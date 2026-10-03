@@ -1,0 +1,6 @@
+kind: name
+metrics: psnr_hvs_y
+side: fork
+fixtures: nflx400
+adr: ADR-0001
+evidence: fixture: only this tree scores luma on 4:0:0

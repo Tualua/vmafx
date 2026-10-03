@@ -3,21 +3,31 @@
 #
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""A/B the fork's CPU throughput against upstream Netflix/vmaf at a pinned tag.
+"""A/B the fork's CPU throughput against upstream Netflix/vmaf at a pinned commit.
 
 Every other benchmark in this repo compares the fork against *itself* — one
 backend against another, or one commit against a recorded baseline. None of
 them answer the question this one exists for: **is the fork actually faster
 than the thing it forked, and did it stay exact while getting there?**
 
-Two numbers per cell, and the second one gates the first:
+Two results per cell, and the second one gates the first:
 
 * **speedup** — upstream median wall-clock over fork median wall-clock. Higher
   is better; 1.00 means no gain.
-* **score delta** — the pooled VMAF the two binaries emit for the same input.
-  This must be zero on the CPU path. A speedup bought by changing the score is
-  not a speedup, it is a regression with a nice number attached, so a non-zero
-  delta fails the run regardless of timing.
+* **score parity** — the upstream parity guard's comparison
+  (`scripts/dev/upstream_parity.py`, ADR-1487) of the model on the same
+  fixtures: every value both trees emit at `%.17g`, against the allowlist of
+  recorded deviations. A speedup bought by changing the score is not a
+  speedup, it is a regression with a nice number attached, so a difference
+  the allowlist does not cover fails the run regardless of timing.
+
+Upstream is built at the commit the repository records as the head it is at
+parity with (`docs/development/known-upstream-bugs.md`), by the guard's own
+build step; `--upstream-ref` names another commit or tag. The fork side is the
+golden-profile build the guard uses (in the guard's work directory), so the
+binary that is timed is the one whose scores are checked. The guard's verdict
+is evidence only in the pinned environment (the dev container image); a bench
+run on the host reports it as advisory.
 
 The CPU path is the only honest A/B surface: upstream has no SYCL, HIP or Metal
 backend, and its CUDA backend covers a different feature set. Comparing the
@@ -33,7 +43,7 @@ every cell.
 Usage:
     testdata/bench_upstream_ab.py --runs 5
     testdata/bench_upstream_ab.py --upstream-ref v3.2.0 --json out.json
-    testdata/bench_upstream_ab.py --upstream-bin /path/to/upstream/vmaf
+    testdata/bench_upstream_ab.py --upstream-bin /path/to/upstream/vmaf   # timing only
 """
 
 import argparse
@@ -46,12 +56,12 @@ import tempfile
 import time
 from pathlib import Path
 
-# Upstream's latest release at the time this harness landed. Pinned rather than
-# tracking master so a rerun months later is comparable to the recorded table:
-# the baseline has to be a fixed point, or the speedup column measures
-# upstream's churn as much as the fork's work.
-DEFAULT_UPSTREAM_REF = "v3.2.0"
-UPSTREAM_URL = "https://github.com/Netflix/vmaf.git"
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from scripts.ci import upstream_parity_allowlist  # noqa: E402
+from scripts.dev import upstream_parity as parity  # noqa: E402
+from scripts.dev import upstream_parity_matrix as parity_matrix  # noqa: E402
 
 # Same fixtures as testdata/bench_backends.py. The 4K pair is gitignored and
 # fetched separately, so it is included only when present -- but it is the one
@@ -65,6 +75,7 @@ FIXTURES = [
         324,
         8,
         "Netflix src01 pair, 576x324, 48f",
+        "nflx8",
     ),
     (
         "checkerboard_1px",
@@ -74,6 +85,7 @@ FIXTURES = [
         1080,
         8,
         "Checkerboard 1-px shift, 1920x1080, 3f",
+        "cb1",
     ),
     (
         "checkerboard_10px",
@@ -83,6 +95,7 @@ FIXTURES = [
         1080,
         8,
         "Checkerboard 10-px shift, 1920x1080, 3f",
+        "cb10",
     ),
     (
         "bbb_4k_200f",
@@ -92,6 +105,7 @@ FIXTURES = [
         2160,
         8,
         "BBB 4K, 3840x2160, 200f",
+        "bbb4k",
     ),
 ]
 
@@ -108,19 +122,13 @@ MIN_USEFUL_SECONDS = 2.0
 # work. v0.6.1 is present in both trees at the same path.
 MODEL = "model/vmaf_v0.6.1.json"
 
-# Both binaries print scores at `%.6f` (upstream has no equivalent of the
-# fork's `--precision`, so 6 decimals is the finest comparison the CLI allows),
-# which puts the floor of any comparison at 1e-6.
-#
-# The default ceiling is deliberately above that floor rather than at it. As of
-# 2026-09-07 the fork and upstream v3.2.0 agree exactly on all 14 pooled
-# features but differ on the final VMAF by up to 8e-6 per frame, in both
-# directions, on the checkerboard 1-px pair. That is a genuine open question --
-# tracked in docs/state.md -- not a rounding artefact, and it is under the
-# Netflix golden gate's `places=4`, which is why it went unnoticed. Until it is
-# localised, the gate's job is to catch the delta GROWING, not to fail every
-# run on a known quantity.
-DEFAULT_MAX_SCORE_DELTA = 1e-5
+# The model run the parity guard compares for the bench's fixtures: the guard's
+# name for it and the harness request ({model} is each tree's model directory).
+PARITY_RUN = ("M.vmaf_v0.6.1", "M:{model}/vmaf_v0.6.1.json")
+
+EXIT_OK = 0
+EXIT_PARITY = 1
+EXIT_USAGE = 2
 
 
 def load1() -> float:
@@ -128,44 +136,31 @@ def load1() -> float:
         return float(fh.read().split()[0])
 
 
-def build_upstream(ref: str, workdir: Path, jobs: int) -> Path:
-    """Clone + build upstream at `ref`. Returns the path to its vmaf binary."""
-    src = workdir / f"netflix-vmaf-{ref}"
-    binary = src / "libvmaf" / "build" / "tools" / "vmaf"
-    if binary.exists():
-        print(f"==> reusing upstream {ref} build at {binary}", file=sys.stderr)
-        return binary
+def score_parity(trees, fixtures, workdir: Path, envdir: Path, jobs: int):
+    """The guard's verdict on the model for *fixtures*: (status, report lines).
 
-    if not src.exists():
-        print(f"==> cloning upstream {ref}", file=sys.stderr)
-        subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", ref, UPSTREAM_URL, str(src)],
-            check=True,
-        )
+    One model run per fixture at the default dispatch, the same comparison and
+    the same allowlist as `make upstream-parity`. The run set is a slice of
+    the guard's matrix, so a fragment without a difference here is not judged
+    stale. Outside the pinned environment the verdict is marked advisory.
+    """
 
-    # Upstream's build root is libvmaf/, not core/ — the fork moved it in
-    # ADR-0700. Build CPU-only: this harness compares the CPU path.
-    print(f"==> building upstream {ref} (CPU only)", file=sys.stderr)
-    subprocess.run(
-        [
-            "meson",
-            "setup",
-            "build",
-            "--buildtype=release",
-            "-Denable_cuda=false",
-            "-Denable_float=true",
-        ],
-        cwd=src / "libvmaf",
-        check=True,
-    )
-    subprocess.run(["ninja", "-C", "build", "-j", str(jobs)], cwd=src / "libvmaf", check=True)
-    if not binary.exists():
-        raise SystemExit(f"upstream build produced no binary at {binary}")
-    return binary
+    upstream_tree, fork_tree = trees
+    names = [fixture[7] for fixture in fixtures]
+    runs = [parity_matrix.Run(name, *PARITY_RUN) for name in names]
+    fixtures_dir = workdir / "fixtures"
+    usable, skipped = parity.available_fixtures(names, fixtures_dir)
+    runs = [run for run in runs if run.fixture in usable]
+    documents = [
+        parity.run_tree(tree, runs, ("default",), fixtures_dir, envdir, jobs)
+        for tree in (upstream_tree, fork_tree)
+    ]
+    fragments = upstream_parity_allowlist.load_fragments()
+    return parity.judge(*documents, fragments, skipped, complete=False, allow_unpinned=True)
 
 
 def build_cmd(vmaf_bin, fixture, model_path, out_path, threads, root):
-    _tag, ref, dis, w, h, bd, _label = fixture
+    _tag, ref, dis, w, h, bd, _label, _parity_name = fixture
     return [
         str(vmaf_bin),
         "--reference",
@@ -239,25 +234,29 @@ def run_cell(vmaf_bin, fixture, runs, threads, root, verbose):
     }
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument(
-        "--fork-bin",
-        default="core/build/tools/vmaf",
-        help="fork vmaf binary (default: core/build/tools/vmaf)",
+        "--fork-build",
+        help="golden-profile build directory of this tree: timed binary and parity harness "
+        "(default: fork-golden in the guard's directory for this environment)",
     )
-    ap.add_argument("--upstream-bin", help="prebuilt upstream binary; skips the clone + build")
+    ap.add_argument("--fork-bin", help="time this fork binary instead of <fork-build>/tools/vmaf")
+    ap.add_argument(
+        "--upstream-bin",
+        help="prebuilt upstream binary; skips the upstream build, and with it the score "
+        "parity check (reported as NOT RUN)",
+    )
     ap.add_argument(
         "--upstream-ref",
-        default=DEFAULT_UPSTREAM_REF,
-        help=f"upstream tag to build (default: {DEFAULT_UPSTREAM_REF})",
+        help="Netflix/vmaf commit or tag to build (default: the recorded parity head)",
     )
     ap.add_argument(
         "--workdir",
-        default="build-upstream-ab",
-        help="where upstream is cloned and built (default: build-upstream-ab)",
+        default=parity.DEFAULT_WORKDIR,
+        help=f"where upstream is exported and built (default: {parity.DEFAULT_WORKDIR})",
     )
     ap.add_argument("--runs", type=int, default=3, help="timed repetitions per cell")
     ap.add_argument(
@@ -267,128 +266,148 @@ def main() -> int:
         help="--threads passed to both binaries (default 1: "
         "single-threaded is the comparable surface)",
     )
-    ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
-    ap.add_argument(
-        "--max-score-delta",
-        type=float,
-        default=DEFAULT_MAX_SCORE_DELTA,
-        help="fail if |fork - upstream| pooled VMAF exceeds this "
-        f"(default {DEFAULT_MAX_SCORE_DELTA:g}; see the module docstring)",
-    )
+    ap.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 4))
     ap.add_argument("--json", help="write the full result document here")
     ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    root = Path(
-        subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
-        ).stdout.strip()
+
+def fork_build_dir(args: argparse.Namespace, envdir: Path) -> Path:
+    """The golden-profile build of this tree the bench times and checks."""
+
+    return (
+        (REPO / args.fork_build).resolve() if args.fork_build else parity.default_fork_build(envdir)
     )
-    fork_bin = Path(args.fork_bin)
-    if not fork_bin.is_absolute():
-        fork_bin = root / fork_bin
-    if not fork_bin.exists():
-        print(
-            f"error: fork binary not found at {fork_bin}\n"
-            f"       build it first: meson setup core/build core && ninja -C core/build",
-            file=sys.stderr,
-        )
-        return 2
 
-    present = [f for f in FIXTURES if (root / f[1]).exists() and (root / f[2]).exists()]
-    absent = [f[0] for f in FIXTURES if f not in present]
-    if not present:
-        print(
-            "error: no fixtures present\n" "       fetch them: scripts/test/fetch-test-yuvs.sh",
-            file=sys.stderr,
-        )
-        return 2
-    if absent:
-        print(f"note: skipping absent fixtures: {', '.join(absent)}", file=sys.stderr)
 
-    if args.upstream_bin:
-        upstream_bin = Path(args.upstream_bin)
-    else:
-        workdir = Path(args.workdir)
-        if not workdir.is_absolute():
-            workdir = root / workdir
-        workdir.mkdir(parents=True, exist_ok=True)
-        upstream_bin = build_upstream(args.upstream_ref, workdir, args.jobs)
+def build_trees(args: argparse.Namespace, envdir: Path, image: str):
+    """Build both sides with the guard's build steps: (upstream tree, fork tree)."""
 
+    commit = parity.resolve_ref(args.upstream_ref) if args.upstream_ref else parity.resolve_pin()
+    return parity.build_trees(commit, fork_build_dir(args, envdir), envdir, args.jobs, image)
+
+
+def time_fixtures(args, binaries, present):
+    """Time every present fixture on both binaries; print and return the cells."""
+
+    upstream_bin, fork_bin = binaries
     results = []
-    parity_failures = []
     print(
-        f"\n{'fixture':<20} {'upstream':>12} {'fork':>12} {'speedup':>9} " f"{'score delta':>12}",
+        f"\n{'fixture':<20} {'upstream':>12} {'fork':>12} {'speedup':>9} {'pooled delta':>13}",
         file=sys.stderr,
     )
     print("-" * 70, file=sys.stderr)
-
     for fixture in present:
         tag = fixture[0]
-        up = run_cell(upstream_bin, fixture, args.runs, args.threads, root, args.verbose)
-        fk = run_cell(fork_bin, fixture, args.runs, args.threads, root, args.verbose)
+        up = run_cell(upstream_bin, fixture, args.runs, args.threads, REPO, args.verbose)
+        fk = run_cell(fork_bin, fixture, args.runs, args.threads, REPO, args.verbose)
         cell = {"fixture": tag, "label": fixture[6], "upstream": up, "fork": fk}
-
         if up["status"] == "ok" and fk["status"] == "ok":
             cell["speedup"] = up["median_time"] / fk["median_time"]
+            # Informational: the command-line tools print six decimals. The
+            # verdict is score_parity(), which compares at %.17g.
             cell["score_delta"] = fk["pooled"] - up["pooled"]
-            if abs(cell["score_delta"]) > args.max_score_delta:
-                parity_failures.append((tag, up["pooled"], fk["pooled"]))
             print(
                 f"{tag:<20} {up['median_time']:>10.3f}s {fk['median_time']:>10.3f}s "
-                f"{cell['speedup']:>8.2f}x {cell['score_delta']:>12.2e}",
+                f"{cell['speedup']:>8.2f}x {cell['score_delta']:>13.2e}",
                 file=sys.stderr,
             )
         else:
             bad = up if up["status"] != "ok" else fk
             print(f"{tag:<20} UNAVAILABLE: {bad.get('error')}", file=sys.stderr)
         results.append(cell)
+    return results
 
-    ok = [c for c in results if "speedup" in c]
+
+def warn_if_startup_bound(ok) -> bool:
     startup_bound = [c for c in ok if c["fork"]["median_time"] < MIN_USEFUL_SECONDS]
-    if startup_bound and len(startup_bound) == len(ok):
+    if not (startup_bound and len(startup_bound) == len(ok)):
+        return False
+    print(
+        f"\nWARNING: every cell ran in under {MIN_USEFUL_SECONDS:g}s, so process "
+        f"startup, model parse and JSON emit dominate the wall clock.\n"
+        f"         The speedup column below is close to 1.00x by construction and "
+        f"says little about\n         the metric kernels. Fetch the 4K pair "
+        f"(scripts/test/fetch-test-yuvs.sh) for a number worth recording.",
+        file=sys.stderr,
+    )
+    return True
+
+
+def present_fixtures():
+    present = [f for f in FIXTURES if (REPO / f[1]).exists() and (REPO / f[2]).exists()]
+    absent = [f[0] for f in FIXTURES if f not in present]
+    if absent and present:
+        print(f"note: skipping absent fixtures: {', '.join(absent)}", file=sys.stderr)
+    return present
+
+
+def main() -> int:
+    args = parse_args()
+    present = present_fixtures()
+    if not present:
         print(
-            f"\nWARNING: every cell ran in under {MIN_USEFUL_SECONDS:g}s, so process "
-            f"startup, model parse and JSON emit dominate the wall clock.\n"
-            f"         The speedup column below is close to 1.00x by construction and "
-            f"says little about\n         the metric kernels. Fetch the 4K pair "
-            f"(scripts/test/fetch-test-yuvs.sh) for a number worth recording.",
+            "error: no fixtures present\n       fetch them: scripts/test/fetch-test-yuvs.sh",
             file=sys.stderr,
         )
+        return EXIT_USAGE
+    workdir = (REPO / args.workdir).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    image = parity.container_image()
+    envdir = parity.environment_dir(workdir, image)
+
+    parity_status, parity_lines = None, ["score parity: NOT RUN (prebuilt upstream binary)"]
+    try:
+        if args.upstream_bin:
+            upstream_bin = Path(args.upstream_bin)
+            fork_default = fork_build_dir(args, envdir) / "tools" / "vmaf"
+            upstream_ref = args.upstream_ref or "prebuilt"
+        else:
+            trees = build_trees(args, envdir, image)
+            upstream_bin, fork_default = trees[0].vmaf, trees[1].vmaf
+            upstream_ref = trees[0].commit
+            parity_status, parity_lines = score_parity(trees, present, workdir, envdir, args.jobs)
+    except (parity.CannotRun, upstream_parity_allowlist.AllowlistError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    fork_bin = Path(args.fork_bin).resolve() if args.fork_bin else fork_default
+    if not fork_bin.exists():
+        print(f"error: fork binary not found at {fork_bin}", file=sys.stderr)
+        return EXIT_USAGE
+
+    results = time_fixtures(args, (upstream_bin, fork_bin), present)
+    ok = [c for c in results if "speedup" in c]
+    verdict = {None: "NOT RUN", parity.EXIT_PASS: "OK"}.get(parity_status, "FAIL")
     doc = {
-        "upstream_ref": args.upstream_ref,
+        "upstream_ref": upstream_ref,
         "runs": args.runs,
         "threads": args.threads,
         "cells": results,
         "geomean_speedup": (statistics.geometric_mean([c["speedup"] for c in ok]) if ok else None),
-        "score_parity": "FAIL" if parity_failures else "OK",
-        "max_score_delta": args.max_score_delta,
-        "startup_bound": bool(startup_bound and len(startup_bound) == len(ok)),
+        "score_parity": verdict,
+        "score_parity_report": parity_lines,
+        "startup_bound": warn_if_startup_bound(ok),
     }
     if doc["geomean_speedup"]:
         print(
-            f"\ngeomean speedup vs upstream {args.upstream_ref}: " f"{doc['geomean_speedup']:.2f}x",
+            f"\ngeomean speedup vs upstream {upstream_ref[:12]}: {doc['geomean_speedup']:.2f}x",
             file=sys.stderr,
         )
-
+    print("\n".join(parity_lines), file=sys.stderr)
     if args.json:
         Path(args.json).write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {args.json}", file=sys.stderr)
 
-    if parity_failures:
+    if verdict == "FAIL":
         print(
-            "\nSCORE PARITY FAILED — the fork and upstream disagree on the CPU path:",
+            "\nSCORE PARITY FAILED — the fork and upstream differ on the CPU path where no "
+            "recorded deviation covers it.\nA speedup that moves the score is a regression. "
+            "Fix the arithmetic, or record the deviation by ADR and fragment "
+            "(docs/development/upstream-parity.md), before recording any timing from this run.",
             file=sys.stderr,
         )
-        for tag, u, f in parity_failures:
-            print(f"  {tag}: upstream={u!r} fork={f!r} delta={f - u:.3e}", file=sys.stderr)
-        print(
-            "A speedup that moves the score is a regression. Fix the arithmetic "
-            "before recording any timing from this run.",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+        return EXIT_PARITY
+    return EXIT_OK
 
 
 if __name__ == "__main__":

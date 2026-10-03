@@ -59353,3 +59353,44 @@ upstream parity guard's allowlist.
 | [ADR-1484](adr/1484-float-ms-ssim-magnitude-before-pow.md) | `core/src/feature/ms_ssim.c`: `fabs()` on `l`, `c`, `s` before `pow()` | no `fabs()` (`ms_ssim.c:294`) | Netflix/vmaf#1665 (`fabs()` on `s` only; equal in value) |
 | [ADR-1485](adr/1485-apsnr-zero-error-plane-reports-cap.md) | `core/src/feature/integer_psnr.c::flush()`, `vmaf_psnr_aggregate()` in `psnr_score.h` | three planes, ceiling with the factor 2 (`integer_psnr.c:226`) | Netflix/vmaf#1666 (keeps the factor 2; equal in value) |
 | [ADR-1486](adr/1486-float-motion-scale1-uses-callers-stride.md) | `core/src/feature/motion.c`: `img1_stride`, `img2_stride` to the scale-1 scaler | stride recomputed from the width (`motion.c:70`) | Netflix/vmaf#1667 |
+
+## Upstream parity guard and its allowlist (ADR-1487, 2026-10-02)
+
+`feat/upstream-parity-guard`.
+
+- No rebase impact on upstream files: `scripts/dev/upstream_parity*.py`,
+  `scripts/dev/upstream_parity_harness.c`, `scripts/ci/upstream_parity.d/`,
+  `scripts/ci/upstream_parity_allowlist.py` and the generated
+  `docs/development/upstream-parity-allowlist.md` exist only in the fork.
+- An upstream port or sync moves the recorded head in
+  `docs/development/known-upstream-bugs.md`. In the same pull request run
+  `make upstream-parity-full`: a difference that appears is the port's to fix
+  or a change upstream made that the port left out; a fragment the port makes
+  stale (upstream took the fork's fix) is removed there.
+- A sync that takes upstream's side of a line an ADR-recorded deviation
+  covers turns that deviation's fragment stale: either the line is restored
+  (the deviation stands) or the fragment and the deviation go together. The
+  table under "Eight deliberate deviations" above names the lines.
+- The harness asks this tree for its feature collector through
+  `vmaf_feature_collector_get()` (`core/src/libvmaf_priv.h`); keep that
+  accessor and the collector's `feature_vector` and `aggregate_vector` fields.
+- `scripts/ci/cross_backend_calibration.py`: the fragment line parser is now
+  `parse_fragment_fields()` and `check_fragment_adrs()`, shared by
+  `exact_twins.d` and `upstream_parity.d`. A conflict in the generated
+  allowlist table is resolved like the exact-twin table: master's side, then
+  `make docs-fragments-write`.
+- `scripts/ci/setup-golden-build.sh` honours `GOLDEN_NINJA_JOBS`.
+- `testdata/bench_upstream_ab.py` no longer clones upstream itself and has no
+  `--max-score-delta`; a branch that still passes the option fails at argument
+  parsing. Its `--fork-build` default moved from `core/build-golden` into the
+  guard's work directory.
+- The guard measures in the dev container image only (`--container`, what
+  `make upstream-parity` passes); outside it, it exits 2 unless `--unpinned`
+  marks the verdict advisory. A bound measured on a host is not evidence: a
+  branch that re-sizes a fragment does it from an `--container` run, and
+  says so in the fragment's `evidence`. Result documents are schema 2 (they
+  carry the environment); a schema-1 document is refused.
+- A bound over a value the heap check (`--heap-check`) finds undefined
+  upstream must be `inf`. A dev image rebuilt with another compiler or C
+  library is a new environment: run `make upstream-parity-full` in it before
+  trusting a bound.

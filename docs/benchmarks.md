@@ -14,20 +14,28 @@ PR that updates this file alongside the commit that motivates the rerun.
 ## Upstream A/B (ADR-1228)
 
 Every other table on this page compares the fork against itself. This one
-compares it against **upstream Netflix/vmaf at a pinned tag**, which is the only
-measurement that answers whether the fork is worth using on throughput grounds —
-and whether it stayed exact while getting there.
+compares it against **upstream Netflix/vmaf at a pinned commit**, which is the
+only measurement that answers whether the fork is worth using on throughput
+grounds — and whether it stayed exact while getting there.
 
 Harness: [`testdata/bench_upstream_ab.py`](../testdata/bench_upstream_ab.py).
-It clones and builds upstream, then runs both binaries over the same fixtures
-with the ADR-1185 discipline (one discarded warmup, `--runs` timed repetitions
-reported as the median, spread and load average recorded).
+It builds upstream at the recorded parity head and this tree with the golden
+build profile, both through the [upstream parity guard](development/upstream-parity.md)
+([ADR-1487](adr/1487-upstream-parity-policy-and-guard.md)), then runs both
+binaries over the same fixtures with the ADR-1185 discipline (one discarded
+warmup, `--runs` timed repetitions reported as the median, spread and load
+average recorded). The score verdict is the guard's: the model's values at
+`%.17g` on the same fixtures against the allowlist of recorded deviations. The
+"Score delta" column is the six-decimal pooled difference of the two tools
+and is informational.
 
 ```bash
-meson setup core/build core -Denable_cuda=false -Denable_sycl=false -Denable_float=true
-ninja -C core/build
 testdata/bench_upstream_ab.py --runs 5 --json /tmp/ab.json
+testdata/bench_upstream_ab.py --upstream-ref v3.2.0   # another upstream commit or tag
 ```
+
+The table below predates the guard: it was measured against the tag `v3.2.0`
+with the six-decimal ceiling the harness had then.
 
 **CPU path only.** Upstream has no SYCL, HIP or Metal backend and its CUDA
 backend covers a different feature set, so a GPU comparison would measure the

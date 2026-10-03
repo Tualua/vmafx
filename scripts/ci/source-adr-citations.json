@@ -41,6 +41,7 @@
       "sites": {
         "scripts/ci/test_cross_backend_parity_gate.py": 10,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
+        "scripts/ci/tests/test_upstream_parity_allowlist.py": 15,
         "scripts/docs/concat-adr-index.sh": 1,
         "scripts/docs/tests/test_agents_index.py": 4,
         "scripts/docs/tests/test_generators.py": 1
@@ -1424,7 +1425,8 @@
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/deliverables-check.sh": 2,
         "scripts/docs/agents_index.py": 1,
-        "scripts/docs/generate-exact-twins.py": 1
+        "scripts/docs/generate-exact-twins.py": 1,
+        "scripts/docs/generate-upstream-parity-allowlist.py": 1
       },
       "target": "0221-changelog-adr-fragment-pattern.md"
     },
@@ -4135,8 +4137,7 @@
         "python/setup.py": 2,
         "python/test/compat_python_vmaf_coverage_test.py": 1,
         "python/vmaf/__init__.py": 1,
-        "scripts/dev/relicense_fork_files.py": 2,
-        "testdata/bench_upstream_ab.py": 1
+        "scripts/dev/relicense_fork_files.py": 2
       },
       "target": "0700-vmafx-repo-layout.md"
     },
@@ -9535,6 +9536,25 @@
         "core/tools/vmaf.cpp": 1
       },
       "target": "1478-motion-five-frame-window-port.md"
+    },
+    "1483": {
+      "sites": {
+        "scripts/dev/upstream_parity_harness.c": 1
+      },
+      "target": "1483-odd-size-chroma-planes-round-up.md"
+    },
+    "1487": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "Makefile": 2,
+        "scripts/ci/tests/test_upstream_parity_allowlist.py": 1,
+        "scripts/ci/upstream_parity_allowlist.py": 1,
+        "scripts/dev/tests/test_upstream_parity.py": 1,
+        "scripts/dev/upstream_parity.py": 1,
+        "scripts/docs/generate-upstream-parity-allowlist.py": 1,
+        "testdata/bench_upstream_ab.py": 1
+      },
+      "target": "1487-upstream-parity-policy-and-guard.md"
     },
     "1488": {
       "sites": {

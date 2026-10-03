@@ -1,0 +1,53 @@
+{
+ "schema": 2,
+ "tree": "upstream",
+ "commit": "cea2b4d832a105116a3f16f56d6f5d953421952c",
+ "environment": {
+  "pinned": true,
+  "image": "sha256:0123456789abcdef",
+  "cc": "gcc (test) 15.2.0",
+  "cxx": "g++ (test) 15.2.0",
+  "libc": "glibc 2.43",
+  "machine": "x86_64"
+ },
+ "heap_fill": 0,
+ "runs": {
+  "scalar/nflx8/F.psnr.default": {
+   "status": "ok",
+   "detail": "",
+   "values": {
+    "0|psnr_y": "30.755063781270582",
+    "1|psnr_y": "30",
+    "0|psnr_cb": "38.449441657812088"
+   },
+   "pooled": {
+    "mean|psnr_y": "30.377531890635291",
+    "harmonic|psnr_y": "30.372865060299798"
+   }
+  },
+  "scalar/nflx422p10/F.ciede.default": {
+   "status": "ok",
+   "detail": "",
+   "values": {
+    "0|ciede2000": "33.268147359332225",
+    "1|ciede2000": "33.5"
+   },
+   "pooled": {
+    "mean|ciede2000": "33.384073679666113",
+    "harmonic|ciede2000": "33.383879"
+   }
+  },
+  "scalar/q160x90/F.cambi.default": {
+   "status": "ok",
+   "detail": "",
+   "values": {},
+   "pooled": {}
+  },
+  "scalar/nflx400/F.psnr_hvs.default": {
+   "status": "ok",
+   "detail": "",
+   "values": {},
+   "pooled": {}
+  }
+ }
+}

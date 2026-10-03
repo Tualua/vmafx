@@ -109,9 +109,11 @@ commits since the September port that the fork does not need, up to
 `8e7a1ac4e`; `docs/state.md` ("Confirmed not-affected") lists the first six.
 
 <!-- The Licence Provenance check reads the heading below
-     (scripts/ci/upstream_parity_pin.py, licence-provenance-check.md).
+     (scripts/ci/upstream_parity_pin.py, licence-provenance-check.md), and
+     the upstream parity guard builds the commit it names
+     (scripts/dev/upstream_parity.py, upstream-parity.md).
      Keep exactly one heading of this form; a port or sync moves its
-     commit id. -->
+     commit id, and runs `make upstream-parity-full` against the new one. -->
 
 ## Upstream head the fork is at parity with: `9e48141b` (2026-10-02)
 

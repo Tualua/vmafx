@@ -116,34 +116,55 @@ class ExactTwin:
     evidence: str
 
 
-def _parse_fragment_lines(path: Path) -> dict[str, str]:
-    """Return the ``key: value`` pairs of one fragment; reject anything else."""
+def parse_fragment_fields(
+    path: Path, allowed_keys: Collection[str], error: type[ValueError]
+) -> dict[str, str]:
+    """Return the ``key: value`` pairs of one fragment file; reject anything else.
+
+    The line grammar of every ``*.d`` fragment directory under ``scripts/ci``
+    (``exact_twins.d``, ``upstream_parity.d``): one ``key: value`` per line,
+    each key at most once, no key outside *allowed_keys*, no empty file.
+    """
 
     lines = path.read_text(encoding="utf-8").splitlines()
     if not any(line.strip() for line in lines):
-        raise ExactTwinError(f"{path.name}: empty fragment")
+        raise error(f"{path.name}: empty fragment")
     fields: dict[str, str] = {}
     for number, line in enumerate(lines, start=1):
         key, sep, value = line.partition(":")
         key, value = key.strip(), value.strip()
         if not sep or not value:
-            raise ExactTwinError(f"{path.name}:{number}: expected 'key: value', got {line!r}")
-        if key not in FRAGMENT_KEYS:
-            raise ExactTwinError(f"{path.name}:{number}: unknown key {key!r}")
+            raise error(f"{path.name}:{number}: expected 'key: value', got {line!r}")
+        if key not in allowed_keys:
+            raise error(f"{path.name}:{number}: unknown key {key!r}")
         if key in fields:
-            raise ExactTwinError(f"{path.name}:{number}: duplicate key {key!r}")
+            raise error(f"{path.name}:{number}: duplicate key {key!r}")
         fields[key] = value
     return fields
 
 
-def _check_adrs(path: Path, value: str, adr_dir: Path) -> tuple[str, ...]:
+def check_fragment_adrs(
+    path: Path, value: str, adr_dir: Path, error: type[ValueError]
+) -> tuple[str, ...]:
+    """Return the ADR ids of an ``adr:`` value; each must have a file in *adr_dir*."""
+
     if not _ADR_LIST.match(value):
-        raise ExactTwinError(f"{path.name}: adr must be 'ADR-1460[, ADR-1460...]', got {value!r}")
+        raise error(f"{path.name}: adr must be 'ADR-1460[, ADR-1460...]', got {value!r}")
     adrs = tuple(item.strip() for item in value.split(","))
     for adr in adrs:
         if not list(adr_dir.glob(f"{adr[4:]}-*.md")):
-            raise ExactTwinError(f"{path.name}: {adr} has no file under {adr_dir}")
+            raise error(f"{path.name}: {adr} has no file under {adr_dir}")
     return adrs
+
+
+def _parse_fragment_lines(path: Path) -> dict[str, str]:
+    """Return the ``key: value`` pairs of one exact-twin fragment."""
+
+    return parse_fragment_fields(path, FRAGMENT_KEYS, ExactTwinError)
+
+
+def _check_adrs(path: Path, value: str, adr_dir: Path) -> tuple[str, ...]:
+    return check_fragment_adrs(path, value, adr_dir, ExactTwinError)
 
 
 def parse_exact_twin_fragment(path: Path, adr_dir: Path = ADR_DIR) -> ExactTwin:

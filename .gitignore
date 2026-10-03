@@ -225,6 +225,7 @@ relcache/
 # the path as an option, so the large-file hook never sees it.
 /tools/vmaf-tune/-version
 build-upstream-ab/
+build-upstream-parity/
 
 # local-only agent scratch (bench fixtures, fan-out logs, tmp scratch)
 .claude/bench-data/

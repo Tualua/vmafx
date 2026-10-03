@@ -99,6 +99,22 @@
   `docs/development/pre-commit-hooks.md`.
 
 
+- **Upstream parity guard: `make upstream-parity` compares this tree's CPU
+  extractors with Netflix/vmaf at the recorded parity head, every emitted
+  value at `%.17g`** (ADR-1487). It builds both trees in the dev container
+  image, where every comparison is made (elsewhere the guard refuses, or
+  with `--unpinned` reports an advisory verdict), runs 16 shared extractors,
+  their option variants and the shipped models on the scalar path and the
+  default dispatch, and fails on a difference that no recorded deviation
+  covers, on one larger than its recorded bound, and on a recorded deviation
+  that no longer exists. `make upstream-parity-full` runs the whole matrix
+  twice, the second time with the heap filled, and fails on an output of
+  this tree that changes or on a finite bound over an upstream value that
+  does. The deviations are fragments under `scripts/ci/upstream_parity.d/`,
+  listed in `docs/development/upstream-parity-allowlist.md`; the guide is
+  `docs/development/upstream-parity.md`.
+
+
 ### Changed
 
 - Migrated the Windows MSYS2 MinGW build matrix leg in
@@ -301,6 +317,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `float_ssim` / `float_ms_ssim` frame-sum row moved to "Recently closed"
   (all six backend parts were fixed on 2026-10-02), and the HIP and CUDA lint
   row no longer lists the `filter1d.cu` function-size rows as open.
+
+
+- **`testdata/bench_upstream_ab.py` takes its score verdict from the upstream
+  parity guard and builds upstream at the recorded parity head** (ADR-1487).
+  The `--max-score-delta` option and its `1e-5` ceiling on the six-decimal
+  pooled score are gone: the model's values are compared at `%.17g` against
+  the allowlist of recorded deviations. `--upstream-ref` still names another
+  commit or tag; `--fork-build` names the golden-profile build that is timed
+  and checked (default: in the guard's work directory); with `--upstream-bin`
+  the parity check is reported as not run. Outside the dev container image
+  the verdict is marked advisory.
 
 
 - **`ciede2000` no longer depends on the compiler or on the C library's `powf`

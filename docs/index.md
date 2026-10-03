@@ -107,6 +107,7 @@ and the individual guides for requirements and feature coverage:
 - [CI runners](development/ci-runners.md) – self-hosted runner setup for GPU lanes
 - [Python process execution](development/python-process-execution.md) – fork-free worker and duplicate-asset ordering guarantees
 - [Cross-backend gate](development/cross-backend-gate.md) – T6-8 GPU-parity gate semantics
+- [Upstream parity guard](development/upstream-parity.md) – CPU extractors against Netflix/vmaf at `%.17g`, with the allowlist of recorded deviations
 - [Fuzzing](development/fuzzing.md) – OSS-Fuzz integration
 - [IDE setup](development/ide-setup.md) – clangd / VS Code configuration for all backends
 - [FFmpeg patches refresh](development/ffmpeg-patches-refresh.md) – rebasing the `ffmpeg-patches/` series

@@ -1191,3 +1191,5 @@
 1488-psnr-hvs-upstream-mask-product
 1489-float-adm-barten-upstream-float
 1478-motion-five-frame-window-port
+1487-upstream-parity-policy-and-guard
+1494-adm-refuses-frames-below-17

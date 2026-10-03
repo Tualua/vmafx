@@ -1,0 +1,7 @@
+kind: value
+metrics: ciede2000
+fixtures: nflx422p10
+bound: 0.2
+adr: ADR-0001
+upstream: Netflix/vmaf#1611
+evidence: fixture: 2 of 2 frames differ, at most 0.153

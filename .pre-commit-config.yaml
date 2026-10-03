@@ -324,6 +324,13 @@ repos:
         files: '^(docs/development/known-upstream-bugs\.md|scripts/ci/(upstream_parity_pin\.py|tests/test_upstream_parity_pin\.py)|\.github/workflows/(lint-and-format|required-aggregator)\.yml)$'
         pass_filenames: false
 
+      - id: test-upstream-parity-guard
+        name: Upstream parity guard compares, attributes and fails as documented (ADR-1487)
+        entry: bash -c 'python3 -B scripts/ci/tests/test_upstream_parity_allowlist.py && python3 -B scripts/dev/tests/test_upstream_parity.py'
+        language: system
+        files: '^(scripts/ci/(upstream_parity_allowlist\.py|upstream_parity\.d/.*|cross_backend_calibration\.py|tests/test_upstream_parity_allowlist\.py)|scripts/dev/(upstream_parity(_matrix)?\.py|tests/test_upstream_parity\.py|tests/fixtures/upstream_parity/.*)|docs/adr/.*\.md)$'
+        pass_filenames: false
+
       - id: check-base-image-single-source
         name: Container base images come from build-config.env
         entry: scripts/ci/check-base-image-single-source.sh
@@ -914,7 +921,7 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
 
       - id: test-agents-index

@@ -118,4 +118,15 @@ else
   validate_compiler_id "${BUILD_DIR}"
 fi
 
-"${NINJA_BIN}" -vC "${BUILD_DIR}" tools/vmaf
+# GOLDEN_NINJA_JOBS=<n> caps the build's parallelism (the upstream parity
+# guard passes its --jobs); unset, ninja picks its own default.
+NINJA_ARGS=(-vC "${BUILD_DIR}")
+if [[ -n "${GOLDEN_NINJA_JOBS:-}" ]]; then
+  if ! [[ "${GOLDEN_NINJA_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "error: GOLDEN_NINJA_JOBS='${GOLDEN_NINJA_JOBS}' is not a positive integer" >&2
+    exit 2
+  fi
+  NINJA_ARGS+=(-j "${GOLDEN_NINJA_JOBS}")
+fi
+
+"${NINJA_BIN}" "${NINJA_ARGS[@]}" tools/vmaf

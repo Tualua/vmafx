@@ -146,6 +146,7 @@ cythonize-deps: $(VENV_PIP)
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast install-hooks hooks-install help \
+        upstream-parity upstream-parity-full \
         coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
 
@@ -198,6 +199,8 @@ docs-fragments-check:
 	@bash scripts/docs/generate-adr-nav.sh --check
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
+	@echo "--- scripts/ci/upstream_parity.d/ vs docs/development/upstream-parity-allowlist.md ---"
+	@python3 scripts/docs/generate-upstream-parity-allowlist.py --check
 	@echo "--- */AGENTS.d/ vs */AGENTS.md ---"
 	@python3 scripts/docs/agents_index.py --check
 
@@ -208,6 +211,7 @@ docs-fragments-write:
 	@bash scripts/docs/generate-adr-by-tag.sh --write
 	@bash scripts/docs/generate-adr-nav.sh --write
 	@python3 scripts/docs/generate-exact-twins.py --write
+	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write
 
 # Analyze only this Meson profile, retaining all configured command variants.
@@ -517,6 +521,29 @@ test-netflix-golden-arm64: build-golden-arm64
 	QEMU_LD_PREFIX="$(QEMU_LD_PREFIX)" CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_ARM64_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    $(GOLDEN_PYTEST_ARGS)
 
+# Upstream parity guard (ADR-1487): this tree's CPU extractors against
+# Netflix/vmaf at the recorded parity head, every emitted value at %.17g,
+# scalar and default dispatch. Both trees are built and run in the dev container
+# image (the pinned environment: Netflix's own values depend on the compiler and
+# the C library), upstream at the pin and this tree with the golden profile.
+# Fails on a difference no fragment of scripts/ci/upstream_parity.d/ covers, on
+# one above its fragment's bound, and on a fragment nothing matches any more.
+# The full run also repeats every request with the heap filled and fails on an
+# output of this tree that changes. Exit 2 = could not compare.
+#   make upstream-parity        # probe set: about two minutes from an empty work directory
+#   make upstream-parity-full   # every fixture, option variant and model, twice
+# docs/development/upstream-parity.md has the details.
+UPSTREAM_PARITY_JOBS ?= 8
+UPSTREAM_PARITY_IMAGE ?= vmaf-dev-mcp:local
+UPSTREAM_PARITY_ARGS ?=
+upstream-parity:
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
+	    --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
+
+upstream-parity-full:
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode full \
+	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
+
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
 test-sanitizers:
 	@mkdir -p build-san
@@ -756,6 +783,8 @@ help:
 	@echo "  make silent-revert-check — ADR-1284: work this merge would remove from BASE"
 	@echo "  make test-netflix-golden — D24 gate: 3 Netflix CPU test pairs"
 	@echo "  make test-netflix-golden-arm64 — the same gate on an aarch64 cross build under qemu-user (GOLDEN_ARM64_CC=gcc|clang)"
+	@echo "  make upstream-parity    — CPU extractors against Netflix/vmaf at the recorded parity head, probe set, in the dev container image (ADR-1487)"
+	@echo "  make upstream-parity-full — the same over every fixture, option variant and model"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
 	@echo "  make coverage         — gcov/lcov line+branch coverage report"
