@@ -1,28 +1,35 @@
 <!-- markdownlint-disable MD060 -->
 # `vmafx` — modernized CLI reference
 
-`vmafx` is a thin alias for the `vmaf` binary that activates modernized
-defaults on invocation. It is installed as a symlink to `vmaf` in the same
-`bindir` (or a dedicated binary on Windows); the binary detects the `vmafx`
-basename at startup and adjusts its behavior accordingly (ADR-0690).
+`vmafx` runs the `vmaf` scorer with modernized defaults: lossless score
+precision and a `VMAFX` banner. Use it for workflows that consume scores
+programmatically; use `vmaf` when you need upstream Netflix output.
 
-> **Relationship to `vmaf`.** `vmafx` and `vmaf` will share one binary on disk.
-> Every flag documented in [`cli.md`](cli.md) is also accepted by `vmafx`.
-> The only differences are the defaults described on this page. To restore all
-> legacy defaults with `vmafx`, pass `--netflix-compat` explicitly.
+Meson builds `vmafx` as a separate executable next to `vmaf`, and on POSIX the
+installed `vmafx` is a symlink to `vmaf`. On Windows it is a dedicated
+`vmafx.exe`. The binary detects the `vmafx` basename at startup and adjusts its
+behavior (ADR-0690).
+
+!!! note "Relationship to `vmaf`"
+    Every flag documented in [`cli.md`](cli.md) is also accepted by `vmafx`.
+    The only differences are the defaults described on this page. To restore
+    all legacy defaults with `vmafx`, pass `--netflix-compat`.
 
 ## Modernized defaults
 
 | Behavior | `vmaf` default | `vmafx` default |
 |---|---|---|
 | Output precision | `%.6f` (6 decimal places, matches upstream Netflix) | `%.17g` (IEEE-754 round-trip lossless, `--precision=max`) |
-| Backend selection | auto (SYCL > CUDA > HIP > CPU) | same — auto is the default for both |
+| Backend selection | auto: SYCL, then CUDA | same, auto is the default for both |
 | Startup banner | `VMAF version <V>` | `VMAFX version <V> (precision=max)` |
 | `--version` output | `<version string>` | `VMAFX <version string> (auto-backend, precision=max)` |
 
-The backend auto-selection priority (SYCL > CUDA > HIP > CPU) applies to
-both `vmaf` and `vmafx` and reflects the libvmaf registry order established
-after ADR-0726 dropped Vulkan. No difference exists at the backend level
+The banner is printed to stderr only on a terminal and without `--quiet`.
+
+Backend auto-selection is identical for both binaries: the compiled-in
+backends are tried in registry order, SYCL then CUDA. HIP and Metal join only
+when you pass `--hip_device` or `--metal_device`
+([cli.md](cli.md#selection-flags)). No difference exists at the backend level
 between the two binaries.
 
 ## Why `--precision=max` is the vmafx default
@@ -51,7 +58,7 @@ vmafx --reference ref.y4m --distorted dist.y4m --precision=legacy
 
 # Check which version and defaults are active
 vmafx --version
-# Output: VMAFX v3.2.1 (auto-backend, precision=max)
+# Output: VMAFX <version> (auto-backend, precision=max)
 ```
 
 ## `--netflix-compat` — restore legacy defaults
@@ -94,7 +101,7 @@ Use `--netflix-compat` when:
 
 - Reproducing results for comparison with upstream Netflix/vmaf.
 - Running a workflow that must satisfy the three golden-data test assertions
-  in `python/test/` (CPU + `%.6f` precision is required — see CLAUDE.md §8).
+  in `python/test/` (CPU + `%.6f` precision is required).
 - Debugging a numeric difference between `vmafx` and `vmaf` output: adding
   `--netflix-compat` to the `vmafx` invocation isolates whether the difference
   is from backend (GPU vs CPU) or precision (`%.17g` vs `%.6f`).
@@ -102,7 +109,8 @@ Use `--netflix-compat` when:
 ## AI tool aliases
 
 Three companion Python tools also ship `vmafx-*` aliases alongside their
-existing `vmaf-*` names. Both names invoke the same callable:
+existing `vmaf-*` names. For each pair, both names invoke the same Python
+callable:
 
 | `vmaf-*` name | `vmafx-*` alias | Package |
 |---|---|---|
@@ -114,18 +122,22 @@ Install any package with `pip install -e <path>` to get both names. The
 aliases are console_scripts entries pointing to the same Python callables;
 no behavior difference exists between `vmaf-train` and `vmafx-train`.
 
+!!! note "`vmafx-mcp` is also a Go binary"
+    The same name belongs to the Go MCP server (`cmd/vmafx-mcp`). The "same
+    callable" statement holds only for the Python package `vmaf-mcp`.
+
 ## Smoke test
 
 After installation, confirm the symlink and default banner:
 
 ```shell
-# Confirm vmafx resolves to the vmaf binary
+# On POSIX, confirm vmafx resolves to the vmaf binary
 ls -la $(which vmafx)
 # -> ... vmafx -> vmaf
 
 # Version string shows VMAFX identity and defaults
 vmafx --version
-# -> VMAFX v3.2.1 (auto-backend, precision=max)
+# -> VMAFX <version> (auto-backend, precision=max), for example v1.0.0-rc.2-310-g1b1663830
 
 # Or inside the dev container:
 docker exec vmaf-dev-mcp vmafx --version

@@ -1,44 +1,60 @@
 <!-- markdownlint-disable MD013 -->
-# MATLAB Usage
+# MATLAB usage
+
+Three reference metrics, ST-MAD, ST-RRED and SpEED-QA, run through MATLAB from
+the Python harness. They are available only there: the `vmaf` CLI does not
+compute them. BRISQUE needs no MATLAB, because libvmaf computes it natively.
 
 ## Prerequisites
 
-Install and activate [MATLAB](https://www.mathworks.com/). Then set
-`MATLAB_PATH` in [`compat/python-vmaf/config.py`](../../compat/python-vmaf/config.py) to
-point at your MATLAB binary:
+1. Install and activate [MATLAB](https://www.mathworks.com/).
+2. Create the optional file
+   [`compat/python-vmaf/externals.py`](../../compat/python-vmaf/config.py), which
+   `config.py` reads, and set `MATLAB_PATH` in it to your MATLAB binary:
 
-```python
-MATLAB_PATH = "/path/to/matlab"
-```
+    ```python
+    MATLAB_PATH = "/path/to/matlab"
+    ```
 
-For example on macOS:
+    For example on macOS:
 
-```python
-MATLAB_PATH = "/Applications/MATLAB_R2017a.app/bin/matlab"
-```
+    ```python
+    MATLAB_PATH = "/Applications/MATLAB_R2017a.app/bin/matlab"
+    ```
 
-## Available Algorithms
+    To use the MATLAB Runtime instead of a full MATLAB, set
+    `MATLAB_RUNTIME_PATH` in the same file.
 
-The available algorithms are ST-MAD [1], ST-RRED [2], SpEED-QA [3] and BRISQUE [4].
+## Available algorithms
 
-Example usage for ST-MAD, ST-RRED and SpEED-QA with the `run_testing` script:
+| Algorithm | `quality_type` | Notes |
+| --- | --- | --- |
+| ST-MAD [1] | `STMAD` | |
+| ST-RRED [2] | `STRRED` | |
+| ST-RRED, optimised | `STRREDOpt` | Computationally efficient variant with numerically identical results. |
+| SpEED-QA [3] | `SpEED_Matlab` | |
+| BRISQUE [4] | n/a | Native libvmaf feature; see below. |
+
+Run the MATLAB algorithms with the `run_testing` script:
 
 ```bash
 python -m vmaf.script.run_testing <quality_type> <dataset_file>
 ```
 
-where `<quality_type>` is `STMAD` (ST-MAD), `STRRED` (ST-RRED), `SpEED_Matlab`
-(SpEED-QA), or `STRREDOpt` for a computationally efficient ST-RRED variant
-that produces numerically identical results.
+The dataset file follows the format described in [python.md](python.md).
 
-Example usage for BRISQUE:
+## BRISQUE
+
+BRISQUE runs without MATLAB, as a libvmaf feature extractor:
 
 ```bash
-python -m vmaf.script.run_vmaf yuv_420p 1920 1080 \
-    NFLX_dataset_public/ref/OldTownCross_25fps.yuv \
-    NFLX_dataset_public/dis/OldTownCross_90_1080_4300.yuv \
-    --model model/vmaf_brisque_all_v0.0rc.pkl
+vmaf --reference ref.yuv --distorted dis.yuv --width 1920 --height 1080 \
+     --pixel_format 420 --bitdepth 8 --feature brisque
 ```
+
+The trained model ships embedded in the binary. See
+[../metrics/brisque.md](../metrics/brisque.md) for the options, including an
+on-disk model such as `model/other_models/brisque_live.model`.
 
 ## References
 

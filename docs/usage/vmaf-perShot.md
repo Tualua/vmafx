@@ -1,14 +1,14 @@
 <!-- markdownlint-disable MD060 -->
 # `vmaf-perShot` — per-shot CRF predictor sidecar
 
-`vmaf-perShot` is a fork-added CLI binary (T6-3b /
-[ADR-0222](../adr/0222-vmaf-per-shot-tool.md)) that turns a single YUV
-reference into a **per-shot CRF plan**: a CSV or JSON sidecar your
-encoder can consume to drive content-adaptive bitrate without an ML
-framework on the encode side.
+`vmaf-perShot` turns a single YUV reference into a **per-shot CRF plan**: a
+CSV or JSON sidecar your encoder can consume to drive content-adaptive bitrate
+without an ML framework on the encode side. It is a fork-added binary
+([ADR-0222](../adr/0222-vmaf-per-shot-tool.md)), built as `vmaf-perShot`
+(`build/tools/vmaf-perShot`).
 
-It does **not** measure VMAF — its output is an encoder hint, not a
-quality score. Use [`vmaf`](cli.md) to verify the post-encode VMAF.
+It does **not** measure VMAF: its output is an encoder hint, not a quality
+score. Use [`vmaf`](cli.md) to verify the post-encode VMAF.
 
 ## Pipeline
 
@@ -125,30 +125,45 @@ absolute luma delta vs. its predecessor is compared against
 fire after the running shot has reached 4 frames (suppresses flash /
 fade flicker).
 
-This is intentionally simple. Once the TransNet V2 extractor (T6-3a /
-[ADR-0223](../adr/0223-transnet-v2-shot-detector.md)) lands, a future
-revision will accept a pre-computed shot map (`--shots PATH`) and
-bypass the detector entirely.
+This is intentionally simple. The TransNet V2 extractor
+([ADR-0223](../adr/0223-transnet-v2-shot-detector.md)) is registered in libvmaf,
+but `vmaf-perShot` does not use it yet: there is no `--shots PATH` option for a
+pre-computed shot map, and the frame-difference detector always runs.
 
-## Worked example — feeding x265 `--zones`
+## Worked example: feeding x265 `--zones`
 
-```shell
-# 1. Build a plan.
-vmaf-perShot \
-    --reference ref.yuv -w 1920 -h 1080 -p 420 -b 8 \
-    --output plan.csv
+1. Build a plan:
 
-# 2. Convert plan.csv to x265 --zones syntax (one zone per row).
-awk -F, 'NR>1 { printf("%s,%s,crf=%.0f/", $2, $3, $7) }' plan.csv \
-    > zones.txt
+    ```shell
+    vmaf-perShot \
+        --reference ref.yuv -w 1920 -h 1080 -p 420 -b 8 \
+        --output plan.csv
+    ```
 
-# 3. Encode using the zone string.
-ffmpeg -i ref.y4m -c:v libx265 \
-    -x265-params "$(< zones.txt)" out.mp4
+2. Convert `plan.csv` to an x265 `zones=` value (one `start,end,crf=Q` zone per
+   row, joined by `/`):
 
-# 4. Verify the post-encode VMAF.
-vmaf --reference ref.y4m --distorted out.mp4 --output verify.json
-```
+    ```shell
+    awk -F, 'NR>1 { printf("%s,%s,crf=%.0f/", $2, $3, $7) }' plan.csv \
+        | sed 's:/$::' > zones.txt
+    ```
+
+    For the plan above, `zones.txt` holds `0,3,crf=25/4,47,crf=25`.
+
+3. Encode with the zone string. `-x265-params` needs the `zones=` key:
+
+    ```shell
+    ffmpeg -i ref.y4m -c:v libx265 \
+        -x265-params "zones=$(< zones.txt)" out.mp4
+    ```
+
+4. Decode the result to `.y4m` and verify the post-encode VMAF. `vmaf` reads
+   only `.y4m` and `.yuv`:
+
+    ```shell
+    ffmpeg -i out.mp4 -pix_fmt yuv420p out.y4m
+    vmaf --reference ref.y4m --distorted out.y4m --output verify.json
+    ```
 
 ## Input Formats
 
@@ -167,32 +182,33 @@ is included in the emitted plan.
 ## Limitations (v1)
 
 - Frame-difference detector misses dissolves / cross-fades — those
-  segments will collapse into a single longer shot. T6-3a / TransNet
-  V2 fixes this once integrated.
+  segments collapse into a single longer shot. The TransNet V2 extractor
+  would fix this once the tool can consume a shot map.
 - The linear-blend CRF is a static prior, not a trained fit. v2
   ships a small MLP under the same CSV / JSON schema (no consumer
   break expected).
 - Shot table capped at 4096 entries (covers ≈3-hour content at
   one cut every 2 s); overflow surfaces as `ENOSPC`.
-- Scan stops at `s->max_frames` if `-F / --frames <N>` (or aliases
-  `--frame_cnt` / `--max-frames`) is provided, terminating cleanly with
-  exit code 0 and emitting the plan for the scanned prefix. If omitted or
-  set to `0` (unbounded), the scan accepts up to exactly `UINT32_MAX`
-  (4294967295) complete frames. At that boundary the reader probes once more:
-  EOF accepts the exact-boundary input, while one additional complete frame reports
-  `vmaf-perShot: input exceeds the 4294967295-frame scan limit` (`EFBIG`)
-  before indexing or recording it. This fixes the off-by-one check from
-  [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md) and closing
-  `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in [state.md](../state.md).
-  For endless sources (such as a FIFO with a live writer or `/dev/zero`),
-  operators can now supply `--frames <N>` to guarantee bounded execution
-  without hanging.
+- **Frame limit.** `-F / --frames <N>` (aliases `--frame_cnt`, `--max-frames`)
+  stops the scan after `N` frames. The tool exits 0 and emits the plan for the
+  scanned prefix.
+- **Unbounded scan.** With `--frames` omitted or `0`, the scan accepts up to
+  exactly `UINT32_MAX` (4294967295) complete frames. At that boundary the reader
+  probes once more: EOF accepts the input, while one more complete frame
+  reports `vmaf-perShot: input exceeds the 4294967295-frame scan limit`
+  (`EFBIG`) before the frame is indexed or recorded.
+- **Endless sources.** For a FIFO with a live writer or `/dev/zero`, pass
+  `--frames <N>` to guarantee bounded execution.
+
+The boundary check fixes the off-by-one of
+[ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md) and closes
+`T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in [state.md](../state.md).
 
 ## Related
 
 - [ADR-0222](../adr/0222-vmaf-per-shot-tool.md) — design + alternatives.
 - [ADR-0223](../adr/0223-transnet-v2-shot-detector.md) — TransNet V2
-  extractor (T6-3a, in-flight).
+  extractor (registered; not yet an input of this tool).
 - [`cli.md`](cli.md) — the main `vmaf` scoring CLI.
 - [`docs/ai/roadmap.md`](../ai/roadmap.md) §2.4 — the broader per-shot
   CRF roadmap.

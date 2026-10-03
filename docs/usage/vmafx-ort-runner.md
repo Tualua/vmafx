@@ -92,10 +92,11 @@ execs it today.
 ## Limits
 
 - **One input, one output, `[1, N]` float32.** The runner binds the array as a
-  single row; a graph with several inputs (`fr_regressor_v2`'s `features` +
-  `codec` ports) or an input rank other than 2 fails with exit 1. This is the
-  same limit `pkg/ai.Registry.Infer` has; see
-  [vmafx-tune-go.md](vmafx-tune-go.md#production-mode-blocker-onnx-named-inputs).
+  single row.
+  - A graph with several inputs (`fr_regressor_v2`'s `features` + `codec`
+    ports), or an input rank other than 2, fails with exit 1.
+  - `pkg/ai.Registry.Infer` has the same limit; see
+    [vmafx-tune-go.md](vmafx-tune-go.md#production-mode-blocker-onnx-named-inputs).
 - **argv-sized tensors.** Inputs travel in `--inputs`, so they are bounded by
   the platform's `ARG_MAX` — fine for the 14-float per-shot predictors, not
   for a 3×H×W saliency frame. A stdin transport is the documented follow-up in
@@ -111,13 +112,16 @@ execs it today.
 ## Observability
 
 `vmafx-ort-runner` is the one Go binary that does **not** initialise
-OpenTelemetry ([ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md): a
-millisecond-lived subprocess with no config, logger or lifecycle; an
-exporter would add a config load and an export flush to every predictor
-call, and argv carries no trace context to parent a span). The
-`vmafx.onnx.inference` span for a runner call is emitted by the caller,
-`pkg/ai.Registry.Infer`, inside whatever trace the calling `vmafx-tune`
-subcommand is in — so inference latency is visible in traces without the
-runner participating. Environment variables such as
-`OTEL_EXPORTER_OTLP_ENDPOINT` have no effect on the runner itself. See
-[docs/development/observability.md](../development/observability.md).
+OpenTelemetry. It is a millisecond-lived subprocess with no config, logger or
+lifecycle, and argv carries no trace context to parent a span; an exporter
+would add a config load and an export flush to every predictor call
+([ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md)).
+
+- The `vmafx.onnx.inference` span for a runner call is emitted by the caller,
+  `pkg/ai.Registry.Infer`, inside the trace of the calling `vmafx-tune`
+  subcommand. Inference latency is therefore visible in traces without the
+  runner taking part.
+- Environment variables such as `OTEL_EXPORTER_OTLP_ENDPOINT` have no effect on
+  the runner.
+
+See [docs/development/observability.md](../development/observability.md).

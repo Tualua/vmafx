@@ -9,20 +9,21 @@ without going through FFmpeg.
 The tool is **built but not installed**. It only compiles when SYCL +
 Intel VPL + libva + libva-drm are all present at configure time. The
 canonical invocation is from the build tree
-(`./build/core/tools/vmaf_vpl`). For most users the
-[`vmaf_libvmaf_sycl` FFmpeg filter](ffmpeg.md#dedicated-sycl-filter-libvmaf_sycl)
+(`./build/tools/vmaf_vpl`). For most users the
+[`libvmaf_sycl` FFmpeg filter](ffmpeg.md#libvmaf_sycl)
 is the right entry point; `vmaf_vpl` is for libvmaf SYCL contributors
 debugging the import path itself.
 
 ## Build prerequisites
 
-1. SYCL toolchain (Intel oneAPI 2025.3+ with `icpx`).
+1. SYCL toolchain (Intel oneAPI 2026.1 with `icpx`, the version pinned in
+   `build-config.env`).
 2. Intel VPL runtime (`libvpl-dev` on Ubuntu 24.04/26.04, or oneAPI bundle).
 3. `libva-dev` + `libva-drm-dev` for the VAAPI surface input path.
 
 If any of the above is missing, meson silently skips the
 `vmaf_vpl` target — `meson setup build` will succeed without it and
-the binary will not appear under `build/core/tools/`.
+the binary will not appear under `build/tools/`.
 
 ## Input format
 
@@ -58,47 +59,73 @@ to H.265.
 
 ## Smoke invocation
 
-```bash
-./build/core/tools/vmaf_vpl \
-  --ref testdata/ref_576x324_48f.h265 \
-  --dis testdata/dis_576x324_48f.h265 \
-  --model vmaf_v0.6.1 \
-  --frames 48 \
-  --device 0
-```
+No elementary-stream fixtures ship in the repository. Encode the tracked YUV
+clips to H.265 first, then run the tool:
 
-Successful runs print per-frame feature scores (first five frames) and
-the mean pooled VMAF score on stdout, then exit 0. If DMA-BUF import
-fails (older kernel without Level Zero VA import, or a DRM render node
-mismatch), re-run with `--fallback` to confirm the SYCL backend itself
-is healthy and isolate the issue to the import path.
+1. Create the two bitstreams:
 
-A single `vmaf_vpl` frame decode is capped at 60 000
-`DecodeFrameAsync` attempts. On a device that keeps reporting
-`MFX_WRN_DEVICE_BUSY` the attempts are 1 ms apart, so the cap is the
-same 60 s ceiling the tool already gives each sync operation; attempts
-that only refill the bitstream do not sleep and are charged against the
-same budget, so the bound is on attempts rather than exactly on wall
-clock. On exhaustion the tool prints `DecodeFrameAsync yielded no frame
-after 60000 attempts`, reports `Decode error at frame N` and stops,
-instead of retrying a wedged device forever. The ceiling has not been
-exercised against real Intel hardware — see
-`T-VPL-DECODE-CEILING-UNVERIFIED-2026-09-21` in
-[state.md](../state.md) and
+    ```bash
+    for n in ref dis; do
+      ffmpeg -f rawvideo -pixel_format yuv420p -video_size 576x324 -framerate 24 \
+        -i testdata/${n}_576x324_48f.yuv -c:v libx265 ${n}_576x324_48f.h265
+    done
+    ```
+
+2. Run `vmaf_vpl` against them:
+
+    ```bash
+    ./build/tools/vmaf_vpl \
+      --ref ref_576x324_48f.h265 \
+      --dis dis_576x324_48f.h265 \
+      --model vmaf_v0.6.1 \
+      --frames 48 \
+      --device 0
+    ```
+
+A successful run prints per-frame feature scores (the first five frames) and the
+mean pooled VMAF score on stdout, then exits 0.
+
+If DMA-BUF import fails (an older kernel without Level Zero VA import, or a DRM
+render node mismatch), re-run with `--fallback`. That confirms the SYCL backend
+itself is healthy and isolates the problem to the import path.
+
+!!! note "`--help` shows an older model default"
+    The tool's `--help` text and header comment still say
+    `--model` defaults to `vmaf_v0.6.1`. The code default is
+    `vmaf_v1.0.16_3d0h`, as in the flag table above.
+
+## Limits
+
+A single `vmaf_vpl` frame decode is capped at 60 000 `DecodeFrameAsync`
+attempts:
+
+- On a device that keeps reporting `MFX_WRN_DEVICE_BUSY`, the attempts are 1 ms
+  apart, so the cap is the same 60 s ceiling the tool gives each sync
+  operation.
+- Attempts that only refill the bitstream do not sleep and are charged against
+  the same budget, so the bound is on attempts rather than exactly on wall
+  clock.
+- On exhaustion the tool prints
+  `DecodeFrameAsync yielded no frame after 60000 attempts`, reports
+  `Decode error at frame N` and stops, instead of retrying a wedged device
+  forever.
+
+The ceiling has not been exercised against real Intel hardware; see
+`T-VPL-DECODE-CEILING-UNVERIFIED-2026-09-21` in [state.md](../state.md) and
 [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md).
 
 ## Status
 
-Context cleanup is fail-closed. `vmaf_vpl` retries `vmaf_close()` once; if the
-second attempt fails it reports the negative error, exits non-zero, and keeps
-the model and imported SYCL state alive until process exit.
-
-The tool tracks ADR-0183 (FFmpeg `libvmaf_sycl` filter) — both share
-the same SYCL dmabuf-import primitive. `vmaf_vpl` exists primarily as
-a contributor regression-test entry point so the import path can be
-debugged without an FFmpeg build round-trip. There is no plan to
-install the binary; if you need a user-facing SYCL entry point use
+The tool tracks ADR-0183 (FFmpeg `libvmaf_sycl` filter); both share the same
+SYCL dmabuf-import primitive. `vmaf_vpl` is a contributor regression-test entry
+point, so the import path can be debugged without an FFmpeg build round-trip.
+There is no plan to install the binary; for a user-facing SYCL entry point, use
 the FFmpeg filter.
+
+!!! note "Cleanup is fail-closed"
+    `vmaf_vpl` retries `vmaf_close()` once. If the second attempt fails, it
+    reports the negative error, exits non-zero and keeps the model and imported
+    SYCL state alive until process exit.
 
 ## Related
 

@@ -1,19 +1,16 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # vmaf-roi — saliency-driven ROI sidecars for x265 / SVT-AV1
 
-`vmaf-roi` is a sidecar binary that consumes a per-frame saliency map and
-emits an encoder-native per-CTU QP-offset file. It complements
-[`mobilesal`](../ai/models/mobilesal.md) (the scoring-side saliency
-extractor): same model, two surfaces — scoring the residual vs steering
-the encoder.
+`vmaf-roi` turns a saliency map of one frame into a per-CTU QP-offset file for
+an encoder (x265 or SVT-AV1). It is the sidecar half of the saliency work
+(T6-2b); T6-2a shipped the in-libvmaf saliency extractor. It complements
+[`mobilesal`](../ai/models/mobilesal.md), the scoring-side saliency extractor:
+same model, two surfaces, scoring the residual vs steering the encoder.
 
-> **Binary name note:** Built and installed as `vmaf_roi` (underscore,
-> per `core/tools/meson.build`). Throughout this page the
-> `vmaf-roi` (hyphen) form refers to the same binary; if you typed
-> `vmaf-roi` and got "command not found", fall back to `vmaf_roi`.
-
-This is **T6-2b** (sidecar). T6-2a shipped the in-libvmaf saliency
-extractor.
+!!! note "Binary name"
+    The binary is built and installed as `vmaf_roi` (underscore, per
+    `core/tools/meson.build`). This page writes `vmaf-roi` (hyphen) for the same
+    binary. If `vmaf-roi` gives "command not found", use `vmaf_roi`.
 
 ## What it produces
 
@@ -23,8 +20,10 @@ For every CTU in a frame the tool emits a signed integer offset:
 qp_offset = clamp(-strength * (2 * saliency - 1), -12, +12)
 ```
 
-- High saliency (eyes, faces, focal subject) → **negative** offset → encoder spends more bits there.
-- Low saliency (background, periphery) → **positive** offset → encoder saves bits.
+- High saliency (eyes, faces, focal subject) → **negative** offset → encoder
+  spends more bits there.
+- Low saliency (background, periphery) → **positive** offset → encoder saves
+  bits.
 - Neutral saliency (≈ 0.5) → **zero** offset → no change.
 
 ## Build
@@ -32,9 +31,11 @@ qp_offset = clamp(-strength * (2 * saliency - 1), -12, +12)
 `vmaf-roi` is built whenever `-Denable_tools=true` (the default):
 
 ```bash
-meson setup build -Denable_cuda=false -Denable_sycl=false -Denable_tools=true
+meson setup build core -Denable_cuda=false -Denable_sycl=false -Denable_tools=true
 ninja -C build tools/vmaf_roi
 ```
+
+The binary is `build/tools/vmaf_roi`.
 
 The binary depends only on libvmaf's public DNN surface
 ([`libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)); when libvmaf is
@@ -48,9 +49,9 @@ smoke-testing the sidecar plumbing.
 ```text
 vmaf-roi --reference REF.yuv --width W --height H \
          --frame N --output qpfile.txt \
-         [--pixel_format 420|422|444] [--bitdepth 8|10|12|16] \
-         [--ctu-size 8..128] [--encoder x265|svt-av1] \
-         [--strength FLOAT] [--saliency-model model.onnx]
+    [--pixel_format 420|422|444] [--bitdepth 8|10|12|16] \
+    [--ctu-size 8..128] [--encoder x265|svt-av1] \
+    [--strength FLOAT] [--saliency-model model.onnx]
 ```
 
 Required flags:
@@ -88,13 +89,10 @@ comment header lines documenting the run:
 ...
 ```
 
-Feed it to x265 via `--qpfile`:
-
-```bash
-x265 --input-res 1920x1080 --fps 30 \
-     --qpfile vmaf_roi_frame_0.txt \
-     -o out.h265 input.yuv
-```
+The file is a per-CTU grid for a consumer that reads per-CTU offsets, such as a
+custom encoder driver. It is not x265's `--qpfile` record format
+(`frame type qp`), so x265 does not read it directly; convert it first. See
+[ADR-0247](../adr/0247-vmaf-roi-tool.md) for the format decision.
 
 ### SVT-AV1 (`--encoder svt-av1`)
 
@@ -145,27 +143,29 @@ for f in $(seq 0 99); do
 done
 ```
 
-(A built-in batch mode is on the roadmap; see roadmap §2.3.)
+A built-in batch mode is on the roadmap (see [roadmap §2.3](../ai/roadmap.md)).
 
 ## Caveats
 
 - **Placeholder is for smoke testing only.** Without `--saliency-model`
   the tool emits a center-weighted radial map that has zero perceptual
   validity. Do not drive a real encode from it.
-- **High-bit-depth input is luma8-normalised.** `--bitdepth 10|12|16`
-  accepts little-endian 16-bit planar YUV, skips chroma using the
-  selected `--pixel_format`, and downscales luma to the saliency
-  model's existing 8-bit input contract. Conversion rounds half up and
-  saturates at 255: maximum luma values 1023, 4095 and 65535 remain white
-  rather than wrapping to zero. Encoded samples above the declared
-  bit-depth range are first clamped to that range. The ROI sidecar itself
-  remains per-CTU QP offsets, not a high-bit-depth image output.
+- **High-bit-depth input is luma8-normalised.** `--bitdepth 10|12|16` accepts
+  little-endian 16-bit planar YUV, skips chroma using the selected
+  `--pixel_format`, and downscales luma to the saliency model's 8-bit input
+  contract.
+  - Conversion rounds half up and saturates at 255, so the maximum luma
+    values 1023, 4095 and 65535 stay white instead of wrapping to zero.
+  - Samples above the declared bit-depth range are clamped to that range
+    first.
+  - The ROI sidecar is still per-CTU QP offsets, not a high-bit-depth image.
 - **Single frame per invocation.** Wave 1 keeps the sidecar one-frame at
   a time so callers can reuse it from any encoder driver. A streaming
   variant is a follow-up.
 
 ## See also
 
-- [ADR-0247](../adr/0247-vmaf-roi-tool.md) — the decision record (sidecar format, encoder coverage, signal blend).
+- [ADR-0247](../adr/0247-vmaf-roi-tool.md) — the decision record (sidecar
+  format, encoder coverage, signal blend).
 - [`docs/ai/roadmap.md` §2.3](../ai/roadmap.md) — Wave 1 saliency surface.
 - [`docs/usage/cli.md`](cli.md) — index of fork CLIs.

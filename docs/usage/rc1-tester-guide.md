@@ -1,16 +1,18 @@
 <!-- markdownlint-disable MD013 MD024 MD046 -->
 # RC1 external tester guide
 
-RC1 testing answers a narrow question: can another person build VMAFx, run its
-compiled tests, initialize an explicitly requested CPU or accelerator backend,
-and return enough evidence for a maintainer to reproduce a failure? Performance
-benchmarking and tuning start in RC8. Real model training starts in RC9.
-RC3 to RC7 (twin exactness, the Rust metric, deduplication, the GPU and CPU
-capability tables) do not change what the collector does.
+Follow this guide to build VMAFx, run its compiled tests, initialize each
+backend you want covered, and return one report archive that lets a maintainer
+reproduce a failure. RC1 testing answers a narrow question: can another person
+do all of that from source?
 
 RC2 (`v1.0.0-rc.2`) is a stabilisation candidate that carries the dependency
 updates and fixes merged since RC1. It asks the same question, so RC2 testers
 follow this guide unchanged and use the RC2 tag wherever it says RC1.
+
+Performance benchmarking and tuning start in RC8, and real model training
+starts in RC9. RC3 to RC7 (twin exactness, the Rust metric, deduplication, the
+GPU and CPU capability tables) do not change what the collector does.
 
 | Release phase | Scope |
 | :--- | :--- |
@@ -22,10 +24,12 @@ follow this guide unchanged and use the RC2 tag wherever it says RC1.
 The RC1 collector never starts a benchmark sweep, encoder search, corpus job, or
 training run.
 
-> **No build needed.** To test the fork on a machine without building anything
-> (an Apple M-series Mac, an arm64 server), use the prepared
-> [tester image and macOS bundle](tester-image.md): one command, one JSON report,
-> and a path to be credited for it. This guide is the build-from-source route.
+!!! note "No build needed"
+    To test the fork on a machine without building anything (an Apple M-series
+    Mac, an arm64 server), use the prepared
+    [tester image and macOS bundle](tester-image.md): one command, one JSON
+    report, and a path to be credited for it. This guide is the
+    build-from-source route.
 
 ## 1. Obtain the RC1 source
 
@@ -147,19 +151,26 @@ correctness reporting.
 ./tools/rc1-tester/vmaf-rc1-report probe --vmaf-bin build/tools/vmaf
 ```
 
-The bounded probe records OS/architecture, CPU SIMD flags, build tools, vendor
-compiler versions, and accelerator visibility through `nvidia-smi`, `sycl-ls`,
-`rocm-smi`/`rocminfo`, or macOS `system_profiler`. It also records the VMAFx
-binary version and SHA-256. CUDA includes the driver string returned by
-`nvidia-smi`; accelerator probes without a bounded driver field explicitly say
-`unknown/not reported` rather than inventing provenance. Detected accelerator
-rows include their runtime-visible ordinal when the vendor probe provides one.
+The bounded probe records:
+
+- the OS and architecture, CPU SIMD flags, build tools and vendor compiler
+  versions;
+- accelerator visibility through `nvidia-smi`, `sycl-ls`, `rocm-smi` /
+  `rocminfo`, or macOS `system_profiler`;
+- the VMAFx binary version and SHA-256.
+
+CUDA includes the driver string returned by `nvidia-smi`; accelerator probes
+without a bounded driver field say `unknown/not reported` rather than inventing
+provenance. Detected accelerator rows include their runtime-visible ordinal when
+the vendor probe provides one. The probe also accepts `--json`.
 
 The selector names printed from `vmaf --help` are syntax, not proof that a
 backend was compiled or used. The explicit smoke below adds bounded
 backend-state and emitted-metric correctness evidence.
 
 ## 5. Check each backend on the host
+
+### Request the backends
 
 There is deliberately no `--backend auto`. Ask for every backend you want the
 report to cover; repeat the option to keep all results in one bundle:
@@ -184,6 +195,8 @@ accelerator, the CPU row is labelled `automatic reference` and is included in
 the report. A failing or incomplete CPU reference prevents an accelerator
 PASS.
 
+### What a PASS requires
+
 Each attempt processes frames 0 through 3 of the checked-in 576x324 `testdata`
 pair with `model/vmaf_v0.6.1.json` passed explicitly. Frame 3 has non-zero
 `integer_motion2`, so the bounded window reaches temporal behavior. A PASS
@@ -205,14 +218,19 @@ requires all of the following:
 It never converts a missing fixture, missing output, or silent CPU fallback into
 a PASS.
 
-ADR-0214 already uses `5e-5` for its listed feature metrics. ADR-1342
-conservatively applies the same threshold to this report's model inputs and
-overall VMAF; ADR-0214 did not define an overall-model VMAF gate.
+!!! note "Where the `5e-5` threshold comes from"
+    ADR-0214 already uses `5e-5` for its listed feature metrics. ADR-1342
+    conservatively applies the same threshold to this report's model inputs
+    and overall VMAF; ADR-0214 did not define an overall-model VMAF gate.
 
-PASS means the requested backend state initialized and its emitted metrics met
-this bounded CPU comparison. The root `backend_used` field does not prove which
-individual feature implementation ran on the accelerator. Use the compiled
-backend suites for per-feature dispatch and full correctness coverage.
+!!! note "What PASS means"
+    PASS means the requested backend state initialized and its emitted metrics
+    met this bounded CPU comparison. The root `backend_used` field does not
+    prove which individual feature implementation ran on the accelerator. Use
+    the compiled backend suites for per-feature dispatch and full correctness
+    coverage.
+
+### Collector exit codes
 
 | Collector exit | Meaning |
 | :--- | :--- |

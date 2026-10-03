@@ -1,37 +1,127 @@
 <!-- markdownlint-disable MD060 -->
 # Environment variable reference
 
-VMAFX reads a number of environment variables at runtime.  This page is the
-canonical, code-audited list — last audited against commit `a5d0c683af8f0d15f`.
+This page lists the environment variables the VMAFx code reads at runtime,
+grouped by component. All variables are optional unless marked **required**.
+To re-check the list against the tree, grep for the names
+(`grep -rhoE '"VMAF[A-Z0-9_]*"' core cmd mcp-server ai`).
 
-All variables are optional unless marked **required**.
-
----
+!!! note "No variable selects the CLI backend"
+    The `vmaf` CLI chooses its backend with flags (`--backend`, `--no_cuda`,
+    ...), not with an environment variable. The dispatch variables below tune
+    how an already selected GPU backend submits work. See
+    [cli.md](cli.md#backend-selection).
 
 ## Core C library (`libvmaf`)
 
+### Model locations
+
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAF_CUDA_DISPATCH` | string | _(auto)_ | CUDA dispatch strategy. Accepts a bare strategy name (`adaptive`, `batched`, `serial`) or a per-feature override `feature=strategy[,...]`. See [CUDA dispatch knobs](#cuda-dispatch-knob). |
-| `VMAF_DISTS_SQ_MODEL_PATH` | path | _(auto)_ | Absolute path to the DISTS-SQ ONNX model file. Overrides the `VMAF_TINY_MODEL_DIR` search. |
-| `VMAF_FASTDVDNET_PRE_MODEL_PATH` | path | _(auto)_ | Absolute path to the FastDVDNet-Pre ONNX model file. |
-| `VMAF_LPIPS_MODEL_PATH` | path | _(auto)_ | Absolute path to the LPIPS ONNX model file. |
-| `VMAF_MOBILESAL_MODEL_PATH` | path | _(auto)_ | Absolute path to the MobileSal saliency ONNX model file. |
-| `VMAF_SYCL_DISPATCH` | string | _(auto)_ | SYCL dispatch strategy.  Same syntax as `VMAF_CUDA_DISPATCH`.  Values: `direct`, `graph`.  See [SYCL dispatch knobs](#sycl-dispatch-knob). |
-| `VMAF_SYCL_NO_GRAPH` | `0`/`1` | `0` | **Deprecated** — use `VMAF_SYCL_USE_GRAPH=false` instead.  Forces SYCL to the direct (non-graph) path when set to `1`.  Emits a deprecation warning on stderr.  Will be removed in v4.0. |
-| `VMAF_SYCL_PROFILE` | `0`/`1` | `0` | Enable SYCL kernel profiling via `enable_profiling` queue property. |
-| `VMAF_SYCL_TIMING` | `0`/`1` | `0` | Print per-kernel wall-clock timing to stderr. |
-| `VMAF_SYCL_USE_GRAPH` | `true`/`false` | _(auto)_ | Force SYCL graph-replay (`true`) or direct dispatch (`false`) globally. Takes precedence over `VMAF_SYCL_NO_GRAPH`. |
-| `VMAF_TINY_MODEL_DIR` | path | _(auto)_ | Chroot-style search directory for all tiny-AI ONNX models.  When set, model loading rejects any path that does not start with this prefix. |
-| `VMAF_TRANSNET_V2_MODEL_PATH` | path | _(auto)_ | Absolute path to the TransNet v2 ONNX model file. |
+| `VMAF_TINY_MODEL_DIR` | path | _(unset)_ | Chroot-style search directory for tiny-AI ONNX models. When set, model loading rejects any path that does not start with this prefix. |
+| `VMAF_DISTS_SQ_MODEL_PATH` | path | _(auto)_ | Absolute path to the DISTS-SQ ONNX model. |
+| `VMAF_FASTDVDNET_PRE_MODEL_PATH` | path | _(auto)_ | Absolute path to the FastDVDNet-Pre ONNX model. |
+| `VMAF_LPIPS_MODEL_PATH` | path | _(auto)_ | Absolute path to the LPIPS ONNX model. |
+| `VMAF_MOBILESAL_MODEL_PATH` | path | _(auto)_ | Absolute path to the MobileSal saliency ONNX model. |
+| `VMAF_TRANSNET_V2_MODEL_PATH` | path | _(auto)_ | Absolute path to the TransNet v2 ONNX model. |
 
-> **Note:** Seven per-feature `VMAF_*_MODEL_PATH` variables exist today
-> (`DISTS_SQ`, `FASTDVDNET_PRE`, `LPIPS`, `MOBILESAL`, `TRANSNET_V2`, plus
-> two more added at the same time as the feature extractor is registered).
-> Each can be used independently of `VMAF_TINY_MODEL_DIR` — the per-feature
-> variable takes precedence.
+Five per-feature `VMAF_*_MODEL_PATH` variables exist (the five above). Each
+works independently of `VMAF_TINY_MODEL_DIR`, and the per-feature variable takes
+precedence.
 
----
+### GPU dispatch
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_CUDA_DISPATCH` | string | `direct` | CUDA dispatch strategy: `direct` or `graph`, per feature. `graph` is accepted but not implemented; it logs a warning and runs `direct`. See [CUDA dispatch](#cuda-dispatch). |
+| `VMAF_SYCL_DISPATCH` | string | _(auto)_ | SYCL dispatch strategy: `direct` or `graph`, per feature. See [SYCL dispatch](#sycl-dispatch). |
+| `VMAF_SYCL_USE_GRAPH` | string | _(auto)_ | A value starting with `1` forces graph replay globally. Any other value is ignored; it does not force direct dispatch. |
+| `VMAF_SYCL_NO_GRAPH` | string | _(unset)_ | **Deprecated.** `1` forces direct dispatch. Prints a deprecation warning when set; removal is scheduled for v4.0. `VMAF_SYCL_USE_GRAPH=1` takes precedence. |
+| `VMAF_HIP_DISPATCH` | string | _(HIP dispatch on)_ | Per-feature switch for the HIP backend: `direct` keeps HIP dispatch, `none` or `disable` turns it off for that feature. See [HIP dispatch](#hip-dispatch). |
+
+### SYCL diagnostics and tuning
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_SYCL_PROFILE` | `1` | off | Enable SYCL kernel profiling through the queue's `enable_profiling` property. |
+| `VMAF_SYCL_TIMING` | `1` | off | Print per-extractor wall-clock timing to stderr. |
+| `VMAF_SYCL_IMPORT_DEBUG` | `1` | off | Log the addresses of the shared import buffers, to check they are not aliased. |
+| `VMAF_SYCL_CHECKSUM` | `1` | off | Log a CRC of each imported ref / dis device buffer per frame, to localise import corruption. |
+| `VMAF_SYCL_VIF_SUBGROUP_SIZE` | `16` or `32` | _(automatic)_ | Force the sub-group size of the SYCL VIF kernels. Other values are ignored with a warning, as is a size the device lacks. Used by parity and timing runs ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)). |
+| `VMAF_SYCL_SCRATCH_SELFTEST` | `0` | on | Set to `0` to skip the first-use scratch-memory self-test of the SYCL device ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)). |
+
+## Dispatch strategy syntax
+
+The three `*_DISPATCH` variables share one grammar
+([ADR-0483](../adr/0483-gpu-dispatch-parse-dedup.md)): a comma-separated list
+of `feature:strategy` tokens, matched case-sensitively. A bare strategy name
+such as `VMAF_CUDA_DISPATCH=graph` matches no feature and has no effect. The
+first token naming a feature wins, and a token with an unknown strategy is
+skipped.
+
+### CUDA dispatch
+
+| Value | Behaviour |
+|---|---|
+| `direct` | Submit directly. **Default** for every feature. |
+| `graph` | Accepted but not implemented: logs `CUDA graph dispatch requested ... not implemented; falling back to direct` and runs `direct`. |
+
+```bash
+VMAF_CUDA_DISPATCH=integer_vif:direct,float_ssim:direct ./build/tools/vmaf ...
+```
+
+### SYCL dispatch
+
+| Value | Behaviour |
+|---|---|
+| `direct` | Submit kernels directly to an in-order queue (no graph). Lower per-frame overhead at small resolutions. |
+| `graph` | Use SYCL graph replay. Reduces kernel-launch overhead at 720p and above. |
+
+The strategy is resolved in this order, first match wins:
+
+1. `VMAF_SYCL_DISPATCH` for the feature.
+2. `VMAF_SYCL_USE_GRAPH=1`, which selects `graph`.
+3. `VMAF_SYCL_NO_GRAPH=1`, which selects `direct` (deprecated).
+4. The zero-copy VA-surface import path, which selects `direct`
+   ([ADR-1121](../adr/1121-sycl-qsv-zerocopy-p010-normalization.md)): the
+   combined graph
+   is a throughput loss there. Steps 1 and 2 still force `graph`.
+5. The feature's own dispatch hint, if it declares one.
+6. An area threshold: `graph` at 1280 x 720 pixels or more, `direct` below.
+
+When `VMAF_SYCL_NO_GRAPH` is set, libvmaf prints:
+
+```text
+VMAF_SYCL_NO_GRAPH deprecated; use VMAF_SYCL_USE_GRAPH=false. Will be removed in v4.0.
+```
+
+That message is misleading: `VMAF_SYCL_USE_GRAPH=false` changes nothing. To
+force direct dispatch use `VMAF_SYCL_DISPATCH=<feature>:direct` or the
+deprecated `VMAF_SYCL_NO_GRAPH=1`.
+
+### HIP dispatch
+
+`VMAF_HIP_DISPATCH` accepts `direct`, `none` and `disable` as strategies. A
+`none` or `disable` token turns HIP dispatch off for that feature, which then
+runs on another path:
+
+```bash
+VMAF_HIP_DISPATCH=float_ssim:disable ./build/tools/vmaf ...
+```
+
+## Python harness (`compat/python-vmaf`)
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_FORCE_BACKEND` | string | _(none)_ | Scoring backend (`cuda`, `sycl`, `cpu`, ...) for harness runs that call the `vmaf` CLI; appends `--backend <value>`. An explicit `backend` option wins. |
+| `VMAF_BACKEND` | string | _(none)_ | Fallback alias for `VMAF_FORCE_BACKEND`. |
+| `VMAF_BUILD_DIR` | path | `core/build` | Build directory whose `tools/vmaf` the harness runs. |
+| `VMAF_PATH` | path | _(none)_ | External `vmaf` path used instead of the in-tree build. |
+| `VMAF_WORKSPACE` | path | `compat/python-vmaf/workspace` | Where the harness reads and writes working files. |
+| `VMAF_RESOURCE` | path | `compat/python-vmaf/resource` | Resource (test clip) root. |
+
+`FFMPEG_PATH` and `MATLAB_PATH` are not environment variables: the harness reads
+them from an optional `externals.py` module ([python.md](python.md)).
 
 ## AI scripts (`ai/scripts/`)
 
@@ -41,186 +131,190 @@ overrides not listed here.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `VMAF_BIN` | path | `core/build-cpu/tools/vmaf` | Path to the `vmaf` CLI binary used by Python AI scripts and feature-extraction pipelines. |
+| `VMAF_MODEL_PATH` | path | _(default model)_ | File path override for the teacher model the AI scoring helpers use; an explicit model argument wins. |
 | `VMAF_BVI_DVC_RAW_DIR` | path | `<repo>/.corpus/bvi-dvc-raw` | Root of the raw BVI-DVC dataset for `train_predictor_v2_realcorpus.py`. |
 | `VMAF_CHUG_DIR` | path | `<repo>/.corpus/chug` | Root of the CHUG shard tree used by `chug_extract_features.py` and `chug_to_corpus_jsonl.py`. |
-| `VMAF_DATA_ROOT` | path | `~/datasets` | Parent directory for datasets whose sub-paths are not otherwise overridden (e.g. `$VMAF_DATA_ROOT/konvid-1k`). |
+| `VMAF_CHUG_OUTPUT_DIR` | path | `<repo>/.corpus/chug` | Output directory of `train_chug_hdr_mos_head.py`. |
+| `VMAF_CORPUS_DIR` | path | `<repo>/.corpus/netflix` | Corpus root for `calibrate_nr_threshold.py`. |
+| `VMAF_DATA_ROOT` | path | `~/datasets` | Parent directory for datasets whose sub-paths are not otherwise overridden (for example `$VMAF_DATA_ROOT/konvid-1k`). |
 | `VMAF_HW_TAG` | string | `ryzen-9950x3d+rtx4090+arc-a380` | Hardware identifier stamped into benchmark artefacts by `measure_quant_drop_per_ep.py`. |
 | `VMAF_KONVID_1K_DIR` | path | `$VMAF_DATA_ROOT/konvid-1k` | Root of the KonViD-1k dataset. |
-| `VMAF_KONVID_150K_DIR` | path | `<repo>/.corpus/konvid-150k` | Root of the KonViD-150k dataset used by `extract_k150k_features.py`, `konvid_150k_to_corpus_jsonl.py`, and `train_konvid_mos_head.py`. |
+| `VMAF_KONVID_150K_DIR` | path | `<repo>/.corpus/konvid-150k` | Root of the KonViD-150k dataset used by `extract_k150k_features.py`, `konvid_150k_to_corpus_jsonl.py` and `train_konvid_mos_head.py`. |
 | `VMAF_NETFLIX_CORPUS_DIR` | path | `<repo>/.corpus/netflix` | Root of the Netflix internal MOS corpus (non-public). |
+| `VMAF_TINY_AI_CACHE` | path | `~/.cache/vmaf-tiny-ai` | Cache of per-pair scores reused by the Netflix and KonViD loaders. |
+| `VMAF_TINY_AI_SCRATCH` | path | system temp dir | Scratch root for dataset extraction and ONNX export scripts. Must be an absolute path. |
+| `VMAFX_RUNS_DIR` | path | `<repo>/runs` | Output root for training and quantisation metrics. |
 
----
-
-## MCP server (`cmd/vmafx-mcp`, Python MCP server)
+## `vmaf-tune`
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAF_MCP_ALLOW` | colon-separated paths | _(built-in roots)_ | Additional filesystem roots that the MCP server is allowed to read YUV files from.  Paths outside any allowed root are rejected. |
-| `VMAF_MCP_ASYNC` | string | `asyncio` | anyio backend for the Python MCP server.  Pass `trio` to switch to the Trio event loop. |
-| `VMAF_ROOT` | path | _(auto-detect)_ | Override the repo root detected by the Go MCP server (`cmd/vmafx-mcp`). |
-| `VMAF_TUNE_BIN` | path | _(PATH lookup)_ | Path to the `vmaf-tune` binary used by MCP scoring tools. |
+| `VMAFTUNE_WORKDIR` | path | OS temp dir | Parent directory for the scratch tree of a per-shot run, used when `--workdir` is not given and the directory is writable. |
+| `VMAFTUNE_VAAPI_DEVICE` | path | _(driver default)_ | VAAPI render node injected into hardware-encoder init chains. |
+| `VMAFTUNE_SALIENCY_FALLBACK_OK` | `1` | off | Equivalent to `--saliency-fallback-plain`: an encoder with no saliency path runs a plain encode instead of exiting 2. |
 
----
+## MCP server
 
-## Go controller (`cmd/vmafx-controller`)
+The Python MCP server (`mcp-server/vmaf-mcp`) and the Go server
+(`cmd/vmafx-mcp`) share the scoring-related variables.
 
-The controller is wired on the golusoris `fx` framework (ADR-1119). Config is
-loaded via golusoris/config: the `VMAFX_` prefix is stripped, the name is
-lowercased, and **every** underscore is replaced with the `.` delimiter, so the
-koanf key is the dotted form in the _golusoris key_ column. The HTTP and gRPC
-modules own the listeners.
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_MCP_ALLOW` | colon-separated paths | _(built-in roots)_ | Additional filesystem roots the MCP server may read YUV files from. Paths outside every allowed root are rejected. |
+| `VMAF_MCP_ASYNC` | string | `asyncio` | anyio backend for the Python server. `1`, `true`, `yes` or `trio` select Trio; any other non-empty name is passed to anyio as the backend. |
+| `VMAF_MCP_MAX_CONCURRENT` | integer | `8` | Maximum simultaneous scoring calls in the Python server. |
+| `VMAF_MCP_SUBPROCESS_TIMEOUT_S` | seconds | `600` | Timeout of each subprocess the Python server runs; a non-positive or malformed value falls back to the default. |
+| `VMAF_ROOT` | path | _(auto-detect)_ | Repo root used by the MCP servers to find the test clips and tools. |
+| `VMAF_TUNE_BIN` | path | _(PATH lookup)_ | Path to the `vmaf-tune` binary used by MCP tuning tools. |
+| `VMAF_PER_SHOT_BIN`, `VMAF_ROI_BIN`, `VMAF_BENCH_BIN`, `VMAF_VPL_BIN` | path | _(next to `vmaf`)_ | Override the binary behind the `vmaf-perShot`, `vmaf_roi`, `vmaf_bench` and `vmaf_vpl` MCP tools. |
+| `VMAFX_MCP_DIRECT` | `1` | off | Go server only: score through libvmaf by cgo instead of a `vmaf` subprocess ([ADR-0931](../adr/0931-mcp-cgo-direct-replace-subprocess.md)). Any other value keeps the subprocess path. |
 
-> **Breaking change (ADR-1119):** the controller previously read `VMAFX_PORT` and
-> `VMAFX_GRPC_PORT` as bare port numbers. It now reads `VMAFX_HTTP_ADDR` /
-> `VMAFX_GRPC_LISTEN`, which take a full listen address (`:8080`, not `8080`),
-> and the golusoris-native defaults `:8080` / `:9090` apply — the legacy
-> wire ports (`8080` / `50051`) are **not** carried. The pre-fx auth/JWKS CLI
-> flags are removed; configure auth via the env vars below. Operators must
-> migrate.
+### MCP HTTP transport (`vmaf-mcp --transport http`)
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAFX_MCP_HTTP_BIND` | address | `127.0.0.1` | Listen address. Set `0.0.0.0` to listen on all interfaces ([ADR-0967](../adr/0967-mcp-http-transport-security-hardening.md)). |
+| `VMAFX_MCP_HTTP_TOKEN` | string | _(unset)_ | Bearer token required in `Authorization: Bearer <token>`. If unset and `VMAFX_MCP_HTTP_NO_AUTH` is also unset, every request gets 401. |
+| `VMAFX_MCP_HTTP_NO_AUTH` | `1` | off | Disable authentication; logs a warning on start. |
+| `VMAFX_MCP_HTTP_TLS_CERT` | path | _(unset)_ | PEM certificate. With `VMAFX_MCP_HTTP_TLS_KEY` it enables TLS; without them the server logs a warning and serves plain HTTP. |
+| `VMAFX_MCP_HTTP_TLS_KEY` | path | _(unset)_ | PEM private key. |
+
+The HTTP transport also reads `VMAFX_PORT` (listen port, default 8080,
+overridden
+by `--port`), `VMAFX_LOG_LEVEL`, `VMAFX_VMAF_BINARY` (same as `VMAF_BIN`) and
+`VMAFX_MODEL_DIR` (extra model search root).
+
+### Go MCP client of the controller and server
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAFX_CONTROLLER_ADDR` | `host:port` | `localhost:9090` | gRPC address of the controller. |
+| `VMAFX_SERVER_ADDR` | `host:port` | `localhost:9090` | gRPC address of `vmafx-server`. |
+| `VMAFX_CONTROLLER_TOKEN` | string | _(unset)_ | Bearer token attached to every controller RPC. |
+| `VMAFX_GRPC_TIMEOUT` | seconds | `30` | Per-RPC deadline; a malformed or non-positive value falls back to the default. |
+
+## Go services (golusoris)
+
+The controller, server and node run on the
+[golusoris](https://github.com/golusoris/golusoris) `fx` framework
+([ADR-1119](../adr/1119-golusoris-go-framework-adoption.md)). Configuration is
+loaded with koanf: the `VMAFX_` prefix is stripped, the name is lowercased, and
+every underscore becomes the `.` key delimiter, so the table columns show the
+resulting key. The HTTP and gRPC modules own the listeners, and listen
+addresses are full addresses (`:8080`), not bare ports.
+
+!!! warning "ADR-1119 migration"
+    The pre-fx services read bare port numbers and removed names:
+    `VMAFX_PORT` and `VMAFX_GRPC_PORT` (controller and server), and
+    `VMAFX_NODE_ADDR` (node). Use `VMAFX_HTTP_ADDR`, `VMAFX_GRPC_LISTEN` and,
+    for
+    the node, `VMAFX_GRPC_LISTEN` with a full address. The golusoris defaults
+    (`:8080`, `:9090`) apply, the legacy wire ports (`8080`, `50051`) are not
+    carried, and the controller's auth and JWKS CLI flags are gone; configure
+    them through the variables below. Operators must migrate.
+
+### Controller (`cmd/vmafx-controller`)
 
 | Name | Type | Default | golusoris key | Description |
 |---|---|---|---|---|
 | `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | `http.addr` | HTTP listen address (serves `/healthz`, `/readyz`, `/metrics`, `/v1/score`). |
 | `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | `grpc.listen` | gRPC listen address (serves both `VmafxScoring` and `VmafxController`). |
-| `VMAFX_DB_PATH` | path | `vmafx-controller.db` | `db.path` | Path to the embedded SQLite job + node-persistence database (kept, not migrated to golusoris.Jobs — ADR-1119). |
-| `VMAFX_LOG_LEVEL` | string | `INFO` | `log.level` | Structured log level: `DEBUG`, `INFO`, `WARN`, `ERROR`. Read directly by golusoris (bridged from `VMAFX_LOG_LEVEL`, golusoris#234). |
-| `VMAFX_MODEL_DIR` | path | _(none)_ | `model.dir` | Directory containing VMAF `.json` model files passed to the libvmaf scorer. |
-| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | `vmaf.binary` | Path to the `vmaf` CLI binary. Falls back to `PATH` lookup if unset. |
-| `VMAFX_AUTH_DISABLED` | bool | `false` | `auth.disabled` | Disable JWT auth (dev/internal only — never in production). When set, a synthetic `dev` tenant with admin role is injected. |
-| `VMAFX_JWKS_ENDPOINT` | URL | _(none)_ | `jwks.endpoint` | JWKS endpoint URL for RS256 verification, e.g. `https://idp.example.com/.well-known/jwks.json`. Required unless auth is disabled. |
+| `VMAFX_DB_PATH` | path | `vmafx-controller.db` | `db.path` | Embedded SQLite job and node-persistence database (kept, not migrated to golusoris.Jobs). |
+| `VMAFX_LOG_LEVEL` | string | `INFO` | `log.level` | `DEBUG`, `INFO`, `WARN` or `ERROR`. |
+| `VMAFX_MODEL_DIR` | path | _(none)_ | `model.dir` | Directory of VMAF `.json` model files passed to the libvmaf scorer. |
+| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | `vmaf.binary` | Path to the `vmaf` CLI binary. |
+| `VMAFX_AUTH_DISABLED` | bool | `false` | `auth.disabled` | Disable JWT auth (dev and internal only, never in production). A synthetic `dev` tenant with the admin role is injected. |
+| `VMAFX_JWKS_ENDPOINT` | URL | _(none)_ | `jwks.endpoint` | JWKS endpoint for RS256 verification, for example `https://idp.example.com/.well-known/jwks.json`. Required unless auth is disabled. |
 | `VMAFX_AUTH_ISSUER` | string | _(none)_ | `auth.issuer` | Expected JWT `iss` claim. Required unless auth is disabled. |
-| `VMAFX_AUTH_AUDIENCE` | string | _(none)_ | `auth.audience` | Expected JWT `aud` claim (optional; audience check skipped when empty). |
-| `VMAFX_AUTH_TENANT_CLAIM` | string | `tid` | `auth.tenant_claim` | JWT claim carrying the tenant id. Declared as a golusoris CompoundKey so its underscore is preserved. |
-| `VMAFX_AUTH_ROLES_CLAIM` | string | `vmafx_roles` | `auth.roles_claim` | JWT claim carrying the roles list. Declared as a golusoris CompoundKey. |
+| `VMAFX_AUTH_AUDIENCE` | string | _(none)_ | `auth.audience` | Expected JWT `aud` claim; the check is skipped when empty. |
+| `VMAFX_AUTH_TENANT_CLAIM` | string | `tid` | `auth.tenant_claim` | JWT claim carrying the tenant id. A golusoris CompoundKey, so its underscore is preserved. |
+| `VMAFX_AUTH_ROLES_CLAIM` | string | `vmafx_roles` | `auth.roles_claim` | JWT claim carrying the roles list. A CompoundKey. |
 
----
-
-## Go server (`cmd/vmafx-server`)
-
-The server runs on the [golusoris](https://github.com/golusoris/golusoris) fx
-framework (ADR-1119). Config is loaded by golusoris' koanf layer under the
-`VMAFX_` env prefix with `_` mapping to the `.` key separator
-(`VMAFX_HTTP_ADDR` → `http.addr`). The framework's HTTP and gRPC modules own the
-listen addresses, so the server takes **full listen addresses** (`:8080`), not
-bare port numbers.
-
-> **Breaking change (ADR-1119).** The pre-fx server used `VMAFX_PORT` /
-> `VMAFX_GRPC_PORT` (bare port numbers, e.g. `8080`). These are replaced by
-> `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN`, which take a full listen address
-> (e.g. `:8080`, `:9090`). Update deployment manifests accordingly. Note the
-> default gRPC address changed from `:50051` to golusoris' `:9090`.
+### Server (`cmd/vmafx-server`)
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | HTTP listen address (serves `/healthz`, `/livez`, `/readyz`, `/startupz`, `/metrics`, `/v1/score`, `/v1/health`, `/v1/ready`, `/swagger`). golusoris key `http.addr`. |
-| `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | gRPC listen address (`VmafxScoring`). golusoris key `grpc.listen`. |
-| `VMAFX_LOG_LEVEL` | string | `INFO` | Structured log level: `DEBUG`, `INFO`, `WARN`, `ERROR`. |
-| `VMAFX_MODEL_DIR` | path | _(none)_ | Model directory passed to the libvmaf scorer (golusoris key `vmaf.model_dir`). |
-| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | Path to the `vmaf` CLI binary (golusoris key `vmaf.binary`). |
-| `VMAFX_MAX_CONCURRENT_SCORES` | int | _(NumCPU)_ | Cap on simultaneous in-flight `Score` calls; excess requests get HTTP 429 / gRPC `ResourceExhausted`. |
+| `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | HTTP listen address (serves `/healthz`, `/livez`, `/readyz`, `/startupz`, `/metrics`, `/v1/score`, `/v1/health`, `/v1/ready`, `/swagger`). Key `http.addr`. |
+| `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | gRPC listen address (`VmafxScoring`). Key `grpc.listen`. The pre-fx default was `:50051`. |
+| `VMAFX_GRPC_CERT_FILE`, `VMAFX_GRPC_KEY_FILE` | path | _(unset)_ | TLS certificate and key for the gRPC listener. |
+| `VMAFX_GRPC_MAX_RECV_SIZE`, `VMAFX_GRPC_MAX_SEND_SIZE` | bytes | _(gRPC default)_ | gRPC message size limits. |
+| `VMAFX_LOG_LEVEL` | string | `INFO` | `DEBUG`, `INFO`, `WARN` or `ERROR`. |
+| `VMAFX_MODEL_DIR` | path | _(none)_ | Model directory passed to the libvmaf scorer. The server's koanf key is `model.dir`, as for the controller and node. |
+| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | Path to the `vmaf` CLI binary. Key `vmaf.binary`. |
+| `VMAFX_MAX_CONCURRENT_SCORES` | integer | _(NumCPU)_ | Cap on simultaneous `Score` calls; excess requests get HTTP 429 or gRPC `ResourceExhausted`. |
 | `VMAFX_SWAGGER_TRY_IT_OUT` | string | _(off)_ | Set to `1` to enable the Swagger UI "try it out" live-execution path. |
 
----
-
-## Go worker node (`cmd/vmafx-node`)
-
-The node is wired on the golusoris fx framework (ADR-1119). golusoris config
-reads these `VMAFX_*` env vars via koanf: it strips the `VMAFX_` prefix,
-lowercases, and replaces **every** underscore with the `.` delimiter, so the
-listed env var maps to the dotted koanf key shown in the third column.
+### Worker node (`cmd/vmafx-node`)
 
 | Name | koanf key | Type | Default | Description |
 |---|---|---|---|---|
-| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | gRPC listen address for the node's `VmafxScoring` service. **Breaking — replaces `VMAFX_NODE_ADDR`** (ADR-1119). |
-| `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | Path to the `ffmpeg` binary used by the startup encoder probe.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
-| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | Path to the `vmaf` CLI binary backing the unary `Score` RPC. |
-| `VMAFX_MODEL_DIR` | `model.dir` | path | _(binary default)_ | Directory containing VMAF `.json` model files. |
-| `VMAFX_BACKEND` | `backend` | string | `cpu` | Scoring backend label attached to executor spans / results. |
-| `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar (ADR-0781). |
-| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level (read by the golusoris `log` module; honours the `VMAFX_` prefix — ADR-1119). |
-| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | Log handler: `auto` (tint on TTY, else JSON), `tint`, or `json`. |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | gRPC listen address of the node's `VmafxScoring` service. Replaces `VMAFX_NODE_ADDR`; the historical `:50052` default is kept. |
+| `VMAFX_GRPC_CERT_FILE`, `VMAFX_GRPC_KEY_FILE`, `VMAFX_GRPC_MAX_RECV_SIZE`, `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.*` | | _(unset)_ | The same gRPC TLS and size settings as the server. |
+| `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | `ffmpeg` binary used by the startup encoder probe. The node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | `vmaf` CLI binary behind the unary `Score` RPC. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(binary default)_ | Directory of VMAF `.json` model files. |
+| `VMAFX_BACKEND` | `backend` | string | `cpu` | Scoring backend label attached to executor spans and results. |
+| `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | `auto` (tint on a TTY, else JSON), `tint` or `json`. |
 
-> **Migration:** the pre-fx node bound on `VMAFX_NODE_ADDR` (default `:50052`).
-> That variable is removed; set `VMAFX_GRPC_LISTEN` instead (the historical
-> `:50052` default is preserved). The node remains gRPC-only — its Kubernetes
-> probe is the `VmafxScoring/Health` RPC; there is no HTTP `/livez` / `/readyz`
-> until `golusoris.HTTP` is added to the node graph.
+The node is gRPC-only. Its Kubernetes probe is the `VmafxScoring/Health` RPC;
+there is no HTTP `/livez` or `/readyz` until `golusoris.HTTP` joins the node
+graph.
 
----
-
-## Go operator (`cmd/vmafx-operator`)
+### Operator (`cmd/vmafx-operator`)
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAFX_OPERATOR_LEADER_ELECTION` | `true`/`false` | `false` | Enable leader election for high-availability deployments. Set to `true` when running multiple operator replicas. |
+| `VMAFX_OPERATOR_LEADER_ELECTION` | `true`/`false` | `false` | Enable leader election; set `true` when running several operator replicas. |
 | `VMAFX_OPERATOR_LEADER_ELECTION_ID` | string | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled. |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `host:port` | `:8080` | Bind address for the Prometheus metrics endpoint. |
-| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `host:port` | `:8081` | Bind address for `/healthz` and `/readyz` health-probe endpoints. |
+| `VMAFX_OPERATOR_METRICS_ADDR` | `host:port` | `:8080` | Bind address of the Prometheus metrics endpoint. |
+| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `host:port` | `:8081` | Bind address of `/healthz` and `/readyz`. |
 | `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | duration | `30s` | Manager graceful-shutdown timeout. |
 | `VMAFX_OPERATOR_WEBHOOK_PORT` | integer | `0` | Admission-webhook port; `0` disables webhooks. |
 | `VMAFX_OPERATOR_WEBHOOK_HOST` | host | _(all interfaces)_ | Admission-webhook bind host. |
-| `VMAFX_LOG_LEVEL` | string | `info` | Shared structured log level: `debug`, `info`, `warn`, or `error`. |
-| `VMAFX_CONTROLLER_GRPC_ADDR` | `host:port` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller used by job reconciliation. |
-| `VMAFX_CONTROLLER_HTTP_ADDR` | URL | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller used by health reconciliation. |
+| `VMAFX_LOG_LEVEL` | string | `info` | Shared log level: `debug`, `info`, `warn` or `error`. |
+| `VMAFX_CONTROLLER_GRPC_ADDR` | `host:port` | `vmafx-controller.<ns>.svc.cluster.local:9090` | Controller gRPC address used by job reconciliation. |
+| `VMAFX_CONTROLLER_HTTP_ADDR` | URL | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | Controller HTTP address used by health reconciliation. |
 
----
-
-## Test-only
-
-These variables are read exclusively by test harnesses and CI gates.  They
-are not read by production code paths.
+### OpenTelemetry identity (all Go services)
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAF_BIN_FOR_TESTS` | path | _(auto-detect)_ | Explicit path to the `vmaf` binary for integration tests (`test_chug_extract_features_smoke.py`, ADR-0543 backend-enforcement tests).  When unset the tests probe the canonical build paths and `PATH`. |
-| `VMAF_TEST_DATA` | path | _(repo-relative)_ | Override for the test-data root in Python-harness tests. |
-| `VMAF_FORCE_BACKEND` | string | _(none)_ | Scoring backend override (`cuda`, `sycl`, `cpu`, etc.) for Python-harness `ExternalProgramCaller` invocations; appends `--backend <val>`. |
-| `VMAF_BACKEND` | string | _(none)_ | Fallback alias for `VMAF_FORCE_BACKEND` in Python-harness CLI invocations. |
+| `VMAFX_OTEL_SERVICE_NAME` | string | the standard `OTEL_SERVICE_NAME`, else the binary name | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | string | the build version | `service.version` resource attribute. |
 
----
+## Online-training sidecar (`ai/sidecar`)
 
-## CUDA dispatch knob
+The sidecar is the Python online trainer that the node feeds over a Unix
+socket.
 
-`VMAF_CUDA_DISPATCH` controls how CUDA feature extractors submit work to the
-driver.  Three strategies are available:
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAFX_SIDECAR_SOCKET` | path | `/tmp/vmafx-sidecar.sock` | Unix socket the sidecar listens on; must match the node's setting. |
+| `VMAFX_SIDECAR_CHECKPOINT_DIR` | path | `/mnt/vmafx-models/online` | Checkpoint directory. |
+| `VMAFX_SIDECAR_REPLAY_CAPACITY` | integer | `10000` | Replay-buffer capacity. |
+| `VMAFX_SIDECAR_PENDING_CAPACITY` | integer | `10000` | Pending-sample queue capacity. |
+| `VMAFX_SIDECAR_BATCH_SIZE` | integer | `32` | Training batch size. |
+| `VMAFX_SIDECAR_REPLAY_MIX` | float | `0.5` | Replay mix ratio, in the range [0, 1). |
+| `VMAFX_SIDECAR_LR` | float | `0.0001` | Learning rate. |
+| `VMAFX_SIDECAR_EMA_DECAY` | float | `0.999` | EMA decay of the served weights. |
+| `VMAFX_SIDECAR_CKPT_INTERVAL_S` | seconds | `600` | Interval between checkpoints. |
+| `VMAFX_SIDECAR_MIN_SAMPLES_CKPT` | integer | `1000` | Minimum new samples before a checkpoint is written. |
+| `VMAFX_SIDECAR_N_FEATURES` | integer | `80` | Input feature count of the model (also of the fallback model when no base model loads). |
 
-| Value | Behaviour |
-|---|---|
-| `adaptive` | Runtime heuristic: selects `batched` above the 720p frame-area threshold, `serial` below it.  **Default** when the variable is unset. |
-| `batched` | Submits a full drain-batch of per-extractor events and waits once (ADR-0483). Lowest latency at ≥ 1080p. |
-| `serial` | Synchronises after each extractor.  Lower overhead at small resolutions or single-extractor runs. |
+## Test-only
 
-Per-feature overrides follow the `feature=strategy[,feature2=strategy2]`
-syntax, for example:
+These variables are read by test harnesses and CI gates, not by the shipped
+tools.
 
-```bash
-VMAF_CUDA_DISPATCH=adaptive,integer_vif=batched ./build/tools/vmaf ...
-```
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_BIN_FOR_TESTS` | path | _(auto-detect)_ | Explicit path to the `vmaf` binary for integration tests (`test_chug_extract_features_smoke.py`, the ADR-0543 backend-enforcement tests). When unset, the tests probe the canonical build paths and `PATH`. |
+| `VMAF_TEST_DATA` | path | _(repo-relative)_ | Test-data root override for Python-harness tests. |
+| `VMAF_SYCL_AOT_JOBS` | integer | `4` | Parallel compiles of the `sycl-aot` meson test suite. |
 
-See [ADR-0483](../adr/0483-gpu-dispatch-parse-dedup.md) for the dispatch
-parse grammar.
+## History
 
----
-
-## SYCL dispatch knob
-
-`VMAF_SYCL_DISPATCH` controls the SYCL graph-replay strategy.  Two values
-are available:
-
-| Value | Behaviour |
-|---|---|
-| `direct` | Submit kernels directly to an in-order queue (no graph).  Lower per-frame overhead at small resolutions. |
-| `graph` | Use SYCL graph replay (ADR-0483).  Reduces kernel-launch overhead at ≥ 720p. |
-
-When the variable is unset, an area-threshold heuristic selects `graph`
-above 1280 × 720 pixels and `direct` below.  `VMAF_SYCL_USE_GRAPH` (boolean)
-provides a simpler global override.
-
-`VMAF_SYCL_NO_GRAPH` is a **deprecated** alias for `VMAF_SYCL_USE_GRAPH=false`.
-Setting it to `1` still works for one release but prints a warning to stderr:
-
-```text
-VMAF_SYCL_NO_GRAPH deprecated; use VMAF_SYCL_USE_GRAPH=false. Will be removed in v4.0.
-```
-
-See [ADR-0483](../adr/0483-gpu-dispatch-parse-dedup.md) for the full grammar.
+- **ADR-1119 migration.** The Go services moved to the golusoris `fx`
+  framework; see the migration warning above for the renamed variables.

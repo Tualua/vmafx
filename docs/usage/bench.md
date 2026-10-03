@@ -1,36 +1,45 @@
 <!-- markdownlint-disable MD013 -->
-# `vmaf_bench` — micro-benchmark & validation harness
+# `vmaf_bench` — micro-benchmark and validation harness
 
-`vmaf_bench` is a fork-added binary that times individual feature extractors on
-pre-staged YUV data and optionally cross-validates GPU output against CPU. It is
-**not** a score-producing tool — use the `vmaf` CLI ([cli.md](cli.md)) for
-quality assessment. `vmaf_bench` exists purely to:
+`vmaf_bench` times individual feature extractors on pre-staged YUV data and can
+cross-validate GPU output against the CPU. It is **not** a score-producing
+tool; use the `vmaf` CLI ([cli.md](cli.md)) for quality assessment. It exists
+to:
 
-- compare CPU vs CUDA vs SYCL vs HIP timings per feature,
-- validate GPU↔CPU numerical agreement before merging a backend change,
+- compare CPU vs CUDA vs SYCL timings per feature,
+- validate GPU to CPU numerical agreement before merging a backend change,
 - profile GPU shader breakdowns (SYCL only).
 
-Snapshot benchmark JSONs produced by `vmaf_bench` live under `testdata/` (see
-[../architecture/index.md](../architecture/index.md)) and are **not** Netflix
-goldens — they are fork-owned. Regenerate with `/regen-snapshots` if you
-intentionally moved a baseline.
+`vmaf_bench` has no HIP or Metal path. Snapshot benchmark JSONs produced by
+the benchmark harness live under `testdata/` (see
+[../architecture/index.md](../architecture/index.md)) and are fork-owned, not
+Netflix goldens. Regenerate them with `/regen-snapshots` if you intentionally
+move a baseline.
 
-## Build
+## Quick start
 
-```shell
-# build with CUDA + SYCL so vmaf_bench can compare all three backends
-meson setup build -Denable_cuda=true -Denable_sycl=true
-ninja -C build
-# binary lives at: build/core/tools/vmaf_bench
-```
+1. Build with the backends you want to compare. The Meson source directory is
+   `core/`:
 
-`vmaf_bench` compiles in every build configuration; CUDA / SYCL rows are
-automatically omitted when the respective backend is disabled.
+    ```shell
+    meson setup build core -Denable_cuda=true -Denable_sycl=true
+    ninja -C build
+    ```
+
+    The binary is `build/tools/vmaf_bench`. It compiles in every
+    configuration; CUDA and SYCL rows are omitted when that backend is disabled.
+
+2. Stage test data (see [Test data layout](#test-data-layout)).
+3. Run a benchmark:
+
+    ```shell
+    ./build/tools/vmaf_bench --resolution 1920x1080 --frames 10 --data-dir /tmp/vmaf_test
+    ```
 
 ## Test data layout
 
 `vmaf_bench` expects a staging directory (default `/tmp/vmaf_test/`, override
-with `--data-dir` or `VMAF_TEST_DATA`):
+with `--data-dir` or `VMAF_TEST_DATA`) holding 8-bit YUV 4:2:0 pairs:
 
 ```text
 /tmp/vmaf_test/
@@ -46,7 +55,7 @@ with `--data-dir` or `VMAF_TEST_DATA`):
 └── dis_3840x2160.yuv
 ```
 
-Generate from Big Buck Bunny (or any clip):
+Generate them from Big Buck Bunny (or any clip):
 
 ```shell
 ffmpeg -i bbb.mp4 -frames:v 48 -vf scale=1920:1080 -pix_fmt yuv420p /tmp/vmaf_test/ref_1920x1080.yuv
@@ -54,101 +63,114 @@ ffmpeg -i bbb.mp4 -frames:v 48 -vf scale=1920:1080 -pix_fmt yuv420p -c:v rawvide
        -x264-params crf=28 /tmp/vmaf_test/dis_1920x1080.yuv
 ```
 
-## Modes
+`vmaf_bench` does not download anything. The repository's
+`testdata/ref_576x324_48f.yuv` and `dis_576x324_48f.yuv` can be copied in under
+the `ref_576x324.yuv` / `dis_576x324.yuv` names for a quick smoke run.
 
-### Performance benchmark (default)
+## Performance benchmark (default mode)
 
 ```shell
 vmaf_bench [--resolution WxH] [--frames N] [--bpc N] [--data-dir PATH] [--gpu-only]
 ```
 
+### Benchmark flags
+
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--resolution WxH` | all staged | Restrict to one resolution. |
 | `--frames N` | 10 | Max 48 (staged data cap). |
-| `--bpc N` | 8 | Bits per component: 8, 10, 12, 16. |
-| `--data-dir PATH` | `/tmp/vmaf_test` (or `$VMAF_TEST_DATA`) | Override stage directory. |
+| `--bpc N` | 8 | Bits per component: 8, 10, 12, 16. Needs matching test data; 8-bit YUVs are not converted. |
+| `--data-dir PATH` | `/tmp/vmaf_test` (or `$VMAF_TEST_DATA`) | Staging directory. |
 | `--gpu-only` | off | Skip CPU feature runs. |
-| `--gpu-profile` | off (SYCL-only) | Emit per-shader GPU timing breakdown. |
-| `--device N` | auto | Pick GPU device by ordinal (SYCL). |
-| `--list-devices` | — | List detected SYCL devices and exit. |
 
-Output is a per-feature, per-backend table of median ms/frame + throughput FPS.
+### Device selection flags
 
-### Validation mode
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--device N` | auto | Pick the GPU by ordinal (SYCL). |
+| `--list-devices` | | List detected SYCL devices and exit. In a build without a GPU backend it prints `No GPU backend enabled`. |
+
+### Profiling flag
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--gpu-profile` | off | Print a per-shader GPU timing breakdown. Requires a SYCL build; it is not wired for CUDA. It returns non-zero when frame submission or the final flush fails. |
+
+### Output
+
+The output is a header (version, data directory, frames per test) followed by
+one row per feature and backend with the average time per frame and the
+throughput. Times are averages, not medians. The CPU rows come from the
+`motion`, `vif`, `adm`, `float_ssim`, `float_ms_ssim` and `psnr` extractors;
+GPU rows appear for each compiled backend. This is a 576x324 CPU-only run:
+
+```text
+VMAF Performance Benchmark (v1.0.0-rc.2-310-g1b1663830)
+Data: /tmp/vmaf_test
+Frames per test: 10
+
+Feature                            Res   Init ms    Avg ms  Total ms       FPS
+----------------------------------------------------------------------------------------
+motion (CPU)                   576x324       2.5      0.14       1.2    7337.4
+vif (CPU)                      576x324       0.2      0.97       8.7    1034.8
+adm (CPU)                      576x324       0.1      0.33       2.9    3051.9
+float_ssim (CPU)               576x324       0.1      1.21      10.9     827.4
+float_ms_ssim (CPU)            576x324       0.1      1.80      16.2     554.9
+psnr (CPU)                     576x324       0.1      0.05       0.4   21865.3
+```
+
+## Validation mode
 
 ```shell
 vmaf_bench --validate [--resolution WxH] [--frames N]
 ```
 
-Runs every feature through every compiled backend on the staged data and prints
-CPU↔GPU ULP deltas per feature. Used by `/cross-backend-diff` and by reviewers
-checking SIMD/GPU PRs.
+Validation compares the `motion`, `vif` and `adm` scores of each compiled GPU
+backend against the CPU, frame by frame, on the staged data. Each pair has an
+absolute tolerance:
+
+| Feature | Tolerance (absolute) | Scores compared |
+| --- | --- | --- |
+| `motion` | `5e-6` | the integer motion scores (CUDA also `motion`; SYCL only `motion2`) |
+| `vif` | `1e-3` | the four VIF scale scores |
+| `adm` | `0.5` | `adm2` and the four ADM scale scores |
+
+Without a GPU backend it prints `No GPU backend enabled, cannot validate`. With
+one, the output starts with `VMAF GPU Correctness Validation` and has one line
+per score (the values below are illustrative):
+
+```text
+  Motion/CU  @ 1920x1080  VMAF_integer_feature_motion2_score        max_diff=0.00e+00  [PASS]
+```
+
+The status is `PASS`, `FAIL` (difference above the tolerance) or `NaN!`. The run
+ends with `ALL PASSED` or `FAILURES`. A larger delta is a regression and should
+block merge unless justified inline
+([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md),
+"Cross-backend numerical results"). The `/cross-backend-diff` skill wraps this
+mode with PR-ready formatting.
 
 An extractor setup, frame submission or final flush failure is reported as a
 `SKIP` for that CPU/GPU pair instead of comparing incomplete score arrays.
-SYCL `--gpu-profile` returns non-zero when frame submission or final flush
-fails; automation may rely on that status without scraping stderr.
-
-Target: max absolute difference ≤ 2 ULP for integer features, ≤ 1e-5 relative
-for float features. Larger deltas are a regression and should block merge
-unless justified inline ([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md)
-"Cross-backend numerical results").
-
-## Example — single 1080p benchmark
-
-```shell
-./build/core/tools/vmaf_bench \
-  --resolution 1920x1080 \
-  --frames 10 \
-  --data-dir /tmp/vmaf_test
-```
-
-Expected output (abbreviated):
-
-```text
-=== VMAF Benchmark — 1920x1080, 10 frames ===
-Feature          CPU(scalar)   CPU(AVX-512)   CUDA         SYCL
-integer_vif      112.4 ms        5.1 ms       0.8 ms       1.1 ms
-integer_adm       98.2 ms        4.7 ms       0.7 ms       0.9 ms
-integer_motion    34.6 ms        1.9 ms       0.3 ms       0.4 ms
-...
-```
-
-## Example — cross-backend validation
-
-```shell
-./build/core/tools/vmaf_bench --validate --resolution 1920x1080 --frames 10
-```
-
-Expected output:
-
-```text
-=== Cross-backend validation — 1920x1080, 10 frames ===
-Feature          CPU vs CUDA      CPU vs SYCL       Verdict
-integer_vif      max |Δ| = 1 ULP   max |Δ| = 1 ULP    OK
-integer_adm      max |Δ| = 0 ULP   max |Δ| = 0 ULP    OK
-integer_motion   max |Δ| = 0 ULP   max |Δ| = 0 ULP    OK
-psnr             max |Δ| = 1e-9    max |Δ| = 1e-9     OK
-```
 
 ## Limitations
 
-- Cleanup is fail-closed: `vmaf_bench` retries a failed context close once.
+- **Cleanup is fail-closed.** `vmaf_bench` retries a failed context close once.
   A second failure is reported on stderr and makes the run fail; imported GPU
-  state remains owned until process exit.
-- Test data must be pre-staged. `vmaf_bench` does not download anything.
-- Resolution list is hard-coded to `576x324`, `640x480`, `1280x720`,
-  `1920x1080`, `3840x2160` (per `core/tools/vmaf_bench.c:291-293`).
-  Pass `--resolution WxH` to restrict to a single size; adding new
-  resolutions requires source changes.
-- `--gpu-profile` requires a SYCL build (not wired for CUDA).
-- 10 / 12 / 16 bpc (`--bpc`) requires matching test data — staged 8-bit YUVs
-  are not auto-converted.
+  state stays owned until process exit.
+- **Test data is pre-staged.** Nothing is downloaded or converted.
+- **The resolution list is hard-coded** to `576x324`, `640x480`, `1280x720`,
+  `1920x1080` and `3840x2160` (`core/tools/vmaf_bench.c`, the `resolutions`
+  array). `--resolution WxH` restricts the run to one of them; new sizes need a
+  source change.
+- **No HIP or Metal path.** `meson` wires only the CUDA and SYCL dependencies
+  into `vmaf_bench`.
 
 ## Related
 
 - [cli.md](cli.md) — the scoring CLI (`vmaf`).
 - [../benchmarks.md](../benchmarks.md) — canonical fork benchmark numbers.
-- [../backends/index.md](../backends/index.md) — backend compile-time + runtime rules.
-- `/cross-backend-diff` skill — wraps `vmaf_bench --validate` with PR-ready formatting.
+- [../backends/index.md](../backends/index.md) — backend compile-time and
+  runtime rules.
+- `/cross-backend-diff` skill — wraps `vmaf_bench --validate` with PR-ready
+  formatting.

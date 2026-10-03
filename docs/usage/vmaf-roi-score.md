@@ -33,23 +33,6 @@ roi_vmaf = (1 - w) * vmaf_full + w * vmaf_masked
 - `w ∈ [0, 1]` — caller-controlled weight. `w=0` returns the standard
   full-frame VMAF unchanged; `w=1` returns the masked VMAF only.
 
-## What it explicitly does **not** do
-
-- **It is not "true" per-pixel saliency-weighted VMAF.** The masked
-  run is a pixel substitution, not a per-feature weight. A salient
-  region surrounded by a "perfect-match" zone scores differently than
-  the same region under a *zero-weight* zone — VMAF's edge-sensitive
-  features (motion, ADM) react to the boundary between the salient
-  region and the substituted background. Option A (per-pixel feature
-  pooling weighted by saliency in libvmaf C code) is tracked as
-  deferred work in ADR-0296.
-- **It makes no claim about MOS correlation.** This tool is a
-  prototype that exposes a saliency-weighted *signal*; whether that
-  signal tracks subjective quality better than uniform VMAF is an
-  open research question. Validation against a labelled MOS dataset
-  is a separate exercise — see Research-0063 §"What we deliberately
-  don't measure".
-
 ## Install
 
 ```bash
@@ -61,7 +44,12 @@ The `vmaf` binary must be on `$PATH` (or pass `--vmaf-bin` explicitly).
 ## Quick start (saliency model)
 
 Use `saliency_student_v1` for the saliency mask and keep the default
-threshold/fade unless you are calibrating a corpus-specific policy.
+threshold and fade unless you are calibrating a corpus-specific policy.
+`model/tiny/` also holds `saliency_student_v2`, an architectural successor
+that stays a parallel artefact: the production weights remain
+`saliency_student_v1` until v2 is validated in real ROI encodes
+([model card](../ai/models/saliency_student_v2.md)). The tool has no default
+saliency model; pass `--saliency-model` or `--synthetic-mask`.
 
 ```bash
 vmaf-roi-score \
@@ -98,7 +86,7 @@ Output (JSON to stdout):
   "vmaf_masked": 90.0,
   "weight": 0.5,
   "vmaf_roi": 85.0,
-  "model": "vmaf_v0.6.1",
+  "model": "vmaf_v1.0.16_3d0h",
   "saliency_model": "synthetic",
   "reference": "path/to/ref.yuv",
   "distorted": "path/to/dis.yuv"
@@ -109,6 +97,23 @@ In synthetic mode `--synthetic-mask FILL` supplies a constant mask.
 `--threshold` and `--fade` are applied the same way as they are for a
 real saliency model, so `--threshold 0 --fade 1 --synthetic-mask 0.5`
 blends each plane halfway between the reference and distorted inputs.
+
+## What it does not do
+
+- **It is not true per-pixel saliency-weighted VMAF.** The masked run is a
+  pixel substitution, not a per-feature weight.
+- **Boundaries matter.** A salient region surrounded by a "perfect-match" zone
+  scores differently from the same region under a zero-weight zone. VMAF's
+  edge-sensitive features (motion, ADM) react to the boundary between the
+  salient region and the substituted background.
+- **Per-pixel pooling is deferred.** Option A, per-pixel feature pooling
+  weighted by saliency in libvmaf C code, is tracked as deferred work in
+  ADR-0296.
+- **It makes no claim about MOS correlation.** The tool is a prototype that
+  exposes a saliency-weighted *signal*. Whether that signal tracks subjective
+  quality better than uniform VMAF is an open research question. Validation
+  against a labelled MOS dataset is a separate exercise; see Research-0063,
+  section "What we deliberately don't measure".
 
 ## Mask Materialisation
 
@@ -169,4 +174,4 @@ bare non-standard numeric token.
 - [`docs/usage/vmaf-roi.md`](vmaf-roi.md) — the encoder-steering
   sibling tool (different surface, related model).
 - [`docs/ai/models/saliency_student_v1.md`](../ai/models/saliency_student_v1.md)
-  — the saliency model this tool consumes by default.
+  — the saliency model used in the quick start.
