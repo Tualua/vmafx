@@ -261,12 +261,20 @@ sycl/
   copy barrier only if marker is still running. Covers readers next
   collect never waits for (`n_subsample` skips). **On rebase**: new
   compute queue that reads shared slots must add its marker there; keep
-  fence before ref upload; zero-copy import path imports luma
-  only, so chroma readers must fail (`-ENOTSUP`, via
-  `vmaf_sycl_require_host_pictures`) on NULL pictures, never read stale
-  chroma. **On rebase**: `sycl_check_zero_copy_extractors` runs before any
-  state mutation in `vmaf_read_pictures_sycl`. Guards: `test_sycl_shared_planes`,
-  `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
+  fence before ref upload; chroma readers call
+  `vmaf_sycl_require_chroma` (ADR-1597): host pictures pass, NULL
+  pictures pass only when the chroma is current, else `-ENOTSUP`, never
+  stale chroma. Currency: `vmaf_sycl_init_frame_buffers` allocates the
+  chroma planes eagerly for `(w+1)/2 x (h+1)/2` (D-01); the VA import
+  writes `vmaf_sycl_get_shared_plane_upload` and calls
+  `vmaf_sycl_shared_chroma_mark_imported`; only `vmaf_sycl_advance_frame`
+  promotes the mark to `planes.frame` (after `frame_counter++`, never
+  between the two load-bearing lines). **On rebase**: never set
+  `planes.frame` elsewhere. **On rebase**:
+  `sycl_check_zero_copy_extractors` runs before any state mutation in
+  `vmaf_read_pictures_sycl`. Guards: `test_sycl_shared_planes`,
+  `test_sycl_zerocopy_parity`, `test_sycl_init_unwind` (wraps
+  `vmaf_sycl_shared_chroma_init`).
 
 - **`dmabuf_import.cpp` normalizes P010/P012 luma MSB→LSB on every
   import path (ADR-1121).** VA-API delivers 10/12-bit samples

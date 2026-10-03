@@ -88,6 +88,10 @@ using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;
  * every copy is one DMA from pinned memory; `staged` is the last copy out of
  * it.
  *
+ * Zero-copy: the VA import writes the upload slot and marks it
+ * (chroma_import_pending); vmaf_sycl_advance_frame() promotes the mark to
+ * `frame`, so a chroma reader sees only chroma of its own frame.
+ *
  * Slot fence: readers_done[s] holds device markers on every compute queue,
  * taken when slot s stopped being the compute slot; the upload that next
  * overwrites s waits on them. */
@@ -101,6 +105,9 @@ struct SyclPlaneState {
     unsigned h = 0;
     uint64_t frame = UINT64_MAX;
     std::vector<sycl::event> readers_done[2];
+    /* A zero-copy import wrote the upload slot's chroma (ADR-1597).
+     * vmaf_sycl_advance_frame() turns it into `frame`; nothing else may. */
+    bool chroma_import_pending = false;
 };
 
 /* An aggregate: vmaf_sycl_state_init() initialises `queue` and `copy_queue`
@@ -225,11 +232,13 @@ extern "C" int vmaf_sycl_require_host_pictures(const char *extractor, const Vmaf
 extern "C" int vmaf_sycl_require_chroma(VmafSyclState *state, const char *extractor,
                                         const VmafPicture *ref, const VmafPicture *dis)
 {
-    (void)state;
-    (void)extractor;
-    (void)ref;
-    (void)dis;
-    return -ENOSYS;
+    if ((ref != nullptr && dis != nullptr) || vmaf_sycl_shared_chroma_current(state)) {
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "%s: needs chroma planes, which this zero-copy import did not provide (-ENOTSUP)\n",
+             extractor);
+    return -ENOTSUP;
 }
 
 /* ------------------------------------------------------------------ */
@@ -686,6 +695,7 @@ static void sycl_shared_chroma_release(VmafSyclState *state)
     chroma.w = 0;
     chroma.h = 0;
     chroma.frame = UINT64_MAX;
+    chroma.chroma_import_pending = false;
 }
 
 static int sycl_shared_frame_reinit_unwind(VmafSyclState *state)
@@ -1127,24 +1137,26 @@ extern "C" void *vmaf_sycl_get_shared_plane(VmafSyclState *state, int is_ref, un
     return is_ref ? state->planes.ref[slot][plane - 1] : state->planes.dis[slot][plane - 1];
 }
 
-extern "C" void *vmaf_sycl_get_shared_plane_upload(VmafSyclState *state, int is_ref,
-                                                   unsigned plane)
+extern "C" void *vmaf_sycl_get_shared_plane_upload(VmafSyclState *state, int is_ref, unsigned plane)
 {
-    (void)state;
-    (void)is_ref;
-    (void)plane;
-    return nullptr;
+    if (!state || plane > 2)
+        return nullptr;
+    int const slot = state->cur_upload;
+    if (plane == 0)
+        return is_ref ? state->shared_ref_buf[slot] : state->shared_dis_buf[slot];
+    return is_ref ? state->planes.ref[slot][plane - 1] : state->planes.dis[slot][plane - 1];
 }
 
 extern "C" void vmaf_sycl_shared_chroma_mark_imported(VmafSyclState *state)
 {
-    (void)state;
+    if (state)
+        state->planes.chroma_import_pending = true;
 }
 
 extern "C" bool vmaf_sycl_shared_chroma_current(const VmafSyclState *state)
 {
-    (void)state;
-    return false;
+    return state && state->planes.ref[state->cur_compute][0] != nullptr &&
+           state->planes.frame == state->frame_counter;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1656,6 +1668,12 @@ extern "C" void vmaf_sycl_advance_frame(VmafSyclState *state)
     /* load-bearing: do not insert code between these two lines (order matters) */
     state->cur_upload = 1 - state->cur_upload;
     state->frame_counter++;
+    /* Promotion of an import mark: the only writer of planes.frame besides the
+     * host chroma upload (ADR-1597). */
+    if (state->planes.chroma_import_pending) {
+        state->planes.frame = state->frame_counter;
+        state->planes.chroma_import_pending = false;
+    }
 }
 
 /* ------------------------------------------------------------------ */

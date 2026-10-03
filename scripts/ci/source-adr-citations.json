@@ -6578,6 +6578,7 @@
         "core/test/test_sycl_vif_min_dim.c": 1,
         "core/test/test_sycl_vif_parity.c": 1,
         "core/test/test_sycl_zerocopy_guards.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
         "core/test/test_tad_rust.c": 1,
         "core/test/test_thread_pool.c": 1,
         "core/test/test_thread_pool_backpressure.c": 1,
@@ -10373,11 +10374,15 @@
     },
     "1597": {
       "sites": {
+        "core/src/libvmaf.c": 1,
         "core/src/sycl/chroma_import.cpp": 1,
         "core/src/sycl/chroma_import.h": 3,
+        "core/src/sycl/common.cpp": 2,
+        "core/src/sycl/common.h": 3,
         "core/src/sycl/dmabuf_import.cpp": 1,
-        "core/test/meson.build": 1,
-        "core/test/test_sycl_chroma_import.c": 1
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_chroma_import.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1597-sycl-zerocopy-planar-chroma-import.md"
     }

@@ -111,6 +111,10 @@ static char *test_eager_chroma_allocation(void)
 static char *check_currency(VmafSyclState *state)
 {
     mu_assert("chroma is not current before any import", !vmaf_sycl_shared_chroma_current(state));
+    /* Both slots start at 0; one advance separates upload from compute. */
+    vmaf_sycl_advance_frame(state);
+    mu_assert("an advance without any mark leaves chroma stale",
+              !vmaf_sycl_shared_chroma_current(state));
 
     void *const up_ref = vmaf_sycl_get_shared_plane_upload(state, 1, 1u);
     void *const up_dis = vmaf_sycl_get_shared_plane_upload(state, 0, 2u);
