@@ -345,7 +345,13 @@ static char *run_zero_copy(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES
     return msg;
 }
 
-static char *compare_scores(unsigned bpc, double cpu[N_FEATURES][PARITY_FRAMES],
+/* The two score tables are only read, but `const double (*)[N]` accepts a
+ * `double (*)[N]` argument only from C23 on; core/meson.build's c_std fallback
+ * list includes c17, which rejects it. */
+static char *compare_scores(unsigned bpc,
+                            /* cppcheck-suppress constParameter */
+                            double cpu[N_FEATURES][PARITY_FRAMES],
+                            /* cppcheck-suppress constParameter */
                             double gpu[N_FEATURES][PARITY_FRAMES])
 {
     for (unsigned f = 0; f < N_FEATURES; f++) {
@@ -590,124 +596,188 @@ static char *test_motion_add_uv_unmarked_refused(void)
 typedef struct LumaFeature {
     const char *twin;
     const char *cpu;
-    const char *scores[LUMA_MAX_SCORES];
-    unsigned n_scores;
     const char *opt_key; /* optional extractor option, set on both legs */
     const char *opt_val;
-    int chroma;     /* reads Cb / Cr: the zero-copy leg marks chroma imported */
     double cpu_tol; /* host upload vs CPU bound; 0 = bit-identical */
-    unsigned w;     /* frame size; 0 = the default 67 x 37 */
+    const char *scores[LUMA_MAX_SCORES];
+    unsigned n_scores;
+    int chroma; /* reads Cb / Cr: the zero-copy leg marks chroma imported */
+    unsigned w; /* frame size; 0 = the default 67 x 37 */
     unsigned h;
 } LumaFeature;
 
 static const LumaFeature g_luma_features[] = {
-    {"float_psnr_sycl", "float_psnr", {"float_psnr"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
-    {"float_motion_sycl",
-     "float_motion",
-     {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score"},
-     2u,
-     NULL,
-     NULL,
-     0,
-     0.0,
-     0u,
-     0u},
+    {.twin = "float_psnr_sycl",
+     .cpu = "float_psnr",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"float_psnr"},
+     .n_scores = 1u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
+    {.twin = "float_motion_sycl",
+     .cpu = "float_motion",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score"},
+     .n_scores = 2u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
     /* motion_add_uv (ADR-1599): Cb / Cr blurred and added in the CPU's order, so host upload
      * is bit-identical to the CPU; the zero-copy leg marks the chroma imported. The option
      * spells the feature names (motion2_mau). 5 frames, odd 67 x 37 (34 x 19 chroma). */
-    {"float_motion_sycl",
-     "float_motion",
-     {"motion2_mau", "motion3_mau", "motion_mau"},
-     3u,
-     "motion_add_uv",
-     "true",
-     1,
-     0.0,
-     0u,
-     0u},
-    {"float_vif_sycl",
-     "float_vif",
-     {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
-      "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score"},
-     4u,
-     NULL,
-     NULL,
-     0,
-     0.0,
-     0u,
-     0u},
-    {"float_adm_sycl",
-     "float_adm",
-     {"VMAF_feature_adm2_score", "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
-      "VMAF_feature_adm_scale2_score"},
-     4u,
-     NULL,
-     NULL,
-     0,
-     0.0,
-     0u,
-     0u},
-    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
+    {.twin = "float_motion_sycl",
+     .cpu = "float_motion",
+     .opt_key = "motion_add_uv",
+     .opt_val = "true",
+     .cpu_tol = 0.0,
+     .scores = {"motion2_mau", "motion3_mau", "motion_mau"},
+     .n_scores = 3u,
+     .chroma = 1,
+     .w = 0u,
+     .h = 0u},
+    {.twin = "float_vif_sycl",
+     .cpu = "float_vif",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
+                "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score"},
+     .n_scores = 4u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
+    {.twin = "float_adm_sycl",
+     .cpu = "float_adm",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"VMAF_feature_adm2_score", "VMAF_feature_adm_scale0_score",
+                "VMAF_feature_adm_scale1_score", "VMAF_feature_adm_scale2_score"},
+     .n_scores = 4u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
+    {.twin = "float_ssim_sycl",
+     .cpu = "float_ssim",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"float_ssim"},
+     .n_scores = 1u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
     /* scale=2 runs the float_ssim twin device decimation (33x18 samples from 67x37). */
-    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, "scale", "2", 0, 0.0, 0u, 0u},
-    {"integer_ssim_sycl", "ssim", {"ssim"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
+    {.twin = "float_ssim_sycl",
+     .cpu = "float_ssim",
+     .opt_key = "scale",
+     .opt_val = "2",
+     .cpu_tol = 0.0,
+     .scores = {"float_ssim"},
+     .n_scores = 1u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
+    {.twin = "integer_ssim_sycl",
+     .cpu = "ssim",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"ssim"},
+     .n_scores = 1u,
+     .chroma = 0,
+     .w = 0u,
+     .h = 0u},
     /* float_ms_ssim_sycl (ADR-1414, ADR-1598): the device converts the shared planes with
      * picture_copy's arithmetic, so host upload == CPU and zero-copy == host upload. The
      * pyramid needs >= 176 samples per plane side; odd sizes exercise the decimation edges. */
-    {"float_ms_ssim_sycl", "float_ms_ssim", {"float_ms_ssim"}, 1u, NULL, NULL, 0, 0.0, 191u, 177u},
-    {"float_ms_ssim_sycl",
-     "float_ms_ssim",
-     {"float_ms_ssim", "float_ms_ssim_l_scale0", "float_ms_ssim_c_scale2",
-      "float_ms_ssim_s_scale4"},
-     4u,
-     "enable_lcs",
-     "true",
-     0,
-     0.0,
-     191u,
-     177u},
+    {.twin = "float_ms_ssim_sycl",
+     .cpu = "float_ms_ssim",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"float_ms_ssim"},
+     .n_scores = 1u,
+     .chroma = 0,
+     .w = 191u,
+     .h = 177u},
+    {.twin = "float_ms_ssim_sycl",
+     .cpu = "float_ms_ssim",
+     .opt_key = "enable_lcs",
+     .opt_val = "true",
+     .cpu_tol = 0.0,
+     .scores = {"float_ms_ssim", "float_ms_ssim_l_scale0", "float_ms_ssim_c_scale2",
+                "float_ms_ssim_s_scale4"},
+     .n_scores = 4u,
+     .chroma = 0,
+     .w = 191u,
+     .h = 177u},
     /* enable_chroma reads Cb / Cr (ADR-1597): 353 x 353 gives 177 x 177 chroma planes. */
-    {"float_ms_ssim_sycl",
-     "float_ms_ssim",
-     {"float_ms_ssim", "float_ms_ssim_cb", "float_ms_ssim_cr"},
-     3u,
-     "enable_chroma",
-     "true",
-     1,
-     0.0,
-     353u,
-     353u},
+    {.twin = "float_ms_ssim_sycl",
+     .cpu = "float_ms_ssim",
+     .opt_key = "enable_chroma",
+     .opt_val = "true",
+     .cpu_tol = 0.0,
+     .scores = {"float_ms_ssim", "float_ms_ssim_cb", "float_ms_ssim_cr"},
+     .n_scores = 3u,
+     .chroma = 1,
+     .w = 353u,
+     .h = 353u},
     /* Chroma readers (ADR-1597): zero-copy must equal host upload bit for bit. ciede_sycl
      * is within the documented ADR-1436 bound of the CPU (host powf), ssimulacra2_sycl is
      * bit-exact with it (ADR-1446). */
-    {"ciede_sycl", "ciede", {"ciede2000"}, 1u, NULL, NULL, 1, 1e-9, 0u, 0u},
-    {"ssimulacra2_sycl", "ssimulacra2", {"ssimulacra2"}, 1u, NULL, NULL, 1, 0.0, 0u, 0u},
-    /* SpEED twins (ADR-1358, ADR-1462): bit-exact with the CPU on host upload, and the
+    {.twin = "ciede_sycl",
+     .cpu = "ciede",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 1e-9,
+     .scores = {"ciede2000"},
+     .n_scores = 1u,
+     .chroma = 1,
+     .w = 0u,
+     .h = 0u},
+    {.twin = "ssimulacra2_sycl",
+     .cpu = "ssimulacra2",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"ssimulacra2"},
+     .n_scores = 1u,
+     .chroma = 1,
+     .w = 0u,
+     .h = 0u},
+    /* SpEED twins (ADR-1358, ADR-1477): bit-exact with the CPU on host upload, and the
      * D2D pipeline upload makes zero-copy equal host upload. speed_temporal keeps two
      * raw luma slots, so the 5 frames wrap its ring twice. */
-    {"speed_temporal_sycl",
-     "speed_temporal",
-     {"Speed_temporal_feature_speed_temporal_score"},
-     1u,
-     NULL,
-     NULL,
-     0,
-     0.0,
-     161u,
-     161u},
+    {.twin = "speed_temporal_sycl",
+     .cpu = "speed_temporal",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"Speed_temporal_feature_speed_temporal_score"},
+     .n_scores = 1u,
+     .chroma = 0,
+     .w = 161u,
+     .h = 161u},
     /* speed_chroma reads the 81 x 81 Cb / Cr planes of the 161 x 161 frame (marked
      * imported on the zero-copy leg). */
-    {"speed_chroma_sycl",
-     "speed_chroma",
-     {"Speed_chroma_feature_speed_chroma_u_score", "Speed_chroma_feature_speed_chroma_v_score",
-      "Speed_chroma_feature_speed_chroma_uv_score"},
-     3u,
-     NULL,
-     NULL,
-     1,
-     0.0,
-     161u,
-     161u},
+    {.twin = "speed_chroma_sycl",
+     .cpu = "speed_chroma",
+     .opt_key = NULL,
+     .opt_val = NULL,
+     .cpu_tol = 0.0,
+     .scores = {"Speed_chroma_feature_speed_chroma_u_score",
+                "Speed_chroma_feature_speed_chroma_v_score",
+                "Speed_chroma_feature_speed_chroma_uv_score"},
+     .n_scores = 3u,
+     .chroma = 1,
+     .w = 161u,
+     .h = 161u},
 };
 #define N_LUMA_FEATURES ((unsigned)(sizeof(g_luma_features) / sizeof(g_luma_features[0])))
 
@@ -801,7 +871,11 @@ static char *run_luma_zero_copy(const LumaFeature *lf, unsigned bpc, LumaScores 
 
 static int same_bits(double a, double b)
 {
-    return memcmp(&a, &b, sizeof(a)) == 0;
+    uint64_t ua;
+    uint64_t ub;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua == ub;
 }
 
 /* Every score the two runs hold must be present in both and identical bits. */

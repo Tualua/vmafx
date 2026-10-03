@@ -1058,6 +1058,15 @@ static PsnrHvsKernelArgs hvs_kernel_args(const PsnrHvsStateSycl *s)
 namespace
 {
 
+/* The typed view of one carve-out of the device scratch block. The layout
+ * aligns every offset to 256 bytes (hvs_align256), so each view is aligned for
+ * its type; one helper keeps the casts out of submit(). */
+template <typename T> T *scratch_at(char *base, size_t offset)
+{
+    // cppcheck-suppress invalidPointerCast
+    return reinterpret_cast<T *>(base + offset);
+}
+
 /* The luma of this frame is already on the device (the host read path
  * uploads it before any extractor submits); the chroma goes up once for all
  * twins here. The kernel waits for both on the device, the terms are read
@@ -1093,13 +1102,12 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     try {
         char *base = static_cast<char *>(s->d_scratch);
-        float *raw_terms = reinterpret_cast<float *>(base + s->layout.raw_terms_offset);
-        uint64_t *block_masks = reinterpret_cast<uint64_t *>(base + s->layout.block_masks_offset);
-        uint32_t *block_counts = reinterpret_cast<uint32_t *>(base + s->layout.block_counts_offset);
-        uint32_t *chunk_totals = reinterpret_cast<uint32_t *>(base + s->layout.chunk_totals_offset);
-        uint32_t *chunk_offsets =
-            reinterpret_cast<uint32_t *>(base + s->layout.chunk_offsets_offset);
-        auto *d_header = reinterpret_cast<PsnrHvsHeader *>(base + s->layout.header_offset);
+        float *raw_terms = scratch_at<float>(base, s->layout.raw_terms_offset);
+        uint64_t *block_masks = scratch_at<uint64_t>(base, s->layout.block_masks_offset);
+        uint32_t *block_counts = scratch_at<uint32_t>(base, s->layout.block_counts_offset);
+        uint32_t *chunk_totals = scratch_at<uint32_t>(base, s->layout.chunk_totals_offset);
+        uint32_t *chunk_offsets = scratch_at<uint32_t>(base, s->layout.chunk_offsets_offset);
+        auto *d_header = scratch_at<PsnrHvsHeader>(base, s->layout.header_offset);
         float *packed_terms = s->d_terms;
 
         PsnrHvsKernelArgs args = hvs_kernel_args(s);
