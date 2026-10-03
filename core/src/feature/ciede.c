@@ -363,11 +363,10 @@ static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
     const float delta_h_prime = get_delta_h_prime(c1, c2, h_prime_1, h_prime_2);
     /* Upstream's statement (Netflix/vmaf libvmaf/src/feature/ciede.c:224-225):
      * the product of the two chromas is a float product, rounded to float
-     * before sqrt() promotes it. ADR-1476. */
-    // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1476: upstream's promotion.
-    // codeql[cpp/integer-multiplication-cast-to-long] — ADR-1476: upstream's float product
-    const float delta_upcase_h_prime = 2.0 * sqrt(c_prime_1 * c_prime_2) * sin(delta_h_prime / 2.0);
-    // NOLINTEND(performance-type-promotion-in-math-fn)
+     * before sqrt() promotes it. The cast widens the product's result, as
+     * upstream's implicit promotion does (ADR-1476). */
+    const float delta_upcase_h_prime =
+        2.0 * sqrt((double)(c_prime_1 * c_prime_2)) * sin(delta_h_prime / 2.0);
     const float upcase_h_bar_prime = get_upcase_h_bar_prime(h_prime_1, h_prime_2);
     const float upcase_t = get_upcase_t(upcase_h_bar_prime);
     const float s_sub_upcase_h = 1.0 + 0.015 * c_bar_prime * upcase_t;
@@ -378,9 +377,10 @@ static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
 
     /* Upstream's statement (Netflix/vmaf libvmaf/src/feature/ciede.c:235-236):
      * the rotation term is two float products, rounded to float before it is
-     * added to the fp64 squares. ADR-1476. */
-    // codeql[cpp/integer-multiplication-cast-to-long] — ADR-1476: upstream's float product
-    return sqrt(square(lightness) + square(chroma) + square(hue) + r_sub_t * chroma * hue);
+     * added to the fp64 squares. The cast widens the products' result, as
+     * upstream's implicit promotion does (ADR-1476). */
+    return sqrt(square(lightness) + square(chroma) + square(hue) +
+                (double)(r_sub_t * chroma * hue));
 }
 
 static double pow_2_4(double x)

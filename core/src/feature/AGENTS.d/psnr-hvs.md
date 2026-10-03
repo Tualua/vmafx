@@ -12,8 +12,11 @@ invariant: Masking threshold = upstream float product (ADR-1488); host scoring t
   `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`. Float product
   (rounded to `float`), root in `double`, stored `float`. No `(double)` in
   front of the product: PR #552 (CodeQL sweep) added one, 27 of 319 measured
-  frames left upstream by up to 9.4e-7 dB. The `codeql[...]` comment on each
-  line answers the alert. Same statement in `x86/psnr_hvs_avx2.c` and
+  frames left upstream by up to 9.4e-7 dB. CodeQL's
+  `cpp/integer-multiplication-cast-to-long` is answered by writing the
+  conversion of the product's RESULT: `sqrt((double)(s_mask * s_gvar))` (same
+  object code as the implicit form; the query reports only implicit
+  widenings; `// codeql[...]` comments do not suppress here). Same statement in `x86/psnr_hvs_avx2.c` and
   `arm64/psnr_hvs_neon.c` (`compute_masks()`), same value in the CUDA, HIP
   and SYCL kernels (`hvs_threshold()`). Change one -> all six, same PR.
   Upstream sync: take upstream's side. Guards:

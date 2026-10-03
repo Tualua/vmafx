@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Explicit conversion of upstream's float products (CodeQL, 2026-10-03)
+
+`fix/codeql-float-product-explicit-conversion`. No score moves; `objdump -d`
+of every touched object is identical.
+
+- `ciede.c`, `third_party/xiph/psnr_hvs.c`, `x86/psnr_hvs_avx2.c`,
+  `arm64/psnr_hvs_neon.c`, `integer_adm_kernels.h`, `adm_tools.h`, `iqa/convolve.c` write the
+  conversion of the float product's result: `sqrt((double)(a * b))`. Upstream
+  has the implicit form; a sync that brings it back keeps the explicit cast
+  (same bits, and CodeQL's `cpp/integer-multiplication-cast-to-long` reports
+  only implicit widenings). Never cast an operand: that is PR #552 again.
+
 ## The Cython extension declares `init_dwt_band_d()` as `adm.c` defines it (2026-10-02)
 
 `fix/ci-cython-adm-dwt-band-cursor`. No score impact; `adm.c` is untouched.
@@ -61,7 +73,9 @@ frames of 24x24 and smaller).
   `+ r_sub_t * chroma * hue` carry no cast, as in Netflix
   `libvmaf/src/feature/ciede.c:224-225` and `:235-236`. These two expressions
   are upstream's again: a sync takes upstream's side. The fork keeps a cited
-  `NOLINT` and a `codeql[...]` comment on them, and `square(x)` for
+  `NOLINT` and writes the conversion of each product's result explicitly
+  (`sqrt((double)(c_prime_1 * c_prime_2))`, `+ (double)(r_sub_t * chroma *
+  hue)`), which compiles to the same object code, and `square(x)` for
   upstream's `pow(x, 2)` in the second one (ADR-1467).
 - Do not re-add `(double)` in front of either product to quiet CodeQL's
   `cpp/integer-multiplication-cast-to-long`: that was PR #552, and it moved
@@ -141,8 +155,8 @@ onto Netflix master's values.
 - `core/src/feature/integer_adm_kernels.h::dwt_quant_step()`: the statement
   `float Q = 2.0 * params->a * pow(10.0, params->k * temp * temp) / ...` is
   upstream's (`libvmaf/src/feature/integer_adm.c`). A sync takes upstream's
-  side of that statement; the fork adds only the comment and the
-  `codeql[cpp/integer-multiplication-cast-to-long]` line above it. Do not
+  side of that statement; the fork adds only the comment and the explicit conversion of the product's
+  result, `pow(10.0, (double)(params->k * temp * temp))` (same object code). Do not
   re-add a `(double)` on an operand of the product: #552 did, and it moved
   the CSF weights of scales 1 to 3 by 1 to 3 units in the last place.
 - The same statement lives in two twins that cannot include the C header:
@@ -169,7 +183,8 @@ onto Netflix master's values.
   `s_mask = sqrt(s_mask * s_gvar) / 32.f;` and the same for `d_mask`, as in
   Netflix `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`. These
   two lines are upstream's again: a sync takes upstream's side. The fork
-  keeps a comment and a `codeql[...]` line above each.
+  keeps a comment and writes `sqrt((double)(s_mask * s_gvar))` (same object
+  code).
 - Do not re-add `(double)` in front of the product to quiet CodeQL's
   `cpp/integer-multiplication-cast-to-long`: that was PR #552.
 - The same statement, same bits, in five more places; a change to it changes

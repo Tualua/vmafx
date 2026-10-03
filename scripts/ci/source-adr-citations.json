@@ -9506,7 +9506,7 @@
     },
     "1476": {
       "sites": {
-        "core/src/feature/ciede.c": 5,
+        "core/src/feature/ciede.c": 2,
         "core/src/feature/ciede_ff_math.h": 2,
         "core/src/feature/cuda/integer_ciede/ciede_device.h": 2,
         "core/test/meson.build": 1,
@@ -9564,15 +9564,15 @@
     },
     "1488": {
       "sites": {
-        "core/src/feature/arm64/psnr_hvs_neon.c": 3,
+        "core/src/feature/arm64/psnr_hvs_neon.c": 1,
         "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu": 2,
         "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip": 2,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 2,
-        "core/src/feature/third_party/xiph/psnr_hvs.c": 3,
-        "core/src/feature/x86/psnr_hvs_avx2.c": 3,
+        "core/src/feature/third_party/xiph/psnr_hvs.c": 1,
+        "core/src/feature/x86/psnr_hvs_avx2.c": 1,
         "core/test/meson.build": 1,
         "core/test/test_psnr_hvs_dispatch_invariance.c": 3,
-        "core/test/test_psnr_hvs_simd.c": 5,
+        "core/test/test_psnr_hvs_simd.c": 3,
         "core/test/test_psnr_hvs_twin_exact_sum_contract.py": 5,
         "core/test/test_sycl_fp_arith_contract.c": 2,
         "core/test/test_sycl_fp_arith_probe.cpp": 1,
@@ -9582,7 +9582,7 @@
     },
     "1489": {
       "sites": {
-        "core/src/feature/adm_tools.h": 2,
+        "core/src/feature/adm_tools.h": 1,
         "core/src/feature/barten_csf_tools.h": 4,
         "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/test/barten_csf_cxx.cpp": 1,

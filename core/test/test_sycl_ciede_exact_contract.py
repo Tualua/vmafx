@@ -60,9 +60,11 @@ REFERENCE_LINES = (
     "const float c1 = sqrt(square(color_1.a) + square(color_1.b));",
     "sin(degrees_to_radians(60.0 * exp(-(degrees * degrees))));",
     # Upstream's two float products (Netflix/vmaf libvmaf/src/feature/ciede.c:224-225
-    # and :235-236; the squares are products since ADR-1467). ADR-1476.
-    "const float delta_upcase_h_prime = 2.0 * sqrt(c_prime_1 * c_prime_2) * sin(delta_h_prime / 2.0);",
-    "return sqrt(square(lightness) + square(chroma) + square(hue) + r_sub_t * chroma * hue);",
+    # and :235-236; the squares are products since ADR-1467). ADR-1476. The
+    # explicit (double) converts the product's result, as upstream's implicit
+    # promotion does; an operand is never cast.
+    "const float delta_upcase_h_prime = 2.0 * sqrt((double)(c_prime_1 * c_prime_2)) * sin(delta_h_prime / 2.0);",
+    "return sqrt(square(lightness) + square(chroma) + square(hue) + (double)(r_sub_t * chroma * hue));",
     "de00_sum += ciede2000(",
     "const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));",
 )
@@ -352,12 +354,12 @@ class SyclCiedeExactContractTest(unittest.TestCase):
         # PR #552's cast: not upstream's statement.
         failures = self._edited(
             CPU,
-            "square(hue) + r_sub_t * chroma * hue);",
-            "square(hue) + (double)r_sub_t * chroma * hue);",
+            "(double)(r_sub_t * chroma * hue)",
+            "(double)r_sub_t * chroma * hue",
         )
         self._detects(failures, CPU)
         failures = self._edited(
-            CPU, "sqrt(c_prime_1 * c_prime_2)", "sqrt((double)c_prime_1 * c_prime_2)"
+            CPU, "sqrt((double)(c_prime_1 * c_prime_2))", "sqrt((double)c_prime_1 * c_prime_2)"
         )
         self._detects(failures, CPU)
 

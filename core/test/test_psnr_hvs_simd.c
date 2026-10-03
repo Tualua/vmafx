@@ -242,10 +242,8 @@ static float ref_calc_final_mask(const od_coeff_ref dct_s[64], const od_coeff_re
     /* Upstream's statement (Netflix/vmaf
      * libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317): the float
      * product, then the double root. ADR-1488. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-1488: upstream's promotion
-    s_mask = (float)(sqrt(s_mask * s_gvar) / 32.0);
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-1488: upstream's promotion
-    d_mask = (float)(sqrt(d_mask * d_gvar) / 32.0);
+    s_mask = (float)(sqrt((double)(s_mask * s_gvar)) / 32.0);
+    d_mask = (float)(sqrt((double)(d_mask * d_gvar)) / 32.0);
     if (d_mask > s_mask)
         s_mask = d_mask;
     return s_mask;

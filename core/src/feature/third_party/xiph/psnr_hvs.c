@@ -364,11 +364,11 @@ static double calc_psnrhvs(const unsigned char *_src, int _systride, const unsig
             /* Upstream's statements (Netflix/vmaf
              * libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317): the
              * product of the masking energy and the variance ratio is a float
-             * product, rounded to float before sqrt() widens it. ADR-1488. */
-            // codeql[cpp/integer-multiplication-cast-to-long] — ADR-1488: upstream's float product
-            s_mask = sqrt(s_mask * s_gvar) / 32.f;
-            // codeql[cpp/integer-multiplication-cast-to-long] — ADR-1488: upstream's float product
-            d_mask = sqrt(d_mask * d_gvar) / 32.f;
+             * product, rounded to float before sqrt() widens it. The cast
+             * widens the product's result, as upstream's implicit promotion
+             * does (ADR-1488). */
+            s_mask = sqrt((double)(s_mask * s_gvar)) / 32.f;
+            d_mask = sqrt((double)(d_mask * d_gvar)) / 32.f;
             if (d_mask > s_mask)
                 s_mask = d_mask;
             for (i = 0; i < 8; i++) {

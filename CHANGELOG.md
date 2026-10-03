@@ -376,6 +376,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged (271 passed, 12 skipped, x86-64 and aarch64).
 
 
+- The ten products that CodeQL's `cpp/integer-multiplication-cast-to-long`
+  reported after the upstream-parity reverts (ADR-1475, ADR-1476, ADR-1488) in
+  `ciede.c`, `third_party/xiph/psnr_hvs.c`, `x86/psnr_hvs_avx2.c`,
+  `arm64/psnr_hvs_neon.c`, `integer_adm_kernels.h`, `adm_tools.h` and `iqa/convolve.c` now
+  write the conversion of the product's result explicitly, as
+  `sqrt((double)(a * b))`. The arithmetic and the object code are unchanged;
+  the query reports only implicit widenings, and the `// codeql[...]` comments
+  they carried do not suppress in this repository's CodeQL setup.
+
+
 - **Six more CUDA twins are held to the CPU's bits by the parity gate.**
   `motion_cuda` (also with `debug=true`), `motion_v2_cuda`, `psnr_cuda`,
   `float_ssim_cuda` and `float_ms_ssim_cuda` (with and without `enable_lcs`)

@@ -17,8 +17,11 @@ invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstre
   weights of scales 1..3 moved 1..3 ulp, `adm2` up to 8.5e-8 and
   `vmaf_v0.6.1` up to 1.83e-5 off Netflix on 94 % of frames. Golden gate
   blind (4..5 decimals).
-- **CodeQL finding on that line: suppress, never "fix".** Line above
-  statement: `// codeql[cpp/integer-multiplication-cast-to-long] — ADR-1475`.
+- **CodeQL `cpp/integer-multiplication-cast-to-long` on that line: convert the
+  RESULT explicitly.** `pow(10.0, (double)(params->k * temp * temp))` is the
+  same operation as upstream's implicit promotion (same object code, checked
+  with `objdump`); the query reports only implicit widenings. `// codeql[...]`
+  comments do not suppress in this repository's setup. Never cast an operand.
 - **Three copies, one edit.** CPU header (CUDA + HIP hosts include),
   `sycl/integer_adm_sycl.cpp::dwt_quant_step()`,
   `metal/integer_adm_metal.mm::iadm_dwt_quant_step()`. Twin copies: exponent

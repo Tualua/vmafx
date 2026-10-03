@@ -91,11 +91,13 @@ accumulated several load-bearing modifications on top.
   / `vcvt_f64_f32(vmul_f32(...))` chains. **No FMA, no pre-widen
   of kernel taps.** Changing the arithmetic requires matching all three SIMD
   variants. The vertical-pass expression keeps the direct equivalent spelling
-  and carries a narrow
-  `codeql[cpp/integer-multiplication-cast-to-long]` suppression backed by
-  Research-2031's executable SSIM/MS-SSIM/PU21 domain proof in
-  `core/test/test_iqa_convolve.c`; keep the directive immediately before
-  that exact expression, and never broaden it to the query or file.
+  and writes the
+  conversion of the product's result explicitly,
+  `sum += (double)(img_cache[...] * k->kernel_v[k])`, which is what
+  `cpp/integer-multiplication-cast-to-long` accepts (it reports implicit
+  widenings only; `// codeql[...]` comments do not suppress here). Research-2031's
+  SSIM/MS-SSIM/PU21 domain proof in `core/test/test_iqa_convolve.c` stays the
+  evidence that the product is exact. Never cast an operand.
 
 - **TU-static rename `_calc_scale` → `iqa_calc_scale`** (fork-local,
   ADR-0148). Keep non-reserved spelling on rebase.

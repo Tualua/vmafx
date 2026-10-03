@@ -51,12 +51,19 @@ Fix the following CodeQL alerts (category: **{{ALERT_CATEGORY}}**):
 For each alert:
 
 1. Read the surrounding code; classify the alert as TP (real bug),
-   FP (false positive — needs `// codeql[…]` suppression with cite),
-   or refactor-required.
-2. **Never** suppress without a one-line justification comment naming
-   the ADR / research digest / rebase invariant that forces the
-   suppression. A bare `// codeql[js/path-injection]` is itself a
-   lint violation under CLAUDE.md §12 r12 (touched-file cleanup).
+   FP (false positive), or refactor-required.
+2. **`// codeql[...]` comments do not suppress in this repository's CodeQL
+   setup** (the alerts stay open): never add one. For
+   `cpp/integer-multiplication-cast-to-long` the query
+   (`IntMultToLong.ql`) reports only an IMPLICIT widening of a product, so
+   write the conversion of the product's RESULT explicitly,
+   `(double)(a * b)`, never an operand (`(double)a * b` changes the
+   arithmetic). Compare `objdump -d` of the object before and after: it
+   must be identical. For any other false positive, dismiss the alert
+   through the API (`gh api -X PATCH
+   repos/VMAFx/vmafx/code-scanning/alerts/<n> -f state=dismissed -f
+   dismissed_reason="false positive" -f dismissed_comment="<ADR / digest
+   cite>"`), with the citing ADR or research digest in the comment.
 3. Run `make lint` after every batch of 3-5 fixes; bisect locally
    if a new finding appears.
 

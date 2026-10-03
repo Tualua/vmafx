@@ -194,9 +194,9 @@ static FORCE_INLINE float dwt_quant_step(const struct dwt_model_params *params, 
      * stored, and the exponent k * temp * temp is a float product whose
      * result alone is promoted for pow(). Keeping any of the three in double
      * changes every CSF weight in the last digits and with it every float_adm
-     * score (ADR-1489). */
-    // codeql[cpp/integer-multiplication-cast-to-long] — ADR-1489
-    float Q = 2.0 * params->a * pow(10.0, params->k * temp * temp) /
+     * score. The cast widens the product's result, as upstream's implicit
+     * promotion does (ADR-1489). */
+    float Q = 2.0 * params->a * pow(10.0, (double)(params->k * temp * temp)) /
               dwt_7_9_basis_function_amplitudes[lambda][theta];
 
     return Q;

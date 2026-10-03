@@ -42,20 +42,21 @@ SCALAR = "third_party/xiph/psnr_hvs.c"
 AVX2 = "x86/psnr_hvs_avx2.c"
 NEON = "arm64/psnr_hvs_neon.c"
 # Upstream's two statements, as the scalar reference carries them, and the
-# same statements on the block structure of the SIMD forms. A `(double)` in
-# front of the first operand is what PR #552 added.
+# same statements on the block structure of the SIMD forms. The `(double)`
+# converts the product's result; one in front of the first operand is what
+# PR #552 added.
 CPU_THRESHOLDS = {
     SCALAR: (
-        "s_mask = sqrt(s_mask * s_gvar) / 32.f;",
-        "d_mask = sqrt(d_mask * d_gvar) / 32.f;",
+        "s_mask = sqrt((double)(s_mask * s_gvar)) / 32.f;",
+        "d_mask = sqrt((double)(d_mask * d_gvar)) / 32.f;",
     ),
     AVX2: (
-        "b->s_mask = (float)(sqrt(b->s_mask * b->s_gvar) / 32.0);",
-        "b->d_mask = (float)(sqrt(b->d_mask * b->d_gvar) / 32.0);",
+        "b->s_mask = (float)(sqrt((double)(b->s_mask * b->s_gvar)) / 32.0);",
+        "b->d_mask = (float)(sqrt((double)(b->d_mask * b->d_gvar)) / 32.0);",
     ),
     NEON: (
-        "b->s_mask = (float)(sqrt(b->s_mask * b->s_gvar) / 32.0);",
-        "b->d_mask = (float)(sqrt(b->d_mask * b->d_gvar) / 32.0);",
+        "b->s_mask = (float)(sqrt((double)(b->s_mask * b->s_gvar)) / 32.0);",
+        "b->d_mask = (float)(sqrt((double)(b->d_mask * b->d_gvar)) / 32.0);",
     ),
 }
 WIDE_PRODUCT = re.compile(r"sqrt\(\s*\(double\)\s*(?:b->)?[sd]_mask\s*\*")
@@ -341,7 +342,7 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
         for name, statements in CPU_THRESHOLDS.items():
             with self.subTest(source=name):
                 old = statements[0]
-                new = old.replace("sqrt(", "sqrt((double)", 1)
+                new = old.replace("sqrt((double)(", "sqrt((double)", 1)
                 failures = _contract_failures(_planted(name, old, new))
                 self.assertTrue(any(f"{name}: masking threshold is not" in i for i in failures))
                 self.assertTrue(any(f"{name}: the masking product is widened" in i for i in failures))

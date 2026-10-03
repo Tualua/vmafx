@@ -17,8 +17,11 @@ invariant: float ADM CSF weights (Watson step, Barten CSF) = upstream float arit
   `libvmaf/src/feature/adm_tools.h`. No `double` local, no cast on product
   operand. #552 cast exponent operand, #760 widened all three locals: 32 of
   40 probed steps left Netflix bits, every `float_adm` score too.
-- **CodeQL finding on `Q` line: suppress, never "fix".** Line above:
-  `// codeql[cpp/integer-multiplication-cast-to-long] — ADR-1489`.
+- **CodeQL `cpp/integer-multiplication-cast-to-long` on `Q` line: convert the
+  RESULT explicitly.** `pow(10.0, (double)(params->k * temp * temp))` is
+  upstream's implicit promotion written out (same object code); the query
+  reports only implicit widenings and `// codeql[...]` comments do not
+  suppress here. Never cast an operand.
 - **`barten_csf_tools.h` = upstream float products.** `linear_interpolate()`
   all `float`. `p_0 * f`, `f / 7`, `a * b`, `-b[i] * f`, `csf * mtf * rod`:
   formed in `float`, result promoted. Never promote operand
