@@ -50,6 +50,13 @@ precedence.
 | `VMAF_SYCL_VIF_SUBGROUP_SIZE` | `16` or `32` | _(automatic)_ | Force the sub-group size of the SYCL VIF kernels. Other values are ignored with a warning, as is a size the device lacks. Used by parity and timing runs ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)). |
 | `VMAF_SYCL_SCRATCH_SELFTEST` | `0` | on | Set to `0` to skip the first-use scratch-memory self-test of the SYCL device ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)). |
 
+The GPU dispatch switches (`VMAF_CUDA_DISPATCH`, `VMAF_SYCL_DISPATCH`,
+`VMAF_SYCL_USE_GRAPH`, `VMAF_SYCL_NO_GRAPH`) and the SYCL diagnostic switches
+(`VMAF_SYCL_PROFILE`, `VMAF_SYCL_TIMING`, `VMAF_SYCL_IMPORT_DEBUG`,
+`VMAF_SYCL_CHECKSUM`) are read once per process, the first time libvmaf needs
+them. Set them before the process starts; a later `setenv()` from inside the
+process is not seen.
+
 ## Dispatch strategy syntax
 
 The three `*_DISPATCH` variables share one grammar

@@ -67,6 +67,7 @@ static double monotonic_ms()
 #include "common.h"
 #include "dispatch_strategy.h"
 #include "feature/feature_extractor.h"
+#include "gpu_dispatch_env.h"
 #include "log.h"
 #include "scratch_check.h"
 
@@ -182,6 +183,7 @@ struct VmafSyclState {
     bool profiling_enabled = false;
     bool extractor_timing = false; // per-extractor q.wait() timing
     bool import_debug = false;     // VMAF_SYCL_IMPORT_DEBUG — resolved once at init
+    bool checksum_probe = false;   // VMAF_SYCL_CHECKSUM — resolved once at init
     bool combined_graphs_recorded = false;
 };
 
@@ -304,14 +306,23 @@ static void sycl_log_fp64_note(bool has_fp64)
     }
 }
 
+/* True when the environment variable @name is set and its value starts with
+ * '1' (the meaning every VMAF_SYCL_* diagnostic switch has always had). Read
+ * through the shared once-only snapshot (ADR-0488) instead of a raw getenv(),
+ * which is not thread-safe against a concurrent setenv(). */
+static bool sycl_env_flag(const char *name)
+{
+    const char *const val = vmaf_gpu_dispatch_env_get(name);
+    return val != nullptr && val[0] == '1';
+}
+
 /* Profiling is on when the config asks for it or VMAF_SYCL_PROFILE=1. */
 static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
 {
     // Allow runtime profiling via environment variable
     if (cfg.enable_profiling)
         return true;
-    const char *env_prof = getenv("VMAF_SYCL_PROFILE");
-    return env_prof != nullptr && env_prof[0] == '1';
+    return sycl_env_flag("VMAF_SYCL_PROFILE");
 }
 
 /* Primary queue properties. The primary queue runs on Level Zero immediate
@@ -383,10 +394,9 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
         auto *s = new VmafSyclState{.queue = std::move(q), .copy_queue = std::move(cq)};
         s->profiling_enabled = profiling;
         // Per-extractor timing via q.wait() — no enable_profiling needed
-        const char *env_timing = getenv("VMAF_SYCL_TIMING");
-        s->extractor_timing = (env_timing && env_timing[0] == '1');
-        const char *env_idbg = getenv("VMAF_SYCL_IMPORT_DEBUG");
-        s->import_debug = (env_idbg && env_idbg[0] == '1');
+        s->extractor_timing = sycl_env_flag("VMAF_SYCL_TIMING");
+        s->import_debug = sycl_env_flag("VMAF_SYCL_IMPORT_DEBUG");
+        s->checksum_probe = sycl_env_flag("VMAF_SYCL_CHECKSUM");
         s->has_fp64 = has_fp64;
         *sycl_state = s;
         return 0;
@@ -1626,12 +1636,9 @@ extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsig
                                          const char *path_tag)
 {
     /* Zero-cost gate — must be first, before any allocation or queue work.
-     * Mirror the VMAF_SYCL_PROFILE gate at common.cpp:230. */
-    const char *env = getenv("VMAF_SYCL_CHECKSUM");
-    if (!env || env[0] != '1')
-        return 0;
-
-    if (!state || !state->shared_buf_size)
+     * VMAF_SYCL_CHECKSUM is resolved once in vmaf_sycl_state_init
+     * (state->checksum_probe), like VMAF_SYCL_IMPORT_DEBUG. */
+    if (!state || !state->checksum_probe || !state->shared_buf_size)
         return 0;
 
     /* Always probe the slot compute will actually use (cur_compute).

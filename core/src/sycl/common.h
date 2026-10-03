@@ -450,7 +450,8 @@ void *vmaf_sycl_get_last_upload_event(VmafSyclState *state);
  *   VMAF_SYCL_CHECKSUM path=<path_tag> frame=<frame_index> slot=<N> ref|dis crc=0x<HEX>
  *
  * Zero cost when VMAF_SYCL_CHECKSUM is unset — returns 0 immediately
- * before any allocation or queue work.
+ * before any allocation or queue work. The variable is resolved once in
+ * vmaf_sycl_state_init (like VMAF_SYCL_IMPORT_DEBUG), not per call.
  *
  * Call from both the VA-import path (path_tag="sycl") and the host-upload
  * oracle path (path_tag="host") to capture exactly what compute will read,
