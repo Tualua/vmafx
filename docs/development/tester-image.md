@@ -31,8 +31,8 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
    published release tag). The source is that commit, built with master's recipe as
    ADR-1347 does for recovery; anything not reachable from master is refused. The image
    tag is `<git describe of the commit>-tester`, for example
-   `v1.0.0-rc.2-312-g1a2b3c4d-tester`. A `release: published` event does the same for
-   new releases. The workflow builds both architectures on native runners, runs the
+   `v1.0.0-rc.2-312-g1a2b3c4d-tester`. Publishing needs approval in the `tester-publish`
+   environment (master only); `release-publish` is for product releases and is not used. The workflow builds both architectures on native runners, runs the
    documented `docker run` line on each, validates the report, pushes by digest, merges
    one index, signs it keyless and attests it, and publishes
    `ghcr.io/vmafx/vmafx:<tag>-tester`. The package `ghcr.io/vmafx/vmafx` is already public,
@@ -40,7 +40,7 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
 2. **macOS bundle**: dispatch `Publish macOS Tester Bundle` on `master` with `ref` (or
    `tag`) and `publish: true`; the file is `vmafx-tester-macos-arm64-<git describe>`. `publish: false` builds, runs the bundle's own report on the hosted
    runner and uploads a 14-day workflow artifact only. With `publish: true` the
-   `release-publish` environment gate applies, then the bundle is attested, signed and
+   `tester-publish` environment gate (master only, maintainer approval) applies, then the bundle is attested, signed and
    attached to a new prerelease `tester-<date>-<sha8>` (not a product release; no other
    workflow starts, because the release is created with `GITHUB_TOKEN`).
 

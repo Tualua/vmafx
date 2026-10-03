@@ -3677,6 +3677,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the maintainer notes](docs/development/tester-image.md).
 
 
+- **The macOS tester bundle's link check follows `@rpath` and skips install names,
+  and both tester publish jobs run in the `tester-publish` environment.**
+  `scripts/ci/check-macos-bundle-links.sh` resolves `@rpath` through each file's
+  `LC_RPATH`, skips a dylib's own install name and accepts a reference only when it
+  resolves inside the bundle or to `/usr/lib` or `/System/Library`; Tcl/Tk is no longer
+  bundled. The tester image is published by dispatch on master only. See
+  [the maintainer notes](docs/development/tester-image.md).
+
+
 - **`vmaf_init()` accepts an uninitialised handle again, as upstream libvmaf
   does.** Since ADR-1032 it returned `-EINVAL` whenever `*vmaf` was not NULL.
   Callers written against upstream, whose own CLI and tests declare

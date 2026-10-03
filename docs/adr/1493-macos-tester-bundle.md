@@ -44,6 +44,12 @@ Provenance is a GitHub build attestation (`gh attestation verify`) and a cosign 
 bundle (`cosign verify-blob`), the same tools `supply-chain.yml` uses. `run.sh` starts
 the report under `sandbox-exec` with network access denied when macOS offers it.
 
+Publishing runs behind the `tester-publish` environment (master only, the maintainer as
+required reviewer), not `release-publish`, which is tag-only and guards product releases:
+tester artifacts are evidence for a master commit, so they follow master's protection.
+The `tag` input stays on `tester-publish` as well; nothing about it requires
+`release-publish`.
+
 The bundle is a release asset of a prerelease `tester-<date>-<sha>` created with
 `GITHUB_TOKEN`: such a release starts no other workflow, and release-please follows
 `v*` tags only. A workflow artifact would need a GitHub login and expires.

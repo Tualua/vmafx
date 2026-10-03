@@ -3,12 +3,11 @@
 # Triggers:
 #   - push to master that touches the tester image inputs: build, run the
 #     documented `docker run` line and validate the report; nothing is pushed
-#   - publication of a release (`release.published`): the same, then publish
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
 #     `master`) or `tag` (an existing published tag): the same, then publish; the
 #     source is that commit with this ref's build recipe (ADR-1347)
 #
-# Produces (only on release or dispatch):
+# Produces (only on dispatch):
 #   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester
 #   (linux/amd64 + linux/arm64; `v1.0.0-rc.2-tester` for the tagged commit itself)
 # a tag of the existing, public package: a new package would start private.
@@ -28,9 +27,6 @@ on:
       - python/requirements-test-lock.txt
       - docs/hardware-reports/report.schema.json
       - .github/workflows/docker-publish-tester.yml
-  release:
-    types:
-      - published
   workflow_dispatch:
     inputs:
       ref:
@@ -44,13 +40,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-publish-tester-${{ github.event.release.tag_name || github.event.inputs.ref || github.event.inputs.tag || github.sha }}
+  group: docker-publish-tester-${{ github.event.inputs.ref || github.event.inputs.tag || github.sha }}
   cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: vmafx/vmafx
-  PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+  PUBLISH_TAG: ${{ github.event.inputs.tag }}
   SOURCE_REF: ${{ github.event.inputs.ref }}
 
 jobs:
@@ -302,7 +298,7 @@ jobs:
     if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: release-publish
+    environment: tester-publish
     permissions:
       contents: read
       packages: write

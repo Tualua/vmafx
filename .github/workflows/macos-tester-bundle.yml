@@ -168,7 +168,7 @@ jobs:
     if: github.event.inputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: release-publish
+    environment: tester-publish
     permissions:
       contents: write      # create the prerelease and its tag
       id-token: write      # keyless signing and attestation

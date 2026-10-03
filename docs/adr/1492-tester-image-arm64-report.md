@@ -30,6 +30,12 @@ are committed as `docs/hardware-reports/<date>-<cpu-slug>.json`, validated by
 `scripts/ci/check-hardware-reports.py` (JSON schema, an integrity hash computed by the
 tool, "built by the hosted workflow", verdict consistency), with a generated index.
 
+Publishing runs behind the `tester-publish` environment (master only, the maintainer as
+required reviewer; `release-publish` is tag-only and guards product releases). Because
+that environment admits runs on master only, the image is published by
+`workflow_dispatch` on master (input `ref` or `tag`) and no longer on `release: published`,
+whose run would sit on the tag ref.
+
 The image tag lives under the already public `ghcr.io/vmafx/vmafx` package, as the
 cuda13 and rocm10 variants do, because a new GHCR package starts private and its
 visibility cannot be changed through the API. It is built per architecture on native

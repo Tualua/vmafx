@@ -151,7 +151,7 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     stub(stubs / "stat", 'echo "1 $*"\n')
     stub(
         stubs / "tar",
-        'case "$1" in -xzf) mkdir -p "$4/python/bin" "$4/python/include" "$4/python/share" "$4/python/lib/python3.13"; printf "#!/bin/sh\\nexit 0\\n" > "$4/python/bin/python3"; chmod +x "$4/python/bin/python3";; --uid) : > "$6";; *) : ;; esac\n',
+        'case "$1" in -xzf) mkdir -p "$4/python/bin" "$4/python/include" "$4/python/share" "$4/python/lib/python3.13/lib-dynload"; printf "#!/bin/sh\\nexit 0\\n" > "$4/python/bin/python3"; chmod +x "$4/python/bin/python3";; --uid) : > "$6";; *) : ;; esac\n',
     )
     stub(stubs / "otool", 'echo "$2:"; printf "\\t/usr/lib/libSystem.B.dylib (c)\\n"\n')
     stub(stubs / "file", "echo text\n")

@@ -90,6 +90,11 @@ stdlib=$(echo "$bundle"/runtime/lib/python3.*)
 for dir in test idlelib tkinter turtledemo ensurepip lib2to3 site-packages/pip; do
   [ -e "$stdlib/$dir" ] && rm -r "${stdlib:?}/$dir"
 done
+# Tcl/Tk and the packages that ship with it (itcl, thread, tdbc), and the _tkinter module
+# that links them: the report uses none of it and each library would need checking.
+find "$bundle/runtime/lib" -maxdepth 1 \( -name 'libtcl*' -o -name 'libtk*' -o -name 'tcl*' \
+  -o -name 'tk*' -o -name 'itcl*' -o -name 'thread*' -o -name 'tdbc*' \) -exec rm -r {} +
+find "$stdlib/lib-dynload" -name '_tkinter*' -delete
 find "$bundle/runtime" -name '*.pyc' -delete
 find "$bundle/runtime" -name __pycache__ -type d -prune -exec rm -r {} + 2>/dev/null || true
 rm -f "$bundle"/runtime/bin/idle3* "$bundle"/runtime/bin/pydoc3* "$bundle"/runtime/bin/pip*
