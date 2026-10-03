@@ -628,6 +628,27 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     if (exp_rc != 0)
         return exp_rc;
 
+    /* Descriptor dump for every exported layer and object (ADR-1597 chroma-import
+     * probe). Same cached VMAF_SYCL_IMPORT_DEBUG switch as the per-import line
+     * below; logging only. */
+    if (vmaf_sycl_import_debug_enabled(state)) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO, "VMAF_SYCL_IMPORT_DEBUG [%s] num_layers=%u num_objects=%u\n",
+                 is_ref ? "ref" : "dis", desc.num_layers, desc.num_objects);
+        for (uint32_t i = 0; i < desc.num_layers && i < 4; i++) {
+            vmaf_log(VMAF_LOG_LEVEL_INFO,
+                     "VMAF_SYCL_IMPORT_DEBUG layer[%u] drm_format=0x%08x num_planes=%u obj=%u "
+                     "offset=%u pitch=%u\n",
+                     i, desc.layers[i].drm_format, desc.layers[i].num_planes,
+                     desc.layers[i].object_index[0], desc.layers[i].offset[0],
+                     desc.layers[i].pitch[0]);
+        }
+        for (uint32_t i = 0; i < desc.num_objects && i < 4; i++) {
+            vmaf_log(VMAF_LOG_LEVEL_INFO,
+                     "VMAF_SYCL_IMPORT_DEBUG obj[%u] size=%u modifier=0x%016" PRIx64 "\n", i,
+                     desc.objects[i].size, (uint64_t)desc.objects[i].drm_format_modifier);
+        }
+    }
+
     /* Extract Y plane metadata from the first layer */
     uint64_t const modifier = desc.objects[desc.layers[0].object_index[0]].drm_format_modifier;
     uint32_t const y_offset = desc.layers[0].offset[0];

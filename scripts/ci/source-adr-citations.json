@@ -10367,6 +10367,12 @@
         "core/test/test_sycl_runtime_contract.py": 2
       },
       "target": "1596-sycl-va-import-immediate-cmdlist.md"
+    },
+    "1597": {
+      "sites": {
+        "core/src/sycl/dmabuf_import.cpp": 1
+      },
+      "target": "1597-sycl-zerocopy-planar-chroma-import.md"
     }
   },
   "retired": {
