@@ -10374,6 +10374,8 @@
     },
     "1597": {
       "sites": {
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,
         "core/src/sycl/chroma_import.cpp": 1,
         "core/src/sycl/chroma_import.h": 3,

@@ -20,3 +20,9 @@ returns `-ENOTSUP` when it fails; the helper logs the one error line.
 `dist_pic` on the nocopy path. `test_sycl_zerocopy_guards` has one row per
 SYCL extractor and counts the registrations, so a new `_sycl` extractor
 without a row fails that test.
+
+`psnr_sycl` and `psnr_hvs_sycl` read chroma, so their chroma branch calls
+`vmaf_sycl_require_chroma` instead (ADR-1597): host pictures upload as
+before; NULL pictures pass only when the zero-copy import marked the chroma
+for this frame, else `-ENOTSUP`. **On rebase**: keep it ahead of any read of
+`vmaf_sycl_get_shared_plane(.., 1|2)`; `test_sycl_zerocopy_parity` pins it.

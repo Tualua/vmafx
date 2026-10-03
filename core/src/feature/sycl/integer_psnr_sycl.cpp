@@ -500,13 +500,15 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     /* Upload the frame's chroma BEFORE graph_submit, which puts the
      * combined queue behind the last upload. Once per frame for every
-     * twin; the zero-copy import path hands no host pictures and
-     * imports luma only. */
+     * twin. The zero-copy import path hands no host pictures: its chroma
+     * is already in the shared planes, usable only when the import marked
+     * it for this frame (ADR-1597). */
     if (s->n_planes > 1U) {
-        if (vmaf_sycl_require_host_pictures("psnr_sycl", ref_pic, dist_pic)) {
+        if (vmaf_sycl_require_chroma(state, "psnr_sycl", ref_pic, dist_pic)) {
             return -ENOTSUP;
         }
-        int const chroma_err = vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic);
+        int const chroma_err =
+            (ref_pic && dist_pic) ? vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic) : 0;
         if (chroma_err) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: frame %u chroma upload failed (%d)\n", index,
                      chroma_err);

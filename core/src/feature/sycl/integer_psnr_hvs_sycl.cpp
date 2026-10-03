@@ -1074,11 +1074,14 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     int err = 0;
     if (s->n_active_planes > 1U) {
-        /* The zero-copy import path hands no host pictures and imports luma only. */
-        if (vmaf_sycl_require_host_pictures("psnr_hvs_sycl", ref_pic, dist_pic)) {
+        /* Zero-copy input hands no host pictures; its chroma is in the shared
+         * planes only when the import marked it for this frame (ADR-1597). */
+        if (vmaf_sycl_require_chroma(s->sycl_state, "psnr_hvs_sycl", ref_pic, dist_pic)) {
             return -ENOTSUP;
         }
-        err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+        if (ref_pic && dist_pic) {
+            err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+        }
     }
     if (!err) {
         err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
