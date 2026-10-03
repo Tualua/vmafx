@@ -57,7 +57,7 @@ source review.
 | `integer_adm_sycl.cpp`, `/core/test/test_sycl_adm_parity.c` | [adm](AGENTS.d/adm.md) | Integer ADM tiny frames and linkage; Scale 0 = CPU int16 semantics; scales 1-3 >> 32 rounding term. |
 | `/core/meson_options.txt`, `/core/meson.build`, `/core/src/meson.build` | [build](AGENTS.d/build.md) | SYCL feature TUs compile only when meson setup -Denable_sycl=true. |
 | `integer_cambi_sycl.cpp`, `/core/test/test_sycl_cambi_parity.c` | [cambi](AGENTS.d/cambi.md) | integer_cambi_sycl.cpp — fully device-resident, graph-registered; options_cambi_sycl sync. |
-| `integer_ciede_sycl.cpp`, `sycl_ciede_math.h`, `/core/test/test_sycl_ciede_parity.c` | [ciede](AGENTS.d/ciede.md) | integer_ciede_sycl.cpp stages Y/U/V at native size; statements on fp32 pairs match ciede.c. |
+| `integer_ciede_sycl.cpp`, `sycl_ciede_math.h`, `/core/test/test_sycl_ciede_parity.c` | [ciede](AGENTS.d/ciede.md) | integer_ciede_sycl.cpp reads Y/U/V at native size from the shared planes; statements on fp32 pairs match ciede.c. |
 | `/scripts/ci/clang-tidy-sycl.sh`, `/scripts/ci/gen-sycl-compile-commands.py`, `/.clang-tidy` | [clang-tidy](AGENTS.d/clang-tidy.md) | icpx-aware clang-tidy; stock LLVM clang-tidy cannot resolve <sycl/sycl.hpp>. |
 | `/core/src/sycl/dmabuf_import.cpp`, `integer_motion_sycl.cpp` | [dmabuf-vaapi](AGENTS.d/dmabuf-vaapi.md) | VAAPI / dmabuf zero-copy import — FFmpeg libvmaf_sycl pipeline. |
 | `/scripts/ci/exact_twins.d/*`, `/scripts/ci/cross_backend_calibration.py`, `/core/test/test_sycl_exact_twins.c` | [exact-twins](AGENTS.d/exact-twins.md) | Twins declared exact as a group; bit-identical with CPU reference, measured at --precision max. |

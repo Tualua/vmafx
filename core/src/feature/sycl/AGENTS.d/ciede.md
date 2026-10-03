@@ -3,16 +3,21 @@ paths:
   - core/src/feature/sycl/integer_ciede_sycl.cpp
   - core/src/feature/sycl/sycl_ciede_math.h
   - core/test/test_sycl_ciede_parity.c
-invariant: integer_ciede_sycl.cpp stages Y/U/V at native size; statements on fp32 pairs match ciede.c.
+invariant: integer_ciede_sycl.cpp reads Y/U/V at native size from the shared planes; statements on fp32 pairs match ciede.c.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CIEDE2000 extractor and kernels
 
-- **`integer_ciede_sycl.cpp` stages Y/U/V at native size; kernel
-  subsamples chroma** ([Research-2120](../../../../../docs/research/2120-sycl-ciede-throughput.md)).
-  `stage_plane()` packs each plane into host USM (`plane_w[p]` x
-  `plane_h[p]`, chroma by `picture.c`'s ceil rule `(w + ss) >> ss`),
-  one DMA per plane. `ciede_pixel()` reads chroma at
+- **`integer_ciede_sycl.cpp` reads Y/U/V at native size from the shared
+  planes; kernel subsamples chroma** ([Research-2120](../../../../../docs/research/2120-sycl-ciede-throughput.md)).
+  Since ADR-1598 there is no per-extractor staging: luma comes from the
+  shared frame, Cb / Cr from the shared chroma planes
+  (`vmaf_sycl_shared_chroma_upload` for host pictures, the import for
+  zero-copy, gated by `vmaf_sycl_require_chroma`), packed tight at
+  `plane_w[p]` x `plane_h[p]` (chroma by `picture.c`'s ceil rule
+  `(w + ss) >> ss`). `ssimulacra2_sycl.cpp` does the same: its `d_raw`
+  are non-owning shared-plane pointers, read-only, never copied or
+  written in place. `ciede_pixel()` reads chroma at
   `(x >> ss_hor, y >> ss_ver)` = nearest-neighbour upsample of
   `ciede.c::scale_chroma_planes`: horizontal from `ss_hor`, vertical
   from `ss_ver` (fork's fixed flags, not upstream's transposed pair).
