@@ -2,6 +2,12 @@ if not get_option('enable_tests')
     subdir_done()
 endif
 
+# Hybrid toolchains (CC=gcc CXX=icpx, ADR-1593): every
+# test links sycl_dependency, whose link args carry -fsycl and the AOT
+# target flags. Only the SYCL C++ driver accepts them, so with SYCL on,
+# link tests as C++. Every new test executable must pass these kwargs.
+test_link_kwargs = is_sycl_enabled ? {'link_language' : 'cpp'} : {}
+
 # ADR-0707: rust_tad_dep is available here (defined in src/meson.build via
 # subdir('src') before subdir('test')). Only test_tad_rust uses it directly —
 # other tests link against libvmaf.so (shared) which already carries the Rust
@@ -752,6 +758,7 @@ test_metal_ms_ssim_option_semantics = executable('test_metal_ms_ssim_option_sema
     ['test.c', 'test_metal_ms_ssim_option_semantics.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies : math_lib,
+    kwargs : test_link_kwargs,
 )
 test('test_metal_ms_ssim_option_semantics', test_metal_ms_ssim_option_semantics,
     suite : ['fast'],
@@ -859,6 +866,7 @@ test_hip_wavefront_reduce = executable('test_hip_wavefront_reduce',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
@@ -869,6 +877,7 @@ test_pool_percentile = executable('test_pool_percentile',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, stdatomic_dependency, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # T-UPSTREAM-930 / ADR-1194 — integer-ADM angle_flag predicate parity.
@@ -882,6 +891,7 @@ test_adm_angle_flag = executable('test_adm_angle_flag',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_adm_angle_flag', test_adm_angle_flag, suite : ['fast'])
 
@@ -893,6 +903,7 @@ test_adm_gain_limit = executable('test_adm_gain_limit',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_adm_gain_limit', test_adm_gain_limit, suite : ['fast'])
 
@@ -901,6 +912,7 @@ test_context = executable('test_context',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies:[stdatomic_dependency, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 test_picture_lib = static_library('test_picture_impl',
@@ -914,6 +926,7 @@ test_picture = executable('test_picture',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # ADR-0928 cycle N+1: picture_v2 unit tests
@@ -922,12 +935,14 @@ test_picture_v2 = executable('test_picture_v2',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 test_propagate_metadata = executable('test_propagate_metadata',
     ['test.c', 'test_propagate_metadata.c', '../src/metadata_handler.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_feature_collector = executable('test_feature_collector',
@@ -940,6 +955,7 @@ test_feature_collector = executable('test_feature_collector',
     c_args : vmaf_cflags_common,
     dependencies: [pthread_dependency, predict_test_dependencies],
     objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1359: device-twin lookup for a CPU extractor name and the registered-
@@ -951,6 +967,7 @@ test_feature_backend_twin = executable('test_feature_backend_twin',
     link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf],
     c_args : vmaf_cflags_common,
     dependencies: [pthread_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Finding R2-10: flush_context terminal-flush ordering. White-box test that
@@ -962,6 +979,7 @@ test_flush_context_ordering = executable('test_flush_context_ordering',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # T-ASYNC-EXTRACTOR-THREAD-POOL-EINVAL-2026-10-01: an extractor with submit()
@@ -974,6 +992,7 @@ test_async_extractor_thread_pool = executable('test_async_extractor_thread_pool'
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # Coverage follow-up to PR #313 (R3 from
@@ -990,6 +1009,7 @@ test_output = executable('test_output',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
     override_options : test_output_lto_override,
+    kwargs : test_link_kwargs,
 )
 
 test_log = executable('test_log',
@@ -1002,6 +1022,7 @@ test_log = executable('test_log',
     # than through #include / direct-compile.
     link_with : log_cpp23_lib,
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Public API coverage test: vmaf_score_at_index, vmaf_model_collection_load,
@@ -1014,6 +1035,7 @@ test_public_api_score = executable('test_public_api_score',
     include_directories : [libvmaf_inc, test_inc],
     link_with : libvmaf_public_link,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # Linux static-link fault control for output_file_open(). The project's
@@ -1029,6 +1051,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         link_args : ['-Wl,--wrap=open64'],
         dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+        kwargs : test_link_kwargs,
     )
     test('test_output_open_eintr', test_output_open_eintr, suite : ['fast'])
 endif
@@ -1037,6 +1060,7 @@ test_thread_pool = executable('test_thread_pool',
     ['test.c', 'test_thread_pool.c', '../src/thread_pool.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Source inclusion allows deterministic pthread failure and wakeup injection.
@@ -1056,6 +1080,7 @@ if has_cond_timedwait
       ['test.c', 'test_thread_pool_backpressure.c'],
       include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
       dependencies : [pthread_dependency, thread_lib],
+      kwargs : test_link_kwargs,
   )
 endif
 
@@ -1116,6 +1141,7 @@ test_pdjson = executable('test_pdjson',
     include_directories : [test_inc, include_directories('../src')],
     link_with : pdjson_default_impl,
     c_args : ['-Drun_tests=vmafx_test_pdjson_default_run_tests'],
+    kwargs : test_link_kwargs,
 )
 
 foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
@@ -1136,6 +1162,7 @@ foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
         include_directories : [test_inc, include_directories('../src')],
         link_with : increment_impl,
         c_args : ['-Drun_tests=vmafx_test_pdjson_' + increment_case[0] + '_run_tests'],
+        kwargs : test_link_kwargs,
     )
     test(increment_test_name, increment_test, suite : ['fast'])
 endforeach
@@ -1149,6 +1176,7 @@ test_cjson = executable('test_cjson',
     ['test.c', 'test_cjson.c', '../src/mcp/3rdparty/cJSON/cJSON.c'],
     include_directories : [test_inc, include_directories('../src/mcp/3rdparty/cJSON')],
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_cjson', test_cjson, suite : ['fast'])
 
@@ -1160,6 +1188,7 @@ test_model = executable('test_model',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     objects : [libsvm_static_lib.extract_all_objects(recursive: true),
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+               kwargs : test_link_kwargs,
 )
 
 # Duplicate-`model`-key libsvm leak regression (fuzz_json_model LeakSanitizer
@@ -1177,6 +1206,7 @@ test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     objects : [libsvm_static_lib.extract_all_objects(recursive: true),
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+               kwargs : test_link_kwargs,
 )
 
 # Netflix/vmaf#1242 regression: VmafFeatureDictionary ownership contract on
@@ -1189,6 +1219,7 @@ test_model_feature_overload_ownership = executable('test_model_feature_overload_
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     objects : [libsvm_static_lib.extract_all_objects(recursive: true),
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+               kwargs : test_link_kwargs,
 )
 
 # Public-only failed-registration ownership regression (Research-2048).
@@ -1197,6 +1228,7 @@ test_model_registration_ownership = executable('test_model_registration_ownershi
     include_directories : [libvmaf_inc, test_inc],
     link_with : libvmaf_public_link,
     dependencies : [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 
 # Fault control: private dictionary-copy failure, public registration callers.
@@ -1214,6 +1246,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         link_args : ['-Wl,--wrap=vmaf_dictionary_copy'],
         dependencies : [math_lib, pthread_dependency, thread_lib],
+        kwargs : test_link_kwargs,
     )
     test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
 endif
@@ -1232,6 +1265,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
         link_args : ['-Wl,--wrap=realloc'],
         c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
         dependencies : [math_lib, pthread_dependency, thread_lib],
+        kwargs : test_link_kwargs,
     )
     test('test_model_collection_growth', test_model_collection_growth, suite : ['fast'])
 endif
@@ -1247,6 +1281,7 @@ test_model_collection_api = executable('test_model_collection_api',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
     dependencies : [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 
 test_predict = executable('test_predict',
@@ -1258,6 +1293,7 @@ test_predict = executable('test_predict',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     objects : [libsvm_static_lib.extract_all_objects(recursive: true),
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+               kwargs : test_link_kwargs,
 )
 
 # Coverage-targeted runtime tests for vendored libsvm 3.24 (svm.cpp).
@@ -1272,6 +1308,7 @@ test_svm_api = executable('test_svm_api',
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    kwargs : test_link_kwargs,
 )
 
 # Regression test for the sequential-realloc double-free fixed in PR #708.
@@ -1285,6 +1322,7 @@ test_svm_multiclass = executable('test_svm_multiclass',
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    kwargs : test_link_kwargs,
 )
 
 # SAN-MODEL-MALLOC-OOB regression suite (ADR-0889). Covers the vendored
@@ -1297,6 +1335,7 @@ test_svm_parser = executable('test_svm_parser',
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    kwargs : test_link_kwargs,
 )
 
 # Coverage-targeted unit tests for the vendored IQA helpers
@@ -1323,6 +1362,7 @@ test_iqa_helpers = executable('test_iqa_helpers',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 
@@ -1349,7 +1389,8 @@ test_feature_extractor = executable('test_feature_extractor',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Registration identity and checked growth, through private and public callers.
@@ -1396,7 +1437,8 @@ test_fex_ctx_vector = executable('test_fex_ctx_vector',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Keep public calls in a separate executable: private objects in the caller
@@ -1406,6 +1448,7 @@ test_fex_ctx_vector_public = executable('test_fex_ctx_vector_public',
     include_directories : [libvmaf_inc, test_inc],
     link_with : libvmaf_public_link,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # Link-time shims synchronize normal pool growth and force legal realloc moves.
@@ -1437,7 +1480,8 @@ if not get_option('b_lto')
           log_cpp23_test_objects,
           libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
           libsvm_static_lib.extract_all_objects(recursive: true),
-        ] + wave8_opt_only_objects
+        ] + wave8_opt_only_objects,
+        kwargs : test_link_kwargs,
     )
     test('test_fex_pool_growth', test_fex_pool_growth, suite : ['fast'], timeout : 15)
 endif
@@ -1447,6 +1491,7 @@ test_dict = executable('test_dict',
     ['test.c', 'test_dict.cpp', '../src/dict.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_opt = executable('test_opt',
@@ -1457,6 +1502,7 @@ test_opt = executable('test_opt',
     # full wave8_cpp23_objects would pull in read_json_model_cpp23_lib which
     # references pdjson symbols not present in this test's link recipe.
     objects : wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_cpu = executable('test_cpu',
@@ -1464,6 +1510,7 @@ test_cpu = executable('test_cpu',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     objects : libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Pins down the VMAF_<BACKEND>_DISPATCH env-variable parser's strict-match
@@ -1474,12 +1521,14 @@ test_gpu_dispatch_parse = executable('test_gpu_dispatch_parse',
     ['test.c', 'test_gpu_dispatch_parse.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_ref = executable('test_ref',
     ['test.c', 'test_ref.c', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_feature = executable('test_feature',
@@ -1487,6 +1536,7 @@ test_feature = executable('test_feature',
      '../src/feature/feature_name.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_ciede = executable('test_ciede',
@@ -1494,6 +1544,7 @@ test_ciede = executable('test_ciede',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1476 — ciede2000() forms upstream's two float products
@@ -1507,6 +1558,7 @@ test_ciede_upstream_products = executable('test_ciede_upstream_products',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_ciede_upstream_products', test_ciede_upstream_products, suite : ['fast'])
 
@@ -1527,6 +1579,7 @@ test_ciede_device_math = executable('test_ciede_device_math',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, gpu_all_deps, math_lib],
     c_args : vmaf_strict_fp_args,
+    kwargs : test_link_kwargs,
 )
 test('test_ciede_device_math', test_ciede_device_math, suite : ['fast'])
 
@@ -1535,6 +1588,7 @@ test_delta_e_itp = executable('test_delta_e_itp',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # PU21 HDR perceptual adapter — encoder + PU-PSNR + PQ EOTF + PU-SSIM oracle.
@@ -1546,6 +1600,7 @@ test_pu21 = executable('test_pu21',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1113: SHARED Pelorus <-> vmafx interop ABI conformance fixture. Compiles
@@ -1563,6 +1618,7 @@ test_pelorus_interop = executable('test_pelorus_interop',
      '../src/interop/pelorus_qp_report_csv.c',
      '../src/interop/pelorus_version.c'],
     include_directories : [libvmaf_inc, test_inc],
+    kwargs : test_link_kwargs,
 )
 
 # LPIPS registration tests — verify feature wiring without depending on a
@@ -1583,7 +1639,8 @@ test_lpips = executable('test_lpips',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # DISTS-Sq registration tests — mirrors test_lpips and verifies the
@@ -1603,7 +1660,8 @@ test_dists = executable('test_dists',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # FastDVDnet temporal pre-filter (T6-7) — same registration-only test
@@ -1625,7 +1683,8 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # MobileSal saliency registration tests (T6-2a) — same pattern as
@@ -1647,7 +1706,8 @@ test_mobilesal = executable('test_mobilesal',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # TransNet V2 shot-boundary detector — structural test, no real ORT
@@ -1668,7 +1728,8 @@ test_transnet_v2 = executable('test_transnet_v2',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_cambi = executable('test_cambi',
@@ -1676,6 +1737,7 @@ test_cambi = executable('test_cambi',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 cambi_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
@@ -1698,6 +1760,7 @@ test_cambi_simd = executable('test_cambi_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Every other CAMBI per-stage SIMD kernel (decimate, anti-dithering, mode
@@ -1708,6 +1771,7 @@ test_cambi_stage_simd = executable('test_cambi_stage_simd',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 
 # CAMBI spatial-mask row kernels (compute_dp_row / compute_mask_row):
@@ -1730,6 +1794,7 @@ test_cambi_spatial_mask_simd = executable('test_cambi_spatial_mask_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -1757,7 +1822,8 @@ test_speed = executable('test_speed',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Frame buffers of the CPU SpEED extractors: speed_temporal at speed_prescale > 1
@@ -1780,7 +1846,8 @@ test_speed_frame_buffers = executable('test_speed_frame_buffers',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # The lanczos4 prescale weight table the device-resident SpEED twins read
@@ -1805,7 +1872,8 @@ test_speed_lanczos4_weights = executable('test_speed_lanczos4_weights',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_speed_lanczos4_weights', test_speed_lanczos4_weights, suite : ['fast'])
 
@@ -1830,7 +1898,8 @@ test_speed_filter = executable('test_speed_filter',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 # 1620 filter cases: 0.3 s in a release build, above meson's default 30 s under
 # UBSan on a hosted runner (Sanitizers (undefined), 2026-10-02).
@@ -1868,7 +1937,8 @@ foreach upstream_form : [['test_speed_upstream_form', []],
           log_cpp23_test_objects,
           libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
           libsvm_static_lib.extract_all_objects(recursive: true),
-        ] + wave8_opt_only_objects
+        ] + wave8_opt_only_objects,
+        kwargs : test_link_kwargs,
     )
     test(upstream_form[0], upstream_form_exe, suite : ['fast'], timeout : 300)
 endforeach
@@ -1890,7 +1960,8 @@ test_speed_qa = executable('test_speed_qa',
       log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_luminance_tools = executable('test_luminance_tools',
@@ -1898,6 +1969,7 @@ test_luminance_tools = executable('test_luminance_tools',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../src/feature/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_cli_parse = executable('test_cli_parse',
@@ -1907,6 +1979,7 @@ test_cli_parse = executable('test_cli_parse',
     c_args : [compat_cflags],
     cpp_args : [compat_cflags],
     dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Netflix/vmaf#743 regression: the CLI progress spinner must fall back to an
@@ -1917,6 +1990,7 @@ test_spinner = executable('test_spinner',
     ['test.c', 'test_spinner.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../tools/')],
     dependencies : [pthread_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # test_y4m_411_oob uses POSIX fmemopen which has no MSVC/MinGW
@@ -1931,6 +2005,7 @@ if host_machine.system() != 'windows'
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         c_args : [compat_cflags],
         dependencies: [pthread_dependency, sycl_dependency],
+        kwargs : test_link_kwargs,
     )
 
     # T-VIDINPUT-ODD-DIMENSION-READBACK-UNTESTED-2026-10-01: raw and y4m
@@ -1945,6 +2020,7 @@ if host_machine.system() != 'windows'
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         c_args : [compat_cflags],
         dependencies: [pthread_dependency, sycl_dependency],
+        kwargs : test_link_kwargs,
     )
 
     # test_cli_parse_long_only_args forks a child to drive
@@ -1960,6 +2036,7 @@ if host_machine.system() != 'windows'
         c_args : [compat_cflags],
         cpp_args : [compat_cflags],
         dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
+        kwargs : test_link_kwargs,
     )
 
     # test_y4m_alloc_failure drives the y4m parser against a header that
@@ -1974,6 +2051,7 @@ if host_machine.system() != 'windows'
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         c_args : [compat_cflags],
         dependencies: [pthread_dependency, sycl_dependency],
+        kwargs : test_link_kwargs,
     )
 endif
 
@@ -1982,6 +2060,7 @@ test_psnr = executable('test_psnr',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 2 — drives the integer_psnr extract paths (10/12/16-bit
@@ -2003,7 +2082,8 @@ test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # T-UPSTREAM-1109 / ADR-1193 — the `uncapped` option that splits the
@@ -2026,7 +2106,8 @@ test_psnr_uncapped = executable('test_psnr_uncapped',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 2 — drives integer_motion (v1) motion_force_zero +
@@ -2047,7 +2128,8 @@ test_integer_motion_coverage = executable('test_integer_motion_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 2 — drives integer_motion_v2 pipelined extractor:
@@ -2069,7 +2151,8 @@ test_integer_motion_v2_coverage = executable('test_integer_motion_v2_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 3 — integer_ssim.c enable_db / clip_db / 10-bit HBD paths.
@@ -2090,7 +2173,8 @@ test_ssim_coverage = executable('test_ssim_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 3 — integer_adm.c end-to-end: default, debug=true,
@@ -2111,7 +2195,8 @@ test_adm_coverage = executable('test_adm_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1325 — integer-ADM CSF fixed-point normalisation: full-scale
@@ -2133,7 +2218,8 @@ test_adm_csf_representable = executable('test_adm_csf_representable',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1472 (T-ADM-AIM-BARTEN-SCALE-TERM-WRAP-2026-10-01): the fixed-point CSF
@@ -2155,7 +2241,8 @@ test_integer_adm_cm_budget = executable('test_integer_adm_cm_budget',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1397: host tail of calc_psnrhvs() for the GPU twins. One running float
@@ -2166,6 +2253,7 @@ test_psnr_hvs_score = executable('test_psnr_hvs_score',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1409: host tail of compute_motion_simd() for the GPU float_motion twins.
@@ -2176,6 +2264,7 @@ test_float_motion_sad = executable('test_float_motion_sad',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_float_motion_sad', test_float_motion_sad, suite : ['fast'])
 
@@ -2197,7 +2286,8 @@ test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 3 — ssimulacra2.c end-to-end: default 8-bit, identical
@@ -2218,7 +2308,8 @@ test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Issue #1526: the two ordered-comparison sites that used to turn a failed
@@ -2229,6 +2320,7 @@ test_ssimulacra2_nonfinite = executable('test_ssimulacra2_nonfinite',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_ssimulacra2_nonfinite', test_ssimulacra2_nonfinite, suite : ['fast'])
 
@@ -2244,6 +2336,7 @@ test_ordered_sum = executable('test_ordered_sum',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
 
@@ -2267,6 +2360,7 @@ test_float_moment_sum = executable('test_float_moment_sum',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 # 35 s on a workstation under the sanitizer job's debug ASan + UBSan build;
 # the hosted runner of that job passed 120 s twice (#1918, #1922).
@@ -2290,6 +2384,7 @@ test_float_psnr_rows = executable('test_float_psnr_rows',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 test('test_float_psnr_rows', test_float_psnr_rows, suite : ['fast'], timeout : 120)
 
@@ -2299,6 +2394,7 @@ test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
     c_args : vmaf_cflags_common,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 test('test_adm_nonfinite_score', test_adm_nonfinite_score, suite : ['fast'])
 
@@ -2331,7 +2427,8 @@ test_niqe = executable('test_niqe',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # BRISQUE (no-reference, opinion-aware, ADR-1115): brisque_math.h unit oracles +
@@ -2360,7 +2457,8 @@ test_brisque = executable('test_brisque',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Y-FUNQUE+ atoms-only (ADR-1114): analytic identical-input oracles
@@ -2385,7 +2483,8 @@ test_y_funque_plus = executable('test_y_funque_plus',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
@@ -2395,6 +2494,7 @@ test_integer_vif_log2 = executable('test_integer_vif_log2',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1561: integer VIF's residual variance takes x86's value on every
@@ -2423,6 +2523,7 @@ test_iqa_convolve_coverage = executable('test_iqa_convolve_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 2 — barten_csf_tools.h non-1080p resolutions + MAE
@@ -2432,6 +2533,7 @@ test_barten_csf_coverage = executable('test_barten_csf_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Coverage round 2 — ms_ssim_decimate scalar NULL-out branch + the
@@ -2441,6 +2543,7 @@ test_ms_ssim_decimate_coverage = executable('test_ms_ssim_decimate_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # ADR-0912: end-to-end pixel-format edge coverage (4:2:2, 4:4:4, 10/12-bit)
@@ -2452,6 +2555,7 @@ test_pixel_format_edge_coverage = executable('test_pixel_format_edge_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_framesync = executable('test_framesync',
@@ -2461,6 +2565,7 @@ test_framesync = executable('test_framesync',
     c_args : vmaf_cflags_common,
     cpp_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # framesync.c is recompiled into the executable, the way every other target in
@@ -2545,6 +2650,7 @@ test_framesync_init_failure = executable('test_framesync_init_failure',
     c_args : framesync_interpose_args,
     dependencies : [pthread_dependency, thread_lib],
     override_options : framesync_interposer_lto_override,
+    kwargs : test_link_kwargs,
 )
 
 # Ported from upstream Netflix/vmaf c70debb1 ("libvmaf/test: port new
@@ -2557,6 +2663,7 @@ test_adm_csf = executable('test_adm_csf',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 test_barten_csf = executable('test_barten_csf',
@@ -2564,6 +2671,7 @@ test_barten_csf = executable('test_barten_csf',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # The CSF weights of float ADM (Watson step and Barten CSF) are upstream's
@@ -2574,6 +2682,7 @@ test_float_adm_csf_upstream = executable('test_float_adm_csf_upstream',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 
 # Bit-exactness between the scalar-separable reference and the arch-
@@ -2601,6 +2710,7 @@ test_iqa_convolve = executable('test_iqa_convolve',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2624,6 +2734,7 @@ test_psnr_hvs_avx2 = executable('test_psnr_hvs_avx2',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2647,6 +2758,7 @@ test_vif_simd = executable('test_vif_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2670,6 +2782,7 @@ test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2696,6 +2809,7 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2718,6 +2832,7 @@ test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1473: the x86 float ADM wavelet and CSF kernels return the scalar
@@ -2740,6 +2855,7 @@ test_float_adm_x86 = executable('test_float_adm_x86',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2767,6 +2883,7 @@ test_integer_ssim_simd = executable('test_integer_ssim_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2796,6 +2913,7 @@ test_ssim_x86_simd = executable('test_ssim_x86_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_ssim_x86_simd', test_ssim_x86_simd, suite : ['fast', 'simd'])
 endif
@@ -2825,6 +2943,7 @@ test_iqa_ssim_sub_window = executable('test_iqa_ssim_sub_window',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_iqa_ssim_sub_window', test_iqa_ssim_sub_window, suite : ['fast', 'simd'])
 
@@ -2848,6 +2967,7 @@ test_ciede_simd_parity = executable('test_ciede_simd_parity',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2871,6 +2991,7 @@ test_motion_v2_simd = executable('test_motion_v2_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2904,6 +3025,7 @@ test_motion_avx512_parity = executable('test_motion_avx512_parity',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -2947,6 +3069,7 @@ test_feature_isa_invariance = executable('test_feature_isa_invariance',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_feature_isa_invariance', test_feature_isa_invariance,
     suite : ['fast'])
@@ -2961,6 +3084,7 @@ test_cambi_dispatch_invariance = executable('test_cambi_dispatch_invariance',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_cambi_dispatch_invariance', test_cambi_dispatch_invariance,
     suite : ['fast', 'simd'])
@@ -2977,6 +3101,7 @@ test_psnr_hvs_dispatch_invariance = executable('test_psnr_hvs_dispatch_invarianc
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_psnr_hvs_dispatch_invariance', test_psnr_hvs_dispatch_invariance,
     suite : ['fast', 'simd'])
@@ -2985,6 +3110,7 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
     suite : ['fast'])
@@ -2997,6 +3123,7 @@ test_cuda_adm_dwt2_rows = executable('test_cuda_adm_dwt2_rows',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_adm_dwt2_rows', test_cuda_adm_dwt2_rows,
     suite : ['fast'])
@@ -3007,6 +3134,7 @@ test('test_cuda_adm_dwt2_rows', test_cuda_adm_dwt2_rows,
 test_adm_cm_row_rounding = executable('test_adm_cm_row_rounding',
     ['test.c', 'test_adm_cm_row_rounding.c'],
     include_directories : [test_inc, include_directories('../src')],
+    kwargs : test_link_kwargs,
 )
 test('test_adm_cm_row_rounding', test_adm_cm_row_rounding,
     suite : ['fast'])
@@ -3020,6 +3148,7 @@ test_hip_adm_dwt2_rows = executable('test_hip_adm_dwt2_rows',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_adm_dwt2_rows', test_hip_adm_dwt2_rows,
     suite : ['fast'])
@@ -3036,6 +3165,7 @@ test_integer_adm_cm_threshold = executable('test_integer_adm_cm_threshold',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_cm_threshold', test_integer_adm_cm_threshold,
     suite : ['fast'])
@@ -3050,6 +3180,7 @@ test_integer_adm_quant_step = executable('test_integer_adm_quant_step',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_quant_step', test_integer_adm_quant_step,
     suite : ['fast'])
@@ -3068,6 +3199,7 @@ test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_simd_noise', test_integer_adm_simd_noise,
     suite : ['fast'])
@@ -3079,6 +3211,7 @@ test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
     suite : ['fast'])
@@ -3092,6 +3225,7 @@ test_integer_adm_aim_unclipped = executable('test_integer_adm_aim_unclipped',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_aim_unclipped', test_integer_adm_aim_unclipped,
     suite : ['fast'])
@@ -3115,6 +3249,7 @@ test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -3138,6 +3273,7 @@ test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 # ADR-1057: prove the universal adm_dwt2_8_neon kernel is scalar-bit-exact and
@@ -3160,6 +3296,7 @@ test_adm_dwt2_neon = executable('test_adm_dwt2_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -3183,6 +3320,7 @@ test_vif_neon = executable('test_vif_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_ssim_neon = executable('test_ssim_neon',
@@ -3203,6 +3341,7 @@ test_ssim_neon = executable('test_ssim_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_float_adm_neon = executable('test_float_adm_neon',
@@ -3223,6 +3362,7 @@ test_float_adm_neon = executable('test_float_adm_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_float_adm_dwt2_neon = executable('test_float_adm_dwt2_neon',
@@ -3243,6 +3383,7 @@ test_float_adm_dwt2_neon = executable('test_float_adm_dwt2_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_motion_neon = executable('test_motion_neon',
@@ -3263,6 +3404,7 @@ test_motion_neon = executable('test_motion_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_motion_pipeline_neon = executable('test_motion_pipeline_neon',
@@ -3283,6 +3425,7 @@ test_motion_pipeline_neon = executable('test_motion_pipeline_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_float_motion_neon = executable('test_float_motion_neon',
@@ -3303,6 +3446,7 @@ test_float_motion_neon = executable('test_float_motion_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_psnr_neon = executable('test_psnr_neon',
@@ -3323,6 +3467,7 @@ test_psnr_neon = executable('test_psnr_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 test_ciede_neon = executable('test_ciede_neon',
@@ -3343,6 +3488,7 @@ test_ciede_neon = executable('test_ciede_neon',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 
 endif
@@ -3367,6 +3513,7 @@ test_moment_simd = executable('test_moment_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -3396,6 +3543,7 @@ test_speed_simd = executable('test_speed_simd',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -3419,6 +3567,7 @@ test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 endif
 
@@ -3433,6 +3582,7 @@ test_locale_handling = executable('test_locale_handling',
     c_args : ['-I' + meson.project_build_root() / 'src'] + vmaf_cflags_common,
     dependencies : [pthread_dependency],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    kwargs : test_link_kwargs,
 )
 
 # CPU-only regression test for the vmaf_gpu_picture_pool_init() UAF
@@ -3444,6 +3594,7 @@ test_gpu_picture_pool_uaf = executable('test_gpu_picture_pool_uaf',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'],
     env : [
@@ -3464,6 +3615,7 @@ test_gpu_picture_pool_partial_init = executable('test_gpu_picture_pool_partial_i
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_gpu_picture_pool_partial_init', test_gpu_picture_pool_partial_init,
     suite : ['fast'])
@@ -3486,6 +3638,7 @@ test_gpu_picture_pool_alloc_failure = executable('test_gpu_picture_pool_alloc_fa
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
     override_options : gpu_pool_interposer_lto_override,
+    kwargs : test_link_kwargs,
 )
 test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
     suite : ['fast'])
@@ -3496,7 +3649,8 @@ test_gpu_picture_pool = executable('test_gpu_picture_pool',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 
 test_cuda_pic_preallocation = executable('test_cuda_pic_preallocation',
@@ -3504,7 +3658,8 @@ test_cuda_pic_preallocation = executable('test_cuda_pic_preallocation',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 
 # Owner scoping of the ADR-0242 drain batch
@@ -3518,7 +3673,8 @@ test_cuda_drain_batch = executable('test_cuda_drain_batch',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 
 test('test_gpu_picture_pool', test_gpu_picture_pool,
@@ -3539,7 +3695,8 @@ test_cuda_runtime_unwind = executable('test_cuda_runtime_unwind',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_runtime_unwind', test_cuda_runtime_unwind, suite : ['fast'])
 
@@ -3550,6 +3707,7 @@ test_cuda_single_frame_flush = executable('test_cuda_single_frame_flush',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_single_frame_flush', test_cuda_single_frame_flush, suite : ['fast'])
 
@@ -3567,7 +3725,8 @@ test_cuda_picture_pinned_overflow = executable('test_cuda_picture_pinned_overflo
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_picture_pinned_overflow', test_cuda_picture_pinned_overflow, suite : ['fast'])
 
@@ -3581,7 +3740,8 @@ test_cuda_buffer_alloc_oom = executable('test_cuda_buffer_alloc_oom',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom,
     suite : ['fast', 'gpu'],
@@ -3595,7 +3755,8 @@ test_cuda_arch_floor = executable('test_cuda_arch_floor',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_arch_floor', test_cuda_arch_floor,
     suite : ['fast', 'gpu'],
@@ -3612,7 +3773,8 @@ test_libvmaf_cuda_only_no_host = executable('test_libvmaf_cuda_only_no_host',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_libvmaf_cuda_only_no_host', test_libvmaf_cuda_only_no_host,
     suite : ['fast', 'gpu'],
@@ -3629,7 +3791,8 @@ test_cuda_preallocation_leak = executable('test_cuda_preallocation_leak',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_preallocation_leak', test_cuda_preallocation_leak,
     suite : ['fast', 'gpu'],
@@ -3647,7 +3810,8 @@ test_cuda_motion3_parity = executable('test_cuda_motion3_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_motion3_parity', test_cuda_motion3_parity,
     suite : ['fast', 'gpu'],
@@ -3665,7 +3829,8 @@ test_cuda_motion_sad_score = executable('test_cuda_motion_sad_score',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_motion_sad_score', test_cuda_motion_sad_score,
     suite : ['fast', 'gpu'],
@@ -3681,7 +3846,8 @@ test_cuda_motion_five_frame_window = executable('test_cuda_motion_five_frame_win
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_motion_five_frame_window', test_cuda_motion_five_frame_window,
     suite : ['fast', 'gpu'],
@@ -3699,7 +3865,8 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
     suite : ['fast', 'gpu'],
@@ -3717,7 +3884,8 @@ test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
     suite : ['fast', 'gpu'],
@@ -3728,7 +3896,8 @@ test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
     suite : ['fast', 'gpu'],
@@ -3739,7 +3908,8 @@ test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
     suite : ['fast', 'gpu'],
@@ -3756,7 +3926,8 @@ test_cuda_float_ssim_order = executable('test_cuda_float_ssim_order',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_ssim_order', test_cuda_float_ssim_order,
     suite : ['fast', 'gpu'],
@@ -3781,7 +3952,8 @@ test_cuda_float_ssim_decimate = executable('test_cuda_float_ssim_decimate',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_ssim_decimate', test_cuda_float_ssim_decimate,
     suite : ['fast', 'gpu'],
@@ -3797,7 +3969,8 @@ test_cuda_vif_log2_table = executable('test_cuda_vif_log2_table',
         include_directories('../src/', '../src/feature/', '../src/cuda/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_vif_log2_table', test_cuda_vif_log2_table,
     suite : ['fast', 'gpu'],
@@ -3813,7 +3986,8 @@ test_cuda_exact_twins = executable('test_cuda_exact_twins',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_exact_twins', test_cuda_exact_twins,
     suite : ['fast', 'gpu'],
@@ -3832,7 +4006,8 @@ test_cuda_speed_chroma_smoke = executable('test_cuda_speed_chroma_smoke',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
     suite : ['fast', 'gpu'],
@@ -3843,7 +4018,8 @@ test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
     suite : ['fast', 'gpu'],
@@ -3860,7 +4036,8 @@ test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
     suite : ['fast', 'gpu'],
@@ -3871,7 +4048,8 @@ test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
     suite : ['fast', 'gpu'],
@@ -3888,7 +4066,8 @@ test_cuda_speed_temporal_parity_1080p = executable('test_cuda_speed_temporal_par
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=1920u', '-DFIXTURE_H=1080u']
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=1920u', '-DFIXTURE_H=1080u'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_temporal_parity_1080p', test_cuda_speed_temporal_parity_1080p,
     suite : ['fast', 'gpu'],
@@ -3899,7 +4078,8 @@ test_cuda_speed_singular_parity = executable('test_cuda_speed_singular_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_singular_parity', test_cuda_speed_singular_parity,
     suite : ['fast', 'gpu'],
@@ -3917,7 +4097,8 @@ test_cuda_speed_lanczos4_parity = executable('test_cuda_speed_lanczos4_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_speed_lanczos4_parity', test_cuda_speed_lanczos4_parity,
     suite : ['fast', 'gpu'],
@@ -3945,7 +4126,8 @@ test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
     suite : ['fast', 'gpu'],
@@ -3957,7 +4139,8 @@ test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_vif_parity', test_cuda_float_vif_parity,
     suite : ['fast', 'gpu'],
@@ -3968,7 +4151,8 @@ test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
     suite : ['fast', 'gpu'],
@@ -3987,7 +4171,8 @@ test_cuda_float_ms_ssim_order = executable('test_cuda_float_ms_ssim_order',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_ms_ssim_order', test_cuda_float_ms_ssim_order,
     suite : ['fast', 'gpu'],
@@ -4016,7 +4201,8 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
     suite : ['fast', 'gpu'],
@@ -4028,7 +4214,8 @@ test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
     suite : ['fast', 'gpu'],
@@ -4055,7 +4242,8 @@ test_cuda_adm_parity = executable('test_cuda_adm_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_adm_parity', test_cuda_adm_parity,
     suite : ['fast', 'gpu'],
@@ -4067,7 +4255,8 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
     suite : ['fast', 'gpu'],
@@ -4080,7 +4269,8 @@ test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
     suite : ['fast', 'gpu'],
@@ -4096,7 +4286,8 @@ test_cuda_motion_tiny_frames = executable('test_cuda_motion_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_motion_tiny_frames', test_cuda_motion_tiny_frames,
     suite : ['fast', 'gpu'],
@@ -4112,7 +4303,8 @@ test_cuda_multi_instance = executable('test_cuda_multi_instance',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_multi_instance', test_cuda_multi_instance,
     suite : ['fast', 'gpu'],
@@ -4127,7 +4319,8 @@ test_cuda_oom_pictures_released = executable('test_cuda_oom_pictures_released',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_oom_pictures_released', test_cuda_oom_pictures_released,
     suite : ['fast', 'gpu'],
@@ -4141,7 +4334,8 @@ test_cuda_device_input_host_extractors = executable('test_cuda_device_input_host
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_device_input_host_extractors', test_cuda_device_input_host_extractors,
     suite : ['fast', 'gpu'],
@@ -4156,7 +4350,8 @@ test_cuda_vif_min_dim = executable('test_cuda_vif_min_dim',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_vif_min_dim', test_cuda_vif_min_dim,
     suite : ['fast', 'gpu'],
@@ -4171,7 +4366,8 @@ test_cuda_twin_option_parity = executable('test_cuda_twin_option_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_twin_option_parity', test_cuda_twin_option_parity,
     suite : ['fast', 'gpu'],
@@ -4183,7 +4379,8 @@ test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_adm_wide_rounding', test_cuda_adm_wide_rounding,
     suite : ['fast', 'gpu'],
@@ -4198,7 +4395,8 @@ test_cuda_motion_v2_parity = executable('test_cuda_motion_v2_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_motion_v2_parity', test_cuda_motion_v2_parity,
     suite : ['fast', 'gpu'],
@@ -4212,7 +4410,8 @@ test_cuda_cambi_parity = executable('test_cuda_cambi_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_cambi_parity', test_cuda_cambi_parity,
     suite : ['fast', 'gpu'],
@@ -4227,7 +4426,8 @@ test_cuda_psnr_hvs_parity = executable('test_cuda_psnr_hvs_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_psnr_hvs_parity', test_cuda_psnr_hvs_parity,
     suite : ['fast', 'gpu'],
@@ -4241,7 +4441,8 @@ test_cuda_ssim_parity = executable('test_cuda_ssim_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_ssim_parity', test_cuda_ssim_parity,
     suite : ['fast', 'gpu'],
@@ -4267,7 +4468,8 @@ test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_psnr_parity', test_cuda_psnr_parity,
     suite : ['fast', 'gpu'],
@@ -4281,7 +4483,8 @@ test_cuda_psnr_parity_10bit = executable('test_cuda_psnr_parity_10bit',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_psnr_parity_10bit', test_cuda_psnr_parity_10bit,
     suite : ['fast', 'gpu'],
@@ -4295,7 +4498,8 @@ test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1']
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
     suite : ['fast', 'gpu'],
@@ -4347,7 +4551,8 @@ foreach parity_test : cuda_parity_large_fixture_tests
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         dependencies: [pthread_dependency, cuda_dependency, math_lib],
-        c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+        c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u'],
+        kwargs : test_link_kwargs,
     )
     test(parity_test + '_large', parity_large_exe,
         suite : ['fast', 'gpu'],
@@ -4365,6 +4570,7 @@ test_vmaf_roi = executable('test_vmaf_roi',
     ['test.c', 'test_vmaf_roi.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../tools/')],
     dependencies: [pthread_dependency, test_vmaf_roi_libm],
+    kwargs : test_link_kwargs,
 )
 test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
 
@@ -4373,6 +4579,7 @@ test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
     ['test.c', 'test_vmaf_roi_bounds.c'],
     include_directories : [libvmaf_inc, test_inc],
     dependencies : [test_vmaf_roi_libm],
+    kwargs : test_link_kwargs,
 )
 test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
 
@@ -4384,6 +4591,7 @@ test_pic_preallocation = executable('test_pic_preallocation',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 # Runs the vmaf_v0.6.1 model on 1080p frames of the preallocated pools: about
 # 9 s of CPU in the ASan + UBSan debug build (46 % in the AVX-512 VIF kernel,
@@ -4400,6 +4608,7 @@ test_thread_safety_batch = executable('test_thread_safety_batch',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_thread_safety_batch', test_thread_safety_batch, suite : ['fast'])
 
@@ -4414,6 +4623,7 @@ test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : test_picture_lib,
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
 
@@ -4422,6 +4632,7 @@ test_picture_pool_cpp_error_paths = executable('test_picture_pool_cpp_error_path
      '../src/picture_pool.cpp', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_picture_pool_cpp_error_paths', test_picture_pool_cpp_error_paths, suite : ['fast'])
 
@@ -4431,6 +4642,7 @@ test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_read_pictures_monotonic', test_read_pictures_monotonic, suite : ['fast'])
 
@@ -4442,6 +4654,7 @@ test_read_pictures_failure_ownership = executable('test_read_pictures_failure_ow
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_read_pictures_failure_ownership', test_read_pictures_failure_ownership,
     suite : ['fast'])
@@ -4456,6 +4669,7 @@ test_motion_five_frame_window = executable('test_motion_five_frame_window',
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_motion_five_frame_window', test_motion_five_frame_window,
     suite : ['fast'])
@@ -4468,6 +4682,7 @@ test_validate_pic_params_bpc = executable('test_validate_pic_params_bpc',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_validate_pic_params_bpc', test_validate_pic_params_bpc, suite : ['fast'])
 
@@ -4478,6 +4693,7 @@ test_score_pooled_eagain = executable('test_score_pooled_eagain',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 
@@ -4488,6 +4704,7 @@ test_path_utf8 = executable('test_path_utf8',
     c_args : vmaf_cflags_common,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_path_utf8', test_path_utf8, suite : ['fast'])
 
@@ -4501,6 +4718,7 @@ test_perceptual_weight = executable('test_perceptual_weight',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_perceptual_weight', test_perceptual_weight, suite : ['fast'])
 
@@ -4520,7 +4738,8 @@ test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 
@@ -4541,7 +4760,8 @@ test_integer_adm_min_dim = executable('test_integer_adm_min_dim',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_integer_adm_min_dim', test_integer_adm_min_dim, suite : ['fast'])
 
@@ -4562,7 +4782,8 @@ test_motion_min_dim = executable('test_motion_min_dim',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
@@ -4575,6 +4796,7 @@ test_motion_convolution_oob = executable('test_motion_convolution_oob',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_motion_convolution_oob', test_motion_convolution_oob, suite : ['fast'])
 
@@ -4587,6 +4809,7 @@ test_convolution_edge_small = executable('test_convolution_edge_small',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_convolution_edge_small', test_convolution_edge_small, suite : ['fast'])
 
@@ -4607,6 +4830,7 @@ if is_asm_enabled and host_machine.cpu_family().startswith('x86')
         c_args : vmaf_cflags_common,
         dependencies : [math_lib, thread_lib],
         objects : convolution_horizontal_objects,
+        kwargs : test_link_kwargs,
     )
     test('test_convolution_horizontal', test_convolution_horizontal, suite : ['fast'])
 endif
@@ -4619,6 +4843,7 @@ test_compat_clz = executable('test_compat_clz',
     ['test.c', 'test_compat_clz.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies : [pthread_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_compat_clz', test_compat_clz, suite : ['fast'])
 
@@ -4655,7 +4880,8 @@ test_float_vif_min_dim = executable('test_float_vif_min_dim',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_vif_min_dim', test_float_vif_min_dim, suite : ['fast'])
 
@@ -4686,7 +4912,8 @@ test_float_ssim_coverage = executable('test_float_ssim_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_ssim_coverage', test_float_ssim_coverage, suite : ['fast'])
 
@@ -4703,7 +4930,8 @@ test_float_ms_ssim_coverage = executable('test_float_ms_ssim_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_ms_ssim_coverage', test_float_ms_ssim_coverage, suite : ['fast'])
 
@@ -4723,7 +4951,8 @@ test_float_psnr_coverage = executable('test_float_psnr_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_psnr_coverage', test_float_psnr_coverage, suite : ['fast'])
 
@@ -4740,7 +4969,8 @@ test_float_moment_coverage = executable('test_float_moment_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_moment_coverage', test_float_moment_coverage, suite : ['fast'])
 
@@ -4757,7 +4987,8 @@ test_float_vif_coverage = executable('test_float_vif_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_vif_coverage', test_float_vif_coverage, suite : ['fast'])
 
@@ -4776,7 +5007,8 @@ test_vif_lifecycle = executable('test_vif_lifecycle',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_vif_lifecycle', test_vif_lifecycle, suite : ['fast'])
 
@@ -4803,7 +5035,8 @@ test_float_vif_device_math = executable('test_float_vif_device_math',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_vif_device_math', test_float_vif_device_math, suite : ['fast'])
 endif
@@ -4821,7 +5054,8 @@ test_float_adm_coverage = executable('test_float_adm_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
 
@@ -4850,7 +5084,8 @@ test_float_adm_device_math = executable('test_float_adm_device_math',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_adm_device_math', test_float_adm_device_math, suite : ['fast'])
 endif
@@ -4868,7 +5103,8 @@ test_float_motion_coverage = executable('test_float_motion_coverage',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_float_motion_coverage', test_float_motion_coverage, suite : ['fast'])
 endif
@@ -4898,6 +5134,7 @@ test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     # (The orphaned legacy .c was removed once the .cpp became canonical.)
     objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
                log_cpp23_test_objects],
+               kwargs : test_link_kwargs,
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
 
@@ -4921,6 +5158,7 @@ test_gpu_dispatch_env_oom = executable('test_gpu_dispatch_env_oom',
     # conversion was a hard C2440 there anyway).
     dependencies: [pthread_dependency, stdatomic_dependency],
     objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)],
+    kwargs : test_link_kwargs,
 )
 test('test_gpu_dispatch_env_oom', test_gpu_dispatch_env_oom, suite : ['fast'])
 
@@ -4933,6 +5171,7 @@ test_version = executable('test_version',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 test('test_version', test_version, suite : ['fast'])
 
@@ -4944,6 +5183,7 @@ test_vif_skip_scale0 = executable('test_vif_skip_scale0',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 test('test_vif_skip_scale0', test_vif_skip_scale0, suite : ['fast'])
 
@@ -4953,7 +5193,8 @@ test_sycl = executable('test_sycl',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 
 test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
@@ -4961,7 +5202,8 @@ test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 
 test('test_sycl', test_sycl,
@@ -4978,7 +5220,8 @@ test_sycl_kernel_registration = executable('test_sycl_kernel_registration',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_kernel_registration', test_sycl_kernel_registration,
     suite : ['fast', 'sycl'])
@@ -5348,7 +5591,8 @@ test_sycl_exact_twins = executable('test_sycl_exact_twins',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_exact_twins', test_sycl_exact_twins,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5366,7 +5610,8 @@ test_sycl_motion_sad_score = executable('test_sycl_motion_sad_score',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_motion_sad_score', test_sycl_motion_sad_score,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5382,7 +5627,8 @@ test_sycl_motion_five_frame_window = executable('test_sycl_motion_five_frame_win
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_motion_five_frame_window', test_sycl_motion_five_frame_window,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5400,7 +5646,8 @@ test_sycl_kernel_scratch = executable('test_sycl_kernel_scratch',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
     c_args: ['-DHAVE_SYCL=1', '-DVMAF_SYCL_SCRATCH_RATCHET="'
-             + (meson.current_source_dir() / '..' / 'src' / 'sycl' / 'scratch_ratchet.txt') + '"']
+             + (meson.current_source_dir() / '..' / 'src' / 'sycl' / 'scratch_ratchet.txt') + '"'],
+             kwargs : test_link_kwargs,
 )
 test('test_sycl_kernel_scratch', test_sycl_kernel_scratch,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5420,6 +5667,7 @@ test_sycl_cuda_serial_upload_lifetime = executable('test_sycl_cuda_serial_upload
     link_with : libvmaf_public_link,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
     c_args : ['-DHAVE_CUDA=1', '-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_cuda_serial_upload_lifetime', test_sycl_cuda_serial_upload_lifetime,
     suite : ['slow', 'gpu', 'sycl'],
@@ -5451,6 +5699,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
             '-Wl,--wrap=vmaf_sycl_graph_register',
             '-Wl,--wrap=vmaf_sycl_graph_unregister',
         ],
+        kwargs : test_link_kwargs,
     )
     test('test_sycl_init_unwind', test_sycl_init_unwind, suite : ['fast', 'sycl'])
 endif
@@ -5460,7 +5709,8 @@ test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_cambi_sycl', test_integer_cambi_sycl,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5478,7 +5728,8 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5494,7 +5745,8 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 # Root cause fixed (ADR-1099): the SIGSEGV was caused by missing -fsycl at
 # link time for test executables linking libvmaf.a.  Without -fsycl, icpx
@@ -5534,7 +5786,8 @@ test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5546,7 +5799,8 @@ test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_float_adm_parity', test_sycl_float_adm_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5557,7 +5811,8 @@ test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_float_vif_parity', test_sycl_float_vif_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5568,7 +5823,8 @@ test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5584,7 +5840,8 @@ test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5611,7 +5868,8 @@ test_sycl_shared_planes = executable('test_sycl_shared_planes',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5623,7 +5881,8 @@ test_sycl_shared_frame_sticky_geometry = executable('test_sycl_shared_frame_stic
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_shared_frame_sticky_geometry', test_sycl_shared_frame_sticky_geometry,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5653,7 +5912,8 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5674,7 +5934,8 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_adm_parity', test_sycl_adm_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5687,7 +5948,8 @@ test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5702,7 +5964,8 @@ test_sycl_motion_tiny_frames = executable('test_sycl_motion_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_motion_tiny_frames', test_sycl_motion_tiny_frames,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5717,7 +5980,8 @@ test_sycl_vif_min_dim = executable('test_sycl_vif_min_dim',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_vif_min_dim', test_sycl_vif_min_dim,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5728,7 +5992,8 @@ test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5743,7 +6008,8 @@ test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_ssim_parity', test_sycl_ssim_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5754,7 +6020,8 @@ test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5770,7 +6037,8 @@ test_sycl_float_ssim_parity = executable('test_sycl_float_ssim_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_float_ssim_parity', test_sycl_float_ssim_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5781,7 +6049,8 @@ test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5796,7 +6065,8 @@ test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_psnr_parity', test_sycl_psnr_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5813,7 +6083,8 @@ test_sycl_twin_option_parity = executable('test_sycl_twin_option_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_twin_option_parity', test_sycl_twin_option_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5828,7 +6099,8 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_vif_parity', test_sycl_vif_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5852,7 +6124,8 @@ test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5863,7 +6136,8 @@ test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5876,7 +6150,8 @@ test_sycl_speed_lanczos4_parity = executable('test_sycl_speed_lanczos4_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1', '-DLZ_BACKEND_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1', '-DLZ_BACKEND_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_speed_lanczos4_parity', test_sycl_speed_lanczos4_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5888,7 +6163,8 @@ test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_speed_singular_parity', test_sycl_speed_singular_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5900,7 +6176,8 @@ test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_ssimulacra2_parity', test_sycl_ssimulacra2_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5915,7 +6192,8 @@ test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_cambi_parity', test_sycl_cambi_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5960,7 +6238,8 @@ foreach parity_test : sycl_parity_large_fixture_tests
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         dependencies: [pthread_dependency, sycl_dependency,  math_lib],
-        c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+        c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u'],
+        kwargs : test_link_kwargs,
     )
     test(parity_test + '_large', parity_large_exe,
         suite : ['fast', 'gpu', 'sycl'],
@@ -5981,7 +6260,8 @@ test_mcp_smoke = executable('test_mcp_smoke',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_MCP=1']
+    c_args: ['-DHAVE_MCP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_mcp_smoke', test_mcp_smoke, suite : ['slow'], timeout: 60)
 
@@ -5998,7 +6278,8 @@ test_mcp_coverage = executable('test_mcp_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_MCP=1']
+    c_args: ['-DHAVE_MCP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_mcp_coverage', test_mcp_coverage, suite : ['slow'], timeout: 60)
 
@@ -6012,7 +6293,8 @@ test_mcp_stop_idempotent = executable('test_mcp_stop_idempotent',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_MCP=1']
+    c_args: ['-DHAVE_MCP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_mcp_stop_idempotent', test_mcp_stop_idempotent, suite : ['fast'], timeout: 30)
 
@@ -6027,7 +6309,8 @@ test_mcp_compute_vmaf_allowlist = executable('test_mcp_compute_vmaf_allowlist',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_MCP=1']
+    c_args: ['-DHAVE_MCP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_mcp_compute_vmaf_allowlist', test_mcp_compute_vmaf_allowlist, suite : ['fast'])
 endif
@@ -6043,6 +6326,7 @@ test_speed_singular_tally = executable('test_speed_singular_tally',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_speed_singular_tally', test_speed_singular_tally, suite : ['fast'])
 
@@ -6053,6 +6337,7 @@ test_speed_clamp_score = executable('test_speed_clamp_score',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_speed_clamp_score', test_speed_clamp_score, suite : ['fast'])
 
@@ -6062,7 +6347,8 @@ test_hip_smoke = executable('test_hip_smoke',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_smoke', test_hip_smoke,
     suite : ['fast', 'gpu'],
@@ -6094,7 +6380,8 @@ test_hip_motion3_parity = executable('test_hip_motion3_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_motion3_parity', test_hip_motion3_parity,
     suite : ['fast', 'gpu'],
@@ -6110,7 +6397,8 @@ test_hip_motion_v2_parity = executable('test_hip_motion_v2_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_motion_v2_parity', test_hip_motion_v2_parity,
     suite : ['fast', 'gpu'],
@@ -6127,7 +6415,8 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 # The picture-staging deferral (ADR-1154) ended with ADR-1211; the parity
 # tests below pass on a gfx1036 device.
@@ -6165,7 +6454,8 @@ test_hip_adm_init_unwind = executable('test_hip_adm_init_unwind',
                            include_directories('../src/feature/common/'),
                            include_directories('../src/cuda/')],
     dependencies: [pthread_dependency, math_lib, hip_deps],
-    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_adm_init_unwind', test_hip_adm_init_unwind, suite : ['fast'])
 
@@ -6181,7 +6471,8 @@ test_hip_shared_frame = executable('test_hip_shared_frame',
     ['test.c', 'test_hip_shared_frame.c', '../src/hip/shared_frame.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_shared_frame', test_hip_shared_frame, suite : ['fast'])
 
@@ -6213,6 +6504,7 @@ test_hip_fp_arith_contract = executable('test_hip_fp_arith_contract',
     # project-wide strict policy (ADR-1461) already turns icx's fast model
     # (reciprocal division) off.
     c_args : ['-DFP_ARITH_PROBE=vmaf_test_hip_fp_arith', '-DFP_ARITH_DEVICE="HIP"'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_fp_arith_contract', test_hip_fp_arith_contract,
     suite : ['fast', 'gpu'],
@@ -6253,6 +6545,7 @@ test_hip_float_adm_math = executable('test_hip_float_adm_math',
     dependencies : [math_lib, hip_deps, pthread_dependency],
     # The host side is the reference's arithmetic only without contraction.
     c_args : vmaf_strict_fp_args + ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_adm_math', test_hip_float_adm_math,
     suite : ['fast', 'gpu'],
@@ -6270,7 +6563,8 @@ test_hip_ssimulacra2_init_unwind = executable('test_hip_ssimulacra2_init_unwind'
                            include_directories('../src/feature/common/'),
                            include_directories('../src/cuda/')],
     dependencies: [pthread_dependency, math_lib, hip_deps],
-    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ssimulacra2_init_unwind', test_hip_ssimulacra2_init_unwind, suite : ['fast'])
 endif
@@ -6281,7 +6575,8 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
     suite : ['fast', 'gpu'],
@@ -6295,7 +6590,8 @@ test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
@@ -6311,7 +6607,8 @@ test_hip_motion_tiny_frames = executable('test_hip_motion_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_motion_tiny_frames', test_hip_motion_tiny_frames,
     suite : ['fast', 'gpu'],
@@ -6328,7 +6625,8 @@ test_hip_ssim_tiny_frames = executable('test_hip_ssim_tiny_frames',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ssim_tiny_frames', test_hip_ssim_tiny_frames,
     suite : ['fast', 'gpu'],
@@ -6344,7 +6642,8 @@ test_hip_vif_min_dim = executable('test_hip_vif_min_dim',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_vif_min_dim', test_hip_vif_min_dim,
     suite : ['fast', 'gpu'],
@@ -6360,7 +6659,8 @@ test_hip_twin_option_parity = executable('test_hip_twin_option_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_twin_option_parity', test_hip_twin_option_parity,
     suite : ['fast', 'gpu'],
@@ -6373,7 +6673,8 @@ test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_adm_wide_rounding', test_hip_adm_wide_rounding,
     suite : ['fast', 'gpu'],
@@ -6414,7 +6715,8 @@ test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
     suite : ['fast', 'gpu'],
@@ -6426,7 +6728,8 @@ test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
     suite : ['fast', 'gpu'],
@@ -6448,7 +6751,8 @@ test_hip_cambi_parity = executable('test_hip_cambi_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_cambi_parity', test_hip_cambi_parity,
     suite : ['fast', 'gpu'],
@@ -6463,7 +6767,8 @@ test_hip_exact_twins = executable('test_hip_exact_twins',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_exact_twins', test_hip_exact_twins,
     suite : ['fast', 'gpu'],
@@ -6475,7 +6780,8 @@ test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_adm_parity', test_hip_float_adm_parity,
     suite : ['fast', 'gpu'],
@@ -6487,7 +6793,8 @@ test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_motion_parity', test_hip_float_motion_parity,
     suite : ['fast', 'gpu'],
@@ -6502,7 +6809,8 @@ test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
     suite : ['fast', 'gpu'],
@@ -6520,7 +6828,8 @@ test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
@@ -6544,7 +6853,8 @@ test_hip_float_moment_parity = executable('test_hip_float_moment_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_moment_parity', test_hip_float_moment_parity,
     suite : ['fast', 'gpu'],
@@ -6577,7 +6887,8 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ciede_parity', test_hip_ciede_parity,
     suite : ['fast', 'gpu'],
@@ -6599,6 +6910,7 @@ test_hip_ciede_math = executable('test_hip_ciede_math',
     dependencies : [math_lib],
     c_args : vmaf_strict_fp_args + ['-DVMAF_TEST_CIEDE_MATH_HOST_ONLY=1'],
     cpp_args : vmaf_strict_fp_args,
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ciede_math', test_hip_ciede_math,
     suite : ['fast'],
@@ -6612,7 +6924,8 @@ test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_psnr_hvs_parity', test_hip_psnr_hvs_parity,
     suite : ['fast', 'gpu'],
@@ -6624,7 +6937,8 @@ test_hip_motion_parity = executable('test_hip_motion_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_motion_parity', test_hip_motion_parity,
     suite : ['fast', 'gpu'],
@@ -6640,7 +6954,8 @@ test_hip_motion_five_frame_window = executable('test_hip_motion_five_frame_windo
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_motion_five_frame_window', test_hip_motion_five_frame_window,
     suite : ['fast', 'gpu'],
@@ -6659,7 +6974,8 @@ foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         dependencies: [pthread_dependency, hip_deps, math_lib],
-        c_args: ['-DHAVE_HIP=1'] + variant[1]
+        c_args: ['-DHAVE_HIP=1'] + variant[1],
+        kwargs : test_link_kwargs,
     )
     test('test_hip_ssim_parity' + variant[0], hip_ssim_exe,
         suite : ['fast', 'gpu'],
@@ -6676,7 +6992,8 @@ test_hip_upload_race = executable('test_hip_upload_race',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=576u', '-DFIXTURE_H=324u']
+    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=576u', '-DFIXTURE_H=324u'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_upload_race', test_hip_upload_race,
     suite : ['fast', 'gpu'],
@@ -6692,7 +7009,8 @@ test_hip_adm_exact = executable('test_hip_adm_exact',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_adm_exact', test_hip_adm_exact,
     suite : ['fast', 'gpu'],
@@ -6738,7 +7056,8 @@ foreach twin : hip_first_frame_twins
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         dependencies: [pthread_dependency, hip_deps, math_lib],
-        c_args: ['-DHAVE_HIP=1', '-DFIRST_FRAME_TWIN="' + twin + '"']
+        c_args: ['-DHAVE_HIP=1', '-DFIRST_FRAME_TWIN="' + twin + '"'],
+        kwargs : test_link_kwargs,
     )
     test('test_hip_first_frame_clear_' + twin, test_hip_first_frame_clear,
         suite : ['fast', 'gpu'],
@@ -6751,7 +7070,8 @@ test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ms_ssim_parity', test_hip_ms_ssim_parity,
     suite : ['fast', 'gpu'],
@@ -6767,7 +7087,8 @@ test_hip_psnr_parity = executable('test_hip_psnr_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_psnr_parity', test_hip_psnr_parity,
     suite : ['fast', 'gpu'],
@@ -6783,7 +7104,8 @@ test_hip_vif_parity = executable('test_hip_vif_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_vif_parity', test_hip_vif_parity,
     suite : ['fast', 'gpu'],
@@ -6807,7 +7129,8 @@ test_hip_speed_chroma_parity = executable('test_hip_speed_chroma_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_speed_chroma_parity', test_hip_speed_chroma_parity,
     suite : ['fast', 'gpu'],
@@ -6819,7 +7142,8 @@ test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
@@ -6833,7 +7157,8 @@ test_hip_speed_lanczos4_parity = executable('test_hip_speed_lanczos4_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1', '-DLZ_BACKEND_HIP=1']
+    c_args: ['-DHAVE_HIP=1', '-DLZ_BACKEND_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_speed_lanczos4_parity', test_hip_speed_lanczos4_parity,
     suite : ['fast', 'gpu'],
@@ -6845,7 +7170,8 @@ test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
     suite : ['fast', 'gpu'],
@@ -6866,7 +7192,8 @@ test_hip_cambi_device_math = executable('test_hip_cambi_device_math',
                            include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: hip_device_math_args
+    c_args: hip_device_math_args,
+    kwargs : test_link_kwargs,
 )
 test('test_hip_cambi_device_math', test_hip_cambi_device_math,
     suite : ['fast'],
@@ -6882,7 +7209,8 @@ test_hip_float_motion_rows = executable('test_hip_float_motion_rows',
                            include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: hip_device_math_args
+    c_args: hip_device_math_args,
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_motion_rows', test_hip_float_motion_rows,
     suite : ['fast'],
@@ -6898,7 +7226,8 @@ test_hip_float_ssim_decimate = executable('test_hip_float_ssim_decimate',
                            include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: hip_device_math_args
+    c_args: hip_device_math_args,
+    kwargs : test_link_kwargs,
 )
 test('test_hip_float_ssim_decimate', test_hip_float_ssim_decimate,
     suite : ['fast'],
@@ -6915,7 +7244,8 @@ test_hip_ms_ssim_arith = executable('test_hip_ms_ssim_arith',
                            include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: hip_device_math_args
+    c_args: hip_device_math_args,
+    kwargs : test_link_kwargs,
 )
 test('test_hip_ms_ssim_arith', test_hip_ms_ssim_arith,
     suite : ['fast'],
@@ -6928,7 +7258,8 @@ test_hip_speed_device_math = executable('test_hip_speed_device_math',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: hip_device_math_args +
-            ['-DSPEED_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"']
+            ['-DSPEED_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
+            kwargs : test_link_kwargs,
 )
 test('test_hip_speed_device_math', test_hip_speed_device_math,
     suite : ['fast'],
@@ -6964,7 +7295,8 @@ foreach parity_test : hip_parity_large_fixture_tests
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         dependencies: [pthread_dependency, hip_deps, math_lib],
-        c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+        c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u'],
+        kwargs : test_link_kwargs,
     )
     test(parity_test + '_large', parity_large_exe,
         suite : ['fast', 'gpu'],
@@ -6993,7 +7325,8 @@ test_metal_smoke = executable('test_metal_smoke',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_METAL=1']
+    c_args: ['-DHAVE_METAL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_smoke', test_metal_smoke,
     suite : ['fast', 'gpu'],
@@ -7010,7 +7343,8 @@ test_metal_install_header = executable('test_metal_install_header',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_METAL=1']
+    c_args: ['-DHAVE_METAL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_install_header', test_metal_install_header,
     suite : ['fast', 'gpu'],
@@ -7030,7 +7364,8 @@ foreach _m : metal_parity_tests
       include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
       link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
       dependencies: [pthread_dependency, math_lib],
-      c_args: ['-DHAVE_METAL=1'])
+      c_args: ['-DHAVE_METAL=1'],
+      kwargs : test_link_kwargs,)
   test('test_metal_' + _m + '_parity', _exe,
       suite : ['fast', 'gpu'],
       is_parallel : false,
@@ -7050,7 +7385,8 @@ test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit'
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_METAL=1']
+    c_args: ['-DHAVE_METAL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit,
     suite : ['fast', 'gpu'],
@@ -7066,7 +7402,8 @@ test_metal_kernel_registration = executable('test_metal_kernel_registration',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_METAL=1']
+    c_args: ['-DHAVE_METAL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_kernel_registration', test_metal_kernel_registration,
     suite : ['fast', 'gpu'],
@@ -7085,7 +7422,8 @@ foreach _m : metal_parity_tests
       include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
       link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
       dependencies: [pthread_dependency, math_lib],
-      c_args: ['-DVMAF_METAL_TWIN_SELFTEST'])
+      c_args: ['-DVMAF_METAL_TWIN_SELFTEST'],
+      kwargs : test_link_kwargs,)
   test('test_metal_selftest_' + _m, _exe,
       suite : ['fast', 'metal-selftest'],
       timeout : 900)
@@ -7310,6 +7648,7 @@ if is_rust_enabled
         ['test.c', 'test_tad_rust.c'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        kwargs : test_link_kwargs,
     )
     test('test_tad_rust', test_tad_rust, suite : ['fast'])
 endif
@@ -7322,6 +7661,7 @@ test_integer_motion_edge16_coverage = executable('test_integer_motion_edge16_cov
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_motion_edge16_coverage', test_integer_motion_edge16_coverage, suite : ['fast'])
 
@@ -7333,6 +7673,7 @@ test_adm_csf_tools_coverage = executable('test_adm_csf_tools_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_adm_csf_tools_coverage', test_adm_csf_tools_coverage, suite : ['fast'])
 
@@ -7352,6 +7693,7 @@ test_feature_collector_coverage = executable('test_feature_collector_coverage',
                            include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_feature_collector_coverage', test_feature_collector_coverage, suite : ['fast'])
 
@@ -7369,6 +7711,7 @@ test_mkdirp = executable('test_mkdirp',
     ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_mkdirp', test_mkdirp, suite : ['fast'])
 
@@ -7393,7 +7736,8 @@ test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 # The sweep behind these two tests is 12 widths x 4 heights x 9 bit depths
 # x 4 scales x 2 patterns = 3456 scalar/SIMD kernel pairs, each followed by a
@@ -7430,7 +7774,8 @@ test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 # The sweep behind these two tests is 12 widths x 4 heights x 9 bit depths
 # x 4 scales x 2 patterns = 3456 scalar/SIMD kernel pairs, each followed by a
