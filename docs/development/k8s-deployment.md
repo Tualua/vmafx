@@ -39,6 +39,10 @@ for the rationale.
 - Helm v3.12 or later
 - A Kubernetes cluster (1.26+) with at least one GPU node (or CPU-only for
   testing)
+- A container runtime that pulls zstd layers: containerd 1.6 or later (what
+  Kubernetes 1.26 requires anyway), CRI-O, or Docker Engine 23.0 or later behind
+  cri-dockerd. The images published after `v1.0.0-rc.2` have zstd layers
+  ([what can pull them](../usage/docker.md#what-can-pull-the-images)).
 - The relevant GPU device-plugin daemonset installed on GPU nodes — see
   [GPU scheduling guide](gpu-scheduling.md)
 

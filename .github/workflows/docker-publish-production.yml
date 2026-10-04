@@ -50,6 +50,13 @@ env:
   # Validation below proves this tag, GITHUB_REF, GITHUB_SHA, and the published
   # GitHub release all identify the same immutable source commit.
   PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+  # Layer compression of every image this workflow pushes (ADR-1594): zstd at
+  # BuildKit's strongest level (22 maps to klauspost's best, about zstd 11).
+  # force-compression converts every layer that is not zstd yet, base-image and
+  # cached layers included; oci-mediatypes because Docker rejects zstd layers under
+  # Docker manifest media types. Pulling needs Docker Engine 23.0 or later (Docker
+  # Desktop 4.19), containerd 1.5 or later, or Podman; docs/usage/docker.md.
+  IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
 
 jobs:
   validate-release:
@@ -231,7 +238,7 @@ jobs:
           file: docker/Dockerfile.production
           target: cli
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -287,6 +294,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestations, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
           name: cpu
@@ -425,7 +433,7 @@ jobs:
           file: docker/Dockerfile.production-gpu
           target: final-cuda13
           platforms: linux/amd64
-          push: true
+          outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -461,6 +469,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestation, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
           name: cuda13
@@ -568,7 +577,7 @@ jobs:
           file: docker/Dockerfile.production-gpu
           target: final-rocm10
           platforms: linux/amd64
-          push: true
+          outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -604,6 +613,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestation, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
           name: rocm10
@@ -714,7 +724,7 @@ jobs:
           file: docker/Dockerfile.production-gpu
           target: final-oneapi2026
           platforms: linux/amd64
-          push: true
+          outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -754,6 +764,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestation, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
           name: oneapi2026
@@ -948,7 +959,7 @@ jobs:
           file: docker/Dockerfile.production
           target: server
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -998,6 +1009,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestations, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
           name: server

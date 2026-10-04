@@ -49,7 +49,7 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    `ghcr.io/vmafx/vmafx:<tag>-tester`. The package `ghcr.io/vmafx/vmafx` is already public,
    so nothing needs a click; check once with a logged-out `docker pull`.
 2. **macOS bundle**: dispatch `Publish macOS Tester Bundle` on `master` with `ref` (or
-   `tag`) and `publish: true`; the file is `vmafx-tester-macos-arm64-<git describe>`. `publish: false` builds, runs the bundle's own report on the hosted
+   `tag`) and `publish: true`; the file is `vmafx-tester-macos-arm64-<git describe>.tar.xz`. `publish: false` builds, runs the bundle's own report on the hosted
    runner and uploads a 14-day workflow artifact only. With `publish: true` the
    `tester-publish` environment gate (master only, maintainer approval) applies, then the bundle is attested, signed and
    attached to a new prerelease `tester-<date>-<sha8>` (not a product release). The
@@ -100,6 +100,23 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    carries an x64 `vcruntime140_1.dll`).
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
+
+### Compression
+
+The macOS bundle is tar + xz at level 9, the Windows zips are Deflate by zopfli, and the
+images' layers are zstd at BuildKit's strongest level: the strongest each package's
+documented consumers open ([ADR-1591](../adr/1591-package-compression.md),
+[ADR-1594](../adr/1594-zstd-images-zopfli-zips.md); the table of every published
+artifact is in [Artifact publishing policy](publishing.md#compression)). The image
+guides therefore require Docker Engine 23.0 or later.
+
+The Windows builder writes the zip records itself: `zipfile` cannot store a stream it
+did not compress. `pack()` runs zopfli (`requirements/locks/windows-tester-zip.txt`,
+installed only by the build job) on every processor and writes the records `zipfile`
+writes on Windows; `tools/rc1-tester/tests/test_windows_bundle.py` checks every entry's
+stream against zopfli's and, with zlib's stream in its place, the whole file against
+`zipfile`'s bytes. zopfli adds about 3,200 CPU seconds to the CUDA zip. Bump zopfli in
+`requirements/locks/windows-tester-zip.in` and the rc1-tester `dev` extra together.
 
 ## Licensing
 

@@ -18,7 +18,7 @@
 # Runs under bash 3.2 (Apple's /bin/bash and the hosted runner's): no mapfile, associative
 # arrays, ${x,,}, |&, [[ -v ]], coproc or local -n (tools/rc1-tester/tests/test_bash32_compat.py).
 #
-# Result in <output-dir>: vmafx-tester-macos-arm64-<tag>.tar.gz, its .sha256,
+# Result in <output-dir>: vmafx-tester-macos-arm64-<tag>.tar.xz, its .sha256,
 # report.json (the bundle's own report run on this runner) and bundle-files.txt.
 # The bundle carries licenses/ (THIRD_PARTY_NOTICES.txt and every licence text)
 # and fails before packing when a file has no recorded licence (ADR-1503).
@@ -93,7 +93,7 @@ echo "$PBS_SHA256  $out/pbs.tar.gz" | shasum -a 256 -c -
 mkdir "$out/pbs"
 tar -xzf "$out/pbs.tar.gz" -C "$out/pbs"
 mv "$out/pbs/python" "$bundle/runtime"
-# The interpreter archive is an input, not a product: the workflow publishes
+# The interpreter archive is an input, not a product: the workflow once published
 # every $out/*.tar.gz, and tester-20261003-c12763f3 carried (and signed) it.
 rm -r "${out:?}/pbs" "${out:?}/pbs.tar.gz"
 # The report needs the standard library only: drop headers, docs, tests, GUI, pip.
@@ -164,9 +164,14 @@ licensing check --artifact macos --root "$bundle" --repo "$repo" \
   --build-scan "$out/vmafx-sources.json" --python-version "$py_version" \
   --receipt "$bundle/licence-check.json"
 
+# xz at level 9 (ADR-1591): macOS's own tar and Archive Utility read xz through the
+# liblzma Apple builds libarchive with (zstd is not built in), and level 9's 64 MiB
+# window finds the frame-to-frame redundancy of the test videos that gzip's 32 KiB
+# window cannot. libarchive's xz writer runs one thread, so the archive is reproducible.
 step "pack"
 (cd "$bundle" && find . -type f | sort | xargs -I{} stat -f '%z %N' {}) >"$out/bundle-files.txt"
-(cd "$out" && COPYFILE_DISABLE=1 tar --uid 0 --gid 0 -czf "$name.tar.gz" "$name")
-(cd "$out" && shasum -a 256 "$name.tar.gz" >"$name.tar.gz.sha256")
-cat "$out/$name.tar.gz.sha256"
-ls -l "$out/$name.tar.gz"
+(cd "$out" && COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --options xz:compression-level=9 \
+  -cJf "$name.tar.xz" "$name")
+(cd "$out" && shasum -a 256 "$name.tar.xz" >"$name.tar.xz.sha256")
+cat "$out/$name.tar.xz.sha256"
+ls -l "$out/$name.tar.xz"

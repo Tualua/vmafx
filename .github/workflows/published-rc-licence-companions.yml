@@ -46,6 +46,12 @@ concurrency:
   group: published-rc-licence-companions-${{ inputs.release }}
   cancel-in-progress: false
 
+env:
+  # Layer compression of the <tag>-source images this workflow pushes through
+  # .github/actions/image-licence-artifacts (ADR-1594); docker-publish-tester.yml
+  # explains each option. The published rc images themselves are not rebuilt.
+  IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
+
 jobs:
   plan:
     name: Images of ${{ inputs.release }}
@@ -185,6 +191,7 @@ jobs:
         if: inputs.publish
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ steps.image.outputs.image }}
           digest: ${{ steps.image.outputs.digest }}
           name: ${{ inputs.release }}-${{ matrix.artifact }}

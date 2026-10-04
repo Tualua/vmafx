@@ -10,9 +10,11 @@ import json
 import struct
 import sys
 import zipfile
+import zlib
 from pathlib import Path
 
 import pytest
+from zopfli import zopfli
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parents[2]
@@ -360,6 +362,97 @@ def test_pack_is_reproducible_and_has_one_top_level_folder(tmp_path: Path) -> No
     assert names == sorted(names) and all(n.startswith(f"{bundle.name}/") for n in names)
     digest, name = (tmp_path / "a" / f"{first.name}.sha256").read_text().split()
     assert name == first.name and digest == builder.sha256(first)
+
+
+def compressible(size: int) -> bytes:
+    """Text-like bytes on which zlib level 9 and zopfli write different streams."""
+    words = [b"vmaf", b"motion", b"adm", b"vif", b"frame", b"score", b"0.917", b"\n"]
+    state, out = 12345, bytearray()
+    while len(out) < size:
+        state = (state * 1103515245 + 12345) % 2**31
+        out += words[state % len(words)] + b" "
+    return bytes(out[:size])
+
+
+def raw_deflate(data: bytes, level: int) -> bytes:
+    compressor = zlib.compressobj(level, zlib.DEFLATED, -zlib.MAX_WBITS)
+    return compressor.compress(data) + compressor.flush()
+
+
+def zopfli_stream(data: bytes) -> bytes:
+    """zopfli's raw Deflate at its default 15 iterations, computed here, not by the builder."""
+    return zopfli.compress(data, numiterations=15)[2:-4]
+
+
+def stored_stream(archive: Path, info: zipfile.ZipInfo) -> bytes:
+    """The compressed bytes of one entry, read past its local file header."""
+    with archive.open("rb") as raw:
+        raw.seek(info.header_offset)
+        header = raw.read(30)
+        name_len, extra_len = struct.unpack("<HH", header[26:30])
+        raw.seek(info.header_offset + 30 + name_len + extra_len)
+        return raw.read(info.compress_size)
+
+
+def bundle_of(root: Path, files: dict[str, bytes]) -> Path:
+    bundle = root / "vmafx-tester-windows-x64-v1"
+    for rel, data in files.items():
+        (bundle / rel).parent.mkdir(parents=True, exist_ok=True)
+        (bundle / rel).write_bytes(data)
+    (root / "out").mkdir()
+    return bundle
+
+
+def test_pack_deflates_every_entry_at_the_strongest_level(tmp_path: Path) -> None:
+    """ADR-1594: every entry is zopfli's Deflate stream (method 8). The zip was zlib
+    level 6 (ADR-1591 found writestr() ignoring the ZipFile's level), then zlib level 9."""
+    data = compressible(300_000)
+    assert zopfli_stream(data) != raw_deflate(data, 9)  # the check can tell them apart
+    assert zlib.decompress(zopfli_stream(data), -zlib.MAX_WBITS) == data
+    rels = ("run.cmd", "tests/test_cpu.exe", "python/test/resource/yuv/a.yuv")
+    bundle = bundle_of(tmp_path, dict.fromkeys(rels, data))
+    archive = builder.pack(bundle, tmp_path / "out")
+    with zipfile.ZipFile(archive) as zf:
+        infos = zf.infolist()
+        assert zf.testzip() is None and all(zf.read(info) == data for info in infos)
+    assert len(infos) == 3
+    for info in infos:
+        assert info.compress_type == zipfile.ZIP_DEFLATED
+        assert stored_stream(archive, info) == zopfli_stream(data), info.filename
+
+
+def zipfile_reference(bundle: Path, target: Path) -> bytes:
+    """What Python's zipfile writes on Windows for the same files at zlib level 9."""
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(p for p in bundle.rglob("*") if p.is_file()):
+            entry = zipfile.ZipInfo(f"{bundle.name}/{path.relative_to(bundle).as_posix()}",
+                                    (1980, 1, 1, 0, 0, 0))  # fmt: skip
+            entry.create_system = 0
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o644 << 16
+            zf.writestr(entry, path.read_bytes(), compresslevel=9)
+    return target.read_bytes()
+
+
+def test_the_container_is_what_zipfile_writes(tmp_path: Path) -> None:
+    """With zlib's level-9 stream in place of zopfli's, pack() writes zipfile's bytes: the
+    records Explorer, tar and Expand-Archive opened before ADR-1594 are unchanged."""
+    files = {"run.cmd": b"@echo off\r\n", "tests/t\u00e9st.exe": compressible(70_000),
+             "licenses/empty.txt": b""}  # fmt: skip
+    bundle = bundle_of(tmp_path, files)
+    archive = builder.pack(bundle, tmp_path / "out", deflate=lambda data: raw_deflate(data, 9))
+    assert archive.read_bytes() == zipfile_reference(bundle, tmp_path / "reference.zip")
+
+
+def test_pack_refuses_what_needs_zip64(tmp_path: Path, monkeypatch) -> None:
+    bundle = bundle_of(tmp_path, {"a.bin": b"x" * 64, "b.bin": b"y"})
+    monkeypatch.setattr(builder, "ZIP_MAX_SIZE", 32)
+    with pytest.raises(builder.BuildError, match="a.bin: 64 bytes needs zip64"):
+        builder.pack(bundle, tmp_path / "out", deflate=lambda data: raw_deflate(data, 9))
+    monkeypatch.setattr(builder, "ZIP_MAX_SIZE", 1 << 20)
+    monkeypatch.setattr(builder, "ZIP_MAX_ENTRIES", 1)
+    with pytest.raises(builder.BuildError, match="2 files need zip64"):
+        builder.pack(bundle, tmp_path / "out", deflate=lambda data: raw_deflate(data, 9))
 
 
 def test_download_refuses_plain_http_and_a_wrong_hash(tmp_path: Path, monkeypatch) -> None:

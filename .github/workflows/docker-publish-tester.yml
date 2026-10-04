@@ -68,6 +68,13 @@ env:
   IMAGE_NAME: vmafx/vmafx
   PUBLISH_TAG: ${{ github.event.inputs.tag }}
   SOURCE_REF: ${{ github.event.inputs.ref }}
+  # Layer compression of every image this workflow pushes (ADR-1594): zstd at
+  # BuildKit's strongest level (22 maps to klauspost's best, about zstd 11).
+  # force-compression converts every layer that is not zstd yet, base-image and
+  # cached layers included; oci-mediatypes because Docker rejects zstd layers under
+  # Docker manifest media types. Pulling needs Docker Engine 23.0 or later (Docker
+  # Desktop 4.19), containerd 1.5 or later, or Podman; docs/usage/docker.md.
+  IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
 
 jobs:
   validate:
@@ -296,7 +303,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-contexts: |
             xref=${{ runner.temp }}/xref
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=tester-${{ matrix.arch }}
           build-args: |
             VMAF_BUILD_JOBS=4
@@ -362,7 +369,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-contexts: |
             xref=${{ runner.temp }}/xref
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=tester-${{ matrix.arch }}
           build-args: |
             VMAF_BUILD_JOBS=4
@@ -678,7 +685,7 @@ jobs:
           file: docker/Dockerfile.tester
           target: final-${{ matrix.kit }}
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=tester-${{ matrix.kit }}
@@ -700,7 +707,7 @@ jobs:
           file: docker/Dockerfile.tester
           target: ${{ matrix.kit }}-source-export
           platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=tester-${{ matrix.kit }}

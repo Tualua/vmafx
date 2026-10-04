@@ -1283,6 +1283,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [dataset terms](docs/ai/training-data.md#dataset-terms)).
 
 
+- Every published archive and image now uses the strongest compression its
+  documented consumers open (ADR-1591). The macOS tester bundle is
+  `vmafx-tester-macos-arm64-<version>.tar.xz` (xz level 9, 27 MB instead of
+  70 MB; unpack with `tar -xf`). The Windows tester zips deflate every entry at
+  zlib level 9: they claimed level 9 but carried level 6, because `zipfile`
+  ignores a `ZipFile`'s level for `ZipInfo` entries (2 % smaller). The release
+  `models.tar.gz` and `licenses.tar.gz` and the git-archive source tarballs are
+  gzip level 9, and every layer the image workflows create is gzip level 9
+  (zstd would need Docker Engine 23.0 or later). The `vmaf-rc1-report` zip
+  bundle deflates at level 9 too.
+
+
 - The generated upstream parity allowlist page
   (`docs/development/upstream-parity-allowlist.md`) keeps its "Pending"
   section with "None" when no difference is pending, so links to it stay
@@ -2235,6 +2247,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `bitrate_kbps` is now an error for these picks. Migration: results that read
   the old pick change; rerun `recommend` and the ladder, and pin a CRF
   explicitly where the higher-quality encode is wanted. See ADR-1562.
+
+
+- Every published image, the dev container included, now stores its layers as zstd
+  at BuildKit's strongest level (ADR-1594): 5 to 25 % smaller downloads (the CPU
+  tester image 268 to 200 MB). Pulling them needs Docker Engine 23.0 or later,
+  Docker Desktop 4.19 or later, containerd 1.5 or later, or Podman; an older Docker
+  stops with `failed to register layer: ... archive/tar: invalid tar header`
+  (`docs/usage/docker.md`, "What can pull the images"). Images published up to
+  `v1.0.0-rc.2` keep gzip layers.
+- The Windows tester zips are encoded by zopfli: still Deflate, which every Windows
+  tool opens, and 3.7 to 4.2 % smaller than zlib's strongest level (the CUDA zip
+  344 to 329 MB).
 
 
 ### Fixed

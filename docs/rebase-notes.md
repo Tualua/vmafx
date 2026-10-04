@@ -78,6 +78,45 @@ records and docs; no build or runtime change.
 - `tools/rc1-tester/image/published-rc/` (data, recorded scans) and the
   `published-rc-*` records describe immutable images: never regenerate a scan
   from another commit than the release's `source_commit`.
+## zstd image layers and zopfli zips (ADR-1594, 2026-10-04)
+
+`build/compress-packages-2`, stacked on ADR-1591. Workflows, the Windows zip builder,
+one lock and docs.
+
+- Every workflow that pushes an image (`docker-publish-{tester,production,operator-node}.yml`,
+  `dev-container-publish.yml`, `published-rc-licence-companions.yml`) sets
+  `IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true`
+  and pushes through `outputs:` ending in it; the tester's `load:` steps are back to the
+  shorthand. Dropping `force-compression` leaves cached and base layers gzip; dropping
+  `oci-mediatypes` makes the images unpullable by Docker.
+- `scripts/ci/build-windows-tester-bundle.py::pack()` no longer uses `zipfile`:
+  `write_zip()` writes the records `zipfile` writes on Windows around zopfli streams.
+  An upstream-style revert to `zipfile.writestr()` silently drops zopfli; the test
+  `test_pack_deflates_every_entry_at_the_strongest_level` fails on it.
+- `requirements/locks/windows-tester-zip.{in,txt}` (new) and the rc1-tester `dev` extra
+  pin the same zopfli; the Windows workflow's recipe overlay checks the lock out with
+  `tools/rc1-tester` and `scripts/ci`.
+- ADR-1591's exception for the dev container is gone.
+
+## Every published archive and image at its strongest compression (ADR-1591, 2026-10-04)
+
+`build/compress-packages`. Packaging, workflows and their tests; no compiled code.
+
+- `.github/workflows/docker-publish-{tester,production,operator-node}.yml`: every
+  `docker/build-push-action` step exports through `outputs:` ending in
+  `,${{ env.IMAGE_COMPRESSION }}` (no `push:` / `load:` shorthand), and every call of
+  `.github/actions/image-licence-artifacts` passes `compression:`. A rebase that adds
+  an image build keeps both; `scripts/ci/tests/test_package_compression.py` fails a
+  workflow that pushes an image outside its tables.
+- `scripts/ci/build-macos-tester-bundle.sh` writes `<name>.tar.xz` and
+  `macos-tester-bundle.yml` globs `*.tar.xz`; the guide's commands name `.tar.xz`.
+- `scripts/ci/build-windows-tester-bundle.py::pack()` and
+  `tools/rc1-tester/src/vmaf_rc1_tester/bundle.py::_archive_zip()` pass
+  `compresslevel` to `writestr()`: a `ZipFile`'s level never reaches a `ZipInfo` entry.
+- `docker/Dockerfile.node` and `licensing.py fetch_git_archive()` run
+  `git archive --format=tar.gz -9`; `build-native-release-artifacts.sh` uses `gzip -9n`.
+- `dev-container-publish.yml` keeps BuildKit's default level as a recorded exception
+  that expires on 2026-12-31 (the test fails after that date).
 
 ## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
 

@@ -164,6 +164,10 @@ sftp://archive.example.com/corpus/ref.yuv
 
 The `vmafx-node` image bundles rclone at `/usr/local/bin/rclone`.  Verify:
 
+Images published after `v1.0.0-rc.2` have zstd layers and need Docker Engine 23.0 or
+later, Docker Desktop 4.19 or later, Podman or containerd 1.5 or later ([what can pull
+them](docker.md#what-can-pull-the-images)).
+
 ```bash
 docker run --rm --entrypoint /usr/local/bin/rclone ghcr.io/vmafx/vmafx-node:<tag> version
 ```

@@ -208,6 +208,9 @@ regular_nonempty() { [[ -f "$1" && ! -L "$1" && -s "$1" ]]; }
 absent() { [[ ! -e "$1" ]]; }
 lacks_line() { ! grep -qx -- "$1" "$2"; }
 archive_has() { tar -tzf "$1" | grep -qx -- "$2"; }
+# RFC 1952: byte 8 of a gzip member is XFL, 2 when the compressor used its
+# strongest level (gzip -9), 0 for the default level 6.
+gzip_xfl_is() { [[ "$(od -An -tu1 -j8 -N1 -- "$1" | tr -d ' ')" == "$2" ]]; }
 
 # --- positive: inside the container the full bundle is built and verified ---
 good="$scratch/good"
@@ -223,6 +226,11 @@ check 'models.tar.gz carries its licenses/ notices' archive_has \
   "$good/artifacts/models.tar.gz" licenses/THIRD_PARTY_NOTICES.txt
 check 'licenses.tar.gz carries the release notices' archive_has \
   "$good/artifacts/licenses.tar.gz" licenses/THIRD_PARTY_NOTICES.txt
+# ADR-1591: both release tarballs are gzip at level 9; the check refuses level 6.
+check 'models.tar.gz is gzip at level 9' gzip_xfl_is "$good/artifacts/models.tar.gz" 2
+check 'licenses.tar.gz is gzip at level 9' gzip_xfl_is "$good/artifacts/licenses.tar.gz" 2
+printf 'vmaf\n' | gzip -6n >"$scratch/level6.gz"
+check 'the level check refuses a level-6 gzip' gzip_xfl_is "$scratch/level6.gz" 0
 check 'the models and the release files are noticed, then checked, in order' cmp -s \
   <(printf '%s\n' 'notices release-models' 'check release-models' 'scan-build ' \
     'notices release-native' 'check release-native') "$good/licensing.log"

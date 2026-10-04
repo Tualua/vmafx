@@ -630,6 +630,11 @@ repo or in CI secrets.
   `licenses/` directory for the models. Both are written and checked by
   `tools/rc1-tester/image/licensing.py` (artifact kinds `release-native`,
   `release-models`); the build fails on a file without a recorded licence.
+  Both tarballs are `gzip -9n` ([ADR-1591](../adr/1591-package-compression.md));
+  the container layers are zstd at BuildKit's strongest level and need Docker
+  Engine 23.0 or later to pull
+  ([ADR-1594](../adr/1594-zstd-images-zopfli-zips.md), table in [Artifact
+  publishing policy](publishing.md#compression)).
 - **`vmaf-mcp` Python package** (wheel + sdist): cosign sign-blob bundles, a
   GitHub build-provenance attestation attached as
   `vmaf-mcp-provenance.sigstore.json`, an SPDX SBOM attestation on the wheel

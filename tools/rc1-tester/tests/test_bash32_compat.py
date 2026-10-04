@@ -153,7 +153,7 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
         stubs / "tar",
         'case "$1" in -xzf) mkdir -p "$4/python/bin" "$4/python/include" "$4/python/share" "$4/python/lib/python3.13/lib-dynload"; printf "#!/bin/sh\\nexit 0\\n" > "$4/python/bin/python3"; chmod +x "$4/python/bin/python3";; '
         '-xf) mkdir -p "$4/python/licenses"; : > "$4/python/licenses/LICENSE.cpython.txt"; : > "$4/python/PYTHON.json";; '
-        '--uid) : > "$6";; *) : ;; esac\n',
+        '--uid) while [ $# -gt 1 ]; do [ "$1" = -cJf ] && : > "$2"; shift; done;; *) : ;; esac\n',
     )
     stub(stubs / "otool", 'echo "$2:"; printf "\\t/usr/lib/libSystem.B.dylib (c)\\n"\n')
     stub(stubs / "file", "echo text\n")
@@ -175,8 +175,9 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     assert "status=0" in result.stdout, result.stderr
     assert "mapfile" not in result.stderr, result.stderr
     assert "command not found" not in result.stderr.replace("sandbox-exec", ""), result.stderr
-    # The interpreter archive is an input: nothing but the bundle's own files
-    # may be left where the workflow publishes every *.tar.gz.
+    # The interpreter archive is an input: nothing but the bundle's own files may be
+    # left in the output directory, whose archives the workflow publishes.
+    assert (tmp_path / "out" / "vmafx-tester-macos-arm64-t.tar.xz").exists()
     assert not (tmp_path / "out" / "pbs.tar.gz").exists()
     assert not (tmp_path / "out" / "pbs").exists()
     assert not (tmp_path / "out" / "pbs-full.tar.zst").exists()

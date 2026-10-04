@@ -22,6 +22,9 @@ interface; see [rest.md](rest.md) for the HTTP endpoints (`/v1/score`,
 
 2. Or run the published release image (multi-architecture amd64/arm64). Use
    a release tag such as `v1.0.0-rc.2` or `latest`.
+   Images published after `v1.0.0-rc.2` have zstd layers and need Docker
+   Engine 23.0 or later, Docker Desktop 4.19 or later, Podman or containerd 1.5
+   or later ([what can pull them](../usage/docker.md#what-can-pull-the-images)).
 
     ```bash
     docker run --rm \

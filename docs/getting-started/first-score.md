@@ -9,7 +9,9 @@ few minutes once you have a `vmaf` binary.
 You need:
 
 - a `vmaf` from [Getting started](index.md): a source build
-  (`build/tools/vmaf`), the release binary, or the container image;
+  (`build/tools/vmaf`), the release binary, or the container image (Docker
+  Engine 23.0 or later for images published after `v1.0.0-rc.2`,
+  [details](../usage/docker.md#what-can-pull-the-images));
 - a checkout of the repository, for the two test clips
   `testdata/ref_576x324_48f.yuv` (reference) and `testdata/dis_576x324_48f.yuv`
   (distorted): 48 frames each, 576x324 pixels, 8-bit, 4:2:0, raw YUV.

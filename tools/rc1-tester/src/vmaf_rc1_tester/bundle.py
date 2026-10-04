@@ -297,6 +297,11 @@ def _write_bundle_files(
     return report_path, manifest_path
 
 
+# The strongest zlib level for both archive formats (ADR-1591). zipfile applies a
+# ZipFile's level only to entries it names itself, so each ZipInfo entry passes it.
+ARCHIVE_LEVEL = 9
+
+
 def _archive_zip(staging: Path, archive_path: Path) -> None:
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as target:
         for path in sorted(staging.iterdir()):
@@ -304,13 +309,15 @@ def _archive_zip(staging: Path, archive_path: Path) -> None:
             member.create_system = 3
             member.compress_type = zipfile.ZIP_DEFLATED
             member.external_attr = (0o100644 & 0xFFFF) << 16
-            target.writestr(member, path.read_bytes())
+            target.writestr(member, path.read_bytes(), compresslevel=ARCHIVE_LEVEL)
 
 
 def _archive_tar(staging: Path, archive_path: Path) -> None:
     with (
         archive_path.open("wb") as raw_stream,
-        gzip.GzipFile(filename="", mode="wb", fileobj=raw_stream, mtime=0) as compressed,
+        gzip.GzipFile(
+            filename="", mode="wb", fileobj=raw_stream, compresslevel=ARCHIVE_LEVEL, mtime=0
+        ) as compressed,
         tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as target,
     ):
         for path in sorted(staging.iterdir()):

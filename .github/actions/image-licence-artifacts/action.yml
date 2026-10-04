@@ -48,6 +48,12 @@ inputs:
     description: Build arguments of the image build (the source stage shares its cache)
     required: false
     default: ""
+  compression:
+    description: >-
+      Layer compression of the source image the build mode pushes, the calling
+      workflow's IMAGE_COMPRESSION (ADR-1594),
+      compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
+    required: true
 runs:
   using: composite
   steps:
@@ -98,7 +104,7 @@ runs:
         file: ${{ inputs.source-file }}
         target: ${{ inputs.source-target }}
         platforms: ${{ inputs.platforms }}
-        push: true
+        outputs: type=image,push=true,${{ inputs.compression }}
         tags: ${{ inputs.image }}:${{ inputs.source-tag }}
         cache-from: type=gha
         build-args: ${{ inputs.build-args }}

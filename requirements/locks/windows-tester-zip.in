@@ -1,0 +1,4 @@
+# zopfli, the Deflate encoder of the Windows tester zips (ADR-1594); build time only,
+# nothing of it ships. Keep equal to the pins in tools/rc1-tester/pyproject.toml
+# and the rc1-tester-report-tests hook of .pre-commit-config.yaml.
+zopfli==0.4.3

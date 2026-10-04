@@ -67,6 +67,11 @@
       "compile_args": ["requirements/locks/jsonschema.in", "--universal", "--python-version", "3.12", "--generate-hashes"]
     },
     {
+      "output": "requirements/locks/windows-tester-zip.txt",
+      "inputs": ["requirements/locks/windows-tester-zip.in"],
+      "compile_args": ["requirements/locks/windows-tester-zip.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
       "output": "requirements/locks/package-build.txt",
       "install_aliases": [
         {

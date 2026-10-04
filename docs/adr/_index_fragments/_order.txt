@@ -1248,3 +1248,5 @@
 1577-scoring-paths-per-tenant
 1578-published-rc-licence-companions
 1568-tests-run-once-in-ci
+1591-package-compression
+1594-zstd-images-zopfli-zips

@@ -25,6 +25,10 @@ The images are published as `ghcr.io/vmafx/vmafx:<tag>`, where `<tag>` is a
 release tag such as `v1.0.0-rc.2`. The image's entry point is `vmaf`, so the
 arguments after the image name go straight to the CLI:
 
+Images published after `v1.0.0-rc.2` have zstd layers and need Docker Engine 23.0 or
+later, Docker Desktop 4.19 or later, Podman or containerd 1.5 or later ([what can pull
+them](../usage/docker.md#what-can-pull-the-images)).
+
 ```bash
 docker run --rm ghcr.io/vmafx/vmafx:v1.0.0-rc.2 --version
 ```

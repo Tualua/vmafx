@@ -50,6 +50,13 @@ env:
   SERVER_IMAGE: vmafx/vmafx-server
   NODE_IMAGE: vmafx/vmafx-node
   PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+  # Layer compression of every image this workflow pushes (ADR-1594): zstd at
+  # BuildKit's strongest level (22 maps to klauspost's best, about zstd 11).
+  # force-compression converts every layer that is not zstd yet, base-image and
+  # cached layers included; oci-mediatypes because Docker rejects zstd layers under
+  # Docker manifest media types. Pulling needs Docker Engine 23.0 or later (Docker
+  # Desktop 4.19), containerd 1.5 or later, or Podman; docs/usage/docker.md.
+  IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
 
 jobs:
   validate-release:
@@ -217,7 +224,7 @@ jobs:
           target: operator
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=operator-${{ matrix.arch }}
           cache-to: type=gha,scope=operator-${{ matrix.arch }},mode=max
           build-args: |
@@ -251,7 +258,7 @@ jobs:
           file: docker/Dockerfile.operator
           target: source-export
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=operator-${{ matrix.arch }}
           build-args: |
             VMAFX_VERSION=${{ env.PUBLISH_TAG }}
@@ -410,6 +417,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestations, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}
           digest: ${{ steps.index.outputs.digest }}
           name: operator
@@ -492,7 +500,7 @@ jobs:
           target: go-server
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=server-${{ matrix.arch }}
           cache-to: type=gha,scope=server-${{ matrix.arch }},mode=max
           build-args: |
@@ -527,7 +535,7 @@ jobs:
           file: Dockerfile.go-server
           target: source-export
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=server-${{ matrix.arch }}
           build-args: |
             VMAFX_VERSION=${{ env.PUBLISH_TAG }}
@@ -687,6 +695,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestations, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
           digest: ${{ steps.index.outputs.digest }}
           name: server
@@ -770,7 +779,7 @@ jobs:
           target: node-cpu
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.NODE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.NODE_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=node-${{ matrix.arch }}
           cache-to: type=gha,scope=node-${{ matrix.arch }},mode=max
           build-args: |
@@ -805,7 +814,7 @@ jobs:
           file: docker/Dockerfile.node
           target: node-source-export
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.NODE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.NODE_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
           cache-from: type=gha,scope=node-${{ matrix.arch }}
           build-args: |
             VMAFX_VERSION=${{ env.PUBLISH_TAG }}
@@ -965,6 +974,7 @@ jobs:
       - name: Licence artifacts (SPDX SBOM attestations, source image)
         uses: ./.github/actions/image-licence-artifacts
         with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
           image: ${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}
           digest: ${{ steps.index.outputs.digest }}
           name: node

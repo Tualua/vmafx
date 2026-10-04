@@ -139,6 +139,11 @@ write_and_check_notices() {
     --build-scan "$scan" --python-version none
 }
 
+# Release tarballs are gzip at level 9 (ADR-1591): gzip is the one compressor every
+# Linux tar extracts without an extra package (xz-utils and zstd are not Essential on
+# Debian), and -n keeps the name and time out of the header so the archive is
+# byte-reproducible.
+#
 # models.tar.gz holds model/ and the notices of the models in it (licenses/).
 stage_models() {
   local archive_epoch stage="$LICENCE_WORK/models"
@@ -149,7 +154,7 @@ stage_models() {
     >"$LICENCE_WORK/no-compiled-sources.json"
   write_and_check_notices release-models "$stage" "$LICENCE_WORK/no-compiled-sources.json"
   tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
-    --numeric-owner -C "$stage" -cf - model licenses | gzip -n >artifacts/models.tar.gz
+    --numeric-owner -C "$stage" -cf - model licenses | gzip -9n >artifacts/models.tar.gz
 }
 
 # THIRD_PARTY_NOTICES.txt and licenses.tar.gz for the release files: the
@@ -164,7 +169,7 @@ stage_licences() {
   write_and_check_notices release-native "$stage" "$LICENCE_WORK/vmafx-sources.json"
   cp "$stage/licenses/THIRD_PARTY_NOTICES.txt" artifacts/THIRD_PARTY_NOTICES.txt
   tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
-    --numeric-owner -C "$stage" -cf - licenses | gzip -n >artifacts/licenses.tar.gz
+    --numeric-owner -C "$stage" -cf - licenses | gzip -9n >artifacts/licenses.tar.gz
 }
 
 # u2netp_mirror: fork-local mirror of the upstream `xuebinqin/U-2-Net` u2netp

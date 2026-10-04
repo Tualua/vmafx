@@ -38,6 +38,15 @@ concurrency:
   group: dev-container-publish-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # Layer compression of every image this workflow pushes (ADR-1594): zstd at
+  # BuildKit's strongest level (22 maps to klauspost's best, about zstd 11).
+  # force-compression converts every layer that is not zstd yet, base-image and
+  # cached layers included; oci-mediatypes because Docker rejects zstd layers under
+  # Docker manifest media types. Pulling needs Docker Engine 23.0 or later (Docker
+  # Desktop 4.19), containerd 1.5 or later, or Podman; docs/usage/docker.md.
+  IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
+
 jobs:
   publish:
     name: Build, push, and sign dev container (libvmaf-build stage)
@@ -72,7 +81,7 @@ jobs:
           context: .
           file: dev/Containerfile
           target: libvmaf-build
-          push: true
+          outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: |
             ghcr.io/vmafx/vmafx-dev-mcp:sha-${{ github.sha }}
             ghcr.io/vmafx/vmafx-dev-mcp:master

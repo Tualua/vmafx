@@ -56,14 +56,16 @@ import json
 import os
 import platform
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
 import urllib.request
-import zipfile
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, NamedTuple
 
 REQUIRED = ("VMAFX_ARCH", "PBS_URL", "PBS_SHA256", "PBS_FULL_URL", "PBS_FULL_SHA256",
             "VMAF_RESOURCE_COMMIT", "VMAFX_SOURCE_COMMIT", "VMAFX_SOURCE_REF",
@@ -122,7 +124,25 @@ GOLDEN_NOT_APPLICABLE = (
     "the dispatch and reference checks"
 )
 TIMEOUT = 600
-ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+# The zip (ADR-1591, ADR-1594): Deflate (method 8), the strongest method Windows 10's tar,
+# Explorer's "Extract All" and PowerShell's Expand-Archive all read, encoded by zopfli at
+# its default 15 iterations (requirements/locks/windows-tester-zip.txt). zipfile cannot
+# store a stream it did not compress, so pack() writes the container itself, byte for byte
+# the records zipfile writes on Windows (create system 0, version 20, no data descriptor,
+# no zip64): test_windows_bundle.py compares the two.
+ZIP_DOS_DATE = 1 << 5 | 1  # 1980-01-01
+ZIP_DOS_TIME = 0  # 00:00:00
+ZIP_VERSION = 20  # Deflate
+ZIP_SYSTEM = 0  # MS-DOS, what zipfile writes on Windows
+ZIP_DEFLATED = 8
+ZIP_UTF8_FLAG = 0x800
+ZIP_MODE = 0o644 << 16
+ZIP_MAX_SIZE = int(((1 << 31) - 1) / 1.05)  # zipfile switches to zip64 above this
+ZIP_MAX_ENTRIES = 0xFFFF
+ZIP_LOCAL = struct.Struct("<4s2B4HL2L2H")
+ZIP_CENTRAL = struct.Struct("<4s4B4HL2L5H2L")
+ZIP_END = struct.Struct("<4s4H2LH")
+ZOPFLI_ITERATIONS = 15
 
 
 class BuildError(RuntimeError):
@@ -624,19 +644,93 @@ def print_failed_tests(bundle: Path, report: Path) -> None:
         print(f"{name} exit status: {result.returncode}")
 
 
-def pack(bundle: Path, out: Path) -> Path:
-    """A zip with one top-level folder, entries sorted, every timestamp 1980-01-01."""
+class ZipEntry(NamedTuple):
+    """One file of the zip: its name in the archive, CRC-32, size and Deflate stream."""
+
+    name: str
+    crc: int
+    size: int
+    stream: bytes
+
+
+def zopfli_deflate(data: bytes) -> bytes:
+    """The raw Deflate stream zopfli writes for data (its zlib form without the two
+    header bytes and the Adler-32 trailer)."""
+    try:
+        zopfli = importlib.import_module("zopfli.zopfli")
+    except ImportError as error:
+        raise BuildError(
+            "zopfli is missing: pip install --require-hashes -r "
+            "requirements/locks/windows-tester-zip.txt"
+        ) from error
+    zlib_form: bytes = zopfli.compress(data, numiterations=ZOPFLI_ITERATIONS)
+    return zlib_form[2:-4]
+
+
+def zip_entry(name: str, data: bytes, deflate: Callable[[bytes], bytes]) -> ZipEntry:
+    if len(data) > ZIP_MAX_SIZE:
+        raise BuildError(f"{name}: {len(data)} bytes needs zip64, which pack() does not write")
+    return ZipEntry(name, zlib.crc32(data), len(data), deflate(data))
+
+
+def zip_name(entry: ZipEntry) -> tuple[bytes, int]:
+    """The encoded name and the general-purpose flags, as zipfile writes them."""
+    try:
+        return entry.name.encode("ascii"), 0
+    except UnicodeEncodeError:
+        return entry.name.encode("utf-8"), ZIP_UTF8_FLAG
+
+
+def zip_records(entry: ZipEntry, offset: int) -> tuple[bytes, bytes]:
+    """The local file header (with the name) and the central directory record."""
+    name, flags = zip_name(entry)
+    common = (flags, ZIP_DEFLATED, ZIP_DOS_TIME, ZIP_DOS_DATE, entry.crc, len(entry.stream),
+              entry.size, len(name))  # fmt: skip
+    local = ZIP_LOCAL.pack(b"PK\x03\x04", ZIP_VERSION, 0, *common, 0) + name
+    central = ZIP_CENTRAL.pack(b"PK\x01\x02", ZIP_VERSION, ZIP_SYSTEM, ZIP_VERSION, 0, *common,
+                               0, 0, 0, 0, ZIP_MODE, offset) + name  # fmt: skip
+    return local, central
+
+
+def write_zip(target: Path, entries: list[ZipEntry]) -> None:
+    """Local headers and streams in order, then the central directory and its end."""
+    if len(entries) > ZIP_MAX_ENTRIES:
+        raise BuildError(f"{len(entries)} files need zip64, which pack() does not write")
+    directory = []
+    with target.open("wb") as out:
+        for entry in entries:
+            local, central = zip_records(entry, out.tell())
+            out.write(local + entry.stream)
+            directory.append(central)
+        start = out.tell()
+        if start > ZIP_MAX_SIZE:
+            raise BuildError(
+                f"{target.name}: {start} bytes needs zip64, which pack() does not write"
+            )
+        out.write(b"".join(directory))
+        size = out.tell() - start
+        out.write(ZIP_END.pack(b"PK\x05\x06", 0, 0, len(entries), len(entries), size, start, 0))
+
+
+def zip_entries(bundle: Path, files: list[Path],
+                deflate: Callable[[bytes], bytes]) -> list[ZipEntry]:  # fmt: skip
+    """Every file deflated on every processor (zopfli releases the GIL), in file order."""
+
+    def one(path: Path) -> ZipEntry:
+        return zip_entry(f"{bundle.name}/{path.relative_to(bundle).as_posix()}",
+                         path.read_bytes(), deflate)  # fmt: skip
+
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+        return list(pool.map(one, files))
+
+
+def pack(bundle: Path, out: Path, deflate: Callable[[bytes], bytes] = zopfli_deflate) -> Path:
+    """A zip with one top-level folder, entries sorted, every timestamp 1980-01-01,
+    every entry Deflate by zopfli."""
     step("pack")
     target = out / f"{bundle.name}.zip"
     files = sorted(p for p in bundle.rglob("*") if p.is_file())
-    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for path in files:
-            entry = zipfile.ZipInfo(
-                f"{bundle.name}/{path.relative_to(bundle).as_posix()}", ZIP_TIME
-            )
-            entry.compress_type = zipfile.ZIP_DEFLATED
-            entry.external_attr = 0o644 << 16
-            zf.writestr(entry, path.read_bytes())
+    write_zip(target, zip_entries(bundle, files, deflate))
     listing = [f"{p.stat().st_size} {p.relative_to(bundle).as_posix()}" for p in files]
     (out / "bundle-files.txt").write_text("\n".join(listing) + "\n", encoding="utf-8")
     (out / f"{target.name}.sha256").write_text(f"{sha256(target)}  {target.name}\n")

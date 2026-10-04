@@ -23,10 +23,10 @@ and 9000 series, Ryzen graphics, Instinct), on Linux.
 
 | | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image | AMD GPU image | Native Windows zip |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) | Windows 10 (2004 or later) or 11, on x64 or Arm64; the x64 CUDA zip with an NVIDIA GPU |
+| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop 4.19 or later) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) | Windows 10 (2004 or later) or 11, on x64 or Arm64; the x64 CUDA zip with an NVIDIA GPU |
 | Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests | AVX2 / AVX-512 default dispatch against scalar, **every HIP twin against the CPU on every AMD GPU**, the parity gate, the HIP device tests | **the MSVC build's** AVX2 / AVX-512 (or NEON) default dispatch against scalar and against baked references, SIMD unit tests and the Windows-only unit tests; the CUDA zip adds **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate and the CUDA device tests |
 | Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate | Metal, CUDA, SYCL, the Python golden gate | SYCL and HIP twins (CUDA in the CUDA zip only), Metal, SVE2, the Python golden gate |
-| You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit | Docker and access to `/dev/kfd` and the GPU's render node | PowerShell or the Command Prompt |
+| You need | a terminal | Docker 23.0 or later | Docker 23.0 or later and access to the GPU's device node | Docker 23.0 or later, the NVIDIA driver and the NVIDIA Container Toolkit | Docker 23.0 or later and access to `/dev/kfd` and the GPU's render node | PowerShell or the Command Prompt |
 
 Each prints what it did and did not exercise inside the report (`not_exercised`).
 
@@ -43,14 +43,14 @@ file name, the `git describe` of the tested commit (for example
 
 ```sh
 # 1. Download the archive and its checksum (curl sets no quarantine flag on the files).
-curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.gz
-curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.gz.sha256
+curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz
+curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
 
 # 2. Check the download against the checksum; it prints "OK" and nothing else.
-shasum -a 256 -c vmafx-tester-macos-arm64-<VERSION>.tar.gz.sha256
+shasum -a 256 -c vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
 
-# 3. Unpack into one new directory.
-tar -xzf vmafx-tester-macos-arm64-<VERSION>.tar.gz
+# 3. Unpack into one new directory (macOS's own tar reads xz; nothing to install).
+tar -xf vmafx-tester-macos-arm64-<VERSION>.tar.xz
 
 # 4. Run the report (a few minutes; more with a Metal device, which runs the Metal tests and
 #    the parity gate); the JSON goes to report.json, a summary to the terminal.
@@ -75,7 +75,10 @@ user name, serial number or UUID (see [What the report contains](#what-the-repor
 ### What is in the bundle
 
 Sizes are approximate; the exact file list with sizes is `bundle-files.txt` in the
-workflow run that built it.
+workflow run that built it. The archive is about 27 MB to download and unpacks to about
+185 MB. It is compressed with xz at its strongest level, which finds the
+frame-to-frame redundancy of the test videos; the `.tar.gz` of earlier bundles was
+about 70 MB.
 
 | Path | What | Size |
 | :--- | :--- | ---: |
@@ -92,7 +95,7 @@ workflow run that built it.
 ### Remove it afterwards
 
 ```sh
-cd .. && rm -rf vmafx-tester-macos-arm64-<VERSION> vmafx-tester-macos-arm64-<VERSION>.tar.gz*
+cd .. && rm -rf vmafx-tester-macos-arm64-<VERSION> vmafx-tester-macos-arm64-<VERSION>.tar.xz*
 ```
 
 ### Check the download more closely (optional)
@@ -103,16 +106,16 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 
 ```sh
 # GitHub build provenance (needs the GitHub CLI, `gh`):
-gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.gz -R VMAFx/vmafx
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx
 
 # Sigstore keyless signature (needs `cosign`; the .bundle file is next to the archive):
-cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.gz.bundle \
+cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.xz.bundle \
   --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  vmafx-tester-macos-arm64-<VERSION>.tar.gz
+  vmafx-tester-macos-arm64-<VERSION>.tar.xz
 
 # The SPDX software bill of materials (the .spdx.json asset) is attested on the archive:
-gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.gz -R VMAFx/vmafx \
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
@@ -137,7 +140,8 @@ xattr -dr com.apple.quarantine vmafx-tester-macos-arm64-<VERSION>
 
 ## B. Container image
 
-You need Docker and nothing else. `<VERSION>` is the same string as above. On an Apple silicon Mac Docker Desktop runs a Linux
+You need Docker Engine 23.0 or later (Docker Desktop 4.19 or later) and nothing else; Podman
+works too. `<VERSION>` is the same string as above. On an Apple silicon Mac Docker Desktop runs a Linux
 arm64 virtual machine, so the container tests the fork's aarch64 code on your real CPU.
 It cannot reach Metal and SVE2 is not exposed by Apple cores; the report says so.
 
@@ -175,11 +179,15 @@ ghcr.io/vmafx/vmafx:<VERSION>-tester /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt
 [`docker-publish-tester.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/docker-publish-tester.yml)
 from a tagged commit, signed keyless with cosign and attested like the other VMAFx
 images. It is about 1.05 GB on disk and about 270 MB to download; it holds a CPU-only build,
-no compiler, and runs as a numeric non-root user.
+no compiler, and runs as a numeric non-root user. Its layers are zstd-compressed, so an
+older Docker stops the pull with `failed to register layer: ... archive/tar: invalid tar
+header`; check `docker version --format '{{.Server.Version}}'` and see
+[What can pull the images](docker.md#what-can-pull-the-images). Debian 12's own
+`docker.io` (20.10) is too old; Docker's own packages, Ubuntu's `docker.io` and Podman work.
 
 ## C. Intel GPU image (Linux, or Windows with WSL2)
 
-You need Docker and an Intel GPU: integrated graphics of an Intel Core processor of
+You need Docker 23.0 or later ([why](docker.md#what-can-pull-the-images)) and an Intel GPU: integrated graphics of an Intel Core processor of
 the 11th generation or later (UHD Graphics 7xx, Iris Xe, the Arc graphics of Core Ultra),
 an Arc A- or B-series card, or a Data Center GPU. The image holds a SYCL build of
 VMAFx compiled ahead of time for all of these, with a portable form for anything newer,
@@ -233,8 +241,8 @@ for Arc GPUs and Core Ultra graphics, the
 [11th to 14th generation processor graphics driver](https://www.intel.com/content/www/us/en/download/864990/intel-11th-14th-gen-processor-graphics-windows.html)
 for UHD Graphics 7xx and Iris Xe of those generations. That is the setup Intel's
 compute runtime documents for WSL2 ([WSL.md](https://github.com/intel/compute-runtime/blob/master/documentation/WSL.md)).
-Docker can be Docker Desktop with its WSL integration turned on for your Linux
-distribution, or Docker Engine installed inside WSL.
+Docker can be Docker Desktop 4.19 or later with its WSL integration turned on for your
+Linux distribution, or Docker Engine 23.0 or later installed inside WSL.
 
 Run this in the WSL Linux shell (for example Ubuntu), not in PowerShell:
 
@@ -303,7 +311,7 @@ cannot reach the network when run with the commands above.
 
 ## D. NVIDIA GPU image (Linux, or Windows with WSL2)
 
-You need Docker and an NVIDIA GPU of compute capability 8.0 or newer, in an x86-64
+You need Docker 23.0 or later ([why](docker.md#what-can-pull-the-images)) and an NVIDIA GPU of compute capability 8.0 or newer, in an x86-64
 machine. The image holds a CUDA build of VMAFx and runs it on your own NVIDIA driver;
 it carries no NVIDIA library. On Windows without Docker, the
 [Windows CUDA zip](#with-an-nvidia-gpu-the-cuda-zip) runs the Windows build of the
@@ -367,8 +375,8 @@ the NVIDIA driver opens its device nodes to every user by default.
 
 You need Windows 11 (or Windows 10 21H2 or later), the current
 [NVIDIA Windows driver](https://www.nvidia.com/Download/index.aspx) (it supports WSL2
-by itself; do not install a Linux NVIDIA driver inside WSL), and Docker Desktop with
-the WSL2 backend turned on, as
+by itself; do not install a Linux NVIDIA driver inside WSL), and Docker Desktop 4.19 or later
+with the WSL2 backend turned on, as
 [Docker's GPU support page](https://docs.docker.com/desktop/features/gpu/) and
 NVIDIA's [CUDA on WSL guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
 describe. Then run, in PowerShell or in the WSL Linux shell:
@@ -423,7 +431,7 @@ driver, and it cannot reach the network when run with the commands above.
 
 ## E. AMD GPU image (Linux)
 
-You need Docker, Linux with the kernel's `amdgpu` driver (every current distribution
+You need Docker 23.0 or later ([why](docker.md#what-can-pull-the-images)), Linux with the kernel's `amdgpu` driver (every current distribution
 has it) and an AMD GPU the image has code for. The image holds a HIP build of VMAFx and
 the ROCm 10.0.0 runtime files it needs; the GPU kernel driver stays your system's own.
 
@@ -645,7 +653,12 @@ report says `gpu (sycl): no_device` and names Level Zero; that is not a failure.
 ### What is in the zip
 
 Sizes are approximate; the exact file list with sizes is `bundle-files.txt` in the
-workflow run that built it.
+workflow run that built it. The download is about 44 MB for x64, 39 MB for arm64 and
+330 MB for the CUDA zip (measured on the zips of 2026-10-04; the SYCL zip had not been
+built yet). Every file in it is Deflate-compressed by zopfli, which writes
+smaller Deflate data than zlib's strongest level: Deflate is the strongest method that
+`tar`, Explorer's "Extract All" and PowerShell's `Expand-Archive` all unpack on
+Windows 10.
 
 | Path | What |
 | :--- | :--- |

@@ -25,6 +25,33 @@ name. The tester image is documented in [tester-image.md](tester-image.md).
 Publishing rules and rebuild triggers are in
 [../development/publishing.md](../development/publishing.md).
 
+### What can pull the images
+
+Every published image stores its layers as zstd under OCI media types, at
+BuildKit's strongest level ([ADR-1594](../adr/1594-zstd-images-zopfli-zips.md)):
+the release images above, the tester images, `vmafx-operator`, `vmafx-server`,
+`vmafx-node` and the dev container. Pulling one needs:
+
+| Runtime | Minimum | Released |
+| --- | --- | --- |
+| Docker Engine | 23.0 | February 2023 |
+| Docker Desktop | 4.19 (the first with Engine 23.0) | April 2023 |
+| containerd, and Kubernetes through it | 1.5 (Kubernetes 1.26 and later already need 1.6) | May 2021 |
+| Podman, CRI-O, skopeo | any current release (zstd since August 2019) | |
+
+Check your Docker with `docker version --format '{{.Server.Version}}'`. An older
+one downloads the layers and then stops with:
+
+```text
+failed to register layer: ApplyLayer exit status 1 stdout:  stderr: archive/tar: invalid tar header
+```
+
+(`docker run` prints the same line after `docker:`.) Debian 12's own `docker.io`
+package is 20.10.24 and fails this way: install Docker Engine from Docker's
+repository, use Debian 13 or Ubuntu's updated `docker.io`, or pull with Podman.
+Images published before ADR-1594 (`v1.0.0-rc.2` and earlier) have gzip layers
+and pull with any Docker.
+
 Run a score on the CPU image:
 
 ```bash

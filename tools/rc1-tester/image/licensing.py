@@ -1264,7 +1264,9 @@ def fetch_git_archive(archive: dict, target: Path) -> None:
         if fetched != commit:
             raise LicensingError(f"{archive['git']}: fetched {fetched}, recorded {commit}")
         prefix = target.name.removesuffix(".tar.gz") + "/"
-        git(["archive", "--format=tar.gz", f"--prefix={prefix}", "-o", str(target), fetched], work)
+        # gzip at level 9, the strongest gzip (ADR-1591); the name stays .tar.gz.
+        git(["archive", "--format=tar.gz", "-9", f"--prefix={prefix}", "-o", str(target), fetched],
+            work)  # fmt: skip
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

@@ -528,6 +528,8 @@ def test_a_source_tree_is_fetched_by_its_commit_and_archived(tmp_path: Path) -> 
                            check=True, capture_output=True, text=True).stdout.split()  # fmt: skip
     assert "Tree-x/patches/numactl/0001.patch" in names
     assert not any(p.name.startswith(".") for p in (tmp_path / "out/archives").iterdir())
+    # ADR-1591: gzip at level 9 writes XFL = 2 in byte 8 of its header (RFC 1952).
+    assert (tmp_path / "out/archives/Tree-x.tar.gz").read_bytes()[8] == 2
 
 
 def test_git_commands_ignore_the_callers_repository(monkeypatch) -> None:

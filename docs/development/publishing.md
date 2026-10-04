@@ -140,6 +140,41 @@ See [docs/development/ci.md](ci.md) for the full CI gate list and
 
 ---
 
+## Compression
+
+Every archive and image the project publishes is written at the strongest compression
+that all of its documented consumers open, deterministically
+([ADR-1591](../adr/1591-package-compression.md), [ADR-1594](../adr/1594-zstd-images-zopfli-zips.md);
+consumer versions and measurements in
+[Research-2142](../research/2142-package-compression-consumers.md)). Nothing it holds
+changes: the same files, the same licence check and SBOM, other bytes on the wire.
+
+| Artifact | Producer | Compression | Size at the rc.2 inputs | Limit |
+| :--- | :--- | :--- | ---: | :--- |
+| macOS tester bundle `.tar.xz` | `scripts/ci/build-macos-tester-bundle.sh` | tar + xz level 9 (libarchive, one thread) | 26.6 MB (gzip 6: 69.8 MB) | macOS 14 `tar` and Archive Utility read xz; Apple's libarchive has no zstd |
+| Windows tester zips (x64, arm64, x64 CUDA) | `scripts/ci/build-windows-tester-bundle.py` | Deflate by zopfli 0.4.3 (15 iterations, hash-locked in `requirements/locks/windows-tester-zip.txt`), every entry | 43.9 / 38.7 / 329.4 MB (zlib 9: 45.6 / 40.1 / 343.8 MB; zlib 6: 46.6 / 41.0 / 351.4 MB) | Windows 10 `tar`, Explorer and `Expand-Archive` read Stored and Deflate only |
+| `models.tar.gz`, `licenses.tar.gz` (release) | `scripts/release/build-native-release-artifacts.sh` | `gzip -9n` | 42.20 MB (gzip 6: 42.25 MB) | xz-utils and zstd are not Essential on Debian; xz would save another 2 % |
+| git-archive source tarballs (`licensing.py fetch-sources`, the FFmpeg source in `docker/Dockerfile.node`) | as named | `git archive --format=tar.gz -9` | 1.5 % smaller than level 6 on this repository's `core/` and `scripts/` | name and format kept for the source indexes |
+| Container images and their `-source` images (tester, production, operator, server, node, the rc licence companions) | `docker-publish-tester.yml`, `docker-publish-production.yml`, `docker-publish-operator-node.yml`, `published-rc-licence-companions.yml`, `.github/actions/image-licence-artifacts` | zstd, BuildKit's best level (22), `force-compression`, OCI media types, on every layer (`IMAGE_COMPRESSION`) | tester 267.8 to 200.1 MB, oneAPI 1,424 to 1,073 MB, ROCm 10 8,310 to 7,065 MB, CPU CLI 55.7 to 51.5 MB (amd64) | pulling needs Docker Engine 23.0, Docker Desktop 4.19, containerd 1.5 or Podman ([requirements](../usage/docker.md#what-can-pull-the-images)) |
+| `ghcr.io/vmafx/vmafx-dev-mcp` | `dev-container-publish.yml` | the same `IMAGE_COMPRESSION` | 17.0 to 14.0 GB | encoding adds an estimated 2 to 4 minutes to a job that used 57 of its 90 |
+
+Three mechanics keep the table true:
+
+- With `compression=zstd`, BuildKit converts every layer that is not zstd yet, but only
+  under `force-compression`: base-image layers and the layers imported from the GitHub
+  Actions cache (which always stores gzip) arrive as gzip and would otherwise be pushed
+  as they are. The converted base layers no longer carry their upstream digests, so a
+  host that has the base image downloads them again. `oci-mediatypes=true` is required:
+  under Docker media types BuildKit labels zstd layers in a way Docker cannot pull.
+- The `push:` shorthand of `docker/build-push-action` carries no compression; every push
+  uses `outputs:` ending in `IMAGE_COMPRESSION`. The tester's local `load:` step is not
+  published.
+- `scripts/ci/tests/test_package_compression.py` fails when a publishing workflow loses
+  `IMAGE_COMPRESSION` or changes it, when another workflow starts pushing an image, when
+  the macOS or source archives change their compression, or when the zopfli pins
+  disagree. The Windows zip (zopfli streams, and records equal to `zipfile`'s), the
+  report bundle and the release tarballs have behavioural tests next to their builders.
+
 ## Enforcement
 
 The policy is checked by `scripts/ci/check-container-build.sh`. Without it the

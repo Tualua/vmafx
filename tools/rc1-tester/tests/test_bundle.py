@@ -4,12 +4,15 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import math
+import struct
 import sys
 import tarfile
 import zipfile
+import zlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -136,6 +139,48 @@ def test_create_zip_contains_report(tmp_path: Path) -> None:
     assert all(member.date_time == (1980, 1, 1, 0, 0, 0) for member in members)
     assert all(member.create_system == ZIP_UNIX_SYSTEM for member in members)
     assert all((member.external_attr >> 16) & 0o777 == ARCHIVE_FILE_MODE for member in members)
+
+
+def _long_log() -> str:
+    """A tool log on which zlib's levels 6 and 9 write different streams."""
+    state, lines = 12345, []
+    for index in range(40_000):
+        state = (state * 1103515245 + 12345) % 2**31
+        lines.append(f"frame {index} adm {state % 997} vif {state % 89} motion {state % 13}")
+    return "\n".join(lines)
+
+
+def _raw_deflate(data: bytes, level: int) -> bytes:
+    compressor = zlib.compressobj(level, zlib.DEFLATED, -zlib.MAX_WBITS)
+    return compressor.compress(data) + compressor.flush()
+
+
+def _entry_stream(archive: Path, info: zipfile.ZipInfo) -> bytes:
+    with archive.open("rb") as raw:
+        raw.seek(info.header_offset)
+        name_len, extra_len = struct.unpack("<HH", raw.read(30)[26:30])
+        raw.seek(info.header_offset + 30 + name_len + extra_len)
+        return raw.read(info.compress_size)
+
+
+def test_zip_entries_are_deflated_at_the_strongest_level(tmp_path: Path) -> None:
+    """ADR-1591: a ZipInfo entry ignores the ZipFile's level; each one passes level 9."""
+    validation = replace(_validation("cpu"), stderr=_long_log())
+    artifact = _bundle(_report(), [validation], dest_dir=tmp_path, archive_format="zip")
+    with zipfile.ZipFile(artifact.archive_path) as archive:
+        entries = [(info, archive.read(info)) for info in archive.infolist()]
+    log = [data for info, data in entries if info.filename.endswith("smoke_cpu.log")]
+    assert log and _raw_deflate(log[0], 6) != _raw_deflate(log[0], 9)
+    for info, data in entries:
+        assert _entry_stream(artifact.archive_path, info) == _raw_deflate(data, 9), info.filename
+
+
+def test_tar_is_gzip_at_the_strongest_level(tmp_path: Path) -> None:
+    """ADR-1591: gzip writes XFL = 2 in its header for level 9 (RFC 1952)."""
+    artifact = _bundle(_report(), [_validation("cpu")], dest_dir=tmp_path)
+    header = artifact.archive_path.read_bytes()[:10]
+    assert header[:2] == b"\x1f\x8b" and header[8] == 2
+    assert gzip.compress(b"vmaf " * 1000, compresslevel=6, mtime=0)[8] == 0  # the check can fail
 
 
 def test_manifest_checksums_match_written_files(tmp_path: Path) -> None:

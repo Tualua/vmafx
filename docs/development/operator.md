@@ -44,6 +44,10 @@ CRDs are installed automatically from `deploy/helm/vmafx/crds/` on first
 The release image exposes a non-blocking version check that does not need
 Kubernetes credentials or start the manager:
 
+Images published after `v1.0.0-rc.2` have zstd layers and need Docker Engine
+23.0 or later, Docker Desktop 4.19 or later, Podman or containerd 1.5 or later
+([what can pull them](../usage/docker.md#what-can-pull-the-images)).
+
 ```bash
 docker run --rm ghcr.io/vmafx/vmafx-operator:v1.0.0-rc.2 --version
 # v1.0.0-rc.2

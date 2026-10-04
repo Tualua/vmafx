@@ -19,6 +19,10 @@ release candidates (`vX.Y.Z-rc.N`) are never tagged `latest`, so until 1.0.0
 is out, `latest` does not exist. The examples use `v1.0.0-rc.2`; substitute the
 newest release listed on the GitHub releases page.
 
+Images published after `v1.0.0-rc.2` have zstd layers and need Docker Engine 23.0 or
+later, Docker Desktop 4.19 or later, Podman or containerd 1.5 or later ([what can pull
+them](../usage/docker.md#what-can-pull-the-images)).
+
 ```bash
 tag=v1.0.0-rc.2
 

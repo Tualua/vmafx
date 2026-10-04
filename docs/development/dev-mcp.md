@@ -31,7 +31,7 @@ of [agent-hard-rules.md](agent-hard-rules.md).
 
 | Component | Version | Notes |
 | --- | --- | --- |
-| Docker Engine | 26+ | `docker compose` v2 plugin required |
+| Docker Engine | 26+ | `docker compose` v2 plugin required; the published `vmafx-dev-mcp` image has zstd layers, which need 23.0 or later ([ADR-1594](../adr/1594-zstd-images-zopfli-zips.md)) |
 | [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) | latest | Enables `--gpus all` / `runtime: nvidia` for CUDA kernel execution. The container builds and runs *without* it; CUDA feature extractors return `-ENOSYS` at runtime. |
 
 ### Optional
