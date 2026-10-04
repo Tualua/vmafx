@@ -77,6 +77,20 @@ if [ ! -f "$INFO" ]; then
   exit 1
 fi
 
+# The input must be a gcovr --json-summary document. An lcov .info file (what
+# `make coverage` produced before this check existed) is refused by name instead
+# of dying in a JSON traceback.
+if ! python3 -c '
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+if not isinstance(d, dict) or "line_percent" not in d or "files" not in d:
+    raise ValueError("no line_percent / files keys")
+' "$INFO" 2>/dev/null; then
+  echo "not a gcovr --json-summary file: $INFO (an lcov .info file is not accepted)" >&2
+  exit 2
+fi
+
 # Pull the overall percent + per-file rows out of gcovr's --json-summary
 # format. The schema:
 #   { "line_percent": 73.4, "files": [

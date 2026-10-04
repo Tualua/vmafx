@@ -85,7 +85,7 @@ gcovr --root .. \
 
 `-fprofile-update=atomic` and `--num-processes 1` are both needed so test binaries do not corrupt each other's counters in the shared `libvmaf.so` ([ADR-0110](../adr/0110-coverage-gate-fprofile-update-atomic.md)). The CI job also runs a Python suite before collecting coverage; a local run without it measures lower on the DNN files.
 
-Do not use `make coverage-check` as a stand-in: it builds an lcov report, which `coverage-check.sh` does not read.
+`make coverage-check` runs the same recipe locally: it builds the instrumented tree in `build-coverage/`, runs the meson suite serially, writes the gcovr summary `build-coverage/coverage.json` and passes it to `coverage-check.sh` with the local floors `COVERAGE_MIN_OVERALL` (37) and `COVERAGE_MIN_CRITICAL` (85) from the Makefile. `make coverage-html` renders the gcovr HTML report. `coverage-check.sh` exits 2 on an input that is not a gcovr JSON summary, an lcov `.info` file included. Like the CI job without its Python suite, a local run measures the DNN files lower.
 
 ## Raising a floor
 

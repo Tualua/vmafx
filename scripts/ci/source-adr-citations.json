@@ -196,6 +196,7 @@
     "0110": {
       "sites": {
         ".github/workflows/tests-and-quality-gates.yml": 3,
+        "Makefile": 2,
         "cmd/vmafx-tune/cmd/prefilter.go": 2,
         "pkg/prefilter/knobs.go": 6,
         "pkg/prefilter/prefilter.go": 1,
@@ -214,6 +215,7 @@
     },
     "0111": {
       "sites": {
+        "Makefile": 1,
         "core/include/libvmaf/pelorus/denoise.h": 1
       },
       "target": "0111-coverage-gate-gcovr-with-ort.md"

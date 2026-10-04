@@ -24,6 +24,14 @@ search:
   restores `%h/dev/vmaf` fails it.
 - ADR-0931 is `Accepted` (Phase 1 only) through a status-update appendix; its body
   is untouched. A sync keeps the status line and the index row in step.
+## make coverage-check reads gcovr, not lcov (2026-10-04)
+
+`fix/coverage-check-gcovr-target`. One Makefile target, one script guard, one page.
+
+- The `coverage` / `coverage-html` / `coverage-check` recipes in `Makefile` use gcovr
+  and `build-coverage/coverage.json`; `scripts/ci/coverage-check.sh` exits 2 on a
+  non-gcovr input. A sync that restores lcov fails `test_make_coverage_target.py`.
+  The CI job's recipe (`tests-and-quality-gates.yml`) is unchanged.
 
 ## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
 

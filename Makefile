@@ -578,43 +578,62 @@ test-fast: build
 # ============================================================================
 
 COVERAGE_DIR := build-coverage
-COVERAGE_MIN_OVERALL := 70
+# Local floors. CI passes its own (37 CPU / 70 GPU overall, 85 critical; see
+# docs/development/coverage-gate.md): a local run without the Python suite
+# measures lower, so the overall floor here is the CPU job's.
+COVERAGE_MIN_OVERALL := 37
 COVERAGE_MIN_CRITICAL := 85
+COVERAGE_JSON := $(COVERAGE_DIR)/coverage.json
 
-# Build with gcov instrumentation, run tests, emit lcov report.
-# Uses a dedicated build dir so normal `make build` isn't instrumented.
+# Build with gcov instrumentation, run the meson suite, emit the gcovr report
+# the Coverage Gate job emits (gcovr, not lcov: ADR-0110 / ADR-0111; lcov sums
+# a source compiled into several targets and prints impossible values).
+# Uses a dedicated build dir so normal `make build` isn't instrumented. The
+# build flags and the serial test run are the CI job's (ADR-0110).
 coverage:
-	@command -v lcov >/dev/null || { echo "lcov not found — install lcov"; exit 1; }
-	@command -v gcov >/dev/null || { echo "gcov not found — install gcc"; exit 1; }
+	@command -v gcovr >/dev/null || { echo "gcovr not found - install gcovr (requirements/locks/gcovr.txt)"; exit 1; }
+	@command -v gcov >/dev/null || { echo "gcov not found - install gcc"; exit 1; }
 	@mkdir -p $(COVERAGE_DIR)
 	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
-	    -Denable_cuda=false -Denable_sycl=false --reconfigure 2>/dev/null || \
+	    -Denable_cuda=false -Denable_sycl=false \
+	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic --reconfigure 2>/dev/null || \
 	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
-	    -Denable_cuda=false -Denable_sycl=false
+	    -Denable_cuda=false -Denable_sycl=false \
+	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 	ninja -C $(COVERAGE_DIR)
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
-	    -C $(COVERAGE_DIR) --print-errorlogs
+	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1
 	@echo "--- gathering coverage ---"
-	lcov --capture --directory $(COVERAGE_DIR) --output-file $(COVERAGE_DIR)/coverage.info \
-	     --ignore-errors mismatch,gcov,source --rc geninfo_unexecuted_blocks=1
-	lcov --remove $(COVERAGE_DIR)/coverage.info \
-	     '/usr/*' '*/subprojects/*' '*/test/*' '*/tests/*' \
-	     --output-file $(COVERAGE_DIR)/coverage.filtered.info \
-	     --ignore-errors unused
-	lcov --list $(COVERAGE_DIR)/coverage.filtered.info | tee $(COVERAGE_DIR)/coverage.summary.txt
+	gcovr --root . \
+	    --filter 'core/src/.*' \
+	    --exclude '.*/test/.*' --exclude '.*/tests/.*' --exclude '.*/subprojects/.*' \
+	    --gcov-ignore-parse-errors=negative_hits.warn \
+	    --gcov-ignore-parse-errors=suspicious_hits.warn \
+	    --print-summary \
+	    --txt $(COVERAGE_DIR)/coverage.txt \
+	    --json-summary $(COVERAGE_JSON) \
+	    --xml $(COVERAGE_DIR)/coverage.xml \
+	    $(COVERAGE_DIR)
+	@cp $(COVERAGE_DIR)/coverage.txt $(COVERAGE_DIR)/coverage.summary.txt
 
 # Render HTML coverage report (open $(COVERAGE_DIR)/html/index.html).
 coverage-html: coverage
-	genhtml $(COVERAGE_DIR)/coverage.filtered.info \
-	    --output-directory $(COVERAGE_DIR)/html \
-	    --demangle-cpp --legend --title "libvmaf coverage"
+	@mkdir -p $(COVERAGE_DIR)/html
+	gcovr --root . \
+	    --filter 'core/src/.*' \
+	    --exclude '.*/test/.*' --exclude '.*/tests/.*' --exclude '.*/subprojects/.*' \
+	    --gcov-ignore-parse-errors=negative_hits.warn \
+	    --gcov-ignore-parse-errors=suspicious_hits.warn \
+	    --html-details $(COVERAGE_DIR)/html/index.html \
+	    $(COVERAGE_DIR)
 	@echo "open $(COVERAGE_DIR)/html/index.html"
 
 # Enforce the coverage thresholds from docs/principles.md §3.
-# Overall: ≥70% line coverage. Security-critical (core/src/dnn/, opt.c,
-# read_json_model.c): ≥85% line coverage.
+# Overall floor COVERAGE_MIN_OVERALL; security-critical (core/src/dnn/, opt.cpp,
+# read_json_model.cpp): COVERAGE_MIN_CRITICAL. The script reads the gcovr JSON
+# summary, never an lcov .info file.
 coverage-check: coverage
-	@scripts/ci/coverage-check.sh $(COVERAGE_DIR)/coverage.filtered.info \
+	@scripts/ci/coverage-check.sh $(COVERAGE_JSON) \
 	    $(COVERAGE_MIN_OVERALL) $(COVERAGE_MIN_CRITICAL)
 
 # Power-of-10 rule 5 density check (≥2 asserts per function average across
@@ -799,9 +818,9 @@ help:
 	@echo "  make upstream-parity-full — the same over every fixture, option variant and model"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
-	@echo "  make coverage         — gcov/lcov line+branch coverage report"
+	@echo "  make coverage         — gcov/gcovr line coverage report"
 	@echo "  make coverage-html    — render HTML coverage report"
-	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
+	@echo "  make coverage-check   — enforce the local floors (37% overall / 85% critical)"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
 	@echo "  make lint-tools       — install ruff/black/mypy into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
