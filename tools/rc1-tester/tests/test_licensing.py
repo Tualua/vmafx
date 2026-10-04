@@ -10,8 +10,10 @@ import hashlib
 import importlib.util
 import json
 import re
+import shutil
 import struct
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -708,6 +710,9 @@ def test_both_workflows_attest_an_sbom(workflow: str, needle: str) -> None:
 # ------------------------------------------------------------ the Windows zip
 
 
+VS_TERMS = "visual-studio-2026-license-terms.txt"
+
+
 def windows_tree(tmp: Path) -> argparse.Namespace:
     """A tree shaped like the Windows zip, checked against the real windows-zip record."""
     root = tmp / "zip"
@@ -728,6 +733,7 @@ def windows_tree(tmp: Path) -> argparse.Namespace:
     texts = tmp / "texts"
     write(texts / "cpython-license.rst", "Doc/license.rst\n")
     write(texts / "python-build-standalone/LICENSE.openssl-3.txt", "Apache-2.0\n")
+    write(texts / VS_TERMS, "MICROSOFT SOFTWARE LICENSE TERMS\nLast Updated: October 1, 2025.\n")
     scan_path = write(tmp / "scan.json", json.dumps(scan(("EUPL-1.2", "BSD-2-Clause-Patent"))))
     return argparse.Namespace(artifact="windows-zip", root=str(root), repo=str(REPO),
                               build_scan=str(scan_path), texts=str(texts), source_commit="c0ffee",
@@ -776,6 +782,19 @@ def test_the_windows_zip_record_passes_a_recorded_tree(tmp_path: Path) -> None:
     for component in ("microsoft-static-runtime", "microsoft-vc-runtime", "cpython"):
         assert f"[component {component}]" in notices
     assert "not covered by EUPL-1.2" in notices
+    assert f"texts/{VS_TERMS}" in notices and "October 1, 2025" in notices
+    assert (Path(args.root) / "licenses/texts" / VS_TERMS).is_file()
+
+
+def test_both_windows_zips_carry_the_visual_studio_terms_from_one_record() -> None:
+    data = lic.expand_shared(lic.load_manifest())
+    fetched = data["fetched_texts"][VS_TERMS]
+    assert fetched["extract"] == "docx-text" and len(fetched["sha256"]) == 64
+    for kind in ("windows-zip", "windows-cuda-zip"):
+        record = lic.artifact_record(data, kind)
+        for component in record["components"]:
+            if component["id"].startswith("microsoft-"):
+                assert [t["fetched"] for t in component["texts"]] == [VS_TERMS], kind
 
 
 def test_the_windows_zip_gate_refuses_planted_defects(tmp_path: Path) -> None:
@@ -786,10 +805,12 @@ def test_the_windows_zip_gate_refuses_planted_defects(tmp_path: Path) -> None:
     write(root / "tests/vcruntime140.dll", "a Microsoft DLL where only VMAFx programs belong")
     write(root / "runtime-extra.dll", "x")
     (root / "runtime/LICENSE.txt").unlink()
+    (root / "licenses/texts" / VS_TERMS).unlink()
     problems = lic.run_check(args, data)
     assert "no recorded licence: tests/vcruntime140.dll" in problems
     assert "no recorded licence: runtime-extra.dll" in problems
     assert "licence text /runtime/LICENSE.txt is missing" in problems
+    assert any(VS_TERMS in problem and "missing" in problem for problem in problems), problems
 
 
 # ------------------------------------------------- vendor packages, fetched texts
@@ -863,3 +884,49 @@ def test_fetch_texts_downloads_the_recorded_texts_with_their_hash(
     del data["fetched_texts"]
     with pytest.raises(lic.LicensingError, match="no entry in fetched_texts"):
         lic.fetch_texts(args, data)
+
+
+def make_docx(path: Path, document_xml: str) -> Path:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("word/document.xml", document_xml)
+    return path
+
+
+DOCX_BODY = (
+    '<w:document xmlns:w="w"><w:body>'
+    '<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs></w:pPr>'
+    "<w:r><w:t>TERMS</w:t></w:r></w:p>"
+    '<w:p><w:r><w:t xml:space="preserve">A &amp; B </w:t></w:r><w:r><w:tab/><w:t>C</w:t></w:r></w:p>'
+    "<w:p/>"
+    "</w:body></w:document>"
+)
+
+
+def test_a_docx_text_is_extracted_paragraph_by_paragraph(tmp_path: Path, monkeypatch) -> None:
+    source = make_docx(tmp_path / "terms.docx", DOCX_BODY)
+    monkeypatch.setattr(lic, "download", lambda url, dest, sha: shutil.copyfile(source, dest))
+    out = tmp_path / "out"
+    out.mkdir()
+    spec = {"url": "https://example.invalid/terms.docx", "sha256": "1" * 64, "extract": "docx-text"}
+    lic.fetch_text("terms.txt", spec, out)
+    text = (out / "terms.txt").read_text()
+    assert text.startswith("Text of https://example.invalid/terms.docx\n")
+    assert text.endswith("TERMS\nA & B \tC\n\n")  # tab stops of a paragraph are no tabs
+    assert sorted(p.name for p in out.iterdir()) == ["terms.txt"]
+
+
+def test_a_docx_extract_refuses_what_it_cannot_read(tmp_path: Path, monkeypatch) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    spec = {"url": "https://example.invalid/x", "sha256": "1" * 64, "extract": "docx-text"}
+    garbage = write(tmp_path / "garbage.docx", "not a zip")
+    empty = make_docx(tmp_path / "empty.docx", "<w:document><w:body><w:p/></w:body></w:document>")
+    for source, message in ((garbage, "not a readable .docx"), (empty, "has no text")):
+        monkeypatch.setattr(
+            lic, "download", lambda url, dest, sha, s=source: shutil.copyfile(s, dest)
+        )
+        with pytest.raises(lic.LicensingError, match=message):
+            lic.fetch_text("x.txt", spec, out)
+    with pytest.raises(lic.LicensingError, match="unknown extract 'pdf-text'"):
+        lic.fetch_text("x.txt", {**spec, "extract": "pdf-text"}, out)

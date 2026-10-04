@@ -728,8 +728,16 @@
      "source": "binary only, except the C++ standard library (https://github.com/microsoft/STL); linked in by the MSVC toolset of the hosted runner's Visual Studio 2026 and Windows SDK",
      "notes": [
       "vmaf.exe and the programs in tests\\ contain object code of Microsoft's C runtime (libcmt, libvcruntime), C++ standard library (libcpmt) and Universal CRT (libucrt), linked in by the MSVC toolset of a licensed Visual Studio (/MT), so that no runtime DLL is installed or shipped for them. Microsoft documents static linking as a deployment of these libraries (Choose a deployment method, Universal CRT deployment, learn.microsoft.com, read 2026-10-04).",
-      "That code is Microsoft's and is not covered by EUPL-1.2 or any other licence of VMAFx. It is provided to you as part of these programs only. You may not reverse engineer, decompile or disassemble it, except where applicable law permits despite this limitation. Microsoft provides it as is and disclaims every warranty; Microsoft is not liable for damages arising from its use.",
+      "The licence terms of Visual Studio Enterprise 2026 and Professional 2026 (Last Updated: October 1, 2025; the text is texts/visual-studio-2026-license-terms.txt) let a licensee distribute Microsoft's Distributable Code in applications it develops, if the application adds significant primary functionality, if distributors and end users agree to terms that protect that code at least as much as those terms, and if Microsoft's trademarks are not used to name the application or to suggest that Microsoft endorses it. VMAFx applies those conditions to this code, which it ships as part of its programs.",
+      "That code is Microsoft's and is not covered by EUPL-1.2 or any other licence of VMAFx. It is provided to you as part of these programs only, and you may pass it on only as part of them and on these terms. You may not modify, reverse engineer, decompile or disassemble it, except where applicable law permits despite this limitation. Microsoft provides it as is and disclaims every warranty; Microsoft is not liable for damages arising from its use.",
       "The C++ standard library is open source under Apache-2.0 WITH LLVM-exception (https://github.com/microsoft/STL); the exception waives the notice conditions for its object code embedded in a program. Microsoft's names identify the component only."
+     ],
+     "texts": [
+      {
+       "fetched": "visual-studio-2026-license-terms.txt",
+       "name": "visual-studio-2026-license-terms.txt",
+       "label": "Microsoft Software License Terms of Visual Studio Enterprise 2026, Visual Studio Professional 2026 and Trial Edition, Last Updated October 1, 2025 (the edition of the hosted runner); its DISTRIBUTABLE CODE section sets the terms on which this Microsoft code ships"
+      }
      ]
     },
     {
@@ -746,9 +754,17 @@
      ],
      "source": "binary only; copied unmodified from VC\\Redist\\MSVC\\<version>\\<arch>\\Microsoft.VC14x.CRT of the hosted runner's Visual Studio 2026 (folder and SHA-256 in image\\msvc-redist.json), in place of the copies in the python-build-standalone archive; never from debug_nonredist",
      "notes": [
-      "These files are Microsoft Distributable Code: the Visual Studio 2026 Distributable Code list (https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution, ms.date 2025-11-11, read 2026-10-04) lets a licensed Visual Studio user copy the files of VC\\Redist unmodified with a program. They ship next to the interpreter, which needs them.",
-      "They are provided to you for use with the Python interpreter of this zip only, not on their own. You may not modify, reverse engineer, decompile or disassemble them, except where applicable law permits despite this limitation. Microsoft provides them as is and disclaims every warranty; Microsoft is not liable for damages arising from their use.",
+      "These files are Microsoft Distributable Code: the Distributable List those terms name (https://aka.ms/vs/18/redistribution, the Visual Studio 2026 distributable code list, ms.date 2025-11-11, read 2026-10-04) lets a licensee copy the files of VC\\Redist unmodified with a program. They ship next to the interpreter, which needs them.",
+      "The licence terms of Visual Studio Enterprise 2026 and Professional 2026 (Last Updated: October 1, 2025; the text is texts/visual-studio-2026-license-terms.txt) let a licensee distribute Microsoft's Distributable Code in applications it develops, if the application adds significant primary functionality, if distributors and end users agree to terms that protect that code at least as much as those terms, and if Microsoft's trademarks are not used to name the application or to suggest that Microsoft endorses it.",
+      "They are provided to you for use with the Python interpreter of this zip only, not on their own, and you may pass them on only unmodified, as part of this zip and on these terms. You may not modify, reverse engineer, decompile or disassemble them, except where applicable law permits despite this limitation. Microsoft provides them as is and disclaims every warranty; Microsoft is not liable for damages arising from their use.",
       "They are Microsoft's and are not covered by EUPL-1.2 or any other licence of VMAFx; Microsoft's names identify the component only. Windows 10 and later carry the Universal CRT these DLLs use; the zip ships none of it."
+     ],
+     "texts": [
+      {
+       "fetched": "visual-studio-2026-license-terms.txt",
+       "name": "visual-studio-2026-license-terms.txt",
+       "label": "Microsoft Software License Terms of Visual Studio Enterprise 2026, Visual Studio Professional 2026 and Trial Edition, Last Updated October 1, 2025 (the edition of the hosted runner); its DISTRIBUTABLE CODE section sets the terms on which this Microsoft code ships"
+      }
      ]
     },
     {
@@ -924,38 +940,12 @@
      ]
     },
     {
-     "id": "microsoft-static-runtime",
-     "kind": "fixed",
-     "name": "Microsoft C and C++ runtime libraries linked into vmaf.exe and every test program (/MT)",
-     "licence": "LicenseRef-Microsoft-Visual-Studio (the static runtime libraries of Visual Studio 2026 and the Universal CRT of the Windows SDK); the C++ standard library is Apache-2.0 WITH LLVM-exception",
-     "copyright": [
-      "Copyright (c) Microsoft Corporation"
-     ],
-     "source": "binary only, except the C++ standard library (https://github.com/microsoft/STL); linked in by the MSVC toolset of the hosted runner's Visual Studio 2026 and Windows SDK",
-     "notes": [
-      "vmaf.exe and the programs in tests\\ contain object code of Microsoft's C runtime (libcmt, libvcruntime), C++ standard library (libcpmt) and Universal CRT (libucrt), linked in by the MSVC toolset of a licensed Visual Studio (/MT), so that no runtime DLL is installed or shipped for them. Microsoft documents static linking as a deployment of these libraries (Choose a deployment method, Universal CRT deployment, learn.microsoft.com, read 2026-10-04).",
-      "That code is Microsoft's and is not covered by EUPL-1.2 or any other licence of VMAFx. It is provided to you as part of these programs only. You may not reverse engineer, decompile or disassemble it, except where applicable law permits despite this limitation. Microsoft provides it as is and disclaims every warranty; Microsoft is not liable for damages arising from its use.",
-      "The C++ standard library is open source under Apache-2.0 WITH LLVM-exception (https://github.com/microsoft/STL); the exception waives the notice conditions for its object code embedded in a program. Microsoft's names identify the component only."
-     ]
+     "from": "windows-zip",
+     "id": "microsoft-static-runtime"
     },
     {
-     "id": "microsoft-vc-runtime",
-     "kind": "fixed",
-     "name": "Microsoft Visual C++ runtime DLLs of the interpreter (vcruntime140.dll, vcruntime140_1.dll)",
-     "paths": [
-      "runtime/vcruntime140.dll",
-      "runtime/vcruntime140_1.dll"
-     ],
-     "licence": "LicenseRef-Microsoft-Visual-Studio-Distributable-Code (Visual C++ Runtime Files of the Visual Studio 2026 Distributable Code list)",
-     "copyright": [
-      "Copyright (c) Microsoft Corporation"
-     ],
-     "source": "binary only; copied unmodified from VC\\Redist\\MSVC\\<version>\\<arch>\\Microsoft.VC14x.CRT of the hosted runner's Visual Studio 2026 (folder and SHA-256 in image\\msvc-redist.json), in place of the copies in the python-build-standalone archive; never from debug_nonredist",
-     "notes": [
-      "These files are Microsoft Distributable Code: the Visual Studio 2026 Distributable Code list (https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution, ms.date 2025-11-11, read 2026-10-04) lets a licensed Visual Studio user copy the files of VC\\Redist unmodified with a program. They ship next to the interpreter, which needs them.",
-      "They are provided to you for use with the Python interpreter of this zip only, not on their own. You may not modify, reverse engineer, decompile or disassemble them, except where applicable law permits despite this limitation. Microsoft provides them as is and disclaims every warranty; Microsoft is not liable for damages arising from their use.",
-      "They are Microsoft's and are not covered by EUPL-1.2 or any other licence of VMAFx; Microsoft's names identify the component only. Windows 10 and later carry the Universal CRT these DLLs use; the zip ships none of it."
-     ]
+     "from": "windows-zip",
+     "id": "microsoft-vc-runtime"
     },
     {
      "id": "nvidia-cuda-device-code",
@@ -3495,6 +3485,12 @@
    "url": "https://raw.githubusercontent.com/google/flatbuffers/v25.12.19/LICENSE",
    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
    "why": "the flatbuffers 25.12.19 wheel (an onnxruntime dependency) ships no licence file"
+  },
+  "visual-studio-2026-license-terms.txt": {
+   "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual_Studio_2026-License-Enterprise_Professional_ENU.docx",
+   "sha256": "dd2ab92a7c2bb90dd509e16572707a34b13bc0bc09b9199d115f25594ac39053",
+   "extract": "docx-text",
+   "why": "the licence terms of Visual Studio Enterprise 2026 and Professional 2026 (Last Updated: October 1, 2025), whose DISTRIBUTABLE CODE section governs the Microsoft runtime code of the Windows zips; visualstudio.microsoft.com/license-terms/vs2026-ga-pro-enterprise/ shows only this document, through an embedded viewer (Last-Modified 2025-10-31, read 2026-10-04)"
   }
  },
  "go_own_modules": [

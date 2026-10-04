@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import html
 import json
 import os
 import re
@@ -44,6 +45,7 @@ import struct
 import subprocess
 import sys
 import urllib.request
+import zipfile
 from pathlib import Path
 
 import tomllib
@@ -1254,6 +1256,50 @@ def recorded_fetches(record: dict, manifest: dict) -> dict[str, dict]:
     return found
 
 
+DOCX_PARAGRAPH = re.compile(r"<w:p\b[^>]*?(?:/>|>.*?</w:p>)", re.DOTALL)
+DOCX_PARAGRAPH_PROPERTIES = re.compile(r"<w:pPr\b.*?</w:pPr>", re.DOTALL)
+DOCX_RUN_TEXT = re.compile(r"<w:t\b[^>]*>([^<]*)</w:t>|<w:(tab|br)\b[^>]*/>")
+
+
+def docx_text(path: Path) -> str:
+    """The paragraphs of a Word document, in order, one per line: the text of its
+    `w:t` runs, tabs and line breaks. List numbering is not reproduced."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            document = archive.read("word/document.xml").decode("utf-8")
+    except (zipfile.BadZipFile, KeyError, UnicodeDecodeError) as error:
+        raise LicensingError(f"{path.name} is not a readable .docx: {error}") from error
+    lines = []
+    for paragraph in DOCX_PARAGRAPH.findall(document):
+        runs = DOCX_PARAGRAPH_PROPERTIES.sub("", paragraph)  # its tab stops are no tabs
+        parts = [
+            {"tab": "\t", "br": "\n"}[tag] if tag else html.unescape(text)
+            for text, tag in DOCX_RUN_TEXT.findall(runs)
+        ]
+        lines.append("".join(parts).rstrip())
+    if not any(lines):
+        raise LicensingError(f"{path.name} has no text")
+    return "\n".join(lines) + "\n"
+
+
+def fetch_text(name: str, spec: dict, out: Path) -> None:
+    """Download one `fetched_texts` entry into out/name, checking its SHA-256. An
+    entry with `"extract": "docx-text"` names a Word document (a licence published
+    only as one); its text is written, headed by where it came from."""
+    extract = spec.get("extract")
+    if extract is None:
+        download(spec["url"], out / name, spec["sha256"])
+        return
+    if extract != "docx-text":
+        raise LicensingError(f"fetched text {name}: unknown extract {extract!r}")
+    document = out / f"{name}.docx"
+    download(spec["url"], document, spec["sha256"])
+    header = (f"Text of {spec['url']}\n(SHA-256 {spec['sha256']}): the document's paragraphs "
+              "in order, without its list numbering. The document is the authoritative form.\n\n")  # fmt: skip
+    (out / name).write_text(header + docx_text(document), encoding="utf-8")
+    document.unlink()
+
+
 def fetch_texts(args: argparse.Namespace, manifest: dict) -> None:
     record = artifact_record(manifest, args.artifact)
     out = Path(args.out)
@@ -1264,7 +1310,7 @@ def fetch_texts(args: argparse.Namespace, manifest: dict) -> None:
     if entry:
         download(entry["url"], out / "cpython-license.rst", entry["sha256"])
     for name, spec in recorded_fetches(record, manifest).items():
-        download(spec["url"], out / name, spec["sha256"])
+        fetch_text(name, spec, out)
 
 
 # ------------------------------------------------- libraries copied out of dpkg

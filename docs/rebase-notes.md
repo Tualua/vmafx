@@ -60435,3 +60435,15 @@ upstream parity guard's allowlist.
   `.github/workflows/build.yml` runs `test_float_adm_x86` in
   `Windows MSVC+CUDA (full)` for that reason; keep it in the list. No score,
   public API or FFmpeg patch impact.
+
+## Windows zips: the Visual Studio 2026 licence terms
+
+- `tools/rc1-tester/image/licensing.json` pins the Visual Studio 2026 licence
+  document in `fetched_texts` with `"extract": "docx-text"`; `licensing.py`
+  (`docx_text()`, `fetch_text()`) writes its paragraphs to
+  `texts/visual-studio-2026-license-terms.txt`. Both Microsoft components of
+  `windows-zip` carry that text, and `windows-cuda-zip` takes them with
+  `{"from": "windows-zip", ...}`, so they have one definition. A sync that
+  touches the record keeps the text on both components; a Visual Studio major
+  version change records its new document first. No score, public API or
+  FFmpeg patch impact.

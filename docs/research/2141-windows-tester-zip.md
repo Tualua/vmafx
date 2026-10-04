@@ -43,15 +43,37 @@ Read on 2026-10-04 unless stated.
 | Libraries python-build-standalone ships on Windows | `runtime\DLLs\` (`libcrypto-3-x64.dll`, `libssl-3-x64.dll`, `libffi-8.dll`, `sqlite3.dll`) and inside `python313.dll` and the `.pyd` modules | OpenSSL Apache-2.0, libffi MIT, SQLite public domain, expat MIT, mpdecimal BSD-2-Clause, bzip2, liblzma 0BSD, zlib | `PYTHON.json` and `python/licenses/` of `cpython-3.13.16+20261001-*-pc-windows-msvc-pgo-full.tar.zst` |
 | Netflix test videos | `python\test\resource\` | BSD-2-Clause-Patent | `Netflix/vmaf_resource` `LICENSE` at the pinned commit |
 
-Nothing copyleft ships: the zip has no source companion. The text of the Visual
-Studio 2026 licence terms (its "Distributable Code" section) could not be read as
-text: `visualstudio.microsoft.com/license-terms/vs2026-ga-pro-enterprise/` renders
-the terms with a script, and the served HTML holds only the title and a date
-(2025-10-31). The Visual Studio 2015 SDK terms, served as text, show the form of that
-section: Distributable Code may be distributed in object code "if you add significant
-primary functionality", with terms that "protect the Distributable Code at least as
-much as this agreement", without Microsoft's trademarks. The notices pass those terms
-on for both Microsoft components.
+Nothing copyleft ships: the zip has no source companion.
+
+The Visual Studio 2026 licence terms were first read only in outline: the page
+`visualstudio.microsoft.com/license-terms/vs2026-ga-pro-enterprise/` serves a title and a
+date. A headless Chrome render on 2026-10-04 showed why: the page embeds a Word document
+in Office's web viewer. The English document,
+`wp-content/uploads/2025/10/Visual_Studio_2026-License-Enterprise_Professional_ENU.docx`
+(67,523 bytes, SHA-256 `dd2ab92a7c2bb90dd509e16572707a34b13bc0bc09b9199d115f25594ac39053`,
+Last-Modified 2025-10-31), is "MICROSOFT SOFTWARE LICENSE TERMS / MICROSOFT VISUAL STUDIO
+ENTERPRISE 2026, VISUAL STUDIO PROFESSIONAL 2026, AND TRIAL EDITION / Last Updated:
+October 1, 2025". Its DISTRIBUTABLE CODE section:
+
+- lets a licensee "copy and distribute the object code form of code listed on the
+  Distributable List located at `https://aka.ms/vs/18/redistribution`" (the list cited
+  above, which names the files of `VC\redist`, unmodified, never `debug_nonredist`);
+- requires the distributor to "add significant primary functionality to it in your
+  applications", to "require distributors and external end users to agree to terms that
+  protect the Distributable Code at least as much as these license terms", and to
+  "indemnify, defend, and hold harmless Microsoft from any claims ... related to the
+  distribution or use of your applications, except to the extent that any claim is based
+  solely on the Distributable Code";
+- forbids using "Microsoft's trademarks in your applications' names or in a way that
+  suggests your applications come from or are endorsed by Microsoft".
+
+The list does not name the static runtime libraries; Microsoft documents static linking
+as a deployment of them (the deployment pages above), and the record applies the same
+conditions to that code. Both Microsoft components now carry the document's text
+(`fetched_texts`, extracted from the pinned `.docx` by `licensing.py fetch-texts`), and
+their notes pass on the protective terms. The indemnity is an obligation of whoever
+publishes the zips, not a term for testers; it binds every Windows program that ships
+Visual C++ runtime code, and publishing the zips accepts it.
 
 ## The interpreter
 

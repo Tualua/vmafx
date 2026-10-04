@@ -754,10 +754,13 @@ workflow refuses to build a package with a file whose licence is not recorded
   and the test programs when they were built (`/MT`), so no runtime DLL is installed or
   shipped for them. The interpreter needs two Microsoft Visual C++ runtime DLLs
   (`runtime\vcruntime140.dll`, `vcruntime140_1.dll`); they are Microsoft Distributable
-  Code, copied unmodified from the Visual Studio of GitHub's build machine. The notices
-  state the terms Microsoft asks a distributor to pass on (use with these programs only,
-  no reverse engineering where the law does not allow it, provided as is), and that
-  EUPL-1.2 covers only VMAFx files, never Microsoft's. Nothing in the zip is copyleft,
+  Code, copied unmodified from the Visual Studio of GitHub's build machine. Both are
+  governed by the licence terms of Visual Studio Enterprise 2026 (Last Updated
+  October 1, 2025), whose text is `licenses\texts\visual-studio-2026-license-terms.txt`.
+  The notices state the terms those terms ask a distributor to pass on (use with these
+  programs only, pass them on only as part of the zip, no reverse engineering where the
+  law does not allow it, provided as is), and that EUPL-1.2 covers only VMAFx files,
+  never Microsoft's. Nothing in the zip is copyleft,
   so it has no source companion. The CUDA zip ships no NVIDIA file either: it uses your
   driver's `nvcuda.dll`; the NVIDIA code inside its GPU kernels comes with the CUDA
   Toolkit End User License Agreement (`licenses\nvidia\CUDA-EULA.txt`) and the notices

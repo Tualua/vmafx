@@ -213,7 +213,14 @@ keep their schema-2 form.
 The Windows zip is the artifact `windows-zip`. The VMAFx programs link the Microsoft C
 and C++ runtime statically (`-Db_vscrt=mt`), so no runtime DLL ships for them; that code
 is component `microsoft-static-runtime`, without paths, whose notes pass on the terms
-Microsoft asks a distributor to pass on. The interpreter's `vcruntime140*.dll` are
+Microsoft asks a distributor to pass on. Those terms are the DISTRIBUTABLE CODE section
+of the Visual Studio Enterprise 2026 licence (Last Updated October 1, 2025), which
+Microsoft publishes only as a Word document behind an embedded viewer: `fetched_texts`
+pins that `.docx` by URL and SHA-256 with `"extract": "docx-text"`, and
+`licensing.py fetch-texts` writes its paragraphs to
+`texts/visual-studio-2026-license-terms.txt` of both Microsoft components. A new
+Visual Studio major version brings new terms: record the new document before the
+runner image moves to it. The interpreter's `vcruntime140*.dll` are
 component `microsoft-vc-runtime`: the build replaces python-build-standalone's copies
 with the unmodified files of the runner's `VC\Redist\MSVC\<version>\<arch>\Microsoft.VC14x.CRT`
 (`VCToolsRedistDir` of vcvarsall), checks the copies byte for byte and records the
