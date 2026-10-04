@@ -92,4 +92,6 @@ Netflix reference table (CPU and SYCL vs the Netflix values).
   [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md).
 - Originally drafted as ADR-1441; renumbered to 1503 on the rebase onto
   master `b01ffe42d`, where 1441 had been taken, and to 1562 on the
-  rebase onto master `2889f963a`, where 1503 had been taken.
+  rebase onto master `2889f963a`, where 1503 had been taken; then to 1594 on the
+  rebase onto master `f224b1b42`, where 1562 had been claimed by other branches
+  (and 1562 taken by master).
