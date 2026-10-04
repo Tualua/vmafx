@@ -65,8 +65,9 @@ check "fatal import message" 'aborting because a skipped frame would change the 
 check_absent "no warn-and-skip frame" 'skipping frame'
 
 # AVERROR_EXTERNAL must follow each of the two import calls (ref and dist).
-n_import=$(grep -cE '^\+.*vmaf_sycl_import_va_surface\(' "${PATCH}" || true)
-n_fatal=$(grep -cE '^\+.*return AVERROR_EXTERNAL;' "${PATCH}" || true)
+# grep -c prints 0 and exits 1 when nothing matches; only status 2 is an error.
+n_import=$(grep -cE '^\+.*vmaf_sycl_import_va_surface\(' "${PATCH}" || [ "$?" -eq 1 ])
+n_fatal=$(grep -cE '^\+.*return AVERROR_EXTERNAL;' "${PATCH}" || [ "$?" -eq 1 ])
 if [ "${n_import}" -ge 2 ] && [ "${n_fatal}" -ge 2 ]; then
   echo "PASS: AVERROR_EXTERNAL after both import calls (${n_import} imports, ${n_fatal} fatal returns)"
 else

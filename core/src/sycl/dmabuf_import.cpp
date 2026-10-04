@@ -390,6 +390,34 @@ int va_readback_chroma(VmafSyclState *state, const VAImage &img, const void *img
     return err;
 }
 
+/* Create a VAImage of the surface in `fmt`, copy the surface into it and map
+ * its buffer. On success the caller unmaps `img->buf` and destroys
+ * `img->image_id`; on failure nothing is left to release. */
+int va_readback_map_image(VADisplay va_dpy, VASurfaceID va_surf, VAImageFormat *fmt, unsigned w,
+                          unsigned h, VAImage *img, void **data)
+{
+    VAStatus va_st = vaCreateImage(va_dpy, fmt, w, h, img);
+    if (va_st != VA_STATUS_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaCreateImage failed: %s\n", vaErrorStr(va_st));
+        return -EIO;
+    }
+
+    va_st = vaGetImage(va_dpy, va_surf, 0, 0, w, h, img->image_id);
+    if (va_st != VA_STATUS_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaGetImage failed: %s\n", vaErrorStr(va_st));
+        vaDestroyImage(va_dpy, img->image_id);
+        return -EIO;
+    }
+
+    va_st = vaMapBuffer(va_dpy, img->buf, data);
+    if (va_st != VA_STATUS_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaMapBuffer failed: %s\n", vaErrorStr(va_st));
+        vaDestroyImage(va_dpy, img->image_id);
+        return -EIO;
+    }
+    return 0;
+}
+
 int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_display_handle,
                                          unsigned int va_surface_id, int is_ref, unsigned w,
                                          unsigned h, unsigned bpc)
@@ -404,26 +432,10 @@ int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_display_
         return rc;
 
     VAImage va_img = {};
-    VAStatus va_st = vaCreateImage(va_dpy, &y_fmt, w, h, &va_img);
-    if (va_st != VA_STATUS_SUCCESS) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaCreateImage failed: %s\n", vaErrorStr(va_st));
-        return -EIO;
-    }
-
-    va_st = vaGetImage(va_dpy, va_surf, 0, 0, w, h, va_img.image_id);
-    if (va_st != VA_STATUS_SUCCESS) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaGetImage failed: %s\n", vaErrorStr(va_st));
-        vaDestroyImage(va_dpy, va_img.image_id);
-        return -EIO;
-    }
-
     void *img_data = nullptr;
-    va_st = vaMapBuffer(va_dpy, va_img.buf, &img_data);
-    if (va_st != VA_STATUS_SUCCESS) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaMapBuffer failed: %s\n", vaErrorStr(va_st));
-        vaDestroyImage(va_dpy, va_img.image_id);
-        return -EIO;
-    }
+    rc = va_readback_map_image(va_dpy, va_surf, &y_fmt, w, h, &va_img, &img_data);
+    if (rc != 0)
+        return rc;
 
     const auto *y_plane = static_cast<const uint8_t *>(img_data) + va_img.offsets[0];
     uint32_t const y_pitch = va_img.pitches[0];

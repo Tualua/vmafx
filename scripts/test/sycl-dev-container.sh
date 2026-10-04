@@ -64,7 +64,8 @@ host_path() {
 }
 
 # Script executed inside the container. Quoted heredoc: no host expansion.
-read -r -d '' INNER <<'EOS' || true
+INNER="$(
+  cat <<'EOS'
 set -euo pipefail
 MODE="$1"
 shift
@@ -129,6 +130,7 @@ case "$MODE" in
     ;;
 esac
 EOS
+)"
 
 exec timeout --signal=KILL "$TIMEOUT" "$RT" run --rm \
   --device /dev/dri --security-opt label=disable \

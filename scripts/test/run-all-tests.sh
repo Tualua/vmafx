@@ -29,9 +29,9 @@
 #   ENGINE=docker ./scripts/test/run-all-tests.sh               # docker instead
 
 set -euo pipefail
-# Sections report their own failures in RESULT[]; every command whose non-zero
-# status is an expected outcome (a failing section, grep counting zero matches)
-# is guarded with `|| true` / `|| rc=$?` so `set -e` only stops on real errors.
+# Sections report their own failures in RESULT[]: a section's exit status is
+# kept in a variable (`|| rc=$?`) and a grep that finds nothing goes through
+# grep_opt, so `set -e` stops the run only on a real error.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # The test matrix runs INSIDE the image and needs meson / python / the source
@@ -55,6 +55,10 @@ c1='\033[1;36m'
 c0='\033[0m'
 red='\033[1;31m'
 grn='\033[1;32m'
+# grep that treats "no match" (status 1) as an answer, not a failure; a real
+# grep error (status 2, e.g. a missing log) still stops the run.
+grep_opt() { grep "$@" || [ "$?" -eq 1 ]; }
+
 banner() { printf "\n${c1}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n %s\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${c0}\n" "$1"; }
 
 # Shared plumbing the Python suites need: symlink the binary path the harness
@@ -113,14 +117,14 @@ if [[ " $SECTIONS " == *" c "* ]]; then
   run_section "$DEV" "
     cd /src/vmafx
     python3 scripts/ci/run_meson_test.py -- -C build --print-errorlogs -t 6 || true
-  " "$LOG_DIR/c-suite.log" 1800 || true
-  ok="$(grep -oE 'Ok: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep -oE '[0-9]+' || true)"
-  totalfail="$(grep -oE '^Fail: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep -oE '[0-9]+' || true)"
-  sigill="$(grep -cE 'SIGILL|signal 4' "$LOG_DIR/c-suite.log" || true)"
+  " "$LOG_DIR/c-suite.log" 1800 || c_rc=$?
+  ok="$(grep_opt -oE 'Ok: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep_opt -oE '[0-9]+')"
+  totalfail="$(grep_opt -oE '^Fail: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep_opt -oE '[0-9]+')"
+  sigill="$(grep_opt -cE 'SIGILL|signal 4' "$LOG_DIR/c-suite.log")"
   real=$((${totalfail:-0} - sigill))
   [ "$real" -lt 0 ] && real=0
   if [ -z "$ok" ]; then
-    RESULT[C]="no summary — killed/hung (see log)"
+    RESULT[C]="no summary — killed/hung, exit ${c_rc:-0} (see log)"
   elif [ "$real" -eq 0 ]; then
     RESULT[C]="Ok: ${ok}, real-fail: 0  (+${sigill} AVX512-VBMI SIGILL = host gap, env)"
   else
@@ -128,7 +132,8 @@ if [[ " $SECTIONS " == *" c "* ]]; then
   fi
   if [ "$sigill" -gt 0 ]; then
     echo "   env SIGILL (host lacks avx512vbmi — would pass on a full-AVX512 host):"
-    grep -E 'SIGILL|signal 4' "$LOG_DIR/c-suite.log" | grep -oE '[^ ]+ / [^ ]+' | sed 's/^/     · /' | head -20 || true
+    grep_opt -E 'SIGILL|signal 4' "$LOG_DIR/c-suite.log" | grep_opt -oE '[^ ]+ / [^ ]+' |
+      sed -n 's/^/     · /; 1,20p'
   fi
 fi
 
@@ -179,12 +184,12 @@ if [[ " $SECTIONS " == *" golden "* ]]; then
         python/test/vmafexec_feature_extractor_test.py \
         python/test/result_test.py \
         -m 'not slow' -q -rfE -p no:cacheprovider
-    " "$LOG_DIR/golden.log" 1800 || true
-    fails="$(grep -cE '^(FAILED|ERROR)' "$LOG_DIR/golden.log" || true)"
-    line="$(grep -oE '[0-9]+ passed[^)]*' "$LOG_DIR/golden.log" | tail -1 || true)"
+    " "$LOG_DIR/golden.log" 1800 || golden_rc=$?
+    fails="$(grep_opt -cE '^(FAILED|ERROR)' "$LOG_DIR/golden.log")"
+    line="$(grep_opt -oE '[0-9]+ passed[^)]*' "$LOG_DIR/golden.log" | tail -1)"
     if [ "$fails" -eq 0 ] && [ -n "$line" ]; then
       RESULT[GOLDEN]="STRICT PASS — $line"
-    else RESULT[GOLDEN]="FAIL — $fails failed/errored (see log)"; fi
+    else RESULT[GOLDEN]="FAIL — $fails failed/errored, exit ${golden_rc:-0} (see log)"; fi
   fi
 fi
 
@@ -199,12 +204,12 @@ if [[ " $SECTIONS " == *" material "* ]]; then
       python/test/raw_extractor_test.py python/test/cambi_test.py \
       python/test/ssimulacra2_test.py python/test/result_test.py python/test/reader_test.py \
       -m 'not slow' -q -rfE -p no:cacheprovider
-  " "$LOG_DIR/material.log" 1800 || true
-  line="$(grep -oE '[0-9]+ passed[^)]*' "$LOG_DIR/material.log" | tail -1 || true)"
-  fails="$(grep -cE '^(FAILED|ERROR)' "$LOG_DIR/material.log" || true)"
-  RESULT[MATERIAL]="${line:-no summary} (${fails} failed/errored)"
+  " "$LOG_DIR/material.log" 1800 || material_rc=$?
+  line="$(grep_opt -oE '[0-9]+ passed[^)]*' "$LOG_DIR/material.log" | tail -1)"
+  fails="$(grep_opt -cE '^(FAILED|ERROR)' "$LOG_DIR/material.log")"
+  RESULT[MATERIAL]="${line:-no summary} (${fails} failed/errored, exit ${material_rc:-0})"
   if [ "$fails" -gt 0 ]; then
-    grep -E '^(FAILED|ERROR)' "$LOG_DIR/material.log" | sed 's/^/   ⚠ /' || true
+    grep_opt -E '^(FAILED|ERROR)' "$LOG_DIR/material.log" | sed 's/^/   ⚠ /'
   fi
 fi
 
