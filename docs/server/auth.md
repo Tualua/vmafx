@@ -9,9 +9,9 @@ bearer token on every request.
 
 Every gRPC and HTTP request, except the liveness, readiness and metrics
 endpoints, must carry a valid RS256 bearer token from a configured OIDC
-provider. Requests are scoped to the tenant identified by the token. Roles
-embedded in the token gate only the HTTP `POST /v1/score` endpoint today; see
-[Roles and RBAC](#roles-and-rbac) for what is and is not enforced.
+provider. Requests are scoped to the tenant identified by the token, and every
+gRPC call and the HTTP `POST /v1/score` endpoint require a role from the token;
+see [Roles and RBAC](#roles-and-rbac).
 
 ## Table of contents
 
@@ -144,30 +144,41 @@ VMAFX_AUTH_TENANT_CLAIM=tid
 
 ## Roles and RBAC
 
-Three roles are recognised. Include one or more in the `vmafx_roles` claim:
+Three roles are recognised. Include one or more in the `vmafx_roles` claim (a
+JSON array, or a single string):
 
-| Role | Intended operations |
+| Role | May call |
 | --- | --- |
-| `vmafx:reader` | `GetJob`, `StreamJobs`, health endpoints |
-| `vmafx:writer` | All of reader + `SubmitJob`, `CancelJob`, `POST /v1/score` |
-| `vmafx:admin` | All of writer + `RegisterNode`, `Heartbeat`, `PullWork`, `ReportResult` |
+| `vmafx:reader` | `GetJob`, `StreamJobs`, `VmafxScoring.Health` |
+| `vmafx:writer` | Everything a reader may, plus `SubmitJob`, `CancelJob`, `VmafxScoring.Score`, `VmafxScoring.ScoreStream` and HTTP `POST /v1/score` |
+| `vmafx:admin` | Everything a writer may, plus the node API: `RegisterNode`, `Heartbeat`, `PullWork`, `ReportResult` |
 
-### What is enforced today
+The controller enforces this table on every call
+([ADR-1518](../adr/1518-controller-grpc-authorization.md)):
 
-Roles gate only one endpoint: HTTP `POST /v1/score` requires `vmafx:writer`
-or `vmafx:admin`. A token with no `vmafx_roles` claim, or an empty one, is
-rejected with `403 Forbidden` there.
+- A gRPC call whose token holds none of the method's roles fails with
+  `PERMISSION_DENIED` and the message `role required: <roles>` before the
+  handler runs. A token without a `vmafx_roles` claim, with an empty one, or
+  with only unknown strings (for example `vmafx:root`) holds no role and is
+  refused everywhere.
+- HTTP `POST /v1/score` answers `403 Forbidden` to a token without
+  `vmafx:writer` or `vmafx:admin`.
+- A gRPC method the controller does not list in its role table is refused for
+  every caller, including the synthetic admin of [disabled
+  mode](#disabling-auth). The table lives in
+  `cmd/vmafx-controller/grpc_roles.go`, and a test fails when a served method
+  is missing from it.
 
-The gRPC API authenticates the token and records the tenant, but it does not
-check roles. Any valid token can call every RPC, including `RegisterNode`,
-`Heartbeat`, `PullWork` and `ReportResult`. What gRPC enforces is tenant
-ownership of `GetJob` and `CancelJob` (see [Tenant
-isolation](#tenant-isolation)).
+Roles are not inherited implicitly: the table above lists, for each call,
+every role that may make it. A writer can read because reader calls also list
+`vmafx:writer`.
 
-!!! warning "Known gaps"
-    Treat the role table above as the intended model, not as a guarantee, until
-    the gRPC role checks land. A gRPC client with any valid token can also
-    register as a node and pull work.
+Clients therefore need a token with the right role:
+
+- `vmafx-mcp` sends `VMAFX_CONTROLLER_TOKEN` with every controller call; its
+  `submit_job` and `cancel_job` tools need `vmafx:writer`, `get_job` and
+  `list_jobs` need `vmafx:reader`.
+- A compute node needs `vmafx:admin`.
 
 ---
 
@@ -309,5 +320,5 @@ refreshes successfully.
 | Token replay | `exp` checked on every request. |
 | Cross-tenant data access | `tenant_id` ownership enforced on `GetJob`, `CancelJob` and `SubmitJob`. `StreamJobs` is not tenant-scoped. |
 | JWKS endpoint spoofing | Endpoint configured by operator via trusted Helm/env values. |
-| Privilege escalation | Not mitigated by the `allowedRoles` whitelist of VmafxTenant yet: no component applies it. HTTP `POST /v1/score` requires a writer or admin role; gRPC does not check roles. |
+| Privilege escalation | Every gRPC method and HTTP `POST /v1/score` require a role from the token; a gRPC method without a role entry is refused. The `allowedRoles` whitelist of VmafxTenant is not applied yet: no component reads it. |
 | Revocation | Use short-lived tokens (≤1 hour); revocation list support is a follow-up. |

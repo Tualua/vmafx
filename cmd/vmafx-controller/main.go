@@ -62,6 +62,7 @@
 // ADR-0782: OpenTelemetry tracing and metrics.
 // ADR-0794: multi-tenant JWT auth gateway.
 // ADR-1119: golusoris fx framework adoption.
+// ADR-1518: controller gRPC authorisation (per-RPC roles, deny by default).
 
 //go:build cgo
 
@@ -156,8 +157,10 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 }
 
 // controllerAuthOptions injects tenant auth after the framework's tracing,
-// logging, and recovery interceptors. Disabled auth still supplies the dev
-// tenant, so both modes use one interceptor chain.
+// logging, and recovery interceptors. Each interceptor authenticates the call
+// and then enforces the method's role (controllerMethodRoles, ADR-1518).
+// Disabled auth still supplies the dev tenant, so both modes use one
+// interceptor chain.
 func controllerAuthOptions() fx.Option {
 	return fx.Options(
 		grpcmod.ProvideServerOptionFn(func(mw *auth.Middleware) googlegrpc.ServerOption {
@@ -264,9 +267,11 @@ func provideScheduler(q queue.Queue, r *nodes.Registry, log *slog.Logger) *sched
 
 // provideAuthMW builds the JWT bearer-token auth middleware from config
 // (ADR-0794). When auth.disabled is true the middleware injects a synthetic
-// "dev" tenant; otherwise jwks.endpoint + auth.issuer are required.
+// "dev" tenant; otherwise jwks.endpoint + auth.issuer are required. Either way
+// every gRPC call is checked against controllerMethodRoles (ADR-1518).
 func provideAuthMW(cfg *config.Config, log *slog.Logger) (*auth.Middleware, error) {
 	mw, err := auth.New(auth.Config{
+		MethodRoles: controllerMethodRoles(),
 		// golusoris env transform: VMAFX_JWKS_ENDPOINT -> "jwks.endpoint".
 		JWKSEndpoint: cfg.Get("jwks.endpoint"),
 		Issuer:       cfg.Get("auth.issuer"),

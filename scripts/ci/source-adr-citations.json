@@ -4755,11 +4755,15 @@
     },
     "0794": {
       "sites": {
+        "cmd/vmafx-controller/auth/authtest/issuer.go": 1,
         "cmd/vmafx-controller/auth/grpc_interceptor.go": 1,
         "cmd/vmafx-controller/auth/grpc_interceptor_test.go": 1,
         "cmd/vmafx-controller/auth/middleware.go": 1,
         "cmd/vmafx-controller/auth/middleware_test.go": 1,
+        "cmd/vmafx-controller/auth/policy.go": 2,
         "cmd/vmafx-controller/auth/rsa.go": 1,
+        "cmd/vmafx-controller/grpc_roles.go": 2,
+        "cmd/vmafx-controller/grpc_roles_test.go": 1,
         "cmd/vmafx-controller/grpc_server.go": 3,
         "cmd/vmafx-controller/http_server.go": 1,
         "cmd/vmafx-controller/main.go": 2,
@@ -9995,6 +9999,19 @@
         "tools/rc1-tester/tests/test_windows_bundle.py": 1
       },
       "target": "1516-windows-cuda-tester-zip.md"
+    },
+    "1518": {
+      "sites": {
+        "cmd/vmafx-controller/auth/authtest/issuer.go": 1,
+        "cmd/vmafx-controller/auth/grpc_interceptor.go": 1,
+        "cmd/vmafx-controller/auth/middleware.go": 2,
+        "cmd/vmafx-controller/auth/policy.go": 2,
+        "cmd/vmafx-controller/auth/policy_test.go": 1,
+        "cmd/vmafx-controller/grpc_roles.go": 2,
+        "cmd/vmafx-controller/grpc_roles_test.go": 1,
+        "cmd/vmafx-controller/main.go": 3
+      },
+      "target": "1518-controller-grpc-authorization.md"
     },
     "1521": {
       "sites": {

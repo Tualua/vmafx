@@ -15,6 +15,7 @@ Per-package invariants for subtree.
 | [ADR-0961](../../docs/adr/0961-queue-pullwork-rollback-on-get-failure.md) | PullWork rollback on post-update Get failure | queue package correctness |
 | [ADR-0962](../../docs/adr/0962-controller-streamjobs-and-reaper-stop.md) | StreamJobs snapshot + reaper stop signal | controller / queue / nodes correctness |
 | [ADR-1119](../../docs/adr/1119-golusoris-go-framework-adoption.md) | golusoris fx framework adoption | composition root, env contract, lifecycle ordering, auth injection |
+| [ADR-1518](../../docs/adr/1518-controller-grpc-authorization.md) | gRPC authorisation: per-method role table, deny by default | auth interceptors, `grpc_roles.go` |
 
 ## Protobuf bindings (ADR-1119) — GENERATED, never hand-written
 
@@ -105,6 +106,16 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    inverse helpers. New `Job.Status` requires updating both plus `queue.Status*`.
 2. **`grpc_server_test.go` mock stream (ADR-0962)**: `mockStreamJobsServer`
    implements `grpc.ServerStream` (6 methods inline).
+3. **Per-RPC role policy (ADR-1518)** (`grpc_roles.go`, `auth/policy.go`):
+   `controllerMethodRoles()` names roles for every served method; auth
+   interceptors authenticate then authorise in one function (`admitGRPC`).
+   Unlisted method = refused for every caller, disabled-mode admin included.
+   New RPC -> add entry in same PR; `TestEveryServedRPCHasARolePolicy` fails
+   otherwise. Never chain separate role interceptor; never move role checks
+   into handlers. `TestGRPCRolesEnforcedPerRPC` holds independent
+   expectation table: change only together with ADR-0794/ADR-1518 role table.
+4. **`auth/authtest` test-only**: RS256 issuer + JWKS server for tests.
+   Import from `_test.go` files only.
 
 ### main / shutdown
 

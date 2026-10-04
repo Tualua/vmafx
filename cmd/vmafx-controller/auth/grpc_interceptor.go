@@ -11,9 +11,12 @@
 // (lowercase, per gRPC HTTP/2 header semantics).  On success, Claims are
 // stored in the context exactly as the HTTP middleware does — code shared
 // between HTTP and gRPC handlers calls TenantIDFromCtx / ClaimsFromCtx
-// without knowing which transport was used.
+// without knowing which transport was used.  The same interceptor then checks
+// the caller's roles against the method's entry in Config.MethodRoles
+// (policy.go); a method without an entry is refused.
 //
 // ADR-0794: multi-tenant auth gateway.
+// ADR-1518: controller gRPC authorisation.
 
 package auth
 
@@ -29,8 +32,8 @@ import (
 )
 
 // GRPCUnaryInterceptor returns a gRPC server unary interceptor that enforces
-// JWT authentication.  Call it with grpc.UnaryInterceptor(...) when creating
-// the gRPC server.
+// JWT authentication and the method's role policy.  Call it with
+// grpc.ChainUnaryInterceptor(...) when creating the gRPC server.
 func (m *Middleware) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -42,7 +45,7 @@ func (m *Middleware) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
 		if info != nil {
 			method = info.FullMethod
 		}
-		ctx, err := m.authenticateGRPC(ctx, method)
+		ctx, err := m.admitGRPC(ctx, method)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +54,8 @@ func (m *Middleware) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // GRPCStreamInterceptor returns a gRPC server stream interceptor that enforces
-// JWT authentication.  Call it with grpc.StreamInterceptor(...) when creating
-// the gRPC server.
+// JWT authentication and the method's role policy.  Call it with
+// grpc.ChainStreamInterceptor(...) when creating the gRPC server.
 func (m *Middleware) GRPCStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(
 		srv any,
@@ -60,12 +63,29 @@ func (m *Middleware) GRPCStreamInterceptor() grpc.StreamServerInterceptor {
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) error {
-		ctx, err := m.authenticateGRPC(ss.Context(), info.FullMethod)
+		method := ""
+		if info != nil {
+			method = info.FullMethod
+		}
+		ctx, err := m.admitGRPC(ss.Context(), method)
 		if err != nil {
 			return err
 		}
 		return handler(srv, &wrappedServerStream{ServerStream: ss, ctx: ctx})
 	}
+}
+
+// admitGRPC authenticates the call and then authorises it against the role
+// policy of method. Both steps run on every call; neither can be wired alone.
+func (m *Middleware) admitGRPC(ctx context.Context, method string) (context.Context, error) {
+	ctx, err := m.authenticateGRPC(ctx, method)
+	if err != nil {
+		return ctx, err
+	}
+	if err := m.authorizeGRPC(ctx, method); err != nil {
+		return ctx, err
+	}
+	return ctx, nil
 }
 
 // authenticateGRPC extracts and verifies the JWT from gRPC metadata.
@@ -115,9 +135,11 @@ func (m *Middleware) authenticateGRPC(ctx context.Context, method string) (conte
 	return withClaims(ctx, claims), nil
 }
 
-// RequireGRPCRole returns a unary interceptor that enforces a role constraint
-// after the auth interceptor has run.  Pair with GRPCUnaryInterceptor in a
-// grpc.ChainUnaryInterceptor(...) call.
+// RequireGRPCRole returns a unary interceptor that requires one of roles for
+// every method it sees, after an authenticating interceptor has run.  The
+// controller does not chain it: GRPCUnaryInterceptor already enforces the
+// per-method policy (Config.MethodRoles).  It remains for servers whose every
+// method needs the same role, and shares the check with the policy.
 func RequireGRPCRole(roles ...string) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -125,13 +147,8 @@ func RequireGRPCRole(roles ...string) grpc.UnaryServerInterceptor {
 		_ *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		c, ok := ClaimsFromCtx(ctx)
-		if !ok {
-			return nil, status.Errorf(codes.Unauthenticated, "unauthenticated")
-		}
-		if !c.HasRole(roles...) {
-			return nil, status.Errorf(codes.PermissionDenied,
-				"role required: %s", strings.Join(roles, " | "))
+		if err := requireRoles(ctx, roles); err != nil {
+			return nil, err
 		}
 		return handler(ctx, req)
 	}

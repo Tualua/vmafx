@@ -92,6 +92,18 @@ source change, no upstream file touched.
   `networkpolicy.yaml` gains `allow-node-to-controller`. A rebase that brings
   the helper back reintroduces a default pointing at a Service the chart does
   not deploy.
+## Controller gRPC calls are authorised per method (ADR-1518, 2026-10-04)
+
+`fix/controller-grpc-roles`. Go controller only; no libvmaf change.
+
+- `cmd/vmafx-controller/auth/policy.go` and the interceptors in
+  `grpc_interceptor.go` authenticate and authorise in one function
+  (`admitGRPC`); `auth.Config.MethodRoles` is the policy and a method without
+  an entry is refused. `cmd/vmafx-controller/grpc_roles.go` holds the
+  controller's table; an RPC added to `controller.proto` or `vmafx.proto` needs
+  an entry there in the same change (`TestEveryServedRPCHasARolePolicy`).
+- `cmd/vmafx-controller/auth/authtest` mints the RS256 tokens of the auth and
+  controller tests; the auth tests' `fakeIssuer` signs through it.
 
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 

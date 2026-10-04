@@ -27,11 +27,6 @@ package auth_test
 
 import (
 	"context"
-	"crypto"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +39,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth/authtest"
 )
 
 // ---------------------------------------------------------------------------
@@ -53,7 +49,7 @@ import (
 // TestGRPCUnaryInterceptor_Disabled verifies that the unary interceptor in
 // Disabled mode injects the synthetic "dev" tenant without checking tokens.
 func TestGRPCUnaryInterceptor_Disabled(t *testing.T) {
-	mw, err := auth.New(auth.Config{Disabled: true})
+	mw, err := auth.New(auth.Config{Disabled: true, MethodRoles: testMethodRoles})
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
@@ -62,7 +58,7 @@ func TestGRPCUnaryInterceptor_Disabled(t *testing.T) {
 	var gotTenantID string
 
 	// No metadata at all — Disabled mode must not care.
-	_, grpcErr := interceptor(context.Background(), nil, nil,
+	_, grpcErr := interceptor(context.Background(), nil, testUnaryInfo,
 		func(ctx context.Context, _ any) (any, error) {
 			gotTenantID = auth.TenantIDFromCtx(ctx)
 			return nil, nil
@@ -102,7 +98,7 @@ func TestGRPCStreamInterceptor_Valid(t *testing.T) {
 	interceptor := mw.GRPCStreamInterceptor()
 	var gotTenantID string
 
-	err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: "/test.Service/TestMethod"},
+	err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: testMethod},
 		func(_ any, ss grpc.ServerStream) error {
 			gotTenantID = auth.TenantIDFromCtx(ss.Context())
 			return nil
@@ -124,7 +120,7 @@ func TestGRPCStreamInterceptor_MissingMetadata(t *testing.T) {
 	stream := &fakeServerStream{ctx: context.Background()}
 	interceptor := mw.GRPCStreamInterceptor()
 
-	err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: "/test.Service/TestMethod"},
+	err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: testMethod},
 		func(_ any, _ grpc.ServerStream) error { return nil })
 	if err == nil {
 		t.Fatal("expected Unauthenticated error, got nil")
@@ -146,7 +142,7 @@ func TestGRPCStreamInterceptor_MissingBearerPrefix(t *testing.T) {
 	stream := &fakeServerStream{ctx: ctx}
 	interceptor := mw.GRPCStreamInterceptor()
 
-	err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: "/test.Service/TestMethod"},
+	err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: testMethod},
 		func(_ any, _ grpc.ServerStream) error { return nil })
 	if err == nil {
 		t.Fatal("expected Unauthenticated error, got nil")
@@ -160,7 +156,7 @@ func TestGRPCStreamInterceptor_MissingBearerPrefix(t *testing.T) {
 // TestGRPCStreamInterceptor_Disabled verifies that Disabled mode injects the
 // dev tenant into the stream context without requiring any token.
 func TestGRPCStreamInterceptor_Disabled(t *testing.T) {
-	mw, err := auth.New(auth.Config{Disabled: true})
+	mw, err := auth.New(auth.Config{Disabled: true, MethodRoles: testMethodRoles})
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
@@ -169,7 +165,7 @@ func TestGRPCStreamInterceptor_Disabled(t *testing.T) {
 	interceptor := mw.GRPCStreamInterceptor()
 	var gotTenantID string
 
-	grpcErr := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: "/test.Service/TestMethod"},
+	grpcErr := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: testMethod},
 		func(_ any, ss grpc.ServerStream) error {
 			gotTenantID = auth.TenantIDFromCtx(ss.Context())
 			return nil
@@ -353,10 +349,6 @@ func TestMarshalPublicKeyPEM_RoundTrip(t *testing.T) {
 func makeArrayAudToken(t *testing.T, fi *fakeIssuer, audiences []string, issuer string) string {
 	t.Helper()
 
-	hdr := map[string]string{"alg": "RS256", "typ": "JWT", "kid": fi.kid}
-	hdrJSON, _ := json.Marshal(hdr)
-	hdrB64 := base64.RawURLEncoding.EncodeToString(hdrJSON)
-
 	payload := map[string]any{
 		"iss":         issuer,
 		"sub":         "user123",
@@ -365,16 +357,7 @@ func makeArrayAudToken(t *testing.T, fi *fakeIssuer, audiences []string, issuer 
 		"exp":         time.Now().Add(time.Hour).Unix(),
 		"aud":         audiences, // array form
 	}
-	payloadJSON, _ := json.Marshal(payload)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	sigInput := hdrB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-	sig, err := fi.priv.Sign(rand.Reader, h[:], crypto.SHA256)
-	if err != nil {
-		t.Fatalf("sign token: %v", err)
-	}
-	return sigInput + "." + base64.RawURLEncoding.EncodeToString(sig)
+	return authtest.Sign(t, fi.priv, "RS256", fi.kid, payload)
 }
 
 // TestAudienceValidation_ArrayAudience verifies that a token whose "aud" claim

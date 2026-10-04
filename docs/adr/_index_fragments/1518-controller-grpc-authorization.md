@@ -1,0 +1,1 @@
+| [ADR-1518](1518-controller-grpc-authorization.md) | The controller authorises every gRPC call against one per-method role table enforced in the authenticating interceptor; a method without an entry is refused, the disabled mode's synthetic admin included | Accepted | security, controller, auth, grpc, go, fork-local |

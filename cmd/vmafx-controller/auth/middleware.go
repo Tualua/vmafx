@@ -16,10 +16,14 @@
 //     JWT's "tid" or "tenant_id" claim.  All controller operations (job submit,
 //     get, cancel, stream) are scoped to that tenant.
 //
-//  3. RBAC — three roles per tenant extracted from the JWT "vmafx_roles" claim:
-//       vmafx:reader  — GET-only (GetJob, StreamJobs, /v1/score readonly)
-//       vmafx:writer  — submit / cancel jobs (SubmitJob, CancelJob, /v1/score)
-//       vmafx:admin   — all of the above + node management (RegisterNode, PullWork)
+//  3. RBAC — three roles per tenant extracted from the JWT "vmafx_roles" claim.
+//     The gRPC interceptors enforce the per-method table the caller passes in
+//     Config.MethodRoles (policy.go, ADR-1518); the controller's table is:
+//       vmafx:reader  — GetJob, StreamJobs, VmafxScoring.Health
+//       vmafx:writer  — the reader calls + SubmitJob, CancelJob, Score,
+//                       ScoreStream and HTTP POST /v1/score
+//       vmafx:admin   — the writer calls + the node API (RegisterNode,
+//                       Heartbeat, PullWork, ReportResult)
 //
 // Token structure expected
 // ========================
@@ -110,8 +114,16 @@ type Config struct {
 	RolesClaim string
 
 	// Disabled bypasses all auth checks.  FOR TESTING ONLY.
-	// In production this must be false.
+	// In production this must be false.  The role policy still applies: the
+	// synthetic caller holds vmafx:admin, and a method without a policy entry
+	// stays refused.
 	Disabled bool
+
+	// MethodRoles is the role policy of the gRPC interceptors: full method
+	// name to the roles that may call it.  A method without an entry is
+	// refused for every caller (deny by default, ADR-1518).  New rejects an
+	// entry with a malformed method name, no roles or an unknown role.
+	MethodRoles MethodRoles
 
 	// Logger is the slog.Logger instance.  If nil, slog.Default() is used.
 	Logger *slog.Logger
@@ -549,9 +561,10 @@ func extractStringSliceClaim(claims map[string]json.RawMessage, key string) []st
 
 // Middleware holds the parsed configuration and key cache.
 type Middleware struct {
-	cfg   Config
-	cache *jwksCache
-	log   *slog.Logger
+	cfg         Config
+	cache       *jwksCache
+	log         *slog.Logger
+	methodRoles MethodRoles
 }
 
 // New creates a Middleware from the given Config.  It validates the config and
@@ -567,15 +580,21 @@ func New(cfg Config) (*Middleware, error) {
 		}
 	}
 
+	methodRoles, err := cloneMethodRoles(cfg.MethodRoles)
+	if err != nil {
+		return nil, err
+	}
+
 	log := cfg.Logger
 	if log == nil {
 		log = slog.Default()
 	}
 
 	return &Middleware{
-		cfg:   cfg,
-		cache: newJWKSCache(cfg.JWKSEndpoint, log),
-		log:   log,
+		cfg:         cfg,
+		cache:       newJWKSCache(cfg.JWKSEndpoint, log),
+		log:         log,
+		methodRoles: methodRoles,
 	}, nil
 }
 

@@ -23,23 +23,20 @@ package auth_test
 
 import (
 	"context"
-	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth/authtest"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,15 +59,7 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 	}
 
 	fi := &fakeIssuer{priv: priv, pub: pub, kid: "test-key-1"}
-
-	// Build the JWKS JSON for the public key.
-	nBytes := pub.N.Bytes()
-	eBytes := big.NewInt(int64(pub.E)).Bytes()
-	nB64 := base64.RawURLEncoding.EncodeToString(nBytes)
-	eB64 := base64.RawURLEncoding.EncodeToString(eBytes)
-
-	jwks := fmt.Sprintf(`{"keys":[{"kty":"RSA","kid":%q,"n":%q,"e":%q}]}`,
-		fi.kid, nB64, eB64)
+	jwks := authtest.JWKS(map[string]*rsa.PublicKey{fi.kid: pub})
 
 	fi.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -104,10 +93,6 @@ func (fi *fakeIssuer) MakeToken(t *testing.T, opts tokenOpts) string {
 		opts.kid = fi.kid
 	}
 
-	hdr := map[string]string{"alg": opts.alg, "typ": "JWT", "kid": opts.kid}
-	hdrJSON, _ := json.Marshal(hdr)
-	hdrB64 := base64.RawURLEncoding.EncodeToString(hdrJSON)
-
 	payload := map[string]any{
 		"iss":         opts.issuer,
 		"sub":         "user123",
@@ -121,18 +106,7 @@ func (fi *fakeIssuer) MakeToken(t *testing.T, opts tokenOpts) string {
 	if opts.nbf != 0 {
 		payload["nbf"] = opts.nbf
 	}
-	payloadJSON, _ := json.Marshal(payload)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	sigInput := hdrB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, fi.priv, crypto.SHA256, h[:])
-	if err != nil {
-		t.Fatalf("sign JWT: %v", err)
-	}
-	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
-
-	return sigInput + "." + sigB64
+	return authtest.Sign(t, fi.priv, opts.alg, opts.kid, payload)
 }
 
 type tokenOpts struct {
@@ -150,11 +124,22 @@ type tokenOpts struct {
 // Middleware factory helper
 // ---------------------------------------------------------------------------
 
+// testMethod is the gRPC method the interceptor tests call; testMethodRoles
+// lets every role call it, so those tests exercise authentication. The policy
+// itself is tested in policy_test.go.
+const testMethod = "/test.Service/TestMethod"
+
+var (
+	testMethodRoles = auth.MethodRoles{testMethod: {auth.RoleReader, auth.RoleWriter, auth.RoleAdmin}}
+	testUnaryInfo   = &grpc.UnaryServerInfo{FullMethod: testMethod}
+)
+
 func newTestMiddleware(t *testing.T, fi *fakeIssuer, extra ...func(*auth.Config)) *auth.Middleware {
 	t.Helper()
 	cfg := auth.Config{
 		JWKSEndpoint: fi.server.URL,
 		Issuer:       fi.server.URL,
+		MethodRoles:  testMethodRoles,
 	}
 	for _, fn := range extra {
 		fn(&cfg)
@@ -260,9 +245,7 @@ func TestVerifyJWT_WrongAlg(t *testing.T) {
 // jwkJSON renders a single RSA public key as a JWKS entry object.
 func jwkJSON(t *testing.T, kid string, pub *rsa.PublicKey) string {
 	t.Helper()
-	nB64 := base64.RawURLEncoding.EncodeToString(pub.N.Bytes())
-	eB64 := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes())
-	return fmt.Sprintf(`{"kty":"RSA","kid":%q,"n":%q,"e":%q}`, kid, nB64, eB64)
+	return authtest.JWK(kid, pub)
 }
 
 // TestVerifyJWT_KidInJWKSTail is the round-3 R3-13 regression. A JWKS that
@@ -489,7 +472,7 @@ func TestGRPCInterceptor_Valid(t *testing.T) {
 	interceptor := mw.GRPCUnaryInterceptor()
 	var gotTenantID string
 
-	_, err := interceptor(ctx, nil, nil,
+	_, err := interceptor(ctx, nil, testUnaryInfo,
 		func(ctx context.Context, _ any) (any, error) {
 			gotTenantID = auth.TenantIDFromCtx(ctx)
 			return nil, nil
