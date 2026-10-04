@@ -406,6 +406,11 @@ The node image adds:
   `scripts/ci/record-copied-debian-libs.sh` in
   `/usr/local/share/vmafx/copied-packages/packages.list` with each package's
   copyright file (the source image holds their Debian sources);
+- for rclone's mount mode, the setuid `fusermount3` (Debian `fuse3`,
+  GPL-2.0) and the util-linux `mount` and `umount` it runs, with their
+  libraries at their Debian paths, recorded the same way in
+  `/usr/local/share/vmafx/fuse-tools/packages.list`
+  ([ADR-1593](../adr/1593-helm-node-fuse-and-ebpf.md));
 - rclone built from its release's module source at `RCLONE_VERSION`
   (`build-config.env`), so the source image can hold the exact source of it and
   of every module it links (it links an LGPL-3.0 module).

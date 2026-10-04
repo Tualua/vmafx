@@ -166,8 +166,33 @@ distorted clip as the end of the clip. Streaming needs a Unix host.
 rclone reads its remotes and credentials from `VMAFX_RCLONE_CONFIG` (an
 `rclone.conf`), or from its own defaults when unset; `VMAFX_RCLONE_BIN` names
 the binary. Without rclone on the node, jobs on rclone remotes fail with the
-reason, and the node says so at startup. The published node image carries
-rclone but no FUSE helper: use `http-serve` or `auto` there.
+reason, and the node says so at startup.
+
+### Mount mode in a container {#mount-mode-in-a-container}
+
+The published node image carries rclone, the setuid FUSE helper
+`fusermount3` and the util-linux `mount` and `umount` it runs
+([ADR-1593](../adr/1593-helm-node-fuse-and-ebpf.md)). `fusermount3` calls
+`mount` whenever `/etc/mtab` exists, which Docker creates in every container.
+The container needs the FUSE device, and its capability bounding set needs
+the two capabilities `fusermount3` mounts with. The node process itself
+still runs as UID 65532 with no effective capability:
+
+```bash
+docker run --device /dev/fuse \
+  --cap-drop ALL --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
+  -e VMAFX_STORAGE_MODE=mount \
+  ghcr.io/vmafx/vmafx-node:<tag>
+```
+
+- `--security-opt no-new-privileges` (Kubernetes
+  `allowPrivilegeEscalation: false`) stops the setuid helper; mounts then fail.
+- Without `DAC_READ_SEARCH`, `fusermount3` cannot reach the node's per-job
+  mount points (mode 0700) and the mount fails with `Permission denied`.
+- On an AppArmor host, the runtime's default profile denies `mount`: add
+  `--security-opt apparmor=unconfined`, or a profile that allows FUSE mounts.
+
+Kubernetes: set `node.fuse` in the Helm chart ([Kubernetes deployment](#kubernetes-deployment)).
 
 ## Configuration (12-factor env vars)
 
@@ -265,9 +290,34 @@ updating the Secret rotates the token.
 `mount` and `auto` are the other accepted values) and `storage.mountRoot`
 becomes `VMAFX_STORAGE_MOUNT_ROOT`. `storage.rclone.config` holds the
 `rclone.conf` contents; the chart mounts it as a Secret at
-`/etc/vmafx/rclone.conf` and only then sets `VMAFX_RCLONE_CONFIG`. `mount`
-needs FUSE in the pod, which the chart does not provide: add a FUSE device
-plugin or a privileged `securityContext`, and an image with `fusermount3`.
+`/etc/vmafx/rclone.conf` and only then sets `VMAFX_RCLONE_CONFIG`.
+
+`mount` needs FUSE in the pod, which `node.fuse` provides
+([ADR-1593](../adr/1593-helm-node-fuse-and-ebpf.md)); the chart refuses
+`storage.mode: mount` without it. The pod gets `/dev/fuse` from a FUSE device
+plugin, named by its extended resource (with
+[squat/generic-device-plugin](https://github.com/squat/generic-device-plugin)
+and its default domain, `devic.es/fuse`):
+
+```yaml
+storage:
+  mode: mount
+node:
+  enabled: true
+  fuse:
+    enabled: true
+    resourceName: devic.es/fuse
+    # appArmorProfile: {type: Unconfined}   # on AppArmor hosts
+```
+
+The container keeps UID 65532 and a read-only root file system; its
+capability bounding set becomes `SYS_ADMIN` and `DAC_READ_SEARCH` and
+`allowPrivilegeEscalation` becomes `true`, both only for the setuid
+`fusermount3`. Such a pod no longer meets the Pod Security `baseline` or
+`restricted` profile, so its namespace must allow `privileged`. A
+`storage.mountRoot` outside `/tmp` gets an `emptyDir`. `node.ebpf` turns on
+the eBPF descriptor tracker on top of this
+([eBPF tracker](../development/ebpf-fuse-bypass.md#kubernetes)).
 
 ## Container images
 

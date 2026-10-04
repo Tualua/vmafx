@@ -99,6 +99,10 @@ class NodeToControllerEgress(unittest.TestCase):
         self.assertIn("prot", result.stderr)
 
 
+# node.fuse settings mount mode needs (ADR-1593).
+FUSE = ("node.fuse.enabled=true", "node.fuse.resourceName=devic.es/fuse")
+
+
 class StorageMode(unittest.TestCase):
     def test_default_is_http_serve(self) -> None:
         env = node_env()
@@ -108,10 +112,18 @@ class StorageMode(unittest.TestCase):
     def test_every_node_mode_renders(self) -> None:
         for mode in ("http-serve", "mount", "auto"):
             with self.subTest(mode=mode):
-                self.assertEqual(node_env(f"storage.mode={mode}")["VMAFX_STORAGE_MODE"], mode)
+                self.assertEqual(
+                    node_env(f"storage.mode={mode}", *FUSE)["VMAFX_STORAGE_MODE"], mode
+                )
+
+    def test_mount_needs_fuse(self) -> None:
+        """Negative: mount mode without node.fuse is refused (ADR-1593)."""
+        result = render("node.enabled=true", "storage.mode=mount", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("storage.mode mount needs FUSE", result.stderr)
 
     def test_mount_root_rendered(self) -> None:
-        env = node_env("storage.mode=mount", "storage.mountRoot=/rclone-mount")
+        env = node_env("storage.mode=mount", "storage.mountRoot=/rclone-mount", *FUSE)
         self.assertEqual(env["VMAFX_STORAGE_MOUNT_ROOT"], "/rclone-mount")
 
     def test_unknown_mode_refused(self) -> None:

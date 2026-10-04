@@ -107,6 +107,16 @@
   controller workload").
 
 
+- **Helm: `node.fuse` and `node.ebpf`
+  ([ADR-1593](docs/adr/1593-helm-node-fuse-and-ebpf.md)).** `node.fuse` gives
+  the node pods `/dev/fuse` through a FUSE device plugin's resource and the
+  capability bounding set mount mode needs; `node.ebpf` turns on the eBPF
+  descriptor tracker (`VMAFX_EBPF_BYPASS`) with UID 0, `BPF`, `PERFMON` and
+  `SYS_ADMIN` and the host's tracefs read-only. `storage.mode: mount` without
+  `node.fuse` is now refused at render time; it used to deploy a node that
+  could not start.
+
+
 - **`scripts/dev/hip_dispatch_drop_probe.hip` checks whether an AMD GPU runs
   every command of a HIP stream.** Built with `hipcc`, it runs frames of one
   memset, several small kernels and a readback on one stream and reports the
@@ -3787,6 +3797,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   zip. The kernels now form that first `+0 +` with a compare and a mask, which
   MSVC keeps. Picture data never reached the case, so no score changes. The
   `Windows MSVC+CUDA (full)` CI lane now runs `test_float_adm_x86`.
+
+
+- **Mount mode works in the node image
+  ([ADR-1593](docs/adr/1593-helm-node-fuse-and-ebpf.md)).** The published
+  `vmafx-node` image had no FUSE helper, so a node with
+  `VMAFX_STORAGE_MODE=mount` refused to start. The image now carries the
+  setuid `fusermount3` and the util-linux `mount` and `umount` it runs, listed
+  in the licence record with their Debian sources in the `-source` image. A
+  container needs `/dev/fuse` and the capabilities `SYS_ADMIN` and
+  `DAC_READ_SEARCH`; the node process itself keeps none.
 
 
 - **vmafx-operator authenticates to the controller

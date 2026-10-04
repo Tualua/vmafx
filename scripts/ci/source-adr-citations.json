@@ -10024,6 +10024,7 @@
         "docker/Dockerfile.published-source": 1,
         "python/test/setup_metadata_test.py": 3,
         "scripts/ci/record-copied-debian-libs.sh": 1,
+        "scripts/ci/tests/test-record-copied-debian-libs.sh": 1,
         "scripts/release/build-native-release-artifacts.sh": 2,
         "scripts/release/published_rc_companion.py": 2,
         "scripts/release/tests/test-build-native-release-artifacts.sh": 3,
@@ -10181,6 +10182,7 @@
         "cmd/vmafx-node/executor.go": 1,
         "cmd/vmafx-node/executor_inputs.go": 1,
         "cmd/vmafx-node/storage_config.go": 1,
+        "deploy/helm/vmafx/templates/node-validate.yaml": 1,
         "deploy/helm/vmafx/values.yaml": 1,
         "pkg/libvmaf/readers_unix.go": 1
       },
@@ -10221,7 +10223,10 @@
         "cmd/vmafx-node/bpf/vmlinux.h": 1,
         "cmd/vmafx-node/ebpf_config.go": 1,
         "cmd/vmafx-node/ebpf_linux.go": 1,
-        "cmd/vmafx-node/ebpf_other.go": 1
+        "cmd/vmafx-node/ebpf_other.go": 1,
+        "deploy/helm/vmafx/templates/node-validate.yaml": 2,
+        "deploy/helm/vmafx/templates/node.yaml": 1,
+        "deploy/helm/vmafx/values.yaml": 1
       },
       "target": "1539-node-ebpf-tracker-wiring.md"
     },
@@ -10488,6 +10493,22 @@
         "scripts/ci/tests/test_helm_service_accounts.py": 1
       },
       "target": "1592-helm-split-service-accounts.md"
+    },
+    "1593": {
+      "sites": {
+        ".github/workflows/docker-publish-operator-node.yml": 1,
+        ".github/workflows/helm-chart.yml": 1,
+        "deploy/helm/vmafx/templates/node-validate.yaml": 4,
+        "deploy/helm/vmafx/templates/node.yaml": 2,
+        "deploy/helm/vmafx/values.yaml": 2,
+        "docker/Dockerfile.node": 3,
+        "scripts/ci/record-copied-debian-libs.sh": 1,
+        "scripts/ci/tests/test-record-copied-debian-libs.sh": 1,
+        "scripts/ci/tests/test_helm_node_contract.py": 2,
+        "scripts/ci/tests/test_helm_node_fuse_ebpf.py": 1,
+        "scripts/release/tests/test-docker-image-runtime-contract.sh": 1
+      },
+      "target": "1593-helm-node-fuse-and-ebpf.md"
     },
     "1594": {
       "sites": {

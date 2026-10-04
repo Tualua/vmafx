@@ -15,6 +15,8 @@
 #   - ffmpeg n9.0.2 with the fork's ffmpeg-patches/ applied
 #   - Full soft-codec inventory: libx264, libx265, libvpx, libsvtav1, libdav1d
 #   - libvmaf filter + fork-specific VMAF filters compiled in
+#   - rclone, and for its mount mode the setuid FUSE helper fusermount3 with the
+#     util-linux mount and umount it runs (ADR-1593)
 #
 # Licences (ADR-1513): node-cpu carries /usr/local/share/vmafx/licenses/
 # (THIRD_PARTY_NOTICES.txt and every licence text, written by
@@ -92,6 +94,44 @@ RUN CGO_ENABLED=0 GOFLAGS=-mod=mod go install -trimpath \
         "github.com/rclone/rclone@${RCLONE_VERSION}" \
     && install -D -m 0755 /go/bin/rclone /usr/local/bin/rclone \
     && env -u RCLONE_VERSION /usr/local/bin/rclone version
+
+# fuse-tools: what `rclone mount` needs in the distroless image (ADR-1593).
+# rclone mounts through the setuid helper fusermount3 (Debian fuse3), and
+# fusermount3 runs /bin/mount and /bin/umount (util-linux) to record a mount
+# whenever /etc/mtab exists, which Docker creates in every container. The
+# three programs and the libraries they link keep their Debian paths:
+# fusermount3 starts them as root with an empty environment, so
+# LD_LIBRARY_PATH would not reach them. mount and umount lose their setuid bit
+# (only fusermount3 runs them, already as root). record-copied-debian-libs
+# records their packages for the licence gate, as it does FFmpeg's libraries.
+FROM ${RELEASE_BUILDER_BASE} AS fuse-tools
+ARG DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fuse3 mount \
+    && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 scripts/ci/record-copied-debian-libs.sh /usr/local/bin/record-copied-debian-libs
+RUN programs="/usr/bin/fusermount3 /usr/bin/mount /usr/bin/umount" \
+    && for program in ${programs}; do printf '%s /usr/bin\n' "${program}" >> /tmp/fuse-origins.txt; done \
+    && ldd ${programs} > /tmp/fuse-ldd.txt \
+    && if grep -q 'not found' /tmp/fuse-ldd.txt; then cat /tmp/fuse-ldd.txt >&2; exit 1; fi \
+    && awk '/=> \// { print $3 }' /tmp/fuse-ldd.txt | sort -u \
+        | while IFS= read -r library; do \
+            case "$(basename "${library}")" in \
+                ld-linux-*|libc.so.*|libdl.so.*|libgcc_s.so.*|libm.so.*|libpthread.so.*|librt.so.*|libstdc++.so.*) \
+                    continue \
+                    ;; \
+            esac; \
+            real="$(realpath "${library}")"; \
+            dir="$(dirname "${real}")"; \
+            install -D -m 0644 "${real}" "/fuse-tools/root${dir}/$(basename "${library}")" || exit 1; \
+            printf '%s %s\n' "${library}" "${dir}" >> /tmp/fuse-origins.txt; \
+        done \
+    && install -D -m 4755 /usr/bin/fusermount3 /fuse-tools/root/usr/bin/fusermount3 \
+    && install -m 0755 /usr/bin/mount /usr/bin/umount /fuse-tools/root/usr/bin/ \
+    && record-copied-debian-libs /tmp/fuse-origins.txt /fuse-tools/copied-packages /usr/bin \
+    && test "$(wc -l < /fuse-tools/copied-packages/packages.list)" -eq "$(wc -l < /tmp/fuse-origins.txt)"
 
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
@@ -386,7 +426,7 @@ FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 LABEL org.opencontainers.image.title="vmafx-node"
 LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND GPL-3.0-or-later"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND GPL-3.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
@@ -401,6 +441,11 @@ COPY --from=vmaf-builder /dist/bin/vmaf /usr/local/bin/vmaf
 # pkg/storage resolves s3://, gs://, rclone:// and remote:path inputs by
 # running rclone (ADR-0719); the v1.0.0-rc.1 image shipped without it.
 COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone
+# rclone's mount mode (storage.mode=mount): the setuid fusermount3, the
+# util-linux mount and umount it runs, their libraries at their Debian paths,
+# and the record of the packages they come from (ADR-1593).
+COPY --from=fuse-tools /fuse-tools/root/ /
+COPY --from=fuse-tools /fuse-tools/copied-packages/ /usr/local/share/vmafx/fuse-tools/
 
 # ---------------------------------------------------------------------------
 # Stage 6 — node-assembled: the CPU-only node worker's content

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1257), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1258), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5031,6 +5031,10 @@ Every ADR, one heading each (1257), so the site search finds an ADR by its title
 ## ADR-1592: the controller runs under its own service account, the only one that may read VmafxTenants
 
 [1592-helm-split-service-accounts](1592-helm-split-service-accounts.md)
+
+## ADR-1593: the node image carries FUSE mount tools, and the Helm chart grants FUSE and the eBPF tracker per value
+
+[1593-helm-node-fuse-and-ebpf](1593-helm-node-fuse-and-ebpf.md)
 
 ## ADR-1594: zstd image layers with a Docker Engine 23.0 floor, and zopfli for the Windows zips
 

@@ -146,6 +146,22 @@ one lock and docs.
   `git archive --format=tar.gz -9`; `build-native-release-artifacts.sh` uses `gzip -9n`.
 - `dev-container-publish.yml` keeps BuildKit's default level as a recorded exception
   that expires on 2026-12-31 (the test fails after that date).
+## Node FUSE tools and the chart's node.fuse / node.ebpf (ADR-1593, 2026-10-04)
+
+`feat/helm-ebpf-and-fuse`. Fork-local files only.
+
+- `docker/Dockerfile.node`: the `fuse-tools` stage and its two `COPY` lines in
+  `runtime-base`. Keep `mount` and `umount` next to `fusermount3`: libfuse
+  3.17 runs `/bin/mount` whenever `/etc/mtab` exists, and Docker creates it.
+  `tools/rc1-tester/image/licensing.json` component `fuse-tools` and
+  `scripts/ci/record-copied-debian-libs.sh` (optional per-line destination)
+  go with it.
+- `deploy/helm/vmafx/templates/node.yaml` renders its securityContext through
+  `vmafx.nodeSecurityContext`; `templates/node-validate.yaml` refuses
+  `storage.mode: mount` without `node.fuse`. A sync that restores the plain
+  `toYaml .Values.securityContext` drops the FUSE and eBPF capabilities.
+- `scripts/ci/tests/test_helm_node_contract.py` renders mount mode with
+  `node.fuse`.
 
 ## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
 

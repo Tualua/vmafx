@@ -3334,6 +3334,13 @@
      "root": "usr/local/share/vmafx/copied-packages"
     },
     {
+     "id": "fuse-tools",
+     "kind": "dpkg-copied",
+     "name": "FUSE helper fusermount3, util-linux mount and umount and their libraries, copied out of Debian packages for rclone's mount mode (ADR-1593)",
+     "list": "usr/local/share/vmafx/fuse-tools/packages.list",
+     "root": "usr/local/share/vmafx/fuse-tools"
+    },
+    {
      "id": "go-modules",
      "kind": "go-binary",
      "name": "Go modules linked into vmafx-node and rclone",

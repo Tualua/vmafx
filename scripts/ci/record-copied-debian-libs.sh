@@ -2,13 +2,15 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 #
-# Record the shared libraries an image copies out of Debian packages (the node
-# image's FFmpeg dependency closure) so that their licences travel with them
-# (ADR-1513): for each library path in ORIGINS that a dpkg package owns, write
-#   <PREFIX>/<basename> <package> <version> <source>=<source version>
+# Record the files an image copies out of Debian packages (the node image's
+# FFmpeg dependency closure, its FUSE tools) so that their licences travel with
+# them (ADR-1513): for each path in ORIGINS that a dpkg package owns, write
+#   <DIR>/<basename> <package> <version> <source>=<source version>
 # to OUT_DIR/packages.list and copy the package's copyright file to
-# OUT_DIR/<package>/copyright. Libraries no package owns (built from source in
-# the image) are printed and left to their own licence record. The list is the
+# OUT_DIR/<package>/copyright. A line of ORIGINS is `<path>` or
+# `<path> <DIR>`: DIR is the directory the image holds the copy in, PREFIX when
+# the line names none (ADR-1593). Files no package owns (built from source in
+# the image) are printed and left to their own licence record. The list is a
 # `dpkg-copied` component of tools/rc1-tester/image/licensing.json.
 #
 # Usage: record-copied-debian-libs.sh ORIGINS OUT_DIR PREFIX
@@ -39,24 +41,33 @@ owner_of() {
 }
 
 count=0
-while IFS= read -r library; do
+while IFS=' ' read -r library dir extra; do
   count=$((count + 1))
   if [[ "$count" -gt 4096 ]]; then
     echo "more than 4096 libraries in $origins" >&2
     exit 1
   fi
   [[ -n "$library" ]] || continue
+  if [[ -n "$extra" ]]; then
+    echo "$origins: more than two fields on the line for $library" >&2
+    exit 1
+  fi
+  dir="${dir:-$prefix}"
+  if [[ "$dir" != /* ]]; then
+    echo "$origins: destination '$dir' of $library is not an absolute directory" >&2
+    exit 1
+  fi
   if ! package="$(owner_of "$library")"; then
     echo "not from a Debian package (recorded elsewhere): $library"
     continue
   fi
   fields="$(dpkg-query -W -f='${Version} ${source:Package}=${source:Version}' "$package")"
-  printf '%s/%s %s %s\n' "$prefix" "$(basename "$library")" "$package" "$fields" >>"$out/packages.list"
+  printf '%s/%s %s %s\n' "${dir%/}" "$(basename "$library")" "$package" "$fields" >>"$out/packages.list"
   mkdir -p "$out/$package"
   cp -L "/usr/share/doc/$package/copyright" "$out/$package/copyright"
 done <"$origins"
 
 if [[ ! -s "$out/packages.list" ]]; then
-  echo "no library of $origins comes from a Debian package; the record would be empty" >&2
+  echo "no file of $origins comes from a Debian package; the record would be empty" >&2
   exit 1
 fi

@@ -1,0 +1,55 @@
+{{- /*
+SPDX-License-Identifier: EUPL-1.2
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/node-validate.yaml
+Renders nothing. Refuses node storage and eBPF settings that would render a
+node which stops at startup (ADR-1593):
+
+- storage.mode "mount" needs node.fuse: without /dev/fuse and the capability
+  bounding set of the setuid fusermount3 the node refuses mount mode.
+- node.fuse needs the extended resource of a FUSE device plugin; the chart
+  does not fall back to a privileged container.
+- node.ebpf needs storage.mode "mount" and node.fuse (the tracker watches the
+  mounts), an absolute mount prefix of at most 255 bytes, and a mount root
+  under it.
+- env.VMAFX_EBPF_* would override node.ebpf, and with node.fuse
+  env.VMAFX_STORAGE_MODE / VMAFX_STORAGE_MOUNT_ROOT would override the
+  settings these checks read.
+
+ADR-1539: eBPF tracker wiring. ADR-1526: storage modes.
+*/ -}}
+{{- $fuse := .Values.node.fuse }}
+{{- $ebpf := .Values.node.ebpf }}
+{{- range $name, $_ := .Values.env }}
+{{- if hasPrefix "VMAFX_EBPF_" $name }}
+{{- fail (printf "env.%s: set the eBPF tracker through node.ebpf, not env (ADR-1593)" $name) }}
+{{- end }}
+{{- if and $fuse.enabled (has $name (list "VMAFX_STORAGE_MODE" "VMAFX_STORAGE_MOUNT_ROOT")) }}
+{{- fail (printf "env.%s: with node.fuse set storage.mode / storage.mountRoot, not env (ADR-1593)" $name) }}
+{{- end }}
+{{- end }}
+{{- if and (or $fuse.enabled $ebpf.enabled) (not .Values.node.enabled) }}
+{{- fail "node.fuse and node.ebpf configure the node workload: set node.enabled: true" }}
+{{- end }}
+{{- if .Values.node.enabled }}
+{{- if and (eq .Values.storage.mode "mount") (not $fuse.enabled) }}
+{{- fail "storage.mode mount needs FUSE in the node pods: set node.fuse.enabled and node.fuse.resourceName (ADR-1593), or use http-serve" }}
+{{- end }}
+{{- if and $fuse.enabled (not $fuse.resourceName) }}
+{{- fail "node.fuse.resourceName is empty: name the extended resource your FUSE device plugin advertises for /dev/fuse (for example devic.es/fuse)" }}
+{{- end }}
+{{- if $ebpf.enabled }}
+{{- if or (ne .Values.storage.mode "mount") (not $fuse.enabled) }}
+{{- fail "node.ebpf needs storage.mode mount and node.fuse.enabled: the tracker watches the rclone mounts (ADR-1539)" }}
+{{- end }}
+{{- $prefix := $ebpf.mountPrefix | default "" }}
+{{- if or (not (hasPrefix "/" $prefix)) (gt (len $prefix) 255) }}
+{{- fail (printf "node.ebpf.mountPrefix %q: must be an absolute path of at most 255 bytes" $prefix) }}
+{{- end }}
+{{- $root := printf "%s/" (trimSuffix "/" (include "vmafx.nodeMountRoot" .)) }}
+{{- if not (hasPrefix (printf "%s/" (trimSuffix "/" $prefix)) $root) }}
+{{- fail (printf "storage.mountRoot %q is not under node.ebpf.mountPrefix %q: the tracker would watch no mount" .Values.storage.mountRoot $prefix) }}
+{{- end }}
+{{- end }}
+{{- end }}

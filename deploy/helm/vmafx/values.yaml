@@ -521,9 +521,9 @@ pushgateway:
 # reads remotes; it becomes VMAFX_STORAGE_MODE:
 #   http-serve  per-job `rclone serve http`, streamed into the scorer through
 #               pipes (nothing written to the node's disk). Needs no FUSE.
-#   mount       per-job `rclone mount` under mountRoot. Needs FUSE in the pod
-#               (a FUSE device plugin or a privileged securityContext); the
-#               node refuses to start without it.
+#   mount       per-job `rclone mount` under mountRoot. Needs FUSE in the pod:
+#               set node.fuse (a FUSE device plugin's resource); the chart
+#               refuses mount without it.
 #   auto        mount when FUSE is usable, else http-serve; the node logs
 #               which one it chose.
 # Any other value is refused by the schema and by the node.
@@ -531,6 +531,8 @@ pushgateway:
 storage:
   mode: "http-serve"   # http-serve | mount | auto
   mountRoot: ""        # VMAFX_STORAGE_MOUNT_ROOT; empty = the node's temp dir
+                       # (node.ebpf.mountPrefix with the tracker on). Outside
+                       # /tmp the chart mounts an emptyDir there.
   rclone:
     config: ""         # rclone.conf contents (remotes + credentials), mounted
                        # at /etc/vmafx/rclone.conf; empty = no rclone config
@@ -611,6 +613,39 @@ node:
   # volumes / volumeMounts for corpus, output, model PVCs.
   volumes: []
   volumeMounts: []
+
+  # fuse — FUSE in the node pods, which storage.mode "mount" needs (ADR-1593).
+  # The node image carries the setuid helper fusermount3 and the util-linux
+  # mount and umount it runs; the pod still needs the /dev/fuse device and the
+  # capabilities fusermount3 mounts with:
+  #   resourceName     the extended resource a FUSE device plugin advertises
+  #                    for /dev/fuse (squat/generic-device-plugin with its
+  #                    default domain: devic.es/fuse); one per pod. Required.
+  #   appArmorProfile  container AppArmor profile. The runtimes' default
+  #                    profile denies mount, so on AppArmor hosts set
+  #                    {type: Unconfined} or a Localhost profile that allows
+  #                    FUSE mounts. Empty: the runtime's default.
+  # The container keeps running as UID 65532 with no effective capabilities;
+  # its capability bounding set becomes SYS_ADMIN and DAC_READ_SEARCH and
+  # allowPrivilegeEscalation true, which only the setuid fusermount3 uses.
+  # Such a pod no longer meets the Pod Security "baseline" or "restricted"
+  # profile. storage.mode "mount" without fuse.enabled is refused.
+  fuse:
+    enabled: false
+    resourceName: ""
+    appArmorProfile: {}
+
+  # ebpf — the eBPF descriptor tracker (VMAFX_EBPF_BYPASS, ADR-1539, ADR-1593;
+  # docs/development/ebpf-fuse-bypass.md). Needs storage.mode "mount" and
+  # fuse.enabled. A non-root container process has no effective capabilities,
+  # so the container runs as UID 0 with its capabilities dropped to BPF,
+  # PERFMON and SYS_ADMIN, and the host's /sys/kernel/tracing is mounted
+  # read-only (the loader finds the tracepoints there). mountPrefix is
+  # VMAFX_EBPF_MOUNT_PREFIX (absolute, at most 255 bytes); storage.mountRoot
+  # must lie under it and defaults to it.
+  ebpf:
+    enabled: false
+    mountPrefix: /rclone-mount/
 
 # ---------------------------------------------------------------------------
 # Auth — multi-tenant JWT / OIDC gateway (ADR-0794, ADR-1518, ADR-1519)

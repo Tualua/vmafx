@@ -81,7 +81,14 @@ never `--enable-nonfree`; `ffmpeg-builder-cpu` writes `/ffmpeg-source/`
 `record-copied-debian-libs`; `rclone-bin` = `go install` at `RCLONE_VERSION`
 (build-config.env), rclone smoke run under `env -u RCLONE_VERSION` (rclone
 reads `RCLONE_*` as flags). `libvmaf.so*` copies via `find -maxdepth 1`, never
-glob (`libvmaf.so.3.0.0.p/`).
+glob (`libvmaf.so.3.0.0.p/`). `fuse-tools` stage (ADR-1593): setuid
+`fusermount3` (4755) + util-linux `mount`/`umount` (0755, setuid stripped) +
+lib closure at Debian paths (`fusermount3` clears env: no LD_LIBRARY_PATH) ->
+`runtime-base` `COPY /fuse-tools/root/ /`; record
+`/usr/local/share/vmafx/fuse-tools/packages.list` = `dpkg-copied` component
+`fuse-tools`. No `mount`/`umount` -> every mount fails where `/etc/mtab`
+exists (Docker always). Guards: `test-docker-image-runtime-contract.sh`,
+publish smoke mount.
 
 ## oneAPI production image (ADR-1368, ADR-1517)
 

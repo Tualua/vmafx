@@ -134,6 +134,12 @@ jobs:
       - name: Service accounts and tenant RBAC
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_service_accounts.py' -v
 
+      # ADR-1593: node.fuse (FUSE device resource, the setuid helper's
+      # capability bounding set) and node.ebpf (tracker env, UID 0 with BPF /
+      # PERFMON / SYS_ADMIN, tracefs), and the combinations the chart refuses.
+      - name: Node FUSE and eBPF renders
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_node_fuse_ebpf.py' -v
+
       # ADR-1353: the server Deployment selected every Pod of the release, the
       # operator's and node's included. Render each server workload with every
       # other component on and require each selector to pick only its own Pods.

@@ -399,3 +399,54 @@ the scoring roots.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+vmafx.nodeMountRoot — VMAFX_STORAGE_MOUNT_ROOT of the node pods: storage.mountRoot,
+or with the eBPF tracker on its mount prefix without the trailing slash
+(ADR-1593). Empty: the node's temp dir.
+*/}}
+{{- define "vmafx.nodeMountRoot" -}}
+{{- if .Values.storage.mountRoot -}}
+{{- .Values.storage.mountRoot -}}
+{{- else if .Values.node.ebpf.enabled -}}
+{{- trimSuffix "/" .Values.node.ebpf.mountPrefix -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+vmafx.nodeMountRootVolume — "true" when the node pods need an emptyDir at the
+mount root: FUSE on and a mount root outside /tmp (the /tmp emptyDir holds
+the temp-dir default).
+*/}}
+{{- define "vmafx.nodeMountRootVolume" -}}
+{{- $root := include "vmafx.nodeMountRoot" . -}}
+{{- if and .Values.node.fuse.enabled $root (ne $root "/tmp") (not (hasPrefix "/tmp/" $root)) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+vmafx.nodeSecurityContext — the node container's securityContext (ADR-1593):
+.Values.securityContext, and with node.fuse the capability bounding set the
+setuid fusermount3 mounts with (SYS_ADMIN, DAC_READ_SEARCH; the node process
+itself keeps no effective capability) plus allowPrivilegeEscalation, which a
+setuid helper needs. With node.ebpf the container runs as UID 0 (a non-root
+process has no effective capabilities) with BPF, PERFMON and SYS_ADMIN only.
+*/}}
+{{- define "vmafx.nodeSecurityContext" -}}
+{{- $sc := deepCopy .Values.securityContext -}}
+{{- if .Values.node.fuse.enabled -}}
+{{- $add := list "SYS_ADMIN" "DAC_READ_SEARCH" -}}
+{{- if .Values.node.ebpf.enabled -}}
+{{- $add = list "BPF" "PERFMON" "SYS_ADMIN" -}}
+{{- $_ := set $sc "runAsUser" 0 -}}
+{{- $_ := set $sc "runAsNonRoot" false -}}
+{{- end -}}
+{{- $_ := set $sc "allowPrivilegeEscalation" true -}}
+{{- $_ := set $sc "capabilities" (dict "drop" (list "ALL") "add" $add) -}}
+{{- with .Values.node.fuse.appArmorProfile -}}
+{{- $_ := set $sc "appArmorProfile" . -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $sc -}}
+{{- end }}

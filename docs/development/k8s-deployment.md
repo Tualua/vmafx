@@ -470,6 +470,15 @@ If your image requires write access outside the mounted volumes, override
 `podSecurityContext` / `securityContext` in `values.yaml` — but doing so
 moves the namespace out of the `restricted` profile.
 
+Two node settings leave the profile on purpose
+([ADR-1593](../adr/1593-helm-node-fuse-and-ebpf.md)), and with either of them
+the node pods need a namespace that allows `privileged`:
+
+| Setting | Node container | Why |
+| --- | --- | --- |
+| `node.fuse` (needed by `storage.mode: mount`) | UID 65532, `allowPrivilegeEscalation: true`, capabilities `[SYS_ADMIN, DAC_READ_SEARCH]`, one `/dev/fuse` from a device plugin's resource | the setuid `fusermount3` mounts with these; the node process has no effective capability ([node guide](../server/node.md#kubernetes-deployment)) |
+| `node.ebpf` (with `node.fuse`) | UID 0, capabilities `[BPF, PERFMON, SYS_ADMIN]`, the host's `/sys/kernel/tracing` read-only | the eBPF tracker loads its program as root ([eBPF tracker](ebpf-fuse-bypass.md#kubernetes)) |
+
 ## NetworkPolicy {#networkpolicy}
 
 Disabled by default (`networkPolicy.enabled=false`) because many clusters

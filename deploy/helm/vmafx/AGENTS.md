@@ -155,6 +155,24 @@ Pod template.
   `vmafx.controllerTokenVolume` / `Mount` -> `VMAFX_CONTROLLER_TOKEN_FILE`.
 - Guard: `scripts/ci/tests/test_helm_controller_workload.py` (`helm-chart.yml`).
 
+## Node FUSE and eBPF (ADR-1593)
+
+- Node container securityContext only via `vmafx.nodeSecurityContext`; never
+  plain `toYaml .Values.securityContext` in `node.yaml`. `node.fuse`: UID
+  65532 kept, bounding set `[SYS_ADMIN, DAC_READ_SEARCH]`,
+  `allowPrivilegeEscalation: true` (setuid `fusermount3` only; measured:
+  either missing -> mount fails). `node.ebpf`: UID 0,
+  `[BPF, PERFMON, SYS_ADMIN]`, hostPath `/sys/kernel/tracing` read-only; no
+  `/sys/kernel/btf` mount (container sysfs shows it).
+- `/dev/fuse` only via `node.fuse.resourceName` (device-plugin resource);
+  never a privileged fallback.
+- `templates/node-validate.yaml` refuses: mount without fuse, fuse without
+  resourceName, ebpf without mount + fuse, relative or >255-byte prefix, mount
+  root outside prefix, `env.VMAFX_EBPF_*`, storage env keys with fuse.
+- Mount root = `vmafx.nodeMountRoot`; emptyDir only outside `/tmp`
+  (`vmafx.nodeMountRootVolume`).
+- Guard: `scripts/ci/tests/test_helm_node_fuse_ebpf.py` (`helm-chart.yml`).
+
 ## Active GPU backends
 
 Chart maps NVIDIA, AMD, Intel device-plugin resources to CUDA, HIP, SYCL.

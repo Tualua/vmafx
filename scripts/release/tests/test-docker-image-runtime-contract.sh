@@ -130,6 +130,29 @@ def validate(texts: dict[str, str]) -> None:
         raise AssertionError("the node runtime does not bundle rclone")
     if '--entrypoint /usr/local/bin/rclone "${image}" version' not in texts[OPERATOR_NODE]:
         raise AssertionError(f"{OPERATOR_NODE}: the node smoke test does not run rclone")
+    # ADR-1593: rclone's mount mode needs the setuid fusermount3 and the
+    # util-linux mount and umount it runs; the published image lacked them.
+    fuse = node_stages.get("fuse-tools", ("", ""))
+    if fuse[0] != "${RELEASE_BUILDER_BASE}":
+        raise AssertionError("docker/Dockerfile.node has no fuse-tools stage built on ${RELEASE_BUILDER_BASE}")
+    for snippet in (
+        "--no-install-recommends fuse3 mount",
+        "install -D -m 4755 /usr/bin/fusermount3 /fuse-tools/root/usr/bin/fusermount3",
+        "install -m 0755 /usr/bin/mount /usr/bin/umount /fuse-tools/root/usr/bin/",
+        "record-copied-debian-libs /tmp/fuse-origins.txt /fuse-tools/copied-packages",
+    ):
+        if snippet not in fuse[1]:
+            raise AssertionError(f"the fuse-tools stage lacks {snippet!r}")
+    for snippet in (
+        "COPY --from=fuse-tools /fuse-tools/root/ /",
+        "COPY --from=fuse-tools /fuse-tools/copied-packages/ /usr/local/share/vmafx/fuse-tools/",
+    ):
+        if snippet not in node_stages["runtime-base"][1]:
+            raise AssertionError(f"the node runtime lacks {snippet!r}")
+    if "rclone mount :local:/frames /tmp/m --daemon" not in texts[OPERATOR_NODE] or (
+        '/usr/bin/fusermount3 -u /tmp/m' not in texts[OPERATOR_NODE]
+    ):
+        raise AssertionError(f"{OPERATOR_NODE}: the node smoke test does not mount through FUSE")
 
     production = texts[PRODUCTION]
     if production.count(SCORE_CHECK) != 3:
@@ -245,6 +268,24 @@ vendor_rclone["docker/Dockerfile.node"] = vendor_rclone["docker/Dockerfile.node"
 )
 expect_rejected("an rclone copied out of the vendor image", vendor_rclone)
 
+no_fuse = deepcopy(texts)
+no_fuse["docker/Dockerfile.node"] = no_fuse["docker/Dockerfile.node"].replace(
+    "COPY --from=fuse-tools /fuse-tools/root/ /\n", ""
+)
+expect_rejected("a node runtime without the FUSE tools", no_fuse)
+
+plain_fusermount = deepcopy(texts)
+plain_fusermount["docker/Dockerfile.node"] = plain_fusermount["docker/Dockerfile.node"].replace(
+    "install -D -m 4755 /usr/bin/fusermount3", "install -D -m 0755 /usr/bin/fusermount3"
+)
+expect_rejected("a fusermount3 without its setuid bit", plain_fusermount)
+
+no_mount_smoke = deepcopy(texts)
+no_mount_smoke[OPERATOR_NODE] = no_mount_smoke[OPERATOR_NODE].replace(
+    "/usr/bin/fusermount3 -u /tmp/m", "true"
+)
+expect_rejected("a node smoke test without a FUSE mount", no_mount_smoke)
+
 drifted_rclone = deepcopy(texts)
 drifted_rclone["build-config.env"] = drifted_rclone["build-config.env"].replace(
     'RCLONE_VERSION="v1.75.1"', 'RCLONE_VERSION="v1.75.2"'
@@ -253,6 +294,6 @@ expect_rejected("an rclone version that does not mirror build-config.env", drift
 
 print(
     "PASS: images build their models in, the oneAPI image carries its pinned GPU runtime, "
-    "the node bundles rclone, and the smoke tests load them"
+    "the node bundles rclone and its FUSE tools, and the smoke tests load and mount them"
 )
 PY

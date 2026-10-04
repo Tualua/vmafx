@@ -308,7 +308,42 @@
         "nodeSelector": { "type": "object" },
         "tolerations": { "type": "array" },
         "volumes": { "type": "array" },
-        "volumeMounts": { "type": "array" }
+        "volumeMounts": { "type": "array" },
+        "fuse": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "FUSE in the node pods for storage.mode mount (ADR-1593): a FUSE device plugin's extended resource, SYS_ADMIN and DAC_READ_SEARCH in the capability bounding set for the setuid fusermount3, and an optional AppArmor profile.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "resourceName": {
+              "type": "string",
+              "description": "Extended resource a FUSE device plugin advertises for /dev/fuse (squat/generic-device-plugin default domain: devic.es/fuse). Required with enabled."
+            },
+            "appArmorProfile": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Container AppArmor profile; the runtimes' default denies mount. Empty: the runtime default.",
+              "properties": {
+                "type": { "type": "string", "enum": ["RuntimeDefault", "Unconfined", "Localhost"] },
+                "localhostProfile": { "type": "string" }
+              }
+            }
+          }
+        },
+        "ebpf": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "eBPF descriptor tracker (VMAFX_EBPF_BYPASS, ADR-1539, ADR-1593). Needs storage.mode mount and node.fuse.enabled; runs the container as UID 0 with BPF, PERFMON and SYS_ADMIN and mounts /sys/kernel/tracing read-only.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "mountPrefix": {
+              "type": "string",
+              "pattern": "^/",
+              "maxLength": 255,
+              "description": "VMAFX_EBPF_MOUNT_PREFIX: absolute path whose opens are recorded; storage.mountRoot must lie under it and defaults to it."
+            }
+          }
+        }
       }
     },
     "podDisruptionBudget": {

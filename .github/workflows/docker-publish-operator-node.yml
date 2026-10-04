@@ -1465,6 +1465,24 @@ jobs:
           docker run --rm --entrypoint /usr/local/bin/ffmpeg "${image}" -version
           # Remote storage inputs run rclone (pkg/storage, ADR-0719).
           docker run --rm --entrypoint /usr/local/bin/rclone "${image}" version
+          # Mount mode (ADR-1593): as UID 65532, with only the bounding-set
+          # capabilities node.fuse grants, the setuid fusermount3 and the
+          # util-linux mount it runs mount an rclone remote; the file reads
+          # back through FUSE and unmounts. AppArmor (on the runner) denies
+          # mount under Docker's default profile.
+          mounted="vmafx-node-mount-smoke"
+          docker run --detach --name "${mounted}" --device /dev/fuse \
+            --cap-drop ALL --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
+            --security-opt apparmor=unconfined --read-only --tmpfs /tmp:mode=1777 \
+            -v "${frames}:/frames:ro" --entrypoint /usr/local/bin/rclone "${image}" \
+            rcd --rc-no-auth --rc-addr 127.0.0.1:5572
+          trap 'docker rm -f "${mounted}" > /dev/null' EXIT
+          docker exec "${mounted}" rclone mkdir /tmp/m
+          timeout 60 docker exec "${mounted}" \
+            rclone mount :local:/frames /tmp/m --daemon --vfs-cache-mode off
+          test "$(docker exec "${mounted}" rclone md5sum /tmp/m/ref.yuv | cut -d' ' -f1)" = \
+            "$(md5sum "${frames}/ref.yuv" | cut -d' ' -f1)"
+          docker exec "${mounted}" /usr/bin/fusermount3 -u /tmp/m
 
   # -------------------------------------------------------------------------
   # Summary gate — CI shows a single green/red status

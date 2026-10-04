@@ -72,11 +72,55 @@ On hosts other than Linux, `VMAFX_EBPF_BYPASS=1` always stops the node.
 
 ## Kubernetes
 
-The Helm chart has no value for the tracker. Set the two variables through
-`env`, run the nodes in `mount` storage mode (which needs FUSE in the pod, see
-[the node guide](../server/node.md#job-sources-local-paths-urls-and-rclone-remotes)),
-add `BPF` and `PERFMON` to the container's `securityContext.capabilities.add`,
-and mount `/sys/kernel/btf` and `/sys/kernel/tracing` read-only.
+`node.ebpf` in the Helm chart turns the tracker on
+([ADR-1593](../adr/1593-helm-node-fuse-and-ebpf.md)). It needs `mount`
+storage mode and FUSE in the pod (`node.fuse`, see
+[the node guide](../server/node.md#kubernetes-deployment)):
+
+```yaml
+storage:
+  mode: mount
+node:
+  enabled: true
+  fuse:
+    enabled: true
+    resourceName: devic.es/fuse
+  ebpf:
+    enabled: true
+    mountPrefix: /rclone-mount/    # the default
+```
+
+The chart then:
+
+- sets `VMAFX_EBPF_BYPASS=1` and `VMAFX_EBPF_MOUNT_PREFIX`, and
+  `VMAFX_STORAGE_MOUNT_ROOT` to the prefix (on an `emptyDir`) unless
+  `storage.mountRoot` names a directory under it;
+- runs the container as UID 0 with its capabilities dropped to `BPF`,
+  `PERFMON` and `SYS_ADMIN` (`SYS_ADMIN` for the FUSE mounts). A non-root
+  container process has no effective capabilities, whatever the pod adds;
+- mounts the host's `/sys/kernel/tracing` read-only, where the loader finds
+  the tracepoint ids. Kernel BTF is visible through the container's own
+  `/sys` and needs no mount.
+
+It refuses `node.ebpf` without `storage.mode: mount` and `node.fuse`, a
+relative prefix or one longer than 255 bytes, a `storage.mountRoot` outside
+the prefix, and `env.VMAFX_EBPF_*`. The pod no longer meets the Pod Security
+`baseline` profile (root, these capabilities, a `hostPath` volume); its
+namespace must allow `privileged`.
+
+The same settings outside Kubernetes, which load and attach the program on a
+7.2 kernel under Docker's default seccomp profile:
+
+```bash
+docker run --user 0 --cap-drop ALL --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN \
+  --device /dev/fuse -v /sys/kernel/tracing:/sys/kernel/tracing:ro \
+  -e VMAFX_STORAGE_MODE=mount -e VMAFX_STORAGE_MOUNT_ROOT=/rclone-mount \
+  -e VMAFX_EBPF_BYPASS=1 --tmpfs /rclone-mount ghcr.io/vmafx/vmafx-node:<tag>
+```
+
+Without the tracefs mount the node stops with `syscall tracepoints not
+visible in tracefs`; as UID 65532 it stops with `process lacks CAP_BPF and
+CAP_PERFMON`.
 
 ## How it works
 
