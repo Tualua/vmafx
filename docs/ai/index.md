@@ -16,7 +16,6 @@ with ONNX Runtime found by `pkg-config`). `--tiny-model` takes the path of an
 
 ```bash
 vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
-     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v2.onnx \
      --json -o scores.json
 ```
@@ -27,10 +26,12 @@ sidecar has no `name`. Look for it in `frames[].metrics` and `pooled_metrics`
 next to `vmaf`. Full details, flags and caveats are in
 [inference.md](inference.md).
 
-!!! warning
+!!! note
     Models that read libvmaf features (the `vmaf_tiny_*` and `fr_regressor_*`
-    families) need those features extracted. Keep `--model version=vmaf_v0.6.1`
-    as above; without it the score is constant.
+    families) make the run compute them, and their scores appear once the run
+    has read its last frame. The codec-aware `fr_regressor_v2` and
+    `fr_regressor_v3` also need `--tiny-codec` and `--tiny-crf`
+    ([inference](inference.md#codec-aware-models)).
 
 ## Status
 

@@ -261,7 +261,6 @@ vmaf \
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
-    --model version=vmaf_v0.6.1 \
     --tiny-model model/tiny/fr_regressor_v3.onnx \
     --tiny-codec libx264 --tiny-preset medium --tiny-crf 28 \
     --json --output /tmp/fr_v3.json
@@ -270,17 +269,15 @@ vmaf \
 The score is attached under the feature name `vmaf_tiny_model` (the sidecar has
 no `name`).
 
-!!! warning "The same run must compute the input features"
-    A tiny feature-vector model reads its input features (`adm2`,
-    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
-    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
-    request them with `--feature adm --feature vif --feature motion`.
-    A feature that is missing is read as `0.0` without a warning. With only the
-    default `vmaf_v1.0.16_3d0h` model the scores are stored under
-    option-suffixed
-    names, so the lookup misses them and the tiny model returns one constant
-    value for every frame (measured on the CPU build with
-    `fr_regressor_v1`: `-0.85`).
+!!! note "Input features and codec context"
+    Loading the model makes the run compute its input features (`adm2`,
+    `vif_scale0..3`, `motion2`, with default options), and the model scores
+    every frame once the run is flushed. A frame without one of them fails the
+    run with a message naming it; no input is read as `0.0`. The model also
+    needs `--tiny-codec` (with the encode's `--tiny-preset` and `--tiny-crf`):
+    without it the run stops on the first frame instead of scoring a guessed
+    codec block
+    ([ADR-1520](../../adr/1520-tiny-model-feature-inputs-at-flush.md)).
 
 ## Known limitations
 

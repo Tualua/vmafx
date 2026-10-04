@@ -7,17 +7,13 @@ invariant: Codec block layout and preset ordinal mapping exactly mirror Python t
 <!-- markdownlint-disable MD013 -->
 # Codec Block Layout and Preset Ordinals
 
-- **Pre-seeded "unknown" codec one-hot** in
-  `dnn_attach_feature_vector`: when rank-2 model declares
-  second input, scratch buffer's third-from-last slot set
-  to 1.0. "Third-from-last" rule mirrors v2 layout
-  (`[encoder_onehot…, preset_norm, crf_norm]`) —
-  "unknown" one-hot lives at index `N-3`. Any future trainer
-  shipping different second-input layout (e.g. inserts
-  new normalised feature between one-hot and `preset_norm`)
-  must keep "unknown" slot reachable by this offset OR
-  update loader to honour explicit sidecar
-  `unknown_encoder_index` field.
+- **No pre-seeded codec block (ADR-1520).** The codec block of a
+  codec-aware model starts zero and the model refuses to score until the
+  caller names the codec; `vmaf_dnn_codec_block_fill()` finds the `"unknown"`
+  entry by name and returns `-ENOENT` for a vocabulary without one. Never
+  bring back a positional default (third-from-last or last slot): in
+  `fr_regressor_v3`'s vocabulary those slots are real encoders. See
+  [feature-vector-inputs](feature-vector-inputs.md).
 
 ## Invariant — `PRESET_ORDINAL` mirrors Python trainer (ADR-0519)
 

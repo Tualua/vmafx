@@ -126,7 +126,6 @@ v2 comparison model, parsed gate arguments, and report path.
 ```bash
 # Attach vmaf_tiny_v3 alongside the classic regressor.
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v3.onnx \
      --tiny-device auto
 ```
@@ -134,16 +133,12 @@ vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
 The tiny model is loaded alongside the classic models; its score is added under
 the feature name `vmaf_tiny_model` (the sidecar has no `name`).
 
-!!! warning "The same run must compute the input features"
-    A tiny feature-vector model reads its input features (`adm2`,
-    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
-    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
-    request them with `--feature adm --feature vif --feature motion`.
-    A feature that is missing is read as `0.0` without a warning. With only the
-    default `vmaf_v1.0.16_3d0h` model the scores are stored under
-    option-suffixed
-    names, so the lookup misses them and the tiny model returns one constant
-    value for every frame.
+!!! note "Input features"
+    Loading the model makes the run compute its input features (`adm2`,
+    `vif_scale0..3`, `motion2`, with default options), and the model scores
+    every frame once the run is flushed. A frame without one of them fails the
+    run with a message naming it; no input is read as `0.0`
+    ([ADR-1520](../../adr/1520-tiny-model-feature-inputs-at-flush.md)).
 
 `--tiny-device auto` walks CUDA, OpenVINO GPU, ROCm, CoreML, then CPU. As with
 v2 the model is small enough (~4 KB) that dispatch overhead

@@ -8,13 +8,12 @@ CLI, the libvmaf C API and the ffmpeg filters.
 
 ## Quick start
 
-A full-reference tiny model reads the canonical-6 features (`adm2`,
-`vif_scale0..3`, `motion2`) that a classic model computes. Pair it with
-`--model version=vmaf_v0.6.1` so those features are extracted.
+A full-reference tiny model reads libvmaf features, usually the canonical-6
+(`adm2`, `vif_scale0..3`, `motion2`). Loading the model makes the run compute
+the features its sidecar names, whatever classic model the run uses:
 
 ```bash
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v2.onnx \
      --tiny-device cpu --json -o scores.json
 ```
@@ -31,14 +30,25 @@ the model's sidecar JSON, or `vmaf_tiny_model` when the sidecar has no `name`
 }
 ```
 
-!!! warning
-    A feature-vector model scores only as well as its inputs. With the default
-    `vmaf_v1.0.16_3d0h` model alone, the canonical-6 features are not
-    extracted and `vmaf_tiny_v2` returns a constant score for every frame
-    (measured: -0.853 on every frame of the `testdata` pair). Either pass
-    `--model version=vmaf_v0.6.1` as above, or keep the default model and add
-    `--feature adm --feature vif --feature motion`. Both give a real score
-    (93.72 mean on the `testdata` pair).
+How a feature-vector model gets its inputs
+([ADR-1520](../adr/1520-tiny-model-feature-inputs-at-flush.md)):
+
+- Loading the model registers the extractors that write its input features,
+  with their default options. Those features appear in the output next to
+  the tiny score. A sidecar that names a feature no extractor writes, or that
+  names fewer or more features than the model's input is wide, makes
+  `--tiny-model` fail.
+- The model runs after the last frame, when every input is in. `motion2` of a
+  frame is only known once the next frame has been read, so the tiny scores
+  appear when the run is flushed, not while frames are read.
+- A frame that lacks one of the inputs fails the run with
+  `tiny model <name>: frame <n> has no value for input feature '<feature>'`.
+  The model never reads a missing feature as 0.
+- Frames that `--subsample` drops are not scored, as for the classic model.
+
+Before this change the default `vmaf_v1.0.16_3d0h` run computed none of the
+canonical-6, and `vmaf_tiny_v2` printed the same number (-0.853) for every
+frame.
 
 !!! note
     The shipped tiny models were trained against the `vmaf_v0.6.1` teacher. The
@@ -76,7 +86,6 @@ non-directory, sibling-prefix and symlink-escape paths fail closed with
 ```bash
 export VMAF_TINY_MODEL_DIR=/opt/vmaf-models
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-     --model version=vmaf_v0.6.1 \
      --tiny-model /opt/vmaf-models/vmaf_tiny_v2.onnx
 ```
 
@@ -91,7 +100,6 @@ C1, full-reference, augmenting the classic SVM:
 
 ```bash
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v2.onnx \
      --tiny-device cuda
 ```
@@ -133,9 +141,9 @@ smallest bundle.
 | `--tiny-threads N` | `0` | CPU EP intra-op threads; 0 = ORT default. |
 | `--tiny-fp16` | off | Request fp16 I/O when the EP supports it. |
 | `--tiny-model-verify` | off | Require Sigstore-bundle verification (`cosign verify-blob`) before model load. Refuses to load on a missing bundle, missing `cosign`, or non-zero exit. See [model-registry.md](model-registry.md) and [security.md](security.md). |
-| `--tiny-codec NAME` | `unknown` | Encoder name for codec-aware models (for example `fr_regressor_v2`). See [codec-aware models](#codec-aware-models). |
+| `--tiny-codec NAME` | none | Encoder of the distorted clip; required by codec-aware models (`fr_regressor_v2`, `fr_regressor_v3`). Must be an entry of the model sidecar's `encoder_vocab`. See [codec-aware models](#codec-aware-models). |
 | `--tiny-preset STR` | `medium` | Encoder preset (`medium`, `slow`, `p4`, `5`, ...). Encoder-specific; mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`. Unknown presets fall back to ordinal 5. |
-| `--tiny-crf N` | `0` | CRF or QP integer used during encoding; clamped to `[0, 63]` and divided by 63 to match the trainer. |
+| `--tiny-crf N` | none | CRF or QP integer used during encoding; clamped to `[0, 63]` and divided by 63 to match the trainer. Required with `--tiny-codec` or `--tiny-preset`. |
 | `--tiny-resize MODE` | `disabled` | Auto-resize for fixed-shape image models: `disabled`, `bilinear`, `nearest`, `bicubic`. |
 | `--no-reference` | off | Skip reference loading; valid only with an NR tiny model. |
 
@@ -151,11 +159,14 @@ smallest bundle.
 - The last two slots are `preset_norm = preset_ordinal / 9.0` and
   `crf_norm = crf / 63.0`.
 
-Without `--tiny-codec`, `--tiny-preset` and `--tiny-crf`, the loader pre-seeds
-the codec block to the `unknown` baseline (ADR-0518), so the model receives a
-constant conditioning vector and returns the same score regardless of the
-encoder. Passing the flags fills the block through the public
-`vmaf_dnn_set_codec_context()` API (ADR-0519):
+A codec-aware model needs `--tiny-codec` (and the encode's `--tiny-preset`
+and `--tiny-crf`). Without it the run stops on the first frame with
+`tiny model <name> is codec-aware: name the codec ...`
+([ADR-1520](../adr/1520-tiny-model-feature-inputs-at-flush.md)); an earlier
+loader filled the block with a guess instead. Pass `--tiny-codec unknown` when
+the encoder is not known and the model's vocabulary has an `unknown` entry
+(`fr_regressor_v2` has one, `fr_regressor_v3` does not). The flags fill the
+block through the public `vmaf_dnn_set_codec_context()` API (ADR-0519):
 
 ```bash
 vmaf --reference src.yuv --distorted dst.yuv \
@@ -173,11 +184,13 @@ The flags are validated at attach time:
   [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md).
 - A model without a codec block (`fr_regressor_v1`, `vmaf_tiny_v4`,
   `dists_sq`) rejects the flags with a `-ENOTSUP` message.
+- `--tiny-codec` or `--tiny-preset` without `--tiny-crf` exits non-zero: the
+  CRF is a model input, and the CLI does not make one up.
 
 ```text
 $ vmaf … --tiny-codec UNKNOWN_ENC …
 --tiny-codec 'UNKNOWN_ENC' not found in model encoder_vocab;
-use one of the names listed by --help.
+use one of the names in the model sidecar's encoder_vocab.
 ```
 
 ### Multi-output models
@@ -283,7 +296,7 @@ legacy `output_name` field stays accepted for single-output metadata.
 
 | Function | Purpose | Notable returns |
 | --- | --- | --- |
-| `vmaf_dnn_set_codec_context(ctx, codec_name, preset, crf)` | Fill the codec block of a codec-aware model. Call before the first `vmaf_read_pictures()`; not thread-safe. NULL or `""` codec maps to `unknown`. | `0` ok; `-ENOENT` codec not in `encoder_vocab` (the `unknown` bucket is used); `-ENOTSUP` model has no codec block; `-EINVAL` no model attached; `-ENOSYS` built without DNN |
+| `vmaf_dnn_set_codec_context(ctx, codec_name, preset, crf)` | Fill the codec block of a codec-aware model; the model does not score until this succeeds. Call before the first `vmaf_read_pictures()`; not thread-safe. NULL or `""` codec maps to the vocabulary's `unknown` entry. | `0` ok; `-ENOENT` codec not in `encoder_vocab`, or NULL / `""` with no `unknown` entry (the model will not score); `-ENOTSUP` model has no codec block; `-EINVAL` no model attached; `-ENOSYS` built without DNN |
 | `vmaf_dnn_is_codec_aware(ctx)` | `1` when the attached model needs a codec context, else `0`. Safe with a NULL context. | `0` or `1` |
 
 ### Accepted ONNX input shapes
@@ -293,7 +306,7 @@ The loader accepts two input ranks (ADR-0518, extended by ADR-0523):
 | Rank | Shape | Meaning | Example checkpoint |
 | --- | --- | --- | --- |
 | 4 | `[N, 1, H, W]` | NCHW single-channel luma image. The picture's Y plane is fed through `vmaf_tensor_from_luma` each frame. Optional `(mean, std)` normalisation comes from the sidecar's `norm_mean` / `norm_std`. | `model/tiny/dists_sq.onnx`, `model/tiny/nr_metric_v1.onnx` |
-| 2 | `[N, F]` | Feature-vector model. The host materialises the `F` features (default canonical-6) from libvmaf's classic feature collector at inference time. The sidecar's `feature_order` (or `features`) declares the slot-to-feature mapping; `feature_mean` / `feature_std` (or `input_mean` / `input_std`) apply a StandardScaler before the tensor reaches ORT. | `model/tiny/fr_regressor_v1.onnx`, `model/tiny/fr_regressor_v2.onnx`, `model/tiny/vmaf_tiny_v4.onnx` |
+| 2 | `[N, F]` | Feature-vector model. The sidecar's `feature_order` (or `features`) names the feature of every slot; a six-wide model without that list reads the canonical-6. Attaching registers the extractors of those features, and the model runs at flush on the values the run computed. `feature_mean` / `feature_std` (or `input_mean` / `input_std`) apply a StandardScaler before the tensor reaches ORT unless the graph carries it (`onnx_has_scaler`). | `model/tiny/fr_regressor_v1.onnx`, `model/tiny/fr_regressor_v2.onnx`, `model/tiny/vmaf_tiny_v4.onnx` |
 
 The batch dimension `N` may be:
 
@@ -310,13 +323,17 @@ Anything else is rejected with a log line:
 | Fixed batch greater than 1 (libvmaf feeds one sample per ORT Run call) | `tiny-model loader: <rank-4\|feature-vector> model has fixed batch N; only batch=1 or symbolic batch (-1) is supported` |
 | Rank-4 model with symbolic or non-positive H or W (the scratch buffer is sized once at attach time) | `tiny-model loader: rank-4 model has dynamic / non-positive spatial dims (H=…, W=…); symbolic H/W is unsupported — re-export with a fixed input resolution` |
 | Input rank other than 2 or 4 | `tiny-model loader: model has input rank N, expected 2 (feature vector) or 4 (NCHW image)` |
+| Sidecar feature list of another length than the feature input | `tiny-model loader: sidecar lists N input features but the model's feature input has M slots` |
+| Feature-vector model not six wide and without a sidecar feature list | `tiny-model loader: feature input slot I of N has no feature name; ...` |
+| Sidecar names a feature no extractor writes | `tiny-model loader: input feature '<name>' (slot I) is written by no feature extractor` |
+| Second input without a sidecar `encoder_vocab`, or of another width than the vocabulary plus two | `tiny-model loader: model has a second input of width N but its sidecar declares no encoder_vocab, ...` / `tiny-model loader: second input has width N but the sidecar's encoder_vocab (V entries) describes a codec block of width V+2` |
 
 Rank-2 models may declare a second input. `fr_regressor_v2`, for instance,
 takes a 14-dim `codec` block (one-hot encoder, `preset_norm`, `crf_norm`). The
-loader discovers its width via ORT and allocates a scratch buffer pre-seeded to
-the `unknown` one-hot at the third-from-last slot. Populate it with
-`--tiny-codec`, `--tiny-preset` and `--tiny-crf` or
-`vmaf_dnn_set_codec_context()`, see
+loader refuses a second input unless the sidecar's `encoder_vocab` has exactly
+two entries fewer than the input is wide. The block starts empty and the model
+does not score until `--tiny-codec`, `--tiny-preset` and `--tiny-crf` or
+`vmaf_dnn_set_codec_context()` fill it, see
 [codec-aware models](#codec-aware-models).
 
 !!! note

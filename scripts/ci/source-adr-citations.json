@@ -3394,7 +3394,6 @@
     },
     "0518": {
       "sites": {
-        "core/include/libvmaf/dnn.h": 1,
         "core/src/dnn/model_loader.c": 1,
         "core/src/dnn/model_loader.h": 1,
         "core/test/dnn/test_cli.sh": 1,
@@ -10091,6 +10090,19 @@
         "scripts/ci/tests/test_helm_controller_auth.py": 1
       },
       "target": "1519-controller-tenant-registry.md"
+    },
+    "1520": {
+      "sites": {
+        "core/include/libvmaf/dnn.h": 2,
+        "core/src/dnn/model_loader.c": 1,
+        "core/src/dnn/model_loader.h": 1,
+        "core/src/libvmaf.c": 13,
+        "core/test/dnn/test_cli.sh": 3,
+        "core/test/dnn/test_model_loader.c": 2,
+        "core/test/dnn/test_vmaf_use_tiny_model.c": 10,
+        "core/tools/vmaf.cpp": 1
+      },
+      "target": "1520-tiny-model-feature-inputs-at-flush.md"
     },
     "1521": {
       "sites": {

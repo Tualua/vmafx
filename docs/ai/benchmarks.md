@@ -73,7 +73,6 @@ To time a tiny model, run the CLI with the device you want to measure:
 
 ```bash
 time vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
-     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v2.onnx \
      --tiny-device cuda --threads 1
 ```

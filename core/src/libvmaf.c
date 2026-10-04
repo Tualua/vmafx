@@ -238,6 +238,18 @@ typedef struct VmafContext {
         /* Scratch buffer for the optional second input (codec block).
          * NULL when the model has only one input. */
         float *extra_in_buf;
+        /* ADR-1520: true once the caller has named the codec
+         * (vmaf_dnn_set_codec_context). The codec block of a codec-aware
+         * model is not filled with a guess, and scoring refuses to run
+         * until it holds the caller's codec. */
+        bool codec_ready;
+        /* ADR-1520: feature-vector models run at flush, after every
+         * extractor (including the retroactive motion2 write and the GPU
+         * twins' final collect) has written its frame. Frames below this
+         * index are done; a retried flush resumes here instead of
+         * appending a frame twice. */
+        uint64_t next_index;
+        bool scored_any;    /* ADR-1520: at least one frame was scored at flush */
         char *feature_name; /* owned; published via feature_collector */
         size_t n_outputs;
         char *output_feature_names[VMAF_ORT_MAX_IO]; /* owned collector keys */
@@ -1078,6 +1090,9 @@ static void vmaf_ctx_dnn_free(VmafContext *vmaf)
     free(vmaf->dnn.extra_in_buf);
     vmaf->dnn.extra_in_buf = NULL;
     vmaf->dnn.extra_in_width = 0;
+    vmaf->dnn.codec_ready = false;
+    vmaf->dnn.next_index = 0u;
+    vmaf->dnn.scored_any = false;
     free(vmaf->dnn.feature_name);
     vmaf->dnn.feature_name = NULL;
     for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
@@ -1122,9 +1137,14 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
     if (ctx->dnn.extra_in_width != ctx->dnn.meta.n_encoder_vocab + 2u) {
         return -ENOTSUP;
     }
-    return vmaf_dnn_codec_block_fill(ctx->dnn.extra_in_buf, ctx->dnn.extra_in_width,
-                                     (const char *const *)ctx->dnn.meta.encoder_vocab,
-                                     ctx->dnn.meta.n_encoder_vocab, codec_name, preset, crf);
+    const int rc =
+        vmaf_dnn_codec_block_fill(ctx->dnn.extra_in_buf, ctx->dnn.extra_in_width,
+                                  (const char *const *)ctx->dnn.meta.encoder_vocab,
+                                  ctx->dnn.meta.n_encoder_vocab, codec_name, preset, crf);
+    /* ADR-1520: only a codec the vocabulary names makes the block usable;
+     * -ENOENT leaves the model refusing to score. */
+    ctx->dnn.codec_ready = rc == 0;
+    return rc;
 }
 
 /* ADR-0543: bridge for vmaf_dnn_set_resize_mode. The public symbol in
@@ -1478,12 +1498,37 @@ static int dnn_validate_feature_vector_shape(const int64_t *in_shape, size_t *n_
     return 0;
 }
 
+/* ADR-1520: the second input of a feature-vector model is the codec block
+ * `[encoder one-hot, preset_norm, crf_norm]`, and only a sidecar that names
+ * the encoder vocabulary says what its slots mean. A second input without
+ * that vocabulary, or one whose width differs from the vocabulary plus the
+ * two normalised slots, is refused at attach instead of being fed a guess. */
+static int dnn_check_codec_layout(const VmafModelSidecar *meta, size_t width)
+{
+    if (!meta || !meta->codec_aware || meta->n_encoder_vocab == 0u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: model has a second input of width %zu but its "
+                 "sidecar declares no encoder_vocab, so the input cannot be filled\n",
+                 width);
+        return -ENOTSUP;
+    }
+    if (width != meta->n_encoder_vocab + 2u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: second input has width %zu but the sidecar's "
+                 "encoder_vocab (%zu entries) describes a codec block of width %zu\n",
+                 width, meta->n_encoder_vocab, meta->n_encoder_vocab + 2u);
+        return -ENOTSUP;
+    }
+    return 0;
+}
+
 /* Discover the optional second input (e.g. fr_regressor_v2's 14-D `codec`
- * block), allocate its scratch buffer and pre-seed it to the conservative
- * "unknown encoder" baseline so models that gate on the one-hot still
- * produce a finite score. Single-input models leave *extra_buf NULL and
- * *extra_w zero. */
-static int dnn_probe_extra_input(VmafOrtSession *sess, float **extra_buf, size_t *extra_w)
+ * block) and allocate its scratch buffer, zero-filled. The block holds no
+ * value until the caller names the codec (vmaf_dnn_set_codec_context), and
+ * scoring refuses to run before that (ADR-1520). Single-input models leave
+ * *extra_buf NULL and *extra_w zero. */
+static int dnn_probe_extra_input(VmafOrtSession *sess, const VmafModelSidecar *meta,
+                                 float **extra_buf, size_t *extra_w)
 {
     size_t n_inputs = 0u;
     size_t n_outputs = 0u;
@@ -1513,19 +1558,139 @@ static int dnn_probe_extra_input(VmafOrtSession *sess, float **extra_buf, size_t
         return -ENOTSUP;
     }
     const size_t w = (size_t)extra_shape[1];
+    const int rc_layout = dnn_check_codec_layout(meta, w);
+    if (rc_layout < 0)
+        return rc_layout;
     float *buf = (float *)calloc(w, sizeof(*buf));
     if (!buf)
         return -ENOMEM;
-    /* Best-effort default: when the codec block follows the v2 layout
-     * (N-2 one-hot slots followed by preset_norm/crf_norm), set the
-     * third-from-last slot — the "unknown" one-hot at vocab v2 index
-     * 11 lives there. This matches `_encoder_onehot(N_ENCODERS-1)`
-     * in train_fr_regressor_v2.py. Any consumer that needs the real
-     * encoder identity must wire a dedicated API. */
-    if (w >= 3u)
-        buf[w - 3u] = 1.0f; /* before preset, crf */
     *extra_buf = buf;
     *extra_w = w;
+    return 0;
+}
+
+/* Canonical libvmaf features a feature-vector model reads when its sidecar
+ * names none (vmaf_tiny_v1 and vmaf_tiny_v1_medium ship without one). */
+static const char *const DNN_CANON6[] = {
+    "adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2",
+};
+#define DNN_CANON6_COUNT (sizeof(DNN_CANON6) / sizeof(DNN_CANON6[0]))
+
+/* A short sidecar feature name and the collector keys of the integer and the
+ * float extractor that write it. The fork's default model graph registers the
+ * integer extractors; upstream-mirror callers using `--feature float_vif` etc.
+ * have only the float key populated. */
+typedef struct DnnFeatureAlias {
+    const char *short_name;
+    const char *integer_key;
+    const char *float_key;
+} DnnFeatureAlias;
+
+static const DnnFeatureAlias DNN_FEATURE_ALIASES[] = {
+    {"adm2", "VMAF_integer_feature_adm2_score", "VMAF_feature_adm2_score"},
+    {"vif_scale0", "VMAF_integer_feature_vif_scale0_score", "VMAF_feature_vif_scale0_score"},
+    {"vif_scale1", "VMAF_integer_feature_vif_scale1_score", "VMAF_feature_vif_scale1_score"},
+    {"vif_scale2", "VMAF_integer_feature_vif_scale2_score", "VMAF_feature_vif_scale2_score"},
+    {"vif_scale3", "VMAF_integer_feature_vif_scale3_score", "VMAF_feature_vif_scale3_score"},
+    {"motion2", "VMAF_integer_feature_motion2_score", "VMAF_feature_motion2_score"},
+};
+
+/* Collector keys for one sidecar feature name: the alias table's pair, or the
+ * name itself (and no second key) when a sidecar already carries a full
+ * collector key. */
+static void dnn_feature_keys(const char *name, const char **primary, const char **secondary)
+{
+    const size_t n_aliases = sizeof(DNN_FEATURE_ALIASES) / sizeof(DNN_FEATURE_ALIASES[0]);
+    for (size_t i = 0; i < n_aliases; ++i) {
+        if (strcmp(name, DNN_FEATURE_ALIASES[i].short_name) == 0) {
+            *primary = DNN_FEATURE_ALIASES[i].integer_key;
+            *secondary = DNN_FEATURE_ALIASES[i].float_key;
+            return;
+        }
+    }
+    *primary = name;
+    *secondary = NULL;
+}
+
+/* Name of input slot @p i of an @p n -wide feature-vector model: the
+ * sidecar's feature list when it carries one (attach checked that it has
+ * exactly @p n names), canonical-6 for a six-wide model without one, NULL
+ * otherwise. */
+static const char *dnn_slot_name(const VmafModelSidecar *meta, size_t n, size_t i)
+{
+    if (meta && meta->n_features > 0u)
+        return meta->feature_names[i];
+    if (n == DNN_CANON6_COUNT)
+        return DNN_CANON6[i];
+    return NULL;
+}
+
+/* ADR-1520: every input slot must name the feature it reads. A sidecar list
+ * of another length, or a model wider than canonical-6 with no list, would
+ * leave a slot that nothing fills; refuse it at attach. */
+static int dnn_check_slot_names(const VmafModelSidecar *meta, size_t n)
+{
+    if (meta && meta->n_features > 0u && meta->n_features != n) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: sidecar lists %zu input features but the model's "
+                 "feature input has %zu slots\n",
+                 meta->n_features, n);
+        return -ENOTSUP;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        const char *name = dnn_slot_name(meta, n, i);
+        if (!name || !*name) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "tiny-model loader: feature input slot %zu of %zu has no feature name; "
+                     "a model that is not six features wide needs a sidecar feature list\n",
+                     i, n);
+            return -ENOTSUP;
+        }
+    }
+    return 0;
+}
+
+/* The extractor that writes feature @p name, preferring the integer key. */
+static VmafFeatureExtractor *dnn_slot_extractor(const char *name, unsigned fex_flags)
+{
+    const char *primary = NULL;
+    const char *secondary = NULL;
+    dnn_feature_keys(name, &primary, &secondary);
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name(primary, fex_flags);
+    if (!fex && secondary)
+        fex = vmaf_get_feature_extractor_by_feature_name(secondary, fex_flags);
+    return fex;
+}
+
+static unsigned compute_fex_flags(const VmafContext *vmaf);
+
+/* ADR-1520: register the extractors that write the model's input features,
+ * with their default options, so the run computes them whatever else the
+ * caller asked for. Every name is resolved before the first registration,
+ * so an unknown name changes nothing. A feature an earlier registration
+ * already writes is skipped by feature_extractor_vector_append(). */
+static int dnn_request_input_features(VmafContext *ctx, const VmafModelSidecar *meta, size_t n)
+{
+    const unsigned fex_flags = compute_fex_flags(ctx);
+    const VmafFeatureExtractor *fex[VMAF_DNN_MAX_FEATURE_NAMES] = {0};
+    for (size_t i = 0; i < n; ++i) {
+        const char *name = dnn_slot_name(meta, n, i);
+        fex[i] = dnn_slot_extractor(name, fex_flags);
+        if (!fex[i]) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "tiny-model loader: input feature '%s' (slot %zu) is written by no "
+                     "feature extractor\n",
+                     name, i);
+            return -EINVAL;
+        }
+    }
+    for (size_t i = 0; i < n; ++i) {
+        if (i > 0u && fex[i] == fex[i - 1u])
+            continue;
+        const int err = vmaf_use_feature(ctx, fex[i]->name, NULL);
+        if (err)
+            return err;
+    }
     return 0;
 }
 
@@ -1537,27 +1702,22 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
                                      char *name)
 {
     size_t n = 0u;
-    int rc = dnn_validate_feature_vector_shape(in_shape, &n);
-    if (rc < 0) {
-        free(name);
-        return rc;
-    }
-    float *buf = (float *)calloc(n, sizeof(*buf));
-    if (!buf) {
-        free(name);
-        return -ENOMEM;
-    }
-
+    float *buf = NULL;
     float *extra_buf = NULL;
     size_t extra_w = 0u;
-    rc = dnn_probe_extra_input(sess, &extra_buf, &extra_w);
-    if (rc < 0) {
-        free(buf);
-        free(name);
-        return rc;
+    int rc = dnn_validate_feature_vector_shape(in_shape, &n);
+    if (rc == 0)
+        rc = dnn_check_slot_names(meta, n);
+    if (rc == 0)
+        rc = dnn_probe_extra_input(sess, meta, &extra_buf, &extra_w);
+    if (rc == 0) {
+        buf = (float *)calloc(n, sizeof(*buf));
+        rc = buf ? 0 : -ENOMEM;
     }
-
-    rc = dnn_prepare_output_feature_names(ctx, sess, meta, name);
+    if (rc == 0)
+        rc = dnn_request_input_features(ctx, meta, n);
+    if (rc == 0)
+        rc = dnn_prepare_output_feature_names(ctx, sess, meta, name);
     if (rc < 0) {
         free(extra_buf);
         free(buf);
@@ -1702,72 +1862,36 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, const VmafPicture *ref
     return dnn_run_and_append(vmaf, &input, 1u, index);
 }
 
-/* Resolve a sidecar feature name (e.g. "adm2", "vif_scale0", "motion2")
- * to the canonical libvmaf feature-collector key (e.g.
- * "VMAF_integer_feature_adm2_score"). Looks up the score at @p index;
- * on miss (extractor not registered, or motion2 retroactive write not
- * yet landed) returns 0.0 — the loaded model still produces a finite
- * inference, just with a stale slot. Returns the value. */
-static double dnn_lookup_feature(VmafFeatureCollector *fc, const char *short_name, unsigned index)
+/* Frame @p index's value of feature @p name: the integer key first, then
+ * the float key. Returns -ENOENT when the frame carries neither (ADR-1520:
+ * a missing input is reported, never read as 0.0). */
+static int dnn_lookup_feature(VmafFeatureCollector *fc, const char *name, unsigned index,
+                              double *value)
 {
-    /* Probe both the integer- and float-extractor keys. The fork's
-     * default model graph registers the integer variants, but
-     * upstream-mirror callers using `--feature float_vif` etc. will
-     * have only the float key populated. */
-    static const struct {
-        const char *short_name;
-        const char *integer_key;
-        const char *float_key;
-    } TABLE[] = {
-        {"adm2", "VMAF_integer_feature_adm2_score", "VMAF_feature_adm2_score"},
-        {"vif_scale0", "VMAF_integer_feature_vif_scale0_score", "VMAF_feature_vif_scale0_score"},
-        {"vif_scale1", "VMAF_integer_feature_vif_scale1_score", "VMAF_feature_vif_scale1_score"},
-        {"vif_scale2", "VMAF_integer_feature_vif_scale2_score", "VMAF_feature_vif_scale2_score"},
-        {"vif_scale3", "VMAF_integer_feature_vif_scale3_score", "VMAF_feature_vif_scale3_score"},
-        {"motion2", "VMAF_integer_feature_motion2_score", "VMAF_feature_motion2_score"},
-    };
-    for (size_t i = 0; i < sizeof(TABLE) / sizeof(TABLE[0]); ++i) {
-        if (strcmp(short_name, TABLE[i].short_name) != 0)
-            continue;
-        double v = 0.0;
-        if (vmaf_feature_collector_get_score(fc, TABLE[i].integer_key, &v, index) == 0)
-            return v;
-        if (vmaf_feature_collector_get_score(fc, TABLE[i].float_key, &v, index) == 0)
-            return v;
-        return 0.0;
-    }
-    /* Unknown feature name — try as-is (some sidecars may already
-     * carry the full collector key). */
-    double v = 0.0;
-    if (vmaf_feature_collector_get_score(fc, short_name, &v, index) == 0)
-        return v;
-    return 0.0;
+    const char *primary = NULL;
+    const char *secondary = NULL;
+    dnn_feature_keys(name, &primary, &secondary);
+    if (vmaf_feature_collector_get_score(fc, primary, value, index) == 0)
+        return 0;
+    if (secondary && vmaf_feature_collector_get_score(fc, secondary, value, index) == 0)
+        return 0;
+    return -ENOENT;
 }
 
-/* Materialise the model's input feature vector from the classic feature
- * collector into vmaf->dnn.in_buf. When the sidecar carries a feature_names
- * list (v1 / v2 / vmaf_tiny_v4 trainers all do) it is honoured slot-by-slot;
- * when it is absent the canonical-6 order is used and any slot beyond it is
- * zero-filled. */
-static void dnn_materialise_feature_vector(VmafContext *vmaf, unsigned index)
+/* Materialise frame @p index's input feature vector into vmaf->dnn.in_buf,
+ * slot by slot in the order the sidecar names (canonical-6 without a
+ * sidecar list). Returns how many slots the frame carries. */
+static size_t dnn_materialise_feature_vector(VmafContext *vmaf, unsigned index)
 {
-    static const char *const CANON6[] = {
-        "adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2",
-    };
     const size_t n = vmaf->dnn.n_features;
     const VmafModelSidecar *meta = vmaf->dnn.has_sidecar ? &vmaf->dnn.meta : NULL;
+    size_t found = 0u;
 
     for (size_t i = 0; i < n; ++i) {
-        const char *short_name = NULL;
-        if (meta && meta->n_features == n && meta->feature_names[i] != NULL) {
-            short_name = meta->feature_names[i];
-        } else if (i < sizeof(CANON6) / sizeof(CANON6[0])) {
-            short_name = CANON6[i];
-        } else {
-            vmaf->dnn.in_buf[i] = 0.0f;
+        double raw = 0.0;
+        if (dnn_lookup_feature(vmaf->feature_collector, dnn_slot_name(meta, n, i), index, &raw) < 0)
             continue;
-        }
-        const double raw = dnn_lookup_feature(vmaf->feature_collector, short_name, index);
+        found++;
         float v = (float)raw;
         /* Apply the C-side StandardScaler only when the model sidecar carries
          * mean/std values (has_feature_scaler) AND the scaler is NOT already
@@ -1781,11 +1905,51 @@ static void dnn_materialise_feature_vector(VmafContext *vmaf, unsigned index)
         }
         vmaf->dnn.in_buf[i] = v;
     }
+    return found;
 }
 
-static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned index)
+/* Name every input feature frame @p index lacks. */
+static void dnn_log_missing_features(VmafContext *vmaf, unsigned index)
 {
-    dnn_materialise_feature_vector(vmaf, index);
+    const size_t n = vmaf->dnn.n_features;
+    const VmafModelSidecar *meta = vmaf->dnn.has_sidecar ? &vmaf->dnn.meta : NULL;
+    for (size_t i = 0; i < n; ++i) {
+        const char *name = dnn_slot_name(meta, n, i);
+        double raw = 0.0;
+        if (dnn_lookup_feature(vmaf->feature_collector, name, index, &raw) == 0)
+            continue;
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny model %s: frame %u has no value for input feature '%s' (slot %zu)\n",
+                 vmaf->dnn.feature_name, index, name, i);
+    }
+}
+
+/* ADR-1520: a codec-aware model scores only after the caller has named the
+ * codec; a zero or guessed codec block is an input the run never had. */
+static int dnn_check_codec_ready(const VmafContext *vmaf)
+{
+    if (!vmaf->dnn.extra_in_buf || vmaf->dnn.codec_ready)
+        return 0;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "tiny model %s is codec-aware: name the codec with vmaf_dnn_set_codec_context() "
+             "(CLI: --tiny-codec, --tiny-preset, --tiny-crf) before scoring\n",
+             vmaf->dnn.feature_name);
+    return -EINVAL;
+}
+
+/* Score frame @p index. A frame that carries none of the model's inputs was
+ * not processed (the caller skipped its index) and is left unscored; one
+ * that carries some but not all of them fails and names what is missing. */
+static int dnn_score_feature_vector_frame(VmafContext *vmaf, unsigned index, bool *scored)
+{
+    *scored = false;
+    const size_t found = dnn_materialise_feature_vector(vmaf, index);
+    if (found == 0u)
+        return 0;
+    if (found < vmaf->dnn.n_features) {
+        dnn_log_missing_features(vmaf, index);
+        return -EINVAL;
+    }
 
     const int64_t feat_shape[2] = {1, (int64_t)vmaf->dnn.n_features};
     const int64_t codec_shape[2] = {1, (int64_t)vmaf->dnn.extra_in_width};
@@ -1795,15 +1959,51 @@ static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned ind
     };
     /* The codec block is the optional second input (ADR-0519). */
     const bool has_codec = vmaf->dnn.extra_in_buf != NULL && vmaf->dnn.extra_in_width > 0u;
-    return dnn_run_and_append(vmaf, inputs, has_codec ? 2u : 1u, index);
+    const int rc = dnn_run_and_append(vmaf, inputs, has_codec ? 2u : 1u, index);
+    *scored = rc == 0;
+    return rc;
+}
+
+/* ADR-1520: score a feature-vector model once every extractor has flushed,
+ * so motion2 (written when the next frame arrives) and the GPU twins' final
+ * collect are in the collector. Frames dropped by n_subsample carry no
+ * model input and are not scored, as vmaf_score_pooled() skips them. The
+ * cursor makes a retried flush resume rather than append a frame twice. */
+static int dnn_flush_feature_vector(VmafContext *vmaf)
+{
+    if (!vmaf->dnn.sess || vmaf->dnn.in_rank != 2u || !vmaf->have_last_index)
+        return 0;
+    int err = dnn_check_codec_ready(vmaf);
+    if (err)
+        return err;
+
+    const unsigned n_subsample = vmaf->cfg.n_subsample;
+    for (uint64_t i = vmaf->dnn.next_index; i <= (uint64_t)vmaf->last_index; ++i) {
+        bool scored = false;
+        if (n_subsample <= 1u || (i % n_subsample) == 0u)
+            err = dnn_score_feature_vector_frame(vmaf, (unsigned)i, &scored);
+        if (err)
+            return err;
+        vmaf->dnn.scored_any = vmaf->dnn.scored_any || scored;
+        vmaf->dnn.next_index = i + 1u;
+    }
+    if (!vmaf->dnn.scored_any) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny model %s: no frame read carries the model's input features\n",
+                 vmaf->dnn.feature_name);
+        return -EINVAL;
+    }
+    return 0;
 }
 
 static int vmaf_ctx_dnn_run_frame(VmafContext *vmaf, const VmafPicture *ref, unsigned index)
 {
     if (!vmaf->dnn.sess)
         return 0;
+    /* Feature-vector models are scored at flush (ADR-1520); a missing codec
+     * context is reported on the first frame rather than after the clip. */
     if (vmaf->dnn.in_rank == 2u)
-        return vmaf_ctx_dnn_run_frame_feature_vector(vmaf, index);
+        return dnn_check_codec_ready(vmaf);
     return vmaf_ctx_dnn_run_frame_nchw(vmaf, ref, index);
 }
 
@@ -3016,6 +3216,11 @@ static int flush_context(VmafContext *vmaf)
 #ifdef HAVE_SYCL
     err |= flush_context_sycl(vmaf);
 #endif
+
+    /* ADR-1520: every extractor has written its last frame; score the
+     * feature-vector tiny model on what the run computed. */
+    if (!err)
+        err = dnn_flush_feature_vector(vmaf);
 
     /* Only mark the context terminally flushed once every backend flush
      * succeeded.  On any error the caller may retry vmaf_read_pictures(NULL,

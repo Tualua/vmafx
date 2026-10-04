@@ -1744,6 +1744,35 @@ static char *test_codec_block_fill_null_codec_is_ok(void)
     return NULL;
 }
 
+/* ADR-1520: a vocabulary without an "unknown" entry (fr_regressor_v3) has
+ * no slot for an unnamed or unmatched codec. The block stays zero and the
+ * call fails instead of setting the last encoder's one-hot. */
+static char *test_codec_block_fill_no_unknown_slot_fails(void)
+{
+    static const char *VOCAB[] = {"libx264", "hevc_videotoolbox"};
+    float buf[4] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, NULL, NULL, 28);
+    mu_assert("NULL codec without an unknown slot: -ENOENT", rc == -ENOENT);
+    mu_assert("no one-hot set for NULL codec", buf[0] == 0.0f && buf[1] == 0.0f);
+    rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, "MY_UNKNOWN_ENC", "medium", 28);
+    mu_assert("unmatched codec without an unknown slot: -ENOENT", rc == -ENOENT);
+    mu_assert("no one-hot set for unmatched codec", buf[0] == 0.0f && buf[1] == 0.0f);
+    return NULL;
+}
+
+/* ADR-1520: the "unknown" entry is found by name, wherever the vocabulary
+ * puts it. */
+static char *test_codec_block_fill_unknown_found_by_name(void)
+{
+    static const char *VOCAB[] = {"unknown", "libx264", "libx265"};
+    float buf[5] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 3u, NULL, NULL, 0);
+    mu_assert("NULL codec: rc == 0", rc == 0);
+    mu_assert("unknown slot 0 set", buf[0] > 0.999f && buf[0] < 1.001f);
+    mu_assert("last slot left zero", buf[2] == 0.0f);
+    return NULL;
+}
+
 /* ADR-0519: vmaf_dnn_codec_block_fill — ffprobe alias "h264" is
  * remapped to libx264 (not bucketed to unknown). */
 static char *test_codec_block_fill_h264_alias(void)
@@ -2051,6 +2080,8 @@ static const MuTest CODEC_BLOCK_TESTS[] = {
     MU_TEST(test_codec_block_fill_libx264_medium_28),
     MU_TEST(test_codec_block_fill_unknown_returns_enoent),
     MU_TEST(test_codec_block_fill_null_codec_is_ok),
+    MU_TEST(test_codec_block_fill_no_unknown_slot_fails),
+    MU_TEST(test_codec_block_fill_unknown_found_by_name),
     MU_TEST(test_codec_block_fill_h264_alias),
     MU_TEST(test_codec_block_fill_aliases_hevc_av1_vp9_vvc),
     MU_TEST(test_codec_block_fill_preset_slower),

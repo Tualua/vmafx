@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1232), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1233), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4899,6 +4899,10 @@ Every ADR, one heading each (1232), so the site search finds an ADR by its title
 ## ADR-1519: The controller reads its tenants from VmafxTenant resources (or a file of them), verifies each token against its own tenant's provider, and refuses what it cannot verify
 
 [1519-controller-tenant-registry](1519-controller-tenant-registry.md)
+
+## ADR-1520: Feature-vector tiny models request their inputs, score at flush, and fail on a missing input
+
+[1520-tiny-model-feature-inputs-at-flush](1520-tiny-model-feature-inputs-at-flush.md)
 
 ## ADR-1521: `vmafx-mcp` names the Go server; the Python wheel's script of that name is a one-release alias
 

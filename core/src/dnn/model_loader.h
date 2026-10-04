@@ -127,11 +127,13 @@ typedef struct VmafModelSidecar {
  *   slot  n_vocab + 1    : crf_norm        = crf / 63.0
  *
  * @p vocab and @p n_vocab must match the sidecar's ``encoder_vocab`` order.
- * When @p codec_name is NULL or empty the "unknown" bucket (last entry in
- * the vocab) is used and the function returns 0. When @p codec_name is
- * non-NULL but does not appear in @p vocab the "unknown" bucket is still
- * written and the function returns -ENOENT so callers can hard-fail on
- * typos. @p preset may be NULL (defaults to ordinal 5 = "medium").
+ * When @p codec_name is NULL or empty the vocabulary's "unknown" entry is
+ * used and the function returns 0. When @p codec_name is non-NULL but does
+ * not appear in @p vocab the "unknown" entry is still written and the
+ * function returns -ENOENT so callers can hard-fail on typos. A vocabulary
+ * without an "unknown" entry has no slot for either case: the block is left
+ * zero and the function returns -ENOENT (ADR-1520). @p preset may be NULL
+ * (defaults to ordinal 5 = "medium").
  *
  * @p crf is clamped to [0, 63] before normalisation.
  *

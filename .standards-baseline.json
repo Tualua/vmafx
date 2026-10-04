@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T05:41:34Z",
+  "generated_at": "2026-10-04T07:17:17Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "f4fa02888ebd6eaa0604e8349c3c541ee4395da2",
-  "total_infractions": 427,
+  "commit_sha": "094d51c8e8793b2767cf571cd69597630f111693",
+  "total_infractions": 421,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -1465,54 +1465,6 @@
       "message": "Function 'pel_x265_csv_parse' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:pel_x265_csv_parse",
       "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:HISS-04:fn:pel_x265_csv_parse#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "core/test/dnn/test_cli.sh",
-      "line_number": 1,
-      "message": "Shell strict mode incomplete: set -o pipefail not enabled, so a failed command, an unset variable or a failure inside a pipeline passes unchecked",
-      "anchor": "text:89abc3a34ad7",
-      "fingerprint": "core/test/dnn/test_cli.sh:HISS-07:text:89abc3a34ad7#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "core/test/dnn/test_cli.sh",
-      "line_number": 37,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:3deb7b318f7e",
-      "fingerprint": "core/test/dnn/test_cli.sh:HISS-07:text:3deb7b318f7e#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "core/test/dnn/test_cli.sh",
-      "line_number": 46,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:8d2f56528a9b",
-      "fingerprint": "core/test/dnn/test_cli.sh:HISS-07:text:8d2f56528a9b#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "core/test/dnn/test_cli.sh",
-      "line_number": 81,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:70252a11142e",
-      "fingerprint": "core/test/dnn/test_cli.sh:HISS-07:text:70252a11142e#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "core/test/dnn/test_cli.sh",
-      "line_number": 94,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:70252a11142e",
-      "fingerprint": "core/test/dnn/test_cli.sh:HISS-07:text:70252a11142e#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "core/test/dnn/test_cli.sh",
-      "line_number": 109,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:12566a04d712",
-      "fingerprint": "core/test/dnn/test_cli.sh:HISS-07:text:12566a04d712#1"
     },
     {
       "rule_id": "HISS-07",

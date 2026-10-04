@@ -76,7 +76,6 @@ vmaf \
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
-    --model version=vmaf_v0.6.1 \
     --tiny-model model/tiny/vmaf_tiny_v1.onnx \
     --json --output /tmp/vmaf_tiny_v1.json
 ```
@@ -84,14 +83,12 @@ vmaf \
 The tiny model is attached alongside the classic model and its score is added
 under the feature name `vmaf_tiny_model` (there is no sidecar `name`).
 
-!!! warning "The same run must compute the input features"
-    A tiny feature-vector model reads its input features (`adm2`,
-    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
-    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
-    request them with `--feature adm --feature vif --feature motion`.
-    A feature that is missing is read as `0.0` without a warning, and with only
-    the default `vmaf_v1.0.16_3d0h` model the tiny model returns one constant
-    value for every frame.
+!!! note "Input features"
+    Loading the model makes the run compute its input features (`adm2`,
+    `vif_scale0..3`, `motion2`, with default options), and the model scores
+    every frame once the run is flushed. A frame without one of them fails the
+    run with a message naming it; no input is read as `0.0`
+    ([ADR-1520](../../adr/1520-tiny-model-feature-inputs-at-flush.md)).
 
 ## Known limitations
 

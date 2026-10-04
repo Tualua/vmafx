@@ -94,6 +94,16 @@ VMAF_EXPORT int vmaf_dnn_available(void);
  * Attach a tiny ONNX model (C1 / C2) to @p ctx. The model is registered
  * alongside any SVM models and participates in the same per-frame pipeline.
  *
+ * A feature-vector model (rank-2 input) reads libvmaf features named by its
+ * sidecar (`feature_order` / `features`; canonical-6 for a six-wide model
+ * without a sidecar). Attaching it registers the extractors that write those
+ * features, with their default options, and refuses a model whose features
+ * no extractor writes. Its per-frame scores are computed when the context
+ * is flushed (vmaf_read_pictures() with NULL pictures), once every input is
+ * in; a frame that lacks one of them fails the flush with -EINVAL and names
+ * the feature (ADR-1520). Image models (rank-4 input) are scored as each
+ * frame is read.
+ *
  * @param ctx        live VmafContext (from vmaf_init())
  * @param onnx_path  filesystem path to a .onnx file; must be a regular file
  * @param cfg        optional device config; NULL uses VMAF_DNN_DEVICE_AUTO
@@ -113,16 +123,16 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
  * (ADR-0519). Must be called **after** vmaf_use_tiny_model() and
  * **before** the first vmaf_read_pictures() call.
  *
- * For codec-aware models such as `fr_regressor_v2`, the loader pre-seeds
- * the codec block to the "unknown" encoder baseline at attach time
- * (ADR-0518). This function overrides that seed with the actual encoding
- * parameters so the model receives the correct conditioning vector.
+ * A codec-aware model such as `fr_regressor_v2` does not score until this
+ * function has succeeded: vmaf_read_pictures() returns -EINVAL for it
+ * otherwise, because a guessed codec block is an input the run never had
+ * (ADR-1520). Pass NULL or "" as @p codec_name when the encoder is not known
+ * and the model's vocabulary has an "unknown" entry.
  *
  * The codec block layout is
  * `[encoder_onehot(N_VOCAB), preset_norm, crf_norm]`. Encoder names are
  * validated against the sidecar's `encoder_vocab`; unknown names return
- * `-ENOENT` (the "unknown" bucket is still written so callers can choose
- * to continue). Preset strings are looked up in a per-encoder ordinal
+ * `-ENOENT` and leave the model refusing to score. Preset strings are looked up in a per-encoder ordinal
  * table that mirrors the `PRESET_ORDINAL` mapping in `ai/scripts/train_fr_regressor_v2.py`;
  * unknown presets fall back to ordinal 5 ("medium"-equivalent). The CRF
  * is clamped to [0, 63] before normalisation.
@@ -134,16 +144,18 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
  * @param ctx         live VmafContext with a tiny model attached via
  *                    vmaf_use_tiny_model().
  * @param codec_name  encoder name (e.g. "libx264", "libx265", "libsvtav1",
- *                    "h264_nvenc"). NULL or "" maps to the "unknown"
- *                    bucket and returns 0.
+ *                    "h264_nvenc"). NULL or "" maps to the vocabulary's
+ *                    "unknown" entry and returns 0; -ENOENT when the
+ *                    vocabulary has none.
  * @param preset      encoder preset string (e.g. "medium", "slow",
  *                    "p4", "5"). NULL defaults to ordinal 5.
  * @param crf         CRF / QP integer; clamped to [0, 63].
  *
  * @return  0          success (codec found and block written, or the
  *                     caller asked for the "unknown" bucket).
- * @return -ENOENT     @p codec_name is non-NULL but not in the model's
- *                     `encoder_vocab`; the "unknown" bucket was used.
+ * @return -ENOENT     @p codec_name is not in the model's `encoder_vocab`
+ *                     (or is NULL / "" and the vocabulary has no "unknown"
+ *                     entry); the model will not score.
  * @return -ENOSYS     libvmaf was built without DNN support.
  * @return -EINVAL     @p ctx is NULL or no tiny model is attached.
  * @return -ENOTSUP    the attached model has no codec block (rank-4

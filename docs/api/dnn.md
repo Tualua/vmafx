@@ -100,6 +100,20 @@ Register a tiny ONNX model on a live `VmafContext`. The model participates in
 the per-frame pipeline; its outputs appear in the report alongside SVM
 scores. Use this when you want "VMAF + tiny AI score" in the same run.
 
+A feature-vector model (rank-2 input) reads libvmaf features
+([ADR-1520](../adr/1520-tiny-model-feature-inputs-at-flush.md)):
+
+- Attaching registers the extractors that write the features its sidecar
+  names (`feature_order` or `features`; canonical-6 for a six-wide model
+  without a sidecar list), with their default options.
+- Its scores are computed when the context is flushed
+  (`vmaf_read_pictures(ctx, NULL, NULL, 0)`), so read them after the flush.
+- A frame that lacks one of the inputs makes the flush return `-EINVAL`, and
+  the log names the feature and the frame. Frames before it keep their
+  scores; frames `n_subsample` drops are not scored.
+
+An image model (rank-4 input) is scored as each frame is read.
+
 Returns:
 
 - `0` — success.
@@ -114,6 +128,11 @@ Returns:
   internal buffer allocation).
 - Negative `errno` from the operator-allowlist walk if the model contains a
   banned op.
+- `-ENOTSUP` — a feature-vector model whose sidecar names another number of
+  features than the input is wide, or whose second input does not match the
+  sidecar's `encoder_vocab`.
+- `-EINVAL` — a feature-vector model whose sidecar names a feature no
+  extractor writes.
 
 Equivalent CLI flag: `--tiny-model <path>`
 ([usage/cli.md](../usage/cli.md#tiny-ai-flags)).
@@ -139,9 +158,10 @@ not need to re-supply it per frame.
 
 !!! warning
     Call it after `vmaf_use_tiny_model()` and before the first
-    `vmaf_read_pictures()`. The loader pre-seeds the block with the
-    "unknown" encoder baseline at attach time; this call overrides that
-    seed.
+    `vmaf_read_pictures()`. A codec-aware model does not score until this
+    call has returned `0`: `vmaf_read_pictures()` returns `-EINVAL` for it
+    and logs `tiny model <name> is codec-aware: ...`
+    ([ADR-1520](../adr/1520-tiny-model-feature-inputs-at-flush.md)).
 
 ```c
 int vmaf_dnn_set_codec_context(VmafContext *ctx,
@@ -155,7 +175,7 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx,
 | Parameter    | Notes                                                                                                                                  |
 |--------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `ctx`        | Context with a tiny model already attached via `vmaf_use_tiny_model()`.                                                                |
-| `codec_name` | Encoder name (`libx264`, `libx265`, `libsvtav1`, `libvpx-vp9`, `h264_nvenc`, ...). `NULL` or `""` selects the `"unknown"` bucket. ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) map to their canonical encoder names. |
+| `codec_name` | Encoder name (`libx264`, `libx265`, `libsvtav1`, `libvpx-vp9`, `h264_nvenc`, ...). `NULL` or `""` selects the vocabulary's `"unknown"` entry; a vocabulary without one (`fr_regressor_v3`) returns `-ENOENT`. ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) map to their canonical encoder names. |
 | `preset`     | Preset string (`medium`, `slow`, `p4`, `5`, ...), looked up in a per-encoder ordinal table. `NULL` or an unknown preset defaults to ordinal 5 (mid-tier).   |
 | `crf`        | CRF / QP integer; clamped to `[0, 63]`.                                                                                                |
 
@@ -163,8 +183,8 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx,
 
 | Code        | Meaning                                                                                            |
 |-------------|----------------------------------------------------------------------------------------------------|
-| `0`         | Codec block written, or the model accepted the `"unknown"` bucket.                                 |
-| `-ENOENT`   | `codec_name` is non-`NULL` but not in the model's `encoder_vocab`; the `"unknown"` bucket was used.|
+| `0`         | Codec block written (a named encoder, or the vocabulary's `"unknown"` entry for `NULL` / `""`).    |
+| `-ENOENT`   | `codec_name` is not in the model's `encoder_vocab`, or is `NULL` / `""` and the vocabulary has no `"unknown"` entry. The model will not score. |
 | `-ENOSYS`   | libvmaf was built without DNN support (`-Denable_dnn=disabled`).                                   |
 | `-EINVAL`   | `ctx` is `NULL` or no tiny model is attached.                                                      |
 | `-ENOTSUP`  | The attached model has no codec block (rank-4 image model or rank-2 single-input model).           |

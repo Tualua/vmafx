@@ -61,6 +61,11 @@
  * frame path supports rank-2 feature vectors and rank-4 NCHW images only. */
 #define RANK5_MODEL "model/tiny/transnet_v2.onnx"
 #define TINY_V1_MODEL "model/tiny/vmaf_tiny_v1.onnx"
+/* ADR-1520 fixtures: a feature-vector model with a sidecar feature list and
+ * the codec-aware FR regressor (external-data weights next to it). */
+#define TINY_V2_MODEL "model/tiny/vmaf_tiny_v2.onnx"
+#define FR_V2_MODEL "model/tiny/fr_regressor_v2.onnx"
+#define FR_V2_DATA "model/tiny/fr_regressor_v2.onnx.data"
 
 #ifndef _WIN32
 static const unsigned char kAllowedOnnx[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
@@ -469,6 +474,200 @@ static char *test_rank5_model_closes_session_after_shape_reject(void)
     return NULL;
 }
 
+/* --- ADR-1520: feature-vector models read what the run computed ---------- */
+
+#define FV_W 176u
+#define FV_H 144u
+
+/* Collector keys of vmaf_tiny_v2's six inputs, in its sidecar's order. */
+static const char *const kFvKeys[6] = {
+    "VMAF_integer_feature_adm2_score",       "VMAF_integer_feature_vif_scale0_score",
+    "VMAF_integer_feature_vif_scale1_score", "VMAF_integer_feature_vif_scale2_score",
+    "VMAF_integer_feature_vif_scale3_score", "VMAF_integer_feature_motion2_score",
+};
+
+/* Textured frame pair: the pattern moves with @p index (motion) and the
+ * distortion grows with it (adm / vif), so every input changes per frame. */
+static void fill_fv_plane(const VmafPicture *ref, const VmafPicture *dist, unsigned p,
+                          unsigned index)
+{
+    uint32_t state = 0x9E3779B9u + p;
+    for (unsigned y = 0; y < ref->h[p]; ++y) {
+        uint8_t *r = (uint8_t *)ref->data[p] + (size_t)y * ref->stride[p];
+        uint8_t *d = (uint8_t *)dist->data[p] + (size_t)y * dist->stride[p];
+        for (unsigned x = 0; x < ref->w[p]; ++x) {
+            state = state * 1664525u + 1013904223u;
+            const unsigned v = 32u + ((x * 3u + y * 5u + index * 7u + (state >> 27u)) % 192u);
+            const unsigned noise = (state >> 20u) % (2u + 6u * index);
+            r[x] = (uint8_t)v;
+            d[x] = (uint8_t)(v + noise);
+        }
+    }
+}
+
+static int read_fv_frame(VmafContext *ctx, unsigned index)
+{
+    VmafPicture ref = {0};
+    VmafPicture dist = {0};
+    int rc = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, FV_W, FV_H);
+    if (rc)
+        return rc;
+    rc = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, FV_W, FV_H);
+    if (rc) {
+        (void)vmaf_picture_unref(&ref);
+        return rc;
+    }
+    for (unsigned p = 0; p < 3u; ++p)
+        fill_fv_plane(&ref, &dist, p, index);
+    return vmaf_read_pictures(ctx, &ref, &dist, index);
+}
+
+/* Read the frames @p indices names, then flush. */
+static int read_fv_frames(VmafContext *ctx, const unsigned *indices, size_t n)
+{
+    for (size_t i = 0; i < n; ++i) {
+        const int rc = read_fv_frame(ctx, indices[i]);
+        if (rc)
+            return rc;
+    }
+    return vmaf_read_pictures(ctx, NULL, NULL, 0u);
+}
+
+/* Frame @p index's tiny score must be the model applied to the features the
+ * collector holds for that frame, run through an independent session. */
+static char *expect_tiny_score_from_features(VmafContext *ctx, VmafDnnSession *sess, unsigned index)
+{
+    float feat[6];
+    for (size_t i = 0; i < 6u; ++i) {
+        double v = 0.0;
+        mu_assert("ADR-1520: the model's input feature was computed",
+                  vmaf_feature_score_at_index(ctx, kFvKeys[i], &v, index) == 0);
+        feat[i] = (float)v;
+    }
+    const int64_t shape[2] = {1, 6};
+    const VmafDnnInput in = {.name = NULL, .data = feat, .shape = shape, .rank = 2u};
+    float expect = 0.0f;
+    VmafDnnOutput out = {.name = NULL, .data = &expect, .capacity = 1u, .written = 0u};
+    mu_assert("reference session run", vmaf_dnn_session_run(sess, &in, 1u, &out, 1u) == 0);
+    double tiny = 0.0;
+    mu_assert("tiny score recorded",
+              vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, index) == 0);
+    mu_assert("ADR-1520: tiny score is the model applied to the computed features",
+              (float)tiny == expect);
+    return NULL;
+}
+
+static const VmafDnnConfig kFvCpu = {.device = VMAF_DNN_DEVICE_CPU};
+
+static VmafContext *alloc_subsampled_ctx(unsigned n_subsample)
+{
+    VmafConfiguration cfg = {
+        .log_level = VMAF_LOG_LEVEL_NONE,
+        .n_threads = 1,
+        .n_subsample = n_subsample,
+    };
+    VmafContext *ctx = NULL;
+    return vmaf_init(&ctx, cfg) < 0 ? NULL : ctx;
+}
+
+/* Attach vmaf_tiny_v2 to a context that registers no feature itself, read
+ * frames 0..@p n-1, and check every @p n_subsample -th frame. */
+static char *run_tiny_v2(unsigned n, unsigned n_subsample)
+{
+    VmafContext *ctx = alloc_subsampled_ctx(n_subsample);
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_tiny_v2 attach", vmaf_use_tiny_model(ctx, TINY_V2_MODEL, &kFvCpu) == 0);
+    static const unsigned frames[] = {0u, 1u, 2u, 3u};
+    mu_assert("frames read and flushed", read_fv_frames(ctx, frames, n) == 0);
+    VmafDnnSession *sess = NULL;
+    mu_assert("reference session open", vmaf_dnn_session_open(&sess, TINY_V2_MODEL, &kFvCpu) == 0);
+    char *err = NULL;
+    for (unsigned i = 0; i < n && !err; i += n_subsample)
+        err = expect_tiny_score_from_features(ctx, sess, i);
+    vmaf_dnn_session_close(sess);
+    double tiny = 0.0;
+    const int skipped_scored =
+        n_subsample > 1u && vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, 1u) == 0;
+    (void)vmaf_close(ctx);
+    mu_assert("ADR-1520: a frame n_subsample drops is not scored", !skipped_scored);
+    return err;
+}
+
+/* Positive: the run computes the model's inputs although the caller asked
+ * for none of them, and every frame is scored on them (motion2 included,
+ * which the motion extractor writes at flush). */
+static char *test_feature_vector_model_scores_computed_features(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    return run_tiny_v2(4u, 1u);
+}
+
+/* Boundary: with n_subsample 2 the dropped frames carry motion2 but no adm
+ * or vif; they are skipped, not failed, and the kept frames are scored. */
+static char *test_feature_vector_model_honours_subsample(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    return run_tiny_v2(4u, 2u);
+}
+
+/* Negative: after a skipped index the motion extractor writes no motion2,
+ * so frame 3 lacks an input; the flush fails instead of scoring 0.0 for
+ * it, and the frames before the gap keep their scores. */
+static char *test_feature_vector_missing_input_fails_flush(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("vmaf_tiny_v2 attach", vmaf_use_tiny_model(ctx, TINY_V2_MODEL, &kFvCpu) == 0);
+    static const unsigned read[] = {0u, 1u, 3u};
+    const int rc = read_fv_frames(ctx, read, 3u);
+    double tiny = 0.0;
+    const int before_gap = vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, 1u);
+    const int after_gap = vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, 3u);
+    (void)vmaf_close(ctx);
+    mu_assert("ADR-1520: a frame missing an input fails the flush", rc == -EINVAL);
+    mu_assert("frames before the missing input are scored", before_gap == 0);
+    mu_assert("the frame missing an input is not scored", after_gap != 0);
+    return NULL;
+}
+
+/* Negative: a codec-aware model refuses to score before the caller names
+ * the codec, instead of reading a zero or guessed codec block. */
+static char *test_codec_aware_model_refuses_without_codec(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("fr_regressor_v2 attach", vmaf_use_tiny_model(ctx, FR_V2_MODEL, &kFvCpu) == 0);
+    mu_assert("ADR-1520: a frame without a codec context is refused",
+              read_fv_frame(ctx, 0u) == -EINVAL);
+    (void)vmaf_close(ctx);
+    return NULL;
+}
+
+/* Positive: with the codec named, the same model scores every frame. */
+static char *test_codec_aware_model_scores_with_codec(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("fr_regressor_v2 attach", vmaf_use_tiny_model(ctx, FR_V2_MODEL, &kFvCpu) == 0);
+    mu_assert("codec context accepted",
+              vmaf_dnn_set_codec_context(ctx, "libx264", "medium", 28) == 0);
+    static const unsigned frames[] = {0u, 1u};
+    mu_assert("frames read and flushed", read_fv_frames(ctx, frames, 2u) == 0);
+    double tiny = 0.0;
+    mu_assert("last frame scored",
+              vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, 1u) == 0);
+    (void)vmaf_close(ctx);
+    return NULL;
+}
+
 #ifndef _WIN32
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -630,6 +829,113 @@ static char *test_use_tiny_model_int8_session_fail_falls_back_to_fp32(void)
     return NULL;
 }
 
+/* Stage @p src_onnx (and @p src_data, its external-data file, when not NULL)
+ * as <dir>/<base>.onnx next to a sidecar holding @p json, in a fresh
+ * directory. The external-data file keeps its own name, which the graph
+ * records. */
+static char *stage_with_sidecar(char *dir, const char *src_onnx, const char *src_data,
+                                const char *base, const char *json, char *onnx, size_t cap)
+{
+    mu_assert("mkdtemp failed", mkdtemp(dir) != NULL);
+    char path[1024];
+    (void)snprintf(onnx, cap, "%s/%s.onnx", dir, base);
+    mu_assert("copy onnx failed", copy_file_600(src_onnx, onnx) == 0);
+    if (src_data) {
+        const char *leaf = strrchr(src_data, '/');
+        (void)snprintf(path, sizeof(path), "%s/%s", dir, leaf ? leaf + 1 : src_data);
+        mu_assert("copy external data failed", copy_file_600(src_data, path) == 0);
+    }
+    (void)snprintf(path, sizeof(path), "%s/%s.json", dir, base);
+    mu_assert("write sidecar failed",
+              write_file_600(path, (const unsigned char *)json, strlen(json)) == 0);
+    return NULL;
+}
+
+static void unstage(const char *dir, const char *base, const char *src_data)
+{
+    char path[1024];
+    (void)snprintf(path, sizeof(path), "%s/%s.onnx", dir, base);
+    (void)unlink(path);
+    (void)snprintf(path, sizeof(path), "%s/%s.json", dir, base);
+    (void)unlink(path);
+    if (src_data) {
+        const char *leaf = strrchr(src_data, '/');
+        (void)snprintf(path, sizeof(path), "%s/%s", dir, leaf ? leaf + 1 : src_data);
+        (void)unlink(path);
+    }
+    (void)rmdir(dir);
+}
+
+/* Attach vmaf_tiny_v2's graph under @p json and expect @p want. */
+static char *expect_tiny_v2_sidecar_attach(const char *json, int want, char *message)
+{
+    char dir[] = "/tmp/vmaf-tiny-fv-XXXXXX";
+    char onnx[1024];
+    char *err = stage_with_sidecar(dir, TINY_V2_MODEL, NULL, "fv", json, onnx, sizeof(onnx));
+    if (err)
+        return err;
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    const int rc = vmaf_use_tiny_model(ctx, onnx, &kFvCpu);
+    (void)vmaf_close(ctx);
+    unstage(dir, "fv", NULL);
+    mu_assert(message, rc == want);
+    return NULL;
+}
+
+/* Negative: a sidecar naming a feature no extractor writes is refused at
+ * attach, instead of feeding that slot 0.0 on every frame. */
+static char *test_feature_vector_unknown_feature_refused(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    static const char json[] = "{\"kind\":\"fr\",\"onnx_has_scaler\":true,\"features\":"
+                               "[\"adm2\",\"vif_scale0\",\"vif_scale1\",\"vif_scale2\","
+                               "\"vif_scale3\",\"no_such_feature\"]}\n";
+    return expect_tiny_v2_sidecar_attach(
+        json, -EINVAL, "ADR-1520: an input feature no extractor writes must be refused");
+}
+
+/* Boundary: a sidecar list one short of the model's width leaves a slot
+ * nothing names; refused rather than filled from canonical-6. */
+static char *test_feature_vector_name_count_mismatch_refused(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    static const char json[] = "{\"kind\":\"fr\",\"onnx_has_scaler\":true,\"features\":"
+                               "[\"adm2\",\"vif_scale0\",\"vif_scale1\",\"vif_scale2\","
+                               "\"vif_scale3\"]}\n";
+    return expect_tiny_v2_sidecar_attach(
+        json, -ENOTSUP, "ADR-1520: five feature names for a six-wide input must be refused");
+}
+
+/* Boundary: an encoder vocabulary one entry short of the graph's codec
+ * input width cannot describe the block; refused at attach. */
+static char *test_codec_layout_mismatch_refused(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    static const char json[] =
+        "{\"kind\":\"fr\",\"feature_order\":[\"adm2\",\"vif_scale0\",\"vif_scale1\","
+        "\"vif_scale2\",\"vif_scale3\",\"motion2\"],\"codec_aware\":true,\"encoder_vocab\":"
+        "[\"libx264\",\"libx265\",\"libsvtav1\",\"libvvenc\",\"libvpx-vp9\",\"h264_nvenc\","
+        "\"hevc_nvenc\",\"av1_nvenc\",\"h264_qsv\",\"hevc_qsv\",\"unknown\"]}\n";
+    char dir[] = "/tmp/vmaf-tiny-codec-XXXXXX";
+    char onnx[1024];
+    char *err = stage_with_sidecar(dir, FR_V2_MODEL, FR_V2_DATA, "fr_regressor_v2", json, onnx,
+                                   sizeof(onnx));
+    if (err)
+        return err;
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    const int rc = vmaf_use_tiny_model(ctx, onnx, &kFvCpu);
+    (void)vmaf_close(ctx);
+    unstage(dir, "fr_regressor_v2", FR_V2_DATA);
+    mu_assert("ADR-1520: 11-entry vocabulary for a 14-wide codec input must be refused",
+              rc == -ENOTSUP);
+    return NULL;
+}
+
 /* NOLINTEND(modernize-use-nullptr) */
 #endif
 
@@ -650,11 +956,19 @@ char *run_tests(void)
         MU_TEST(test_use_tiny_model_int8_redirect_and_fallback),
         MU_TEST(test_use_tiny_model_missing_external_data_returns_error_not_abort),
         MU_TEST(test_use_tiny_model_int8_session_fail_falls_back_to_fp32),
+        MU_TEST(test_feature_vector_unknown_feature_refused),
+        MU_TEST(test_feature_vector_name_count_mismatch_refused),
+        MU_TEST(test_codec_layout_mismatch_refused),
 #endif
         MU_TEST(test_happy_path_smoke_model),
         MU_TEST(test_attached_multi_output_model_records_named_scores),
         MU_TEST(test_attach_accepts_symbolic_batch_rank4),
         MU_TEST(test_rank5_model_closes_session_after_shape_reject),
+        MU_TEST(test_feature_vector_model_scores_computed_features),
+        MU_TEST(test_feature_vector_model_honours_subsample),
+        MU_TEST(test_feature_vector_missing_input_fails_flush),
+        MU_TEST(test_codec_aware_model_refuses_without_codec),
+        MU_TEST(test_codec_aware_model_scores_with_codec),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

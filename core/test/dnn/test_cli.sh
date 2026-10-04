@@ -8,9 +8,26 @@
 # model/tiny/ (any), and libonnxruntime on the runtime library path.
 #
 # When DNN is disabled, asserts the clear error message instead.
-set -eu
+set -euo pipefail
 
 : "${VMAF_BIN:=build/tools/vmaf}"
+
+# Run a command and keep its combined output in $captured. Most checks
+# below feed the CLI deliberately incomplete command lines and assert on
+# the diagnostic, so the exit status is kept in $captured_status rather
+# than failing the script.
+captured=""
+captured_status=0
+capture() {
+  captured_status=0
+  captured="$("$@" 2>&1)" || captured_status=$?
+}
+
+# grep a captured text without a pipe, so pipefail cannot see a SIGPIPE.
+text_has() {
+  local pattern=$1 text=$2
+  grep -q -- "$pattern" <<<"$text"
+}
 
 if [[ ! -x "$VMAF_BIN" ]]; then
   echo "vmaf binary not found at $VMAF_BIN — set VMAF_BIN=<path>" >&2
@@ -32,10 +49,10 @@ fi
 # through `--no-reference` and only points `--tiny-model` at /dev/null.
 DIST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
 if [[ -f "$DIST_YUV" ]]; then
-  dnn_probe="$("$VMAF_BIN" --no-reference --tiny-model /dev/null \
+  capture "$VMAF_BIN" --no-reference --tiny-model /dev/null \
     --distorted "$DIST_YUV" --width 576 --height 324 \
-    --pixel_format 420 --bitdepth 8 --frame_cnt 1 2>&1 || true)"
-  if printf '%s\n' "$dnn_probe" | grep -q 'without DNN support'; then
+    --pixel_format 420 --bitdepth 8 --frame_cnt 1
+  if text_has 'without DNN support' "$captured"; then
     echo "libvmaf built without DNN support; skipping DNN CLI smoke" >&2
     exit 77 # meson's "skipped"
   fi
@@ -43,31 +60,24 @@ fi
 
 # `vmaf --help` exits with 1 by convention, so capture the output first
 # instead of piping into grep under set -o pipefail.
-help_text="$("$VMAF_BIN" --help 2>&1 || true)"
+capture "$VMAF_BIN" --help
+help_text=$captured
 
 # 1. Help text must advertise the tiny flags.
-printf '%s\n' "$help_text" | grep -q -- '--tiny-model' || {
-  echo "help missing --tiny-model"
-  exit 1
-}
-printf '%s\n' "$help_text" | grep -q -- '--tiny-device' || {
-  echo "help missing --tiny-device"
-  exit 1
-}
-printf '%s\n' "$help_text" | grep -q -- '--no-reference' || {
-  echo "help missing --no-reference"
-  exit 1
-}
+for flag in --tiny-model --tiny-device --no-reference; do
+  if ! text_has "$flag" "$help_text"; then
+    echo "help missing $flag"
+    exit 1
+  fi
+done
 
 # 2. Invalid device string must be rejected with a useful message.
 # The keyword list grew with coreml / coreml-{ane,gpu,cpu} (ADR-0365)
 # and openvino-{npu,cpu,gpu} (Research-0031 / A.5);
 # match the stable head + tail rather than the verbatim middle so this
 # stays passing across future grammar additions.
-if "$VMAF_BIN" --tiny-model /nonexistent.onnx --tiny-device bogus 2>&1 |
-  grep -qiE 'auto\|cpu\|cuda\|openvino.*rocm'; then
-  :
-else
+capture "$VMAF_BIN" --tiny-model /nonexistent.onnx --tiny-device bogus
+if ! grep -qiE 'auto\|cpu\|cuda\|openvino.*rocm' <<<"$captured"; then
   echo "expected validation error for --tiny-device bogus"
   exit 1
 fi
@@ -78,8 +88,8 @@ fi
 # argument" if the keyword itself were unknown. We only assert the
 # keyword does not surface as a validation error.
 for dev in coreml coreml-ane coreml-gpu coreml-cpu; do
-  out="$("$VMAF_BIN" --tiny-device "$dev" 2>&1 || true)"
-  if printf '%s\n' "$out" | grep -q "Invalid argument \"$dev\""; then
+  capture "$VMAF_BIN" --tiny-device "$dev"
+  if text_has "Invalid argument \"$dev\"" "$captured"; then
     echo "validator wrongly rejected --tiny-device $dev"
     exit 1
   fi
@@ -91,8 +101,8 @@ done
 # keyword itself were unknown. We only assert the keyword does not
 # surface as a validation error.
 for dev in openvino-npu openvino-cpu openvino-gpu; do
-  out="$("$VMAF_BIN" --tiny-device "$dev" 2>&1 || true)"
-  if printf '%s\n' "$out" | grep -q "Invalid argument \"$dev\""; then
+  capture "$VMAF_BIN" --tiny-device "$dev"
+  if text_has "Invalid argument \"$dev\"" "$captured"; then
     echo "validator wrongly rejected --tiny-device $dev"
     exit 1
   fi
@@ -105,14 +115,15 @@ done
 # AND the absence of the legacy "Reference .y4m or .yuv (-r/--reference)
 # is required" message that would surface if the gate were still
 # unconditional.
-nr_noref_out="$("$VMAF_BIN" --no-reference --distorted /dev/null \
-  --width 64 --height 64 --pixel_format 420 --bitdepth 8 2>&1 || true)"
-if ! printf '%s\n' "$nr_noref_out" | grep -q -- '--no-reference requires --tiny-model'; then
+capture "$VMAF_BIN" --no-reference --distorted /dev/null \
+  --width 64 --height 64 --pixel_format 420 --bitdepth 8
+nr_noref_out=$captured
+if ! text_has '--no-reference requires --tiny-model' "$nr_noref_out"; then
   printf '%s\n' "$nr_noref_out"
   echo "ADR-0520: --no-reference without --tiny-model did not emit the expected diagnostic"
   exit 1
 fi
-if printf '%s\n' "$nr_noref_out" | grep -q 'Reference .y4m or .yuv'; then
+if text_has 'Reference .y4m or .yuv' "$nr_noref_out"; then
   printf '%s\n' "$nr_noref_out"
   echo "ADR-0520: --no-reference still trips the legacy reference-required gate"
   exit 1
@@ -138,13 +149,13 @@ if [[ -f "$DIST_YUV" && -f model/tiny/nr_metric_v1.onnx ]]; then
     rm -f "$json_out"
     exit 1
   fi
-  if printf '%s\n' "$nr_dist_out" | grep -q 'Reference .y4m or .yuv'; then
+  if text_has 'Reference .y4m or .yuv' "$nr_dist_out"; then
     printf '%s\n' "$nr_dist_out"
     echo "ADR-0520: --no-reference --tiny-model still trips the reference-required gate"
     rm -f "$json_out"
     exit 1
   fi
-  if printf '%s\n' "$nr_dist_out" | grep -q 'problem loading tiny model'; then
+  if text_has 'problem loading tiny model' "$nr_dist_out"; then
     printf '%s\n' "$nr_dist_out"
     echo "ADR-0524: --no-reference --tiny-model nr_metric_v1.onnx hit the loader-reject path"
     rm -f "$json_out"
@@ -180,39 +191,71 @@ fi
 # below resolve against the source tree, not the build dir.
 SRC_YUV="python/test/resource/yuv/src01_hrc00_576x324.yuv"
 DST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
+# The codec-aware fr_regressor_v2 scores only with a codec context
+# (ADR-1520), so it gets one; without it the run must fail and say why.
+tiny_fv_smoke() {
+  local model=$1
+  shift
+  local json_out
+  json_out="$(mktemp -t vmaf_tiny_smoke_XXXXXX.json)"
+  capture "$VMAF_BIN" \
+    --reference "$SRC_YUV" --distorted "$DST_YUV" \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --tiny-model "$model" --tiny-device cpu "$@" \
+    --frame_cnt 1 --json --output "$json_out"
+  if [[ $captured_status -ne 0 ]]; then
+    printf '%s\n' "$captured"
+    echo "tiny-model smoke load FAILED for $model"
+    rm -f "$json_out"
+    exit 1
+  fi
+  if text_has 'problem loading tiny model' "$captured"; then
+    printf '%s\n' "$captured"
+    echo "tiny-model smoke load surfaced load-error for $model"
+    rm -f "$json_out"
+    exit 1
+  fi
+  if ! grep -q 'vmaf_tiny_model' "$json_out"; then
+    echo "tiny-model smoke: vmaf_tiny_model missing from JSON for $model"
+    rm -f "$json_out"
+    exit 1
+  fi
+  rm -f "$json_out"
+}
+
 if [[ -f "$SRC_YUV" && -f "$DST_YUV" ]]; then
-  for M in \
-    model/tiny/fr_regressor_v1.onnx \
-    model/tiny/fr_regressor_v2.onnx \
-    model/tiny/vmaf_tiny_v4.onnx; do
+  for M in model/tiny/fr_regressor_v1.onnx model/tiny/vmaf_tiny_v4.onnx; do
     if [[ ! -f "$M" ]]; then
       echo "missing tiny model: $M (skipping that case)"
       continue
     fi
-    json_out="$(mktemp -t vmaf_tiny_smoke_XXXXXX.json)"
-    if ! out="$("$VMAF_BIN" \
+    tiny_fv_smoke "$M"
+  done
+  M=model/tiny/fr_regressor_v2.onnx
+  if [[ -f "$M" ]]; then
+    tiny_fv_smoke "$M" --tiny-codec libx264 --tiny-preset medium --tiny-crf 28
+    capture "$VMAF_BIN" \
       --reference "$SRC_YUV" --distorted "$DST_YUV" \
       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
-      --tiny-model "$M" --tiny-device cpu \
-      --frame_cnt 1 --json --output "$json_out" 2>&1)"; then
-      echo "$out"
-      echo "tiny-model smoke load FAILED for $M"
-      rm -f "$json_out"
+      --tiny-model "$M" --tiny-device cpu --frame_cnt 1 --output /dev/null
+    if [[ $captured_status -eq 0 ]] || ! text_has 'is codec-aware' "$captured"; then
+      printf '%s\n' "$captured"
+      echo "ADR-1520: codec-aware $M scored without a codec context"
       exit 1
     fi
-    if printf '%s\n' "$out" | grep -q 'problem loading tiny model'; then
-      printf '%s\n' "$out"
-      echo "tiny-model smoke load surfaced load-error for $M"
-      rm -f "$json_out"
+    capture "$VMAF_BIN" \
+      --reference "$SRC_YUV" --distorted "$DST_YUV" \
+      --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+      --tiny-model "$M" --tiny-device cpu --tiny-codec libx264 \
+      --frame_cnt 1 --output /dev/null
+    if [[ $captured_status -eq 0 ]] || ! text_has 'need --tiny-crf' "$captured"; then
+      printf '%s\n' "$captured"
+      echo "ADR-1520: --tiny-codec without --tiny-crf was accepted for $M"
       exit 1
     fi
-    if ! grep -q 'vmaf_tiny_model' "$json_out"; then
-      echo "tiny-model smoke: vmaf_tiny_model missing from JSON for $M"
-      rm -f "$json_out"
-      exit 1
-    fi
-    rm -f "$json_out"
-  done
+  else
+    echo "missing tiny model: $M (skipping that case)"
+  fi
 else
   echo "Netflix YUV fixtures not present at $SRC_YUV; skipping feature-vector smoke"
 fi

@@ -1116,12 +1116,18 @@ namespace
 {
     if (!codec && !preset && crf_setting < 0)
         return 0;
-    const int crf = crf_setting >= 0 ? crf_setting : 0;
-    const int cerr = vmaf_dnn_set_codec_context(vmaf, codec, preset, crf);
+    /* ADR-1520: the CRF is a model input like the features; a codec-aware
+     * model is not handed a CRF the user never gave. */
+    if (crf_setting < 0 && vmaf_dnn_is_codec_aware(vmaf)) {
+        (void)fprintf(stderr, "--tiny-codec / --tiny-preset need --tiny-crf: the CRF of the "
+                              "encode is an input of codec-aware tiny models.\n");
+        return -1;
+    }
+    const int cerr = vmaf_dnn_set_codec_context(vmaf, codec, preset, crf_setting);
     if (cerr == -ENOENT) {
         (void)fprintf(stderr,
                       "--tiny-codec '%s' not found in model encoder_vocab; "
-                      "use one of the names listed by --help.\n",
+                      "use one of the names in the model sidecar's encoder_vocab.\n",
                       codec ? codec : "(null)");
         return -1;
     }

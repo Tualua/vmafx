@@ -820,6 +820,32 @@ static size_t codec_vocab_index(const char *const *vocab, size_t n_vocab, const 
     return n_vocab;
 }
 
+/* One-hot slot for the alias-resolved codec key @p codec_lc (NULL when the
+ * caller named no codec, or a name too long to be in any vocabulary).
+ * ADR-1520: a codec the vocabulary does not name maps to the vocabulary's
+ * own "unknown" entry, wherever the trainer put it; a vocabulary without one
+ * (fr_regressor_v3) has no slot for it, and @p n_vocab is returned instead
+ * of the one-hot of some real encoder. *found is 1 when the name matched,
+ * or when no name was given and "unknown" exists. */
+static size_t codec_block_slot(const char *const *vocab, size_t n_vocab, const char *codec_lc,
+                               const char *codec_name, int *found)
+{
+    const size_t unknown_idx = codec_vocab_index(vocab, n_vocab, "unknown");
+    *found = 0;
+    if (codec_lc) {
+        const size_t hit = codec_vocab_index(vocab, n_vocab, codec_lc);
+        if (hit != n_vocab) {
+            *found = 1;
+            return hit;
+        }
+        return unknown_idx;
+    }
+    /* NULL or empty codec name is a legitimate "unknown" tag. */
+    if (!codec_name || codec_name[0] == '\0')
+        *found = unknown_idx != n_vocab;
+    return unknown_idx;
+}
+
 int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *vocab, size_t n_vocab,
                               const char *codec_name, const char *preset, int crf)
 {
@@ -834,28 +860,15 @@ int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *voc
         buf[i] = 0.0f;
     }
 
-    /* Default to "unknown" — the trainer guarantees the last slot is
-     * the "unknown" bucket (see train_fr_regressor_v2.py
-     * `UNKNOWN_ENCODER_INDEX = ENCODER_VOCAB.index("unknown")` with
-     * "unknown" appended last). */
-    size_t codec_idx = n_vocab - 1u;
-    int found = 0;
-
     char name_lc[64];
     const char *codec_lc = lower_copy(name_lc, sizeof(name_lc), codec_name);
-
-    if (codec_lc) {
+    if (codec_lc)
         codec_lc = resolve_codec_alias(codec_lc);
-        const size_t hit = codec_vocab_index(vocab, n_vocab, codec_lc);
-        if (hit != n_vocab) {
-            codec_idx = hit;
-            found = 1;
-        }
-    } else if (!codec_name || codec_name[0] == '\0') {
-        /* NULL or empty codec name is a legitimate "unknown" tag. */
-        found = 1;
-    }
 
+    int found = 0;
+    const size_t codec_idx = codec_block_slot(vocab, n_vocab, codec_lc, codec_name, &found);
+    if (codec_idx == n_vocab)
+        return -ENOENT;
     buf[codec_idx] = 1.0f;
 
     /* preset_norm: encoder-specific ordinal table, normalised by 9.0. */

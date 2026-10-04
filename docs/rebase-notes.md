@@ -234,6 +234,21 @@ libvmaf source change.
   `fex->hip_device_index` (CAMBI through `cambi_hip_setup_device()`, SpEED
   through `SpeedHipConfig.device_index`). A new HIP twin does the same;
   `test_hip_device_index_contract` fails on a literal index.
+## Feature-vector tiny models own their inputs (ADR-1520, 2026-10-04)
+
+`fix/tiny-model-missing-features`. Fork-local DNN code; upstream Netflix has
+no tiny-model path, so a sync does not touch these hunks.
+
+- `core/src/libvmaf.c`: `dnn_attach_feature_vector()` registers the input
+  extractors (`dnn_request_input_features()`), `flush_context()` calls
+  `dnn_flush_feature_vector()` after the backend flushes, and
+  `vmaf_ctx_dnn_run_frame()` no longer scores rank-2 models. A rebase that
+  touches `flush_context()` must keep that call after the CUDA and SYCL
+  flushes and before `vmaf->flushed` is set.
+- `core/src/dnn/model_loader.c`: `vmaf_dnn_codec_block_fill()` finds
+  `"unknown"` by name (`codec_block_slot()`); do not restore the last-slot
+  default.
+- `core/tools/vmaf.cpp`: `apply_tiny_codec()` requires `--tiny-crf`.
 
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 

@@ -112,23 +112,17 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --model version=vmaf_v0.6.1 \
     --tiny-model model/tiny/fr_regressor_v1.onnx \
     --tiny-device auto \
     --output score.json
 ```
 
-!!! warning "The same run must compute the input features"
-    A tiny feature-vector model reads its input features (`adm2`,
-    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
-    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
-    request them with `--feature adm --feature vif --feature motion`.
-    A feature that is missing is read as `0.0` without a warning. With only the
-    default `vmaf_v1.0.16_3d0h` model the scores are stored under
-    option-suffixed
-    names, so the lookup misses them and the tiny model returns one constant
-    value for every frame (measured on the CPU build with
-    `fr_regressor_v1`: `-0.85`).
+!!! note "Input features"
+    Loading the model makes the run compute its input features (`adm2`,
+    `vif_scale0..3`, `motion2`, with default options), and the model scores
+    every frame once the run is flushed. A frame without one of them fails the
+    run with a message naming it; no input is read as `0.0`
+    ([ADR-1520](../../adr/1520-tiny-model-feature-inputs-at-flush.md)).
 
 `--tiny-model` takes a path to the ONNX file; there is no registry-id lookup.
 The score is attached under the sidecar's `name` field when it has one,

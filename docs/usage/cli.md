@@ -626,17 +626,21 @@ encoding rationale.
 
 | Flag | Default | Notes |
 | --- | --- | --- |
-| `--tiny-codec` | `unknown` | Must match an entry of the model sidecar's `encoder_vocab` (`libx264`, `libx265`, `libsvtav1`, `libvvenc`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `unknown`). Common ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) are accepted. |
+| `--tiny-codec` | none (required by codec-aware models) | Must match an entry of the model sidecar's `encoder_vocab`; the vocabulary differs per model (`fr_regressor_v2` lists 11 encoders and `unknown`, `fr_regressor_v3` 16 encoders and no `unknown`). Common ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) are accepted. |
 | `--tiny-preset` | ordinal 5 (medium-equivalent) | Encoder-specific; mirrors `train_fr_regressor_v2.py::PRESET_ORDINAL`. |
-| `--tiny-crf` | `0` | Clamped to [0, 63] and normalised by 63. |
+| `--tiny-crf` | none (required with `--tiny-codec` / `--tiny-preset`) | Clamped to [0, 63] and normalised by 63. |
 
 !!! warning "Unknown codec names are rejected"
     A `--tiny-codec` value that is not in the model's `encoder_vocab` stops the
     run: `vmaf` prints `--tiny-codec '<name>' not found in model encoder_vocab`
     and exits non-zero. A codec flag on a model that has no codec block fails
     the same way (`--tiny-codec / --tiny-preset / --tiny-crf require a
-    codec-aware tiny model`). Only an omitted `--tiny-codec` routes through the
-    `unknown` bucket.
+    codec-aware tiny model`). A codec-aware model run without `--tiny-codec`
+    stops on the first frame (`tiny model <name> is codec-aware: ...`), and
+    `--tiny-codec` or `--tiny-preset` without `--tiny-crf` stops at load
+    ([ADR-1520](../adr/1520-tiny-model-feature-inputs-at-flush.md)). Pass
+    `--tiny-codec unknown` when the encoder is not known and the model's
+    vocabulary has that entry.
 
 ### Resize mode
 
