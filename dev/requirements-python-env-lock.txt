@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: 23d29196640c621adef50db5eee8857457ab65040a3a721bf7b474045084a4d8
+# vmafx-input-sha256: 22e0d3611e15cd1e82314f1f31c3cab0c554b68ea24602a108ec59a5bfc5513b
 # vmafx-inputs: python/pyproject.toml, python/requirements.txt, ai/pyproject.toml, tools/vmaf-tune/pyproject.toml, requirements/locks/dev-container.in
 aiohappyeyeballs==2.7.1 \
     --hash=sha256:065665c041c42a5938ed220bdcd7230f22527fbec085e1853d2402c8a3615d9d \
@@ -1154,6 +1154,7 @@ matplotlib==3.11.2 \
     # via
     #   -r python/requirements.txt
     #   -r requirements/locks/dev-container.in
+    #   vmaf-tune (tools/vmaf-tune/pyproject.toml)
     #   sureal
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
@@ -1683,7 +1684,9 @@ onnxruntime==1.30.0 \
     --hash=sha256:f36c87ec504f4f328e968ee322e4ba9682abe66280b3425625afcbed5333fed7 \
     --hash=sha256:fa688e7891a6aa206636fe7372e27ee75fd17713289f6b4fc7b190e0a7de9328 \
     --hash=sha256:fd54b314ea385bcecac69ab431f020ba503e3878dad4ebb645fec5a24b041242
-    # via vmaf-train (ai/pyproject.toml)
+    # via
+    #   vmaf-train (ai/pyproject.toml)
+    #   vmaf-tune (tools/vmaf-tune/pyproject.toml)
 onnxscript==0.7.2 \
     --hash=sha256:2c664f6383d10f332a4d47b2876dcab16dba84909fe703656b19abc281fda165 \
     --hash=sha256:d0e7121c6a1eefd608058928e111cbdb76709f70d269ff0d07aee493bd1d13c9

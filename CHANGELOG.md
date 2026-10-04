@@ -4308,6 +4308,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   context is now overwritten instead of rejected; close it first.
 
 
+- **`vmaf-tune`'s test suite passes from a plain `pip install -e
+  "tools/vmaf-tune[dev]"`.** The `dev` extra now holds matplotlib and ONNX
+  Runtime, which `vmaf-tune report` and the ONNX-backed features import but
+  the package declared nowhere, and new extras `report`, `onnx` and `train`
+  name them for users. Four tests that pinned the old `vmaf.c` /
+  `cli_parse.c` sources, ran an upstream `vmaf` from `PATH`, or swallowed
+  their own failure now test the current code, and each test runs in its own
+  working directory, so the suite no longer leaves a `-version` file behind.
+
+
 - **`vmafx-tune-go compare` and `ladder` score their encodes, `ladder` encodes
   each rung at its own resolution, and usage errors exit 2.** The scorer handed
   `vmaf` the Matroska encode, which it cannot read, so every probe failed while

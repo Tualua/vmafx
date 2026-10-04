@@ -3168,6 +3168,7 @@
         "pkg/encodeprofile/encode_test.go": 2,
         "pkg/ffencode/ffencode.go": 1,
         "pkg/scorecli/scorecli.go": 1,
+        "tools/vmaf-tune/pyproject.toml": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 1,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py": 1,
         "tools/vmaf-tune/src/vmaftune/corpus.py": 2,
@@ -3613,7 +3614,8 @@
         "core/src/libvmaf.c": 1,
         "core/tools/test/test_vmaf_feature_backend.sh": 1,
         "core/tools/vmaf.cpp": 5,
-        "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 20
+        "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 19,
+        "tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py": 1
       },
       "target": "0543-adr-0498-enforcement-hardening.md"
     },
@@ -4418,7 +4420,7 @@
         "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 1,
         "tools/vmaf-tune/tests/test_bbb_e2e_v2_bug_cluster.py": 3,
         "tools/vmaf-tune/tests/test_bbb_e2e_v4_bug_cluster.py": 3,
-        "tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py": 5,
+        "tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py": 6,
         "tools/vmaf-tune/tests/test_ladder_score_backend_0511.py": 4,
         "tools/vmaf-tune/tests/test_score_backend.py": 4
       },
@@ -8015,7 +8017,8 @@
         "core/tools/test/test_cli_feature_backend.c": 1,
         "core/tools/test/test_vmaf_feature_backend.sh": 1,
         "core/tools/vmaf.cpp": 3,
-        "scripts/dev/speed_gpu_parity.py": 1
+        "scripts/dev/speed_gpu_parity.py": 1,
+        "tools/vmaf-tune/tests/test_bbb_e2e_v2_bug_cluster.py": 1
       },
       "target": "1359-cli-feature-backend-twin.md"
     },

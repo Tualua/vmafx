@@ -40,8 +40,15 @@ A Go port of the same subcommands is described in
     - `vmaf`, this fork's CLI, built with meson (see
       [getting started](../getting-started/index.md)).
 
-3. Optional extras: `pip install "vmaf-tune[fast]"` adds Optuna for
-   the [`fast`](vmaf-tune-fast-path.md) subcommand.
+3. Optional extras, installed as `pip install -e "tools/vmaf-tune[NAME]"`:
+
+    | Extra | Adds | For |
+    |---|---|---|
+    | `fast` | Optuna | the TPE search of [`fast`](vmaf-tune-fast-path.md) |
+    | `report` | matplotlib | the charts of [`report`](vmaf-tune-report.md); without it the report renders its tables and a placeholder per chart |
+    | `onnx` | ONNX Runtime | ONNX inference: the `fast` proxy, the per-shot predictor and the saliency models |
+    | `train` | PyTorch | predictor training (`vmaftune.predictor_train`) |
+    | `dev` | pytest, ruff, Optuna, matplotlib, ONNX Runtime | running the test suite (see [Tests](#tests)) |
 
 `vmaf-tune --version` prints the package version.
 
@@ -145,11 +152,24 @@ These pages cover behaviour shared across subcommands.
 ## Tests
 
 ```shell
-pytest tools/vmaf-tune/tests/
+python3 -m venv .venv-tune
+.venv-tune/bin/pip install -e "tools/vmaf-tune[dev]"
+.venv-tune/bin/python -m pytest tools/vmaf-tune/tests/
 ```
 
-The suite mocks `subprocess.run`, so it needs neither `ffmpeg` nor a
-built `vmaf`.
+The `dev` extra holds every package the suite imports, so a run from it
+has no failure and no skip for a missing package. Each test runs in its
+own temporary working directory (`tests/conftest.py`). The suite mocks
+`subprocess.run` almost everywhere, so it needs neither `ffmpeg` nor a
+built `vmaf`; the tests that need more skip and name what is missing:
+
+| Skip reason | Precondition |
+|---|---|
+| no vmaf binary reachable | this fork's `vmaf` CLI: `VMAF_BIN_FOR_TESTS=/path/to/vmaf`, `build/tools/vmaf`, or a `vmaf` on `PATH` that has `--backend` |
+| `set VMAF_TUNE_INTEGRATION=1` | opt-in runs against the real `ffmpeg` / libx265 |
+| the `train` extra | PyTorch for the predictor-training test |
+| h264_qsv not compiled in or VA-API driver too old | an Intel GPU whose QSV encoder works |
+| BBB corpus missing | the BBB clip under `/workspace/.corpus/bbb_e2e/` (dev container) |
 
 ## Former section names
 

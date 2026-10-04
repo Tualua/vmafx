@@ -14,6 +14,19 @@ for umbrella spec and
 [`docs/research/0044-quality-aware-encode-automation.md`](../../../docs/research/0044-quality-aware-encode-automation.md)
 for option-space digest.
 
+- **The `dev` extra is everything `tests/` imports.**
+  `pip install -e "tools/vmaf-tune[dev]"` then
+  `python -m pytest tools/vmaf-tune/tests/` must give 0 failed, and no
+  skip may be a package the suite imports but `pyproject.toml` does not
+  declare (matplotlib and onnxruntime hid failing tests that way). A new
+  optional import in `src/` gets an extra; one the suite needs goes into
+  `dev` too, and both hash locks that read this file
+  (`tools/vmaf-tune/requirements-dev-lock.txt`,
+  `dev/requirements-python-env-lock.txt`) are regenerated with the
+  existing pins kept. Tests read repository sources and find the `vmaf`
+  CLI through `tests/_vmaf_cli.py` (a missing in-repo source fails, it
+  never skips), and `tests/conftest.py` gives every test its own working
+  directory.
 - **Usage docs describe shipped implementation status.**
   Dedicated `docs/usage/vmaf-tune-*.md` pages and umbrella
   `docs/usage/vmaf-tune.md` page are user-discoverable contracts,

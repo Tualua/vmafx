@@ -51,10 +51,11 @@ from vmaftune.predictor_train import (
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MODEL_DIR = _REPO_ROOT / "model"
 
-# Skip the heavy paths if torch / onnxruntime are missing — the trainer
-# is dev-only and the runtime predictor path itself does not need
-# torch.
-torch = pytest.importorskip("torch")
+# The trainer needs torch, which the dev extra leaves out (it is the
+# heavy `train` extra); onnxruntime and numpy come with the dev extra.
+torch = pytest.importorskip(
+    "torch", reason="predictor training needs the 'train' extra: pip install -e '.[train]'"
+)
 ort = pytest.importorskip("onnxruntime")
 np = pytest.importorskip("numpy")
 

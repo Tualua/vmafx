@@ -52,6 +52,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from _vmaf_cli import resolve_vmaf_binary
+
 from vmaftune.corpus import (
     _VMAF_RAW_SUFFIXES,
     CorpusJob,
@@ -79,35 +81,18 @@ class _FakeCompleted:
 
 
 def _resolve_vmaf_binary() -> Path | None:
-    """Locate a built libvmaf CLI binary for the integration test.
+    """Locate this fork's ``vmaf`` CLI for the integration test.
 
-    Lookup order (first hit wins):
-
-    1. ``$VMAF_BIN_FOR_TESTS`` — explicit override for CI gates that
-       build the binary in a non-canonical location.
-    2. ``shutil.which("vmaf")`` — the historical V4-A discovery path.
-    3. ``build/tools/vmaf`` under the repo root — the meson default
-       output for ``ninja -C build vmaf``. Walks up from the test
-       file until a ``meson.build`` is found so worktrees resolve
-       correctly.
+    ``$VMAF_BIN_FOR_TESTS``, then a ``vmaf`` on ``PATH`` that advertises
+    ``--backend``, then ``build/tools/vmaf`` / ``core/build/tools/vmaf``
+    under the repository root (``_vmaf_cli.resolve_vmaf_binary``, shared
+    with the ADR-0543 tests). An upstream ``vmaf`` on ``PATH`` used to
+    be picked: it prints "unrecognized option '--backend'" and exits 0,
+    which this test then reported as an ADR-0726 regression.
 
     Returns ``None`` when nothing is reachable; the caller skips.
     """
-    env = os.environ.get("VMAF_BIN_FOR_TESTS")
-    if env:
-        env_path = Path(env)
-        if env_path.is_file() and os.access(env_path, os.X_OK):
-            return env_path
-    which = shutil.which("vmaf")
-    if which:
-        return Path(which)
-    for parent in [_HERE, *_HERE.parents]:
-        if (parent / "meson.build").is_file() and (parent / "libvmaf").is_dir():
-            candidate = parent / "build" / "tools" / "vmaf"
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return candidate
-            break
-    return None
+    return resolve_vmaf_binary(_HERE)
 
 
 def _find_yuv_resource_root() -> Path | None:

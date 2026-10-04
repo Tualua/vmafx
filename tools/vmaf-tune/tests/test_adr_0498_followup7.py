@@ -227,6 +227,8 @@ def _recording_run_score(calls: list[dict]):
         return ScoreResult(
             request=req,
             vmaf_score=85.0,
+            score_time_ms=1.0,
+            vmaf_binary_version="test",
             feature_means={},
             exit_status=0,
             stderr_tail="",
@@ -269,6 +271,11 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
 
     with (
         unittest.mock.patch("vmaftune.score.run_score", _recording_run_score(calls)),
+        # The extractor decodes the encoded container to raw YUV before
+        # scoring; the stub encode is not a real container, so the decode
+        # is stubbed too (it used to run ffmpeg, fail, and raise before
+        # run_score was reached).
+        unittest.mock.patch("vmaftune.score.maybe_decode_distorted", lambda req, **_kw: (req, 0)),
         unittest.mock.patch("vmaftune.encode.run_encode", _stub_run_encode),
         unittest.mock.patch(
             "vmaftune.predictor_features._probe_video_geometry", _stub_probe_geometry
@@ -276,10 +283,7 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
     ):
         extractor = _build_production_sample_extractor(backend="cuda")
         # Call the extractor directly; it should forward backend="cuda" to run_score.
-        try:
-            extractor(src, 23, "libx264")
-        except Exception:
-            pass  # Only care that run_score was called with the right backend.
+        extractor(src, 23, "libx264")
 
     assert calls, "run_score was never called"
     assert (

@@ -419,7 +419,11 @@ def test_compute_saliency_extracts_raw_yuv_before_model(tmp_path, monkeypatch):
     assert seen["frame_samples"] == 3
 
 
-def test_predictor_synthetic_stub_detection_and_warning(tmp_path):
+def test_predictor_synthetic_stub_detection_and_warning(tmp_path, monkeypatch):
+    # Stub detection and its warning only; the dummy model bytes are not an
+    # ONNX graph, so keep onnxruntime from loading them (with onnxruntime
+    # installed, as the dev extra does, an invalid graph rightly raises).
+    monkeypatch.setitem(sys.modules, "onnxruntime", None)
     # Stub model card
     card = tmp_path / "predictor_libx264_card.md"
     card.write_text("- **Corpus kind**: `synthetic-stub-N=100`\n", encoding="utf-8")

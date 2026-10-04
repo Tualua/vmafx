@@ -39,59 +39,21 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 
-def _binary_supports_backend_flag(path: Path) -> bool:
-    """Return True iff the binary advertises ``--backend`` in its help output.
+from _vmaf_cli import binary_supports_backend_flag, repo_source, resolve_vmaf_binary
 
-    The ADR-0543 tests exercise ``--backend NAME`` hard-fail behaviour
-    that was added to the fork's libvmaf CLI.  The upstream system
-    binary shipped at ``/usr/local/bin/vmaf`` (or equivalent) predates
-    that flag; invoking it with ``--backend`` exits 255 ("unrecognised
-    option") rather than the expected 100, causing spurious failures.
-    We therefore skip any binary whose help output does not include the
-    ``--backend`` token.
-    """
-    try:
-        result = subprocess.run(
-            [str(path), "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return "--backend" in (result.stdout + result.stderr)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+# Module-level names so the lookup-order tests below can patch them.
+_binary_supports_backend_flag = binary_supports_backend_flag
 
 
 def _resolve_vmaf_binary() -> Path | None:
-    """Locate a built libvmaf CLI binary for the integration test.
+    """Locate this fork's ``vmaf`` CLI (``_vmaf_cli.resolve_vmaf_binary``).
 
-    Lookup order mirrors V5-1 (``test_bbb_e2e_v5_bug_cluster.py``):
-    ``$VMAF_BIN_FOR_TESTS`` env override, ``shutil.which("vmaf")``,
-    then walk-up to ``build/tools/vmaf`` under the nearest repo root.
-
-    Binaries that do not advertise ``--backend`` in their help text are
-    skipped — they are pre-ADR-0543 system installs that would return
-    255 instead of the expected 100 for explicit-backend failures.
+    ``$VMAF_BIN_FOR_TESTS`` override first, then a capable ``vmaf``
+    on ``PATH``, then a capable in-tree build. Binaries that do not
+    advertise ``--backend`` are pre-ADR-0543 system installs that would
+    return 255 instead of the expected 100 for explicit-backend failures.
     """
-    env = os.environ.get("VMAF_BIN_FOR_TESTS")
-    if env:
-        env_path = Path(env)
-        if env_path.is_file() and os.access(env_path, os.X_OK):
-            return env_path
-    which = shutil.which("vmaf")
-    if which:
-        which_path = Path(which)
-        if _binary_supports_backend_flag(which_path):
-            return which_path
-    for parent in [_HERE, *_HERE.parents]:
-        if (parent / "meson.build").is_file() or (parent / "core" / "meson.build").is_file():
-            for rel in [Path("build/tools/vmaf"), Path("core/build/tools/vmaf")]:
-                candidate = parent / rel
-                if candidate.is_file() and os.access(candidate, os.X_OK):
-                    if _binary_supports_backend_flag(candidate):
-                        return candidate
-            break
-    return None
+    return resolve_vmaf_binary(_HERE, _binary_supports_backend_flag)
 
 
 def _find_yuv_resource_root() -> Path | None:
@@ -280,17 +242,8 @@ def test_adr_0543_per_feature_pinned_to_inactive_backend_fails(tmp_path: Path) -
 
 
 def _vmaf_c_source() -> str:
-    for parent in [_HERE, *_HERE.parents]:
-        for rel in [
-            Path("core/tools/vmaf.cpp"),
-            Path("core/tools/vmaf.c"),
-            Path("libvmaf/tools/vmaf.c"),
-        ]:
-            candidate = parent / rel
-            if candidate.is_file():
-                return candidate.read_text()
-    pytest.skip("core/tools/vmaf.cpp not found in any ancestor")
-    return ""  # unreachable; satisfies type checker
+    """The CLI source, ``core/tools/vmaf.cpp`` (it was ``vmaf.c``)."""
+    return repo_source("core/tools/vmaf.cpp")
 
 
 def test_adr_0543_exit_code_constant_defined() -> None:

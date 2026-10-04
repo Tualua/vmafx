@@ -390,42 +390,50 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
 
     The vmaf binary is built per-host; a Python integration test would
     flake when the dev box doesn't have a particular GPU. Instead we
-    pin the source-level invariant: the init_gpu_backends() helper now
-    derives an ``explicit_backend`` flag from ``--backend NAME`` and
-    turns each per-backend ``state_init`` failure into ``return -1``
-    (-> non-zero exit) when that backend was the requested one. Soft
-    fallback to CPU only happens for ``--backend auto`` (and the
-    implicit default).
+    pin the source-level invariant: an explicit ``--backend NAME``
+    (``explicit_backend_requested()``, true for any name but ``auto``
+    and ``cpu``) turns each per-backend ``state_init`` failure into an
+    error exit when that backend was the requested one. Soft fallback
+    to CPU only happens for ``--backend auto`` (and the implicit
+    default).
 
-    Pinning the source carries the same regression-prevention value as
-    a live integration test for the dispatch policy; the test passes
-    on CI hosts without CUDA / SYCL / HIP. ADR-0726 dropped the Vulkan
+    The CLI is ``core/tools/vmaf.cpp`` (it was ``vmaf.c``); the
+    device-backend predicate and the ``backend_used`` receipt writer
+    moved to ``core/tools/cli_feature_backend.cpp`` (ADR-1359). Pinning
+    the source carries the same regression-prevention value as a live
+    integration test for the dispatch policy; the test passes on CI
+    hosts without CUDA / SYCL / HIP. ADR-0726 dropped the Vulkan
     backend on 2026-05-28, so ``vulkan`` is no longer one of the
-    per-backend strcmp targets.
+    per-backend targets.
     """
-    repo_root = Path(__file__).resolve().parents[3]
-    vmaf_src = repo_root / "core/tools/vmaf.cpp"
-    if not vmaf_src.exists():
-        vmaf_src = repo_root / "core/tools/vmaf.c"
-    src = vmaf_src.read_text(encoding="utf-8")
-    # The explicit-backend gate must be defined exactly once.
-    assert "explicit_backend" in src, "missing explicit_backend variable in vmaf.c"
-    assert 'strcmp(c->backend, "auto") != 0' in src, "auto exemption missing"
-    # Each per-backend init failure has the explicit guard. Vulkan was
-    # removed by ADR-0726 — guard against accidental reintroduction.
+    from _vmaf_cli import repo_source
+
+    src = repo_source("core/tools/vmaf.cpp")
+    backend_src = repo_source("core/tools/cli_feature_backend.cpp")
+    # The explicit-backend gate exempts ``auto`` (and ``cpu``).
+    assert "explicit_backend_requested(" in src, "missing explicit-backend gate in vmaf.cpp"
+    assert "return cli_backend_is_device(c->backend);" in src
+    assert 'strcmp(backend, "auto") != 0' in backend_src, "auto exemption missing"
+    # Each per-backend init failure has the explicit guard and refuses
+    # the CPU fallback. Vulkan was removed by ADR-0726 — guard against
+    # accidental reintroduction.
     for backend in ("sycl", "cuda", "hip", "metal"):
-        marker = f'strcmp(c->backend, "{backend}") == 0'
-        assert marker in src, f"explicit-backend guard missing for --backend {backend}"
+        guard = f'if (!explicit_backend_requested(c) || strcmp(c->backend, "{backend}") != 0)'
+        assert guard in src, f"explicit-backend guard missing for --backend {backend}"
+        message = f"vmaf: --backend {backend} requested but init failed; refusing to "
+        assert message in src, f"explicit-backend error missing for --backend {backend}"
     assert (
         'strcmp(c->backend, "vulkan")' not in src
-    ), "ADR-0726 regression: Vulkan strcmp resurfaced in vmaf.c"
-    # The amend_json_with_backend_used helper exists and is called.
-    assert "amend_json_with_backend_used" in src
-    assert '"backend_used"' in src
+    ), "ADR-0726 regression: Vulkan strcmp resurfaced in vmaf.cpp"
+    # The receipt writer exists, is called, and writes ``backend_used``.
+    assert "void amend_json_with_backend_receipt(" in src
+    assert "amend_json_with_backend_receipt(state->c.output_path" in src
+    # C string literal in the source: "\"backend_used\": "
+    assert r"\"backend_used\": " in backend_src
     # The not-compiled-in guard fires before any per-backend stanza so
     # an unknown ``--backend NAME`` on a CPU-only build also errors out.
     assert "libvmaf was built" in src
-    assert "compiled_in" in src
+    assert "backend_compiled_in(" in src
 
 
 # ---------------------------------------------------------------------------

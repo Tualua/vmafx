@@ -371,23 +371,17 @@ def test_vmaf_raw_suffixes_matches_cli_acceptance() -> None:
 def test_vmaf_raw_suffixes_matches_libvmaf_cli_source() -> None:
     """Cross-check the suffix table against the libvmaf CLI source.
 
-    Walks ``core/tools/cli_parse.c`` and asserts that the flags
-    vmaf-tune emits unconditionally (``-w`` / ``-h`` / ``-p`` / ``-b``)
-    still set ``use_yuv = true``. If upstream ever changes the
+    Walks ``core/tools/cli_parse.cpp`` (it was ``libvmaf/tools/cli_parse.c``;
+    a stale path turned this test into a silent skip) and asserts that the
+    flags vmaf-tune emits unconditionally (``-w`` / ``-h`` / ``-p`` /
+    ``-b``) still set ``use_yuv = true``. If upstream ever changes the
     surface to accept Y4M via extension auto-detect even with explicit
     width/height/pixfmt, this test fails loudly so the suffix table
     can be revised in lockstep.
     """
-    repo_root = Path(__file__).resolve().parents[3]
-    cli_src = repo_root / "libvmaf" / "tools" / "cli_parse.c"
-    if not cli_src.exists():
-        # Tests live inside vmaf-tune subtree; allow soft-skip when
-        # extracted into a standalone wheel test run.
-        import pytest
+    from _vmaf_cli import repo_source
 
-        pytest.skip(f"libvmaf source not available at {cli_src}")
-
-    text = cli_src.read_text(encoding="utf-8", errors="replace")
+    text = repo_source("core/tools/cli_parse.cpp")
     # Every one of -w/-h/-p/-b must set use_yuv true. Use a permissive
     # pattern so re-formatting (clang-format pass) doesn't false-fail.
     for short_opt in ("'w'", "'h'", "'p'", "'b'"):
@@ -397,10 +391,10 @@ def test_vmaf_raw_suffixes_matches_libvmaf_cli_source() -> None:
             text,
             re.DOTALL,
         )
-        assert m is not None, f"case {short_opt} not found in cli_parse.c"
+        assert m is not None, f"case {short_opt} not found in cli_parse.cpp"
         body = m.group(1)
-        assert (
-            "use_yuv" in body and "true" in body
+        assert re.search(
+            r"use_yuv\s*=\s*true", body
         ), f"case {short_opt} no longer sets use_yuv=true; suffix table needs revisit"
 
 
