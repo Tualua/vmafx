@@ -15,6 +15,15 @@ search:
   replaces `_try_jsonschema_validate` and `_structural_fallback_validate`, and a
   missing `jsonschema` is exit 2. A sync that brings either old name back fails
   `test_no_structural_fallback_validator_remains`.
+## Runner unit path and ADR-0931 status (2026-10-04)
+
+`fix/runner-unit-path-adr-0931-status`. A unit file, one doc line and one ADR status.
+
+- The runner unit's two paths assume the clone at `%h/dev/vmafx/vmafx`;
+  `test_runner_systemd_unit.py` follows them into the tree, so a sync that
+  restores `%h/dev/vmaf` fails it.
+- ADR-0931 is `Accepted` (Phase 1 only) through a status-update appendix; its body
+  is untouched. A sync keeps the status line and the index row in step.
 
 ## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
 

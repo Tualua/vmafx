@@ -185,7 +185,7 @@ manages the lifecycle:
 
 #### Option A: systemd --user service (recommended)
 
-Install the provided user unit [`dev/systemd/vmafx-sycl-arc-runner.service`](../../dev/systemd/vmafx-sycl-arc-runner.service). Its `ExecStart=` line names the supervisor under `%h/dev/vmaf/`; edit the copy so it points at your checkout of `dev/scripts/runner-supervisor.sh`.
+Install the provided user unit [`dev/systemd/vmafx-sycl-arc-runner.service`](../../dev/systemd/vmafx-sycl-arc-runner.service). Its `ExecStart=` line names the supervisor under `%h/dev/vmafx/vmafx/`; edit the copy so it points at your checkout of `dev/scripts/runner-supervisor.sh`.
 
 ```bash
 mkdir -p ~/.config/systemd/user

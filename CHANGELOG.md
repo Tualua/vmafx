@@ -3913,6 +3913,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   absence and the declared review values. The live ruleset is unchanged.
 
 
+- **The Arc runner's systemd unit starts the supervisor of this repository.**
+  `dev/systemd/vmafx-sycl-arc-runner.service` named `%h/dev/vmaf/...`, the
+  archived repository's path, so the documented install started nothing; it
+  names `%h/dev/vmafx/vmafx/...` and the install guide says so. ADR-0931 (MCP
+  direct cgo path) is `Accepted` for its implemented Phase 1.
+
+
 - **`--feature mobilesal` scores frames whose sides are not multiples of 8
   with the saliency students.** `saliency_student_v1` and `v2` need both
   sides divisible by 8; a 576x324 clip failed inside ONNX Runtime with a

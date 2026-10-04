@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0931: MCP server — replace subprocess delegation with direct cgo (Phase 1)
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-31
 - **Deciders**: lusoris
 - **Tags**: `mcp`, `go`, `cgo`, `libvmaf`, `performance`, `vmafx`, `modernization`
@@ -172,3 +172,20 @@ flips the default once parity is broad and CI gates pass.
   with direct cgo via `pkg/libvmaf`. Phase 1: ADR + extension-point design +
   first 1-2 tool handlers as proof-of-concept, behind `VMAFX_MCP_DIRECT=1`
   flag." (per user task specification, 2026-05-31).
+
+### Status update 2026-10-04: Accepted
+
+Per [ADR-0028](0028-adr-maintenance-rule.md) the body above is frozen; this
+appendix records why the status line changed from Proposed. The Phase 1
+decision is implemented and on `master`: PR #440 landed `pkg/libvmaf/direct.go`
+(`ScoreDirect`), `cmd/vmafx-mcp/impl_direct.go` (`vmaf_score` and
+`describe_model` behind `VMAFX_MCP_DIRECT=1`) and their tests, and
+the Decision's step 8 records the close lifecycle correction governed by
+[ADR-1336](1336-cuda-context-owned-resource-teardown.md). The subprocess path remains the default, as the Decision
+states. Phases 2 to 4 (the "Out of scope" list and the follow-ups in
+Consequences) are not part of this acceptance; the rollout table in
+[`docs/architecture/mcp-cgo-direct-migration.md`](../architecture/mcp-cgo-direct-migration.md)
+tracks them.
+
+Verification command:
+`grep -n 'directPathEnabled\|VMAFX_MCP_DIRECT' cmd/vmafx-mcp/impl_direct.go`.

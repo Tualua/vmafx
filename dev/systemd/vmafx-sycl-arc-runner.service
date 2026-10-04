@@ -33,9 +33,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Assumes repository is located at %h/dev/vmaf. Adjust if located elsewhere.
-WorkingDirectory=%h/dev/vmaf
-ExecStart=%h/dev/vmaf/dev/scripts/runner-supervisor.sh
+# Assumes the repository is cloned at %h/dev/vmafx/vmafx. Adjust both paths below if it is elsewhere.
+WorkingDirectory=%h/dev/vmafx/vmafx
+ExecStart=%h/dev/vmafx/vmafx/dev/scripts/runner-supervisor.sh
 # Optional environment file for headless hosts or explicit PAT:
 # EnvironmentFile=-%h/.config/vmafx-runner/env
 Restart=on-failure

@@ -759,7 +759,7 @@ public authority; documentation never links into either local root.
 | [ADR-0926](0926-parquet-schema-v2.md) | Parquet schema v2 — canonical column order, zstd-3, schema metadata | Accepted | ai, data, storage, parquet, k150k, chug |
 | [ADR-0924](0924-native-pre-commit-hooks.md) | Native bash pre-commit hook as opt-in alternative to the pre-commit framework (~10x faster on small commits; CI unchanged) | Accepted | 2026-05-31 | build, ci, dx, tooling, fork-local, vmafx-modernization |
 | [ADR-0923](0923-buildkit-cache-mounts.md) | Adopt BuildKit cache mounts and ccache across the container build matrix | Accepted | ci, build, container, performance |
-| [ADR-0931](0931-mcp-cgo-direct-replace-subprocess.md) | MCP server — replace subprocess delegation with direct cgo (Phase 1: `vmaf_score` + `describe_model`, behind `VMAFX_MCP_DIRECT=1`) | Proposed | mcp, go, cgo, libvmaf, performance, vmafx, modernization |
+| [ADR-0931](0931-mcp-cgo-direct-replace-subprocess.md) | MCP server — replace subprocess delegation with direct cgo (Phase 1: `vmaf_score` + `describe_model`, behind `VMAFX_MCP_DIRECT=1`) | Accepted | mcp, go, cgo, libvmaf, performance, vmafx, modernization |
 | [ADR-0929](0929-rust-safe-binding-scaffold.md) | Promote the safe wrapper layer out of `vmafx-sys` into a standalone `vmafx` crate; ship Phase 1 (`Context`, `Model`, `Picture`, `Score`, `Error`) | Accepted | rust, bindings, ffi, phase4, workspace, fork-local |
 | [ADR-0953](0953-doxygen-public-api-clean.md) | Doxygen public-API build is warning-clean | Accepted | `docs`, `ci`, `api`, `public-surface` |
 | [ADR-0959](0959-metal-kernel-coverage-round4-closeout.md) | Metal kernel parity coverage round 4 — closeout | Accepted | testing, metal, gpu, parity, regression-guard |
