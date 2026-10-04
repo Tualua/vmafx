@@ -10,7 +10,8 @@ checked on an i9-12900K with an Arc B580 and a UHD 770
 ([Research-2125](../../research/2125-windows-native-sycl-run.md)).
 
 Host builds are for development and diagnosis. Published binaries come from
-the container ([ADR-1102](../../adr/1102-phase4b9-container-only-publishing.md)).
+the container
+([ADR-1102](../../adr/1102-phase4b9-container-only-publishing.md)).
 
 ## What you need
 
@@ -23,6 +24,11 @@ the container ([ADR-1102](../../adr/1102-phase4b9-container-only-publishing.md))
 | CMake | `python -m pip install cmake` | builds the Level Zero loader below |
 | NASM 2.14 or newer | `scoop install nasm` (or winget) | x86 SIMD kernels |
 | `xxd` | Git for Windows (`C:\Program Files\Git\usr\bin`) | embeds the built-in models; without it `--model version=...` has nothing to load |
+
+!!! note
+    The Windows CI leg pins oneAPI 2025.3.0.372 (`ONEAPI_WINDOWS_VERSION` in
+    `build-config.env`) because the Windows installer lags. Linux builds and
+    images use oneAPI 2026.1 (`ONEAPI_VERSION`).
 
 The oneAPI installer for Windows ships no Level Zero import library, so build
 the loader once, pinned to the version the CI leg uses. Use the Ninja
@@ -60,7 +66,8 @@ ninja -C build
 Why each setting is there:
 
 - `--default-library=static`: libvmaf has no `__declspec(dllexport)`, so an
-  MSVC DLL build exports nothing ([ADR-0121](../../adr/0121-windows-gpu-build-only-legs.md)).
+  MSVC DLL build exports nothing
+  ([ADR-0121](../../adr/0121-windows-gpu-build-only-legs.md)).
 - `/experimental:c11atomics`: MSVC's `<stdatomic.h>` refuses C11 atomics
   without it.
 - `-Dcpp_std=c++latest`: the C++ sources need C++23, and `icx-cl` names it
@@ -69,14 +76,18 @@ Why each setting is there:
   supply `xxd` without shadowing anything else.
 
 The build needs `ocloc` for the default ahead-of-time targets
-([AOT targets](overview.md#aot-targets-default-adr-0568)); on Windows it comes
+([AOT targets](overview.md#aot-targets-default-adr-0568)). On Windows it comes
 with oneAPI (`where ocloc`). An older `ocloc` may not know every default
-target. oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`; check
-with `ocloc ids <target>` and drop the unknown ones:
+target; oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`.
 
-```bat
-meson configure build -Dsycl_icpx_aot_targets=dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21
-```
+If `ocloc` rejects a target:
+
+1. Check each target with `ocloc ids <target>`.
+2. Drop the unknown ones from the list:
+
+    ```bat
+    meson configure build -Dsycl_icpx_aot_targets=dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21
+    ```
 
 `-Dsycl_icpx_aot_targets=` (empty) builds SPIR-V only: every run then
 compiles the kernels for the GPU at startup.

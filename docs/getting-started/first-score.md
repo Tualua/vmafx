@@ -52,7 +52,7 @@ libvmaf WARNING est_params: covariance matrix was singular on 6 of 192 solves
     The warnings come from the SpEED chroma feature of the default model, which
     sets the solution of a flat block to zero and keeps going. They report how
     often that happened; the run is not aborted. See
-    [SpEED: singular covariance matrices](../metrics/speed_qa.md#singular-covariance-matrices).
+    [SpEED: singular covariance matrices](../metrics/speed.md#singular-covariance-matrices).
 
 ## 2. Read the result
 

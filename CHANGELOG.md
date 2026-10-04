@@ -677,6 +677,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `mkdocs.yml`.
 
 
+- Rewrote the backend guide around a newcomer's choice: `backends/index.md`
+  opens with a table of hardware, backend, build option, `--backend` value, SDK
+  and exactness status, then explains selection and numerical agreement. The
+  SYCL, HIP and CUDA overviews (13,000, 10,000 and 7,400 words) are now short
+  overviews with twin tables and open gaps only; per-twin notes, AOT and
+  zero-copy details and the dated history moved to their own pages. Corrected:
+  `VMAF_CUDA_DISPATCH` is `direct|graph`, HIP registers 19 extractors (the
+  `-ENOSYS` stubs are gone), Metal 17, `ciede_cuda` exists, and
+  `--backend sycl --feature cambi` runs the SYCL twin (ADR-1359).
+
+
 - Rewrote the newcomer path of the documentation. The home page leads with
   five steps (get VMAFx, score a first pair, choose a backend, use the CLI, API
   or FFmpeg filter, reference). Getting started offers the published container
@@ -689,6 +700,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   add the MSVC `/experimental:c11atomics` flag, cover Metal on macOS, and share
   one Intel QSV page instead of four copies. The roadmap explains the release
   candidates for users and cites ADR-1490 for the RC7 to RC9 numbering.
+
+
+- Corrected the metric and model pages against the extractor option tables
+  and the exact-twin declarations. `features.md` is now the feature index: one
+  coverage table of every registered extractor with its GPU twins and their
+  exactness, then the option reference; ADM, CIEDE2000, float moment, SpEED and
+  the tiny-AI extractors have their own pages. Corrected: `vif_enhn_gain_limit`
+  defaults to 100.0, integer `motion` `debug` defaults to false, `motion_v2`
+  has seven options, `speed_chroma` emits u, v and uv, the five-frame motion
+  window reads frames n-3, n-1 and n+1, and the default model is
+  `vmaf_v1.0.16_3d0h`.
 
 
 - Corrected the usage pages against the code and restructured the longest ones.

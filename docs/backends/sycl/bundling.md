@@ -1,19 +1,28 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Bundling libvmaf_sycl for Self-Contained Deployment
 
+Bundle the Intel oneAPI runtime libraries listed below next to the binary so
+FFmpeg with `libvmaf_sycl` runs on a machine without oneAPI installed.
+
 ## Problem
 
-When deploying FFmpeg with `libvmaf_sycl` on a system without Intel oneAPI installed, SYCL fails with:
+Without the runtime, SYCL fails on a system that has no Intel oneAPI with:
 
 ```text
 SYCL exception: No device of requested type available
 ```
 
-Even though the Intel iGPU is present and VA-API works, the SYCL runtime libraries are missing.
+Even though the Intel iGPU is present and VA-API works, the SYCL runtime
+libraries are missing.
 
 ## Required Runtime Libraries
 
 ### Intel oneAPI Runtime (from `/opt/intel/oneapi/compiler/latest/lib/`)
+
+`libumf.so.1` lives under `/opt/intel/oneapi/umf/latest/lib/`, and
+`libze_loader.so` comes from the Level Zero loader package, not the compiler
+directory. The oneAPI 2025 and later runtimes load Unified Runtime (UR)
+adapters; the older `libpi_level_zero.so` plugin no longer exists.
 
 | Library | Purpose |
 |---------|---------|
@@ -21,7 +30,9 @@ Even though the Intel iGPU is present and VA-API works, the SYCL runtime librari
 | `libze_loader.so` | Level Zero loader (GPU compute API) |
 | `libsvml.so` | Intel short vector math library |
 | `libirc.so` | Intel compiler runtime |
-| `libpi_level_zero.so` | SYCL plugin for Level Zero backend (runtime-loaded) |
+| `libur_loader.so.0` | Unified Runtime loader that `libsycl.so` links against |
+| `libur_adapter_level_zero.so.0` (and `libur_adapter_level_zero_v2.so.0`) | Unified Runtime adapter for the Level Zero backend (runtime-loaded) |
+| `libumf.so.1` | Unified Memory Framework, from the `intel-oneapi-umf` package |
 
 ### FFmpeg Integration
 
@@ -50,15 +61,19 @@ Any non-standard deps (e.g. `libspdlog`, `libfmt`) also need bundling.
 
 ## Cannot Be Bundled (must exist on target)
 
-- `i915` or `xe` kernel module (Intel GPU driver)
+- `i915` or `xe` kernel module (Intel GPU driver); it must be loaded on the
+  target system
 - `/dev/dri/render*` device node access
 - Standard glibc (`libc.so`, `libm.so`, `libpthread.so`)
+- The Intel GPU compute runtime (user-space driver) matching the hardware
 
 ## Bundling Steps
 
-1. **Copy the `.so` files** into the FFmpeg binary directory (or a `lib/` subdirectory).
+1. **Copy the `.so` files** into the FFmpeg binary directory (or a `lib/`
+   subdirectory).
 
-2. **Set RPATH at link time** so the binary finds them without `LD_LIBRARY_PATH`:
+2. **Set RPATH at link time** so the binary finds them without
+   `LD_LIBRARY_PATH`:
 
    ```bash
    # Same directory as binary
@@ -78,39 +93,47 @@ Any non-standard deps (e.g. `libspdlog`, `libfmt`) also need bundling.
 Check which libraries are missing at runtime:
 
 ```bash
-ldd /path/to/ffmpeg | grep -E 'sycl|ze_loader|svml|irc|pi_level_zero|vpl|drm|libva'
+ldd /path/to/ffmpeg | grep -E 'sycl|ze_loader|svml|irc|ur_|umf|vpl|drm|libva'
 ```
 
 Any "not found" entries need to be bundled.
 
-## Notes
+## Device code and the DMA-BUF path
 
-- SPIR-V device code is embedded in the binary at link time via `clang-offload-wrapper`, so no extra device code files are needed.
-- The kernel driver (`i915` or `xe`) must still be loaded on the target system — it cannot be bundled.
-- `libva` and `libva-drm` are only needed if using the DMA-BUF zero-copy path; otherwise the CPU upload path is used.
+- The default build embeds ahead-of-time device code for the 19 targets of
+  `sycl_icpx_aot_targets` plus a SPIR-V image for JIT, so no separate device
+  code files ship with the binary (see the
+  [SYCL overview](overview.md#aot-targets-default-adr-0568)).
+- `libva` and `libva-drm` are only needed for the DMA-BUF zero-copy path;
+  otherwise the CPU upload path is used.
 
 ## Toolchain versions and runtime knobs
 
-Built and validated against:
+The release pins live in `build-config.env`; read them there instead of
+trusting a copy in prose:
 
-- **Intel oneAPI DPC++ 2025.3** (package `intel-oneapi-compiler-dpcpp-cpp-2025.3`, icpx 2025.3.x).
-- **Level Zero loader v1.28.0** (`oneapi-src/level-zero`, tag `v1.28.0`, Feb 2026).
-- **Intel Compute Runtime 26.09+** on target systems with Xe2 / Battlemage.
-- **SYCL 2020 Rev 11** spec.
+| Component | Pin in `build-config.env` | Current value |
+|-----------|---------------------------|---------------|
+| Intel oneAPI DPC++ (Linux) | `ONEAPI_VERSION`, package `intel-oneapi-compiler-dpcpp-cpp-<version>` | 2026.1 (apt build 2026.1.1-325) |
+| Intel oneAPI (Windows CI) | `ONEAPI_WINDOWS_VERSION` | 2025.3.0.372 |
+| Level Zero loader | `LEVEL_ZERO_VERSION` | 1.34.0 |
+| Intel Compute Runtime (NEO) | `INTEL_NEO_VERSION` | 26.35.39758.10 |
 
-oneAPI 2025.0 was an ABI-breaking release; any object files / shared libraries built
-against earlier toolchains must be rebuilt. CI pins the minor meta-package
-`-2025.3` rather than the unversioned `latest` to prevent silent bumps.
+- The SYCL 2020 Rev 11 specification is the language level.
+- oneAPI 2025.0 was an ABI-breaking release; rebuild any object files or
+  shared libraries built against an earlier toolchain.
+- CI pins the minor meta-package (`-<ONEAPI_VERSION>`) and the exact apt build
+  rather than the unversioned `latest`, to prevent silent bumps.
 
-### Level Zero v2 adapter (enabled by default on Xe2 / Battlemage)
+### Level Zero v2 adapter (Xe2 / Battlemage default)
 
-oneAPI 2025.3 enables the refactored Unified Runtime L0 v2 adapter by default on
-Arc B-Series and other Xe2-based GPUs. On **Arc A-Series / DG2 / Flex** you may
-observe a perf regression under L0 v2's immediate command lists; the escape hatch is:
+The refactored Unified Runtime Level Zero v2 adapter is the default on Arc
+B-Series and other Xe2-based GPUs. On Arc A-Series, DG2 and Flex you may see
+a performance regression under its immediate command lists. Set this before
+running `ffmpeg` or any libvmaf-linked binary:
 
 ```bash
 export UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 ```
 
-Set before running `ffmpeg` or any libvmaf-linked binary. Xe2 / Battlemage users
-should leave the default (immediate command lists on).
+Xe2 / Battlemage users should keep the default (immediate command lists on).
