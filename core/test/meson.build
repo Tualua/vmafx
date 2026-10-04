@@ -2343,6 +2343,7 @@ test_float_bits = executable('test_float_bits',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_float_bits', test_float_bits, suite : ['fast'])
 
@@ -6909,7 +6910,8 @@ test_hip_device_selection = executable('test_hip_device_selection',
     ['test.c', 'test_hip_device_selection.c', '../src/hip/common.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, hip_deps],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_hip_device_selection', test_hip_device_selection, suite : ['fast'])
 
