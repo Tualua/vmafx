@@ -23,6 +23,7 @@ import json
 import sys
 from pathlib import Path
 
+import jsonschema
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -165,15 +166,12 @@ def test_consistency_rejects_malformed_bundle_extension(tmp_path: Path) -> None:
     assert any("sigstore_bundle" in e and ".sigstore.json" in e for e in errors)
 
 
-@pytest.mark.skipif(
-    "jsonschema" not in sys.modules
-    and pytest.importorskip("jsonschema", reason="optional") is None,
-    reason="jsonschema not installed; covered by structural fallback",
-)
 def test_jsonschema_rejects_bad_id_pattern() -> None:
-    """When jsonschema is installed, the full Draft 2020-12 validator runs."""
-    import jsonschema
+    """The full Draft 2020-12 validator rejects an id outside the pattern.
 
+    ``jsonschema`` is a declared test dependency (``python/requirements-test.in``),
+    so a missing install is an error here, never a skip.
+    """
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     bad = {
         "schema_version": 1,

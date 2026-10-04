@@ -3651,6 +3651,11 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   where the fork returns the error instead of asserting).
 
 
+- **The model-registry schema tests run in the Python harness suite.** `python/test/model_registry_schema_test.py`
+  skipped its whole module when `jsonschema` was not installed. `jsonschema` is now in
+  `python/requirements-test.in` and its hash lock, and a missing install is an error, not a skip.
+
+
 - **The files attached to a GitHub release carry their licence notices.** A
   release now has `THIRD_PARTY_NOTICES.txt` (every component, licence and
   copyright line of `libvmaf` and `vmaf`, computed from the SPDX headers of the

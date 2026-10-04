@@ -60473,3 +60473,9 @@ upstream parity guard's allowlist.
   (its LFS object ids equal the two pinned hashes). `77498b8e` never existed upstream; a sync
   must not restore it. `ai/tests/test_transnet_pin_consistency.py` guards the four places. No
   score, public API or FFmpeg patch impact.
+## Registry schema test dependency (`fix/registry-schema-test-deps`)
+
+- `jsonschema==4.26.0` is a line of `python/requirements-test.in`; regenerate
+  `python/requirements-test-lock.txt` with `make python-locks-write` after a sync that touches the
+  file, and keep `model_registry_schema_test.py` importing it at module level (no
+  `importorskip`). No score, public API or FFmpeg patch impact.
