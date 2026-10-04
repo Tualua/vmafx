@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T15:27:31Z",
+  "generated_at": "2026-10-04T15:50:14Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "794d06134f382bcc52475aee51b0d5eac16e1f6e",
-  "total_infractions": 395,
+  "commit_sha": "667b2d3e8404c9b18827e0ab66edd9861bc83fa4",
+  "total_infractions": 391,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3172,33 +3172,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/fast.py",
-      "line_number": 347,
-      "symbol": "_build_production_sample_extractor",
-      "message": "Function '_build_production_sample_extractor' (102 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_build_production_sample_extractor",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/fast.py:HISS-04:fn:_build_production_sample_extractor#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/fast.py",
-      "line_number": 502,
-      "symbol": "_build_production_encode_runner",
-      "message": "Function '_build_production_encode_runner' (73 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_build_production_encode_runner",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/fast.py:HISS-04:fn:_build_production_encode_runner#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/fast.py",
-      "line_number": 577,
-      "symbol": "fast_recommend",
-      "message": "Function 'fast_recommend' (180 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:fast_recommend",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/fast.py:HISS-04:fn:fast_recommend#1"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "tools/vmaf-tune/src/vmaftune/fr_from_nr_adapter.py",
       "line_number": 285,
       "symbol": "run",
@@ -3241,15 +3214,6 @@
       "message": "Function 'run_proxy' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:run_proxy",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/proxy.py:HISS-04:fn:run_proxy#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/recommend.py",
-      "line_number": 313,
-      "symbol": "pick_target_vmaf_with_uncertainty",
-      "message": "Function 'pick_target_vmaf_with_uncertainty' (120 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:pick_target_vmaf_with_uncertainty",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/recommend.py:HISS-04:fn:pick_target_vmaf_with_uncertainty#1"
     },
     {
       "rule_id": "HISS-04",

@@ -1676,7 +1676,7 @@ def _add_recommend_subparser(sub: argparse._SubParsersAction) -> None:
     recommend = sub.add_parser(
         "recommend",
         help=(
-            "find the smallest CRF whose VMAF >= --target-vmaf "
+            "find the lowest-bitrate encode whose VMAF >= --target-vmaf "
             "(coarse-to-fine, ~3.5x fewer encodes than the full grid)"
         ),
     )
@@ -1904,8 +1904,8 @@ def _add_coarse_to_fine_flags(p: argparse.ArgumentParser) -> None:
         type=float,
         default=None,
         help=(
-            "target VMAF score; the orchestrator picks the smallest "
-            "CRF whose score >= target. Optional for `corpus`, "
+            "target VMAF score; the orchestrator picks the lowest-bitrate "
+            "encode whose score >= target. Optional for `corpus`, "
             "required for `recommend`."
         ),
     )
@@ -2420,8 +2420,8 @@ def _emit_live_uncertainty_pick(
 def _emit_live_point_pick(
     args: argparse.Namespace, visited: list[dict[str, Any]], output: Path
 ) -> int:
-    """Emit the legacy smallest-passing-CRF result."""
-    pick = _smallest_passing_crf(visited, args.target_vmaf)
+    """Emit the lowest-bitrate passing encode (one line, ``src preset crf vmaf``)."""
+    pick = _lowest_bitrate_passing(visited, args.target_vmaf)
     if pick is None:
         sys.stderr.write(
             f"recommend: no CRF meets target VMAF >= {args.target_vmaf}; "
@@ -2458,42 +2458,30 @@ def _run_recommend(args: argparse.Namespace) -> int:
     return _emit_live_point_pick(args, visited, opts.output)
 
 
-def _smallest_passing_crf(
+def _lowest_bitrate_passing(
     rows: list[dict], target_vmaf: float
 ) -> tuple[str, str, int, float] | None:
-    """Return (src, preset, crf, vmaf) for the highest-quality passing encode.
+    """Return (src, preset, crf, vmaf) for the lowest-bitrate passing encode.
 
-    Picks the SMALLEST CRF whose ``vmaf_score`` still meets ``target_vmaf``
-    — for libx264 a smaller CRF means higher quality / larger bitrate, so
-    the smallest passing CRF is the highest quality that clears the gate.
-    This matches the CLI help: "find the smallest CRF whose VMAF >= --target-vmaf".
-    Grouped per (src, preset); we return the first such (src, preset) pair
-    in the natural row order.
+    The pick rule is :func:`vmaftune.recommend.lowest_passing_row` (the one
+    implementation): the cheapest encode whose ``vmaf_score`` meets
+    ``target_vmaf``. Rows are grouped per (src, preset); the first group
+    in row order that has a passing row supplies the answer, because
+    bitrates of different sources are not comparable.
     """
-    best: dict[tuple[str, str], tuple[int, float]] = {}
+    from .recommend import lowest_passing_row
+
+    groups: dict[tuple[str, str], list[dict]] = {}
     for r in rows:
         try:
-            score = float(r.get("vmaf_score"))
+            float(r.get("vmaf_score"))
         except (TypeError, ValueError):
             continue
-        if score < target_vmaf:
-            continue
-        key = (str(r["src"]), str(r["preset"]))
-        crf = int(r["crf"])
-        cur = best.get(key)
-        # We want the SMALLEST CRF that still meets the target — that's
-        # the highest quality at acceptable cost. Tie-break on the
-        # higher VMAF score for determinism.
-        if cur is None or crf < cur[0] or (crf == cur[0] and score > cur[1]):
-            best[key] = (crf, score)
-    if not best:
-        return None
-    # Return the first key in row order.
-    for r in rows:
-        key = (str(r["src"]), str(r["preset"]))
-        if key in best:
-            crf, score = best[key]
-            return key[0], key[1], crf, score
+        groups.setdefault((str(r["src"]), str(r["preset"])), []).append(r)
+    for (src, preset), members in groups.items():
+        winner = lowest_passing_row(members, target_vmaf)
+        if winner is not None:
+            return src, preset, int(winner["crf"]), float(winner["vmaf_score"])
     return None
 
 

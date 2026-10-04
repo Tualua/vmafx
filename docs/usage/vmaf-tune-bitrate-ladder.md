@@ -33,7 +33,7 @@ divides the encode size into the manifest bitrate.
 1. `build_ladder()` samples every `(resolution, target_vmaf)` pair.
 2. The default sampler encodes and scores the 5-point CRF sweep
    `20,25,30,35,40` at that resolution (override with `--crf-sweep`) and keeps
-   the row that meets the target at the smallest CRF.
+   the lowest-bitrate row that meets the target.
 3. `convex_hull()` removes dominated bitrate and quality points.
 4. `select_knees()` chooses the requested number of rungs along the hull.
 5. `emit_manifest()` writes HLS, DASH or JSON.

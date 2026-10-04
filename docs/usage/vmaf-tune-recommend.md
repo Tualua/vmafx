@@ -29,7 +29,7 @@ much of the corpus is scanned.
         --output corpus.jsonl
     ```
 
-2. Ask for the smallest CRF whose VMAF reaches 92:
+2. Ask for the lowest-bitrate encode whose VMAF reaches 92:
 
     ```shell
     vmaf-tune recommend --from-corpus corpus.jsonl --target-vmaf 92.0
@@ -60,7 +60,7 @@ axis. `--target-bitrate` is corpus mode only.
 
 | Flag | Row chosen |
 | --- | --- |
-| `--target-vmaf T` | The row with the smallest CRF whose `vmaf_score >= T`. When no row clears `T`, the highest-VMAF row, annotated `(UNMET)`. |
+| `--target-vmaf T` | The row with the lowest `bitrate_kbps` among those whose `vmaf_score >= T` (ties go to the higher VMAF, then the lower CRF). When no row clears `T`, the highest-VMAF row, annotated `(UNMET)`. |
 | `--target-bitrate KBPS` | The row whose `bitrate_kbps` is closest (absolute distance) to `KBPS`. Ties go to the smaller CRF, which is the higher quality. |
 
 Passing both targets is an error (exit code 2). In corpus mode, rows with a
@@ -81,7 +81,7 @@ ignored.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--from-corpus JSONL` | none | Select from this corpus instead of running encodes. `--source`, `--width`, `--height` and `--preset` become optional. |
-| `--target-vmaf T` | none | Smallest-CRF predicate. Required in live mode. |
+| `--target-vmaf T` | none | Lowest-bitrate predicate. Required in live mode. |
 | `--target-bitrate KBPS` | none | Closest-bitrate predicate (corpus mode only). |
 | `--json` | off | Print the winning corpus row as one JSON object instead of the summary line. |
 

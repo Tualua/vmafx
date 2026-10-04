@@ -9,6 +9,11 @@ pass at the chosen CRF. It is opt-in: the slow `corpus` + `recommend` path
 remains the ground truth ([ADR-0276](../adr/0276-vmaf-tune-fast-path.md),
 [Research-0060](../research/0060-vmaf-tune-fast-path.md)).
 
+The pick rule is the one every `vmaf-tune` command uses: among the CRFs whose
+predicted VMAF meets the target, the one with the lowest predicted bitrate. A
+CRF that misses the target ranks behind all of those, and when none meets it
+the closest miss is returned. The Go `fast` applies the same objective.
+
 `fast` reports `proxy_verify_gap`. When the gap exceeds `--proxy-tolerance` the
 CLI still prints the recommendation but exits with code `3`, so a caller can
 fall back to the slow grid.

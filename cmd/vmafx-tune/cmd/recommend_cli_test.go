@@ -37,7 +37,7 @@ var corpusFixture = []string{
 }
 
 // TestRecommend_fromCorpusTargetVMAF drives the whole clikit root and asserts
-// the JSON output is the smallest-CRF passing row.
+// the JSON output is the lowest-bitrate passing row.
 func TestRecommend_fromCorpusTargetVMAF(t *testing.T) {
 	corpus := writeCorpus(t, corpusFixture...)
 
@@ -58,8 +58,8 @@ func TestRecommend_fromCorpusTargetVMAF(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &row); err != nil {
 		t.Fatalf("parse recommendation JSON %q: %v", out, err)
 	}
-	if crf, ok := row["crf"].(float64); !ok || int(crf) != 20 {
-		t.Errorf("recommended crf = %v, want 20", row["crf"])
+	if crf, ok := row["crf"].(float64); !ok || int(crf) != 24 {
+		t.Errorf("recommended crf = %v, want 24 (the lowest-bitrate row that clears 93)", row["crf"])
 	}
 }
 
@@ -104,7 +104,7 @@ func TestRecommend_fromCorpusHumanReadable(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("execute recommend: %v", execErr)
 	}
-	for _, want := range []string{"crf=20", "vmaf=96.000", "kbps=8000",
+	for _, want := range []string{"crf=24", "vmaf=93.500", "kbps=5000",
 		"predicate=target_vmaf>=93.0", "[OK]"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output %q is missing %q", strings.TrimSpace(out), want)

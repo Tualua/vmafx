@@ -57,8 +57,8 @@ per-rendition playlists when you package the encoded segments.
 
 1. `build_ladder()` samples every `(resolution, target_vmaf)` pair.
 2. The default sampler encodes and scores a CRF sweep at that resolution
-   (default `20,25,30,35,40`) and keeps the row that meets the target at the
-   smallest CRF. [Details](vmaf-tune-ladder-default-sampler.md).
+   (default `20,25,30,35,40`) and keeps the lowest-bitrate row that meets the
+   target. [Details](vmaf-tune-ladder-default-sampler.md).
 3. `convex_hull()` drops dominated points (a Pareto filter) and then keeps the
    upper-convex envelope, so both bitrate and VMAF rise strictly along it.
 4. `select_knees()` picks the requested number of rungs along the hull; the

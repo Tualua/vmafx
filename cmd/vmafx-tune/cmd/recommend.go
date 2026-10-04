@@ -70,9 +70,8 @@ Two modes:
 
   --from-corpus JSONL   Pick from an existing corpus without running any new
                         encodes. Applies one of two predicates:
-                          --target-vmaf T     smallest CRF whose VMAF >= T
-                                              (smaller CRF = higher quality,
-                                              so this is the best quality that
+                          --target-vmaf T     lowest-bitrate encode whose VMAF >= T
+                                              (the cheapest encode that
                                               clears the gate)
                           --target-bitrate B  row whose bitrate is closest to
                                               B kbps, ties to the lower CRF
@@ -101,7 +100,7 @@ Examples:
 func newRecommendCmd() *cobra.Command {
 	flags := &recommendFlags{}
 	cmd := clikit.Command("recommend",
-		"Find the smallest CRF whose VMAF meets --target-vmaf",
+		"Find the lowest-bitrate encode whose VMAF meets --target-vmaf",
 		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
 			return runRecommend(ctx, d, flags)
 		})),
@@ -151,7 +150,7 @@ func addRecommendSearchFlags(cmd *cobra.Command, flags *recommendFlags) {
 		"Radius around the best-coarse CRF for the fine pass")
 	cmd.Flags().IntVar(&flags.fineStep, "fine-step", 1, "CRF step for the fine pass")
 	cmd.Flags().Float64Var(&flags.targetVMAF, "target-vmaf", math.NaN(),
-		"Target VMAF score; the smallest CRF whose score meets it wins")
+		"Target VMAF score; the lowest-bitrate encode whose score meets it wins")
 }
 
 func addRecommendSelectionFlags(cmd *cobra.Command, flags *recommendFlags) {
@@ -399,7 +398,10 @@ func emitEncodedRecommendation(
 		return printErr
 	}
 
-	src, preset, crf, score, ok := recommend.SmallestPassingCRF(visited, targetVMAF)
+	src, preset, crf, score, ok, pickErr := recommend.LowestBitratePassing(visited, targetVMAF)
+	if pickErr != nil {
+		return pickErr
+	}
 	if !ok {
 		return fmt.Errorf(
 			"no CRF meets target VMAF >= %g; visited %d encodes -> %s",

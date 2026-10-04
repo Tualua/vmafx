@@ -44,7 +44,7 @@ invariant: Ladder math is two-pass and order-sensitive; default 5-point CRF samp
   (ADR-0307).** `ladder.build_ladder` accepts explicit `sampler=`
   callback; when omitted, `_default_sampler` composes
   `corpus.iter_rows` (Phase A encode+score) with
-  `recommend.pick_target_vmaf` (smallest CRF clearing target VMAF)
+  `recommend.pick_target_vmaf` (lowest-bitrate row clearing target VMAF)
   over canonical sweep
   `DEFAULT_SAMPLER_CRF_SWEEP = (20, 25, 30, 35, 40)` at codec
   adapter's mid-range preset (`"medium"` for libx264 / libx265 /

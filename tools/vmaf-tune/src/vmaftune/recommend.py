@@ -6,9 +6,10 @@ The Phase A corpus already produces ``(preset, crf, bitrate_kbps,
 vmaf_score)`` tuples. ``recommend`` re-uses those rows and applies a
 user-supplied predicate:
 
-- ``--target-vmaf T`` — return the row with the *smallest* CRF whose
-  ``vmaf_score >= T``. Falls back to the row with the highest VMAF if
-  no row clears the bar.
+- ``--target-vmaf T`` — return the row with the *lowest bitrate* whose
+  ``vmaf_score >= T`` (the cheapest encode that meets the target; ties
+  go to the higher VMAF, then the lower CRF). Falls back to the row
+  with the highest VMAF if no row clears the bar.
 - ``--target-bitrate B`` — return the row whose ``bitrate_kbps`` is
   closest to ``B`` (absolute distance, ties broken by smaller CRF).
 
@@ -22,19 +23,20 @@ predicate evaluation is independent of how the rows were obtained.
 Implements Buckets #4 (target-bitrate) and #5 (target-vmaf) from the
 capability audit (Research-0061).
 
-Uncertainty-aware extension (ADR-0279, this PR)
+Uncertainty-aware extension (ADR-0393)
 ------------------------------------------------
 
 The conformal-VQA prediction surface in :mod:`vmaftune.conformal`
-(PR #488) wraps the predictor's point VMAF estimate in a
+wraps the predictor's point VMAF estimate in a
 ``(point, low, high)`` interval whose width carries the predictor's
 local confidence. When the caller supplies that interval per row
 (via :class:`UncertaintyAwareRequest`) the search loop becomes:
 
 * **Tight interval** (``width <= tight_max``) — the predictor is
-  confident; ``pick_target_vmaf_with_uncertainty`` short-circuits
-  the search as soon as the *first* row whose ``low`` clears the
-  target is observed. The "interval-aware search cost" is
+  confident; ``pick_target_vmaf_with_uncertainty`` walks the rows in
+  ascending bitrate order and short-circuits the search as soon as
+  the *first* row whose ``low`` clears the target is observed, which
+  is the lowest-bitrate such row. The "interval-aware search cost" is
   :math:`O(k)` instead of the :math:`O(n)` full scan, where ``k``
   is the index of the first sufficiently-confident row.
 * **Wide interval** (``width >= wide_min``) — the predictor is
@@ -118,7 +120,9 @@ def validate_request(req: RecommendRequest) -> None:
         raise ValueError("missing target: pass --target-vmaf or --target-bitrate")
 
 
-def _filter_rows(rows: Iterable[dict], req: RecommendRequest) -> list[dict]:
+def _filter_rows(
+    rows: Iterable[dict], req: RecommendRequest | UncertaintyAwareRequest
+) -> list[dict]:
     """Drop rows that fail the encoder/preset filter or have NaN VMAF."""
     out: list[dict] = []
     for row in rows:
@@ -141,28 +145,65 @@ def _filter_rows(rows: Iterable[dict], req: RecommendRequest) -> list[dict]:
     return out
 
 
+def row_bitrate_kbps(row: dict) -> float:
+    """Return ``row["bitrate_kbps"]`` as a finite float, or raise.
+
+    The lowest-bitrate rule cannot rank a row without its bitrate; a row
+    that lacks one is an error, never silently skipped or ranked last.
+    """
+    try:
+        value = float(row["bitrate_kbps"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            f"row has no usable bitrate_kbps (needed to pick the lowest-bitrate passing "
+            f"encode): {row!r}"
+        ) from exc
+    if not math.isfinite(value):
+        raise ValueError(f"row bitrate_kbps is not finite ({value!r}): {row!r}")
+    return value
+
+
+def lowest_passing_row(rows: Iterable[dict], target: float) -> dict | None:
+    """The lowest-bitrate row whose VMAF clears ``target``, or ``None``.
+
+    The one implementation of the pick rule: every command that returns
+    "the encode that meets the target" ranks the passing rows by bitrate,
+    then by higher VMAF, then by lower CRF so equal rows resolve the same
+    way on every run.
+    """
+    best: dict | None = None
+    best_key: tuple[float, float, int] | None = None
+    for row in rows:
+        score = float(row["vmaf_score"])
+        if score < target:
+            continue
+        key = (row_bitrate_kbps(row), -score, int(row.get("crf", 0)))
+        if best_key is None or key < best_key:
+            best, best_key = row, key
+    return best
+
+
 def pick_target_vmaf(rows: Sequence[dict], target: float) -> RecommendResult:
-    """Smallest CRF whose VMAF clears ``target``.
+    """Lowest-bitrate row whose VMAF clears ``target``.
 
     Falls back to the row with the highest VMAF if none clears the bar
     — the user gets the closest miss rather than an empty result.
     """
     if not rows:
         raise ValueError("no eligible rows to evaluate (after filtering)")
-    clearing = [r for r in rows if float(r["vmaf_score"]) >= target]
-    if clearing:
-        winner = min(clearing, key=lambda r: (int(r["crf"]), -float(r["vmaf_score"])))
+    winner = lowest_passing_row(rows, target)
+    if winner is not None:
         return RecommendResult(
             row=winner,
             predicate=f"target_vmaf>={target}",
             margin=float(winner["vmaf_score"]) - target,
         )
     # No row clears the bar — return the row that comes closest from below.
-    winner = max(rows, key=lambda r: float(r["vmaf_score"]))
+    closest = max(rows, key=lambda r: float(r["vmaf_score"]))
     return RecommendResult(
-        row=winner,
+        row=closest,
         predicate=f"target_vmaf>={target} (UNMET)",
-        margin=float(winner["vmaf_score"]) - target,
+        margin=float(closest["vmaf_score"]) - target,
     )
 
 
@@ -221,7 +262,7 @@ def format_result(result: RecommendResult) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Uncertainty-aware extension (ADR-0279) — interval-aware CRF search.
+# Uncertainty-aware extension (ADR-0393) — interval-aware CRF search.
 # ---------------------------------------------------------------------------
 
 
@@ -310,6 +351,46 @@ def _row_interval(row: dict, req: UncertaintyAwareRequest) -> tuple[float, float
     return (point, float("nan"), float("nan"))
 
 
+def _scan_intervals(
+    eligible: Sequence[dict], req: UncertaintyAwareRequest
+) -> tuple[UncertaintyRecommendResult | None, dict, bool, bool, int]:
+    """Walk ``eligible`` (ascending bitrate) for a tight, clearing row.
+
+    Returns ``(tight_result, best_so_far, every_row_excludes, saw_wide,
+    visited)``; ``tight_result`` is set when a tight interval whose lower
+    bound clears the target short-circuited the walk.
+    """
+    target = req.target_vmaf
+    visited = 0
+    best_so_far = eligible[0]
+    best_score = -math.inf
+    every_row_excludes = True
+    saw_wide = False
+    for r in sorted(eligible, key=row_bitrate_kbps):
+        visited += 1
+        _point, low, high = _row_interval(r, req)
+        score = float(r["vmaf_score"])
+        if score > best_score:
+            best_score, best_so_far = score, r
+        if not interval_excludes_target(low=low, high=high, target=target):
+            every_row_excludes = False
+        # Preserve NaN through to ``classify_interval`` so an uncalibrated
+        # row defers to the MIDDLE band rather than reading as zero-width.
+        width = float("nan") if math.isnan(low) or math.isnan(high) else max(0.0, high - low)
+        decision = classify_interval(width, req.thresholds)
+        saw_wide = saw_wide or decision is ConfidenceDecision.WIDE
+        if decision is ConfidenceDecision.TIGHT and low >= target:
+            tight = UncertaintyRecommendResult(
+                row=r,
+                predicate=f"target_vmaf>={target} (TIGHT, low={low:.3f})",
+                margin=score - target,
+                decision=ConfidenceDecision.TIGHT,
+                visited=visited,
+            )
+            return tight, best_so_far, every_row_excludes, saw_wide, visited
+    return None, best_so_far, every_row_excludes, saw_wide, visited
+
+
 def pick_target_vmaf_with_uncertainty(
     rows: Sequence[dict], req: UncertaintyAwareRequest
 ) -> UncertaintyRecommendResult:
@@ -318,17 +399,16 @@ def pick_target_vmaf_with_uncertainty(
     Search cost is :math:`O(k)` instead of :math:`O(n)` when at
     least one row's interval is tight enough that its lower bound
     clears ``target`` — the search short-circuits the moment that
-    row is observed. Iteration order follows the input ``rows``
-    (typically ascending CRF as produced by
-    :func:`vmaftune.corpus.coarse_to_fine_search`); callers that
-    care about a different traversal order pre-sort the input.
+    row is observed. Rows are walked in ascending bitrate order
+    (stable, so equal bitrates keep the input order), which makes the
+    first tight clearing row the lowest-bitrate one.
 
     Decision rules:
 
     * **Tight interval and ``low >= target``** — promote
       immediately; the conformal lower bound is a conservative
       lower-confidence proxy that already clears the bar
-      (ADR-0279). Returned ``decision`` is
+      (ADR-0393). Returned ``decision`` is
       :attr:`ConfidenceDecision.TIGHT`.
     * **Wide interval** — refuse to short-circuit on any single
       row; fall through to a full scan with the same point-
@@ -343,85 +423,25 @@ def pick_target_vmaf_with_uncertainty(
       best-effort row (highest VMAF) with ``predicate=...
       (UNMET)``.
     """
-    eligible: list[dict] = []
-    for r in rows:
-        if req.encoder is not None and r.get("encoder") != req.encoder:
-            continue
-        if req.preset is not None and r.get("preset") != req.preset:
-            continue
-        if int(r.get("exit_status", 0)) != 0:
-            continue
-        v = r.get("vmaf_score")
-        if v is None:
-            continue
-        try:
-            fv = float(v)
-        except (TypeError, ValueError):
-            continue
-        if not math.isfinite(fv):
-            continue
-        eligible.append(r)
+    eligible = _filter_rows(rows, req)
     if not eligible:
         raise ValueError("no eligible rows to evaluate (after filtering)")
-
     target = req.target_vmaf
-    thresholds = req.thresholds
-
-    # Pass 1 — short-circuit search. Walk in input order; stop at
-    # the first row whose interval is tight AND whose lower bound
-    # already clears ``target``. Track the highest-VMAF row seen so
-    # the UNMET branch can return a best-effort row without a
-    # second pass.
-    visited = 0
-    best_so_far: dict | None = None
-    best_score = -math.inf
-    every_row_excludes = True
-    saw_wide = False
-    for r in eligible:
-        visited += 1
-        _point, low, high = _row_interval(r, req)
-        score = float(r["vmaf_score"])
-        if score > best_score:
-            best_score = score
-            best_so_far = r
-        if not interval_excludes_target(low=low, high=high, target=target):
-            every_row_excludes = False
-        # Preserve NaN through to ``classify_interval`` so an
-        # uncalibrated row defers to MIDDLE band rather than being
-        # mis-classified as zero-width TIGHT.
-        if math.isnan(low) or math.isnan(high):
-            width = float("nan")
-        else:
-            width = max(0.0, high - low)
-        decision = classify_interval(width, thresholds)
-        if decision is ConfidenceDecision.WIDE:
-            saw_wide = True
-        if decision is ConfidenceDecision.TIGHT and low >= target:
-            return UncertaintyRecommendResult(
-                row=r,
-                predicate=f"target_vmaf>={target} (TIGHT, low={low:.3f})",
-                margin=score - target,
-                decision=ConfidenceDecision.TIGHT,
-                visited=visited,
-            )
-
-    # No tight short-circuit fired. Decide the fallback strategy
-    # from what we observed across the whole eligible set.
+    tight, best_so_far, every_row_excludes, saw_wide, visited = _scan_intervals(eligible, req)
+    if tight is not None:
+        return tight
+    band = ConfidenceDecision.WIDE if saw_wide else ConfidenceDecision.MIDDLE
     if every_row_excludes:
-        assert best_so_far is not None  # eligible is non-empty
         return UncertaintyRecommendResult(
             row=best_so_far,
             predicate=f"target_vmaf>={target} (UNMET, interval-excluded)",
-            margin=best_score - target,
-            decision=ConfidenceDecision.WIDE if saw_wide else ConfidenceDecision.MIDDLE,
+            margin=float(best_so_far["vmaf_score"]) - target,
+            decision=band,
             visited=visited,
         )
-
-    # Fall back to the point-estimate predicate but tag the
-    # decision band so callers can audit which recipe drove the
-    # pick. saw_wide => WIDE; else MIDDLE.
+    # No short-circuit fired: fall back to the point-estimate predicate
+    # and tag the decision band so callers can audit which recipe drove it.
     point_pick = pick_target_vmaf(eligible, target)
-    band = ConfidenceDecision.WIDE if saw_wide else ConfidenceDecision.MIDDLE
     suffix = " (UNCERTAIN)" if band is ConfidenceDecision.WIDE else ""
     return UncertaintyRecommendResult(
         row=point_pick.row,
@@ -439,9 +459,11 @@ __all__ = [
     "UncertaintyRecommendResult",
     "format_result",
     "load_corpus_jsonl",
+    "lowest_passing_row",
     "pick_target_bitrate",
     "pick_target_vmaf",
     "pick_target_vmaf_with_uncertainty",
     "recommend",
+    "row_bitrate_kbps",
     "validate_request",
 ]

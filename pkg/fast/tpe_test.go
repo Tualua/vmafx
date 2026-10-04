@@ -99,22 +99,22 @@ func TestRunTPEConvergesOnSmokeCurve(t *testing.T) {
 		{
 			name: "target 95", target: 95.0, wantCRF: 15,
 			wantVMAF: 95.23711249329942, wantKbps: 5300.59966363287,
-			wantValue: 0.7671724596627076,
+			wantValue: 5300.59966363287,
 		},
 		{
 			name: "target 90", target: 90.0, wantCRF: 20,
 			wantVMAF: 90.3551546220283, wantKbps: 3486.832605990455,
-			wantValue: 0.7038378826273399,
+			wantValue: 3486.832605990455,
 		},
 		{
 			name: "target 88", target: 88.0, wantCRF: 22,
 			wantVMAF: 88.24093019754717, wantKbps: 2952.122483622292,
-			wantValue: 0.5361424459094013,
+			wantValue: 2952.122483622292,
 		},
 		{
 			name: "target 75", target: 75.0, wantCRF: 33,
 			wantVMAF: 75.51283314339115, wantKbps: 1203.0260895888348,
-			wantValue: 0.6331357523500318,
+			wantValue: 1203.0260895888348,
 		},
 	}
 
@@ -184,19 +184,19 @@ func TestRunTPEHitsTheBandAtDefaultBudgets(t *testing.T) {
 	}{
 		{
 			name: "target 95 at the production budget", target: 95.0, nTrials: ProdNTrials,
-			wantCRF: 15, wantValue: 0.7671724596627076,
+			wantCRF: 15, wantValue: 5300.59966363287,
 		},
 		{
 			name: "target 90 at the smoke budget", target: 90.0, nTrials: SmokeNTrials,
-			wantCRF: 20, wantValue: 0.7038378826273399,
+			wantCRF: 20, wantValue: 3486.832605990455,
 		},
 		{
 			name: "target 88 at the smoke budget", target: 88.0, nTrials: SmokeNTrials,
-			wantCRF: 22, wantValue: 0.5361424459094013,
+			wantCRF: 22, wantValue: 2952.122483622292,
 		},
 		{
 			name: "target 75 at the smoke budget", target: 75.0, nTrials: SmokeNTrials,
-			wantCRF: 33, wantValue: 0.6331357523500318,
+			wantCRF: 33, wantValue: 1203.0260895888348,
 		},
 	}
 

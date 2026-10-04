@@ -7,10 +7,12 @@ documented in :doc:`/adr/0276-vmaf-tune-fast-path` and
 :doc:`/adr/0304-vmaf-tune-fast-path-prod-wiring` (production wiring).
 The flow is:
 
-1. **Optuna TPE search** over the integer CRF axis. The objective is
-   ``|predicted_vmaf - target| + λ·predicted_kbps`` so ties break
-   toward lower bitrate. Default budget is 30 trials (production) or
-   :data:`SMOKE_N_TRIALS` (smoke).
+1. **Optuna TPE search** over the integer CRF axis. The objective ranks
+   every CRF that meets the target by its predicted bitrate (lowest
+   wins) and every CRF that misses it above all of those, nearest the
+   target first (:func:`objective_value`), so the search returns the
+   lowest-bitrate CRF that meets the target. Default budget is 30
+   trials (production) or :data:`SMOKE_N_TRIALS` (smoke).
 2. **Proxy scoring** via :func:`vmaftune.proxy.run_proxy` — the
    production fr_regressor_v2 ONNX session (no smoke models in
    production mode). Each TPE trial encodes a short sample chunk,
@@ -142,29 +144,43 @@ def _smoke_predictor(crf: int) -> TrialSample:
     return TrialSample(crf=crf, predicted_vmaf=vmaf, predicted_kbps=kbps)
 
 
+#: Offset that ranks every CRF missing the target above every CRF meeting
+#: it: a predicted bitrate in kbps never reaches it.
+UNMET_OBJECTIVE_BASE = 1.0e9
+
+
+def objective_value(predicted_vmaf: float, predicted_kbps: float, target_vmaf: float) -> float:
+    """TPE objective: the lowest-bitrate encode that meets the target wins.
+
+    A CRF whose predicted VMAF meets ``target_vmaf`` scores its predicted
+    bitrate in kbps. A CRF that misses scores :data:`UNMET_OBJECTIVE_BASE`
+    plus its shortfall, so it ranks behind every passing CRF and, among the
+    misses, the closest one wins. The Go port is ``fast.objectiveValue``;
+    the two agree value for value (``tests/test_fast_objective.py``).
+    """
+    if predicted_vmaf >= target_vmaf:
+        return float(predicted_kbps)
+    return UNMET_OBJECTIVE_BASE + (target_vmaf - predicted_vmaf)
+
+
 def _objective_factory(
     target_vmaf: float,
     predict: Callable[[int], TrialSample],
     crf_range: tuple[int, int],
 ) -> Callable[[Any], float]:
-    """Build an Optuna objective that minimises ``|vmaf - target| + λ·kbps``.
+    """Build an Optuna objective for :func:`objective_value`.
 
-    The bitrate term is weighted small relative to the quality term so
-    the optimiser primarily hits the target; ties (multiple CRFs at the
-    target) break toward the lower-bitrate option. This mirrors the
-    typical "pick the lowest CRF that hits VMAF≥X" framing while
-    staying differentiable enough for TPE.
+    Minimising it returns the lowest-bitrate CRF whose predicted VMAF
+    meets ``target_vmaf``; when none does, the CRF closest to the target.
     """
     crf_lo, crf_hi = crf_range
-    bitrate_weight = 1.0e-4
 
     def _objective(trial: Any) -> float:
         crf = trial.suggest_int("crf", crf_lo, crf_hi)
         sample = predict(crf)
         trial.set_user_attr("predicted_vmaf", sample.predicted_vmaf)
         trial.set_user_attr("predicted_kbps", sample.predicted_kbps)
-        quality_gap = abs(sample.predicted_vmaf - target_vmaf)
-        return float(quality_gap + bitrate_weight * sample.predicted_kbps)
+        return objective_value(sample.predicted_vmaf, sample.predicted_kbps, target_vmaf)
 
     return _objective
 
@@ -373,79 +389,132 @@ def _build_production_sample_extractor(
     The returned callable is stateless: parallel TPE trials can call it
     concurrently (each gets its own tempdir).
     """
-    from . import CANONICAL6_FEATURES
+    score_backend: str | None = None if (backend is None or backend == "auto") else backend
+
+    def _extract(src: Path, crf: int, encoder: str) -> tuple[list[float], float]:
+        return _extract_sample(
+            src,
+            crf,
+            encoder,
+            pix_fmt=pix_fmt,
+            preset=preset,
+            ffmpeg_bin=ffmpeg_bin,
+            vmaf_bin=vmaf_bin,
+            score_backend=score_backend,
+        )
+
+    return _extract
+
+
+class _FfprobeCfg:
+    """Probe settings handed to :func:`_fast_probe_geometry`."""
+
+    ffprobe_bin: str = "ffprobe"
+
+
+def _is_container_source(src: Path) -> bool:
+    """True when ``src`` is a container (not raw YUV / Y4M)."""
+    return src.suffix.lower() not in {".yuv", ".y4m", ""}
+
+
+def _encode_sample_clip(
+    src: Path,
+    crf: int,
+    encoder: str,
+    dist: Path,
+    *,
+    geometry: tuple[int, int, float],
+    pix_fmt: str,
+    preset: str,
+    ffmpeg_bin: str,
+) -> tuple[Any, Any, float]:
+    """Encode the centre window of ``src`` to ``dist``.
+
+    Returns ``(encode_request, encode_result, observed_kbps)``; raises
+    ``RuntimeError`` when the encode fails.
+    """
     from .encode import EncodeRequest, bitrate_kbps, run_encode
+
+    width, height, fps = geometry
+    enc_req = EncodeRequest(
+        source=src,
+        width=width,
+        height=height,
+        pix_fmt=pix_fmt,
+        framerate=fps,
+        encoder=encoder,
+        preset=preset,
+        crf=crf,
+        output=dist,
+        sample_clip_seconds=SAMPLE_CHUNK_SECONDS,
+        source_is_container=_is_container_source(src),
+    )
+    enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
+    if enc_result.exit_status != 0 or not dist.exists():
+        raise RuntimeError(
+            f"fast sample_extractor: encode failed (CRF {crf}, "
+            f"encoder {encoder}): {enc_result.stderr_tail[-300:]}"
+        )
+    return enc_req, enc_result, bitrate_kbps(enc_result.encode_size_bytes, SAMPLE_CHUNK_SECONDS)
+
+
+def _extract_sample(
+    src: Path,
+    crf: int,
+    encoder: str,
+    *,
+    pix_fmt: str,
+    preset: str,
+    ffmpeg_bin: str,
+    vmaf_bin: str,
+    score_backend: str | None,
+) -> tuple[list[float], float]:
+    """Encode one probe chunk and return ``(canonical_6, observed_kbps)``."""
+    from . import CANONICAL6_FEATURES
     from .proxy import normalise_features
     from .score import ScoreRequest
 
-    class _Cfg:
-        ffprobe_bin: str = "ffprobe"
-
-    cfg = _Cfg()
-    _score_backend: str | None = None if (backend is None or backend == "auto") else backend
-
-    def _extract(src: Path, crf: int, encoder: str) -> tuple[list[float], float]:
-        with tempfile.TemporaryDirectory(prefix="vmaftune-fast-sample-") as td:
-            tmpdir = Path(td)
-            dist = tmpdir / "dist.mp4"
-
-            width, height, fps = _fast_probe_geometry(src, cfg, "sample_extractor")
-
-            # Locate the centre window; clip to source length if shorter.
-            duration_s = SAMPLE_CHUNK_SECONDS
-            is_container = src.suffix.lower() not in {".yuv", ".y4m", ""}
-            enc_req = EncodeRequest(
-                source=src,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                framerate=fps,
-                encoder=encoder,
-                preset=preset,
-                crf=crf,
-                output=dist,
-                sample_clip_seconds=duration_s,
-                source_is_container=is_container,
-            )
-            enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
-            if enc_result.exit_status != 0 or not dist.exists():
-                raise RuntimeError(
-                    f"fast sample_extractor: encode failed (CRF {crf}, "
-                    f"encoder {encoder}): {enc_result.stderr_tail[-300:]}"
-                )
-
-            observed_kbps = bitrate_kbps(enc_result.encode_size_bytes, duration_s)
-
-            score_req = ScoreRequest(
-                reference=src,
-                distorted=dist,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                # Mirror the same centre window the encoder used.
-                frame_skip_ref=int(
-                    enc_req.sample_clip_start_s * fps if enc_req.sample_clip_start_s > 0 else 0
-                ),
-                frame_cnt=int(duration_s * fps),
-                duration_s=duration_s,
-            )
-            score_result = _fast_score_distorted(
-                score_req,
-                dist=dist,
-                tmpdir=tmpdir,
-                ffmpeg_bin=ffmpeg_bin,
-                vmaf_bin=vmaf_bin,
-                backend=_score_backend,
-                label="sample_extractor",
-            )
-
-            raw_features = [
-                score_result.feature_means.get(f, float("nan")) for f in CANONICAL6_FEATURES
-            ]
-            features = normalise_features(raw_features)
-            return features, observed_kbps
-
-    return _extract
+    with tempfile.TemporaryDirectory(prefix="vmaftune-fast-sample-") as td:
+        tmpdir = Path(td)
+        dist = tmpdir / "dist.mp4"
+        geometry = _fast_probe_geometry(src, _FfprobeCfg(), "sample_extractor")
+        enc_req, _enc_result, observed_kbps = _encode_sample_clip(
+            src,
+            crf,
+            encoder,
+            dist,
+            geometry=geometry,
+            pix_fmt=pix_fmt,
+            preset=preset,
+            ffmpeg_bin=ffmpeg_bin,
+        )
+        width, height, fps = geometry
+        score_req = ScoreRequest(
+            reference=src,
+            distorted=dist,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+            # Mirror the same centre window the encoder used.
+            frame_skip_ref=int(
+                enc_req.sample_clip_start_s * fps if enc_req.sample_clip_start_s > 0 else 0
+            ),
+            frame_cnt=int(SAMPLE_CHUNK_SECONDS * fps),
+            duration_s=SAMPLE_CHUNK_SECONDS,
+        )
+        score_result = _fast_score_distorted(
+            score_req,
+            dist=dist,
+            tmpdir=tmpdir,
+            ffmpeg_bin=ffmpeg_bin,
+            vmaf_bin=vmaf_bin,
+            backend=score_backend,
+            label="sample_extractor",
+        )
+        raw_features = [
+            score_result.feature_means.get(f, float("nan")) for f in CANONICAL6_FEATURES
+        ]
+        return normalise_features(raw_features), observed_kbps
 
 
 def _fast_probe_geometry(src: Path, cfg: object, label: str) -> tuple[int, int, float]:
@@ -512,66 +581,104 @@ def _build_production_encode_runner(
     Encodes the full source, scores it, and returns the real kbps +
     libvmaf score so the caller can compute the proxy/verify gap.
     """
-    from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .score import ScoreRequest
-
-    class _Cfg:
-        ffprobe_bin: str = "ffprobe"
-
-    cfg = _Cfg()
 
     def _run(src: Path, encoder: str, crf: int, backend: str) -> tuple[float, float]:
-        with tempfile.TemporaryDirectory(prefix="vmaftune-fast-verify-") as td:
-            tmpdir = Path(td)
-            dist = tmpdir / "dist.mp4"
-
-            width, height, fps = _fast_probe_geometry(src, cfg, "encode_runner")
-
-            is_container = src.suffix.lower() not in {".yuv", ".y4m", ""}
-            enc_req = EncodeRequest(
-                source=src,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                framerate=fps,
-                encoder=encoder,
-                preset=preset,
-                crf=crf,
-                output=dist,
-                source_is_container=is_container,
-            )
-            enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
-            if enc_result.exit_status != 0 or not dist.exists():
-                raise RuntimeError(
-                    f"fast encode_runner: encode failed (CRF {crf}): "
-                    f"{enc_result.stderr_tail[-300:]}"
-                )
-
-            # Approximate duration from frame count; good enough for kbps.
-            size_bytes = dist.stat().st_size
-            score_req = ScoreRequest(
-                reference=src,
-                distorted=dist,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-            )
-            score_result = _fast_score_distorted(
-                score_req,
-                dist=dist,
-                tmpdir=tmpdir,
-                ffmpeg_bin=ffmpeg_bin,
-                vmaf_bin=vmaf_bin,
-                backend=backend if backend != "auto" else None,
-                label="encode_runner",
-            )
-
-            # Duration from encoder stats if available, else encode time proxy.
-            enc_duration_s = enc_result.encode_time_ms / 1000.0 or 1.0
-            kbps = bitrate_kbps(size_bytes, enc_duration_s)
-            return kbps, score_result.vmaf_score
+        return _verify_encode(
+            src,
+            encoder,
+            crf,
+            backend,
+            pix_fmt=pix_fmt,
+            preset=preset,
+            ffmpeg_bin=ffmpeg_bin,
+            vmaf_bin=vmaf_bin,
+        )
 
     return _run
+
+
+def _encode_full_source(
+    src: Path,
+    encoder: str,
+    crf: int,
+    dist: Path,
+    *,
+    geometry: tuple[int, int, float],
+    pix_fmt: str,
+    preset: str,
+    ffmpeg_bin: str,
+) -> Any:
+    """Encode the whole source to ``dist``; raise ``RuntimeError`` on failure."""
+    from .encode import EncodeRequest, run_encode
+
+    width, height, fps = geometry
+    enc_req = EncodeRequest(
+        source=src,
+        width=width,
+        height=height,
+        pix_fmt=pix_fmt,
+        framerate=fps,
+        encoder=encoder,
+        preset=preset,
+        crf=crf,
+        output=dist,
+        source_is_container=_is_container_source(src),
+    )
+    enc_result = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin)
+    if enc_result.exit_status != 0 or not dist.exists():
+        raise RuntimeError(
+            f"fast encode_runner: encode failed (CRF {crf}): {enc_result.stderr_tail[-300:]}"
+        )
+    return enc_result
+
+
+def _verify_encode(
+    src: Path,
+    encoder: str,
+    crf: int,
+    backend: str,
+    *,
+    pix_fmt: str,
+    preset: str,
+    ffmpeg_bin: str,
+    vmaf_bin: str,
+) -> tuple[float, float]:
+    """Encode ``src`` fully at ``crf``, score it, return ``(kbps, vmaf)``."""
+    from .encode import bitrate_kbps
+    from .score import ScoreRequest
+
+    with tempfile.TemporaryDirectory(prefix="vmaftune-fast-verify-") as td:
+        tmpdir = Path(td)
+        dist = tmpdir / "dist.mp4"
+        geometry = _fast_probe_geometry(src, _FfprobeCfg(), "encode_runner")
+        enc_result = _encode_full_source(
+            src,
+            encoder,
+            crf,
+            dist,
+            geometry=geometry,
+            pix_fmt=pix_fmt,
+            preset=preset,
+            ffmpeg_bin=ffmpeg_bin,
+        )
+        # Approximate duration from frame count; good enough for kbps.
+        size_bytes = dist.stat().st_size
+        width, height, _fps = geometry
+        score_req = ScoreRequest(
+            reference=src, distorted=dist, width=width, height=height, pix_fmt=pix_fmt
+        )
+        score_result = _fast_score_distorted(
+            score_req,
+            dist=dist,
+            tmpdir=tmpdir,
+            ffmpeg_bin=ffmpeg_bin,
+            vmaf_bin=vmaf_bin,
+            backend=backend if backend != "auto" else None,
+            label="encode_runner",
+        )
+        # Duration from encoder stats if available, else encode time proxy.
+        enc_duration_s = enc_result.encode_time_ms / 1000.0 or 1.0
+        return bitrate_kbps(size_bytes, enc_duration_s), score_result.vmaf_score
 
 
 def fast_recommend(
@@ -589,161 +696,120 @@ def fast_recommend(
 ) -> dict[str, Any]:
     """Return a fast-path CRF recommendation for ``src`` at ``target_vmaf``.
 
-    Production flow (``smoke=False``):
+    Production (``smoke=False``): a proxy-driven TPE search
+    (:func:`_run_tpe`, objective :func:`objective_value`: the lowest
+    predicted bitrate that meets the target) followed by one mandatory real
+    encode and score (:func:`_gpu_verify`); the result carries the proxy
+    score, the verify score and their gap, flagged OOD above
+    ``proxy_tolerance``. Smoke (``smoke=True``): the synthetic CRF to VMAF
+    curve, no proxy, no encode, no verify.
 
-    1. Build a CRF→TrialSample predictor backed by ``fr_regressor_v2``
-       (via :func:`_proxy_score`) and the injected ``sample_extractor``.
-    2. Run :func:`_run_tpe` to converge on a recommended CRF.
-    3. Run :func:`_gpu_verify` for a single real encode+score pass at
-       the chosen CRF (proxy alone never wins).
-    4. Report the proxy score, the verify score, and the absolute gap;
-       flag OOD when the gap exceeds ``proxy_tolerance``.
-
-    Smoke flow (``smoke=True``): synthetic CRF→VMAF curve, no proxy, no
-    encode, no verify. Kept as the CI-friendly entry point.
-
-    Parameters
-    ----------
-    src
-        Path to the source video. ``None`` only in smoke mode.
-    target_vmaf
-        Quality target on the standard VMAF [0, 100] scale.
-    encoder
-        Codec adapter name (must be in ``ENCODER_VOCAB_V2`` for the
-        production proxy path).
-    time_budget_s
-        Soft wall-clock budget for Optuna's TPE loop. Optuna stops
-        scheduling new trials after the timeout; an in-flight trial is
-        allowed to finish so probe encodes are not interrupted midway.
-    crf_range
-        ``(lo, hi)`` inclusive CRF search range.
-    n_trials
-        Number of TPE trials. Defaults to :data:`PROD_N_TRIALS` in
-        production mode, :data:`SMOKE_N_TRIALS` in smoke mode.
-    smoke
-        Use the deterministic mock predictor (no ffmpeg / no ONNX /
-        no GPU verify).
-    predictor
-        Optional override for the ``crf -> TrialSample`` callable.
-        When supplied, both ``sample_extractor`` and the v2 proxy seam
-        are bypassed. The verify pass still runs unless ``smoke=True``.
-    sample_extractor
-        Production seam — takes ``(src, crf, encoder)`` and returns
-        ``(canonical_6_features, observed_kbps)``. Defaults to the
-        encode-extract pipeline backed by ffmpeg + libvmaf JSON.
-    encode_runner
-        Production seam — takes ``(src, encoder, crf, backend)`` and
-        returns ``(observed_kbps, vmaf_score)`` for the verify pass.
-    proxy_tolerance
-        VMAF gap above which the result is flagged OOD. The CLI exit
-        code reflects this; in-process callers read
-        ``proxy_verify_gap`` from the result dict.
-
-    Returns
-    -------
-    dict
-        Serialisable result; see :class:`FastRecommendResult`.
-
-    Raises
-    ------
-    RuntimeError
-        Optuna missing (install ``vmaf-tune[fast]``).
-    ValueError
-        Invalid in-process argument, such as ``src=None`` in production
-        mode or a non-positive ``time_budget_s``.
+    ``src`` is ``None`` only in smoke mode. ``predictor`` overrides the
+    ``crf -> TrialSample`` callable (the verify pass still runs unless
+    smoke). ``sample_extractor`` takes ``(src, crf, encoder)`` and returns
+    ``(canonical_6_features, observed_kbps)``; ``encode_runner`` takes
+    ``(src, encoder, crf, backend)`` and returns ``(kbps, vmaf_score)`` for
+    the verify pass. ``time_budget_s`` is Optuna's soft timeout: an in-flight
+    trial finishes. ``n_trials`` defaults to :data:`PROD_N_TRIALS` or
+    :data:`SMOKE_N_TRIALS`. Returns the serialised
+    :class:`FastRecommendResult`; raises ``RuntimeError`` when Optuna is
+    missing (``vmaf-tune[fast]``) and ``ValueError`` for ``src=None`` in
+    production mode or a non-positive ``time_budget_s``.
     """
     _require_optuna()
-
-    effective_n_trials = (
-        n_trials if n_trials is not None else (SMOKE_N_TRIALS if smoke else PROD_N_TRIALS)
-    )
-
+    default_trials = SMOKE_N_TRIALS if smoke else PROD_N_TRIALS
+    search = {
+        "target_vmaf": target_vmaf,
+        "crf_range": crf_range,
+        "n_trials": n_trials if n_trials is not None else default_trials,
+        "time_budget_s": time_budget_s,
+    }
     if smoke:
-        chosen_predictor = predictor or _smoke_predictor
-        recommended_crf, predicted_vmaf, predicted_kbps, completed_trials = _run_tpe(
-            target_vmaf=target_vmaf,
-            predictor=chosen_predictor,
-            crf_range=crf_range,
-            n_trials=effective_n_trials,
-            time_budget_s=time_budget_s,
-        )
-        result = FastRecommendResult(
-            encoder=encoder,
-            target_vmaf=float(target_vmaf),
-            recommended_crf=recommended_crf,
-            predicted_vmaf=predicted_vmaf,
-            predicted_kbps=predicted_kbps,
-            n_trials=completed_trials,
-            smoke=True,
-            notes=(
-                "smoke mode — synthetic predictor; no ffmpeg / ONNX / GPU. "
-                "See ADR-0276 + ADR-0304 + Research-0076 for the production path."
-            ),
-            verify_vmaf=None,
-            proxy_verify_gap=None,
-        )
-        return result.to_dict()
-
-    # Production path.
+        return _fast_smoke_result(encoder, predictor or _smoke_predictor, search)
     if src is None:
         raise ValueError(
             "vmaf-tune fast production mode requires a source path. "
             "Use smoke=True for the synthetic pipeline."
         )
+    return _fast_production_result(
+        src,
+        encoder,
+        search,
+        predictor=predictor,
+        sample_extractor=sample_extractor,
+        encode_runner=encode_runner,
+        proxy_tolerance=proxy_tolerance,
+    )
 
+
+def _fast_smoke_result(
+    encoder: str, predictor: Callable[[int], TrialSample], search: dict[str, Any]
+) -> dict[str, Any]:
+    """Run the synthetic-curve search; no ffmpeg, no ONNX, no verify."""
+    recommended_crf, predicted_vmaf, predicted_kbps, completed_trials = _run_tpe(
+        predictor=predictor, **search
+    )
+    return FastRecommendResult(
+        encoder=encoder,
+        target_vmaf=float(search["target_vmaf"]),
+        recommended_crf=recommended_crf,
+        predicted_vmaf=predicted_vmaf,
+        predicted_kbps=predicted_kbps,
+        n_trials=completed_trials,
+        smoke=True,
+        notes=(
+            "smoke mode — synthetic predictor; no ffmpeg / ONNX / GPU. "
+            "See ADR-0276 + ADR-0304 + Research-0076 for the production path."
+        ),
+        verify_vmaf=None,
+        proxy_verify_gap=None,
+    ).to_dict()
+
+
+def _fast_production_result(
+    src: Path,
+    encoder: str,
+    search: dict[str, Any],
+    *,
+    predictor: Callable[[int], TrialSample] | None,
+    sample_extractor: Callable[[Path, int, str], tuple[list[float], float]] | None,
+    encode_runner: Callable[[Path, str, int, str], tuple[float, float]] | None,
+    proxy_tolerance: float,
+) -> dict[str, Any]:
+    """Proxy-driven TPE search plus the mandatory verify encode."""
     # Select the scoring backend once; forward it to both the TPE proxy
-    # extractor and the GPU verify pass so all scoring — proxy trials +
-    # the final verify encode — uses the same backend. ADR-0498 follow-
-    # up #7: previously the sample extractor always defaulted to CPU
-    # even when a GPU was available.
+    # extractor and the GPU verify pass so all scoring uses the same
+    # backend (ADR-0498 follow-up #7).
     from vmaftune.score_backend import select_backend as _select_backend
 
-    _prod_backend = _select_backend(prefer="auto")
-
     if predictor is None:
-        # Build the v2-proxy-backed predictor from the production
-        # encode-extract sample seam, forwarding the selected backend
-        # so each TPE trial scores on GPU when available.
         predictor = _build_prod_predictor(
             src=src,
             encoder=encoder,
-            crf_range=crf_range,
+            crf_range=search["crf_range"],
             sample_extractor=sample_extractor,
-            backend=_prod_backend,
+            backend=_select_backend(prefer="auto"),
         )
-
     recommended_crf, predicted_vmaf, predicted_kbps, completed_trials = _run_tpe(
-        target_vmaf=target_vmaf,
-        predictor=predictor,
-        crf_range=crf_range,
-        n_trials=effective_n_trials,
-        time_budget_s=time_budget_s,
+        predictor=predictor, **search
     )
-
     # Single GPU verify pass — mandatory; proxy alone never wins.
     verify_vmaf = _gpu_verify(
-        src=src,
-        encoder=encoder,
-        crf=recommended_crf,
-        encode_runner=encode_runner,
+        src=src, encoder=encoder, crf=recommended_crf, encode_runner=encode_runner
     )
-    proxy_verify_gap = abs(predicted_vmaf - verify_vmaf)
-    ood_flag = proxy_verify_gap > proxy_tolerance
-
+    gap = abs(predicted_vmaf - verify_vmaf)
     notes = (
-        f"production: TPE over {effective_n_trials} trials with v2 proxy; "
-        f"GPU verify gap = {proxy_verify_gap:.3f} VMAF "
-        f"(tolerance {proxy_tolerance:.2f})."
+        f"production: TPE over {search['n_trials']} trials with v2 proxy; "
+        f"GPU verify gap = {gap:.3f} VMAF (tolerance {proxy_tolerance:.2f})."
     )
-    if ood_flag:
+    if gap > proxy_tolerance:
         notes += (
             " FLAG: proxy/verify gap exceeds tolerance — consider falling "
             "back to the slow Phase A grid (ADR-0276)."
         )
-
-    result = FastRecommendResult(
+    return FastRecommendResult(
         encoder=encoder,
-        target_vmaf=float(target_vmaf),
+        target_vmaf=float(search["target_vmaf"]),
         recommended_crf=recommended_crf,
         predicted_vmaf=predicted_vmaf,
         predicted_kbps=predicted_kbps,
@@ -751,9 +817,8 @@ def fast_recommend(
         smoke=False,
         notes=notes,
         verify_vmaf=float(verify_vmaf),
-        proxy_verify_gap=float(proxy_verify_gap),
-    )
-    return result.to_dict()
+        proxy_verify_gap=float(gap),
+    ).to_dict()
 
 
 __all__ = [

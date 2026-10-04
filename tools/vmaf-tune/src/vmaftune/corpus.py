@@ -13,7 +13,7 @@ schema is a coordinated change.
 
 A 2-pass coarse-to-fine search is also exposed via
 :func:`coarse_to_fine_search` for callers that only need to find the
-smallest CRF that still meets a VMAF target. The full ``--crf-range
+lowest-bitrate CRF that still meets a VMAF target. The full ``--crf-range
 0:51:1`` grid wastes encode wall time once the target is bracketed;
 coarse-to-fine visits ~15 points instead of 52 for the canonical
 defaults (3.5x speedup) — see ADR-0306.
@@ -1442,7 +1442,7 @@ def _upgrade_row_in_place(row: dict) -> None:
 # ---------------------------------------------------------------------------
 #
 # Full-grid sweep over CRF 0..51 step 1 = 52 encodes per (source, preset).
-# When the caller only wants "smallest CRF that meets a VMAF target" we can
+# When the caller only wants "lowest-bitrate CRF that meets a VMAF target" we can
 # bracket in two passes:
 #
 #   1. Coarse pass at every ``coarse_step`` over the CRF range.
@@ -1528,7 +1528,7 @@ def _pick_best_crf(
 
     With a target: highest CRF whose ``vmaf_score`` meets ``target_vmaf``.
     That's the smallest-quality candidate that still passes the gate, so
-    refining around it locates the smallest acceptable CRF. For an
+    refining around it locates the lowest-bitrate acceptable CRF. For an
     adapter whose quality value rises with quality (``higher_is_better``,
     VideoToolbox's ``-q:v``) the smallest-quality passing candidate is
     the *lowest* value.
@@ -1556,7 +1556,7 @@ def _pick_best_crf(
     passing = [r for r in valid if _score(r) >= target_vmaf]
     if passing:
         # Highest CRF that still passes — refining around it finds the
-        # smallest CRF that still meets the target.
+        # lowest-bitrate CRF that still meets the target.
         pick = min if higher_is_better else max
         winner = pick(passing, key=lambda r: int(r["crf"]))
         return int(winner["crf"])

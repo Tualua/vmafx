@@ -1089,7 +1089,7 @@ def test_pick_with_uncertainty_middle_band_falls_back_to_point():
     req = UncertaintyAwareRequest(target_vmaf=94.0)
     result = pick_target_vmaf_with_uncertainty(rows, req)
     assert result.decision is ConfidenceDecision.MIDDLE
-    # Point-estimate picks smallest CRF clearing target — that is crf=18.
+    # Point-estimate picks the lowest-bitrate row clearing target (rows share a bitrate; higher VMAF wins): crf=18.
     assert result.row["crf"] == 18
 
 

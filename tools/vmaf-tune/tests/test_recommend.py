@@ -3,7 +3,7 @@
 """Smoke tests for the ``recommend`` subcommand and library API.
 
 Validates the predicate semantics from Buckets #4 + #5 of
-Research-0061 — picks the smallest-CRF row whose VMAF clears a
+Research-0061 — picks the lowest-bitrate row whose VMAF clears a
 threshold (``--target-vmaf``) and the row whose bitrate is closest
 to a target (``--target-bitrate``). Mocks all binaries.
 """
@@ -65,7 +65,7 @@ def test_validate_request_accepts_either():
     validate_request(RecommendRequest(target_bitrate_kbps=5000.0))
 
 
-def test_pick_target_vmaf_smallest_crf_clearing_bar():
+def test_pick_target_vmaf_lowest_bitrate_clearing_bar():
     rows = [
         _row(crf=18, vmaf=98.0, bitrate=8000),
         _row(crf=22, vmaf=95.0, bitrate=5000),
@@ -73,10 +73,10 @@ def test_pick_target_vmaf_smallest_crf_clearing_bar():
         _row(crf=30, vmaf=89.0, bitrate=2000),
     ]
     result = pick_target_vmaf(rows, target=92.0)
-    # 18, 22, 26 all clear; smallest CRF wins.
-    assert result.row["crf"] == 18
+    # 18, 22, 26 all clear; the lowest bitrate (CRF 26) wins.
+    assert result.row["crf"] == 26
     assert "UNMET" not in result.predicate
-    assert result.margin == pytest.approx(98.0 - 92.0)
+    assert result.margin == pytest.approx(92.5 - 92.0)
 
 
 def test_pick_target_vmaf_falls_back_to_max_when_unmet():
@@ -198,8 +198,8 @@ def test_cli_target_vmaf_from_corpus(tmp_path: Path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     payload = json.loads(out.strip())
-    # Smallest CRF clearing 92 is 22 (vmaf=95).
-    assert payload["crf"] == 22
+    # 22 and 26 clear 92; the lowest bitrate (CRF 26) wins.
+    assert payload["crf"] == 26
 
 
 def test_cli_target_bitrate_from_corpus(tmp_path: Path, capsys):

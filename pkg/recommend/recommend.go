@@ -8,20 +8,20 @@
 // vmaf_score) rows. This package re-uses those rows and applies one of two
 // user-supplied predicates:
 //
-//   - target VMAF T — return the row with the SMALLEST crf whose vmaf_score
-//     >= T (smaller CRF = higher quality, so the smallest passing CRF is the
-//     best quality that clears the gate). Falls back to the highest-VMAF row
-//     when nothing clears the bar, so the user sees the closest miss rather
-//     than an empty result.
+//   - target VMAF T — return the row with the LOWEST bitrate_kbps whose
+//     vmaf_score >= T: the cheapest encode that meets the target (ties go to
+//     the higher VMAF, then the lower CRF). Falls back to the highest-VMAF
+//     row when nothing clears the bar, so the user sees the closest miss
+//     rather than an empty result.
 //   - target bitrate B — return the row whose bitrate_kbps is closest to B,
 //     ties broken toward the lower CRF.
 //
 // Exactly one target must be set. Implements buckets #4 and #5 from the
 // Research-0061 capability audit.
 //
-// The uncertainty-aware extension (ADR-0279) adds an interval-aware search
-// that short-circuits at the first row whose conformal lower bound already
-// clears the target, provided that row's interval is tight enough for the
+// The uncertainty-aware extension (ADR-0393) adds an interval-aware search
+// that walks the rows in ascending bitrate order and short-circuits at the
+// first row whose conformal lower bound already clears the target, provided that row's interval is tight enough for the
 // conservative bound to be a faithful proxy (Lei et al. 2018 Theorem 2.2).
 // It changes which encodes get PROBED, never which get SHIPPED — the
 // production-flip gate stays in pkg/predictor.
@@ -36,6 +36,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -152,38 +153,66 @@ func eligible(rows []Row, encoder, preset string) []Row {
 	return out
 }
 
-// PickTargetVMAF returns the smallest-CRF row whose VMAF clears target,
-// falling back to the highest-VMAF row when nothing does.
-func PickTargetVMAF(rows []Row, target float64) (Result, error) {
-	if len(rows) == 0 {
-		return Result{}, errors.New("no eligible rows to evaluate (after filtering)")
+// bitrateKbps reads row["bitrate_kbps"]. The lowest-bitrate rule cannot rank a
+// row without it, so a missing or non-finite value is an error, never skipped
+// or ranked last.
+func bitrateKbps(row Row) (float64, error) {
+	v, ok := numField(row, "bitrate_kbps")
+	if !ok || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, fmt.Errorf(
+			"row has no usable bitrate_kbps (needed to pick the lowest-bitrate passing encode): %v", row)
 	}
+	return v, nil
+}
 
+// lowestPassing is the one implementation of the pick rule: among the rows
+// whose vmaf_score >= target, the one with the lowest bitrate_kbps; ties go to
+// the higher score, then the lower CRF. It returns nil when no row passes.
+func lowestPassing(rows []Row, target float64) (Row, error) {
 	var winner Row
-	bestCRF, bestScore := 0, 0.0
+	var bestKbps, bestScore float64
+	bestCRF := 0
 	for _, row := range rows {
 		score, _ := numField(row, "vmaf_score")
 		if score < target {
 			continue
 		}
+		kbps, err := bitrateKbps(row)
+		if err != nil {
+			return nil, err
+		}
 		crf, _ := intField(row, "crf")
-		// min by (crf, -vmaf_score): smallest CRF wins; ties break to the
-		// higher score for determinism.
-		if winner == nil || crf < bestCRF || (crf == bestCRF && score > bestScore) {
-			winner, bestCRF, bestScore = row, crf, score
+		better := winner == nil || kbps < bestKbps ||
+			(kbps == bestKbps && (score > bestScore || (score == bestScore && crf < bestCRF)))
+		if better {
+			winner, bestKbps, bestScore, bestCRF = row, kbps, score, crf
 		}
 	}
+	return winner, nil
+}
+
+// PickTargetVMAF returns the lowest-bitrate row whose VMAF clears target,
+// falling back to the highest-VMAF row when nothing does.
+func PickTargetVMAF(rows []Row, target float64) (Result, error) {
+	if len(rows) == 0 {
+		return Result{}, errors.New("no eligible rows to evaluate (after filtering)")
+	}
+	winner, err := lowestPassing(rows, target)
+	if err != nil {
+		return Result{}, err
+	}
 	if winner != nil {
+		score, _ := numField(winner, "vmaf_score")
 		return Result{
 			Row:       winner,
 			Predicate: fmt.Sprintf("target_vmaf>=%s", formatTarget(target)),
-			Margin:    bestScore - target,
+			Margin:    score - target,
 		}, nil
 	}
 
 	// Nothing clears the bar — return the closest miss from below.
 	winner = rows[0]
-	bestScore, _ = numField(winner, "vmaf_score")
+	bestScore, _ := numField(winner, "vmaf_score")
 	for _, row := range rows[1:] {
 		if score, _ := numField(row, "vmaf_score"); score > bestScore {
 			winner, bestScore = row, score
@@ -295,8 +324,9 @@ func rowInterval(row Row, req UncertaintyRequest) (point, low, high float64) {
 // PickTargetVMAFWithUncertainty is the interval-aware analogue of
 // PickTargetVMAF.
 //
-// Iteration follows the input order (typically ascending CRF as produced by
-// the coarse-to-fine search); callers who want a different traversal pre-sort.
+// Rows are walked in ascending bitrate order (stable, so equal bitrates keep
+// the input order), which makes the first tight clearing row the
+// lowest-bitrate one.
 //
 // Decision rules:
 //   - tight interval whose low >= target — promote immediately; the conformal
@@ -313,6 +343,10 @@ func PickTargetVMAFWithUncertainty(rows []Row, req UncertaintyRequest) (Uncertai
 	}
 
 	target := req.TargetVMAF
+	rows, err := sortedByBitrate(rows)
+	if err != nil {
+		return UncertaintyResult{}, err
+	}
 	scan, promoted, err := scanIntervals(rows, req)
 	if err != nil {
 		return UncertaintyResult{}, err
@@ -354,6 +388,23 @@ func PickTargetVMAFWithUncertainty(rows []Row, req UncertaintyRequest) (Uncertai
 	}, nil
 }
 
+// sortedByBitrate returns a copy of rows ordered by ascending bitrate_kbps
+// (stable).
+func sortedByBitrate(rows []Row) ([]Row, error) {
+	out := append([]Row(nil), rows...)
+	for _, row := range out {
+		if _, err := bitrateKbps(row); err != nil {
+			return nil, err
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, _ := bitrateKbps(out[i])
+		b, _ := bitrateKbps(out[j])
+		return a < b
+	})
+	return out, nil
+}
+
 // intervalScan is what one pass over the eligible rows learns when no row
 // promotes on its own.
 type intervalScan struct {
@@ -364,7 +415,7 @@ type intervalScan struct {
 	sawWide          bool
 }
 
-// scanIntervals walks the rows in order, stopping at the first TIGHT row whose
+// scanIntervals walks the rows in the order given, stopping at the first TIGHT row whose
 // conformal lower bound already clears the target — that row is returned as a
 // promotion. Otherwise it reports what the whole pass observed: the widest
 // band seen, whether every interval excluded the target, and the best-effort
@@ -564,13 +615,50 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
 }
 
+// LowestBitratePassing returns (src, preset, crf, vmaf) for the lowest-bitrate
+// passing encode across a visited-row stream. Rows are grouped per
+// (src, preset) and the first group in row order that has a passing row
+// supplies the answer, because bitrates of different sources are not
+// comparable; within a group the rule is lowestPassing's.
+//
+// This is the encode-driven path's picker (vmaftune.cli._lowest_bitrate_passing).
+func LowestBitratePassing(
+	rows []Row, targetVMAF float64,
+) (src, preset string, crf int, vmaf float64, ok bool, err error) {
+	type key struct{ src, preset string }
+	var order []key
+	groups := map[key][]Row{}
+	for _, row := range rows {
+		if _, hasScore := numField(row, "vmaf_score"); !hasScore {
+			continue
+		}
+		rowSrc, _ := strField(row, "src")
+		rowPreset, _ := strField(row, "preset")
+		k := key{rowSrc, rowPreset}
+		if _, seen := groups[k]; !seen {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], row)
+	}
+	for _, k := range order {
+		winner, pickErr := lowestPassing(groups[k], targetVMAF)
+		if pickErr != nil {
+			return "", "", 0, 0, false, pickErr
+		}
+		if winner != nil {
+			crf, _ = intField(winner, "crf")
+			vmaf, _ = numField(winner, "vmaf_score")
+			return k.src, k.preset, crf, vmaf, true, nil
+		}
+	}
+	return "", "", 0, 0, false, nil
+}
+
 // SmallestPassingCRF returns (src, preset, crf, vmaf) for the highest-quality
 // passing encode across a visited-row stream, grouped per (src, preset) and
 // returning the first such pair in row order.
 //
-// This is the encode-driven path's picker (vmaftune.cli._smallest_passing_crf),
-// distinct from PickTargetVMAF because it keys on (src, preset) rather than
-// evaluating a flat row set.
+// Deprecated: use LowestBitratePassing instead.
 func SmallestPassingCRF(rows []Row, targetVMAF float64) (src, preset string, crf int, vmaf float64, ok bool) {
 	type key struct{ src, preset string }
 	type best struct {
@@ -589,8 +677,6 @@ func SmallestPassingCRF(rows []Row, targetVMAF float64) (src, preset string, crf
 		rowCRF, _ := intField(row, "crf")
 		k := key{rowSrc, rowPreset}
 		cur, seen := bests[k]
-		// Smallest CRF that still meets the target is the highest quality at
-		// acceptable cost; ties break on the higher score for determinism.
 		if !seen || rowCRF < cur.crf || (rowCRF == cur.crf && score > cur.score) {
 			bests[k] = best{rowCRF, score}
 		}

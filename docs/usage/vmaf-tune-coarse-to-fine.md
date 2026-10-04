@@ -6,7 +6,7 @@
 quality regression. `vmaf-tune recommend` always uses it; `vmaf-tune corpus`
 uses it when the flag is given.
 
-Use it when the only question is "what is the smallest CRF whose VMAF still
+Use it when the only question is "what is the lowest-bitrate CRF whose VMAF still
 meets my target?" and you do not need every CRF in the corpus.
 
 ## Quick start

@@ -156,7 +156,7 @@ def build_ladder(
     :class:`LadderPoint`. Production callers leave ``sampler`` ``None``
     to dispatch to :func:`_default_sampler`, which composes the Phase A
     corpus encode+score loop with :func:`recommend.pick_target_vmaf` to
-    pick the (preset_default, CRF) row with the smallest CRF whose VMAF
+    pick the (preset_default, CRF) row with the lowest bitrate whose VMAF
     clears ``target_vmaf`` (the highest-VMAF row when none clears it)
     over :data:`DEFAULT_SAMPLER_CRF_SWEEP` (ADR-0307, Research-0079).
     Tests inject a stub via ``sampler=`` to avoid live encoder runs.
@@ -386,7 +386,7 @@ def _default_sampler(
 
     Composes :func:`vmaftune.corpus.iter_rows` (Phase A encode+score)
     with :func:`vmaftune.recommend.pick_target_vmaf` (Phase B-equivalent
-    smallest-CRF-meeting-target predicate). The JSONL corpus is
+    lowest-bitrate-meeting-target predicate). The JSONL corpus is
     written to a tempfile that's discarded after the call returns; the
     encode-side temp dir lives under the same prefix and is cleaned up
     on exit.

@@ -41,7 +41,9 @@ invariant: Auto emits one winner; 10 short-circuits ordered; smoke plans need no
   must be updated in same PR — contract is checked by
   `test_recommend.py` against `CORPUS_ROW_KEYS`.
 - **Predicate semantics are part of user-visible contract.**
-  `--target-vmaf T` returns *smallest CRF* whose `vmaf_score >= T`
+  `--target-vmaf T` returns the *lowest-bitrate* row whose `vmaf_score >= T`
+  (ties: higher VMAF, then lower CRF; one implementation,
+  `recommend.lowest_passing_row`, Go `recommend.lowestPassing`)
   (falling back to closest-miss when nothing clears, marked
   `(UNMET)`). `--target-bitrate KBPS` returns row with minimum
   `|bitrate_kbps - KBPS|`, ties broken by smaller CRF. Two flags
@@ -145,3 +147,8 @@ invariant: Auto emits one winner; 10 short-circuits ordered; smoke plans need no
   that ships models) is preserved verbatim in
   `plan.metadata.target_vmaf`. See
   [ADR-0397](../../../docs/adr/0397-vmaf-tune-phase-f-auto.md) §F.4.
+- **One pick rule, one implementation per language (ADR-1562).**
+  `recommend.lowest_passing_row` (Go `recommend.lowestPassing`) is the only
+  place that ranks passing rows; `recommend`, the interval-aware search (rows
+  walked in ascending bitrate), `cli._lowest_bitrate_passing` and the ladder's
+  default sampler call it. A row without `bitrate_kbps` raises; never skip it.

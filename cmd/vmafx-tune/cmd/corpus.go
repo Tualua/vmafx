@@ -173,7 +173,7 @@ func registerCorpusSearchHDRFlags(cmd *cobra.Command, flags *corpusFlags) {
 		"+/- radius around the best-coarse CRF for the fine pass (default 5)")
 	cmd.Flags().IntVar(&flags.fineStep, "fine-step", 1, "CRF step for the fine pass (default 1)")
 	cmd.Flags().Float64Var(&flags.targetVMAF, "target-vmaf", 0,
-		"Target VMAF score; the orchestrator refines around the smallest CRF whose "+
+		"Target VMAF score; the orchestrator refines around the lowest-bitrate CRF whose "+
 			"score >= target. Optional for corpus")
 	cmd.Flags().BoolVar(&flags.autoHDR, "auto-hdr", false,
 		"(default) probe each source via ffprobe and inject HDR codec args + the "+

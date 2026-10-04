@@ -8,9 +8,10 @@
 //
 // The flow is:
 //
-//  1. TPE search over the integer CRF axis. The objective is
-//     |predicted_vmaf - target| + lambda*predicted_kbps so ties break toward
-//     lower bitrate. Default budget is 30 trials (production) or
+//  1. TPE search over the integer CRF axis. The objective ranks every CRF
+//     that meets the target by its predicted bitrate (lowest wins) and every
+//     CRF that misses it behind all of those, nearest the target first
+//     (objectiveValue). Default budget is 30 trials (production) or
 //     SmokeNTrials (smoke). The Python original drives Optuna; this port
 //     drives github.com/c-bata/goptuna, a Go implementation of the same TPE
 //     sampler, seeded identically (seed 0).
@@ -76,10 +77,10 @@ const DefaultProxyTolerance = 1.5
 // DefaultTimeBudgetSeconds is the soft wall-clock cap on the TPE loop.
 const DefaultTimeBudgetSeconds = 300
 
-// bitrateWeight scales the bitrate term of the TPE objective. It is small
-// relative to the quality term so the optimiser primarily hits the target;
-// ties (multiple CRFs at the target) break toward the lower-bitrate option.
-const bitrateWeight = 1.0e-4
+// unmetObjectiveBase offsets the objective of every CRF that misses the
+// target so it ranks above every CRF that meets it: a predicted bitrate in
+// kbps never reaches it. Python: vmaftune.fast.UNMET_OBJECTIVE_BASE.
+const unmetObjectiveBase = 1.0e9
 
 // TrialSample is one (crf, predicted_vmaf, predicted_kbps) proposal.
 //
@@ -151,9 +152,16 @@ func SmokePredictor(crf int) (TrialSample, error) {
 	return TrialSample{CRF: crf, PredictedVMAF: vmaf, PredictedKbps: kbps}, nil
 }
 
-// objectiveValue is the TPE objective: |vmaf - target| + lambda*kbps.
+// objectiveValue is the TPE objective: the lowest-bitrate encode that meets
+// the target wins. A CRF whose predicted VMAF meets targetVMAF scores its
+// predicted bitrate in kbps; one that misses scores unmetObjectiveBase plus
+// its shortfall, so it ranks behind every passing CRF and, among the misses,
+// the closest one wins. Python: vmaftune.fast.objective_value.
 func objectiveValue(sample TrialSample, targetVMAF float64) float64 {
-	return math.Abs(sample.PredictedVMAF-targetVMAF) + bitrateWeight*sample.PredictedKbps
+	if sample.PredictedVMAF >= targetVMAF {
+		return sample.PredictedKbps
+	}
+	return unmetObjectiveBase + (targetVMAF - sample.PredictedVMAF)
 }
 
 // VerifyFunc runs ONE real encode + libvmaf score at the recommended CRF and

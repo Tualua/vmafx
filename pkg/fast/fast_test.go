@@ -84,7 +84,8 @@ func TestSmokePredictorIsMonotone(t *testing.T) {
 	}
 }
 
-// TestObjectiveValue pins the TPE objective formula.
+// TestObjectiveValue pins the TPE objective formula. The same table is pinned
+// in Python (tests/test_pick_lowest_bitrate.py::test_fast_objective_values).
 func TestObjectiveValue(t *testing.T) {
 	t.Parallel()
 
@@ -95,28 +96,28 @@ func TestObjectiveValue(t *testing.T) {
 		want   float64
 	}{
 		{
-			name:   "exact hit costs only the bitrate term",
-			sample: TrialSample{PredictedVMAF: 90, PredictedKbps: 1000},
-			target: 90,
-			want:   0.1,
+			name:   "a CRF that meets the target costs its bitrate",
+			sample: TrialSample{PredictedVMAF: 94, PredictedKbps: 4000},
+			target: 92,
+			want:   4000,
 		},
 		{
-			name:   "overshoot is penalised symmetrically",
-			sample: TrialSample{PredictedVMAF: 92, PredictedKbps: 0},
-			target: 90,
-			want:   2.0,
+			name:   "exactly at the target meets it",
+			sample: TrialSample{PredictedVMAF: 92, PredictedKbps: 1234.5},
+			target: 92,
+			want:   1234.5,
 		},
 		{
-			name:   "undershoot is penalised symmetrically",
-			sample: TrialSample{PredictedVMAF: 88, PredictedKbps: 0},
-			target: 90,
-			want:   2.0,
+			name:   "a miss ranks behind every pass, by its shortfall",
+			sample: TrialSample{PredictedVMAF: 91, PredictedKbps: 4000},
+			target: 92,
+			want:   unmetObjectiveBase + 1,
 		},
 		{
-			name:   "ties break toward the lower bitrate",
-			sample: TrialSample{PredictedVMAF: 90, PredictedKbps: 2000},
-			target: 90,
-			want:   0.2,
+			name:   "a larger shortfall ranks further back",
+			sample: TrialSample{PredictedVMAF: 80, PredictedKbps: 100},
+			target: 92,
+			want:   unmetObjectiveBase + 12,
 		},
 	}
 

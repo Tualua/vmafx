@@ -68,6 +68,19 @@ search:
   because `image/prepare_build.py` imports `vmaf_rc1_tester.hw_facts`. A rebase
   keeps all four lines; `test_dockerfile_script_imports.py` fails when one is
   missing.
+## `vmaf-tune` returns the lowest-bitrate passing encode everywhere (ADR-1562, 2026-10-04)
+
+`feat/vmaf-tune-lowest-passing-bitrate-pick`. `tools/vmaf-tune` and the Go
+`pkg/recommend`, `pkg/fast`, `cmd/vmafx-tune`. Fork-only code, no upstream
+Netflix files. A rebase must keep the single implementation of the rule
+(`recommend.lowest_passing_row`, Go `lowestPassing`): `recommend`, the
+interval-aware search, the live-mode pickers (`cli._lowest_bitrate_passing`,
+Go `LowestBitratePassing`) and the ladder's default sampler all call it, and
+the `fast` objective (`objective_value` / `objectiveValue`) is pinned in both
+languages by the same table. Do not restore `_smallest_passing_crf`,
+`SmallestPassingCRF` or the `abs(vmaf - target)` objective. A conflict in
+`fast.py` also moves the three helpers split out of its former over-length
+functions (`_extract_sample`, `_verify_encode`, `_fast_production_result`).
 
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 

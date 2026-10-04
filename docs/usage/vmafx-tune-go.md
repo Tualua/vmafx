@@ -267,7 +267,7 @@ The two predicates are mutually exclusive.
 
 | Flag | Description |
 |------|-------------|
-| `--target-vmaf` | Smallest CRF whose VMAF meets the target. A smaller CRF is higher quality, so this is the best quality that clears the gate. Falls back to the closest miss, tagged `(UNMET)`, when nothing clears it. |
+| `--target-vmaf` | Lowest-bitrate row whose VMAF meets the target (ties go to the higher VMAF, then the lower CRF). Falls back to the closest miss, tagged `(UNMET)`, when nothing clears it. |
 | `--target-bitrate` | Row whose `bitrate_kbps` is closest to the target; ties go to the lower CRF. `--from-corpus` only. |
 
 ### recommend source and encode flags
@@ -512,7 +512,9 @@ grid. A TPE (Tree-structured Parzen Estimator) search walks the integer CRF
 axis. Each trial encodes a short probe slice, extracts the canonical-6 libvmaf
 features, and predicts VMAF with the `fr_regressor_v2` proxy. One real encode
 plus libvmaf score at the chosen CRF then verifies the recommendation: the
-proxy alone never wins (ADR-0304). See also
+proxy alone never wins (ADR-0304). The pick is the
+lowest predicted bitrate among the CRFs that meet the target, as in
+`recommend`. See also
 [vmaf-tune-fast-path.md](vmaf-tune-fast-path.md).
 
 ```text
@@ -845,7 +847,7 @@ canonical-6 columns (`adm2`, `vif_scale0..3`, `motion2`) populated.
 | `--coarse-step` | `10` | CRF step for the coarse pass. |
 | `--fine-radius` | `5` | ± radius around the best-coarse CRF for the fine pass. |
 | `--fine-step` | `1` | CRF step for the fine pass. |
-| `--target-vmaf` | unset | Target VMAF. The search refines around the smallest CRF whose score meets it; without a target it refines around the highest-VMAF coarse point. |
+| `--target-vmaf` | unset | Target VMAF. The search refines around the lowest-bitrate CRF whose score meets it; without a target it refines around the highest-VMAF coarse point. |
 
 ### corpus HDR flags
 

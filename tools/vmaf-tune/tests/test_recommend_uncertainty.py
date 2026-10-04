@@ -89,8 +89,8 @@ def test_wide_interval_forces_full_scan_and_flags_uncertain():
     assert result.decision is ConfidenceDecision.WIDE
     assert result.visited == len(rows), "wide interval must force the full scan"
     assert "UNCERTAIN" in result.predicate
-    # The point-estimate fallback picks the smallest CRF clearing 90,
-    # which is crf=18 (vmaf=96).
+    # The point-estimate fallback picks the lowest-bitrate row clearing 90;
+    # every row shares one bitrate here, so VMAF breaks the tie: crf=18.
     assert result.row["crf"] == 18
 
 
@@ -104,7 +104,8 @@ def test_middle_band_defers_to_point_estimate_recipe():
     req = UncertaintyAwareRequest(target_vmaf=90.0)
     result = pick_target_vmaf_with_uncertainty(rows, req)
     assert result.decision is ConfidenceDecision.MIDDLE
-    # Point-estimate predicate picks smallest CRF clearing 90 = crf=18.
+    # Point-estimate predicate picks the lowest-bitrate row clearing 90; the
+    # rows share one bitrate, so the higher VMAF wins: crf=18.
     assert result.row["crf"] == 18
     assert "UNCERTAIN" not in result.predicate
 
@@ -242,7 +243,7 @@ def test_from_corpus_with_uncertainty_uses_interval_aware_predictor(tmp_path: Pa
 
     The corpus has three rows (crf 18, 23, 28).  Without
     ``--with-uncertainty`` the point-estimate path examines all rows
-    and picks crf=18 (smallest CRF clearing the 90-VMAF bar).  With
+    and picks crf=18 (the best row clearing the 90-VMAF bar at the shared bitrate).  With
     ``--with-uncertainty`` the tight interval on crf=18 fires on the
     first row examined and the output must include the ``decision=``
     and ``rows_examined=`` fields that signal the uncertainty-aware code path

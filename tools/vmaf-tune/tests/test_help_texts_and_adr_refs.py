@@ -18,7 +18,7 @@
   score) cited renumbered ADRs in comments and docstrings, and ``auto.py``
   still counted "seven" short-circuits.
 - Item 21: the ladder docstring said the sampler picks the row closest to
-  the target; ``pick_target_vmaf`` takes the smallest CRF that clears it.
+  the target; ``pick_target_vmaf`` takes the lowest-bitrate row that clears it.
 """
 
 from __future__ import annotations
@@ -143,8 +143,8 @@ def test_build_ladder_docstring_names_the_sweep_and_the_pick() -> None:
     doc = " ".join(str(build_ladder.__doc__).split())
     assert "DEFAULT_SAMPLER_CRF_SWEEP" in doc
     assert "(18, 23, 28, 33, 38)" not in doc
-    # Item 21: the sampler takes the smallest CRF that clears the target.
-    assert "smallest CRF whose VMAF clears" in doc
+    # Item 21: the sampler takes the lowest-bitrate row that clears the target.
+    assert "lowest bitrate whose VMAF" in doc
     assert "closest to" not in doc
 
 

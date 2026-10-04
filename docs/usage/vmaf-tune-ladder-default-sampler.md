@@ -17,8 +17,9 @@ For each `(source, encoder, width, height, target_vmaf)` cell the sampler:
    `vmaftune.corpus.iter_rows()` encode-and-score path. `--crf-sweep CSV`
    replaces the list on the CLI.
 3. Keeps the rows whose encode and score succeeded and picks one with
-   `vmaftune.recommend.pick_target_vmaf()`: the smallest CRF whose VMAF meets
-   the target, or the highest-VMAF row when none does.
+   `vmaftune.recommend.pick_target_vmaf()`: the lowest-bitrate row whose VMAF
+   meets the target (ties go to the higher VMAF, then the lower CRF), or the
+   highest-VMAF row when none does.
 4. Returns a `LadderPoint(width, height, bitrate_kbps, vmaf, crf)`.
 
 The sampler stays replaceable. Operators who need a different CRF grid, source

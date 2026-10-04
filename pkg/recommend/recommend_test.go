@@ -66,8 +66,8 @@ func TestValidateRequest(t *testing.T) {
 	}
 }
 
-// TestPickTargetVMAF covers the smallest-passing-CRF rule, the determinism
-// tie-break, and the UNMET fallback.
+// TestPickTargetVMAF covers the lowest-bitrate-passing rule, the determinism
+// tie-breaks, and the UNMET fallback.
 func TestPickTargetVMAF(t *testing.T) {
 	t.Parallel()
 
@@ -81,28 +81,62 @@ func TestPickTargetVMAF(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name: "smallest passing CRF wins",
+			name: "lowest-bitrate passing row wins",
 			rows: []recommend.Row{
 				row(20, 96.0, 8000), row(24, 93.5, 5000), row(28, 90.0, 3000),
 			},
-			target: 93.0, wantCRF: 20,
-			wantPredicate: "target_vmaf>=93.0", wantMargin: 3.0,
+			target: 93.0, wantCRF: 24,
+			wantPredicate: "target_vmaf>=93.0", wantMargin: 0.5,
 		},
 		{
 			name: "row order does not matter",
 			rows: []recommend.Row{
 				row(28, 90.0, 3000), row(24, 93.5, 5000), row(20, 96.0, 8000),
 			},
-			target: 93.0, wantCRF: 20,
-			wantPredicate: "target_vmaf>=93.0", wantMargin: 3.0,
+			target: 93.0, wantCRF: 24,
+			wantPredicate: "target_vmaf>=93.0", wantMargin: 0.5,
 		},
 		{
-			name: "duplicate CRF ties break to the higher score",
+			// CRF 28 passes at a higher bitrate than CRF 24: the rule ranks
+			// by bitrate, not by CRF in either direction.
+			name: "bitrate beats CRF order on a non-monotone sweep",
+			rows: []recommend.Row{
+				row(20, 97.0, 9000), row(24, 94.0, 4000), row(28, 93.0, 5200),
+			},
+			target: 92.0, wantCRF: 24,
+			wantPredicate: "target_vmaf>=92.0", wantMargin: 2.0,
+		},
+		{
+			name: "equal bitrate ties break to the higher score",
+			rows: []recommend.Row{
+				row(30, 93.2, 5000), row(26, 94.9, 5000),
+			},
+			target: 93.0, wantCRF: 26,
+			wantPredicate: "target_vmaf>=93.0", wantMargin: 1.9,
+		},
+		{
+			name: "equal bitrate and score tie break to the lower CRF",
+			rows: []recommend.Row{
+				row(30, 94.0, 5000), row(26, 94.0, 5000),
+			},
+			target: 93.0, wantCRF: 26,
+			wantPredicate: "target_vmaf>=93.0", wantMargin: 1.0,
+		},
+		{
+			name: "a score exactly at the target passes",
+			rows: []recommend.Row{
+				row(30, 93.0, 1000), row(20, 99.0, 9000),
+			},
+			target: 93.0, wantCRF: 30,
+			wantPredicate: "target_vmaf>=93.0", wantMargin: 0.0,
+		},
+		{
+			name: "duplicate CRF resolves to the cheaper encode",
 			rows: []recommend.Row{
 				row(24, 93.2, 5000), row(24, 94.9, 5200),
 			},
 			target: 93.0, wantCRF: 24,
-			wantPredicate: "target_vmaf>=93.0", wantMargin: 1.9,
+			wantPredicate: "target_vmaf>=93.0", wantMargin: 0.2,
 		},
 		{
 			name: "nothing clears the bar returns the closest miss",
@@ -284,15 +318,15 @@ func TestPickTargetVMAFWithUncertainty(t *testing.T) {
 		wantContains string
 	}{
 		{
-			name: "tight interval short-circuits at the first clearing row",
+			name: "tight interval short-circuits at the first clearing row by ascending bitrate",
 			rows: []recommend.Row{
 				withInterval(row(20, 96.0, 8000), 95.0, 96.5),
 				withInterval(row(24, 93.5, 5000), 93.0, 94.0),
 				withInterval(row(28, 90.0, 3000), 89.5, 90.5),
 			},
-			target: 93.0, wantCRF: 20,
-			wantDecision: uncertainty.Tight, wantVisited: 1,
-			wantContains: "(TIGHT, low=95.000)",
+			target: 93.0, wantCRF: 24,
+			wantDecision: uncertainty.Tight, wantVisited: 2,
+			wantContains: "(TIGHT, low=93.000)",
 		},
 		{
 			name: "wide intervals force the full scan and tag UNCERTAIN",
@@ -300,7 +334,7 @@ func TestPickTargetVMAFWithUncertainty(t *testing.T) {
 				withInterval(row(20, 96.0, 8000), 90.0, 99.0),
 				withInterval(row(24, 93.5, 5000), 88.0, 99.0),
 			},
-			target: 93.0, wantCRF: 20,
+			target: 93.0, wantCRF: 24,
 			wantDecision: uncertainty.Wide, wantVisited: 2,
 			wantContains: "(UNCERTAIN)",
 		},
@@ -309,7 +343,7 @@ func TestPickTargetVMAFWithUncertainty(t *testing.T) {
 			rows: []recommend.Row{
 				row(20, 96.0, 8000), row(24, 93.5, 5000),
 			},
-			target: 93.0, wantCRF: 20,
+			target: 93.0, wantCRF: 24,
 			wantDecision: uncertainty.Middle, wantVisited: 2,
 			wantContains: "target_vmaf>=93.0",
 		},
@@ -378,8 +412,8 @@ func TestPickTargetVMAFWithUncertainty_zeroWidthIsNotTight(t *testing.T) {
 	if got.Visited != 2 {
 		t.Errorf("visited = %d, want 2 (no short-circuit without an interval)", got.Visited)
 	}
-	if crf := int(got.Row["crf"].(float64)); crf != 20 {
-		t.Errorf("winning crf = %d, want 20 (the point-estimate pick)", crf)
+	if crf := int(got.Row["crf"].(float64)); crf != 24 {
+		t.Errorf("winning crf = %d, want 24 (the lowest-bitrate point-estimate pick)", crf)
 	}
 }
 
@@ -560,8 +594,8 @@ func TestParseCorpusJSONL_pythonNonFiniteTokens(t *testing.T) {
 func TestParseCorpusJSONL_nanScoreRowIsFiltered(t *testing.T) {
 	t.Parallel()
 
-	input := `{"crf": 20, "vmaf_score": NaN, "exit_status": 0}` + "\n" +
-		`{"crf": 24, "vmaf_score": 93.5, "exit_status": 0}` + "\n"
+	input := `{"crf": 20, "vmaf_score": NaN, "bitrate_kbps": 8000, "exit_status": 0}` + "\n" +
+		`{"crf": 24, "vmaf_score": 93.5, "bitrate_kbps": 5000, "exit_status": 0}` + "\n"
 
 	rows, err := recommend.ParseCorpusJSONL(strings.NewReader(input))
 	if err != nil {
@@ -576,8 +610,91 @@ func TestParseCorpusJSONL_nanScoreRowIsFiltered(t *testing.T) {
 	}
 }
 
-// TestSmallestPassingCRF covers the (src, preset)-grouped picker the
+// TestLowestBitratePassing covers the (src, preset)-grouped picker the
 // encode-driven path uses.
+func TestLowestBitratePassing(t *testing.T) {
+	t.Parallel()
+
+	mk := func(src, preset string, crf int, vmaf, kbps float64) recommend.Row {
+		return recommend.Row{
+			"src": src, "preset": preset,
+			"crf": float64(crf), "vmaf_score": vmaf, "bitrate_kbps": kbps,
+		}
+	}
+
+	tests := []struct {
+		name      string
+		rows      []recommend.Row
+		target    float64
+		wantOK    bool
+		wantSrc   string
+		wantCRF   int
+		wantScore float64
+	}{
+		{
+			name: "lowest-bitrate passing row per group",
+			rows: []recommend.Row{
+				mk("/a.yuv", "medium", 28, 90.0, 3000),
+				mk("/a.yuv", "medium", 24, 93.5, 5000),
+				mk("/a.yuv", "medium", 20, 96.0, 8000),
+			},
+			target: 93.0, wantOK: true,
+			wantSrc: "/a.yuv", wantCRF: 24, wantScore: 93.5,
+		},
+		{
+			name: "bitrate beats CRF order on a non-monotone sweep",
+			rows: []recommend.Row{
+				mk("/a.yuv", "medium", 20, 97.0, 9000),
+				mk("/a.yuv", "medium", 24, 94.0, 4000),
+				mk("/a.yuv", "medium", 28, 93.0, 5200),
+			},
+			target: 92.0, wantOK: true,
+			wantSrc: "/a.yuv", wantCRF: 24, wantScore: 94.0,
+		},
+		{
+			name: "first group with a passing row wins",
+			rows: []recommend.Row{
+				mk("/b.yuv", "fast", 22, 80.0, 100),
+				mk("/a.yuv", "medium", 20, 96.0, 8000),
+				mk("/a.yuv", "medium", 30, 94.0, 2000),
+			},
+			target: 93.0, wantOK: true,
+			wantSrc: "/a.yuv", wantCRF: 30, wantScore: 94.0,
+		},
+		{
+			name: "nothing clears the target",
+			rows: []recommend.Row{
+				mk("/a.yuv", "medium", 28, 90.0, 3000),
+			},
+			target: 95.0, wantOK: false,
+		},
+		{
+			name: "empty input", rows: nil, target: 93.0, wantOK: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			src, _, crf, score, ok, err := recommend.LowestBitratePassing(tc.rows, tc.target)
+			if err != nil {
+				t.Fatalf("LowestBitratePassing: %v", err)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if src != tc.wantSrc || crf != tc.wantCRF || score != tc.wantScore {
+				t.Errorf("got (%q, %d, %v), want (%q, %d, %v)",
+					src, crf, score, tc.wantSrc, tc.wantCRF, tc.wantScore)
+			}
+		})
+	}
+}
+
+// TestSmallestPassingCRF covers the deprecated SmallestPassingCRF picker.
 func TestSmallestPassingCRF(t *testing.T) {
 	t.Parallel()
 
@@ -643,6 +760,66 @@ func TestSmallestPassingCRF(t *testing.T) {
 					src, crf, score, tc.wantSrc, tc.wantCRF, tc.wantScore)
 			}
 		})
+	}
+}
+
+// TestLowestBitrateRuleNeedsABitrate: a passing row without a usable
+// bitrate_kbps is an error, never skipped or ranked last.
+func TestLowestBitrateRuleNeedsABitrate(t *testing.T) {
+	t.Parallel()
+
+	for name, bad := range map[string]any{
+		"missing": nil, "nan": math.NaN(), "string": "n/a",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			broken := row(28, 93.0, 1)
+			if bad == nil {
+				delete(broken, "bitrate_kbps")
+			} else {
+				broken["bitrate_kbps"] = bad
+			}
+			rows := []recommend.Row{row(24, 94.0, 4000), broken}
+			if _, err := recommend.PickTargetVMAF(rows, 92.0); err == nil ||
+				!strings.Contains(err.Error(), "bitrate_kbps") {
+				t.Errorf("PickTargetVMAF error = %v, want one naming bitrate_kbps", err)
+			}
+			if _, _, _, _, _, err := recommend.LowestBitratePassing(rows, 92.0); err == nil {
+				t.Error("LowestBitratePassing: want an error for the unusable bitrate")
+			}
+			_, err := recommend.PickTargetVMAFWithUncertainty(rows,
+				recommend.UncertaintyRequest{TargetVMAF: 92.0})
+			if err == nil {
+				t.Error("PickTargetVMAFWithUncertainty: want an error for the unusable bitrate")
+			}
+		})
+	}
+}
+
+// TestUncertaintyTightWalkIsLowestBitrateFirst: both rows are tight and clear
+// the target; the cheaper one is examined first and wins. The earlier walk
+// (input order) stopped at the first, higher-bitrate row.
+func TestUncertaintyTightWalkIsLowestBitrateFirst(t *testing.T) {
+	t.Parallel()
+
+	rows := []recommend.Row{
+		withInterval(row(18, 96.0, 8000), 95.5, 96.5),
+		withInterval(row(28, 92.0, 3000), 91.5, 92.5),
+	}
+	got, err := recommend.PickTargetVMAFWithUncertainty(rows,
+		recommend.UncertaintyRequest{
+			TargetVMAF: 90.0, Thresholds: uncertainty.DefaultThresholds(),
+		})
+	if err != nil {
+		t.Fatalf("PickTargetVMAFWithUncertainty: %v", err)
+	}
+	if crf := int(got.Row["crf"].(float64)); crf != 28 {
+		t.Errorf("winning crf = %d, want 28 (the lowest-bitrate clearing row)", crf)
+	}
+	if got.Visited != 1 {
+		t.Errorf("visited = %d, want 1 (ascending bitrate examines the cheapest row first)",
+			got.Visited)
 	}
 }
 

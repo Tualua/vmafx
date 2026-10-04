@@ -86,7 +86,7 @@ flag table and examples.
 | Subcommand | Purpose | Page |
 |------------|---------|------|
 | `corpus` | Encoder grid sweep plus scoring; writes the JSONL corpus | [corpus](vmaf-tune-corpus.md) |
-| `recommend` | Smallest CRF that meets a target VMAF, or the row closest to a target bitrate | [recommend](vmaf-tune-recommend.md) |
+| `recommend` | Lowest-bitrate encode that meets a target VMAF, or the row closest to a target bitrate | [recommend](vmaf-tune-recommend.md) |
 | `predict` | Predict per-shot VMAF with an ONNX predictor and validate it | [predict](vmaf-tune-predict.md) |
 | `fast` | Proxy model plus Bayesian search, verified once by a real encode | [fast path](vmaf-tune-fast-path.md) |
 | `tune-per-shot` | Per-shot CRF zones from shot detection | [per-shot](vmaf-tune-per-shot.md) |

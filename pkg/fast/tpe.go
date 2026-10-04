@@ -106,8 +106,8 @@ type TPEResult struct {
 
 // RunTPE runs the TPE search and returns the best (crf, vmaf, kbps) triple.
 //
-// The objective is |predicted_vmaf - target| + bitrateWeight*predicted_kbps,
-// minimised. Errors raised by Predict abort the study, matching Optuna's
+// The objective is objectiveValue (the predicted bitrate of a CRF that meets
+// the target, a larger shortfall-ranked value for one that misses), minimised. Errors raised by Predict abort the study, matching Optuna's
 // default catch=() behaviour.
 func RunTPE(ctx context.Context, params TPEParams) (TPEResult, error) {
 	if err := params.validate(); err != nil {
