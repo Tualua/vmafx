@@ -18,7 +18,7 @@ Parent: [../../AGENTS.md](../../AGENTS.md).
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `src/vmaftune/auto.py`, `src/vmaftune/recommend.py`, `tests/test_auto*.py`, `tests/test_recommend*.py` | [auto-tune](AGENTS.d/auto-tune.md) | Auto emits one selected winner; 7 short-circuit predicates ordered; F.4 recipe overrides are read-only factories. |
+| `src/vmaftune/auto.py`, `src/vmaftune/recommend.py`, `tests/test_auto*.py`, `tests/test_recommend*.py` | [auto-tune](AGENTS.d/auto-tune.md) | Auto emits one winner; 10 short-circuits ordered; smoke plans need no --src; F.4 overrides are read-only. |
 | `src/vmaftune/bisect.py`, `tests/test_bisect*.py` | [bisect](AGENTS.d/bisect.md) | Bisect assumes monotone VMAF; default targets 94,96,97,98; PredicateFn signature is Phase B contract. |
 | `src/vmaftune/cache.py`, `tests/test_cache.py` | [cache](AGENTS.d/cache.md) | Cache key fields are load-bearing; cache content stays opaque and parsed through domain model. |
 | `src/vmaftune/cli.py`, `tests/test_cli_subcommands.py` | [cli-invariants](AGENTS.d/cli-invariants.md) | Output JSON is strict JSON; Pathlib-only filesystem ops; _stamp_tracked_default_sentinels tuple invariant. |

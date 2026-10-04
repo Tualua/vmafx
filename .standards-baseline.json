@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T07:17:17Z",
+  "generated_at": "2026-10-04T14:56:21Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "094d51c8e8793b2767cf571cd69597630f111693",
-  "total_infractions": 413,
+  "commit_sha": "2889f963a955c0cca313b261cabb2d2704b6c99c",
+  "total_infractions": 399,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3181,84 +3181,12 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/auto.py",
-      "line_number": 1003,
-      "symbol": "pick_auto_winner",
-      "message": "Function 'pick_auto_winner' (88 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:pick_auto_winner",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/auto.py:HISS-04:fn:pick_auto_winner#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/auto.py",
-      "line_number": 1100,
-      "symbol": "run_auto",
-      "message": "Function 'run_auto' (327 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_auto",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/auto.py:HISS-04:fn:run_auto#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/bisect.py",
-      "line_number": 497,
-      "symbol": "bisect_target_vmaf",
-      "message": "Function 'bisect_target_vmaf' (368 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:bisect_target_vmaf",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/bisect.py:HISS-04:fn:bisect_target_vmaf#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/bisect.py",
-      "line_number": 935,
-      "symbol": "_encode_and_score",
-      "message": "Function '_encode_and_score' (305 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_encode_and_score",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/bisect.py:HISS-04:fn:_encode_and_score#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/bisect.py",
-      "line_number": 1242,
-      "symbol": "make_bisect_predicate",
-      "message": "Function 'make_bisect_predicate' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:make_bisect_predicate",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/bisect.py:HISS-04:fn:make_bisect_predicate#1"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "tools/vmaf-tune/src/vmaftune/encoder_profile.py",
       "line_number": 143,
       "symbol": "build_encode_request",
       "message": "Function 'build_encode_request' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:build_encode_request",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/encoder_profile.py:HISS-04:fn:build_encode_request#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/executor.py",
-      "line_number": 137,
-      "symbol": "run_plan",
-      "message": "Function 'run_plan' (119 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_plan",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/executor.py:HISS-04:fn:run_plan#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/executor.py",
-      "line_number": 303,
-      "symbol": "run_plan_per_shot",
-      "message": "Function 'run_plan_per_shot' (162 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_plan_per_shot",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/executor.py:HISS-04:fn:run_plan_per_shot#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/executor.py",
-      "line_number": 490,
-      "symbol": "run_plan_saliency",
-      "message": "Function 'run_plan_saliency' (151 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_plan_saliency",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/executor.py:HISS-04:fn:run_plan_saliency#1"
     },
     {
       "rule_id": "HISS-04",
@@ -3316,48 +3244,12 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/per_shot.py",
-      "line_number": 174,
-      "symbol": "_detect_shots_with_status",
-      "message": "Function '_detect_shots_with_status' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_detect_shots_with_status",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/per_shot.py:HISS-04:fn:_detect_shots_with_status#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/per_shot.py",
-      "line_number": 404,
-      "symbol": "merge_shots",
-      "message": "Function 'merge_shots' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:merge_shots",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/per_shot.py:HISS-04:fn:merge_shots#1"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "tools/vmaf-tune/src/vmaftune/predictor_features.py",
       "line_number": 383,
       "symbol": "_compute_saliency",
       "message": "Function '_compute_saliency' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:_compute_saliency",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/predictor_features.py:HISS-04:fn:_compute_saliency#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/prefilter.py",
-      "line_number": 262,
-      "symbol": "_run_joint_tpe",
-      "message": "Function '_run_joint_tpe' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_run_joint_tpe",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/prefilter.py:HISS-04:fn:_run_joint_tpe#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/prefilter.py",
-      "line_number": 334,
-      "symbol": "recommend_prefilter",
-      "message": "Function 'recommend_prefilter' (136 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:recommend_prefilter",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/prefilter.py:HISS-04:fn:recommend_prefilter#1"
     },
     {
       "rule_id": "HISS-04",
@@ -3394,24 +3286,6 @@
       "message": "Function 'saliency_aware_encode' (110 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:saliency_aware_encode",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/saliency.py:HISS-04:fn:saliency_aware_encode#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/score.py",
-      "line_number": 237,
-      "symbol": "parse_feature_aggregates",
-      "message": "Function 'parse_feature_aggregates' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:parse_feature_aggregates",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/score.py:HISS-04:fn:parse_feature_aggregates#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/score.py",
-      "line_number": 427,
-      "symbol": "run_score",
-      "message": "Function 'run_score' (81 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_score",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/score.py:HISS-04:fn:run_score#1"
     },
     {
       "rule_id": "HISS-04",

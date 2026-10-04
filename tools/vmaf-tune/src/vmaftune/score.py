@@ -114,7 +114,7 @@ def build_vmaf_command(
 
     ``backend`` (when set) is forwarded as the libvmaf CLI's
     ``--backend NAME`` selector — values ``cpu`` / ``cuda`` / ``sycl``
-    / ``hip`` per ADR-0127 / ADR-0175 / ADR-0299 / ADR-0726. When
+    / ``hip`` per ADR-0299 (the Vulkan value was removed, ADR-0726). When
     ``None`` the flag is omitted so the libvmaf binary picks its own
     default (CPU on a stock build).
     """
@@ -191,7 +191,7 @@ def _model_arg(model: str) -> str:
     pre-formatted ``key=value`` string (``"path=/abs/model.json"``,
     ``"version=vmaf_v0.6.1"``). Bare identifiers are wrapped as
     ``version=...``; pre-formatted strings pass through. Used by
-    ``corpus.py`` to inject HDR-model paths (see ADR-0295).
+    ``corpus.py`` to inject HDR-model paths (see ADR-0300).
     """
     if "=" in model:
         return model
@@ -234,85 +234,80 @@ def parse_vmaf_json(payload: dict[str, Any]) -> float:
     raise ValueError("vmaf JSON missing pooled_metrics.vmaf.mean")
 
 
+def _find_pooled_block(pooled: dict[str, Any], name: str, pooled_key: str) -> dict[str, Any] | None:
+    """Return the pooled block for ``name``: integer_* key, bare name, then prefix."""
+    block = pooled.get(pooled_key)
+    if not isinstance(block, dict):
+        # Synthetic payloads may use bare keys without integer_* prefixes.
+        block = pooled.get(name)
+    if isinstance(block, dict):
+        return block
+    # Options-suffixed keys (integer_adm2_csf_2_dlmw_0.7_..., integer_motion2_mmxv_18).
+    prefixes = (f"{pooled_key}_", f"{name}_")
+    for key, value in pooled.items():
+        if isinstance(value, dict) and key.startswith(prefixes):
+            return value
+    return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    """Return ``float(value)`` or ``None`` when it does not convert."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _per_frame_mean(frames: list[Any], name: str, pooled_key: str) -> float | None:
+    """Mean of a feature over per-frame metrics, ``None`` when no frame has it."""
+    vals: list[float] = []
+    for fr in frames:
+        metrics = fr.get("metrics") or {}
+        key = pooled_key if pooled_key in metrics else name
+        if key in metrics:
+            val = _float_or_none(metrics[key])
+            if val is not None:
+                vals.append(val)
+    return sum(vals) / len(vals) if vals else None
+
+
+def _store_block(
+    name: str, block: dict[str, Any], means: dict[str, float], stds: dict[str, float]
+) -> None:
+    """Copy a pooled block's ``mean`` / ``stddev`` into the result dicts."""
+    for key, dest in (("mean", means), ("stddev", stds)):
+        val = _float_or_none(block[key]) if key in block else None
+        if val is not None:
+            dest[name] = val
+
+
 def parse_feature_aggregates(
     payload: dict[str, Any], feature_names: tuple[str, ...]
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Pull per-feature ``mean`` / ``stddev`` aggregates from libvmaf JSON.
 
-    Modern libvmaf emits ``pooled_metrics.<key> = {"min", "max",
-    "mean", "harmonic_mean"}`` for every registered feature extractor,
-    where ``<key>`` is the ``integer_``-prefixed pipeline name for the
-    canonical-6 features (e.g. ``integer_adm2``, ``integer_vif_scale0``).
-    We resolve each canonical bare name (``adm2``, ``vif_scale0``, …)
-    to its ``integer_*`` pooled key via ``_CANONICAL_TO_POOLED_KEY``,
-    falling back to the bare name for features without a prefix mapping
-    (e.g. ``cambi``).
-
-    We surface ``mean`` and ``stddev`` because the canonical-6 trainers
-    (``train_fr_regressor_v[23].py``) consume both; ``stddev`` is absent
-    from real integer-pipeline blocks (libvmaf emits ``harmonic_mean``
-    instead) but is present in some older / synthetic fixtures, so the
-    lookup is guarded.
-
-    Features not present in ``pooled_metrics`` (model-dependent — e.g. a
-    cambi-only fixture won't carry ``adm2``) are simply absent from the
-    returned dicts; the corpus row writer translates absence into ``NaN``.
-
-    The legacy top-level ``VMAF score`` shape predates per-feature
-    pooling and is silently treated as an empty aggregate set.
+    Each canonical bare name (``adm2``, ``vif_scale0``, ...) is resolved to
+    its ``integer_*`` pooled key through ``_CANONICAL_TO_POOLED_KEY``, then
+    the bare name, then an options-suffixed prefix match. ``stddev`` is
+    guarded because real integer-pipeline blocks carry ``harmonic_mean``
+    instead. Features absent from ``pooled_metrics`` fall back to the
+    per-frame mean; features present nowhere are omitted (the corpus row
+    writer turns absence into ``NaN``). The legacy top-level ``VMAF score``
+    shape yields an empty aggregate set.
     """
     pooled = payload.get("pooled_metrics") or {}
     frames = payload.get("frames") or []
     means: dict[str, float] = {}
     stds: dict[str, float] = {}
     for name in feature_names:
-        # Prefer the integer_* key that modern libvmaf emits; fall back
-        # to the bare name so non-integer features (cambi, …) and
-        # synthetic test fixtures that use bare keys still resolve.
         pooled_key = _CANONICAL_TO_POOLED_KEY.get(name, name)
-        block = pooled.get(pooled_key)
-        if not isinstance(block, dict):
-            # Also attempt the bare name in case the caller passed a
-            # synthetic payload that does not use integer_* prefixes.
-            block = pooled.get(name)
-        if not isinstance(block, dict):
-            # Fall back to prefix matching for options-suffixed keys
-            # (e.g. integer_adm2_csf_2_dlmw_0.7_..., integer_motion2_mmxv_18,
-            # integer_vif_scale0_...).
-            pref1 = f"{pooled_key}_"
-            pref2 = f"{name}_"
-            for k, v in pooled.items():
-                if isinstance(v, dict) and k.startswith((pref1, pref2)):
-                    block = v
-                    break
-        if isinstance(block, dict):
-            if "mean" in block:
-                try:
-                    means[name] = float(block["mean"])
-                except (TypeError, ValueError):
-                    pass
-            if "stddev" in block:
-                try:
-                    stds[name] = float(block["stddev"])
-                except (TypeError, ValueError):
-                    pass
+        block = _find_pooled_block(pooled, name, pooled_key)
+        if block is not None:
+            _store_block(name, block, means, stds)
         elif frames:
-            # Per-frame fallback when pooled_metrics omits the feature.
-            vals: list[float] = []
-            for fr in frames:
-                metrics = fr.get("metrics") or {}
-                if pooled_key in metrics:
-                    try:
-                        vals.append(float(metrics[pooled_key]))
-                    except (TypeError, ValueError):
-                        pass
-                elif name in metrics:
-                    try:
-                        vals.append(float(metrics[name]))
-                    except (TypeError, ValueError):
-                        pass
-            if vals:
-                means[name] = sum(vals) / len(vals)
+            fmean = _per_frame_mean(frames, name, pooled_key)
+            if fmean is not None:
+                means[name] = fmean
     return means, stds
 
 
@@ -424,6 +419,59 @@ def maybe_decode_distorted(
     return dataclasses.replace(req, distorted=decoded), 0
 
 
+def _read_score_payload(
+    json_path: Path, rc: int
+) -> tuple[int, float, dict[str, float], dict[str, float]]:
+    """Parse the vmaf JSON at ``json_path``; returns ``(rc, score, means, stds)``."""
+    score = float("nan")
+    if rc != 0 or not json_path.exists():
+        return rc, score, {}, {}
+    try:
+        with json_path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except json.JSONDecodeError:
+        # vmaf exited 0 but wrote corrupt/partial JSON (e.g. killed
+        # mid-write): NaN score and a non-zero status, not a crash.
+        return 65, score, {}, {}
+    try:
+        score = parse_vmaf_json(payload)
+    except ValueError:
+        rc = rc or 65
+    # Per-feature aggregates are best-effort: a cambi-only model exposes no
+    # ``adm2``; the corpus row writer fills missing entries with NaN.
+    means, stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
+    return rc, score, means, stds
+
+
+def _run_vmaf_once(
+    req: ScoreRequest,
+    json_path: Path,
+    runner_fn: Any,
+    vmaf_bin: str,
+    backend: str | None,
+) -> ScoreResult:
+    """Run the vmaf command once and fold its output into a ScoreResult."""
+    cmd = build_vmaf_command(req, json_path, vmaf_bin=vmaf_bin, backend=backend)
+    started = time.monotonic()
+    completed = runner_fn(cmd, capture_output=True, text=True, check=False)
+    elapsed_ms = (time.monotonic() - started) * 1000.0
+    stderr = getattr(completed, "stderr", "") or ""
+    rc, score, means, stds = _read_score_payload(
+        json_path, int(getattr(completed, "returncode", 1))
+    )
+    match = _VMAF_VERSION_RE.search(stderr)
+    return ScoreResult(
+        request=req,
+        vmaf_score=score,
+        score_time_ms=elapsed_ms,
+        vmaf_binary_version=match.group(1) if match else "unknown",
+        exit_status=rc,
+        stderr_tail=stderr[-2048:],
+        feature_means=means,
+        feature_stds=stds,
+    )
+
+
 def run_score(
     req: ScoreRequest,
     *,
@@ -443,65 +491,8 @@ def run_score(
     in corpus.py for the corpus pipeline's decode step.
     """
     runner_fn = runner or subprocess.run
-
     if workdir is None:
-        workdir_ctx = tempfile.TemporaryDirectory()
-        workdir_path = Path(workdir_ctx.name)
-    else:
-        workdir_ctx = None
-        workdir_path = workdir
-        workdir_path.mkdir(parents=True, exist_ok=True)
-
-    json_path = workdir_path / "vmaf.json"
-    cmd = build_vmaf_command(req, json_path, vmaf_bin=vmaf_bin, backend=backend)
-
-    try:
-        started = time.monotonic()
-        completed = runner_fn(  # type: ignore[operator]
-            cmd, capture_output=True, text=True, check=False
-        )
-        elapsed_ms = (time.monotonic() - started) * 1000.0
-
-        stderr = getattr(completed, "stderr", "") or ""
-        rc = int(getattr(completed, "returncode", 1))
-
-        score = float("nan")
-        feature_means: dict[str, float] = {}
-        feature_stds: dict[str, float] = {}
-        if rc == 0 and json_path.exists():
-            try:
-                with json_path.open("r", encoding="utf-8") as fh:
-                    payload = json.load(fh)
-            except json.JSONDecodeError:
-                # vmaf exited 0 but wrote corrupt/partial JSON (e.g. killed
-                # mid-write).  Treat this as a scoring error so the corpus
-                # row gets a NaN score and a non-zero exit status rather than
-                # an unhandled exception crashing the whole run.
-                rc = 65
-                payload = None
-            if payload is not None:
-                try:
-                    score = parse_vmaf_json(payload)
-                except ValueError:
-                    rc = rc or 65
-                # Per-feature aggregates are best-effort — a cambi-only
-                # model won't expose ``adm2`` etc.; the corpus row writer
-                # fills missing entries with NaN.
-                feature_means, feature_stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
-
-        match = _VMAF_VERSION_RE.search(stderr)
-        version = match.group(1) if match else "unknown"
-
-        return ScoreResult(
-            request=req,
-            vmaf_score=score,
-            score_time_ms=elapsed_ms,
-            vmaf_binary_version=version,
-            exit_status=rc,
-            stderr_tail=stderr[-2048:],
-            feature_means=feature_means,
-            feature_stds=feature_stds,
-        )
-    finally:
-        if workdir_ctx is not None:
-            workdir_ctx.cleanup()
+        with tempfile.TemporaryDirectory() as tmp:
+            return _run_vmaf_once(req, Path(tmp) / "vmaf.json", runner_fn, vmaf_bin, backend)
+    workdir.mkdir(parents=True, exist_ok=True)
+    return _run_vmaf_once(req, workdir / "vmaf.json", runner_fn, vmaf_bin, backend)

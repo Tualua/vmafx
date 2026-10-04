@@ -4,7 +4,7 @@ paths:
   - tools/vmaf-tune/src/vmaftune/recommend.py
   - tools/vmaf-tune/tests/test_auto*.py
   - tools/vmaf-tune/tests/test_recommend*.py
-invariant: Auto emits one selected winner; 7 short-circuit predicates ordered; F.4 recipe overrides are read-only factories.
+invariant: Auto emits one winner; 10 short-circuits ordered; smoke plans need no --src; F.4 overrides are read-only.
 ---
 <!-- markdownlint-disable MD024 -->
 # Auto-tuning policy and recipe selection
@@ -24,6 +24,14 @@ invariant: Auto emits one selected winner; 7 short-circuit predicates ordered; F
   target passes, then target passes with smallest budget overage,
   then closest quality miss. Do not make callers infer winner from
   cell order.
+- **`auto --smoke` needs no `--src`; everything else does.**
+  `cli._auto_src_error` accepts a missing `--src` only for a smoke
+  plan that is not executed, and `run_auto(src=None)` plans only with
+  `smoke=True` (the metadata records `"src": ""`, as the Go planner
+  does). `run_auto` is a thin sequence over helpers (`_resolve_meta`,
+  `_make_plan_ctx`, `_build_cells`, `_late_short_circuits`,
+  `_plan_metadata`): keep its stage order and the `plan.metadata` key
+  order when editing them.
 - **`recommend` is pure consumer of corpus schema.** `recommend`
   subcommand reads `vmaf_score`, `bitrate_kbps`, `crf`, `preset`,
   `encoder`, `exit_status` directly from rows produced by

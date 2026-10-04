@@ -165,7 +165,8 @@
         "pkg/prefilter/prefilter.go": 1,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/filter_adapters/__init__.py": 1,
-        "tools/vmaf-tune/src/vmaftune/prefilter.py": 1
+        "tools/vmaf-tune/src/vmaftune/prefilter.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1
       },
       "target": "0106-adr-maintenance-rule.md"
     },
@@ -206,7 +207,7 @@
         "tools/vmaf-tune/src/vmaftune/prefilter.py": 3,
         "tools/vmaf-tune/tests/test_cli_prefilter.py": 1,
         "tools/vmaf-tune/tests/test_filter_adapter_pelorus_deband.py": 7,
-        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 5,
         "tools/vmaf-tune/tests/test_prefilter.py": 1
       },
       "target": "0110-coverage-gate-fprofile-update-atomic.md"
@@ -329,7 +330,6 @@
       "sites": {
         "pkg/corpus/score.go": 1,
         "pkg/scorecli/scorecli.go": 1,
-        "tools/vmaf-tune/src/vmaftune/score.py": 1,
         "tools/vmaf-tune/src/vmaftune/score_backend.py": 1,
         "tools/vmaf-tune/tests/test_score_backend.py": 1
       },
@@ -877,7 +877,6 @@
         "core/src/hip/meson.build": 1,
         "pkg/corpus/score.go": 1,
         "pkg/scorecli/scorecli.go": 1,
-        "tools/vmaf-tune/src/vmaftune/score.py": 1,
         "tools/vmaf-tune/src/vmaftune/score_backend.py": 1
       },
       "target": "0175-vulkan-backend-scaffold.md"
@@ -1744,7 +1743,6 @@
         "pkg/fast/tpe.go": 1,
         "pkg/prefilter/prefilter.go": 1,
         "tools/vmaf-tune/pyproject.toml": 1,
-        "tools/vmaf-tune/src/vmaftune/auto.py": 1,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/fast.py": 4,
         "tools/vmaf-tune/src/vmaftune/prefilter.py": 2,
@@ -1913,7 +1911,6 @@
         "pkg/recommend/recommend.go": 1,
         "pkg/tune/auto/confidence.go": 1,
         "pkg/uncertainty/uncertainty.go": 1,
-        "tools/vmaf-tune/src/vmaftune/auto.py": 7,
         "tools/vmaf-tune/src/vmaftune/recommend.py": 3,
         "tools/vmaf-tune/tests/test_auto_confidence_aware.py": 1,
         "tools/vmaf-tune/tests/test_ladder_uncertainty.py": 1,
@@ -1980,7 +1977,7 @@
         "ai/scripts/calibrate_phase_f_recipes.py": 3,
         "pkg/corpus/corpus.go": 1,
         "pkg/tune/auto/auto.go": 3,
-        "tools/vmaf-tune/src/vmaftune/auto.py": 5,
+        "tools/vmaf-tune/src/vmaftune/auto.py": 4,
         "tools/vmaf-tune/src/vmaftune/cli.py": 4,
         "tools/vmaf-tune/src/vmaftune/corpus.py": 3,
         "tools/vmaf-tune/src/vmaftune/ladder.py": 1
@@ -2028,7 +2025,6 @@
         "pkg/corpusrow/corpusrow.go": 1,
         "pkg/tune/auto/auto.go": 1,
         "tools/vmaf-tune/src/vmaftune/auto.py": 1,
-        "tools/vmaf-tune/src/vmaftune/score.py": 1,
         "tools/vmaf-tune/tests/test_hdr.py": 1
       },
       "target": "0295-vmaf-tune-phase-e-bitrate-ladder.md"
@@ -2040,7 +2036,6 @@
         "pkg/corpus/coarse_to_fine.go": 2,
         "pkg/corpusrow/corpusrow.go": 1,
         "tools/vmaf-roi-score/src/vmafroiscore/__init__.py": 1,
-        "tools/vmaf-tune/src/vmaftune/bisect.py": 1,
         "tools/vmaf-tune/tests/test_corpus.py": 1
       },
       "target": "0296-vmaf-roi-saliency-weighted.md"
@@ -2117,6 +2112,7 @@
         "tools/vmaf-tune/src/vmaftune/auto.py": 6,
         "tools/vmaf-tune/src/vmaftune/corpus.py": 3,
         "tools/vmaf-tune/src/vmaftune/hdr.py": 1,
+        "tools/vmaf-tune/src/vmaftune/score.py": 1,
         "tools/vmaf-tune/tests/test_auto_recipe_overrides.py": 1,
         "tools/vmaf-tune/tests/test_corpus.py": 1,
         "tools/vmaf-tune/tests/test_hdr.py": 2
@@ -2140,7 +2136,8 @@
         "tools/vmaf-tune/src/vmaftune/corpus.py": 1,
         "tools/vmaf-tune/src/vmaftune/encode.py": 1,
         "tools/vmaf-tune/src/vmaftune/score.py": 2,
-        "tools/vmaf-tune/tests/test_corpus.py": 1
+        "tools/vmaf-tune/tests/test_corpus.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1
       },
       "target": "0301-vmaf-tune-sample-clip.md"
     },
@@ -2327,7 +2324,6 @@
         "pkg/tune/auto/auto.go": 1,
         "pkg/tune/auto/recipes.go": 1,
         "scripts/release/build-native-release-artifacts.sh": 3,
-        "tools/vmaf-tune/src/vmaftune/auto.py": 8,
         "tools/vmaf-tune/src/vmaftune/predictor.py": 3,
         "tools/vmaf-tune/tests/test_auto_recipe_overrides.py": 2,
         "tools/vmaf-tune/tests/test_calibrated_recipes.py": 2,
@@ -2604,7 +2600,6 @@
       "sites": {
         "cmd/vmafx-tune/cmd/auto.go": 1,
         "pkg/tune/auto/auto.go": 1,
-        "tools/vmaf-tune/src/vmaftune/auto.py": 5,
         "tools/vmaf-tune/tests/test_auto_confidence_aware.py": 1,
         "tools/vmaf-tune/tests/test_auto_short_circuits.py": 1
       },
@@ -2795,8 +2790,15 @@
       },
       "target": "0389-vmaf-tiny-v3-mlp-medium.md"
     },
+    "0392": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/auto.py": 1
+      },
+      "target": "0392-vmaf-tune-phase-d-per-shot.md"
+    },
     "0393": {
       "sites": {
+        "tools/vmaf-tune/src/vmaftune/auto.py": 5,
         "tools/vmaf-tune/src/vmaftune/cli.py": 4,
         "tools/vmaf-tune/src/vmaftune/conformal.py": 1,
         "tools/vmaf-tune/src/vmaftune/ladder.py": 2,
@@ -2823,6 +2825,7 @@
     },
     "0397": {
       "sites": {
+        "tools/vmaf-tune/src/vmaftune/auto.py": 10,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1
       },
@@ -3031,7 +3034,6 @@
         "cmd/vmafx-tune/cmd/auto.go": 1,
         "pkg/tune/auto/auto.go": 1,
         "pkg/tune/executor/executor.go": 1,
-        "tools/vmaf-tune/src/vmaftune/executor.py": 1,
         "tools/vmaf-tune/tests/test_executor.py": 1,
         "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2
       },
@@ -3076,8 +3078,8 @@
         "core/src/feature/hip/float_adm_hip.h": 1,
         "core/src/hip/meson.build": 1,
         "core/src/meson.build": 1,
-        "tools/vmaf-tune/src/vmaftune/executor.py": 6,
-        "tools/vmaf-tune/tests/test_executor_pershot_saliency.py": 1
+        "tools/vmaf-tune/tests/test_executor_pershot_saliency.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2
       },
       "target": "0468-hip-float-adm-real-kernel.md"
     },
@@ -3343,8 +3345,7 @@
     },
     "0512": {
       "sites": {
-        "pkg/corpus/shots.go": 2,
-        "tools/vmaf-tune/src/vmaftune/per_shot.py": 3
+        "pkg/corpus/shots.go": 2
       },
       "target": "0512-vulkan-vif-two-variant-shader.md"
     },
@@ -3357,6 +3358,7 @@
         "pkg/pershot/pershot.go": 4,
         "testdata/bench_all.sh": 3,
         "tools/vmaf-tune/src/vmaftune/cli.py": 4,
+        "tools/vmaf-tune/src/vmaftune/per_shot.py": 3,
         "tools/vmaf-tune/src/vmaftune/report.py": 1,
         "tools/vmaf-tune/tests/test_per_shot.py": 1,
         "tools/vmaf-tune/tests/test_report.py": 2
@@ -3510,7 +3512,6 @@
         "pkg/bisect/bisect.go": 1,
         "pkg/report/report.go": 1,
         "pkg/report/report_test.go": 1,
-        "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
         "tools/vmaf-tune/tests/test_bisect.py": 1,
         "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py": 2,
         "tools/vmaf-tune/tests/test_per_shot.py": 5
@@ -3549,6 +3550,7 @@
     },
     "0534": {
       "sites": {
+        "tools/vmaf-tune/src/vmaftune/bisect.py": 3,
         "tools/vmaf-tune/src/vmaftune/cli.py": 3,
         "tools/vmaf-tune/src/vmaftune/compare.py": 5,
         "tools/vmaf-tune/src/vmaftune/report.py": 6,
@@ -3697,7 +3699,6 @@
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "scripts/ci/cross_backend_parity_gate.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
-        "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
         "tools/vmaf-tune/tests/test_bbb_e2e_v15_shared_ref.py": 1,
         "tools/vmaf-tune/tests/test_workdir_enospc.py": 1
       },
@@ -3818,7 +3819,7 @@
       "sites": {
         "cmd/vmafx-tune/cmd/pershot.go": 3,
         "pkg/bisect/score_yuv.go": 1,
-        "tools/vmaf-tune/src/vmaftune/bisect.py": 9,
+        "tools/vmaf-tune/src/vmaftune/bisect.py": 8,
         "tools/vmaf-tune/src/vmaftune/cli.py": 5,
         "tools/vmaf-tune/src/vmaftune/corpus.py": 2,
         "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
@@ -3830,7 +3831,8 @@
     },
     "0579": {
       "sites": {
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
+        "tools/vmaf-tune/src/vmaftune/executor.py": 1
       },
       "target": "0579-vmaf-tune-auto-execute-mode.md"
     },
@@ -3843,6 +3845,12 @@
         "core/test/test_moment_simd.c": 2
       },
       "target": "0584-moment-sve2-port.md"
+    },
+    "0588": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/executor.py": 6
+      },
+      "target": "0588-vmaf-tune-executor-pershot-saliency.md"
     },
     "0589": {
       "sites": {
@@ -3886,6 +3894,7 @@
     "0598": {
       "sites": {
         "cmd/vmafx-tune/cmd/pershot.go": 3,
+        "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
         "tools/vmaf-tune/src/vmaftune/cli.py": 4,
         "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
         "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2
@@ -4022,7 +4031,7 @@
       "sites": {
         "ai/scripts/calibrate_nr_threshold.py": 3,
         "pkg/scorebackend/scorebackend.go": 1,
-        "tools/vmaf-tune/src/vmaftune/bisect.py": 6,
+        "tools/vmaf-tune/src/vmaftune/bisect.py": 5,
         "tools/vmaf-tune/src/vmaftune/cli.py": 3,
         "tools/vmaf-tune/src/vmaftune/score_backend.py": 3,
         "tools/vmaf-tune/tests/test_compare.py": 1,

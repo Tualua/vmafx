@@ -23,25 +23,28 @@ vmaf-tune auto \
 ```
 
 Add `--smoke` to exercise the whole composition with mocked sub-phases and no
-ffmpeg or ONNX. Add `--execute` to also run the selected encode, see
-[Execute mode](#execute-mode).
+ffmpeg or ONNX. A smoke plan probes nothing, so it needs no source:
+`vmaf-tune auto --smoke` works on its own and the plan records an empty
+`"src": ""` (pass `--src` to have it recorded). Add `--execute` to also run
+the selected encode, see [Execute mode](#execute-mode).
 
 Exit codes: `0` for a plan-only run, whatever the plan holds; `1` when
 `--execute` ran at least one cell and none scored; `2` for an empty
-`--allow-codecs`, a planner error, or `--execute` without the source
+`--allow-codecs`, a missing `--src` (it is required unless `--smoke`, and
+always with `--execute`), a planner error, or `--execute` without the source
 geometry (see [Execute mode](#execute-mode)).
 
 ## Flags
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--src PATH` | none (required) | Reference video: raw YUV or any FFmpeg-readable container. |
+| `--src PATH` | none | Reference video: raw YUV or any FFmpeg-readable container. Required unless `--smoke`, and always with `--execute` (exit 2). |
 | `--target-vmaf F` | `93.0` | Target pooled-mean VMAF. |
 | `--max-budget-bitrate K` | `8000.0` | Upper bound on the picked rendition's bitrate, in kbps. |
 | `--allow-codecs LIST` | `libx264` | Comma-separated codecs the tree may pick from. A single entry short-circuits the compare shortlist. |
 | `--codec NAME` | none | Pins the codec, overriding the `--allow-codecs` ranking. Also short-circuits the shortlist. |
 | `--sample-clip-seconds N` | `0.0` | Propagates this clip length to the internal sweeps instead of re-deciding it per stage (ADR-0301). `0` means the full source. |
-| `--smoke` | off | Composition end to end with mocked sub-phases. |
+| `--smoke` | off | Composition end to end with mocked sub-phases and synthetic 1080p SDR metadata; needs no `--src`. |
 | `--output PATH` | stdout | Write the JSON plan here. |
 | `--execute` | off | Run real encodes and scores for the selected cell. Plan-only without it. |
 | `--runs-dir PATH` | `runs` | Destination of the encodes and `tune_results.jsonl`. |

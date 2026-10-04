@@ -142,7 +142,7 @@ def detect_shots(
     ``diff_threshold`` overrides the C-side ``--diff-threshold`` (luma
     mean-absolute-delta cutoff for cut classification). Lower values
     yield more shots; the C default is 12.0 (8-bit domain). When
-    ``None`` the C binary uses its compiled-in default. See ADR-0512.
+    ``None`` the C binary uses its compiled-in default. See ADR-0513.
 
     ``max_shot_duration_sec`` enforces a uniform-time-window splitter
     on top of the detector output: any shot longer than the window is
@@ -171,6 +171,52 @@ def detect_shots(
     return shots
 
 
+def _per_shot_command(
+    per_shot_bin: str,
+    video_path: Path,
+    width: int,
+    height: int,
+    pix_fmt: str,
+    bitdepth: int,
+    tmp_path: Path,
+    diff_threshold: float | None,
+) -> list[str]:
+    """Build the ``vmaf-perShot`` argv writing JSON to ``tmp_path``."""
+    cmd = [
+        per_shot_bin,
+        "--reference",
+        str(video_path),
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--pixel_format",
+        _bitdepth_aware_pix(pix_fmt),
+        "--bitdepth",
+        str(bitdepth),
+        "--output",
+        str(tmp_path),
+        "--format",
+        "json",
+    ]
+    # ADR-0513: user-tunable cut threshold; the binary keeps its own default
+    # when the flag is omitted.
+    if diff_threshold is not None:
+        cmd.extend(["--diff-threshold", f"{float(diff_threshold):.6f}"])
+    return cmd
+
+
+def _read_shot_payload(completed: object, tmp_path: Path) -> str | None:
+    """Return the JSON text the binary wrote, or ``None`` on any failure."""
+    if int(getattr(completed, "returncode", 1)) != 0:
+        return None
+    try:
+        payload = tmp_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return payload if payload.strip() else None
+
+
 def _detect_shots_with_status(
     video_path: Path,
     *,
@@ -195,63 +241,28 @@ def _detect_shots_with_status(
     if binary is None:
         return _single_shot_fallback(total_frames), False
 
-    # vmaf-perShot always writes "vmaf-perShot: wrote N shot(s) to PATH" to
-    # stdout regardless of the --output value (including "--output -"). When
-    # "--output -" was used, the JSON landed in a file literally named "-"
-    # in the CWD while stdout carried the progress string, which made
-    # json.loads(stdout) fail with JSONDecodeError. Use a real tmpfile so
-    # stdout is exclusively the progress message and the JSON is read from
-    # the file the binary actually wrote. See fix/vmaf-tune-pershot-stdout-json-protocol.
+    # vmaf-perShot writes a progress line to stdout whatever --output holds,
+    # so the JSON goes to a real tmpfile (not "--output -") and is read back
+    # from it. See fix/vmaf-tune-pershot-stdout-json-protocol.
     with tempfile.NamedTemporaryFile(suffix=".json", prefix="vmaf_pershot_", delete=False) as _tmp:
         tmp_path = Path(_tmp.name)
-
-    cmd = [
-        per_shot_bin,
-        "--reference",
-        str(video_path),
-        "--width",
-        str(width),
-        "--height",
-        str(height),
-        "--pixel_format",
-        _bitdepth_aware_pix(pix_fmt),
-        "--bitdepth",
-        str(bitdepth),
-        "--output",
-        str(tmp_path),
-        "--format",
-        "json",
-    ]
-    # ADR-0512: thread a user-tunable cut threshold to the C binary so
-    # operators can dial sensitivity per content (animation vs. live
-    # action) without rebuilding. The binary keeps its own default
-    # when the flag is omitted.
-    if diff_threshold is not None:
-        cmd.extend(["--diff-threshold", f"{float(diff_threshold):.6f}"])
-
+    cmd = _per_shot_command(
+        per_shot_bin, video_path, width, height, pix_fmt, bitdepth, tmp_path, diff_threshold
+    )
     try:
         runner_fn = runner or subprocess.run
         completed = runner_fn(  # type: ignore[operator]
             cmd, capture_output=True, text=True, check=False
         )
-        rc = int(getattr(completed, "returncode", 1))
-        if rc != 0:
-            return _single_shot_fallback(total_frames), False
-
-        # Read the JSON payload from the tmpfile the binary wrote.
-        try:
-            payload = tmp_path.read_text(encoding="utf-8")
-        except OSError:
-            return _single_shot_fallback(total_frames), False
-        if not payload.strip():
-            return _single_shot_fallback(total_frames), False
+        payload = _read_shot_payload(completed, tmp_path)
     finally:
         # Best-effort cleanup; unlink failure is non-fatal.
         try:
             tmp_path.unlink()
         except OSError:
             pass
-
+    if payload is None:
+        return _single_shot_fallback(total_frames), False
     return _parse_per_shot_json(payload), True
 
 
@@ -288,7 +299,7 @@ def split_long_shots(
     the empirical threshold under-fits), the fallback ensures the
     timeline is partitioned into at least :math:`\\lceil L/W \\rceil`
     pieces where :math:`L` is the shot length in seconds and :math:`W`
-    is the window. ADR-0512.
+    is the window. ADR-0513.
 
     ``max_duration_sec`` <= 0 or non-finite ``framerate`` is a no-op
     (returns the input unchanged) — the caller has explicitly disabled
@@ -401,6 +412,24 @@ def _default_predicate(shot: Shot, target_vmaf: float, encoder: str) -> tuple[in
     return (adapter.quality_default, float(target_vmaf))
 
 
+def _concat_command(ffmpeg_bin: str, seg_dir: Path, output: Path) -> tuple[str, ...]:
+    """ffmpeg concat-demuxer argv stitching ``seg_dir/concat.txt`` into ``output``."""
+    return (
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str((seg_dir / "concat.txt").as_posix()),
+        "-c",
+        "copy",
+        str(output),
+    )
+
+
 def merge_shots(
     recommendations: Sequence[ShotRecommendation],
     *,
@@ -442,20 +471,7 @@ def merge_shots(
         listing_lines.append(f"file '{seg_path.as_posix()}'")
 
     listing = "\n".join(listing_lines) + "\n"
-    concat_cmd: tuple[str, ...] = (
-        ffmpeg_bin,
-        "-y",
-        "-hide_banner",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str((seg_dir / "concat.txt").as_posix()),
-        "-c",
-        "copy",
-        str(output),
-    )
+    concat_cmd = _concat_command(ffmpeg_bin, seg_dir, output)
 
     return EncodingPlan(
         recommendations=tuple(recommendations),

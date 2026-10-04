@@ -3,7 +3,7 @@
 """Pelorus deband prefilter autotune (control-plane workstream D2).
 
 Drives a VMAF-in-the-loop joint search over the Pelorus deband filter's
-strength knobs (the 10-knob frozen contract, ADR-0110) **and** the
+strength knobs (the 10-knob frozen contract, Pelorus ADR-0110) **and** the
 encoder's CRF axis. Each TPE trial:
 
 1. proposes a deband parameter dict + a CRF,
@@ -259,27 +259,14 @@ def _smoke_probe_factory(target_vmaf: float, adapter: FilterAdapter) -> ProbeFn:
     return _probe
 
 
-def _run_joint_tpe(
+def _make_objective(
     *,
     target_vmaf: float,
-    adapter: FilterAdapter,
     probe: ProbeFn,
     search_space: dict[str, tuple[str, float, float]],
-    n_trials: int,
-    time_budget_s: float | None,
-    seed: int = 0,
-) -> tuple[int, dict[str, float], ProbeResult, tuple[ProbeRecord, ...]]:
-    """Run the joint deband+CRF TPE search; return the winner + probe log.
-
-    Reuses Optuna's ``TPESampler`` (the same engine fast.py uses). The
-    objective is ``|achieved_vmaf - target| + λ·kbps``. Returns
-    ``(best_crf, best_deband_params, best_probe, all_probe_records)``.
-    """
-    if time_budget_s is not None and time_budget_s <= 0.0:
-        raise ValueError(f"time_budget_s must be > 0 when set; got {time_budget_s!r}")
-    assert optuna is not None, "optuna not installed; call _require_optuna() first"
-
-    records: list[ProbeRecord] = []
+    records: list[ProbeRecord],
+) -> Callable[[Any], float]:
+    """Build the Optuna objective ``|achieved_vmaf - target| + lambda * kbps``."""
 
     def _objective(trial: Any) -> float:
         deband: dict[str, float] = {}
@@ -308,27 +295,120 @@ def _run_joint_tpe(
         )
         return objective
 
+    return _objective
+
+
+def _run_joint_tpe(
+    *,
+    target_vmaf: float,
+    adapter: FilterAdapter,
+    probe: ProbeFn,
+    search_space: dict[str, tuple[str, float, float]],
+    n_trials: int,
+    time_budget_s: float | None,
+    seed: int = 0,
+) -> tuple[int, dict[str, float], ProbeResult, tuple[ProbeRecord, ...]]:
+    """Run the joint deband+CRF TPE search; return the winner + probe log.
+
+    Reuses Optuna's ``TPESampler`` (the same engine fast.py uses). Returns
+    ``(best_crf, best_deband_params, best_probe, all_probe_records)``.
+    """
+    if time_budget_s is not None and time_budget_s <= 0.0:
+        raise ValueError(f"time_budget_s must be > 0 when set; got {time_budget_s!r}")
+    assert optuna is not None, "optuna not installed; call _require_optuna() first"
+
+    records: list[ProbeRecord] = []
+    objective = _make_objective(
+        target_vmaf=target_vmaf, probe=probe, search_space=search_space, records=records
+    )
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study = optuna.create_study(
         direction="minimize",
         sampler=optuna.samplers.TPESampler(seed=seed),
     )
     study.optimize(
-        _objective,
+        objective,
         n_trials=n_trials,
         timeout=float(time_budget_s) if time_budget_s is not None else None,
         show_progress_bar=False,
     )
 
     best = study.best_trial
-    best_crf = int(best.params["crf"])
     best_deband = {k: v for k, v in best.params.items() if k != "crf"}
     best_probe = ProbeResult(
         vmaf=float(best.user_attrs.get("vmaf", float("nan"))),
         kbps=float(best.user_attrs.get("kbps", float("nan"))),
         vf_fragment=adapter.vf_fragment(best_deband),
     )
-    return best_crf, best_deband, best_probe, tuple(records)
+    return int(best.params["crf"]), best_deband, best_probe, tuple(records)
+
+
+def _choose_probe(
+    *,
+    smoke: bool,
+    probe: ProbeFn | None,
+    src: Path | None,
+    target_vmaf: float,
+    adapter: FilterAdapter,
+) -> ProbeFn:
+    """Pick the probe: synthetic in smoke mode, the injected one in production."""
+    if smoke:
+        return probe or _smoke_probe_factory(target_vmaf, adapter)
+    if probe is None:
+        raise ValueError(
+            "recommend_prefilter production mode requires an injected "
+            "probe callable (deband, crf) -> ProbeResult. The live "
+            "deband->encode->score loop is built by the CLI handler "
+            "from ffmpeg + libvmaf and gated on pelorus_filter_available()."
+        )
+    if src is None:
+        raise ValueError(
+            "recommend_prefilter production mode requires a source path "
+            "(src=None is only valid for smoke=True)."
+        )
+    return probe
+
+
+def _result_notes(smoke: bool, swept: tuple[str, ...], n_records: int) -> str:
+    """Human-readable provenance note stored in the result."""
+    if smoke:
+        return (
+            "smoke mode — synthetic deband+CRF surface; no ffmpeg / Vulkan / "
+            "GPU. Joint TPE over deband knobs + CRF (ADR-1116 / Pelorus ADR-0106). "
+            f"Swept knobs: {', '.join(swept)}."
+        )
+    return (
+        f"production: joint TPE over {len(swept)} deband knobs + CRF, "
+        f"{n_records} probes against the pelorus_deband_vulkan filter "
+        "(Pelorus ADR-0110 contract). VMAF is the oracle; lowest-bitrate hit wins."
+    )
+
+
+def _build_result(
+    adapter: FilterAdapter,
+    encoder: str,
+    target_vmaf: float,
+    smoke: bool,
+    best: tuple[int, dict[str, float], ProbeResult],
+    records: tuple[ProbeRecord, ...],
+    swept: tuple[str, ...],
+) -> dict[str, Any]:
+    """Serialise the search outcome as a :class:`PrefilterResult` dict."""
+    best_crf, best_deband, best_probe = best
+    return PrefilterResult(
+        filter_name=adapter.filter_name,
+        encoder=encoder,
+        target_vmaf=float(target_vmaf),
+        recommended_crf=best_crf,
+        recommended_deband=best_deband,
+        recommended_vf=best_probe.vf_fragment,
+        achieved_vmaf=float(best_probe.vmaf),
+        achieved_kbps=float(best_probe.kbps),
+        n_trials=len(records),
+        smoke=smoke,
+        probes=records,
+        notes=_result_notes(smoke, swept, len(records)),
+    ).to_dict()
 
 
 def recommend_prefilter(
@@ -347,126 +427,49 @@ def recommend_prefilter(
 ) -> dict[str, Any]:
     """Recommend joint deband strengths + CRF for ``src`` at ``target_vmaf``.
 
-    The search optimises the Pelorus deband knob space (the frozen
-    contract, ADR-0110) **and** the CRF axis in one Optuna TPE study,
-    returning the lowest-bitrate combination that hits the VMAF target.
+    One Optuna TPE study searches the Pelorus deband knob space (the frozen
+    contract, Pelorus ADR-0110) **and** the CRF axis, returning the
+    lowest-bitrate combination that hits the VMAF target.
 
-    Production flow (``smoke=False``): the caller must inject ``probe``
-    (the ``deband -> encode -> score`` loop) — this module does not run
-    ffmpeg itself, and the live loop requires the Pelorus Vulkan filter
-    in the ffmpeg build (gated by :func:`pelorus_filter_available`,
-    enforced by the CLI handler before this function is reached).
+    Production (``smoke=False``): the caller injects ``probe`` (the
+    ``deband -> encode -> score`` loop); this module runs no ffmpeg, and the
+    CLI gates on :func:`pelorus_filter_available`. Smoke (``smoke=True``): a
+    synthetic surface drives the search with no ffmpeg / Vulkan / GPU, and
+    ``src`` may be ``None``.
 
-    Smoke flow (``smoke=True``): a synthetic deband+CRF surface drives
-    the joint search end-to-end with no ffmpeg / Vulkan / GPU.
+    ``encoder`` names the codec adapter (recorded and forwarded to the
+    probe); ``filter_name`` the registered filter adapter; ``crf_range`` the
+    inclusive CRF range; ``sweep_knobs`` an optional subset of the 10
+    contract knobs (the rest keep the filter default); ``n_trials`` the TPE
+    budget (:data:`DEFAULT_N_TRIALS` / :data:`SMOKE_N_TRIALS`);
+    ``time_budget_s`` a soft wall-clock cap; ``seed`` the sampler seed.
 
-    Parameters
-    ----------
-    src
-        Source video path. ``None`` only in smoke mode (no encode runs).
-    target_vmaf
-        Quality target on the standard VMAF [0, 100] scale.
-    encoder
-        Codec adapter name (reused from ``codec_adapters``); recorded in
-        the result and forwarded to the probe.
-    filter_name
-        Registered filter-adapter name (default ``pelorus_deband``).
-    crf_range
-        Inclusive ``(lo, hi)`` CRF search range.
-    sweep_knobs
-        Optional subset of deband knob names to sweep; ``None`` sweeps
-        all 10 contract knobs. The rest stay at the filter default.
-    n_trials
-        TPE trial budget. Defaults to :data:`DEFAULT_N_TRIALS`
-        (production) / :data:`SMOKE_N_TRIALS` (smoke).
-    time_budget_s
-        Soft wall-clock cap for the Optuna loop.
-    smoke
-        Use the synthetic probe (no ffmpeg / Vulkan / GPU).
-    probe
-        Production seam — ``(deband_params, crf) -> ProbeResult``.
-        Required when ``smoke=False`` and no synthetic probe is wanted.
-    seed
-        TPE sampler seed (default 0) for reproducible searches.
-
-    Returns
-    -------
-    dict
-        Serialisable :class:`PrefilterResult`.
-
-    Raises
-    ------
-    RuntimeError
-        Optuna missing (install ``vmaf-tune[fast]``).
-    ValueError
-        Invalid argument (``src=None`` in production without a probe,
-        non-positive budget, bad CRF range, unknown knob name).
+    Returns the serialised :class:`PrefilterResult`. Raises ``RuntimeError``
+    without Optuna (``vmaf-tune[fast]``), ``ValueError`` on bad arguments.
     """
     _require_optuna()
 
     adapter = get_filter_adapter(filter_name)
     search_space = build_search_space(adapter, crf_range=crf_range, knobs=sweep_knobs)
 
-    effective_n_trials = (
-        n_trials if n_trials is not None else (SMOKE_N_TRIALS if smoke else DEFAULT_N_TRIALS)
+    default_trials = SMOKE_N_TRIALS if smoke else DEFAULT_N_TRIALS
+    chosen_probe = _choose_probe(
+        smoke=smoke, probe=probe, src=src, target_vmaf=target_vmaf, adapter=adapter
     )
-
-    if smoke:
-        chosen_probe = probe or _smoke_probe_factory(target_vmaf, adapter)
-    else:
-        if probe is None:
-            raise ValueError(
-                "recommend_prefilter production mode requires an injected "
-                "probe callable (deband, crf) -> ProbeResult. The live "
-                "deband->encode->score loop is built by the CLI handler "
-                "from ffmpeg + libvmaf and gated on pelorus_filter_available()."
-            )
-        if src is None:
-            raise ValueError(
-                "recommend_prefilter production mode requires a source path "
-                "(src=None is only valid for smoke=True)."
-            )
-        chosen_probe = probe
-
     best_crf, best_deband, best_probe, records = _run_joint_tpe(
         target_vmaf=target_vmaf,
         adapter=adapter,
         probe=chosen_probe,
         search_space=search_space,
-        n_trials=effective_n_trials,
+        n_trials=n_trials if n_trials is not None else default_trials,
         time_budget_s=time_budget_s,
         seed=seed,
     )
 
     swept = tuple(n for n in search_space if n != "crf")
-    if smoke:
-        notes = (
-            "smoke mode — synthetic deband+CRF surface; no ffmpeg / Vulkan / "
-            "GPU. Joint TPE over deband knobs + CRF (ADR-1116 / ADR-0106). "
-            f"Swept knobs: {', '.join(swept)}."
-        )
-    else:
-        notes = (
-            f"production: joint TPE over {len(swept)} deband knobs + CRF, "
-            f"{len(records)} probes against the pelorus_deband_vulkan filter "
-            "(ADR-0110 contract). VMAF is the oracle; lowest-bitrate hit wins."
-        )
-
-    result = PrefilterResult(
-        filter_name=adapter.filter_name,
-        encoder=encoder,
-        target_vmaf=float(target_vmaf),
-        recommended_crf=best_crf,
-        recommended_deband=best_deband,
-        recommended_vf=best_probe.vf_fragment,
-        achieved_vmaf=float(best_probe.vmaf),
-        achieved_kbps=float(best_probe.kbps),
-        n_trials=len(records),
-        smoke=smoke,
-        probes=records,
-        notes=notes,
+    return _build_result(
+        adapter, encoder, target_vmaf, smoke, (best_crf, best_deband, best_probe), records, swept
     )
-    return result.to_dict()
 
 
 __all__ = [

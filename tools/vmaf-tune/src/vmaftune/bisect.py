@@ -54,7 +54,7 @@ import shutil
 import tempfile
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .codec_adapters import get_adapter
 from .defaultmodel import DEFAULT_MODEL
@@ -141,7 +141,7 @@ _ABSOLUTE_CRF_RANGE_BY_NAME: dict[str, tuple[int, int]] = {
 def _workdir_parent() -> Path | None:
     """Return the preferred parent directory for temporary work directories.
 
-    Resolution order (ADR-0549):
+    Resolution order (ADR-0598):
 
     1. ``VMAFTUNE_WORKDIR`` environment variable (set by the dev-mcp
        container to ``/probes/vmaftune-work`` which has ~435 GB free),
@@ -173,8 +173,7 @@ def _workdir_parent() -> Path | None:
     import logging
 
     logging.getLogger(__name__).warning(
-        "VMAFTUNE_WORKDIR=%s is not writable (uid=%d); "
-        "falling back to OS default temp directory",
+        "VMAFTUNE_WORKDIR=%s is not writable (uid=%d); falling back to OS default temp directory",
         env_val,
         os.getuid(),
     )
@@ -218,7 +217,7 @@ def _estimate_yuv_bytes(
 ) -> int:
     """Estimate the disk bytes a raw YUV decode will occupy.
 
-    Used for the preflight disk-space check (ADR-0549). The estimate
+    Used for the preflight disk-space check (ADR-0598). The estimate
     is intentionally rounded up — we multiply by the ceiling of fps and
     add a small per-frame overhead for alignment, so the check is
     conservative rather than optimistic.
@@ -315,7 +314,7 @@ class BisectSample:
     target-meeting cell. Each probe is a genuine measurement on the
     codec under test (no extrapolation, no overshoot bias) — exactly
     the data the rate-quality chart should plot to avoid the
-    connect-the-dots artefact described in ADR-0530. Failed encodes /
+    connect-the-dots artefact described in ADR-0534. Failed encodes /
     score round-trips never reach this list; see :func:`_encode_and_score`.
     """
 
@@ -341,7 +340,7 @@ class BisectResult:
     walked through before converging on ``best_crf``. Consumers like
     the rate-quality chart use the raw samples instead of the
     (potentially overshoot-biased) picked-CRF point to draw a
-    monotonic R-Q curve (ADR-0530). The tuple is empty when the bisect
+    monotonic R-Q curve (ADR-0534). The tuple is empty when the bisect
     short-circuits before any sample completes (e.g. unknown codec).
     """
 
@@ -494,6 +493,287 @@ def _try_nr_early_elimination_on_yuv(
     return None
 
 
+@dataclasses.dataclass
+class _BisectLoop:
+    """Fixed inputs and mutable state of one :func:`bisect_target_vmaf` run."""
+
+    src: Path
+    codec: str
+    adapter: object
+    preset: str
+    target_vmaf: float
+    max_iterations: int
+    sem: threading.Semaphore
+    encode_kwargs: dict[str, Any]
+    nr_proxy_backend: NRProxyBackend | None
+    yuv_est_bytes: int | None
+    workdir: Path
+    cur_lo: int
+    cur_hi: int
+    n_iterations: int = 0
+    best: BisectResult | None = None
+    last_vmaf_at_crf: dict[int, float] = dataclasses.field(default_factory=dict)
+    # ADR-0534: every successful probe is kept so compare-sweep and the
+    # rate-quality chart can plot the codec's real R-Q curve.
+    samples: list[BisectSample] = dataclasses.field(default_factory=list)
+    fr_calls_total: int = 0
+    fr_calls_saved: int = 0
+
+
+def _open_workdir(workdir: Path | None) -> tuple[tempfile.TemporaryDirectory[str] | None, Path]:
+    """Return ``(temp-dir context or None, workdir path)``."""
+    if workdir is not None:
+        workdir_path = Path(workdir)
+        workdir_path.mkdir(parents=True, exist_ok=True)
+        return None, workdir_path
+    # ADR-0598: prefer VMAFTUNE_WORKDIR (e.g. /probes/vmaftune-work in the
+    # dev-mcp container) over the OS default /tmp, an 8 GB tmpfs there that a
+    # full 1080p60 reference decode (~118 GB) cannot fit.
+    parent = _workdir_parent()
+    if parent is not None:
+        parent.mkdir(parents=True, exist_ok=True)
+    ctx = tempfile.TemporaryDirectory(dir=parent)
+    return ctx, Path(ctx.name)
+
+
+def _cleanup_workdir(
+    workdir_ctx: tempfile.TemporaryDirectory[str] | None, workdir_path: Path, src: Path
+) -> None:
+    """ADR-0577 aggressive cleanup: drop the decoded reference YUV.
+
+    It is re-decoded for the next codec's bisect; this caps peak disk use at
+    one reference YUV instead of one per concurrent codec bisect. A temp-dir
+    workdir is removed whole; a caller-supplied one loses only the
+    ``<stem>.ref.decoded.yuv`` that ``_encode_and_score`` materialised.
+    """
+    if workdir_ctx is None:
+        ref_yuv = workdir_path / (Path(src).stem + ".ref.decoded.yuv")
+        with contextlib.suppress(OSError):
+            if ref_yuv.exists():
+                ref_yuv.unlink()
+    else:
+        workdir_ctx.cleanup()
+
+
+def _midrun_disk_error(loop: _BisectLoop) -> str | None:
+    """ADR-0577 / ADR-0641 mid-run disk-space check; an error text or ``None``.
+
+    Container sources need 2x the estimated YUV size because the reference
+    and distorted decodes can coexist; a raw source needs only the distorted
+    decode plus overhead.
+    """
+    if loop.yuv_est_bytes is None:
+        return None
+    ctx = f"{loop.codec} @ VMAF {loop.target_vmaf:g}, iteration {loop.n_iterations}"
+    return _check_disk_space(
+        loop.workdir,
+        estimated_bytes=loop.yuv_est_bytes,
+        headroom=_midrun_disk_headroom(Path(loop.src)),
+        context=ctx,
+    )
+
+
+def _probe_midpoint(loop: _BisectLoop, mid: int) -> BisectResult:
+    """One encode+score at ``mid``, holding the decode semaphore (ADR-0577).
+
+    The semaphore caps concurrent reference-YUV materialisation across the
+    compare thread pool. NR pre-scoring (ADR-0624 / ADR-0615) is offered
+    only while the window holds more than one candidate, so the final CRF
+    always gets a full-reference confirmation.
+    """
+    use_nr = loop.nr_proxy_backend is not None and loop.cur_lo < loop.cur_hi
+    with loop.sem:
+        return _encode_and_score(
+            src=loop.src,
+            codec=loop.codec,
+            adapter=loop.adapter,
+            preset=loop.preset,
+            crf=mid,
+            workdir=loop.workdir,
+            nr_proxy_backend=loop.nr_proxy_backend if use_nr else None,
+            nr_target_vmaf=loop.target_vmaf if use_nr else None,
+            **loop.encode_kwargs,
+        )
+
+
+def _apply_nr_skip(loop: _BisectLoop, sample: BisectResult, mid: int) -> None:
+    """Advance the window in the NR-implied direction (FR call skipped)."""
+    loop.fr_calls_saved += 1
+    parts = sample.error[len(_NR_SKIP_SENTINEL) :].split(";", 1)
+    direction = parts[0] if parts else "looser"
+    try:
+        nr_val = float(parts[1]) if len(parts) > 1 else float("nan")
+    except ValueError:
+        nr_val = float("nan")
+    _log.info(
+        "fast-nr: CRF %d NR_VMAF=%.2f target=%.2f δ=%.1f → %s (FR skipped, iter %d)",
+        mid,
+        nr_val,
+        loop.target_vmaf,
+        loop.nr_proxy_backend.calibration_threshold,  # type: ignore[union-attr]
+        direction,
+        loop.n_iterations,
+    )
+    if direction == "tighter":
+        loop.cur_lo = mid + 1
+    else:
+        loop.cur_hi = mid - 1
+
+
+def _record_sample(loop: _BisectLoop, sample: BisectResult, mid: int) -> BisectResult | None:
+    """Store a probe, check monotonicity, narrow the window; failure or ``None``."""
+    loop.samples.append(
+        BisectSample(
+            crf=int(mid),
+            bitrate_kbps=float(sample.bitrate_kbps),
+            vmaf_score=float(sample.measured_vmaf),
+            encode_time_ms=float(sample.encode_time_ms),
+        )
+    )
+    mono_err = _detect_monotonicity_violation(loop.last_vmaf_at_crf, mid, sample.measured_vmaf)
+    loop.last_vmaf_at_crf[mid] = sample.measured_vmaf
+    best = loop.best
+    if mono_err is not None:
+        return _failure(
+            loop.codec,
+            mono_err,
+            n_iterations=loop.n_iterations,
+            best_crf=best.best_crf if best is not None else -1,
+            measured_vmaf=best.measured_vmaf if best is not None else float("nan"),
+            bitrate_kbps=best.bitrate_kbps if best is not None else float("nan"),
+            encode_time_ms=sample.encode_time_ms,
+            encoder_version=sample.encoder_version,
+            samples=tuple(loop.samples),
+            fr_calls_total=loop.fr_calls_total,
+            fr_calls_saved=loop.fr_calls_saved,
+        )
+    if sample.measured_vmaf >= loop.target_vmaf:
+        # Quality met: best so far; try harder compression next.
+        loop.best = dataclasses.replace(sample, n_iterations=loop.n_iterations)
+        loop.cur_lo = mid + 1
+    else:
+        loop.cur_hi = mid - 1
+    return None
+
+
+def _bisect_iteration(loop: _BisectLoop) -> BisectResult | None:
+    """Run one bisect step; a terminal result ends the search, ``None`` continues."""
+    mid = _midpoint_lower_quality(loop.cur_lo, loop.cur_hi)
+    loop.n_iterations += 1
+    space_err = _midrun_disk_error(loop)
+    if space_err is not None:
+        return _failure(
+            loop.codec,
+            space_err,
+            n_iterations=loop.n_iterations,
+            samples=tuple(loop.samples),
+        )
+    sample = _probe_midpoint(loop, mid)
+    # NR early elimination returns a sentinel failure carrying the direction.
+    if not sample.ok and sample.error.startswith(_NR_SKIP_SENTINEL):
+        _apply_nr_skip(loop, sample, mid)
+        return None
+    loop.fr_calls_total += 1
+    if not sample.ok:
+        return dataclasses.replace(
+            sample,
+            n_iterations=loop.n_iterations,
+            samples=tuple(loop.samples),
+            fr_calls_total=loop.fr_calls_total,
+            fr_calls_saved=loop.fr_calls_saved,
+        )
+    return _record_sample(loop, sample, mid)
+
+
+def _bisect_finish(loop: _BisectLoop, lo: int, hi: int) -> BisectResult:
+    """Result after the loop: the best sample, or the unreachable-target failure."""
+    if loop.nr_proxy_backend is not None:
+        _log.info(
+            "fast-nr: bisect done — FR calls %d total, %d saved (%.0f%%)",
+            loop.fr_calls_total,
+            loop.fr_calls_saved,
+            100.0 * loop.fr_calls_saved / max(1, loop.fr_calls_total + loop.fr_calls_saved),
+        )
+    if loop.best is None:
+        return _failure(
+            loop.codec,
+            (
+                f"target VMAF {loop.target_vmaf:g} unreachable in CRF window "
+                f"[{lo}, {hi}] after {loop.n_iterations} iterations "
+                f"(best sample: {_describe_best_miss(loop.last_vmaf_at_crf)})"
+            ),
+            n_iterations=loop.n_iterations,
+            samples=tuple(loop.samples),
+            fr_calls_total=loop.fr_calls_total,
+            fr_calls_saved=loop.fr_calls_saved,
+        )
+    return dataclasses.replace(
+        loop.best,
+        samples=tuple(loop.samples),
+        fr_calls_total=loop.fr_calls_total,
+        fr_calls_saved=loop.fr_calls_saved,
+    )
+
+
+def _bisect_search(
+    src: Path,
+    codec: str,
+    adapter: object,
+    target_vmaf: float,
+    *,
+    crf_range: tuple[int, int] | None,
+    preset: str | None,
+    max_iterations: int,
+    knobs: dict[str, Any],
+    workdir: Path | None,
+    decode_semaphore: threading.Semaphore | None,
+    nr_proxy_backend: NRProxyBackend | None,
+) -> BisectResult:
+    """Validate the window, open the workdir and run the bisect loop."""
+    # ADR-0538: the caller's ``crf_range`` always wins, so --crf-min /
+    # --crf-max and the tutorial fixtures keep their explicit windows.
+    lo, hi = crf_range if crf_range is not None else _absolute_crf_range(adapter)
+    lo, hi = int(lo), int(hi)
+    if lo > hi:
+        return _failure(codec, f"invalid crf_range: lo={lo} > hi={hi}")
+    if max_iterations <= 0:
+        return _failure(codec, f"max_iterations must be >= 1, got {max_iterations}")
+    workdir_ctx, workdir_path = _open_workdir(workdir)
+    # ADR-0577: the YUV size is estimated once for the mid-run disk checks.
+    yuv_est = None
+    if float(knobs["duration_s"]) > 0.0:
+        yuv_est = _estimate_yuv_bytes(
+            width=knobs["width"],
+            height=knobs["height"],
+            pix_fmt=knobs["pix_fmt"],
+            fps=knobs["framerate"],
+            duration_s=float(knobs["duration_s"]),
+        )
+    loop = _BisectLoop(
+        src=src,
+        codec=codec,
+        adapter=adapter,
+        preset=preset if preset is not None else _default_preset(adapter),
+        target_vmaf=target_vmaf,
+        max_iterations=max_iterations,
+        sem=decode_semaphore if decode_semaphore is not None else _decode_semaphore,
+        encode_kwargs=knobs,
+        nr_proxy_backend=nr_proxy_backend,
+        yuv_est_bytes=yuv_est,
+        workdir=workdir_path,
+        cur_lo=lo,
+        cur_hi=hi,
+    )
+    try:
+        while loop.cur_lo <= loop.cur_hi and loop.n_iterations < loop.max_iterations:
+            early = _bisect_iteration(loop)
+            if early is not None:
+                return early
+        return _bisect_finish(loop, lo, hi)
+    finally:
+        _cleanup_workdir(workdir_ctx, workdir_path, src)
+
+
 def bisect_target_vmaf(
     src: Path,
     codec: str,
@@ -521,347 +801,39 @@ def bisect_target_vmaf(
 ) -> BisectResult:
     """Find the largest CRF whose measured VMAF still meets ``target_vmaf``.
 
-    Parameters
-    ----------
-    src
-        Reference YUV. Geometry / pix_fmt / framerate / duration are
-        passed via kwargs because the file does not self-describe.
-    codec
-        Codec adapter name (must exist in
-        :mod:`vmaftune.codec_adapters`).
-    target_vmaf
-        Quality floor; the bisect returns the highest-CRF cell whose
-        measured VMAF clears this.
-    sample_clip_seconds
-        Optional ADR-0301 centre-window sample clip. When positive and
-        shorter than ``duration_s``, each iteration encodes only that
-        window and scores against the matching reference frame window.
-    crf_range
-        ``(lo, hi)`` inclusive bound on the search domain. ``None``
-        defaults to the encoder's **absolute** CRF range per
-        :func:`_absolute_crf_range` (ADR-0538, supersedes the
-        ADR-0296 ``quality_range`` default). The wider absolute range
-        is required so the high-VMAF targets in the premium-archival
-        sweep (``--target-vmafs 94,96,97,98``) are reachable —
-        adapters such as ``libsvtav1`` declare
-        ``quality_range = (20, 50)`` for the informative window, which
-        is too tight to bisect down to VMAF >= 95. Callers that need
-        the historical informative-window behaviour pass
-        ``crf_range=adapter.quality_range`` explicitly.
-    max_iterations
-        Hard cap on encode+score round-trips. The window halves each
-        iteration so the asymptote is ``ceil(log2(hi - lo + 1))``;
-        ``max_iterations`` short-circuits before that for paranoia.
-    preset
-        Preset name forwarded verbatim to the adapter. ``None`` picks
-        the adapter's mid-range default (``"medium"`` for x264 /
-        x265 / svtav1 today).
-    encode_runner / score_runner
-        Subprocess-runner stubs. Default to
-        :func:`subprocess.run` via the underlying ``run_encode`` /
-        ``run_score`` calls. Tests inject fakes; production callers
-        leave them ``None``.
-    workdir
-        Where the per-iteration encoded outputs live. ``None`` uses a
-        :class:`tempfile.TemporaryDirectory` cleaned at exit.
-    decode_semaphore
-        A :class:`threading.Semaphore` that gates concurrent
-        reference-YUV decode operations (ADR-0577). When ``None``,
-        the module-level ``_decode_semaphore`` is used (default:
-        serial, i.e. ``Semaphore(1)``). Callers that want multiple
-        concurrent decodes pass ``threading.Semaphore(N)`` or call
-        :func:`set_decode_semaphore` before spawning the thread pool.
-    nr_proxy_backend
-        Optional :class:`~vmaftune.score_backend.NRProxyBackend` for
-        fast NR pre-scoring (ADR-0624 / ADR-0615). When provided, each
-        bisect midpoint is first scored via the cheap NR proxy. If
-        ``|NR - target| > δ_fast``, the full-reference VMAF call is
-        skipped and the bisect window advances in the NR-implied
-        direction. Full-reference scoring always runs for the *final*
-        confirmed CRF and for any midpoint within the δ_fast uncertainty
-        zone. The result carries ``fr_calls_saved`` / ``fr_calls_total``
-        telemetry fields. Pass ``None`` (default) to disable NR
-        pre-scoring and use full-reference scoring throughout.
+    ``src`` is the reference YUV (geometry, ``pix_fmt``, ``framerate`` and
+    ``duration_s`` come as kwargs); ``crf_range=None`` takes the encoder's
+    absolute range (ADR-0538); ``sample_clip_seconds`` (ADR-0301) scores a
+    centre window only. ``decode_semaphore`` gates concurrent reference
+    decodes (ADR-0577; default: the module-level ``Semaphore(1)``).
+    ``nr_proxy_backend`` enables NR pre-scoring (ADR-0624 / ADR-0615): a
+    midpoint far from the target skips the full-reference call, and the
+    result carries ``fr_calls_saved`` / ``fr_calls_total``. Runner kwargs are
+    subprocess test seams; ``workdir=None`` uses a temp dir.
 
-    Returns
-    -------
-    BisectResult
-        The best-so-far (CRF, VMAF, bitrate) tuple. ``ok=False`` when
-        the target is unreachable in the given window or the
-        monotonicity assumption fails.  When ``nr_proxy_backend`` is
-        supplied, ``fr_calls_total`` and ``fr_calls_saved`` carry
-        the NR telemetry.
+    Returns the best-so-far :class:`BisectResult`; ``ok=False`` when the
+    target is unreachable in the window or monotonicity fails.
     """
     try:
         adapter = get_adapter(codec)
     except KeyError as exc:
         return _failure(codec, f"unknown codec: {exc}")
-
-    # ADR-0577: use caller-supplied semaphore or fall back to the
-    # module-level singleton. The module-level default is Semaphore(1)
-    # (serial decodes) unless the CLI called set_decode_semaphore().
-    effective_sem: threading.Semaphore = (
-        decode_semaphore if decode_semaphore is not None else _decode_semaphore
+    # fmt: off
+    knobs = {
+        "width": width, "height": height, "pix_fmt": pix_fmt, "framerate": framerate,
+        "duration_s": duration_s, "sample_clip_seconds": sample_clip_seconds,
+        "vmaf_model": vmaf_model, "score_backend": score_backend,
+        "encode_runner": encode_runner, "score_runner": score_runner,
+        "decode_runner": decode_runner, "ffmpeg_bin": ffmpeg_bin, "vmaf_bin": vmaf_bin,
+    }
+    # fmt: on
+    # fmt: off
+    return _bisect_search(
+        src, codec, adapter, target_vmaf, crf_range=crf_range, preset=preset,
+        max_iterations=max_iterations, knobs=knobs, workdir=workdir,
+        decode_semaphore=decode_semaphore, nr_proxy_backend=nr_proxy_backend,
     )
-
-    # ADR-0538: default to the encoder's absolute CRF range (e.g. 0..51
-    # for libx264 / libx265, 0..63 for libvpx-vp9 / libaom-av1 /
-    # libsvtav1) rather than the adapter's perceptually-informative
-    # ``quality_range``. Premium-archival targets (VMAF 94..98) require
-    # CRFs below the informative window for most codecs; the absolute
-    # range makes them reachable. Caller-supplied ``crf_range`` always
-    # wins so the existing --crf-min / --crf-max CLI knobs and the
-    # codec-tutorial test fixtures keep their explicit windows.
-    lo, hi = crf_range if crf_range is not None else _absolute_crf_range(adapter)
-    lo = int(lo)
-    hi = int(hi)
-    if lo > hi:
-        return _failure(codec, f"invalid crf_range: lo={lo} > hi={hi}")
-
-    if max_iterations <= 0:
-        return _failure(codec, f"max_iterations must be >= 1, got {max_iterations}")
-
-    chosen_preset = preset if preset is not None else _default_preset(adapter)
-
-    if workdir is None:
-        # ADR-0549: prefer VMAFTUNE_WORKDIR (e.g. /probes/vmaftune-work
-        # in the dev-mcp container, ~435 GB free) over the OS default
-        # /tmp (8 GB tmpfs in the container — too small for a full
-        # 1080p60 BBB YUV decode of ~118 GB).
-        _wdir_parent = _workdir_parent()
-        if _wdir_parent is not None:
-            _wdir_parent.mkdir(parents=True, exist_ok=True)
-        workdir_ctx = tempfile.TemporaryDirectory(dir=_wdir_parent)
-        workdir_path = Path(workdir_ctx.name)
-    else:
-        workdir_ctx = None
-        workdir_path = Path(workdir)
-        workdir_path.mkdir(parents=True, exist_ok=True)
-
-    # State across iterations:
-    best: BisectResult | None = None
-    last_vmaf_at_crf: dict[int, float] = {}
-    # ADR-0530: record every successful encode+score round-trip so
-    # downstream consumers (compare-sweep, rate-quality chart) can
-    # plot the genuine codec R-Q curve instead of just the picked-CRF
-    # cell. Duplicates by (crf) are kept — the bisect never revisits
-    # a CRF in normal operation but a deliberate retry would be a real
-    # second measurement worth preserving.
-    samples: list[BisectSample] = []
-    n_iterations = 0
-    cur_lo, cur_hi = lo, hi
-    # ADR-0624 NR telemetry counters.
-    _fr_calls_total: int = 0
-    _fr_calls_saved: int = 0
-
-    # ADR-0577: estimate YUV size once for mid-run disk checks.
-    _yuv_est_bytes: int | None = None
-    if float(duration_s) > 0.0:
-        _yuv_est_bytes = _estimate_yuv_bytes(
-            width=width,
-            height=height,
-            pix_fmt=pix_fmt,
-            fps=framerate,
-            duration_s=float(duration_s),
-        )
-
-    try:
-        while cur_lo <= cur_hi and n_iterations < max_iterations:
-            mid = _midpoint_lower_quality(cur_lo, cur_hi)
-            n_iterations += 1
-
-            # ADR-0577 / ADR-0641: mid-run disk-space check. Container
-            # sources need 2× the estimated YUV size because the reference
-            # and distorted decodes can coexist. A pre-decoded/raw source
-            # already occupies the reference side, so each iteration needs
-            # only the distorted decode plus normal file overhead.
-            # ``workdir_path`` is bound on every branch of the
-            # if/else above, so a None-check would be dead code.
-            if _yuv_est_bytes is not None:
-                _ctx = f"{codec} @ VMAF {target_vmaf:g}, iteration {n_iterations}"
-                _space_err = _check_disk_space(
-                    workdir_path,
-                    estimated_bytes=_yuv_est_bytes,
-                    headroom=_midrun_disk_headroom(Path(src)),
-                    context=_ctx,
-                )
-                if _space_err is not None:
-                    return _failure(
-                        codec,
-                        _space_err,
-                        n_iterations=n_iterations,
-                        samples=tuple(samples),
-                    )
-
-            # ADR-0624 / ADR-0615 — NR pre-scoring fast path.
-            # When the caller supplied an NRProxyBackend, _encode_and_score
-            # is told about it. Inside _encode_and_score, after the
-            # encode+decode-distorted step but before the FR libvmaf call,
-            # the NR backend scores the distorted YUV. If |NR - target| >
-            # δ_fast the function returns early with nr_skipped=True and no
-            # measured_vmaf; the loop advances the window in the NR-implied
-            # direction without paying the FR cost.
-            #
-            # The ``cur_lo < cur_hi`` guard ensures the final CRF (window
-            # has collapsed to one candidate) always gets a FR confirmation.
-            _use_nr = nr_proxy_backend is not None and cur_lo < cur_hi
-
-            # ADR-0577: acquire the decode semaphore before calling
-            # _encode_and_score. The semaphore gates the number of
-            # concurrent reference-YUV materialisation operations across
-            # all threads in the compare thread pool. Encoder runs inside
-            # _encode_and_score proceed without semaphore gating — only
-            # the decode step benefits from the cap.
-            with effective_sem:
-                sample = _encode_and_score(
-                    src=src,
-                    codec=codec,
-                    adapter=adapter,
-                    preset=chosen_preset,
-                    crf=mid,
-                    width=width,
-                    height=height,
-                    pix_fmt=pix_fmt,
-                    framerate=framerate,
-                    duration_s=duration_s,
-                    sample_clip_seconds=sample_clip_seconds,
-                    vmaf_model=vmaf_model,
-                    score_backend=score_backend,
-                    encode_runner=encode_runner,
-                    score_runner=score_runner,
-                    decode_runner=decode_runner,
-                    ffmpeg_bin=ffmpeg_bin,
-                    vmaf_bin=vmaf_bin,
-                    workdir=workdir_path,
-                    nr_proxy_backend=nr_proxy_backend if _use_nr else None,
-                    nr_target_vmaf=target_vmaf if _use_nr else None,
-                )
-
-            # NR early-elimination path: _encode_and_score returned a
-            # sentinel BisectResult with ok=False and error starting with
-            # _NR_SKIP_SENTINEL. Parse direction + calibrated NR-VMAF from the payload.
-            if not sample.ok and sample.error.startswith(_NR_SKIP_SENTINEL):
-                _fr_calls_saved += 1
-                _payload = sample.error[len(_NR_SKIP_SENTINEL) :]
-                _parts = _payload.split(";", 1)
-                direction = _parts[0] if _parts else "looser"
-                try:
-                    nr_val = float(_parts[1]) if len(_parts) > 1 else float("nan")
-                except ValueError:
-                    nr_val = float("nan")
-                _log.info(
-                    "fast-nr: CRF %d NR_VMAF=%.2f target=%.2f δ=%.1f → %s " "(FR skipped, iter %d)",
-                    mid,
-                    nr_val,
-                    target_vmaf,
-                    nr_proxy_backend.calibration_threshold,  # type: ignore[union-attr]
-                    direction,
-                    n_iterations,
-                )
-                if direction == "tighter":
-                    cur_lo = mid + 1
-                else:
-                    cur_hi = mid - 1
-                continue
-
-            _fr_calls_total += 1
-
-            if not sample.ok:
-                return dataclasses.replace(
-                    sample,
-                    n_iterations=n_iterations,
-                    samples=tuple(samples),
-                    fr_calls_total=_fr_calls_total,
-                    fr_calls_saved=_fr_calls_saved,
-                )
-
-            # ADR-0530: record every successful probe (regardless of
-            # whether it cleared the target) so the rate-quality chart
-            # can render the actual codec curve.
-            samples.append(
-                BisectSample(
-                    crf=int(mid),
-                    bitrate_kbps=float(sample.bitrate_kbps),
-                    vmaf_score=float(sample.measured_vmaf),
-                    encode_time_ms=float(sample.encode_time_ms),
-                )
-            )
-
-            mono_err = _detect_monotonicity_violation(last_vmaf_at_crf, mid, sample.measured_vmaf)
-            last_vmaf_at_crf[mid] = sample.measured_vmaf
-            if mono_err is not None:
-                return _failure(
-                    codec,
-                    mono_err,
-                    n_iterations=n_iterations,
-                    best_crf=best.best_crf if best is not None else -1,
-                    measured_vmaf=best.measured_vmaf if best is not None else float("nan"),
-                    bitrate_kbps=best.bitrate_kbps if best is not None else float("nan"),
-                    encode_time_ms=sample.encode_time_ms,
-                    encoder_version=sample.encoder_version,
-                    samples=tuple(samples),
-                    fr_calls_total=_fr_calls_total,
-                    fr_calls_saved=_fr_calls_saved,
-                )
-
-            if sample.measured_vmaf >= target_vmaf:
-                # We met quality at this CRF — record it as best-so-far
-                # and try harder compression next.
-                best = dataclasses.replace(sample, n_iterations=n_iterations)
-                cur_lo = mid + 1
-            else:
-                # Quality miss — narrow toward higher quality.
-                cur_hi = mid - 1
-
-        if nr_proxy_backend is not None:
-            _log.info(
-                "fast-nr: bisect done — FR calls %d total, %d saved (%.0f%%)",
-                _fr_calls_total,
-                _fr_calls_saved,
-                100.0 * _fr_calls_saved / max(1, _fr_calls_total + _fr_calls_saved),
-            )
-
-        if best is None:
-            # Target unreachable in the searched window.
-            return _failure(
-                codec,
-                (
-                    f"target VMAF {target_vmaf:g} unreachable in CRF window "
-                    f"[{lo}, {hi}] after {n_iterations} iterations "
-                    f"(best sample: {_describe_best_miss(last_vmaf_at_crf)})"
-                ),
-                n_iterations=n_iterations,
-                samples=tuple(samples),
-                fr_calls_total=_fr_calls_total,
-                fr_calls_saved=_fr_calls_saved,
-            )
-
-        return dataclasses.replace(
-            best,
-            samples=tuple(samples),
-            fr_calls_total=_fr_calls_total,
-            fr_calls_saved=_fr_calls_saved,
-        )
-    finally:
-        # ADR-0577 aggressive cleanup: after the bisect completes (all
-        # iterations for this codec at this target), delete the decoded
-        # reference YUV. It is re-decoded on the next codec's bisect.
-        # This costs one extra decode per codec but caps peak disk usage
-        # to one reference YUV at a time instead of N (where N = number
-        # of concurrent codec bisects running in parallel). At 110 GB per
-        # 1080p BBB source, serial cleanup drops peak from 330 GB (3
-        # codecs × 110 GB) to 110 GB.
-        if workdir_ctx is None:
-            # Caller-supplied workdir: clean up the decoded ref YUV that
-            # _encode_and_score materialized (stem + ".ref.decoded.yuv").
-            # The temp-dir case is handled by workdir_ctx.cleanup() below,
-            # which removes the entire tree.
-            _ref_yuv = workdir_path / (Path(src).stem + ".ref.decoded.yuv")
-            with contextlib.suppress(OSError):
-                if _ref_yuv.exists():
-                    _ref_yuv.unlink()
-        if workdir_ctx is not None:
-            workdir_ctx.cleanup()
+    # fmt: on
 
 
 def _default_preset(adapter: object) -> str:
@@ -932,6 +904,262 @@ def _sample_clip_window(
     return start_s, clip_s, frame_skip_ref, frame_cnt
 
 
+def _check_adapter_cell(adapter: object, codec: str, preset: str, crf: int) -> BisectResult | None:
+    """Reject a preset or CRF the encoder cannot take; ``None`` when fine.
+
+    ADR-0538: ``adapter.validate(preset, crf)`` would also enforce the
+    adapter's informative ``quality_range`` (x265 ``(15, 40)``, svtav1
+    ``(20, 50)``). The bisect window is the wider absolute range so the
+    premium-archival targets are reachable, hence the preset whitelist and
+    the encoder's own limits are checked here instead.
+    """
+    abs_lo, abs_hi = _absolute_crf_range(adapter)
+    if not abs_lo <= int(crf) <= abs_hi:
+        return _failure(
+            codec,
+            (
+                f"adapter rejected (preset={preset!r}, crf={crf}): "
+                f"crf outside encoder absolute range [{abs_lo}, {abs_hi}]"
+            ),
+        )
+    presets = getattr(adapter, "presets", ())
+    if presets and preset not in presets:
+        return _failure(
+            codec,
+            (
+                f"adapter rejected (preset={preset!r}, crf={crf}): "
+                f"unknown preset; expected one of {presets}"
+            ),
+        )
+    return None
+
+
+def _bisect_encode_request(
+    src: Path,
+    cell: tuple[object, str, str, int, Path],
+    geometry: tuple[int, int, str, float],
+    clip: tuple[float, float, int, int],
+) -> EncodeRequest:
+    """The :class:`EncodeRequest` for one bisect cell.
+
+    ``cell`` is ``(adapter, codec, preset, crf, output)``, ``geometry`` is
+    ``(width, height, pix_fmt, framerate)``, ``clip`` is
+    :func:`_sample_clip_window`'s tuple. Bug #1: a container reference must
+    not get ``-f rawvideo`` (ffmpeg would parse the demuxed container as raw
+    YUV and write an empty file), so the container suffix is detected here.
+    """
+    adapter, codec, preset, crf, out_path = cell
+    width, height, pix_fmt, framerate = geometry
+    return EncodeRequest(
+        source=Path(src),
+        width=int(width),
+        height=int(height),
+        pix_fmt=pix_fmt,
+        framerate=float(framerate),
+        encoder=getattr(adapter, "encoder", codec),
+        preset=preset,
+        crf=int(crf),
+        output=out_path,
+        sample_clip_seconds=clip[1],
+        sample_clip_start_s=clip[0],
+        source_is_container=Path(src).suffix.lower() not in VMAF_RAW_SUFFIXES,
+    )
+
+
+def _encode_failure_message(enc_res: Any, enc_req: EncodeRequest, crf: int) -> str:
+    """Tell a missing encoder binary apart from a genuine encode failure.
+
+    ADR-0498: ffmpeg exits non-zero for both; the stderr tail decides.
+    """
+    encoder_name = enc_req.encoder
+    stderr_tail = enc_res.stderr_tail or ""
+    last_line = stderr_tail.strip().splitlines()[-1] if stderr_tail else "no stderr"
+    lowered = stderr_tail.lower()
+    if "encoder not found" in lowered or "unknown encoder" in lowered or "no such codec" in lowered:
+        return f"encoder unavailable ({encoder_name}): {last_line}"
+    return f"encode failed at CRF {crf} (exit={enc_res.exit_status}): {last_line}"
+
+
+def _enc_failure(codec: str, enc_res: Any, error: str) -> BisectResult:
+    """A failed sample that still reports the encode's time and version."""
+    return _failure(
+        codec,
+        error,
+        encode_time_ms=enc_res.encode_time_ms,
+        encoder_version=enc_res.encoder_version,
+    )
+
+
+def _prepare_reference(
+    src: Path,
+    workdir: Path,
+    src_is_container: bool,
+    geometry: tuple[int, int, str, float, float],
+    ffmpeg_bin: str,
+    runner: object | None,
+) -> tuple[Path | None, str | None]:
+    """The reference libvmaf can read: ``src`` itself, or its raw-YUV decode.
+
+    Bug #3: libvmaf takes raw .yuv / .y4m only, so a container reference is
+    decoded once into the workdir and reused by every iteration of the
+    bisect. ``geometry`` is ``(width, height, pix_fmt, framerate,
+    duration_s)``. Returns ``(path, None)`` or ``(None, error)``.
+    """
+    if not src_is_container:
+        return Path(src), None
+    from .score import _decode_to_raw_yuv
+
+    width, height, pix_fmt, framerate, duration_s = geometry
+    decoded_ref = workdir / (Path(src).stem + ".ref.decoded.yuv")
+    rc = 0
+    if not decoded_ref.exists():
+        # ADR-0598: preflight disk check; a 1080p60 634 s source decodes to
+        # ~118 GB, and the dev-mcp /tmp is an 8 GB tmpfs. Skipped when the
+        # duration is unknown (the ffmpeg return code reports ENOSPC).
+        decode_dur = float(duration_s) if float(duration_s) > 0.0 else None
+        if decode_dur is not None:
+            workdir.mkdir(parents=True, exist_ok=True)
+            est = _estimate_yuv_bytes(
+                width=width,
+                height=height,
+                pix_fmt=pix_fmt,
+                fps=framerate,
+                duration_s=decode_dur,
+            )
+            space_err = _check_disk_space(workdir, estimated_bytes=est)
+            if space_err is not None:
+                return None, space_err
+        # BBB e2e v2 Bug #v2-A: clamp the decode to ``duration_s`` (a 10 s
+        # probe of a 634 s source is ~896 MB, not ~58 GB); 0 keeps the legacy
+        # full-source decode.
+        rc = _decode_to_raw_yuv(
+            Path(src),
+            decoded_ref,
+            pix_fmt=pix_fmt,
+            ffmpeg_bin=ffmpeg_bin,
+            runner=runner,
+            duration_s=decode_dur,
+        )
+    if rc != 0 or not decoded_ref.exists():
+        return None, f"reference decode to raw YUV failed (rc={rc}) for {src}"
+    return decoded_ref, None
+
+
+def _drop_artifacts(out_path: Path, distorted: Path) -> None:
+    """Best-effort removal of the encode and its per-iteration decoded sidecar."""
+    with contextlib.suppress(OSError):
+        if out_path.exists():
+            out_path.unlink()
+        if distorted != out_path and distorted.exists():
+            distorted.unlink()
+
+
+def _nr_skip_sample(
+    codec: str, enc_res: Any, out_path: Path, score_req: ScoreRequest, score_args: dict[str, Any]
+) -> BisectResult | None:
+    """ADR-0624 / ADR-0615 NR early elimination before the full-reference call.
+
+    Returns the sentinel failure the bisect loop reads as "advance the
+    window without a real failure", or ``None`` to score in full.
+    """
+    nr_backend, nr_target = score_args["nr_proxy_backend"], score_args["nr_target_vmaf"]
+    if nr_backend is None or nr_target is None:
+        return None
+    nr_result = _try_nr_early_elimination_on_yuv(
+        nr_proxy_backend=nr_backend,
+        distorted_yuv=score_req.distorted,
+        width=int(score_args["width"]),
+        height=int(score_args["height"]),
+        pix_fmt=score_args["pix_fmt"],
+        target_vmaf=nr_target,
+    )
+    if nr_result is None:
+        return None
+    _drop_artifacts(out_path, score_req.distorted)
+    return _enc_failure(codec, enc_res, f"{_NR_SKIP_SENTINEL}{nr_result[0]};{nr_result[1]:.6f}")
+
+
+def _score_encoded(
+    *,
+    codec: str,
+    crf: int,
+    out_path: Path,
+    enc_res: Any,
+    ref_for_score: Path,
+    sample_duration_s: float,
+    window: tuple[int, int],
+    score_args: dict[str, Any],
+) -> BisectResult:
+    """Decode the encode, optionally NR-skip, score it, and build the sample."""
+    width, height = int(score_args["width"]), int(score_args["height"])
+    pix_fmt, duration_s = score_args["pix_fmt"], score_args["duration_s"]
+    workdir, ffmpeg_bin = score_args["workdir"], score_args["ffmpeg_bin"]
+    score_req = ScoreRequest(
+        reference=ref_for_score,
+        distorted=out_path,
+        width=width,
+        height=height,
+        pix_fmt=pix_fmt,
+        model=score_args["vmaf_model"],
+        frame_skip_ref=window[0],
+        frame_cnt=window[1],
+        # BBB e2e v2 Bug #v2-A: cap the distorted decode at the window length.
+        duration_s=float(duration_s),
+    )
+    # libvmaf takes raw .yuv / .y4m only; a no-op for raw encoder output.
+    score_req, decode_rc = maybe_decode_distorted(
+        score_req, workdir=workdir, ffmpeg_bin=ffmpeg_bin, runner=score_args["decode_runner"]
+    )
+    if decode_rc != 0:
+        _drop_artifacts(out_path, out_path)
+        return _enc_failure(
+            codec, enc_res, f"distorted decode to raw YUV failed (rc={decode_rc}) at CRF {crf}"
+        )
+    skipped = _nr_skip_sample(codec, enc_res, out_path, score_req, score_args)
+    if skipped is not None:
+        return skipped
+    score_res = run_score(
+        score_req,
+        vmaf_bin=score_args["vmaf_bin"],
+        runner=score_args["score_runner"],
+        backend=score_args["score_backend"],
+    )
+    _drop_artifacts(out_path, score_req.distorted)
+    return _sample_from_score(codec, crf, enc_res, score_res, sample_duration_s, duration_s)
+
+
+def _sample_from_score(
+    codec: str,
+    crf: int,
+    enc_res: Any,
+    score_res: Any,
+    sample_duration_s: float,
+    duration_s: float,
+) -> BisectResult:
+    """Validate the score and fold it with the encode into a sample result."""
+    if score_res.exit_status != 0:
+        return _enc_failure(
+            codec, enc_res, f"score failed at CRF {crf} (exit={score_res.exit_status})"
+        )
+    measured = float(score_res.vmaf_score)
+    if math.isnan(measured) or measured < _VMAF_VALID_FLOOR or measured > _VMAF_VALID_CEIL:
+        return _enc_failure(
+            codec, enc_res, f"score returned out-of-range VMAF {measured!r} at CRF {crf}"
+        )
+    bitrate_duration_s = sample_duration_s if sample_duration_s > 0.0 else duration_s
+    return BisectResult(
+        codec=codec,
+        best_crf=int(crf),
+        measured_vmaf=measured,
+        bitrate_kbps=bitrate_kbps(enc_res.encode_size_bytes, bitrate_duration_s),
+        encode_time_ms=enc_res.encode_time_ms,
+        n_iterations=0,
+        encoder_version=enc_res.encoder_version,
+        ok=True,
+        error="",
+    )
+
+
 def _encode_and_score(
     *,
     src: Path,
@@ -958,285 +1186,40 @@ def _encode_and_score(
 ) -> BisectResult:
     """One encode+score round-trip — returns a sample-shaped BisectResult.
 
-    The ``n_iterations`` field on the returned struct is always ``0``;
-    the caller stamps it with the cumulative count.
-
-    When ``nr_proxy_backend`` is supplied, NR early-elimination is
-    attempted after encode+decode-distorted but before the FR libvmaf
-    call. If the NR score is outside the δ_fast uncertainty zone the
-    function returns early with ``ok=False`` and
-    ``error=_NR_SKIP_SENTINEL + "<direction>;<nr_score>"`` — the caller
-    detects this sentinel, increments ``_fr_calls_saved``, and advances
-    the bisect window in the NR-implied direction without treating the
-    result as a real failure.
+    ``n_iterations`` is always ``0`` (the caller stamps it). The decode
+    runner defaults to the encode runner (both are ffmpeg). An NR skip
+    returns ``ok=False`` with ``error = _NR_SKIP_SENTINEL + "<dir>;<nr>"``.
     """
-    # ADR-0538: ``adapter.validate(preset, crf)`` enforces both the
-    # preset whitelist AND the adapter's perceptually-informative
-    # ``quality_range`` (e.g. x265's ``(15, 40)``, svtav1's
-    # ``(20, 50)``). For the bisect we want the preset check but NOT
-    # the informative-range gate — the search window in
-    # :func:`bisect_target_vmaf` is the encoder's absolute CRF range,
-    # which is intentionally wider than the informative window so
-    # premium-archival targets are reachable. Validate the preset by
-    # itself first; then re-run the full validator under a "swallow
-    # CRF-range complaints" rule so genuine encoder limits (e.g.
-    # libsvtav1's ``crf_min/crf_max``) still fire when the bisect
-    # was misconfigured with an out-of-encoder window.
-    abs_lo, abs_hi = _absolute_crf_range(adapter)
-    if not abs_lo <= int(crf) <= abs_hi:
-        return _failure(
-            codec,
-            (
-                f"adapter rejected (preset={preset!r}, crf={crf}): "
-                f"crf outside encoder absolute range [{abs_lo}, {abs_hi}]"
-            ),
-        )
-    presets = getattr(adapter, "presets", ())
-    if presets and preset not in presets:
-        return _failure(
-            codec,
-            (
-                f"adapter rejected (preset={preset!r}, crf={crf}): "
-                f"unknown preset; expected one of {presets}"
-            ),
-        )
-
+    if (bad := _check_adapter_cell(adapter, codec, preset, crf)) is not None:
+        return bad
     out_path = workdir / f"bisect_{codec}_{preset}_{crf}.mkv"
-    encoder_name = getattr(adapter, "encoder", codec)
-    sample_start_s, sample_duration_s, frame_skip_ref, frame_cnt = _sample_clip_window(
-        duration_s=duration_s,
-        sample_clip_seconds=sample_clip_seconds,
-        framerate=framerate,
+    clip = _sample_clip_window(
+        duration_s=duration_s, sample_clip_seconds=sample_clip_seconds, framerate=framerate
     )
-    # Bug #1: When the reference source is a container (mp4/mkv/…) the
-    # encoder ffmpeg invocation must NOT prepend ``-f rawvideo`` —
-    # otherwise ffmpeg tries to parse the demuxed container as raw YUV
-    # and produces "Output file is empty". Autodetect via the same
-    # suffix table that the post-encode decode step uses.
-    src_is_container = Path(src).suffix.lower() not in VMAF_RAW_SUFFIXES
-    enc_req = EncodeRequest(
-        source=Path(src),
-        width=int(width),
-        height=int(height),
-        pix_fmt=pix_fmt,
-        framerate=float(framerate),
-        encoder=encoder_name,
-        preset=preset,
-        crf=int(crf),
-        output=out_path,
-        sample_clip_seconds=sample_duration_s,
-        sample_clip_start_s=sample_start_s,
-        source_is_container=src_is_container,
+    enc_req = _bisect_encode_request(
+        src, (adapter, codec, preset, crf, out_path), (width, height, pix_fmt, framerate), clip
     )
     enc_res = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
     if enc_res.exit_status != 0:
-        # ADR-0498 / BBB e2e v2 follow-up #6: ffmpeg returns the same
-        # non-zero exit for "encoder binary missing in this build" as
-        # for genuine encode failures (rate-control overflow, etc.).
-        # Distinguish them via the stderr tail so operators see
-        # "encoder unavailable" rather than "Encoder not found" /
-        # "encode failed" for the libsvtav1 case in the dev-mcp image.
-        stderr_tail = enc_res.stderr_tail or ""
-        last_line = stderr_tail.strip().splitlines()[-1] if stderr_tail else "no stderr"
-        lowered = stderr_tail.lower()
-        if (
-            "encoder not found" in lowered
-            or "unknown encoder" in lowered
-            or "no such codec" in lowered
-        ):
-            err_msg = f"encoder unavailable ({encoder_name}): {last_line}"
-        else:
-            err_msg = f"encode failed at CRF {crf} (exit={enc_res.exit_status}): {last_line}"
-        return _failure(
-            codec,
-            err_msg,
-            encode_time_ms=enc_res.encode_time_ms,
-            encoder_version=enc_res.encoder_version,
-        )
-
-    # Bug #3: The libvmaf CLI only accepts raw .yuv / .y4m. The
-    # encoded artefact is a Matroska container; without this decode
-    # step the vmaf binary mis-parses it as raw YUV and aborts with
-    # "file too small for declared geometry". We also need a raw YUV
-    # reference for the same reason — if ``src`` is a container, the
-    # caller cannot have decoded it (bisect is responsible for the
-    # full round trip), so decode it once into the workdir.
-    # ``decode_runner`` defaults to the encode runner: both are
-    # ffmpeg invocations, so production callers (which leave both
-    # ``None``) get the real ``subprocess.run`` either way, while
-    # tests can keep injecting a single stub.
-    effective_decode_runner = decode_runner if decode_runner is not None else encode_runner
-
-    ref_for_score = Path(src)
-    decoded_ref: Path | None = None
-    if src_is_container:
-        from .score import _decode_to_raw_yuv
-
-        decoded_ref = workdir / (Path(src).stem + ".ref.decoded.yuv")
-        # Re-use across iterations within the same bisect — workdir
-        # persists for the bisect's lifetime so a single decode is
-        # enough (every iteration scores the same reference).
-        rc = 0
-        if not decoded_ref.exists():
-            # ADR-0549: preflight disk-space check before materialising
-            # the raw YUV decode. A 1080p60 634 s BBB source decodes to
-            # ~118 GB; the dev-mcp container's /tmp is an 8 GB tmpfs, so
-            # the decode fails with rc=228 (ENOSPC) without this guard.
-            # The check is skipped when duration_s <= 0 (unknown
-            # duration) — we cannot estimate in that case and the error
-            # will surface via the ffmpeg returncode as before.
-            _decode_dur_s = float(duration_s) if float(duration_s) > 0.0 else None
-            if _decode_dur_s is not None:
-                workdir.mkdir(parents=True, exist_ok=True)
-                _est = _estimate_yuv_bytes(
-                    width=width,
-                    height=height,
-                    pix_fmt=pix_fmt,
-                    fps=framerate,
-                    duration_s=_decode_dur_s,
-                )
-                _space_err = _check_disk_space(workdir, estimated_bytes=_est)
-                if _space_err is not None:
-                    return _failure(
-                        codec,
-                        _space_err,
-                        encode_time_ms=enc_res.encode_time_ms,
-                        encoder_version=enc_res.encoder_version,
-                    )
-            # BBB e2e v2 Bug #v2-A: clamp the reference decode to
-            # ``duration_s`` so a 10 s probe against a 634 s source
-            # produces ~896 MB of raw YUV, not ~58 GB. ``duration_s == 0``
-            # preserves the legacy full-source behaviour for callers
-            # that have not bound a source duration yet.
-            decode_dur = float(duration_s) if float(duration_s) > 0.0 else None
-            rc = _decode_to_raw_yuv(
-                Path(src),
-                decoded_ref,
-                pix_fmt=pix_fmt,
-                ffmpeg_bin=ffmpeg_bin,
-                runner=effective_decode_runner,
-                duration_s=decode_dur,
-            )
-        if rc != 0 or not decoded_ref.exists():
-            return _failure(
-                codec,
-                f"reference decode to raw YUV failed (rc={rc}) for {src}",
-                encode_time_ms=enc_res.encode_time_ms,
-                encoder_version=enc_res.encoder_version,
-            )
-        ref_for_score = decoded_ref
-
-    score_req = ScoreRequest(
-        reference=ref_for_score,
-        distorted=out_path,
-        width=int(width),
-        height=int(height),
-        pix_fmt=pix_fmt,
-        model=vmaf_model,
-        frame_skip_ref=frame_skip_ref,
-        frame_cnt=frame_cnt,
-        # BBB e2e v2 Bug #v2-A: thread the requested duration so the
-        # ``maybe_decode_distorted`` step caps the raw-YUV decode at
-        # the analysed window length.
-        duration_s=float(duration_s),
-    )
-    # Decode the encoded container to raw YUV — libvmaf will not accept
-    # the .mkv otherwise. ``maybe_decode_distorted`` is a no-op for raw
-    # outputs, so callers that wire a custom encoder that emits .yuv
-    # directly are unaffected.
-    score_req, decode_rc = maybe_decode_distorted(
-        score_req,
-        workdir=workdir,
-        ffmpeg_bin=ffmpeg_bin,
-        runner=effective_decode_runner,
-    )
-    if decode_rc != 0:
-        with contextlib.suppress(OSError):
-            if out_path.exists():
-                out_path.unlink()
-        return _failure(
-            codec,
-            f"distorted decode to raw YUV failed (rc={decode_rc}) at CRF {crf}",
-            encode_time_ms=enc_res.encode_time_ms,
-            encoder_version=enc_res.encoder_version,
-        )
-
-    # ADR-0624 / ADR-0615 — NR early-elimination: the distorted YUV is
-    # now available (score_req.distorted). Run NR inference; if the score
-    # is far from the target skip the FR libvmaf call and return a
-    # sentinel so the bisect loop can advance the window cheaply.
-    if nr_proxy_backend is not None and nr_target_vmaf is not None:
-        _nr_result = _try_nr_early_elimination_on_yuv(
-            nr_proxy_backend=nr_proxy_backend,
-            distorted_yuv=score_req.distorted,
-            width=width,
-            height=height,
-            pix_fmt=pix_fmt,
-            target_vmaf=nr_target_vmaf,
-        )
-        if _nr_result is not None:
-            _direction, _nr_score = _nr_result
-            # Clean up artefacts before returning the sentinel.
-            with contextlib.suppress(OSError):
-                if out_path.exists():
-                    out_path.unlink()
-                if score_req.distorted != out_path and score_req.distorted.exists():
-                    score_req.distorted.unlink()
-            return _failure(
-                codec,
-                f"{_NR_SKIP_SENTINEL}{_direction};{_nr_score:.6f}",
-                encode_time_ms=enc_res.encode_time_ms,
-                encoder_version=enc_res.encoder_version,
-            )
-
-    score_res = run_score(
-        score_req,
-        vmaf_bin=vmaf_bin,
-        runner=score_runner,
-        backend=score_backend,
-    )
-
-    # Best-effort cleanup: the encoded artefact + per-iteration decoded
-    # sidecar are throwaway; we keep the workdir alive across
-    # iterations so a caller-supplied workdir can still inspect it
-    # later (the temp-dir path cleans on context exit instead).
-    with contextlib.suppress(OSError):
-        if out_path.exists():
-            out_path.unlink()
-        if score_req.distorted != out_path and score_req.distorted.exists():
-            score_req.distorted.unlink()
-
-    if score_res.exit_status != 0:
-        return _failure(
-            codec,
-            f"score failed at CRF {crf} (exit={score_res.exit_status})",
-            encode_time_ms=enc_res.encode_time_ms,
-            encoder_version=enc_res.encoder_version,
-        )
-
-    measured = float(score_res.vmaf_score)
-    if math.isnan(measured) or measured < _VMAF_VALID_FLOOR or measured > _VMAF_VALID_CEIL:
-        return _failure(
-            codec,
-            f"score returned out-of-range VMAF {measured!r} at CRF {crf}",
-            encode_time_ms=enc_res.encode_time_ms,
-            encoder_version=enc_res.encoder_version,
-        )
-
-    bitrate_duration_s = sample_duration_s if sample_duration_s > 0.0 else duration_s
-    br_kbps = bitrate_kbps(enc_res.encode_size_bytes, bitrate_duration_s)
-
-    return BisectResult(
-        codec=codec,
-        best_crf=int(crf),
-        measured_vmaf=measured,
-        bitrate_kbps=br_kbps,
-        encode_time_ms=enc_res.encode_time_ms,
-        n_iterations=0,
-        encoder_version=enc_res.encoder_version,
-        ok=True,
-        error="",
-    )
+        return _enc_failure(codec, enc_res, _encode_failure_message(enc_res, enc_req, crf))
+    decode = decode_runner if decode_runner is not None else encode_runner
+    ref, ref_err = _prepare_reference(
+        src, workdir, enc_req.source_is_container, (width, height, pix_fmt, framerate, duration_s),
+        ffmpeg_bin, decode,
+    )  # fmt: skip
+    if ref is None:
+        return _enc_failure(codec, enc_res, str(ref_err))
+    score_args = {
+        "width": width, "height": height, "pix_fmt": pix_fmt, "duration_s": duration_s,
+        "workdir": workdir, "ffmpeg_bin": ffmpeg_bin, "vmaf_model": vmaf_model,
+        "decode_runner": decode, "nr_proxy_backend": nr_proxy_backend,
+        "nr_target_vmaf": nr_target_vmaf, "vmaf_bin": vmaf_bin,
+        "score_runner": score_runner, "score_backend": score_backend,
+    }  # fmt: skip
+    return _score_encoded(
+        codec=codec, crf=crf, out_path=out_path, enc_res=enc_res, ref_for_score=ref,
+        sample_duration_s=clip[1], window=(clip[2], clip[3]), score_args=score_args,
+    )  # fmt: skip
 
 
 def make_bisect_predicate(
@@ -1264,66 +1247,30 @@ def make_bisect_predicate(
 ) -> PredicateFn:
     """Return a :data:`compare.PredicateFn` that closes over bisect knobs.
 
-    The returned callable matches ``compare.compare_codecs``'s
-    predicate signature ``(codec, src, target_vmaf) -> RecommendResult``.
-    The ``target_vmaf`` argument the predicate receives at call time
-    is forwarded through verbatim; the closure-time ``target_vmaf``
-    here serves as the default for callers that pin one floor across
-    many comparisons.
-
-    Note ``target_vmaf`` appears at both layers because the predicate
-    signature exposes a target argument (so the same predicate may be
-    re-used with shifting targets) but encode geometry / runners must
-    be fixed before the predicate is built.
-
-    ``decode_semaphore`` is forwarded to :func:`bisect_target_vmaf`
-    so callers that build predicates for multiple codecs share the same
-    semaphore across all threads in the compare thread pool (ADR-0577).
-    When ``None``, the module-level ``_decode_semaphore`` is used.
-
-    ``nr_proxy_backend`` is an optional :class:`~vmaftune.score_backend.NRProxyBackend`
-    for fast NR pre-scoring (ADR-0624 / ADR-0615). When supplied, each
-    bisect midpoint is first scored via the NR proxy; midpoints far from
-    the target skip the full-reference VMAF call. Pass ``None`` (default)
-    to use full-reference scoring throughout.
+    The callable matches ``compare.compare_codecs``'s predicate signature
+    ``(codec, src, target_vmaf) -> RecommendResult``. The target the
+    predicate receives wins; the closure-time ``target_vmaf`` is the default
+    when it receives NaN. ``decode_semaphore`` is shared across the compare
+    thread pool (ADR-0577), ``nr_proxy_backend`` enables NR pre-scoring
+    (ADR-0624 / ADR-0615); see :func:`bisect_target_vmaf`.
     """
+    # fmt: off
+    knobs: dict[str, Any] = {
+        "width": width, "height": height, "pix_fmt": pix_fmt, "framerate": framerate,
+        "duration_s": duration_s, "sample_clip_seconds": sample_clip_seconds,
+        "preset": preset, "crf_range": crf_range, "max_iterations": max_iterations,
+        "vmaf_model": vmaf_model, "score_backend": score_backend,
+        "encode_runner": encode_runner, "score_runner": score_runner,
+        "decode_runner": decode_runner, "ffmpeg_bin": ffmpeg_bin, "vmaf_bin": vmaf_bin,
+        "workdir": workdir, "decode_semaphore": decode_semaphore,
+        "nr_proxy_backend": nr_proxy_backend,
+    }
+    # fmt: on
 
     def _predicate(codec: str, src: Path, runtime_target_vmaf: float) -> RecommendResult:
-        # Runtime target argument wins; closure-time default is unused
-        # whenever ``compare_codecs`` calls us (it always supplies the
-        # current target). We keep the closure default for callers that
-        # bind the predicate directly without ``compare_codecs``.
-        # ``runtime_target_vmaf`` is typed ``float`` so ``is None`` is
-        # statically impossible; NaN is the only way the predicate could
-        # ever request the closure default. Keeping the NaN branch is
-        # still meaningful — callers can signal "use my bound default"
-        # by passing ``float('nan')``.
+        # The runtime target wins; NaN means "use the closure default".
         target = runtime_target_vmaf if not math.isnan(runtime_target_vmaf) else target_vmaf
-        result = bisect_target_vmaf(
-            src,
-            codec,
-            float(target),
-            width=width,
-            height=height,
-            pix_fmt=pix_fmt,
-            framerate=framerate,
-            duration_s=duration_s,
-            sample_clip_seconds=sample_clip_seconds,
-            preset=preset,
-            crf_range=crf_range,
-            max_iterations=max_iterations,
-            vmaf_model=vmaf_model,
-            score_backend=score_backend,
-            encode_runner=encode_runner,
-            score_runner=score_runner,
-            decode_runner=decode_runner,
-            ffmpeg_bin=ffmpeg_bin,
-            vmaf_bin=vmaf_bin,
-            workdir=workdir,
-            decode_semaphore=decode_semaphore,
-            nr_proxy_backend=nr_proxy_backend,
-        )
-        return result.to_recommend_result()
+        return bisect_target_vmaf(src, codec, float(target), **knobs).to_recommend_result()
 
     return _predicate
 

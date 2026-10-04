@@ -7,7 +7,7 @@ Phase F composes the per-phase subcommands (``corpus``, ``recommend``,
 ``ladder``, ``compare``) plus the orthogonal modes (HDR, sample-clip,
 resolution-aware) into a single deterministic decision tree. The
 sequential composition (F.1) walks the tree top-to-bottom and runs every
-stage; the seven short-circuits (F.2, this module) skip stages whose
+stage; the ten short-circuits (F.2 and its additions, this module; ADR-0397) skip stages whose
 output is determined by metadata alone.
 
 Decision tree (per :doc:`docs/adr/0364-vmaf-tune-phase-f-auto.md`):
@@ -34,7 +34,7 @@ Decision tree (per :doc:`docs/adr/0364-vmaf-tune-phase-f-auto.md`):
        winner = pick_pareto(plan, target_vmaf, max_budget_kbps)
        return realise(winner, hdr=is_hdr)
 
-The seven short-circuit predicates live in this module as standalone
+The ten short-circuit predicates live in this module as standalone
 helpers (``_should_short_circuit_<N>``) so each one is unit-testable in
 isolation. Each predicate returns ``True`` when the corresponding stage
 can be skipped; the main driver records the firing predicate names in
@@ -43,7 +43,7 @@ can be skipped; the main driver records the firing predicate names in
 F.3 ships per-cell confidence-aware fallbacks (escalation to
 ``recommend.coarse_to_fine`` driven by the conformal interval width
 from :class:`vmaftune.predictor.Predictor.predict_vmaf_with_uncertainty`,
-ADR-0279). F.4 ships per-content-type recipe overrides
+ADR-0393). F.4 ships per-content-type recipe overrides
 (:func:`_apply_recipe_override`, recipes for ``animation``,
 ``screen_content``, ``live_action_hdr``, and ``ugc``) — the recipe
 fires *before* the F.2 short-circuits evaluate so a recipe can flip
@@ -71,7 +71,7 @@ import enum
 import json
 import logging
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -84,7 +84,7 @@ from .jsonio import dumps_strict
 _LOG = logging.getLogger(__name__)
 
 
-# Phase D gate thresholds (per ADR-0364 short-circuit #7). The 5-min /
+# Phase D gate thresholds (per ADR-0397 short-circuit #7). The 5-min /
 # 0.15-shot-variance pair is a placeholder; F.3 fits these from a real
 # corpus once Phase F has emitted enough labelled compositions to make
 # the fit statistically defensible. Until then, the placeholders keep
@@ -112,7 +112,7 @@ SALIENCY_CONTENT_CLASSES: frozenset[str] = frozenset({"animation", "screen_conte
 # F.2 treats the predictor's verdict as a binary GOSPEL / FALL_BACK gate.
 # F.3 makes the gate continuous by consulting the conformal interval
 # half-width returned by :meth:`Predictor.predict_vmaf_with_uncertainty`
-# (ADR-0279). The two thresholds below carve the half-width axis into
+# (ADR-0393). The two thresholds below carve the half-width axis into
 # three regions:
 #
 #   * width <= ``DEFAULT_TIGHT_INTERVAL_MAX_WIDTH`` → predictor is
@@ -129,7 +129,7 @@ SALIENCY_CONTENT_CLASSES: frozenset[str] = frozenset({"animation", "screen_conte
 # The defaults (2.0 and 5.0 VMAF) are documented in Research-0067 and
 # act as an emergency floor when no corpus-derived sidecar is shipped
 # with the calibration. The production thresholds come from a JSON
-# sidecar produced by the calibration pipeline shipped in #488 — keys
+# sidecar produced by the calibration pipeline — keys
 # ``tight_interval_max_width`` and ``wide_interval_min_width``. The
 # loader in :func:`load_confidence_thresholds` honours per-corpus
 # overrides and emits a one-line warning when no sidecar is found.
@@ -138,7 +138,7 @@ DEFAULT_WIDE_INTERVAL_MIN_WIDTH: float = 5.0
 
 
 # ---------------------------------------------------------------------------
-# F.4 per-content-type recipe overrides (ADR-0325 §F.4).
+# F.4 per-content-type recipe overrides (ADR-0397 §F.4).
 #
 # When an upstream classifier (e.g. TransNet V2 shot histograms in
 # ``tools/vmaf-tune/src/vmaftune/per_shot.py::detect_shots`` plus the
@@ -172,7 +172,7 @@ DEFAULT_WIDE_INTERVAL_MIN_WIDTH: float = 5.0
 #   for, never the gate that decides whether a model can ship.
 #
 # Every threshold cited below is provisional and tagged for empirical
-# calibration in F.5 — see ADR-0325 §"Phase F.5 backlog" once F.4
+# calibration in F.5 — see ADR-0397 §"Phase F.5 backlog" once F.4
 # emits enough labelled recipe applications to fit them. The current
 # values are documented placeholders, not measured outcomes; the
 # only-evidence-cited footnotes are tracked in
@@ -239,7 +239,7 @@ _F4_PLACEHOLDER_RECIPES: dict[str, dict[str, object]] = {
 # Path to the calibrated-recipes JSON, relative to the repo root.
 # Resolved at module import; if the file is missing or malformed the
 # F.4 placeholder constants above remain in force (graceful
-# degradation per ADR-0325 §F.5 status update).
+# degradation per ADR-0397 §F.5 status update).
 _CALIBRATED_RECIPES_FILENAME: str = "ai/data/phase_f_recipes_calibrated.json"
 
 
@@ -405,7 +405,7 @@ def _live_action_hdr_recipe() -> dict[str, object]:
     HDR live-action shows wide tonal swings; per ADR-0300 the HDR
     pipeline already runs, but the F.3 conformal-tight gate is narrowed
     here because a wide predictor interval on HDR is more suspect than
-    on SDR (the predictor was largely trained on SDR — see ADR-0279).
+    on SDR (the predictor was largely trained on SDR — see ADR-0393).
 
     Values from ``ai/data/phase_f_recipes_calibrated.json`` (F.5).
     """
@@ -493,7 +493,7 @@ def get_recipe_for_class(content_class: str) -> dict[str, object]:
 
 
 class ShortCircuit(enum.Enum):
-    """Names of the short-circuits (per ADR-0325 §F.1/F.2).
+    """Names of the short-circuits (per ADR-0397 §F.1/F.2).
 
     The string values are the canonical identifiers recorded in
     ``plan.metadata.short_circuits`` and surfaced in the JSON output.
@@ -530,7 +530,7 @@ class SourceMeta:
     the F.4 classifier (placeholder until F.4 lands; defaults to
     ``"live_action"`` so the saliency gate stays a no-op on unknown
     content), ``duration_s`` and ``shot_variance`` from the per-shot
-    detector (ADR-0276 phase-d).
+    detector (ADR-0392 phase-d).
     """
 
     height: int
@@ -670,7 +670,7 @@ class PlanState:
 
 
 # ---------------------------------------------------------------------------
-# The seven short-circuit predicates. Each returns True when the stage
+# The ten short-circuit predicates. Each returns True when the stage
 # the predicate guards can be skipped. Predicates are pure functions of
 # (meta, plan_state) so tests mock the inputs and assert the branch
 # fires / doesn't fire without invoking the full driver.
@@ -680,8 +680,7 @@ class PlanState:
 def _should_short_circuit_1_single_rung_ladder(meta: SourceMeta, plan_state: PlanState) -> bool:
     """Short-circuit #1 — single-rung ladder when ``meta.height < 2160``.
 
-    Per ADR-0364 / ADR-0289: sub-4K sources don't need a multi-rung
-    Per ADR-0325 / ADR-0289: sub-4K sources don't need a multi-rung
+    Per ADR-0397 / ADR-0289: sub-4K sources don't need a multi-rung
     ABR ladder evaluation; the source rung is the only candidate. The
     driver still runs the per-rung pipeline, just on one rung.
     """
@@ -705,8 +704,7 @@ def _should_short_circuit_2_codec_pinned(meta: SourceMeta, plan_state: PlanState
 def _should_short_circuit_3_predictor_gospel(meta: SourceMeta, plan_state: PlanState) -> bool:
     """Short-circuit #3 — predictor returned GOSPEL.
 
-    Per ADR-0364 escalation rule: when ``predict.crf_for_target``
-    Per ADR-0325 escalation rule: when ``predict.crf_for_target``
+    Per ADR-0397 escalation rule: when ``predict.crf_for_target``
     returns ``GOSPEL`` (residuals within threshold across the
     validation sample), trust the predictor's CRF pick and skip the
     ``recommend.coarse_to_fine`` fallback for that cell.
@@ -755,8 +753,7 @@ def _should_short_circuit_6_sample_clip_propagate(meta: SourceMeta, plan_state: 
 def _should_short_circuit_7_skip_per_shot(meta: SourceMeta, plan_state: PlanState) -> bool:
     """Short-circuit #7 — duration / shot-variance gate.
 
-    Per ADR-0364: skip ``tune_per_shot.refine`` when the source is
-    Per ADR-0325: skip ``tune_per_shot.refine`` when the source is
+    Per ADR-0397: skip ``tune_per_shot.refine`` when the source is
     both short (< 5 min) **and** low-variance (shot variance < 0.15).
     Either condition alone is not enough — a short high-variance
     trailer benefits from per-shot, and a long low-variance lecture
@@ -1000,6 +997,63 @@ def _finite_float(value: object) -> float | None:
     return out
 
 
+def _score_cells(cells: Sequence[dict]) -> list[tuple[int, dict, float, float]]:
+    """Cells carrying a finite estimated VMAF and bitrate, as scored tuples."""
+    scored: list[tuple[int, dict, float, float]] = []
+    for index, cell in enumerate(cells):
+        estimated_vmaf = _finite_float(cell.get("estimated_vmaf"))
+        estimated_bitrate = _finite_float(cell.get("estimated_bitrate_kbps"))
+        if estimated_vmaf is None or estimated_bitrate is None:
+            continue
+        scored.append((index, cell, estimated_vmaf, estimated_bitrate))
+    return scored
+
+
+def _select_cell(
+    scored: list[tuple[int, dict, float, float]], target: float, budget: float
+) -> tuple[str, tuple[int, dict, float, float]]:
+    """Pick the winning scored cell and name the rule that chose it.
+
+    Ties favour lower bitrate, then higher VMAF, then a higher rung, then a
+    stable codec/name ordering.
+    """
+    passing = [item for item in scored if item[2] >= target and item[3] <= budget]
+    if passing:
+        return "budget_and_quality_met", min(
+            passing,
+            key=lambda item: (
+                item[3],
+                -item[2],
+                -int(item[1].get("rung", 0)),
+                str(item[1].get("codec", "")),
+                item[0],
+            ),
+        )
+    quality_only = [item for item in scored if item[2] >= target]
+    if quality_only:
+        return "quality_met_budget_exceeded", min(
+            quality_only,
+            key=lambda item: (
+                item[3] - budget,
+                item[3],
+                -item[2],
+                -int(item[1].get("rung", 0)),
+                str(item[1].get("codec", "")),
+                item[0],
+            ),
+        )
+    return "target_unmet", max(
+        scored,
+        key=lambda item: (
+            item[2],
+            -item[3],
+            int(item[1].get("rung", 0)),
+            str(item[1].get("codec", "")),
+            -item[0],
+        ),
+    )
+
+
 def pick_auto_winner(
     cells: Sequence[dict],
     *,
@@ -1015,68 +1069,16 @@ def pick_auto_winner(
       overage;
     * if no cell meets quality, return the closest quality miss so callers get
       a concrete next encode instead of an empty plan.
-
-    Ties favour lower bitrate, then higher VMAF, then a higher rung, then a
-    stable codec/name ordering.
     """
-    scored: list[tuple[int, dict, float, float]] = []
-    for index, cell in enumerate(cells):
-        estimated_vmaf = _finite_float(cell.get("estimated_vmaf"))
-        estimated_bitrate = _finite_float(cell.get("estimated_bitrate_kbps"))
-        if estimated_vmaf is None or estimated_bitrate is None:
-            continue
-        scored.append((index, cell, estimated_vmaf, estimated_bitrate))
-
+    scored = _score_cells(cells)
     if not scored:
         return {
             "status": "no_eligible_cells",
             "reason": "no cell carried finite estimated_vmaf and estimated_bitrate_kbps",
         }
-
     target = float(target_vmaf)
     budget = float(max_budget_kbps)
-    passing = [item for item in scored if item[2] >= target and item[3] <= budget]
-    if passing:
-        status = "budget_and_quality_met"
-        selected = min(
-            passing,
-            key=lambda item: (
-                item[3],
-                -item[2],
-                -int(item[1].get("rung", 0)),
-                str(item[1].get("codec", "")),
-                item[0],
-            ),
-        )
-    else:
-        quality_only = [item for item in scored if item[2] >= target]
-        if quality_only:
-            status = "quality_met_budget_exceeded"
-            selected = min(
-                quality_only,
-                key=lambda item: (
-                    item[3] - budget,
-                    item[3],
-                    -item[2],
-                    -int(item[1].get("rung", 0)),
-                    str(item[1].get("codec", "")),
-                    item[0],
-                ),
-            )
-        else:
-            status = "target_unmet"
-            selected = max(
-                scored,
-                key=lambda item: (
-                    item[2],
-                    -item[3],
-                    int(item[1].get("rung", 0)),
-                    str(item[1].get("codec", "")),
-                    -item[0],
-                ),
-            )
-
-    index, cell, estimated_vmaf, estimated_bitrate = selected
+    status, (index, cell, estimated_vmaf, estimated_bitrate) = _select_cell(scored, target, budget)
     return {
         "status": status,
         "cell_index": index,
@@ -1097,9 +1099,320 @@ def _mark_selected_cell(cells: list[dict], winner: dict[str, object]) -> None:
         cell["selected"] = index == selected_index
 
 
+@dataclasses.dataclass
+class _CellCtx:
+    """Inputs shared by every per-cell prediction of one :func:`run_auto` run."""
+
+    meta: SourceMeta
+    plan_state: PlanState
+    thresholds: ConfidenceThresholds
+    interval_lookup: dict[tuple[int, str], tuple[str | None, float]]
+    cell_intervals: Sequence[tuple[int, str, str | None, float]] | None
+    smoke: bool
+    hdr_info: HdrInfo | None
+    hdr_codec_args: Callable[[str, HdrInfo], tuple[str, ...]] | None
+    propagated_clip: float
+    target_vmaf: float
+    max_budget_kbps: float
+    predictor_target_vmaf: float
+    saliency_intensity: str
+    src: Path | None
+    allow_codecs: Sequence[str]
+    user_pinned_codec: str | None
+    recipe_class: str
+    recipe: Mapping[str, object]
+    rungs: tuple[int, ...]
+    codecs: tuple[str, ...]
+    predictor: Any = None
+    predictor_features: Any = None
+
+
+def _resolve_meta(
+    src: Path | None,
+    *,
+    smoke: bool,
+    meta_override: SourceMeta | None,
+    sample_clip_seconds: float,
+    probe_runner: Callable[..., Any] | None,
+) -> tuple[SourceMeta, HdrInfo | None]:
+    """Source metadata (probed, injected or synthetic) and its HDR info."""
+    detected_hdr_info = None
+    if not smoke and meta_override is None:
+        if src is None:
+            raise ValueError("src is required unless smoke=True or meta_override is given")
+        meta_override, detected_hdr_info = _probe_source_meta(
+            src,
+            sample_clip_seconds=sample_clip_seconds,
+            runner=probe_runner,
+        )
+    meta = meta_override or SourceMeta(
+        height=1080,
+        width=1920,
+        is_hdr=False,
+        content_class="live_action",
+        duration_s=120.0,
+        shot_variance=0.05,
+        sample_clip_seconds=sample_clip_seconds,
+    )
+    hdr_info = detected_hdr_info if bool(meta.is_hdr) else None
+    if bool(meta.is_hdr) and hdr_info is None:
+        hdr_info = _default_hdr_info_for_auto()
+    return meta, hdr_info
+
+
+def _rungs_and_codecs(
+    meta: SourceMeta,
+    plan_state: PlanState,
+    force_single_rung: bool,
+    allow_codecs: Sequence[str],
+    user_pinned_codec: str | None,
+) -> tuple[tuple[int, ...], tuple[str, ...]]:
+    """Stages 1 and 2: ladder rungs (short-circuit #1) and codec list (#2)."""
+    if _should_short_circuit_1_single_rung_ladder(meta, plan_state) or force_single_rung:
+        plan_state.fired(ShortCircuit.LADDER_SINGLE_RUNG)
+        rungs: tuple[int, ...] = (int(meta.height),)
+    else:
+        # Multi-rung path; production wiring delegates to ladder.py.
+        rungs = (2160, 1440, 1080, 720, 540)
+    if _should_short_circuit_2_codec_pinned(meta, plan_state):
+        plan_state.fired(ShortCircuit.CODEC_PINNED)
+        codecs: tuple[str, ...] = (user_pinned_codec,) if user_pinned_codec else tuple(allow_codecs)
+    else:
+        # Production wiring delegates to compare.shortlist.
+        codecs = tuple(allow_codecs)
+    return rungs, codecs
+
+
+def _hdr_stage(
+    meta: SourceMeta, plan_state: PlanState, hdr_info: HdrInfo | None
+) -> tuple[HdrInfo | None, Callable[[str, HdrInfo], tuple[str, ...]] | None]:
+    """Stage 3, HDR pipeline (short-circuit #5): HDR info and codec-arg builder."""
+    if _should_short_circuit_5_sdr_skip(meta, plan_state):
+        plan_state.fired(ShortCircuit.SDR_SKIP)
+        return None, None
+    from .hdr import hdr_codec_args
+
+    return hdr_info, hdr_codec_args
+
+
+def _interval_lookup(
+    cell_intervals: Sequence[tuple[int, str, str | None, float]] | None,
+) -> dict[tuple[int, str], tuple[str | None, float]]:
+    """(rung, codec) -> (verdict, width) from the production-wiring seam."""
+    lookup: dict[tuple[int, str], tuple[str | None, float]] = {}
+    for rung_in, codec_in, verdict_in, width_in in cell_intervals or ():
+        lookup[(int(rung_in), str(codec_in))] = (verdict_in, float(width_in))
+    return lookup
+
+
+def _cell_interval(ctx: _CellCtx, rung: int, codec: str) -> tuple[str | None, float]:
+    """F.3: the (verdict, interval width) that gates one cell's escalation.
+
+    The smoke default is a tight width of 1.0. A caller that supplied
+    ``cell_intervals`` but left this cell out gets NaN, so the gate defers to
+    the native verdict instead of using a synthetic tight width.
+    """
+    cell_key = (int(rung), str(codec))
+    if cell_key in ctx.interval_lookup:
+        return ctx.interval_lookup[cell_key]
+    if ctx.cell_intervals is not None:
+        return ctx.plan_state.predictor_verdict, float("nan")
+    return ctx.plan_state.predictor_verdict, 1.0 if ctx.smoke else float("nan")
+
+
+def _predict_cell(ctx: _CellCtx, codec: str) -> tuple[int, float, float, str]:
+    """``(crf, estimated VMAF, estimated kbps, prediction source)`` for a codec."""
+    if ctx.predictor is None or ctx.predictor_features is None:
+        return 23, float(ctx.target_vmaf), float(ctx.max_budget_kbps), "smoke-placeholder"
+    from .predictor import pick_crf
+
+    crf = pick_crf(
+        ctx.predictor, ctx.predictor_features, float(ctx.predictor_target_vmaf), str(codec)
+    )
+    estimated_vmaf = ctx.predictor.predict_vmaf(ctx.predictor_features, crf, str(codec))
+    kbps = _estimate_cell_bitrate_kbps(ctx.predictor_features, str(codec), crf)
+    return crf, estimated_vmaf, kbps, "predictor"
+
+
+def _build_cell(ctx: _CellCtx, rung: int, codec: str) -> tuple[dict, dict]:
+    """One plan cell and its confidence-escalation record."""
+    plan_state = ctx.plan_state
+    cell_state = dataclasses.replace(plan_state)
+    cell_state.short_circuits = list(plan_state.short_circuits)
+    if _should_short_circuit_3_predictor_gospel(ctx.meta, cell_state):
+        cell_state.fired(ShortCircuit.PREDICTOR_GOSPEL)
+        # Carry the cell-level firing up so the metadata records it.
+        if ShortCircuit.PREDICTOR_GOSPEL.value not in plan_state.short_circuits:
+            plan_state.fired(ShortCircuit.PREDICTOR_GOSPEL)
+    cell_verdict, cell_width = _cell_interval(ctx, rung, codec)
+    decision = _confidence_aware_escalation(cell_verdict, cell_width, ctx.thresholds)
+    hdr_args: tuple[str, ...] = ()
+    if ctx.hdr_info is not None and ctx.hdr_codec_args is not None:
+        hdr_args = ctx.hdr_codec_args(str(codec), ctx.hdr_info)
+    crf, estimated_vmaf, estimated_kbps, source = _predict_cell(ctx, codec)
+    escalation = {
+        "rung": int(rung),
+        "codec": str(codec),
+        "verdict": cell_verdict or "UNKNOWN",
+        "interval_width": cell_width,
+        "decision": decision.value,
+    }
+    cell = {
+        "rung": int(rung),
+        "codec": str(codec),
+        "verdict": cell_verdict or plan_state.predictor_verdict or "UNKNOWN",
+        "crf": int(crf),
+        "estimated_vmaf": float(estimated_vmaf),
+        "estimated_bitrate_kbps": float(estimated_kbps),
+        "hdr_args": list(hdr_args),
+        "sample_clip_seconds": ctx.propagated_clip,
+        "confidence_decision": decision.value,
+        "interval_width": cell_width,
+        "effective_predictor_target_vmaf": float(ctx.predictor_target_vmaf),
+        "prediction_source": source,
+        "saliency_intensity": ctx.saliency_intensity,
+    }
+    return cell, escalation
+
+
+def _build_cells(ctx: _CellCtx) -> tuple[list[dict], list[dict]]:
+    """Stage 5: per-cell predictor + escalation (short-circuit #3 + F.3)."""
+    if not ctx.smoke:
+        from .predictor import Predictor
+
+        ctx.predictor = Predictor()
+        ctx.predictor_features = _predictor_features_from_meta(ctx.meta)
+    cells: list[dict] = []
+    escalations: list[dict] = []
+    for rung in ctx.rungs:
+        for codec in ctx.codecs:
+            cell, escalation = _build_cell(ctx, rung, codec)
+            cells.append(cell)
+            escalations.append(escalation)
+    return cells, escalations
+
+
+def _late_short_circuits(meta: SourceMeta, plan_state: PlanState, codecs: Sequence[str]) -> None:
+    """Stages 6-10: saliency (#4), per-shot (#7), complexity (#8), baseline (#9), two-pass (#10).
+
+    Production wiring would call ``recommend_saliency.maybe_apply`` and
+    ``tune_per_shot.refine`` on every cell when #4 / #7 do not fire. #8 and #9
+    stay dormant while ``complexity_score`` / ``baseline_vmaf`` is 0.0 or NaN.
+    """
+    if _should_short_circuit_4_skip_saliency(meta, plan_state):
+        plan_state.fired(ShortCircuit.SKIP_SALIENCY)
+    if _should_short_circuit_7_skip_per_shot(meta, plan_state):
+        plan_state.fired(ShortCircuit.SKIP_PER_SHOT)
+    if _should_short_circuit_low_complexity(meta, plan_state):
+        plan_state.fired(ShortCircuit.LOW_COMPLEXITY)
+    if _should_short_circuit_baseline_meets_target(meta, plan_state):
+        plan_state.fired(ShortCircuit.BASELINE_MEETS_TARGET)
+    if codecs:
+        # supports_two_pass comes from the first codec; None keeps #10 dormant.
+        try:
+            from .codec_adapters import get_adapter as _get_adapter
+
+            first_adapter = _get_adapter(codecs[0])
+            plan_state.adapter_supports_two_pass = bool(
+                getattr(first_adapter, "supports_two_pass", False)
+            )
+        except (KeyError, ImportError):
+            plan_state.adapter_supports_two_pass = False
+        if _should_short_circuit_no_two_pass(meta, plan_state):
+            plan_state.fired(ShortCircuit.NO_TWO_PASS)
+
+
+def _make_plan_ctx(
+    src: Path | None,
+    meta: SourceMeta,
+    plan_state: PlanState,
+    hdr_info: HdrInfo | None,
+    *,
+    confidence_thresholds: ConfidenceThresholds | None,
+    allow_codecs: Sequence[str],
+    user_pinned_codec: str | None,
+    cell_intervals: Sequence[tuple[int, str, str | None, float]] | None,
+    smoke: bool,
+    target_vmaf: float,
+    max_budget_kbps: float,
+) -> _CellCtx:
+    """Stages 0-4 (recipe, rungs, codecs, HDR #5, sample-clip #6) as shared inputs."""
+    # Stage 0, F.4 recipe: runs before the F.2 short-circuits so it can flip
+    # ``force_single_rung``; ``target_vmaf_offset`` shifts only the predictor.
+    recipe_class, recipe, thresholds = _apply_recipe_override(
+        meta, plan_state, confidence_thresholds or ConfidenceThresholds()
+    )
+    predictor_target = float(target_vmaf) + float(recipe.get("target_vmaf_offset", 0.0))  # type: ignore[arg-type]
+    rungs, codecs = _rungs_and_codecs(
+        meta,
+        plan_state,
+        bool(recipe.get("force_single_rung", False)),
+        allow_codecs,
+        user_pinned_codec,
+    )
+    hdr_info, hdr_codec_args = _hdr_stage(meta, plan_state, hdr_info)
+    propagated_clip = 0.0
+    if _should_short_circuit_6_sample_clip_propagate(meta, plan_state):
+        plan_state.fired(ShortCircuit.SAMPLE_CLIP_PROPAGATE)
+        propagated_clip = float(meta.sample_clip_seconds)
+    if smoke:
+        # Smoke synthesises a GOSPEL verdict so the F.2 gate fires; production
+        # takes it from predictor_validate.ValidationReport.verdict.
+        plan_state.predictor_verdict = "GOSPEL"
+    return _CellCtx(
+        meta=meta,
+        plan_state=plan_state,
+        thresholds=thresholds,
+        interval_lookup=_interval_lookup(cell_intervals),
+        cell_intervals=cell_intervals,
+        smoke=smoke,
+        hdr_info=hdr_info,
+        hdr_codec_args=hdr_codec_args,
+        propagated_clip=propagated_clip,
+        target_vmaf=target_vmaf,
+        max_budget_kbps=max_budget_kbps,
+        predictor_target_vmaf=predictor_target,
+        saliency_intensity=str(recipe.get("saliency_intensity", "default")),
+        src=src,
+        allow_codecs=allow_codecs,
+        user_pinned_codec=user_pinned_codec,
+        recipe_class=recipe_class,
+        recipe=recipe,
+        rungs=rungs,
+        codecs=codecs,
+    )
+
+
+def _plan_metadata(
+    ctx: _CellCtx, escalations: list[dict], winner: dict[str, object]
+) -> dict[str, Any]:
+    """The plan's JSON metadata block."""
+    thresholds = ctx.thresholds
+    return {
+        "src": "" if ctx.src is None else str(ctx.src),
+        "target_vmaf": float(ctx.target_vmaf),
+        "max_budget_kbps": float(ctx.max_budget_kbps),
+        "allow_codecs": list(ctx.allow_codecs),
+        "user_pinned_codec": ctx.user_pinned_codec,
+        "smoke": bool(ctx.smoke),
+        "source_meta": dataclasses.asdict(ctx.meta),
+        "short_circuits": list(ctx.plan_state.short_circuits),
+        "confidence_aware_escalations": escalations,
+        "confidence_thresholds": {
+            "tight_interval_max_width": thresholds.tight_interval_max_width,
+            "wide_interval_min_width": thresholds.wide_interval_min_width,
+            "source": thresholds.source,
+        },
+        "recipe_applied": ctx.recipe_class,
+        "recipe_overrides": dict(ctx.recipe),
+        "effective_predictor_target_vmaf": float(ctx.predictor_target_vmaf),
+        "winner": winner,
+    }
+
+
 def run_auto(
     *,
-    src: Path,
+    src: Path | None,
     target_vmaf: float,
     max_budget_kbps: float,
     allow_codecs: Sequence[str],
@@ -1113,322 +1426,54 @@ def run_auto(
 ) -> AutoPlan:
     """Drive the F.1 + F.2 + F.3 decision tree.
 
-    The non-smoke path probes source metadata from the actual source
-    and uses the predictor path for per-cell CRF / bitrate / VMAF
-    estimates. ``smoke=True`` skips process-bound probes and exercises
-    the composition end-to-end with synthetic metadata.
+    The non-smoke path probes source metadata and uses the predictor for
+    per-cell CRF / bitrate / VMAF estimates. ``smoke=True`` skips
+    process-bound probes and runs the composition on synthetic metadata
+    (1080p SDR) unless ``meta_override`` supplies one; ``src`` may then be
+    ``None`` (empty ``src`` in the plan), and is required otherwise.
 
-    ``meta_override`` lets callers (and tests) inject a pre-built
-    :class:`SourceMeta`. When ``None`` and ``smoke=True``, a synthetic
-    1080p SDR live-action meta is fabricated so the smoke run is
-    deterministic without touching ffprobe.
-
-    ``confidence_thresholds`` carries the F.3 width gates. ``None``
-    falls back to the documented defaults (2.0 / 5.0) — call
-    :func:`load_confidence_thresholds` to honour a calibration sidecar.
-
-    ``cell_intervals`` is the F.3 production-wiring seam: a sequence
-    of ``(rung, codec, verdict, interval_width)`` tuples, one per
-    cell, that the driver consumes when wiring
-    :meth:`Predictor.predict_vmaf_with_uncertainty` into the
-    per-cell predict step. ``None`` keeps the smoke synthesis (a
-    constant tight interval per cell so the gate is exercised
-    deterministically without ONNX). Any (rung, codec) cell missing
-    from the sequence falls back to a NaN interval (uncalibrated)
-    plus the driver's smoke verdict.
-
-    ``probe_runner`` is the subprocess seam used by the non-smoke
-    metadata probe. Production callers leave it ``None``; tests pass a
-    fake runner that returns ffprobe-compatible JSON.
+    ``confidence_thresholds`` carries the F.3 width gates (``None``: 2.0 /
+    5.0; see :func:`load_confidence_thresholds`). ``cell_intervals`` is the
+    F.3 production-wiring seam, ``(rung, codec, verdict, interval_width)``
+    per cell; ``None`` keeps the smoke synthesis (a tight interval per cell)
+    and a cell missing from the sequence gets a NaN interval. ``probe_runner``
+    is the subprocess seam of the metadata probe.
     """
-    detected_hdr_info = None
-    if not smoke and meta_override is None:
-        meta_override, detected_hdr_info = _probe_source_meta(
-            src,
-            sample_clip_seconds=sample_clip_seconds,
-            runner=probe_runner,
-        )
-
-    meta = meta_override or SourceMeta(
-        height=1080,
-        width=1920,
-        is_hdr=False,
-        content_class="live_action",
-        duration_s=120.0,
-        shot_variance=0.05,
+    meta, hdr_info = _resolve_meta(
+        src,
+        smoke=smoke,
+        meta_override=meta_override,
         sample_clip_seconds=sample_clip_seconds,
+        probe_runner=probe_runner,
     )
-    hdr_info = detected_hdr_info if bool(meta.is_hdr) else None
-    if bool(meta.is_hdr) and hdr_info is None:
-        hdr_info = _default_hdr_info_for_auto()
-
     plan_state = PlanState(
         target_vmaf=target_vmaf,
         max_budget_kbps=max_budget_kbps,
         allow_codecs=tuple(allow_codecs),
         user_pinned_codec=user_pinned_codec,
     )
-
-    # ------------------------------------------------------------------
-    # Stage 0 — F.4 per-content-type recipe override.
-    #
-    # Fires *before* the F.2 short-circuits so a recipe can flip
-    # `force_single_rung` and have the ladder stage honour it.
-    # `effective_thresholds` carries the recipe-narrowed F.3 width gate
-    # for the rest of the driver. ``recipe_applied`` lands in the JSON
-    # metadata block so post-hoc analysis can audit which content class
-    # drove the recipe choice. The predictor's effective target VMAF
-    # is offset by ``target_vmaf_offset`` (recipe key) but the
-    # production-flip gate that ships models is *not* shifted by this
-    # value — see ``feedback_no_test_weakening`` memory.
-    # ------------------------------------------------------------------
-    base_thresholds = confidence_thresholds or ConfidenceThresholds()
-    recipe_class, recipe, effective_thresholds = _apply_recipe_override(
-        meta, plan_state, base_thresholds
-    )
-    target_vmaf_offset = float(recipe.get("target_vmaf_offset", 0.0))  # type: ignore[arg-type]
-    effective_predictor_target_vmaf = float(target_vmaf) + target_vmaf_offset
-    force_single_rung = bool(recipe.get("force_single_rung", False))
-    saliency_intensity = str(recipe.get("saliency_intensity", "default"))
-
-    # ------------------------------------------------------------------
-    # Stage 1 — ladder rung selection (short-circuit #1).
-    # ------------------------------------------------------------------
-    if _should_short_circuit_1_single_rung_ladder(meta, plan_state) or force_single_rung:
-        plan_state.fired(ShortCircuit.LADDER_SINGLE_RUNG)
-        rungs: tuple[int, ...] = (int(meta.height),)
-    else:
-        # Multi-rung path — production wiring delegates to ladder.py.
-        rungs = (2160, 1440, 1080, 720, 540)
-
-    # ------------------------------------------------------------------
-    # Stage 2 — codec shortlist (short-circuit #2).
-    # ------------------------------------------------------------------
-    if _should_short_circuit_2_codec_pinned(meta, plan_state):
-        plan_state.fired(ShortCircuit.CODEC_PINNED)
-        codecs: tuple[str, ...] = (user_pinned_codec,) if user_pinned_codec else tuple(allow_codecs)
-    else:
-        # Production wiring delegates to compare.shortlist; smoke
-        # path keeps the full allow-list.
-        codecs = tuple(allow_codecs)
-
-    # ------------------------------------------------------------------
-    # Stage 3 — HDR pipeline (short-circuit #5).
-    # ------------------------------------------------------------------
-    _hdr_codec_args: Callable[[str, HdrInfo], tuple[str, ...]] | None = None
-    if _should_short_circuit_5_sdr_skip(meta, plan_state):
-        plan_state.fired(ShortCircuit.SDR_SKIP)
-        hdr_info = None
-    else:
-        from .hdr import hdr_codec_args as _hdr_codec_args
-
-    # ------------------------------------------------------------------
-    # Stage 4 — sample-clip propagation (short-circuit #6).
-    # ------------------------------------------------------------------
-    propagated_clip = 0.0
-    if _should_short_circuit_6_sample_clip_propagate(meta, plan_state):
-        plan_state.fired(ShortCircuit.SAMPLE_CLIP_PROPAGATE)
-        propagated_clip = float(meta.sample_clip_seconds)
-
-    # ------------------------------------------------------------------
-    # Stage 5 — per-cell predictor + escalation (short-circuit #3 +
-    # F.3 confidence-aware override).
-    #
-    # In smoke mode we synthesise a GOSPEL verdict so the F.2 gate
-    # fires in the unit smoke run; production wiring will set the
-    # verdict from predictor_validate.ValidationReport.verdict and
-    # the interval width from
-    # Predictor.predict_vmaf_with_uncertainty (ADR-0279).
-    # ------------------------------------------------------------------
-    if smoke:
-        plan_state.predictor_verdict = "GOSPEL"
-
-    # Use the recipe-narrowed thresholds for the rest of the driver.
-    thresholds = effective_thresholds
-    # Build a (rung, codec) -> (verdict, width) lookup from the
-    # production-wiring seam. Missing cells fall back to (verdict,
-    # NaN) — NaN width defers F.3 to the native verdict so the gate
-    # degrades gracefully when no calibration is available.
-    interval_lookup: dict[tuple[int, str], tuple[str | None, float]] = {}
-    if cell_intervals is not None:
-        for rung_in, codec_in, verdict_in, width_in in cell_intervals:
-            interval_lookup[(int(rung_in), str(codec_in))] = (
-                verdict_in,
-                float(width_in),
-            )
-
-    confidence_aware_escalations: list[dict] = []
-    cells: list[dict] = []
-    predictor = None
-    predictor_features = None
-    if not smoke:
-        from .predictor import Predictor
-
-        predictor = Predictor()
-        predictor_features = _predictor_features_from_meta(meta)
-    for rung in rungs:
-        for codec in codecs:
-            cell_state = dataclasses.replace(plan_state)
-            cell_state.short_circuits = list(plan_state.short_circuits)
-            if _should_short_circuit_3_predictor_gospel(meta, cell_state):
-                cell_state.fired(ShortCircuit.PREDICTOR_GOSPEL)
-                # Carry the cell-level firing back up so the metadata
-                # block records that GOSPEL fired at least once.
-                if ShortCircuit.PREDICTOR_GOSPEL.value not in plan_state.short_circuits:
-                    plan_state.fired(ShortCircuit.PREDICTOR_GOSPEL)
-
-            # F.3 — consult the conformal interval to decide whether
-            # the native verdict is overridden. The synthetic smoke
-            # default is a tight interval (width=1.0) below the
-            # tight_interval_max_width gate; production wiring
-            # supplies real widths via cell_intervals.
-            cell_key = (int(rung), str(codec))
-            if cell_key in interval_lookup:
-                cell_verdict, cell_width = interval_lookup[cell_key]
-            elif cell_intervals is not None:
-                # Caller opted into the production-wiring seam but
-                # didn't cover this cell — degrade to NaN so the F.3
-                # gate defers to the native verdict instead of
-                # silently using a synthetic tight width.
-                cell_verdict = plan_state.predictor_verdict
-                cell_width = float("nan")
-            else:
-                cell_verdict = plan_state.predictor_verdict
-                cell_width = 1.0 if smoke else float("nan")
-            decision = _confidence_aware_escalation(cell_verdict, cell_width, thresholds)
-            cell_hdr_args = ()
-            if hdr_info is not None and _hdr_codec_args is not None:
-                cell_hdr_args = _hdr_codec_args(str(codec), hdr_info)
-            confidence_aware_escalations.append(
-                {
-                    "rung": int(rung),
-                    "codec": str(codec),
-                    "verdict": cell_verdict or "UNKNOWN",
-                    "interval_width": cell_width,
-                    "decision": decision.value,
-                }
-            )
-            if predictor is not None and predictor_features is not None:
-                from .predictor import pick_crf
-
-                crf = pick_crf(
-                    predictor,
-                    predictor_features,
-                    float(effective_predictor_target_vmaf),
-                    str(codec),
-                )
-                estimated_vmaf = predictor.predict_vmaf(predictor_features, crf, str(codec))
-                estimated_bitrate_kbps = _estimate_cell_bitrate_kbps(
-                    predictor_features,
-                    str(codec),
-                    crf,
-                )
-                prediction_source = "predictor"
-            else:
-                crf = 23
-                estimated_vmaf = float(target_vmaf)
-                estimated_bitrate_kbps = float(max_budget_kbps)
-                prediction_source = "smoke-placeholder"
-
-            cells.append(
-                {
-                    "rung": int(rung),
-                    "codec": str(codec),
-                    "verdict": cell_verdict or plan_state.predictor_verdict or "UNKNOWN",
-                    "crf": int(crf),
-                    "estimated_vmaf": float(estimated_vmaf),
-                    "estimated_bitrate_kbps": float(estimated_bitrate_kbps),
-                    "hdr_args": list(cell_hdr_args),
-                    "sample_clip_seconds": propagated_clip,
-                    "confidence_decision": decision.value,
-                    "interval_width": cell_width,
-                    "effective_predictor_target_vmaf": float(effective_predictor_target_vmaf),
-                    "prediction_source": prediction_source,
-                    "saliency_intensity": saliency_intensity,
-                }
-            )
-
-    # ------------------------------------------------------------------
-    # Stage 6 — saliency gate (short-circuit #4).
-    # ------------------------------------------------------------------
-    if _should_short_circuit_4_skip_saliency(meta, plan_state):
-        plan_state.fired(ShortCircuit.SKIP_SALIENCY)
-    # else: production wiring would call recommend_saliency.maybe_apply
-    # on every cell.
-
-    # ------------------------------------------------------------------
-    # Stage 7 — per-shot refinement gate (short-circuit #7).
-    # ------------------------------------------------------------------
-    if _should_short_circuit_7_skip_per_shot(meta, plan_state):
-        plan_state.fired(ShortCircuit.SKIP_PER_SHOT)
-    # else: production wiring would call tune_per_shot.refine on
-    # every cell.
-
-    # ------------------------------------------------------------------
-    # Stage 8 — low-complexity source (short-circuit #8).
-    # Does not fire when complexity_score is 0.0 / NaN (no probe yet).
-    # ------------------------------------------------------------------
-    if _should_short_circuit_low_complexity(meta, plan_state):
-        plan_state.fired(ShortCircuit.LOW_COMPLEXITY)
-
-    # ------------------------------------------------------------------
-    # Stage 9 — baseline encode already meets target (short-circuit #9).
-    # Does not fire when baseline_vmaf is 0.0 / NaN (no baseline yet).
-    # ------------------------------------------------------------------
-    if _should_short_circuit_baseline_meets_target(meta, plan_state):
-        plan_state.fired(ShortCircuit.BASELINE_MEETS_TARGET)
-
-    # ------------------------------------------------------------------
-    # Stage 10 — per-cell no-two-pass gate (short-circuit #10).
-    # Resolve supports_two_pass from the first codec in the list;
-    # None (smoke / pre-cell) keeps the predicate dormant.
-    # ------------------------------------------------------------------
-    if codecs:
-        try:
-            from .codec_adapters import get_adapter as _get_adapter
-
-            _first_adapter = _get_adapter(codecs[0])
-            plan_state.adapter_supports_two_pass = bool(
-                getattr(_first_adapter, "supports_two_pass", False)
-            )
-        except (KeyError, ImportError):
-            plan_state.adapter_supports_two_pass = False
-        if _should_short_circuit_no_two_pass(meta, plan_state):
-            plan_state.fired(ShortCircuit.NO_TWO_PASS)
-
-    winner = pick_auto_winner(
-        cells,
+    ctx = _make_plan_ctx(
+        src,
+        meta,
+        plan_state,
+        hdr_info,
+        confidence_thresholds=confidence_thresholds,
+        allow_codecs=allow_codecs,
+        user_pinned_codec=user_pinned_codec,
+        cell_intervals=cell_intervals,
+        smoke=smoke,
         target_vmaf=target_vmaf,
         max_budget_kbps=max_budget_kbps,
     )
+    cells, escalations = _build_cells(ctx)
+    _late_short_circuits(meta, plan_state, ctx.codecs)
+    winner = pick_auto_winner(cells, target_vmaf=target_vmaf, max_budget_kbps=max_budget_kbps)
     _mark_selected_cell(cells, winner)
-
-    metadata = {
-        "src": str(src),
-        "target_vmaf": float(target_vmaf),
-        "max_budget_kbps": float(max_budget_kbps),
-        "allow_codecs": list(allow_codecs),
-        "user_pinned_codec": user_pinned_codec,
-        "smoke": bool(smoke),
-        "source_meta": dataclasses.asdict(meta),
-        "short_circuits": list(plan_state.short_circuits),
-        "confidence_aware_escalations": confidence_aware_escalations,
-        "confidence_thresholds": {
-            "tight_interval_max_width": thresholds.tight_interval_max_width,
-            "wide_interval_min_width": thresholds.wide_interval_min_width,
-            "source": thresholds.source,
-        },
-        "recipe_applied": recipe_class,
-        "recipe_overrides": dict(recipe),
-        "effective_predictor_target_vmaf": float(effective_predictor_target_vmaf),
-        "winner": winner,
-    }
-    return AutoPlan(cells=cells, metadata=metadata)
+    return AutoPlan(cells=cells, metadata=_plan_metadata(ctx, escalations, winner))
 
 
 # ---------------------------------------------------------------------------
-# F.3 confidence-aware fallback policy (ADR-0364 §F.3 / ADR-0279).
-# F.3 confidence-aware fallback policy (ADR-0325 §F.3 / ADR-0279).
+# F.3 confidence-aware fallback policy (ADR-0397 §F.3 / ADR-0393).
 #
 # These helpers are pure functions of (verdict, interval_width,
 # thresholds). The driver calls them per-(rung, codec) cell after the
@@ -1468,7 +1513,7 @@ class ConfidenceThresholds:
     The two fields gate F.3's confidence-aware policy. The defaults are
     the emergency floor (Research-0067 §"Phase F decision tree"); the
     production values come from a calibration sidecar produced by the
-    conformal-VQA pipeline (ADR-0279 / #488). ``source`` records where
+    conformal-VQA pipeline (ADR-0393). ``source`` records where
     the values came from for the JSON metadata block.
 
     A valid threshold pair satisfies
@@ -1501,7 +1546,7 @@ def load_confidence_thresholds(sidecar_path: Path | None) -> ConfidenceThreshold
     """Load corpus-derived thresholds from a calibration sidecar.
 
     The sidecar is the JSON file produced by the conformal-VQA
-    calibration pipeline (#488). Expected schema (extra keys ignored
+    calibration pipeline. Expected schema (extra keys ignored
     so the loader survives schema growth)::
 
         {
@@ -1601,7 +1646,7 @@ def _confidence_aware_escalation(
         return ConfidenceDecision.RECOMMEND_ESCALATION
     if width < 0.0:
         raise ValueError(
-            f"_confidence_aware_escalation: interval_width must be " f">= 0.0 or NaN; got {width!r}"
+            f"_confidence_aware_escalation: interval_width must be >= 0.0 or NaN; got {width!r}"
         )
     if width <= thresholds.tight_interval_max_width:
         return ConfidenceDecision.SKIP_ESCALATION

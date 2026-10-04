@@ -1359,8 +1359,11 @@ def _add_auto_plan_args(auto: argparse.ArgumentParser) -> None:
     auto.add_argument(
         "--src",
         type=Path,
-        required=True,
-        help="reference video (raw YUV or any FFmpeg-readable container)",
+        default=None,
+        help=(
+            "reference video (raw YUV or any FFmpeg-readable container); "
+            "required unless --smoke, and always with --execute"
+        ),
     )
     auto.add_argument(
         "--target-vmaf",
@@ -1400,6 +1403,10 @@ def _add_auto_plan_args(auto: argparse.ArgumentParser) -> None:
             "re-deciding per stage (ADR-0301). 0 = full source."
         ),
     )
+
+
+def _add_auto_mode_args(auto: argparse.ArgumentParser) -> None:
+    """Add the smoke switch and plan output arguments."""
     auto.add_argument(
         "--smoke",
         action="store_true",
@@ -1486,6 +1493,7 @@ def _add_auto_subparser(sub: argparse._SubParsersAction) -> None:
         ),
     )
     _add_auto_plan_args(auto)
+    _add_auto_mode_args(auto)
     _add_auto_execute_args(auto)
 
 
@@ -4328,6 +4336,44 @@ def _load_per_shot_predicate(spec: str) -> PerShotPredicateFn:
     return predicate
 
 
+def _auto_src_error(args: argparse.Namespace) -> str | None:
+    """``--src`` is optional only for a smoke plan that is not executed."""
+    if args.src is not None:
+        return None
+    if getattr(args, "execute", False):
+        return "--src is required with --execute"
+    if not args.smoke:
+        return "--src is required unless --smoke"
+    return None
+
+
+def _auto_execute(args: argparse.Namespace, plan: Any) -> int:
+    """Run the plan's selected cells (``auto --execute``); 0, 1 or 2."""
+    from .executor import run_plan
+
+    try:
+        geometry = _auto_execute_geometry(args)
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-tune auto: {exc}\n")
+        return 2
+    runs_dir: Path = getattr(args, "runs_dir", Path("runs"))
+    execute_all: bool = getattr(args, "execute_all", False)
+    sys.stderr.write(f"vmaf-tune auto: execute mode — runs dir: {runs_dir}\n")
+    results = run_plan(
+        plan,
+        args.src,
+        runs_dir,
+        execute_all=execute_all,
+        **geometry,
+    )
+    n_ok = sum(1 for r in results if r.score is not None and r.score.exit_status == 0)
+    sys.stderr.write(
+        f"vmaf-tune auto: executed {len(results)} cell(s), "
+        f"{n_ok} scored successfully → {runs_dir / 'tune_results.jsonl'}\n"
+    )
+    return 1 if n_ok == 0 and results else 0
+
+
 def _run_auto(args: argparse.Namespace) -> int:
     """Plan an automatic tune and optionally execute its selected cells."""
     from .auto import emit_plan_json, run_auto
@@ -4335,6 +4381,9 @@ def _run_auto(args: argparse.Namespace) -> int:
     allow = tuple(token.strip() for token in args.allow_codecs.split(",") if token.strip())
     if not allow:
         sys.stderr.write("vmaf-tune auto: --allow-codecs is empty\n")
+        return 2
+    if (src_error := _auto_src_error(args)) is not None:
+        sys.stderr.write(f"vmaf-tune auto: {src_error}\n")
         return 2
     try:
         plan = run_auto(
@@ -4359,33 +4408,8 @@ def _run_auto(args: argparse.Namespace) -> int:
         if not rendered.endswith("\n"):
             sys.stdout.write("\n")
 
-    execute = getattr(args, "execute", False)
-    if execute:
-        from .executor import run_plan
-
-        try:
-            geometry = _auto_execute_geometry(args)
-        except ValueError as exc:
-            sys.stderr.write(f"vmaf-tune auto: {exc}\n")
-            return 2
-        runs_dir: Path = getattr(args, "runs_dir", Path("runs"))
-        execute_all: bool = getattr(args, "execute_all", False)
-        sys.stderr.write(f"vmaf-tune auto: execute mode — runs dir: {runs_dir}\n")
-        results = run_plan(
-            plan,
-            args.src,
-            runs_dir,
-            execute_all=execute_all,
-            **geometry,
-        )
-        n_ok = sum(1 for r in results if r.score is not None and r.score.exit_status == 0)
-        sys.stderr.write(
-            f"vmaf-tune auto: executed {len(results)} cell(s), "
-            f"{n_ok} scored successfully → {runs_dir / 'tune_results.jsonl'}\n"
-        )
-        if n_ok == 0 and results:
-            return 1
-
+    if getattr(args, "execute", False):
+        return _auto_execute(args, plan)
     return 0
 
 

@@ -14,6 +14,9 @@
   ADR-0598.
 - Item 19: ADR numbers in the help, the usage pages and the AGENTS.d pages
   resolved to unrelated records (renumbered ADRs).
+- Item 22: the split modules (auto, bisect, executor, per_shot, prefilter,
+  score) cited renumbered ADRs in comments and docstrings, and ``auto.py``
+  still counted "seven" short-circuits.
 - Item 21: the ladder docstring said the sampler picks the row closest to
   the target; ``pick_target_vmaf`` takes the smallest CRF that clears it.
 """
@@ -267,3 +270,59 @@ def test_unrelated_record_is_reported() -> None:
     ]
     assert _misattributed("fixture", "see ADR-9999") == ["fixture: ADR-9999 does not exist"]
     assert _misattributed("fixture", "frozen Pelorus ADR-0110 contract, ADR-0726") == []
+
+
+# ---------------------------------------------------------------- item 22
+
+# The modules whose HISS-04 baseline was retired together with their stale ADR
+# numbers. recommend.py keeps its own row (another change owns its pick rule).
+SPLIT_MODULES = ("auto", "bisect", "executor", "per_shot", "prefilter", "score")
+
+
+def _module_misattributions(paths: list[Path]) -> list[str]:
+    """ADR references in the source text (comments, docstrings, strings) of ``paths``."""
+    bad = []
+    for path in paths:
+        bad += _misattributed(path.name, path.read_text(encoding="utf-8"))
+    return bad
+
+
+def _split_module_paths() -> list[Path]:
+    _doc_pages()
+    return [_HERE.parent / "src" / "vmaftune" / f"{name}.py" for name in SPLIT_MODULES]
+
+
+def test_split_modules_cite_vmaf_tune_records() -> None:
+    bad = _module_misattributions(_split_module_paths())
+    assert not bad, "\n".join(bad)
+
+
+def test_module_scan_reports_unrelated_and_unqualified_pelorus_records(tmp_path: Path) -> None:
+    # Negative cases: a renumbered record and a Pelorus ADR cited without
+    # saying whose it is (ADR-0110 here is a coverage-gate record).
+    _doc_pages()
+    fixture = tmp_path / "fixture.py"
+    fixture.write_text(
+        '"""See ADR-0468 and ADR-0110; Pelorus ADR-0110 is fine, ADR-0301 too."""\n',
+        encoding="utf-8",
+    )
+    assert _module_misattributions([fixture]) == [
+        "fixture.py: ADR-0110 is 0110-coverage-gate-fprofile-update-atomic.md",
+        "fixture.py: ADR-0468 is 0468-hip-float-adm-real-kernel.md",
+    ]
+
+
+def test_auto_module_counts_every_short_circuit() -> None:
+    text = (_HERE.parent / "src" / "vmaftune" / "auto.py").read_text(encoding="utf-8")
+    assert len(ShortCircuit) == 10
+    assert "the seven short-circuit" not in text.lower()
+    assert "ten short-circuit" in text
+
+
+def test_prefilter_notes_name_the_pelorus_records() -> None:
+    pytest.importorskip("optuna")
+    from vmaftune.prefilter import recommend_prefilter
+
+    notes = recommend_prefilter(src=None, target_vmaf=90.0, smoke=True, n_trials=3)["notes"]
+    assert "Pelorus ADR-0106" in notes
+    assert not _misattributed("prefilter notes", notes)

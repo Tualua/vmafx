@@ -2137,6 +2137,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (`Python Package Tests (vmaf-roi-score)`).
 
 
+- **`vmaf-tune`'s `auto`, `bisect`, `executor`, `per_shot`, `prefilter` and
+  `score` modules meet the HISS-04 size limits and cite the right ADRs.** The 14
+  functions over 60 lines (among them `auto.run_auto` at 327 lines and
+  `bisect.bisect_target_vmaf` at 368) are split into helpers without a change in
+  behaviour, and the HISS baseline loses those 14 infractions. Comments and
+  docstrings now cite the current records (the conformal intervals are ADR-0393,
+  Phase F `auto` is ADR-0397, the workdir is ADR-0598), the Pelorus records in
+  `prefilter` are named as Pelorus's, and the `auto` docstrings count ten
+  short-circuits. The JSON `notes` text of `prefilter --smoke` and the
+  production result changed with the citations.
+
+
 - **`vmaf-tune`'s corpus, compare, encode and ladder modules meet the HISS-04
   size limits.** The 13 functions over 60 lines (among them `iter_rows` at 428
   lines) are split into helpers without a change in behaviour: the same rows,
@@ -4672,6 +4684,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `vmaf_init()` no longer reads `*vmaf`: it sets it to NULL on entry and to
   the new context on success (ADR-1396). A handle that still holds an open
   context is now overwritten instead of rejected; close it first.
+
+
+- **`vmaf-tune auto --smoke` runs without `--src`.** The smoke planner probes
+  nothing, but the subcommand required `--src` and exited 2 before reading
+  `--smoke`. `--src` is now required unless `--smoke`, and always with
+  `--execute`; a smoke plan without a source records an empty `"src"`, as
+  `vmafx-tune auto --smoke` does. See `docs/usage/vmaf-tune-auto.md`.
 
 
 - **`vmaf-tune` checks the coarse-to-fine window against the adapter, honours

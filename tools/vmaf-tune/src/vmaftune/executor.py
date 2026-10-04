@@ -7,7 +7,7 @@ runs FFmpeg (via :func:`~vmaftune.encode.run_encode`) per rung, scores each outp
 the libvmaf CLI (via :func:`~vmaftune.score.run_score`), and appends rows to a JSONL
 results file under ``out_dir/tune_results.jsonl``.
 
-Two additional execution modes extend the base executor (ADR-0468):
+Two additional execution modes extend the base executor (ADR-0588):
 
 * **Per-shot** (``run_plan_per_shot``): detects shot boundaries via
   :func:`~vmaftune.per_shot.detect_shots`, scores each segment independently,
@@ -17,7 +17,7 @@ Two additional execution modes extend the base executor (ADR-0468):
   preferential bit allocation; the resulting encode is scored in the same
   encode → score pipeline as the base mode.
 
-Design notes (ADR-0454, ADR-0468):
+Design notes (ADR-0579, ADR-0588):
 
 * Zero new mandatory dependencies — results are written as JSONL, matching the corpus
   path (``corpus.py``). A future polars/pyarrow layer can convert on demand.
@@ -35,7 +35,7 @@ from __future__ import annotations
 import dataclasses
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -134,6 +134,84 @@ def _write_jsonl_row(fh: Any, row: dict[str, Any]) -> None:
     fh.write(dumps_strict(row, indent=None, sort_keys=True) + "\n")
 
 
+@dataclasses.dataclass(frozen=True)
+class _ExecCtx:
+    """Per-run settings shared by the three execution modes."""
+
+    src: Path
+    out_dir: Path
+    pix_fmt: str
+    width: int
+    height: int
+    framerate: float
+    vmaf_model: str
+    vmaf_bin: str
+    ffmpeg_bin: str
+    encode_runner: Callable[..., Any] | None
+    score_runner: Callable[..., Any] | None
+
+
+def _effective_geometry(plan: Any, width: int, height: int) -> tuple[int, int]:
+    """Frame size: plan ``source_meta`` fills in a caller left at the defaults."""
+    source_meta = plan.metadata.get("source_meta", {})
+    eff_width = int(source_meta.get("width", width)) if width == 1920 else width
+    eff_height = int(source_meta.get("height", height)) if height == 1080 else height
+    return eff_width, eff_height
+
+
+def _cells_to_run(plan: Any, execute_all: bool) -> list[dict[str, Any]]:
+    """Cells to execute: all of them, or only the ``selected`` ones."""
+    return [cell for cell in plan.cells if execute_all or bool(cell.get("selected", False))]
+
+
+def _score_in_tempdir(ctx: _ExecCtx, score_req: ScoreRequest) -> ScoreResult:
+    """Run the scorer with a throw-away work directory."""
+    with tempfile.TemporaryDirectory() as td:
+        return run_score(
+            score_req,
+            vmaf_bin=ctx.vmaf_bin,
+            runner=ctx.score_runner,
+            workdir=Path(td),
+        )
+
+
+def _execute_cell(
+    ctx: _ExecCtx, cell: dict[str, Any], source_is_container: bool
+) -> tuple[EncodeResult | None, ScoreResult | None]:
+    """Encode one cell, then score it when the encode succeeded."""
+    enc_req = _cell_to_encode_request(
+        cell,
+        ctx.src,
+        ctx.out_dir,
+        pix_fmt=ctx.pix_fmt,
+        width=ctx.width,
+        height=ctx.height,
+        framerate=ctx.framerate,
+        source_is_container=source_is_container,
+    )
+    enc: EncodeResult | None = None
+    sc: ScoreResult | None = None
+    try:
+        enc = run_encode(enc_req, ffmpeg_bin=ctx.ffmpeg_bin, runner=ctx.encode_runner)
+    except Exception as exc:
+        # Encode failure is recorded in the row; scoring is skipped.
+        _log(f"executor: encode failed for cell {cell.get('cell_index')}: {exc}")
+    if enc is not None and enc.exit_status == 0:
+        score_req = ScoreRequest(
+            reference=ctx.src,
+            distorted=enc_req.output,
+            width=ctx.width,
+            height=ctx.height,
+            pix_fmt=ctx.pix_fmt,
+            model=ctx.vmaf_model,
+        )
+        try:
+            sc = _score_in_tempdir(ctx, score_req)
+        except Exception as exc:
+            _log(f"executor: score failed for cell {cell.get('cell_index')}: {exc}")
+    return enc, sc
+
+
 def run_plan(
     plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
     src: Path,
@@ -153,105 +231,35 @@ def run_plan(
 ) -> list[ExecuteResult]:
     """Realise an ``AutoPlan`` by running real encodes and scores.
 
-    Parameters
-    ----------
-    plan:
-        The :class:`~vmaftune.auto.AutoPlan` returned by :func:`~vmaftune.auto.run_auto`.
-    src:
-        Reference source path (forwarded to the encoder as input).
-    out_dir:
-        Directory for encoded files and the ``tune_results.jsonl`` log.
-        Created if absent.
-    pix_fmt:
-        FFmpeg pixel format string (default ``yuv420p``).  When
-        ``source_is_container=True`` the encoder driver reads format from the
-        container; ``pix_fmt`` is still stored in :class:`EncodeRequest` for
-        the score driver.
-    width, height:
-        Frame geometry; taken from plan ``metadata.source_meta`` when not
-        overridden (the CLI wrapper does this automatically).
-    framerate:
-        Frame rate; same override semantics as ``width``/``height``.
-    source_is_container:
-        When ``True`` (default) the encoder driver omits raw-YUV input flags
-        and lets FFmpeg detect the format from the container.
-    execute_all:
-        When ``True`` run every cell; otherwise only cells with
-        ``selected=True`` are executed (default).
-    vmaf_model:
-        libvmaf model identifier forwarded to :class:`~vmaftune.score.ScoreRequest`.
-    vmaf_bin, ffmpeg_bin:
-        Binary names / paths for the ``vmaf`` and ``ffmpeg`` executables.
-    encode_runner, score_runner:
-        Optional ``subprocess.run``-compatible callables used as test seams.
-        Pass ``None`` in production (the drivers call ``subprocess.run``
-        directly).
+    ``plan`` is the :class:`~vmaftune.auto.AutoPlan` from
+    :func:`~vmaftune.auto.run_auto`; ``src`` the reference path;
+    ``out_dir`` receives the encodes and ``tune_results.jsonl`` (created if
+    absent). ``width`` / ``height`` / ``framerate`` come from the plan's
+    ``metadata.source_meta`` when left at the defaults. With
+    ``source_is_container=True`` the encoder lets FFmpeg detect the format.
+    Only ``selected`` cells run unless ``execute_all``. ``encode_runner`` and
+    ``score_runner`` are ``subprocess.run``-compatible test seams.
 
-    Returns
-    -------
-    list[ExecuteResult]
-        One entry per executed cell, in plan order.  Always written to
-        ``out_dir/tune_results.jsonl`` even on partial failure.
+    Returns one :class:`ExecuteResult` per executed cell in plan order; the
+    JSONL log is written even on partial failure.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "tune_results.jsonl"
-
-    # Pull geometry from plan metadata when caller did not override.
-    source_meta = plan.metadata.get("source_meta", {})
-    eff_width = int(source_meta.get("width", width)) if width == 1920 else width
-    eff_height = int(source_meta.get("height", height)) if height == 1080 else height
-
-    cells_to_run = [cell for cell in plan.cells if execute_all or bool(cell.get("selected", False))]
-
+    eff_width, eff_height = _effective_geometry(plan, width, height)
+    # fmt: off
+    ctx = _ExecCtx(
+        src, out_dir, pix_fmt, eff_width, eff_height, framerate,
+        vmaf_model, vmaf_bin, ffmpeg_bin, encode_runner, score_runner,
+    )
+    # fmt: on
     results: list[ExecuteResult] = []
-
     with results_path.open("a", encoding="utf-8") as fh:
-        for cell in cells_to_run:
-            enc_req = _cell_to_encode_request(
-                cell,
-                src,
-                out_dir,
-                pix_fmt=pix_fmt,
-                width=eff_width,
-                height=eff_height,
-                framerate=framerate,
-                source_is_container=source_is_container,
-            )
-
-            enc: EncodeResult | None = None
-            sc: ScoreResult | None = None
-
-            try:
-                enc = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
-            except Exception as exc:
-                # Encode failure is recorded in the row; scoring is skipped.
-                _log(f"executor: encode failed for cell {cell.get('cell_index')}: {exc}")
-
-            if enc is not None and enc.exit_status == 0:
-                with tempfile.TemporaryDirectory() as td:
-                    score_req = ScoreRequest(
-                        reference=src,
-                        distorted=enc_req.output,
-                        width=eff_width,
-                        height=eff_height,
-                        pix_fmt=pix_fmt,
-                        model=vmaf_model,
-                    )
-                    try:
-                        sc = run_score(
-                            score_req,
-                            vmaf_bin=vmaf_bin,
-                            runner=score_runner,
-                            workdir=Path(td),
-                        )
-                    except Exception as exc:
-                        _log(f"executor: score failed for cell " f"{cell.get('cell_index')}: {exc}")
-
+        for cell in _cells_to_run(plan, execute_all):
+            enc, sc = _execute_cell(ctx, cell, source_is_container)
             row = _make_row(cell, enc, sc)
             _write_jsonl_row(fh, row)
             fh.flush()
             results.append(ExecuteResult(cell=cell, encode=enc, score=sc, row=row))
-
     return results
 
 
@@ -264,7 +272,7 @@ def _log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Per-shot execution mode (ADR-0468)
+# Per-shot execution mode (ADR-0588)
 # ---------------------------------------------------------------------------
 
 
@@ -300,6 +308,103 @@ class PerShotPlanResult:
     row: dict[str, Any]
 
 
+def _score_one_shot(ctx: _ExecCtx, cell: dict[str, Any], si: int, shot: Any) -> ShotExecuteResult:
+    """Encode one shot segment, score it, and build its result row."""
+    codec = str(cell.get("codec", "libx264"))
+    crf = int(cell.get("crf", 23))
+    cell_index = int(cell.get("cell_index", 0))
+    seg_out = ctx.out_dir / f"shot_{cell_index:03d}_{si:04d}_{codec}_crf{crf}.mkv"
+    enc_req = EncodeRequest(
+        source=ctx.src,
+        width=ctx.width,
+        height=ctx.height,
+        pix_fmt=ctx.pix_fmt,
+        framerate=ctx.framerate,
+        encoder=codec,
+        preset=str(cell.get("preset", "medium")),
+        crf=crf,
+        output=seg_out,
+        source_is_container=True,
+    )
+    sc: ScoreResult | None = None
+    try:
+        enc = run_encode(enc_req, ffmpeg_bin=ctx.ffmpeg_bin, runner=ctx.encode_runner)
+        if enc.exit_status == 0:
+            sc = _score_in_tempdir(
+                ctx,
+                ScoreRequest(
+                    reference=ctx.src,
+                    distorted=seg_out,
+                    width=ctx.width,
+                    height=ctx.height,
+                    pix_fmt=ctx.pix_fmt,
+                    model=ctx.vmaf_model,
+                    frame_skip_ref=shot.start_frame,
+                    frame_cnt=shot.length,
+                ),
+            )
+    except Exception as exc:
+        _log(f"executor per-shot: cell {cell_index} shot {si} failed: {exc}")
+    shot_row: dict[str, Any] = {
+        "cell_index": cell_index,
+        "shot_index": si,
+        "shot_start_frame": shot.start_frame,
+        "shot_end_frame": shot.end_frame,
+        "shot_length_frames": shot.length,
+        "codec": codec,
+        "crf": crf,
+        "vmaf_score": sc.vmaf_score if sc else None,
+        "score_exit_status": sc.exit_status if sc else None,
+    }
+    return ShotExecuteResult(shot_index=si, length_frames=shot.length, score=sc, row=shot_row)
+
+
+def _weighted_vmaf(shot_results: Sequence[ShotExecuteResult]) -> float:
+    """Frame-length-weighted mean VMAF across the shots that scored."""
+    total_frames = 0
+    weighted_sum = 0.0
+    for sr in shot_results:
+        if sr.score is not None and not _is_nan(sr.score.vmaf_score):
+            total_frames += sr.length_frames
+            weighted_sum += sr.score.vmaf_score * sr.length_frames
+    return weighted_sum / total_frames if total_frames > 0 else float("nan")
+
+
+def _per_shot_cell(
+    ctx: _ExecCtx,
+    cell: dict[str, Any],
+    per_shot_bin: str,
+    shot_runner: object | None,
+) -> PerShotPlanResult:
+    """Detect the shots of one cell, score each, and aggregate."""
+    from .per_shot import detect_shots  # local import to avoid cycles
+
+    shots = detect_shots(
+        ctx.src,
+        width=ctx.width,
+        height=ctx.height,
+        pix_fmt=ctx.pix_fmt,
+        per_shot_bin=per_shot_bin,
+        runner=shot_runner,
+    )
+    shot_results = [_score_one_shot(ctx, cell, si, shot) for si, shot in enumerate(shots)]
+    weighted_vmaf = _weighted_vmaf(shot_results)
+    plan_row: dict[str, Any] = {
+        "cell_index": int(cell.get("cell_index", 0)),
+        "codec": str(cell.get("codec", "libx264")),
+        "crf": int(cell.get("crf", 23)),
+        "selected": bool(cell.get("selected", False)),
+        "shot_count": len(shots),
+        "weighted_vmaf": weighted_vmaf,
+    }
+    return PerShotPlanResult(
+        cell=cell,
+        shot_results=tuple(shot_results),
+        weighted_vmaf=weighted_vmaf,
+        row=plan_row,
+    )
+
+
 def run_plan_per_shot(
     plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
     src: Path,
@@ -318,154 +423,38 @@ def run_plan_per_shot(
     score_runner: Callable[..., Any] | None = None,
     shot_runner: object | None = None,
 ) -> list[PerShotPlanResult]:
-    """Execute an ``AutoPlan`` with per-shot VMAF scoring (ADR-0468).
+    """Execute an ``AutoPlan`` with per-shot VMAF scoring (ADR-0588).
 
-    For each selected plan cell:
-
-    1. Detect shot boundaries using :func:`~vmaftune.per_shot.detect_shots`
-       (falls back to a single-shot range when ``vmaf-perShot`` is absent).
-    2. For each shot, encode the source segment and score it independently.
-    3. Aggregate per-shot VMAF scores into a frame-length-weighted mean.
-
-    Results are appended to ``out_dir/tune_results_per_shot.jsonl``.
-
-    Parameters
-    ----------
-    plan:
-        The :class:`~vmaftune.auto.AutoPlan` from :func:`~vmaftune.auto.run_auto`.
-    src:
-        Reference source (container or raw YUV; shot detection works on
-        containers via ``vmaf-perShot``).
-    out_dir:
-        Directory for encoded segments and the JSONL log. Created if absent.
-    per_shot_bin:
-        Binary name for the ``vmaf-perShot`` shot-detection tool.
-    shot_runner:
-        Test seam for the ``vmaf-perShot`` subprocess call (same pattern as
-        ``encode_runner`` / ``score_runner``).
+    For each selected plan cell: detect shot boundaries with
+    :func:`~vmaftune.per_shot.detect_shots` (a single-shot range when
+    ``vmaf-perShot`` is absent), encode and score each shot segment
+    independently, and aggregate into a frame-length-weighted mean. Rows are
+    appended to ``out_dir/tune_results_per_shot.jsonl`` (``out_dir`` is
+    created if absent). ``per_shot_bin`` names the detector and
+    ``shot_runner`` is the test seam for its subprocess call, as
+    ``encode_runner`` / ``score_runner`` are for the other two.
     """
-    from .per_shot import Shot, detect_shots  # local import to avoid cycles
-
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "tune_results_per_shot.jsonl"
-
-    source_meta = plan.metadata.get("source_meta", {})
-    eff_width = int(source_meta.get("width", width)) if width == 1920 else width
-    eff_height = int(source_meta.get("height", height)) if height == 1080 else height
-
-    cells_to_run = [cell for cell in plan.cells if execute_all or bool(cell.get("selected", False))]
-
+    eff_width, eff_height = _effective_geometry(plan, width, height)
+    # fmt: off
+    ctx = _ExecCtx(
+        src, out_dir, pix_fmt, eff_width, eff_height, framerate,
+        vmaf_model, vmaf_bin, ffmpeg_bin, encode_runner, score_runner,
+    )
+    # fmt: on
     all_results: list[PerShotPlanResult] = []
-
     with results_path.open("a", encoding="utf-8") as fh:
-        for cell in cells_to_run:
-            codec = str(cell.get("codec", "libx264"))
-            crf = int(cell.get("crf", 23))
-            cell_index = int(cell.get("cell_index", 0))
-
-            shots: list[Shot] = detect_shots(
-                src,
-                width=eff_width,
-                height=eff_height,
-                pix_fmt=pix_fmt,
-                per_shot_bin=per_shot_bin,
-                runner=shot_runner,
-            )
-
-            shot_results: list[ShotExecuteResult] = []
-            for si, shot in enumerate(shots):
-                seg_out = out_dir / f"shot_{cell_index:03d}_{si:04d}_{codec}_crf{crf}.mkv"
-                enc_req = EncodeRequest(
-                    source=src,
-                    width=eff_width,
-                    height=eff_height,
-                    pix_fmt=pix_fmt,
-                    framerate=framerate,
-                    encoder=codec,
-                    preset=str(cell.get("preset", "medium")),
-                    crf=crf,
-                    output=seg_out,
-                    source_is_container=True,
-                )
-
-                sc: ScoreResult | None = None
-                try:
-                    enc = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
-                    if enc.exit_status == 0:
-                        score_req = ScoreRequest(
-                            reference=src,
-                            distorted=seg_out,
-                            width=eff_width,
-                            height=eff_height,
-                            pix_fmt=pix_fmt,
-                            model=vmaf_model,
-                            frame_skip_ref=shot.start_frame,
-                            frame_cnt=shot.length,
-                        )
-                        with tempfile.TemporaryDirectory() as td:
-                            sc = run_score(
-                                score_req,
-                                vmaf_bin=vmaf_bin,
-                                runner=score_runner,
-                                workdir=Path(td),
-                            )
-                except Exception as exc:
-                    _log(f"executor per-shot: cell {cell_index} shot {si} failed: {exc}")
-
-                shot_row: dict[str, Any] = {
-                    "cell_index": cell_index,
-                    "shot_index": si,
-                    "shot_start_frame": shot.start_frame,
-                    "shot_end_frame": shot.end_frame,
-                    "shot_length_frames": shot.length,
-                    "codec": codec,
-                    "crf": crf,
-                    "vmaf_score": sc.vmaf_score if sc else None,
-                    "score_exit_status": sc.exit_status if sc else None,
-                }
-                shot_results.append(
-                    ShotExecuteResult(
-                        shot_index=si,
-                        length_frames=shot.length,
-                        score=sc,
-                        row=shot_row,
-                    )
-                )
-
-            # Frame-length-weighted mean VMAF across shots that succeeded.
-            total_frames = 0
-            weighted_sum = 0.0
-            for sr in shot_results:
-                if sr.score is not None and not _is_nan(sr.score.vmaf_score):
-                    total_frames += sr.length_frames
-                    weighted_sum += sr.score.vmaf_score * sr.length_frames
-            weighted_vmaf = weighted_sum / total_frames if total_frames > 0 else float("nan")
-
-            plan_row: dict[str, Any] = {
-                "cell_index": cell_index,
-                "codec": codec,
-                "crf": crf,
-                "selected": bool(cell.get("selected", False)),
-                "shot_count": len(shots),
-                "weighted_vmaf": weighted_vmaf,
-            }
-            _write_jsonl_row(fh, plan_row)
+        for cell in _cells_to_run(plan, execute_all):
+            result = _per_shot_cell(ctx, cell, per_shot_bin, shot_runner)
+            _write_jsonl_row(fh, result.row)
             fh.flush()
-
-            all_results.append(
-                PerShotPlanResult(
-                    cell=cell,
-                    shot_results=tuple(shot_results),
-                    weighted_vmaf=weighted_vmaf,
-                    row=plan_row,
-                )
-            )
-
+            all_results.append(result)
     return all_results
 
 
 # ---------------------------------------------------------------------------
-# Saliency execution mode (ADR-0468)
+# Saliency execution mode (ADR-0588)
 # ---------------------------------------------------------------------------
 
 
@@ -487,6 +476,99 @@ class SaliencyExecuteResult:
     row: dict[str, Any]
 
 
+def _saliency_encode(
+    ctx: _ExecCtx,
+    enc_req: EncodeRequest,
+    cell_index: int,
+    saliency_model_path: Path | None,
+    duration_frames: int,
+    session_factory: Any,
+) -> tuple[EncodeResult | None, bool]:
+    """Saliency-aware encode; returns ``(encode result, saliency applied)``."""
+    from .saliency import (
+        SaliencyConfig,
+        SaliencyUnavailableError,
+        saliency_aware_encode,
+    )
+
+    try:
+        enc = saliency_aware_encode(
+            enc_req,
+            duration_frames=duration_frames,
+            model_path=saliency_model_path,
+            config=SaliencyConfig(),
+            encode_runner=ctx.encode_runner,
+            session_factory=session_factory,
+            ffmpeg_bin=ctx.ffmpeg_bin,
+        )
+        # ``saliency_aware_encode`` returns an EncodeResult even on fallback;
+        # the augmented request tells whether saliency actually ran.
+        return enc, _saliency_was_applied(enc_req, enc)
+    except SaliencyUnavailableError as exc:
+        _log(f"executor saliency: unavailable for cell {cell_index}: {exc}")
+    except Exception as exc:
+        _log(f"executor saliency: encode failed for cell {cell_index}: {exc}")
+    return None, False
+
+
+def _saliency_cell(
+    ctx: _ExecCtx,
+    cell: dict[str, Any],
+    saliency_model_path: Path | None,
+    duration_frames: int,
+    session_factory: Any,
+) -> SaliencyExecuteResult:
+    """Run one saliency-aware encode + score for a plan cell."""
+    cell_index = int(cell.get("cell_index", 0))
+    codec = str(cell.get("codec", "libx264"))
+    preset = str(cell.get("preset", "medium"))
+    crf = int(cell.get("crf", 23))
+    output = ctx.out_dir / f"sal_{cell_index:03d}_{codec}_{preset}_crf{crf}.mkv"
+    enc_req = EncodeRequest(
+        source=ctx.src,
+        width=ctx.width,
+        height=ctx.height,
+        pix_fmt=ctx.pix_fmt,
+        framerate=ctx.framerate,
+        encoder=codec,
+        preset=preset,
+        crf=crf,
+        output=output,
+        source_is_container=True,
+    )
+    enc, sal_available = _saliency_encode(
+        ctx, enc_req, cell_index, saliency_model_path, duration_frames, session_factory
+    )
+    sc: ScoreResult | None = None
+    if enc is not None and enc.exit_status == 0:
+        score_req = ScoreRequest(
+            reference=ctx.src,
+            distorted=output,
+            width=ctx.width,
+            height=ctx.height,
+            pix_fmt=ctx.pix_fmt,
+            model=ctx.vmaf_model,
+        )
+        try:
+            sc = _score_in_tempdir(ctx, score_req)
+        except Exception as exc:
+            _log(f"executor saliency: score failed for cell {cell_index}: {exc}")
+    row: dict[str, Any] = {
+        "cell_index": cell_index,
+        "codec": codec,
+        "preset": preset,
+        "crf": crf,
+        "selected": bool(cell.get("selected", False)),
+        "saliency_available": sal_available,
+        "encode_exit_status": enc.exit_status if enc else None,
+        "vmaf_score": sc.vmaf_score if sc else None,
+        "score_exit_status": sc.exit_status if sc else None,
+    }
+    return SaliencyExecuteResult(
+        cell=cell, encode=enc, score=sc, saliency_available=sal_available, row=row
+    )
+
+
 def run_plan_saliency(
     plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
     src: Path,
@@ -506,137 +588,36 @@ def run_plan_saliency(
     score_runner: Callable[..., Any] | None = None,
     session_factory: Any = None,
 ) -> list[SaliencyExecuteResult]:
-    """Execute an ``AutoPlan`` with saliency-weighted encoding (ADR-0468).
+    """Execute an ``AutoPlan`` with saliency-weighted encoding (ADR-0588).
 
-    For each selected plan cell, the source is encoded using
-    :func:`~vmaftune.saliency.saliency_aware_encode` which biases bits
-    toward salient regions via per-codec ROI/qpfile injection, then the
-    output is scored in the standard way.
-
-    When saliency is unavailable (onnxruntime or model file missing) the
-    encode falls back silently to a plain encode — ``saliency_available``
-    in the result records which path was taken.
-
-    Results are appended to ``out_dir/tune_results_saliency.jsonl``.
-
-    Parameters
-    ----------
-    saliency_model_path:
-        Path to the ``saliency_student_v1.onnx`` model. When ``None``,
-        :func:`~vmaftune.saliency.compute_saliency_map` uses its default
-        (``model/tiny/saliency_student_v1.onnx`` relative to repo root).
-    duration_frames:
-        Number of frames to write into the per-codec ROI sidecar. Forwarded
-        to the saliency augment helpers.
-    session_factory:
-        Test seam for the ONNX Runtime session factory — same pattern as in
-        :func:`~vmaftune.saliency.compute_saliency_map`.
+    Each selected cell is encoded with
+    :func:`~vmaftune.saliency.saliency_aware_encode` (per-codec ROI / qpfile
+    injection) and scored in the standard way. Without onnxruntime or the
+    model file the encode falls back to a plain one and
+    ``saliency_available`` records which path ran. Rows are appended to
+    ``out_dir/tune_results_saliency.jsonl``. ``saliency_model_path`` defaults
+    to :func:`~vmaftune.saliency.compute_saliency_map`'s model,
+    ``duration_frames`` sizes the ROI sidecar and ``session_factory`` is the
+    ONNX Runtime test seam.
     """
-    from .saliency import (
-        SaliencyConfig,
-        SaliencyUnavailableError,
-        saliency_aware_encode,
-    )
-
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "tune_results_saliency.jsonl"
-
-    source_meta = plan.metadata.get("source_meta", {})
-    eff_width = int(source_meta.get("width", width)) if width == 1920 else width
-    eff_height = int(source_meta.get("height", height)) if height == 1080 else height
-
-    cells_to_run = [cell for cell in plan.cells if execute_all or bool(cell.get("selected", False))]
-
+    eff_width, eff_height = _effective_geometry(plan, width, height)
+    # fmt: off
+    ctx = _ExecCtx(
+        src, out_dir, pix_fmt, eff_width, eff_height, framerate,
+        vmaf_model, vmaf_bin, ffmpeg_bin, encode_runner, score_runner,
+    )
+    # fmt: on
     results: list[SaliencyExecuteResult] = []
-
     with results_path.open("a", encoding="utf-8") as fh:
-        for cell in cells_to_run:
-            cell_index = int(cell.get("cell_index", 0))
-            codec = str(cell.get("codec", "libx264"))
-            preset = str(cell.get("preset", "medium"))
-            crf = int(cell.get("crf", 23))
-            output = out_dir / f"sal_{cell_index:03d}_{codec}_{preset}_crf{crf}.mkv"
-
-            enc_req = EncodeRequest(
-                source=src,
-                width=eff_width,
-                height=eff_height,
-                pix_fmt=pix_fmt,
-                framerate=framerate,
-                encoder=codec,
-                preset=preset,
-                crf=crf,
-                output=output,
-                source_is_container=True,
+        for cell in _cells_to_run(plan, execute_all):
+            result = _saliency_cell(
+                ctx, cell, saliency_model_path, duration_frames, session_factory
             )
-
-            enc: EncodeResult | None = None
-            sc: ScoreResult | None = None
-            sal_available = False
-
-            try:
-                enc = saliency_aware_encode(
-                    enc_req,
-                    duration_frames=duration_frames,
-                    model_path=saliency_model_path,
-                    config=SaliencyConfig(),
-                    encode_runner=encode_runner,
-                    session_factory=session_factory,
-                    ffmpeg_bin=ffmpeg_bin,
-                )
-                # ``saliency_aware_encode`` always returns an EncodeResult even
-                # on fallback. Detect whether saliency actually ran by checking
-                # for known ROI-related flags in extra_params on the request the
-                # encoder saw — the saliency helpers mutate extra_params.
-                sal_available = _saliency_was_applied(enc_req, enc)
-            except SaliencyUnavailableError as exc:
-                _log(f"executor saliency: unavailable for cell {cell_index}: {exc}")
-            except Exception as exc:
-                _log(f"executor saliency: encode failed for cell {cell_index}: {exc}")
-
-            if enc is not None and enc.exit_status == 0:
-                score_req = ScoreRequest(
-                    reference=src,
-                    distorted=output,
-                    width=eff_width,
-                    height=eff_height,
-                    pix_fmt=pix_fmt,
-                    model=vmaf_model,
-                )
-                with tempfile.TemporaryDirectory() as td:
-                    try:
-                        sc = run_score(
-                            score_req,
-                            vmaf_bin=vmaf_bin,
-                            runner=score_runner,
-                            workdir=Path(td),
-                        )
-                    except Exception as exc:
-                        _log(f"executor saliency: score failed for cell {cell_index}: {exc}")
-
-            row: dict[str, Any] = {
-                "cell_index": cell_index,
-                "codec": codec,
-                "preset": preset,
-                "crf": crf,
-                "selected": bool(cell.get("selected", False)),
-                "saliency_available": sal_available,
-                "encode_exit_status": enc.exit_status if enc else None,
-                "vmaf_score": sc.vmaf_score if sc else None,
-                "score_exit_status": sc.exit_status if sc else None,
-            }
-            _write_jsonl_row(fh, row)
+            _write_jsonl_row(fh, result.row)
             fh.flush()
-            results.append(
-                SaliencyExecuteResult(
-                    cell=cell,
-                    encode=enc,
-                    score=sc,
-                    saliency_available=sal_available,
-                    row=row,
-                )
-            )
-
+            results.append(result)
     return results
 
 

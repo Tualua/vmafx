@@ -24,6 +24,24 @@ search:
 - A new file under another licence in a package, or a new header the `vmaf`
   extension includes, fails the test until that package's expression and
   `LICENSES/` gain the identifier.
+## `vmaf-tune` splits `auto`, `bisect`, `executor`, `per_shot`, `prefilter` and `score` (ADR-1142, 2026-10-04)
+
+`refactor/vmaf-tune-baselined-modules`. Python only, `tools/vmaf-tune`.
+
+- Public names and signatures are unchanged except `auto.run_auto(src=...)`,
+  which now accepts `None` for a smoke plan (the CLI's `--src` is optional with
+  `--smoke`). Test seams stay module attributes (`run_encode`, `run_score`,
+  `_encode_and_score`, `_midpoint_lower_quality`, `_which`); a rebase that
+  resolves a conflict in one of these files keeps the helper split, never the
+  old long body, because the HISS baseline no longer holds those functions.
+- New private helpers carry the old bodies: `auto._CellCtx` / `_build_cell` /
+  `_late_short_circuits`, `bisect._BisectLoop` / `_bisect_iteration` /
+  `_score_encoded`, `executor._ExecCtx` / `_execute_cell` /
+  `_per_shot_cell` / `_saliency_cell`, `per_shot._per_shot_command`,
+  `prefilter._make_objective`, `score._read_score_payload`. `plan.metadata`
+  keeps its key order.
+- `test_help_texts_and_adr_refs.py` now scans these six modules for ADR
+  citations; `recommend.py` is still outside it (its own state row).
 
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 
