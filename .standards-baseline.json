@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-03T23:59:56Z",
+  "generated_at": "2026-10-04T00:12:01Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "8d8f5d78511dd61726f3f93e3085365d8529e2bc",
-  "total_infractions": 472,
+  "commit_sha": "afcba28f7fc0fe1387168137a81df81deadc01ef",
+  "total_infractions": 470,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3094,22 +3094,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "fn:offline_flag",
       "fingerprint": "scripts/git-hooks/hiss-audit.sh:HISS-07:fn:offline_flag#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/git-hooks/pre-push-mkdocs-strict.sh",
-      "line_number": 38,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:2654c263254a",
-      "fingerprint": "scripts/git-hooks/pre-push-mkdocs-strict.sh:HISS-07:text:2654c263254a#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/git-hooks/pre-push-mkdocs-strict.sh",
-      "line_number": 55,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:8f7411334017",
-      "fingerprint": "scripts/git-hooks/pre-push-mkdocs-strict.sh:HISS-07:text:8f7411334017#1"
     },
     {
       "rule_id": "HISS-07",
