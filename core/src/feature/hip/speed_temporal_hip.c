@@ -195,6 +195,7 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     int err = st_configure(s, bpc, w, h, &config);
     if (err)
         return err;
+    config.device_index = fex->hip_device_index;
     SpeedHipBindingSets bindings;
     speed_hip_bindings_temporal(s->speed_temporal_use_ref_diff ? 1 : 0, &bindings);
     err = speed_hip_pipeline_create(&s->pipeline, &config, &bindings);

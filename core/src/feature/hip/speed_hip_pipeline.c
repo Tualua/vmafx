@@ -412,7 +412,7 @@ int speed_hip_pipeline_create(SpeedHipPipeline **out, const SpeedHipConfig *conf
     p->config = *config;
     p->plane_bytes = speed_hip_plane_bytes(&config->shared.geometry);
     p->tail = speed_gpu_tail_layout(config->channels, config->shared.geometry.blocks);
-    int err = vmaf_hip_context_new(&p->ctx, 0);
+    int err = vmaf_hip_context_new(&p->ctx, config->device_index);
     if (!err)
         err = vmaf_hip_kernel_lifecycle_init(&p->lc, p->ctx);
     if (!err)

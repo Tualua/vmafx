@@ -37,9 +37,36 @@ typedef struct VmafHipContext VmafHipContext;
 typedef int hipError_t;
 #endif
 
+struct VmafHipState;
+
+/*
+ * Allocate a context on HIP device `device_index` and make that device the
+ * calling thread's, so the allocations and module loads that follow land on
+ * it. A HIP twin passes `fex->hip_device_index`, the device of the
+ * context's imported VmafHipState. Returns 0, -EINVAL for a NULL `ctx` or an
+ * index outside [0, vmaf_hip_device_count()), -ENODEV when the runtime sees
+ * no device, -ENOMEM, or the runtime's error as a negative errno. `*ctx` is
+ * NULL on every failure.
+ */
 int vmaf_hip_context_new(VmafHipContext **ctx, int device_index);
 void vmaf_hip_context_destroy(VmafHipContext *ctx);
+
+/*
+ * The number of HIP devices the runtime sees: >= 0 when the runtime answers
+ * (0 when it reports hipErrorNoDevice), a negative errno when it cannot be
+ * queried. A failure is never reported as a count.
+ */
 int vmaf_hip_device_count(void);
+
+/* The device index `state` was created on (vmaf_hip_state_init() resolves
+ * -1 to 0); -EINVAL for NULL. */
+int vmaf_hip_state_device_index(const struct VmafHipState *state);
+
+/* Make the device of `state` the calling thread's HIP device. libvmaf calls
+ * it before a frame's HIP twins run and before the flush, so a caller that
+ * moves vmaf_read_pictures() to another thread keeps the device it chose.
+ * Returns 0, -EINVAL for NULL, or the runtime's error as a negative errno. */
+int vmaf_hip_state_bind(const struct VmafHipState *state);
 
 /*
  * Translate a HIP error code into a negative POSIX errno. Consolidates

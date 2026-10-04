@@ -400,10 +400,15 @@ A zero-initialised configuration selects device 0.
 | Function | Does | Errors |
 | --- | --- | --- |
 | `vmaf_hip_available` | Returns 1 when libvmaf was built with `-Denable_hip=true`, else 0. Touches no HIP runtime. | none |
-| `vmaf_hip_state_init` | Allocates a state pinned to one HIP device and its compute stream. | `-ENODEV` no compatible device, `-ENOSYS` built without HIP, `-EINVAL` bad arguments |
+| `vmaf_hip_state_init` | Allocates a state pinned to one HIP device and its compute stream. | `-ENODEV` no visible HIP device, `-EINVAL` bad arguments or an ordinal the runtime does not have, another negative errno when the HIP runtime fails, `-ENOSYS` built without HIP |
 | `vmaf_hip_import_state` | Hands the state to a context; the context borrows the pointer. | `-EINVAL` NULL `ctx` or `state`, `-ENOSYS` built without HIP |
 | `vmaf_hip_state_free` | Releases the state and sets `*state` to `NULL`. Accepts `NULL` or a never-imported state. | none |
-| `vmaf_hip_list_devices` | Prints ordinal, name and compute capability per device. Returns the count. | `-ENOSYS` built without HIP |
+| `vmaf_hip_list_devices` | Logs ordinal, name and GFX architecture per device at `VMAF_LOG_LEVEL_INFO`. Returns the count, 0 when the runtime sees no device. | a negative errno when the HIP runtime fails or a device cannot be described, `-ENOSYS` built without HIP |
+
+Every HIP twin of a context runs on the state's device: it creates its
+device resources there, and libvmaf makes that device current before each
+frame's HIP work and before the flush. The thread that calls
+`vmaf_read_pictures()` does not change the device.
 
 ### Ownership and call order
 

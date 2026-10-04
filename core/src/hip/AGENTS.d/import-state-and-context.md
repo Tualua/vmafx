@@ -2,7 +2,10 @@
 paths:
   - core/src/libvmaf.c
   - core/src/hip/common.c
+  - core/src/hip/common.h
   - core/include/libvmaf/libvmaf_hip.h
+  - core/test/test_hip_device_selection.c
+  - core/test/test_hip_device_index_contract.py
 invariant: vmaf_hip_import_state lives in libvmaf.c and HIP state lifetime is caller-owned mirroring SYCL and Metal.
 ---
 # HIP State Import and Context Lifetime
@@ -40,3 +43,22 @@ invariant: vmaf_hip_import_state lives in libvmaf.c and HIP state lifetime is ca
   pointer-stash contract is load-bearing for caller-owned
   `VmafHipState` lifetime documented in
   `core/include/libvmaf/libvmaf_hip.h`.
+
+## Device selection (ADR-1523)
+
+- **`vmaf_hip_context_new()` selects the device it is given.** It checks the
+  index against `vmaf_hip_device_count()` (`-EINVAL` outside `[0, count)`,
+  `-ENODEV` with no device) and calls `hipSetDevice()`. Every HIP twin passes
+  `fex->hip_device_index`, which `set_fex_hip_device()` in `libvmaf.c` fills
+  from the imported state for every extractor context, flagged or not. A new
+  twin passes the same field; a literal index is a regression
+  (`test_hip_device_index_contract`).
+- **The state's device is rebound before a frame's twins run and before the
+  flush** (`vmaf_hip_state_bind()` in `read_pictures_hip_frame_begin()` and
+  `flush_context()`). HIP binds the device to the calling thread; without the
+  rebind a caller that scores on another thread lands on device 0.
+- **`vmaf_hip_device_count()` is a count only when the runtime answers.**
+  `hipErrorNoDevice` is 0; any other failure is a negative errno, and
+  `vmaf_hip_list_devices()` / `vmaf_hip_state_init()` pass it on. Do not
+  bring back "return 0 on error". `test_hip_device_selection` checks all of
+  it against a stubbed runtime on any host.

@@ -433,7 +433,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 583,
+  "total_warnings": 581,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -483,7 +483,6 @@
     "core/src/fex_ctx_vector.h": 1,
     "core/src/framesync.h": 1,
     "core/src/gpu_picture_pool.h": 2,
-    "core/src/libvmaf.c": 2,
     "core/src/mcp/3rdparty/cJSON/cJSON.h": 8,
     "core/src/metadata.h": 3,
     "core/src/metadata_handler.h": 2,
@@ -523,6 +522,21 @@
         }
       },
       "previous_baseline_sha256": "707d6db62da9ede910e8faf28b3c1e5b273838a2cdc584b0ff91feb9b1cf0932"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/libvmaf.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "955d1ea488afc4b81588d82b886d1fc1ff5be92c3fb1ca6be011ab97d5988deb"
     }
   ]
 }

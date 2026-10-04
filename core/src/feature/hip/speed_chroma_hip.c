@@ -198,6 +198,7 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
     int err = sc_configure(s, pix_fmt, bpc, w, h, &config);
     if (err)
         return err;
+    config.device_index = fex->hip_device_index;
     /* Channel c reads raw plane c, no difference. */
     SpeedHipBindingSets bindings;
     speed_hip_bindings_chroma(&bindings);

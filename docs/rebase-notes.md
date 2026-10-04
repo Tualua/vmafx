@@ -206,6 +206,23 @@ libvmaf source change.
   disk cleanup, and the oneAPI smoke checks `/usr/local/lib/intel/libur_adapter_*`.
   `scripts/release/tests/test-docker-image-runtime-contract.sh` holds the oneAPI
   staging and the UMF entry of `sycl-runtime.json`.
+## HIP twins run on the state's device (ADR-1523, 2026-10-04)
+
+`fix/hip-device-index`. Fork-local HIP runtime and twins; no upstream file.
+
+- `core/src/hip/common.c`: `vmaf_hip_context_new()` checks its index and calls
+  `hipSetDevice()`; `vmaf_hip_device_count()` returns a negative errno for a
+  runtime failure (0 only for `hipErrorNoDevice`); new
+  `vmaf_hip_state_device_index()` / `vmaf_hip_state_bind()`.
+- `VmafFeatureExtractor` gains `int hip_device_index` under `HAVE_HIP`, filled
+  by `set_fex_hip_device()` in `libvmaf.c`'s `fex_ctx_bind_backends()`;
+  `read_pictures_hip_frame_begin()` and `flush_context()` call
+  `vmaf_hip_state_bind()`. An upstream change to `flush_context()` keeps the
+  HIP block at its top.
+- Every `vmaf_hip_context_new()` call under `core/src/feature/hip/` passes
+  `fex->hip_device_index` (CAMBI through `cambi_hip_setup_device()`, SpEED
+  through `SpeedHipConfig.device_index`). A new HIP twin does the same;
+  `test_hip_device_index_contract` fails on a literal index.
 
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 

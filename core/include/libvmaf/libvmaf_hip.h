@@ -82,7 +82,9 @@ typedef struct VmafHipConfiguration {
  * @param cfg  device selection.
  *
  * @return 0 on success, -ENOSYS when built without HIP, -ENODEV when
- *         no compatible device is found, -EINVAL on bad arguments.
+ *         no compatible device is found, -EINVAL on bad arguments or a
+ *         device index the runtime does not have, or another negative errno
+ *         when the HIP runtime fails (it is not reported as -ENODEV).
  */
 VMAF_EXPORT int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg);
 
@@ -117,10 +119,12 @@ VMAF_EXPORT void vmaf_hip_state_free(VmafHipState **state);
 
 /**
  * Enumerate compute-capable HIP devices visible to the runtime.
- * Prints one line per device with its ordinal, name, and compute
- * capability.
+ * Logs one line per device with its ordinal, name, and GFX architecture
+ * at VMAF_LOG_LEVEL_INFO.
  *
- * @return Device count, or -ENOSYS when built without HIP.
+ * @return Device count (0 when the runtime sees no device), a negative
+ *         errno when the HIP runtime fails or a device cannot be described,
+ *         or -ENOSYS when built without HIP.
  */
 VMAF_EXPORT int vmaf_hip_list_devices(void);
 

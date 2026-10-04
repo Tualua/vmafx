@@ -738,9 +738,10 @@ static int cambi_hip_release(CambiStateHip *s)
     return rc;
 }
 
-static int cambi_hip_setup_device(CambiStateHip *s)
+/* `device_index` is the framework's fex->hip_device_index. */
+static int cambi_hip_setup_device(CambiStateHip *s, int device_index)
 {
-    int err = vmaf_hip_context_new(&s->ctx, 0);
+    int err = vmaf_hip_context_new(&s->ctx, device_index);
     if (!err)
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (!err)
@@ -888,7 +889,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
     int err = cambi_hip_configure(s, bpc, w, h);
     if (!err)
-        err = cambi_hip_setup_device(s);
+        err = cambi_hip_setup_device(s, fex->hip_device_index);
     if (err) {
         (void)cambi_hip_release(s);
         (void)vmaf_dictionary_free(&s->feature_name_dict);

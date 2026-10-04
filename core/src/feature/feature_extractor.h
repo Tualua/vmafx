@@ -166,6 +166,11 @@ typedef struct VmafFeatureExtractor {
      *  the framework; NULL when the extractor is driven without a context,
      *  and it then uploads into buffers of its own. */
     struct VmafHipSharedFrame *hip_frame;
+    /** The HIP device the twin creates its context on
+     *  (vmaf_hip_context_new()), set by the framework from the context's
+     *  imported VmafHipState; 0 when no state is imported, the device
+     *  vmaf_hip_state_init() picks for -1. */
+    int hip_device_index;
 #endif
     /* HAVE_VULKAN block removed per ADR-0726 (Vulkan backend dropped
      * 2026-05-28). The VMAF_FEATURE_EXTRACTOR_VULKAN bit below is kept

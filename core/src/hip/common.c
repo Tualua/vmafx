@@ -8,8 +8,11 @@
  *  Replaces the audit-first `-ENOSYS` stubs with real ROCm HIP
  *  runtime calls. Mirrors core/src/vulkan/common.c.
  *
- *    - `vmaf_hip_device_count`  -> hipGetDeviceCount
- *    - `vmaf_hip_state_init`    -> hipSetDevice +
+ *    - `vmaf_hip_device_count`  -> hipGetDeviceCount (a runtime failure
+ *                                  is a negative errno, not a count)
+ *    - `vmaf_hip_context_new`   -> checks the index against the count,
+ *                                  then hipSetDevice
+ *    - `vmaf_hip_state_init`    -> the same device selection +
  *                                  hipStreamCreateWithFlags
  *    - `vmaf_hip_state_free`    -> hipStreamDestroy + free
  *    - `vmaf_hip_list_devices`  -> hipGetDeviceCount +
@@ -55,10 +58,36 @@ struct VmafHipState {
     struct VmafHipContext ctx;
 };
 
+/* Make `device_index` the calling thread's HIP device, after checking that
+ * the runtime has a device by that index. -ENODEV when it has none, -EINVAL
+ * for an index outside [0, count), the runtime's error otherwise. */
+static int vmaf_hip_select_device(int device_index)
+{
+    const int n = vmaf_hip_device_count();
+    if (n < 0) {
+        return n;
+    }
+    if (n == 0) {
+        return -ENODEV;
+    }
+    assert(n > 0);
+    if (device_index < 0 || device_index >= n) {
+        return -EINVAL;
+    }
+    /* NASA P10 r5: the invariant the device selection below depends on. */
+    assert(device_index >= 0 && device_index < n);
+    return vmaf_hip_rc_to_errno(hipSetDevice(device_index));
+}
+
 int vmaf_hip_context_new(VmafHipContext **out, int device_index)
 {
     if (out == NULL) {
         return -EINVAL;
+    }
+    *out = NULL;
+    const int err = vmaf_hip_select_device(device_index);
+    if (err) {
+        return err;
     }
     VmafHipContext *ctx = calloc(1, sizeof(*ctx));
     if (ctx == NULL) {
@@ -85,13 +114,34 @@ void vmaf_hip_context_destroy(VmafHipContext *ctx)
 int vmaf_hip_device_count(void)
 {
     int n = 0;
-    hipError_t rc = hipGetDeviceCount(&n);
-    if (rc != hipSuccess) {
-        /* No device or no runtime — return 0 (CUDA convention; the
-         * public caller pivots on count > 0, not on the error code). */
+    const hipError_t rc = hipGetDeviceCount(&n);
+    if (rc == hipErrorNoDevice) {
+        /* The runtime answered and sees no device (an empty or masked
+         * HIP_VISIBLE_DEVICES, no /dev/kfd): a count of 0, not a failure. */
         return 0;
     }
+    if (rc != hipSuccess) {
+        /* The runtime could not be asked (driver, initialisation): an error,
+         * never a count, so a caller cannot read it as "no device". */
+        return vmaf_hip_rc_to_errno(rc);
+    }
     return n;
+}
+
+int vmaf_hip_state_device_index(const VmafHipState *state)
+{
+    if (state == NULL) {
+        return -EINVAL;
+    }
+    return state->ctx.device_index;
+}
+
+int vmaf_hip_state_bind(const VmafHipState *state)
+{
+    if (state == NULL) {
+        return -EINVAL;
+    }
+    return vmaf_hip_rc_to_errno(hipSetDevice(state->ctx.device_index));
 }
 
 /* ---- Public C-API entry points (libvmaf_hip.h) ---- */
@@ -115,26 +165,13 @@ int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg)
     assert(out != NULL);
     *out = NULL;
 
-    int n = 0;
-    hipError_t hip_rc = hipGetDeviceCount(&n);
-    if (hip_rc != hipSuccess || n <= 0) {
-        return -ENODEV;
+    /* -1 selects the first device. */
+    const int device_index = (cfg.device_index < 0) ? 0 : cfg.device_index;
+    const int err = vmaf_hip_select_device(device_index);
+    if (err) {
+        return err;
     }
-    assert(n > 0);
-
-    int device_index = cfg.device_index;
-    if (device_index < 0) {
-        device_index = 0;
-    }
-    if (device_index >= n) {
-        return -EINVAL;
-    }
-    assert(device_index >= 0 && device_index < n);
-
-    hip_rc = hipSetDevice(device_index);
-    if (hip_rc != hipSuccess) {
-        return -ENODEV;
-    }
+    assert(device_index >= 0);
 
     VmafHipState *s = calloc(1, sizeof(*s));
     if (s == NULL) {
@@ -143,7 +180,7 @@ int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg)
     s->ctx.device_index = device_index;
 
     hipStream_t stream = NULL;
-    hip_rc = hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
+    const hipError_t hip_rc = hipStreamCreateWithFlags(&stream, hipStreamNonBlocking);
     if (hip_rc != hipSuccess) {
         free(s);
         return -EIO;
@@ -172,17 +209,18 @@ void vmaf_hip_state_free(VmafHipState **state)
 
 int vmaf_hip_list_devices(void)
 {
-    int n = 0;
-    hipError_t rc = hipGetDeviceCount(&n);
-    if (rc != hipSuccess) {
-        return 0;
+    const int n = vmaf_hip_device_count();
+    if (n < 0) {
+        return n;
     }
     assert(n >= 0);
     for (int i = 0; i < n; ++i) {
         hipDeviceProp_t prop;
-        rc = hipGetDeviceProperties(&prop, i);
+        const hipError_t rc = hipGetDeviceProperties(&prop, i);
         if (rc != hipSuccess) {
-            continue;
+            /* A device that cannot be described is reported, not skipped:
+             * the count would otherwise name devices the log never showed. */
+            return vmaf_hip_rc_to_errno(rc);
         }
         vmaf_log(VMAF_LOG_LEVEL_INFO, "HIP device %d: %s (arch %s)\n", i, prop.name,
                  prop.gcnArchName);

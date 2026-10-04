@@ -244,7 +244,7 @@ class FloatAdmHipExactContract(unittest.TestCase):
             '    const int size_err = adm_frame_size_check("float_adm_hip", w, h);\n'
             "    if (size_err)\n        return size_err;\n"
         )
-        context = "    int err = vmaf_hip_context_new(&s->ctx, 0);\n"
+        context = "    int err = vmaf_hip_context_new(&s->ctx, fex->hip_device_index);\n"
         self.assertIn(check, host)
         self.assertIn(context, host)
         sources[HOST] = host.replace(check, "", 1).replace(context, context + check, 1)

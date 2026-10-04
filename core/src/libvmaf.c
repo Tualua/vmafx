@@ -93,6 +93,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #endif
 
 #ifdef HAVE_HIP
+#include "hip/common.h"
 #include "hip/shared_frame.h"
 #include "libvmaf/libvmaf_hip.h"
 #endif
@@ -595,7 +596,7 @@ static void cuda_pinned_pool_destroy_events(VmafContext *vmaf)
     }
     if (!push_err)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    free(vmaf->cuda.pinned_pool.events);
+    free((void *)vmaf->cuda.pinned_pool.events);
     vmaf->cuda.pinned_pool.events = NULL;
 }
 
@@ -611,7 +612,7 @@ static int prepare_cuda_pinned_pool(VmafContext *vmaf, unsigned pic_cnt, unsigne
     vmaf->cuda.pinned_pool.pix_fmt = pix_fmt;
     vmaf->cuda.pinned_pool.bpc = bpc;
     vmaf->cuda.pinned_pool.pic_cnt = pic_cnt;
-    vmaf->cuda.pinned_pool.events = calloc(pic_cnt, sizeof(CUevent));
+    vmaf->cuda.pinned_pool.events = (CUevent *)calloc(pic_cnt, sizeof(CUevent));
     if (!vmaf->cuda.pinned_pool.events)
         return -ENOMEM;
 
@@ -1024,6 +1025,16 @@ static void set_fex_hip_frame(VmafFeatureExtractorContext *fex_ctx, VmafContext 
         (void)vmaf_hip_shared_frame_create(&vmaf->hip.frame);
     fex_ctx->fex->hip_frame = vmaf->hip.frame;
 }
+
+/* Every extractor learns the device of the imported HIP state, flagged or
+ * not: a HIP twin that is reachable by name only (no HIP flag) creates its
+ * context on the same device as the flagged ones. Without a state it is 0,
+ * the device vmaf_hip_state_init() picks for -1. */
+static void set_fex_hip_device(VmafFeatureExtractorContext *fex_ctx, const VmafContext *vmaf)
+{
+    fex_ctx->fex->hip_device_index =
+        vmaf->hip.state ? vmaf_hip_state_device_index(vmaf->hip.state) : 0;
+}
 #endif
 
 static void set_fex_framesync(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
@@ -1044,6 +1055,7 @@ static void fex_ctx_bind_backends(VmafFeatureExtractorContext *fex_ctx, VmafCont
 #endif
 #ifdef HAVE_HIP
     set_fex_hip_frame(fex_ctx, vmaf);
+    set_fex_hip_device(fex_ctx, vmaf);
 #endif
     set_fex_framesync(fex_ctx, vmaf);
 }
@@ -2978,6 +2990,14 @@ static int flush_context_sycl(VmafContext *vmaf)
 static int flush_context(VmafContext *vmaf)
 {
     int err = 0;
+#ifdef HAVE_HIP
+    if (vmaf->hip.state) {
+        /* The final collects of the HIP twins run on this thread. */
+        err = vmaf_hip_state_bind(vmaf->hip.state);
+        if (err)
+            return err;
+    }
+#endif
     if (vmaf->thread_pool) {
         err = flush_context_threaded(vmaf);
     } else {
@@ -3614,6 +3634,12 @@ static int read_pictures_dispatch_extractors(VmafContext *vmaf, ReadPicturesFram
  * and the call does nothing. */
 static int read_pictures_hip_frame_begin(VmafContext *vmaf, ReadPicturesFrame *fr)
 {
+    if (vmaf->hip.state) {
+        /* The frame's HIP calls run on this thread: on the state's device. */
+        const int err = vmaf_hip_state_bind(vmaf->hip.state);
+        if (err)
+            return err;
+    }
 #ifdef HAVE_CUDA
     return vmaf_hip_shared_frame_begin(vmaf->hip.frame, &fr->ref_host, &fr->dist_host);
 #else

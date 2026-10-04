@@ -40,6 +40,7 @@ typedef struct SpeedHipConfig {
     uint32_t channels;   /* 2 (one score pair) or 4 (two pairs) */
     uint32_t raw_planes; /* device raw-plane slots */
     uint32_t staged;     /* most planes one upload carries */
+    int device_index;    /* HIP device of the pipeline: fex->hip_device_index */
 } SpeedHipConfig;
 
 /* The channel bindings of every binding set a frame can be submitted with

@@ -128,7 +128,7 @@ The JSON output names the extractor that ran for each feature under
 | Flag | Effect |
 |---|---|
 | `--backend hip` | Exclusive HIP selection; disables the other backends before dispatch. An explicit request for a backend that was not compiled in fails with exit code 100. |
-| `--hip_device N` | Selects the HIP GPU by ordinal. |
+| `--hip_device N` | Selects the HIP GPU by ordinal; every HIP twin runs on it. An ordinal the runtime does not have fails with exit code 100 under `--backend hip`. |
 | `--no_hip` | Forbids HIP dispatch even when the backend is built in. |
 | `--feature NAME` | Runs an extractor. A CPU name runs the HIP twin under `--backend hip`; the twin's own name (`psnr_hip`) always runs it. |
 

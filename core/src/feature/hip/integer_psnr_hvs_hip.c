@@ -425,7 +425,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err != 0)
         return err;
 
-    err = vmaf_hip_context_new(&s->ctx, 0);
+    err = vmaf_hip_context_new(&s->ctx, fex->hip_device_index);
     if (err != 0)
         return err;
 

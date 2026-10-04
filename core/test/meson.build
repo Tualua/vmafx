@@ -312,6 +312,18 @@ test('test_hip_adm_exact_contract',
     timeout : 30,
 )
 
+# T-HIP-DEVICE-INDEX-IGNORED-2026-10-04: every HIP twin creates its context on
+# fex->hip_device_index, which libvmaf fills from the imported VmafHipState,
+# and libvmaf rebinds that device before a frame and before the flush.
+# Device-free source contract with a planted regression per check; the device
+# selection itself is test_hip_device_selection.
+test('test_hip_device_index_contract',
+    import('python').find_installation(),
+    args : files('test_hip_device_index_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1407: device-free guard for the HIP strict FP policy (one hipcc flag
 # list for every kernel: contraction off, correctly rounded fp32 division and
 # square root; no per-kernel table; the device probe built with the same
@@ -6024,6 +6036,21 @@ test_hip_smoke = executable('test_hip_smoke',
 test('test_hip_smoke', test_hip_smoke,
     suite : ['fast', 'gpu'],
     is_parallel : false)
+
+# T-HIP-DEVICE-INDEX-IGNORED-2026-10-04 -- HIP device selection without a
+# device. core/src/hip/common.c is compiled into the target against stubs of
+# the five hip* calls it makes, so vmaf_hip_context_new() selecting the device
+# it is given (and refusing one the runtime does not have) and
+# vmaf_hip_device_count() reporting a runtime failure as an errno instead of 0
+# run in the `fast` suite on any host with the ROCm headers, the hosted HIP
+# lane without a GPU included.
+test_hip_device_selection = executable('test_hip_device_selection',
+    ['test.c', 'test_hip_device_selection.c', '../src/hip/common.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_device_selection', test_hip_device_selection, suite : ['fast'])
 
 # T3-15(c) / ADR-0219 / ADR-0214 — motion3 CPU vs. HIP parity gate.
 # The motion3 post-process (host-side moving-average over blended motion2)

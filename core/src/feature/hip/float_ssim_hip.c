@@ -582,7 +582,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
     ssim_hip_init_dims(s, w, h, bpc);
 
-    err = vmaf_hip_context_new(&s->ctx, 0);
+    err = vmaf_hip_context_new(&s->ctx, fex->hip_device_index);
     if (err == 0)
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err == 0) {

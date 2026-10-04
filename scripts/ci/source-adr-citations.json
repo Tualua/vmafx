@@ -6370,6 +6370,7 @@
         "core/test/test_hip_cambi_device_math.c": 1,
         "core/test/test_hip_cambi_parity.c": 1,
         "core/test/test_hip_ciede_parity.c": 1,
+        "core/test/test_hip_device_selection.c": 1,
         "core/test/test_hip_exact_twins.c": 1,
         "core/test/test_hip_first_frame_clear.c": 1,
         "core/test/test_hip_float_adm_math.c": 1,
