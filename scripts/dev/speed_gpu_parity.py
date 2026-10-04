@@ -24,6 +24,11 @@ Usage::
     ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py --backend sycl
     python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2 --max-abs-diff 1e-9
 
+A fixture whose files are absent (``testdata/bbb`` is untracked) is a usage error
+naming the missing file. ``--skip-fixture 3840x2160 --skip-reason "<why>"`` leaves
+that fixture out instead, and the run prints ``SKIPPED fixture ...: <reason>``
+so the omission is on the record; a skip is a partial run, never a full pass.
+
 Exit status: 0 when every output of every frame is identical (or, with
 ``--max-abs-diff``, within that bound), 1 when any is not, 2 on a usage or run
 error.
@@ -48,6 +53,7 @@ from scripts.lib.safe_subprocess import CommandFailed, CommandTimedOut
 from scripts.lib.safe_subprocess import run as run_command
 
 FEATURES = ("speed_chroma", "speed_temporal")
+FIXTURE_NAMES = ("576x324", "3840x2160")
 BACKENDS = ("cuda", "sycl", "hip", "metal")
 SHORT_RUN = 2
 LONG_RUN = 22
@@ -95,6 +101,26 @@ def fixtures(netflix_dir: Path, bbb_dir: Path) -> list[Fixture]:
             50,
         ),
     ]
+
+
+def selected_fixtures(args: argparse.Namespace) -> list[Fixture]:
+    """The fixtures to run: every one not named by ``--skip-fixture``. A skip is
+    printed with its reason; a fixture that is kept must have both files."""
+    chosen = []
+    for fixture in fixtures(args.netflix_dir, args.bbb_dir):
+        if fixture.name in args.skip_fixture:
+            print(f"SKIPPED fixture {fixture.name}: {args.skip_reason}")
+            continue
+        for path in (fixture.ref, fixture.dis):
+            if not path.is_file():
+                raise ValueError(
+                    f"fixture {fixture.name}: missing {path} "
+                    f"(pass --skip-fixture {fixture.name} --skip-reason <why> to leave it out)"
+                )
+        chosen.append(fixture)
+    if not chosen:
+        raise ValueError("every fixture is skipped; nothing was checked")
+    return chosen
 
 
 def vmaf_command(
@@ -241,6 +267,17 @@ def parse(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--reps", type=int, default=3)
     parser.add_argument("--no-timing", action="store_true")
     parser.add_argument(
+        "--skip-fixture",
+        action="append",
+        default=[],
+        choices=FIXTURE_NAMES,
+        help="leave this fixture out of the run (repeatable); needs --skip-reason",
+    )
+    parser.add_argument(
+        "--skip-reason",
+        help="why the fixtures named by --skip-fixture are left out; printed with the skip",
+    )
+    parser.add_argument(
         "--feature",
         action="append",
         help="CPU feature name whose <feature>_<backend> twin to check; repeatable "
@@ -257,6 +294,8 @@ def parse(argv: Sequence[str]) -> argparse.Namespace:
         parser.error("--reps and --threads must be at least 1")
     if not math.isfinite(args.max_abs_diff) or args.max_abs_diff < 0.0:
         parser.error("--max-abs-diff must be a finite non-negative number")
+    if bool(args.skip_fixture) != bool(args.skip_reason):
+        parser.error("--skip-fixture and --skip-reason go together")
     args.feature = tuple(args.feature) if args.feature else FEATURES
     args.vmaf = executable_path(args.vmaf)
     return args
@@ -266,7 +305,7 @@ def main(argv: Sequence[str]) -> int:
     args = parse(argv)
     identical = True
     try:
-        for fixture in fixtures(args.netflix_dir, args.bbb_dir):
+        for fixture in selected_fixtures(args):
             for feature in args.feature:
                 identical = check_pair(args, fixture, feature) and identical
                 if args.no_timing:

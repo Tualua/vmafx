@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1221), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1222), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4887,6 +4887,10 @@ Every ADR, one heading each (1221), so the site search finds an ADR by its title
 ## ADR-1516: A Windows CUDA tester zip that ships no NVIDIA file and measures every CUDA twin on a tester's Windows PC
 
 [1516-windows-cuda-tester-zip](1516-windows-cuda-tester-zip.md)
+
+## ADR-1521: `vmafx-mcp` names the Go server; the Python wheel's script of that name is a one-release alias
+
+[1521-python-mcp-console-script-name](1521-python-mcp-console-script-name.md)
 
 ## ADR-1524: vmafx-node pulls work from the controller, advertises exactly the backend it runs, and refuses to start when it cannot honour its configuration
 

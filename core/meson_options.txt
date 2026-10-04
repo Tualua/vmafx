@@ -80,7 +80,7 @@ option('enable_dnn',
 option('enable_mcp',
     type: 'boolean',
     value: false,
-    description: 'Build embedded MCP (Model Context Protocol) server inside libvmaf (ADR-0128 design; ADR-0209 / T5-2 scaffold; runtime promoted through T5-2b/c/d). Default disabled — opt in to use. The umbrella flag enables the `vmaf_mcp_*` symbols; per-transport availability is gated by the sub-flags below.')
+    description: 'Build the embedded MCP (Model Context Protocol) server inside libvmaf (ADR-0128 design, ADR-0209 scaffold, runtime promoted through T5-2b/c/d). Serves list_features and compute_vmaf over every transport compiled in. Default disabled; opt in to use. This umbrella flag enables the `vmaf_mcp_*` symbols; each transport is gated by its own sub-flag below.')
 
 option('enable_mcp_sse',
     type: 'feature',
@@ -100,12 +100,12 @@ option('enable_mcp_stdio',
 option('enable_hip',
     type: 'boolean',
     value: false,
-    description: 'Build HIP (AMD ROCm) compute backend (ADR-0212 scaffold / T7-10). Default OFF — every entry point returns -ENOSYS until the runtime PR lands. Requires ROCm 7.0+ when the kernels arrive; the scaffold has no SDK requirement.')
+    description: 'Build the HIP (AMD ROCm) compute backend host runtime and its extractors (ADR-0212, T7-10). Default OFF: with it off every libvmaf_hip.h entry point returns -ENOSYS. Needs ROCm 7.0+. Device kernels additionally need enable_hipcc=true; see docs/backends/hip/overview.md.')
 
 option('enable_hipcc',
     type: 'boolean',
     value: false,
-    description: 'Compile HIP device kernels via hipcc and embed the resulting HSACO fat binary (T7-10b / ADR-0254). Requires enable_hip=true and a ROCm 7.0+ toolchain with hipcc in PATH. Default OFF — without it, HIP feature extractors that have real kernels (float_psnr_hip) fall back to -ENOSYS at init(). Mirrors enable_nvcc for CUDA.')
+    description: 'Compile the HIP device kernels with hipcc and embed the resulting HSACO fat binary (T7-10b, ADR-0254). Requires enable_hip=true and a ROCm 7.0+ toolchain with hipcc in PATH. Default OFF: without it every HIP extractor returns -ENOSYS at init(). Mirrors enable_nvcc for CUDA.')
 
 option('enable_float_vif_hip_autodispatch',
     type: 'boolean',
@@ -127,7 +127,7 @@ option('hip_gfx_targets',
 option('enable_metal',
     type: 'feature',
     value: 'auto',
-    description: 'Build Metal (Apple Silicon) compute backend (ADR-0361 / T8-1 through T8-1k). Default `auto`: probes for Metal.framework / MetalKit.framework on macOS, disabled elsewhere. Apple Silicon (M1+ / GPU Family Apple 7+) only — Intel Macs surface as -ENODEV at runtime. Runtime, IOSurface import, and the first eight feature kernels are live; remaining metrics land as follow-up kernel batches.')
+    description: 'Build the Metal (Apple Silicon) compute backend (ADR-0361). Default `auto`: probes for Metal.framework / MetalKit.framework on macOS, disabled elsewhere. Apple Silicon (M1+ / GPU Family Apple 7+) only; Intel Macs surface as -ENODEV at runtime. The runtime, IOSurface import and the feature extractors listed in docs/backends/metal/index.md are live; the SpEED family is the remaining gap.')
 
 option('fuzz',
     type: 'boolean',

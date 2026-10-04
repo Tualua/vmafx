@@ -15,9 +15,10 @@ Test sets (Netflix standard):
   2. checkerboard 1920x1080 — _1_0 vs _0_0 (3 frames, yuv420p 8bit)  [mild distortion]
   3. checkerboard 1920x1080 — _10_0 vs _0_0 (3 frames, yuv420p 8bit) [heavy distortion]
 
-Expected Netflix reference scores (vmaf_v0.6.1, integer path, from
+Expected Netflix reference scores (vmaf_v0.6.1, integer path, the `vmaf`
+CLI / ffmpeg-filter golden values of python/test/vmafexec_test.py and
 python/test/quality_runner_test.py):
-  src01 576x324:              76.66890519623612
+  src01 576x324:              76.66783025
   checkerboard 1080p (_1_0):  35.06866714286451
   checkerboard 1080p (_10_0):  7.985898744818505
 """
@@ -58,10 +59,12 @@ YUVDIR = os.environ.get(
 # docs/development/netflix-benchmark-baselines.md.
 SYCL_RENDER_NODE = os.environ.get("VMAF_SYCL_RENDER_NODE", "/dev/dri/renderD128")
 
-# Netflix reference scores (vmaf_v0.6.1, integer path)
-# From python/test/quality_runner_test.py
+# Netflix reference scores (vmaf_v0.6.1, integer path). The src01 value is the
+# CLI golden of python/test/vmafexec_test.py (`VMAFEXEC_score`); the Python
+# harness's older 76.66890519623612 (quality_runner_test.py) is a different
+# code path and made the CPU row read DIFF. Checkerboard values: quality_runner_test.py.
 EXPECTED = {
-    "src01_576x324": 76.66890519623612,
+    "src01_576x324": 76.66783025,
     "checker_1080p_mild": 35.06866714286451,
     "checker_1080p_heavy": 7.985898744818505,
 }

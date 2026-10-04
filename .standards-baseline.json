@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T04:40:51Z",
+  "generated_at": "2026-10-04T04:48:45Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "d39a82de0e42ae4b5930c469ef1cfa06544f8fc1",
-  "total_infractions": 440,
+  "commit_sha": "e0516f58518ed5d3d5252d0c85a400d477305663",
+  "total_infractions": 434,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -2520,54 +2520,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:c16a929c0415",
       "fingerprint": "scripts/ci/classify-dependency-pr.sh:HISS-07:text:c16a929c0415#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/ffmpeg-patches-surface-check.sh",
-      "line_number": 156,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:ec8162d89338",
-      "fingerprint": "scripts/ci/ffmpeg-patches-surface-check.sh:HISS-07:text:ec8162d89338#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/ffmpeg-patches-surface-check.sh",
-      "line_number": 175,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9f4e9c8c55d7",
-      "fingerprint": "scripts/ci/ffmpeg-patches-surface-check.sh:HISS-07:text:9f4e9c8c55d7#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/ffmpeg-patches-surface-check.sh",
-      "line_number": 182,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9a9809dc28fc",
-      "fingerprint": "scripts/ci/ffmpeg-patches-surface-check.sh:HISS-07:text:9a9809dc28fc#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/ffmpeg-patches-surface-check.sh",
-      "line_number": 187,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:2770e1722aa5",
-      "fingerprint": "scripts/ci/ffmpeg-patches-surface-check.sh:HISS-07:text:2770e1722aa5#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/ffmpeg-patches-surface-check.sh",
-      "line_number": 194,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1903aa63adaa",
-      "fingerprint": "scripts/ci/ffmpeg-patches-surface-check.sh:HISS-07:text:1903aa63adaa#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/ffmpeg-patches-surface-check.sh",
-      "line_number": 227,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:96da97c81a80",
-      "fingerprint": "scripts/ci/ffmpeg-patches-surface-check.sh:HISS-07:text:96da97c81a80#1"
     },
     {
       "rule_id": "HISS-02",

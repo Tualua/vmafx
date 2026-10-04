@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -90,6 +92,19 @@ class CommandTests(unittest.TestCase):
                 SGP.parse(["--backend", "sycl", "--max-abs-diff", bound])
 
 
+def _touch_fixtures(root: Path, *, bbb: bool = True) -> tuple[Path, Path]:
+    """Empty stand-ins for the fixture files; the fake CLI never reads them."""
+    netflix, bbb_dir = root / "netflix", root / "bbb"
+    netflix.mkdir()
+    bbb_dir.mkdir()
+    for name in ("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv"):
+        (netflix / name).touch()
+    if bbb:
+        for name in ("ref_3840x2160_200f.yuv", "dis_3840x2160_200f.yuv"):
+            (bbb_dir / name).touch()
+    return netflix, bbb_dir
+
+
 class ExecutablePathTests(unittest.TestCase):
     """``--vmaf build/tools/vmaf``, the default and the form every documented
     command uses, was refused by ``safe_subprocess`` ("allowlisted executable
@@ -122,10 +137,12 @@ class ExecutablePathTests(unittest.TestCase):
             tool.parent.mkdir()
             tool.write_text(stand_in, encoding="utf-8")
             tool.chmod(0o755)
+            netflix, bbb_dir = _touch_fixtures(Path(tmp))
             previous = Path.cwd()
             os.chdir(tmp)
             try:
                 relative = ["--vmaf", "tools/vmaf", "--feature", "speed_temporal"]
+                relative += ["--netflix-dir", str(netflix), "--bbb-dir", str(bbb_dir)]
                 status = SGP.main(["--backend", "sycl", "--no-timing", *relative])
             finally:
                 os.chdir(previous)
@@ -133,7 +150,7 @@ class ExecutablePathTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def _run(self, gpu_value: float, *extra: str) -> int:
+    def _run(self, gpu_value: float, *extra: str, bbb: bool = True) -> int:
         def fake_run(command: list[str], **_: object) -> None:
             out = Path(command[command.index("-o") + 1])
             value = gpu_value if "cpu" not in command else 7.0
@@ -146,10 +163,48 @@ class MainTests(unittest.TestCase):
 
         # SGP is loaded through importlib, so mypy sees its attributes as Any.
         with TemporaryDirectory() as tmp, mock.patch.object(SGP, "run_command", fake_run):
+            netflix, bbb_dir = _touch_fixtures(Path(tmp), bbb=bbb)
             status = SGP.main(
-                ["--backend", "sycl", "--no-timing", "--vmaf", str(Path(tmp) / "v"), *extra]
+                [
+                    "--backend",
+                    "sycl",
+                    "--no-timing",
+                    "--vmaf",
+                    str(Path(tmp) / "v"),
+                    "--netflix-dir",
+                    str(netflix),
+                    "--bbb-dir",
+                    str(bbb_dir),
+                    *extra,
+                ]
             )
         return int(status)
+
+    def test_missing_fixture_is_a_usage_error_naming_the_option(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(self._run(7.0, bbb=False), 2)
+        self.assertIn("ref_3840x2160_200f.yuv", stderr.getvalue())
+        self.assertIn("--skip-fixture 3840x2160", stderr.getvalue())
+
+    def test_skipped_fixture_is_reported_with_its_reason(self) -> None:
+        stdout = io.StringIO()
+        skip = ("--skip-fixture", "3840x2160", "--skip-reason", "BBB 4K not on this host")
+        with contextlib.redirect_stdout(stdout):
+            self.assertEqual(self._run(7.0, *skip, bbb=False), 0)
+        self.assertIn("SKIPPED fixture 3840x2160: BBB 4K not on this host", stdout.getvalue())
+        self.assertNotIn("3840x2160 speed", stdout.getvalue())
+
+    def test_skip_without_reason_and_reason_without_skip_are_refused(self) -> None:
+        for extra in (("--skip-fixture", "3840x2160"), ("--skip-reason", "why")):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                self._run(7.0, *extra)
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_skipping_every_fixture_is_an_error(self) -> None:
+        both = ("--skip-fixture", "576x324", "--skip-fixture", "3840x2160", "--skip-reason", "x")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self._run(7.0, *both), 2)
 
     def test_identical_twin_exits_zero(self) -> None:
         self.assertEqual(self._run(7.0), 0)

@@ -235,7 +235,7 @@ is_hipcc_enabled = get_option('enable_hipcc') == true
 if is_hipcc_enabled and not is_hip_enabled
     warning('enable_hipcc=true has no effect when enable_hip=false')
 endif
-# ADR-0642: gate VMAF_FEATURE_EXTRACTOR_HIP on float_vif_hip behind a Meson
+# ADR-0623: gate VMAF_FEATURE_EXTRACTOR_HIP on float_vif_hip behind a Meson
 # option (default OFF) pending T7-10c picture-pool plumbing. Without this flag,
 # pictures arrive as CPU VmafPictures and float_vif_hip performs explicit HtoD
 # copies rather than zero-copy from the HIP picture pool.
@@ -2081,8 +2081,9 @@ vmaf_include = include_directories(
 #
 # The option enable_rust_features (default: false, see meson_options.txt)
 # lets operators enable the Rust build on hosts with a Rust toolchain
-# (cargo + cbindgen).  When disabled, the tad extractor is silently
-# omitted and --feature tad returns -ENOSYS.
+# (cargo + cbindgen).  When disabled, tad_rust.c is not compiled and the tad
+# extractor is not registered, so --feature tad fails with "problem loading
+# feature extractor: tad" (not -ENOSYS).
 # ---------------------------------------------------------------------------
 is_rust_enabled = get_option('enable_rust_features')
 
@@ -2122,9 +2123,10 @@ if is_rust_enabled
 
     # -DHAVE_RUST_TAD is emitted as a compile_args so any TU that
     # depends on this dependency gets the define. In practice only
-    # feature_extractor.c and tad_rust.c use it — the define gates the
-    # extern vmafx_tad_* declarations so builds without the archive can
-    # still compile (they get -ENOSYS stubs instead).
+    # feature_extractor.cpp and tad_rust.c use it — the define gates the
+    # extern vmafx_tad_* declarations and the extractor's registration; a
+    # build without the archive compiles neither tad_rust.c nor registers
+    # the extractor.
     rust_tad_dep = declare_dependency(
         sources: [rust_tad_staticlib],
         compile_args: ['-DHAVE_RUST_TAD'],

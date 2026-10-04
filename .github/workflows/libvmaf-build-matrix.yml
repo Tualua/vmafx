@@ -422,8 +422,9 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Pinned to CUDA 13.3.1, matching build.yml's Linux and Windows legs and
-      # the dev container. ADR-0603: Ubuntu 26.04 (glibc 2.43) needs CUDA >=
+      # Pinned to CUDA_VERSION in build-config.env (scripts/ci/install-cuda-toolkit.sh
+      # reads it), the same release as build.yml's Linux and Windows legs and the
+      # dev container. ADR-0603: Ubuntu 26.04 (glibc 2.43) needs CUDA >=
       # 13.2 to avoid the rsqrt(double) noexcept C2059/C2085 NVCC cascade.
       #
       # Installed from NVIDIA's apt repository rather than through
@@ -929,11 +930,12 @@ jobs:
           arch: x64
 
       # ---------- CUDA toolkit (CUDA leg only) ----------
-      # Same pin as the Linux CUDA legs: CUDA 13.3.1. 13.x itself drops
+      # Same pin as the Linux CUDA legs (CUDA_VERSION in build-config.env, read
+      # by install-cuda-toolkit.ps1). 13.x itself drops
       # Maxwell/Pascal/Volta; ADR-1223 additionally drops Turing (sm_75), so
       # meson.build's gencode floor is compute_80 and the `< 13` sm_50 guard
       # is gone. Bumped 13.0.0 -> 13.2.0 per ADR-0603, 13.2.0 -> 13.3.1 per
-      # ADR-1223.
+      # ADR-1223; build-config.env has moved on since (Renovate-driven).
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
         shell: pwsh
@@ -1083,9 +1085,10 @@ jobs:
   # `#if ARCH_AARCH64` branch are compiled by cl.exe and executed on
   # ARM64 silicon. Before this lane the arm64 tree was only ever
   # compiled by gcc/clang (Ubuntu ARM clang, macOS) and MSVC only ever
-  # saw the x86 tree. CPU only: CUDA 13.3.1, the repository pin, ships
-  # no windows-arm64 packages (13.4.1 is the first that does); a
-  # CUDA-on-WoA leg waits for the coordinated 13.4 bump. ADR-1260 left
+  # saw the x86 tree. CPU only: there is no CUDA-on-WoA leg yet. CUDA
+  # 13.4.1 is the first release with windows-arm64 packages and the pin
+  # (CUDA_VERSION in build-config.env) is past it, so such a leg is open work,
+  # not blocked on the toolkit. ADR-1260 left
   # this lane advisory -- "not in required-aggregator.yml -- until the
   # maintainer promotes it". ADR-1297 is that promotion: the lane is in
   # required-aggregator.yml, and in that file's `strictMustReport` list

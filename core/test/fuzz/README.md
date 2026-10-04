@@ -11,7 +11,7 @@ in [`docs/development/fuzzing.md`](../../../docs/development/fuzzing.md).
 |--------------------|---------------------------------------------------------------------------------------------------------------|-----------------------|
 | `fuzz_y4m_input`   | `video_input_open` / `_fetch_frame` (Y4M parser, `core/tools/y4m_input.c`)                                    | `y4m_input_corpus/`   |
 | `fuzz_yuv_input`   | `raw_input_open` / `_fetch_frame` (raw YUV reader, `core/tools/yuv_input.c`)                                  | `yuv_input_corpus/`   |
-| `fuzz_cli_parse`   | `cli_parse` argv tokeniser + colon-delimited model/feature parsers (`core/tools/cli_parse.c`)                 | `cli_parse_corpus/`   |
+| `fuzz_cli_parse`   | `cli_parse` argv tokeniser + colon-delimited model/feature parsers (`core/tools/cli_parse.cpp`)               | `cli_parse_corpus/`   |
 | `fuzz_json_model`  | `vmaf_read_json_model_from_buffer` + collection variant (SVM model JSON parser, `core/src/read_json_model.c`) | `json_model_corpus/`  |
 | `fuzz_dnn_sidecar` | `vmaf_dnn_sidecar_load` (tiny-AI sidecar JSON parser, `core/src/dnn/model_loader.c`)                          | `dnn_sidecar_corpus/` |
 
@@ -22,18 +22,20 @@ libFuzzer) and pair best with AddressSanitizer:
 
 ```bash
 CC=clang CXX=clang++ \
-  meson setup build-fuzz \
+  meson setup build-fuzz core \
     --buildtype=debug \
     -Db_sanitize=address \
+    -Db_lundef=false \
+    -Db_lto=false \
     -Dfuzz=true \
-    -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled
-ninja -C build-fuzz core/test/fuzz/fuzz_y4m_input
+    -Denable_cuda=false -Denable_sycl=false
+ninja -C build-fuzz test/fuzz/fuzz_y4m_input
 ```
 
 ## Run a smoke fuzz locally
 
 ```bash
-./build-fuzz/core/test/fuzz/fuzz_y4m_input \
+./build-fuzz/test/fuzz/fuzz_y4m_input \
     -max_total_time=60 \
     -rss_limit_mb=2048 \
     core/test/fuzz/y4m_input_corpus/
@@ -45,7 +47,7 @@ AddressSanitizer ...` and writes a `crash-<sha>` file in the working
 directory, treat that as a real bug — triage with the reproducer:
 
 ```bash
-./build-fuzz/core/test/fuzz/fuzz_y4m_input crash-<sha>
+./build-fuzz/test/fuzz/fuzz_y4m_input crash-<sha>
 ```
 
 ## Corpus management
@@ -73,33 +75,26 @@ lands:
 for f in core/test/fuzz/y4m_input_known_crashes/*.y4m; do
     ./build-fuzz/test/fuzz/fuzz_y4m_input "$f"
 done
-
-for f in core/test/fuzz/cli_parse_known_crashes/*.argv; do
-    ./build-fuzz/test/fuzz/fuzz_cli_parse "$f"
-done
 ```
 
-The `fuzz_cli_parse` harness additionally carries an in-source
-**early-reject filter** for tokens whose getopt-abbreviation prefix
-would route through one of the three known-buggy `parse_unsigned`
-call sites (`--th*`, `--s*`, `--c*`); see the
-`known_assert_in_input` helper in
-[`fuzz_cli_parse.c`](fuzz_cli_parse.c) and the bug write-up in
-[ADR-0311 §Consequences](../../../docs/adr/0311-libfuzzer-harness-expansion.md#consequences).
-Remove the filter once the cli_parse fix lands.
+Today the directories that exist are `y4m_input_known_crashes/` and
+`json_model_known_crashes/`. `fuzz_cli_parse` has no known-crash directory and
+no early-reject filter: its one historical crash (a getopt abbreviation such as
+`--th=foosoxe` reaching `parse_unsigned`) is fixed, and the reproducer
+`cli_parse_corpus/cli_threads_abbrev_assert.argv` is a regular seed that the
+nightly run exercises ([ADR-0311 §Consequences](../../../docs/adr/0311-libfuzzer-harness-expansion.md#consequences)).
 
 The `fuzz_json_model` harness surfaced a heap-buffer-overflow in
-`vmaf_model_destroy` (`core/src/model.c:210`) on a fork-local
-parser path: `parse_slopes` grows the feature array via
-`ensure_feature_capacity` while leaving `n_features` unchanged,
-so `vmaf_model_destroy` then walks past the initialised region.
-Reproducer in `json_model_known_crashes/slopes_oob_destroy.bin`
-(the `.bin` extension keeps the `pre-commit check-json` hook from
-trying to parse fuzzer-mutated bytes that are deliberately not
-valid JSON)
-— per ADR-0404, the harness is kept running unmodified until the
-fix PR lands; the next nightly run returns green automatically.
-Tracked in [`docs/state.md`](../../../docs/state.md).
+`vmaf_model_destroy`: `parse_slopes` grew the feature array via
+`ensure_feature_capacity` while leaving `n_features` unchanged, so the
+destroy walk and the cross-key validation disagreed. It is fixed
+(`sync_n_features()` in `core/src/read_json_model.c`,
+[ADR-0887](../../../docs/adr/0887-vmaf-model-slopes-feature-mismatch-validation.md)).
+The reproducer stays in `json_model_known_crashes/slopes_oob_destroy.bin` (the
+`.bin` extension keeps the `pre-commit check-json` hook from trying to parse
+fuzzer-mutated bytes that are deliberately not valid JSON) as a regression
+input; per [ADR-0404](../../../docs/adr/0404-nightly-fuzz-triage-keep-gates.md)
+the nightly gate was kept running unmodified until the fix landed.
 
 ## CI
 

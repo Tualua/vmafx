@@ -96,11 +96,13 @@ typedef struct VmafPicture {
  *
  * Sets every field of @p pic according to @p pix_fmt, @p bpc, @p w, and @p h:
  * per-plane widths/heights are derived from the chroma subsampling encoded in
- * @p pix_fmt, row strides are rounded up to a 32-byte boundary (so AVX2 /
+ * @p pix_fmt, each plane's row stride is the plane width rounded up to a
+ * multiple of 64 samples (64 bytes for 8-bit, 128 bytes for >8-bit; so AVX2 /
  * AVX-512 SIMD paths can load full vector registers without tail handling),
- * and the sample buffer is contiguously allocated for all three planes. The
- * data buffers are *uninitialised*; the caller is expected to fill them
- * before passing the picture to @ref vmaf_read_pictures.
+ * and the sample buffer is contiguously allocated for all three planes on a
+ * 64-byte boundary. The buffer is zero-filled; the caller is expected to
+ * overwrite it with the sample data before passing the picture to
+ * @ref vmaf_read_pictures.
  *
  * The picture's refcount is initialised to 1. Pair every successful
  * allocation with exactly one @ref vmaf_picture_unref unless ownership is

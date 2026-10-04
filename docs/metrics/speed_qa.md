@@ -137,6 +137,20 @@ log2](speed.md#the-cpu-reference-and-log2f).
 - **VMAF_FEATURE_EXTRACTOR_TEMPORAL** flag ensures in-order frame delivery.
   The extractor maintains its own `prev_dist` buffer (aligned, private).
 
+### Checking a GPU twin against the CPU { #checking-a-gpu-twin-against-the-cpu }
+
+`scripts/dev/speed_gpu_parity.py --backend cuda|sycl|hip|metal` runs the CPU
+extractor and the `<feature>_<backend>` twin at `--precision max` on two
+fixtures (the Netflix 576x324 pair from `python/test/resource/yuv/` and the
+untracked BBB 3840x2160 pair from `testdata/bbb/`), prints the bit-identical
+frame count and the maximum absolute difference per output, then times both.
+`--feature` picks other twins (for example `ssimulacra2`).
+
+A fixture whose files are absent is a usage error that names the file. To run
+without one, say so: `--skip-fixture 3840x2160 --skip-reason "BBB 4K not on
+this host"` leaves it out and prints a `SKIPPED fixture ...` line with the
+reason. A skipped fixture is a partial run, not a full pass.
+
 ## Test coverage
 
 `core/test/test_speed_qa.c` provides five smoke tests:

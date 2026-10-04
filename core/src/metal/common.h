@@ -14,11 +14,10 @@ extern "C" {
 #endif
 
 /*
- * Scaffolded by ADR-0361 / T8-1 (mirrors the HIP scaffold ADR-0212 and
- * the Vulkan scaffold ADR-0175). Replace the stubs in common.c,
- * picture_metal.c, dispatch_strategy.c, kernel_template.c, and
- * feature/metal/<feature>_metal.c with real Metal runtime
- * implementations (MetalCpp wrapper — see ADR-0361).
+ * Scaffolded by ADR-0361 / T8-1 (mirrors the HIP scaffold ADR-0212);
+ * common.c, picture_metal.c, dispatch_strategy.c, kernel_template.c and
+ * feature/metal/<feature>_metal.c are the live Metal runtime (MetalCpp
+ * wrapper, see ADR-0361).
  */
 
 typedef struct VmafMetalContext VmafMetalContext;
@@ -37,9 +36,8 @@ int vmaf_metal_device_count(void);
  * retain and drops it in `vmaf_metal_context_destroy`. Returns NULL
  * for a NULL context.
  *
- * Same pattern as `vmaf_hip_context_stream()` (ADR-0212) and
- * `vmaf_cuda_context_stream()` (ADR-0246) — opaque handle + accessor,
- * never struct-layout coupling.
+ * Opaque handle + accessor (the two functions below), never
+ * struct-layout coupling.
  */
 void *vmaf_metal_context_device_handle(VmafMetalContext *ctx);
 void *vmaf_metal_context_queue_handle(VmafMetalContext *ctx);

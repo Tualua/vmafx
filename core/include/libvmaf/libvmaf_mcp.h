@@ -7,32 +7,28 @@
  * @file libvmaf_mcp.h
  * @brief Embedded MCP (Model Context Protocol) server public API.
  *
- * Scaffolded by ADR-0209 / T5-2 (audit-first). Runtime (cJSON +
- * mongoose vendoring, dedicated MCP pthread, SPSC ring buffer,
- * SSE / UDS / stdio transport bodies) lands via T5-2b in a
- * follow-up PR. The header surface here is stable for downstream
- * consumers: every entry point returns -ENOSYS while the runtime
- * is unwired, so a caller compiled against this header sees a
- * predictable error and can fall back to the external Python MCP
- * server under mcp-server/vmaf-mcp/.
+ * Designed by ADR-0128, scaffolded by ADR-0209, runtime v3 (T5-2b/c/d):
+ * `vmaf_mcp_init`, `vmaf_mcp_start_{stdio,uds,sse}`, `vmaf_mcp_stop` and
+ * `vmaf_mcp_close` are wired and serve `list_features` and `compute_vmaf`
+ * (see docs/mcp/embedded.md). The SPSC command ring that would let a
+ * transport steer a running measurement is v4 work: until then
+ * `VmafMcpConfig.queue_depth` and `max_drain_per_frame` are validated and
+ * stored but allocate and drain nothing.
  *
  * When libvmaf was built without `-Denable_mcp=true`, every entry
- * point still returns -ENOSYS unconditionally; the linker resolves
- * the symbols against the same stub TU at core/src/mcp/mcp.c.
+ * point returns -ENOSYS unconditionally, so a caller compiled against
+ * this header sees a predictable error and can fall back to the external
+ * MCP server (Go `cmd/vmafx-mcp` or Python `mcp-server/vmaf-mcp/`).
  *
  * Threading model (per ADR-0128 + Research-0005):
  *   - The host calls `vmaf_mcp_init` after `vmaf_init` and before
- *     the first `vmaf_read_pictures`. Init pre-allocates the SPSC
- *     ring buffer; no further allocation crosses the measurement-
- *     thread boundary (NASA Power-of-10 rule 3).
+ *     the first `vmaf_read_pictures`.
  *   - One transport-start call (`_start_sse`, `_start_uds`,
- *     `_start_stdio`) per active transport — they may be combined.
- *     Each spawns a dedicated MCP pthread; the measurement thread
- *     drains at most N command envelopes per frame from the SPSC
- *     ring (bounded loop, NASA Power-of-10 rule 2).
+ *     `_start_stdio`) per active transport; they may be combined.
+ *     Each spawns a dedicated MCP pthread. The measurement thread is
+ *     not touched in v3 (no SPSC ring yet).
  *   - `vmaf_mcp_stop` joins the MCP threads; `vmaf_mcp_close`
- *     releases the ring buffer + handle. Closing a NULL handle is
- *     a no-op.
+ *     releases the handle. Closing a NULL handle is a no-op.
  *
  * Auth surface (per ADR-0128 § "Operational guardrails"):
  *   - SSE binds to 127.0.0.1 only.
@@ -40,7 +36,7 @@
  *   - stdio is trusted by construction (host owns the fds).
  *
  * Error contract (negative errno):
- *   -ENOSYS — feature not built (or scaffold not yet wired).
+ *   -ENOSYS — feature (or the transport) not built.
  *   -ENODEV — transport-specific runtime unavailable
  *             (e.g. UDS on a non-POSIX host).
  *   -EINVAL — bad argument (NULL where required, malformed config).
@@ -90,7 +86,7 @@ VMAF_EXPORT int vmaf_mcp_available(void);
 typedef enum VmafMcpTransport {
     VMAF_MCP_TRANSPORT_SSE = 0,   /**< Server-Sent Events over loopback HTTP. */
     VMAF_MCP_TRANSPORT_UDS = 1,   /**< Unix domain socket, newline-delimited JSON-RPC. */
-    VMAF_MCP_TRANSPORT_STDIO = 2, /**< LSP-framed JSON-RPC on caller-supplied fd pair. */
+    VMAF_MCP_TRANSPORT_STDIO = 2, /**< newline-delimited JSON-RPC on a caller-supplied fd pair. */
 } VmafMcpTransport;
 
 /**
@@ -107,7 +103,7 @@ VMAF_EXPORT int vmaf_mcp_transport_available(VmafMcpTransport transport);
 
 /**
  * Opaque handle to an embedded MCP server. One handle pins one
- * SPSC ring buffer + zero-or-more transport threads. The handle is
+ * server context + zero-or-more transport threads. The handle is
  * created by @ref vmaf_mcp_init and released by
  * @ref vmaf_mcp_close.
  */
@@ -119,13 +115,13 @@ typedef struct VmafMcpServer VmafMcpServer;
  */
 typedef struct VmafMcpConfig {
     /** SPSC ring slot count. 0 → default 64. Must be a power of
-     *  two; rejected otherwise with -EINVAL. Slots are fixed-size
-     *  (no heap-owned data crosses the boundary), pre-allocated at
-     *  @ref vmaf_mcp_init time. */
+     *  two; rejected otherwise with -EINVAL. Reserved for the v4
+     *  SPSC bridge: v3 validates and stores it but allocates no
+     *  ring. */
     uint32_t queue_depth;
     /** Upper bound on command envelopes the measurement thread
      *  drains per frame (NASA Power-of-10 rule 2). 0 → default 4.
-     *  Cap 64. */
+     *  Cap 64. Reserved for the v4 SPSC bridge; v3 drains nothing. */
     uint32_t max_drain_per_frame;
     /** Optional NUL-terminated tag returned in MCP `serverInfo`.
      *  NULL → libvmaf default. Caller retains ownership; the string
@@ -136,8 +132,8 @@ typedef struct VmafMcpConfig {
 /**
  * Initialise an embedded MCP server bound to a VmafContext. Must
  * be called after `vmaf_init` and before the first
- * `vmaf_read_pictures`. Pre-allocates the SPSC ring buffer; no
- * further allocation occurs on the measurement-thread hot path.
+ * `vmaf_read_pictures`. Allocates the server handle; the measurement
+ * thread is not touched.
  *
  * @param out  Receives the new server handle. Caller owns it; pair
  *             with @ref vmaf_mcp_close.
@@ -147,8 +143,7 @@ typedef struct VmafMcpConfig {
  *             vmaf_close().
  * @param cfg  Configuration. NULL → all-defaults.
  *
- * @return 0 on success, -ENOSYS when built without MCP (or while
- *         the runtime is still unwired in the scaffold), -EINVAL
+ * @return 0 on success, -ENOSYS when built without MCP, -EINVAL
  *         on bad arguments, -ENOMEM on ring allocation failure,
  *         -EBUSY if measurement is already in flight.
  */
@@ -229,7 +224,8 @@ typedef struct VmafMcpStdioConfig {
 
 /**
  * Start the stdio transport. Spawns one dedicated MCP pthread that
- * reads LSP-framed JSON-RPC on `fd_in` and writes responses on
+ * reads newline-delimited JSON-RPC on `fd_in` (one request per line; no
+ * LSP `Content-Length:` framing) and writes one response line on
  * `fd_out`.
  *
  * @param server  Server handle previously created via

@@ -8,9 +8,10 @@
  *  T5-2b (this PR — see ADR-0209 § "Status update 2026-05-08")
  *  flips `vmaf_mcp_init` + `vmaf_mcp_start_stdio` + `vmaf_mcp_stop`
  *  + `vmaf_mcp_close` to a working JSON-RPC 2.0 dispatcher with
- *  two tools (`list_features`, `compute_vmaf`). SSE / UDS still
- *  return `-ENOSYS`; vendoring `mongoose` and wiring the SPSC ring
- *  drain at frame boundaries is deferred to v2.
+ *  two tools (`list_features`, `compute_vmaf`). The UDS and SSE
+ *  transports followed in T5-2c / T5-2d (see transport_uds.c,
+ *  transport_sse.c). Wiring the SPSC ring drain at frame boundaries
+ *  is v4 work.
  *
  *  Power-of-10 invariants:
  *      - rule 2 (bounded loops): all per-request loops are bounded

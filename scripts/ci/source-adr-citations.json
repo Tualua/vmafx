@@ -335,7 +335,7 @@
     },
     "0128": {
       "sites": {
-        "core/include/libvmaf/libvmaf_mcp.h": 4,
+        "core/include/libvmaf/libvmaf_mcp.h": 5,
         "core/meson_options.txt": 1,
         "core/src/mcp/mcp.c": 2,
         "core/src/mcp/transport_uds.c": 1,
@@ -871,10 +871,7 @@
     "0175": {
       "sites": {
         ".github/workflows/libvmaf-build-matrix.yml": 1,
-        "core/include/libvmaf/libvmaf_metal.h": 1,
-        "core/src/hip/common.h": 1,
         "core/src/hip/meson.build": 1,
-        "core/src/metal/common.h": 1,
         "pkg/corpus/score.go": 1,
         "pkg/scorecli/scorecli.go": 1,
         "tools/vmaf-tune/src/vmaftune/score.py": 1,
@@ -946,17 +943,9 @@
       },
       "target": "0182-gpu-long-tail-batch-1.md"
     },
-    "0184": {
-      "sites": {
-        "core/include/libvmaf/libvmaf_metal.h": 2
-      },
-      "target": "0184-vulkan-image-import-scaffold.md"
-    },
     "0186": {
       "sites": {
-        "core/include/libvmaf/picture_v2.h": 1,
-        "scripts/ci/ffmpeg-patches-surface-check.sh": 2,
-        "scripts/ci/tests/test-pr-body-input-selection.sh": 1
+        "core/include/libvmaf/picture_v2.h": 1
       },
       "target": "0186-vulkan-image-import-impl.md"
     },
@@ -1210,7 +1199,7 @@
         "core/src/hip/kernel_template.h": 1,
         "core/src/hip/picture_hip.c": 1,
         "core/src/meson.build": 1,
-        "core/src/metal/common.h": 2,
+        "core/src/metal/common.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_gpu_dispatch_runtime.c": 1,
         "core/test/test_hip_smoke.c": 4
@@ -1573,7 +1562,6 @@
         "core/src/feature/cuda/integer_psnr_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
         "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
-        "core/src/metal/common.h": 1,
         "core/src/metal/kernel_template.h": 1
       },
       "target": "0246-gpu-kernel-template.md"
@@ -2557,8 +2545,7 @@
     },
     "0356": {
       "sites": {
-        ".github/workflows/rule-enforcement.yml": 1,
-        "scripts/ci/ffmpeg-patches-surface-check.sh": 2
+        ".github/workflows/rule-enforcement.yml": 1
       },
       "target": "0356-vulkan-two-level-gpu-reduction.md"
     },
@@ -2858,6 +2845,14 @@
         "scripts/ci/tests/test_check_adr_links.py": 1
       },
       "target": "0407-adaptivecpp-second-sycl-toolchain.md"
+    },
+    "0409": {
+      "sites": {
+        "core/test/test_stale_text_contract.py": 1,
+        "scripts/ci/ffmpeg-patches-surface-check.sh": 2,
+        "scripts/ci/tests/test-pr-body-input-selection.sh": 1
+      },
+      "target": "0409-ffmpeg-patches-surface-gate.md"
     },
     "0415": {
       "sites": {
@@ -3991,6 +3986,8 @@
       "sites": {
         "core/meson_options.txt": 1,
         "core/src/feature/hip/float_vif_hip.c": 1,
+        "core/src/meson.build": 1,
+        "core/test/test_stale_text_contract.py": 3,
         "scripts/ci/test_sycl_tidy_workflow_contract.py": 1
       },
       "target": "0623-scaffold-audit-p2-half-finished.md"
@@ -4042,7 +4039,7 @@
     },
     "0642": {
       "sites": {
-        "core/src/meson.build": 1
+        "core/test/test_stale_text_contract.py": 1
       },
       "target": "0642-ai-refresh-full-feature-defaults.md"
     },
@@ -4238,6 +4235,7 @@
         "core/src/feature/tad_rust.c": 1,
         "core/src/meson.build": 3,
         "core/test/meson.build": 1,
+        "core/test/test_stale_text_contract.py": 1,
         "core/test/test_tad_rust.c": 1
       },
       "target": "0707-vmafx-rust-pilot-feature.md"
@@ -9710,6 +9708,12 @@
       },
       "target": "1489-float-adm-barten-upstream-float.md"
     },
+    "1490": {
+      "sites": {
+        "core/test/test_stale_text_contract.py": 1
+      },
+      "target": "1490-rc3-rc9-candidate-map-cpu-capability.md"
+    },
     "1491": {
       "sites": {
         "core/src/feature/cuda/integer_motion_cuda.c": 3,
@@ -9988,6 +9992,12 @@
         "tools/rc1-tester/tests/test_windows_bundle.py": 1
       },
       "target": "1516-windows-cuda-tester-zip.md"
+    },
+    "1521": {
+      "sites": {
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/console_alias.py": 1
+      },
+      "target": "1521-python-mcp-console-script-name.md"
     },
     "1524": {
       "sites": {

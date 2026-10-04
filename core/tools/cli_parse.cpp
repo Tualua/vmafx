@@ -245,9 +245,11 @@ void print_usage_options_part2(FILE *const out)
     (void)fprintf(
         out,
         " --no_hip:                     disable HIP (AMD ROCm) backend\n"
-        " --hip_device $unsigned:       select HIP GPU by index (default: auto)\n"
+        " --hip_device $unsigned:       select HIP GPU by index (opt-in: HIP is off\n"
+        "                               unless this or --backend hip is given)\n"
         " --no_metal:                   disable Metal (Apple Silicon) backend\n"
-        " --metal_device $unsigned:     select Metal GPU by index (default: auto)\n"
+        " --metal_device $unsigned:     select Metal GPU by index (opt-in: Metal is off\n"
+        "                               unless this or --backend metal is given)\n"
         " --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip|metal.\n"
         "                               When set to a specific backend, the others are\n"
         "                               disabled to avoid the dispatcher first-match-wins\n"

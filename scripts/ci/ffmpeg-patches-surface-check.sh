@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # scripts/ci/ffmpeg-patches-surface-check.sh — local + CI gate for
-# CLAUDE.md §12 r14 (ADR-0186 + ADR-0356): every PR that changes a
+# agent hard rule 11 (docs/development/agent-hard-rules.md, ADR-0409): every PR that changes a
 # libvmaf public-surface symbol consumed by ffmpeg-patches/*.patch
 # must update at least one patch file in the same PR.
 #
@@ -51,6 +51,17 @@
 # patch update, 2 on an environment / setup error.
 
 set -euo pipefail
+
+# A pipeline that ends in grep exits 1 when no line matched: that is data, not an
+# error. Any other status (grep 2, git 128, a signal) is a failure and ends the
+# check with the usage/error status instead of being read as "no symbols".
+nomatch_ok() {
+  if [ "$1" -eq 1 ]; then
+    return 0
+  fi
+  echo "ffmpeg-patches-surface-check: a command failed with status $1." >&2
+  exit 2
+}
 
 # ---------- 1. Locate PR body ----------
 
@@ -153,7 +164,7 @@ fi
   sort -u |
   grep -vE '^vmaf_v[0-9]+$' |
   grep -vE '^vmaf_(pre|tune)$' \
-    >"$tmp_consumed" || true
+    >"$tmp_consumed" || nomatch_ok $?
 
 consumed_count=$(wc -l <"$tmp_consumed" | tr -d ' ')
 if [ "${consumed_count}" -eq 0 ]; then
@@ -172,26 +183,26 @@ fi
 # We extract identifiers from the union of `+` and `-` lines (added or
 # removed in the diff). Pure `+ // comment` or `+ /* comment */` lines
 # are filtered.
-header_diff="$(git diff "${diff_base}..${diff_head}" -- 'core/include/libvmaf/*.h' || true)"
+header_diff="$(git diff "${diff_base}..${diff_head}" -- 'core/include/libvmaf/*.h' || nomatch_ok $?)"
 
 if [ -n "$header_diff" ]; then
   printf '%s\n' "$header_diff" |
     grep -E '^[+-][^+-]' |
     sed -E 's|//.*$||; s|/\*.*\*/||' |
     grep -hoE '\b(vmaf_[a-zA-Z0-9_]+|Vmaf[A-Z][a-zA-Z0-9]+)\b' |
-    sort -u >"$tmp_diff_syms" || true
+    sort -u >"$tmp_diff_syms" || nomatch_ok $?
 fi
 
 # meson_options.txt changes — capture any `option('<name>'` declaration
 # touched in `+` or `-` lines.
-meson_diff="$(git diff "${diff_base}..${diff_head}" -- 'core/meson_options.txt' || true)"
+meson_diff="$(git diff "${diff_base}..${diff_head}" -- 'core/meson_options.txt' || nomatch_ok $?)"
 
 if [ -n "$meson_diff" ]; then
   printf '%s\n' "$meson_diff" |
     grep -E "^[+-][^+-].*option\('" |
     grep -hoE "option\('[a-zA-Z0-9_]+'" |
     sed -E "s/option\('//; s/'\$//" |
-    sort -u >"$tmp_diff_flags" || true
+    sort -u >"$tmp_diff_flags" || nomatch_ok $?
 fi
 
 # ---------- 6. Check intersection ----------
@@ -224,7 +235,7 @@ if [ -s "$tmp_diff_syms" ]; then
   # For every diff symbol, check if it appears verbatim in the consumed
   # set. We use grep -F -x for an exact line-match: each line of
   # tmp_consumed and tmp_diff_syms is one identifier.
-  sym_hits="$(grep -F -x -f "$tmp_diff_syms" "$tmp_consumed" || true)"
+  sym_hits="$(grep -F -x -f "$tmp_diff_syms" "$tmp_consumed" || nomatch_ok $?)"
   if [ -n "$sym_hits" ]; then
     sym_hit_count=$(printf '%s\n' "$sym_hits" | wc -l | tr -d ' ')
   fi
@@ -283,7 +294,7 @@ if [ "$patch_touched" -eq 1 ]; then
 fi
 
 # Hard fail.
-echo "::error title=CLAUDE.md §12 r14::Public libvmaf surface consumed by ffmpeg-patches/ was changed without a patch update."
+echo "::error title=Agent hard rule 11::Public libvmaf surface consumed by ffmpeg-patches/ was changed without a patch update."
 echo ""
 if [ -n "$sym_hits" ]; then
   echo "  consumed symbols touched:"
@@ -294,7 +305,7 @@ if [ -n "$flag_hits" ]; then
   printf '%b' "$flag_hits" | sed 's/^/    - /'
 fi
 echo ""
-echo "Per CLAUDE.md §12 r14 (and ADR-0186 / ADR-0356), every PR that"
+echo "Per agent hard rule 11 (docs/development/agent-hard-rules.md, ADR-0409), every PR that"
 echo "changes a public libvmaf surface consumed by ffmpeg-patches/"
 echo "must update at least one patch file in the SAME PR — otherwise"
 echo "the next /sync-upstream rebase inherits a silently-broken"

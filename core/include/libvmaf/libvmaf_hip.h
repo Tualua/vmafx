@@ -7,9 +7,9 @@
  * @file libvmaf_hip.h
  * @brief HIP (AMD ROCm) backend public API — ADR-0212 / T7-10.
  *
- * The HIP backend is fully implemented. All 21 registered feature extractors
- * have real ROCm HIP kernels verified on AMD gfx hardware (ADR-0533 /
- * ADR-0539). Three legacy-API stubs (`adm_hip`, `vif_hip`, `motion_hip`)
+ * The HIP backend is fully implemented. The registered feature extractors
+ * (listed in docs/backends/hip/overview.md) have real ROCm HIP kernels
+ * verified on AMD gfx hardware (ADR-0533 / ADR-0539). Three legacy-API stubs (`adm_hip`, `vif_hip`, `motion_hip`)
  * use an older `_init/_run/_destroy` shape incompatible with the
  * `VmafFeatureExtractor` registration system; they return `-ENOSYS` at
  * `init()` and are not selectable via `--feature`.
@@ -60,7 +60,7 @@ VMAF_EXPORT int vmaf_hip_available(void);
  * Opaque handle to a HIP-backed scoring state. One state pins one
  * HIP device + compute stream; callers that want multi-GPU fan-out
  * create one state per device. Same lifetime model as
- * `VmafCudaState` / `VmafVulkanState`.
+ * `VmafCudaState` / `VmafSyclState`.
  */
 typedef struct VmafHipState VmafHipState;
 

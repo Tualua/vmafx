@@ -244,18 +244,14 @@ substitute for a quiet-host baseline.
 
 #### Reading the harness's own PASS/DIFF column
 
-`benchmark_netflix.py` prints each pooled score against a reference value
-(`src01_576x324` = 76.66890519623612) taken from the Python harness test
-`python/test/quality_runner_test.py`, which asserts it to two places. All three
-backends have always shown `DIFF` on that row, and the recorded snapshot's own
-CPU value, 76.667828, is 1.07e-3 below that reference too.
-
-That reference is not the CLI's golden value. The golden assertion for the
-`vmaf` CLI on this pair is 76.66783025
-(`python/test/vmafexec_test.py`), and the CPU row agrees with it to about
-3e-6. Treat 76.668905 as the older Python-harness value. The two checkerboard
-rows read `OK`. Compare against the **snapshot**, not against that column, when
-asking whether master has drifted.
+`benchmark_netflix.py` prints each pooled score against the Netflix golden
+value of the pair (`src01_576x324` = 76.66783025, the `vmaf` CLI assertion in
+`python/test/vmafexec_test.py`) and tags it `OK` within 5e-5. The CPU row agrees
+with it to about 3e-6. Earlier versions of the harness compared against
+76.66890519623612, the value the Python harness asserts in
+`python/test/quality_runner_test.py` to two places, so the CPU row always read
+`DIFF`; that was a wrong reference, not drift. Compare against the
+**snapshot** when asking whether master has drifted.
 
 #### Scores versus the recorded snapshot
 

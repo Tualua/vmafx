@@ -278,11 +278,58 @@ static char *run_chroma_ceiling_tests(void)
     return NULL;
 }
 
+/* vmaf_picture_alloc's documented layout (core/include/libvmaf/picture.h): each
+ * plane's stride is its width rounded up to 64 samples (bytes for 8-bit, twice
+ * that above 8 bits) and the buffer is zero-filled. The header once said "32-byte
+ * boundary" and "uninitialised"; a caller trusting that wrote the wrong padding. */
+static char *test_picture_stride_is_64_samples(void)
+{
+    VmafPicture pic;
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 577, 323);
+    mu_assert("vmaf_picture_alloc failed for 577x323 8-bit", !err);
+    mu_assert("8-bit luma stride must be 640 bytes (577 rounded up to 64)", pic.stride[0] == 640);
+    mu_assert("8-bit chroma stride must be 320 bytes (289 rounded up to 64)",
+              pic.stride[1] == 320 && pic.stride[2] == 320);
+    err = vmaf_picture_unref(&pic);
+    mu_assert("problem during vmaf_picture_unref", !err);
+
+    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 10, 577, 323);
+    mu_assert("vmaf_picture_alloc failed for 577x323 10-bit", !err);
+    mu_assert("10-bit luma stride must be 1280 bytes (640 samples of two bytes)",
+              pic.stride[0] == 1280);
+    err = vmaf_picture_unref(&pic);
+    mu_assert("problem during vmaf_picture_unref", !err);
+    return NULL;
+}
+
+static char *test_picture_buffer_is_zero_filled(void)
+{
+    VmafPicture pic;
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 577, 323);
+    mu_assert("vmaf_picture_alloc failed for 577x323 8-bit", !err);
+    const uint8_t *luma = (const uint8_t *)pic.data[0];
+    size_t nonzero = 0;
+    for (size_t i = 0; i < (size_t)pic.stride[0] * pic.h[0]; i++)
+        nonzero += luma[i] != 0;
+    mu_assert("a freshly allocated luma plane must be zero-filled", nonzero == 0);
+    err = vmaf_picture_unref(&pic);
+    mu_assert("problem during vmaf_picture_unref", !err);
+    return NULL;
+}
+
+static char *run_layout_tests(void)
+{
+    mu_run_test(test_picture_stride_is_64_samples);
+    mu_run_test(test_picture_buffer_is_zero_filled);
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_picture_alloc_ref_and_unref);
     mu_run_test(test_picture_data_alignment);
     mu_run_test(run_chroma_ceiling_tests);
+    mu_run_test(run_layout_tests);
     mu_run_test(test_picture_alloc_rejects_overflow_dimensions);
     mu_run_test(test_picture_alloc_yuv400p_luma_only);
     mu_run_test(test_picture_ref_null_error_paths);

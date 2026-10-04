@@ -9,6 +9,7 @@
 #include "../gpu_dispatch_env.h"
 #include "../gpu_dispatch_parse.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
@@ -50,12 +51,19 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
         return VMAF_SYCL_DISPATCH_GRAPH_REPLAY;
     if (env_no_graph) {
         /* ADR-0841: VMAF_SYCL_NO_GRAPH is deprecated. Keep reading it for one
-         * release so operators have time to migrate, but print a one-shot
-         * warning on the first call that detects the variable.  Removal is
-         * scheduled for v4.0. */
-        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
-                                         "use VMAF_SYCL_USE_GRAPH=false. "
-                                         "Will be removed in v4.0.\n");
+         * release so operators have time to migrate, and print the warning
+         * once per process (this function runs once per feature). The
+         * replacement is the per-feature VMAF_SYCL_DISPATCH=<feature>:direct;
+         * VMAF_SYCL_USE_GRAPH only ever forces graph replay (a value other
+         * than "1" is ignored), so it is no replacement for force-direct.
+         * Removal is scheduled for v4.0. */
+        static std::atomic_flag warned = ATOMIC_FLAG_INIT;
+        if (!warned.test_and_set()) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
+                                             "use VMAF_SYCL_DISPATCH=<feature>:direct "
+                                             "(per feature, for example float_vif:direct). "
+                                             "Will be removed in v4.0.\n");
+        }
         if (env_no_graph[0] == '1')
             return VMAF_SYCL_DISPATCH_DIRECT;
     }

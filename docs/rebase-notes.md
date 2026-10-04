@@ -60197,3 +60197,14 @@ upstream parity guard's allowlist.
   unit tests the report counts as failed. The verify job of
   `windows-tester-bundle.yml` runs per leg when `validate` passed; the publish
   job still needs every leg. No score, public API or FFmpeg patch impact.
+## Stale-text fixes and the `vmafx-mcp` alias (ADR-1521)
+
+- `core/test/test_stale_text_contract.py` pins help strings, header comments, option
+  descriptions, CI comments, the fuzz README, the perf-gate page and the Metal gate row to the
+  code. An upstream sync that rewrites `cli_parse.cpp`'s usage text, `picture.h`'s
+  `vmaf_picture_alloc` comment or `dispatch_strategy.cpp` must keep what those tests assert
+  (HIP / Metal help says opt-in; the picture header says 64 samples and zero-filled; the
+  `VMAF_SYCL_NO_GRAPH` warning names `VMAF_SYCL_DISPATCH=<feature>:direct`).
+- `mcp-server/vmaf-mcp/pyproject.toml` keeps `vmafx-mcp` pointing at
+  `deprecated_vmafx_mcp_alias` until the Python package is removed (ADR-1229); never point it
+  back at `main`. No score, public API or FFmpeg patch impact.

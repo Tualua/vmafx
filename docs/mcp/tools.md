@@ -132,7 +132,7 @@ Response body (abridged):
 ```json
 {
   "version": "1.0.0-rc.2",
-  "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
+  "pooled_metrics": { "vmaf": { "mean": 76.667831, "...": "..." } },
   "frames": [ { "frameNum": 0, "metrics": { "vmaf": 78.8263, "...": "..." } } ]
 }
 ```
@@ -728,7 +728,7 @@ Same shape as `vmaf_score`, plus two extra keys:
 ```json
 {
   "version": "1.0.0-rc.2",
-  "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
+  "pooled_metrics": { "vmaf": { "mean": 76.667831, "...": "..." } },
   "frames": [ "..." ],
   "backend_requested": "auto",
   "backend_used":      "cpu",

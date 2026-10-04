@@ -152,6 +152,7 @@ testpaths = [
   "ai/tests",
   "ai/sidecar/tests",
   "compat/vmaf/tests",
+  "testdata/test_benchmark_netflix.py",
   "testdata/test_run_sycl_scores.py",
   "testdata/test_sycl_4k_repeat_determinism.py",
 ]

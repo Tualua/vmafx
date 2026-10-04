@@ -30,12 +30,13 @@
 
 /* ---------------------------------------------------------------------------
  * Gate on HAVE_RUST_TAD: defined by Meson when the Rust staticlib is linked.
- * When the define is absent (enable_rust_features=false or cargo not found),
- * the extern references to vmafx_tad_* are omitted entirely so the link
- * succeeds without the archive. The extractor struct then contains no-op
- * stubs that return -ENOSYS, and vmaf_fex_tad is still registered so that
- * --feature tad produces a clear "not available" error rather than an unknown-
- * feature error.
+ * core/src/meson.build compiles this TU, and feature_extractor.cpp registers
+ * vmaf_fex_tad, only in that case (enable_rust_features=true and cargo found).
+ * Without it the extractor does not exist: `--feature tad` fails with the
+ * generic "problem loading feature extractor: tad", and nothing here runs.
+ * The `#else` stubs below return -ENOSYS and exist only so a tool that
+ * compiles this file without the define (an IDE, clang-tidy) still parses;
+ * the shipped build graph never links them.
  * --------------------------------------------------------------------------- */
 
 #ifdef HAVE_RUST_TAD

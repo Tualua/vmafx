@@ -8,14 +8,13 @@
  * @brief Metal (Apple Silicon) backend public API — ADR-0361 / T8-1 through T8-1d.
  *
  * **Status: live.** The runtime (T8-1b, ADR-0420) and the first kernel set
- * (T8-1c/d, ADR-0421 — `integer_motion_v2.metal` + 7 additional
- * feature-extractor MSL shaders) are fully shipped. All 8 `.mm` dispatch
- * translation units and 8 `.metal` shaders are compiled, linked, and
- * registered. Entry points return 0 on Apple-Family-7+ (M1 and later) or
+ * (T8-1c/d, ADR-0421 and later batches) are fully shipped: every
+ * `.mm` dispatch translation unit and `.metal` shader under
+ * core/src/feature/metal/ is compiled, linked, and registered (the list is
+ * in docs/backends/metal/index.md). Entry points return 0 on Apple-Family-7+ (M1 and later) or
  * -ENODEV on Intel Macs and non-Apple hosts.
  *
- * Mirrors the HIP scaffold (ADR-0212) and the Vulkan scaffold (ADR-0175) —
- * see ADR-0361 for the audit-first decision and rollout sequence.
+ * Mirrors the HIP scaffold (ADR-0212) — see ADR-0361 for the audit-first decision and rollout sequence.
  *
  * When libvmaf was built without `-Denable_metal=enabled` (or built on
  * a non-macOS host where the Metal framework auto-probe failed), every
@@ -26,9 +25,7 @@
  * `id<MTLCommandQueue>`, `id<MTLBuffer>`) cross the ABI as
  * `uintptr_t` to keep this header free of `<Metal/Metal.h>` /
  * `<Metal/Metal.hpp>`. Cast on the caller side. Same convention the
- * HIP backend uses for `hipStream_t` / `hipEvent_t` (per ADR-0212)
- * and the Vulkan backend uses for `VkDevice` / `VkQueue` (per
- * ADR-0184).
+ * HIP backend uses for `hipStream_t` / `hipEvent_t` (per ADR-0212).
  *
  * Apple-platform-only: device selection is gated on `MTLGPUFamily.Apple7`
  * (M1 and later). Intel Macs and non-Apple hosts surface as -ENODEV from
@@ -74,7 +71,7 @@ VMAF_EXPORT int vmaf_metal_available(void);
  * Opaque handle to a Metal-backed scoring state. One state pins one
  * Metal device + command queue; callers that want multi-GPU fan-out
  * create one state per device. Same lifetime model as
- * `VmafCudaState` / `VmafVulkanState` / `VmafHipState`.
+ * `VmafCudaState` / `VmafSyclState` / `VmafHipState`.
  */
 typedef struct VmafMetalState VmafMetalState;
 
@@ -171,8 +168,8 @@ VMAF_EXPORT int vmaf_metal_list_devices(void);
 /**
  * Pre-existing Metal handles supplied by the caller. Used by
  * @ref vmaf_metal_state_init_external so libvmaf compute runs on
- * the same MTLDevice as the source IOSurfaces (same constraint
- * the Vulkan import path enforces — see ADR-0184). Handles cross
+ * the same MTLDevice as the source IOSurfaces (the
+ * imported IOSurface must belong to that device). Handles cross
  * the ABI as `uintptr_t` to keep this header free of
  * `<Metal/Metal.h>`; cast on the caller side.
  *
@@ -242,8 +239,7 @@ VMAF_EXPORT int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosur
 
 /**
  * Block until all previously-submitted Metal compute work on
- * `state` has finished. Mirrors `vmaf_vulkan_wait_compute`.
- * Used by FFmpeg-side filters before reusing imported IOSurfaces
+ * `state` has finished. Used by FFmpeg-side filters before reusing imported IOSurfaces
  * in the next frame.
  *
  * Currently a no-op: the v1 import path is synchronous CPU memcpy

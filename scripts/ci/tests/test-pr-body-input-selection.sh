@@ -12,7 +12,7 @@
 #
 #   scripts/ci/deliverables-check.sh          ADR-0108 six-deliverable gate
 #   scripts/ci/validate-pr-body.sh            its local mirror
-#   scripts/ci/ffmpeg-patches-surface-check.sh  ADR-0186 surface gate
+#   scripts/ci/ffmpeg-patches-surface-check.sh  ADR-0409 surface gate
 #   scripts/ci/state-md-touch-check.sh        ADR-0165 state.md gate
 #
 # The last two were fixed a commit later than the first two, which is the
@@ -242,6 +242,34 @@ run_case 0 "ffmpeg-surface: a real pipe still reaches the opt-out parser" \
   "printf 'no ffmpeg-patches update needed: regression test\n' | ${same_rev} bash '${ffmpeg_surface}'"
 expect_output "ffmpeg-surface: the piped opt-out was honoured" \
   'opt-out claimed in PR body'
+
+# A failing `git diff` of the public headers must end the check, not be read as
+# "no header changed" (the old `|| true` did exactly that and passed the gate).
+# The shim reaches the real git for everything and fails only the header
+# pathspec, and only while PLANT_GIT_FAILURE is set.
+mkdir -p "${work}/shim"
+cat >"${work}/shim/git" <<'SHIM'
+#!/usr/bin/env bash
+if [ -n "${PLANT_GIT_FAILURE:-}" ]; then
+  case "$*" in
+    *'core/include/libvmaf/*.h'*)
+      echo "git: planted failure" >&2
+      exit 128
+      ;;
+  esac
+fi
+exec "${REAL_GIT}" "$@"
+SHIM
+chmod +x "${work}/shim/git"
+shim_env="REAL_GIT='$(command -v git)' PATH='${work}/shim':\"\$PATH\" ${same_rev}"
+
+run_case 2 "ffmpeg-surface: a failing git diff of the headers fails closed" \
+  "PLANT_GIT_FAILURE=1 ${shim_env} bash '${ffmpeg_surface}' </dev/null"
+expect_output "ffmpeg-surface: the failure names the status" \
+  'command failed with status 128'
+
+run_case 0 "ffmpeg-surface: the same shim without the planted failure passes" \
+  "${shim_env} bash '${ffmpeg_surface}' </dev/null"
 
 echo "--- scripts/ci/state-md-touch-check.sh ---"
 

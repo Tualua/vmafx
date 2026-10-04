@@ -66,14 +66,9 @@ Layout of the sample buffers:
 - Each `data[i]` is allocated 64-byte aligned for the SIMD paths. Copy rows
   in with `memcpy` or a sample loop; do not cast to a wider type without
   re-checking alignment.
-- Do not rely on the initial buffer contents. Write every row you intend
-  to score.
-
-!!! note
-    The header comment of `vmaf_picture_alloc` says strides round to a
-    32-byte boundary. The implementation (`core/src/picture.c`,
-    `DATA_ALIGN 64`) rounds to 64 samples; use `stride[i]` and neither
-    number matters.
+- The buffer is zero-filled at allocation, so padding bytes beyond `w[i]`
+  read as zero. Write every row you intend to score; the zero fill is not a
+  picture.
 
 ### Example: fill and submit a frame
 

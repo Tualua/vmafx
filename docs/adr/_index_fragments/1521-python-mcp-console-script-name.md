@@ -1,0 +1,1 @@
+| [ADR-1521](1521-python-mcp-console-script-name.md) | `vmafx-mcp` names the Go server; the Python wheel keeps `vmaf-mcp` and a one-release deprecated `vmafx-mcp` alias that warns on stderr and hands over to the Go binary when it is on `PATH` | Accepted | mcp, python, go, packaging, deprecation, fork-local |

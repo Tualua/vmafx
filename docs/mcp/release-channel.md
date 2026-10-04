@@ -44,11 +44,12 @@ Requirements and settings:
   the server may read.
 
 !!! warning "Console script name"
-    The wheel installs two console scripts, `vmaf-mcp` and `vmafx-mcp`,
-    both pointing at the Python server (`mcp-server/vmaf-mcp/pyproject.toml`).
-    The `vmafx-mcp` script has the same name as the Go binary. If both are
-    on `PATH`, check which one runs first (`command -v vmafx-mcp`) before
-    relying on the 24-tool surface.
+    `vmafx-mcp` is the name of the Go server. The wheel installs `vmaf-mcp`
+    for the Python server, plus a deprecated `vmafx-mcp` alias kept for one
+    release (`mcp-server/vmaf-mcp/pyproject.toml`). The alias prints a
+    deprecation notice on stderr and hands over to the Go binary when one is
+    on `PATH`; with none, it runs the Python server. Use `vmaf-mcp` for the
+    Python server and drop `vmafx-mcp` from client configs that meant it.
 
 ## Embedded server
 

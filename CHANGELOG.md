@@ -1338,6 +1338,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   go to the CPU extractor. See [SSIMULACRA 2](docs/metrics/ssimulacra2.md).
 
 
+- **The perf-gate guide says the gate is not wired into CI.** `docs/development/perf-gate.md`
+  no longer describes a CI step or artifact that does not exist; it documents the by-hand run
+  and what wiring it takes (RC8, ADR-1490) ([guide](docs/development/perf-gate.md)). FFmpeg
+  patch impact: none.
+
+
 - **`cambi_hip` runs every CAMBI stage on the device (ADR-1378).** The HIP
   twin no longer preprocesses the picture on the host or copies the image and
   mask back at every scale to compute the c-values and the top-K pooling
@@ -1634,6 +1640,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged (271 passed, 12 skipped, x86-64 and aarch64).
 
 
+- **The Python wheel's `vmafx-mcp` script is a deprecated alias; use `vmaf-mcp`.** `vmafx-mcp`
+  is the Go server (`cmd/vmafx-mcp`). For one release the wheel's script of that name prints a
+  notice on stderr and hands over to the Go binary when one is on `PATH`, otherwise it runs the
+  Python server ([ADR-1521](docs/adr/1521-python-mcp-console-script-name.md),
+  [release channel](docs/mcp/release-channel.md)). FFmpeg patch impact: none.
+
+
 - The first-release candidate map has a new RC7, the CPU capability source of
   truth ([ADR-1490](docs/adr/1490-rc3-rc9-candidate-map-cpu-capability.md)): a
   generated, checked-in table of the CPU features each SIMD kernel needs, a
@@ -1702,6 +1715,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   changes. The tool's other 31 pending entries are not applied: they are listed
   with what each needs in `T-RELICENSE-CHECK-PENDING-2026-10-02`
   ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)).
+
+
+- **`scripts/dev/speed_gpu_parity.py` can leave a fixture out, with a stated reason.**
+  `--skip-fixture 3840x2160 --skip-reason "<why>"` skips the untracked BBB fixture and prints a
+  `SKIPPED` line; a missing fixture file without the option is now a usage error naming the
+  file ([SpEED](docs/metrics/speed_qa.md#checking-a-gpu-twin-against-the-cpu)). FFmpeg patch
+  impact: none.
 
 
 - `docs/state.md` lists what stands between master and the `v1.0.0-rc.3` exit.
@@ -2204,6 +2224,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   not have. Such an extractor now runs on the thread that calls
   `vmaf_read_pictures()` whatever its flags, and threaded and unthreaded runs
   give the same scores bit for bit.
+
+
+- **`testdata/benchmark_netflix.py` compares the src01 pair with the CLI golden.** The CPU row
+  read `DIFF` against 76.66890519623612 (the Python harness's value); the reference is now
+  76.66783025, the `vmafexec_test.py` assertion
+  ([baselines](docs/development/netflix-benchmark-baselines.md)). FFmpeg patch impact: none.
 
 
 - **`VmafVifNameSet` has the same size in C and in C++.** The internal header
@@ -3641,6 +3667,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   refuses 4:0:0 with `-EINVAL` and an error message, as `ssimulacra2_sycl`
   does. The `vmaf` CLI was not affected: it rejects `-p 400` and converts Y4M
   `mono` input to 4:2:0. See [SSIMULACRA 2](docs/metrics/ssimulacra2.md).
+
+
+- **Help strings, header comments, option descriptions and CI comments now say what the code does.**
+  `vmaf --help` no longer shows `(default: auto)` for `--hip_device` and `--metal_device` (both
+  are opt-in); `vmaf_vpl --help` names the real default model; the `VMAF_SYCL_NO_GRAPH`
+  deprecation warning recommends `VMAF_SYCL_DISPATCH=<feature>:direct` (the old advice,
+  `VMAF_SYCL_USE_GRAPH=false`, did nothing) and prints once; the headers `picture.h`,
+  `libvmaf_mcp.h`, `libvmaf_hip.h` and `libvmaf_metal.h`, the HIP / Metal / MCP / TAD build
+  options, the fuzz README and the CI comments are corrected
+  ([CLI](docs/usage/cli.md), [pictures](docs/api/pictures.md), [env vars](docs/usage/env-vars.md)).
+  FFmpeg patch impact: none.
 
 
 - `scripts/ci/check-state-md-rows.sh` works with the `mawk` of Debian 12. That

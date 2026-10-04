@@ -390,11 +390,6 @@ runtime dispatch rules and which features have GPU or SIMD twins.
 | `--gpumask <mask>` | GPU enabled | Not a per-op mask; see [`--gpumask`](#the-gpumask-flag). |
 | `--threads <N>` | `0` (serial) | Worker thread count; see [Threads](#threads). |
 
-!!! note "`--help` says HIP and Metal default to `auto`"
-    The `--help` text for `--hip_device` and `--metal_device` reads
-    `(default: auto)`. The code skips both backends unless the device flag is
-    given (opt-in), so the table above is correct and the help text is not.
-
 ### The gpumask flag
 
 Despite the `$bitmask` placeholder in the usage string, `--gpumask` is not a

@@ -23,6 +23,16 @@ dev = [
   "prometheus-client>=0.26.0",
   "ruff>=0.16.10",
   "mypy>=2.4.0",
+  # The `eval` extra below: without it 16 tests skip (eval_model_on_split,
+  # compare_models), so the dev environment carries it.
+  "numpy>=2.5.3",
+  "pandas>=3.0.6",
+  "pyarrow>=25.0.1",
+  "onnxruntime>=1.30.0",
+  "scipy>=1.18.1",
+  # Tests build tiny ONNX graphs with it (not imported by the server). Below 1.23:
+  # 1.23 writes IR version 14, which onnxruntime 1.30 (max IR 13) refuses to load.
+  "onnx>=1.22.0,<1.23.0",
 ]
 # Optional HTTP operator surface (--transport http). Kept separate so stdio
 # clients do not need aiohttp or Prometheus at runtime (ADR-0701).
@@ -53,7 +63,9 @@ vlm = [
 
 [project.scripts]
 vmaf-mcp = "vmaf_mcp.server:main"
-vmafx-mcp = "vmaf_mcp.server:main"
+# Deprecated for one release: `vmafx-mcp` is the Go server (cmd/vmafx-mcp). The alias
+# warns and hands over to the Go binary when one is on PATH.
+vmafx-mcp = "vmaf_mcp.console_alias:deprecated_vmafx_mcp_alias"
 
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"

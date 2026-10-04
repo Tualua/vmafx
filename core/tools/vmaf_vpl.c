@@ -27,7 +27,7 @@
  *    VPL decode → VA surface → DMA-BUF → Level Zero → SYCL → VMAF
  *
  *  Usage:
- *    vmaf_vpl --ref ref.mp4 --dis dis.mp4 [--model vmaf_v0.6.1]
+ *    vmaf_vpl --ref ref.mp4 --dis dis.mp4 [--model <name>]
  *             [--frames N] [--device N] [--render-node /dev/dri/renderD128]
  *
  *  Requirements:
@@ -88,7 +88,8 @@ static void print_usage(const char *argv0)
                   "Options:\n"
                   "  --ref <file>        Reference video file\n"
                   "  --dis <file>        Distorted video file\n"
-                  "  --model <name>      VMAF model name (default: vmaf_v0.6.1)\n"
+                  "  --model <name>      VMAF model name (default: " VMAF_DEFAULT_MODEL_VERSION
+                  ")\n"
                   "  --frames <N>        Max frames to process (0 = all)\n"
                   "  --device <N>        SYCL device index (default: 0)\n"
                   "  --render-node <path> VA-API render node (default: /dev/dri/renderD128)\n"

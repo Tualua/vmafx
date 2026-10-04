@@ -45,7 +45,9 @@ typedef enum {
  *   VMAF_SYCL_USE_GRAPH=1   Force GRAPH_REPLAY for every feature
  *                           (legacy alias, deprecated).
  *   VMAF_SYCL_NO_GRAPH=1    Force DIRECT for every feature
- *                           (legacy alias, deprecated).
+ *                           (legacy alias, deprecated; the warning names
+ *                           VMAF_SYCL_DISPATCH=<feature>:direct as the
+ *                           replacement).
  *
  * @param va_import_path  true for the zero-copy VA-import (libvmaf_sycl) path,
  *                        which defaults to DIRECT — the combined graph is a net

@@ -590,6 +590,16 @@ test('test_agent_pages_contract',
     timeout : 30,
 )
 
+# Help strings, header comments, option descriptions, CI comments and the perf-gate
+# page are pinned to the code they describe (docs audit 2026-10-03/04). Compiles
+# one small C++ TU with the host compiler to run the SYCL dispatch-strategy advice.
+test('test_stale_text_contract',
+    import('python').find_installation(),
+    args : files('test_stale_text_contract.py'),
+    suite : ['fast'],
+    timeout : 120,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
