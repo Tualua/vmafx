@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import unittest
 from collections.abc import Callable
 from pathlib import Path
@@ -40,7 +41,16 @@ class HardwareEncoderCorpusTests(unittest.TestCase):
         self.vmaf = self.root / "vmaf"
         self.output = self.root / "out" / "rows.jsonl"
         self.source.write_bytes(b"source")
-        self.vmaf.write_bytes(b"binary")
+        # main() resolves --vmaf-bin and ffmpeg to executables before any work
+        # (scripts/AGENTS.md); both are stubs here, ffmpeg found through PATH.
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        for tool in (self.vmaf, bin_dir / "ffmpeg"):
+            tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            tool.chmod(0o755)
+        path = mock.patch.dict(os.environ, {"PATH": f"{bin_dir}{os.pathsep}/usr/bin:/bin"})
+        path.start()
+        self.addCleanup(path.stop)
         self.argv = [
             "--vmaf-bin",
             str(self.vmaf),
@@ -65,7 +75,7 @@ class HardwareEncoderCorpusTests(unittest.TestCase):
         return 0, 1.5, 4
 
     @staticmethod
-    def _decode_ok(_mp4: Path, raw_yuv: Path, _pix_fmt: str) -> int:
+    def _decode_ok(_mp4: Path, raw_yuv: Path, _pix_fmt: str, **_kwargs: Any) -> int:
         raw_yuv.write_bytes(b"yuv")
         return 0
 
@@ -109,6 +119,30 @@ class HardwareEncoderCorpusTests(unittest.TestCase):
         self.source.unlink()
         self.assertEqual(HW.main(self.argv), 2)
         self.assertFalse(self.output.exists())
+
+    def test_non_executable_vmaf_returns_usage_error(self) -> None:
+        self.vmaf.chmod(0o644)
+        self.assertEqual(HW.main(self.argv), 2)
+        self.assertFalse(self.output.exists())
+
+    def test_one_failed_point_keeps_the_others_rows_and_returns_nonzero(self) -> None:
+        argv = [*self.argv, "--cq", "31"]
+        good_then_bad = iter([(0, 1.5, 4), (7, 1.5, 0)])
+
+        def encode(*args: Any, **_kwargs: Any) -> tuple[int, float, int]:
+            rc, ms, size = next(good_then_bad)
+            if rc == 0:
+                args[7].write_bytes(b"mp4")
+            return rc, ms, size
+
+        with (
+            mock.patch.object(HW, "encode_hw", side_effect=encode),
+            mock.patch.object(HW, "decode_to_raw", side_effect=self._decode_ok),
+            mock.patch.object(HW, "score_cuda", side_effect=self._score_with(_payload())),
+        ):
+            self.assertEqual(HW.main(argv), 1)
+        rows = [json.loads(line) for line in self.output.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["cq"] for row in rows], [23])
 
 
 if __name__ == "__main__":

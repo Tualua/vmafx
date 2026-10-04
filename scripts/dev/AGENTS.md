@@ -37,8 +37,10 @@ adversarial controls after every change.
 retain rows from successful quality points for diagnosis, but any encode,
 decode, score, or canonical-row failure must make process return non-zero.
 Never turn failed quality point into successful partial corpus. Preserve
-positive, failed-encode, empty-metrics, and missing-input controls in
-`tests/test_hw_encoder_corpus.py`.
+positive, failed-encode, empty-metrics, one-failed-point, missing-input and
+non-executable-binary controls in `tests/test_hw_encoder_corpus.py`.
+`main(argv)` keeps its argument: the tests drive it, and a stale-base merge
+(#1509 over #1518) once dropped it together with the non-zero exit.
 
 `resolve-state-md-conflict.py` (ADR-1383) resolves conflicted
 `docs/state.md` from index stages `:1:` / `:2:` / `:3:`, never from

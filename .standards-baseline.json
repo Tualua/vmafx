@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T02:21:29Z",
+  "generated_at": "2026-10-04T04:03:47Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "4685b45e55033e0fc0376a408599d2a76157d4b1",
-  "total_infractions": 445,
+  "commit_sha": "e0f2b3fb8582231ba1fddb009229da120c92e61c",
+  "total_infractions": 444,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -2932,15 +2932,6 @@
       "message": "Direct recursion in differences; the call graph must form an acyclic DAG",
       "anchor": "fn:differences",
       "fingerprint": "scripts/dev/check_repository_security.py:HISS-01:fn:differences#2"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/dev/hw_encoder_corpus.py",
-      "line_number": 73,
-      "symbol": "encode_hw",
-      "message": "Function 'encode_hw' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:encode_hw",
-      "fingerprint": "scripts/dev/hw_encoder_corpus.py:HISS-04:fn:encode_hw#1"
     },
     {
       "rule_id": "HISS-07",

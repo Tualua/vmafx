@@ -70,6 +70,55 @@ def report_process_output(process: TextCommandResult) -> None:
         sys.stderr.write(process.stderr)
 
 
+def _hw_device_args(encoder: str, qsv_device: Path | None, vaapi_device: Path | None) -> list[str]:
+    """The ffmpeg hardware-device initialisation an encoder family needs."""
+    if encoder.endswith("_qsv") and qsv_device is not None:
+        return ["-init_hw_device", f"qsv:hw,child_device={qsv_device}"]
+    if encoder.endswith("_vaapi") and vaapi_device is not None:
+        return ["-init_hw_device", f"vaapi=va:{vaapi_device}"]
+    return []
+
+
+def _videotoolbox_quality(cq: int) -> int:
+    """Map the harness's CRF-shaped `cq` onto VideoToolbox's -q:v axis.
+
+    Apple VideoToolbox uses -q:v on the [0, 100] axis (higher = better),
+    opposite direction to x264's CRF [0, 51] (lower = better). Mirror the
+    canonical adapter at
+    tools/vmaf-tune/src/vmaftune/codec_adapters/_videotoolbox_common.py: a
+    CRF-shaped input (0..51) maps linearly so the same `--cq 19,25,31,37`
+    grid lights up sensible quality points across both codec families,
+        q = clamp(100 - 2*cq, 1, 100)
+    and a VT-native value (cq at or above the pivot, where 100 - 2*cq <= 0)
+    passes through clamped to [1, 100].
+    """
+    vt_scale_pivot = 50  # CRF axis -> VT axis crossover.
+    if cq >= vt_scale_pivot:
+        return max(1, min(100, cq))
+    return max(1, min(100, 100 - 2 * cq))
+
+
+def _encoder_args(encoder: str, cq: int) -> list[str]:
+    """The codec and quality-knob arguments of one encoder family."""
+    if encoder.endswith("_nvenc"):
+        return ["-c:v", encoder, "-cq", str(cq), "-preset", "p4"]
+    if encoder.endswith("_qsv"):
+        return ["-c:v", encoder, "-global_quality", str(cq), "-preset", "medium"]
+    if encoder.endswith("_vaapi"):
+        return [
+            "-vf",
+            "format=nv12,hwupload=extra_hw_frames=16",
+            "-c:v",
+            encoder,
+            "-qp",
+            str(cq),
+        ]
+    if encoder.endswith("_videotoolbox"):
+        return ["-c:v", encoder, "-q:v", str(_videotoolbox_quality(cq)), "-realtime", "0"]
+    # CPU fallback (libx264) — the corpus may want a CPU baseline row.
+    return ["-c:v", encoder, "-crf", str(cq), "-preset", "medium"]
+
+
 def encode_hw(
     source: Path,
     width: int,
@@ -89,18 +138,9 @@ def encode_hw(
 
     Returns (returncode, encode_wall_ms, bytes_written).
     """
-    pre_args: list[str] = [str(resolve_executable(ffmpeg_bin)), "-y", "-loglevel", "error"]
-    if encoder.endswith("_qsv") and qsv_device is not None:
-        pre_args += [
-            "-init_hw_device",
-            f"qsv:hw,child_device={qsv_device}",
-        ]
-    if encoder.endswith("_vaapi") and vaapi_device is not None:
-        pre_args += [
-            "-init_hw_device",
-            f"vaapi=va:{vaapi_device}",
-        ]
-    pre_args += [
+    cmd = [str(resolve_executable(ffmpeg_bin)), "-y", "-loglevel", "error"]
+    cmd += _hw_device_args(encoder, qsv_device, vaapi_device)
+    cmd += [
         "-f",
         "rawvideo",
         "-pix_fmt",
@@ -112,42 +152,7 @@ def encode_hw(
         "-i",
         str(source),
     ]
-    if encoder.endswith("_nvenc"):
-        post = ["-c:v", encoder, "-cq", str(cq), "-preset", "p4"]
-    elif encoder.endswith("_qsv"):
-        post = ["-c:v", encoder, "-global_quality", str(cq), "-preset", "medium"]
-    elif encoder.endswith("_vaapi"):
-        post = [
-            "-vf",
-            "format=nv12,hwupload=extra_hw_frames=16",
-            "-c:v",
-            encoder,
-            "-qp",
-            str(cq),
-        ]
-    elif encoder.endswith("_videotoolbox"):
-        # Apple VideoToolbox uses -q:v on the [0, 100] axis (higher =
-        # better), opposite direction to x264's CRF [0, 51] (lower =
-        # better). Mirror the canonical adapter at
-        # tools/vmaf-tune/src/vmaftune/codec_adapters/_videotoolbox_common.py.
-        # The harness's `cq` slot is reused as the quality knob; map a
-        # CRF-shaped input (0..51) onto the VT scale linearly so the
-        # same `--cq 19,25,31,37` grid lights up sensible quality
-        # points across both codec families:
-        #     q = clamp(100 - 2*cq, 1, 100)
-        # When the operator already supplies a VT-native value
-        # (cq above _VT_SCALE_PIVOT, where 100 - 2*cq <= 0) we treat
-        # the input as already-VT-scale and pass it through clamped
-        # to [1, 100].
-        _VT_SCALE_PIVOT = 50  # CRF axis -> VT axis crossover.
-        q = max(1, min(100, cq)) if cq >= _VT_SCALE_PIVOT else max(1, min(100, 100 - 2 * cq))
-        post = ["-c:v", encoder, "-q:v", str(q), "-realtime", "0"]
-    else:
-        # CPU fallback (libx264) — the corpus may want a CPU baseline row.
-        post = ["-c:v", encoder, "-crf", str(cq), "-preset", "medium"]
-    if extra:
-        post += extra
-    cmd = pre_args + post + [str(out_mp4)]
+    cmd += _encoder_args(encoder, cq) + (extra or []) + [str(out_mp4)]
 
     t0 = time.monotonic()
     p = run_command(
@@ -389,34 +394,54 @@ def score_candidate(
     return payload, rows
 
 
-def write_quality_rows(args: argparse.Namespace, output: TextIO, src_stem: str) -> int:
-    """Run every requested quality point and append successful frame rows."""
+def run_quality_point(args: argparse.Namespace, cq: int, src_stem: str, output: TextIO) -> int:
+    """Encode, score and append one quality point; return its row count (0 = failed).
+
+    A point fails when its encode, decode or score fails or when it yields no
+    canonical-6 row.
+    """
+    with tempfile.TemporaryDirectory(prefix="hwenc_") as directory:
+        workdir = Path(directory)
+        encoded = encode_candidate(args, cq, src_stem, workdir)
+        if encoded is None:
+            return 0
+        mp4, enc_ms, size = encoded
+        scored = score_candidate(args, cq, src_stem, workdir, mp4, enc_ms, size)
+        if scored is None:
+            return 0
+        payload, rows = scored
+        if not rows:
+            print(f"[fail] {src_stem} {args.encoder} cq{cq}: no canonical-6 row", file=sys.stderr)
+            return 0
+        for row in rows:
+            output.write(json.dumps(row) + "\n")
+        print(
+            f"[ok] {src_stem} {args.encoder} cq{cq}: "
+            f"{len(rows)} rows, vmaf_pool={payload['pooled_metrics']['vmaf']['mean']:.2f}, "
+            f"enc={enc_ms:.0f}ms, sz={size}",
+            flush=True,
+        )
+        return len(rows)
+
+
+def write_quality_rows(args: argparse.Namespace, output: TextIO, src_stem: str) -> tuple[int, int]:
+    """Run every requested quality point; return (rows written, points failed).
+
+    The rows of the points that succeeded are kept for diagnosis even when
+    another point fails; main() then exits non-zero.
+    """
     written = 0
+    failed = 0
     for cq in args.cq:
-        with tempfile.TemporaryDirectory(prefix="hwenc_") as directory:
-            workdir = Path(directory)
-            encoded = encode_candidate(args, cq, src_stem, workdir)
-            if encoded is None:
-                continue
-            mp4, enc_ms, size = encoded
-            scored = score_candidate(args, cq, src_stem, workdir, mp4, enc_ms, size)
-            if scored is None:
-                continue
-            payload, rows = scored
-            for row in rows:
-                output.write(json.dumps(row) + "\n")
-            written += len(rows)
-            print(
-                f"[ok] {src_stem} {args.encoder} cq{cq}: "
-                f"{len(rows)} rows, vmaf_pool={payload['pooled_metrics']['vmaf']['mean']:.2f}, "
-                f"enc={enc_ms:.0f}ms, sz={size}",
-                flush=True,
-            )
-    return written
+        rows = run_quality_point(args, cq, src_stem, output)
+        written += rows
+        failed += rows == 0
+    return written, failed
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    """Encode, score and append every quality point; exit 1 if any point failed."""
+    args = build_parser().parse_args(argv)
 
     if not args.source.is_file():
         print(f"error: source not found: {args.source}", file=sys.stderr)
@@ -430,9 +455,9 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     with args.out.open("a", encoding="utf-8") as fh:
-        written = write_quality_rows(args, fh, args.source.stem)
-    print(f"[done] wrote {written} rows -> {args.out}")
-    return 0
+        written, failed = write_quality_rows(args, fh, args.source.stem)
+    print(f"[done] wrote {written} rows -> {args.out}; {failed} quality point(s) failed")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
