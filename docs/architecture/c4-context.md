@@ -17,35 +17,24 @@ deeper levels live in sibling files as the system grows.
 
 ## System context diagram
 
-Mermaid has no native C4 shapes, so the diagram is a flowchart: rounded
-boxes are people, the highlighted box is VMAFx, and plain boxes are external
-systems.
+The context is written as a table of relations; the people and external
+systems are described under [External actors and
+systems](#external-actors-and-systems).
+VMAFx itself is perceptual video quality assessment: CPU and GPU backends, SIMD
+paths, tiny-AI models, MCP servers, a Go scoring service and a Kubernetes
+platform.
 
-```mermaid
-flowchart LR
-    user(["Video engineer<br/>Uses vmaf to score encodes, compare backends,<br/>or train tiny models"])
-    agent(["Coding agent<br/>Claude Code / Cursor / Copilot,<br/>runs inside the repo"])
-
-    vmaf["VMAFx<br/>Perceptual video quality assessment: CPU + GPU<br/>backends, SIMD paths, tiny-AI models, MCP servers,<br/>Go scoring service and Kubernetes platform"]
-
-    upstream["Netflix/vmaf<br/>Upstream project, periodically synced"]
-    ort["ONNX Runtime<br/>Tiny-AI inference runtime,<br/>resolved at build time"]
-    gh["GitHub<br/>Repo hosting, CI, release signing via Sigstore"]
-    sigstore["Sigstore<br/>Keyless signing via GitHub OIDC"]
-    ghcr["ghcr.io/vmafx/*<br/>Container images"]
-    pypi["PyPI<br/>vmaf-mcp package"]
-    k8s["Kubernetes<br/>Runs the controller, nodes and operator"]
-
-    user -->|"Invokes vmaf CLI, ffmpeg filter, C API,<br/>MCP tools or the scoring service"| vmaf
-    agent -->|"Reads / edits sources per .claude/skills/"| vmaf
-    vmaf -->|"Loads .onnx checkpoints for tiny-AI features"| ort
-    vmaf -->|"git fetch upstream; port-upstream-commit skill"| upstream
-    vmaf -->|"CI; release-please publishes tagged builds"| gh
-    gh -->|"Signs release artefacts keyless (OIDC)"| sigstore
-    gh -->|"Publishes images"| ghcr
-    gh -->|"Publishes the Python MCP server"| pypi
-    ghcr -->|"Images deployed by the Helm chart"| k8s
-```
+| From | To | How |
+| --- | --- | --- |
+| Video engineer | VMAFx | Invokes vmaf CLI, ffmpeg filter, C API, MCP tools or the scoring service |
+| Coding agent | VMAFx | Reads / edits sources per .claude/skills/ |
+| VMAFx | ONNX Runtime | Loads .onnx checkpoints for tiny-AI features |
+| VMAFx | Netflix/vmaf | git fetch upstream; port-upstream-commit skill |
+| VMAFx | GitHub | CI; release-please publishes tagged builds |
+| GitHub | Sigstore | Signs release artefacts keyless (OIDC) |
+| GitHub | ghcr.io/vmafx/* | Publishes images |
+| GitHub | PyPI | Publishes the Python MCP server |
+| ghcr.io/vmafx/* | Kubernetes | Images deployed by the Helm chart |
 
 ## External actors and systems
 

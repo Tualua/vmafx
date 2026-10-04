@@ -2074,6 +2074,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ([ADR-1470](docs/adr/1470-c-cxx-shared-enum-one-definition.md)).
 
 
+- The C4 context and container pages list the relations between VMAFx, its
+  containers and the external systems as tables. The Mermaid diagrams that
+  #1957 put there do not render: the site enables no Mermaid since the
+  diagrams moved to checked figures (ADR-1508).
+
+
 - **`cambi` no longer reads and writes outside its buffers on wide, short
   frames, and scores tall, narrow frames the same on every path.** When the
   coarsest of CAMBI's five scales had no more rows than half the window,

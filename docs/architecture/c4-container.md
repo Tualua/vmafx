@@ -14,55 +14,30 @@ that owns each container. [c4-context.md](c4-context.md) is Level 1 and
 
 ## Container diagram
 
-The diagram uses a Mermaid flowchart; solid boxes are containers, cylinders
-are file stores, and boxes outside the VMAFx boundary are external systems.
+The containers are written as a table of relations; each container is
+described under [Containers](#containers). `model/` and `testdata/` are file
+stores; ONNX Runtime and GitHub are outside the VMAFx boundary.
 
-```mermaid
-flowchart LR
-    user(["Video engineer"])
-    agent(["Coding agent"])
-
-    subgraph vmaf["VMAFx"]
-        direction TB
-        libvmaf["libvmaf<br/>C11 + C++ + SIMD + GPU<br/>Metric engine, feature extractors,<br/>backend dispatch, public API"]
-        cli["vmaf + vmaf_bench<br/>C11<br/>End-user CLI and micro-benchmark<br/>harness, link libvmaf"]
-        dnn["core/src/dnn<br/>C11 + ONNX Runtime<br/>Tiny-AI inference layer<br/>(loader, op-allowlist, session)"]
-        ai["ai/<br/>Python + PyTorch + Lightning<br/>Tiny-AI training + ONNX export<br/>(vmaf-train CLI)"]
-        mcp["mcp-server/vmaf-mcp<br/>Python<br/>MCP server, 19 tools<br/>(stdio and HTTP)"]
-        gomcp["cmd/vmafx-mcp<br/>Go<br/>MCP server, 24 tools<br/>(stdio and streamable HTTP)"]
-        emb["core/src/mcp<br/>C11<br/>Embedded MCP server<br/>(list_features, compute_vmaf)"]
-        py["compat/python-vmaf<br/>Python<br/>Classic SVM training harness<br/>and Python bindings"]
-        platform["cmd/vmafx-server, vmafx-controller,<br/>vmafx-node, vmafx-operator<br/>Go<br/>Scoring service, job control plane,<br/>worker node, Kubernetes operator"]
-        model[("model/<br/>Files<br/>Shipped .json/.pkl VMAF models +<br/>model/tiny/*.onnx with registry.json")]
-        testdata[("testdata/<br/>Files<br/>YUV fixtures + fork benchmark JSONs<br/>(not Netflix goldens)")]
-    end
-
-    ort["ONNX Runtime"]
-    gh["GitHub"]
-
-    user -->|"Runs vmaf --tiny-model ... ref.yuv dist.yuv"| cli
-    user -->|"Connects over JSON-RPC from an MCP-capable client"| mcp
-    user -->|"Connects over JSON-RPC from an MCP-capable client"| gomcp
-    user -->|"Submits scoring jobs over gRPC / REST"| platform
-    agent -->|"Trains / exports new tiny models"| ai
-
-    cli -->|"links"| libvmaf
-    libvmaf -->|"opens vmaf_dnn_session_* when a tiny model is loaded"| dnn
-    dnn -->|"C API: CreateSession, Run"| ort
-    dnn -->|"Reads .onnx + registry.json; verifies sha256"| model
-
-    ai -->|"Writes .onnx checkpoints + registry entries"| model
-
-    mcp -->|"vmaf CLI subprocess"| cli
-    gomcp -->|"vmaf CLI subprocess, optional cgo scoring,<br/>gRPC for the 5 job tools"| cli
-    gomcp -->|"gRPC"| platform
-    emb -->|"in-process"| libvmaf
-    platform -->|"vmaf CLI subprocess"| cli
-    py -->|"Bindings for classic harness"| libvmaf
-
-    cli -->|"Reads fixtures for benchmarks"| testdata
-    gh -->|"CI validates snapshot JSONs against backends"| testdata
-```
+| From | To | How |
+| --- | --- | --- |
+| Video engineer | vmaf + vmaf_bench | Runs vmaf --tiny-model ... ref.yuv dist.yuv |
+| Video engineer | mcp-server/vmaf-mcp | Connects over JSON-RPC from an MCP-capable client |
+| Video engineer | cmd/vmafx-mcp | Connects over JSON-RPC from an MCP-capable client |
+| Video engineer | cmd/vmafx-server, vmafx-controller, | Submits scoring jobs over gRPC / REST |
+| Coding agent | ai/ | Trains / exports new tiny models |
+| vmaf + vmaf_bench | libvmaf | links |
+| libvmaf | core/src/dnn | opens vmaf_dnn_session_* when a tiny model is loaded |
+| core/src/dnn | ONNX Runtime | C API: CreateSession, Run |
+| core/src/dnn | model/ | Reads .onnx + registry.json; verifies sha256 |
+| ai/ | model/ | Writes .onnx checkpoints + registry entries |
+| mcp-server/vmaf-mcp | vmaf + vmaf_bench | vmaf CLI subprocess |
+| cmd/vmafx-mcp | vmaf + vmaf_bench | vmaf CLI subprocess, optional cgo scoring, gRPC for the 5 job tools |
+| cmd/vmafx-mcp | cmd/vmafx-server, vmafx-controller, | gRPC |
+| core/src/mcp | libvmaf | in-process |
+| cmd/vmafx-server, vmafx-controller, | vmaf + vmaf_bench | vmaf CLI subprocess |
+| compat/python-vmaf | libvmaf | Bindings for classic harness |
+| vmaf + vmaf_bench | testdata/ | Reads fixtures for benchmarks |
+| GitHub | testdata/ | CI validates snapshot JSONs against backends |
 
 ## Containers
 
