@@ -1965,6 +1965,11 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [features](docs/metrics/features.md)).
 
 
+- The site's sidebar lists only the ADR index, the template and the tag index,
+  as ADR-1510 decided: #1951 landed without its `mkdocs.yml` change, so every
+  ADR and tag page was still in the navigation of every page.
+
+
 - **`libvmaf.h` and the API guide say what an index gap and an early query do.**
   `vmaf_read_pictures()` has always rejected a repeated or earlier index with
   `-EINVAL`; it also accepts an index that skips values, and then the motion
