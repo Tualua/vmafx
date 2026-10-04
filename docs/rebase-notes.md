@@ -7,6 +7,20 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `vmafx-node` starts the eBPF descriptor tracker on request (ADR-1539, 2026-10-04)
+
+`feat/node-ebpf-loader`. Go node and `cmd/vmafx-node/bpf`; no C library
+change.
+
+- `cmd/vmafx-node/bpf`: `rclone_bypass_stub.go` is gone; bpf2go output
+  (`rclonebypass_bpfel.{go,o}`, little-endian only) and a minimal `vmlinux.h` are committed;
+  `preflight.go` is new; the loader uses the generated struct mirrors. A
+  change to `rclone_bypass.bpf.c` regenerates and commits both generated files
+  with it.
+- `cmd/vmafx-node`: `ebpf_config.go`, `ebpf_linux.go`, `ebpf_other.go`; the
+  lifecycle invoke gains `_ *ebpfBypass` between the executor and the
+  controller client.
+
 ## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
 
 `fix/vmaf-tune-crashes-dead-flags`. Fork-local Python only; no C source change.

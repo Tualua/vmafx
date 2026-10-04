@@ -55,6 +55,8 @@ func TestNodeEnvOptionsContract(t *testing.T) {
 		"controller.poll_interval":      true,
 		// Storage layer keys (storage_config.go).
 		"storage.mount_root": true,
+		// eBPF tracker keys (ebpf_config.go).
+		"ebpf.mount_prefix": true,
 	}
 	got := make(map[string]bool, len(opts.CompoundKeys))
 	for _, k := range opts.CompoundKeys {
@@ -145,6 +147,21 @@ func TestNodeEnvOptionsBindStorageKeys(t *testing.T) {
 		if got := raw.Get(key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
+	}
+}
+
+// TestNodeEnvOptionsBindEBPFKeys: VMAFX_EBPF_BYPASS and VMAFX_EBPF_MOUNT_PREFIX
+// reach the keys loadEBPFConfig reads.
+func TestNodeEnvOptionsBindEBPFKeys(t *testing.T) {
+	t.Setenv("VMAFX_EBPF_BYPASS", "1")
+	t.Setenv("VMAFX_EBPF_MOUNT_PREFIX", "/rclone-mount")
+	raw, err := config.New(nodeEnvOptions(false))
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	got, err := loadEBPFConfig(raw)
+	if err != nil || !got.Enabled || got.MountPrefix != "/rclone-mount/" {
+		t.Fatalf("loadEBPFConfig = %+v, %v; want enabled with /rclone-mount/", got, err)
 	}
 }
 

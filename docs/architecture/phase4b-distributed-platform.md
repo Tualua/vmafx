@@ -92,7 +92,7 @@ as done when its code or artefact exists on `master`.
 | 4b.3 | `vmafx-operator` kubebuilder skeleton + CRDs | Phase 4b.1 | Done (`cmd/vmafx-operator`) |
 | 4b.4 | ffmpeg latest + `ffmpeg-patches/` bundled in node image | Phase 4b.2 | Done (`docker/Dockerfile.node`, ADR-0717) |
 | 4b.5 | rclone integration (node distroless layer + mount lifecycle) | Phase 4b.2 | Done (rclone stage in `docker/Dockerfile.node`; executor wiring per [ADR-1526](../adr/1526-node-storage-streamed-inputs.md)) |
-| 4b.6 | eBPF research digest + ONE concrete optimization | Phase 4b.2 (baseline measurement) | Research done ([Research-0733](../research/0733-vmafx-ebpf-optimization-target.md)); probe code under `cmd/vmafx-node/bpf` |
+| 4b.6 | eBPF research digest + ONE concrete optimization | Phase 4b.2 (baseline measurement) | Research done ([Research-0733](../research/0733-vmafx-ebpf-optimization-target.md)); descriptor tracker wired, opt-in ([ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md)); no read path bypassed yet |
 | 4b.7 | Sidecar training v1 (Python sidecar + triple-capture API) | Phase 4b.2 + Phase 4b.3 | Helm template present (`sidecar-trainer.yaml`) |
 | 4b.8 | C ABI break + ffmpeg-patches update | Phase 4b.4 | Open; tracked by ADR-0709 |
 | 4b.9 | Native build sunset (Docker + Helm only release artifacts) | Phase 4b.8 | Open; tracked by ADR-0709 |

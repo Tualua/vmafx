@@ -4636,12 +4636,13 @@
     },
     "0779": {
       "sites": {
-        "cmd/vmafx-node/bpf/bypass_loader.go": 2,
+        "cmd/vmafx-node/bpf/bypass_loader.go": 3,
         "cmd/vmafx-node/bpf/bypass_smoke_test.go": 1,
         "cmd/vmafx-node/bpf/bypass_unit_test.go": 1,
         "cmd/vmafx-node/bpf/gen.go": 1,
         "cmd/vmafx-node/bpf/rclone_bypass.bpf.c": 1,
-        "cmd/vmafx-node/bpf/rclone_bypass_stub.go": 1
+        "cmd/vmafx-node/ebpf_config.go": 1,
+        "cmd/vmafx-node/ebpf_linux.go": 1
       },
       "target": "0779-ebpf-fuse-bypass.md"
     },
@@ -7344,6 +7345,8 @@
         ".github/workflows/required-aggregator.yml": 1,
         ".pre-commit-config.yaml": 3,
         "REUSE.toml": 3,
+        "cmd/vmafx-node/bpf/add_spdx_header.sh": 1,
+        "cmd/vmafx-node/bpf/gen.go": 1,
         "core/src/mcp/meson.build": 1,
         "docker/Dockerfile.production": 1,
         "scripts/ci/check-copyright.sh": 7,
@@ -10015,6 +10018,19 @@
         "pkg/libvmaf/readers_unix.go": 1
       },
       "target": "1526-node-storage-streamed-inputs.md"
+    },
+    "1539": {
+      "sites": {
+        "cmd/vmafx-node/bpf/bypass_loader.go": 1,
+        "cmd/vmafx-node/bpf/bypass_smoke_test.go": 1,
+        "cmd/vmafx-node/bpf/gen.go": 1,
+        "cmd/vmafx-node/bpf/preflight.go": 1,
+        "cmd/vmafx-node/bpf/vmlinux.h": 1,
+        "cmd/vmafx-node/ebpf_config.go": 1,
+        "cmd/vmafx-node/ebpf_linux.go": 1,
+        "cmd/vmafx-node/ebpf_other.go": 1
+      },
+      "target": "1539-node-ebpf-tracker-wiring.md"
     }
   },
   "retired": {

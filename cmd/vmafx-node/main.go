@@ -47,8 +47,9 @@
 // (controller_client.go): it registers with the controller, heartbeats, pulls
 // jobs, scores them through the Executor and reports the results (ADR-0713).
 //
-// The eBPF rclone-bypass loader (cmd/vmafx-node/bpf) is unrelated to golusoris
-// and remains a privileged, opt-in side path; it is not wired into this graph.
+// The eBPF descriptor tracker (cmd/vmafx-node/bpf) is a privileged, opt-in
+// side path: VMAFX_EBPF_BYPASS starts it (ebpf_linux.go), and a host that
+// cannot run it stops the node at startup.
 //
 // ADR-0713: vmafx-node Go worker binary (original hand-rolled root).
 // ADR-0717: ffmpeg baked into the node image at /usr/local/bin/ffmpeg.
@@ -118,7 +119,7 @@ func nodeEnvOptions(watch bool) config.Options {
 			"grpc.key_file",
 			"grpc.max_recv_size",
 			"grpc.max_send_size",
-		}, controllerConfigKeys, storageConfigKeys),
+		}, controllerConfigKeys, storageConfigKeys, ebpfConfigKeys),
 	}
 }
 
@@ -172,6 +173,7 @@ func nodeDomainOptions() fx.Option {
 		provideExecutor,         // (*libvmaf.Scorer, *config.Config, *slog.Logger) -> (*Executor, error); storage layer per storage_config.go
 		provideFeedbackClient,   // (fx.Lifecycle, *config.Config, *slog.Logger) -> *FeedbackClient (drainer OnStart, Close+awaited OnStop)
 		provideControllerClient, // (controllerClientParams) -> *controllerClient (nil without VMAFX_CONTROLLER_ADDR; start OnStart, drain OnStop)
+		provideEBPFBypass,       // -> *ebpfBypass (nil unless VMAFX_EBPF_BYPASS; tracker Start OnStart, fail closed)
 		provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry
 		newScoringHandler,       // (*libvmaf.Scorer, *probe.Inventory, *slog.Logger) -> *scoringHandler
 	)
@@ -206,12 +208,14 @@ func nodeLifecycleOptions() fx.Option {
 		// reverse-order stop fires: gRPC GracefulStop → FeedbackClient drainer stop
 		// → scorer Close (R-node). See TestStopOrderNode in app_test.go.
 		//
-		// The controller client is realised last of the three (it consumes the
-		// Executor), so its drain runs right after gRPC GracefulStop and before the
+		// The controller client is realised last (it consumes the Executor), so
+		// its drain runs right after gRPC GracefulStop and before the
 		// FeedbackClient and the scorer stop: jobs it is running finish and are
 		// reported while the executor still exists. See
-		// TestStopOrderNodeWithController in controller_client_test.go.
-		fx.Invoke(func(_ *FeedbackClient, _ *Executor, _ *controllerClient) {}),
+		// TestStopOrderNodeWithController in controller_graph_test.go. The eBPF
+		// tracker (when enabled) is realised before the client, so it watches
+		// before the first job is pulled and stops after the last one drained.
+		fx.Invoke(func(_ *FeedbackClient, _ *Executor, _ *ebpfBypass, _ *controllerClient) {}),
 
 		// Register the VmafxScoring service on the golusoris gRPC server. The arg
 		// order (scorer-bearing handler first, then the server) also keeps the

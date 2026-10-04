@@ -179,6 +179,8 @@ rclone but no FUSE helper: use `http-serve` or `auto` there.
 | `VMAFX_STORAGE_MOUNT_ROOT` | temp directory | Parent of `mount` mode's per-job mount points. |
 | `VMAFX_RCLONE_BIN` | `rclone` (PATH) | rclone binary. |
 | `VMAFX_RCLONE_CONFIG` | rclone's default | rclone configuration file with the remotes and their credentials. |
+| `VMAFX_EBPF_BYPASS` | off | `1` starts the eBPF descriptor tracker; the node stops if it cannot run it ([eBPF tracker](../development/ebpf-fuse-bypass.md)). |
+| `VMAFX_EBPF_MOUNT_PREFIX` | `/rclone-mount/` | Path whose opens the tracker records; must contain `VMAFX_STORAGE_MOUNT_ROOT`. |
 | `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
 | `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
 

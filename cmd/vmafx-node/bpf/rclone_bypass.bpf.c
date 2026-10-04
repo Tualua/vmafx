@@ -83,6 +83,10 @@ struct event_t {
     char path[MAX_PATH_LEN];
 };
 
+// Exports struct event_t in the object's BTF so bpf2go (-type event_t)
+// generates its Go mirror; the ring buffer itself carries no value type.
+const struct event_t *unused_event_t __attribute__((unused));
+
 // Probe: sys_enter_openat — capture path arg before the syscall.
 SEC("tracepoint/syscalls/sys_enter_openat")
 int tp_openat_enter(struct trace_event_raw_sys_enter *ctx)

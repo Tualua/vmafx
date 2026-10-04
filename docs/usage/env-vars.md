@@ -264,6 +264,8 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_STORAGE_MODE` | `storage.mode` | string | `auto` | How rclone-remote job sources are read: `http-serve`, `mount` or `auto`; anything else stops the node ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)). |
 | `VMAFX_STORAGE_MOUNT_ROOT` | `storage.mount_root` | path | temp directory | Parent of `mount` mode's per-job mount points. |
 | `VMAFX_RCLONE_BIN`, `VMAFX_RCLONE_CONFIG` | `rclone.bin`, `rclone.config` | path | `rclone`, rclone's default | rclone binary and configuration file. |
+| `VMAFX_EBPF_BYPASS` | `ebpf.bypass` | bool | off | Starts the eBPF descriptor tracker; a host that cannot run it stops the node ([ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md)). |
+| `VMAFX_EBPF_MOUNT_PREFIX` | `ebpf.mount_prefix` | path | `/rclone-mount/` | Mount prefix the tracker watches; must contain `VMAFX_STORAGE_MOUNT_ROOT`. |
 | `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level. |
 | `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | `auto` (tint on a TTY, else JSON), `tint` or `json`. |
 

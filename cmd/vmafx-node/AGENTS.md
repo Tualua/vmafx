@@ -12,9 +12,9 @@ channel), and
 Node serves single gRPC service: `VmafxScoring` (`Score`, `ScoreStream`,
 `Health`); node = **gRPC-only** (no HTTP server). With `VMAFX_CONTROLLER_ADDR`
 set, node also = controller client (`controller_*.go`, ADR-1524): register,
-heartbeat, pull, execute, report. eBPF rclone-bypass loader
-under `bpf/` = privileged, opt-in side path unrelated to golusoris, NOT wired
-into fx graph.
+heartbeat, pull, execute, report. eBPF descriptor tracker
+under `bpf/` = privileged, opt-in (`VMAFX_EBPF_BYPASS`, `ebpf_linux.go`,
+ADR-1539), fail closed.
 
 ## Rebase-sensitive invariants
 
@@ -155,3 +155,15 @@ into fx graph.
     distorted clip with exit 0. `NewExecutor` = `LocalStorage` (local paths
     only, remote URI refused). Guard: `TestEndToEndControllerNodeRcloneSources`
     (real rclone, both modes), `TestStorageModeRefusedAtStartup`.
+
+15. **eBPF tracker wiring** (`ebpf_*.go`, `bpf/`, ADR-1539): invoke arg order
+    `_ *FeedbackClient, _ *Executor, _ *ebpfBypass, _ *controllerClient`
+    (tracker starts before pulls, stops after drain). Enabled + storage not
+    mount / root outside prefix -> construction error; `bpf.Preflight`
+    failure or `Start` error -> OnStart error (node exits). Never downgrade to
+    a warning. Loader ctx = provider-owned `WithCancel`, not the fx start ctx
+    (fx cancels that after start; drain loop would die). `bpf/` objects:
+    regenerate via `go generate ./cmd/vmafx-node/bpf/` only, commit `.c` +
+    2 generated files together (little-endian only); use bpf2go struct mirrors, never hand-written
+    layouts (old `mountPrefixT` was 264 B vs 260 B map value).
+    `TestEmbeddedObjectMatchesMirrors`, `TestEBPFStartFailsClosed` guard.
