@@ -48,6 +48,12 @@ type Y4MScoreParams struct {
 	// at: the reference is scaled to it unless it already is a Y4M file of
 	// that size. Zero leaves the reference at its own geometry.
 	Width, Height int
+
+	// Model is the libvmaf model selector, as in Y4MScoreParams of the raw
+	// YUV scorer: a bare version identifier is passed as "version=...", a
+	// "key=value" string through unchanged. Empty leaves --model off so the
+	// binary scores with its own default.
+	Model string
 }
 
 // Y4MScorer scores encodes against one or more references, decoding each
@@ -86,7 +92,7 @@ func (s *Y4MScorer) Score(ref, distorted string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	score, scoreErr := runVMAFXML(s.params.VMAFBin, refY4M, distY4M)
+	score, scoreErr := runVMAFXML(s.params.VMAFBin, refY4M, distY4M, s.params.Model)
 	return score, errors.Join(scoreErr, cleanup())
 }
 

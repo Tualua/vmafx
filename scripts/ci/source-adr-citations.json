@@ -1975,6 +1975,8 @@
     "0289": {
       "sites": {
         "ai/scripts/calibrate_phase_f_recipes.py": 3,
+        "cmd/vmafx-tune/cmd/ladder.go": 1,
+        "cmd/vmafx-tune/cmd/ladder_model_test.go": 1,
         "pkg/corpus/corpus.go": 1,
         "pkg/tune/auto/auto.go": 3,
         "tools/vmaf-tune/src/vmaftune/auto.py": 4,

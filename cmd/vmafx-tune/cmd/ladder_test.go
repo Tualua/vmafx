@@ -144,6 +144,8 @@ func TestLadder_outputSchemaJSON(t *testing.T) {
 
 	outJSON := filepath.Join(dir, "ladder.json")
 
+	// The smaller rung stays at 216 lines or more: the VMAF model each rung is scored
+	// with needs cambi, which refuses frames below 216 on both sides.
 	// Two rungs and one target: enough to see each rung encoded at its own
 	// geometry while staying fast.
 	runOut, runErr := exec.Command(
@@ -151,7 +153,7 @@ func TestLadder_outputSchemaJSON(t *testing.T) {
 		"--reference", srcPath,
 		"--codec", "libx264",
 		"--targets", "60",
-		"--resolutions", "320x240,160x120",
+		"--resolutions", "320x240,288x216",
 		"--output", outJSON,
 		"--format", "json",
 		"--work-dir", dir,
@@ -209,8 +211,8 @@ func assertLadderRungsScaled(t *testing.T, payload map[string]any) {
 		width, _ := pt["width"].(float64)
 		kbps[width], _ = pt["bitrate_kbps"].(float64)
 	}
-	if kbps[160] <= 0 || kbps[160] >= kbps[320] {
-		t.Errorf("160x120 rung at %.1f kbps vs 320x240 at %.1f kbps: the smaller rung must be "+
-			"encoded at its own, smaller geometry", kbps[160], kbps[320])
+	if kbps[288] <= 0 || kbps[288] >= kbps[320] {
+		t.Errorf("288x216 rung at %.1f kbps vs 320x240 at %.1f kbps: the smaller rung must be "+
+			"encoded at its own, smaller geometry", kbps[288], kbps[320])
 	}
 }

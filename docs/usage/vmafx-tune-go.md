@@ -169,6 +169,14 @@ encoded at 640x360 and scored against a 640x360 reference. When no cell
 produces a scored encode, `ladder` exits `2` with the first cell's error and
 writes no ladder.
 
+Each cell is also scored with the VMAF model its own height selects, the rule
+of [resolution-aware model selection](vmaf-tune-resolution-aware.md): a rung
+2160 lines or taller uses `vmaf_v1.0.16_1d5h_2160`, every lower rung
+`vmaf_v1.0.16_3d0h`, passed to libvmaf as `--model version=...`. A ladder that
+mixes 1080p and 2160p rungs therefore scores them with different models, as
+the Python `ladder` does. The Go ladder has no `--vmaf-model` or `--neg` flag
+yet.
+
 ```text
 vmafx-tune-go ladder --reference <video> [flags]
 ```

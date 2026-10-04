@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/VMAFx/vmafx/pkg/bisect"
+	"github.com/VMAFx/vmafx/pkg/corpus"
 	"github.com/VMAFx/vmafx/pkg/encoder"
 	"github.com/VMAFx/vmafx/pkg/ladder"
 	"github.com/VMAFx/vmafx/pkg/report"
@@ -253,15 +254,23 @@ func parseLadderResolutions(raw []string) ([][2]int, error) {
 // Every rung is encoded and scored at its own geometry, as the Python ladder does
 // (corpus.iter_rows, ADR-0501): each probe encode gets "-vf scale=W:H", and the
 // reference is decoded through the same scale filter once per rung by a Y4MScorer
-// whose decoded copy is removed when the rung's bisect returns.
+// whose decoded copy is removed when the rung's bisect returns. Each rung is scored
+// with the VMAF model its own height selects (corpus.SelectVMAFModelVersion, the Go
+// port of vmaftune.resolution.select_vmaf_model_version, ADR-0289): the 4K model from
+// 2160 lines up, the default model below.
 func newLadderSampler(enc encoder.Encoder, flags *ladderFlags) ladder.SamplerFn {
 	return func(src, codecName string, width, height int, targetVMAF float64) (ladder.Point, error) {
+		rungModel, modelErr := corpus.SelectVMAFModelVersion(width, height)
+		if modelErr != nil {
+			return ladder.Point{}, fmt.Errorf("rung %dx%d: %w", width, height, modelErr)
+		}
 		scorer := bisect.NewY4MScorer(bisect.Y4MScoreParams{
 			VMAFBin:   flags.vmafBin,
 			FFmpegBin: flags.ffmpegBin,
 			WorkDir:   flags.workDir,
 			Width:     width,
 			Height:    height,
+			Model:     rungModel,
 		})
 		params := ladderBisectParams(flags, targetVMAF, width, height)
 		bisectResult, bisectErr := bisect.Run(src, enc, scorer.Score, params)

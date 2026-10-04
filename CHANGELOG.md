@@ -4773,6 +4773,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   working directory, so the suite no longer leaves a `-version` file behind.
 
 
+- **`vmafx-tune-go ladder` scores each rung with the VMAF model its height selects.**
+  It passed no `--model`, so a 2160p rung was scored with the default 1080p model;
+  the Python `vmaf-tune ladder` uses `vmaf_v1.0.16_1d5h_2160` from 2160 lines up
+  (ADR-0289). The Go rule and the Python rule now read one golden table in their
+  tests, so they cannot drift. Ladders with no rung of 2160 lines or more score as before.
+
+
 - **`vmafx-tune-go compare` and `ladder` score their encodes, `ladder` encodes
   each rung at its own resolution, and usage errors exit 2.** The scorer handed
   `vmaf` the Matroska encode, which it cannot read, so every probe failed while

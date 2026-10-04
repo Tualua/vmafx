@@ -1,0 +1,109 @@
+{
+  "_comment": "Shared golden table: vmaftune.resolution.select_vmaf_model_version / neg_model_for. Read by tools/vmaf-tune/tests/test_resolution.py and pkg/corpus/resolution_parity_test.go; regenerate from the Python functions, never edit one side.",
+  "cases": [
+    {
+      "width": 320,
+      "height": 240,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 640,
+      "height": 360,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 854,
+      "height": 480,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 1024,
+      "height": 576,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 2560,
+      "height": 1440,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 3840,
+      "height": 2159,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 1920,
+      "height": 2160,
+      "model": "vmaf_v1.0.16_1d5h_2160",
+      "neg_model": "vmaf_4k_v0.6.1neg"
+    },
+    {
+      "width": 3840,
+      "height": 2160,
+      "model": "vmaf_v1.0.16_1d5h_2160",
+      "neg_model": "vmaf_4k_v0.6.1neg"
+    },
+    {
+      "width": 3840,
+      "height": 2161,
+      "model": "vmaf_v1.0.16_1d5h_2160",
+      "neg_model": "vmaf_4k_v0.6.1neg"
+    },
+    {
+      "width": 7680,
+      "height": 4320,
+      "model": "vmaf_v1.0.16_1d5h_2160",
+      "neg_model": "vmaf_4k_v0.6.1neg"
+    },
+    {
+      "width": 1,
+      "height": 1,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    },
+    {
+      "width": 16,
+      "height": 2160,
+      "model": "vmaf_v1.0.16_1d5h_2160",
+      "neg_model": "vmaf_4k_v0.6.1neg"
+    },
+    {
+      "width": 2160,
+      "height": 16,
+      "model": "vmaf_v1.0.16_3d0h",
+      "neg_model": "vmaf_v0.6.1neg"
+    }
+  ],
+  "rejected": [
+    {
+      "width": 0,
+      "height": 1080
+    },
+    {
+      "width": 1920,
+      "height": 0
+    },
+    {
+      "width": -1,
+      "height": -1
+    }
+  ]
+}

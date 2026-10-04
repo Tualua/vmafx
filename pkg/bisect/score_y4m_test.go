@@ -226,3 +226,46 @@ func assertY4MCount(t *testing.T, dir string, want int) {
 		t.Errorf("decoded Y4M files in work dir = %v, want %d", matches, want)
 	}
 }
+
+// TestY4MScorer_ModelArgument: a scorer with a Model hands libvmaf that model
+// as --model version=...; one without leaves the flag off so the binary picks
+// its own default (what compare and bisect have always done).
+func TestY4MScorer_ModelArgument(t *testing.T) {
+	cases := []struct {
+		name, model, want string
+	}{
+		{"4k model", "vmaf_v1.0.16_1d5h_2160", "--model version=vmaf_v1.0.16_1d5h_2160"},
+		{"path override passes through", "path=/m/x.json", "--model path=/m/x.json"},
+		{"no model, no flag", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, log := fakeTools(t)
+			work := t.TempDir()
+			ref := filepath.Join(work, "ref.y4m")
+			dist := filepath.Join(work, "dist.y4m")
+			for _, p := range []string{ref, dist} {
+				if err := os.WriteFile(p, []byte("YUV4MPEG2 W64 H36 F24:1 C420jpeg\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s := NewY4MScorer(Y4MScoreParams{
+				VMAFBin: filepath.Join(dir, "vmaf"), FFmpegBin: filepath.Join(dir, "ffmpeg"),
+				WorkDir: work, Model: tc.model,
+			})
+			if _, err := s.Score(ref, dist); err != nil {
+				t.Fatalf("score: %v", err)
+			}
+			call := readCalls(t, log)[0]
+			if tc.want == "" {
+				if strings.Contains(call, "--model") {
+					t.Errorf("vmaf call has --model without a Model: %q", call)
+				}
+				return
+			}
+			if !strings.Contains(call, tc.want) {
+				t.Errorf("vmaf call %q lacks %q", call, tc.want)
+			}
+		})
+	}
+}

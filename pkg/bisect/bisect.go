@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/encoder"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 )
 
 // defaultScoreTimeout is the upper bound on a single vmaf scoring subprocess
@@ -176,8 +177,9 @@ func VMAFScoreFunc(vmafBin string) ScoreFunc {
 }
 
 // runVMAFXML runs vmaf on a Y4M pair and returns the pooled mean VMAF from
-// its XML report, which it writes to a temporary file and removes again.
-func runVMAFXML(vmafBin, ref, distorted string) (float64, error) {
+// its XML report, which it writes to a temporary file and removes again. A
+// non-empty model is passed as --model; empty leaves the flag off.
+func runVMAFXML(vmafBin, ref, distorted, model string) (float64, error) {
 	tmp, err := os.CreateTemp("", "vmafx-tune-score-*.json")
 	if err != nil {
 		return 0, fmt.Errorf("create score temp: %w", err)
@@ -198,6 +200,9 @@ func runVMAFXML(vmafBin, ref, distorted string) (float64, error) {
 		"--distorted", distorted,
 		"--output", tmpPath,
 		"--xml",
+	}
+	if model != "" {
+		argv = append(argv, "--model", vmafmodel.CLIArgument(model))
 	}
 
 	ctx, cancel := scoreContext()

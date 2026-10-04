@@ -78,6 +78,18 @@ public API change.
   `inferMask()`). A sync must not restore the guard. The Python function now
   delegates to `_MaskAccumulator`, `_open_saliency_session()` and `_infer_frame_mask()`
   (HISS-04 split); keep that shape if upstream-style edits land in either file.
+## Go `ladder` scores each rung with its height's VMAF model (2026-10-04)
+
+`fix/vmaf-tune-go-ladder-model-per-rung`. Fork-local Go and docs; no C source or public API
+change.
+
+- `cmd/vmafx-tune/cmd/ladder.go::newLadderSampler()` passes
+  `corpus.SelectVMAFModelVersion(width, height)` to `bisect.Y4MScoreParams.Model`,
+  which `runVMAFXML()` turns into `--model version=...`; an empty `Model` still leaves
+  the flag off (`compare`, `bisect`). `pkg/corpus/resolution.go` and
+  `vmaftune.resolution` share `tools/vmaf-tune/tests/data/resolution_model_table.json`
+  as their golden table: a change to the height rule or the model names changes that
+  file, both rules and both tests in the same PR.
 
 ## mobilesal pads frames to a multiple of 8 (ADR-1540, 2026-10-04)
 

@@ -142,7 +142,12 @@ during migration; see Stage roadmap in
     `raw_input_open` (ADR-0499). A ladder rung encodes with
     `bisect.Params.EncodeExtraArgs = -vf scale=W:H` and scores against a
     reference the rung's `Y4MScorer` decodes through the same
-    `bisect.ScaleFilter`; keep both legs on one filter. QSV encodes append
+    `bisect.ScaleFilter`; keep both legs on one filter. The same rung scores
+    with `Y4MScoreParams.Model = corpus.SelectVMAFModelVersion(W, H)` (4K model
+    from 2160 lines, default below), as Python's `ladder` does (ADR-0289); an
+    empty `Model` (`compare`, `bisect`) leaves `--model` off. The rule is pinned
+    to `tools/vmaf-tune/tests/data/resolution_model_table.json` on both sides.
+    QSV encodes append
     their upload to the caller's `-vf` chain (`appendVideoFilter` in
     `pkg/encoder/hardware.go`); a second `-vf` would drop the scale.
 

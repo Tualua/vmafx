@@ -278,3 +278,34 @@ class TestModelJSONPathResolvesNestedFamilies:
         path = model_json_path("vmaf_does_not_exist")
         assert not path.exists()
         assert path.name == "vmaf_does_not_exist.json"
+
+
+# ---- shared Go/Python golden table -----------------------------------------
+
+_GOLDEN_TABLE = json.loads((_HERE / "data" / "resolution_model_table.json").read_text())
+
+
+@pytest.mark.parametrize(
+    "case",
+    _GOLDEN_TABLE["cases"],
+    ids=lambda c: f"{c['width']}x{c['height']}",
+)
+def test_golden_table_matches_model_rule(case):
+    """``data/resolution_model_table.json`` is what pkg/corpus pins the Go rule to."""
+    from vmaftune.resolution import neg_model_for, select_vmaf_model_version
+
+    model = select_vmaf_model_version(case["width"], case["height"])
+    assert model == case["model"]
+    assert neg_model_for(model) == case["neg_model"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    _GOLDEN_TABLE["rejected"],
+    ids=lambda c: f"{c['width']}x{c['height']}",
+)
+def test_golden_table_rejected_sizes(case):
+    from vmaftune.resolution import select_vmaf_model_version
+
+    with pytest.raises(ValueError):
+        select_vmaf_model_version(case["width"], case["height"])
