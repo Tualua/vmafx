@@ -19,7 +19,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let header_path = include_dir.join("vmafx_tad.h");
 
-    let wrote_header = cbindgen::Builder::new()
+    // `write_to_file` returns whether the file changed, not whether it was
+    // written: an unchanged header returns false. Treating false as a failure
+    // broke every rebuild after a src/lib.rs edit that left the C API alone.
+    // I/O errors panic inside cbindgen; the header's presence is the check.
+    let header_changed = cbindgen::Builder::new()
         .with_crate(&crate_dir)
         .with_language(cbindgen::Language::C)
         .with_include_guard("VMAFX_TAD_H")
@@ -36,8 +40,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .generate()?
         .write_to_file(&header_path);
-    if !wrote_header {
-        return Err(std::io::Error::other("failed to write generated TAD header").into());
+    // Unchanged (false) is the normal rebuild case: the header from the last
+    // build must then still be there.
+    if !header_changed && !header_path.is_file() {
+        return Err(std::io::Error::other("cbindgen produced no TAD header").into());
     }
 
     // Tell Cargo to rerun build.rs only when the library sources change.

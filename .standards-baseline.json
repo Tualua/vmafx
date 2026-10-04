@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T04:48:45Z",
+  "generated_at": "2026-10-04T05:08:58Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "e0516f58518ed5d3d5252d0c85a400d477305663",
-  "total_infractions": 434,
+  "commit_sha": "e00c17bc8ba003362bd42562aac5828ac8dde665",
+  "total_infractions": 433,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -260,14 +260,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:0f34b4adc0f0",
       "fingerprint": ".github/workflows/pr-type-label.yml:HISS-07:text:0f34b4adc0f0#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/rust-ci.yml",
-      "line_number": 64,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:d413ea8743c7",
-      "fingerprint": ".github/workflows/rust-ci.yml:HISS-07:text:d413ea8743c7#1"
     },
     {
       "rule_id": "HISS-02",
