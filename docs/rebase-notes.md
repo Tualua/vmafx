@@ -60465,3 +60465,11 @@ upstream parity guard's allowlist.
   touches the record keeps the text on both components; a Visual Studio major
   version change records its new document first. No score, public API or
   FFmpeg patch impact.
+## TransNet V2 upstream pin (`fix/transnet-exporter-pin`)
+
+- `UPSTREAM_COMMIT` in `ai/scripts/export_transnet_v2.py`, `upstream_commit` and `license_url` in
+  `model/tiny/transnet_v2.json`, `license_url` in `model/tiny/registry.json` and the model page
+  carry `a0942ca347ee00aa455631147641954278b1d1a5`, the commit that added the weights upstream
+  (its LFS object ids equal the two pinned hashes). `77498b8e` never existed upstream; a sync
+  must not restore it. `ai/tests/test_transnet_pin_consistency.py` guards the four places. No
+  score, public API or FFmpeg patch impact.

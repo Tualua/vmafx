@@ -4631,6 +4631,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   quantize-int8` calibrates static PTQ from a parquet feature cache.
 
 
+- **The TransNet V2 exporter pins a commit that exists.** `ai/scripts/export_transnet_v2.py`, the
+  `transnet_v2` sidecar, its registry `license_url` and the model page named upstream commit
+  `77498b8e`, which returns 404. They now name `a0942ca347ee00aa455631147641954278b1d1a5`, the
+  commit that added the weights; its Git LFS object ids are the exporter's two pinned SHA-256
+  values. The shipped ONNX file and every score are unchanged.
+
+
 - **`--feature transnet_v2` opens the shipped model and detects cuts.** The
   extractor failed to open `model/tiny/transnet_v2.onnx` (`-34`: its rank-5
   input exceeded the session's shape probe, and the output it bound had another

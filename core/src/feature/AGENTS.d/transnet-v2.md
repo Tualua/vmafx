@@ -24,7 +24,7 @@ invariant: TransNet V2 runs upstream predict_frames() windows on 0..255 thumbnai
   indices is `-EINVAL`. (4) Dual feature names `shot_boundary_probability`
   and `shot_boundary` (0.5 threshold); a `1.0` marks the last frame of a
   shot; downstream consumers bind to both. (5) The shipped ONNX is real
-  upstream weights (`smoke: false`, MIT, commit `77498b8e`); the NTCHW
+  upstream weights (`smoke: false`, MIT, commit `a0942ca3`); the NTCHW
   wrapper and the `UnsortedSegmentSum` → `ScatterND` rewrite live in
   `ai/scripts/export_transnet_v2.py` and must be redone on a re-export.
   `core/test/dnn/test_transnet_v2_run.c` guards (1)-(4) with the shipped

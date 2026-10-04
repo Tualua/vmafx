@@ -50,7 +50,7 @@ shot-cut filter shipping with T6-3b) bind to those exact strings.
 | Input range | 0..255 per sample, as upstream's RGB frames |
 | Smoke flag | `smoke: false` in registry — real shot detector |
 | License | MIT (upstream `soCzech/TransNetV2`) |
-| Upstream commit | `77498b8e4a6d61ed7c3d9bd56f4de2b29ab7f4db` |
+| Upstream commit | `a0942ca347ee00aa455631147641954278b1d1a5` |
 | TF SavedModel parity | max-abs-diff `< 4e-6` over 3 random `[0..255]` input trials |
 
 The sidecar JSON at `model/tiny/transnet_v2.json` carries the input /

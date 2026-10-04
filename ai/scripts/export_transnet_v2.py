@@ -87,7 +87,7 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 
 # Pinned upstream provenance — bumping these is a deliberate weights swap.
 UPSTREAM_REPO = "https://github.com/soCzech/TransNetV2"
-UPSTREAM_COMMIT = "77498b8e4a6d61ed7c3d9bd56f4de2b29ab7f4db"
+UPSTREAM_COMMIT = "a0942ca347ee00aa455631147641954278b1d1a5"
 UPSTREAM_WEIGHTS_VARIABLES_SHA256 = (
     "b8c9dc3eb807583e6215cabee9ca61737b3eb1bceff68418b43bf71459669367"
 )
