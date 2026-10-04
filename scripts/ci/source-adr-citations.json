@@ -33,7 +33,8 @@
     "0000": {
       "sites": {
         "scripts/docs/generate-adr-by-tag.sh": 1,
-        "scripts/docs/tests/test_generators.py": 1
+        "scripts/docs/tests/test_generators.py": 1,
+        "scripts/docs/tests/test_search_scope.py": 1
       },
       "target": "0000-template.md"
     },
@@ -44,14 +45,16 @@
         "scripts/ci/tests/test_upstream_parity_allowlist.py": 15,
         "scripts/docs/concat-adr-index.sh": 1,
         "scripts/docs/tests/test_agents_index.py": 4,
-        "scripts/docs/tests/test_generators.py": 2
+        "scripts/docs/tests/test_generators.py": 2,
+        "scripts/docs/tests/test_search_scope.py": 3
       },
       "target": "0001-stash-benchmark-noise-file.md"
     },
     "0002": {
       "sites": {
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
-        "scripts/docs/tests/test_generators.py": 1
+        "scripts/docs/tests/test_generators.py": 1,
+        "scripts/docs/tests/test_search_scope.py": 2
       },
       "target": "0002-merge-path-master-default.md"
     },
@@ -9865,6 +9868,17 @@
         "scripts/docs/tests/test_generators.py": 1
       },
       "target": "1510-adr-nav-collapse-behind-index.md"
+    },
+    "1512": {
+      "sites": {
+        ".github/workflows/docs.yml": 1,
+        ".github/workflows/lint-and-format.yml": 1,
+        ".pre-commit-config.yaml": 1,
+        "scripts/docs/check_search_scope.py": 1,
+        "scripts/docs/generate-record-titles.py": 4,
+        "scripts/docs/tests/test_search_scope.py": 1
+      },
+      "target": "1512-docs-search-user-pages-only.md"
     },
     "1513": {
       "sites": {

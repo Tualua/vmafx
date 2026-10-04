@@ -198,6 +198,7 @@ docs-fragments-check:
 	@echo "--- docs/adr/_index_fragments/ vs docs/adr/README.md ---"
 	@bash scripts/docs/concat-adr-index.sh --check
 	@bash scripts/docs/generate-adr-by-tag.sh --check
+	@python3 scripts/docs/generate-record-titles.py --check
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
 	@echo "--- scripts/ci/upstream_parity.d/ vs docs/development/upstream-parity-allowlist.md ---"
@@ -216,6 +217,7 @@ docs-fragments-write:
 	@bash scripts/release/concat-changelog-fragments.sh --write
 	@bash scripts/docs/concat-adr-index.sh --write
 	@bash scripts/docs/generate-adr-by-tag.sh --write
+	@python3 scripts/docs/generate-record-titles.py --write
 	@python3 scripts/docs/generate-exact-twins.py --write
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write

@@ -1,0 +1,4 @@
+# ADR-1512: the tag pages list ADR titles and stay in the site search,
+# overriding docs/adr/.meta.yml.
+search:
+  exclude: false

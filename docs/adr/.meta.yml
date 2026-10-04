@@ -1,0 +1,6 @@
+# ADR-1512: site search covers user pages only. ADR bodies are not indexed;
+# the ADR index (README.md) and the tag pages (by-tag/) override this, so
+# every ADR title stays findable. Read by Material's and Zensical's meta
+# plugin; applies to every new ADR file automatically.
+search:
+  exclude: true

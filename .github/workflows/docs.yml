@@ -108,6 +108,9 @@ jobs:
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict
+      - name: Check the search index covers user pages only (ADR-1512)
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/docs/check_search_scope.py build-docs/site
       # Only `deploy` consumes this, and `deploy` runs on `push` to master
       # only, so a pull request uploading it gains nothing -- the artifact is
       # named `github-pages`, repository-unique, with no consumer on the other

@@ -227,6 +227,55 @@ A new ADR therefore needs no `mkdocs.yml` edit.
 `scripts/docs/tests/test_generators.py` holds the three entries
 (`test_adr_navigation_is_collapsed`).
 
+## Search
+
+The site search indexes user pages only
+([ADR-1512](../adr/1512-docs-search-user-pages-only.md)). The bodies of ADRs,
+research digests, `rebase-notes.md`, `state.md` and the changelog archive are
+not in the index; their titles are, through the ADR index, the
+[ADR title list](../adr/titles.md), the ADR tag pages, the research index and
+the [research title list](../research/titles.md), where each record is a
+heading of its own.
+
+To search the text of records, use GitHub code search with a path filter:
+
+| Records | Query |
+| --- | --- |
+| ADRs | [`repo:VMAFx/vmafx path:docs/adr/ <terms>`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code) |
+| Research digests | [`repo:VMAFx/vmafx path:docs/research/ <terms>`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fresearch%2F+zensical&type=code) |
+| Rebase notes, state | `repo:VMAFx/vmafx path:docs/rebase-notes.md <terms>`, `path:docs/state.md` |
+
+Locally, `git grep -n '<terms>' -- docs/adr docs/research` does the same.
+
+How it works:
+
+- `docs/adr/.meta.yml`, `docs/research/.meta.yml` and
+  `docs/changelog-archive/.meta.yml` set `search: exclude: true` for every
+  page below them, through Material's `meta` plugin (`material/meta` in
+  `mkdocs.yml`; Zensical implements the same plugin). A new ADR or digest is
+  left out without any edit.
+- The index pages set `search: exclude: false` in their front matter (the
+  ADR index through `docs/adr/_index_fragments/_header.md`, the tag pages
+  through `docs/adr/by-tag/.meta.yml`). `rebase-notes.md` and `state.md` set
+  `search: exclude: true` in theirs.
+- `scripts/docs/generate-record-titles.py` writes the two title lists
+  (`make docs-fragments-write`; `make docs-fragments-check` fails when one is
+  stale).
+- `scripts/docs/check_search_scope.py <site>` reads the built index and fails
+  on a record page in it or an index page missing from it; the docs CI jobs run
+  it after the build. `scripts/docs/tests/test_search_scope.py` builds a
+  fixture with a planted ADR, digest and user page, with and without the
+  `meta` plugin.
+
+Measured on strict builds before and after:
+
+| | Before | After |
+| --- | ---: | ---: |
+| `search/search_index.json` | 29,324,374 bytes (8,946,905 gzipped) | 5,780,964 bytes (1,703,993 gzipped) |
+| Index entries | 24,265 | 6,931 |
+| Landing page, first visit | 31.5 MB (9.7 MB gzipped) | 7.9 MB (2.4 MB gzipped) |
+| 12 sampled ADR titles: a page with the ADR's link ranks first | 11 (the ADR) | 11 (its entry in the title list) |
+
 ## Fonts
 
 The site serves Inter 4.1 for text and JetBrains Mono 2.304 for code, both

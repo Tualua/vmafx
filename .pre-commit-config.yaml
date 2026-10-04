@@ -925,7 +925,7 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|docs/assets/|docs/charts/|docs/javascripts/vendor/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
 
       - id: test-docs-vendored-assets
@@ -941,6 +941,14 @@ repos:
         entry: python3 -B scripts/docs/tests/test_charts.py
         language: system
         files: '^(scripts/docs/(generate-charts|tests/test_charts)\.py|docs/charts/|\.pre-commit-config\.yaml)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-docs-search-scope
+        name: Site search scope (ADR-1512) keeps its contract
+        entry: python3 -B scripts/docs/tests/test_search_scope.py
+        language: system
+        files: '^(scripts/docs/(check_search_scope|generate-record-titles|tests/test_search_scope)\.py|docs/(adr|research|changelog-archive|adr/by-tag)/\.meta\.yml|mkdocs\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

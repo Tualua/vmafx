@@ -63,6 +63,9 @@ theme:
 
 plugins:
   - search
+  # Applies the front matter of each directory's .meta.yml to its pages;
+  # ADR-1512 uses it to keep record bodies out of the search index.
+  - material/meta
   - minify:
       minify_html: true
 

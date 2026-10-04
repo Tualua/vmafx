@@ -1,4 +1,17 @@
+---
+# ADR-1512: the index stays in the site search; the records it lists do not.
+search:
+  exclude: false
+---
+
 # Architectural Decision Records (ADR)
+
+The site search finds an ADR by its title through the
+[title list](titles.md) and the [tag pages](by-tag/index.md); ADR
+bodies are not in the search index
+([ADR-1512](1512-docs-search-user-pages-only.md)). To search their text, use
+GitHub code search, for example
+[`repo:VMAFx/vmafx path:docs/adr/ precision`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code).
 
 This is the **canonical, tracked** decision log for the fork. Every non-trivial
 architectural / policy / scope decision lands here as its own markdown file

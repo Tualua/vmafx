@@ -1,5 +1,17 @@
+---
+# ADR-1512: the index stays in the site search; the records it lists do not.
+search:
+  exclude: false
+---
+
 <!-- markdownlint-disable MD013 -->
 # Research digests
+
+The site search finds a digest by its title through the
+[title list](titles.md); digest bodies are not in the search index
+([ADR-1512](../adr/1512-docs-search-user-pages-only.md)). To search their
+text, use GitHub code search, for example
+[`repo:VMAFx/vmafx path:docs/research/ zensical`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fresearch%2F+zensical&type=code).
 
 Iteration-time research notes for the VMAFx fork. Each digest
 captures **what was investigated and why** for a fork-local

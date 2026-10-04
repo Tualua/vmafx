@@ -55,6 +55,15 @@ linked AGENTS.md before resolving conflicts.
   `scripts/docs/tests/test_generators.py` guards it. See
   [scripts/AGENTS.md](../../scripts/AGENTS.md).
 
+- **Site search covers user pages only ([ADR-1512](../adr/1512-docs-search-user-pages-only.md))**:
+  `.meta.yml` files under `docs/adr/`, `docs/research/` and
+  `docs/changelog-archive/` set `search.exclude` through the `material/meta`
+  plugin; the index pages and the generated title lists
+  (`scripts/docs/generate-record-titles.py`) override it, and
+  `docs/rebase-notes.md` and `docs/state.md` keep their front matter.
+  `scripts/docs/check_search_scope.py` reads the built index. See
+  [Documentation site design](docs-site-design.md#search).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,

@@ -1,0 +1,4 @@
+# ADR-1512: site search covers user pages only. Archived changelogs are not
+# indexed.
+search:
+  exclude: true

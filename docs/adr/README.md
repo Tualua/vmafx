@@ -1,4 +1,17 @@
+---
+# ADR-1512: the index stays in the site search; the records it lists do not.
+search:
+  exclude: false
+---
+
 # Architectural Decision Records (ADR)
+
+The site search finds an ADR by its title through the
+[title list](titles.md) and the [tag pages](by-tag/index.md); ADR
+bodies are not in the search index
+([ADR-1512](1512-docs-search-user-pages-only.md)). To search their text, use
+GitHub code search, for example
+[`repo:VMAFx/vmafx path:docs/adr/ precision`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code).
 
 This is the **canonical, tracked** decision log for the fork. Every non-trivial
 architectural / policy / scope decision lands here as its own markdown file
@@ -1306,4 +1319,5 @@ public authority; documentation never links into either local root.
 | [ADR-1510](1510-adr-nav-collapse-behind-index.md) | The individual ADR and ADR tag pages leave the site sidebar: the `ADRs` entry lists the ADR index, the template and the tag index, readers reach ADRs through those pages and search, and `generate-adr-nav.sh` is retired; ADR-0937's tag pages stay | Accepted; supersedes the sidebar enumeration of [ADR-0937](0937-mkdocs-nav-decade-buckets.md) | docs, mkdocs, navigation, adr, fork-local |
 | [ADR-1511](1511-amd-gpu-tester-image.md) | An AMD GPU tester image (`<describe>-tester-hip`, target `final-hip`, Linux only) measures every HIP twin, the gate's HIP cells and the device tests on every AMD GPU of the 25 gfx targets ROCm 10.0.0 supports on a tester's host; it ships only the ROCm 10.0.0 runtime files the HIP build loads, unmodified with their RPATH layout, and publishes the source of the two LGPL libraries ROCm bundles (recorded by ELF build ID; the TheRock tree by git commit) | Accepted | ci, docker, hip, rocm, testing, parity, license, fork-local |
 | [ADR-1513](1513-production-artifact-licensing.md) | The production images, native release assets and Python packages follow the tester licensing rules of ADR-1503, checked by the same tool and record: notices and licence texts inside each image, a licence-check stage its final target depends on, a `-source` companion image, a per-platform SPDX SBOM attested with `actions/attest`, and package metadata that names the licences of the files | Accepted | license, compliance, supply-chain, ci, docker, release, python, fork-local |
+| [ADR-1512](1512-docs-search-user-pages-only.md) | The site search indexes user pages only: `.meta.yml` files (Material and Zensical `meta` plugin) set `search.exclude` on ADR bodies, research digests and the changelog archive, front matter on `rebase-notes.md` and `state.md`; the ADR and research indexes, tag pages and generated title lists stay indexed so titles remain findable | Accepted | docs, mkdocs, search, fork-local |
 | [ADR-1406](1406-cuda-cli-pinned-host-picture-pool.md) | Preallocate pinned host pictures for zero-copy 4K CLI CUDA upload, reducing 4K frame times across CUDA twins. | Accepted | `cuda`, `perf`, `cli`, `picture-pool` |

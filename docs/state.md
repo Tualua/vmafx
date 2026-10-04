@@ -1,3 +1,9 @@
+---
+# ADR-1512: site search covers user pages only; this page is not indexed.
+search:
+  exclude: true
+---
+
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
 _Updated: 2026-10-04 (`fix/tester-bundle-metal-toolchain`, RC3, tester-report path): `T-TESTER-BUNDLE-METAL-TOOLCHAIN-2026-10-04` opened and closed — the macOS tester bundle job did not install the Metal compiler component and failed on a runner image without it._
 _Updated: 2026-10-04 ([ADR-1513](adr/1513-production-artifact-licensing.md) on `fix/prod-licensing-cpu-images`, RC3, release path): the licence audit of every published production artifact ([Research-2140](research/2140-production-artifact-licence-audit.md)) opened twelve `T-PROD-LICENCE-*-2026-10-04` rows; the change on that branch closes `T-PROD-LICENCE-CPU-SERVER-IMAGES-2026-10-04`, `T-PROD-LICENCE-PYTHON-PACKAGE-METADATA-2026-10-04` and `T-PROD-LICENCE-DOCS-FOOTER-2026-10-04`; the GPU, Go, node, release-asset and model rows stay open for the changes that follow in the same train, the already-published artifacts for the maintainer._
