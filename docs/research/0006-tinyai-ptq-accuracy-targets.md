@@ -111,11 +111,12 @@ name>/`, pointed to by the `quant_calibration_set` field in
 `model/registry.json`. Tracked via git LFS (already set up for
 fork-trained `.onnx` files).
 
-Reproducibility: the calibration-set generation script
-(`ai/scripts/gen_calibration.py`) takes a set of clip paths + frame
-indices from a YAML spec, decodes them, and dumps them as raw
-tensor-shaped binary. The YAML spec is checked in; the binary is in
-git LFS. Anyone can reproduce the calibration set from source clips.
+Reproducibility (updated 2026-10-04): the calibration-set generator
+this digest first proposed (`gen_calibration.py`, clip paths plus frame
+indices from a YAML spec) was never written and has been removed.
+`vmaf-train quantize-int8` calibrates from a parquet feature cache, which
+is the reproducible input for the feature-vector regressors; see
+[quantization guide](../ai/quantization.md).
 
 ### 4. QAT re-training cost
 

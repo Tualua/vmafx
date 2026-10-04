@@ -60479,3 +60479,8 @@ upstream parity guard's allowlist.
   `python/requirements-test-lock.txt` with `make python-locks-write` after a sync that touches the
   file, and keep `model_registry_schema_test.py` importing it at module level (no
   `importorskip`). No score, public API or FFmpeg patch impact.
+## PTQ stub scripts removed (`fix/quantize-stubs`)
+
+- `ai/scripts/gen_calibration.py` and `ai/scripts/quantize_int8.py` are removed, with the
+  `.standards-baseline.json` row of the first; `vmaf-train quantize-int8` is the entry point. A sync
+  must not restore them. No score, public API or FFmpeg patch impact.

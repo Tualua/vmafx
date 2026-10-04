@@ -353,7 +353,7 @@ in the Decision section.
   shipped scaffold + `enable_mcp` Meson option might tempt a
   reviewer to flip it.
 - **ADR-0129 (`tinyai-ptq-quantization`)** — int8 PTQ shipped via
-  `ai/scripts/quantize_int8.py` and `model/*_int8.onnx`; calibration
+  `vmaf-train quantize-int8` (`ai/src/vmaf_train/quantize.py`) and `model/*_int8.onnx`; calibration
   accuracy targets met (Research-0006). Flippable.
 - **ADR-0138 (`iqa-convolve-avx2-bitexact-double`)** — shipped.
   Bit-exactness gate green (Research-0011).

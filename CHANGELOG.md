@@ -3635,6 +3635,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [licensing](docs/licensing.md#python-packages)).
 
 
+- **The two PTQ stub scripts are removed.** `ai/scripts/gen_calibration.py` and
+  `ai/scripts/quantize_int8.py` only printed "not yet implemented" and exited 1. Static PTQ is
+  `vmaf-train quantize-int8`, which calibrates from a parquet feature cache
+  ([quantization guide](docs/ai/quantization.md)).
+
+
 - **`vmaf` no longer hangs after an out-of-memory on the device.**
   `vmaf_read_pictures()` kept the pair of pictures it was given when it failed
   before it reached an extractor (a non-increasing index, pictures that

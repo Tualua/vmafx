@@ -3,7 +3,7 @@
   "generated_at": "2026-10-04T07:17:17Z",
   "repository": "VMAFx/vmafx",
   "commit_sha": "094d51c8e8793b2767cf571cd69597630f111693",
-  "total_infractions": 414,
+  "total_infractions": 413,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -451,14 +451,6 @@
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
       "anchor": "text:4cf92c48f933",
       "fingerprint": "ai/scripts/fetch_lsvq.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/gen_calibration.py",
-      "line_number": 28,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/gen_calibration.py:HISS-07:text:4cf92c48f933#1"
     },
     {
       "rule_id": "HISS-07",
