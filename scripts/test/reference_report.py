@@ -153,11 +153,9 @@ def verdict(delta, tol):
     return (GRN + "PASS" + C0) if ok else (RED + "FAIL" + C0), ok
 
 
-def main():
+def golden_table(gpu):
+    """Netflix golden: VMAF vs the Netflix reference (CPU + SYCL). True if all pass."""
     all_ok = True
-    gpu = not NO_SYCL
-
-    # ---- Netflix golden: VMAF vs the Netflix reference (CPU + SYCL) ----------
     print("\n  Netflix golden — VMAF vs Netflix reference (CPU%s)" % (" + SYCL" if gpu else ""))
     hdr = "  %-28s %-14s %-13s %-13s %-9s %-6s %s"
     print(hdr % ("pair", "Netflix ref", "CPU", "SYCL", "delta", "tol", "verdict"))
@@ -169,7 +167,7 @@ def main():
         cd = abs(cv - refv) if cv is not None else None
         # The Netflix golden is a CPU contract: the golden gate runs the CPU
         # backend. SYCL correctness is verified SEPARATELY by the cross-backend
-        # parity table below (SYCL vs CPU @ 1e-4, ADR-0214), NOT against the
+        # parity table (SYCL vs CPU @ 1e-4, ADR-0214), NOT against the
         # tighter golden tol — a SYCL result within its parity envelope but
         # outside 5e-5 of the Netflix ref is CORRECT, not a golden failure.
         # So the golden verdict is CPU-vs-Netflix; SYCL is shown for info only.
@@ -188,36 +186,46 @@ def main():
             )
         )
         print("  %-28s   ^ %s" % ("", src))
+    return all_ok
 
-    # ---- Cross-backend parity: SYCL vs CPU per feature (ADR-0214) ------------
-    if gpu:
+
+def parity_table():
+    """Cross-backend parity: SYCL vs CPU per feature (ADR-0214). True if all pass."""
+    all_ok = True
+    print(
+        "\n  Cross-backend parity — SYCL vs CPU (ADR-0214 places=4; CPU is "
+        "the parity anchor, not a golden ref)   src01 576x324"
+    )
+    hdr2 = "  %-18s %-13s %-13s %-9s %-6s %s"
+    print(hdr2 % ("feature", "CPU", "SYCL", "delta", "tol", "verdict"))
+    _label, ref, dist, w, h = PAIRS[0][:5]
+    cpu = run(ref, dist, w, h, "cpu")
+    sycl = run(ref, dist, w, h, "sycl")
+    for key, tol in XBACKEND_METRICS:
+        cv = cpu[key]["mean"] if (cpu and key in cpu) else None
+        sv = sycl[key]["mean"] if (sycl and key in sycl) else None
+        d = abs(cv - sv) if (cv is not None and sv is not None) else None
+        vtxt, ok = verdict(d, tol)
+        all_ok = all_ok and ok
         print(
-            "\n  Cross-backend parity — SYCL vs CPU (ADR-0214 places=4; CPU is "
-            "the parity anchor, not a golden ref)   src01 576x324"
-        )
-        hdr2 = "  %-18s %-13s %-13s %-9s %-6s %s"
-        print(hdr2 % ("feature", "CPU", "SYCL", "delta", "tol", "verdict"))
-        label, ref, dist, w, h = PAIRS[0][:5]
-        cpu = run(ref, dist, w, h, "cpu")
-        sycl = run(ref, dist, w, h, "sycl")
-        for key, tol in XBACKEND_METRICS:
-            cv = cpu[key]["mean"] if (cpu and key in cpu) else None
-            sv = sycl[key]["mean"] if (sycl and key in sycl) else None
-            d = abs(cv - sv) if (cv is not None and sv is not None) else None
-            vtxt, ok = verdict(d, tol)
-            all_ok = all_ok and ok
-            print(
-                hdr2
-                % (
-                    key,
-                    cell(cv),
-                    cell(sv),
-                    ("%.1e" % d if d is not None else "n/a"),
-                    "%.0e" % tol,
-                    vtxt,
-                )
+            hdr2
+            % (
+                key,
+                cell(cv),
+                cell(sv),
+                ("%.1e" % d if d is not None else "n/a"),
+                "%.0e" % tol,
+                vtxt,
             )
+        )
+    return all_ok
 
+
+def main():
+    gpu = not NO_SYCL
+    all_ok = golden_table(gpu)
+    if gpu:
+        all_ok = parity_table() and all_ok
     return 0 if all_ok else 1
 
 

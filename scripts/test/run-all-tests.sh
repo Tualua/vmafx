@@ -28,7 +28,10 @@
 #   LOG_DIR=/tmp/mylogs ./scripts/test/run-all-tests.sh          # log location
 #   ENGINE=docker ./scripts/test/run-all-tests.sh               # docker instead
 
-set -uo pipefail
+set -euo pipefail
+# Sections report their own failures in RESULT[]; every command whose non-zero
+# status is an expected outcome (a failing section, grep counting zero matches)
+# is guarded with `|| true` / `|| rc=$?` so `set -e` only stops on real errors.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # The test matrix runs INSIDE the image and needs meson / python / the source
@@ -91,12 +94,11 @@ run_section() {
 # --- ensure the image exists --------------------------------------------------
 if [ "${REBUILD:-0}" = "1" ] || ! "$ENGINE" image exists "$IMAGE" 2>/dev/null; then
   banner "BUILD  $IMAGE  (--target $BUILD_TARGET)"
-  (cd "$REPO_ROOT" && "$ENGINE" build --target "$BUILD_TARGET" -t "$IMAGE" -f "$CONTAINERFILE" .) \
-    2>&1 | tee "$LOG_DIR/build.log"
-  [ "${PIPESTATUS[0]}" -eq 0 ] || {
+  if ! (cd "$REPO_ROOT" && "$ENGINE" build --target "$BUILD_TARGET" -t "$IMAGE" -f "$CONTAINERFILE" .) \
+    2>&1 | tee "$LOG_DIR/build.log"; then
     printf "${red}BUILD FAILED — see %s${c0}\n" "$LOG_DIR/build.log"
     exit 1
-  }
+  fi
 fi
 
 # --- [C] meson C test suite ---------------------------------------------------
@@ -111,10 +113,10 @@ if [[ " $SECTIONS " == *" c "* ]]; then
   run_section "$DEV" "
     cd /src/vmafx
     python3 scripts/ci/run_meson_test.py -- -C build --print-errorlogs -t 6 || true
-  " "$LOG_DIR/c-suite.log" 1800
-  ok="$(grep -oE 'Ok: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep -oE '[0-9]+')"
-  totalfail="$(grep -oE '^Fail: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep -oE '[0-9]+')"
-  sigill="$(grep -cE 'SIGILL|signal 4' "$LOG_DIR/c-suite.log")"
+  " "$LOG_DIR/c-suite.log" 1800 || true
+  ok="$(grep -oE 'Ok: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep -oE '[0-9]+' || true)"
+  totalfail="$(grep -oE '^Fail: *[0-9]+' "$LOG_DIR/c-suite.log" | tail -1 | grep -oE '[0-9]+' || true)"
+  sigill="$(grep -cE 'SIGILL|signal 4' "$LOG_DIR/c-suite.log" || true)"
   real=$((${totalfail:-0} - sigill))
   [ "$real" -lt 0 ] && real=0
   if [ -z "$ok" ]; then
@@ -126,7 +128,7 @@ if [[ " $SECTIONS " == *" c "* ]]; then
   fi
   if [ "$sigill" -gt 0 ]; then
     echo "   env SIGILL (host lacks avx512vbmi — would pass on a full-AVX512 host):"
-    grep -E 'SIGILL|signal 4' "$LOG_DIR/c-suite.log" | grep -oE '[^ ]+ / [^ ]+' | sed 's/^/     · /' | head -20
+    grep -E 'SIGILL|signal 4' "$LOG_DIR/c-suite.log" | grep -oE '[^ ]+ / [^ ]+' | sed 's/^/     · /' | head -20 || true
   fi
 fi
 
@@ -142,11 +144,11 @@ if [[ " $SECTIONS " == *" report "* ]]; then
   # baked into the image on the next REBUILD=1, like the rest of the source).
   report_dev="$DEV -v ${REPO_ROOT}/scripts/test/reference_report.py:/src/vmafx/scripts/test/reference_report.py:ro"
   [ -z "$DEV" ] && report_dev="$report_dev -e REPORT_NO_SYCL=1"
+  rc=0
   run_section "$report_dev" "
     cd /src/vmafx
     VMAF_BIN=/src/vmafx/build/tools/vmaf python3 scripts/test/reference_report.py
-  " "$LOG_DIR/report.log" 600
-  rc="${PIPESTATUS[0]}"
+  " "$LOG_DIR/report.log" 600 || rc=$?
   if [ "${rc:-1}" -eq 0 ]; then
     RESULT[REPORT]="all reference rows within tolerance"
   else
@@ -177,9 +179,9 @@ if [[ " $SECTIONS " == *" golden "* ]]; then
         python/test/vmafexec_feature_extractor_test.py \
         python/test/result_test.py \
         -m 'not slow' -q -rfE -p no:cacheprovider
-    " "$LOG_DIR/golden.log" 1800
-    fails="$(grep -cE '^(FAILED|ERROR)' "$LOG_DIR/golden.log")"
-    line="$(grep -oE '[0-9]+ passed[^)]*' "$LOG_DIR/golden.log" | tail -1)"
+    " "$LOG_DIR/golden.log" 1800 || true
+    fails="$(grep -cE '^(FAILED|ERROR)' "$LOG_DIR/golden.log" || true)"
+    line="$(grep -oE '[0-9]+ passed[^)]*' "$LOG_DIR/golden.log" | tail -1 || true)"
     if [ "$fails" -eq 0 ] && [ -n "$line" ]; then
       RESULT[GOLDEN]="STRICT PASS — $line"
     else RESULT[GOLDEN]="FAIL — $fails failed/errored (see log)"; fi
@@ -197,11 +199,13 @@ if [[ " $SECTIONS " == *" material "* ]]; then
       python/test/raw_extractor_test.py python/test/cambi_test.py \
       python/test/ssimulacra2_test.py python/test/result_test.py python/test/reader_test.py \
       -m 'not slow' -q -rfE -p no:cacheprovider
-  " "$LOG_DIR/material.log" 1800
-  line="$(grep -oE '[0-9]+ passed[^)]*' "$LOG_DIR/material.log" | tail -1)"
-  fails="$(grep -cE '^(FAILED|ERROR)' "$LOG_DIR/material.log")"
+  " "$LOG_DIR/material.log" 1800 || true
+  line="$(grep -oE '[0-9]+ passed[^)]*' "$LOG_DIR/material.log" | tail -1 || true)"
+  fails="$(grep -cE '^(FAILED|ERROR)' "$LOG_DIR/material.log" || true)"
   RESULT[MATERIAL]="${line:-no summary} (${fails} failed/errored)"
-  [ "$fails" -gt 0 ] && grep -E '^(FAILED|ERROR)' "$LOG_DIR/material.log" | sed 's/^/   ⚠ /'
+  if [ "$fails" -gt 0 ]; then
+    grep -E '^(FAILED|ERROR)' "$LOG_DIR/material.log" | sed 's/^/   ⚠ /' || true
+  fi
 fi
 
 # --- summary ------------------------------------------------------------------
