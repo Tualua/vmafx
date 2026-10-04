@@ -51,10 +51,29 @@ validation_snippets = (
     'echo "source_sha=$(git rev-parse HEAD)"',
 )
 
-RECOVERY_OVERLAY = (
-    "        if: needs.validate-release.outputs.recovery == 'true'\n",
-    '          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/\n',
+RECOVERY_CONDITION = "        if: needs.validate-release.outputs.recovery == 'true'\n"
+# ADR-1350: the recovery overlay is the build recipe, which includes the patches
+# to the bundled FFmpeg. ADR-1513 / ADR-1514: the licence tooling the image build
+# runs, the composite actions that collect its licence artifacts and the script
+# that records the Debian libraries an image copies are recipe too. A source
+# tree (core/, model/, ...) never is: the image must package the tag's source.
+RECIPE_BASE = ("docker/", "Dockerfile.go-server", "ffmpeg-patches/")
+RECIPE_PATHS = frozenset(
+    RECIPE_BASE
+    + (
+        "tools/rc1-tester/image/",
+        ".github/actions/",
+        "scripts/ci/record-copied-debian-libs.sh",
+    )
 )
+
+
+def overlays(block: str) -> list[list[str]]:
+    """The paths of every `git checkout FETCH_HEAD --` in a job, continuations joined."""
+    return [
+        match.group(1).replace("\\\n", " ").split()
+        for match in re.finditer(r"git checkout FETCH_HEAD -- ((?:[^\n]*\\\n)*[^\n]*)", block)
+    ]
 
 # The OCI revision label names the packaged source (the tag's commit), not the
 # recipe commit a recovery run executes at (v1.0.0-rc.1's first recovered
@@ -110,15 +129,18 @@ for relative_path, build_jobs in workflows.items():
         if "ref: ${{ needs.validate-release.outputs.tag }}" not in block:
             raise AssertionError(f"{relative_path}: {job} does not check out validated tag")
         # The recovery overlay replaces only the build recipe, only in recovery.
-        for snippet in RECOVERY_OVERLAY:
-            if snippet not in block:
-                raise AssertionError(f"{relative_path}: {job} recovery overlay missing {snippet!r}")
+        if RECOVERY_CONDITION not in block:
+            raise AssertionError(f"{relative_path}: {job} recovery overlay is not recovery-only")
         if SOURCE_REVISION_LABEL not in block:
             raise AssertionError(f"{relative_path}: {job} does not label the tag's source revision")
-        overlays = re.findall(r"git checkout FETCH_HEAD -- ([^\n]*)", block)
-        # ADR-1350: the recipe includes the patches to the bundled FFmpeg.
-        if overlays != ["docker/ Dockerfile.go-server ffmpeg-patches/"]:
-            raise AssertionError(f"{relative_path}: {job} overlays {overlays}, not the build recipe only")
+        found = overlays(block)
+        if len(found) != 1:
+            raise AssertionError(f"{relative_path}: {job} has {len(found)} recovery overlays, not one")
+        paths = found[0]
+        if tuple(paths[: len(RECIPE_BASE)]) != RECIPE_BASE:
+            raise AssertionError(f"{relative_path}: {job} overlay {paths} lacks the recipe {RECIPE_BASE}")
+        if len(set(paths)) != len(paths) or not set(paths) <= RECIPE_PATHS:
+            raise AssertionError(f"{relative_path}: {job} overlays {paths}, not the build recipe only")
 
     if relative_path.endswith("docker-publish-operator-node.yml"):
         # ADR-1349: every Go service image builds each architecture on a native

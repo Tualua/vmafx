@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Regression tests for the in-container native release build (ADR-1346, ADR-1354).
+# Regression tests for the in-container native release build (ADR-1346,
+# ADR-1354, ADR-1513).
 #
 # Runs scripts/release/build-native-release-artifacts.sh against a throwaway
 # Git repository with a stub `meson` on PATH. The stub records how it was
 # called and, on `compile`, links a tiny real ELF libvmaf chain and CLI, so
 # staging, the provenance stamp and the clean-environment verifier all run for
-# real. The dev container is simulated through VMAFX_CONTAINER_MARKER, as in
+# real. The fixture's tools/rc1-tester/image/licensing.py is a stub too: it
+# records the notices and checks the script asks for and can refuse a check. The dev container is simulated through VMAFX_CONTAINER_MARKER, as in
 # scripts/ci/tests/test-check-container-build.sh. No Docker is needed, but the
 # host needs cc, readelf and patchelf (the ubuntu-26.04 runner image and the
 # release-build stage carry all three): the staged CLI's RUNPATH is rewritten
@@ -81,6 +83,40 @@ cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0 \
 STUB
 chmod +x "$stub_bin/meson"
 
+# Stub licensing.py (ADR-1513). The real tool reads the build's ninja deps and
+# the recorded licence texts, which a stub meson does not produce; this one
+# records each call, writes a deterministic notices tree under --root, and
+# fails `check` when STUB_LICENSING_MODE=check-fail.
+licensing_stub="$scratch/licensing.py"
+cat >"$licensing_stub" <<'STUB'
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("command")
+parser.add_argument("--artifact", default="")
+parser.add_argument("--root", default="")
+parser.add_argument("--out", default="")
+args, _ = parser.parse_known_args()
+with open(os.environ["STUB_LICENSING_LOG"], "a", encoding="utf-8") as log:
+    log.write(f"{args.command} {args.artifact}\n")
+notices = Path(args.root) / "licenses" / "THIRD_PARTY_NOTICES.txt"
+if args.command == "scan-build":
+    Path(args.out).write_text('{"schema_version": 1}\n', encoding="utf-8")
+elif args.command == "notices":
+    notices.parent.mkdir(parents=True, exist_ok=True)
+    notices.write_text(f"notices of {args.artifact}\n", encoding="utf-8")
+elif args.command == "check":
+    if os.environ.get("STUB_LICENSING_MODE") == "check-fail" or not notices.is_file():
+        print(f"licensing stub: check of {args.artifact} refused", file=sys.stderr)
+        sys.exit(3)
+else:
+    sys.exit(f"licensing stub: unknown command {args.command}")
+STUB
+
 # A patchelf that fails, put in front of the real one by with_failing_patchelf.
 failing_patchelf_bin="$scratch/failing-patchelf"
 mkdir -p "$failing_patchelf_bin"
@@ -100,8 +136,10 @@ origin='$ORIGIN'
 # new_repo <dir> — a committed tree holding only what the build script reads.
 new_repo() {
   local dir="$1"
-  mkdir -p "$dir/scripts/ci" "$dir/scripts/release" "$dir/model" "$dir/LICENSES" "$dir/core"
+  mkdir -p "$dir/scripts/ci" "$dir/scripts/release" "$dir/model" "$dir/LICENSES" "$dir/core" \
+    "$dir/tools/rc1-tester/image"
   cp -- "$REPO_ROOT/scripts/ci/check-container-build.sh" "$dir/scripts/ci/"
+  cp -- "$licensing_stub" "$dir/tools/rc1-tester/image/licensing.py"
   cp -- "$REPO_ROOT/scripts/release/build-native-release-artifacts.sh" \
     "$REPO_ROOT/scripts/release/verify-native-release-artifacts.sh" "$dir/scripts/release/"
   printf '{"model": "fixture"}\n' >"$dir/model/vmaf_fixture.json"
@@ -131,6 +169,7 @@ run_build() {
     fi
     env PATH="${RUN_PATH_PREFIX:+$RUN_PATH_PREFIX:}$stub_bin:$PATH" \
       STUB_MESON_LOG="$dir/meson.log" \
+      STUB_LICENSING_LOG="$dir/licensing.log" \
       VMAFX_CONTAINER_MARKER="$marker_path" \
       bash scripts/release/build-native-release-artifacts.sh "$@"
   ) >"$dir/run.log" 2>&1
@@ -168,15 +207,25 @@ expect_failure() {
 regular_nonempty() { [[ -f "$1" && ! -L "$1" && -s "$1" ]]; }
 absent() { [[ ! -e "$1" ]]; }
 lacks_line() { ! grep -qx -- "$1" "$2"; }
+archive_has() { tar -tzf "$1" | grep -qx -- "$2"; }
 
 # --- positive: inside the container the full bundle is built and verified ---
 good="$scratch/good"
 new_repo "$good"
 check 'container build exits 0' expect_status 0 "$good" "$marker" 3.2.1
 for name in libvmaf.so libvmaf.so.3 libvmaf.so.3.0.0 vmaf models.tar.gz \
-  container-build-provenance.txt; do
+  container-build-provenance.txt THIRD_PARTY_NOTICES.txt licenses.tar.gz; do
   check "stages $name as a regular non-empty file" regular_nonempty "$good/artifacts/$name"
 done
+# ADR-1513: models.tar.gz carries the notices of its models, and both notice
+# trees are written and then checked by licensing.py before the verifier runs.
+check 'models.tar.gz carries its licenses/ notices' archive_has \
+  "$good/artifacts/models.tar.gz" licenses/THIRD_PARTY_NOTICES.txt
+check 'licenses.tar.gz carries the release notices' archive_has \
+  "$good/artifacts/licenses.tar.gz" licenses/THIRD_PARTY_NOTICES.txt
+check 'the models and the release files are noticed, then checked, in order' cmp -s \
+  <(printf '%s\n' 'notices release-models' 'check release-models' 'scan-build ' \
+    'notices release-native' 'check release-native') "$good/licensing.log"
 # ADR-1354: unit tests stay out of the release build; GCC 14.2 on the Debian 13
 # release track crashed at random while LTO-linking them.
 check 'meson setup keeps the release flags and pins DNN and unit tests off' grep -q \
@@ -285,6 +334,17 @@ check 'compile failure fails the build' expect_failure "$broken" "$marker" 3.2.1
 unset STUB_MESON_MODE
 check 'compile failure writes no stamp' absent \
   "$broken/artifacts/container-build-provenance.txt"
+
+licence_refused="$scratch/licence-refused"
+new_repo "$licence_refused"
+STUB_LICENSING_MODE=check-fail
+export STUB_LICENSING_MODE
+check 'a refused licence check fails the build' expect_failure "$licence_refused" "$marker" 3.2.1
+unset STUB_LICENSING_MODE
+check 'a refused licence check is reported' grep -q \
+  'licensing stub: check of release-models refused' "$licence_refused/run.log"
+check 'a refused licence check stages no notices' absent \
+  "$licence_refused/artifacts/THIRD_PARTY_NOTICES.txt"
 
 short="$scratch/short-chain"
 new_repo "$short"

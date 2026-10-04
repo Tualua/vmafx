@@ -9922,11 +9922,20 @@
         "docker/Dockerfile.production": 2,
         "scripts/ci/record-copied-debian-libs.sh": 1,
         "scripts/release/build-native-release-artifacts.sh": 2,
+        "scripts/release/tests/test-build-native-release-artifacts.sh": 3,
         "scripts/release/tests/test-docker-image-runtime-contract.sh": 1,
+        "scripts/release/tests/test-docker-publish-source-binding.sh": 1,
         "tools/rc1-tester/tests/test_licensing_go.py": 1,
         "tools/rc1-tester/tests/test_licensing_production.py": 3
       },
       "target": "1513-production-artifact-licensing.md"
+    },
+    "1514": {
+      "sites": {
+        "scripts/ci/test_e2e_runtime_contract.py": 2,
+        "scripts/release/tests/test-docker-publish-source-binding.sh": 1
+      },
+      "target": "1514-go-and-node-image-licensing.md"
     },
     "1515": {
       "sites": {

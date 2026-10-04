@@ -95,6 +95,35 @@ def _docker_stage(dockerfile: str, name: str) -> str:
     return "\n".join(lines[start:end])
 
 
+def _stage_lineage(dockerfile: str, name: str) -> list[str]:
+    """Return a stage and every stage it is built FROM, nearest first.
+
+    The walk stops at the first base that is not a stage of this file (an
+    image reference or a build argument). It visits each stage at most once,
+    so it is bounded by the number of FROM lines.
+    """
+    bases = {
+        match.group(2): match.group(1)
+        for match in re.finditer(r"(?m)^FROM\s+(?:--\S+\s+)*(\S+)\s+AS\s+(\S+)\s*$", dockerfile)
+    }
+    lineage = [name]
+    for _ in range(len(bases)):
+        base = bases.get(lineage[-1])
+        if base is None or base not in bases or base in lineage:
+            break
+        lineage.append(base)
+    return lineage
+
+
+# The libvmaf SONAME chain, copied as regular files and symlinks (ADR-1514):
+# `find` keeps Meson's object directory `libvmaf.so.<version>.p/` out, and
+# `cp -a` keeps the symlinks.
+SONAME_CHAIN_COPY = (
+    "find /build/src -maxdepth 1 -name 'libvmaf.so*' \\( -type f -o -type l \\) \\\n"
+    "        -exec cp -a {} /dist/lib/ \\;"
+)
+
+
 def _c_define(header: Path, name: str) -> str:
     """Return the replacement text of one `#define` in a C header."""
     source = header.read_text(encoding="utf-8")
@@ -239,7 +268,12 @@ class E2ERuntimeContractTest(unittest.TestCase):
 
         node_dockerfile = NODE_DOCKERFILE.read_text(encoding="utf-8")
         server_dockerfile = SERVER_DOCKERFILE.read_text(encoding="utf-8")
-        self.assertRegex(node_dockerfile, r"(?m)^FROM\s+runtime-base\s+AS\s+node-cpu\s*$")
+        # node-cpu is the CPU worker: its stages reach the shared runtime base
+        # and none of them is a GPU runtime (ADR-1514 put the notices and the
+        # licence receipt between the two).
+        lineage = _stage_lineage(node_dockerfile, "node-cpu")
+        self.assertEqual(lineage[-1], "runtime-base", lineage)
+        self.assertFalse([stage for stage in lineage if "runtime-libs" in stage], lineage)
         self.assertIn("cp -r model/. /dist/model/", node_dockerfile)
         self.assertIn("test -f /dist/model/vmaf_v0.6.1.json", node_dockerfile)
         self.assertNotIn("cp -r model/ /dist/model/", node_dockerfile)
@@ -261,12 +295,15 @@ class E2ERuntimeContractTest(unittest.TestCase):
                 builder = _docker_stage(source, "vmaf-builder")
                 self.assertRegex(builder, r"(?m)^\s+make \\\s*$")
                 self.assertRegex(builder, r"(?m)^\s+xxd \\\s*$")
-                self.assertIn("cp -a /build/src/libvmaf.so* /dist/lib/", builder)
+                self.assertIn(SONAME_CHAIN_COPY, builder)
                 self.assertIn(
                     "cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc",
                     builder,
                 )
-                self.assertNotIn("find /build/src", builder)
+                # A glob copies the object directory; a copy without -a turns
+                # the SONAME symlinks into three copies of the library.
+                self.assertNotIn("cp -a /build/src/libvmaf.so*", builder)
+                self.assertNotIn("-exec cp {}", builder)
 
         node = NODE_DOCKERFILE.read_text(encoding="utf-8")
         self.assertNotIn('pkg_version="${VMAFX_VERSION#v}"', node)

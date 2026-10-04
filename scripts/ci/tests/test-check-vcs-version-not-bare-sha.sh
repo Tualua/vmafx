@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # Tests for scripts/ci/check-vcs-version-not-bare-sha.sh: a throwaway repo holds
-# the real core/include/meson.build and fixture tester workflows. Positive:
+# the real core/include/meson.build and the three fixture tester workflows. Positive:
 # the contract form passes (with and without --long). Negative: --always, a
 # describe without --match, a moved describe and a missing workflow fail.
 # Boundary: comments that mention the banned flag are ignored.
@@ -18,6 +18,7 @@ cp "$root/core/include/meson.build" "$tmp/core/include/meson.build"
 cp "$root/scripts/ci/check-vcs-version-not-bare-sha.sh" "$tmp/scripts/ci/"
 macos="$tmp/.github/workflows/macos-tester-bundle.yml"
 docker="$tmp/.github/workflows/docker-publish-tester.yml"
+windows="$tmp/.github/workflows/windows-tester-bundle.yml"
 
 # wf FILE TEXT: write one workflow line (TEXT is literal, never expanded).
 wf() { printf '          %s\n' "$2" >"$1"; }
@@ -34,7 +35,8 @@ expect() { # $1 label, $2 expected rc
 
 wf "$macos" "d=\$(git describe --tags $M \$sha)"
 wf "$docker" "d=\$(git describe --tags $M \$sha)"
-expect "both workflows on the contract form pass" 0
+wf "$windows" "d=\$(git describe --tags $M \$sha)"
+expect "all three workflows on the contract form pass" 0
 
 wf "$docker" "d=\$(git describe --tags --long $M \$sha)"
 expect "--long with --match passes" 0
@@ -60,5 +62,18 @@ wf "$macos" "d=\$(compute_version \$sha)"
 expect "a workflow with no git describe fails" 1
 
 wf "$macos" "d=\$(git describe --tags $M \$sha)"
+wf "$windows" "d=\$(git describe --tags --always $M \$sha)"
+expect "--always in the windows workflow fails" 1
+
+wf "$windows" "d=\$(git describe --tags \$sha)"
+expect "describe without --match in the windows workflow fails" 1
+
+wf "$windows" "d=\$(git describe --tags $M \$sha)"
+
+wf "$macos" "d=\$(git describe --tags $M \$sha)"
 rm "$docker"
 expect "a missing workflow fails" 1
+
+wf "$docker" "d=\$(git describe --tags $M \$sha)"
+rm "$windows"
+expect "a missing windows workflow fails" 1
