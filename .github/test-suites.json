@@ -61,6 +61,12 @@
       "runs": "pytest over this suite's files (suite_registry.py list vmaf-tune) with tools/vmaf-tune/requirements-dev-lock.txt"
     },
     {
+      "name": "vmaf-tune-train",
+      "paths": ["tools/vmaf-tune/tests/test_predictor_train.py"],
+      "checks": ["Tiny AI"],
+      "runs": "pytest in the Tiny AI job, whose venv holds torch from ai/requirements-dev-lock.txt; vmaf-tune's dev lock leaves torch out (the train extra), so the predictor trainer test runs there; the file path wins over the vmaf-tune directory (ADR-1568)"
+    },
+    {
       "name": "dev-llm",
       "paths": ["dev-llm/tests/"],
       "checks": ["Python Package Tests (dev-llm)"],

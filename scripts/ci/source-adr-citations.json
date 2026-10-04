@@ -10307,7 +10307,7 @@
         ".github/workflows/dev-container-build.yml": 1,
         ".github/workflows/lint-and-format.yml": 3,
         ".github/workflows/rule-enforcement.yml": 2,
-        ".github/workflows/tests-and-quality-gates.yml": 1,
+        ".github/workflows/tests-and-quality-gates.yml": 2,
         "scripts/ci/suite_registry.py": 3,
         "scripts/ci/test_e2e_runtime_contract.py": 1,
         "scripts/ci/test_fail_closed_ci.py": 1,

@@ -36,7 +36,10 @@ job and as the `suite-registry` pre-commit hook.
   executable bit and the `$ORIGIN/../src` SONAME chain) and fails on a skip for
   a missing binary or missing golden YUVs. It runs the files
   `suite_registry.py list vmaf-tune` prints, never the directory, so a file
-  another suite owns does not run twice. The aggregator's
+  another suite owns does not run twice: `test_predictor_train.py` is suite
+  `vmaf-tune-train` and runs in `Tiny AI`, the only venv with torch; that
+  step fails on any skip. Do not add torch to vmaf-tune's dev lock to run it
+  twice. The aggregator's
   `delayedStrictDependencies` must keep the `MCP Smoke` entry for it, or the
   check reads as never reported while MCP Smoke builds.
 
