@@ -156,6 +156,41 @@ verify job was skipped because the Arm64 leg failed). Both findings are state ro
 and `T-MSVC-FLOAT-ADM-X86-TEST-FAILS-2026-10-04` (open; the build log now prints a failed
 test's output so the next run names the case).
 
+## The second hosted run (run 37178704550, 2026-10-04)
+
+A `publish: false` dispatch on master `e00c17bc8`, after the Arm64 fix and with the CUDA
+leg ([ADR-1516](../adr/1516-windows-cuda-tester-zip.md)) for the first time:
+
+| | x64 | arm64 | x64-cuda |
+| :--- | :--- | :--- | :--- |
+| Build job | passed, 6 min 39 s | passed, 7 min 37 s | passed, 9 min 47 s (CUDA 13.4.92 archives) |
+| Report verdict | `fail`: 50 of 51 unit tests | `pass`: 39 of 39 unit tests | `fail`: 50 of 51 unit tests; GPU `no_device`, reason names `nvcuda.dll` |
+| Dispatch and reference equivalence | identical (AMD EPYC 7763, AVX2) | identical (Cobalt 100, NEON) | identical (AMD EPYC 7763, AVX2) |
+| Zip | 46,454,287 bytes, 726 files, 127.1 MB unpacked | 40,865,508 bytes, 713 files, 118.6 MB unpacked | 350,462,085 bytes, 933 files, 1,057.2 MB unpacked |
+
+All three reports pass `check-hardware-reports.py --report` (run on the downloaded
+artifacts; a report whose verdict is edited to `pass` is refused). The x64 failure is
+`test_dwt2_avx2_matches_scalar_on_signed_zeros`: MSVC removes the intrinsic
+`_mm256_add_ps(_mm256_setzero_ps(), p)` that starts the AVX2 wavelet sum, while it keeps
+the scalar `accum = 0; accum += p`, so a sample whose four products are all -0 comes out
+-0 against the scalar's +0. MSVC 19.51 x64 on Compiler Explorer, `/O2 /fp:precise
+/arch:AVX2`, shows both shapes; it also folds an intrinsic `x - (+0)` and keeps
+`x + (-0)`, `x - (-0)` and a compare-and-mask. Microsoft's `/fp` page says `/fp:precise`
+processes -0.0 according to IEEE-754 and says nothing about intrinsics. GCC and Clang keep
+the addition, so the MSVC lanes are the only ones that see it; the fix forms `+0 + p` with
+a compare and a mask (`T-MSVC-FLOAT-ADM-X86-TEST-FAILS-2026-10-04`). Of the two forms
+MSVC keeps, the compare and the mask is the one whose value follows from IEEE-754 alone:
+`x - (-0)` equals `+0 + x` too, but survives only as long as MSVC's folding keys on an
+all-zero constant. The AVX-512 kernel gets the same form, although no hosted run has
+reached it.
+
+In the CUDA zip, 952.4 MB of the 1,057.2 MB are its 114 test programs: the 73 that link
+libvmaf carry their own static copy with every CUDA image (12.7 to 13.9 MB each, 941.6 MB
+together; the largest test of the CPU zip is 2.7 MB). That is the `/MT`, static-library
+design of [ADR-1515](../adr/1515-windows-tester-zip.md) applied to a CUDA build. Linking
+the tests against one shared library would keep a single copy of those images; it is not
+decided here.
+
 ## Found on the way
 
 The macOS bundle published as `tester-20261003-c12763f3` lists its unit tests by their
@@ -167,10 +202,14 @@ the Windows zip depends on that fix).
 
 - That the MSVC build links cleanly with `-Db_vscrt=mt` (no lane has used it).
 - Which unit tests of the x86 SIMD list fail on MSVC, and whether the hosted x64
-  runner has AVX-512.
+  runner has AVX-512. Answered by the two runs: only the AVX2 signed-zero case of
+  `test_float_adm_x86`; both x64 runners were an AMD EPYC 7763 without AVX-512, so the
+  MSVC build of the AVX-512 kernels has not run.
 - `compression.zstd` in the runner's Python 3.14.8 on both architectures (the build
   falls back to a `zstd` program on PATH and fails with a message without either).
+  Answered: it read the archive on both.
 - The Arm64 redistributable folder holding both `vcruntime140.dll` and
-  `vcruntime140_1.dll` (the build fails with the missing name if not).
+  `vcruntime140_1.dll` (the build fails with the missing name if not). Answered: the
+  second run's Arm64 build passed.
 - Anything on a tester's machine: SmartScreen and Smart App Control behaviour, and the
   scores of his processor.

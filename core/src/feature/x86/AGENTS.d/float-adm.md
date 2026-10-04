@@ -24,6 +24,12 @@ Rules:
 - Four-tap sum = `dwt2_tap4()` / `dwt2_tap4_avx2()` / `dwt2_tap4_avx512()`
   only: start at `+0`, add one product per step, tap order 0..3. Starting at
   the first product returns `-0` where scalar returns `+0`.
+- Vector first step = `dwt2_plus_zero_avx2()` / `dwt2_plus_zero_avx512()`
+  (compare `_CMP_NEQ_UQ` + mask), never `_mm*_add_ps(_mm*_setzero_ps(), p)`:
+  MSVC 19.51 drops intrinsic `+0 +` even under `/fp:precise`, keeps scalar
+  `+0 +` -> `-0` vs `+0`. GCC / Clang keep both; only MSVC lanes show defect
+  (`Windows MSVC+CUDA (full)` runs test, Windows tester zip).
+  `T-MSVC-FLOAT-ADM-X86-TEST-FAILS-2026-10-04`.
 - Multiply, then add. No `_mm*_fmadd_ps`: scalar `adm_dwt2_s()` carries a
   contraction guard (ADR-1057).
 - Horizontal vector loop: taps `tmp[2j - 1 .. 2j + 2]` = what `ind_x` holds

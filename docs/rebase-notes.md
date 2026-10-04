@@ -60422,3 +60422,16 @@ upstream parity guard's allowlist.
 - `mcp-server/vmaf-mcp/pyproject.toml` keeps `vmafx-mcp` pointing at
   `deprecated_vmafx_mcp_alias` until the Python package is removed (ADR-1229); never point it
   back at `main`. No score, public API or FFmpeg patch impact.
+
+## MSVC float ADM wavelet: the first `+0 +` of the vector sums
+
+- `core/src/feature/x86/float_adm_avx2.c` and `float_adm_avx512.c` start the
+  four-tap vector sum with `dwt2_plus_zero_avx2()` / `dwt2_plus_zero_avx512()`
+  (a compare with `_CMP_NEQ_UQ` and a mask), not with
+  `_mm*_add_ps(_mm*_setzero_ps(), p)`: MSVC 19.51 removes that intrinsic
+  addition under `/fp:precise` and the kernel then returns -0 where
+  `adm_dwt2_s()` returns +0. A sync or cleanup must not restore the addition;
+  GCC and Clang builds cannot show the defect, the MSVC lane can.
+  `.github/workflows/build.yml` runs `test_float_adm_x86` in
+  `Windows MSVC+CUDA (full)` for that reason; keep it in the list. No score,
+  public API or FFmpeg patch impact.

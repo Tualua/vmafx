@@ -557,6 +557,10 @@ jobs:
       # leg at all, so this job could not catch a regression in the version
       # string. The test already carries a GetTempPathA/GetTempFileNameA
       # path for exactly this platform.
+      # test_float_adm_x86 is the one x86 SIMD test here: the Windows tester
+      # zip found MSVC removing an intrinsic `+0 +` that the scalar code keeps
+      # (T-MSVC-FLOAT-ADM-X86-TEST-FAILS-2026-10-04), which no other lane can
+      # see, since GCC and Clang keep the addition.
       # `|| exit /b 1` is required, not decorative: GitHub runs `shell: cmd`
       # as `%ComSpec% /D /E:ON /V:OFF /S /C "CALL ..."`, so the step result is
       # the errorlevel of the *last* command alone — without it, a failing
@@ -572,6 +576,7 @@ jobs:
             test_feature test_cli_parse test_model test_predict
             test_ciede test_cambi test_psnr test_luminance_tools
             test_feature_collector test_framesync test_output
+            test_float_adm_x86
           ) do (
             echo === %%t ===
             test\%%t.exe || exit /b 1

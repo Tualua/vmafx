@@ -33,7 +33,10 @@
  *
  *  - a four-tap sum starts at +0 and adds one product per step, in tap order,
  *    as `accum = 0; accum += c[0] * s0; ...` does. Starting at the first
- *    product instead returns -0 where the scalar returns +0;
+ *    product instead returns -0 where the scalar returns +0. The vector sum
+ *    does not spell the first step `_mm256_add_ps(_mm256_setzero_ps(), p)`:
+ *    MSVC drops an intrinsic addition of +0 even under /fp:precise (19.51),
+ *    so dwt2_plus_zero_avx2() forms `+0 + p` with a compare and a mask;
  *  - multiply, then add. No fused multiply-add: the scalar function carries a
  *    contraction guard (ADR-1057) and this translation unit is built with
  *    the strict floating-point arguments (ADR-1415);
@@ -74,11 +77,19 @@ static inline float dwt2_tap4(const float c[4], float s0, float s1, float s2, fl
     return accum;
 }
 
+/* `+0 + p` for eight samples: -0 becomes +0, every other value (NaN
+ * included) stays itself. Written without an addition because MSVC removes
+ * `_mm256_add_ps(_mm256_setzero_ps(), p)` as if it were `p` (19.51, /O2
+ * /fp:precise), which keeps -0 where the scalar sum returns +0. */
+static inline __m256 dwt2_plus_zero_avx2(__m256 p)
+{
+    return _mm256_and_ps(p, _mm256_cmp_ps(p, _mm256_setzero_ps(), _CMP_NEQ_UQ));
+}
+
 /* The same sum for eight samples. */
 static inline __m256 dwt2_tap4_avx2(const __m256 c[4], __m256 s0, __m256 s1, __m256 s2, __m256 s3)
 {
-    __m256 accum = _mm256_setzero_ps();
-    accum = _mm256_add_ps(accum, _mm256_mul_ps(c[0], s0));
+    __m256 accum = dwt2_plus_zero_avx2(_mm256_mul_ps(c[0], s0));
     accum = _mm256_add_ps(accum, _mm256_mul_ps(c[1], s1));
     accum = _mm256_add_ps(accum, _mm256_mul_ps(c[2], s2));
     accum = _mm256_add_ps(accum, _mm256_mul_ps(c[3], s3));

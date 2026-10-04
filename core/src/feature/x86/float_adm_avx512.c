@@ -71,11 +71,19 @@ static inline float dwt2_tap4(const float c[4], float s0, float s1, float s2, fl
     return accum;
 }
 
+/* `+0 + p` for sixteen samples: -0 becomes +0, every other value (NaN
+ * included) stays itself. Written without an addition because MSVC removes
+ * `_mm512_add_ps(_mm512_setzero_ps(), p)` as if it were `p` (19.51, /O2
+ * /fp:precise), which keeps -0 where the scalar sum returns +0. */
+static inline __m512 dwt2_plus_zero_avx512(__m512 p)
+{
+    return _mm512_maskz_mov_ps(_mm512_cmp_ps_mask(p, _mm512_setzero_ps(), _CMP_NEQ_UQ), p);
+}
+
 /* The same sum for sixteen samples. */
 static inline __m512 dwt2_tap4_avx512(const __m512 c[4], __m512 s0, __m512 s1, __m512 s2, __m512 s3)
 {
-    __m512 accum = _mm512_setzero_ps();
-    accum = _mm512_add_ps(accum, _mm512_mul_ps(c[0], s0));
+    __m512 accum = dwt2_plus_zero_avx512(_mm512_mul_ps(c[0], s0));
     accum = _mm512_add_ps(accum, _mm512_mul_ps(c[1], s1));
     accum = _mm512_add_ps(accum, _mm512_mul_ps(c[2], s2));
     accum = _mm512_add_ps(accum, _mm512_mul_ps(c[3], s3));
