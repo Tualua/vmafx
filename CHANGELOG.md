@@ -2908,6 +2908,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   on master again.
 
 
+- **The node's eBPF program declares `"GPL"` to the kernel instead of
+  `"Dual BSD/GPL"`
+  ([ADR-1559](docs/adr/1559-ebpf-kernel-licence-string.md)).** The source of
+  the descriptor tracker is EUPL-1.2, but its compiled object claimed a BSD
+  grant the project never made. Loaded into the kernel, the program is
+  combined with GPL-2.0 code and calls GPL-only helpers, which EUPL-1.2's
+  compatibility clause (Article 5, GPL v2 and v3 in its Appendix) allows to be
+  distributed under the GPL. The object loads as before; only its licence
+  section changed.
+
+
 - **`float_adm` and the models that read it use Netflix's CSF weights again;
   `vmaf_float_v0.6.1` moves by up to 2.2e-5 per frame.** Two inherited
   routines compute the contrast-sensitivity weights of float ADM: the Watson

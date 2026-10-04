@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1239), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1240), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4955,6 +4955,10 @@ Every ADR, one heading each (1239), so the site search finds an ADR by its title
 ## ADR-1558: A codec-aware sidecar declares how its codec block's scalar slots are normalised
 
 [1558-codec-block-encoding-from-sidecar](1558-codec-block-encoding-from-sidecar.md)
+
+## ADR-1559: the node's eBPF program stays EUPL-1.2 and declares "GPL" to the kernel under EUPL-1.2's compatibility clause
+
+[1559-ebpf-kernel-licence-string](1559-ebpf-kernel-licence-string.md)
 
 ## ADR-1560: A Python package declares the licences of every file its sdist and wheel carry, its compiled extension included
 

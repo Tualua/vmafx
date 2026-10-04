@@ -177,4 +177,10 @@ int tp_close_enter(struct trace_event_raw_sys_enter *ctx)
     return 0;
 }
 
-char LICENSE[] SEC("license") = "Dual BSD/GPL";
+// The licence the kernel sees (ADR-1559). This file is EUPL-1.2; loaded into
+// the kernel the program is combined with GPL-2.0 code and calls GPL-only
+// helpers (bpf_probe_read_user_str, bpf_probe_read_kernel), so it declares
+// "GPL" under EUPL-1.2's compatibility clause (Article 5 and the Appendix,
+// which lists the GPL v. 2 and v. 3). Never a licence the project did not
+// grant, such as "Dual BSD/GPL".
+char LICENSE[] SEC("license") = "GPL";

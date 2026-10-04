@@ -149,6 +149,47 @@ func TestEmbeddedObjectMatchesMirrors(t *testing.T) {
 	}
 }
 
+// kernelLicence is the licence string the object declares to the kernel
+// (ADR-1559): the source stays EUPL-1.2 and the loaded program is GPL under
+// EUPL-1.2's compatibility clause. A string naming a licence the project never
+// granted ("Dual BSD/GPL" before ADR-1559) fails, and so does one the kernel
+// does not accept as GPL-compatible: the program calls GPL-only helpers
+// (bpf_probe_read_user_str, bpf_probe_read_kernel) and would not load.
+const kernelLicence = "GPL"
+
+// TestEmbeddedObjectLicence: every program of the embedded object declares
+// kernelLicence.
+func TestEmbeddedObjectLicence(t *testing.T) {
+	t.Parallel()
+	spec, err := loadRcloneBypass()
+	if err != nil {
+		t.Fatalf("loadRcloneBypass: %v", err)
+	}
+	if len(spec.Programs) == 0 {
+		t.Fatal("the embedded object has no programs")
+	}
+	for name, p := range spec.Programs {
+		if p.License != kernelLicence {
+			t.Errorf("program %s declares licence %q to the kernel, want %q", name, p.License, kernelLicence)
+		}
+	}
+}
+
+// TestEmbeddedObjectLoadsIntoKernel: on a host that passes Preflight (kernel
+// 5.15+, BTF, tracefs, CAP_BPF and CAP_PERFMON or CAP_SYS_ADMIN) the kernel's
+// verifier accepts the programs, GPL-only helper calls included, and the
+// tracepoints attach. Elsewhere it skips and names the missing precondition.
+func TestEmbeddedObjectLoadsIntoKernel(t *testing.T) {
+	if err := Preflight(); err != nil {
+		t.Skipf("this host cannot load the tracker: %v", err)
+	}
+	l := New(DefaultMountPrefix, slog.Default())
+	if err := l.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	l.Stop()
+}
+
 // TestDecodeEvent: a full record decodes, a truncated one is dropped, and a
 // path without a NUL stops at maxPathLen (boundary).
 func TestDecodeEvent(t *testing.T) {

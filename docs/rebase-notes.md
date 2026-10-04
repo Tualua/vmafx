@@ -60563,3 +60563,12 @@ upstream parity guard's allowlist.
   `opset`. A sync or a new sidecar writer must not bring `onnx_opset` back.
   `ai/tests/test_sidecar_opset_key.py` and `test_model_loader` guard it. No score or FFmpeg
   patch impact; `vmaf_model_meta.opset` is now filled for every sidecar that has the key.
+## eBPF program licence string (ADR-1559)
+
+- `cmd/vmafx-node/bpf/rclone_bypass.bpf.c` declares `"GPL"` in its
+  `SEC("license")` section; its SPDX line stays `EUPL-1.2`. Never restore
+  `"Dual BSD/GPL"` (a grant the project never made) or put `"EUPL-1.2"` there
+  (the kernel refuses the GPL-only helpers the program calls). Regenerate the
+  object with `go generate ./cmd/vmafx-node/bpf/` after any change to the C
+  file; `TestEmbeddedObjectLicence` checks the string. No score, public API or
+  FFmpeg patch impact.

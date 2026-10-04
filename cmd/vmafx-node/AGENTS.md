@@ -169,3 +169,8 @@ ADR-1539), fail closed.
     2 generated files together (little-endian only); use bpf2go struct mirrors, never hand-written
     layouts (old `mountPrefixT` was 264 B vs 260 B map value).
     `TestEmbeddedObjectMatchesMirrors`, `TestEBPFStartFailsClosed` guard.
+    Kernel licence string (ADR-1559): `rclone_bypass.bpf.c` declares
+    `"GPL"` (`SEC("license")`), SPDX stays `EUPL-1.2`; never `"Dual BSD/GPL"`
+    (grant never made) or `"EUPL-1.2"` (GPL-only helpers refused, program
+    never loads). Guard: `TestEmbeddedObjectLicence`;
+    `TestEmbeddedObjectLoadsIntoKernel` on hosts passing `Preflight`.

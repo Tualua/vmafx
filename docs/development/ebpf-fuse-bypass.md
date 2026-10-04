@@ -112,16 +112,38 @@ On a big-endian architecture the node refuses `VMAFX_EBPF_BYPASS`.
 struct sizes against the Go side without kernel privileges; the same clang
 version regenerates the object byte for byte.
 
-## Not verified
+## Licence
 
-Loading and attaching the program needs `CAP_BPF`; the checks above run
-without it, and the tests and the documented refusal were produced
-unprivileged. A privileged load on a real node has not been run.
+`rclone_bypass.bpf.c` is EUPL-1.2 like the rest of the node. The program
+declares `"GPL"` to the kernel (its `SEC("license")` string): the kernel
+links it against GPL-2.0 code at load time, and it calls helpers the kernel
+offers only to GPL-compatible programs (`bpf_probe_read_user_str`,
+`bpf_probe_read_kernel`). EUPL-1.2's compatibility clause (Article 5, with
+the GPL v. 2 and v. 3 in its Appendix) allows that combination to be
+distributed under the GPL. [ADR-1559](../adr/1559-ebpf-kernel-licence-string.md)
+records the reasoning; `TestEmbeddedObjectLicence` fails when the object
+declares anything else. A string the kernel does not count as GPL-compatible
+stops the program from loading:
+
+```text
+load program: invalid argument: cannot call GPL-restricted function from non-GPL compatible program
+```
+
+## Verification
+
+`TestEmbeddedObjectLoadsIntoKernel` loads the programs and attaches the
+tracepoints on a host that passes `Preflight`, and skips elsewhere with the
+reason. It passed on kernel 7.2.8 in a privileged container
+(`docker run --privileged -v /sys/kernel/tracing:/sys/kernel/tracing`) with
+the test binary from `CGO_ENABLED=0 go test -c ./cmd/vmafx-node/bpf/`. A run
+of the tracker inside a node pod on a Kubernetes cluster has not been made.
 
 ## See also
 
 - [ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md): wiring, fail-closed
   checks, why no read path uses the tracker.
+- [ADR-1559](../adr/1559-ebpf-kernel-licence-string.md): the licence string
+  the program declares to the kernel.
 - [ADR-0779](../adr/0779-ebpf-fuse-bypass.md),
   [ADR-0996](../adr/0996-ebpf-fuse-bypass-rclone.md): the original design.
 - [ADR-1526](../adr/1526-node-storage-streamed-inputs.md): the storage modes.
