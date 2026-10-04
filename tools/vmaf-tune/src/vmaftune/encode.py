@@ -82,6 +82,11 @@ class EncodeRequest:
     # ``sample_clip_seconds == 0.0 and duration_s > 0`` so the
     # `--duration` ladder/CLI flag actually bounds the encode.
     duration_s: float = 0.0
+    # ADR-0601: VA-API render node of an encoder that needs a hardware
+    # device (QSV). ``auto`` resolves through
+    # :func:`vmaftune.hw_devices.resolve_vaapi_device`; other encoders
+    # ignore it.
+    vaapi_device: str = "auto"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -157,24 +162,18 @@ def _resolve_codec_args(req: EncodeRequest) -> list[str]:
         args = list(fn(req.preset, req.crf))
     # Append adapter-level extra_params (codec-specific flags that are
     # orthogonal to quality/preset — e.g. -svtav1-params for SVT-AV1,
-    # -row-mt for libaom-av1, -b:v 0 for VBR-mode encoders).
+    # -row-mt for libaom-av1, -b:v 0 for VBR-mode encoders). Every
+    # adapter's extra_params() takes no argument.
     extra_fn = getattr(adapter, "extra_params", None)
-    if extra_fn is not None:
-        import inspect
-
-        sig = inspect.signature(extra_fn)
-        if len(sig.parameters) >= 2:
-            extra = extra_fn(req.preset, req.crf)
+    extra = extra_fn() if extra_fn is not None else ()
+    if extra:
+        # extra_params may be a flat tuple of strings or a tuple of
+        # (flag, value) pairs; normalise both shapes.
+        if isinstance(extra[0], tuple):
+            for flag, val in extra:
+                args.extend([flag, val])
         else:
-            extra = extra_fn()
-        if extra:
-            # extra_params may be a flat tuple of strings or a tuple of
-            # (flag, value) pairs; normalise both shapes.
-            if isinstance(extra[0], tuple):
-                for flag, val in extra:
-                    args.extend([flag, val])
-            else:
-                args.extend(extra)
+            args.extend(extra)
     return args
 
 
@@ -202,14 +201,56 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
     libaom-av1, ``-cq`` for NVENC, ``-global_quality`` for QSV). The
     legacy ``-c:v <enc> -preset <p> -crf <q>`` shape stays available
     as a fallback for unregistered encoders.
+
+    ADR-0601: an encoder whose adapter needs a hardware device (QSV)
+    gets the adapter's device argv before the input and its upload
+    filter at the end of the request's own ``-vf`` chain, so a scaled
+    rung stays scaled.
     """
+    adapter = _registered_adapter(req.encoder)
     cmd: list[str] = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
+    cmd.extend(_hw_pre_input_args(adapter, req))
     cmd.extend(_build_input_args(req))
     cmd.extend(_resolve_codec_args(req))
     cmd.extend(_build_two_pass_args(req))
-    cmd.extend(req.extra_params)
+    cmd.extend(with_upload_filter(req.extra_params, getattr(adapter, "hw_upload_filter", "")))
     cmd.extend(_build_sink_args(req))
     return cmd
+
+
+def _registered_adapter(encoder: str) -> object | None:
+    """The registry's adapter for ``encoder``, or ``None`` when unregistered."""
+    from . import codec_adapters as _ca
+
+    try:
+        return _ca.get_adapter(encoder)
+    except KeyError:
+        return None
+
+
+def _hw_pre_input_args(adapter: object | None, req: EncodeRequest) -> list[str]:
+    """Device-initialisation argv the adapter needs before ``-i`` (QSV), else ``[]``."""
+    fn = getattr(adapter, "hw_pre_input_args", None)
+    return list(fn(req.vaapi_device)) if fn is not None else []
+
+
+def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[str]:
+    """Return ``extra_params`` with ``upload_filter`` ending its ``-vf`` chain.
+
+    ffmpeg keeps only the last ``-vf`` of an output, so the upload is
+    appended to the caller's chain (``scale=W:H,format=nv12,hwupload...``)
+    rather than added as a second ``-vf`` that would drop the scale or
+    the upload. Without a caller chain it becomes ``-vf <upload_filter>``.
+    An empty ``upload_filter`` returns the params unchanged.
+    """
+    out = list(extra_params)
+    if not upload_filter:
+        return out
+    for i in range(len(out) - 1):
+        if out[i] in ("-vf", "-filter:v"):
+            out[i + 1] = f"{out[i + 1]},{upload_filter}"
+            return out
+    return ["-vf", upload_filter, *out]
 
 
 def _build_seek_args(req: EncodeRequest) -> list[str]:
@@ -349,6 +390,27 @@ def parse_versions(stderr: str, encoder: str = "libx264") -> tuple[str, str]:
     ffm = _FFMPEG_VERSION_RE.search(stderr)
     ffm_str = ffm.group(1) if ffm else "unknown"
     return ffm_str, _parse_encoder_version(stderr, encoder)
+
+
+def probe_ffmpeg_version(ffmpeg_bin: str, runner: object | None = None) -> str:
+    """Return the version ``ffmpeg -version`` reports, or ``"unknown"``.
+
+    ``runner`` is a ``subprocess.run``-shaped stub for tests. The corpus
+    encode cache keys on this value (ADR-0298), so an ffmpeg rebuild
+    invalidates its entries.
+    """
+    runner_fn = runner or subprocess.run
+    try:
+        completed = runner_fn(  # type: ignore[operator]
+            [ffmpeg_bin, "-version"], capture_output=True, text=True, check=False
+        )
+    except (OSError, ValueError):
+        return "unknown"
+    if int(getattr(completed, "returncode", 1)) != 0:
+        return "unknown"
+    out = (getattr(completed, "stdout", "") or "") + (getattr(completed, "stderr", "") or "")
+    match = _FFMPEG_VERSION_RE.search(out)
+    return match.group(1) if match else "unknown"
 
 
 def _autodetect_encoder_version(stderr: str) -> str:

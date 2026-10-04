@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Final
 
 from . import _gop_common
+from ._ffmpeg_listing import encoder_listed
 
 # Canonical 7-level preset vocabulary used by x264 / NVENC / QSV.
 # Mapped to AMF's 3 quality levels as follows:
@@ -110,7 +111,7 @@ def ensure_amf_available(
     )
     rc = int(getattr(completed, "returncode", 1))
     stdout = getattr(completed, "stdout", "") or ""
-    if rc != 0 or encoder not in stdout:
+    if rc != 0 or not encoder_listed(stdout, encoder):
         raise RuntimeError(
             f"AMF encoder {encoder!r} is unavailable in ffmpeg "
             f"({ffmpeg_bin!r}). Confirm an AMD GPU is present and "
@@ -132,6 +133,9 @@ class _AMFAdapterBase:
 
     name: str = "amf"
     encoder: str = "h264_amf"
+    # Cache-key component (ADR-0298): bump when the argv, presets or range
+    # change. "2": the constant-QP block is emitted once, not twice.
+    adapter_version: str = "2"
     quality_knob: str = "qp"
     # AMF cqp accepts 0..51; surface the Phase A informative window
     # so the search loop's grid generator stays aligned with x264.
@@ -185,7 +189,9 @@ class _AMFAdapterBase:
         control is constant-QP via ``-rc cqp -qp_i N -qp_p N`` and the
         speed dial is the 3-level ``-quality {speed,balanced,quality}``
         switch. The 7-name canonical preset vocabulary is compressed
-        to those three rungs by :func:`map_preset_to_amf_quality`.
+        to those three rungs by :func:`map_preset_to_amf_quality`. The
+        whole rate-control block lives here, once; :meth:`extra_params`
+        adds nothing.
         """
         return [
             "-c:v",
@@ -200,26 +206,14 @@ class _AMFAdapterBase:
             str(quality),
         ]
 
-    def extra_params(self, preset: str, qp: int) -> tuple[str, ...]:
-        """FFmpeg argv tail covering AMF-specific switches.
+    def extra_params(self) -> tuple[str, ...]:
+        """No argv beyond :meth:`ffmpeg_codec_args`.
 
-        Returns the full ``-quality / -rc / -qp_i / -qp_p`` block
-        ready to be appended after ``-c:v <encoder>``. The harness
-        builds the ``-c:v`` / ``-preset`` portion itself; AMF doesn't
-        use the generic ``-preset`` flag, so callers that go through
-        ``encode.build_ffmpeg_command`` can pass these via
-        ``EncodeRequest.extra_params``.
+        The ``-quality / -rc / -qp_i / -qp_p`` block is part of
+        :meth:`ffmpeg_codec_args`; returning it here as well made every
+        AMF encode carry it twice.
         """
-        return (
-            "-quality",
-            self.amf_quality(preset),
-            "-rc",
-            "cqp",
-            "-qp_i",
-            str(qp),
-            "-qp_p",
-            str(qp),
-        )
+        return ()
 
     def gop_args(self, keyint: int, min_keyint: int | None = None) -> tuple[str, ...]:
         """FFmpeg ``-g`` / ``-keyint_min``, honoured by AMF."""
@@ -230,7 +224,7 @@ class _AMFAdapterBase:
 
         AMF honours ``-force_key_frames`` when ``-rc cqp`` is in effect
         (the Phase A rate-control mode this adapter pins via
-        ``extra_params``). No equivalent of NVENC's ``-forced-idr`` is
+        :meth:`ffmpeg_codec_args`). No equivalent of NVENC's ``-forced-idr`` is
         documented on the AMF side; if downstream decoders trip on
         non-IDR keyframes the workaround is to set ``-bf 0``.
         """
@@ -269,11 +263,10 @@ class _AMFAdapterBase:
         """Predictor probe-encode argv: AMF ``speed`` quality, fixed cqp.
 
         AMF does not honour FFmpeg's generic ``-preset``; the equivalent
-        is the ``-quality {quality,balanced,speed}`` switch threaded
-        through ``extra_params``. We inline the speed-mode probe shape
-        here rather than calling ``extra_params`` so the probe stays a
-        single stable string regardless of any future AMF rate-control
-        change.
+        is the ``-quality {quality,balanced,speed}`` switch of
+        :meth:`ffmpeg_codec_args`. We inline the speed-mode probe shape
+        here so the probe stays a single stable string regardless of any
+        future AMF rate-control change.
         """
         return [
             "-c:v",

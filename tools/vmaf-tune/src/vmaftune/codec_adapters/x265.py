@@ -46,6 +46,8 @@ class X265Adapter:
 
     name: str = "libx265"
     encoder: str = "libx265"
+    # Cache-key component (ADR-0298): bump when the argv, presets or range change.
+    adapter_version: str = "1"
     quality_knob: str = "crf"
     # x265 nominally accepts 0..51; surface the same Phase A informative
     # window as x264 so the search loop is uniform across codecs.

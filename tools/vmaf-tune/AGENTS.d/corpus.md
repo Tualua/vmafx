@@ -40,12 +40,26 @@ invariant: Phase A JSONL corpus row schema is API contract; canonical-6 uncondit
   emitting `NaN`.
 - **`vmaf_model` JSONL field is now per-row, not per-job.** Since
   ADR-0289 (resolution-aware model selection), `corpus._row_for`
-  populates `vmaf_model` from `score_res.request.model`, which in
-  turn comes from `resolution.select_vmaf_model_version(width, height)`
-  when `CorpusOptions.resolution_aware` is True. Mixed-ladder corpora
-  legitimately contain multiple distinct `vmaf_model` values across
-  rows. Downstream consumers (Phase B/C/D) must group/filter by
-  `vmaf_model` rather than assuming constant.
+  populates `vmaf_model` from the sweep's score model
+  (`_sweep_score_model`, resolved once per job): the height rule
+  (`resolution.select_vmaf_model_version`) when
+  `CorpusOptions.resolution_aware` is True, else `vmaf_model`; then the
+  NEG variant when `neg` is set; then the HDR model resolution. Encoded
+  cells and reference-decode-failed cells name the same model. The CLI
+  sets `resolution_aware=False` exactly when `--vmaf-model` is given.
+  Mixed-ladder corpora legitimately contain multiple distinct
+  `vmaf_model` values across rows. Downstream consumers (Phase B/C/D)
+  must group/filter by `vmaf_model` rather than assuming constant.
+- **The encode-cache key covers every input of the cell (cache key
+  version 2).** `_cell_cache_key` passes the adapter's
+  `adapter_version`, the ffmpeg version probed once per sweep through
+  `probe_runner`, the pass count, the sample-clip window and a
+  `settings` map (geometry, source geometry, pixel format, frame rate,
+  duration, extra encoder argv, score model, score backend). A new
+  input that changes the encode or the score goes into `settings` in
+  the same PR. A hit replays the stored miss row (`CachedResult.row`)
+  with fresh `run_id` / `timestamp` / `encode_path`; an entry without a
+  row is a miss. No ffmpeg version, no cache for the run (logged).
 - **Sample-clip windows are mirrored on both sides**
   ([ADR-0301](../../../docs/adr/0301-vmaf-tune-sample-clip.md)).
   Encode side uses FFmpeg input-side `-ss <start> -t <N>`

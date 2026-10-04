@@ -54,9 +54,11 @@ The `--neg` flag is available on the following `vmaf-tune` subcommands:
 | `corpus` | The Phase A grid sweep scores with the NEG model |
 
 When `--neg` is passed together with `--vmaf-model vmaf_v0.6.1`, the model is
-routed to `vmaf_v0.6.1neg`. When `--vmaf-model vmaf_4k_v0.6.1` is set (or
-selected automatically for 4K content), the model routes to
-`vmaf_4k_v0.6.1neg`.
+routed to `vmaf_v0.6.1neg`. Where `corpus`, live `recommend` and `ladder`
+pick the model from the encode height (no `--vmaf-model`), `--neg` takes the
+NEG variant of the picked model: `vmaf_v0.6.1neg` below 2160 lines and
+`vmaf_4k_v0.6.1neg` at 2160 and above (no `vmaf_v1.0.16` model has a NEG
+twin).
 
 ### Example: codec comparison with NEG
 

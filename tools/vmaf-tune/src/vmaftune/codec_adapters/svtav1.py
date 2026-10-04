@@ -86,6 +86,8 @@ class SvtAv1Adapter:
 
     name: str = "libsvtav1"
     encoder: str = "libsvtav1"
+    # Cache-key component (ADR-0298): bump when the argv, presets or range change.
+    adapter_version: str = "1"
     quality_knob: str = "crf"
     # SVT-AV1 nominally accepts CRF 0..63. Phase A surfaces the
     # perceptually informative window — ADR-0277 covers the choice.

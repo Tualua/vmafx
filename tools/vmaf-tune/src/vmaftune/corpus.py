@@ -434,26 +434,30 @@ class CorpusOptions:
     hdr_mode: str = "auto"
     ffprobe_bin: str = "ffprobe"
     # Phase F (ADR-0333): opt into 2-pass encoding for codecs whose
-    # adapter sets ``supports_two_pass = True`` (libx264 / libx265
-    # today; libsvtav1 / libvvenc follow as sibling PRs). Default
-    # off — single-pass behaviour stays the canonical path. When set
-    # against an adapter where ``supports_two_pass = False``, the
-    # encode driver writes a one-line stderr warning and runs
-    # single-pass (matching the saliency unsupported-ROI fallback
-    # precedent).
+    # adapter sets ``supports_two_pass = True`` (libx264, libx265,
+    # libvpx-vp9, libaom-av1 and libvvenc). Default off — single-pass
+    # behaviour stays the canonical path. When set against an adapter
+    # where ``supports_two_pass = False``, the encode driver writes a
+    # one-line stderr warning and runs single-pass (matching the
+    # saliency unsupported-ROI fallback precedent).
     two_pass: bool = False
     # Content-addressed encode cache (ADR-0298): when enabled, iter_rows
-    # skips re-encoding cells whose (src_sha256, encoder, preset, crf)
-    # key already exists in cache_dir. Default off; CLI enables via
-    # --cache-dir. The cache key schema matches vmaftune.cache.
+    # skips re-encoding cells whose key (vmaftune.cache.cache_key: the
+    # source hash, encoder, preset, crf, adapter and ffmpeg versions,
+    # pass count, sample-clip window and the encode/score settings)
+    # already exists in cache_dir. Default off; there is no CLI flag.
     cache_enabled: bool = False
     cache_dir: Path | None = None
     # Resolution-aware model selection (ADR-0289): when True, iter_rows
-    # overrides vmaf_model with the resolution-appropriate model returned
-    # by vmaftune.resolution.model_for_resolution — vmaf_4k_v0.6.1 for
-    # height >= 2160, vmaf_v0.6.1 otherwise. False keeps the explicit
-    # vmaf_model value regardless of source resolution.
+    # scores with the model vmaftune.resolution.select_vmaf_model_version
+    # picks from the encode height (vmaf_v1.0.16_1d5h_2160 at 2160 lines
+    # and above, vmaf_v1.0.16_3d0h below) instead of vmaf_model. False
+    # keeps vmaf_model for every row. The CLI sets False when the user
+    # passes --vmaf-model.
     resolution_aware: bool = True
+    # VMAF NEG (ADR-0622): score with the NEG variant of whichever model
+    # the two fields above select (vmaftune.resolution.neg_model_for).
+    neg: bool = False
 
 
 def _encode_path(opts: CorpusOptions, source: Path, preset: str, crf: int) -> Path:
@@ -506,7 +510,9 @@ def _synthetic_hdr_info(transfer: str, *, pix_fmt: str) -> HdrInfo:
     )
 
 
-def _resolve_hdr(job: CorpusJob, opts: CorpusOptions) -> tuple[HdrInfo | None, bool]:
+def _resolve_hdr(
+    job: CorpusJob, opts: CorpusOptions, *, probe_runner: object | None = None
+) -> tuple[HdrInfo | None, bool]:
     """Resolve the effective HDR signaling for ``job`` per ``opts.hdr_mode``.
 
     Returns ``(info, forced)`` where ``info`` is the HdrInfo to drive
@@ -534,7 +540,7 @@ def _resolve_hdr(job: CorpusJob, opts: CorpusOptions) -> tuple[HdrInfo | None, b
     # auto: probe the source via ffprobe. detect_hdr returns None for
     # SDR / probe-failure / missing-binary, all of which are OK — the
     # encode proceeds without HDR signaling.
-    info = detect_hdr(job.source, ffprobe_bin=opts.ffprobe_bin)
+    info = detect_hdr(job.source, ffprobe_bin=opts.ffprobe_bin, runner=probe_runner)
     return (info, False)
 
 
@@ -633,19 +639,59 @@ class _Sweep:
     score_model_warned: list[bool]
     decoded_reference: Path
     ref_decode_rc: int
+    # The model every cell of this job is scored with (ADR-0289 height
+    # rule or the explicit model, NEG variant, HDR model), and the ffmpeg
+    # version the encode-cache key carries ("" without a cache).
+    score_model: str = ""
+    ffmpeg_version: str = ""
 
 
-def _open_tune_cache(opts: CorpusOptions) -> TuneCache | None:
-    """Open the content-addressed encode cache (ADR-0298), or return ``None``.
+def _open_tune_cache(
+    opts: CorpusOptions, probe_runner: object | None
+) -> tuple[TuneCache | None, str]:
+    """Open the content-addressed encode cache (ADR-0298) and probe ffmpeg's version.
 
-    Called once per :func:`iter_rows` call so the cache index is loaded
-    only once, not per cell.
+    Returns ``(cache, ffmpeg_version)``; ``(None, "")`` when the cache
+    is off. Called once per :func:`iter_rows` call so the cache index is
+    loaded only once, not per cell. The cache key carries the ffmpeg
+    version, so when it cannot be read the cache stays off for the run
+    and a warning says so: a key without it would survive an ffmpeg
+    rebuild.
     """
     if not (opts.cache_enabled and opts.cache_dir is not None):
-        return None
+        return None, ""
     from .cache import TuneCache
+    from .encode import probe_ffmpeg_version
 
-    return TuneCache(path=opts.cache_dir)
+    version = probe_ffmpeg_version(opts.ffmpeg_bin, probe_runner)
+    if version == "unknown":
+        _LOG.warning(
+            "vmaf-tune: encode cache off for this run: `%s -version` reported no "
+            "version, and the cache key needs it",
+            opts.ffmpeg_bin,
+        )
+        return None, ""
+    return TuneCache(path=opts.cache_dir), version
+
+
+def _sweep_score_model(
+    job: CorpusJob, opts: CorpusOptions, hdr_info: HdrInfo | None, warned: list[bool]
+) -> str:
+    """Return the model every cell of ``job`` is scored with.
+
+    The explicit ``opts.vmaf_model``, or with ``opts.resolution_aware``
+    the model the height rule picks (ADR-0289); then its NEG variant
+    with ``opts.neg`` (ADR-0622); then the HDR model resolution, which
+    may warn once per sweep.
+    """
+    from .resolution import neg_model_for, select_vmaf_model_version
+
+    base_model = opts.vmaf_model
+    if opts.resolution_aware:
+        base_model = select_vmaf_model_version(job.width, job.height)
+    if opts.neg:
+        base_model = neg_model_for(base_model)
+    return _resolve_hdr_score_model(hdr_info, base_model, warned=warned)
 
 
 def _reference_scale_target(job: CorpusJob) -> tuple[int | None, int | None]:
@@ -712,18 +758,24 @@ def _decode_job_reference(job: CorpusJob, opts: CorpusOptions) -> tuple[Path, in
     )
 
 
-def _prepare_sweep(job: CorpusJob, opts: CorpusOptions, *, shot_runner: object | None) -> _Sweep:
+def _prepare_sweep(
+    job: CorpusJob,
+    opts: CorpusOptions,
+    *,
+    shot_runner: object | None,
+    probe_runner: object | None = None,
+) -> _Sweep:
     """Resolve everything :func:`iter_rows` computes once per call, in order.
 
     Adapter lookup, source hash, encode directory, encode cache, sample
-    clip window, shot metadata, HDR signaling and the reference decode
-    all run here, before the first cell is evaluated.
+    clip window, shot metadata, HDR signaling, the score model and the
+    reference decode all run here, before the first cell is evaluated.
     """
     adapter = get_adapter(opts.encoder)
     src_hash = _sha256_file(job.source) if (opts.src_sha256 and job.source.exists()) else ""
 
     opts.encode_dir.mkdir(parents=True, exist_ok=True)
-    tune_cache = _open_tune_cache(opts)
+    tune_cache, ffmpeg_version = _open_tune_cache(opts, probe_runner)
 
     clip_seconds, start_s, frame_skip_ref, frame_cnt, clip_mode = _resolve_sample_clip(job, opts)
     shot_meta = _resolve_shot_metadata(job, shot_runner=shot_runner, per_shot_bin="vmaf-perShot")
@@ -732,10 +784,12 @@ def _prepare_sweep(job: CorpusJob, opts: CorpusOptions, *, shot_runner: object |
     # synthetic info) is constant across the (preset, crf) grid for a
     # given input. Re-probing per cell would burn an ffprobe per encode
     # for no signal gain.
-    hdr_info, hdr_forced = _resolve_hdr(job, opts)
+    hdr_info, hdr_forced = _resolve_hdr(job, opts, probe_runner=probe_runner)
     hdr_extra_params: tuple[str, ...] = ()
     if hdr_info is not None:
         hdr_extra_params = hdr_codec_args(opts.encoder, hdr_info)
+    warned = [False]
+    score_model = _sweep_score_model(job, opts, hdr_info, warned)
 
     decoded_reference, ref_decode_rc = _decode_job_reference(job, opts)
     return _Sweep(
@@ -753,9 +807,11 @@ def _prepare_sweep(job: CorpusJob, opts: CorpusOptions, *, shot_runner: object |
         hdr_info=hdr_info,
         hdr_forced=hdr_forced,
         hdr_extra_params=hdr_extra_params,
-        score_model_warned=[False],
+        score_model_warned=warned,
         decoded_reference=decoded_reference,
         ref_decode_rc=ref_decode_rc,
+        score_model=score_model,
+        ffmpeg_version=ffmpeg_version,
     )
 
 
@@ -772,9 +828,10 @@ def iter_rows(
 
     ``encode_runner`` / ``score_runner`` / ``shot_runner`` / ``probe_runner``
     are subprocess-runner stubs parameterised for tests. Production
-    callers leave them ``None``.
+    callers leave them ``None``. ``probe_runner`` serves the ffprobe HDR
+    detection and the ``ffmpeg -version`` probe of the encode cache.
     """
-    sweep = _prepare_sweep(job, opts, shot_runner=shot_runner)
+    sweep = _prepare_sweep(job, opts, shot_runner=shot_runner, probe_runner=probe_runner)
     for preset, crf in job.cells:
         yield _cell_row(sweep, preset, crf, encode_runner, score_runner)
 
@@ -812,81 +869,89 @@ def _cell_row(
     row = _cell_row_for(sweep, preset, crf, enc_res, score_res, score_model)
     # Cache put: must happen BEFORE cleanup so artifact_path exists.
     # Store successful rows so the next run gets a hit.
-    _cache_put(sweep, preset, crf, out, enc_res, score_res, score_model)
+    _cache_put(sweep, preset, crf, out, enc_res, score_res, row)
     _cleanup_encode(sweep.opts, out, enc_res)
     return row
 
 
-def _cell_cache_key(sweep: _Sweep, preset: str, crf: int, ffmpeg_version: str) -> str:
-    """Return the encode-cache key of one cell; ``adapter_version`` is ``""``."""
+def _cell_cache_key(sweep: _Sweep, preset: str, crf: int) -> str:
+    """Return the encode-cache key of one cell (ADR-0298, cache key version 2).
+
+    Every input that changes the encode or the score is in it: the
+    adapter and ffmpeg versions, the pass count, the sample-clip window,
+    the geometry and duration, the extra encoder argv (HDR signalling,
+    rung scale), the score model and backend.
+    """
     from .cache import cache_key
 
+    job, opts = sweep.job, sweep.opts
+    two_pass = opts.two_pass and getattr(sweep.adapter, "supports_two_pass", False)
+    settings = {
+        "width": int(job.width),
+        "height": int(job.height),
+        "src_width": job.src_width,
+        "src_height": job.src_height,
+        "pix_fmt": job.pix_fmt,
+        "framerate": float(job.framerate),
+        "duration_s": float(job.duration_s),
+        "extra_params": list(sweep.hdr_extra_params) + list(_encode_source_geometry(job)[3]),
+        "vmaf_model": sweep.score_model,
+        "score_backend": opts.score_backend or "",
+    }
     return cache_key(
         src_sha256=sweep.src_hash,
-        encoder=sweep.opts.encoder,
+        encoder=opts.encoder,
         preset=preset,
         crf=crf,
-        adapter_version="",
-        ffmpeg_version=ffmpeg_version,
+        adapter_version=str(getattr(sweep.adapter, "adapter_version", "")),
+        ffmpeg_version=sweep.ffmpeg_version,
+        passes=2 if two_pass else 1,
+        sample_clip_seconds=sweep.clip_seconds,
+        sample_clip_start_s=sweep.start_s,
+        settings=settings,
     )
 
 
 def _cached_row(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any] | None:
-    """Return the cache-hit row of one cell; ``None`` on a miss or without a cache."""
+    """Return the cache-hit row of one cell; ``None`` on a miss or without a cache.
+
+    An entry without a stored row is a miss: a row rebuilt from the
+    parsed result tuple alone would lose columns the miss row had.
+    """
     if sweep.tune_cache is None or not sweep.src_hash:
         return None
-    cached = sweep.tune_cache.get(_cell_cache_key(sweep, preset, crf, ""))
-    if cached is None:
+    cached = sweep.tune_cache.get(_cell_cache_key(sweep, preset, crf))
+    if cached is None or cached.row is None:
         return None
-    return _cache_hit_row(sweep, preset, crf, cached)
+    return _cache_hit_row(sweep, cached)
 
 
-def _cache_hit_row(sweep: _Sweep, preset: str, crf: int, cached: CachedResult) -> dict[str, Any]:
-    """Reconstruct a minimal corpus row from :class:`CachedResult` fields.
+# Provenance columns a cache hit stamps afresh; every other column is
+# the miss row's, so a hit row equals the miss row (ADR-0298).
+_CACHE_PROVENANCE_KEYS: tuple[str, ...] = ("run_id", "timestamp", "encode_path")
 
-    Provenance metadata (run_id, timestamp) gets a fresh stamp so
-    downstream tools can tell the row came from cache.
+
+def _cache_hit_row(sweep: _Sweep, cached: CachedResult) -> dict[str, Any]:
+    """Replay the miss row a cache entry stored, with fresh provenance.
+
+    ``run_id`` and ``timestamp`` get a fresh stamp so downstream tools
+    can tell the row came from cache; ``encode_path`` names the cached
+    artifact only with ``keep_encodes``.
     """
-    job, opts = sweep.job, sweep.opts
-    nan = float("nan")
-    hit_row: dict[str, Any] = {k: nan for k in CORPUS_ROW_KEYS}
-    hit_row.update(
-        {
-            "schema_version": SCHEMA_VERSION,
-            "run_id": uuid.uuid4().hex,
-            "timestamp": _utc_now_iso(),
-            "src": str(job.source),
-            "src_sha256": sweep.src_hash,
-            "width": job.width,
-            "height": job.height,
-            "pix_fmt": job.pix_fmt,
-            "framerate": job.framerate,
-            "duration_s": job.duration_s,
-            "encoder": opts.encoder,
-            "encoder_version": cached.encoder_version,
-            "preset": preset,
-            "crf": crf,
-            "extra_params": [],
-            "encode_path": str(cached.artifact_path) if opts.keep_encodes else "",
-            "encode_size_bytes": cached.encode_size_bytes,
-            "bitrate_kbps": bitrate_kbps(cached.encode_size_bytes, job.duration_s or 1.0),
-            "encode_time_ms": cached.encode_time_ms,
-            "vmaf_score": cached.vmaf_score,
-            "vmaf_model": cached.vmaf_model,
-            "score_time_ms": cached.score_time_ms,
-            "ffmpeg_version": cached.ffmpeg_version,
-            "vmaf_binary_version": cached.vmaf_binary_version,
-            "exit_status": 0,
-            "clip_mode": "full",
-            "hdr_transfer": "",
-            "hdr_primaries": "",
-            "hdr_forced": False,
-            "shot_count": 0,
-            "shot_avg_duration_sec": nan,
-            "shot_duration_std_sec": nan,
-        }
-    )
-    return hit_row
+    fresh = {
+        "run_id": uuid.uuid4().hex,
+        "timestamp": _utc_now_iso(),
+        "encode_path": str(cached.artifact_path) if sweep.opts.keep_encodes else "",
+    }
+    stored = dict(cached.row or {})
+    return {key: fresh.get(key, stored.get(key, math.nan)) for key in _row_key_order(stored)}
+
+
+def _row_key_order(stored: dict[str, Any]) -> list[str]:
+    """The stored row's column order, with any missing schema column appended."""
+    order = list(stored)
+    order.extend(key for key in (*CORPUS_ROW_KEYS, *_CACHE_PROVENANCE_KEYS) if key not in stored)
+    return order
 
 
 def _ref_decode_failed_row(sweep: _Sweep, preset: str, crf: int, out: Path) -> dict[str, Any]:
@@ -897,15 +962,12 @@ def _ref_decode_failed_row(sweep: _Sweep, preset: str, crf: int, out: Path) -> d
     failed ``EncodeResult`` instead of re-running ffmpeg N times for
     output we cannot score, and skip the score step too. ``_row_for``
     requires a non-None ``enc_res`` for the row-shape invariant. The
-    score model is ``opts.vmaf_model`` after HDR resolution, without
-    the resolution-aware selection of :func:`_cell_score_model`.
+    row names the model the cell would have been scored with, as an
+    encoded cell's row does.
     """
     rc = sweep.ref_decode_rc
     enc_res = _skipped_encode_result(sweep, preset, crf, out)
-    base_model = sweep.opts.vmaf_model
-    score_model = _resolve_hdr_score_model(
-        sweep.hdr_info, base_model, warned=sweep.score_model_warned
-    )
+    score_model = _cell_score_model(sweep)
     score_req = _cell_score_request(sweep, out, score_model)
     score_res = _skipped_score_result(
         score_req, rc, f"reference decode to raw YUV failed (rc={rc}) for {sweep.job.source}"
@@ -1066,17 +1128,8 @@ def _encode_cell(
 
 
 def _cell_score_model(sweep: _Sweep) -> str:
-    """Return the model an encoded cell is scored against.
-
-    Resolution-aware selection when ``opts.resolution_aware`` is set,
-    then the HDR model resolution, which may warn once per sweep.
-    """
-    base_model = sweep.opts.vmaf_model
-    if sweep.opts.resolution_aware:
-        from .resolution import select_vmaf_model_version
-
-        base_model = select_vmaf_model_version(sweep.job.width, sweep.job.height)
-    return _resolve_hdr_score_model(sweep.hdr_info, base_model, warned=sweep.score_model_warned)
+    """Return the model a cell is scored against (resolved once per sweep)."""
+    return sweep.score_model
 
 
 def _score_cell(
@@ -1132,42 +1185,38 @@ def _cache_put(
     out: Path,
     enc_res: EncodeResult,
     score_res: ScoreResult,
-    score_model: str,
+    row: dict[str, Any],
 ) -> None:
-    """Store a successfully encoded cell in the encode cache, if one is open.
+    """Store a successfully encoded cell and its row in the encode cache, if one is open.
 
-    Must run before :func:`_cleanup_encode` so ``out`` still exists.
+    Must run before :func:`_cleanup_encode` so ``out`` still exists. A
+    failed put is logged, not raised: the row of this run is complete
+    either way.
     """
     if not (sweep.tune_cache is not None and sweep.src_hash and enc_res.exit_status == 0):
         return
     from .cache import CachedResult
 
-    # This key, built with the real ffmpeg version, is never used: lookup
-    # and put both use the placeholder key below. It stays so this
-    # function raises exactly what it raised before the HISS-04 split.
-    _cell_cache_key(sweep, preset, crf, enc_res.ffmpeg_version)
-    with contextlib.suppress(Exception):
-        # Re-compute key with the same placeholder values used at
-        # lookup so get(key) and put(key, ...) are always
-        # consistent. adapter_version / ffmpeg_version are set
-        # to "" in both paths; the corpus row records the real
-        # values in the encoder_version / ffmpeg_version columns.
-        put_key = _cell_cache_key(sweep, preset, crf, "")
+    stored_row = {k: v for k, v in row.items() if k not in _CACHE_PROVENANCE_KEYS}
+    try:
         sweep.tune_cache.put(
-            put_key,
+            _cell_cache_key(sweep, preset, crf),
             CachedResult(
                 encode_size_bytes=enc_res.encode_size_bytes,
                 encode_time_ms=enc_res.encode_time_ms,
                 encoder_version=enc_res.encoder_version,
                 ffmpeg_version=enc_res.ffmpeg_version,
                 vmaf_score=score_res.vmaf_score,
-                vmaf_model=score_model,
+                vmaf_model=str(row.get("vmaf_model", "")),
                 score_time_ms=score_res.score_time_ms,
                 vmaf_binary_version=score_res.vmaf_binary_version,
                 artifact_path=out,  # placeholder; put() overwrites it
+                row=stored_row,
             ),
             artifact_path=out,
         )
+    except (OSError, ValueError, TypeError) as exc:
+        _LOG.warning("vmaf-tune: encode cache put failed for %s: %s", out.name, exc)
 
 
 def _cleanup_encode(opts: CorpusOptions, out: Path, enc_res: EncodeResult) -> None:

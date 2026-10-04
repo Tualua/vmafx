@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/hwdevice"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
@@ -80,6 +81,11 @@ type Request struct {
 	// DurationS bounds the encode when SampleClipSeconds is unset. Also used
 	// to derive achieved kbps from the output size.
 	DurationS float64
+
+	// VAAPIDevice is the render node of a QSV encode's device chain
+	// (ADR-0601); "" or "auto" resolves through hwdevice.ResolveVAAPIDevice.
+	// Other encoders ignore it.
+	VAAPIDevice string
 }
 
 // Result mirrors vmaftune.encode.EncodeResult.
@@ -103,11 +109,20 @@ type Result struct {
 // When PassNumber != 0 the adapter's two-pass argv is spliced in before
 // ExtraParams; pass 1 redirects the bitstream to "-f null -" (the stats file
 // is the only artefact that matters) while pass 2 keeps Output.
+//
+// A QSV encoder gets the pkg/hwdevice device chain before the input and the
+// upload filter at the end of the ExtraParams -vf chain, as
+// vmaftune.encode.build_ffmpeg_command does (ADR-0601).
 func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 	if ffmpegBin == "" {
 		ffmpegBin = "ffmpeg"
 	}
 	cmd := []string{ffmpegBin, "-y", "-hide_banner", "-loglevel", "info"}
+	extra := req.ExtraParams
+	if hwdevice.NeedsQSVChain(req.Encoder) {
+		cmd = append(cmd, hwdevice.QSVInitArgs(hwdevice.ResolveVAAPIDevice(req.VAAPIDevice))...)
+		extra = hwdevice.AppendVideoFilter(extra, hwdevice.UploadFilter)
+	}
 	cmd = append(cmd, InputArgs(req)...)
 	cmd = append(cmd, "-i", req.Source)
 
@@ -132,7 +147,7 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 		cmd = append(cmd, passArgs...)
 	}
 
-	cmd = append(cmd, req.ExtraParams...)
+	cmd = append(cmd, extra...)
 
 	if req.PassNumber == 1 {
 		cmd = append(cmd, "-f", "null", "-")

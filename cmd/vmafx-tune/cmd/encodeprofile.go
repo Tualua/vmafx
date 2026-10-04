@@ -78,11 +78,10 @@ picks the Nth survivor (zero-based).
 --dry-run prints the selected recommendation and the exact FFmpeg argv without
 encoding anything. On a real run the process exit status is FFmpeg's own.
 
-Hardware-encoder note: the emitted argv contains no -init_hw_device chain, so
-a QSV profile row needs FFmpeg's VA-API device flags supplied separately (see
-ADR-0601). This matches the Python implementation exactly — vmaf-tune injects
-that chain in its 'compare' sweep, never in 'encode-profile'. Hardware encoders
-also reject sources below roughly 320x240.
+Hardware-encoder note: a QSV row's argv carries FFmpeg's VA-API / QSV device
+chain and upload filter (ADR-0601), exactly as the Python implementation builds
+every QSV encode; the render node is VMAFTUNE_VAAPI_DEVICE, else the first Intel
+render node. Hardware encoders reject sources below roughly 320x240.
 
 Example — inspect without encoding:
   vmafx-tune-go encode-profile \

@@ -1,10 +1,12 @@
 <!-- markdownlint-disable MD060 -->
 # `vmaf-tune` resolution-aware model selection
 
-`vmaf-tune corpus` picks the VMAF model for each source from its encode
-height, so a mixed-resolution corpus is scored with the right model. It
-needs no flag: the CLI always does it, and every JSONL row records the
-model that was used in its `vmaf_model` field.
+`vmaf-tune corpus`, live `recommend` and `ladder` pick the VMAF model for
+each encode from its height, so a mixed-resolution corpus is scored with
+the right model. It needs no flag, and every JSONL row records the model
+that was used in its `vmaf_model` field. An explicit `--vmaf-model`
+replaces the rule for every row, and `--neg` scores with the NEG variant
+of whichever model applies.
 
 ## Why it matters
 
@@ -49,24 +51,28 @@ Rows from that job carry:
 
 ## CLI behaviour
 
-- The CLI has no `--resolution-aware` or `--no-resolution-aware` flag.
-  `corpus` always selects the model from the height.
+- Without `--vmaf-model`, `corpus` and live `recommend` select the model
+  from the height and say so on stderr:
+  `vmaf-tune: VMAF model picked per encode height: vmaf_v1.0.16_3d0h below
+  2160 lines, vmaf_v1.0.16_1d5h_2160 at 2160 and above; pass --vmaf-model to
+  score every row with one model`.
+- `--vmaf-model NAME` turns the rule off: every row is scored with `NAME`,
+  and stderr says `vmaf-tune: VMAF model = NAME for every row
+  (--vmaf-model)`.
+- `--neg` takes the NEG variant of the model that applies: the height
+  rule's (`vmaf_v0.6.1neg` below 2160 lines, `vmaf_4k_v0.6.1neg` at 2160 and
+  above, because no v1.0.16 model has a NEG twin) or the explicit one.
+- `ladder` has no `--vmaf-model`: each rung is scored with its height's
+  model, and `--neg` takes its NEG variant.
 - `vmaf_model` is per-row metadata: it records the effective model for
   that row, not a global option. A mixed-ladder corpus legitimately holds
   several distinct values, so group or filter by `vmaf_model` instead of
   assuming one model per file.
 
-!!! warning "`--vmaf-model` and `--neg` do not override the selector"
-    In `vmaf-tune corpus` the height rule replaces the model for every
-    scored cell, so `--vmaf-model` and `--neg` do not change the
-    `vmaf_model` field or the score. To score a corpus with one model
-    regardless of height, use the Python API below. To compare models
-    from the command line, use a subcommand that honours `--vmaf-model`,
-    for example `vmaf-tune compare`.
-
 ## Python API
 
-Python callers can switch the selector off per run:
+Python callers switch the selector off per run (the CLI does it when
+`--vmaf-model` is given):
 
 ```python
 from vmaftune.corpus import CorpusOptions
@@ -76,8 +82,9 @@ opts = CorpusOptions(encoder="libx264", resolution_aware=False,
 ```
 
 With `resolution_aware=False` the explicit `vmaf_model` is used for every
-row, which reproduces a legacy single-model corpus. The decision rule is
-also available directly:
+row, which reproduces a legacy single-model corpus; `neg=True` scores
+with the NEG variant of either model. The decision rule is also available
+directly:
 
 ```python
 from vmaftune.resolution import (

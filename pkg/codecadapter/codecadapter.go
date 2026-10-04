@@ -580,15 +580,10 @@ func (a *Adapter) ExtraParams() []string {
 
 // ResolveCodecArgs returns FFmpegCodecArgs followed by ExtraParams — the
 // full codec argv slice the encode driver splices into the ffmpeg command.
-// Mirrors vmaftune.encode._resolve_codec_args.
-//
-// Deliberate deviation from the Python original: the three AMF adapters'
-// extra_params(preset, qp) returns the same tokens ffmpeg_codec_args already
-// produced, so _resolve_codec_args emits "-quality balanced -rc cqp -qp_i 23
-// -qp_p 23" twice for every AMF encode. FFmpeg takes the last occurrence so
-// the encode is unaffected, but every logged command line carries the
-// duplicate. The Go port emits each AMF token once; every other codec's argv
-// is byte-identical to the Python original.
+// Mirrors vmaftune.encode._resolve_codec_args, byte for byte for every codec:
+// the AMF adapters emit their -quality / -rc / -qp_i / -qp_p block once in
+// both implementations (the Python driver repeated it until its AMF
+// extra_params() stopped returning the block, 2026-10-04).
 func (a *Adapter) ResolveCodecArgs(preset string, quality int) ([]string, error) {
 	return a.ResolveCodecArgsForPass(preset, quality, 0)
 }

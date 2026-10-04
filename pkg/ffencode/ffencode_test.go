@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/VMAFx/vmafx/pkg/ffencode"
@@ -525,5 +526,40 @@ func TestRun_injectedRunner(t *testing.T) {
 				t.Errorf("runner saw argv %v", sawArgv)
 			}
 		})
+	}
+}
+
+// TestBuildFFmpegCommandQSVChain: a QSV encode carries the device chain before
+// -i and the upload at the end of the caller's -vf chain, as the Python
+// build_ffmpeg_command does (ADR-0601); the encode-profile argv used to have
+// neither.
+func TestBuildFFmpegCommandQSVChain(t *testing.T) {
+	t.Parallel()
+	req := ffencode.Request{
+		Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "hevc_qsv", Preset: "medium", CRF: 23, Output: "out.mp4",
+		ExtraParams: []string{"-vf", "scale=640:360"}, VAAPIDevice: "/dev/dri/renderD131",
+	}
+	argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(argv, " ")
+	chain := "-init_hw_device vaapi=va:/dev/dri/renderD131 -init_hw_device qsv=qsv_dev@va " +
+		"-filter_hw_device qsv_dev"
+	if !strings.Contains(joined, chain) || strings.Index(joined, chain) > strings.Index(joined, " -i ") {
+		t.Errorf("device chain missing or after -i: %v", argv)
+	}
+	if strings.Count(joined, "-vf") != 1 ||
+		!strings.Contains(joined, "-vf scale=640:360,format=nv12,hwupload=extra_hw_frames=64") {
+		t.Errorf("upload must join the caller's -vf chain: %v", argv)
+	}
+	req.Encoder = "libx264"
+	argv, err = ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := strings.Join(argv, " "); strings.Contains(j, "init_hw_device") || strings.Contains(j, "hwupload") {
+		t.Errorf("non-QSV encode got the QSV chain: %v", argv)
 	}
 }

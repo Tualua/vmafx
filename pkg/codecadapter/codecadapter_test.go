@@ -258,8 +258,8 @@ func TestResolveCodecArgs(t *testing.T) {
 			want: []string{"-c:v", "libx264", "-preset", "medium", "-crf", "23"},
 		},
 		{
-			// The Python original emits the -quality/-rc/-qp_i/-qp_p run twice
-			// here; see the ResolveCodecArgs doc comment.
+			// Each -quality/-rc/-qp_i/-qp_p token once, as the Python driver
+			// emits it since its extra_params() stopped repeating them.
 			name:  "AMF tokens are emitted once, not duplicated",
 			codec: "h264_amf", preset: "medium", quality: 23,
 			want: []string{

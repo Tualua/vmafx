@@ -61,6 +61,8 @@ class LibaomAdapter:
 
     name: str = "libaom-av1"
     encoder: str = "libaom-av1"
+    # Cache-key component (ADR-0298): bump when the argv, presets or range change.
+    adapter_version: str = "1"
     quality_knob: str = "crf"
     # libaom accepts CRF 0..63; the full window is exposed because the
     # informative VMAF range for AV1 differs from x264 and Phase B

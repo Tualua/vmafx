@@ -219,42 +219,29 @@ def make_default_sampler(
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
     score_backend: str | None = None,
-    vmaf_model: str = DEFAULT_MODEL,
+    vmaf_model: str | None = None,
+    neg: bool = False,
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
-    The legacy module-level :func:`_default_sampler` hardcoded
-    ``framerate=24.0``, ``duration_s=1.0``, ``pix_fmt="yuv420p"`` and
-    the canonical 5-point CRF sweep. The CLI had no way to override
-    any of them — a 1080p30 / 60 s source therefore ran the corpus
-    sweep at 24 fps / 1 s, producing nonsense bitrate math
-    (kbps = file_size / 1.0) and timing out on real content (Bug #4
-    and #5, BBB e2e 2026-05-17). This factory closes over the actual
-    source shape (resolved by the CLI from ``--framerate`` /
-    ``--duration`` / ``--pix-fmt`` flags or ffprobe) plus an optional
-    CRF sweep override (``--crf-sweep``) so smoke runs can pick a
-    short sweep instead of the production 5-point grid.
+    The module-level :func:`_default_sampler` defaults to placeholder
+    shape values (24 fps, 1 s, ``yuv420p``); a 1080p30 / 60 s source
+    sampled with them produced nonsense bitrate math (Bug #4 and #5,
+    BBB e2e 2026-05-17). This factory closes over the real source shape
+    (``--framerate`` / ``--duration`` / ``--pix-fmt`` or ffprobe) and an
+    optional CRF sweep override (``--crf-sweep``).
 
-    ``src_width`` / ``src_height`` (added 2026-05-18, ADR-0498) carry
-    the actual source resolution separately from the per-rung target
-    resolution. When the source is raw YUV at one resolution and the
-    ladder requests a different rendition, the sampler injects an
-    ffmpeg ``scale`` filter on the encode pipe and tells ffmpeg the
-    true source dimensions on the input side — the historic path used
-    the target dims as the input ``-s`` argument, which produces
-    frame-corruption on every rung where target != source (BBB e2e v2
-    Bug #v2-B). When left at ``None`` the legacy behaviour is
-    preserved (target dims serve as both source and encode dims).
+    ``src_width`` / ``src_height`` (ADR-0498) carry the source resolution
+    separately from the rung target: a raw-YUV source is read at its own
+    geometry and scaled to the rung (BBB e2e v2 Bug #v2-B). ``None``
+    keeps the target dims as both source and encode dims.
 
-    ``score_backend`` (added 2026-05-18, Bug C / ADR-0509) threads the
-    ``--score-backend`` CLI value into every corpus call the default
-    sampler makes. ``None`` keeps the existing auto-select behaviour
-    (libvmaf picks the fastest available backend).
+    ``score_backend`` (Bug C / ADR-0509) threads ``--score-backend`` into
+    every corpus call; ``None`` lets libvmaf pick.
 
-    ``vmaf_model`` (added ADR-0622) threads the ``--vmaf-model``
-    (and its NEG variant when ``--neg`` is set) into every corpus call.
-    The default preserves the historic ``vmaf_v0.6.1`` behaviour for
-    callers that do not pass ``vmaf_model``.
+    ``vmaf_model`` pins the model of every rung; ``None`` (the default,
+    and the CLI's) picks it per rung height (ADR-0289). ``neg`` scores
+    with the NEG variant of either (ADR-0622).
     """
     return _SamplerSettings(
         pix_fmt=pix_fmt,
@@ -266,6 +253,7 @@ def make_default_sampler(
         cloud_sink=cloud_sink,
         score_backend=score_backend,
         vmaf_model=vmaf_model,
+        neg=neg,
     ).bind()
 
 
@@ -292,7 +280,8 @@ class _SamplerSettings:
     src_height: int | None
     cloud_sink: list[LadderPoint] | None
     score_backend: str | None
-    vmaf_model: str
+    vmaf_model: str | None
+    neg: bool = False
 
     def bind(self) -> SamplerFn:
         """Closure calling :func:`_default_sampler` with these settings.
@@ -319,6 +308,7 @@ class _SamplerSettings:
                 cloud_sink=self.cloud_sink,
                 score_backend=self.score_backend,
                 vmaf_model=self.vmaf_model,
+                neg=self.neg,
             )
 
         return _sampler
@@ -359,7 +349,8 @@ def _default_sampler(
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
     score_backend: str | None = None,
-    vmaf_model: str = DEFAULT_MODEL,
+    vmaf_model: str | None = None,
+    neg: bool = False,
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
@@ -377,12 +368,13 @@ def _default_sampler(
     encode framerate match the input.
 
     BBB e2e v2 Bug #v2-B: when ``src_width`` / ``src_height`` are set
-    and differ from the rung's ``(width, height)``, the corpus job is
-    configured with the *actual* source dimensions and an extra
-    ``-vf scale=W:H`` filter is appended via ``CorpusOptions.extra_args``
-    so ffmpeg decodes the source at its native geometry and scales to
-    the requested rendition. The historic single-resolution code path
-    (``src_width`` / ``src_height`` left at ``None``) is preserved.
+    and differ from the rung's ``(width, height)``, the corpus job gets
+    the *actual* source dimensions (``CorpusJob.src_width`` /
+    ``src_height``) and the corpus encode adds a ``-vf scale=W:H``
+    filter, so ffmpeg decodes the source at its native geometry and
+    scales to the requested rendition. The historic single-resolution
+    code path (``src_width`` / ``src_height`` left at ``None``) is
+    preserved. ``vmaf_model`` / ``neg``: see :func:`make_default_sampler`.
     """
     return _SamplerSettings(
         pix_fmt=pix_fmt,
@@ -394,6 +386,7 @@ def _default_sampler(
         cloud_sink=cloud_sink,
         score_backend=score_backend,
         vmaf_model=vmaf_model,
+        neg=neg,
     ).sample(src, encoder, width, height, target_vmaf)
 
 
@@ -459,7 +452,9 @@ def _sweep_corpus_options(
         keep_encodes=False,
         src_sha256=False,
         score_backend=settings.score_backend,
-        vmaf_model=settings.vmaf_model,
+        vmaf_model=settings.vmaf_model or DEFAULT_MODEL,
+        resolution_aware=settings.vmaf_model is None,
+        neg=settings.neg,
     )
 
 
@@ -694,11 +689,17 @@ def _rendition_of(p: LadderPoint) -> Rendition:
 # ---------------------------------------------------------------------------
 
 
+# Codec-string resolver of the HLS / DASH writers: the RFC 6381 string of
+# one rendition (vmaftune.codec_strings.probe_codec_string in the CLI).
+CodecFn = Callable[[Rendition], str]
+
+
 def emit_manifest(
     ladder: Sequence[Rendition],
     format: str = "hls",
     *,
     samples: Sequence[LadderPoint] | None = None,
+    codec_for: CodecFn | None = None,
 ) -> str:
     """Serialise a list of :class:`Rendition` rungs in the requested format.
 
@@ -719,40 +720,45 @@ def emit_manifest(
       plot; downstream diff tooling reads it to compare the sampled
       cloud across runs. Non-JSON formats ignore ``samples``.
 
+    ``codec_for`` names each rendition's codec (the HLS ``CODECS`` and
+    the DASH ``codecs`` attribute). Without it the attribute is left
+    out: the writers used to print ``avc1.640028`` for every encoder,
+    which named the wrong codec for HEVC, AV1 and VP9 ladders and the
+    wrong level for most H.264 rungs.
+
     Output is a string; callers write to disk if needed. Renditions
     are emitted in ascending-bitrate order.
     """
     sorted_ladder = sorted(ladder, key=lambda r: r.bitrate_kbps)
     if format == "hls":
-        return _emit_hls(sorted_ladder)
+        return _emit_hls(sorted_ladder, codec_for)
     if format == "dash":
-        return _emit_dash(sorted_ladder)
+        return _emit_dash(sorted_ladder, codec_for)
     if format == "json":
         return _emit_json(sorted_ladder, samples=samples)
     raise ValueError(f"unknown manifest format: {format!r} (expected hls/dash/json)")
 
 
-def _emit_hls(ladder: Sequence[Rendition]) -> str:
+def _emit_hls(ladder: Sequence[Rendition], codec_for: CodecFn | None = None) -> str:
     lines: list[str] = ["#EXTM3U", "#EXT-X-VERSION:6"]
     for r in ladder:
         bps = round(r.bitrate_kbps * 1000.0)
         uri = f"rendition_{r.width}x{r.height}_{round(r.bitrate_kbps)}k.m3u8"
-        lines.append(
-            f"#EXT-X-STREAM-INF:BANDWIDTH={bps},RESOLUTION={r.width}x{r.height},"
-            f'CODECS="avc1.640028"'
-        )
+        codecs = f',CODECS="{codec_for(r)}"' if codec_for is not None else ""
+        lines.append(f"#EXT-X-STREAM-INF:BANDWIDTH={bps},RESOLUTION={r.width}x{r.height}{codecs}")
         lines.append(uri)
     return "\n".join(lines) + "\n"
 
 
-def _emit_dash(ladder: Sequence[Rendition]) -> str:
+def _emit_dash(ladder: Sequence[Rendition], codec_for: CodecFn | None = None) -> str:
     reps: list[str] = []
     for i, r in enumerate(ladder):
         bps = round(r.bitrate_kbps * 1000.0)
+        codecs = f'codecs="{codec_for(r)}" ' if codec_for is not None else ""
         reps.append(
             f'    <Representation id="r{i}" bandwidth="{bps}" '
             f'width="{r.width}" height="{r.height}" '
-            f'codecs="avc1.640028" mimeType="video/mp4">\n'
+            f'{codecs}mimeType="video/mp4">\n'
             f"      <BaseURL>rendition_{r.width}x{r.height}_"
             f"{round(r.bitrate_kbps)}k.mp4</BaseURL>\n"
             f"    </Representation>"
@@ -827,8 +833,11 @@ def build_and_emit(
     rung_overlap_threshold: float | None = None,
     point_interval_width: float | None = None,
     extra_samples: Sequence[LadderPoint] | None = None,
+    codec_for: CodecFn | None = None,
 ) -> str:
     """Convenience: build → hull → select → emit, returns the manifest string.
+
+    ``codec_for`` reaches :func:`emit_manifest` (HLS / DASH codec strings).
 
     ADR-0505 / BBB e2e v5 Bug #V5-2 + #V5-3: when ``extra_samples`` is
     provided it supersedes the per-target ``ladder.points`` cloud as
@@ -858,7 +867,7 @@ def build_and_emit(
         )
     rungs = select_knees(hull, n=quality_tiers, spacing=spacing)
     plain_samples = _manifest_samples(ladder.points, extra_samples)
-    return emit_manifest(rungs, format=format, samples=plain_samples)
+    return emit_manifest(rungs, format=format, samples=plain_samples, codec_for=codec_for)
 
 
 def _uncertainty_adjusted_hull(

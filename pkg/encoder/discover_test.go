@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/pkg/hwdevice"
 )
 
 // TestHardwareEncoderNames returns the exact expected list (order matters
@@ -223,8 +225,9 @@ func TestNewExtended_UnknownReturnsError(t *testing.T) {
 	}
 }
 
-// TestInjectQSVInitChain_DefaultDevice covers the default /dev/dri/renderD128
-// path (when VMAFTUNE_VAAPI_DEVICE is empty).
+// TestInjectQSVInitChain_DefaultDevice covers the auto-resolved render node
+// (when VMAFTUNE_VAAPI_DEVICE is empty: the first Intel node, else
+// /dev/dri/renderD128; pkg/hwdevice tests pin the resolution itself).
 func TestInjectQSVInitChain_DefaultDevice(t *testing.T) {
 	// Mutates process env — cannot run in parallel.
 	old := os.Getenv("VMAFTUNE_VAAPI_DEVICE")
@@ -243,14 +246,16 @@ func TestInjectQSVInitChain_DefaultDevice(t *testing.T) {
 	// must land in InputArgs (emitted before "-i"), never in ExtraArgs (which
 	// runEncodeArgv emits after "-c:v", where ffmpeg rejects them with -22).
 	inputJoined := strings.Join(out.InputArgs, " ")
-	if !strings.Contains(inputJoined, "/dev/dri/renderD128") {
-		t.Errorf("default VAAPI device missing from InputArgs: %v", out.InputArgs)
+	if !strings.Contains(inputJoined, "vaapi=va:"+hwdevice.ResolveVAAPIDevice("")) {
+		t.Errorf("auto-resolved VAAPI device missing from InputArgs: %v", out.InputArgs)
 	}
 	if !strings.Contains(inputJoined, "-init_hw_device") {
 		t.Errorf("init_hw_device flag missing from InputArgs: %v", out.InputArgs)
 	}
-	if !strings.Contains(inputJoined, "-filter_hw_device va") {
-		t.Errorf("filter_hw_device flag missing from InputArgs: %v", out.InputArgs)
+	// The QSV device is the filter device, so hwupload yields frames the
+	// encoder takes (with "va" the filter graph failed on an A380).
+	if !strings.HasSuffix(inputJoined, "-filter_hw_device qsv_dev") {
+		t.Errorf("filter_hw_device qsv_dev missing from InputArgs: %v", out.InputArgs)
 	}
 	// The hwupload filter is a per-output option and stays in ExtraArgs.
 	extraJoined := strings.Join(out.ExtraArgs, " ")

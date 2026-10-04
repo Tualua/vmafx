@@ -107,8 +107,8 @@ never re-grow shadows on rebase.
     slice pinned in `executor_test.go`. Argv builder lenient
     (`(*codecadapter.Adapter).ResolveCodecArgs` passes out-of-vocabulary preset);
     package `codecadapter.ResolveCodecArgs` strict. Plan driver emits `medium`.
-    AMF duplicate `-quality / -rc / -qp_i / -qp_p` tail dropped (ADR-1125,
-    pkg/codecadapter `AGENTS.md` invariant 3).
+    AMF `-quality / -rc / -qp_i / -qp_p` block emitted once, as the Python
+    driver now does too (ADR-1125, pkg/codecadapter `AGENTS.md` invariant 3).
 
 13. **Plan cells omit `cell_index` and `preset`** (`executor/executor.go`
     `cellToEncodeRequest`, `makeRow`). Planner omits keys; executor defaults

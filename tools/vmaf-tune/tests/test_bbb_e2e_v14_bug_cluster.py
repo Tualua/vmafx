@@ -11,7 +11,7 @@ Three bugs blocked ``vmaf-tune compare`` from running with hardware encoders:
 
 * **V14-B** — QSV adapters emitted only ``-c:v h264_qsv`` but FFmpeg's QSV bridge
   requires ``-init_hw_device vaapi=va:<dev> -init_hw_device qsv=qsv_dev@va
-  -filter_hw_device va`` before the input, and ``-vf format=nv12,hwupload=extra_hw_frames=64``
+  -filter_hw_device qsv_dev`` before the input, and ``-vf format=nv12,hwupload=extra_hw_frames=64``
   before the encoder. Without these flags the probe fails with ``-22 Invalid argument``
   even when the Intel GPU driver is installed.
   Fix: ``_hw_init_args_for_encoder`` returns the three init flags for QSV encoders;
@@ -160,7 +160,8 @@ def test_v14_b_qsv_probe_init_precedes_input():
 def test_v14_b_qsv_auto_vaapi_device(monkeypatch):
     """QSV probe auto-resolves the Intel VAAPI device when none is specified."""
     monkeypatch.setattr(
-        "vmaftune.compare.resolve_vaapi_device", lambda _device: "/dev/dri/renderD129"
+        "vmaftune.codec_adapters._qsv_common.resolve_vaapi_device",
+        lambda _device: "/dev/dri/renderD129",
     )
     runner, calls = _make_runner(
         b" V..... h264_qsv             H.264 / AVC (Intel Quick Sync Video)\n"

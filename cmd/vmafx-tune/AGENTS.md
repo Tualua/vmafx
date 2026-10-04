@@ -221,23 +221,25 @@ during migration; see Stage roadmap in
     uses `MarshalIndent` with declaration-ordered struct fields; known
     gap, not pattern to copy.)
 
-24. **`encode-profile` emits no `-init_hw_device` chain — deliberately**
-    (`pkg/encodeprofile/encode.go` `BuildFFmpegCommand`): FFmpeg's QSV bridge
-    needs VA-API device flags before first `-i` (ADR-0601), and
-    `vmaftune.compare` injects them via its own pre-input argv. But
-    `vmaftune.encode.build_ffmpeg_command` — function this ports, and
-    one `encode-profile` calls — never has. Adding chain here would make
-    Go `--dry-run` argv differ from Python's for every QSV row. Fix it in
-    both implementations at once, or not at all.
+24. **Every QSV encode carries the device chain, in both implementations**
+    (`pkg/hwdevice`, `pkg/ffencode` `BuildFFmpegCommand`, `pkg/encoder`
+    `injectQSVInitChain`; Python `vmaftune.encode.build_ffmpeg_command`):
+    `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
+    -filter_hw_device qsv_dev` before the first `-i`, and
+    `format=nv12,hwupload=extra_hw_frames=64` appended to the request's own
+    `-vf` chain (ADR-0601). The filter device is the QSV device: with
+    `-filter_hw_device va` the upload produced `vaapi` frames and the filter
+    graph failed before the encoder opened. The render node resolves through
+    `hwdevice.ResolveVAAPIDevice` (explicit, `VMAFTUNE_VAAPI_DEVICE`, first
+    Intel node, `/dev/dri/renderD128`), the Python resolver's order. Change
+    the chain in both implementations at once; `encode-profile --dry-run`
+    argv must stay identical to Python's.
 
-25. **AMF adapters emit constant-QP block twice** (`pkg/codecadapter`
-    `amfExtraParams`): CPython's `encode._resolve_codec_args` inspects each
-    adapter's `extra_params` signature, for two-parameter AMF variant,
-    appends return value after codec slice — so
-    `-quality/-rc/-qp_i/-qp_p` appears twice with identical values. FFmpeg takes
-    last-wins so duplicate inert, but IS in argv Python prints
-    under `--dry-run`, records in corpus rows. Go port reproduces it on
-    purpose; de-duplicating it = parity break, not cleanup.
+25. **AMF adapters emit the constant-QP block once** (`pkg/codecadapter`):
+    the Python AMF `extra_params()` no longer repeats the `-quality/-rc/
+    -qp_i/-qp_p` block `ffmpeg_codec_args` emits, so Python and Go argv agree
+    byte for byte (pkg/codecadapter `AGENTS.md` invariant 3). Repeating it on
+    either side is a parity break, not an inert duplicate.
 
 26. **`sidecar` group's exit statuses and fixtures = Python
     contract** (`cmd/vmafx-tune/cmd/sidecar.go`, `sidecar_parity_test.go`,

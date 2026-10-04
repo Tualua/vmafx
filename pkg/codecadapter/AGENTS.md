@@ -39,18 +39,15 @@ them.
    is part of codec argv proper (`qualityTail`) — Python emits it from
    `ffmpeg_codec_args`.
 
-3. **AMF trio's argv is deliberately de-duplicated.** Python's
-   `extra_params(preset, qp)` on `h264_amf` / `hevc_amf` / `av1_amf`
-   returns same tokens `ffmpeg_codec_args` already produced, so Python
-   emits `-quality … -rc cqp -qp_i … -qp_p …` twice per AMF encode. Go
-   port emits each token once; since ADR-1137 that holds for every
-   encode driver (`pkg/ffencode`, `pkg/corpus`, `pkg/encodeprofile`,
-   `pkg/tune/executor`) — all build argv through this registry.
-   `TestCodecArgsMatchPythonAtDefaultQuality` pins exception
-   precisely: Python fixture's `extra` must equal codec-args tail, so
-   change in what Python duplicates still caught. If future change
-   makes duplication load-bearing (not today — FFmpeg takes last
-   occurrence), deviation has to be revisited, not silently inherited.
+3. **AMF trio's argv carries the constant-QP block once, in both
+   implementations.** Python's AMF `extra_params()` used to return the
+   `-quality … -rc cqp -qp_i … -qp_p …` block `ffmpeg_codec_args`
+   already produced, so the Python driver emitted it twice and this port
+   documented its single copy as a deviation. Python's `extra_params()`
+   now returns `()`, the fixture's AMF `extra` is empty, and
+   `TestCodecArgsMatchPythonAtDefaultQuality` holds AMF to the same
+   equality as every other adapter. A change that repeats the block on
+   either side is a parity break.
 
 4. **`recommend`'s CRF window is 10–50, not adapter's quality range**
    (`cmd/vmafx-tune/cmd/recommend.go`). Python CLI never overrides

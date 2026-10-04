@@ -11,14 +11,11 @@ package codecadapter_test
 // It is the parity oracle for the Go registry: drift between the two
 // implementations fails TestFFmpegCodecArgs_matchesPythonGolden.
 //
-// Two codecs are deliberately absent:
-//   - av1_videotoolbox — the Python adapter raises
-//     Av1VideoToolboxUnavailableError for every preset (ADR-0339); the Go
-//     port returns an error and is covered by its own test.
-//   - the AMF trio's duplicated tail — see the Adapter.FFmpegCodecArgs
-//     doc comment; the Go port emits each AMF token once, and this table
-//     records ffmpeg_codec_args() (single copy), not the doubled argv
-//     _resolve_codec_args() actually hands to FFmpeg.
+// av1_videotoolbox is deliberately absent: the Python adapter raises
+// Av1VideoToolboxUnavailableError for every preset (ADR-0339); the Go port
+// returns an error and is covered by its own test. The AMF rows are the
+// ffmpeg_codec_args() argv, which is also what both drivers hand to FFmpeg
+// (each token once; the Python driver repeated the block until 2026-10-04).
 var goldenArgv = map[string]map[string][]string{
 	"libx264": {
 		"ultrafast": {"-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"},

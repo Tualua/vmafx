@@ -98,13 +98,11 @@ func TestRegistryMatchesPythonMetadata(t *testing.T) {
 // TestCodecArgsMatchPythonAtDefaultQuality replays every (adapter, preset)
 // pair through both argv surfaces at the adapter's default quality.
 //
-// FFmpegCodecArgs must match the Python ffmpeg_codec_args exactly. ExtraParams
-// must match the Python extra_params with one documented exception: the AMF
-// trio's extra_params returns the same constant-QP block ffmpeg_codec_args
-// already emitted, and this registry deliberately drops that inert duplicate
-// (AGENTS.md invariant 3, ADR-1125). The test pins the exception precisely —
-// the fixture's extra tail must equal the codec-args tail, so any change to
-// what the Python duplicates is still caught.
+// FFmpegCodecArgs must match the Python ffmpeg_codec_args exactly, and
+// ExtraParams the Python extra_params. The AMF trio used to be the exception:
+// Python's extra_params repeated the constant-QP block ffmpeg_codec_args had
+// already emitted. Python now emits it once too, so the AMF adapters are held
+// to the same equality as every other adapter (AGENTS.md invariant 3).
 func TestCodecArgsMatchPythonAtDefaultQuality(t *testing.T) {
 	t.Parallel()
 
@@ -143,19 +141,6 @@ func TestCodecArgsMatchPythonAtDefaultQuality(t *testing.T) {
 				}
 
 				gotExtra := adapter.ExtraParams()
-				if adapter.qualityStyle == StyleAMFQP {
-					// The documented deviation: Python's extra is the codec
-					// tail repeated; the Go registry emits it once.
-					if !reflect.DeepEqual(expected.Extra, expected.CodecArgs[2:]) {
-						t.Errorf("preset %q: the AMF fixture no longer duplicates the codec tail "+
-							"(extra %v vs codec args %v); revisit the de-duplication",
-							preset, expected.Extra, expected.CodecArgs)
-					}
-					if len(gotExtra) != 0 {
-						t.Errorf("preset %q: AMF extra params = %v, want none", preset, gotExtra)
-					}
-					continue
-				}
 				if len(gotExtra) == 0 && len(expected.Extra) == 0 {
 					continue
 				}

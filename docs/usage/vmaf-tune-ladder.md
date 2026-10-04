@@ -42,8 +42,16 @@ of the form `rendition_<W>x<H>_<kbps>k.m3u8`; re-point them at your
 per-rendition playlists when you package the encoded segments.
 
 !!! note "CODECS attribute"
-    The HLS and DASH writers always emit `CODECS="avc1.640028"`, whatever
-    `--encoder` was. Edit the attribute when you ladder a non-H.264 encoder.
+    The HLS `CODECS` and DASH `codecs` attributes name each rung's codec,
+    profile and level (RFC 6381). They come from a two-frame encode with the
+    ladder's encoder and preset at the rung's geometry and frame rate,
+    read from the codec configuration record of the result: `avc1.PPCCLL`
+    for H.264, `hvc1.…` for HEVC (package those renditions with
+    `-tag:v hvc1`), `av01.P.LLT.DD` for AV1 and `vp09.PP.LL.DD` for VP9
+    (level from the VP9 level table). An encoder without such a record
+    (VVC, ProRes) makes HLS and DASH output fail with exit status 2; use
+    `--format json`. The writers used to print `avc1.640028` for every
+    encoder.
 
 ## Pipeline
 
@@ -283,7 +291,7 @@ $ vmaf-tune ladder --src trailer.mp4 --encoder libx264 \
     --with-uncertainty --uncertainty-sidecar calibration.json
 #EXTM3U
 #EXT-X-VERSION:6
-#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=854x480,CODECS="avc1.640028"
+#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=854x480,CODECS="avc1.64001e"
 rendition_854x480_1200k.m3u8
 ...
 ```

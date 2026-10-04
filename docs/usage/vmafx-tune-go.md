@@ -1037,14 +1037,14 @@ JSON payload is still written first, so a wrapper script can read
 
 ### Hardware-encoder caveats
 
-- The emitted argv contains no `-init_hw_device` chain. FFmpeg's QSV bridge on
-  Linux needs `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
-  -filter_hw_device va` before the first `-i`, plus a `format=nv12,hwupload`
-  filter, or the encode fails with `-22` (see
-  [ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md)). This
-  matches the Python implementation exactly: `vmaf-tune` injects that chain in
-  its `compare` sweep, never in `encode-profile`. Supply the flags yourself
-  with repeated `--extra-ffmpeg-arg`, or drive QSV through `compare`.
+- A QSV row's argv carries FFmpeg's QSV device chain,
+  `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
+  -filter_hw_device qsv_dev`, before the first `-i`, and
+  `format=nv12,hwupload=extra_hw_frames=64` at the end of its `-vf` chain
+  (see [ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md)),
+  exactly as the Python `vmaf-tune` builds every QSV encode. The render node is
+  `VMAFTUNE_VAAPI_DEVICE`, else the first Intel render node, else
+  `/dev/dri/renderD128`.
 - Hardware encoders (NVENC / QSV / AMF) reject sources below roughly 320x240.
   A profile built from a smaller clip fails at the encoder.
 - `av1_videotoolbox` is a placeholder: upstream FFmpeg ships no such encoder,

@@ -128,11 +128,12 @@ def test_amf_validate_rejects_qp_out_of_range(name):
 
 
 @pytest.mark.parametrize("name", _AMF_NAMES)
-def test_amf_extra_params_shape(name):
+def test_amf_codec_args_shape_and_no_extra_params(name):
     a = get_adapter(name)
-    params = a.extra_params("medium", 23)
-    # Argv ordering matters for ffmpeg; assert the exact tuple.
-    assert params == (
+    # Argv ordering matters for ffmpeg; assert the exact list.
+    assert a.ffmpeg_codec_args("medium", 23) == [
+        "-c:v",
+        a.encoder,
         "-quality",
         "balanced",
         "-rc",
@@ -141,19 +142,53 @@ def test_amf_extra_params_shape(name):
         "23",
         "-qp_p",
         "23",
-    )
+    ]
+    # The rate-control block lives in ffmpeg_codec_args only; extra_params
+    # used to repeat it, so every AMF encode carried it twice.
+    assert a.extra_params() == ()
 
 
-def test_amf_extra_params_compresses_slow_to_quality():
+def test_amf_codec_args_compress_slow_to_quality():
     a = get_adapter("h264_amf")
-    assert a.extra_params("placebo", 18)[1] == "quality"
-    assert a.extra_params("slower", 18)[1] == "quality"
+    assert a.ffmpeg_codec_args("placebo", 18)[3] == "quality"
+    assert a.ffmpeg_codec_args("slower", 18)[3] == "quality"
 
 
-def test_amf_extra_params_compresses_fast_to_speed():
+def test_amf_codec_args_compress_fast_to_speed():
     a = get_adapter("hevc_amf")
-    assert a.extra_params("ultrafast", 30)[1] == "speed"
-    assert a.extra_params("veryfast", 30)[1] == "speed"
+    assert a.ffmpeg_codec_args("ultrafast", 30)[3] == "speed"
+    assert a.ffmpeg_codec_args("veryfast", 30)[3] == "speed"
+
+
+@pytest.mark.parametrize("name", _AMF_NAMES)
+def test_amf_encode_argv_carries_rate_control_once(name, tmp_path):
+    """The real encode argv names -quality / -rc / -qp_i / -qp_p once each."""
+    from vmaftune.encode import EncodeRequest, build_ffmpeg_command
+
+    req = EncodeRequest(
+        source=tmp_path / "ref.yuv",
+        width=1920,
+        height=1080,
+        pix_fmt="yuv420p",
+        framerate=24.0,
+        encoder=name,
+        preset="medium",
+        crf=23,
+        output=tmp_path / "out.mp4",
+    )
+    argv = build_ffmpeg_command(req)
+    for flag in ("-quality", "-rc", "-qp_i", "-qp_p"):
+        assert argv.count(flag) == 1, (flag, argv)
+
+
+def test_ensure_amf_available_token_match_not_substring():
+    """``h264_amf`` must not match a listing that only advertises ``h264_amf_x``."""
+
+    def fake_run(cmd, capture_output, text, check):
+        return _FakeCompleted(returncode=0, stdout=" V..... h264_amf_x           other encoder\n")
+
+    with pytest.raises(RuntimeError, match="unavailable"):
+        ensure_amf_available(encoder="h264_amf", runner=fake_run)
 
 
 def test_ensure_amf_available_succeeds_when_encoder_listed():

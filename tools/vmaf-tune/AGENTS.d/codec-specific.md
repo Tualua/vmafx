@@ -7,18 +7,27 @@ invariant: QSV shares _qsv_common; VideoToolbox shares _videotoolbox_common; AMF
 <!-- markdownlint-disable MD024 -->
 # Specific codec adapter implementations
 
-- **`_QSV_ENCODERS` and `BaseQsvAdapter.qsv_hw_init_args()` must
-  stay in sync (ADR-0601).** `compare._hw_init_args_for_encoder()`
-  injects QSV VA-API device-init chain (`-init_hw_device vaapi=va:…
-  -init_hw_device qsv=qsv_dev@va -filter_hw_device va`) only for
-  encoders listed in `_QSV_ENCODERS`. If new QSV adapter added, its
-  encoder string must be added to `_QSV_ENCODERS` in same commit —
-  omitting it silently skips init chain, produces
-  `-22 Invalid argument` at runtime. Static helper
-  `BaseQsvAdapter.qsv_hw_init_args(vaapi_device)` must produce same
-  flag sequence as `_hw_init_args_for_encoder` for QSV encoders.
-  `test_bbb_e2e_v14_bug_cluster.py::test_qsv_adapter_static_helper_returns_init_args`
-  asserts this invariant.
+- **The QSV device chain has one implementation and every QSV encode
+  uses it (ADR-0601).** `_qsv_common.qsv_device_init_args()` (also
+  `BaseQsvAdapter.hw_pre_input_args()` / `qsv_hw_init_args()`) returns
+  `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
+  -filter_hw_device qsv_dev`, and `BaseQsvAdapter.hw_upload_filter` is
+  `QSV_UPLOAD_FILTER`. `encode.build_ffmpeg_command` puts the first
+  before `-i` and appends the second to the request's own `-vf` chain
+  (`encode.with_upload_filter`; a second `-vf` would drop a rung's
+  scale); `compare._hw_probe_argv` uses the same two. The filter device
+  is the QSV device: with `va` the upload produced `vaapi` frames and the
+  filter graph failed (A380, iHD driver). A new hardware family that
+  needs a device implements `hw_pre_input_args` / `hw_upload_filter` on
+  its adapter instead of a branch in `encode.py` or `compare.py`. The Go
+  side (`pkg/hwdevice`) must emit the identical chain.
+  `tests/test_qsv_encode_chain.py` pins argv, merge and resolution.
+- **AMF's rate-control block lives in `ffmpeg_codec_args` only.**
+  `_AMFAdapterBase.extra_params()` returns `()`; it used to repeat the
+  `-quality / -rc / -qp_i / -qp_p` block, so every AMF command line
+  carried it twice (`adapter_version` "2" marks the change).
+  `encode._resolve_codec_args` calls `extra_params()` without arguments
+  for every adapter.
 - **`libvpx-vp9` two-pass is FFmpeg-generic, encoder-stats is not.**
   Adapter may set `supports_two_pass = True` because FFmpeg's
   libvpx wrapper honours `-pass` / `-passlogfile`, but

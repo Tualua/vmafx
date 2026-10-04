@@ -14,16 +14,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "faster": {
         "codec_args": [
@@ -38,16 +29,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "medium": {
         "codec_args": [
@@ -62,16 +44,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "balanced",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "placebo": {
         "codec_args": [
@@ -86,16 +59,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slow": {
         "codec_args": [
@@ -110,16 +74,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slower": {
         "codec_args": [
@@ -134,16 +89,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slowest": {
         "codec_args": [
@@ -158,16 +104,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "superfast": {
         "codec_args": [
@@ -182,16 +119,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "ultrafast": {
         "codec_args": [
@@ -206,16 +134,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "veryfast": {
         "codec_args": [
@@ -230,16 +149,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       }
     },
     "encoder": "av1_amf",
@@ -577,16 +487,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "faster": {
         "codec_args": [
@@ -601,16 +502,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "medium": {
         "codec_args": [
@@ -625,16 +517,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "balanced",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "placebo": {
         "codec_args": [
@@ -649,16 +532,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slow": {
         "codec_args": [
@@ -673,16 +547,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slower": {
         "codec_args": [
@@ -697,16 +562,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slowest": {
         "codec_args": [
@@ -721,16 +577,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "superfast": {
         "codec_args": [
@@ -745,16 +592,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "ultrafast": {
         "codec_args": [
@@ -769,16 +607,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "veryfast": {
         "codec_args": [
@@ -793,16 +622,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       }
     },
     "encoder": "h264_amf",
@@ -1203,16 +1023,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "faster": {
         "codec_args": [
@@ -1227,16 +1038,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "medium": {
         "codec_args": [
@@ -1251,16 +1053,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "balanced",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "placebo": {
         "codec_args": [
@@ -1275,16 +1068,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slow": {
         "codec_args": [
@@ -1299,16 +1083,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slower": {
         "codec_args": [
@@ -1323,16 +1098,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "slowest": {
         "codec_args": [
@@ -1347,16 +1113,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "quality",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "superfast": {
         "codec_args": [
@@ -1371,16 +1128,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "ultrafast": {
         "codec_args": [
@@ -1395,16 +1143,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       },
       "veryfast": {
         "codec_args": [
@@ -1419,16 +1158,7 @@
           "-qp_p",
           "23"
         ],
-        "extra": [
-          "-quality",
-          "speed",
-          "-rc",
-          "cqp",
-          "-qp_i",
-          "23",
-          "-qp_p",
-          "23"
-        ]
+        "extra": []
       }
     },
     "encoder": "hevc_amf",

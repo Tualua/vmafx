@@ -39,8 +39,11 @@ Common behaviour:
   unsupported GPU makes the encode exit non-zero, and the harness
   records the failure and skips scoring, so a partial corpus from a
   mixed fleet is still well-formed.
-- `vmaf-tune compare` probes each hardware encoder first with a
-  one-frame dummy encode and skips a failing one with a recorded reason.
+- Every hardware encoder (NVENC, QSV, AMF and VideoToolbox) is probed
+  with a one-frame dummy encode before it is used. `compare` skips a
+  failing one with a recorded reason; `corpus`, live `recommend` and
+  `ladder` stop before the first encode with exit status 2 and the
+  probe's reason.
 - None of the hardware adapters supports the two-invocation `--two-pass`
   driver. NVENC, QSV and AMF offer an in-encoder look-ahead instead; see
   [multi-pass encoding](vmaf-tune-multipass.md).
@@ -88,38 +91,46 @@ presets are `veryslow`, `slower`, `slow`, `medium`, `fast`, `faster` and
 `superfast`; those names are rejected.
 
 `vmaf-tune` validates the `(preset, global_quality)` pair before spawning
-FFmpeg. `require_qsv_encoder()` raises a `RuntimeError` with a build hint
-when `ffmpeg -encoders` lacks the encoder, but the `corpus` path does not
-call it. The argv for a working QSV encode on Linux needs a VA-API device
-chain before the input and a format conversion after it:
+FFmpeg. Every QSV encode (`corpus`, `ladder`, `compare`'s bisect, `fast`,
+`tune-per-shot`) carries a VA-API / QSV device chain before the input and
+the upload filter at the end of its `-vf` chain, from the same adapter
+code the availability probe uses:
 
 ```shell
 ffmpeg \
     -init_hw_device vaapi=va:/dev/dri/renderD129 \
     -init_hw_device qsv=qsv_dev@va \
-    -filter_hw_device va \
+    -filter_hw_device qsv_dev \
     -i src.mkv \
     -vf format=nv12,hwupload=extra_hw_frames=64 \
     -c:v h264_qsv -preset medium -global_quality 23 -an out.mkv
 ```
 
-Without this chain every QSV encode fails with `-22 Invalid argument`.
+Without the chain every QSV encode fails with `-22 Invalid argument`. The
+filter device is the QSV device (`qsv_dev`): with the VA-API device there,
+as ADR-0601 first recorded it, `hwupload` produces `vaapi` frames and the
+filter graph fails before the encoder opens. A ladder rung's
+`scale=W:H` and the upload share one `-vf` chain
+(`scale=W:H,format=nv12,hwupload=extra_hw_frames=64`), because FFmpeg
+keeps only the last `-vf`.
 
-!!! warning "The chain is only added by the `compare` availability probe"
-    `vmaf-tune compare` builds the chain for its one-frame availability
-    probe (ADR-0601, ADR-0641). The adapter helper
-    `BaseQsvAdapter.qsv_hw_init_args()` exists, but no CLI encode path
-    in `corpus` or `compare` inserts the chain into the real encodes
-    today. Until that is wired, a QSV sweep needs an FFmpeg that
-    initialises the device itself.
+!!! warning "Not proven on QSV hardware"
+    The argv and the probe wiring are covered by tests with fakes. On the
+    one Intel GPU the project has measured (Arc A380, Linux xe driver,
+    iHD 26.3.5, oneVPL 2.17), the chain gets past device and filter
+    initialisation, but every QSV encoder then fails inside the runtime
+    with `Invalid FrameType:0`, with or without `vmaf-tune`'s chain. A
+    `LIBVA_DRIVER_NAME` that names another vendor's driver also breaks the
+    device chain ("Failed to get device id from the driver").
 
 The VA-API render node defaults to `auto`: `vmaf-tune` walks
 `/dev/dri/by-path` and `/sys/class/drm/renderD*/device/vendor`, picks
 the first Intel vendor node (`0x8086`), and falls back to
 `/dev/dri/renderD128` only when none is found. Pin a node with
 `vmaf-tune compare --vaapi-device /dev/dri/renderD129` or with the
-`VMAFTUNE_VAAPI_DEVICE` environment variable (the flag wins). Both apply
-to `compare` only.
+`VMAFTUNE_VAAPI_DEVICE` environment variable (the flag wins). The
+environment variable applies to every subcommand that encodes; the flag
+exists on `compare` and holds for its probe and every encode of the run.
 
 ## AMD AMF
 
@@ -165,6 +176,10 @@ ffmpeg -i ref.yuv -c:v h264_amf \
        -an out.mkv
 ```
 
+Each of `-quality`, `-rc`, `-qp_i` and `-qp_p` appears once. Until
+2026-10-04 the AMF adapters returned the same block from
+`extra_params()` as well, so every AMF command line carried it twice.
+
 !!! note "Some APUs have no AMF encoder"
     The gfx1036 iGPU in AMD Raphael and Phoenix APUs (Ryzen 7000
     integrated graphics) is decode-only. `h264_amf`, `hevc_amf` and
@@ -182,9 +197,10 @@ ffmpeg -i ref.yuv -c:v h264_amf \
 | `av1_videotoolbox` | `av1_videotoolbox` | `-q:v` 0..100 (placeholder) | none shipped yet |
 
 The adapters validate the `(preset, quality)` pair (`-q:v` for H.264
-and HEVC, the integer tier id for ProRes). They do not probe the host:
-on a machine without VideoToolbox, for example Linux, FFmpeg itself
-prints `Encoder not found` and the cell fails.
+and HEVC, the integer tier id for ProRes). The host is probed like every
+hardware encoder's: on a machine without VideoToolbox, for example
+Linux, the one-frame dummy encode fails and `compare` records the row as
+unavailable, while `corpus` and `ladder` stop with exit status 2.
 
 VideoToolbox has no multi-valued preset, only a boolean `-realtime`
 flag, so the nine accepted names collapse onto it:

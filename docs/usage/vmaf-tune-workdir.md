@@ -28,7 +28,7 @@ The directory is resolved in this order:
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `VMAFTUNE_WORKDIR` | OS default (typically `/tmp`) | Parent of every per-run scratch directory. Overridden by `--workdir`. |
-| `VMAFTUNE_VAAPI_DEVICE` | unset | VA-API DRI render node for Intel QSV hardware-device initialisation. The `--vaapi-device` flag of `compare` takes precedence; without either, the first Intel render node under `/sys/class/drm` is used. Ignored for non-QSV encoders ([ADR-0641](../adr/0641-dev-container-encoder-probe-hardening.md)). |
+| `VMAFTUNE_VAAPI_DEVICE` | unset | VA-API DRI render node for Intel QSV hardware-device initialisation, read by every QSV encode and probe (Python and `vmafx-tune-go`). The `--vaapi-device` flag of `compare` takes precedence; without either, the first Intel render node under `/sys/class/drm` is used. Ignored for non-QSV encoders ([ADR-0641](../adr/0641-dev-container-encoder-probe-hardening.md)). |
 | `VMAFTUNE_SALIENCY_FALLBACK_OK` | unset | Set to `1` to accept a plain encode when an encoder has no saliency ROI dispatch. Equivalent to `--saliency-fallback-plain`; see [saliency-aware](vmaf-tune-saliency-aware.md). |
 
 ## Disk-space safeguards

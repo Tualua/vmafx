@@ -9,8 +9,7 @@
 //   - All hardware paths require the GPU driver and the corresponding ffmpeg
 //     HW-accel plugin to be present in the container image.
 //   - QSV requires VA-API device initialisation (ADR-0601); injectQSVInitChain
-//     adds the chain to every QSV encode (render node from
-//     VMAFTUNE_VAAPI_DEVICE, default /dev/dri/renderD128).
+//     adds the pkg/hwdevice chain to every QSV encode.
 //   - AV1 encoders (libsvtav1, libaom-av1) are treated as software encoders
 //     but shipped here because they are AOM ecosystem, not libx26x.
 //
@@ -21,8 +20,9 @@ package encoder
 
 import (
 	"fmt"
-	"os"
 	"strings"
+
+	"github.com/VMAFx/vmafx/pkg/hwdevice"
 )
 
 // ---------------------------------------------------------------------------
@@ -95,53 +95,27 @@ func (e HEVCQSVEncoder) Encode(src string, params EncodeParams) (EncodeResult, e
 }
 
 // injectQSVInitChain wires the VA-API to QSV device chain that FFmpeg's QSV
-// bridge requires, defaulting the render node to /dev/dri/renderD128 and
-// honouring the VMAFTUNE_VAAPI_DEVICE override.
+// bridge requires (pkg/hwdevice, the one Go implementation; the render node
+// comes from hwdevice.ResolveVAAPIDevice: VMAFTUNE_VAAPI_DEVICE, else the
+// first Intel render node, else /dev/dri/renderD128).
 //
 // Placement is load-bearing (ADR-0601; mirrors the Python
-// compare.hw_device_init_args + _qsv_common.hw_device_init_args split):
+// vmaftune.encode.build_ffmpeg_command):
 //
 //   - The three device-init flags are *global* options and MUST precede the
 //     first "-i". ffmpeg rejects them with "-22 Invalid argument" otherwise,
 //     even on a host with a working Intel driver. They go to InputArgs.
-//   - "-vf format=nv12,hwupload=extra_hw_frames=64" is a per-output filter
-//     option and must follow the input; it stays in ExtraArgs.
+//   - The upload filter is a per-output filter option and must follow the
+//     input; it joins the caller's -vf chain in ExtraArgs.
 //
 // Before EncodeParams grew an InputArgs field the whole chain was crammed
 // into ExtraArgs, which placed -init_hw_device after "-c:v" where ffmpeg
 // rejects it. Keep the split.
 func injectQSVInitChain(params EncodeParams) EncodeParams {
-	vaapiDev := os.Getenv("VMAFTUNE_VAAPI_DEVICE")
-	if vaapiDev == "" {
-		vaapiDev = "/dev/dri/renderD128"
-	}
-	deviceChain := []string{
-		"-init_hw_device", "vaapi=va:" + vaapiDev,
-		"-init_hw_device", "qsv=qsv_dev@va",
-		"-filter_hw_device", "va",
-	}
+	deviceChain := hwdevice.QSVInitArgs(hwdevice.ResolveVAAPIDevice(""))
 	params.InputArgs = append(deviceChain, params.InputArgs...)
-	params.ExtraArgs = appendVideoFilter(params.ExtraArgs, qsvUploadFilter)
+	params.ExtraArgs = hwdevice.AppendVideoFilter(params.ExtraArgs, hwdevice.UploadFilter)
 	return params
-}
-
-// qsvUploadFilter moves system-memory frames into QSV surfaces; it must be the
-// last filter before the encoder.
-const qsvUploadFilter = "format=nv12,hwupload=extra_hw_frames=64"
-
-// appendVideoFilter adds filter to the end of the caller's "-vf" chain, or
-// prepends "-vf filter" when the caller set none. ffmpeg keeps only the last
-// "-vf" of an output, so a second flag would silently drop the caller's chain
-// (a ladder rung's scale) or the upload.
-func appendVideoFilter(args []string, filter string) []string {
-	out := append([]string(nil), args...)
-	for i := 0; i+1 < len(out); i++ {
-		if out[i] == "-vf" || out[i] == "-filter:v" {
-			out[i+1] = out[i+1] + "," + filter
-			return out
-		}
-	}
-	return append([]string{"-vf", filter}, out...)
 }
 
 // ---------------------------------------------------------------------------

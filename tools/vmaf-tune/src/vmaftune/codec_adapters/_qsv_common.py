@@ -32,6 +32,7 @@ from pathlib import Path
 
 from ..hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
 from . import _gop_common
+from ._ffmpeg_listing import encoder_listed
 
 # QSV preset vocabulary — identical to x264's medium/fast/... subset
 # but without the libx264-specific `ultrafast` / `superfast` levels.
@@ -48,6 +49,42 @@ QSV_PRESETS: tuple[str, ...] = (
 # `global_quality` ICQ window — full libmfx / VPL accepted range.
 QSV_QUALITY_RANGE: tuple[int, int] = (1, 51)
 QSV_QUALITY_DEFAULT: int = 23
+
+# The filter that moves system-memory frames into QSV surfaces; it must be
+# the last filter before the encoder (ADR-0601).
+QSV_UPLOAD_FILTER: str = "format=nv12,hwupload=extra_hw_frames=64"
+
+
+def qsv_device_init_args(vaapi_device: str = AUTO_VAAPI_DEVICE) -> list[str]:
+    """Return the pre-input FFmpeg argv that initialises the QSV device.
+
+    FFmpeg's QSV bridge on Linux needs a VA-API device and a QSV device
+    derived from it before the first ``-i``; without them ``-c:v
+    h264_qsv`` fails with ``-22 Invalid argument`` even with a working
+    Intel driver (ADR-0601). The QSV device is the filter device, so
+    :data:`QSV_UPLOAD_FILTER` uploads into frames the encoder takes:
+    with the VA-API device there (``-filter_hw_device va``, the chain
+    ADR-0601 first recorded) ``hwupload`` produces ``vaapi`` frames and
+    the filter graph fails before the encoder opens ("Impossible to
+    convert between the formats supported by the filter
+    'Parsed_hwupload_1' and the filter 'auto_scale_1'", measured on an
+    Arc A380 with the iHD driver, 2026-10-04).
+    ``vaapi_device`` resolves through
+    :func:`vmaftune.hw_devices.resolve_vaapi_device` (``auto``: the
+    ``--vaapi-device`` of the command, ``$VMAFTUNE_VAAPI_DEVICE``, the
+    first Intel render node). This is the one implementation of the
+    chain: real encodes (:func:`vmaftune.encode.build_ffmpeg_command`)
+    and the ``compare`` availability probe both call it.
+    """
+    resolved = resolve_vaapi_device(vaapi_device)
+    return [
+        "-init_hw_device",
+        f"vaapi=va:{resolved}",
+        "-init_hw_device",
+        "qsv=qsv_dev@va",
+        "-filter_hw_device",
+        "qsv_dev",
+    ]
 
 
 def preset_to_qsv(preset: str) -> str:
@@ -95,12 +132,7 @@ def ffmpeg_supports_encoder(
     except FileNotFoundError:
         return False
     stdout = getattr(completed, "stdout", "") or ""
-    # Encoder lines look like ` V..... h264_qsv             H.264 / ... `
-    for line in stdout.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and parts[1] == encoder:
-            return True
-    return False
+    return encoder_listed(stdout, encoder)
 
 
 def require_qsv_encoder(
@@ -109,11 +141,12 @@ def require_qsv_encoder(
     ffmpeg_bin: str = "ffmpeg",
     runner: object | None = None,
 ) -> None:
-    """Raise ``RuntimeError`` if FFmpeg cannot drive ``encoder``.
+    """Raise ``RuntimeError`` if FFmpeg does not advertise ``encoder``.
 
-    Caller-side helper for the eventual encode wiring (out of Phase A
-    scope but pinned here so adapters can self-validate when the
-    corpus pipeline grows multi-codec support).
+    A listing check only. The encode path's availability check is the
+    two-stage :func:`vmaftune.compare.probe_encoder_available` (listing
+    plus a one-frame encode through :func:`qsv_device_init_args`), which
+    the CLI runs before the first encode of a hardware encoder.
     """
     if not ffmpeg_supports_encoder(encoder, ffmpeg_bin=ffmpeg_bin, runner=runner):
         raise RuntimeError(
@@ -134,6 +167,9 @@ class BaseQsvAdapter:
 
     name: str = "h264_qsv"
     encoder: str = "h264_qsv"
+    # Cache-key component (ADR-0298): bump when the argv, presets or range
+    # change. "2": encodes carry the VA-API device chain and the upload filter.
+    adapter_version: str = "2"
     quality_knob: str = "global_quality"
     quality_range: tuple[int, int] = QSV_QUALITY_RANGE
     quality_default: int = QSV_QUALITY_DEFAULT
@@ -155,6 +191,9 @@ class BaseQsvAdapter:
     # quality boost append :meth:`two_pass_args` pass-1 output to a
     # single-pass ``EncodeRequest.extra_params``.
     supports_two_pass: bool = False
+    # ADR-0601: the filter every QSV encode ends its -vf chain with;
+    # build_ffmpeg_command appends it to the request's own chain.
+    hw_upload_filter: str = QSV_UPLOAD_FILTER
 
     presets: tuple[str, ...] = QSV_PRESETS
 
@@ -237,32 +276,17 @@ class BaseQsvAdapter:
             str(self.probe_quality),
         ]
 
+    def hw_pre_input_args(self, vaapi_device: str = AUTO_VAAPI_DEVICE) -> list[str]:
+        """Pre-input device argv of every encode (:func:`qsv_device_init_args`)."""
+        return qsv_device_init_args(vaapi_device)
+
     @staticmethod
     def qsv_hw_init_args(vaapi_device: str = AUTO_VAAPI_DEVICE) -> list[str]:
         """Return the FFmpeg pre-input argv for QSV hardware-device init.
 
-        FFmpeg's QSV bridge on Linux requires three device-initialisation
-        flags before the first ``-i`` argument. Without them,
-        ``ffmpeg -c:v h264_qsv …`` fails with ``-22 Invalid argument``
-        even when the Intel GPU driver and libmfx / VPL are installed.
-
-        The returned list must be inserted before the ``-i`` input flag.
-        Callers must also add ``-vf format=nv12,hwupload=extra_hw_frames=64``
-        before the ``-c:v`` flag to surface QSV-mapped surfaces to the
-        encoder.
-
-        ``vaapi_device`` defaults to ``auto`` and resolves to the first
-        Intel render node under ``/sys/class/drm``. Override when an
-        operator needs a specific render node.
-
-        See ADR-0601 (Bug V14-B).
+        Same as :func:`qsv_device_init_args`; kept for callers of the
+        static helper (ADR-0601, Bug V14-B). Encodes get the chain and
+        the :data:`QSV_UPLOAD_FILTER` from
+        :func:`vmaftune.encode.build_ffmpeg_command` without calling it.
         """
-        resolved_vaapi_device = resolve_vaapi_device(vaapi_device)
-        return [
-            "-init_hw_device",
-            f"vaapi=va:{resolved_vaapi_device}",
-            "-init_hw_device",
-            "qsv=qsv_dev@va",
-            "-filter_hw_device",
-            "va",
-        ]
+        return qsv_device_init_args(vaapi_device)

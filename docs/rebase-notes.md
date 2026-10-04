@@ -7,6 +7,27 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `vmaf-tune` model overrides, cache key v2, QSV chain on encodes, ladder codec strings (2026-10-04)
+
+`fix/vmaf-tune-silent-overrides`. Fork-local Python and Go only; no C source change.
+
+- `corpus._sweep_score_model` resolves the score model once per job
+  (`resolution_aware`, then `neg`, then HDR); the CLI sets
+  `resolution_aware=False` only for an explicit `--vmaf-model`. Do not
+  bring back a per-cell selector that ignores `neg`.
+- `cache.CACHE_VERSION` is 2 and `cache_key` takes `passes`, the
+  sample-clip window and `settings`; `corpus._cell_cache_key` fills them.
+  Every adapter carries `adapter_version`.
+- The QSV chain is `_qsv_common.qsv_device_init_args()` (filter device
+  `qsv_dev`) plus `QSV_UPLOAD_FILTER`, applied by
+  `encode.build_ffmpeg_command` and `compare._hw_probe_argv`; the Go twin
+  is `pkg/hwdevice`, used by `pkg/ffencode` and `pkg/encoder`. Change both
+  together (`cmd/vmafx-tune/AGENTS.md` invariant 24).
+- `ladder.emit_manifest(..., codec_for=)` names codecs only through a
+  resolver (`vmaftune.codec_strings`); there is no default codec string.
+- AMF `extra_params()` returns `()`; `pkg/codecadapter/testdata/python_adapters.json`
+  records an empty AMF `extra`.
+
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 
 `fix/prod-licensing-release-assets`. Release tooling only; no libvmaf change.

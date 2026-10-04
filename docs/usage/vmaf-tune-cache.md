@@ -43,8 +43,8 @@ unset). The corpus runner does not call it, so pass that path yourself as
 
 ## Cache key
 
-A cache entry is keyed on the SHA-256 of the canonical-JSON encoding of six
-fields:
+A cache entry is keyed on the SHA-256 of the canonical-JSON encoding of
+these fields plus the key version (`CACHE_VERSION`, 2):
 
 | Field | Source |
 |---|---|
@@ -52,21 +52,18 @@ fields:
 | `encoder` | Adapter slug (`libx264`, `hevc_nvenc`, ...). |
 | `preset` | Encoder preset string fed to the adapter. |
 | `crf` | Quality-knob value (int). |
-| `adapter_version` | Meant to change when the adapter's argv shape changes. |
-| `ffmpeg_version` | Meant to track the host ffmpeg version string. |
+| `adapter_version` | The adapter's `adapter_version`, bumped when its argv shape, presets or range change. |
+| `ffmpeg_version` | The version `ffmpeg -version` reports, read once per sweep. |
+| `passes` | `2` for a 2-pass encode (`two_pass` on an adapter that supports it), else `1`. |
+| `sample_clip_seconds`, `sample_clip_start_s` | The encoded window of sample-clip mode. |
+| `settings` | Everything else the encode or the score depends on: width, height, source width and height, pixel format, frame rate, duration, the extra encoder argv (HDR signalling, rung scale), the VMAF model and the score backend. |
 
-`cache_key()` requires all six, and `tools/vmaf-tune/tests/test_cache.py`
-checks that changing any one of them produces a new key.
-
-!!! warning "What the corpus runner actually keys on"
-    The corpus runner passes an empty string for both `adapter_version` and
-    `ffmpeg_version` (see `iter_rows` in
-    `tools/vmaf-tune/src/vmaftune/corpus.py`),
-    so today a hit depends on `src_sha256`, `encoder`, `preset` and `crf`
-    only. An adapter or ffmpeg upgrade does not invalidate entries; clear the
-    cache directory after one. Options that are not part of the key, such as
-    the VMAF model, the score backend or the sample-clip length, do not
-    invalidate entries either.
+`cache_key()` refuses an empty source hash, encoder, preset, adapter
+version or ffmpeg version, and `tools/vmaf-tune/tests/test_cache.py`
+checks that changing any field produces a new key. When `ffmpeg -version`
+reports no version, the corpus runner keeps the cache off for that run
+and logs a warning. Entries written under key version 1 hash differently,
+so they miss; their files stay until LRU eviction or a manual delete.
 
 ## Cache layout on disk
 
@@ -79,8 +76,9 @@ checks that changing any one of them produces a new key.
 
 ## Cache lifecycle
 
-- **Hit:** the encode and score subprocesses are skipped and the cached tuple
-  becomes the JSONL row. The row gets a fresh `run_id` and timestamp.
+- **Hit:** the encode and score subprocesses are skipped and the row the miss
+  produced is replayed, column for column, with a fresh `run_id` and
+  timestamp. An entry without a stored row is treated as a miss.
 - **Miss:** encode and score run as normal. A successful result (encoder exit
   status 0) is inserted with a fresh `last_access` timestamp.
 - **Source hash off:** a run with `--no-source-hash` has no `src_sha256`, so

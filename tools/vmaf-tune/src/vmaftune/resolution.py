@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Resolution-aware VMAF model selection + per-resolution CRF offsets.
 
-Background — VMAF ships two production-grade pooled-mean models in this
-fork's ``model/`` tree:
+Background — the fork's ``model/`` tree carries a production pooled-mean
+model per viewing setup (ADR-1168 / ADR-1169):
 
-- ``vmaf_v0.6.1.json`` — trained on a 1080p-display viewing setup; the
-  default for HD content.
-- ``vmaf_4k_v0.6.1.json`` — re-fit for a 4K display setup; recommended
-  by Netflix for any encode whose target display is UHD.
+- ``vmaf_v1.0.16_3d0h`` (:data:`MODEL_1080P`, the fork default) — 1080p
+  viewed at 3H; the default for HD content.
+- ``vmaf_v1.0.16_1d5h_2160`` (:data:`MODEL_4K`) — 2160p viewed at 1.5H;
+  for any encode whose target display is UHD.
 
 The wrong model on the wrong resolution biases scores by several VMAF
 points (4K content scored against the 1080p model under-counts spatial
@@ -97,8 +97,8 @@ def select_vmaf_model_version(width: int, height: int) -> str:
 
     Decision rule (see module docstring for justification):
 
-    - ``height >= 2160`` → ``vmaf_4k_v0.6.1``
-    - else → ``vmaf_v0.6.1``
+    - ``height >= 2160`` → :data:`MODEL_4K` (``vmaf_v1.0.16_1d5h_2160``)
+    - else → :data:`MODEL_1080P` (the fork default, ``vmaf_v1.0.16_3d0h``)
 
     ``width`` is accepted for API symmetry with future anamorphic /
     aspect-ratio aware extensions; the current rule is height-only.
@@ -132,7 +132,7 @@ def neg_model_for(model_version: str) -> str:
     Args:
         model_version: Bare model version string as used in
             :class:`~vmaftune.score.ScoreRequest` (e.g.
-            ``"vmaf_v0.6.1"``, ``"vmaf_4k_v0.6.1"``).  Pre-formatted
+            ``"vmaf_v1.0.16_3d0h"``, ``"vmaf_v0.6.1"``).  Pre-formatted
             ``key=value`` strings (``"path=/…"`` / ``"version=…"``) are
             returned unchanged — they are model-path overrides, not
             version identifiers.

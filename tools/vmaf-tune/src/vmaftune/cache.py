@@ -8,24 +8,31 @@ sweep is the dominant interaction. Re-encoding and re-scoring the
 unchanged tuples burns minutes-to-hours of wall clock for no new
 information. This module turns those cells into a free hit.
 
-Cache key components (all six required to invalidate correctly):
+Cache key components (every one required to invalidate correctly):
 
-1. ``src_sha256``         — content hash of the reference YUV
-2. ``encoder``            — adapter name (``libx264``, …)
-3. ``preset``             — encoder preset string
-4. ``crf``                — quality knob value (int)
-5. ``adapter_version``    — bumps when the adapter's argv shape changes
-6. ``ffmpeg_version``     — host ffmpeg version string
+1. ``src_sha256``          — content hash of the reference YUV
+2. ``encoder``             — adapter name (``libx264``, …)
+3. ``preset``              — encoder preset string
+4. ``crf``                 — quality knob value (int)
+5. ``adapter_version``     — bumps when the adapter's argv shape changes
+6. ``ffmpeg_version``      — host ffmpeg version string
+7. ``passes``              — 1 or 2 (a 2-pass encode is another result)
+8. ``sample_clip_seconds`` / ``sample_clip_start_s`` — the encoded window
+9. ``settings``            — every other input of the encode and the score
+   (geometry, duration, extra encoder argv, VMAF model, score backend)
 
-The key is the SHA-256 of the canonical-JSON-encoded tuple of those
-six fields. Dropping any one of them produces wrong cached scores
-when, e.g., the adapter is upgraded or ffmpeg is rebuilt — that's a
-bug, not an optimisation, so the key signature is enforced by tests.
+The key is the SHA-256 of the canonical-JSON encoding of those fields
+plus :data:`CACHE_VERSION`. Dropping any one of them produces wrong
+cached scores when, e.g., the adapter is upgraded, ffmpeg is rebuilt or
+a 1-pass result answers a 2-pass request — that's a bug, not an
+optimisation, so the key signature is enforced by tests. An empty
+adapter or ffmpeg version is refused: it would make every upgrade a hit.
 
 Cache layout on disk::
 
     <cache-dir>/
       meta/<key>.json     — small JSON sidecar with the parsed result tuple
+                            and the corpus row the miss produced
       blobs/<key>.bin     — opaque encoded artifact (atomic put: tmp + rename)
 
 A single ``__index__.json`` carries last-access timestamps for LRU
@@ -43,18 +50,23 @@ import contextlib
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import shutil
 import tempfile
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from .jsonio import write_json_strict
 
 # Bumps any time the cache key composition or the on-disk layout
-# changes in a way that should invalidate older entries.
-CACHE_VERSION = 1
+# changes in a way that should invalidate older entries. 2: the key
+# carries the adapter and ffmpeg versions, the pass count, the
+# sample-clip window and the encode/score settings; entries store the
+# miss row. Version-1 keys hash differently, so old entries miss.
+CACHE_VERSION = 2
 
 # Default ceiling — generous for typical workflows (~50-100 cells of
 # 720p/1080p HEVC sit comfortably under 10 GB), small enough to not
@@ -80,6 +92,10 @@ class CachedResult:
     score_time_ms: float
     vmaf_binary_version: str
     artifact_path: Path
+    # The corpus row the miss produced, without its provenance columns
+    # (``run_id``, ``timestamp``, ``encode_path``); a hit replays it so
+    # the hit row equals the miss row. ``None`` when the entry has none.
+    row: Mapping[str, Any] | None = None
 
 
 def _xdg_cache_home() -> Path:
@@ -103,16 +119,32 @@ def cache_key(
     crf: int,
     adapter_version: str,
     ffmpeg_version: str,
+    passes: int = 1,
+    sample_clip_seconds: float = 0.0,
+    sample_clip_start_s: float = 0.0,
+    settings: Mapping[str, Any] | None = None,
 ) -> str:
     """Return the SHA-256 hex digest that identifies a trial.
 
-    All six fields are mandatory — see module docstring. Inputs are
-    serialised through canonical JSON (``sort_keys=True``,
-    ``separators=(",", ":")``) so the digest is stable across Python
-    versions and dict orderings.
+    Every field is part of the digest — see module docstring. The text
+    fields must be non-empty: an empty ``adapter_version`` or
+    ``ffmpeg_version`` would let an adapter or ffmpeg upgrade reuse old
+    results. ``settings`` holds the remaining encode and score inputs
+    as JSON-serialisable values. Inputs are serialised through
+    canonical JSON (``sort_keys=True``, ``separators=(",", ":")``) so
+    the digest is stable across Python versions and dict orderings.
     """
-    if not src_sha256:
-        raise ValueError("cache_key requires non-empty src_sha256")
+    for name, value in (
+        ("src_sha256", src_sha256),
+        ("encoder", encoder),
+        ("preset", preset),
+        ("adapter_version", adapter_version),
+        ("ffmpeg_version", ffmpeg_version),
+    ):
+        if not value:
+            raise ValueError(f"cache_key requires non-empty {name}")
+    if passes not in (1, 2):
+        raise ValueError(f"cache_key: passes must be 1 or 2, got {passes}")
     payload = {
         "v": CACHE_VERSION,
         "src_sha256": src_sha256,
@@ -121,9 +153,42 @@ def cache_key(
         "crf": int(crf),
         "adapter_version": adapter_version,
         "ffmpeg_version": ffmpeg_version,
+        "passes": int(passes),
+        "sample_clip_seconds": float(sample_clip_seconds),
+        "sample_clip_start_s": float(sample_clip_start_s),
+        "settings": dict(settings or {}),
     }
-    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(blob).hexdigest()
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _row_to_meta(row: Mapping[str, Any]) -> list[list[Any]]:
+    """Encode a corpus row for the strict-JSON meta file.
+
+    A list of ``[column, value]`` pairs keeps the row's column order
+    (the meta file is written with sorted keys); non-finite floats
+    become ``null``.
+    """
+    return [
+        [key, None if isinstance(value, float) and not math.isfinite(value) else value]
+        for key, value in row.items()
+    ]
+
+
+def _row_from_meta(raw: object) -> dict[str, Any] | None:
+    """Decode a stored row; ``null`` (a corpus row's NaN) becomes NaN again.
+
+    Returns ``None`` for anything that is not a list of ``[column, value]``
+    pairs, which the corpus runner treats as a miss.
+    """
+    if not isinstance(raw, list):
+        return None
+    row: dict[str, Any] = {}
+    for pair in raw:
+        if not (isinstance(pair, list) and len(pair) == 2 and isinstance(pair[0], str)):
+            return None
+        row[pair[0]] = math.nan if pair[1] is None else pair[1]
+    return row
 
 
 class TuneCache:
@@ -223,6 +288,7 @@ class TuneCache:
                 score_time_ms=float(payload.get("score_time_ms", 0.0)),
                 vmaf_binary_version=str(payload.get("vmaf_binary_version", "")),
                 artifact_path=blob,
+                row=_row_from_meta(payload.get("row")),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -267,6 +333,8 @@ class TuneCache:
             "score_time_ms": float(result.score_time_ms),
             "vmaf_binary_version": result.vmaf_binary_version,
         }
+        if result.row is not None:
+            payload["row"] = _row_to_meta(result.row)
         write_json_strict(meta, payload, indent=None, trailing_newline=False)
 
         index = self._read_index()

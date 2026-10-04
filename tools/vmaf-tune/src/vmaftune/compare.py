@@ -50,8 +50,10 @@ from typing import Any
 
 from . import __version__ as TOOL_VERSION
 from .codec_adapters import known_codecs
+from .codec_adapters._ffmpeg_listing import encoder_listed
+from .encode import with_upload_filter
 from .encoder_runtime import parse_encoder_runtime_token
-from .hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
+from .hw_devices import AUTO_VAAPI_DEVICE
 from .jsonio import dumps_strict
 
 # Keys exposed to programmatic consumers. Mirrors the CORPUS_ROW_KEYS
@@ -491,10 +493,16 @@ HARDWARE_ENCODERS: tuple[str, ...] = (
     "h264_amf",
     "hevc_amf",
     "av1_amf",
+    "h264_videotoolbox",
+    "hevc_videotoolbox",
+    "av1_videotoolbox",
+    "prores_videotoolbox",
 )
 
 # QSV encoder names — require VAAPI/QSV device-init flags and an
-# ``hwupload`` filter before the encoder (ADR-0601 Bug V14-B).
+# ``hwupload`` filter before the encoder (ADR-0601 Bug V14-B). The chain
+# itself comes from the adapter (``hw_pre_input_args`` /
+# ``hw_upload_filter``), the same one every real encode uses.
 _QSV_ENCODERS: frozenset[str] = frozenset({"h264_qsv", "hevc_qsv", "av1_qsv"})
 
 # Default VA-API render-node selector used for QSV device initialisation.
@@ -513,39 +521,24 @@ def _hw_init_args_for_encoder(
 ) -> list[str]:
     """Return the pre-input FFmpeg argv for hardware-device initialisation.
 
-    NVENC / AMF: no device-init flags needed on Linux (the NVIDIA driver
-    and the AMF runtime are discovered automatically). Returns ``[]``.
-
-    QSV: FFmpeg's QSV bridge requires three device-init flags before the
-    first ``-i`` input. The chain initialises a VA-API context, derives a
-    QSV context from it, and nominates the VA-API device as the filter-
-    hardware device so ``hwupload`` can push frames to the encoder::
-
-        -init_hw_device vaapi=va:<device>
-        -init_hw_device qsv=qsv_dev@va
-        -filter_hw_device va
-
-    Without these flags ``ffmpeg -c:v h264_qsv`` fails with
-    ``-22 Invalid argument`` even when the Intel GPU driver is installed.
-
-    The caller is also responsible for inserting
-    ``-vf format=nv12,hwupload=extra_hw_frames=64`` before ``-c:v`` to
-    push system-memory frames into QSV-mapped surfaces.
-
-    See ADR-0601.
+    The adapter's ``hw_pre_input_args`` when it has one (the QSV
+    adapters: :func:`vmaftune.codec_adapters._qsv_common.qsv_device_init_args`,
+    the chain every real encode carries), else ``[]``: NVENC and AMF
+    need no device-init flags on Linux. See ADR-0601.
     """
-    if encoder in _QSV_ENCODERS:
-        resolved_vaapi_device = resolve_vaapi_device(vaapi_device)
-        return [
-            "-init_hw_device",
-            f"vaapi=va:{resolved_vaapi_device}",
-            "-init_hw_device",
-            "qsv=qsv_dev@va",
-            "-filter_hw_device",
-            "va",
-        ]
-    # NVENC and AMF: no pre-input device-init required.
-    return []
+    adapter = _adapter_or_none(encoder)
+    fn = getattr(adapter, "hw_pre_input_args", None)
+    return list(fn(vaapi_device)) if fn is not None else []
+
+
+def _adapter_or_none(encoder: str) -> object | None:
+    """The registry's adapter for ``encoder``, or ``None`` when unregistered."""
+    from .codec_adapters import get_adapter
+
+    try:
+        return get_adapter(encoder)
+    except KeyError:
+        return None
 
 
 _PROBE_ERROR_HINTS: tuple[str, ...] = (
@@ -690,8 +683,9 @@ def _hw_probe_argv(ffmpeg_bin: str, adapter_encoder: str, vaapi_device: str) -> 
     (NVENC: 145x49; QSV: 128x96). 320x240 clears every known minimum.
 
     ADR-0601 Bug V14-B: QSV requires hardware-device init flags
-    before the input and an hwupload filter before the encoder.
-    NVENC and AMF need no pre-input device-init.
+    before the input and an hwupload filter before the encoder; both
+    come from the adapter, as for a real encode. NVENC, AMF and
+    VideoToolbox need no pre-input device-init.
     """
     pre_input_args = _hw_init_args_for_encoder(adapter_encoder, vaapi_device)
     argv = [
@@ -707,8 +701,9 @@ def _hw_probe_argv(ffmpeg_bin: str, adapter_encoder: str, vaapi_device: str) -> 
         "-frames:v",
         "1",
     ]
-    if adapter_encoder in _QSV_ENCODERS:
-        argv += ["-vf", "format=nv12,hwupload=extra_hw_frames=64"]
+    argv += with_upload_filter(
+        (), getattr(_adapter_or_none(adapter_encoder), "hw_upload_filter", "")
+    )
     argv += ["-c:v", adapter_encoder, "-f", "null", "-"]
     return argv
 
@@ -744,20 +739,10 @@ def _probe_hw_dummy_encode(
 def _encoder_listed(ffmpeg_encoders_stdout: str, encoder: str) -> bool:
     """True iff ``ffmpeg -encoders`` output advertises ``encoder``.
 
-    Each non-header line has the form ``" V..... NAME    description"``;
-    the encoder name appears as a whitespace-separated token in column 2.
-    Token-match avoids "libx264" matching "libx264rgb" or "h264_nvenc"
-    matching "h264_v4l2m2m" (substring matches false-positive there).
+    The shared token-match parser
+    (:func:`vmaftune.codec_adapters._ffmpeg_listing.encoder_listed`).
     """
-    for raw in ffmpeg_encoders_stdout.splitlines():
-        # Skip header / separator lines.
-        if "------" in raw or not raw.strip():
-            continue
-        tokens = raw.split()
-        # Encoder lines have flags as first token (e.g. ``V.....``).
-        if len(tokens) >= 2 and tokens[1] == encoder:
-            return True
-    return False
+    return encoder_listed(ffmpeg_encoders_stdout, encoder)
 
 
 def compare_codecs_sweep(

@@ -119,7 +119,7 @@ def _resolve_vmaf_model(args: argparse.Namespace, attr: str = "vmaf_model") -> s
     Returns:
         The (possibly NEG-routed) model version string.
     """
-    model = getattr(args, attr, DEFAULT_MODEL)
+    model = getattr(args, attr, None) or DEFAULT_MODEL
     if getattr(args, "neg", False):
         model = neg_model_for(model)
     return model
@@ -236,8 +236,12 @@ def _add_corpus_grid_args(corpus: argparse.ArgumentParser) -> None:
     )
     corpus.add_argument(
         "--vmaf-model",
-        default=DEFAULT_MODEL,
-        help="vmaf model version string (default: the fork default model)",
+        default=None,
+        help=(
+            "score every row with this VMAF model version. Default: the "
+            "model is picked per encode height (vmaf_v1.0.16_1d5h_2160 at "
+            "2160 lines and above, vmaf_v1.0.16_3d0h below; ADR-0289)"
+        ),
     )
     _add_neg_flag(corpus)
 
@@ -1888,7 +1892,14 @@ def _add_recommend_execution_args(p: argparse.ArgumentParser) -> None:
         default=Path(".workingdir/cache/vmafx-tune/encodes"),
     )
     p.add_argument("--keep-encodes", action="store_true")
-    p.add_argument("--vmaf-model", default=DEFAULT_MODEL)
+    p.add_argument(
+        "--vmaf-model",
+        default=None,
+        help=(
+            "score the live search with this VMAF model version. Default: "
+            "the model is picked per encode height (ADR-0289)"
+        ),
+    )
     _add_neg_flag(p)
     p.add_argument("--ffmpeg-bin", default="ffmpeg")
     p.add_argument("--vmaf-bin", default="vmaf")
@@ -1988,19 +1999,28 @@ def _add_recommend_uncertainty_flags(p: argparse.ArgumentParser) -> None:
     )
 
 
+class EncoderUnavailableError(RuntimeError):
+    """A hardware encoder the host cannot run (``compare``'s two-stage probe)."""
+
+
 def _build_opts(args: argparse.Namespace) -> CorpusOptions:
     # ADR-0299 / ADR-0314: resolve --score-backend up-front so an
     # unavailable backend errors out before we burn cycles on encodes.
     # `select_backend` raises `BackendUnavailableError` (caught by the
     # caller) when a non-auto backend is requested but the host can't
-    # provide it.
+    # provide it. A hardware encoder the host cannot run raises
+    # `EncoderUnavailableError` the same way, before the first encode.
     selected = select_backend(prefer=args.score_backend, vmaf_bin=args.vmaf_bin)
     sys.stderr.write(f"vmaf-tune: scoring backend = {selected}\n")
+    _require_hardware_encoder(args.encoder, args.ffmpeg_bin)
+    explicit_model = getattr(args, "vmaf_model", None)
+    neg = bool(getattr(args, "neg", False))
+    _announce_vmaf_model(explicit_model, neg)
     return CorpusOptions(
         encoder=args.encoder,
         output=args.output,
         encode_dir=args.encode_dir,
-        vmaf_model=_resolve_vmaf_model(args),
+        vmaf_model=explicit_model or DEFAULT_MODEL,
         ffmpeg_bin=args.ffmpeg_bin,
         vmaf_bin=args.vmaf_bin,
         keep_encodes=args.keep_encodes,
@@ -2010,7 +2030,45 @@ def _build_opts(args: argparse.Namespace) -> CorpusOptions:
         hdr_mode=getattr(args, "hdr_mode", "auto"),
         ffprobe_bin=getattr(args, "ffprobe_bin", "ffprobe"),
         two_pass=getattr(args, "two_pass", False),
+        # ADR-0289: an explicit --vmaf-model scores every row with it;
+        # without one the height rule picks the model per row.
+        resolution_aware=explicit_model is None,
+        neg=neg,
     )
+
+
+def _announce_vmaf_model(explicit_model: str | None, neg: bool) -> None:
+    """Name on stderr the model the rows will be scored with."""
+    from .resolution import MODEL_4K, MODEL_1080P, neg_model_for
+
+    if explicit_model:
+        model = neg_model_for(explicit_model) if neg else explicit_model
+        sys.stderr.write(f"vmaf-tune: VMAF model = {model} for every row (--vmaf-model)\n")
+        return
+    low, high = (
+        (neg_model_for(MODEL_1080P), neg_model_for(MODEL_4K)) if neg else (MODEL_1080P, MODEL_4K)
+    )
+    sys.stderr.write(
+        f"vmaf-tune: VMAF model picked per encode height: {low} below 2160 lines, "
+        f"{high} at 2160 and above; pass --vmaf-model to score every row with one model\n"
+    )
+
+
+def _require_hardware_encoder(encoder: str, ffmpeg_bin: str) -> None:
+    """Probe a hardware encoder before the first encode; raise when the host cannot run it.
+
+    The same two-stage probe ``compare`` runs (encoder listing, then a
+    one-frame encode with the adapter's device chain); software
+    encoders are not probed. Raises :class:`EncoderUnavailableError`
+    with the probe's reason.
+    """
+    from . import compare
+
+    if encoder not in compare.HARDWARE_ENCODERS:
+        return
+    ok, reason = compare.probe_encoder_available(encoder, ffmpeg_bin=ffmpeg_bin)
+    if not ok:
+        raise EncoderUnavailableError(reason)
 
 
 def _build_job(args: argparse.Namespace, src: Path, cells: tuple) -> CorpusJob:
@@ -2028,7 +2086,7 @@ def _build_job(args: argparse.Namespace, src: Path, cells: tuple) -> CorpusJob:
 def _run_corpus(args: argparse.Namespace) -> int:
     try:
         opts = _build_opts(args)
-    except BackendUnavailableError as exc:
+    except (BackendUnavailableError, EncoderUnavailableError) as exc:
         sys.stderr.write(f"vmaf-tune: {exc}\n")
         return 2
 
@@ -2281,7 +2339,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
 
     try:
         opts = _build_opts(args)
-    except BackendUnavailableError as exc:
+    except (BackendUnavailableError, EncoderUnavailableError) as exc:
         sys.stderr.write(f"vmaf-tune: {exc}\n")
         return 2
     visited = _collect_live_recommend_rows(args, opts)
@@ -3143,6 +3201,11 @@ def _build_ladder_manifest(
     from .ladder import LadderPoint, build_and_emit, make_default_sampler
 
     src_w, src_h = _resolve_ladder_source_dimensions(args, resolutions)
+    _require_hardware_encoder(args.encoder, "ffmpeg")
+    # ladder has no --vmaf-model: each rung's model follows its height
+    # (ADR-0289); --neg takes the NEG variant of it (ADR-0622).
+    neg = bool(getattr(args, "neg", False))
+    _announce_vmaf_model(None, neg)
     cloud_sink: list[LadderPoint] = []
     sampler = make_default_sampler(
         pix_fmt=getattr(args, "pix_fmt", "yuv420p"),
@@ -3153,7 +3216,7 @@ def _build_ladder_manifest(
         src_height=src_h,
         cloud_sink=cloud_sink,
         score_backend=_resolve_ladder_backend(args),
-        vmaf_model=_resolve_vmaf_model(args),
+        neg=neg,
     )
     return build_and_emit(
         src=args.src,
@@ -3168,7 +3231,37 @@ def _build_ladder_manifest(
         uncertainty_thresholds=thresholds,
         rung_overlap_threshold=getattr(args, "rung_overlap_threshold", None),
         extra_samples=cloud_sink,
+        codec_for=_ladder_codec_resolver(args) if args.format in ("hls", "dash") else None,
     )
+
+
+def _ladder_codec_resolver(args: argparse.Namespace) -> Callable[[Any], str]:
+    """Codec-string resolver of the HLS / DASH ladder writers.
+
+    Each rung's RFC 6381 string comes from a two-frame encode with the
+    ladder's encoder and preset at the rung's geometry and frame rate
+    (:func:`vmaftune.codec_strings.probe_codec_string`). A codec without
+    a supported string raises ``CodecStringError`` (a ``RuntimeError``),
+    which ``ladder`` reports with exit status 2.
+    """
+    from .codec_strings import probe_codec_string
+    from .ladder import _default_sampler_preset
+
+    preset = _default_sampler_preset(args.encoder)
+
+    def _codec_for(rendition: Any) -> str:
+        return probe_codec_string(
+            args.encoder,
+            preset=preset,
+            quality=int(rendition.crf),
+            width=int(rendition.width),
+            height=int(rendition.height),
+            framerate=float(getattr(args, "framerate", 24.0)),
+            pix_fmt=getattr(args, "pix_fmt", "yuv420p"),
+            bitrate_kbps=float(rendition.bitrate_kbps),
+        )
+
+    return _codec_for
 
 
 def _emit_ladder_manifest(output: Path | None, manifest: str) -> None:
@@ -3658,7 +3751,20 @@ def _execute_compare(
 
 
 def _run_compare(args: argparse.Namespace) -> int:
-    """Compare codec runtimes through custom or production predicates."""
+    """Compare codec runtimes through custom or production predicates.
+
+    ``--vaapi-device`` holds for every QSV encode of the run, not only for
+    the availability probe (ADR-0601): the bisect's encodes resolve
+    ``auto`` to it through :func:`vmaftune.hw_devices.session_vaapi_device`.
+    """
+    from .hw_devices import session_vaapi_device
+
+    with session_vaapi_device(getattr(args, "vaapi_device", None)):
+        return _run_compare_in_session(args)
+
+
+def _run_compare_in_session(args: argparse.Namespace) -> int:
+    """Body of :func:`_run_compare` once the VA-API device is set."""
     try:
         runtime = _resolve_compare_runtime(args)
     except ValueError as exc:

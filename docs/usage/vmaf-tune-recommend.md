@@ -100,7 +100,7 @@ ignored.
 | `--output PATH` | `corpus.jsonl` | JSONL destination for the visited points. |
 | `--encode-dir PATH` | `.workingdir/cache/vmafx-tune/encodes` | Scratch directory for encodes. |
 | `--keep-encodes` | off | Keep the encoded files after scoring. |
-| `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | libvmaf model. |
+| `--vmaf-model NAME` | per encode height | libvmaf model of the live search; without it the model follows the encode height ([resolution-aware](vmaf-tune-resolution-aware.md)). |
 | `--neg` | off | Use the VMAF NEG model variant (see [VMAF NEG](../metrics/vmaf-neg.md)). |
 | `--ffmpeg-bin`, `--vmaf-bin` | `ffmpeg`, `vmaf` | Binaries to run. |
 | `--score-backend` | `auto` | `auto`, `cpu`, `cuda`, `sycl` or `hip`. `auto` prefers `cuda`, then `sycl`, `hip`, `cpu`; the chosen backend is printed on stderr. |

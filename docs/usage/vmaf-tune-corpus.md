@@ -74,8 +74,8 @@ is on the [AV1 codecs page](vmaf-tune-codec-av1.md)
 | `--output PATH` | `corpus.jsonl` | JSONL destination. |
 | `--encode-dir PATH` | `.workingdir/cache/vmafx-tune/encodes` | Scratch directory for encodes; gitignored by convention. |
 | `--keep-encodes` | off | Keep encoded files after scoring. |
-| `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | Model forwarded to `vmaf --model`. See the note below. |
-| `--neg` | off | Use the VMAF NEG model variant. See the note below. |
+| `--vmaf-model NAME` | per encode height | Score every row with this model. Without it the model follows the encode height ([resolution-aware](vmaf-tune-resolution-aware.md)). |
+| `--neg` | off | Score with the NEG variant of the model that applies. |
 | `--ffmpeg-bin PATH` | `ffmpeg` | ffmpeg binary. |
 | `--ffprobe-bin PATH` | `ffprobe` | ffprobe binary, used for HDR detection. |
 | `--vmaf-bin PATH` | `vmaf` | vmaf binary. |
@@ -96,12 +96,17 @@ is on the [AV1 codecs page](vmaf-tune-codec-av1.md)
 The four HDR flags are mutually exclusive.
 
 !!! note "Model selection on the CLI"
-    `corpus` always selects the VMAF model per encode resolution
-    ([resolution-aware](vmaf-tune-resolution-aware.md)), so
-    `--vmaf-model` and `--neg` do not change the model that scores a
-    row. Only the Python API can turn this off:
-    `CorpusOptions(resolution_aware=False)`. There is no
-    `--no-resolution-aware` flag.
+    Without `--vmaf-model`, `corpus` selects the VMAF model per encode
+    height ([resolution-aware](vmaf-tune-resolution-aware.md)); with it,
+    every row is scored with that model. `--neg` takes the NEG variant of
+    either. The choice is printed on stderr and recorded in each row's
+    `vmaf_model`.
+
+!!! note "Hardware encoders"
+    A hardware encoder (NVENC, QSV, AMF, VideoToolbox) is probed with a
+    one-frame encode before the sweep; when the host cannot run it,
+    `corpus` exits 2 with the probe's reason. See
+    [hardware encoders](vmaf-tune-codec-hardware.md).
 
 !!! note "Cache"
     The encode cache has no `corpus` flags. It is enabled from Python

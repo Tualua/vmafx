@@ -19,6 +19,8 @@ import math
 import sys
 from pathlib import Path
 
+import pytest
+
 # Make src/ importable without an editable install.
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
@@ -86,9 +88,74 @@ def test_cache_key_diffs_on_each_field():
         ("crf", 28),
         ("adapter_version", "2"),
         ("ffmpeg_version", "7.0.0"),
+        ("passes", 2),
+        ("sample_clip_seconds", 10.0),
+        ("sample_clip_start_s", 5.0),
+        ("settings", {"vmaf_model": "vmaf_v0.6.1"}),
     ):
         mutated = {**base, field: alt}
         assert cache_key(**mutated) != base_key, field
+
+
+def test_cache_key_settings_order_does_not_matter():
+    base = {
+        "src_sha256": "abc",
+        "encoder": "libx264",
+        "preset": "medium",
+        "crf": 23,
+        "adapter_version": "1",
+        "ffmpeg_version": "6.1.1",
+    }
+    a = cache_key(**base, settings={"width": 64, "height": 36})
+    b = cache_key(**base, settings={"height": 36, "width": 64})
+    assert a == b
+
+
+def test_cache_key_version_1_entries_miss():
+    """Entries written under the version-1 key must not be found (nor misread)."""
+    import hashlib
+    import json
+
+    fields = {
+        "src_sha256": "abc",
+        "encoder": "libx264",
+        "preset": "medium",
+        "crf": 23,
+        "adapter_version": "1",
+        "ffmpeg_version": "6.1.1",
+    }
+    v1 = hashlib.sha256(
+        json.dumps({"v": 1, **fields}, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert cache_key(**fields) != v1
+
+
+def test_cache_key_rejects_empty_versions_and_bad_passes():
+    """An empty adapter or ffmpeg version made every upgrade a hit."""
+    import pytest
+
+    base = {
+        "src_sha256": "abc",
+        "encoder": "libx264",
+        "preset": "medium",
+        "crf": 23,
+        "adapter_version": "1",
+        "ffmpeg_version": "6.1.1",
+    }
+    for field in ("adapter_version", "ffmpeg_version", "encoder", "preset"):
+        with pytest.raises(ValueError, match=field):
+            cache_key(**{**base, field: ""})
+    for passes in (0, 3):
+        with pytest.raises(ValueError, match="passes"):
+            cache_key(**base, passes=passes)
+
+
+def test_every_registered_adapter_declares_an_adapter_version():
+    """The cache key carries it; 13 adapters had none (the key used "")."""
+    from vmaftune.codec_adapters import get_adapter, known_codecs
+
+    missing = [n for n in known_codecs() if not getattr(get_adapter(n), "adapter_version", "")]
+    assert missing == []
 
 
 def test_cache_key_rejects_empty_src_hash():
@@ -192,7 +259,15 @@ def test_evict_lru_zero_target_is_noop(tmp_path):
 # -------------------------------------------------- corpus integration
 
 
-def _run_corpus(tmp_path: Path, *, cache_enabled: bool, encode_calls: list, score_calls: list):
+def _run_corpus(
+    tmp_path: Path,
+    *,
+    cache_enabled: bool,
+    encode_calls: list,
+    score_calls: list,
+    ffmpeg_version: str = "6.1.1",
+    **opts_kw,
+):
     src = _make_yuv(tmp_path / "ref.yuv")
 
     def fake_encode(cmd, capture_output, text, check):
@@ -213,7 +288,7 @@ def _run_corpus(tmp_path: Path, *, cache_enabled: bool, encode_calls: list, scor
         return _FakeCompleted(returncode=0, stderr="VMAF version: 3.0.0-lusoris\n")
 
     def fake_probe(cmd, capture_output, text, check):
-        return _FakeCompleted(returncode=0, stdout="ffmpeg version 6.1.1\n")
+        return _FakeCompleted(returncode=0, stdout=f"ffmpeg version {ffmpeg_version}\n")
 
     job = CorpusJob(
         source=src,
@@ -231,6 +306,7 @@ def _run_corpus(tmp_path: Path, *, cache_enabled: bool, encode_calls: list, scor
         src_sha256=True,
         cache_enabled=cache_enabled,
         cache_dir=tmp_path / "cache",
+        **opts_kw,
     )
     rows = list(
         iter_rows(
@@ -261,6 +337,70 @@ def test_corpus_first_miss_second_hit(tmp_path):
     assert rows2[0]["vmaf_score"] == 92.5
     # Row schema is identical between miss and hit.
     assert set(rows1[0].keys()) == set(rows2[0].keys())
+
+
+def test_corpus_hit_row_equals_miss_row(tmp_path):
+    """A hit replays the miss row; only run_id / timestamp / encode_path differ."""
+    rows1 = _run_corpus(tmp_path, cache_enabled=True, encode_calls=[], score_calls=[])
+    rows2 = _run_corpus(tmp_path, cache_enabled=True, encode_calls=[], score_calls=[])
+    provenance = {"run_id", "timestamp", "encode_path"}
+    miss = {k: v for k, v in rows1[0].items() if k not in provenance}
+    hit = {k: v for k, v in rows2[0].items() if k not in provenance}
+    assert list(hit) == list(miss)  # column order too
+    for key, value in miss.items():
+        same = value == hit[key] or (value != value and hit[key] != hit[key])  # NaN
+        assert same, (key, value, hit[key])
+    assert rows2[0]["run_id"] != rows1[0]["run_id"]
+
+
+@pytest.mark.parametrize(
+    ("second", "why"),
+    [
+        ({"ffmpeg_version": "7.1.2"}, "an ffmpeg upgrade"),
+        ({"two_pass": True}, "a 2-pass request against a 1-pass entry"),
+        ({"sample_clip_seconds": 1.0}, "another sample-clip window"),
+        ({"resolution_aware": False, "vmaf_model": "vmaf_v0.6.1"}, "another model"),
+        ({"neg": True}, "the NEG model"),
+        ({"score_backend": "cuda"}, "another score backend"),
+    ],
+)
+def test_corpus_cache_misses_when_an_input_changes(tmp_path, second, why):
+    enc_a: list = []
+    _run_corpus(tmp_path, cache_enabled=True, encode_calls=enc_a, score_calls=[])
+    assert enc_a
+    enc_b: list = []
+    _run_corpus(tmp_path, cache_enabled=True, encode_calls=enc_b, score_calls=[], **second)
+    assert enc_b, f"cache served a cell for {why}"
+
+
+def test_corpus_cache_misses_after_an_adapter_version_bump(tmp_path, monkeypatch):
+    import dataclasses
+
+    from vmaftune import codec_adapters
+
+    _run_corpus(tmp_path, cache_enabled=True, encode_calls=[], score_calls=[])
+    real = codec_adapters.get_adapter("libx264")
+    bumped = dataclasses.replace(real, adapter_version=real.adapter_version + "-next")
+    monkeypatch.setattr("vmaftune.corpus.get_adapter", lambda name: bumped)
+    enc_b: list = []
+    _run_corpus(tmp_path, cache_enabled=True, encode_calls=enc_b, score_calls=[])
+    assert enc_b, "cache served a cell after an adapter_version bump"
+
+
+def test_corpus_cache_off_when_ffmpeg_version_unknown(tmp_path, caplog):
+    """No version, no key: the run encodes and says the cache is off."""
+    enc_a: list = []
+    _run_corpus(tmp_path, cache_enabled=True, encode_calls=enc_a, score_calls=[], ffmpeg_version="")
+    enc_b: list = []
+    with caplog.at_level("WARNING"):
+        _run_corpus(
+            tmp_path, cache_enabled=True, encode_calls=enc_b, score_calls=[], ffmpeg_version=""
+        )
+    assert enc_b
+    assert "encode cache off" in caplog.text
+    assert not (tmp_path / "cache" / "meta").exists() or not any(
+        (tmp_path / "cache" / "meta").iterdir()
+    )
 
 
 def test_corpus_no_cache_flag_forces_re_encode(tmp_path):

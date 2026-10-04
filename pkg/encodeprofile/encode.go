@@ -36,17 +36,10 @@ import (
 // have edited by hand. An unregistered encoder still falls back to the legacy
 // libx264-shaped argv, as CPython does.
 //
-// Hardware-encoder caveat, inherited verbatim from Python: this argv carries
-// NO `-init_hw_device` chain. FFmpeg's QSV bridge on Linux needs
-// `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
-// -filter_hw_device va` before the first -i, plus a `format=nv12,hwupload`
-// filter, or the encode fails with -22 (ADR-0601). vmaftune.compare injects
-// that chain itself via its own pre-input argv; vmaftune.encode.
-// build_ffmpeg_command — the function this ports, and the one encode-profile
-// calls — never has. Emitting the chain here would make the Go --dry-run argv
-// differ from Python's for every QSV row, so the gap is preserved and
-// documented rather than silently fixed. See the package docs and the
-// subcommand's --help.
+// A QSV encode carries the device chain and the upload filter
+// (ffencode.BuildFFmpegCommand, pkg/hwdevice), as the Python
+// build_ffmpeg_command it ports does since 2026-10-04 (ADR-0601); the
+// --dry-run argv stays identical to Python's for every row.
 func BuildFFmpegCommand(req EncodeRequest, ffmpegBin string) ([]string, error) {
 	if adapter, err := codecadapter.Get(req.Encoder); err == nil {
 		if err := adapter.Validate(req.Preset, req.CRF); err != nil {
