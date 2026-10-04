@@ -14,6 +14,10 @@
 #
 
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
+# The CPU and server images also carry their licence texts and pass a licence
+# check in their build, get an SPDX SBOM per platform attested with actions/attest,
+# and publish their corresponding source as <tag>-source / <tag>-server-source
+# (.github/actions/image-licence-artifacts, ADR-1503, ADR-1513).
 # ADR-0698: vmafx-production-dockerfile
 
 name: Publish Production
@@ -135,8 +139,16 @@ jobs:
               exit 0
               ;;
           esac
-          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
-            --jq '.tag_name' 2>/dev/null || true)"
+          # A repository without a non-prerelease release answers 404: no
+          # `latest` yet. Any other failure stops the publish.
+          if ! latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+            --jq '.tag_name' 2>"$RUNNER_TEMP/latest-release.err")"; then
+            if ! grep -q 'HTTP 404' "$RUNNER_TEMP/latest-release.err"; then
+              cat "$RUNNER_TEMP/latest-release.err" >&2
+              exit 1
+            fi
+            latest_tag=""
+          fi
           if [[ "$latest_tag" == "$PUBLISH_TAG" ]]; then
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
           else
@@ -181,7 +193,8 @@ jobs:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/ \
+            tools/rc1-tester/image/ .github/actions/
           git status --short
 
       - name: Set up QEMU (cross-arch emulation)
@@ -224,6 +237,8 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
@@ -265,6 +280,23 @@ jobs:
           name: sbom-cpu
           path: sbom-cpu.cdx.json
           retention-days: 90
+
+      # ADR-1503 / ADR-1513: SPDX SBOM per platform attested on its digest, and
+      # the corresponding source of the copyleft parts as <tag>-source.
+      - name: Licence artifacts (SPDX SBOM attestations, source image)
+        uses: ./.github/actions/image-licence-artifacts
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+          name: cpu
+          source-file: docker/Dockerfile.production
+          source-target: cli-source-export
+          source-tag: ${{ env.PUBLISH_TAG }}-source
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}
 
   # -----------------------------------------------------------------------
   # Smoke-test: pull the just-pushed image and verify --version exits 0
@@ -813,7 +845,8 @@ jobs:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/ \
+            tools/rc1-tester/image/ .github/actions/
           git status --short
 
       - name: Set up QEMU
@@ -853,6 +886,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-server
 
       - name: Install cosign + sign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
@@ -891,6 +927,20 @@ jobs:
           name: sbom-server
           path: sbom-server.cdx.json
           retention-days: 90
+
+      - name: Licence artifacts (SPDX SBOM attestations, source image)
+        uses: ./.github/actions/image-licence-artifacts
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+          name: server
+          source-file: docker/Dockerfile.production
+          source-target: server-source-export
+          source-tag: ${{ env.PUBLISH_TAG }}-server-source
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-server
 
   # -----------------------------------------------------------------------
   # Server smoke: verify the signature, Python 3.14 interpreter, and CLI.
@@ -958,7 +1008,7 @@ jobs:
           }
           trap cleanup EXIT
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error \
+            if curl --fail --silent --show-error --max-time 5 \
               --oauth2-bearer "${smoke_token}" \
               http://127.0.0.1:18080/healthz; then
               break
@@ -973,7 +1023,7 @@ jobs:
             fi
             sleep 1
           done
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --max-time 5 \
             --oauth2-bearer "${smoke_token}" \
             http://127.0.0.1:18080/readyz \
             | grep --extended-regexp '"status"[[:space:]]*:[[:space:]]*"ready"'

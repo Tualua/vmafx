@@ -42,6 +42,20 @@ cannot pair compiler + runtime on Debian 13 glibc.
 
 See [docs/development/base-images.md](../docs/development/base-images.md).
 
+## Production licence gate (ADR-1513)
+
+`Dockerfile.production`: `cli` + `server` copy receipt of `cli-licence-check` /
+`server-licence-check` (`licensing.py check`, kinds `production-cli-image` /
+`production-server-image`). Distroless CLI has no interpreter: notices written
+on copy of tree (`cli-notices`), copied back (`cli-with-notices`).
+`*-source-export` = corresponding source, pushed as `<tag>-source` /
+`<tag>-server-source` by `.github/actions/image-licence-artifacts` (also SPDX
+SBOM per platform via `actions/attest`). Wheels built in `/build-venv`; runtime
+`/venv` = runtime lock + wheels only. New file / package / wheel lib / licence
+in image -> `tools/rc1-tester/image/licensing.json` same PR, else build fails.
+Label `org.opencontainers.image.licenses` = `vmafx-binaries` licence set
+(test-held).
+
 ## oneAPI production image (ADR-1368)
 
 `builder-oneapi2026` runs `scripts/ci/install-intel-oneapi.sh --mode=builder`,

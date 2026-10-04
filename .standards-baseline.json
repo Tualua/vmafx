@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T00:12:01Z",
+  "generated_at": "2026-10-04T00:44:05Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "afcba28f7fc0fe1387168137a81df81deadc01ef",
-  "total_infractions": 470,
+  "commit_sha": "cd2088fe0658a1f1e0a1978d9c156b087163721a",
+  "total_infractions": 467,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -196,30 +196,6 @@
       "message": "curl without --max-time waits on the network without a deadline",
       "anchor": "text:bec94358d1d7",
       "fingerprint": ".github/workflows/docker-publish-operator-node.yml:HISS-02:text:bec94358d1d7#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-publish-production.yml",
-      "line_number": 139,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:cfd5f221951c",
-      "fingerprint": ".github/workflows/docker-publish-production.yml:HISS-07:text:cfd5f221951c#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/docker-publish-production.yml",
-      "line_number": 961,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:215227f15a2e",
-      "fingerprint": ".github/workflows/docker-publish-production.yml:HISS-02:text:215227f15a2e#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/docker-publish-production.yml",
-      "line_number": 976,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:f4f02a7deb1d",
-      "fingerprint": ".github/workflows/docker-publish-production.yml:HISS-02:text:f4f02a7deb1d#1"
     },
     {
       "rule_id": "HISS-02",

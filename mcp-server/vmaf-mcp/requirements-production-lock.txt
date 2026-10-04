@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: d8ad27597f1dcbc41d7485822f154e24962c855c393f063f3aca17967e9139ed
+# vmafx-input-sha256: 23587260b71e6657e52cfd8a0a36b874ce088d8f8f04c5b74fd8d83fea204456
 # vmafx-inputs: mcp-server/vmaf-mcp/pyproject.toml
 aiohappyeyeballs==2.7.1 \
     --hash=sha256:065665c041c42a5938ed220bdcd7230f22527fbec085e1853d2402c8a3615d9d \

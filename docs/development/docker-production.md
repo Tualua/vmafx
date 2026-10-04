@@ -276,6 +276,58 @@ cosign verify-attestation \
   | jq '.payload | @base64d | fromjson'
 ```
 
+The CPU and server images also carry an SPDX SBOM of each platform image,
+attested with GitHub's attestation store
+([ADR-1513](../adr/1513-production-artifact-licensing.md)):
+
+```bash
+gh attestation verify oci://ghcr.io/vmafx/vmafx:$tag --repo VMAFx/vmafx \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+## Licences and corresponding source
+
+The CPU (`cli`) and server targets write their notices into the image and
+cannot be built without passing the licence check
+([ADR-1513](../adr/1513-production-artifact-licensing.md), the rules of
+[ADR-1503](../adr/1503-tester-artifact-licensing.md)):
+
+| Path or tag | What it holds |
+| --- | --- |
+| `/usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt` | every component of the image: VMAFx's compiled files with their licences and copyright lines, the models, CPython and every Python package (server), every Debian package with its source package |
+| `/usr/local/share/vmafx/licenses/texts/` | the licence texts the notices name |
+| `/usr/local/share/vmafx/licenses/vmafx-compiled-sources.json` | the licence of every repository file the build compiled |
+| `/usr/local/share/vmafx/licence-check.json` | the receipt of the licence check |
+| `ghcr.io/vmafx/vmafx:<tag>-source`, `<tag>-server-source` | the corresponding source of the copyleft parts: Debian source packages of every installed package at the installed version, and (server) the GCC source RPMs of the runtimes grafted into the numpy and scipy wheels; `SOURCES.txt` is the index |
+
+How the gate works, per stage of `docker/Dockerfile.production`:
+
+1. `builder` runs `licensing.py scan-build`, which reads `ninja -t deps` and the
+   SPDX headers (or `REUSE.toml`) of every compiled repository file.
+2. `licence-texts` downloads the recorded texts that are not in the repository
+   (CPython's `Doc/license.rst`, the pinned `fetched_texts`), each by SHA-256.
+3. `cli-notices` (on a copy of the distroless tree, which has no interpreter) and
+   `server-assembled` write the notices with `licensing.py notices`.
+4. `cli-licence-check` / `server-licence-check` run `licensing.py check` on the
+   finished tree: a file no component of `tools/rc1-tester/image/licensing.json`
+   claims, a Debian package without its copyright file, a dist-info without a
+   licence file, a copyleft wheel graft without recorded source, or a missing
+   text fails the build. `cli` and `server` copy the check's receipt, so they
+   cannot be built without it.
+5. `cli-source-export` / `server-source-export` fetch the corresponding source
+   (`licensing.py sources`, `fetch-sources`); the release workflow pushes them as
+   the `-source` tags through `.github/actions/image-licence-artifacts`.
+
+A base-image or lock bump that brings a new package, wheel library or licence
+fails the release build until `licensing.json` records it. Run the check locally
+the same way the release does:
+
+```bash
+docker buildx build --target cli -f docker/Dockerfile.production -t vmafx:test-cli .
+docker buildx build --target cli-source-export -f docker/Dockerfile.production \
+  --output type=local,dest=./cli-source .
+```
+
 ## Building locally
 
 ```bash

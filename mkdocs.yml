@@ -4,7 +4,7 @@ site_description: Perceptual video quality assessment with GPU/SIMD acceleration
 repo_url: https://github.com/VMAFx/vmafx
 repo_name: VMAFx/vmafx
 edit_uri: edit/master/docs/
-copyright: "BSD-2-Clause-Patent — Netflix / Lusoris"
+copyright: 'Fork-authored files EUPL-1.2, files inherited from Netflix BSD-2-Clause-Patent: each file''s SPDX header decides (ADR-1250). <a href="https://vmafx.github.io/vmafx/licensing/">Licensing</a> · <a href="https://github.com/VMAFx/vmafx/blob/master/LICENSE">LICENSE</a> · <a href="https://github.com/VMAFx/vmafx/tree/master/LICENSES">LICENSES/</a>'
 
 docs_dir: docs
 site_dir: build-docs/site
@@ -158,6 +158,7 @@ extra:
 nav:
   - Home: index.md
   - Roadmap: roadmap.md
+  - Licensing: licensing.md
   - Getting started:
       - getting-started/index.md
       - Install:

@@ -7307,6 +7307,7 @@
         ".pre-commit-config.yaml": 3,
         "REUSE.toml": 3,
         "core/src/mcp/meson.build": 1,
+        "docker/Dockerfile.production": 1,
         "scripts/ci/check-copyright.sh": 7,
         "scripts/ci/tests/test_check_copyright.py": 4,
         "scripts/ci/tests/test_spdx_tag_matches_notice.py": 1,
@@ -9818,14 +9819,19 @@
     },
     "1503": {
       "sites": {
+        ".github/actions/image-licence-artifacts/action.yml": 2,
+        ".github/actions/image-licence-artifacts/sbom.sh": 1,
+        ".github/workflows/docker-publish-production.yml": 2,
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
         "REUSE.toml": 2,
+        "docker/Dockerfile.production": 8,
         "docker/Dockerfile.tester": 13,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
         "scripts/ci/install-rocm-from-image.sh": 1,
         "tools/rc1-tester/image/licensing.py": 4,
-        "tools/rc1-tester/tests/test_licensing.py": 1
+        "tools/rc1-tester/tests/test_licensing.py": 1,
+        "tools/rc1-tester/tests/test_licensing_production.py": 1
       },
       "target": "1503-tester-artifact-licensing.md"
     },
@@ -9859,6 +9865,15 @@
         "scripts/docs/tests/test_generators.py": 1
       },
       "target": "1510-adr-nav-collapse-behind-index.md"
+    },
+    "1513": {
+      "sites": {
+        ".github/actions/image-licence-artifacts/action.yml": 1,
+        ".github/workflows/docker-publish-production.yml": 2,
+        "docker/Dockerfile.production": 2,
+        "tools/rc1-tester/tests/test_licensing_production.py": 2
+      },
+      "target": "1513-production-artifact-licensing.md"
     }
   },
   "retired": {

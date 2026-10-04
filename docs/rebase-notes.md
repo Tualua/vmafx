@@ -45,6 +45,29 @@
   `usage/tester-image.md`, `architecture/phase4b-distributed-platform.md`,
   `development/operator.md`, `server/controller.md`) keep the fence when their
   text is rewritten; an ASCII diagram must not come back beside it.
+## Production CPU and server images carry their licences and source (ADR-1513, 2026-10-04)
+
+`fix/prod-licensing-cpu-images`. Fork-added build and packaging files only; no
+libvmaf source change.
+
+- `docker/Dockerfile.production`: `cli` and `server` copy the receipt of
+  `cli-licence-check` / `server-licence-check`, so neither builds without the
+  licence check (artifact kinds `production-cli-image`,
+  `production-server-image` in `tools/rc1-tester/image/licensing.json`);
+  `cli-source-export` / `server-source-export` are published as `<tag>-source`
+  and `<tag>-server-source`. An upstream sync never touches this file; a change
+  that adds files to either image changes the record in the same PR.
+- `python-deps` builds the two wheels in `/build-venv` and installs only the
+  runtime lock and the wheels into `/venv`; do not bring the build lock back into
+  the runtime venv (the licence check would also refuse its dist-infos).
+- `mcp-server/vmaf-mcp/pyproject.toml` and `tools/vmaf-tune/pyproject.toml`
+  declare the union of their files' SPDX identifiers and ship `LICENSES/*`
+  (copies of the repository texts, held byte-identical by a test).
+- `.github/actions/image-licence-artifacts` is the one implementation of the
+  per-platform SPDX attestation and the source image push for production images.
+- The CPU and server jobs' recovery dispatch also takes
+  `tools/rc1-tester/image/` and `.github/actions/` from the recipe commit
+  (ADR-1347): the licence record is part of the build recipe.
 
 ## `rule-enforcement.yml` swallows no exit status (2026-10-04)
 

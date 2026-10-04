@@ -6,7 +6,8 @@ version = "0.0.2"
 description = "Quality-aware encode automation harness for libvmaf (Phase A: x264 grid corpus)."
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
-license = "BSD-2-Clause-Patent"
+license = "EUPL-1.2 AND BSD-2-Clause-Patent"
+license-files = ["LICENSES/*"]
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]

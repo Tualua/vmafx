@@ -1,5 +1,5 @@
 {
- "comment": "Licence record of the published tester artifacts (ADR-1503), read by licensing.py. Every file of an artifact must be claimed by one component (first match in list order). Change this file with the artifact: a new package, wheel library, licence or interpreter version fails the build until it is recorded here.",
+ "comment": "Licence record of the published tester and production artifacts (ADR-1503), read by licensing.py. Every file of an artifact must be claimed by one component (first match in list order). Change this file with the artifact: a new package, wheel library, licence or interpreter version fails the build until it is recorded here.",
  "schema_version": 1,
  "spdx_texts": {
   "BSD-2-Clause": "LICENSES/BSD-2-Clause.txt",
@@ -1766,6 +1766,382 @@
      ]
     }
    ]
+  },
+  "production-cli-image": {
+   "title": "the VMAFx production image (vmaf command)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version); SOURCES.txt inside it is the index.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: the vmaf command and libvmaf",
+     "paths": [
+      "usr/local/bin/vmaf",
+      "usr/local/lib/libvmaf.so*"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "EUPL-1.2 covers the VMAFx files only; every other component keeps its own terms."
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "usr/local/share/vmafx/model/other_models/brisque_live.model",
+      "usr/local/share/vmafx/model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-models",
+     "kind": "repo",
+     "name": "VMAFx models (files from the repository's model/ directory)",
+     "map": [
+      {
+       "artifact": "usr/local/share/vmafx/model/",
+       "repo": "model/"
+      }
+     ],
+     "licences": [
+      "BSD-2-Clause-Patent",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above (model/)"
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "The licence check receipt written by this image's build",
+     "paths": [
+      "usr/local/share/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the distroless base image"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and package records the distroless base image writes",
+     "paths": [
+      "bin",
+      "sbin",
+      "lib",
+      "lib32",
+      "lib64",
+      "libx32",
+      "etc/debian_version",
+      "etc/dpkg/origins/*",
+      "etc/ethertypes",
+      "etc/group",
+      "etc/host.conf",
+      "etc/issue",
+      "etc/issue.net",
+      "etc/ld.so.conf.d/*",
+      "etc/mime.types",
+      "etc/nsswitch.conf",
+      "etc/os-release",
+      "etc/passwd",
+      "etc/protocols",
+      "etc/rpc",
+      "etc/services",
+      "etc/ssl/certs/ca-certificates.crt",
+      "etc/update-motd.d/*",
+      "usr/share/zoneinfo/localtime",
+      "var/lib/dpkg/status.d/**"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "usr/local/share/vmafx/licenses/**"
+     ]
+    }
+   ]
+  },
+  "production-server-image": {
+   "title": "the VMAFx production MCP server image",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the source RPMs listed under [grafted]); SOURCES.txt inside it is the index.",
+   "python": {
+    "version": "3.14.8"
+   },
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: the vmaf command and libvmaf",
+     "paths": [
+      "usr/local/bin/vmaf",
+      "usr/local/lib/libvmaf.so*"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "EUPL-1.2 covers the VMAFx files only; every other component keeps its own terms."
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "usr/local/share/vmafx/model/other_models/brisque_live.model",
+      "usr/local/share/vmafx/model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-models",
+     "kind": "repo",
+     "name": "VMAFx models (files from the repository's model/ directory)",
+     "map": [
+      {
+       "artifact": "usr/local/share/vmafx/model/",
+       "repo": "model/"
+      }
+     ],
+     "licences": [
+      "BSD-2-Clause-Patent",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above (model/)"
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "The licence check receipt written by this image's build",
+     "paths": [
+      "usr/local/share/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "cpython",
+     "kind": "fixed",
+     "name": "CPython (python.org build of the python:3.14-slim base image)",
+     "paths": [
+      "usr/local/bin/**",
+      "usr/local/include/**",
+      "usr/local/lib/libpython3*",
+      "usr/local/lib/pkgconfig/**",
+      "usr/local/lib/python3.14/**",
+      "usr/local/share/man/**"
+     ],
+     "licence": "PSF-2.0 AND the incorporated software of Doc/license.rst AND MIT (HACL*)",
+     "copyright": [
+      "Copyright (c) 2001 Python Software Foundation; All Rights Reserved"
+     ],
+     "source": "https://www.python.org/downloads/source/ (the version above; the base image builds it unmodified)",
+     "texts": [
+      {
+       "artifact": "usr/local/lib/python3.14/LICENSE.txt",
+       "label": "CPython LICENSE"
+      },
+      {
+       "fetched": "cpython-license.rst",
+       "name": "cpython-license.rst",
+       "label": "Doc/license.rst of this CPython version: licences of incorporated software"
+      },
+      {
+       "repo": "tools/rc1-tester/image/licenses/hacl-star.txt",
+       "name": "hacl-star.txt",
+       "label": "HACL* (Modules/_hacl), which Doc/license.rst omits"
+      }
+     ]
+    },
+    {
+     "id": "python-venv",
+     "kind": "fixed",
+     "name": "Virtual environment scaffold written by CPython's venv module",
+     "paths": [
+      "venv/bin/**",
+      "venv/pyvenv.cfg",
+      "venv/lib64",
+      "venv/include/**",
+      "venv/.gitignore"
+     ],
+     "licence": "PSF-2.0",
+     "texts": [
+      {
+       "artifact": "usr/local/lib/python3.14/LICENSE.txt",
+       "label": "CPython LICENSE"
+      }
+     ]
+    },
+    {
+     "id": "python-packages",
+     "kind": "python-dist",
+     "name": "Python packages (one dist-info each)",
+     "roots": [
+      "venv/lib/python3.14/site-packages",
+      "usr/local/lib/python3.14/site-packages"
+     ],
+     "texts": [
+      {
+       "artifact": "venv/lib/python3.14/site-packages/onnxruntime/LICENSE",
+       "dist": "onnxruntime",
+       "label": "onnxruntime keeps its LICENSE in the package, not the dist-info"
+      },
+      {
+       "artifact": "venv/lib/python3.14/site-packages/onnxruntime/ThirdPartyNotices.txt",
+       "dist": "onnxruntime",
+       "label": "onnxruntime third-party notices"
+      },
+      {
+       "fetched": "flatbuffers-25.12.19-LICENSE",
+       "name": "flatbuffers-25.12.19-LICENSE.txt",
+       "dist": "flatbuffers",
+       "label": "flatbuffers 25.12.19 (Apache-2.0) ships no licence file in its wheel"
+      }
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the python:3.14-slim base image"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and state written by the Debian base image's build and its package scripts (no licensable content of its own; the scripts are covered by their packages' copyright files)",
+     "paths": [
+      "var/lib/dpkg/**",
+      "var/lib/apt/**",
+      "var/lib/pam/**",
+      "var/lib/systemd/**",
+      "var/lib/shells.state",
+      "var/cache/**",
+      "var/log/**",
+      "var/spool/**",
+      "etc/ld.so.cache",
+      "etc/alternatives/*",
+      "etc/apt/apt.conf.d/docker-*",
+      "etc/apt/sources.list.d/debian.sources",
+      "etc/dpkg/dpkg.cfg.d/docker*",
+      "etc/dpkg/origins/default",
+      "etc/systemd/system/**",
+      "etc/pam.d/common-*",
+      "etc/security/opasswd",
+      "etc/passwd",
+      "etc/passwd-",
+      "etc/group",
+      "etc/group-",
+      "etc/shadow",
+      "etc/shadow-",
+      "etc/gshadow",
+      "etc/gshadow-",
+      "etc/subuid",
+      "etc/subgid",
+      "etc/shells",
+      "etc/profile",
+      "etc/inputrc",
+      "etc/environment",
+      "etc/fstab",
+      "etc/localtime",
+      "etc/motd",
+      "etc/networks",
+      "etc/nsswitch.conf",
+      "etc/ca-certificates.conf",
+      "etc/ssl/certs/**",
+      "etc/hostname",
+      "etc/hosts",
+      "etc/resolv.conf",
+      "etc/mtab",
+      "etc/machine-id",
+      "etc/.pwd.lock",
+      "usr/share/info/dir",
+      "usr/bin/awk",
+      "usr/bin/nawk",
+      "usr/bin/pager",
+      "usr/bin/which",
+      "usr/sbin/rmt",
+      "usr/sbin/policy-rc.d",
+      "usr/local/man",
+      "root/.bashrc",
+      "root/.profile",
+      "root/.python_history",
+      "root/.wget-hsts",
+      "dev/**",
+      ".dockerenv"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "usr/local/share/vmafx/licenses/**"
+     ]
+    }
+   ]
   }
  },
  "fetched_texts": {
@@ -1853,6 +2229,11 @@
    "url": "https://sourceware.org/git/?p=bzip2.git;a=blob_plain;f=LICENSE;hb=refs/tags/bzip2-1.0.8",
    "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3",
    "why": "libbz2 of bzip2 1.0.8 (librocm_sysdeps_bz2)"
+  },
+  "flatbuffers-25.12.19-LICENSE": {
+   "url": "https://raw.githubusercontent.com/google/flatbuffers/v25.12.19/LICENSE",
+   "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+   "why": "the flatbuffers 25.12.19 wheel (an onnxruntime dependency) ships no licence file"
   }
  }
 }

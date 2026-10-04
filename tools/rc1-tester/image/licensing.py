@@ -309,26 +309,41 @@ def walk_artifact(root: Path) -> list[str]:
     return sorted(found)
 
 
+STATUS_D = "var/lib/dpkg/status.d"
+
+
+def control_fields(block: str) -> dict:
+    return dict(re.findall(r"^([A-Za-z-]+): (.*)$", block, re.MULTILINE))
+
+
 def dpkg_packages(root: Path) -> list[dict]:
-    """Installed packages of a dpkg database (name, version, source, built-using)."""
+    """Installed packages of a dpkg database (name, version, source, built-using).
+    A distroless image has no `status` file: each package is one stanza in
+    `status.d/<package>`, installed by being there."""
     status = root / "var/lib/dpkg/status"
-    if not status.is_file():
-        return []
-    packages = []
-    for block in status.read_text(encoding="utf-8").split("\n\n"):
-        fields = dict(re.findall(r"^([A-Za-z-]+): (.*)$", block, re.MULTILINE))
-        if "Package" in fields and "installed" in fields.get("Status", ""):
-            packages.append(fields)
-    return packages
+    if status.is_file():
+        blocks = status.read_text(encoding="utf-8").split("\n\n")
+        found = [control_fields(block) for block in blocks]
+        return [f for f in found if "Package" in f and "installed" in f.get("Status", "")]
+    stanzas = sorted(p for p in (root / STATUS_D).glob("*") if p.suffix != ".md5sums")
+    found = [control_fields(p.read_text(encoding="utf-8")) for p in stanzas if p.is_file()]
+    return [f for f in found if "Package" in f]
 
 
 def dpkg_owned(root: Path) -> set[str]:
+    """Paths dpkg owns: `info/*.list`, or a distroless image's `status.d/*.md5sums`
+    (relative paths of the package's regular files)."""
     owned: set[str] = set()
     info = root / "var/lib/dpkg/info"
     for listing in sorted(info.glob("*.list")):
         for line in listing.read_text(encoding="utf-8", errors="replace").splitlines():
             if line.strip() and line != "/.":
                 owned.add(line.lstrip("/"))
+    for sums in sorted((root / STATUS_D).glob("*.md5sums")):
+        for line in sums.read_text(encoding="utf-8", errors="replace").splitlines():
+            parts = line.split(maxsplit=1)
+            if len(parts) == 2:
+                owned.add(parts[1].lstrip("/"))
     return owned
 
 
@@ -381,6 +396,12 @@ def metadata_licence(first: dict, fields: list[tuple[str, str]]) -> str:
     return licence
 
 
+def is_licence_file(rel: Path) -> bool:
+    """A licence file of a dist-info: named like one, or anywhere under the
+    `licenses/` directory core metadata 2.4 (PEP 639) keeps them in."""
+    return bool(LICENCE_FILE.match(rel.name)) or "licenses" in rel.parts[:-1]
+
+
 def dist_metadata(dist: Path) -> dict:
     text = (dist / "METADATA").read_text(encoding="utf-8", errors="replace")
     head = text.split("\n\n", 1)[0]
@@ -388,7 +409,7 @@ def dist_metadata(dist: Path) -> dict:
     get = {k: v for k, v in reversed(fields)}
     licence = metadata_licence(get, fields)
     files = sorted(p.relative_to(dist).as_posix() for p in dist.rglob("*")
-                   if p.is_file() and LICENCE_FILE.match(p.name))  # fmt: skip
+                   if p.is_file() and is_licence_file(p.relative_to(dist)))  # fmt: skip
     return {"name": get.get("Name", dist.name), "version": get.get("Version", "?"),
             "licence": licence, "licence_files": files}  # fmt: skip
 
@@ -413,6 +434,8 @@ class Context:
     def __init__(self, root: Path, repo: Path, record: dict) -> None:
         self.root, self.repo, self.record = root, repo, record
         self.dpkg = dpkg_owned(root)
+        self.dpkg_dirs = {str(Path(rel).parents[i]) for rel in self.dpkg
+                          for i in range(len(Path(rel).parents) - 1)}  # fmt: skip
         self.packages = dpkg_packages(root)
         self.recorded: set[str] = set()
         self.dists: list[Path] = []
@@ -446,10 +469,39 @@ def compiled_matchers(record: dict, repo: Path) -> list[tuple[dict, list, set[st
     return matchers
 
 
+def link_target(root: Path, rel: str) -> str | None:
+    """Where a symlink of the artifact points, relative to the artifact root (an
+    absolute target is read inside the root), or None when it leaves the root."""
+    path = root / rel
+    if not path.is_symlink():
+        return None
+    target = os.readlink(path)
+    base = Path("/") if target.startswith("/") else Path("/" + rel).parent
+    resolved = os.path.normpath(base / target).lstrip("/")
+    return None if resolved.startswith("..") else resolved
+
+
+def dpkg_claims(ctx: Context, rel: str) -> bool:
+    """A path dpkg owns, or a symlink onto one: a distroless image's `md5sums` list
+    only regular files, so a package's own links (`libz.so.1`, zoneinfo aliases,
+    `lib64`, `usr/share/doc/libgcc-s1`) are claimed through what they point at."""
+    if any(alias in ctx.dpkg for alias in usrmerge_aliases(rel)):
+        return True
+    target = link_target(ctx.root, rel)
+    for _ in range(8):  # bounded: a chain of links onto links
+        if target is None:
+            return False
+        aliases = usrmerge_aliases(target)
+        if any(a in ctx.dpkg or a in ctx.dpkg_dirs for a in aliases):
+            return True
+        target = link_target(ctx.root, target)
+    return False
+
+
 def claims(component: dict, globs: list, listed: set[str], ctx: Context, rel: str) -> bool:
     kind = component["kind"]
     if kind == "dpkg":
-        return any(alias in ctx.dpkg for alias in usrmerge_aliases(rel))
+        return dpkg_claims(ctx, rel)
     if kind == "python-dist":
         return rel in ctx.recorded or in_dist_info(component, rel)
     if kind == "repo":
@@ -592,11 +644,26 @@ def check_vendored(ctx: Context, owned: dict[str, list[str]]) -> list[str]:
     return problems
 
 
+def dist_texts(record: dict) -> dict[str, list[dict]]:
+    """Licence texts the record names for a distribution whose dist-info keeps none
+    (a wheel that ships its licence inside the package, or none at all): `texts`
+    entries of a python-dist component carrying `dist`, keyed by distribution name."""
+    found: dict[str, list[dict]] = {}
+    for component in record["components"]:
+        if component["kind"] != "python-dist":
+            continue
+        for entry in component_texts(component):
+            if "dist" in entry:
+                found.setdefault(entry["dist"], []).append(entry)
+    return found
+
+
 def check_dists(ctx: Context) -> list[str]:
     problems = []
+    recorded = dist_texts(ctx.record)
     for dist in ctx.dists:
         meta = dist_metadata(dist)
-        if not meta["licence_files"]:
+        if not meta["licence_files"] and meta["name"] not in recorded:
             problems.append(f"{dist.name} keeps no licence file")
         if not meta["licence"]:
             problems.append(f"{dist.name} declares no licence")
@@ -753,11 +820,14 @@ def dist_section(ctx: Context, manifest: dict) -> list[str]:
     if not ctx.dists:
         return []
     lines = ["[python] Python packages: name version, licence, licence files in the dist-info"]
+    recorded = dist_texts(ctx.record)
     for dist in ctx.dists:
         meta = dist_metadata(dist)
         where = dist.relative_to(ctx.root).as_posix()
         lines.append(f"  {meta['name']} {meta['version']}: {meta['licence']}")
         lines.extend(f"    {where}/{name}" for name in meta["licence_files"])
+        lines.extend(f"    {text_target(entry)}" for entry in recorded.get(meta["name"], [])
+                     if not meta["licence_files"])  # fmt: skip
     lines += ["", "[grafted] Libraries bundled inside wheels (licence; source of copyleft ones)"]
     for dist in ctx.dists:
         for rel, _digest in record_rows(dist):
