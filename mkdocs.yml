@@ -160,59 +160,107 @@ extra:
 
 nav:
   - Home: index.md
-  - Roadmap: roadmap.md
-  - Licensing: licensing.md
-  - Getting started:
+  - Get started:
       - getting-started/index.md
+      - Score your first pair: getting-started/first-score.md
       - Install:
           - Ubuntu: getting-started/install/ubuntu.md
           - Fedora: getting-started/install/fedora.md
           - Arch: getting-started/install/arch.md
           - Alpine: getting-started/install/alpine.md
           - macOS: getting-started/install/macos.md
-          - Windows: getting-started/install/windows.md
+          - Windows (MSVC): getting-started/install/windows.md
+          - Intel QSV: getting-started/install/intel-qsv.md
       - Building on Windows: getting-started/building-on-windows.md
-  - Usage:
-      - CLI reference: usage/cli.md
-      - RC1 External Tester Guide: usage/rc1-tester-guide.md
-      - Hardware we need: usage/hardware-we-need.md
-      - Tester image and macOS bundle: usage/tester-image.md
-      - vmaf_bench: usage/bench.md
-      - '--precision': usage/precision.md
-      - Python library: usage/python.md
-      - FFmpeg: usage/ffmpeg.md
       - Docker: usage/docker.md
-      - MATLAB: usage/matlab.md
-      - BD-rate utilities: usage/bd-rate.md
-      - Per-shot scoring: usage/vmaf-perShot.md
-      - ROI scoring: usage/vmaf-roi.md
-      - ROI score output: usage/vmaf-roi-score.md
-      - Storage / rclone: usage/storage.md
-      - vmafx CLI: usage/vmafx-cli.md
-      - vmafx-ort-runner: usage/vmafx-ort-runner.md
-      - vmaf-train CLI: usage/vmaf-train.md
-      - VPL pipeline: usage/vmaf-vpl.md
-      - External resources: usage/external-resources.md
+      - Releases and roadmap: roadmap.md
+      - Licensing: licensing.md
+  - Choose a backend:
+      - backends/index.md
+      - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md
+      - ARM NEON / SVE2: backends/arm/overview.md
+      - CUDA:
+          - Overview: backends/cuda/overview.md
+          - Twin notes: backends/cuda/twin-notes.md
+          - NVTX profiling: backends/nvtx/profiling.md
+      - SYCL / oneAPI:
+          - Overview: backends/sycl/overview.md
+          - AOT targets: backends/sycl/aot.md
+          - Twin notes: backends/sycl/twins.md
+          - Zero-copy imports: backends/sycl/zero-copy.md
+          - Bundling: backends/sycl/bundling.md
+          - SYCL on Windows: backends/sycl/windows.md
+          - Developer notes: backends/sycl/developer-notes.md
+          - History: backends/sycl/history.md
+      - HIP (AMD ROCm):
+          - Overview: backends/hip/overview.md
+          - Twin notes: backends/hip/twins.md
+          - Picture uploads: backends/hip/uploads.md
+          - History: backends/hip/history.md
+      - Metal (Apple Silicon): backends/metal/index.md
+      - Kernel scaffolding: backends/kernel-scaffolding.md
+      - Context API contract: backends/context-api-contract.md
+  - Use VMAFx:
+      - CLI reference: usage/cli.md
+      - '--precision': usage/precision.md
       - Environment variables: usage/env-vars.md
-      - vmaf-tune:
-          - Overview: usage/vmaf-tune.md
-          - Codec adapters: usage/vmaf-tune-codec-adapters.md
-          - Fast path: usage/vmaf-tune-fast-path.md
-          - Score backend: usage/vmaf-tune-score-backend.md
-          - Bitrate ladder: usage/vmaf-tune-ladder.md
-          - Ladder (default sampler): usage/vmaf-tune-ladder-default-sampler.md
-          - Ladder (bitrate grid): usage/vmaf-tune-bitrate-ladder.md
-          - Coarse-to-fine: usage/vmaf-tune-coarse-to-fine.md
-          - Recommend: usage/vmaf-tune-recommend.md
-          - Resolution-aware: usage/vmaf-tune-resolution-aware.md
-          - Saliency-aware: usage/vmaf-tune-saliency-aware.md
-          - HDR & sampling: usage/vmaf-tune-hdr-and-sampling.md
-          - FFmpeg wiring: usage/vmaf-tune-ffmpeg.md
-          - Cache: usage/vmaf-tune-cache.md
-          - Bisect: usage/vmaf-tune-bisect.md
-          - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
+      - FFmpeg: usage/ffmpeg.md
+      - Python library: usage/python.md
+      - MATLAB: usage/matlab.md
+      - vmafx CLI: usage/vmafx-cli.md
+      - vmaf_bench: usage/bench.md
+      - Test on your hardware:
+          - Hardware we need: usage/hardware-we-need.md
+          - Tester image and macOS bundle: usage/tester-image.md
+          - Build-from-source tester guide: usage/rc1-tester-guide.md
+          - Hardware reports: hardware-reports/index.md
+      - Encoding workflows:
+          - vmaf-tune:
+              - Overview: usage/vmaf-tune.md
+              - corpus: usage/vmaf-tune-corpus.md
+              - recommend: usage/vmaf-tune-recommend.md
+              - fast: usage/vmaf-tune-fast-path.md
+              - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
+              - Coarse-to-fine: usage/vmaf-tune-coarse-to-fine.md
+              - bisect: usage/vmaf-tune-bisect.md
+              - predict: usage/vmaf-tune-predict.md
+              - auto: usage/vmaf-tune-auto.md
+              - tune-per-shot: usage/vmaf-tune-per-shot.md
+              - compare: usage/vmaf-tune-compare.md
+              - benchmark: usage/vmaf-tune-benchmark.md
+              - report: usage/vmaf-tune-report.md
+              - prefilter: usage/vmaf-tune-prefilter.md
+              - Bitrate ladder: usage/vmaf-tune-ladder.md
+              - Ladder (default sampler): usage/vmaf-tune-ladder-default-sampler.md
+              - Ladder (bitrate grid): usage/vmaf-tune-bitrate-ladder.md
+              - Codec adapters: usage/vmaf-tune-codec-adapters.md
+              - Software encoders: usage/vmaf-tune-codec-software.md
+              - AV1 encoders: usage/vmaf-tune-codec-av1.md
+              - Hardware encoders: usage/vmaf-tune-codec-hardware.md
+              - Multi-pass: usage/vmaf-tune-multipass.md
+              - Resolution-aware: usage/vmaf-tune-resolution-aware.md
+              - Saliency-aware: usage/vmaf-tune-saliency-aware.md
+              - HDR and sampling: usage/vmaf-tune-hdr-and-sampling.md
+              - Score backend: usage/vmaf-tune-score-backend.md
+              - FFmpeg wiring: usage/vmaf-tune-ffmpeg.md
+              - Cache: usage/vmaf-tune-cache.md
+              - Scratch directory: usage/vmaf-tune-workdir.md
+              - Go port (vmafx-tune): usage/vmafx-tune-go.md
+          - Per-shot scoring: usage/vmaf-perShot.md
+          - ROI scoring: usage/vmaf-roi.md
+          - ROI score output: usage/vmaf-roi-score.md
+          - BD-rate utilities: usage/bd-rate.md
+      - More tools:
+          - vmafx-ort-runner: usage/vmafx-ort-runner.md
+          - vmaf-train CLI: usage/vmaf-train.md
+          - VPL pipeline: usage/vmaf-vpl.md
+          - Storage / rclone: usage/storage.md
+          - External resources: usage/external-resources.md
   - C API:
       - api/index.md
+      - Context lifecycle: api/lifecycle.md
+      - Pictures: api/pictures.md
+      - Models and features: api/models-and-features.md
       - Rust context close/retry: api/rust-context-close.md
       - DNN sessions: api/dnn.md
       - GPU (CUDA / SYCL): api/gpu.md
@@ -220,24 +268,29 @@ nav:
       - Pelorus interop ABI (vendored): api/pelorus-interop.md
       - Perceptual pooling weighting: api/perceptual-weight.md
       - vmaftune.ladder: api/ladder.md
-      - vmaftune.predict: api/predictor.md
-  - Metrics:
-      - Features: metrics/features.md
+      - vmaftune.predictor: api/predictor.md
+  - Metrics and models:
+      - Feature index: metrics/features.md
+      - ADM: metrics/adm.md
       - ANSNR (removed): metrics/ansnr.md
       - BRISQUE: metrics/brisque.md
       - CAMBI: metrics/cambi.md
+      - CIEDE2000: metrics/ciede.md
       - Delta E ITP (HDR colour): metrics/delta_e_itp.md
       - DISTS: metrics/dists.md
+      - Float moment: metrics/float-moment.md
       - Motion: metrics/motion.md
       - MS-SSIM: metrics/ms-ssim.md
       - NIQE: metrics/niqe.md
       - PSNR: metrics/psnr.md
       - PSNR-HVS: metrics/psnr-hvs.md
       - PU21 (HDR): metrics/pu21.md
-      - SpeedQA: metrics/speed_qa.md
+      - SpEED (speed_chroma, speed_temporal): metrics/speed.md
+      - SpEED-QA: metrics/speed_qa.md
       - SSIM: metrics/ssim.md
       - SSIMULACRA 2: metrics/ssimulacra2.md
       - TAD: metrics/tad.md
+      - Tiny-AI extractors: metrics/tiny-ai-extractors.md
       - VIF: metrics/vif.md
       - VMAF-NEG: metrics/vmaf-neg.md
       - Y-FUNQUE+ atoms: metrics/y-funque-plus.md
@@ -246,34 +299,15 @@ nav:
       - CTC:
           - AOM: metrics/ctc/aom.md
           - NFLX: metrics/ctc/nflx.md
-  - Models:
-      - Overview: models/overview.md
-      - VMAF v1 (v1.0.16): models/v1.md
-      - Datasets: models/datasets.md
-  - Backends:
-      - backends/index.md
-      - Kernel scaffolding: backends/kernel-scaffolding.md
-      - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md
-      - ARM NEON / SVE2: backends/arm/overview.md
-      - CUDA: backends/cuda/overview.md
-      - NVTX profiling: backends/nvtx/profiling.md
-      - SYCL / oneAPI: backends/sycl/overview.md
-      - SYCL bundling: backends/sycl/bundling.md
-      - SYCL on Windows: backends/sycl/windows.md
-      - HIP (AMD ROCm): backends/hip/overview.md
-      - Metal (Apple Silicon): backends/metal/index.md
-      - Context API contract: backends/context-api-contract.md
-  - MCP:
-      - mcp/index.md
-      - Tool reference: mcp/tools.md
-      - Backend discovery: mcp/backends.md
-      - HTTP transport: mcp/http-transport.md
-      - Embedded server: mcp/embedded.md
-      - Release channel: mcp/release-channel.md
+      - Models:
+          - Overview: models/overview.md
+          - VMAF v1 (v1.0.16): models/v1.md
+          - Datasets: models/datasets.md
   - Tiny AI:
       - ai/index.md
       - Overview: ai/overview.md
       - Training: ai/training.md
+      - Run provenance: ai/run-provenance.md
       - Training data: ai/training-data.md
       - Inference: ai/inference.md
       - Benchmarks: ai/benchmarks.md
@@ -302,6 +336,7 @@ nav:
       - U2Net-P mirror: ai/u2netp-mirror.md
       - Extractor template: ai/extractor-template.md
       - Roadmap: ai/roadmap.md
+      - Retraining runbook (#1246): ai/retrain-runbook-1246.md
       - Scripts env vars: ai/scripts-env-vars.md
       - Per-PR doc bar: ai/per-pr-doc-bar.md
       - CHUG ingestion: ai/chug-ingestion.md
@@ -327,7 +362,7 @@ nav:
           - FR regressor v2 (probabilistic): ai/models/fr_regressor_v2_probabilistic.md
           - FR regressor v3: ai/models/fr_regressor_v3.md
           - Learned filter v1: ai/models/learned_filter_v1.md
-          - LPIPS-SQ: ai/models/lpips_sq.md
+          - LPIPS-SQ (family): ai/models/lpips_sq.md
           - LPIPS-SQ v1: ai/models/lpips_sq_v1.md
           - MobileSAL: ai/models/mobilesal.md
           - NR metric v1: ai/models/nr_metric_v1.md
@@ -338,6 +373,27 @@ nav:
           - VMAF tiny v2: ai/models/vmaf_tiny_v2.md
           - VMAF tiny v3: ai/models/vmaf_tiny_v3.md
           - VMAF tiny v4: ai/models/vmaf_tiny_v4.md
+          - VMAF tiny v1 (legacy): ai/models/vmaf_tiny_v1.md
+          - VMAF tiny v1 medium (legacy): ai/models/vmaf_tiny_v1_medium.md
+          - CI fixtures:
+              - smoke_v0: ai/models/smoke_v0.md
+              - smoke_fp16_v0: ai/models/smoke_fp16_v0.md
+              - smoke_multi_output_v0: ai/models/smoke_multi_output_v0.md
+              - smoke_v0_symbolic_batch: ai/models/smoke_v0_symbolic_batch.md
+  - MCP:
+      - mcp/index.md
+      - Tool reference: mcp/tools.md
+      - Backend discovery: mcp/backends.md
+      - HTTP transport: mcp/http-transport.md
+      - Embedded server: mcp/embedded.md
+      - Release channel: mcp/release-channel.md
+  - Server:
+      - Controller: server/controller.md
+      - gRPC service: server/grpc.md
+      - Worker node: server/node.md
+      - Auth gateway: server/auth.md
+      - Operator: server/operator.md
+      - REST API: server/rest.md
   - Architecture:
       - architecture/index.md
       - C4 context: architecture/c4-context.md
@@ -351,10 +407,16 @@ nav:
       - Preflight (local CI gate): development/preflight.md
       - Default model: development/default-model.md
       - Release: development/release.md
+      - Tester image (maintainers): development/tester-image.md
       - CI: development/ci.md
+      - Whole-tree lint ratchet: development/tidy-ratchet.md
+      - Local lint profile: development/local-lint.md
+      - state.md gates: development/state-md-gates.md
+      - Praetor documentation gate: development/praetor-gate.md
       - Measuring the clang-tidy lanes: development/tidy-lanes.md
       - CI runners: development/ci-runners.md
       - Cross-backend gate: development/cross-backend-gate.md
+      - Exact GPU twins (generated): development/cross-backend-exact-twins.md
       - RC3 home GPU retest: development/rc3-home-gpu-retest.md
       - Fuzzing: development/fuzzing.md
       - IDE setup: development/ide-setup.md
@@ -403,18 +465,6 @@ nav:
       - CI tmate debug: development/ci-tmate-debug.md
       - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
       - Performance claims (May 2026): development/perf-claims-2026-05-10.md
-      - Upstream sync reports:
-          - 2026-05-02: sync-upstream/2026-05-02-sync-report.md
-          - 2026-05-03: sync-upstream/2026-05-03-sync-report.md
-      - Upstream ports:
-          - "1b08bb4d (needs manual port)": upstream-ports/1b08bb4d-needs-manual-port.md
-  - Server:
-      - Controller: server/controller.md
-      - gRPC service: server/grpc.md
-      - Worker node: server/node.md
-      - Auth gateway: server/auth.md
-      - Operator: server/operator.md
-      - REST API: server/rest.md
   - ADRs:
       # ADR-1510: the sidebar lists the index, the template and the tag index;
       # each ADR and tag page is reached from those pages and search.
@@ -424,6 +474,13 @@ nav:
   - Reference:
       - FAQ: reference/faq.md
       - References: reference/references.md
+      - Benchmarks: benchmarks.md
+  - Records:
       - Bug state tracker: state.md
       - Rebase notes: rebase-notes.md
-      - Benchmarks: benchmarks.md
+      - Scorecard and CodeQL audit (2026-09-04): security/scorecard-alerts-2026-09-04.md
+      - Upstream sync reports:
+          - 2026-05-02: sync-upstream/2026-05-02-sync-report.md
+          - 2026-05-03: sync-upstream/2026-05-03-sync-report.md
+      - Upstream ports:
+          - "1b08bb4d (needs manual port)": upstream-ports/1b08bb4d-needs-manual-port.md

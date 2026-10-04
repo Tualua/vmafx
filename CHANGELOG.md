@@ -775,6 +775,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `vmaf_v1.0.16_3d0h`.
 
 
+- Reorganised the documentation navigation around a newcomer path: Get started
+  (install, score a first pair, Docker, releases), Choose a backend, Use VMAFx
+  (CLI, FFmpeg, Python, testing on your hardware, encoding workflows), the
+  C API, then the reference sections (metrics and models, tiny AI, MCP, server,
+  architecture), Development, ADRs, Reference and Records. Every page that was
+  in the navigation still is; the pages the documentation audit added, the
+  tester image and macOS bundle, the hardware reports and the exact-twin table
+  are now reachable from it.
+
+
 - Corrected the tiny-AI pages and model cards against the code and
   `model/tiny/registry.json`. The tiny-AI index is now an entry page with one
   runnable `--tiny-model` command that links every tiny-AI page. Corrected:

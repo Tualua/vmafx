@@ -235,7 +235,8 @@ docker exec vmaf-dev-mcp rm -rf \
 ## 5. Per-Corpus Feature Extraction
 
 In accordance with maintainer decision D6 and the worktree/device discipline
-([AGENTS.md](../../AGENTS.md) §12), **devices are never multiplexed**.
+([agent hard rule 12](../development/agent-hard-rules.md)), **devices are never
+multiplexed**.
 The RTX 4090 is dedicated to K150K extraction, while the Zen 5 CPU handles the
 remaining corpora in parallel. All invocations run under `nohup` with stdout/stderr
 redirected to dedicated logs under `runs/logs/`.
@@ -704,7 +705,7 @@ contract fails:
 
 ### 11.2 What to Watch (Workstation as Daily Driver)
 
-- **One Device Per Job (AGENTS.md §12)**:
+- **One Device Per Job (agent hard rule 12)**:
   Never schedule sibling jobs on the RTX 4090 while K150K is extracting. The Zen 5
   CPU handles Netflix/BVI/UGC/CHUG extractions. The SYCL Arc A380 remains idle
   (`--no_sycl`) per maintainer decision D6.
