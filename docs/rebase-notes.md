@@ -60168,3 +60168,14 @@ upstream parity guard's allowlist.
   fails when an entry stops at "See", a link or path stops resolving, or retired status text
   returns. On a conflict in the page, resolve per hunk inside the section of the entry, never
   take a whole side. No score, public API or FFmpeg patch impact.
+
+## Windows tester zip: unimported runtime DLLs and per-leg verify
+
+- `scripts/ci/build-windows-tester-bundle.py` removes an interpreter
+  `vcruntime140*.dll` that no program of the interpreter imports before it
+  replaces the others from the runner's redistributable folder
+  (`drop_unimported_runtime()`, reading imports with the parser of
+  `scripts/ci/check-windows-bundle-imports.py`), and prints the output of the
+  unit tests the report counts as failed. The verify job of
+  `windows-tester-bundle.yml` runs per leg when `validate` passed; the publish
+  job still needs every leg. No score, public API or FFmpeg patch impact.

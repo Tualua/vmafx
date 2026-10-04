@@ -38,6 +38,7 @@ from __future__ import annotations
 import filecmp
 import hashlib
 import importlib
+import importlib.util
 import io
 import json
 import os
@@ -46,9 +47,11 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Any
 
 REQUIRED = ("VMAFX_ARCH", "PBS_URL", "PBS_SHA256", "PBS_FULL_URL", "PBS_FULL_SHA256",
             "VMAF_RESOURCE_COMMIT", "VMAFX_SOURCE_COMMIT", "VMAFX_SOURCE_REF",
@@ -80,6 +83,9 @@ PRUNE_GLOBS = ("DLLs/tcl*.dll", "DLLs/tk*.dll", "DLLs/_tkinter.pyd", "DLLs/zlib1
                "DLLs/_test*.pyd", "DLLs/_ctypes_test.pyd", "pythonw.exe",
                "Lib/site-packages/pip", "Lib/site-packages/pip-*.dist-info")  # fmt: skip
 VC_RUNTIME_GLOB = "vcruntime140*.dll"
+PE_SUFFIXES = (".exe", ".dll", ".pyd")
+FAILED_TEST_TIMEOUT = 300
+FAILED_TEST_LINES = 60
 DOWNLOAD_LIMIT = 512 * 1024 * 1024
 USAGE_ARGS = 2
 GOLDEN_NOT_APPLICABLE = (
@@ -282,6 +288,34 @@ def redist_crt_dir(redist_root: Path, arch: str) -> Path:
     return found[0]
 
 
+def pe_imports() -> Any:
+    """The PE import reader of scripts/ci/check-windows-bundle-imports.py (one parser)."""
+    path = Path(__file__).with_name("check-windows-bundle-imports.py")
+    spec = importlib.util.spec_from_file_location("check_windows_bundle_imports", path)
+    if spec is None or spec.loader is None:
+        raise BuildError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.imports
+
+
+def drop_unimported_runtime(runtime: Path) -> list[str]:
+    """Remove the interpreter's vcruntime140*.dll that no program of the interpreter
+    imports (the Arm64 archive carries an x64 vcruntime140_1.dll nothing loads):
+    ADR-1503 rule 1 ships only what runs. Returns the names removed."""
+    read = pe_imports()
+    imported: set[str] = set()
+    for path in sorted(runtime.rglob("*")):
+        if path.is_file() and path.suffix.lower() in PE_SUFFIXES:
+            imported |= set(read(path.read_bytes())[1])
+    dropped = []
+    for shipped in sorted(runtime.glob(VC_RUNTIME_GLOB)):
+        if shipped.name.lower() not in imported:
+            shipped.unlink()
+            dropped.append(shipped.name)
+    return dropped
+
+
 def replace_vc_runtime(runtime: Path, crt: Path) -> list[dict[str, str]]:
     """Replace the interpreter's vcruntime140*.dll with the unmodified copies of this
     runner's Visual Studio redistributable folder; returns what was copied."""
@@ -311,9 +345,11 @@ def install_interpreter(bundle: Path, out: Path, env: dict[str, str]) -> Path:
     remove(archive)
     runtime = bundle / "runtime"
     prune_runtime(runtime)
+    dropped = drop_unimported_runtime(runtime)
     # VCToolsRedistDir of vcvarsall; Windows environment names ignore case.
     crt = redist_crt_dir(Path(os.environ["VCTOOLSREDISTDIR"]), env["VMAFX_ARCH"])
-    record = {"redist_dir": str(crt), "files": replace_vc_runtime(runtime, crt)}
+    record = {"redist_dir": str(crt), "files": replace_vc_runtime(runtime, crt),
+              "dropped_unimported": dropped}  # fmt: skip
     (bundle / "image" / "msvc-redist.json").write_text(json.dumps(record, indent=1) + "\n")
     return runtime / "python.exe"
 
@@ -400,6 +436,36 @@ def run_own_report(bundle: Path, out: Path) -> None:
     print(f"report exit status: {result.returncode}")
     if result.returncode not in (0, 1) or not (out / "report.json").is_file():
         raise BuildError(f"the report did not complete (exit {result.returncode})")
+    print_failed_tests(bundle, out / "report.json")
+
+
+def failed_test_commands(bundle: Path, report: Path) -> list[tuple[str, list[str]]]:
+    """(name, argv) of every unit test the report counts as failed."""
+    failures = set(json.loads(report.read_text(encoding="utf-8"))["unit_tests"]["failures"])
+    manifest = json.loads((bundle / "image" / "unit-tests.json").read_text(encoding="utf-8"))
+    found = []
+    for test in manifest["tests"]:
+        if test["name"] in failures:
+            argv = [str(bundle / test["cmd"]), *[str(arg) for arg in test.get("args", [])]]
+            found.append((test["name"], argv))
+    return found
+
+
+def print_failed_tests(bundle: Path, report: Path) -> None:
+    """The output of every failed unit test, in this log only: the report keeps names,
+    and a maintainer needs the failing case (the zip is not changed)."""
+    for name, argv in failed_test_commands(bundle, report):
+        step(f"output of the failed unit test {name} (diagnostics; not part of the zip)")
+        with tempfile.TemporaryDirectory(prefix="vmaf-failed-test-") as work:
+            try:
+                result = subprocess.run(argv, cwd=work, capture_output=True, text=True,  # noqa: S603
+                                        errors="replace", timeout=FAILED_TEST_TIMEOUT, check=False)  # fmt: skip
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f"{name} did not run: {error}")
+                continue
+        lines = (result.stdout + result.stderr).splitlines()
+        print("\n".join(lines[-FAILED_TEST_LINES:]))
+        print(f"{name} exit status: {result.returncode}")
 
 
 def pack(bundle: Path, out: Path) -> Path:

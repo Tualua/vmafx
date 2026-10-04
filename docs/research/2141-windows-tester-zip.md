@@ -135,6 +135,27 @@ Xeon Phi parts). The processor's name, vendor and family come from
   kernel of the MSVC build on a GPU. The hosted run shows the build, the licence gate
   and `no_device`.
 
+## The first hosted run (run 37170921097, 2026-10-04)
+
+A `publish: false` dispatch on master `010140154` (the merge of the zip's pull request):
+
+| | x64 (`windows-2025`) | arm64 (`windows-11-vs2026-arm`) |
+| :--- | :--- | :--- |
+| Build (MSVC 19.51.36260, `/MT`, 51 tests) | passed, 1 min 47 s; the whole job about 5 min | passed |
+| References, notices, licence texts (`compression.zstd` of Python 3.14.8 read the `full` archive), `scan-build` | passed | passed |
+| Import check | passed: no VMAFx program imports a runtime DLL | failed: `runtime/vcruntime140_1.dll` is machine 0x8664 |
+| The zip's own report through `run.cmd` (98 s) | verdict `fail`: dispatch equivalence identical on all four fixtures, reference equivalence identical, 50 of 51 unit tests, `test_float_adm_x86` failed | not reached |
+| Licence gate, pack | passed; 46,453,578 bytes, 726 files, 127.1 MB unpacked (test videos 58.2 MB, tests 34.3 MB, interpreter 31.1 MB, `vmaf.exe` 2.8 MB) | not reached |
+
+The runner's processor was an AMD EPYC 7763 (`sse2 ssse3 sse4.1 avx2`, no AVX-512), Windows
+Server 2025 10.0.26100, image `win25-vs2026-20260925.250.1`. The report passed
+`check-hardware-reports.py --report` (run here on the downloaded artifact; the workflow's
+verify job was skipped because the Arm64 leg failed). Both findings are state rows:
+`T-TESTER-WINDOWS-ARM64-X64-VCRUNTIME-2026-10-04` (the Arm64 interpreter archive's x64
+`vcruntime140_1.dll`, which nothing imports, fixed by removing unimported runtime DLLs)
+and `T-MSVC-FLOAT-ADM-X86-TEST-FAILS-2026-10-04` (open; the build log now prints a failed
+test's output so the next run names the case).
+
 ## Found on the way
 
 The macOS bundle published as `tester-20261003-c12763f3` lists its unit tests by their

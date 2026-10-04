@@ -391,3 +391,36 @@ def test_the_nv_codec_headers_notices_come_from_the_headers(tmp_path: Path) -> N
     (headers / "dynlink_cuda.h").write_text("#pragma once\n")
     with pytest.raises(builder.BuildError, match="no leading comment"):
         builder.write_nv_codec_notices(tmp_path / "bundle", tmp_path / "nv")
+
+
+def test_an_unimported_runtime_dll_is_dropped_before_the_replacement(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    write_pe(runtime, "python.exe", make_pe(0xAA64, ["python313.dll", "VCRUNTIME140.dll"]))
+    write_pe(runtime, "vcruntime140.dll", make_pe(0xAA64, ["kernel32.dll"]))
+    # The Arm64 archive's vcruntime140_1.dll is an x64 image nothing imports.
+    write_pe(runtime, "vcruntime140_1.dll", make_pe(0x8664, ["kernel32.dll"]))
+    assert builder.drop_unimported_runtime(runtime) == ["vcruntime140_1.dll"]
+    assert (runtime / "vcruntime140.dll").is_file()
+    assert not (runtime / "vcruntime140_1.dll").exists()
+    write_pe(runtime, "vcruntime140_1.dll", make_pe(0x8664, ["kernel32.dll"]))
+    write_pe(runtime, "DLLs/_wmi.pyd", make_pe(0x8664, ["vcruntime140_1.dll"]))
+    assert builder.drop_unimported_runtime(runtime) == []  # x64: _wmi.pyd needs it
+
+
+def test_the_log_shows_the_output_of_a_failed_unit_test(tmp_path: Path, capsys) -> None:
+    bundle = tmp_path / "bundle"
+    script = bundle / "tests" / "test_b.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\necho 'FAIL: test_b: a wavelet kernel differs'\nexit 1\n")
+    script.chmod(0o755)
+    (bundle / "image").mkdir()
+    manifest = {"tests": [{"name": "test_a", "cmd": "tests/test_a.sh"},
+                          {"name": "test_b", "cmd": "tests/test_b.sh"}]}  # fmt: skip
+    (bundle / "image" / "unit-tests.json").write_text(json.dumps(manifest))
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"unit_tests": {"failures": ["test_b"]}}))
+    assert [n for n, _ in builder.failed_test_commands(bundle, report)] == ["test_b"]
+    builder.print_failed_tests(bundle, report)
+    out = capsys.readouterr().out
+    assert "a wavelet kernel differs" in out and "test_b exit status: 1" in out
+    assert "test_a" not in out

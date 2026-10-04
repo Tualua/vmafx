@@ -271,6 +271,10 @@ jobs:
   verify:
     name: Verify the zip and write its SBOM (Windows ${{ matrix.name }})
     needs: [validate, build]
+    # Each zip is verified when its own build passed, even if another leg failed (a
+    # failed leg has no artifact and its verify leg fails at the download). The
+    # publish job still needs every build and every verify to pass.
+    if: ${{ !cancelled() && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

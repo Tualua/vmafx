@@ -4344,6 +4344,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 - **The macOS tester bundle and the tester image name the version of the tested commit.** The file name and the report's version could read `tester-20261003-c12763f3-18-g2414774ea`, because `git describe` took the nearest `tester-*` release tag; they now read `v1.0.0-rc.2-311-g2414774ea`, the nearest `v*.*.*` tag. The macOS publish job also creates its prerelease as the release-bot identity, since the job token was refused (HTTP 403) when the tested commit was behind master.
 
 
+- **The Arm64 Windows tester zip builds**
+  (`T-TESTER-WINDOWS-ARM64-X64-VCRUNTIME-2026-10-04`). The Arm64 interpreter
+  archive carries an x64 `vcruntime140_1.dll` that no program loads, and the
+  zip's import check refused it, so the first hosted run published no Arm64
+  zip. The build now leaves out every interpreter runtime DLL nothing imports.
+  Each zip is also verified when its own build passed, and the build log shows
+  the output of a unit test the zip's report counts as failed.
+
+
 - **`vmaf_init()` accepts an uninitialised handle again, as upstream libvmaf
   does.** Since ADR-1032 it returned `-EINVAL` whenever `*vmaf` was not NULL.
   Callers written against upstream, whose own CLI and tests declare

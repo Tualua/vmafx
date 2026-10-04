@@ -93,7 +93,11 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    bundle. A push to master that changes the zip's own inputs (the workflow, the two
    scripts, `tools/rc1-tester/image/windows/`, the Windows unit list) runs the build and
    verify jobs without publishing. The workflow summary of each verify job lists the
-   runner's verdict, unit-test failures and the unpacked size.
+   runner's verdict, unit-test failures and the unpacked size; each zip is verified when
+   its own build passed, and the build log prints the output of every unit test the
+   zip's report counts as failed (the report itself keeps only the names). The
+   interpreter's runtime DLLs that nothing imports are left out (the Arm64 archive
+   carries an x64 `vcruntime140_1.dll`).
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
 

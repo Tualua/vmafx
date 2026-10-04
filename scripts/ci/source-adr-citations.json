@@ -9883,7 +9883,7 @@
         "docker/Dockerfile.production": 8,
         "docker/Dockerfile.tester": 13,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
-        "scripts/ci/build-windows-tester-bundle.py": 6,
+        "scripts/ci/build-windows-tester-bundle.py": 7,
         "scripts/ci/check-windows-bundle-imports.py": 1,
         "scripts/ci/install-rocm-from-image.sh": 1,
         "scripts/release/build-native-release-artifacts.sh": 1,
