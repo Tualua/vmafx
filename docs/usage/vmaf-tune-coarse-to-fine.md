@@ -1,24 +1,15 @@
-# `vmaf-tune --coarse-to-fine`
+<!-- markdownlint-disable MD013 MD060 -->
+# `vmaf-tune --coarse-to-fine` — two-pass CRF search
 
-`vmaf-tune corpus --coarse-to-fine` runs the ADR-0306 two-pass CRF
-search instead of enumerating a full manual CRF grid. It is useful when
-the operator has a target VMAF and wants the corpus rows needed to pick
-the smallest acceptable bitrate without scoring every CRF in the codec
-range.
+`--coarse-to-fine` finds the CRFs worth measuring for a target VMAF in about
+15 encodes instead of the 52 a full 0..51 sweep needs, with no measurable
+quality regression. `vmaf-tune recommend` always uses it; `vmaf-tune corpus`
+uses it when the flag is given.
 
-The implementation lives in
-`tools/vmaf-tune/src/vmaftune/corpus.py::coarse_to_fine_search` and is
-wired through `tools/vmaf-tune/src/vmaftune/cli.py`.
+Use it when the only question is "what is the smallest CRF whose VMAF still
+meets my target?" and you do not need every CRF in the corpus.
 
-## How It Works
-
-1. Coarse pass: score a wide CRF sweep such as `10,20,30,40,50`.
-2. Pick the coarse cell closest to `--target-vmaf`.
-3. Fine pass: score a narrow window around that cell.
-4. Emit the union of visited rows to the normal Phase-A JSONL schema.
-
-With defaults, one source/preset visits up to 15 CRFs instead of a full
-0..51 sweep:
+## Quick start
 
 ```shell
 vmaf-tune corpus \
@@ -31,26 +22,142 @@ vmaf-tune corpus \
     --output corpus_c2f.jsonl
 ```
 
+`--crf` is not needed: the search generates the CRF axis. `--target-vmaf` is
+optional for `corpus`; without it both passes still run and the fine pass
+refines around the highest-VMAF coarse point. `--preset` is required.
+
+## How it works
+
+1. **Coarse pass.** Encode and score the CRFs `10, 20, 30, 40, 50`
+   (`--coarse-step` apart, across a fixed 10..50 window): 5 encodes.
+2. **Pick the centre.** With a target, the centre is the highest coarse CRF
+   whose VMAF meets the target. When no coarse CRF meets it, or when no target
+   was given, the centre is the coarse CRF with the highest VMAF.
+3. **Fine pass.** Encode and score every CRF within `--fine-radius` of the
+   centre at `--fine-step` spacing, skipping CRFs the coarse pass already
+   measured. With defaults that is the 10 unique CRFs around the centre, for
+   example `25..29` and `31..35` when the centre is `30`.
+4. **Emit.** Write the union of visited rows to the normal corpus JSONL schema.
+
+The search runs once per `--preset`.
+
+### One-pass shortcut
+
+When the highest coarse CRF already meets the target, the search stops after
+the coarse pass. Lower bitrate would need CRFs above the coarse grid, which the
+fine pass does not probe anyway.
+
 ## Flags
 
-| Flag | Default | Notes |
+The same flags exist on `corpus` and `recommend`.
+
+| Flag | Default | Meaning |
 | --- | --- | --- |
-| `--coarse-to-fine` | off | Enables the two-pass search for `corpus`; `recommend` uses it by default. |
-| `--target-vmaf` | — | Target used to centre the fine pass. |
-| `--coarse-step` | `10` | CRF spacing for the coarse pass. |
-| `--fine-radius` | `5` | Half-width around the best coarse CRF. |
-| `--fine-step` | `1` | CRF spacing inside the fine window. |
+| `--coarse-to-fine` | off | Enable the search on `corpus`. `recommend` runs it unconditionally, so the flag is accepted there but redundant. |
+| `--target-vmaf V` | none | Target that centres the fine pass. Optional for `corpus`, required for `recommend`. |
+| `--coarse-step N` | `10` | CRF spacing of the coarse pass. With defaults the grid is `[10, 20, 30, 40, 50]`. |
+| `--fine-radius R` | `5` | Fine pass covers the centre CRF plus or minus `R`. |
+| `--fine-step S` | `1` | CRF spacing inside the fine window. |
+
+The coarse window (10..50) and the fine-pass clamp (0..51) are fixed in
+`corpus.coarse_to_fine_search`; no CLI flag changes them.
+
+!!! warning "Adapters with a narrower CRF range"
+    The window is shaped for libx264. An adapter rejects any CRF outside its
+    `quality_range`, and the search then stops with a `ValueError` traceback
+    before encoding that cell.
+
+- **Rejected by the default grid:** `libx265` (range 15..40; rejects 10 and
+  50), `libsvtav1` (20..50; rejects 10), `libvvenc` (17..50; rejects 10),
+  the AMF adapters (15..40; reject 10 and 50), `av1_videotoolbox` and
+  `prores_videotoolbox`.
+- **Accepted by the whole grid:** `libx264`, `libaom-av1`, `libvpx-vp9`,
+  the NVENC and QSV adapters, `h264_videotoolbox` and
+  `hevc_videotoolbox`.
+
+For the rejected codecs, run `corpus` with an explicit `--crf` list or use
+[`compare`](vmaf-tune-compare.md), which bisects inside the encoder's own
+range.
+
+## Hardware encoders
+
+NVENC, AMF and QSV adapters work with this search as long as their range
+accepts the grid (see the warning above). The `--crf` value carries the
+quality number whether the encoder names it CRF or CQ; the NVENC adapter
+forwards it as `-cq`.
+
+NVENC is 10 to 100 times faster than the software encoders at the cost of
+quality. Empirically, `h264_nvenc` at `medium` loses 3 to 5 VMAF points
+against `libx264 medium` at the same bitrate, depending on content. The Pareto
+frontiers differ, which is why the harness lists each hardware encoder as its
+own codec rather than as a flag on `libx264`.
+
+| Goal | Use |
+| --- | --- |
+| A large corpus quickly, or a GPU-encoded production pipeline | A hardware encoder. |
+| The best perceptual quality at a given bitrate | A software encoder. |
+
+If FFmpeg reports `Encoder h264_nvenc not found` (or a sibling encoder), the
+FFmpeg build lacks `--enable-nvenc` or the GPU generation does not support it.
+The harness records the failure as `exit_status != 0` and skips scoring, so a
+partial corpus over a mixed fleet stays well-formed. See
+[`vmaf-tune-codec-adapters.md`](vmaf-tune-codec-adapters.md) for the adapter
+details, including AMF and QSV.
+
+An AMF sweep over three presets and three CRFs:
+
+```shell
+vmaf-tune corpus \
+    --source ref.yuv --width 1920 --height 1080 \
+    --encoder h264_amf \
+    --preset slow --preset medium --preset fast \
+    --crf 23 --crf 28 --crf 34 \
+    --output corpus_amf.jsonl
+```
+
+For `--preset medium --crf 23` the adapter emits these encoder arguments:
+
+```shell
+ffmpeg -i ref.yuv -c:v h264_amf \
+       -quality balanced -rc cqp -qp_i 23 -qp_p 23 \
+       -an out.mkv
+```
+
+## Timing comparison
+
+The count of visited points is the figure that matters. Wall time per point
+varies with source resolution, preset and the libvmaf backend
+(`cpu`, `cuda`, `sycl` or `hip`), so the figures below are illustrative.
+
+| Mode | Points visited | Relative wall time |
+| --- | ---: | ---: |
+| Full grid `--crf 0 ... 51` | 52 | 1.00x (baseline) |
+| Coarse-to-fine, defaults, target met mid-range | 15 | about 0.29x (3.46x faster) |
+| Coarse-to-fine, one-pass shortcut (target met at the coarse maximum) | 5 | about 0.10x (10.4x faster) |
+| Coarse-to-fine, target unmet (fine pass runs anyway) | 15 | about 0.29x |
+
+For a 1080p `--preset medium` clip where one encode-plus-score pass takes about
+5 s, a recommend run drops from about 260 s to about 75 s.
 
 ## Output
 
-Rows are ordinary `vmaf-tune` corpus rows. Downstream consumers do not
-need a separate parser; `recommend`, predictor training, and Phase-B
-bisect tooling can consume the JSONL as usual.
+Rows are ordinary `vmaf-tune` corpus rows (schema in
+[`vmaf-tune-corpus.md`](vmaf-tune-corpus.md)), so
+[`recommend`](vmaf-tune-recommend.md), predictor training and the
+[bisect](vmaf-tune-bisect.md) tooling read the JSONL without a separate parser.
 
-## See Also
+## History
 
-- [`vmaf-tune.md`](vmaf-tune.md) — base tool documentation.
-- [`vmaf-tune-recommend.md`](vmaf-tune-recommend.md) — target-picking
-  consumer for coarse-to-fine rows.
-- [ADR-0306](../adr/0306-vmaf-tune-coarse-to-fine.md) — design
-  decision and search strategy.
+- ADR-0306 introduced the search in Phase A; the library entry point is
+  `tools/vmaf-tune/src/vmaftune/corpus.py::coarse_to_fine_search`, wired in
+  `cli.py`.
+
+## See also
+
+- [`vmaf-tune.md`](vmaf-tune.md) — overview of every subcommand.
+- [`vmaf-tune-recommend.md`](vmaf-tune-recommend.md) — the target-picking
+  consumer of coarse-to-fine rows.
+- [`vmaf-tune-bisect.md`](vmaf-tune-bisect.md) — binary search over the CRF
+  window, the alternative for one codec and one target.
+- [ADR-0306](../adr/0306-vmaf-tune-coarse-to-fine.md) — design decision and
+  search strategy.

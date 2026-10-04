@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # vmaf-tune — Fast NR Pre-Scoring (`--fast-nr`)
 
-`--fast-nr` enables **NR early-elimination** in the Phase B CRF bisect
-(ADR-0615 / ADR-0624).  Instead of running a full-reference VMAF call at
+`--fast-nr` enables **NR early-elimination** in the
+[target-VMAF CRF bisect](vmaf-tune-bisect.md) (ADR-0615 / ADR-0624).  Instead of running a full-reference VMAF call at
 every bisect midpoint, the cheap `nr_metric_v1` ONNX model scores the
 distorted stream alone (~200 ms CPU, <50 ms GPU EP), maps that raw MOS-like
 score into VMAF units with the sidecar calibration, and skips the expensive
@@ -35,7 +35,7 @@ additional download is required.
 ## Quick start
 
 ```bash
-# Compare four CPU codecs with NR pre-scoring enabled:
+# Compare the default CPU codecs (libx265, libsvtav1) with NR pre-scoring:
 vmaf-tune compare \
     --src source.yuv --width 1920 --height 1080 \
     --framerate 24 --duration 10 \
@@ -72,41 +72,57 @@ fast-nr: bisect done — FR calls 3 total, 4 saved (57%)
 the FR call is paid.
 
 The default value (8.0 VMAF) comes from the ADR-0615 design target and is
-conservative enough to be safe on un-calibrated hosts.  The calibration script
-fits a more precise value from your actual corpus:
+conservative enough to be safe on hosts that have not been calibrated. The
+calibration script fits a tighter value from your own corpus.
 
-```bash
-python ai/scripts/calibrate_nr_threshold.py \
-    --corpus .corpus/netflix/ \
-    --output model/tiny/nr_metric_v1.json \
-    --nr-ep cpu
-```
+### Calibrate on your corpus
 
-After a successful calibration run, `nr_metric_v1.json` will contain
-`calibration_slope`, `calibration_intercept`, and `calibration_threshold`
-fields that `NRProxyBackend` picks up automatically on the next `--fast-nr`
-invocation.  The calibration report is written to
-`docs/ai/models/nr_metric_v1-calibration-<date>.md`.  Fresh calibration JSON
-also includes ADR-0661 `run_provenance` so the threshold can be traced back to
-the corpus directory, `nr_metric_v1.onnx` input, CRF grid, CLI arguments, and
-Markdown report path that produced it.
+1. Run the calibration script over a directory of reference YUVs:
 
-The script now guards the sidecar write: by default it requires at least 10
-samples and PLCC ≥ 0.70 between raw NR scores and FR VMAF.  Weak fits still
-write the Markdown report with a `WEAK` quality status, but they do not update
-`nr_metric_v1.json` unless `--allow-weak-calibration` is passed for diagnostic
-work.  This keeps `--fast-nr` from consuming a sidecar that cannot actually
-speed up the Netflix-style tune loop safely.
+   ```bash
+   python ai/scripts/calibrate_nr_threshold.py \
+       --corpus .corpus/netflix/ \
+       --output model/tiny/nr_metric_v1.json \
+       --nr-ep cpu
+   ```
+
+2. Read the Markdown report at
+   `docs/ai/models/nr_metric_v1-calibration-<date>.md`. It states the fit
+   quality, including a `WEAK` status when the fit is poor.
+3. Run `vmaf-tune ... --fast-nr` as before. `NRProxyBackend` picks the new
+   values up automatically on the next invocation.
+
+A successful run writes these fields to `nr_metric_v1.json`:
+
+- `calibration_slope` and `calibration_intercept`, the NR-to-VMAF mapping;
+- `calibration_threshold`, the fitted `δ_fast`;
+- `run_provenance` ([ADR-0661](../adr/0661-ai-run-manifest-provenance.md)),
+  which traces the threshold back to the corpus directory, the
+  `nr_metric_v1.onnx` input, the CRF grid, the CLI arguments and the report
+  path that produced it.
+
+!!! warning "Weak fits are not written"
+    By default the script needs at least 10 samples and a PLCC of at least
+    0.70 between the raw NR scores and the FR VMAF. A weaker fit still writes
+    the Markdown report with a `WEAK` quality status, but it does not update
+    `nr_metric_v1.json`, so `--fast-nr` never consumes a sidecar that cannot
+    speed up the tune loop safely. Pass `--allow-weak-calibration` for
+    diagnostic work only.
 
 ### Content-type considerations
 
-The default δ_fast = 8.0 VMAF is a global threshold calibrated on
-mixed-content Netflix clips.  On highly homogeneous content (animation,
-screen-capture) NR correlates better with FR and a tighter δ_fast (e.g. 5.0)
-may yield more FR savings without correctness risk.  On high-motion sports
-content NR can be less predictive, so a looser δ_fast (e.g. 10–12) is safer.
-Use `--fast-nr` together with `--delta-fast` (not yet exposed in CLI; inject
-via sidecar JSON) for content-specific tuning.
+Tune `δ_fast` per content type. `vmaf-tune` has no `--delta-fast` flag: edit
+`calibration_threshold` in `model/tiny/nr_metric_v1.json`, or run
+`calibrate_nr_threshold.py --delta-fast V` to write a forced value.
+
+The default of 8.0 VMAF is a global threshold calibrated on mixed-content
+Netflix clips.
+
+- **Homogeneous content** (animation, screen capture): NR correlates better
+  with FR, so a tighter value such as 5.0 can save more FR calls without a
+  correctness risk.
+- **High-motion sports content**: NR is less predictive, so a looser value
+  such as 10 to 12 is safer.
 
 ## Calibration script
 
@@ -152,8 +168,8 @@ spell out `1920x1080`.
 
 ## FR call savings — example
 
-On a 10-second 1080p source at `--target-vmaf 93` with the default CRF window
-`[0, 63]` and `max_iterations=8`:
+On a 10-second 1080p source at `--target-vmaf 93` with a CRF window of
+`[0, 63]` (the absolute range of `libsvtav1`) and `max_iterations=8`:
 
 | Phase | CRF | NR score | δ_fast | Action |
 |-------|-----|----------|--------|--------|
@@ -181,8 +197,13 @@ saved — **60% FR reduction**.
 
 ## See also
 
-- [ADR-0615](../adr/0615-fast-nr-prescoring.md) — decision to implement NR early-elimination.
+- [ADR-0615](../adr/0615-fast-nr-prescoring.md) — decision to implement NR
+  early-elimination.
 - [ADR-0624](../adr/0624-fast-nr-prescoring-impl.md) — implementation record.
-- [Research-0611](../research/0611-fast-nr-prescoring-research.md) — design options and calibration plan.
-- [`vmaf-tune compare`](vmaf-tune.md) — main compare subcommand documentation.
-- [`vmaf-tune tune-per-shot`](vmaf-tune.md#phase-d-per-shot-crf-tuning) — per-shot encode documentation.
+- [Research-0611](../research/0611-fast-nr-prescoring-research.md) — design
+  options and calibration plan.
+- [`vmaf-tune compare`](vmaf-tune-compare.md) — compare subcommand.
+- [`vmaf-tune tune-per-shot`](vmaf-tune-per-shot.md) — per-shot subcommand.
+- [`vmaf-tune-bisect.md`](vmaf-tune-bisect.md) — the bisect that `--fast-nr`
+  accelerates.
+- [`vmaf-tune.md`](vmaf-tune.md) — the tool overview.
