@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T17:37:36Z",
+  "generated_at": "2026-10-04T17:54:11Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "48d9ea42b79848bedc7728293693334e2ea92b31",
-  "total_infractions": 377,
+  "commit_sha": "5d81bfb47a5029e0d7d4adf168817ee5f24ca02e",
+  "total_infractions": 367,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -275,14 +275,6 @@
     },
     {
       "rule_id": "HISS-07",
-      "file_path": "ai/scripts/eval_loso_fr_regressor_v2.py",
-      "line_number": 26,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/eval_loso_fr_regressor_v2.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
-      "rule_id": "HISS-07",
       "file_path": "ai/scripts/export_fastdvdnet_pre_placeholder.py",
       "line_number": 146,
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
@@ -296,14 +288,6 @@
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
       "anchor": "fn:_update_registry",
       "fingerprint": "ai/scripts/export_transnet_v2_placeholder.py:HISS-07:fn:_update_registry#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/external_benchmark_pvmaf.py",
-      "line_number": 26,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/external_benchmark_pvmaf.py:HISS-07:text:4cf92c48f933#1"
     },
     {
       "rule_id": "HISS-04",
@@ -333,38 +317,6 @@
       "fingerprint": "ai/scripts/extract_k150k_features.py:HISS-04:fn:_process_clip#1"
     },
     {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/fetch_lsvq.py",
-      "line_number": 26,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/fetch_lsvq.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/gen_dists_sq_placeholder_onnx.py",
-      "line_number": 25,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/gen_dists_sq_placeholder_onnx.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/gen_mobilesal_placeholder_onnx.py",
-      "line_number": 34,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/gen_mobilesal_placeholder_onnx.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/gen_ssimulacra2_eotf_lut.py",
-      "line_number": 27,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/gen_ssimulacra2_eotf_lut.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/hardware_caps_loader.py",
       "line_number": 287,
@@ -372,14 +324,6 @@
       "message": "Function 'cap_vector_for' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:cap_vector_for",
       "fingerprint": "ai/scripts/hardware_caps_loader.py:HISS-04:fn:cap_vector_for#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/hdrsdr_vqa_to_corpus_jsonl.py",
-      "line_number": 26,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/hdrsdr_vqa_to_corpus_jsonl.py:HISS-07:text:4cf92c48f933#1"
     },
     {
       "rule_id": "HISS-04",
@@ -454,14 +398,6 @@
       "fingerprint": "ai/scripts/materialize_second_opinion_features.py:HISS-04:fn:materialize#1"
     },
     {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/my_corpus_to_corpus_jsonl.py",
-      "line_number": 27,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/my_corpus_to_corpus_jsonl.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/train_fr_regressor.py",
       "line_number": 280,
@@ -469,14 +405,6 @@
       "message": "Function '_export_and_register' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:_export_and_register",
       "fingerprint": "ai/scripts/train_fr_regressor.py:HISS-04:fn:_export_and_register#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/train_fr_regressor_v4.py",
-      "line_number": 27,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/train_fr_regressor_v4.py:HISS-07:text:4cf92c48f933#1"
     },
     {
       "rule_id": "HISS-04",
@@ -522,14 +450,6 @@
       "message": "Function 'train_codec_loso' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:train_codec_loso",
       "fingerprint": "ai/scripts/train_predictor_v2_realcorpus.py:HISS-04:fn:train_codec_loso#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/train_video_saliency_student.py",
-      "line_number": 27,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/train_video_saliency_student.py:HISS-07:text:4cf92c48f933#1"
     },
     {
       "rule_id": "HISS-04",

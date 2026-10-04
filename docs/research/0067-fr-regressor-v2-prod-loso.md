@@ -101,9 +101,9 @@ python ai/scripts/train_fr_regressor_v2.py \
     --corpus runs/phase_a/full_grid/per_frame_canonical6.jsonl \
     --epochs 200 --batch-size 32 --lr 5e-4 --hidden 32 --depth 3
 
-# 3. Re-run LOSO eval
-python3 ai/scripts/eval_loso_fr_regressor_v2.py \
-    --corpus runs/phase_a/full_grid/per_frame_canonical6.jsonl
+# 3. Re-run LOSO eval. There is no `eval_loso_fr_regressor_v2.py`: the
+#    tiny-model LOSO evaluator is ai/scripts/eval_loso_vmaf_tiny_v3.py, which a
+#    v2 evaluation would adapt.
 # Expected: LOSO PLCC = 0.9681 ± 0.0207 (PASS 0.95 gate)
 ```
 

@@ -67,7 +67,7 @@ model in T6-2b and exports the map in encoder-native format.
 | Upstream source (paper) | [yuhuan-wu/MobileSal](https://github.com/yuhuan-wu/MobileSal) (HEAD `8f42ded5`; not currently shippable — see ADR-0257) |
 | License (placeholder) | BSD-2-Clause-Patent (this fork) |
 | License (upstream MobileSal weights) | CC BY-NC-SA 4.0 — **incompatible with the fork**; per `yuhuan-wu/MobileSal/README.md` §License. ADR-0218's MIT claim was inaccurate; corrected here and in ADR-0257. |
-| Exporter (placeholder) | `scripts/gen_mobilesal_placeholder_onnx.py` |
+| Exporter (placeholder) | `ai/scripts/gen_mobilesal_placeholder_onnx.py` |
 | Registry entry | `mobilesal_placeholder_v0` in `model/tiny/registry.json` (smoke=true) |
 | Status | Legacy smoke placeholder — superseded for production by `saliency_student_v2` (ADR-0444) / `saliency_student_v1` (ADR-0286) |
 
@@ -183,15 +183,15 @@ for it. Trained, evaluated saliency weights are on the
 ## How the placeholder is regenerated
 
 ```bash
-python scripts/gen_mobilesal_placeholder_onnx.py
-# wrote model/tiny/mobilesal.onnx (330 bytes, sha256=f1226...)
-# wrote model/tiny/mobilesal.json
-# updated model/tiny/registry.json
+python ai/scripts/gen_mobilesal_placeholder_onnx.py          # rewrite model/tiny/mobilesal.onnx
+python ai/scripts/gen_mobilesal_placeholder_onnx.py --check   # exit 1 if the file differs
+# wrote model/tiny/mobilesal.onnx (330 bytes, sha256 f12263...)
 ```
 
-Re-running on the same `numpy` / `onnx` versions produces byte-identical
-output. CI verifies the sha256 against `registry.json` before
-`CreateSession`.
+The generator writes the ONNX file only; the sidecar JSON and the registry
+entry are committed files. The output is byte-identical to the shipped file,
+and `--check` fails when it is not. The sha256 in `registry.json` is verified
+before `CreateSession`.
 
 ## Related
 

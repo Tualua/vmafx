@@ -168,7 +168,7 @@ All MOS-corpus adapter scripts share a base class in `ai/src/corpus/base.py`
 and call `ingest.run()`:
 
 ```python
-# ai/scripts/my_corpus_to_corpus_jsonl.py
+# ai/scripts/<your_corpus>_to_corpus_jsonl.py
 from corpus.base import CorpusIngestBase, utc_now_iso
 
 class MyCorpusIngest(CorpusIngestBase):

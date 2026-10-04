@@ -1434,7 +1434,6 @@
         "ai/scripts/extract_full_features.py": 1,
         "ai/scripts/train_fr_regressor_v2.py": 4,
         "ai/scripts/train_fr_regressor_v3.py": 2,
-        "ai/scripts/train_fr_regressor_v4.py": 2,
         "ai/scripts/train_predictor_v2_realcorpus.py": 1,
         "ai/src/vmaf_train/codec.py": 1,
         "ai/src/vmaf_train/models/fr_regressor.py": 1,
@@ -1949,7 +1948,6 @@
     "0286": {
       "sites": {
         "ai/scripts/train_saliency_student_v2.py": 1,
-        "ai/scripts/train_video_saliency_student.py": 1,
         "cmd/vmafx-tune/cmd/recommend_saliency.go": 1,
         "pkg/saliency/saliency.go": 1,
         "tools/vmaf-tune/src/vmaftune/saliency.py": 3
@@ -2819,7 +2817,6 @@
     "0396": {
       "sites": {
         "ai/scripts/eval_saliency_per_mb.py": 1,
-        "ai/scripts/train_video_saliency_student.py": 2,
         "tools/vmaf-tune/src/vmaftune/saliency.py": 1
       },
       "target": "0396-video-saliency-extension.md"
@@ -3051,12 +3048,6 @@
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2
       },
       "target": "0458-sycl-cambi-ssim-slm-staging.md"
-    },
-    "0459": {
-      "sites": {
-        "ai/scripts/hdrsdr_vqa_to_corpus_jsonl.py": 1
-      },
-      "target": "0459-vmaftune-panel-aware-recommendations.md"
     },
     "0464": {
       "sites": {

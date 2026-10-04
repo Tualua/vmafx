@@ -60734,3 +60734,14 @@ upstream parity guard's allowlist.
   constructor and never adds an `Adapter` literal to a list. Guard:
   `pkg/codecadapter/one_definition_test.go`. No score, public API or FFmpeg
   patch impact.
+
+## ai/scripts stubs removed, two placeholder generators implemented
+
+- Eight `ai/scripts/*.py` stubs are deleted (`eval_loso_fr_regressor_v2`,
+  `external_benchmark_pvmaf`, `fetch_lsvq`, `gen_ssimulacra2_eotf_lut`,
+  `hdrsdr_vqa_to_corpus_jsonl`, `my_corpus_to_corpus_jsonl`,
+  `train_fr_regressor_v4`, `train_video_saliency_student`); the real
+  `scripts/gen_ssimulacra2_eotf_lut.py` is untouched. A sync must not restore
+  them. `gen_dists_sq_placeholder_onnx.py` and `gen_mobilesal_placeholder_onnx.py`
+  are real and guarded by `ai/tests/test_no_stub_scripts.py`. No score, public API
+  or FFmpeg patch impact.

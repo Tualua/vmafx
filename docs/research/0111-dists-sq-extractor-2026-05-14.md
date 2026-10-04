@@ -37,7 +37,7 @@ published metric rather than the smoke graph.
 ## Verification
 
 ```bash
-.venv/bin/python scripts/gen_dists_sq_placeholder_onnx.py
+.venv/bin/python ai/scripts/gen_dists_sq_placeholder_onnx.py --check
 meson test -C build-dists test_dists
 ```
 

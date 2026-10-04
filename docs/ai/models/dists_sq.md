@@ -15,7 +15,7 @@ tracked separately as `T7-DISTS-followup`.
 | SHA-256 | `ec8433e8c7c6a33ef3032a6e4538833e0bbb59de9f088054bbcb3be0e371ee55` |
 | ONNX opset | 17 |
 | License | BSD-2-Clause-Patent |
-| Generator | `scripts/gen_dists_sq_placeholder_onnx.py` |
+| Generator | `ai/scripts/gen_dists_sq_placeholder_onnx.py` |
 
 ## Contract
 
@@ -74,11 +74,15 @@ trained DISTS model and intentionally sets `"smoke": true` in
 ## Regeneration
 
 ```bash
-.venv/bin/python scripts/gen_dists_sq_placeholder_onnx.py
+.venv/bin/python ai/scripts/gen_dists_sq_placeholder_onnx.py          # rewrite model/tiny/dists_sq.onnx
+.venv/bin/python ai/scripts/gen_dists_sq_placeholder_onnx.py --check   # exit 1 if the file differs
 ```
 
-The generator writes the ONNX file, sidecar JSON, and registry entry in one
-pass. Re-run registry validation after regeneration:
+The generator writes the ONNX file only; the sidecar JSON and the registry
+entry are committed files. The output is byte-identical to the shipped file on
+every `onnx` version that serialises the graph the same way, so `--check` is
+the test that the registry's SHA-256 still describes what the script builds.
+After a change, update the SHA-256 and re-run registry validation:
 
 ```bash
 .venv/bin/python ai/scripts/validate_model_registry.py model/tiny/registry.json
