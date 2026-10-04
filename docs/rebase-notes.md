@@ -48,6 +48,19 @@ change.
   `--width/--height` exits 2.
 - `cli._uncertainty_unavailable_note` is the only path that answers
   `--with-uncertainty` without intervals.
+## TransNet V2 runs upstream's windows (ADR-1527, 2026-10-04)
+
+`fix/transnet-v2-load`. Fork-local tiny-AI code; upstream Netflix has no
+`transnet_v2` extractor.
+
+- `core/src/feature/transnet_v2.c`: windows of `predict_frames()`, a flush
+  callback and `VMAF_FEATURE_EXTRACTOR_TEMPORAL`; thumbnails in 0..255; the
+  output bound by position. Do not restore the last-slot readout or the 0..1
+  scaling.
+- `core/src/dnn/dnn_api.c`: `setup_luma_fast_path()` probes ranks up to
+  `VMAF_DNN_PROBE_MAX_RANK` (8) and treats `-ERANGE` as "no fast path".
+- `model/tiny/transnet_v2.json` and `ai/scripts/export_transnet_v2.py`:
+  `output_name` is `output_0`.
 
 ## `vmaf-tune` model overrides, cache key v2, QSV chain on encodes, ladder codec strings (2026-10-04)
 

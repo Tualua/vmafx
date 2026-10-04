@@ -241,19 +241,23 @@ in
 [`docs/metrics/features.md`](../../docs/metrics/features.md#transnetv2--transnet-v2-shot-boundary-detector-tiny-ai-nr--single-input).
 What it does, for anyone copying the recipe:
 
-- **Window.** A 100-slot ring buffer of 27x48 thumbnails. The luma plane is
-  downsampled and broadcast across the three RGB channels, so the input tensor
-  is `[1, 100, 3, 27, 48]` (`"frames"`). The output is `[1, 100]` per-frame
-  logits (`"boundary_logits"`). The 27x48 and 100-frame geometry is the
-  published Soucek and Lokoc 2020 architecture, not a fork choice.
-- **No decimation.** The network runs once per `extract()` call, every frame,
-  and
-  only the slot for the most recent push is read out. That is the dominant
-  per-frame cost of the feature and why `transnet_v2` is in no default model.
-- **Warm-up, not padding.** Until the ring holds 100 frames, the most recent
-  frame is replicated across the empty slots, so the tensor is always
-  well-formed. The reported probability is delayed-onset: treat roughly the
-  first 50 frames as warm-up rather than as scores.
+- **Window.** A 100-slot ring buffer of 27x48 thumbnails, keyed by frame
+  index. The luma plane is downsampled, kept in the 0..255 range and broadcast
+  across the three RGB channels, so the input tensor is `[1, 100, 3, 27, 48]`
+  (`"frames"`). The output is `[1, 100]` per-frame logits, bound by position
+  (the shipped graph names it `output_0`). The 27x48 and 100-frame geometry is
+  the published Soucek and Lokoc 2020 architecture, not a fork choice.
+- **Upstream windows, delayed output.** As upstream's `predict_frames()`
+  does, windows advance by 50 frames and report their middle 50, with the
+  first frame repeated 25 times before the clip and the last frame repeated
+  after it ([ADR-1527](../adr/1527-transnet-v2-upstream-windows.md)). A window
+  runs once its last frame is read, so `extract()` writes features for frames
+  up to 74 frames back; `flush()` runs the windows the clip's end leaves open.
+  The network runs once per 50 frames. A logit read from the frame just read
+  sees no later frame and misses cuts.
+- **Temporal flag.** The extractor sets `VMAF_FEATURE_EXTRACTOR_TEMPORAL`, so
+  it sees every frame in order on the calling thread; a gap in the frame
+  indices fails.
 - **Per-frame output.** The extractor emits `shot_boundary_probability` (sigmoid
   of the logit) and a `shot_boundary` flag thresholded at 0.5. Per-shot
   aggregation is a separate tool,

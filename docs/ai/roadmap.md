@@ -171,7 +171,8 @@ Status:
 - **Shot-boundary extractor shipped** (T6-3a, 2026-04-29, real upstream weights
   in
   T6-3a-followup, [ADR-0261](../adr/0261-transnet-v2-real-weights.md)). The
-  `transnet_v2` extractor uses a 100-slot ring buffer with the
+  `transnet_v2` extractor runs upstream's 100-frame windows
+  ([ADR-1527](../adr/1527-transnet-v2-upstream-windows.md)) with the
   `[1, 100, 3, 27, 48] -> [1, 100]` ONNX contract and the Soucek and Lokoc 2020
   MIT checkpoint at `model/tiny/transnet_v2.onnx` (`smoke: false`), wrapped by
   the

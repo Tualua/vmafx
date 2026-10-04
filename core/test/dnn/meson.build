@@ -109,6 +109,16 @@ test_vmaf_use_tiny_model = executable('test_vmaf_use_tiny_model',
     dependencies : [math_lib, cuda_dependency, sycl_dependency],
 )
 
+# TransNet V2 end to end with the shipped model (ADR-1527): rank-5 session
+# open, positional output binding, upstream windows and the flush.
+test_transnet_v2_run = executable('test_transnet_v2_run',
+    ['../test.c', 'test_transnet_v2_run.c'],
+    include_directories : dnn_test_inc,
+    c_args : dnn_defines,
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, cuda_dependency, sycl_dependency],
+)
+
 test('test_tensor_io',       test_tensor_io,       suite : 'dnn')
 test('test_op_allowlist',    test_op_allowlist,    suite : 'dnn')
 test('test_model_loader',    test_model_loader,    suite : 'dnn')
@@ -125,6 +135,10 @@ test('test_ort_internals',   test_ort_internals,
      suite : 'dnn')
 test('test_vmaf_use_tiny_model', test_vmaf_use_tiny_model,
      workdir : meson.project_source_root() / '..',
+     suite : 'dnn')
+test('test_transnet_v2_run', test_transnet_v2_run,
+     workdir : meson.project_source_root() / '..',
+     timeout : 120,
      suite : 'dnn')
 
 # ORT error-injection tests (ADR-0112 internal-test-seam pattern).

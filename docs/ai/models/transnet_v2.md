@@ -16,24 +16,17 @@ through the existing feature collector).
     original placeholder-only design is documented in
     [ADR-0223](../../adr/0223-transnet-v2-shot-detector.md).
 
-!!! warning "Known issue: the shipped model does not open on current master"
-    On a CPU build of master, `--feature transnet_v2=model_path=...` stops
-    with `libvmaf ERROR transnet_v2: vmaf_dnn_session_open(...) failed: -34`
-    (`-ERANGE`). The session opener probes the input shape with a rank limit
-    of 4, and this model's input has rank 5 (`[1, 100, 3, 27, 48]`). The
-    exported ONNX graph also names its output `output_0`, while the
-    extractor and the sidecar bind `boundary_logits`. Both are code or
-    export defects, tracked outside this page; the sections below describe
-    the intended contract.
-
 ## What the outputs mean
 
 The extractor appends two per-frame features:
 
 | Feature name | Type | Meaning |
 | --- | --- | --- |
-| `shot_boundary_probability` | float32 in `[0, 1]` | Sigmoid of the network's logit for the current frame. ~0.0 = no cut, ~1.0 = high-confidence cut. |
+| `shot_boundary_probability` | float32 in `[0, 1]` | Sigmoid of the network's logit for the frame. ~0.0 = no cut, ~1.0 = the frame is the last of a shot. |
 | `shot_boundary` | float32 ∈ `{0.0, 1.0}` | Binary flag thresholded at 0.5 against the probability. Drop-in for naive consumers. |
+
+A `1.0` marks the **last frame of a shot**, the frame before the cut, as
+upstream's `predictions_to_scenes()` reads the predictions.
 
 Downstream consumers (the per-shot CRF predictor T6-3b, the FFmpeg
 shot-cut filter shipping with T6-3b) bind to those exact strings.
@@ -41,7 +34,7 @@ shot-cut filter shipping with T6-3b) bind to those exact strings.
 | Probability | Interpretation |
 | --- | --- |
 | **~0.05** | No shot change — typical mid-shot frame. |
-| **~0.50** | Detector uncertain — common during dissolve / fade transitions and the first ~50 frames of warm-up. |
+| **~0.50** | Detector uncertain — common during dissolve / fade transitions. |
 | **~0.95** | High-confidence shot cut. |
 
 ## Shipped checkpoint
@@ -53,7 +46,8 @@ shot-cut filter shipping with T6-3b) bind to those exact strings.
 | Size | ~30 MiB (real upstream weights, ~7.7M parameters in the published checkpoint plus the ColorHistograms branch) |
 | ONNX opset | 17 |
 | Input | `frames` — float32 `[1, 100, 3, 27, 48]` (100-frame stack of RGB thumbnails, NTCHW) |
-| Output | `boundary_logits` — float32 `[1, 100]` (per-frame logits before sigmoid) |
+| Output | `output_0` — float32 `[1, 100]` (per-frame logits before sigmoid); the extractor binds it by position |
+| Input range | 0..255 per sample, as upstream's RGB frames |
 | Smoke flag | `smoke: false` in registry — real shot detector |
 | License | MIT (upstream `soCzech/TransNetV2`) |
 | Upstream commit | `77498b8e4a6d61ed7c3d9bd56f4de2b29ab7f4db` |
@@ -102,31 +96,38 @@ allocation). Rationale + alternatives in
 
 ## Frame window contract
 
-The C extractor (`core/src/feature/transnet_v2.c`) maintains a
-100-slot ring buffer of pre-resized RGB thumbnail tensors. Each
-`extract()` call:
+The C extractor (`core/src/feature/transnet_v2.c`) reproduces upstream's
+`predict_frames()`
+([ADR-1527](../../adr/1527-transnet-v2-upstream-windows.md)):
 
-1. Resizes the input luma plane (any bpc; rescaled to `[0, 1]`) down
-   to a 27x48 grid via nearest-neighbour, then broadcasts that single
-   plane across all three RGB channels (placeholder behaviour
-   preserved from ADR-0223 — true RGB decode + bilinear resize is
-   tracked as a separate follow-up; the model accepts the broadcast
-   luma since the upstream training data was natural-image RGB and
-   the network is robust to per-channel correlation).
-2. Pushes the resized frame into the ring at `next_slot`.
-3. Gathers the 100 ring slots into a `[1, 100, 3, 27, 48]` input
-   tensor. At clip start (when fewer than 100 frames have been seen)
-   the missing slots replicate the oldest available frame
-   (head-clamp).
-4. Calls `vmaf_dnn_session_run` with the named bindings `frames`
-   (input) and `boundary_logits` (output).
-5. Reads the most recent slot's logit (index `WINDOW-1`), sigmoids
-   it, and appends both `shot_boundary_probability` and
-   `shot_boundary` (thresholded at 0.5) via
-   `vmaf_feature_collector_append`.
+1. Each `extract()` call resizes the luma plane to a 27x48 grid by nearest
+   neighbour, keeps it in the 0..255 range (10- and 12-bit samples are scaled
+   to it) and broadcasts it across the three RGB channels. It stores the
+   thumbnail in a 100-slot ring keyed by frame index.
+2. The clip is padded as upstream pads it: 25 copies of the first frame in
+   front, copies of the last frame behind. Window k covers frames
+   `50k - 25 .. 50k + 74` and runs as soon as frame `50k + 74` is read; its
+   logits at slots 25..74 become the features of frames `50k .. 50k + 49`.
+   The windows the clip's end leaves open (one or two) run in `flush()`.
+3. Each logit goes through a sigmoid into `shot_boundary_probability`, and
+   the 0.5 threshold gives `shot_boundary`.
 
-The first ~50 frames of any clip should be treated as warm-up: the
-detector hasn't seen enough context to make a confident decision.
+Consequences:
+
+- The network runs once per 50 frames, not once per frame.
+- A frame's features are written up to 74 frames after it is read; read
+  them after the run is flushed.
+- Every frame sees at least 25 frames before and after it. A logit read from
+  the window's last slot (the frame just read, which an earlier version of
+  the extractor did) sees no later frame: on a hard cut between two natural
+  clips it stayed at 0.10.
+- The extractor is temporal: frames arrive in order from index 0, and a gap
+  in the indices fails.
+
+Two inputs differ from upstream: the luma plane stands in for RGB, and the
+resize is nearest neighbour rather than ffmpeg's scaler. On a hard cut
+between the Netflix `src01` clip and the BBB clip the extractor's
+probability for the last frame before the cut is 0.89.
 
 ## Integration recipe
 
@@ -185,10 +186,12 @@ SavedModel before declaring success.
 ## Smoke test
 
 The C-side registration + options-table contract + dual-feature
-surface is exercised by `core/test/test_transnet_v2.c`:
+surface is exercised by `core/test/test_transnet_v2.c`, and the model end to
+end (session open, the windows, the flush, 10-bit input) by
+`core/test/dnn/test_transnet_v2_run.c` on synthetic clips with known cuts:
 
 ```bash
-python3 scripts/ci/run_meson_test.py -- -C core/build test_transnet_v2
+python3 scripts/ci/run_meson_test.py -- -C core/build test_transnet_v2 test_transnet_v2_run
 ```
 
 To smoke the full 100-frame round-trip via Python ORT:
@@ -198,8 +201,8 @@ python3 -c "
 import onnxruntime as ort, numpy as np
 sess = ort.InferenceSession('model/tiny/transnet_v2.onnx',
                             providers=['CPUExecutionProvider'])
-x = np.random.RandomState(7).rand(1, 100, 3, 27, 48).astype(np.float32)
-y = sess.run(['boundary_logits'], {'frames': x})[0]
+x = (np.random.RandomState(7).rand(1, 100, 3, 27, 48) * 255).astype(np.float32)
+y = sess.run(['output_0'], {'frames': x})[0]
 print('shape', y.shape, 'mean prob',
       float((1.0/(1.0+np.exp(-y))).mean()))
 "

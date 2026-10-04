@@ -344,7 +344,9 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
         "onnx": onnx_path.name,
         "opset": 17,
         "input_name": "frames",
-        "output_name": "boundary_logits",
+        # tf2onnx names the single wrapped output after the SavedModel
+        # signature key; the C extractor binds it by position (ADR-1527).
+        "output_name": "output_0",
         "frame_window": WINDOW,
         "thumbnail_h": HEIGHT,
         "thumbnail_w": WIDTH,

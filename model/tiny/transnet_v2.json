@@ -11,7 +11,7 @@
   "notes": "TransNet V2 shot-boundary detector (T6-3a-followup). 100-frame window of 27x48 RGB thumbnails -> per-frame shot-boundary logits. Real upstream weights from Soucek & Lokoc 2020 (MIT). Wrapper transposes NTCHW->NTHWC and selects only the single-frame logits output; ColorHistograms's rank-2 UnsortedSegmentSum rewritten to ScatterND for ONNX opset-17 compatibility. See ADR-0261 + docs/ai/models/transnet_v2.md.",
   "onnx": "transnet_v2.onnx",
   "opset": 17,
-  "output_name": "boundary_logits",
+  "output_name": "output_0",
   "smoke": false,
   "thumbnail_h": 27,
   "thumbnail_w": 48,

@@ -6196,6 +6196,7 @@
         "core/test/dnn/test_ort_internals.c": 1,
         "core/test/dnn/test_tensor_io.c": 1,
         "core/test/dnn/test_tiny_model_verify.c": 1,
+        "core/test/dnn/test_transnet_v2_run.c": 1,
         "core/test/dnn/test_vmaf_use_tiny_model.c": 2,
         "core/test/float_adm_twin_parity.h": 1,
         "core/test/float_moment_twin_parity.h": 1,
@@ -10035,6 +10036,16 @@
         "pkg/libvmaf/readers_unix.go": 1
       },
       "target": "1526-node-storage-streamed-inputs.md"
+    },
+    "1527": {
+      "sites": {
+        "ai/scripts/export_transnet_v2.py": 1,
+        "core/src/dnn/dnn_api.c": 1,
+        "core/src/feature/transnet_v2.c": 3,
+        "core/test/dnn/meson.build": 1,
+        "core/test/dnn/test_transnet_v2_run.c": 5
+      },
+      "target": "1527-transnet-v2-upstream-windows.md"
     },
     "1539": {
       "sites": {

@@ -227,10 +227,13 @@ not on the scoring-side `mobilesal` feature yet.
 
 ## `transnet_v2` — TransNet V2 shot-boundary detector
 
-Runs the TransNet V2 shot-boundary detector on a sliding 100-frame
-window of 27x48 RGB thumbnails (downsampled from the distorted
-stream's luma + reconstructed chroma) and emits a per-frame shot-
-boundary probability plus a thresholded binary flag. Companion ADRs
+Runs the TransNet V2 shot-boundary detector over 100-frame windows of
+27x48 thumbnails of the distorted stream's luma (broadcast to the three
+channels) and emits a per-frame shot-boundary probability plus a thresholded
+binary flag. The windows are upstream's `predict_frames()`
+([ADR-1527](../adr/1527-transnet-v2-upstream-windows.md)): 25 frames of padding
+before the clip, windows advancing by 50, each reporting its middle 50
+frames. Companion ADRs
 [`docs/adr/0223-transnet-v2-shot-detector.md`](../adr/0223-transnet-v2-shot-detector.md)
 and
 [`docs/adr/0261-transnet-v2-real-weights.md`](../adr/0261-transnet-v2-real-weights.md)
@@ -245,26 +248,32 @@ features is T6-3b.
 - C API: `vmaf_use_feature(ctx, "transnet_v2", opts)` with
   `model_path` set on the dictionary.
 
-**Output metrics** — `shot_boundary_probability` (sigmoid of the most
-recent frame's boundary logit, range `[0.0, 1.0]`) and `shot_boundary`
-(binary flag `0.0` / `1.0`, thresholded at `0.5` against
-`shot_boundary_probability`). Downstream consumers (per-shot CRF
-predictor T6-3b, FFmpeg shot-cut filter) bind to these two names.
+**Output metrics** — `shot_boundary_probability` (sigmoid of the frame's
+boundary logit, range `[0.0, 1.0]`) and `shot_boundary` (binary flag `0.0` /
+`1.0`, thresholded at `0.5` against `shot_boundary_probability`). A `1.0`
+marks the last frame of a shot, as upstream's `predictions_to_scenes()` reads
+the predictions. Downstream consumers (per-shot CRF predictor T6-3b, FFmpeg
+shot-cut filter) bind to these two names.
 
 **Backends** — scalar only on the libvmaf side; ORT-dispatched to
 the selected execution provider.
 
 Limitations:
 
-- Stateful: a 100-frame sliding window. The first 99 frames emit boundary
-  probabilities computed against a partially filled window.
+- Stateful: frames must arrive in order from index 0 without a gap (the
+  extractor is temporal, so `--subsample` and `--threads` do not reorder it).
+  A frame's features are written up to 74 frames after it is read, and the
+  last windows run when the run is flushed.
+- Samples are fed in the 0..255 range of upstream's RGB frames; 10- and
+  12-bit input is scaled to it.
 - Without ORT, or without a model path, init fails as described in
   [Shared behaviour](#shared-behaviour).
 - The shipped checkpoint `model/tiny/transnet_v2.onnx` carries real upstream
   soCzech/TransNetV2 weights (`smoke: false` in `model/tiny/registry.json`)
   wrapped by the ADR-0261 NTCHW adapter. The wrapper preserves the C
   extractor's `[1, 100, 3, 27, 48] -> [1, 100]` ONNX contract while invoking
-  the upstream NTHWC graph and selecting the boundary-logits output.
+  the upstream NTHWC graph and selecting the single-frame logits; the graph
+  names that output `output_0`, and the extractor binds it by position.
 - Remaining follow-ups are per-shot CRF aggregation and true RGB / bilinear
   thumbnail input; the model shipped here is not the old smoke-only
   placeholder.

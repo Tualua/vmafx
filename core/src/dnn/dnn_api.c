@@ -125,14 +125,22 @@ static int resolve_load_path(const VmafDnnSession *s, const char *onnx_path, siz
  * would otherwise truncate into a wrong fixed geometry. Out-of-range dims
  * fall through to the generic path as well. CERT INT31-C. (R2-7)
  */
+/* Input ranks the session-open probe reads in full (ADR-1527). */
+#define VMAF_DNN_PROBE_MAX_RANK 8u
+
 static int setup_luma_fast_path(VmafDnnSession *s)
 {
     assert(s != NULL);
     assert(s->ort != NULL);
 
-    int64_t shape[4] = {0};
+    /* Probe with room for every rank a shipped model uses (TransNet V2's
+     * input is rank 5). A rank beyond the probe is not [1,1,H,W] either:
+     * such a model keeps the generic path instead of failing to open. */
+    int64_t shape[VMAF_DNN_PROBE_MAX_RANK] = {0};
     size_t rank = 0;
-    const int rc = vmaf_ort_input_shape(s->ort, shape, 4u, &rank);
+    const int rc = vmaf_ort_input_shape(s->ort, shape, VMAF_DNN_PROBE_MAX_RANK, &rank);
+    if (rc == -ERANGE)
+        return 0;
     if (rc < 0)
         return rc;
 

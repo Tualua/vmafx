@@ -76,7 +76,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `ssim.c`, `ssim.h`, `float_ssim.c` | [ssim](AGENTS.d/ssim.md) | Integer SSIM samplemax² widening, fork-side registration, and pthread_once dispatch. |
 | `ssimulacra2.c`, `/core/test/test_ssimulacra2_simd.c` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | SSIMULACRA 2 regression gates, linear RGB conversion, blur, and SIMD bit-exactness. |
 | `arm64/moment_sve2.c`, `arm64/ssimulacra2_sve2.c` | [sve2-simd](AGENTS.d/sve2-simd.md) | SVE2 SIMD ports portability, build gating, and fallback guarantees. |
-| `transnet_v2.c`, `transnet_v2_score.h` | [transnet-v2](AGENTS.d/transnet-v2.md) | TransNet V2 100-frame-window buffering and shot-boundary extractor contracts. |
+| `transnet_v2.c`, `transnet_v2_score.h`, `/core/test/dnn/test_transnet_v2_run.c` | [transnet-v2](AGENTS.d/transnet-v2.md) | TransNet V2 runs upstream predict_frames() windows on 0..255 thumbnails and binds its one output by position. |
 | `ciede.c`, `feature_collector.cpp` | [unwind-helpers](AGENTS.d/unwind-helpers.md) | Error exits use unwind helpers instead of goto labels; cleanup order is invariant. |
 | `integer_vif.c`, `vif_tools.c` | [vif](AGENTS.d/vif.md) | Integer VIF scalar reference tails, log2 table generation, score append order, and NULL preservation. |
 | `y_funque_plus.c` | [y-funque-plus](AGENTS.d/y-funque-plus.md) | Y-FUNQUE+ atoms-only feature calculation and decomposition invariants. |
