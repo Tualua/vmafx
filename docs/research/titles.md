@@ -2164,6 +2164,10 @@ Every research digest, one heading each (788), so the site search finds a digest
 
 [1593-hybrid-gcc-cpu-icpx-sycl](1593-hybrid-gcc-cpu-icpx-sycl.md)
 
+## Research-1594: porting `Containerfile.vmafx` onto master
+
+[1594-vmafx-sycl-ffmpeg-container](1594-vmafx-sycl-ffmpeg-container.md)
+
 ## SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 
 [2026-06-30-sycl-qsv-zerocopy-two-bug-investigation](2026-06-30-sycl-qsv-zerocopy-two-bug-investigation.md)

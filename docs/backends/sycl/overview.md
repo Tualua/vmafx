@@ -169,6 +169,28 @@ A model's feature list resolves the same way, so the default model
 `vmaf_v1.0.16_3d0h` runs its VIF, ADM, motion and CAMBI features on the
 device.
 
+### Known issue: `LD_BIND_NOW=1` crashes SYCL builds
+
+Do not run a SYCL build of `vmaf`, or a program that loads such a `libvmaf`,
+with `LD_BIND_NOW=1` in the environment. It exits with a segmentation fault
+before printing anything, and glibc reports
+``Relink `.../libimf.so' with `.../libm.so.6' for IFUNC symbol `cosf'``.
+The defect is in Intel's oneAPI runtime, not in libvmaf: the SYCL runtime
+loads Intel's `libimf.so`, which uses functions of glibc's `libm.so.6` without
+listing it as a dependency, so binding every symbol at load time relocates it
+too early. Intel's own `sycl-ls` crashes the same way. Without `LD_BIND_NOW`
+everything runs. The fork does not patch Intel's binaries (the Intel EULA does
+not allow modifying them) and waits for a fixed oneAPI release
+(`T-SYCL-LD-BIND-NOW-LIBIMF-IFUNC-2026-10-03` in
+[`state.md`](../../state.md)).
+
+!!! warning "Do not use `LD_PRELOAD=libimf.so` as a workaround"
+    Preloading `libimf.so` avoids the crash, but a preloaded library comes
+    first in symbol lookup: all 30 math references of `libvmaf` and `vmaf`
+    (`log2f`, `pow`, `powf`, `exp`, `log10`, ...) then bind to Intel's library
+    instead of glibc's, and CPU feature scores change. That is the
+    configuration [ADR-1495](../../adr/1495-icx-system-libm.md) removed.
+
 ## Environment variables
 
 | Variable | Effect |
