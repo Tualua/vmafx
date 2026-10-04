@@ -103,4 +103,6 @@ covered there.
   [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-1594](1594-vmafx-sycl-ffmpeg-container.md).
 - Originally drafted as ADR-1440; renumbered to 1502 on the rebase onto
   master `b01ffe42d`, where 1440 had been taken, and to 1561 on the
-  rebase onto master `2889f963a`, where 1502 had been taken.
+  rebase onto master `2889f963a`, where 1502 had been taken; then to 1593 on the
+  rebase onto master `f224b1b42`, where 1561 had been claimed by other branches
+  (and 1562 taken by master).
