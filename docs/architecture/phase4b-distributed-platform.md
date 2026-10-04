@@ -75,7 +75,7 @@ Node pods are scheduled via k8s `nodeSelector` / `nodeAffinity` resource keys:
 | --- | --- | --- |
 | NVIDIA | `nvidia.com/gpu` | CUDA EP |
 | AMD | `amd.com/gpu` | ROCm EP + HIP |
-| Intel | `gpu.intel.com/i915` | OpenVINO EP + SYCL |
+| Intel | `gpu.intel.com/i915` or `gpu.intel.com/xe` (Helm `gpu.intelDriver`) | OpenVINO EP + SYCL |
 
 Each backend runs through whichever GPU device plugin is allocated to the pod
 (per ADR-0701). (The Vulkan backend was removed in ADR-0726.)

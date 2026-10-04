@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1230), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1231), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4931,3 +4931,7 @@ Every ADR, one heading each (1230), so the site search finds an ADR by its title
 ## ADR-1540: The mobilesal extractor pads frames to a multiple of 8 for the saliency students
 
 [1540-saliency-pad-to-multiple-of-8](1540-saliency-pad-to-multiple-of-8.md)
+
+## ADR-1547: The Helm chart derives the GPU resource name from the vendor and the Intel kernel driver, with an explicit override
+
+[1547-helm-gpu-resource-name](1547-helm-gpu-resource-name.md)

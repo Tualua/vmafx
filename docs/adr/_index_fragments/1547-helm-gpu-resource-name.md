@@ -1,0 +1,1 @@
+| [ADR-1547](1547-helm-gpu-resource-name.md) | The chart requests `gpu.intel.com/<gpu.intelDriver>` (`i915` default, `xe`) for Intel GPUs and any resource verbatim through `gpu.resourceName` (refused with `gpu.vendor: cpu`); one helper, `vmafx.gpuResourceName`, resolves the name for every workload | Accepted | helm, k8s, gpu, intel, fork-local |

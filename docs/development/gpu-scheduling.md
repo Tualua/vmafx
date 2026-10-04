@@ -30,14 +30,32 @@ VMAFX uses one device-plugin per GPU vendor:
 |---|---|---|---|
 | NVIDIA | `nvidia.com/gpu` | CUDA | [k8s-device-plugin](https://github.com/NVIDIA/k8s-device-plugin) |
 | AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/ROCm/k8s-device-plugin) |
-| Intel | `gpu.intel.com/i915` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |
+| Intel | `gpu.intel.com/i915` or `gpu.intel.com/xe` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |
 
-The Intel resource key depends on the kernel driver: the plugin advertises
-`gpu.intel.com/i915` for the `i915` driver and `gpu.intel.com/xe` for the `xe`
-driver, which the newest Intel GPUs (Xe2 or newer) use. The chart requests
-only `gpu.intel.com/i915` (`deploy/helm/vmafx/templates/_helpers.tpl`), so a
-pod on a node that advertises only `gpu.intel.com/xe` stays `Pending`. See the
-plugin's
+The Intel resource name depends on the GPU's kernel driver: the plugin
+advertises `gpu.intel.com/i915` for the `i915` driver and `gpu.intel.com/xe`
+for the `xe` driver, which Arc B-series (Battlemage) and newer GPUs use, and
+which older GPUs use when bound to `xe`. Tell the chart which one with
+`gpu.intelDriver` (default `i915`):
+
+```yaml
+gpu:
+  vendor: intel
+  intelDriver: xe     # requests gpu.intel.com/xe, e.g. Arc B580 / Pro B60
+```
+
+Check what a node advertises before choosing:
+
+```bash
+kubectl describe node <gpu-node> | grep "gpu.intel.com/"
+```
+
+`gpu.resourceName` requests any other extended resource verbatim, for any
+vendor: a GPU sharing resource, an NVIDIA MIG slice
+(`nvidia.com/mig-1g.10gb`), or a renamed plugin resource. It overrides
+`gpu.vendor`'s default and `gpu.intelDriver`; the backend still follows
+`gpu.vendor`. The chart refuses it with `gpu.vendor: cpu`, and refuses an
+`intelDriver` other than `i915` or `xe`. See the plugin's
 [GPU plugin README](https://github.com/intel/intel-device-plugins-for-kubernetes/tree/main/cmd/gpu_plugin)
 for the resource names it advertises.
 
@@ -93,10 +111,11 @@ kubectl apply -k \
   https://github.com/intel/intel-device-plugins-for-kubernetes/deployments/gpu_plugin/overlays/nfd_labeled_nodes
 ```
 
-Verify:
+Verify (the resource is `gpu.intel.com/i915` or `gpu.intel.com/xe`; set
+`gpu.intelDriver` to match):
 
 ```bash
-kubectl describe node <gpu-node> | grep "gpu.intel.com/i915"
+kubectl describe node <gpu-node> | grep "gpu.intel.com/"
 ```
 
 ## Node capacity and allocatable
@@ -149,9 +168,11 @@ Causes and fixes:
    kubectl get pod <pod> -o jsonpath='{.spec.containers[0].resources}'
    ```
 
-### `Insufficient gpu.intel.com/i915`
+### `Insufficient gpu.intel.com/i915` or `gpu.intel.com/xe`
 
-Same root causes as above, but for Intel.  The Intel plugin additionally
+Same root causes as above, but for Intel. First check that `gpu.intelDriver`
+matches what the node advertises: a node whose GPU runs on `xe` has no
+`gpu.intel.com/i915`, and the reverse.  The Intel plugin additionally
 requires the NFD (Node Feature Discovery) operator to label nodes correctly.
 If the node is not labeled, the daemonset may not deploy onto it:
 

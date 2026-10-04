@@ -53,7 +53,9 @@ GPU device-plugin reference
 ----------------------------------------------------------------------
   nvidia  →  nvidia.com/gpu       (requires: NVIDIA device plugin daemonset)
   amd     →  amd.com/gpu          (requires: ROCm device plugin daemonset)
-  intel   →  gpu.intel.com/i915   (requires: Intel GPU device plugin daemonset)
+  intel   →  gpu.intel.com/i915 or gpu.intel.com/xe (gpu.intelDriver;
+             requires: Intel GPU device plugin daemonset)
+  gpu.resourceName overrides the name for any vendor.
   cpu     →  (no device plugin required)
 
 Vulkan was removed as a VMAFX backend (ADR-0726).

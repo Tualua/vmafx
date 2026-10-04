@@ -133,7 +133,17 @@
         "vendor": {
           "type": "string",
           "enum": ["nvidia", "amd", "intel", "cpu"],
-          "description": "Maps to the matching device-plugin resource key. nvidia → nvidia.com/gpu, amd → amd.com/gpu, intel → gpu.intel.com/i915, cpu → no device plugin. Vulkan removed per ADR-0726."
+          "description": "Maps to the matching device-plugin resource name. nvidia → nvidia.com/gpu, amd → amd.com/gpu, intel → gpu.intel.com/<intelDriver>, cpu → no device plugin. gpu.resourceName overrides it. Vulkan removed per ADR-0726."
+        },
+        "intelDriver": {
+          "type": "string",
+          "enum": ["i915", "xe"],
+          "description": "Kernel driver of the Intel GPUs; the Intel device plugin advertises gpu.intel.com/i915 or gpu.intel.com/xe accordingly. Used only when gpu.vendor is intel."
+        },
+        "resourceName": {
+          "type": "string",
+          "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$",
+          "description": "Explicit extended-resource name to request (domain/name), overriding vendor and intelDriver; for GPU sharing or MIG resources. Refused with gpu.vendor cpu."
         },
         "count": {
           "type": "integer",
@@ -311,7 +321,7 @@
               "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
-                "nodePort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+                "nodePort": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Node gRPC port the controller may reach; defaults to node.grpcPort." }
               }
             },
             "nodeToController": {

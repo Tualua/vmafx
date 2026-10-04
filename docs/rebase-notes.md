@@ -52,6 +52,17 @@ change.
   `tests/test_help_texts_and_adr_refs.py` fails on an unrelated record in the
   help, the usage pages and the AGENTS.d pages.
 - `cli._fast_proxy_encoder_slot` adds `proxy_encoder_slot` to the `fast` JSON.
+## Helm GPU resource name follows the Intel driver (ADR-1547, 2026-10-04)
+
+`fix/helm-gpu-resource-name`. Helm chart only.
+
+- `_helpers.tpl`: `vmafx.gpuResourceName` is the one resolver;
+  `vmafx.gpuResource` gates it on `gpu.enabled`; `vmafx.gpuResourceKey` is
+  gone (`node.yaml` uses `vmafx.gpuResourceName`). New values
+  `gpu.intelDriver`, `gpu.resourceName`.
+- `networkpolicy.yaml`: `allow-controller-to-node` takes
+  `controllerToNode.nodePort | default node.grpcPort`; the values file no
+  longer sets `nodePort: 50051`.
 
 ## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
 

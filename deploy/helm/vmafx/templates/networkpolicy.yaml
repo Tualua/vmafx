@@ -137,7 +137,7 @@ spec:
               {{- $selector | nindent 14 }}
       ports:
         - protocol: TCP
-          port: {{ .Values.networkPolicy.allow.controllerToNode.nodePort }}
+          port: {{ .Values.networkPolicy.allow.controllerToNode.nodePort | default .Values.node.grpcPort | default 50052 }}
 {{- end }}
 
 # ----------------------------------------------------------------------------

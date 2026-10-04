@@ -1229,3 +1229,4 @@
 1540-saliency-pad-to-multiple-of-8
 1519-controller-tenant-registry
 1523-hip-twins-run-on-the-state-device
+1547-helm-gpu-resource-name

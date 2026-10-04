@@ -75,8 +75,12 @@ helm upgrade --install vmafx deploy/helm/vmafx/ \
 |---|---|---|---|
 | `nvidia` | `nvidia.com/gpu` | `cuda` | [NVIDIA device plugin](https://github.com/NVIDIA/k8s-device-plugin) |
 | `amd` | `amd.com/gpu` | `hip` | [AMD ROCm device plugin](https://github.com/ROCm/k8s-device-plugin) |
-| `intel` | `gpu.intel.com/i915` | `sycl` | [Intel GPU plugin](https://github.com/intel/intel-device-plugins-for-kubernetes) |
+| `intel` | `gpu.intel.com/i915`, or `gpu.intel.com/xe` with `gpu.intelDriver: xe` | `sycl` | [Intel GPU plugin](https://github.com/intel/intel-device-plugins-for-kubernetes) |
 | `cpu` | _(none)_ | `cpu` | _(none)_ |
+
+`gpu.resourceName` requests any other extended resource verbatim (a GPU
+sharing resource or an NVIDIA MIG slice); see the
+[GPU scheduling guide](gpu-scheduling.md#how-gpu-device-plugins-work).
 
 The chart automatically sets the `VMAFX_BACKEND` environment variable inside
 the container based on `gpu.vendor`, so the VMAFX runtime picks the correct
@@ -376,7 +380,7 @@ registry):
 |---------------------------------|-----------|-------------------------------------------------|---------------------|------------------------------------------------------|
 | `default-deny`                  | both      | _(no allow)_                                    | _(all)_             | Safety net — drops everything that is not explicitly allowed. Emitted per workload component (root / operator / node) so a new component without an allow-rule remains isolated. |
 | `allow-http-ingress`            | ingress   | every pod in the release namespace              | `service.targetPort`| Scoring server reachable from any in-namespace client. |
-| `allow-controller-to-node`      | ingress   | controller pods (selector match)                | `50051` (configurable) | gRPC dispatch from controller to `vmafx-node` workers. |
+| `allow-controller-to-node`      | ingress   | controller pods (selector match)                | `node.grpcPort` (50052; `nodePort` overrides) | gRPC dispatch from controller to `vmafx-node` workers. |
 | `allow-node-to-controller`      | egress    | pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `9090` (configurable) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered only when `node.controllerAddr` is set. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |

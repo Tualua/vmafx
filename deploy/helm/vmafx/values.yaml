@@ -155,11 +155,15 @@ ingress:
 # ---------------------------------------------------------------------------
 # GPU — multi-vendor device-plugin selector
 # ---------------------------------------------------------------------------
-# The chart maps "vendor" to the correct Kubernetes resource key:
-#   nvidia  →  nvidia.com/gpu     (CUDA backend)
-#   amd     →  amd.com/gpu        (HIP backend)
-#   intel   →  gpu.intel.com/i915 (SYCL backend)
+# The chart maps "vendor" to the Kubernetes resource name it requests:
+#   nvidia  →  nvidia.com/gpu                   (CUDA backend)
+#   amd     →  amd.com/gpu                      (HIP backend)
+#   intel   →  gpu.intel.com/<intelDriver>      (SYCL backend)
 #   cpu     →  (no device-plugin resource; CPU-only execution)
+# The Intel device plugin names the resource after the GPU's kernel driver:
+# gpu.intel.com/i915 or gpu.intel.com/xe (Arc B-series and newer, or any GPU
+# bound to xe). resourceName overrides the name for any vendor, e.g. a GPU
+# sharing or MIG resource.
 #
 # ADR-0726: Vulkan backend removed. See docs/backends/README.md.
 # See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
@@ -169,6 +173,8 @@ gpu:
   enabled: true
   vendor: nvidia    # nvidia | amd | intel | cpu
   count: 1
+  intelDriver: i915 # i915 | xe — used only when vendor is intel
+  resourceName: ""  # explicit device-plugin resource; overrides vendor/intelDriver
 
 # ---------------------------------------------------------------------------
 # Resources
@@ -305,7 +311,9 @@ networkPolicy:
     # controller → node (in-cluster gRPC dispatch)
     controllerToNode:
       enabled: true
-      nodePort: 50051
+      # nodePort defaults to node.grpcPort (the node's gRPC listener); set it
+      # only when the node listens elsewhere.
+      # nodePort: 50052
     # node → controller (the nodes' controller client: RegisterNode,
     # Heartbeat, PullWork, ReportResult). Rendered only when
     # node.controllerAddr is set. port is the controller's gRPC port;

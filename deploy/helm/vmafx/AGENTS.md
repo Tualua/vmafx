@@ -163,3 +163,14 @@ scheduling docs on rebase.
   `node.controllerAddr`; port = controller gRPC (9090). Schema entry
   `networkPolicy.allow.nodeToController` keeps `additionalProperties: false`.
 - Guard: `scripts/ci/tests/test_helm_node_contract.py` (helm-chart workflow).
+
+## Invariants (ADR-1547)
+
+- GPU resource name resolved ONLY in `vmafx.gpuResourceName` (`_helpers.tpl`):
+  `gpu.resourceName` verbatim > vendor default; intel ->
+  `gpu.intel.com/<gpu.intelDriver>` (`i915` default, `xe`). Never hard-code
+  `gpu.intel.com/i915` in a template or bring back `vmafx.gpuResourceKey`.
+- `allow-controller-to-node` port = `controllerToNode.nodePort` or
+  `node.grpcPort`; no fixed 50051.
+- Guard: `scripts/ci/tests/test_helm_node_contract.py` (`GpuResource`,
+  `ControllerToNodePort`).

@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The vmafx-node contract of the Helm chart, checked on real `helm template`
 renders: the controller address the node's controller client reads, the
-NetworkPolicy egress it needs, and the storage mode the node accepts.
+NetworkPolicy rules it needs, the storage mode the node accepts, and the GPU
+device-plugin resource the pods request.
 
 Requires the `helm` binary (the helm-chart workflow installs it); a missing
 binary is a failure, not a skip.
@@ -124,6 +125,82 @@ class StorageMode(unittest.TestCase):
         self.assertNotIn("VMAFX_RCLONE_CONFIG", node_env())
         env = node_env("storage.rclone.config=[s3]\ntype = s3")
         self.assertEqual(env["VMAFX_RCLONE_CONFIG"], "/etc/vmafx/rclone.conf")
+
+
+def gpu_limits(name: str, *sets: str) -> dict[str, Any]:
+    """Resource limits of the first container of the Deployment called name."""
+    for doc in manifests("node.enabled=true", *sets):
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == name:
+            limits: dict[str, Any] = doc["spec"]["template"]["spec"]["containers"][0]["resources"][
+                "limits"
+            ]
+            return limits
+    raise AssertionError(f"no Deployment called {name!r}")
+
+
+class GpuResource(unittest.TestCase):
+    """The device-plugin resource the server and node pods request."""
+
+    def assert_requested(self, name: str | None, *sets: str) -> None:
+        for workload in ("vmafx", "vmafx-node"):
+            with self.subTest(workload=workload):
+                limits = gpu_limits(workload, *sets)
+                gpu = {k: v for k, v in limits.items() if "/" in k}
+                self.assertEqual(list(gpu), [name] if name else [])
+
+    def test_vendor_defaults(self) -> None:
+        for vendor, name in (
+            ("nvidia", "nvidia.com/gpu"),
+            ("amd", "amd.com/gpu"),
+            ("intel", "gpu.intel.com/i915"),
+        ):
+            with self.subTest(vendor=vendor):
+                self.assert_requested(name, f"gpu.vendor={vendor}")
+
+    def test_intel_xe_driver(self) -> None:
+        """The xe kernel driver's resource, as advertised for Arc B-series GPUs."""
+        self.assert_requested("gpu.intel.com/xe", "gpu.vendor=intel", "gpu.intelDriver=xe")
+
+    def test_explicit_resource_name(self) -> None:
+        self.assert_requested("nvidia.com/mig-1g.10gb", "gpu.resourceName=nvidia.com/mig-1g.10gb")
+
+    def test_cpu_requests_nothing(self) -> None:
+        """Boundary: no device-plugin resource for a CPU deployment."""
+        self.assert_requested(None, "gpu.vendor=cpu")
+
+    def test_unknown_driver_refused(self) -> None:
+        result = render("gpu.vendor=intel", "gpu.intelDriver=xe2", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("/gpu/intelDriver", result.stderr)
+
+    def test_resource_name_with_cpu_refused(self) -> None:
+        """Negative: a resource name on a CPU deployment is a contradiction."""
+        result = render("gpu.vendor=cpu", "gpu.resourceName=gpu.intel.com/xe", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("needs a GPU vendor", result.stderr)
+
+    def test_malformed_resource_name_refused(self) -> None:
+        result = render("gpu.resourceName=not a resource", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("/gpu/resourceName", result.stderr)
+
+
+class ControllerToNodePort(unittest.TestCase):
+    def test_follows_node_grpc_port(self) -> None:
+        """The allow rule opens the port the node listens on (it opened 50051)."""
+        doc = policy("-allow-controller-to-node")
+        assert doc is not None
+        self.assertEqual(doc["spec"]["ingress"][0]["ports"][0]["port"], 50052)
+        moved = policy("-allow-controller-to-node", "node.grpcPort=7443")
+        assert moved is not None
+        self.assertEqual(moved["spec"]["ingress"][0]["ports"][0]["port"], 7443)
+
+    def test_explicit_port_kept(self) -> None:
+        doc = policy(
+            "-allow-controller-to-node", "networkPolicy.allow.controllerToNode.nodePort=6000"
+        )
+        assert doc is not None
+        self.assertEqual(doc["spec"]["ingress"][0]["ports"][0]["port"], 6000)
 
 
 if __name__ == "__main__":

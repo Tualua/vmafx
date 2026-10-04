@@ -66,35 +66,48 @@ Service account name.
 {{- end }}
 
 {{/*
-Resolve the Kubernetes device-plugin resource key for the requested GPU vendor.
+Resolve the Kubernetes device-plugin resource name for the requested GPU.
 
 Usage:
   resources:
     limits:
       {{ include "vmafx.gpuResource" . }}: {{ .Values.gpu.count | quote }}
 
-Vendor → resource mapping:
-  nvidia  →  nvidia.com/gpu       (CUDA backend)
-  amd     →  amd.com/gpu          (HIP backend via ROCm)
-  intel   →  gpu.intel.com/i915   (SYCL backend)
-  cpu     →  (empty string — no device-plugin resource inserted)
+Resolution (vmafx.gpuResourceName, one definition for every workload):
+  gpu.resourceName set  →  that name, verbatim (any device plugin or sharing
+                           mode, e.g. gpu.intel.com/xe, nvidia.com/mig-1g.10gb)
+  nvidia                →  nvidia.com/gpu                    (CUDA backend)
+  amd                   →  amd.com/gpu                       (HIP backend via ROCm)
+  intel                 →  gpu.intel.com/<gpu.intelDriver>   (SYCL backend;
+                           i915 by default, xe for GPUs on the xe kernel driver)
+  cpu                   →  (empty — no device-plugin resource inserted)
 
+vmafx.gpuResource is the same name, empty when gpu.enabled is false.
 Note: Vulkan was removed as a VMAFX backend in ADR-0726.
 See docs/development/gpu-scheduling.md.
 */}}
-{{- define "vmafx.gpuResource" -}}
-{{- if .Values.gpu.enabled }}
-{{- if eq .Values.gpu.vendor "nvidia" -}}
+{{- define "vmafx.gpuResourceName" -}}
+{{- $vendor := .Values.gpu.vendor -}}
+{{- if and .Values.gpu.resourceName (eq $vendor "cpu") -}}
+{{ fail "gpu.resourceName needs a GPU vendor; gpu.vendor is cpu" }}
+{{- else if .Values.gpu.resourceName -}}
+{{ .Values.gpu.resourceName }}
+{{- else if eq $vendor "nvidia" -}}
 nvidia.com/gpu
-{{- else if eq .Values.gpu.vendor "amd" -}}
+{{- else if eq $vendor "amd" -}}
 amd.com/gpu
-{{- else if eq .Values.gpu.vendor "intel" -}}
-gpu.intel.com/i915
-{{- else if eq .Values.gpu.vendor "cpu" -}}
+{{- else if eq $vendor "intel" -}}
+gpu.intel.com/{{ .Values.gpu.intelDriver | default "i915" }}
+{{- else if eq $vendor "cpu" -}}
 {{- /* CPU workload: no device-plugin resource needed */ -}}
 {{- else -}}
-{{ fail (printf "gpu.vendor must be one of: nvidia, amd, intel, cpu — got %q" .Values.gpu.vendor) }}
+{{ fail (printf "gpu.vendor must be one of: nvidia, amd, intel, cpu — got %q" $vendor) }}
 {{- end }}
+{{- end }}
+
+{{- define "vmafx.gpuResource" -}}
+{{- if .Values.gpu.enabled }}
+{{- include "vmafx.gpuResourceName" . }}
 {{- end }}
 {{- end }}
 
@@ -140,20 +153,6 @@ the chart default follows the canonical tag published by the release workflow.
 {{- define "vmafx.operatorImage" -}}
 {{- $tag := .Values.operator.image.tag | default (include "vmafx.releaseImageTag" .) -}}
 {{- printf "%s:%s" .Values.operator.image.repository $tag -}}
-{{- end }}
-
-{{/*
-Resolve the Kubernetes device-plugin resource key (name only, no value).
-Used in node.yaml where we need the key inline.
-*/}}
-{{- define "vmafx.gpuResourceKey" -}}
-{{- if eq .Values.gpu.vendor "nvidia" -}}
-nvidia.com/gpu
-{{- else if eq .Values.gpu.vendor "amd" -}}
-amd.com/gpu
-{{- else if eq .Values.gpu.vendor "intel" -}}
-gpu.intel.com/i915
-{{- end }}
 {{- end }}
 
 {{/*
