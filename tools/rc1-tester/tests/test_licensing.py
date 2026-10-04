@@ -683,12 +683,12 @@ def test_the_bundle_script_checks_before_it_packs() -> None:
 
 def test_the_windows_build_checks_before_it_packs() -> None:
     text = (REPO / "scripts/ci/build-windows-tester-bundle.py").read_text()
-    body = text.split("def build_all(", 1)[1]
-    assert body.index('licensing("check", "--artifact", "windows-zip"') < body.index("pack(bundle")
-    assert body.index('licensing("notices", "--artifact", "windows-zip"') < body.index(
-        "run_own_report("
-    )
+    body = text.split("def seal(", 1)[1].split("\ndef ", 1)[0]
+    assert body.index('licensing("notices", "--artifact", kind') < body.index("run_own_report(")
     assert body.index("check-windows-bundle-imports.py") < body.index("pack(bundle")
+    assert body.index('licensing("check", "--artifact", kind') < body.index("pack(bundle")
+    kinds = text.split("def build_all(", 1)[1]
+    assert '"windows-cuda-zip" if gpu else "windows-zip"' in kinds
 
 
 @pytest.mark.parametrize(("workflow", "needle"), [
@@ -699,6 +699,7 @@ def test_the_windows_build_checks_before_it_packs() -> None:
     ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_x64 }}"),
     ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_arm64 }}"),
     ("windows-tester-bundle.yml", "PBS_ARM64_FULL_SHA256:"),
+    ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_x64_cuda }}"),
 ])  # fmt: skip
 def test_both_workflows_attest_an_sbom(workflow: str, needle: str) -> None:
     assert needle in (REPO / ".github/workflows" / workflow).read_text()
@@ -731,6 +732,40 @@ def windows_tree(tmp: Path) -> argparse.Namespace:
     return argparse.Namespace(artifact="windows-zip", root=str(root), repo=str(REPO),
                               build_scan=str(scan_path), texts=str(texts), source_commit="c0ffee",
                               tag="v1.0.0-test", python_version="3.13.16", receipt=None)  # fmt: skip
+
+
+def windows_cuda_tree(tmp: Path) -> argparse.Namespace:
+    """The Windows zip's tree with what the CUDA zip adds (ADR-1516)."""
+    args = windows_tree(tmp)
+    args.artifact = "windows-cuda-zip"
+    root = Path(args.root)
+    for rel in ("tests/test_cuda_psnr_parity.exe", "image/gpu-tests.json", "image/gpu-twins.json",
+                "image/cuda-targets.json"):  # fmt: skip
+        write(root / rel, "x")
+    write(
+        root / "image/cuda-rows.json", (REPO / "tools/rc1-tester/image/cuda-rows.json").read_bytes()
+    )
+    write(root / "tester/gate/scripts/ci/cross_backend_parity_gate.py",
+          (REPO / "scripts/ci/cross_backend_parity_gate.py").read_bytes())  # fmt: skip
+    write(
+        root / "licenses/nvidia/CUDA-EULA.txt", "Last updated: January 26, 2026\nlibdevice.10.bc\n"
+    )
+    write(root / "licenses/nv-codec-headers/NOTICE.txt", "Permission is hereby granted\n")
+    return args
+
+
+def test_the_windows_cuda_zip_record_passes_and_refuses_an_nvidia_library(tmp_path: Path) -> None:
+    args = windows_cuda_tree(tmp_path)
+    data = lic.load_manifest()
+    assert notices_then_check(args, data) == []
+    root = Path(args.root)
+    notices = (root / "licenses/THIRD_PARTY_NOTICES.txt").read_text()
+    assert "[component nvidia-cuda-device-code]" in notices and "nvcuda.dll" in notices
+    write(root / "tests/cudart64_13.dll", "an NVIDIA runtime the zip must not carry")
+    (root / "licenses/nvidia/CUDA-EULA.txt").unlink()
+    problems = lic.run_check(args, data)
+    assert "no recorded licence: tests/cudart64_13.dll" in problems
+    assert "licence text /licenses/nvidia/CUDA-EULA.txt is missing" in problems
 
 
 def test_the_windows_zip_record_passes_a_recorded_tree(tmp_path: Path) -> None:

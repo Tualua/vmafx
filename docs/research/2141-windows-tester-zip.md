@@ -112,6 +112,29 @@ Xeon Phi parts). The processor's name, vendor and family come from
   fixtures 56 MB. MSVC programs carry no symbols in the executable; the zip's real
   size comes from the hosted build.
 
+## The CUDA zip (ADR-1516)
+
+- `libvmaf` loads the driver at run time through nv-codec-headers'
+  `dynlink_loader.h`, which opens `nvcuda.dll` on Windows; no program of the build
+  imports an NVIDIA DLL, and the import check makes that a build failure. The CUDA
+  runtime (`cudart64_13.dll`), which Attachment A would allow, is not linked and does
+  not ship.
+- The toolkit on the runner comes from NVIDIA's Windows redistributable archives
+  (`scripts/ci/install-cuda-toolkit.ps1`, `redistrib_13.4.2.json`). Every archive holds
+  the same `LICENSE` (68,070 bytes, MD5 `a3c52c1f3e8953cbfbc50639ad4b63e1` for
+  `cuda_crt` and `visual_studio_integration` 13.4.92): the CUDA Toolkit EULA, "Last
+  updated: January 26, 2026", which lists `libdevice.10.bc` in Attachment A. The build
+  copies the installed copy after checking both strings, as the Linux image checks the
+  Debian copyright file.
+- `-fsycl` cannot be combined with `/MT` on Windows (Intel oneAPI DPC++/C++ Compiler
+  guide 2025.2, `-fsycl`: "On Windows, option -fsycl sets option /MD ... You cannot
+  specify option /MT"); a Windows SYCL zip would need the Visual C++ runtime DLLs next
+  to the VMAFx programs and is left to its own decision.
+- Not proven before a tester runs it: the CUDA probe under Windows (the driver calls
+  are the Linux kit's, measured on the RTX 4090; the DLL name differs) and every CUDA
+  kernel of the MSVC build on a GPU. The hosted run shows the build, the licence gate
+  and `no_device`.
+
 ## Found on the way
 
 The macOS bundle published as `tester-20261003-c12763f3` lists its unit tests by their

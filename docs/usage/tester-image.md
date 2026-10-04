@@ -23,9 +23,9 @@ and 9000 series, Ryzen graphics, Instinct), on Linux.
 
 | | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image | AMD GPU image | Native Windows zip |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) | Windows 10 (2004 or later) or 11, on x64 or Arm64 |
-| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests | AVX2 / AVX-512 default dispatch against scalar, **every HIP twin against the CPU on every AMD GPU**, the parity gate, the HIP device tests | **the MSVC build's** AVX2 / AVX-512 (or NEON) default dispatch against scalar and against baked references, SIMD unit tests and the Windows-only unit tests |
-| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate | Metal, CUDA, SYCL, the Python golden gate | GPU twins, Metal, SVE2, the Python golden gate |
+| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) | Windows 10 (2004 or later) or 11, on x64 or Arm64; the x64 CUDA zip with an NVIDIA GPU |
+| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests | AVX2 / AVX-512 default dispatch against scalar, **every HIP twin against the CPU on every AMD GPU**, the parity gate, the HIP device tests | **the MSVC build's** AVX2 / AVX-512 (or NEON) default dispatch against scalar and against baked references, SIMD unit tests and the Windows-only unit tests; the CUDA zip adds **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate and the CUDA device tests |
+| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate | Metal, CUDA, SYCL, the Python golden gate | SYCL and HIP twins (CUDA in the CUDA zip only), Metal, SVE2, the Python golden gate |
 | You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit | Docker and access to `/dev/kfd` and the GPU's render node | PowerShell or the Command Prompt |
 
 Each prints what it did and did not exercise inside the report (`not_exercised`).
@@ -305,7 +305,9 @@ cannot reach the network when run with the commands above.
 
 You need Docker and an NVIDIA GPU of compute capability 8.0 or newer, in an x86-64
 machine. The image holds a CUDA build of VMAFx and runs it on your own NVIDIA driver;
-it carries no NVIDIA library.
+it carries no NVIDIA library. On Windows without Docker, the
+[Windows CUDA zip](#with-an-nvidia-gpu-the-cuda-zip) runs the Windows build of the
+same twins natively.
 
 | Your GPU | Examples | Code the run uses |
 | :--- | :--- | :--- |
@@ -577,12 +579,37 @@ number or UUID.
 | Dispatch equivalence | every CPU feature extractor on four test videos at full precision, your processor's SIMD code against plain C, compared exactly | AVX2, and AVX-512 when your processor has it | NEON |
 | Reference equivalence | the same scores against scores the same build recorded on GitHub's runner | yes | yes, without the x86_64 cross-check |
 | Unit tests | the SIMD and dispatch tests, and the tests of what only a Windows build has: the Windows thread and option-parsing shims, UTF-8 file names, temporary files, locales | about 57 | those that exist for Arm64 |
-| Not run | GPU twins (CUDA, SYCL, HIP), Metal, the Python golden gate, ONNX Runtime, SVE2 | | |
+| CUDA twins | every CUDA twin against the CPU, the parity gate, the CUDA device tests | the CUDA zip only | no |
+| Not run | SYCL and HIP twins, Metal, the Python golden gate, ONNX Runtime, SVE2 | | |
 
 The programs are built with Microsoft's compiler (MSVC), the build most Windows users
 of VMAFx make. No tester has run that build on his own machine before, and nobody has
 compared its AVX2 and AVX-512 code with the plain C code yet, so a `fail` from this zip
 is especially useful.
+
+### With an NVIDIA GPU: the CUDA zip
+
+If your PC has an NVIDIA GPU of the GeForce RTX 30 series or newer (or an RTX
+professional card), take the third zip, `vmafx-tester-windows-x64-cuda-<VERSION>.zip`,
+instead of the x64 one: replace `<ARCH>` with `x64-cuda` in the five steps above. You
+need the NVIDIA display driver, version 580 or later, which most gaming and workstation
+PCs already have; the zip contains no NVIDIA file and uses the driver's `nvcuda.dll`.
+
+On top of everything the x64 zip runs, the CUDA zip, on every NVIDIA GPU it finds (at
+most four), one after the other:
+
+- runs every CPU feature extractor on the four test videos with `--backend cuda` at
+  full precision and compares each value with the CPU's;
+- runs the project's parity gate for every CUDA twin on every fixture, compared exactly
+  (ciede at its `1e-9` math-library bound);
+- runs the CUDA device tests of the build;
+- says which open state rows your GPU's measurements close
+  ([NVIDIA GPU state rows](#nvidia-gpu-state-rows)).
+
+No one has run the Windows CUDA build on a GPU before: GitHub's build machines have
+none. A GPU below the RTX 30 series (compute capability below 8.0) is listed in the
+report with the reason and not run. Without the driver the report says
+`gpu (cuda): no_device` and names `nvcuda.dll`; that is not a failure.
 
 ### What is in the zip
 
@@ -731,7 +758,11 @@ workflow refuses to build a package with a file whose licence is not recorded
   state the terms Microsoft asks a distributor to pass on (use with these programs only,
   no reverse engineering where the law does not allow it, provided as is), and that
   EUPL-1.2 covers only VMAFx files, never Microsoft's. Nothing in the zip is copyleft,
-  so it has no source companion.
+  so it has no source companion. The CUDA zip ships no NVIDIA file either: it uses your
+  driver's `nvcuda.dll`; the NVIDIA code inside its GPU kernels comes with the CUDA
+  Toolkit End User License Agreement (`licenses\nvidia\CUDA-EULA.txt`) and the notices
+  of the nv-codec-headers loader (`licenses\nv-codec-headers\`), as in the NVIDIA GPU
+  image.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
   publishing workflow: the `.spdx.json` release asset for the macOS bundle and each
   Windows zip, an attestation on each platform manifest of the container, and an
@@ -868,6 +899,9 @@ Reports from outside the project's own hosts are listed on the
   the container on other machines.
 - `run.cmd: this zip is for AMD64 Windows, this machine is ARM64` (or the other way
   round) — download the zip for your processor (see [F](#f-native-windows-zip-x64-or-arm64)).
+- The Windows CUDA zip says `gpu (cuda): no_device` — Windows has no NVIDIA driver
+  (`nvcuda.dll` is not in System32), or your GPU is older than the RTX 30 series; the
+  reason says which.
 - Windows says "Windows protected your PC", or Smart App Control blocked a program —
   see [Windows SmartScreen and Smart App Control](#windows-smartscreen-and-smart-app-control).
 - macOS says the developer cannot be verified — see [Gatekeeper](#gatekeeper).

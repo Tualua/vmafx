@@ -9842,7 +9842,7 @@
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
         ".github/workflows/supply-chain.yml": 1,
-        ".github/workflows/windows-tester-bundle.yml": 6,
+        ".github/workflows/windows-tester-bundle.yml": 7,
         "Dockerfile.go-server": 3,
         "REUSE.toml": 2,
         "docker/Dockerfile.node": 4,
@@ -9884,6 +9884,13 @@
         "scripts/docs/vendor_fonts.py": 1
       },
       "target": "1508-docs-site-toolchain-and-charts.md"
+    },
+    "1509": {
+      "sites": {
+        ".github/workflows/windows-tester-bundle.yml": 1,
+        "scripts/ci/build-windows-tester-bundle.py": 2
+      },
+      "target": "1509-nvidia-gpu-tester-image.md"
     },
     "1510": {
       "sites": {
@@ -9929,6 +9936,17 @@
         "tools/rc1-tester/tests/test_windows_bundle.py": 1
       },
       "target": "1515-windows-tester-zip.md"
+    },
+    "1516": {
+      "sites": {
+        ".github/workflows/windows-tester-bundle.yml": 4,
+        "scripts/ci/build-windows-tester-bundle.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_cuda.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_cudaprobe.py": 1,
+        "tools/rc1-tester/tests/test_licensing.py": 1,
+        "tools/rc1-tester/tests/test_windows_bundle.py": 1
+      },
+      "target": "1516-windows-cuda-tester-zip.md"
     }
   },
   "retired": {

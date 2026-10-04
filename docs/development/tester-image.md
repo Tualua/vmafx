@@ -9,7 +9,8 @@ and how reports reach the tree. The tester-facing steps are in
 [ADR-1505](../adr/1505-intel-gpu-tester-image.md) (Intel),
 [ADR-1509](../adr/1509-nvidia-gpu-tester-image.md) (NVIDIA) and
 [ADR-1511](../adr/1511-amd-gpu-tester-image.md) (AMD), and for the Windows zip
-[ADR-1515](../adr/1515-windows-tester-zip.md).
+[ADR-1515](../adr/1515-windows-tester-zip.md) and, for its CUDA variant,
+[ADR-1516](../adr/1516-windows-cuda-tester-zip.md).
 
 ## Pieces
 
@@ -78,13 +79,16 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    project's Arc A380, RTX 4090 or gfx1036 (see [Local checks](#local-checks)).
 
 4. **Windows zips**: dispatch `Publish Windows Tester Bundle` on `master` with `ref`
-   (or `tag`) and `publish: true`. Two jobs build `vmafx-tester-windows-x64-<describe>.zip`
-   on `windows-2025` and `vmafx-tester-windows-arm64-<describe>.zip` on
-   `windows-11-vs2026-arm`, each runs its own report through `run.cmd` and fails before
+   (or `tag`) and `publish: true`. Three jobs build `vmafx-tester-windows-x64-<describe>.zip`
+   and `vmafx-tester-windows-x64-cuda-<describe>.zip` on `windows-2025` and
+   `vmafx-tester-windows-arm64-<describe>.zip` on `windows-11-vs2026-arm`; the CUDA job
+   installs the toolkit as the MSVC+CUDA lanes do and fetches nv-codec-headers at the
+   commit `docker/Dockerfile.tester` pins, and its verify job requires `gpu.status`
+   `no_device` naming `nvcuda.dll`. Each runs its own report through `run.cmd` and fails before
    packing on a missing licence or a program that imports a runtime DLL; a Linux job per
    zip checks the checksum, writes the SPDX SBOM (syft) and validates the runner's report.
    With `publish: true` the `tester-publish` gate applies, then both zips are attested
-   (provenance, SBOM), signed (cosign) and attached to a prerelease
+   (provenance, SBOM per zip), signed (cosign) and attached to a prerelease
    `tester-windows-<date>-<sha8>` made by the release-bot identity, as for the macOS
    bundle. A push to master that changes the zip's own inputs (the workflow, the two
    scripts, `tools/rc1-tester/image/windows/`, the Windows unit list) runs the build and
@@ -217,6 +221,14 @@ program importing `vcruntime*`, `msvcp*`, `ucrtbase` or `api-ms-win-crt-*`, or a
 that is not part of Windows, fails the build, as does an interpreter import that is
 neither a Windows DLL nor a file of `runtime\`, or a program of the other architecture.
 
+The CUDA zip is the artifact `windows-cuda-zip`: the `windows-zip` record plus the
+Linux CUDA image's `nvidia-cuda-device-code` and `nv-codec-headers` components. Its
+CUDA EULA is the toolkit's `LICENSE` (every redistributable archive of CUDA 13.4 carries
+the same text), copied by the build after it finds "Last updated: January 26, 2026" and
+`libdevice.10.bc` in it; the nv-codec-headers notices are the two headers' leading
+comments. The import check also proves that no program imports an NVIDIA DLL: the
+driver's `nvcuda.dll` is opened at run time by the loader libvmaf compiles in.
+
 ## What the hosted macOS runner cannot show
 
 The hosted runner is a virtual machine. The workflow runs the bundle's report there and
@@ -261,10 +273,10 @@ tracked files other than a commit trailer the person asked for.
 | Windows runtime DLLs | the runner image's Visual Studio | nothing to pin: the build copies the redistributable folder's files and records their SHA-256; a toolset without one of the interpreter's `vcruntime140*.dll` fails the build with the name |
 | Licence record | `tools/rc1-tester/image/licensing.json` | change with the package contents; the build fails until it matches |
 | Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
-| Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt`, `unit-tests-windows.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
+| Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt`, `unit-tests-windows.txt` (the Windows CUDA zip adds `cuda-tests.txt`) | a name absent from a build is skipped; fewer than ten found fails the build |
 | Intel GPU runtime | `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`, `ONEAPI_*` in `build-config.env`; `tools/rc1-tester/image/sycl-runtime.json`; `fetched_texts` and the `intel-gpu-stack` component of `licensing.json` | a moved compute runtime or loader version fails the build until the licence text of the new version is recorded in `fetched_texts` (URL and SHA-256) and named by the component; a runtime file must stay in the compiler's `credist.txt` |
 | Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_gpu_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
-| CUDA toolkit | `CUDA_VERSION` and the `CUDA_APT_*` versions in `build-config.env` (NVIDIA's `debian13` repository, `scripts/ci/install-cuda-toolkit.sh`); `NV_CODEC_HEADERS_COMMIT` in `docker/Dockerfile.tester` | a new CUDA version brings a new EULA: the build checks the EULA's "Last updated" date, so update that check, the `nvidia-cuda-device-code` component and ADR-1509's citation together after reading the new Attachment A |
+| CUDA toolkit | `CUDA_VERSION` and the `CUDA_APT_*` versions in `build-config.env` (NVIDIA's `debian13` repository, `scripts/ci/install-cuda-toolkit.sh`; the Windows CUDA zip's `install-cuda-toolkit.ps1`); `NV_CODEC_HEADERS_COMMIT` in `docker/Dockerfile.tester` (the Windows workflow reads it from there) | a new CUDA version brings a new EULA: the Linux build and `CUDA_EULA_MARKERS` of `scripts/ci/build-windows-tester-bundle.py` check the EULA's "Last updated" date, so update both checks, the two `nvidia-cuda-device-code` components and ADR-1509's citation together after reading the new Attachment A |
 | NVIDIA GPU state rows | `tools/rc1-tester/image/cuda-rows.json` | the same contract test; every CUDA family has a row, and each row holds every gate feature |
 | ROCm runtime | `ROCM_BUILDER` in `build-config.env` (mirrored in `docker/Dockerfile.tester`); `HIP_GFX_TARGETS` in `docker/Dockerfile.tester` (every target of the ROCm image's `share/therock/dist_info.json`; the build refuses a list that differs); `tools/rc1-tester/image/hip-runtime.json`; the `rocm-*` components, `fetched_texts` and `source_archives` of `licensing.json` | a new ROCm brings new file names, a new TheRock commit and new build IDs of the bundled LGPL libraries: the build and the licence check fail until `hip-runtime.json` and the record match; a new gfx target needs a row family (`tests/test_gpu_rows_contract.py`) |
 | AMD GPU state rows | `tools/rc1-tester/image/hip-rows.json` | the same contract test; every family of `HIP_GFX_TARGETS` has a row, and each row holds every gate feature |

@@ -5,7 +5,8 @@
 Runs as its own process, `python3 -m vmaf_rc1_tester.hw_cudaprobe`, under the
 caller's time limit: a broken driver can hang `cuInit`. It loads the driver
 library the way libvmaf does (`libcuda.so.1`, which the NVIDIA Container Toolkit
-mounts from the host, or WSL2's `/usr/lib/wsl/lib/libcuda.so.1`) and prints one
+mounts from the host, or WSL2's `/usr/lib/wsl/lib/libcuda.so.1`; on Windows the
+display driver's `nvcuda.dll`) and prints one
 JSON document with, per GPU, its name, compute capability and family,
 multiprocessor count, total memory and whether it is integrated, plus the
 driver's CUDA version. It reads no UUID, serial number or PCI bus ID.
@@ -23,7 +24,9 @@ import json
 import sys
 from typing import Any
 
-DRIVER = "libcuda.so.1"
+# The driver library libvmaf loads (nv-codec-headers' loader): nvcuda.dll from the
+# NVIDIA display driver in System32 on Windows (the Windows zip, ADR-1516).
+DRIVER = "nvcuda.dll" if sys.platform == "win32" else "libcuda.so.1"
 ATTRIBUTE_CLOCK_RATE = 13
 ATTRIBUTE_MULTIPROCESSOR_COUNT = 16
 ATTRIBUTE_INTEGRATED = 18

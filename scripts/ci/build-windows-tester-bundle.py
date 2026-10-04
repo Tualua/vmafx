@@ -17,8 +17,14 @@ Environment (all required):
                           texts (python/licenses, PYTHON.json; ADR-1503)
   VMAF_RESOURCE_COMMIT    Netflix/vmaf_resource commit the fixtures come from
   VMAFX_SOURCE_COMMIT, VMAFX_SOURCE_REF, VMAFX_RECIPE_COMMIT, VMAFX_IMAGE_TAG
+Optional, for the CUDA zip (ADR-1516; x64 only):
+  VMAFX_GPU=cuda          build the CUDA backend and its device tests
+  CUDA_PATH               the toolkit scripts/ci/install-cuda-toolkit.ps1 installed (its
+                          LICENSE is the CUDA EULA the notices carry)
+  VMAFX_NV_CODEC_HEADERS  the nv-codec-headers checkout the build includes (its two
+                          headers' notices travel with the zip)
 
-Result in <output-dir>: vmafx-tester-windows-<arch>-<tag>.zip, its .sha256,
+Result in <output-dir>: vmafx-tester-windows-<arch>[-cuda]-<tag>.zip, its .sha256,
 report.json (the zip's own report run on this runner) and bundle-files.txt. The zip
 carries licenses/ (THIRD_PARTY_NOTICES.txt and every licence text) and is not packed
 when a file has no recorded licence (ADR-1503). The C and C++ runtime is linked
@@ -50,6 +56,11 @@ REQUIRED = ("VMAFX_ARCH", "PBS_URL", "PBS_SHA256", "PBS_FULL_URL", "PBS_FULL_SHA
 ARCHES = {"x64": "AMD64", "arm64": "ARM64"}  # VMAFX_ARCH -> PROCESSOR_ARCHITECTURE
 IMAGE_DIR = Path("tools/rc1-tester/image")
 UNIT_TESTS = IMAGE_DIR / "unit-tests-windows.txt"
+CUDA_TESTS = IMAGE_DIR / "cuda-tests.txt"
+# The CUDA EULA the toolkit's redistributable archives carry as LICENSE (each archive
+# holds the same text); the build checks it is the text ADR-1509 read.
+CUDA_EULA_MARKERS = ("Last updated: January 26, 2026", "libdevice.10.bc")
+NV_CODEC_HEADERS = ("dynlink_cuda.h", "dynlink_loader.h")
 RESOURCE_URL = (
     "https://raw.githubusercontent.com/Netflix/vmaf_resource/{commit}/python/test/resource/{file}"
 )
@@ -59,6 +70,7 @@ MESON_OPTIONS = (
     "-Denable_sycl=false", "-Denable_hip=false", "-Denable_metal=disabled",
     "-Denable_dnn=disabled",
 )  # fmt: skip
+CUDA_OPTIONS = ("-Denable_cuda=true", "-Denable_nvcc=true")
 # The interpreter keeps the standard library the report uses; these go (as in the macOS
 # bundle: headers, import libraries, pip, tests, IDLE, Tcl/Tk and the zlib1.dll only
 # Tcl links, the test extension modules, the GUI launcher).
@@ -148,13 +160,24 @@ def compiler_line(build: Path) -> str:
     return str(compiler.get("full_version") or f"{compiler['id']} {compiler['version']}")
 
 
-def configure_and_build(build: Path) -> None:
-    step("configure and build (MSVC, static libvmaf, static C runtime /MT, no GPU, no DNN)")
+def meson_options(gpu: str) -> list[str]:
+    """The configure options: the CPU build, or the CUDA build of the CUDA zip."""
+    options = list(MESON_OPTIONS)
+    if gpu == "cuda":
+        options = [o for o in options if o != "-Denable_cuda=false"] + list(CUDA_OPTIONS)
+    return options
+
+
+def configure_and_build(build: Path, gpu: str) -> None:
+    step(f"configure and build (MSVC, static libvmaf, static C runtime /MT, GPU: {gpu or 'none'})")
     env = {**os.environ, "CFLAGS": "/experimental:c11atomics",
            "CXXFLAGS": "/experimental:c11atomics"}  # fmt: skip
-    run(["meson", "setup", str(build), "core", *MESON_OPTIONS], env=env)
-    targets = prepare_build("select", str(build), str(UNIT_TESTS), capture=True).split()
-    run(["ninja", "-C", str(build), "tools/vmaf.exe", *targets])
+    run(["meson", "setup", str(build), "core", *meson_options(gpu)], env=env)
+    lists = [UNIT_TESTS, CUDA_TESTS] if gpu == "cuda" else [UNIT_TESTS]
+    targets = set()
+    for tests in lists:
+        targets |= set(prepare_build("select", str(build), str(tests), capture=True).split())
+    run(["ninja", "-C", str(build), "tools/vmaf.exe", *sorted(targets)])
 
 
 def stage(build: Path, bundle: Path, env: dict[str, str]) -> None:
@@ -169,6 +192,54 @@ def stage(build: Path, bundle: Path, env: dict[str, str]) -> None:
     (bundle / "image" / "package-arch.txt").write_text(ARCHES[env["VMAFX_ARCH"]] + "\n")
     shutil.copy2(IMAGE_DIR / "windows" / "run.cmd", bundle / "run.cmd")
     shutil.copy2(IMAGE_DIR / "windows" / "README.txt", bundle / "README.txt")
+
+
+def copy_cuda_eula(bundle: Path, cuda_path: Path) -> None:
+    """The CUDA EULA of the toolkit that compiled the kernels, unmodified, checked."""
+    eula = cuda_path / "LICENSE"
+    text = eula.read_text(encoding="utf-8", errors="replace") if eula.is_file() else ""
+    missing = [marker for marker in CUDA_EULA_MARKERS if marker not in text]
+    if missing:
+        raise BuildError(f"{eula} is not the CUDA EULA ADR-1509 read (missing {missing})")
+    target = bundle / "licenses" / "nvidia" / "CUDA-EULA.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(eula, target)
+
+
+def header_notice(header: Path) -> str:
+    """The leading comment of a header: its copyright and permission notice."""
+    text = header.read_text(encoding="utf-8", errors="replace")
+    end = text.find("*/")
+    if end < 0:
+        raise BuildError(f"{header} has no leading comment")
+    return text[: end + 2]
+
+
+def write_nv_codec_notices(bundle: Path, checkout: Path) -> None:
+    """The notices of the two nv-codec-headers files libvmaf compiles its loader from."""
+    parts = []
+    for name in NV_CODEC_HEADERS:
+        header = checkout / "include" / "ffnvcodec" / name
+        parts.append(f"include/ffnvcodec/{name} of nv-codec-headers:\n{header_notice(header)}\n")
+    text = "\n".join(parts)
+    if "Permission is hereby granted" not in text:
+        raise BuildError("the nv-codec-headers notices hold no MIT permission notice")
+    target = bundle / "licenses" / "nv-codec-headers" / "NOTICE.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+
+
+def stage_cuda(build: Path, bundle: Path) -> None:
+    """The CUDA zip's device tests, parity gate, twin bounds, targets, row map and
+    NVIDIA notices (the Windows counterpart of docker/Dockerfile.tester's cuda-build)."""
+    step("stage the CUDA device tests, the parity gate and the NVIDIA notices")
+    prepare_build("stage", str(build), str(CUDA_TESTS), str(bundle), "gpu-tests.json")
+    prepare_build("gate", ".", str(bundle))
+    prepare_build("twins", str(bundle), "cuda")
+    prepare_build("cuda-targets", str(build), str(bundle))
+    shutil.copy2(IMAGE_DIR / "cuda-rows.json", bundle / "image" / "cuda-rows.json")
+    copy_cuda_eula(bundle, Path(os.environ["CUDA_PATH"]))
+    write_nv_codec_notices(bundle, Path(os.environ["VMAFX_NV_CODEC_HEADERS"]))
 
 
 def fetch_fixtures(bundle: Path, out: Path, commit: str) -> None:
@@ -292,7 +363,7 @@ def bundle_python_version(python: Path) -> str:
     return run([str(python), "-I", "-c", code], capture=True).strip()
 
 
-def info_environment(build: Path, env: dict[str, str]) -> dict[str, str]:
+def info_environment(build: Path, env: dict[str, str], gpu: str) -> dict[str, str]:
     """What `prepare_build.py info` writes into image/build-info.json."""
     keys = ("VMAFX_SOURCE_COMMIT", "VMAFX_SOURCE_REF", "VMAFX_RECIPE_COMMIT", "VMAFX_IMAGE_TAG")
     runner = f"{os.environ.get('IMAGEOS', 'windows')}-{os.environ.get('IMAGEVERSION', 'runner')}"
@@ -306,13 +377,14 @@ def info_environment(build: Path, env: dict[str, str]) -> dict[str, str]:
         "VMAFX_COMPILER": compiler_line(build),
         "VMAFX_LIBC": f"{libc}; built on Windows {platform.version()}",
         "VMAFX_NOT_APPLICABLE": json.dumps({"golden": GOLDEN_NOT_APPLICABLE}),
+        "VMAFX_GPU_BACKEND": gpu,
     }
 
 
-def records(bundle: Path, build: Path, python: Path, env: dict[str, str]) -> None:
+def records(bundle: Path, build: Path, python: Path, env: dict[str, str], gpu: str) -> None:
     step("bundle metadata and references")
     run([sys.executable, str(IMAGE_DIR / "prepare_build.py"), "info", str(bundle)],
-        env=info_environment(build, env))  # fmt: skip
+        env=info_environment(build, env, gpu))  # fmt: skip
     run([str(python), "-I", "-B", str(bundle / "tester" / "vmaf-tester-report"),
          "--image-root", str(bundle), "generate-reference", str(bundle / "reference")])  # fmt: skip
 
@@ -360,37 +432,59 @@ def check_host(arch: str) -> None:
         )
 
 
+def gpu_kit(env: dict[str, str]) -> str:
+    """`cuda` for the CUDA zip (x64 only), "" for the CPU zip."""
+    gpu = os.environ.get("VMAFX_GPU", "")
+    if gpu not in ("", "cuda"):
+        raise BuildError(f"VMAFX_GPU must be empty or cuda, not {gpu!r}")
+    if gpu == "cuda" and env["VMAFX_ARCH"] != "x64":
+        raise BuildError("the CUDA zip is built for x64 only")
+    return gpu
+
+
+def assemble(bundle: Path, build: Path, out: Path, env: dict[str, str], gpu: str) -> Path:
+    """Build, stage, fetch the fixtures and install the interpreter; its python.exe."""
+    configure_and_build(build, gpu)
+    stage(build, bundle, env)
+    if gpu == "cuda":
+        stage_cuda(build, bundle)
+    fetch_fixtures(bundle, out, env["VMAF_RESOURCE_COMMIT"])
+    return install_interpreter(bundle, out, env)
+
+
+def seal(bundle: Path, out: Path, kind: str, scan: Path, version: str, tag: str) -> None:
+    """Notices, the import check, the zip's own report, the licence gate, the zip."""
+    step("licence notices (ADR-1503)")
+    licensing("notices", "--artifact", kind, "--root", str(bundle), "--repo", ".",
+              "--build-scan", str(scan), "--texts", str(out / "licence-texts"),
+              "--source-commit", os.environ["VMAFX_SOURCE_COMMIT"], "--tag", tag)  # fmt: skip
+    step("every program loads Windows DLLs or the bundle's own (no runtime DLL for VMAFx)")
+    run([sys.executable, "scripts/ci/check-windows-bundle-imports.py", str(bundle),
+         "--machine", os.environ["VMAFX_ARCH"]])  # fmt: skip
+    run_own_report(bundle, out)
+    step("every file of the zip has a recorded licence (ADR-1503)")
+    licensing("check", "--artifact", kind, "--root", str(bundle), "--repo", ".",
+              "--build-scan", str(scan), "--python-version", version,
+              "--receipt", str(bundle / "licence-check.json"))  # fmt: skip
+    pack(bundle, out)
+
+
 def build_all(out: Path, env: dict[str, str]) -> None:
     check_host(env["VMAFX_ARCH"])
-    tag = env["VMAFX_IMAGE_TAG"]
-    bundle = out / f"vmafx-tester-windows-{env['VMAFX_ARCH']}-{tag}"
+    gpu, tag = gpu_kit(env), env["VMAFX_IMAGE_TAG"]
+    kind = "windows-cuda-zip" if gpu else "windows-zip"
+    name = f"{env['VMAFX_ARCH']}-cuda" if gpu else env["VMAFX_ARCH"]
+    bundle = out / f"vmafx-tester-windows-{name}-{tag}"
     build, texts = Path("build-tester-windows").resolve(), out / "licence-texts"
-    configure_and_build(build)
-    stage(build, bundle, env)
-    fetch_fixtures(bundle, out, env["VMAF_RESOURCE_COMMIT"])
-    python = install_interpreter(bundle, out, env)
+    python = assemble(bundle, build, out, env, gpu)
     step("licence texts (python-build-standalone full archive, CPython Doc/license.rst)")
     pbs_licence_texts(out, texts, env)
     version = bundle_python_version(python)
     scan = out / "vmafx-sources.json"
-    licensing(
-        "fetch-texts", "--artifact", "windows-zip", "--python-version", version, "--out", str(texts)
-    )
+    licensing("fetch-texts", "--artifact", kind, "--python-version", version, "--out", str(texts))
     licensing("scan-build", "--build", str(build), "--repo", ".", "--out", str(scan))
-    records(bundle, build, python, env)
-    step("licence notices (ADR-1503)")
-    licensing("notices", "--artifact", "windows-zip", "--root", str(bundle), "--repo", ".",
-              "--build-scan", str(scan), "--texts", str(texts),
-              "--source-commit", env["VMAFX_SOURCE_COMMIT"], "--tag", tag)  # fmt: skip
-    step("every program loads Windows DLLs or the bundle's own (no runtime DLL for VMAFx)")
-    run([sys.executable, "scripts/ci/check-windows-bundle-imports.py", str(bundle),
-         "--machine", env["VMAFX_ARCH"]])  # fmt: skip
-    run_own_report(bundle, out)
-    step("every file of the zip has a recorded licence (ADR-1503)")
-    licensing("check", "--artifact", "windows-zip", "--root", str(bundle), "--repo", ".",
-              "--build-scan", str(scan), "--python-version", version,
-              "--receipt", str(bundle / "licence-check.json"))  # fmt: skip
-    pack(bundle, out)
+    records(bundle, build, python, env, gpu)
+    seal(bundle, out, kind, scan, version, tag)
 
 
 def main(argv: list[str]) -> int:

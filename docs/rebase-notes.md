@@ -60089,3 +60089,19 @@ upstream parity guard's allowlist.
 - `scripts/ci/check-vcs-version-not-bare-sha.sh` holds the new workflow's
   `git describe` to `--match 'v*.*.*'`. No score, public API or FFmpeg patch
   impact.
+
+## Windows CUDA tester zip (ADR-1516)
+
+- `windows-tester-bundle.yml` gains the matrix leg `x64-cuda`
+  (`VMAFX_GPU=cuda`): the toolkit from `scripts/ci/install-cuda-toolkit.ps1`,
+  nv-codec-headers at `NV_CODEC_HEADERS_COMMIT` read from
+  `docker/Dockerfile.tester` (one pin for both CUDA kits), artifact
+  `windows-cuda-zip`. The CUDA EULA check (`CUDA_EULA_MARKERS` of
+  `scripts/ci/build-windows-tester-bundle.py`) moves with the Linux image's
+  check on a CUDA bump.
+- `hw_cuda.py` reaches the GPU on Windows through `nvcuda.dll` in System32
+  (path `windows`); `hw_cudaprobe.DRIVER` names that DLL there.
+  `prepare_build.py` leaves a shell test out of a Windows build.
+  `generate-hardware-reports.py` lets a GPU row name a platform; such a row
+  covers no family in the coverage check. No score, public API or FFmpeg patch
+  impact.

@@ -285,3 +285,25 @@ def test_no_device_is_no_device_with_the_missing_option(tmp_path: Path, monkeypa
     assert section["status"] == "no_device" and section["access"]["path"] == "none"
     assert "--gpus all" in section["reason"]
     assert hw_gpu.gpu_not_exercised(section) == [("CUDA twins", section["reason"])]
+
+
+def test_windows_reaches_the_gpu_through_the_display_driver(tmp_path: Path) -> None:
+    facts = hw_cuda.windows_access_facts(tmp_path)
+    assert facts == {"driver_library": "nvcuda.dll", "driver_library_present": False,
+                     "path": "none"}  # fmt: skip
+    reason = hw_cuda.missing_access_reason(facts)
+    assert "nvcuda.dll is not in System32" in reason and "NVIDIA display driver" in reason
+    (tmp_path / "nvcuda.dll").write_bytes(b"MZ")
+    facts = hw_cuda.windows_access_facts(tmp_path)
+    assert facts["path"] == "windows"
+    broken = hw_cuda.probe_reason({"status": "no_driver_library", "error": "error 126"}, facts)
+    assert "does not load (error 126)" in broken and "--gpus" not in broken
+
+
+def test_host_access_follows_the_platform(monkeypatch) -> None:
+    monkeypatch.setattr(hw_cuda, "windows_access_facts", lambda: {"path": "windows"})
+    monkeypatch.setattr(hw_cuda, "access_facts", lambda: {"path": "nvidia"})
+    monkeypatch.setattr(hw_cuda.os, "name", "nt")
+    assert hw_cuda.host_access()["path"] == "windows"
+    monkeypatch.setattr(hw_cuda.os, "name", "posix")
+    assert hw_cuda.host_access()["path"] == "nvidia"

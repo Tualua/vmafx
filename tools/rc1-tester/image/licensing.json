@@ -891,6 +891,265 @@
     }
    ]
   },
+  "windows-cuda-zip": {
+   "title": "the VMAFx Windows CUDA tester zip",
+   "licence_root": "licenses",
+   "source_offer": "no copyleft object code is in this zip; VMAFx's own source is the commit above.",
+   "python": {
+    "version": "3.13.16"
+   },
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: vmaf.exe (libvmaf with the CUDA backend linked in) and the unit and CUDA device test programs, built with MSVC and nvcc",
+     "paths": [
+      "build/tools/vmaf.exe",
+      "tests/*.exe"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "The CUDA kernels are fatbins inside vmaf.exe and the test programs (cubins for sm_80, sm_86, sm_89, sm_90, sm_100 and sm_120, PTX for compute_80 and compute_120); their device code also holds NVIDIA's code, see [component nvidia-cuda-device-code]."
+     ]
+    },
+    {
+     "id": "microsoft-static-runtime",
+     "kind": "fixed",
+     "name": "Microsoft C and C++ runtime libraries linked into vmaf.exe and every test program (/MT)",
+     "licence": "LicenseRef-Microsoft-Visual-Studio (the static runtime libraries of Visual Studio 2026 and the Universal CRT of the Windows SDK); the C++ standard library is Apache-2.0 WITH LLVM-exception",
+     "copyright": [
+      "Copyright (c) Microsoft Corporation"
+     ],
+     "source": "binary only, except the C++ standard library (https://github.com/microsoft/STL); linked in by the MSVC toolset of the hosted runner's Visual Studio 2026 and Windows SDK",
+     "notes": [
+      "vmaf.exe and the programs in tests\\ contain object code of Microsoft's C runtime (libcmt, libvcruntime), C++ standard library (libcpmt) and Universal CRT (libucrt), linked in by the MSVC toolset of a licensed Visual Studio (/MT), so that no runtime DLL is installed or shipped for them. Microsoft documents static linking as a deployment of these libraries (Choose a deployment method, Universal CRT deployment, learn.microsoft.com, read 2026-10-04).",
+      "That code is Microsoft's and is not covered by EUPL-1.2 or any other licence of VMAFx. It is provided to you as part of these programs only. You may not reverse engineer, decompile or disassemble it, except where applicable law permits despite this limitation. Microsoft provides it as is and disclaims every warranty; Microsoft is not liable for damages arising from its use.",
+      "The C++ standard library is open source under Apache-2.0 WITH LLVM-exception (https://github.com/microsoft/STL); the exception waives the notice conditions for its object code embedded in a program. Microsoft's names identify the component only."
+     ]
+    },
+    {
+     "id": "microsoft-vc-runtime",
+     "kind": "fixed",
+     "name": "Microsoft Visual C++ runtime DLLs of the interpreter (vcruntime140.dll, vcruntime140_1.dll)",
+     "paths": [
+      "runtime/vcruntime140.dll",
+      "runtime/vcruntime140_1.dll"
+     ],
+     "licence": "LicenseRef-Microsoft-Visual-Studio-Distributable-Code (Visual C++ Runtime Files of the Visual Studio 2026 Distributable Code list)",
+     "copyright": [
+      "Copyright (c) Microsoft Corporation"
+     ],
+     "source": "binary only; copied unmodified from VC\\Redist\\MSVC\\<version>\\<arch>\\Microsoft.VC14x.CRT of the hosted runner's Visual Studio 2026 (folder and SHA-256 in image\\msvc-redist.json), in place of the copies in the python-build-standalone archive; never from debug_nonredist",
+     "notes": [
+      "These files are Microsoft Distributable Code: the Visual Studio 2026 Distributable Code list (https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution, ms.date 2025-11-11, read 2026-10-04) lets a licensed Visual Studio user copy the files of VC\\Redist unmodified with a program. They ship next to the interpreter, which needs them.",
+      "They are provided to you for use with the Python interpreter of this zip only, not on their own. You may not modify, reverse engineer, decompile or disassemble them, except where applicable law permits despite this limitation. Microsoft provides them as is and disclaims every warranty; Microsoft is not liable for damages arising from their use.",
+      "They are Microsoft's and are not covered by EUPL-1.2 or any other licence of VMAFx; Microsoft's names identify the component only. Windows 10 and later carry the Universal CRT these DLLs use; the zip ships none of it."
+     ]
+    },
+    {
+     "id": "nvidia-cuda-device-code",
+     "kind": "fixed",
+     "name": "NVIDIA CUDA Toolkit 13.4 code compiled into the CUDA kernels: CUDA header code and the libdevice math library (libdevice.10.bc) that nvcc links into the device code",
+     "licence": "LicenseRef-NVIDIA-CUDA-EULA (distributable portions listed in Attachment A, incorporated in object code into this application)",
+     "copyright": [
+      "Copyright (c) NVIDIA Corporation"
+     ],
+     "source": "binary only; compiled in by nvcc of the CUDA release CUDA_VERSION of build-config.env names, installed from NVIDIA's Windows redistributable archives by scripts/ci/install-cuda-toolkit.ps1",
+     "texts": [
+      {
+       "artifact": "licenses/nvidia/CUDA-EULA.txt",
+       "label": "NVIDIA CUDA Toolkit End User License Agreement v13.4 (last updated January 26, 2026): the LICENSE of the toolkit's redistributable archives, checked by the build"
+      }
+     ],
+     "notes": [
+      "Part of the object code in this zip is NVIDIA's: the device code of the CUDA kernels in vmaf.exe and in the test programs contains code from the CUDA Toolkit's headers and from its libdevice library, which Attachment A of the CUDA Toolkit EULA lists as distributable (NVIDIA Common Device Math Functions Library, CUDA Floating Point Type Headers, CUDA Headers for Runtime Compilation), incorporated in object code into this application (EULA 1.1.1(c)).",
+      "These NVIDIA portions are accessed only by the VMAFx programs in this zip (EULA 1.1.2). You may not reverse engineer, decompile or disassemble them or remove NVIDIA's notices (EULA 1.2); NVIDIA provides them as is (1.4), with the limitation of liability of 1.5.",
+      "The zip ships no NVIDIA library. The NVIDIA driver (nvcuda.dll, with its PTX JIT compiler) comes from your Windows display driver, under the driver's own licence; libvmaf loads it at run time.",
+      "EUPL-1.2 covers only the VMAFx files of this zip, never NVIDIA's components. VMAFx is not sponsored or endorsed by NVIDIA; NVIDIA's names identify the components only."
+     ]
+    },
+    {
+     "id": "nv-codec-headers",
+     "kind": "fixed",
+     "name": "nv-codec-headers (FFmpeg): the CUDA driver loader libvmaf compiles in (include/ffnvcodec/dynlink_loader.h, dynlink_cuda.h)",
+     "licence": "MIT",
+     "copyright": [
+      "Copyright (c) 2016 (as the headers state it)"
+     ],
+     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d (NV_CODEC_HEADERS_COMMIT of docker/Dockerfile.tester, the minimum core/src/meson.build requires)",
+     "texts": [
+      {
+       "artifact": "licenses/nv-codec-headers/NOTICE.txt",
+       "label": "the copyright and permission notices of the two headers, copied from them at build time"
+      }
+     ]
+    },
+    {
+     "id": "netflix-test-videos",
+     "kind": "fixed",
+     "name": "Netflix test videos (Netflix/vmaf_resource)",
+     "paths": [
+      "python/test/resource/**"
+     ],
+     "licence": "BSD-2-Clause-Patent",
+     "copyright": [
+      "Copyright (c) 2020 Netflix, Inc."
+     ],
+     "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
+     "texts": [
+      {
+       "repo": "LICENSE",
+       "name": "netflix-vmaf_resource-LICENSE.txt",
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+      }
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (built into vmaf)",
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-files",
+     "kind": "repo",
+     "name": "VMAFx report program, parity gate, row map and launcher (source files from the repository)",
+     "map": [
+      {
+       "artifact": "tester/src/",
+       "repo": "tools/rc1-tester/src/"
+      },
+      {
+       "artifact": "tester/vmaf-tester-report",
+       "repo": "tools/rc1-tester/vmaf-tester-report"
+      },
+      {
+       "artifact": "tester/gate/",
+       "repo": ""
+      },
+      {
+       "artifact": "image/fixtures.json",
+       "repo": "tools/rc1-tester/image/fixtures.json"
+      },
+      {
+       "artifact": "image/cuda-rows.json",
+       "repo": "tools/rc1-tester/image/cuda-rows.json"
+      },
+      {
+       "artifact": "run.cmd",
+       "repo": "tools/rc1-tester/image/windows/run.cmd"
+      },
+      {
+       "artifact": "README.txt",
+       "repo": "tools/rc1-tester/image/windows/README.txt"
+      }
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above"
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "Scores, build information, test manifests, twin bounds, the CUDA targets, the runtime DLLs' origin and the licence check receipt written by this zip's build",
+     "paths": [
+      "reference/**",
+      "image/build-info.json",
+      "image/unit-tests.json",
+      "image/gpu-tests.json",
+      "image/gpu-twins.json",
+      "image/cuda-targets.json",
+      "image/package-arch.txt",
+      "image/msvc-redist.json",
+      "licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "cpython",
+     "kind": "fixed",
+     "name": "CPython from python-build-standalone (install_only_stripped, x86_64-pc-windows-msvc or aarch64-pc-windows-msvc), pruned to the standard library the report uses",
+     "paths": [
+      "runtime/**"
+     ],
+     "licence": "PSF-2.0 AND the incorporated software of Doc/license.rst AND MIT (HACL*) AND the libraries python-build-standalone ships with or links into the interpreter (OpenSSL Apache-2.0, libffi MIT, expat MIT, mpdecimal BSD-2-Clause, bzip2 bzip2-1.0.6, liblzma 0BSD, SQLite blessing, zlib Zlib)",
+     "copyright": [
+      "Copyright (c) 2001 Python Software Foundation; All Rights Reserved"
+     ],
+     "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261001 (unmodified; files the report does not need were removed, and vcruntime140*.dll are component microsoft-vc-runtime)",
+     "texts": [
+      {
+       "artifact": "runtime/LICENSE.txt",
+       "label": "CPython LICENSE"
+      },
+      {
+       "fetched": "cpython-license.rst",
+       "name": "cpython-license.rst",
+       "label": "Doc/license.rst of this CPython version: licences of incorporated software"
+      },
+      {
+       "repo": "tools/rc1-tester/image/licenses/hacl-star.txt",
+       "name": "hacl-star.txt",
+       "label": "HACL* (Modules/_hacl), which Doc/license.rst omits"
+      },
+      {
+       "fetched_dir": "python-build-standalone",
+       "label": "python/licenses/ and PYTHON.json of the release's full archive: texts of every library linked into the interpreter"
+      }
+     ]
+    },
+    {
+     "id": "python-packages",
+     "kind": "python-dist",
+     "name": "Python package metadata left in the interpreter",
+     "roots": [
+      "runtime/Lib/site-packages"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "licenses/**"
+     ]
+    }
+   ]
+  },
   "sycl-image": {
    "title": "the VMAFx Intel GPU tester image",
    "licence_root": "opt/vmafx/licenses",

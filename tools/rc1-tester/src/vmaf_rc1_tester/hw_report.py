@@ -184,7 +184,8 @@ def other_gpu_backends(backend: str | None, platform_name: str = "linux") -> tup
             return ("CUDA, SYCL and HIP twins", "this zip holds the CPU-only MSVC build")
         return ("CUDA, SYCL and HIP twins", "the image holds no GPU SDK and a CPU-only build")
     others = [name for name in ("CUDA", "SYCL", "HIP") if name.lower() != backend]
-    return (" and ".join(others) + " twins", f"this image is the {backend.upper()} build")
+    package = "zip" if platform_name == "windows" else "image"
+    return (" and ".join(others) + " twins", f"this {package} is the {backend.upper()} build")
 
 
 PASSING = {

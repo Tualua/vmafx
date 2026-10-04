@@ -41,6 +41,7 @@ machine still repeats the measurement on different silicon and is welcome.
 | NVIDIA Hopper (H100, H200) | [NVIDIA GPU image](tester-image.md#d-nvidia-gpu-image-linux-or-windows-with-wsl2) | [`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03`](../state.md) | no report yet |
 | NVIDIA Blackwell (B200, GeForce RTX 50 series, Jetson Thor, DGX Spark) | [NVIDIA GPU image](tester-image.md#d-nvidia-gpu-image-linux-or-windows-with-wsl2) | [`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03`](../state.md) | no report yet |
 | NVIDIA Ada (GeForce RTX 40 series) | [NVIDIA GPU image](tester-image.md#d-nvidia-gpu-image-linux-or-windows-with-wsl2) | [`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03`](../state.md) | covered by RTX 4090 |
+| NVIDIA GPU under native Windows (GeForce RTX 30 series or newer, RTX professional cards) | [Windows CUDA zip](tester-image.md#with-an-nvidia-gpu-the-cuda-zip) | [`T-CUDA-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`](../state.md) | no report yet |
 | AMD CDNA (Instinct MI100, MI200, MI300, MI350) | [AMD GPU image](tester-image.md#e-amd-gpu-image-linux) | [`T-HIP-TWINS-OTHER-TARGETS-2026-10-03`](../state.md) | no report yet |
 | AMD RDNA3 and RDNA3.5 (Radeon RX 7000, Radeon 780M, 860M, 890M, 8060S) | [AMD GPU image](tester-image.md#e-amd-gpu-image-linux) | [`T-HIP-TWINS-OTHER-TARGETS-2026-10-03`](../state.md) | no report yet |
 | AMD RDNA4 (Radeon RX 9060 and RX 9070, AI PRO R9700) | [AMD GPU image](tester-image.md#e-amd-gpu-image-linux) | [`T-HIP-TWINS-OTHER-TARGETS-2026-10-03`](../state.md) | no report yet |

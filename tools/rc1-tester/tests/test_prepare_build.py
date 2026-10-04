@@ -290,3 +290,11 @@ def test_shipped_sycl_runtime_list_names_only_libraries() -> None:
     names = [n for c in spec["components"] for n in c["names"]]
     assert all(".so" in n and "*" not in n and "gdb" not in n for n in names)
     assert "libsycl-jit.so" not in names and "libur_adapter_opencl.so.0" not in names
+
+
+def test_a_shell_test_is_left_out_of_a_windows_build(tmp_path: Path, monkeypatch) -> None:
+    script = {"cmd": [str(tmp_path / "threads.sh"), "cuda"]}
+    assert pb.classify(script, tmp_path / "build") == ("script", "")
+    monkeypatch.setattr(pb.platform, "system", lambda: "Windows")
+    kind, reason = pb.classify(script, tmp_path / "build")
+    assert kind == "left_out" and "carries no sh" in reason

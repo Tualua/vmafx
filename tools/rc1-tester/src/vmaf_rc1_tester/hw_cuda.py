@@ -11,7 +11,10 @@ run time. How the image reaches an NVIDIA GPU, recorded as facts and as one `pat
 - `wsl`: WSL2's paravirtualised GPU, `/dev/dxg`, with the host driver's
   `/usr/lib/wsl/lib/libcuda.so.1` mounted (Docker Desktop does both for
   `--gpus all`);
-- `none`: neither, with the reason and the `docker run` option that is missing.
+- `windows`: the Windows zip (ADR-1516), where the NVIDIA display driver puts
+  `nvcuda.dll` into System32;
+- `none`: none of these, with the reason and what is missing (the `docker run`
+  option, or on Windows the driver).
 
 The devices are the CUDA devices of the driver (hw_cudaprobe.py, its own bounded
 process) in PCI bus order; every run of a device is pinned with
@@ -38,6 +41,9 @@ from .hw_gpu import GpuBackend
 DEV = Path("/dev")
 DXG = Path("/dev/dxg")
 WSL_LIBCUDA = Path("/usr/lib/wsl/lib/libcuda.so.1")
+WINDOWS_DRIVER = "nvcuda.dll"
+SYSTEM32 = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32"
+DRIVER_HINT = "install the NVIDIA display driver (R580 or later runs this build's CUDA 13 code)"
 PROBE_TIMEOUT_SECONDS = 120.0
 DEVICE_ORDER = {"CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
 TOOLKIT_HINT = ("add --gpus all (NVIDIA Container Toolkit; with CDI: "
@@ -75,8 +81,23 @@ def access_facts(dev: Path = DEV, dxg: Path = DXG, libcuda: Path = WSL_LIBCUDA) 
     return facts
 
 
+def windows_access_facts(system32: Path = SYSTEM32) -> dict[str, Any]:
+    """The Windows zip reaches an NVIDIA GPU through the display driver's nvcuda.dll."""
+    present = (system32 / WINDOWS_DRIVER).is_file()
+    return {"driver_library": WINDOWS_DRIVER, "driver_library_present": present,
+            "path": "windows" if present else "none"}  # fmt: skip
+
+
+def host_access() -> dict[str, Any]:
+    """The access facts of this platform: the Windows zip or a Linux container."""
+    return windows_access_facts() if os.name == "nt" else access_facts()
+
+
 def missing_access_reason(facts: Mapping[str, Any]) -> str:
-    """Why no NVIDIA GPU is reachable, with the `docker run` option that fixes it."""
+    """Why no NVIDIA GPU is reachable, with the `docker run` option that fixes it (on
+    Windows: the driver that is missing)."""
+    if "driver_library_present" in facts:
+        return f"no NVIDIA driver is installed ({WINDOWS_DRIVER} is not in System32): {DRIVER_HINT}"
     if facts["dxg_present"] and not facts["wsl_libcuda_present"]:
         return ("/dev/dxg is present but the WSL2 driver library /usr/lib/wsl/lib/libcuda.so.1 is"
                 " not: run with --gpus all under Docker Desktop's WSL2 backend")  # fmt: skip
@@ -92,6 +113,9 @@ def missing_access_reason(facts: Mapping[str, Any]) -> str:
 def probe_reason(probe: Mapping[str, Any], facts: Mapping[str, Any]) -> str:
     """Why the driver reports no usable device although a device node is visible."""
     status = probe.get("status")
+    if status == "no_driver_library" and facts.get("driver_library") == WINDOWS_DRIVER:
+        return (f"{WINDOWS_DRIVER} is in System32 but does not load "
+                f"({probe.get('error', '')}): {DRIVER_HINT}")  # fmt: skip
     if status == "no_driver_library":
         return ("the NVIDIA device is visible but the driver library libcuda.so.1 is not: the "
                 f"NVIDIA Container Toolkit did not mount it; {TOOLKIT_HINT}, not --device "
@@ -175,7 +199,7 @@ def split_devices(
 
 def discover(root: Path, runner: Runner) -> dict[str, Any]:
     """Access facts, driver and build versions, and the usable CUDA devices of this host."""
-    facts = access_facts()
+    facts = host_access()
     probe = probe_devices(runner)
     targets = load_targets(root / "image" / "cuda-targets.json")
     facts["cuda_driver"] = {k: v for k, v in probe.items() if k != "devices"}

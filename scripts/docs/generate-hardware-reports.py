@@ -42,6 +42,7 @@ PACKAGES = {
     "cuda": ("NVIDIA GPU image", "d-nvidia-gpu-image-linux-or-windows-with-wsl2"),
     "hip": ("AMD GPU image", "e-amd-gpu-image-linux"),
     "windows": ("Windows zip", "f-native-windows-zip-x64-or-arm64"),
+    "windows-cuda": ("Windows CUDA zip", "with-an-nvidia-gpu-the-cuda-zip"),
 }
 GPU_BACKENDS = ("cuda", "hip", "sycl")
 
@@ -115,9 +116,12 @@ def _host_matches(match: dict[str, Any], report: dict[str, Any]) -> bool:
 
 
 def _gpu_verdicts(match: dict[str, Any], report: dict[str, Any]) -> list[str]:
-    """One verdict per device of the report that belongs to the row's GPU families."""
+    """One verdict per device of the report that belongs to the row's GPU families (and,
+    when the row names one, ran on its platform)."""
     gpu = report.get("gpu") or {}
     if gpu.get("backend") != match["gpu_backend"]:
+        return []
+    if "platform" in match and report["host"]["platform"] != match["platform"]:
         return []
     found = []
     for device in gpu.get("devices", []):
@@ -184,10 +188,12 @@ def needs_problems(needs: dict[str, Any]) -> list[str]:
     for backend in GPU_BACKENDS:
         wanted = json.loads((IMAGE_DIR / f"{backend}-rows.json").read_text(encoding="utf-8"))
         mapped = {f for row in wanted["rows"] for f in row.get("families", [])}
+        # A row bound to one platform (the Windows CUDA zip's) covers no family: every
+        # family still needs its own row.
         listed = {
             f
             for row in needs["rows"]
-            if row["match"].get("gpu_backend") == backend
+            if row["match"].get("gpu_backend") == backend and "platform" not in row["match"]
             for f in row["match"]["gpu_families"]
         }
         problems += [

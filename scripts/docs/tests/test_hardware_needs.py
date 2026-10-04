@@ -64,6 +64,16 @@ class StatusTests(unittest.TestCase):
         arm = [host(platform="windows", machine="aarch64", dispatch_flags=["neon"])]
         self.assertIn("1 reported", GEN._status(row("Windows on Arm"), arm))
 
+    def test_a_windows_cuda_report_counts_for_the_windows_gpu_row(self) -> None:
+        windows = gpu_report("ampere")
+        windows["host"] = {**windows["host"], "platform": "windows"}
+        self.assertIn("1 reported", GEN._status(row("NVIDIA GPU under native Windows"), [windows]))
+        self.assertIn("1 reported", GEN._status(row("NVIDIA Ampere"), [windows]))
+        linux = [gpu_report("ampere")]
+        self.assertEqual(
+            GEN._status(row("NVIDIA GPU under native Windows"), linux), "no report yet"
+        )
+
     def test_gpu_report_counts_for_its_family_and_a_fail_wins(self) -> None:
         reports = [gpu_report("hopper"), gpu_report("hopper", rows="fail")]
         self.assertIn("2 reported, worst fail", GEN._status(row("Hopper"), reports))

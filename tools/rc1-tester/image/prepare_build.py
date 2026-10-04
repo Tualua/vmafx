@@ -100,6 +100,8 @@ def classify(test: dict, build_dir: Path) -> tuple[str, str]:
         return "left_out", "Python test of the source tree; device-free, runs in CI"
     if command.is_relative_to(build_dir):
         return "exe", ""
+    if command.suffix == ".sh" and platform.system() == "Windows":
+        return "left_out", "shell test; the Windows zip carries no sh"
     if command.suffix == ".sh":
         return "script", ""
     return "left_out", f"runs {command.name}, which the image does not carry"
