@@ -7,6 +7,17 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Python lock declarations and the cosign verifier contract (2026-10-04)
+
+`fix/master-red-locks-cosign`. Three declarations and one test.
+
+- `ai/pyproject.toml` and `tools/rc1-tester/pyproject.toml` carry `jsonschema==4.26.0` in `dev`
+  (rc1-tester also pins `black==26.5.1`); their hash locks are regenerated with
+  `make python-locks-write`. A sync that regenerates other locks keeps this one's pins.
+- `test-publication-environment-binding.sh` lists four verifier targets for
+  `docker-publish-operator-node.yml` and requires one per `publish-*` job; a sync that adds a
+  published image adds its target to `VERIFY_TARGETS`.
+
 ## The registry validator has no fallback (2026-10-04)
 
 `fix/model-registry-validator-no-fallback`. One script and its tests.

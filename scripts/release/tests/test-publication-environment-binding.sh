@@ -48,6 +48,8 @@ VERIFY_TARGETS = {
         '${{ needs.publish-operator.outputs.digest }}"',
         '"${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@'
         '${{ needs.publish-server.outputs.digest }}"',
+        '"${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@'
+        '${{ needs.publish-controller.outputs.digest }}"',
         '"${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@'
         '${{ needs.publish-node.outputs.digest }}"',
     ),
@@ -320,15 +322,29 @@ def validate_docker_identities(relative_path: str, text: str) -> None:
             commands.append(command)
         index += 1
 
-    if len(commands) != 3:
+    expected_targets = VERIFY_TARGETS[Path(relative_path).name]
+    if len(commands) != len(expected_targets):
         raise AssertionError(
-            f"{relative_path}: expected 3 cosign verifiers, got {len(commands)}"
+            f"{relative_path}: expected {len(expected_targets)} cosign verifiers, "
+            f"got {len(commands)}"
+        )
+    # The count is derived from the workflow too: every publish-<image> job
+    # must have its digest verified, so a new image cannot ship unverified and
+    # the table above cannot drift from the jobs.
+    published = set(re.findall(r"(?m)^  (publish-[a-z0-9-]+):$", text))
+    verified = {
+        match
+        for command in commands
+        for match in re.findall(r"needs\.(publish-[a-z0-9-]+)\.outputs\.digest", " ".join(command))
+    }
+    if Path(relative_path).name == "docker-publish-operator-node.yml" and published != verified:
+        raise AssertionError(
+            f"{relative_path}: publish jobs {sorted(published - verified)} have no cosign verifier"
         )
     expected_issuer = (
         "--certificate-oidc-issuer "
         "https://token.actions.githubusercontent.com \\"
     )
-    expected_targets = VERIFY_TARGETS[Path(relative_path).name]
     for verifier_index, (command, expected_target) in enumerate(
         zip(commands, expected_targets, strict=True), start=1
     ):
