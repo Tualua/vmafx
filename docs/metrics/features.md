@@ -245,7 +245,7 @@ named features:
 | Env var | Strategy values | Effect |
 | --- | --- | --- |
 | `VMAF_SYCL_DISPATCH` | `graph` / `direct` | Per-feature SYCL graph-replay override. |
-| `VMAF_CUDA_DISPATCH` | `graph` / `direct` | Per-feature CUDA graph-capture override. Today the CUDA stub returns DIRECT for every input; the override ships now so future graph-capture work does not change the user contract. |
+| `VMAF_CUDA_DISPATCH` | `graph` / `direct` | Per-extractor CUDA graph-capture override, keyed by the CUDA extractor name (`vif_cuda:graph`) and read when the extractor initialises. Graph capture is not implemented: `graph` logs a warning and runs direct ([env-var reference](../usage/env-vars.md#cuda-dispatch)). |
 
 Examples:
 

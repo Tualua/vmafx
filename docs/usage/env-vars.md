@@ -33,11 +33,10 @@ precedence.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAF_CUDA_DISPATCH` | string | `direct` | CUDA dispatch strategy: `direct` or `graph`, per feature. `graph` is accepted but not implemented; it logs a warning and runs `direct`. See [CUDA dispatch](#cuda-dispatch). |
+| `VMAF_CUDA_DISPATCH` | string | `direct` | CUDA dispatch strategy: `direct` or `graph`, per CUDA extractor. `graph` is accepted but not implemented; it logs a warning and runs `direct`. See [CUDA dispatch](#cuda-dispatch). |
 | `VMAF_SYCL_DISPATCH` | string | _(auto)_ | SYCL dispatch strategy: `direct` or `graph`, per feature. See [SYCL dispatch](#sycl-dispatch). |
 | `VMAF_SYCL_USE_GRAPH` | string | _(auto)_ | A value starting with `1` forces graph replay globally. Any other value is ignored; it does not force direct dispatch. |
 | `VMAF_SYCL_NO_GRAPH` | string | _(unset)_ | **Deprecated.** `1` forces direct dispatch. Prints a deprecation warning when set; removal is scheduled for v4.0. `VMAF_SYCL_USE_GRAPH=1` takes precedence. |
-| `VMAF_HIP_DISPATCH` | string | _(HIP dispatch on)_ | Per-feature switch for the HIP backend: `direct` keeps HIP dispatch, `none` or `disable` turns it off for that feature. See [HIP dispatch](#hip-dispatch). |
 
 ### SYCL diagnostics and tuning
 
@@ -52,7 +51,7 @@ precedence.
 
 ## Dispatch strategy syntax
 
-The three `*_DISPATCH` variables share one grammar
+The two `*_DISPATCH` variables share one grammar
 ([ADR-0483](../adr/0483-gpu-dispatch-parse-dedup.md)): a comma-separated list
 of `feature:strategy` tokens, matched case-sensitively. A bare strategy name
 such as `VMAF_CUDA_DISPATCH=graph` matches no feature and has no effect. The
@@ -61,13 +60,17 @@ skipped.
 
 ### CUDA dispatch
 
+libvmaf reads `VMAF_CUDA_DISPATCH` when a CUDA extractor initialises, and the
+feature name of a token is the extractor's registered name (`vif_cuda`,
+`float_ssim_cuda`, ...).
+
 | Value | Behaviour |
 |---|---|
-| `direct` | Submit directly. **Default** for every feature. |
+| `direct` | Submit directly. **Default** for every extractor. |
 | `graph` | Accepted but not implemented: logs `CUDA graph dispatch requested ... not implemented; falling back to direct` and runs `direct`. |
 
 ```bash
-VMAF_CUDA_DISPATCH=integer_vif:direct,float_ssim:direct ./build/tools/vmaf ...
+VMAF_CUDA_DISPATCH=vif_cuda:graph,float_ssim_cuda:direct ./build/tools/vmaf --backend cuda ...
 ```
 
 ### SYCL dispatch
@@ -101,13 +104,10 @@ deprecated `VMAF_SYCL_NO_GRAPH=1`.
 
 ### HIP dispatch
 
-`VMAF_HIP_DISPATCH` accepts `direct`, `none` and `disable` as strategies. A
-`none` or `disable` token turns HIP dispatch off for that feature, which then
-runs on another path:
-
-```bash
-VMAF_HIP_DISPATCH=float_ssim:disable ./build/tools/vmaf ...
-```
+The HIP backend has one submission path and reads no dispatch variable.
+`VMAF_HIP_DISPATCH`, listed here before, was read by a function nothing
+called and has been removed
+([ADR-1571](../adr/1571-gpu-dispatch-env-consulted.md)).
 
 ## Python harness (`compat/python-vmaf`)
 

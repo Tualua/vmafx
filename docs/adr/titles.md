@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1245), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1246), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4987,6 +4987,10 @@ Every ADR, one heading each (1245), so the site search finds an ADR by its title
 ## ADR-1570: Tiny models trained on restricted data stay, their cards quote the data's terms, and RC9 retrains them on cleared data
 
 [1570-tiny-model-dataset-terms-retrain-rc9](1570-tiny-model-dataset-terms-retrain-rc9.md)
+
+## ADR-1571: a GPU dispatch variable is documented only when library code reads it; `VMAF_CUDA_DISPATCH` is read at extractor init, `VMAF_HIP_DISPATCH` and its predicate are removed
+
+[1571-gpu-dispatch-env-consulted](1571-gpu-dispatch-env-consulted.md)
 
 ## ADR-1590: Every build stores its GPU device code compressed at the toolchain's strongest setting, and the build refuses raw device code
 

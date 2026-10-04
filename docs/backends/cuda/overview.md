@@ -180,18 +180,18 @@ FFmpeg with `--enable-libvmaf-cuda` to enable it.
 
 ### Dispatch knob (`VMAF_CUDA_DISPATCH`)
 
-`VMAF_CUDA_DISPATCH` selects how CUDA feature extractors submit work. Two
-strategy names are accepted:
+`VMAF_CUDA_DISPATCH` selects how a CUDA extractor submits work. libvmaf reads
+it when the extractor initialises; each token is `extractor:strategy`, where
+`extractor` is the CUDA extractor's registered name (`vif_cuda`,
+`float_ssim_cuda`, ...). Two strategy names are accepted:
 
 | Value | Behaviour |
 |---|---|
-| `direct` | Per-extractor submit and collect. **Default** for every feature. |
-| `graph` | CUDA graph capture (`cuGraphCreate`, `cuGraphLaunch`). Not implemented: libvmaf logs a warning and falls back to `direct`. |
-
-Per-feature overrides use the `feature=strategy[,...]` syntax:
+| `direct` | Per-extractor submit and collect. **Default** for every extractor. |
+| `graph` | CUDA graph capture. Not implemented: libvmaf logs `CUDA graph dispatch requested for '<extractor>' but graph capture is not implemented; falling back to direct` and runs `direct`. |
 
 ```bash
-VMAF_CUDA_DISPATCH=direct,integer_vif=graph ./build/tools/vmaf ...
+VMAF_CUDA_DISPATCH=vif_cuda:graph ./build/tools/vmaf --backend cuda ...
 ```
 
 See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) for the parse
@@ -285,7 +285,7 @@ Open items only. Closed gaps are in the [twin notes](twin-notes.md#history).
 
 | Gap | Status | Detail |
 |-----|--------|--------|
-| CUDA graph capture dispatch | open | `VMAF_CUDA_DISPATCH=graph` (or `feature=graph`) logs `libvmaf: CUDA graph dispatch requested for '<feature>' but graph capture is not implemented; falling back to direct` and runs `direct`. Graph capture needs static pitch allocation and graph instance lifecycle management across frames (deferred; `docs/state.md`). |
+| CUDA graph capture dispatch | open | `VMAF_CUDA_DISPATCH=<extractor>:graph` logs `libvmaf: CUDA graph dispatch requested for '<extractor>' but graph capture is not implemented; falling back to direct` and runs `direct`. Graph capture needs static pitch allocation and graph instance lifecycle management across frames (deferred; `docs/state.md`). |
 | Zero-copy picture import | open | `core/src/cuda/picture_cuda.c` stages pictures through pinned host memory (`cuMemcpyHtoDAsync` / `cuMemcpyDtoHAsync`). Linux `dmabuf` / external-memory import (`cuImportExternalMemory`, `cuExternalMemoryGetMappedBuffer`) is not implemented, unlike the SYCL backend (`dmabuf_import.cpp`). The CUDA driver API import needs Vulkan or EGL external handle negotiation (deferred; `docs/state.md`). |
 | `float_motion` extra options | open | `motion_add_scale1`, `motion_add_uv` and `motion_filter_size` keep `float_motion` on the CPU. `motion_add_uv=true` is not wired through to the CUDA backend; the `picture_copy()` call in `integer_ms_ssim_cuda.c` passes `0` for the `channel` argument (Y plane only). UV-plane motion on GPU is tracked in [docs/state.md](../../state.md). |
 | `psnr_hvs_cuda` throughput | open (tuning) | Bit-exactness costs a 256-byte readback per block and a sequential host sum: 12.2 ms per 3840x2160 frame on an RTX 4090 instead of 2.4 ms. Details on [the psnr_hvs page](../../metrics/psnr-hvs.md#gpu-twins). |

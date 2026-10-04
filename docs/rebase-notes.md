@@ -23,6 +23,21 @@ search:
 - `ai/pyproject.toml` keeps only `configs` in `force-include`;
   `dev-llm/pyproject.toml` has none. A sync that brings an in-package
   `force-include` back fails `test_no_wheel_force_includes_a_file_its_packages_already_ship`.
+## GPU dispatch variables: CUDA read at init, HIP removed (ADR-1571, 2026-10-04)
+
+`fix/hip-dispatch-env`. CUDA, HIP, docs.
+
+- `core/src/hip/dispatch_strategy.{c,h}` (`vmaf_hip_dispatch_supports()`,
+  `VMAF_HIP_DISPATCH`, the `g_hip_features[]` table) and
+  `core/src/hip/AGENTS.d/dispatch-allowlist.md` are deleted; a sync must not
+  restore them. HIP twin selection stays on `VMAF_FEATURE_EXTRACTOR_HIP`.
+- `feature_extractor.cpp::consult_cuda_dispatch()` calls
+  `vmaf_cuda_select_strategy()` for each CUDA extractor before `init()` and
+  fails with `-ENOSYS` on a strategy other than direct. Keep the call when
+  `vmaf_feature_extractor_context_init()` changes.
+- `test_gpu_dispatch_env_contract.py` ties `docs/usage/env-vars.md`'s
+  `VMAF_*_DISPATCH` rows to readers with a caller in `core/src`. No score,
+  public C API or FFmpeg patch impact.
 
 ## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
 

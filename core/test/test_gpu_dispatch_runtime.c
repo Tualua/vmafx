@@ -5,15 +5,15 @@
  *  GPU dispatch-runtime coverage test (host-only).
  *
  *  Targets the *shared* GPU-runtime surface used by every backend's
- *  dispatch_strategy module (CUDA, SYCL, HIP, Metal). Coverage gap
- *  identified by the runtime-files audit (2026-05-31): the three
+ *  dispatch_strategy module (CUDA, SYCL). Coverage gap
+ *  identified by the runtime-files audit (2026-05-31): the
  *  per-backend dispatch_strategy TUs and the shared
  *  `gpu_dispatch_env` / `gpu_dispatch_parse` helpers had no direct
  *  unit coverage prior to this file — only an integration-level
  *  exercise via the per-feature smoke tests.
  *
  *  Host-only by design: every assertion runs without a GPU driver,
- *  without a CUDA/HIP/SYCL SDK, and without any libvmaf state. The
+ *  without a CUDA/SYCL SDK, and without any libvmaf state. The
  *  per-backend dispatch_strategy TUs are linked directly into this
  *  executable so the test exercises the *real* shipped logic rather
  *  than a re-implementation. See CLAUDE.md §15 — falls back to the
@@ -57,7 +57,6 @@ static int test_unsetenv(const char *name)
  * translation unit where NULL is the canonical null pointer constant. ADR-1138. */
 
 #include "cuda/dispatch_strategy.h"
-#include "hip/dispatch_strategy.h"
 #include "sycl/dispatch_strategy.h"
 
 /* ---- gpu_dispatch_parse.h — header-only static-inline parser ---- */
@@ -268,27 +267,6 @@ static char *test_sycl_dispatch_env_overrides(void)
     return NULL;
 }
 
-/* ---- hip/dispatch_strategy.c — stub selector ---- */
-/*
- * The HIP dispatch_strategy stub returns 0 unconditionally pending
- * the kernel-routing table (ADR-0212 §"What lands next"). This pin
- * makes any future "accidentally support a feature before the
- * routing table lands" regression caught at test time, not at the
- * vmaf --backend hip CLI exit path. Mirrors core/test/
- * test_metal_smoke.c's vmaf_metal_dispatch_supports pin.
- */
-
-static char *test_hip_dispatch_supports_null_and_unknown(void)
-{
-    /* NULL ctx + NULL feature + unknown feature all return 0
-     * (unsupported). The stub never crashes regardless of input. */
-    mu_assert("NULL ctx + NULL feature → 0", vmaf_hip_dispatch_supports(NULL, NULL) == 0);
-    mu_assert("NULL ctx + named feature → 0", vmaf_hip_dispatch_supports(NULL, "psnr_hip") == 0);
-    mu_assert("NULL ctx + unknown feature → 0",
-              vmaf_hip_dispatch_supports(NULL, "definitely_not_hip") == 0);
-    return NULL;
-}
-
 /* Function-pointer table keeps run_tests below the
  * readability-function-size budget (mirrors the test_hip_smoke.c
  * pattern for the same reason). */
@@ -310,8 +288,6 @@ static const test_fn test_table[] = {
     test_cuda_dispatch_null_feature_defaults_direct,
     /* sycl/dispatch_strategy.cpp */
     test_sycl_dispatch_env_overrides,
-    /* hip/dispatch_strategy.c */
-    test_hip_dispatch_supports_null_and_unknown,
 };
 
 static const size_t test_table_len = sizeof(test_table) / sizeof(test_table[0]);

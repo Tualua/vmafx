@@ -43,6 +43,15 @@ cuda/
 
 ## Rebase-sensitive invariants
 
+- **`VMAF_CUDA_DISPATCH` is consulted at extractor init (ADR-1571).**
+  `feature_extractor.cpp::consult_cuda_dispatch()` calls
+  `vmaf_cuda_select_strategy(fex->name, &fex->chars, w, h)` for every
+  CUDA-flagged extractor before `init()`; key = registered extractor name
+  (`vif_cuda:graph`). Non-`DIRECT` result -> init fails `-ENOSYS` (no silent
+  fallback). Keep the call when touching `dispatch_strategy.c` or the init
+  path; `test_gpu_dispatch_env_contract.py` fails when the selector loses its
+  caller. HIP has no dispatch variable (`hip/dispatch_strategy.c` deleted).
+
 - **Every CUDA picture records state that allocated it.**
   `vmaf_cuda_picture_alloc_pinned()` (`picture_cuda.c`) sets
   `priv->cuda.state = cuda_state` next to `priv->cuda.ctx`, like device

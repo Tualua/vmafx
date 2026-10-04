@@ -1083,6 +1083,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   longer pass the name check.
 
 
+- **`VMAF_CUDA_DISPATCH` is read, `VMAF_HIP_DISPATCH` is gone
+  ([ADR-1571](docs/adr/1571-gpu-dispatch-env-consulted.md)).** Neither
+  variable did anything: the functions that read them were never called.
+  libvmaf now reads `VMAF_CUDA_DISPATCH` when a CUDA extractor initialises,
+  keyed by the extractor's registered name (`VMAF_CUDA_DISPATCH=vif_cuda:graph`
+  logs that graph capture is not implemented and runs direct).
+  `VMAF_HIP_DISPATCH`, a per-feature HIP switch no other backend has, and the
+  unused `vmaf_hip_dispatch_supports()` are removed with their docs; HIP
+  routing is unchanged, and setting the variable still has no effect.
+
+
 - **The CUDA, SYCL and HIP motion twins compute `motion_five_frame_window`.**
   `motion_cuda`, `motion_sycl`, `motion_hip` and the three `motion_v2` twins
   keep the frame two back on the device and derive `motion2` / `motion3` with

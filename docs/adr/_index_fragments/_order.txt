@@ -1244,3 +1244,4 @@
 1561-integer-vif-sv-sq-defined
 1567-job-cancel-reaches-node
 1566-windows-sycl-tester-zip
+1571-gpu-dispatch-env-consulted

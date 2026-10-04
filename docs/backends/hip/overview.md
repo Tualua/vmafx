@@ -152,16 +152,11 @@ FFmpeg selects the device with the `hip_device=N` filter option (patch
 `0011-libvmaf-wire-hip-backend-selector.patch` in `ffmpeg-patches/`,
 [ADR-0380](../../adr/0380-ffmpeg-patches-hip-backend-selector.md)).
 
-### Environment variables
-
-`VMAF_HIP_DISPATCH` disables or forces individual HIP kernels at run time.
-Each entry is `feature:strategy`; the strategies are `direct`, `none` and
-`disable`. `vmaf_hip_dispatch_supports(ctx, feature)` probes the result.
-
-```bash
-# Force the CPU extractors for float_ssim and ciede
-export VMAF_HIP_DISPATCH="float_ssim:disable,ciede:none"
-```
+The HIP backend reads no dispatch environment variable: every HIP twin
+submits directly, and `--backend hip` picks a twin by its registration flag.
+`VMAF_HIP_DISPATCH`, which earlier pages listed, was read by a function
+nothing called and has been removed
+([ADR-1571](../../adr/1571-gpu-dispatch-env-consulted.md)).
 
 ## Registered extractors
 

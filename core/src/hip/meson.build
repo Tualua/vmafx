@@ -68,7 +68,9 @@ hip_sources += files(
     'picture_hip.c',
     # ADR-1408: the frame planes a state uploads once and every twin reads.
     'shared_frame.c',
-    'dispatch_strategy.c',
+    # dispatch_strategy.c (vmaf_hip_dispatch_supports, VMAF_HIP_DISPATCH) was
+    # deleted by ADR-1571: no production caller; --backend hip routes through
+    # the VMAF_FEATURE_EXTRACTOR_HIP flag.
     'kernel_template.c',
     # adm_hip.c, vif_hip.c, motion_hip.c were deleted by ADR-0546:
     # they defined only vmaf_hip_{adm,vif,motion}_{init,run,destroy} stubs

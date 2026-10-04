@@ -473,6 +473,7 @@
         "core/include/libvmaf/libvmaf_sycl.h": 1,
         "core/src/cuda/common.h": 1,
         "core/src/cuda/cuda_helper.cuh": 1,
+        "core/src/cuda/dispatch_strategy.h": 1,
         "core/src/dnn/model_loader.c": 1,
         "core/src/dnn/tiny_extractor_template.h": 1,
         "core/src/feature/adm_tools.c": 1,
@@ -1196,14 +1197,12 @@
         "core/meson_options.txt": 1,
         "core/src/hip/common.c": 1,
         "core/src/hip/common.h": 1,
-        "core/src/hip/dispatch_strategy.c": 1,
         "core/src/hip/kernel_template.c": 1,
         "core/src/hip/kernel_template.h": 1,
         "core/src/hip/picture_hip.c": 1,
         "core/src/meson.build": 1,
         "core/src/metal/common.h": 1,
         "core/test/meson.build": 1,
-        "core/test/test_gpu_dispatch_runtime.c": 1,
         "core/test/test_hip_smoke.c": 4
       },
       "target": "0212-hip-backend-scaffold.md"
@@ -3544,7 +3543,6 @@
         "core/include/libvmaf/libvmaf_hip.h": 1,
         "core/src/feature/feature_extractor.cpp": 2,
         "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-        "core/src/hip/dispatch_strategy.h": 1,
         "core/src/hip/meson.build": 1,
         "core/src/meson.build": 1,
         "core/test/test_hip_smoke.c": 2
@@ -6221,7 +6219,6 @@
         "core/src/feature/y_funque_plus.c": 1,
         "core/src/gpu_dispatch_parse.h": 1,
         "core/src/hip/common.c": 1,
-        "core/src/hip/dispatch_strategy.c": 1,
         "core/src/hip/kernel_template.c": 1,
         "core/src/hip/picture_hip.c": 2,
         "core/src/hip/shared_frame.c": 1,
@@ -10162,7 +10159,6 @@
         "core/src/feature/hip/integer_adm/adm_cm.hip": 3,
         "core/src/feature/hip/integer_adm_hip.c": 8,
         "core/src/feature/hip/integer_adm_hip.h": 2,
-        "core/src/hip/dispatch_strategy.c": 1,
         "core/test/test_adm_small_border.c": 1,
         "core/test/test_adm_wide_rounding.c": 1,
         "core/test/test_gpu_adm_tiny_frames.c": 2,
@@ -10314,6 +10310,16 @@
         "scripts/ci/tests/test_model_card_dataset_terms.py": 1
       },
       "target": "1570-tiny-model-dataset-terms-retrain-rc9.md"
+    },
+    "1571": {
+      "sites": {
+        "core/src/cuda/dispatch_strategy.h": 1,
+        "core/src/feature/feature_extractor.cpp": 1,
+        "core/src/hip/meson.build": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_gpu_dispatch_env_contract.py": 1
+      },
+      "target": "1571-gpu-dispatch-env-consulted.md"
     },
     "1590": {
       "sites": {

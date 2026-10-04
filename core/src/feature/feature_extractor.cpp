@@ -34,6 +34,10 @@
 #include <nvtx3/nvToolsExt.h>
 #endif
 
+#ifdef HAVE_CUDA
+#include "cuda/dispatch_strategy.h"
+#endif
+
 /* All vmaf_fex_* symbols are defined in C-compiled TUs (.c files).
  * Wrap every extern declaration in extern "C" so MSVC (and strictly-
  * conforming C++ compilers) emit unmangled C linkage names rather than
@@ -833,6 +837,31 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     return 0;
 }
 
+namespace
+{
+
+/* VMAF_CUDA_DISPATCH (ADR-1571): every CUDA extractor submits directly, and
+ * the selector reads the variable as the extractor initialises, so a
+ * `<extractor>:graph` request is reported rather than ignored. A strategy the
+ * CUDA backend cannot run fails the initialisation instead of falling back. */
+int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned h)
+{
+#ifdef HAVE_CUDA
+    if (!(fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA))
+        return 0;
+    const VmafCudaDispatchStrategy strategy =
+        vmaf_cuda_select_strategy(fex->name, &fex->chars, w, h);
+    return strategy == VMAF_CUDA_DISPATCH_DIRECT ? 0 : -ENOSYS;
+#else
+    (void)fex;
+    (void)w;
+    (void)h;
+    return 0;
+#endif
+}
+
+} // namespace
+
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
                                         enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                                         unsigned h)
@@ -845,6 +874,10 @@ int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
         return -EBUSY;
     if (!pix_fmt)
         return -EINVAL;
+    /* Before the close obligation below: nothing of the extractor runs yet. */
+    const int dispatch_err = consult_cuda_dispatch(fex_ctx->fex, w, h);
+    if (dispatch_err)
+        return dispatch_err;
 
     /* ADR-1336: CUDA init callbacks may publish several device owners before a later
      * allocation fails. Publish their close obligation before entering feature

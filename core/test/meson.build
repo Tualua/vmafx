@@ -4876,9 +4876,9 @@ endif
 # GPU dispatch-runtime coverage (host-only). Targets the shared
 # `gpu_dispatch_env.cpp` + `gpu_dispatch_parse.h` helpers and the
 # host-buildable subset of the per-backend dispatch_strategy TUs
-# (CUDA + HIP — both compile without their respective SDKs because
-# they only depend on stdlib + pthread + opaque forward-declared
-# context types). No GPU driver required at runtime — purely
+# (CUDA and SYCL compile without their SDKs because they only depend
+# on stdlib + pthread + opaque forward-declared context types; the HIP
+# TU was deleted by ADR-1571). No GPU driver required at runtime — purely
 # exercises pure-function dispatch logic.
 #
 # Coverage gap discovered by the 2026-05-31 runtime-files audit:
@@ -4887,7 +4887,6 @@ endif
 test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     ['test.c', 'test_gpu_dispatch_runtime.c',
      '../src/cuda/dispatch_strategy.c',
-     '../src/hip/dispatch_strategy.c',
      '../src/sycl/dispatch_strategy.cpp'],
     include_directories : [libvmaf_inc, test_inc,
                            include_directories('../src/'),
@@ -4900,6 +4899,15 @@ test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
                log_cpp23_test_objects],
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
+
+# ADR-1571: every documented VMAF_*_DISPATCH variable is read by a function
+# that library code calls, and every one the library reads is documented.
+test('test_gpu_dispatch_env_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_dispatch_env_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # R2-9 regression: a transient allocation failure while snapshotting a *set*
 # GPU-dispatch env variable must not permanently cache the slot as "unset".

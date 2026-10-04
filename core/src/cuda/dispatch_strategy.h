@@ -18,6 +18,9 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C
+ * and C++ translation units (feature_extractor.cpp, ADR-1571); C cannot spell
+ * `using` or fixed underlying enum types across required toolchains. ADR-0141. */
 typedef enum {
     /// Direct stream submission per kernel — current default for
     /// every CUDA extractor.
@@ -26,6 +29,7 @@ typedef enum {
     /// graph instance every frame. Future opt-in for ADM.
     VMAF_CUDA_DISPATCH_GRAPH_CAPTURE,
 } VmafCudaDispatchStrategy;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /**
  * Returns the CUDA dispatch strategy for the given feature.

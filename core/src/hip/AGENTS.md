@@ -161,7 +161,6 @@ builds host side without device kernels. Kernel-enabled builds
 | --- | --- | --- |
 | `common.c`, `kernel_template.c` | [backend-status](AGENTS.d/backend-status.md) | HIP backend landed across phased milestones with audit-first scaffold and real module API consumers. |
 | `/core/src/feature/hip/ciede_hip.c`, `/core/src/feature/hip/ciede_hip.h` | [ciede](AGENTS.d/ciede.md) | ciede_hip mirrors CUDA twin call-graph and intentionally bypasses vmaf_hip_kernel_submit_pre_launch. |
-| `dispatch_strategy.c`, `dispatch_strategy.h` | [dispatch-allowlist](AGENTS.d/dispatch-allowlist.md) | HIP dispatch allowlist uses exact public names and fail-closed override semantics under HAVE_HIPCC. |
 | `/core/src/libvmaf.c`, `/core/src/feature/feature_extractor.cpp` | [extractor-flag-promotion](AGENTS.d/extractor-flag-promotion.md) | Extractor flag-promotion is per-extractor and gated on verified end-to-end CLI reproducer within places=4. |
 | `picture_hip.c`, `shared_frame.c`, `shared_frame.h` | [host-picture-staging](AGENTS.d/host-picture-staging.md) | HIP is host-pic so kernels must stage device copies via shared frame and tightly packed row stride. |
 | `/core/src/meson.build`, `meson.build` | [hsaco-header-dependencies](AGENTS.d/hsaco-header-dependencies.md) | All HIP HSACO custom targets bind depend_files and compiler depfiles covering include closures. |
