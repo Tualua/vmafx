@@ -115,6 +115,11 @@ The two failures: `test_icx_system_libm` runs `vmaf --version` under
 stops with "Relink libimf.so with libm.so.6 for IFUNC symbol cosf" and
 SIGSEGV. Neither `libvmaf.so` nor `vmaf` needs `libimf`. `test_sycl_ordered_sum`'s
 device walk returns a wrong sum on this A380 setup.
+Master later made `test_icx_system_libm` trace the loader without running
+the program (`T-ICX-LIBM-TEST-BIND-NOW-CRASH-2026-10-04`); the runtime crash
+under `LD_BIND_NOW=1` is Intel's and stays open
+(`T-SYCL-LD-BIND-NOW-LIBIMF-IFUNC-2026-10-03`). `test_sycl_ordered_sum` is fixed
+on `fix/sycl-zerocopy-features`.
 
 The numerical reasons of the first measurement are gone on this base; the
 speed difference is within noise on this short run.
