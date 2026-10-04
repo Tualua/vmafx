@@ -553,7 +553,7 @@ static char *test_sidecar_parses(void)
     (void)fprintf(s, "{\n"
                      "  \"name\": \"vmaf_tiny_fr_v1\",\n"
                      "  \"kind\": \"fr\",\n"
-                     "  \"onnx_opset\": 17,\n"
+                     "  \"opset\": 17,\n"
                      "  \"input_name\":  \"features\",\n"
                      "  \"output_name\": \"score\",\n"
                      "  \"output_names\": [\"score\", \"uncertainty\"]\n"
@@ -832,10 +832,10 @@ static char *test_sidecar_malformed_keys_default(void)
     mu_assert("fopen sidecar failed", s != NULL);
     /* "kind" present but not a string (number) → extract_string returns
      * NULL via "no opening quote" branch. "name" missing entirely →
-     * extract_string returns NULL via strstr-miss branch. "onnx_opset"
+     * extract_string returns NULL via strstr-miss branch. "opset"
      * present but not a number → extract_int returns -EINVAL via the
      * endp == p branch. */
-    (void)fprintf(s, "{\"kind\": 42, \"onnx_opset\": \"abc\"}\n");
+    (void)fprintf(s, "{\"kind\": 42, \"opset\": \"abc\"}\n");
     (void)fclose(s);
 
     VmafModelSidecar meta;
@@ -1684,7 +1684,7 @@ static char *test_sidecar_array_non_string_element_wipes(void)
 }
 
 /* extract_int -ERANGE branch (model_loader.c:332-333): a numeric
- * onnx_opset value that overflows int triggers the strtol ERANGE /
+ * opset value that overflows int triggers the strtol ERANGE /
  * INT_MAX guard. */
 static char *test_sidecar_opset_overflow_returns_default(void)
 {
@@ -1703,7 +1703,7 @@ static char *test_sidecar_opset_overflow_returns_default(void)
 
     FILE *s = fopen_w_600(sidecar);
     mu_assert("fopen sidecar failed", s != NULL);
-    (void)fputs("{\"kind\": \"fr\", \"onnx_opset\": 99999999999999999999999}\n", s);
+    (void)fputs("{\"kind\": \"fr\", \"opset\": 99999999999999999999999}\n", s);
     (void)fclose(s);
 
     VmafModelSidecar meta;

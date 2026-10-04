@@ -85,7 +85,7 @@ def write_sidecar(path: Path) -> None:
             "libvmaf extractor and ORT load path. Real Ding et al. DISTS "
             "weights are tracked as T7-DISTS-followup."
         ),
-        "onnx_opset": OPSET,
+        "opset": OPSET,
         "output_name": "score",
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

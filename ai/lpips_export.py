@@ -198,7 +198,7 @@ def _write_sidecar(
             "scalar LPIPS distance (lower = more similar). Two-input model — use "
             "vmaf_dnn_session_run() with named bindings 'ref' and 'dist'."
         ),
-        "onnx_opset": opset,
+        "opset": opset,
         "output_name": "score",
     }
     if run_provenance is not None:

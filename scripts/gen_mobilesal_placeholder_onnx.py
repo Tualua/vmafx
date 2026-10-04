@@ -114,7 +114,7 @@ def write_sidecar(path: Path) -> None:
             "CC BY-NC-SA 4.0) + ADR-0265 (U-2-Net u2netp distribution + "
             "Resize op blockers). See docs/ai/models/mobilesal.md."
         ),
-        "onnx_opset": OPSET,
+        "opset": OPSET,
         "output_name": OUTPUT_NAME,
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

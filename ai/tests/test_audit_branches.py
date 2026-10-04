@@ -27,7 +27,7 @@ def _write_sidecar(onnx_path: Path, **over) -> None:
         "schema_version": 1,
         "name": onnx_path.stem,
         "kind": "fr",
-        "onnx_opset": 17,
+        "opset": 17,
         "input_names": ["features"],
         "output_names": ["score"],
         "normalization": {},

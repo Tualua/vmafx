@@ -56,7 +56,7 @@ def test_main_accepts_documented_out_and_sidecar_flags(
     payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
     assert rc == 0
     assert onnx_path.read_bytes() == b"fake-onnx"
-    assert payload["onnx_opset"] == 17
+    assert payload["opset"] == 17
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
     assert payload["run_provenance"]["args"]["output"] == str(onnx_path)
     assert payload["run_provenance"]["args"]["sidecar"] == str(sidecar_path)

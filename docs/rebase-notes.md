@@ -60546,3 +60546,10 @@ upstream parity guard's allowlist.
   binaries append `controllerclient.CompoundKeys` to their config options. A
   sync that touches either binary's dial must keep going through the package;
   no score, public C API or FFmpeg patch impact.
+## Sidecar key `opset` (`fix/sidecar-opset-key`)
+
+- `core/src/dnn/model_loader.c` reads `opset` (not `onnx_opset`), as `registry.schema.json` and
+  `ai/scripts/validate_model_registry.py` do; `vmaf_train.registry.ModelMetadata` has the field
+  `opset`. A sync or a new sidecar writer must not bring `onnx_opset` back.
+  `ai/tests/test_sidecar_opset_key.py` and `test_model_loader` guard it. No score or FFmpeg
+  patch impact; `vmaf_model_meta.opset` is now filled for every sidecar that has the key.

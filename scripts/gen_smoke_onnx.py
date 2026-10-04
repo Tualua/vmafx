@@ -84,7 +84,7 @@ def write_sidecar(path: Path) -> None:
     payload = {
         "name": "vmaf_tiny_smoke_v0",
         "kind": "fr",
-        "onnx_opset": OPSET,
+        "opset": OPSET,
         "input_name": INPUT_NAME,
         "output_name": OUTPUT_NAME,
         "notes": "CI smoke fixture — not a quality model.",

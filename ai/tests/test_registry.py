@@ -42,7 +42,7 @@ def test_register_roundtrip(tmp_path: Path) -> None:
     assert meta.kind == "fr"
     assert meta.dataset == "synthetic"
     assert meta.train_commit == "deadbeef"
-    assert meta.onnx_opset >= 17
+    assert meta.opset >= 17
     assert "features" in meta.input_names
     assert meta.train_config_hash and len(meta.train_config_hash) == 64
 

@@ -3770,6 +3770,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `/experimental:c11atomics` compiler flags every MSVC build needs.
 
 
+- **Sidecars name the ONNX opset with one key, `opset`.** The C model loader read `onnx_opset`,
+  a key only seven sidecars carried, while the registry, its schema and its validator use `opset`;
+  `vmaf_model_meta.opset` stayed 0 for the rest. The loader, every shipped sidecar, the sidecar
+  writers and `vmaf_train.registry.ModelMetadata` (field `onnx_opset` is now `opset`) agree.
+  Migration: rename `onnx_opset` to `opset` in out-of-tree sidecars; the loader no longer reads
+  the old key, and `ModelMetadata` refuses a sidecar that has it.
+
+
 - **Eleven licence tags now say what the file's own notice says.** The SPDX
   backfill had given some files the identifier of their directory rather than
   of the notice in them. Files that carry only Daala's, Xiph.Org's, dav1d's,

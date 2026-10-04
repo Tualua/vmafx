@@ -7,7 +7,7 @@ Each `.onnx` under `model/tiny/` gets a `<name>.json` sidecar recording:
   * input_names, output_names
   * normalization (mean/std)
   * dataset, train_commit, train_config_hash
-  * onnx_opset
+  * opset
   * expected_output_range (for runtime sanity bounds)
   * license
   * cosign_signature (filled in by release workflow)
@@ -46,7 +46,7 @@ class ModelMetadata(BaseModel):
     schema_version: int
     name: str
     kind: str
-    onnx_opset: int
+    opset: int
     input_names: list[str]
     output_names: list[str]
     normalization: dict[str, list[float]] = Field(default_factory=dict)
@@ -118,7 +118,7 @@ def register(
         schema_version=SCHEMA_VERSION,
         name=onnx_path.stem,
         kind=kind,
-        onnx_opset=opset,
+        opset=opset,
         input_names=input_names,
         output_names=output_names,
         normalization=normalization or {},
@@ -142,18 +142,29 @@ def load(sidecar_path: Path) -> ModelMetadata:
 
 
 def _sanitize_nonfinite(obj: Any) -> Any:
-    """Recursively replace non-finite floats (NaN, Infinity) with None.
+    """Replace non-finite floats (NaN, Infinity) with None in a nested document.
 
     Standard JSON does not support NaN or Infinity; replacing with null
     keeps the document valid while preserving all other numeric fields.
+    Dicts and lists are copied, so the argument is not modified. The walk
+    keeps an explicit stack instead of recursing (HISS-01).
     """
-    if isinstance(obj, float) and not math.isfinite(obj):
-        return None
-    if isinstance(obj, dict):
-        return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_nonfinite(v) for v in obj]
-    return obj
+    holder: list[Any] = [obj]
+    stack: list[tuple[Any, Any]] = [(holder, 0)]
+    while stack:
+        parent, key = stack.pop()
+        value = parent[key]
+        if isinstance(value, float) and not math.isfinite(value):
+            parent[key] = None
+        elif isinstance(value, dict):
+            dict_copy = dict(value)
+            parent[key] = dict_copy
+            stack.extend((dict_copy, k) for k in dict_copy)
+        elif isinstance(value, list):
+            list_copy = list(value)
+            parent[key] = list_copy
+            stack.extend((list_copy, i) for i in range(len(list_copy)))
+    return holder[0]
 
 
 def dumps_registry_json(payload: dict, **kwargs: Any) -> str:

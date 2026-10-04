@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T15:20:38Z",
+  "generated_at": "2026-10-04T15:27:31Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "f13ec65e7ff627f4944c32573d3909eb19af2ea2",
-  "total_infractions": 397,
+  "commit_sha": "794d06134f382bcc52475aee51b0d5eac16e1f6e",
+  "total_infractions": 395,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -858,24 +858,6 @@
       "message": "Direct recursion in _collect_loop_violations; the call graph must form an acyclic DAG",
       "anchor": "fn:_collect_loop_violations",
       "fingerprint": "ai/src/vmaf_train/op_allowlist.py:HISS-01:fn:_collect_loop_violations#2"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "ai/src/vmaf_train/registry.py",
-      "line_number": 153,
-      "symbol": "_sanitize_nonfinite",
-      "message": "Direct recursion in _sanitize_nonfinite; the call graph must form an acyclic DAG",
-      "anchor": "fn:_sanitize_nonfinite",
-      "fingerprint": "ai/src/vmaf_train/registry.py:HISS-01:fn:_sanitize_nonfinite#1"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "ai/src/vmaf_train/registry.py",
-      "line_number": 155,
-      "symbol": "_sanitize_nonfinite",
-      "message": "Direct recursion in _sanitize_nonfinite; the call graph must form an acyclic DAG",
-      "anchor": "fn:_sanitize_nonfinite",
-      "fingerprint": "ai/src/vmaf_train/registry.py:HISS-01:fn:_sanitize_nonfinite#2"
     },
     {
       "rule_id": "HISS-04",

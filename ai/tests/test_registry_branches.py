@@ -145,7 +145,7 @@ def test_model_metadata_to_json_serialises_defaults() -> None:
         schema_version=SCHEMA_VERSION,
         name="m",
         kind="fr",
-        onnx_opset=17,
+        opset=17,
         input_names=["x"],
         output_names=["y"],
     )
@@ -164,7 +164,7 @@ def test_load_roundtrips_metadata_without_onnx(tmp_path: Path) -> None:
         schema_version=SCHEMA_VERSION,
         name="example",
         kind="nr",
-        onnx_opset=17,
+        opset=17,
         input_names=["features"],
         output_names=["score"],
         normalization={"mean": [0.0], "std": [1.0]},

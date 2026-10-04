@@ -685,7 +685,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     out->input_name = extract_string(buf, "input_name");
     out->output_name = extract_string(buf, "output_name");
     parse_sidecar_output_names(buf, out);
-    (void)extract_int(buf, "onnx_opset", &out->opset);
+    (void)extract_int(buf, "opset", &out->opset);
     parse_sidecar_quant_mode(buf, out);
     parse_sidecar_feature_schema(buf, out);
     parse_sidecar_onnx_has_scaler(buf, out);

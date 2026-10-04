@@ -145,7 +145,7 @@ corpus.
   "schema_version": 1,
   "name": "fr_tiny_v1",
   "kind": "fr",
-  "onnx_opset": 17,
+  "opset": 17,
   "input_names": ["features"],
   "output_names": ["score"],
   "normalization": { "mean": [], "std": [] },

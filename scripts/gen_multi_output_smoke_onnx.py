@@ -76,7 +76,7 @@ def write_sidecar(path: Path) -> None:
     payload = {
         "kind": "fr",
         "name": "multi_probe",
-        "onnx_opset": OPSET,
+        "opset": OPSET,
         "input_name": INPUT_NAME,
         "output_names": list(OUTPUT_NAMES),
         "notes": "CI attached multi-output fixture - not a quality model.",
