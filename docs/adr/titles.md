@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1228), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1229), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4895,6 +4895,10 @@ Every ADR, one heading each (1228), so the site search finds an ADR by its title
 ## ADR-1518: The controller authorises every gRPC call against one per-method role table, and a method without an entry is refused
 
 [1518-controller-grpc-authorization](1518-controller-grpc-authorization.md)
+
+## ADR-1519: The controller reads its tenants from VmafxTenant resources (or a file of them), verifies each token against its own tenant's provider, and refuses what it cannot verify
+
+[1519-controller-tenant-registry](1519-controller-tenant-registry.md)
 
 ## ADR-1521: `vmafx-mcp` names the Go server; the Python wheel's script of that name is a one-release alias
 

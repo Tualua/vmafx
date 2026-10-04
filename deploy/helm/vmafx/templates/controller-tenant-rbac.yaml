@@ -1,0 +1,44 @@
+{{- /*
+SPDX-License-Identifier: EUPL-1.2
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/controller-tenant-rbac.yaml
+Read access to the release namespace's VmafxTenant resources for the
+workload's service account, rendered when the controller reads its tenants
+from them (VMAFX_AUTH_TENANTS_SOURCE=kubernetes). Namespace-scoped: the
+controller reads no other namespace's tenants.
+
+ADR-1519: tenant registry.
+*/ -}}
+{{- if and .Values.auth.enabled (eq (include "vmafx.tenantSource" .) "kubernetes") }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "vmafx.fullname" . }}-tenant-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+rules:
+  - apiGroups: ["vmafx.dev"]
+    resources: ["vmafxtenants"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "vmafx.fullname" . }}-tenant-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "vmafx.fullname" . }}-tenant-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vmafx.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

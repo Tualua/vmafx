@@ -12,7 +12,8 @@ three VMAFX custom resource types:
 | `VmafxModelTraining` | `vmtrain` | Online SGD-EMA sidecar model training run |
 
 The Helm chart ships a fourth CRD, `VmafxTenant` (short name `vmtenant`), that
-the operator does not reconcile; see [VmafxTenant CRD](#vmafxtenant-crd).
+the operator does not reconcile: the vmafx-controller reads it; see
+[VmafxTenant CRD](#vmafxtenant-crd).
 
 See [ADR-0714](../adr/0714-vmafx-operator-skeleton.md) for the design decision
 and [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) for the
@@ -291,10 +292,13 @@ The chart also installs `VmafxTenant` (`vmtenant`, namespaced), which holds a
 tenant's OIDC provider and RBAC policy for the multi-tenant auth gateway of
 the vmafx-controller. The operator's `ClusterRole` grants access to it
 (`deploy/helm/vmafx/templates/operator-rbac.yaml`), but the operator has no
-reconciler for it: the chart renders one `VmafxTenant` per entry of
-`auth.tenants` when `auth.enabled` is set. The CRD schema is
-`deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml`; fields, example and Helm
-values are in [server/auth.md](../server/auth.md#vmafxtenant-crd).
+reconciler for it: the controller lists the `VmafxTenant` resources of its
+namespace itself and enforces them
+([ADR-1519](../adr/1519-controller-tenant-registry.md)). The chart renders one
+`VmafxTenant` per entry of `auth.tenants` when `auth.enabled` is set and
+grants the controller's service account read access to them. The CRD schema
+is `deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml`; fields, example and
+Helm values are in [server/auth.md](../server/auth.md#tenant-registry).
 
 ---
 

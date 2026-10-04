@@ -194,7 +194,13 @@ func startAuthEnabledController(t *testing.T, iss *authtest.Issuer) *googlegrpc.
 	app := fxtest.New(t, productionGraph())
 	app.RequireStart()
 	t.Cleanup(app.RequireStop)
+	return dialInsecure(t, addr)
+}
 
+// dialInsecure returns a plaintext client connection to addr, closed when the
+// test ends.
+func dialInsecure(t *testing.T, addr string) *googlegrpc.ClientConn {
+	t.Helper()
 	cc, err := googlegrpc.NewClient(addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)

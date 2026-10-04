@@ -125,6 +125,13 @@ type Config struct {
 	// entry with a malformed method name, no roles or an unknown role.
 	MethodRoles MethodRoles
 
+	// Tenants, when set, is the tenant registry (ADR-1519): tokens are
+	// verified against the identity provider of the tenant they name, and
+	// only configured, enabled tenants are accepted.  JWKSEndpoint, Issuer,
+	// Audience, TenantClaim and RolesClaim must then be empty (each tenant
+	// carries its own), and Disabled must be false.
+	Tenants *TenantRegistry
+
 	// Logger is the slog.Logger instance.  If nil, slog.Default() is used.
 	Logger *slog.Logger
 }
@@ -190,6 +197,15 @@ const (
 	jwksCacheMax             = 16
 	jwksCacheRefreshCooldown = 30 * time.Second
 	jwksFetchTimeout         = 10 * time.Second
+	// jwksKeyMaxAge is how long fetched keys are used before the next token
+	// refetches the JWKS, so a key the IdP has withdrawn stops verifying
+	// tokens even when nobody presents an unknown kid.
+	jwksKeyMaxAge = 15 * time.Minute
+	// jwksKeyHardMaxAge bounds how long keys are kept when refetching fails:
+	// past it, tokens are refused until the JWKS endpoint answers again.
+	jwksKeyHardMaxAge = 24 * time.Hour
+	// jwksMaxRedirects bounds the redirects a JWKS fetch follows.
+	jwksMaxRedirects = 5
 )
 
 // jwkKey holds a single RSA public key from the JWKS endpoint.
@@ -203,62 +219,88 @@ type jwksCache struct {
 	mu          sync.RWMutex
 	endpoint    string
 	keys        map[string]*rsa.PublicKey // kid → key
-	lastRefresh time.Time
+	lastRefresh time.Time                 // last fetch attempt (cooldown)
+	fetchedAt   time.Time                 // last successful fetch (key age)
 	client      *http.Client
 	log         *slog.Logger
+	now         func() time.Time
 }
 
 func newJWKSCache(endpoint string, log *slog.Logger) *jwksCache {
 	return &jwksCache{
 		endpoint: endpoint,
 		keys:     make(map[string]*rsa.PublicKey),
-		client:   &http.Client{Timeout: jwksFetchTimeout},
+		client:   &http.Client{Timeout: jwksFetchTimeout, CheckRedirect: refuseDowngradeRedirect},
 		log:      log,
+		now:      time.Now,
 	}
+}
+
+// refuseDowngradeRedirect stops a JWKS fetch that started over https from
+// following a redirect to plain http on a non-loopback host: the keys decide
+// which tokens are genuine and must not arrive over an unauthenticated hop.
+func refuseDowngradeRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= jwksMaxRedirects {
+		return fmt.Errorf("jwks: more than %d redirects", jwksMaxRedirects)
+	}
+	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" && !isLoopbackHost(req.URL.Hostname()) {
+		return fmt.Errorf("jwks: refusing redirect from https to %s", req.URL.Redacted())
+	}
+	return nil
 }
 
 // Key returns the RSA public key for the given kid.  It fetches the JWKS
-// endpoint if the kid is unknown or the cache is stale.
+// endpoint if the kid is unknown or the keys are older than jwksKeyMaxAge.
 func (c *jwksCache) Key(kid string) (*rsa.PublicKey, error) {
 	c.mu.RLock()
 	k, ok := c.keys[kid]
+	fresh := c.now().Sub(c.fetchedAt) < jwksKeyMaxAge
 	c.mu.RUnlock()
-	if ok {
+	if ok && fresh {
 		return k, nil
 	}
-	// Unknown kid — refresh (rate-limited).
 	return c.refresh(kid)
 }
 
-// refresh fetches the JWKS endpoint.  It is rate-limited by jwksCacheRefreshCooldown.
+// refresh fetches the JWKS endpoint.  It is rate-limited by
+// jwksCacheRefreshCooldown.  When the fetch is rate-limited or fails, a known
+// key younger than jwksKeyHardMaxAge is still returned.
 func (c *jwksCache) refresh(kid string) (*rsa.PublicKey, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	now := c.now()
+	k, known := c.keys[kid]
+	age := now.Sub(c.fetchedAt)
 	// Another goroutine may have refreshed while we waited for the write lock.
-	if k, ok := c.keys[kid]; ok {
+	if known && age < jwksKeyMaxAge {
 		return k, nil
 	}
+	usable := known && age < jwksKeyHardMaxAge
 
 	// Cooldown guard.
-	if time.Since(c.lastRefresh) < jwksCacheRefreshCooldown {
+	if now.Sub(c.lastRefresh) < jwksCacheRefreshCooldown {
+		if usable {
+			return k, nil
+		}
 		return nil, fmt.Errorf("jwks: key %q not found and refresh is rate-limited", kid)
 	}
+	c.lastRefresh = now
 
 	c.log.Info("jwks: refreshing key cache", "endpoint", c.endpoint, "reason_kid", kid)
 
-	body, err := c.fetchJWKS()
+	keys, err := c.fetchKeys()
 	if err != nil {
+		if usable {
+			c.log.Warn("jwks: refresh failed; using the cached keys", "endpoint", c.endpoint,
+				"age", age, "refused_after", jwksKeyHardMaxAge, "error", err)
+			return k, nil
+		}
 		return nil, err
 	}
 
-	keys, err := parseJWKS(body)
-	if err != nil {
-		return nil, fmt.Errorf("jwks: parse: %w", err)
-	}
-
 	c.keys = buildKeyCache(keys, kid)
-	c.lastRefresh = time.Now()
+	c.fetchedAt = now
 
 	c.log.Info("jwks: key cache updated", "key_count", len(c.keys))
 
@@ -267,6 +309,19 @@ func (c *jwksCache) refresh(kid string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("jwks: key %q not present in IdP's JWKS", kid)
 	}
 	return k, nil
+}
+
+// fetchKeys fetches and parses the JWKS document.
+func (c *jwksCache) fetchKeys() ([]jwkKey, error) {
+	body, err := c.fetchJWKS()
+	if err != nil {
+		return nil, err
+	}
+	keys, err := parseJWKS(body)
+	if err != nil {
+		return nil, fmt.Errorf("jwks: parse: %w", err)
+	}
+	return keys, nil
 }
 
 // fetchJWKS GETs the JWKS document, bounded by jwksFetchTimeout and a 1 MiB read.
@@ -406,33 +461,46 @@ type jwtHeader struct {
 // verifyJWT verifies an RS256 JWT against the JWKS cache and returns the raw
 // claims map (the full payload).
 func verifyJWT(token string, cache *jwksCache, issuer, audience string) (map[string]json.RawMessage, error) {
+	tok, err := parseJWT(token)
+	if err != nil {
+		return nil, err
+	}
+	if err = verifyJWTSignature(tok.parts, tok.header, cache); err != nil {
+		return nil, err
+	}
+	if err = validateJWTClaims(tok.payload, issuer, audience); err != nil {
+		return nil, err
+	}
+	return tok.claims, nil
+}
+
+// parsedJWT is a token split and decoded, not yet verified.
+type parsedJWT struct {
+	parts   []string
+	header  []byte
+	payload []byte
+	claims  map[string]json.RawMessage
+}
+
+// parseJWT splits and decodes a compact JWT without verifying it.
+func parseJWT(token string) (parsedJWT, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("jwt: malformed token (expected 3 parts, got %d)", len(parts))
+		return parsedJWT{}, fmt.Errorf("jwt: malformed token (expected 3 parts, got %d)", len(parts))
 	}
-
 	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return nil, fmt.Errorf("jwt: decode header: %w", err)
+		return parsedJWT{}, fmt.Errorf("jwt: decode header: %w", err)
 	}
 	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("jwt: decode payload: %w", err)
+		return parsedJWT{}, fmt.Errorf("jwt: decode payload: %w", err)
 	}
-
-	if err = verifyJWTSignature(parts, headerJSON, cache); err != nil {
-		return nil, err
-	}
-	if err = validateJWTClaims(payloadJSON, issuer, audience); err != nil {
-		return nil, err
-	}
-
-	// Return full claims map for claim extraction.
 	var claims map[string]json.RawMessage
 	if err = json.Unmarshal(payloadJSON, &claims); err != nil {
-		return nil, fmt.Errorf("jwt: parse claims map: %w", err)
+		return parsedJWT{}, fmt.Errorf("jwt: parse claims map: %w", err)
 	}
-	return claims, nil
+	return parsedJWT{parts: parts, header: headerJSON, payload: payloadJSON, claims: claims}, nil
 }
 
 // verifyJWTSignature checks the token's algorithm and RS256 signature against the key the
@@ -458,7 +526,7 @@ func verifyJWTSignature(parts []string, headerJSON []byte, cache *jwksCache) err
 	if err != nil {
 		return fmt.Errorf("jwt: decode signature: %w", err)
 	}
-	if err = verifyRS256([]byte(parts[0]+"."+parts[1]), sig, pubKey); err != nil {
+	if err = rs256Verify([]byte(parts[0]+"."+parts[1]), sig, pubKey); err != nil {
 		return fmt.Errorf("jwt: signature invalid: %w", err)
 	}
 	return nil
@@ -571,13 +639,8 @@ type Middleware struct {
 // creates the JWKS cache but does NOT fetch keys eagerly — the first request
 // triggers a cache warm-up.
 func New(cfg Config) (*Middleware, error) {
-	if !cfg.Disabled {
-		if cfg.JWKSEndpoint == "" {
-			return nil, fmt.Errorf("auth: JWKSEndpoint is required")
-		}
-		if cfg.Issuer == "" {
-			return nil, fmt.Errorf("auth: Issuer is required")
-		}
+	if err := cfg.validateMode(); err != nil {
+		return nil, err
 	}
 
 	methodRoles, err := cloneMethodRoles(cfg.MethodRoles)
@@ -598,6 +661,35 @@ func New(cfg Config) (*Middleware, error) {
 	}, nil
 }
 
+// validateMode checks that exactly one way of verifying tokens is configured:
+// disabled, a global identity provider, or a tenant registry. Settings that
+// the chosen mode would ignore are refused rather than silently dropped.
+func (c *Config) validateMode() error {
+	globalSet := c.JWKSEndpoint != "" || c.Issuer != "" || c.Audience != "" ||
+		c.TenantClaim != "" || c.RolesClaim != ""
+	switch {
+	case c.Disabled && c.Tenants != nil:
+		return errors.New("auth: a tenant source cannot be combined with disabled auth")
+	case c.Disabled:
+		return nil
+	case c.Tenants != nil && globalSet:
+		return errors.New("auth: the global JWKS endpoint, issuer, audience, tenant claim and " +
+			"roles claim are not used with a tenant source; configure them per tenant")
+	case c.Tenants != nil:
+		return nil
+	case c.JWKSEndpoint == "":
+		return errors.New("auth: JWKSEndpoint is required")
+	case c.Issuer == "":
+		return errors.New("auth: Issuer is required")
+	}
+	return nil
+}
+
+// devClaims is the synthetic caller of disabled mode.
+func devClaims() Claims {
+	return Claims{Subject: "dev", TenantID: "dev", Roles: []string{RoleAdmin}}
+}
+
 // HTTPHandler wraps the given http.Handler and enforces JWT authentication.
 // Unauthenticated or unauthorized requests receive a JSON 401 / 403 response.
 // The /healthz and /readyz probes are explicitly exempted.
@@ -613,19 +705,15 @@ func (m *Middleware) HTTPHandler(next http.Handler) http.Handler {
 
 		if m.cfg.Disabled {
 			// Inject a synthetic "bypass" tenant for dev/test environments.
-			ctx := withClaims(r.Context(), Claims{
-				Subject:  "dev",
-				TenantID: "dev",
-				Roles:    []string{RoleAdmin},
-			})
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(withClaims(r.Context(), devClaims())))
 			return
 		}
 
-		claims, err := m.extractAndVerify(r.Header.Get("Authorization"))
+		claims, err := m.verifyBearer(r.Header.Get("Authorization"))
 		if err != nil {
 			m.log.Warn("auth: rejected request", "path", r.URL.Path, "error", err)
-			writeJSONError(w, http.StatusUnauthorized, "invalid or missing token")
+			code, msg := httpAuthError(err)
+			writeJSONError(w, code, msg)
 			return
 		}
 
@@ -654,19 +742,48 @@ func (m *Middleware) RequireRole(roles ...string) func(http.Handler) http.Handle
 	}
 }
 
-// extractAndVerify parses the Authorization header, verifies the JWT, and
-// returns Claims.
-func (m *Middleware) extractAndVerify(authHeader string) (Claims, error) {
-	if authHeader == "" {
-		return Claims{}, fmt.Errorf("missing Authorization header")
+// httpAuthError maps a verification failure to its HTTP status and body: a
+// suspended tenant is 403, a stale tenant set 503, anything else 401.
+func httpAuthError(err error) (int, string) {
+	switch {
+	case errors.Is(err, errTenantDisabled):
+		return http.StatusForbidden, "tenant is suspended"
+	case errors.Is(err, errTenantsStale):
+		return http.StatusServiceUnavailable, "tenant configuration is stale"
+	default:
+		return http.StatusUnauthorized, "invalid or missing token"
 	}
+}
 
+// verifyBearer verifies an Authorization header value (HTTP header or gRPC
+// metadata) and returns the caller's claims, through the tenant registry when
+// one is configured and the global identity provider otherwise.
+func (m *Middleware) verifyBearer(authHeader string) (Claims, error) {
+	token, err := bearerToken(authHeader)
+	if err != nil {
+		return Claims{}, err
+	}
+	if m.cfg.Tenants != nil {
+		return m.cfg.Tenants.Resolve(token)
+	}
+	return m.verifyGlobal(token)
+}
+
+// bearerToken returns the token of a "Bearer <token>" header value.
+func bearerToken(authHeader string) (string, error) {
+	if authHeader == "" {
+		return "", errors.New("missing Authorization header")
+	}
 	const prefix = "Bearer "
 	if !strings.HasPrefix(authHeader, prefix) {
-		return Claims{}, fmt.Errorf("Authorization header must be Bearer token")
+		return "", errors.New("authorization must be a Bearer token")
 	}
-	token := strings.TrimPrefix(authHeader, prefix)
+	return strings.TrimPrefix(authHeader, prefix), nil
+}
 
+// verifyGlobal verifies token against the global identity provider and
+// returns Claims; any tenant the token names is accepted.
+func (m *Middleware) verifyGlobal(token string) (Claims, error) {
 	rawClaims, err := verifyJWT(token, m.cache, m.cfg.Issuer, m.cfg.Audience)
 	if err != nil {
 		return Claims{}, err

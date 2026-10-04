@@ -19,6 +19,11 @@ import (
 	"fmt"
 )
 
+// rs256Verify is the signature check verifyJWTSignature calls. Only the
+// package's own tests replace it, to count verifications (ADR-1519: one per
+// JWKS cache, not one per tenant).
+var rs256Verify = verifyRS256
+
 // verifyRS256 verifies an RS256 JWT signature.
 // message is the bytes of "<header_b64>.<payload_b64>".
 // sig is the decoded (raw bytes) signature from the JWT's third segment.

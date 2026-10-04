@@ -1,11 +1,25 @@
 # vmafx-controller: Multi-Tenant Auth Gateway
 
-> ADR: [ADR-0794](../adr/0794-controller-multi-tenant-auth-gateway.md)
+> ADRs: [ADR-0794](../adr/0794-controller-multi-tenant-auth-gateway.md)
+> (gateway), [ADR-1518](../adr/1518-controller-grpc-authorization.md) (roles),
+> [ADR-1522](../adr/1522-controller-tenant-scoped-reads.md) (tenant scoping),
+> [ADR-1519](../adr/1519-controller-tenant-registry.md) (tenant registry)
 
 The vmafx-controller supports multi-tenant deployments through a built-in
 JWT auth gateway. You configure it with `VMAFX_*` environment variables (the
 controller has no CLI flags beyond `--version`, since ADR-1119) and send a
 bearer token on every request.
+
+The controller verifies tokens in one of two ways:
+
+- **One identity provider** for every tenant: the controller trusts
+  `VMAFX_JWKS_ENDPOINT` and `VMAFX_AUTH_ISSUER` and takes the tenant from
+  each token's tenant claim. Any tenant name the provider issues is accepted.
+  The [quick start](#quick-start) uses this mode.
+- **A tenant registry**: the controller reads `VmafxTenant` resources (from
+  the Kubernetes API or a file) and accepts only those tenants, each with its
+  own identity provider, suspension switch and role whitelist. See [Tenant
+  registry](#tenant-registry).
 
 Every gRPC and HTTP request, except the liveness, readiness and metrics
 endpoints, must carry a valid RS256 bearer token from a configured OIDC
@@ -23,6 +37,7 @@ see [Roles and RBAC](#roles-and-rbac).
   - [Dex](#dex)
 - [Roles and RBAC](#roles-and-rbac)
 - [Tenant isolation](#tenant-isolation)
+- [Tenant registry](#tenant-registry)
 - [Helm configuration](#helm-configuration)
 - [VmafxTenant CRD](#vmafxtenant-crd)
 - [Disabling auth](#disabling-auth)
@@ -215,9 +230,110 @@ Tenant IDs are opaque strings compared exactly (case and whitespace count).
 
 ---
 
+## Tenant registry
+
+With `VMAFX_AUTH_TENANTS_SOURCE` set, the controller accepts a token only when
+it belongs to exactly one configured, enabled tenant:
+
+1. The token's `iss` claim selects the tenants whose `oidc.issuer` it names.
+   No such tenant: `UNAUTHENTICATED` / `401`.
+2. Each of those tenants checks the signature against its own
+   `oidc.jwksEndpoint`, the expiry, its own issuer and (when set) its own
+   `oidc.audience`, then reads its own `oidc.tenantClaim`. The tenant whose
+   claim value equals its `tenantId` is the match. A token one tenant's
+   provider issued with another tenant's ID matches nothing and is refused;
+   a token matching two tenants is refused too.
+3. A tenant with `enabled: false` is refused with `PERMISSION_DENIED` / `403`.
+4. The caller's roles are the vmafx roles of the token's `oidc.rolesClaim`
+   that are in `rbac.allowedRoles`; roles outside the list are dropped. A
+   token that names no vmafx role at all gets `rbac.defaultRole`. A token
+   whose only vmafx roles are all dropped keeps no role and is refused
+   everywhere.
+
+Defaults follow the CRD: `enabled: true`, `tenantClaim: tid`,
+`rolesClaim: vmafx_roles`, `defaultRole: vmafx:reader`,
+`allowedRoles: [vmafx:reader, vmafx:writer]`. So by default no token of a
+registry tenant can act as a node: list `vmafx:admin` in `allowedRoles` for a
+tenant that runs its own nodes.
+
+Set `oidc.audience`: without it, a token the tenant's provider issues for any
+other application, with the tenant's claim, is accepted. The controller logs
+a warning at startup for each tenant without one. When several tenants share
+one provider, the signature of a token is checked once per JWKS endpoint, not
+once per tenant.
+
+Refused tokens get a fixed `UNAUTHENTICATED` message (`invalid or missing
+token`); the reason (unknown issuer, bad signature, expired, no matching
+tenant) is only logged, so a caller cannot probe which issuers and tenants
+are configured.
+
+### Sources
+
+- `VMAFX_AUTH_TENANTS_SOURCE=kubernetes` lists the `VmafxTenant` resources of
+  `VMAFX_AUTH_TENANTS_NAMESPACE` (default: the controller pod's namespace)
+  with the pod's service account, which needs `get`, `list` and `watch` on
+  `vmafxtenants` there. The Helm chart grants it (see [Helm
+  configuration](#helm-configuration)).
+- `VMAFX_AUTH_TENANTS_SOURCE=file` reads `VMAFX_AUTH_TENANTS_FILE`: YAML or
+  JSON documents, each a `VmafxTenant` (as in the [CRD
+  example](#vmafxtenant-crd)) or a list of them (`kind: List` or
+  `VmafxTenantList`, as `kubectl get vmafxtenants -o yaml` writes). Use it to
+  run a tenant registry outside Kubernetes.
+
+The controller re-reads the source every `VMAFX_AUTH_TENANTS_REFRESH`
+(default `30s`, between `1s` and `1h`), so suspending a tenant or changing its
+roles takes effect within one interval, without a restart.
+
+### What stops the controller, and what it refuses at run time
+
+At startup the controller does not start, and logs why, when:
+
+- the source cannot be read, or the file is not YAML or JSON;
+- a document is not `apiVersion: vmafx.dev/v1`, `kind: VmafxTenant` (or a
+  list of them), or its spec has a field the CRD does not define (for example
+  `allowedRole` instead of `allowedRoles`);
+- a tenant is invalid: `tenantId` not matching the CRD pattern, an issuer
+  that is not an absolute `http(s)` URL, a JWKS endpoint that is not `https`
+  (plain `http` is accepted for `localhost` and loopback addresses only), an
+  unknown role, an empty `allowedRoles`, or a `defaultRole` that is not in
+  `allowedRoles`;
+- two tenants have the same `tenantId`;
+- a tenant setting does not fit the source (`VMAFX_AUTH_TENANTS_FILE` without
+  `VMAFX_AUTH_TENANTS_SOURCE=file`, an unknown source, a refresh interval out
+  of range), or the tenant source is combined with `VMAFX_AUTH_DISABLED=true`
+  or with `VMAFX_JWKS_ENDPOINT`, `VMAFX_AUTH_ISSUER`, `VMAFX_AUTH_AUDIENCE`,
+  `VMAFX_AUTH_TENANT_CLAIM` or `VMAFX_AUTH_ROLES_CLAIM` (each tenant carries
+  its own; the global values would be ignored).
+
+Because startup is strict, a `VmafxTenant` that the API server accepts but the
+controller refuses (for example `defaultRole: vmafx:admin` with the default
+`allowedRoles`) stops the controller from starting after its next restart,
+for every tenant. Check a new tenant in the controller log (refreshes report
+it, see below) before restarting.
+
+On a refresh, an invalid tenant is dropped and logged
+(`tenant refused; its tokens are rejected until it is fixed`) while the other
+tenants are reloaded. A refresh that cannot read the source keeps the last
+tenant set; once that set is older than ten refresh intervals (five minutes
+by default) every request is refused with `UNAVAILABLE` / `503` (`tenant
+configuration is stale`), because the controller can no longer tell whether a
+tenant was suspended.
+
+---
+
 ## Helm configuration
 
+The auth gateway is part of `vmafx-controller`. The chart's default image,
+`vmafx-server`, has no auth gateway, so with `auth.enabled` the chart refuses
+to render unless `image.repository` names a controller image (built from
+`docker/Dockerfile.controller`; the project publishes none yet) and
+`workload` is `Deployment`.
+
+One identity provider:
+
 ```yaml
+image:
+  repository: registry.example.com/vmafx-controller
 auth:
   enabled: true
   jwksEndpoint: https://idp.example.com/.well-known/jwks.json
@@ -225,7 +341,20 @@ auth:
   audience: vmafx-api          # optional
   tenantClaim: tid             # default
   rolesClaim: vmafx_roles      # default
+```
 
+These values become the `VMAFX_*` variables of the [environment
+table](#environment-variables).
+
+A tenant registry:
+
+```yaml
+image:
+  repository: registry.example.com/vmafx-controller
+auth:
+  enabled: true
+  issuer: https://idp.example.com/               # default for entries without one
+  jwksEndpoint: https://idp.example.com/keys     # default for entries without one
   tenants:
     - tenantId: acme
       oidc:
@@ -235,17 +364,50 @@ auth:
       rbac:
         defaultRole: vmafx:reader
         allowedRoles: [vmafx:reader, vmafx:writer]
+    - tenantId: lab
+      enabled: false                             # suspended
 ```
 
-The `auth.tenants` list creates `VmafxTenant` CRs in the same namespace. The
-other `auth.*` values become the `VMAFX_*` environment variables of the
-[environment table](#environment-variables).
+A non-empty `auth.tenants` (or `auth.tenantSource: kubernetes`, for
+`VmafxTenant` resources managed outside the chart) switches the controller to
+the tenant registry. The chart then:
+
+- creates one `VmafxTenant` per entry in the release namespace, filling an
+  entry's missing `oidc` fields from the global `auth.issuer`,
+  `auth.jwksEndpoint`, `auth.audience`, `auth.tenantClaim` and
+  `auth.rolesClaim` (an entry with neither its own nor a global issuer or JWKS
+  endpoint fails the render);
+- passes `VMAFX_AUTH_TENANTS_SOURCE=kubernetes` and
+  `VMAFX_AUTH_TENANTS_NAMESPACE=<release namespace>`, and none of the global
+  provider variables;
+- grants the workload's service account `get`, `list` and `watch` on
+  `vmafxtenants` in the release namespace (Role and RoleBinding
+  `<release>-tenant-reader`);
+- with `networkPolicy.enabled`, allows the controller's egress to the API
+  server (`networkPolicy.allow.serverToApiserver`, ports 443 and 6443). The
+  rule allows those ports to any address, as the operator's rule does,
+  because the API server's Service IP cannot be selected; it also lets the
+  controller reach `https` JWKS endpoints. Narrow it to your control plane's
+  and identity providers' CIDRs where you know them.
+
+The Role is bound to the chart's service account (`serviceAccount.name`,
+default: the chart's full name; with `serviceAccount.create: false`, the
+namespace's `default` account unless named), which the node and job pods use
+too, so they can also read the namespace's `VmafxTenant` resources (identity
+provider URLs, audiences and role lists; no secrets).
+
+The render also fails for `auth.tenants` or `auth.tenantSource` without
+`auth.enabled`, for `auth.disabled` combined with a tenant registry, for any
+`env.VMAFX_AUTH_*` or `env.VMAFX_JWKS_*` entry (set those through `auth.*`),
+and for an entry with an empty `rbac.allowedRoles` (the CRD would default it
+to reader and writer).
 
 ---
 
 ## VmafxTenant CRD
 
-Each tenant can be configured as a Kubernetes custom resource:
+Each tenant is a Kubernetes custom resource; the controller reads them as
+described in [Tenant registry](#tenant-registry):
 
 ```yaml
 apiVersion: vmafx.dev/v1
@@ -266,16 +428,10 @@ spec:
     allowedRoles: [vmafx:reader, vmafx:writer]
 ```
 
-`kubectl apply` VmafxTenant CRs directly for operator-managed multi-tenant
-clusters. The CRD is installed by the Helm chart's `crds/` directory.
-
-!!! note "Which configuration wins"
-    The Helm `auth.tenants` list and a hand-written `VmafxTenant` are two ways
-    to create the same resource. The controller itself reads only the global
-    `VMAFX_*` variables. No binary in this repository reads `VmafxTenant`
-    resources yet (the operator has no reconciler for them), so per-tenant
-    `oidc` and `rbac` settings, including `allowedRoles`, are stored but not
-    applied.
+The Helm `auth.tenants` list and a `kubectl apply`-ed `VmafxTenant` are two
+ways to create the same resource, and the controller reads both. The CRD is
+installed by the chart's `crds/` directory. The vmafx-operator does not
+reconcile `VmafxTenant`; the controller reads the resources directly.
 
 ---
 
@@ -300,11 +456,15 @@ environment-only (ADR-1119).
 | Env var | Default | Description |
 | --- | --- | --- |
 | `VMAFX_AUTH_DISABLED` | `false` | Bypass all auth checks. |
-| `VMAFX_JWKS_ENDPOINT` | — | JWKS endpoint URL. |
-| `VMAFX_AUTH_ISSUER` | — | Expected `iss` claim value. |
-| `VMAFX_AUTH_AUDIENCE` | — | Expected `aud` claim value. |
-| `VMAFX_AUTH_TENANT_CLAIM` | `tid` | Tenant claim field name. |
-| `VMAFX_AUTH_ROLES_CLAIM` | `vmafx_roles` | Roles claim field name. |
+| `VMAFX_JWKS_ENDPOINT` | — | JWKS endpoint URL (one identity provider). |
+| `VMAFX_AUTH_ISSUER` | — | Expected `iss` claim value (one identity provider). |
+| `VMAFX_AUTH_AUDIENCE` | — | Expected `aud` claim value (one identity provider). |
+| `VMAFX_AUTH_TENANT_CLAIM` | `tid` | Tenant claim field name (one identity provider). |
+| `VMAFX_AUTH_ROLES_CLAIM` | `vmafx_roles` | Roles claim field name (one identity provider). |
+| `VMAFX_AUTH_TENANTS_SOURCE` | — | `kubernetes` or `file`: use a [tenant registry](#tenant-registry) instead of one identity provider. |
+| `VMAFX_AUTH_TENANTS_FILE` | — | Tenant file (`VMAFX_AUTH_TENANTS_SOURCE=file`). |
+| `VMAFX_AUTH_TENANTS_NAMESPACE` | pod namespace | Namespace of the `VmafxTenant` resources (`VMAFX_AUTH_TENANTS_SOURCE=kubernetes`). |
+| `VMAFX_AUTH_TENANTS_REFRESH` | `30s` | Re-read interval of the tenant source (`1s` to `1h`); the set is refused after ten intervals without a successful read. |
 
 The listen addresses and the other controller settings are in
 [controller.md](controller.md#configuration).
@@ -315,11 +475,20 @@ The listen addresses and the other controller settings are in
 
 When the controller receives a token whose `kid` (key ID) is not in the
 local JWKS cache, it fetches the JWKS endpoint once. To prevent thundering-
-herd on rotation, re-fetches are rate-limited to one per 30 seconds.
+herd on rotation, fetches (successful or not) are rate-limited to one per 30
+seconds per endpoint.
 
 If the new key is not present in the endpoint's response within the cooldown
 window, requests with the new `kid` are rejected with `401` until the cache
 refreshes successfully.
+
+Fetched keys are used for 15 minutes; the first token after that refetches
+the JWKS, so a key the identity provider withdraws stops verifying tokens
+within 15 minutes even if nobody presents a new `kid`. When the refetch fails,
+the cached keys keep working for up to 24 hours after their last successful
+fetch; past that, tokens are refused until the endpoint answers again. A JWKS
+fetch that starts over `https` does not follow a redirect to plain `http`
+(except to a loopback host).
 
 ---
 
@@ -331,5 +500,7 @@ refreshes successfully.
 | Token replay | `exp` checked on every request. |
 | Cross-tenant data access | Every job read and write is scoped to the token's tenant (`GetJob`, `CancelJob`, `StreamJobs`, `SubmitJob`); node sessions belong to one tenant, nodes pull only that tenant's jobs and report only jobs assigned to them. Refusals do not name the owning tenant. |
 | JWKS endpoint spoofing | Endpoint configured by operator via trusted Helm/env values. |
-| Privilege escalation | Every gRPC method and HTTP `POST /v1/score` require a role from the token; a gRPC method without a role entry is refused. The `allowedRoles` whitelist of VmafxTenant is not applied yet: no component reads it. |
+| Privilege escalation | Every gRPC method and HTTP `POST /v1/score` require a role from the token; a gRPC method without a role entry is refused. With a tenant registry, roles outside a tenant's `allowedRoles` are dropped. |
+| One tenant's provider acting for another | With a tenant registry, a token is verified with the provider of the tenant it names, and that tenant's claim must carry its own ID. |
+| Suspension not applied | `enabled: false` refuses the tenant within one refresh interval; a tenant set the controller cannot refresh for ten intervals refuses everyone. |
 | Revocation | Use short-lived tokens (≤1 hour); revocation list support is a follow-up. |

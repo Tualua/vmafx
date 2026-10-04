@@ -224,11 +224,15 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_MODEL_DIR` | path | _(none)_ | `model.dir` | Directory of VMAF `.json` model files passed to the libvmaf scorer. |
 | `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | `vmaf.binary` | Path to the `vmaf` CLI binary. |
 | `VMAFX_AUTH_DISABLED` | bool | `false` | `auth.disabled` | Disable JWT auth (dev and internal only, never in production). A synthetic `dev` tenant with the admin role is injected. |
-| `VMAFX_JWKS_ENDPOINT` | URL | _(none)_ | `jwks.endpoint` | JWKS endpoint for RS256 verification, for example `https://idp.example.com/.well-known/jwks.json`. Required unless auth is disabled. |
-| `VMAFX_AUTH_ISSUER` | string | _(none)_ | `auth.issuer` | Expected JWT `iss` claim. Required unless auth is disabled. |
+| `VMAFX_JWKS_ENDPOINT` | URL | _(none)_ | `jwks.endpoint` | JWKS endpoint for RS256 verification, for example `https://idp.example.com/.well-known/jwks.json`. Required unless auth is disabled or a tenant source is set (then refused). |
+| `VMAFX_AUTH_ISSUER` | string | _(none)_ | `auth.issuer` | Expected JWT `iss` claim. Required unless auth is disabled or a tenant source is set (then refused). |
 | `VMAFX_AUTH_AUDIENCE` | string | _(none)_ | `auth.audience` | Expected JWT `aud` claim; the check is skipped when empty. |
 | `VMAFX_AUTH_TENANT_CLAIM` | string | `tid` | `auth.tenant_claim` | JWT claim carrying the tenant id. A golusoris CompoundKey, so its underscore is preserved. |
 | `VMAFX_AUTH_ROLES_CLAIM` | string | `vmafx_roles` | `auth.roles_claim` | JWT claim carrying the roles list. A CompoundKey. |
+| `VMAFX_AUTH_TENANTS_SOURCE` | string | _(none)_ | `auth.tenants.source` | `kubernetes` (the namespace's `VmafxTenant` resources) or `file`: verify tokens per tenant ([tenant registry](../server/auth.md#tenant-registry)). Excludes the five global provider variables above and `VMAFX_AUTH_DISABLED=true`. |
+| `VMAFX_AUTH_TENANTS_FILE` | path | _(none)_ | `auth.tenants.file` | YAML or JSON file of `VmafxTenant` documents (source `file`). |
+| `VMAFX_AUTH_TENANTS_NAMESPACE` | string | pod namespace | `auth.tenants.namespace` | Namespace of the `VmafxTenant` resources (source `kubernetes`). |
+| `VMAFX_AUTH_TENANTS_REFRESH` | duration | `30s` | `auth.tenants.refresh` | Re-read interval of the tenant source, `1s` to `1h`; the tenant set is refused after ten intervals without a successful read. |
 
 ### Server (`cmd/vmafx-server`)
 

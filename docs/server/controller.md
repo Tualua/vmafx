@@ -61,8 +61,11 @@ flags beyond `--version` since ADR-1119. Listen addresses are full addresses
 
 The authentication variables (`VMAFX_AUTH_DISABLED`, `VMAFX_JWKS_ENDPOINT`,
 `VMAFX_AUTH_ISSUER`, `VMAFX_AUTH_AUDIENCE`, `VMAFX_AUTH_TENANT_CLAIM`,
-`VMAFX_AUTH_ROLES_CLAIM`) are listed in
-[auth.md](auth.md#environment-variables).
+`VMAFX_AUTH_ROLES_CLAIM`, and `VMAFX_AUTH_TENANTS_SOURCE`, `_FILE`,
+`_NAMESPACE`, `_REFRESH` for a tenant registry) are listed in
+[auth.md](auth.md#environment-variables). The controller does not start when
+they are inconsistent or a configured tenant is invalid
+([tenant registry](auth.md#tenant-registry)).
 
 ## VmafxScoring service (direct scoring)
 

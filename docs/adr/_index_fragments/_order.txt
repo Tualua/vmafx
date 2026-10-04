@@ -1227,3 +1227,4 @@
 1517-gpu-image-licensing
 1522-controller-tenant-scoped-reads
 1540-saliency-pad-to-multiple-of-8
+1519-controller-tenant-registry

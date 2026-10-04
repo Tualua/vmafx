@@ -282,3 +282,16 @@ containers:
 volumes:
   {{- include "vmafx.volumes" . | nindent 2 }}
 {{- end }}
+
+{{/*
+vmafx.tenantSource — "kubernetes" when the controller reads its tenants from
+VmafxTenant resources (auth.tenantSource, implied by a non-empty auth.tenants),
+else "". ADR-1519.
+*/}}
+{{- define "vmafx.tenantSource" -}}
+{{- if .Values.auth.tenantSource -}}
+{{ .Values.auth.tenantSource }}
+{{- else if .Values.auth.tenants -}}
+kubernetes
+{{- end -}}
+{{- end }}

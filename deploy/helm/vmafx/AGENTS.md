@@ -113,6 +113,25 @@ need ADR + upgrade path per `docs/development/k8s-deployment.md#upgrading-from-1
 cross-component Pod match. New component: own `component` label in selector and
 Pod template.
 
+## Auth settings and tenant registry (ADR-1519)
+
+- `templates/auth-validate.yaml` refuses `auth.enabled` with image named
+  `*vmafx-server` (no auth gateway) or non-Deployment workload, tenant
+  settings without `auth.enabled`, `auth.disabled` with tenant registry.
+  Never relax: each case otherwise deploys server without requested auth.
+- Tenant mode (`vmafx.tenantSource` = `kubernetes`, implied by non-empty
+  `auth.tenants`): `deployment.yaml` passes `VMAFX_AUTH_TENANTS_SOURCE` +
+  `_NAMESPACE` and NO global `VMAFX_JWKS_ENDPOINT` / `_AUTH_ISSUER` /
+  `_AUDIENCE` / `_TENANT_CLAIM` / `_ROLES_CLAIM` (controller refuses globals
+  next to tenant source). Globals only default `auth.tenants` entries in
+  `tenant-crd-config.yaml`.
+- `controller-tenant-rbac.yaml` (Role + RoleBinding, namespace only) and
+  netpol `allow-server-to-apiserver` render in tenant mode; dropping either
+  stops controller start (list of VmafxTenant fails).
+- `enabled:` in `tenant-crd-config.yaml` uses `hasKey`, never
+  `default true` (`false | default true` renders `true`; suspension vanished).
+- Guard: `scripts/ci/tests/test_helm_controller_auth.py` (`helm-chart.yml`).
+
 ## Active GPU backends
 
 Chart maps NVIDIA, AMD, Intel device-plugin resources to CUDA, HIP, SYCL.
@@ -133,6 +152,7 @@ scheduling docs on rebase.
 - [ADR-1129](../../../docs/adr/1129-release-container-runtime-alignment.md) — release image/runtime alignment
 - [ADR-0726](../../../docs/adr/0726-drop-vulkan-backend.md) — Vulkan backend removal
 - [ADR-1353](../../../docs/adr/1353-helm-server-component-selector.md) — server workload component selector, rc.1 upgrade path
+- [ADR-1519](../../../docs/adr/1519-controller-tenant-registry.md) — controller tenant registry, chart auth guards
 
 ## Invariants (ADR-1524)
 

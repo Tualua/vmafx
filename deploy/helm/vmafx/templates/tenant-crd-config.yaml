@@ -3,7 +3,10 @@ SPDX-License-Identifier: EUPL-1.2
 Copyright 2026 Lusoris
 
 deploy/helm/vmafx/templates/tenant-crd-config.yaml
-Renders a VmafxTenant CR for each entry in .Values.auth.tenants.
+Renders a VmafxTenant CR for each entry in .Values.auth.tenants. An entry's
+oidc field left out takes the matching global auth.* value (jwksEndpoint,
+issuer, audience, tenantClaim, rolesClaim); the controller reads the result
+(VMAFX_AUTH_TENANTS_SOURCE=kubernetes, ADR-1519).
 ADR-0794: multi-tenant auth gateway.
 */ -}}
 {{- if .Values.auth.enabled }}
@@ -18,18 +21,19 @@ metadata:
     {{- include "vmafx.labels" $ | nindent 4 }}
 spec:
   tenantId: {{ .tenantId | quote }}
-  enabled: {{ .enabled | default true }}
+  enabled: {{ if hasKey . "enabled" }}{{ .enabled }}{{ else }}true{{ end }}
+  {{- $oidc := .oidc | default dict }}
   oidc:
-    issuer: {{ .oidc.issuer | quote }}
-    jwksEndpoint: {{ .oidc.jwksEndpoint | quote }}
-    {{- if .oidc.audience }}
-    audience: {{ .oidc.audience | quote }}
+    issuer: {{ $oidc.issuer | default $.Values.auth.issuer | required (printf "auth.tenants %s: oidc.issuer (or auth.issuer) is required" .tenantId) | quote }}
+    jwksEndpoint: {{ $oidc.jwksEndpoint | default $.Values.auth.jwksEndpoint | required (printf "auth.tenants %s: oidc.jwksEndpoint (or auth.jwksEndpoint) is required" .tenantId) | quote }}
+    {{- with ($oidc.audience | default $.Values.auth.audience) }}
+    audience: {{ . | quote }}
     {{- end }}
-    {{- if .oidc.tenantClaim }}
-    tenantClaim: {{ .oidc.tenantClaim | quote }}
+    {{- with ($oidc.tenantClaim | default $.Values.auth.tenantClaim) }}
+    tenantClaim: {{ . | quote }}
     {{- end }}
-    {{- if .oidc.rolesClaim }}
-    rolesClaim: {{ .oidc.rolesClaim | quote }}
+    {{- with ($oidc.rolesClaim | default $.Values.auth.rolesClaim) }}
+    rolesClaim: {{ . | quote }}
     {{- end }}
   {{- if .rbac }}
   rbac:

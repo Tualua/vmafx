@@ -22,6 +22,22 @@
   and [ADR-1511](docs/adr/1511-amd-gpu-tester-image.md).
 
 
+- **vmafx-controller reads and enforces its tenant configuration
+  ([ADR-1519](docs/adr/1519-controller-tenant-registry.md)).** With
+  `VMAFX_AUTH_TENANTS_SOURCE=kubernetes` the controller lists the
+  `VmafxTenant` resources of its namespace (`=file`: a YAML/JSON file of
+  them) and accepts only those tenants: each token is verified with the
+  identity provider of the tenant it names and must carry that tenant's ID,
+  `enabled: false` suspends a tenant (403 / `PERMISSION_DENIED`), roles
+  outside `allowedRoles` are dropped and a token without vmafx roles gets
+  `defaultRole`. The set is re-read every `VMAFX_AUTH_TENANTS_REFRESH`
+  (default 30 s); the controller does not start on an invalid tenant or an
+  inconsistent setting, and refuses every token once it has not read its
+  tenants for ten intervals. The Helm chart switches to it when
+  `auth.tenants` is set (or `auth.tenantSource: kubernetes`), grants the read
+  access and opens the API server in the NetworkPolicy.
+
+
 - **Charts in the documentation, drawn from repository data.** Three
   Vega-Lite charts render to static SVG in light and dark at docs-generation
   time and turn interactive in the browser, with exact values on hover: the
@@ -3001,6 +3017,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
 
 
+- **The Helm chart no longer renders auth settings that nothing applies
+  ([ADR-1519](docs/adr/1519-controller-tenant-registry.md)).** `auth.enabled`
+  passed `VMAFX_AUTH_*` to the default `vmafx-server` image, which has no auth
+  gateway, so the server ran unauthenticated; the render now fails unless
+  `image.repository` names a vmafx-controller image and `workload` is
+  `Deployment`. `enabled: false` in an `auth.tenants` entry rendered as
+  `true`; it now renders as `false`.
+
+
 - **`adm_hip` is bit-identical to the CPU `adm` extractor, and no longer
   returns garbage for the first frame of a second context.** The HIP twin
   rounded the ADM denominator once per thread where the CPU rounds once per
@@ -4636,6 +4661,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (`role required: ...`). A method missing from the role table is refused for
   every caller. Clients with auth enabled need tokens carrying these roles
   (`VMAFX_CONTROLLER_TOKEN` of `vmafx-mcp`: writer to submit and cancel).
+
+
+- **vmafx-controller refetches its JWKS keys and hides why a token was refused
+  ([ADR-1519](docs/adr/1519-controller-tenant-registry.md)).** A key the
+  identity provider withdrew kept verifying tokens until the controller
+  restarted; keys are now refetched after 15 minutes (and kept for at most
+  24 hours while the endpoint fails), failed fetches are rate-limited like
+  successful ones, and an `https` JWKS fetch no longer follows a redirect to
+  plain `http`. A refused gRPC call now gets the fixed message `invalid or
+  missing token` instead of the verification error, which named the
+  configured issuers.
 
 
 - **vmafx-controller scopes every job read and every node session to the

@@ -253,6 +253,39 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: controller -> kube-apiserver, when the controller reads its
+# tenants from VmafxTenant resources (ADR-1519). Same ipBlock reasoning as the
+# operator rule above.
+# ----------------------------------------------------------------------------
+{{- if and .Values.auth.enabled (eq (include "vmafx.tenantSource" .) "kubernetes") .Values.networkPolicy.allow.serverToApiserver.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-server-to-apiserver
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+      ports:
+        {{- range .Values.networkPolicy.allow.serverToApiserver.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: Prometheus scraping on the node metrics port (9090).  When the
 # ServiceMonitor is enabled, the Prometheus operator scrapes vmafx-node pods
 # on port 9090.  The default-deny policy blocks this unless we add an explicit

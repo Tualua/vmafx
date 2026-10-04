@@ -16,6 +16,8 @@ Per-package invariants for subtree.
 | [ADR-0962](../../docs/adr/0962-controller-streamjobs-and-reaper-stop.md) | StreamJobs snapshot + reaper stop signal | controller / queue / nodes correctness |
 | [ADR-1119](../../docs/adr/1119-golusoris-go-framework-adoption.md) | golusoris fx framework adoption | composition root, env contract, lifecycle ordering, auth injection |
 | [ADR-1518](../../docs/adr/1518-controller-grpc-authorization.md) | gRPC authorisation: per-method role table, deny by default | auth interceptors, `grpc_roles.go` |
+| [ADR-1522](../../docs/adr/1522-controller-tenant-scoped-reads.md) | tenant-scoped job reads, tenant-bound node sessions | queue, nodes, scheduler, gRPC handlers |
+| [ADR-1519](../../docs/adr/1519-controller-tenant-registry.md) | tenant registry from VmafxTenant resources or file | `auth/tenants.go`, `tenants/`, `tenant_config.go` |
 
 ## Protobuf bindings (ADR-1119) — GENERATED, never hand-written
 
@@ -141,6 +143,37 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    `callerTenant(ctx)` once, hand value down (queue query, registry, scheduler).
    Empty tenant -> `Unauthenticated`. Ownership refusals name no tenant
    (`AssertTenantOwns`).
+
+### tenant registry (ADR-1519)
+
+1. **One verification path** (`auth/middleware.go::verifyBearer`): HTTP and
+   gRPC both call `verifyBearer`; registry mode -> `TenantRegistry.Resolve`,
+   else global provider. Never add transport-specific token checks.
+2. **Resolve contract** (`auth/tenants.go`): issuer picks candidates; each
+   verifies with own JWKS/issuer/audience; match only when own `tenantClaim`
+   value == own `tenantId`; exactly one match. Suspended -> PermissionDenied
+   (403); stale set (age > `StaleFactor` x refresh) -> Unavailable (503).
+   One snapshot (`atomic.Pointer`) per request; never reload mid-decision.
+3. **Startup strict, refresh lenient**: `Load` all-or-nothing (controller
+   start fails); `Reload` drops only invalid tenants and every copy of
+   duplicate `tenantId`. Undecodable resource = entry with `Err`, refused by
+   registry, never load failure. Mode exclusivity in `Config.validateMode`:
+   registry excludes disabled and all five global provider settings.
+4. **JWKS cache** (`auth/middleware.go`): keys used `jwksKeyMaxAge` (15 min)
+   then refetched; on fetch failure kept until `jwksKeyHardMaxAge` (24 h);
+   every fetch attempt sets cooldown; https->http redirect refused
+   (`refuseDowngradeRedirect`). Registry: one signature check per cache
+   (`matchTenant` + `verifiedOnce`), caches pruned in `publish`. gRPC
+   Unauthenticated message fixed (`grpcAuthError`); reasons only logged.
+5. **Sources** (`tenants/`): `FileSource` (YAML/JSON docs, lists) and
+   `KubernetesSource` (dynamic client, namespace-scoped list, timeout).
+   Strict spec decode (`DisallowUnknownFields`). `Refresher` Start/Close like
+   `nodes.Registry`.
+6. **Guards**: `auth/tenants_internal_test.go` (once-per-cache, key age,
+   redirect, prune), `auth/tenants_test.go` (mutation-checked: tenant-claim match,
+   suspension, allowedRoles, staleness, defaultRole-in-allowed),
+   `tenants/source_test.go`, `tenant_config_test.go`
+   (`TestMisconfiguredTenantStopsStartup`, over-wire enforcement + reload).
 
 ### main / shutdown
 

@@ -343,6 +343,15 @@
                 "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } }
               }
             },
+            "serverToApiserver": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Allow the controller to read VmafxTenant resources from the kube-apiserver (ADR-1519).",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+              }
+            },
             "nodeMetrics": {
               "type": "object",
               "additionalProperties": false,
@@ -377,6 +386,7 @@
         "audience": { "type": "string" },
         "tenantClaim": { "type": "string" },
         "rolesClaim": { "type": "string" },
+        "tenantSource": { "type": "string", "enum": ["", "kubernetes"] },
         "tenants": { "type": "array" }
       }
     },

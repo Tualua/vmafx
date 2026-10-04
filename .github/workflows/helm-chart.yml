@@ -118,6 +118,12 @@ jobs:
       - name: vmafx-node chart contract
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_node_contract.py' -v
 
+      # ADR-1519: tenant-registry wiring (env, VmafxTenant RBAC, API-server
+      # egress, rendered tenants) and the render failures for auth settings
+      # the workload would not apply.
+      - name: Controller auth and tenant registry renders
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_controller_auth.py' -v
+
       # ADR-1353: the server Deployment selected every Pod of the release, the
       # operator's and node's included. Render each server workload with every
       # other component on and require each selector to pick only its own Pods.

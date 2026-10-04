@@ -1,0 +1,43 @@
+{{- /*
+SPDX-License-Identifier: EUPL-1.2
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/auth-validate.yaml
+Renders nothing. Refuses auth settings that the rendered workload would not
+apply, instead of deploying a server that silently runs without them.
+
+- The auth gateway is part of vmafx-controller; vmafx-server (the default
+  image) has none, and only the Deployment workload receives the auth
+  environment.
+- A tenant registry cannot be combined with auth.disabled, and auth.tenants /
+  auth.tenantSource mean nothing without auth.enabled.
+- env.VMAFX_AUTH_* / env.VMAFX_JWKS_* would override the auth settings
+  behind these checks; an empty rbac.allowedRoles would be dropped and the
+  CRD would default it to reader and writer.
+
+ADR-0794: multi-tenant auth gateway. ADR-1519: tenant registry.
+*/ -}}
+{{- $source := include "vmafx.tenantSource" . }}
+{{- range $name, $_ := .Values.env }}
+{{- if or (hasPrefix "VMAFX_AUTH_" $name) (hasPrefix "VMAFX_JWKS_" $name) }}
+{{- fail (printf "env.%s: set auth settings through auth.*, not env (the auth guards cannot see env)" $name) }}
+{{- end }}
+{{- end }}
+{{- range .Values.auth.tenants }}
+{{- if and (hasKey . "rbac") (hasKey (.rbac | default dict) "allowedRoles") (empty .rbac.allowedRoles) }}
+{{- fail (printf "auth.tenants %s: rbac.allowedRoles is empty (the CRD would default it to reader and writer)" .tenantId) }}
+{{- end }}
+{{- end }}
+{{- if .Values.auth.enabled }}
+{{- if hasSuffix "vmafx-server" .Values.image.repository }}
+{{- fail (printf "auth.enabled: image.repository %q is vmafx-server, which has no auth gateway; set image.repository to a vmafx-controller image" .Values.image.repository) }}
+{{- end }}
+{{- if ne .Values.workload "Deployment" }}
+{{- fail (printf "auth.enabled: only workload Deployment receives the auth settings, workload is %q" .Values.workload) }}
+{{- end }}
+{{- if and $source .Values.auth.disabled }}
+{{- fail "auth.disabled cannot be combined with a tenant registry (auth.tenants / auth.tenantSource)" }}
+{{- end }}
+{{- else if $source }}
+{{- fail "auth.tenants and auth.tenantSource need auth.enabled: true" }}
+{{- end }}

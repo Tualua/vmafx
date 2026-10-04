@@ -31,7 +31,7 @@ phase4b-platform
 | Component | Language | Image | Key responsibilities |
 | --- | --- | --- | --- |
 | `vmafx-controller` | Go | distroless/cc | gRPC + HTTP API, job queue, node registry, scheduler, `/healthz /readyz /metrics` |
-| `vmafx-operator` | Go (controller-runtime) | distroless/cc | Watches `VmafxJob` / `VmafxNode` / `VmafxModelTraining` CRDs (`VmafxTenant` ships as a CRD without a reconciler); reconciles pod lifecycle; drives HPA |
+| `vmafx-operator` | Go (controller-runtime) | distroless/cc | Watches `VmafxJob` / `VmafxNode` / `VmafxModelTraining` CRDs (`VmafxTenant` is read by the controller, not the operator); reconciles pod lifecycle; drives HPA |
 | `vmafx-node` | Go | distroless/cc + ffmpeg + rclone | Pulls work, runs ffmpeg subprocess, scores via libvmaf cgo, AI inference via Go ONNX Runtime, captures training triples |
 | `training-sidecar` | Python (PyTorch + Lightning) | pytorch base | Consumes `(ref, dis, score, metadata)` triples from co-located node; continuously fine-tunes ONNX model; writes updated `.onnx` to model registry |
 | `vmafx-mcp` | Go | distroless/cc | MCP JSON-RPC server; 5 of its 24 tools (`submit_job`, `get_job`, `cancel_job`, `list_jobs`, `vmaf_score_remote`) call the controller over gRPC, the others run the `vmaf` CLI directly (see [MCP tools](../mcp/tools.md)) |
@@ -48,7 +48,7 @@ All four CRDs belong to the group `vmafx.dev`, version `v1`
 | `VmafxJob` | `vmafx.dev/v1` | Namespaced | Describes a scoring / encoding / QA job (source, models, encoder params, target node pool) |
 | `VmafxNode` | `vmafx.dev/v1` | Namespaced | Describes a node pool (GPU vendor, count, image, resource limits) |
 | `VmafxModelTraining` | `vmafx.dev/v1` | Namespaced | Describes a sidecar training run (base model, training config, output target) |
-| `VmafxTenant` | `vmafx.dev/v1` | Namespaced | Maps an auth tenant to its settings (see [auth](../server/auth.md)); no reconciler in the operator |
+| `VmafxTenant` | `vmafx.dev/v1` | Namespaced | Maps an auth tenant to its identity provider, suspension switch and role whitelist; the controller reads and enforces it (see [auth](../server/auth.md#tenant-registry)) |
 
 ## Storage flow (zero-copy via rclone)
 

@@ -95,7 +95,7 @@ The operator serves validating webhooks for `VmafxJob` and `VmafxNode` when
 | VmafxJob | `vmafx.dev/v1` | Job submission and lifecycle tracking |
 | VmafxNode | `vmafx.dev/v1` | Worker node registration and capability |
 | VmafxModelTraining | `vmafx.dev/v1` | Sidecar training run lifecycle |
-| VmafxTenant | `vmafx.dev/v1` | Tenant OIDC and role settings (CRD only: the operator has no reconciler for it; see [auth](auth.md#vmafxtenant-crd)) |
+| VmafxTenant | `vmafx.dev/v1` | Tenant OIDC and role settings; read and enforced by the controller, not reconciled by the operator (see [auth](auth.md#tenant-registry)) |
 
 Install CRDs from the Helm chart (enabled by default) or manually:
 

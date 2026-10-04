@@ -22,8 +22,8 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -92,11 +92,7 @@ func (m *Middleware) admitGRPC(ctx context.Context, method string) (context.Cont
 // Returns an enriched context on success, or a gRPC status error on failure.
 func (m *Middleware) authenticateGRPC(ctx context.Context, method string) (context.Context, error) {
 	if m.cfg.Disabled {
-		return withClaims(ctx, Claims{
-			Subject:  "dev",
-			TenantID: "dev",
-			Roles:    []string{RoleAdmin},
-		}), nil
+		return withClaims(ctx, devClaims()), nil
 	}
 
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -109,30 +105,28 @@ func (m *Middleware) authenticateGRPC(ctx context.Context, method string) (conte
 		return ctx, status.Errorf(codes.Unauthenticated, "missing authorization metadata")
 	}
 
-	authHeader := vals[0]
-	const prefix = "Bearer "
-	if !strings.HasPrefix(authHeader, prefix) {
-		return ctx, status.Errorf(codes.Unauthenticated, "authorization must be Bearer token")
-	}
-	token := strings.TrimPrefix(authHeader, prefix)
-
-	rawClaims, err := verifyJWT(token, m.cache, m.cfg.Issuer, m.cfg.Audience)
+	claims, err := m.verifyBearer(vals[0])
 	if err != nil {
 		m.log.Warn("grpc auth: rejected", "method", method, "error", err)
-		return ctx, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+		return ctx, grpcAuthError(err)
 	}
-
-	tenantID, ok2 := extractStringClaim(rawClaims, m.cfg.tenantClaim())
-	if !ok2 || tenantID == "" {
-		return ctx, status.Errorf(codes.Unauthenticated,
-			"jwt claim %q is required", m.cfg.tenantClaim())
-	}
-
-	sub, _ := extractStringClaim(rawClaims, "sub")
-	roles := extractStringSliceClaim(rawClaims, m.cfg.rolesClaim())
-	claims := Claims{Subject: sub, TenantID: tenantID, Roles: roles}
-
 	return withClaims(ctx, claims), nil
+}
+
+// grpcAuthError maps a verification failure to its gRPC status: a suspended
+// tenant is PermissionDenied, a stale tenant set Unavailable, anything else
+// Unauthenticated with a fixed message.
+func grpcAuthError(err error) error {
+	switch {
+	case errors.Is(err, errTenantDisabled):
+		return status.Errorf(codes.PermissionDenied, "%v", err)
+	case errors.Is(err, errTenantsStale):
+		return status.Errorf(codes.Unavailable, "%v", err)
+	default:
+		// The reason is logged, not returned: it would tell an unauthenticated
+		// caller which issuers and tenants are configured.
+		return status.Error(codes.Unauthenticated, "invalid or missing token")
+	}
 }
 
 // RequireGRPCRole returns a unary interceptor that requires one of roles for

@@ -14,9 +14,12 @@ PodDisruptionBudget).
 The chart installs four custom resource definitions from
 `deploy/helm/vmafx/crds/`: `VmafxJob`, `VmafxNode` and `VmafxModelTraining`,
 which the operator reconciles ([operator.md](operator.md)), and `VmafxTenant`,
-which holds per-tenant OIDC and RBAC settings for the controller's auth gateway
-(`auth.tenants` in `values.yaml`; see
-[server/auth.md](../server/auth.md#vmafxtenant-crd)).
+which holds per-tenant OIDC and RBAC settings that the controller's auth
+gateway reads and enforces (`auth.tenants` in `values.yaml`; see
+[server/auth.md](../server/auth.md#helm-configuration)). The auth gateway
+belongs to `vmafx-controller`, not to the chart's default `vmafx-server`
+image: with `auth.enabled`, set `image.repository` to a controller image, or
+the render fails.
 
 A `values.schema.json` (Draft 2020-12) sits next to `values.yaml` and is
 consulted automatically by `helm install`, `helm upgrade`, and `helm lint
@@ -365,7 +368,9 @@ Calico GlobalNetworkPolicy) or do not install a NetworkPolicy controller —
 in the latter case the chart's NetworkPolicies render but are inert.
 
 Opt in with `--set networkPolicy.enabled=true`.  The chart then emits a
-default-deny baseline plus seven narrow allow-rules:
+default-deny baseline plus narrow allow-rules (`allow-node-to-controller` only
+with `node.controllerAddr`, `allow-server-to-apiserver` only with a tenant
+registry):
 
 | Policy                          | Direction | Peer                                            | Ports               | Purpose                                              |
 |---------------------------------|-----------|-------------------------------------------------|---------------------|------------------------------------------------------|
@@ -375,6 +380,7 @@ default-deny baseline plus seven narrow allow-rules:
 | `allow-node-to-controller`      | egress    | pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `9090` (configurable) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered only when `node.controllerAddr` is set. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
+| `allow-server-to-apiserver`     | egress    | `0.0.0.0/0` (same reason)                       | `443`, `6443`       | The controller listing `VmafxTenant` resources; rendered with `auth.enabled` and `auth.tenants` / `auth.tenantSource: kubernetes`. |
 | `allow-node-metrics-ingress`    | ingress   | any in-namespace pod (or a narrower `fromPodSelector`) | `9090` | Prometheus scraping of the vmafx-node metrics endpoint. Tighten `networkPolicy.allow.nodeMetrics.fromPodSelector` to `{app.kubernetes.io/name: prometheus}` in production. |
 | `allow-dns-egress`              | egress    | `kube-system` / CoreDNS pods                    | `53/udp`, `53/tcp`  | Cluster DNS resolution — required for the other allow-rules to function. |
 

@@ -328,7 +328,8 @@
     "helm": {
       "patterns": [
         "deploy/helm/*",
-        "deploy/helm/**"
+        "deploy/helm/**",
+        "scripts/ci/tests/test_helm_controller_auth.py"
       ]
     },
     "golden_harness": {

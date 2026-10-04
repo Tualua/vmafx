@@ -339,6 +339,14 @@ networkPolicy:
       ports:
         - 443
         - 6443
+    # controller → kube-apiserver: reading VmafxTenant resources. Rendered
+    # only when the controller reads its tenants from them (ADR-1519:
+    # auth.enabled with auth.tenants or auth.tenantSource: kubernetes).
+    serverToApiserver:
+      enabled: true
+      ports:
+        - 443
+        - 6443
     # Prometheus scraping of node metrics port 9090 (vmafx-node).
     # When monitoring.enabled is true, the Prometheus operator scrapes the
     # node metrics endpoint; the default-deny ingress policy blocks this
@@ -520,28 +528,38 @@ node:
   volumeMounts: []
 
 # ---------------------------------------------------------------------------
-# Auth — multi-tenant JWT / OIDC gateway (ADR-0794)
+# Auth — multi-tenant JWT / OIDC gateway (ADR-0794, ADR-1518, ADR-1519)
 # ---------------------------------------------------------------------------
-# When auth.enabled is true the controller validates RS256 bearer tokens from
-# an OIDC provider and enforces tenant isolation + RBAC.
+# The auth gateway is part of vmafx-controller. The chart's default workload
+# image, vmafx-server, has no auth gateway, so auth.enabled requires
+# image.repository to name a vmafx-controller image and workload: Deployment;
+# the chart refuses to render otherwise instead of deploying an open server.
+#
+# Two ways to verify tokens:
+#   1. One identity provider for every tenant (auth.tenantSource ""): the
+#      controller trusts jwksEndpoint / issuer below and takes the tenant from
+#      each token's tenantClaim. Any tenant name the provider issues is
+#      accepted.
+#   2. A tenant registry (auth.tenantSource "kubernetes", implied when
+#      auth.tenants is not empty): the controller reads the VmafxTenant
+#      resources of the release namespace and accepts only their tenants, each
+#      with its own identity provider, suspension switch and role whitelist.
+#      The chart creates one VmafxTenant per auth.tenants entry and grants the
+#      controller's service account read access to VmafxTenants; resources
+#      applied with kubectl are read the same way. jwksEndpoint, issuer,
+#      audience, tenantClaim and rolesClaim below then only fill the fields an
+#      auth.tenants entry leaves out; they are not passed to the controller.
 #
 # For internal / dev deployments set auth.disabled: true (sets
-# VMAFX_AUTH_DISABLED=true env var, bypasses all checks).
-#
-# Tenant configuration can be supplied two ways:
-#   1. Inline below (auth.tenants[]) — creates VmafxTenant CRs via the Helm
-#      template.  Suitable for small fixed tenant sets.
-#   2. Kubectl-apply VmafxTenant CRs directly — suitable for operator-managed
-#      multi-tenant clusters where tenants are managed by an external control
-#      plane.
+# VMAFX_AUTH_DISABLED=true: every request runs as tenant "dev" with
+# vmafx:admin).
 #
 # Quick-start (single tenant, Auth0):
 #
+#   image:
+#     repository: ghcr.io/vmafx/vmafx-controller
 #   auth:
 #     enabled: true
-#     jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
-#     issuer: https://YOUR_DOMAIN.auth0.com/
-#     audience: https://vmafx.example.com/api
 #     tenants:
 #       - tenantId: acme
 #         oidc:
@@ -551,22 +569,28 @@ node:
 #
 # See docs/server/auth.md for the full OIDC configuration guide.
 auth:
-  # enabled — set to true to activate the auth gateway.
-  # When false the controller starts with auth bypassed (plaintext, no tenant).
+  # enabled — pass the auth settings below to the controller. When false the
+  # chart passes no auth setting; vmafx-controller then refuses to start
+  # unless VMAFX_AUTH_DISABLED or an identity provider comes from env/envFrom.
   enabled: false
 
   # disabled — explicitly bypass auth even when enabled is true.
   # Useful for dry-run or integration-test pipelines.  Never true in production.
   disabled: false
 
-  # jwksEndpoint — global fallback JWKS URL used when a tenant does not
-  # override it.  Required when auth.enabled is true.
+  # tenantSource — "" (one identity provider, the fields below) or
+  # "kubernetes" (read VmafxTenant resources). auth.tenants not empty implies
+  # "kubernetes".
+  tenantSource: ""
+
+  # jwksEndpoint — JWKS URL of the single identity provider; with a tenant
+  # registry, the default of an auth.tenants entry without oidc.jwksEndpoint.
   jwksEndpoint: ""
 
-  # issuer — global fallback expected "iss" claim value.
+  # issuer — expected "iss" claim value (same rule as jwksEndpoint).
   issuer: ""
 
-  # audience — global fallback expected "aud" claim value (optional).
+  # audience — expected "aud" claim value (optional; same rule).
   audience: ""
 
   # tenantClaim — JWT claim field that holds the tenant identifier.
@@ -576,8 +600,9 @@ auth:
   # rolesClaim — JWT claim field that holds the list of vmafx role strings.
   rolesClaim: "vmafx_roles"
 
-  # tenants — list of VmafxTenant CRs to create.  Each entry maps to one
-  # VmafxTenant custom resource.  Leave empty to manage tenants out-of-band.
+  # tenants — VmafxTenant resources to create in the release namespace. Each
+  # entry maps to one VmafxTenant (see the CRD for every field). Leave empty
+  # and set tenantSource: kubernetes to manage VmafxTenants out-of-band.
   tenants: []
   # Example:
   # tenants:

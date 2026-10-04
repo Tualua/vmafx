@@ -137,6 +137,23 @@ source change, no upstream file touched.
   `networkpolicy.yaml` gains `allow-node-to-controller`. A rebase that brings
   the helper back reintroduces a default pointing at a Service the chart does
   not deploy.
+## Controller tenant registry and chart auth guards (ADR-1519, 2026-10-04)
+
+`feat/controller-tenant-config`. Go controller and Helm chart; no libvmaf
+change.
+
+- `cmd/vmafx-controller/auth/tenants.go` (registry, resolution) and
+  `cmd/vmafx-controller/tenants/` (file and Kubernetes sources, refresher) are
+  new; `auth.Config.Tenants` selects them and `Config.validateMode` refuses a
+  tenant source next to `Disabled` or the global provider settings. HTTP and
+  gRPC verify through one `Middleware.verifyBearer`.
+- `cmd/vmafx-controller/tenant_config.go` reads `VMAFX_AUTH_TENANTS_*` and
+  loads the tenants while the fx graph is built (a failure stops startup).
+- Chart: `templates/auth-validate.yaml`, `templates/controller-tenant-rbac.yaml`
+  and the `allow-server-to-apiserver` NetworkPolicy are new;
+  `deployment.yaml` passes the tenant source instead of the global provider in
+  tenant mode; `tenant-crd-config.yaml` tests `enabled` with `hasKey`.
+
 ## Controller job reads and node sessions are tenant-scoped (ADR-1522, 2026-10-04)
 
 `fix/controller-tenant-filter`. Go controller only; no libvmaf change.

@@ -63,6 +63,14 @@ spec:
             {{- if .Values.auth.enabled }}
             - name: VMAFX_AUTH_DISABLED
               value: {{ .Values.auth.disabled | toString | quote }}
+            {{- if eq (include "vmafx.tenantSource" .) "kubernetes" }}
+            {{- /* ADR-1519: the controller reads VmafxTenants; the global
+                   provider settings only default auth.tenants entries. */}}
+            - name: VMAFX_AUTH_TENANTS_SOURCE
+              value: "kubernetes"
+            - name: VMAFX_AUTH_TENANTS_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            {{- else }}
             {{- if .Values.auth.jwksEndpoint }}
             - name: VMAFX_JWKS_ENDPOINT
               value: {{ .Values.auth.jwksEndpoint | quote }}
@@ -82,6 +90,7 @@ spec:
             {{- if .Values.auth.rolesClaim }}
             - name: VMAFX_AUTH_ROLES_CLAIM
               value: {{ .Values.auth.rolesClaim | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
           {{- range $k, $v := .Values.env }}

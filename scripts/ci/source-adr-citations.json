@@ -4797,6 +4797,7 @@
         "cmd/vmafx-controller/auth/middleware_test.go": 1,
         "cmd/vmafx-controller/auth/policy.go": 2,
         "cmd/vmafx-controller/auth/rsa.go": 1,
+        "cmd/vmafx-controller/auth/tenants.go": 1,
         "cmd/vmafx-controller/grpc_roles.go": 2,
         "cmd/vmafx-controller/grpc_roles_test.go": 1,
         "cmd/vmafx-controller/grpc_server.go": 3,
@@ -4805,6 +4806,7 @@
         "cmd/vmafx-controller/queue/queue.go": 1,
         "cmd/vmafx-controller/queue/schema.sql": 2,
         "deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml": 2,
+        "deploy/helm/vmafx/templates/auth-validate.yaml": 1,
         "deploy/helm/vmafx/templates/operator-rbac.yaml": 1,
         "deploy/helm/vmafx/templates/tenant-crd-config.yaml": 1,
         "deploy/helm/vmafx/values.yaml": 1
@@ -5949,6 +5951,7 @@
         "cmd/vmafx-controller/nodes/registry_test.go": 3,
         "cmd/vmafx-controller/proto/generate.sh": 1,
         "cmd/vmafx-controller/scheduler/scheduler_test.go": 1,
+        "cmd/vmafx-controller/tenants/refresher.go": 1,
         "cmd/vmafx-controller/wire_test.go": 1,
         "cmd/vmafx-mcp/main.go": 6,
         "cmd/vmafx-mcp/otel_test.go": 1,
@@ -10058,9 +10061,34 @@
         "cmd/vmafx-controller/auth/policy_test.go": 1,
         "cmd/vmafx-controller/grpc_roles.go": 2,
         "cmd/vmafx-controller/grpc_roles_test.go": 1,
-        "cmd/vmafx-controller/main.go": 3
+        "cmd/vmafx-controller/main.go": 3,
+        "deploy/helm/vmafx/values.yaml": 1
       },
       "target": "1518-controller-grpc-authorization.md"
+    },
+    "1519": {
+      "sites": {
+        ".github/workflows/helm-chart.yml": 1,
+        "cmd/vmafx-controller/auth/middleware.go": 1,
+        "cmd/vmafx-controller/auth/rsa.go": 1,
+        "cmd/vmafx-controller/auth/tenants.go": 1,
+        "cmd/vmafx-controller/auth/tenants_internal_test.go": 1,
+        "cmd/vmafx-controller/auth/tenants_test.go": 1,
+        "cmd/vmafx-controller/main.go": 3,
+        "cmd/vmafx-controller/tenant_config.go": 1,
+        "cmd/vmafx-controller/tenant_config_test.go": 1,
+        "cmd/vmafx-controller/tenants/refresher.go": 1,
+        "cmd/vmafx-controller/tenants/source.go": 1,
+        "cmd/vmafx-controller/tenants/source_test.go": 1,
+        "deploy/helm/vmafx/templates/auth-validate.yaml": 1,
+        "deploy/helm/vmafx/templates/controller-tenant-rbac.yaml": 1,
+        "deploy/helm/vmafx/templates/deployment.yaml": 1,
+        "deploy/helm/vmafx/templates/networkpolicy.yaml": 1,
+        "deploy/helm/vmafx/templates/tenant-crd-config.yaml": 1,
+        "deploy/helm/vmafx/values.yaml": 2,
+        "scripts/ci/tests/test_helm_controller_auth.py": 1
+      },
+      "target": "1519-controller-tenant-registry.md"
     },
     "1521": {
       "sites": {
