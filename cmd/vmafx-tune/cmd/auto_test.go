@@ -155,26 +155,36 @@ func TestAutoRejectsBadInput(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		args    []string
-		wantErr string
+		name     string
+		args     []string
+		wantErr  string
+		wantCode int
 	}{
 		{
-			name:    "missing --src",
-			args:    []string{"auto", "--smoke"},
-			wantErr: "src",
+			name:     "missing --src",
+			args:     []string{"auto"},
+			wantErr:  "src",
+			wantCode: 2,
 		},
 		{
-			name:    "empty --allow-codecs",
-			args:    []string{"auto", "--src", "/tmp/clip.mkv", "--smoke", "--allow-codecs", ",,"},
-			wantErr: "allow-codecs",
+			name:     "missing --src with --smoke --execute",
+			args:     []string{"auto", "--smoke", "--execute"},
+			wantErr:  "src",
+			wantCode: 2,
+		},
+		{
+			name:     "empty --allow-codecs",
+			args:     []string{"auto", "--src", "/tmp/clip.mkv", "--smoke", "--allow-codecs", ",,"},
+			wantErr:  "allow-codecs",
+			wantCode: 2,
 		},
 		{
 			name: "unknown codec in the allow list",
 			args: []string{
 				"auto", "--src", "/tmp/clip.mkv", "--allow-codecs", "libnope",
 			},
-			wantErr: "libnope",
+			wantErr:  "libnope",
+			wantCode: 1,
 		},
 	}
 	for _, tc := range tests {
@@ -191,7 +201,31 @@ func TestAutoRejectsBadInput(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error %q should mention %q", err, tc.wantErr)
 			}
+			if code := resolveExitCode(err); code != tc.wantCode {
+				t.Errorf("exit code = %d, want %d", code, tc.wantCode)
+			}
 		})
+	}
+}
+
+// TestAutoSmokeNeedsNoSrc: the smoke planner probes nothing, so --smoke plans
+// without a source (the plan records an empty src).
+func TestAutoSmokeNeedsNoSrc(t *testing.T) {
+	t.Parallel()
+	out := filepath.Join(t.TempDir(), "plan.json")
+	root := newRoot("dev")
+	root.Cobra().SetArgs([]string{"auto", "--smoke", "--output", out})
+	root.Cobra().SetOut(new(strings.Builder))
+	root.Cobra().SetErr(new(strings.Builder))
+	if err := root.Execute(); err != nil {
+		t.Fatalf("auto --smoke without --src: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read plan: %v", err)
+	}
+	if !strings.Contains(string(data), `"src": ""`) {
+		t.Errorf("plan should record an empty src, got:\n%s", data)
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/VMAFx/vmafx/pkg/bisect"
+	"github.com/VMAFx/vmafx/pkg/ladder"
 	"github.com/VMAFx/vmafx/pkg/report"
 )
 
@@ -526,4 +527,26 @@ func existingFile(t *testing.T) string {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	return p
+}
+
+// TestErrNoScoredRung: a ladder whose every cell failed is an error with exit
+// status 2 naming the first failure; one scored cell is enough to emit.
+func TestErrNoScoredRung(t *testing.T) {
+	t.Parallel()
+	failed := ladder.LadderResult{Cloud: []ladder.Point{
+		{Width: 640, Height: 360, Error: "score at CRF 26: boom"},
+		{Width: 320, Height: 180, Error: "other"},
+	}}
+	err := errNoScoredRung(failed)
+	if err == nil || !strings.Contains(err.Error(), "boom") || resolveExitCode(err) != 2 {
+		t.Fatalf("all cells failed: err = %v (exit %d), want exit 2 naming the first error",
+			err, resolveExitCode(err))
+	}
+	if err := errNoScoredRung(ladder.LadderResult{}); err == nil {
+		t.Error("an empty cloud must be an error")
+	}
+	failed.Cloud = append(failed.Cloud, ladder.Point{Width: 160, Height: 90, OK: true})
+	if err := errNoScoredRung(failed); err != nil {
+		t.Errorf("one scored cell: err = %v, want nil", err)
+	}
 }

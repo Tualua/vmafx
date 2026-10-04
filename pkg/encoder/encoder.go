@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,8 +151,11 @@ func outputDir(params EncodeParams) string {
 	return os.TempDir()
 }
 
-// probeBitrateKbps reads the bitrate of path by invoking ffprobe.
-// Returns 0.0 when ffprobe is unavailable or the file cannot be probed.
+// probeBitrateKbps reads the bitrate of path by invoking ffprobe: the video
+// stream's bit_rate, or the container's when the stream has none. Matroska,
+// the format every encode is written in, stores no per-stream bit_rate, so the
+// stream entry alone read "N/A" and every compare and ladder point reported 0
+// kbps. Returns 0.0 when ffprobe is unavailable or the file cannot be probed.
 func probeBitrateKbps(path, ffmpegBin string) float64 {
 	// Derive ffprobe path from ffmpeg path.
 	dir := filepath.Dir(ffmpegBin)
@@ -174,19 +178,27 @@ func probeBitrateKbps(path, ffmpegBin string) float64 {
 		ctx, probeBin,
 		"-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=bit_rate",
+		"-show_entries", "stream=bit_rate:format=bit_rate",
 		"-of", "default=noprint_wrappers=1:nokey=1",
 		path,
 	).Output()
 	if err != nil {
 		return 0.0
 	}
-	s := strings.TrimSpace(string(out))
-	bps, err := strconv.ParseFloat(s, 64)
-	if err != nil || bps <= 0 {
-		return 0.0
+	return firstPositiveKbps(string(out))
+}
+
+// firstPositiveKbps returns the first positive bits-per-second value of an
+// ffprobe "stream=bit_rate:format=bit_rate" listing (stream first, then
+// container), in kbps; 0.0 when no line holds one ("N/A" lines are skipped).
+func firstPositiveKbps(listing string) float64 {
+	for line := range strings.SplitSeq(listing, "\n") {
+		bps, err := strconv.ParseFloat(strings.TrimSpace(line), 64)
+		if err == nil && bps > 0 && !math.IsInf(bps, 0) {
+			return bps / 1000.0
+		}
 	}
-	return bps / 1000.0
+	return 0.0
 }
 
 // extractEncoderVersion extracts the encoder version string from ffmpeg

@@ -160,7 +160,7 @@ func TestAvailableHardwareEncoders_ReturnsSubset(t *testing.T) {
 	// Prime cache from a missing binary so the result is the empty set.
 	_ = probeAvailableCodecs("/nonexistent/ffmpeg")
 	got := AvailableHardwareEncoders()
-	if got != nil && len(got) != 0 {
+	if len(got) != 0 {
 		// On dev hosts with full ffmpeg the slice may be non-empty;
 		// only fail on the fake-binary cached scenario above.
 		for _, name := range got {
@@ -284,6 +284,54 @@ func TestInjectQSVInitChain_CustomDevice(t *testing.T) {
 	out := injectQSVInitChain(EncodeParams{})
 	if !strings.Contains(strings.Join(out.InputArgs, " "), "/dev/dri/renderD129") {
 		t.Errorf("VAAPI device override not honoured: %v", out.InputArgs)
+	}
+}
+
+// TestInjectQSVInitChain_MergesCallerFilter pins that the QSV upload joins the
+// caller's -vf chain instead of adding a second -vf: ffmpeg keeps only the last
+// one, so a ladder rung's scale (or the upload) would be dropped silently.
+func TestInjectQSVInitChain_MergesCallerFilter(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"scale then upload", []string{"-vf", "scale=640:360"},
+			[]string{"-vf", "scale=640:360,format=nv12,hwupload=extra_hw_frames=64"}},
+		{"filter:v spelling", []string{"-preset", "fast", "-filter:v", "scale=320:180"},
+			[]string{"-preset", "fast", "-filter:v", "scale=320:180,format=nv12,hwupload=extra_hw_frames=64"}},
+		{"no caller filter", nil,
+			[]string{"-vf", "format=nv12,hwupload=extra_hw_frames=64"}},
+		{"dangling -vf is not a chain", []string{"-vf"},
+			[]string{"-vf", "format=nv12,hwupload=extra_hw_frames=64", "-vf"}},
+	}
+	for _, tc := range cases {
+		out := injectQSVInitChain(EncodeParams{ExtraArgs: tc.in})
+		if strings.Join(out.ExtraArgs, " ") != strings.Join(tc.want, " ") {
+			t.Errorf("%s: ExtraArgs = %v, want %v", tc.name, out.ExtraArgs, tc.want)
+		}
+		if n := strings.Count(strings.Join(out.ExtraArgs, " "), "hwupload"); n != 1 {
+			t.Errorf("%s: %d hwupload filters in %v, want 1", tc.name, n, out.ExtraArgs)
+		}
+	}
+}
+
+// TestFirstPositiveKbps: Matroska stores no per-stream bit_rate, so the probe
+// falls back to the container's; "N/A" and non-positive lines are skipped.
+func TestFirstPositiveKbps(t *testing.T) {
+	t.Parallel()
+	cases := map[string]float64{
+		"N/A\n1149992\n":    1149.992, // stream N/A (mkv), container value
+		"250000\n300000\n":  250,      // stream value wins
+		"N/A\nN/A\n":        0,
+		"":                  0,
+		"-5\n0\n":           0,
+		"garbage\n128000\n": 128,
+	}
+	for listing, want := range cases {
+		if got := firstPositiveKbps(listing); got != want {
+			t.Errorf("firstPositiveKbps(%q) = %v, want %v", listing, got, want)
+		}
 	}
 }
 

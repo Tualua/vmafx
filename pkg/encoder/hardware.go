@@ -8,8 +8,9 @@
 //     runEncode helper as the software encoders.
 //   - All hardware paths require the GPU driver and the corresponding ffmpeg
 //     HW-accel plugin to be present in the container image.
-//   - QSV requires VA-API device initialisation (ADR-0601); the init chain
-//     is injected via ExtraArgs when the VMAFTUNE_VAAPI_DEVICE env var is set.
+//   - QSV requires VA-API device initialisation (ADR-0601); injectQSVInitChain
+//     adds the chain to every QSV encode (render node from
+//     VMAFTUNE_VAAPI_DEVICE, default /dev/dri/renderD128).
 //   - AV1 encoders (libsvtav1, libaom-av1) are treated as software encoders
 //     but shipped here because they are AOM ecosystem, not libx26x.
 //
@@ -63,8 +64,7 @@ func (e HEVCNVENCEncoder) Encode(src string, params EncodeParams) (EncodeResult,
 
 // H264QSVEncoder implements Encoder for h264_qsv.
 // Per ADR-0601, QSV encodes require a VA-API device chain initialised before
-// the input.  When VMAFTUNE_VAAPI_DEVICE is set the init chain is injected as
-// ExtraArgs at the beginning of the ffmpeg command.
+// the input; Encode adds it through injectQSVInitChain.
 type H264QSVEncoder struct{}
 
 // Name returns "h264_qsv".
@@ -121,11 +121,27 @@ func injectQSVInitChain(params EncodeParams) EncodeParams {
 		"-filter_hw_device", "va",
 	}
 	params.InputArgs = append(deviceChain, params.InputArgs...)
-	params.ExtraArgs = append(
-		[]string{"-vf", "format=nv12,hwupload=extra_hw_frames=64"},
-		params.ExtraArgs...,
-	)
+	params.ExtraArgs = appendVideoFilter(params.ExtraArgs, qsvUploadFilter)
 	return params
+}
+
+// qsvUploadFilter moves system-memory frames into QSV surfaces; it must be the
+// last filter before the encoder.
+const qsvUploadFilter = "format=nv12,hwupload=extra_hw_frames=64"
+
+// appendVideoFilter adds filter to the end of the caller's "-vf" chain, or
+// prepends "-vf filter" when the caller set none. ffmpeg keeps only the last
+// "-vf" of an output, so a second flag would silently drop the caller's chain
+// (a ladder rung's scale) or the upload.
+func appendVideoFilter(args []string, filter string) []string {
+	out := append([]string(nil), args...)
+	for i := 0; i+1 < len(out); i++ {
+		if out[i] == "-vf" || out[i] == "-filter:v" {
+			out[i+1] = out[i+1] + "," + filter
+			return out
+		}
+	}
+	return append([]string{"-vf", filter}, out...)
 }
 
 // ---------------------------------------------------------------------------

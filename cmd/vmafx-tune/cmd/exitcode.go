@@ -55,16 +55,17 @@ func exitCodeOf(err error) int {
 // `return 2`, and argparse itself exits 2 on a bad flag.
 const usageExitCode = 2
 
-// useUsageExitCode makes cmd report flag-layer failures — an unknown flag, a
-// value that will not parse — with the same exit status as its own validation
-// failures. Cobra raises those inside ParseFlags, before RunE ever runs, so
-// wrapping the domain function is not enough on its own.
+// useUsageExitCode makes cmd, and every subcommand that does not set its own,
+// report flag-layer failures — an unknown flag, a value that will not parse —
+// with the usage status 2. Cobra raises those inside ParseFlags, before RunE
+// ever runs, so wrapping the domain function is not enough on its own. newRoot
+// installs it on the root command, so it covers the whole CLI (cobra's
+// FlagErrorFunc is inherited from the parent).
 //
-// The companion half is that these commands do NOT call MarkFlagRequired:
-// cobra's required-flag check also runs before RunE and returns a bare error.
-// Each command re-checks its required flags at the top of its own run function
-// instead, so a missing flag takes the same path as any other validation
-// failure.
+// A missing required flag takes the same status: markCommandFlagsRequired
+// checks the annotations from PreRunE, ahead of Cobra's own check, and the
+// commands that never call MarkFlagRequired re-check their flags at the top
+// of their run function (benchmark, encode-profile, the sidecar group).
 func useUsageExitCode(cmd *cobra.Command) {
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return asUsageError(err)
@@ -74,14 +75,11 @@ func useUsageExitCode(cmd *cobra.Command) {
 // asUsageError tags a validation failure with the exit status the Python CLI
 // would have used, leaving an error that already carries one alone.
 //
-// Scope note: only the subcommands ported with this helper honour it —
-// `benchmark`, `encode-profile`, and the `sidecar` group (whose Python
-// original returns 2 from every validation path; see sidecar.go). The earlier
-// ports (compare, ladder, report) still surface every failure as exit 1, so a
-// script that branches on the status sees 2 from the former and 1 from the
-// latter. That inconsistency is pre-existing and deliberately not widened
-// here — making the older commands match Python changes their published
-// contract and belongs in its own change.
+// Every command reports flag-layer failures and missing required flags with
+// it (see useUsageExitCode). Validation inside a run function uses it where
+// the command was ported with that contract (benchmark, encode-profile, the
+// sidecar group); other commands still report their own validation failures
+// as exit 1.
 func asUsageError(err error) error {
 	if err == nil {
 		return nil

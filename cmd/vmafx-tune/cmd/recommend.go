@@ -329,13 +329,13 @@ func runRecommendFromEncodes(ctx context.Context, d deps, flags *recommendFlags)
 func validateRecommendEncodeFlags(flags *recommendFlags) (float64, string, error) {
 	if len(flags.sources) == 0 || flags.width <= 0 || flags.height <= 0 ||
 		len(flags.presets) == 0 {
-		return 0, "", errors.New(
+		return 0, "", asUsageError(errors.New(
 			"--source, --width, --height and --preset are required unless " +
-				"--from-corpus is used")
+				"--from-corpus is used"))
 	}
 	targetVMAF := optionalFloat(flags.targetVMAF)
 	if targetVMAF == nil {
-		return 0, "", errors.New("recommend requires --target-vmaf")
+		return 0, "", asUsageError(errors.New("recommend requires --target-vmaf"))
 	}
 	adapter, err := codecadapter.Get(flags.encoder)
 	if err != nil {

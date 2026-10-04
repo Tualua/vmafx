@@ -144,13 +144,14 @@ func TestLadder_outputSchemaJSON(t *testing.T) {
 
 	outJSON := filepath.Join(dir, "ladder.json")
 
-	// Run ladder with a single resolution and single target to keep it fast.
+	// Two rungs and one target: enough to see each rung encoded at its own
+	// geometry while staying fast.
 	runOut, runErr := exec.Command(
 		binPath, "ladder",
 		"--reference", srcPath,
 		"--codec", "libx264",
 		"--targets", "60",
-		"--resolutions", "320x240",
+		"--resolutions", "320x240,160x120",
 		"--output", outJSON,
 		"--format", "json",
 		"--work-dir", dir,
@@ -185,5 +186,31 @@ func TestLadder_outputSchemaJSON(t *testing.T) {
 		t.Errorf("schema_version = %v, want 1", payload["schema_version"])
 	}
 
+	assertLadderRungsScaled(t, payload)
 	t.Logf("ladder output: %s", string(data))
+}
+
+// assertLadderRungsScaled checks that every cloud point was scored (the scorer
+// used to hand vmaf the Matroska encode, so every point failed while the
+// command still exited 0) and that the smaller rung was encoded smaller (the
+// sampler used to encode every rung at the source resolution).
+func assertLadderRungsScaled(t *testing.T, payload map[string]any) {
+	t.Helper()
+	cloud, ok := payload["cloud"].([]any)
+	if !ok || len(cloud) != 2 {
+		t.Fatalf("cloud = %v, want two points", payload["cloud"])
+	}
+	kbps := map[float64]float64{}
+	for _, raw := range cloud {
+		pt, _ := raw.(map[string]any)
+		if pt["ok"] != true {
+			t.Fatalf("cloud point not scored: %v", pt)
+		}
+		width, _ := pt["width"].(float64)
+		kbps[width], _ = pt["bitrate_kbps"].(float64)
+	}
+	if kbps[160] <= 0 || kbps[160] >= kbps[320] {
+		t.Errorf("160x120 rung at %.1f kbps vs 320x240 at %.1f kbps: the smaller rung must be "+
+			"encoded at its own, smaller geometry", kbps[160], kbps[320])
+	}
 }

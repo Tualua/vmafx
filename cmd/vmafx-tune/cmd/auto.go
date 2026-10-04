@@ -82,15 +82,16 @@ Example — plan and realise the winner:
 
 	registerAutoFlags(cmd, flags)
 
-	markCommandFlagsRequired(cmd, "src")
-
+	// --src is required unless --smoke: the smoke planner probes nothing, so
+	// it is checked in runAuto (exit 2) instead of with MarkFlagRequired.
 	return cmd
 }
 
 // registerAutoFlags registers the flags of the auto subcommand.
 func registerAutoFlags(cmd *cobra.Command, flags *autoFlags) {
 	cmd.Flags().StringVar(&flags.src, "src", "",
-		"reference video (raw YUV or any FFmpeg-readable container)")
+		"reference video (raw YUV or any FFmpeg-readable container); "+
+			"required unless --smoke, and with --execute")
 	cmd.Flags().Float64Var(&flags.targetVMAF, "target-vmaf", 93.0,
 		"target pooled-mean VMAF (default 93)")
 	cmd.Flags().Float64Var(&flags.maxBudgetBitrate, "max-budget-bitrate", 8000.0,
@@ -137,12 +138,9 @@ func parseAllowCodecs(raw string) []string {
 
 // runAuto is the implementation of the auto subcommand.
 func runAuto(ctx context.Context, d deps, flags *autoFlags) error {
-	if flags.src == "" {
-		return errors.New("--src is required")
-	}
-	allow := parseAllowCodecs(flags.allowCodecs)
-	if len(allow) == 0 {
-		return errors.New("--allow-codecs is empty")
+	allow, err := validateAutoFlags(flags)
+	if err != nil {
+		return err
 	}
 
 	pred, err := predictor.NewWithModel(ctx, flags.model, d.Log)
@@ -187,6 +185,21 @@ func runAuto(ctx context.Context, d deps, flags *autoFlags) error {
 		return nil
 	}
 	return executePlan(ctx, d, flags, plan)
+}
+
+// validateAutoFlags checks the flag combination before anything runs and
+// returns the parsed --allow-codecs list. A smoke plan needs no source; a real
+// plan and every --execute run do. Failures carry the usage status 2.
+func validateAutoFlags(flags *autoFlags) ([]string, error) {
+	if flags.src == "" && (!flags.smoke || flags.execute) {
+		return nil, asUsageError(errors.New(
+			"--src is required (it may be omitted only with --smoke and without --execute)"))
+	}
+	allow := parseAllowCodecs(flags.allowCodecs)
+	if len(allow) == 0 {
+		return nil, asUsageError(errors.New("--allow-codecs is empty"))
+	}
+	return allow, nil
 }
 
 // writePlan mirrors the Python emitter: the file form gets the rendered JSON

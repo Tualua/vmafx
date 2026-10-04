@@ -128,14 +128,23 @@ during migration; see Stage roadmap in
     this reason until split existed (ADR-0601). Filter options (`-vf`)
     must stay post-input. Do not "simplify" two fields into one.
 
-16. **`YUVScoreFunc` is not interchangeable with `VMAFScoreFunc`**
-    (`pkg/bisect/`): `VMAFScoreFunc` passes both paths to `vmaf` with no
-    geometry flags, only works for Y4M pair. `YUVScoreFunc` = raw-YUV
-    path: decodes containerised distorted file first, passes
+16. **`YUVScoreFunc` is not interchangeable with `Y4MScorer` /
+    `VMAFScoreFunc`** (`pkg/bisect/`): `Y4MScorer` (`score_y4m.go`, used by
+    `compare` and `ladder`; `VMAFScoreFunc` wraps one per call) decodes every
+    input that is not `.y4m` to Y4M and calls `vmaf` with no geometry flags,
+    so libvmaf's y4m branch reads both legs; a raw `.yuv` input is refused.
+    Handing `vmaf` the Matroska encode directly made every compare and
+    ladder probe fail while the commands exited 0. `YUVScoreFunc` = raw-YUV
+    path: decodes containerised distorted file to raw YUV first, passes
     `--width/--height/--pixel_format/--bitdepth/--model`. Those flags flip
     libvmaf's `use_yuv` branch, why `.y4m` deliberately **absent**
     from `rawYUVSuffixes` — Y4M header then trips file-size guard in
-    `raw_input_open` (ADR-0499).
+    `raw_input_open` (ADR-0499). A ladder rung encodes with
+    `bisect.Params.EncodeExtraArgs = -vf scale=W:H` and scores against a
+    reference the rung's `Y4MScorer` decodes through the same
+    `bisect.ScaleFilter`; keep both legs on one filter. QSV encodes append
+    their upload to the caller's `-vf` chain (`appendVideoFilter` in
+    `pkg/encoder/hardware.go`); a second `-vf` would drop the scale.
 
 17. **`--predicate-module` and `--fast-nr` fail fast, are not ignored**
     (`cmd/vmafx-tune/cmd/pershot.go` `rejectUnportedPerShotFlags`): both flags
@@ -283,3 +292,16 @@ during migration; see Stage roadmap in
     `InitOTel`; `deps.OTel` exists so `otel_test.go` can prove wiring.
     `TestWithGolusoris_CommandSpanWrapsRun` locks span, its attribute and
     its error status.
+
+30. **Usage failures exit 2 on every subcommand** (`root.go`,
+    `required_flags.go`, `exitcode.go`): `newRoot` installs
+    `useUsageExitCode` on root (cobra inherits `FlagErrorFunc`), so unknown
+    or unparseable flags exit 2; `markCommandFlagsRequired` runs cobra's
+    `ValidateRequiredFlags` from `PreRunE`, ahead of cobra's own check
+    (exit 1), and tags it with `asUsageError`. A flag required only in some
+    modes (`auto --src`, required unless `--smoke`) is checked in the run
+    function with `asUsageError`, never with `MarkFlagRequired`.
+    `TestEveryCommandRejectsUnknownFlagWithUsageStatus` and
+    `TestMissingRequiredFlagExitsWithUsageStatus` cover new subcommands
+    automatically for the first and by table for the second: add a row
+    when a command gains a required flag.

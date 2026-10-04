@@ -134,6 +134,11 @@ type Params struct {
 	// WorkDir is the directory for temporary encode outputs. Defaults to
 	// os.TempDir().
 	WorkDir string
+
+	// EncodeExtraArgs are appended to every probe encode's ffmpeg argv after
+	// the codec flags (encoder.EncodeParams.ExtraArgs). The ladder passes
+	// "-vf scale=W:H" here to encode each rung at its own geometry.
+	EncodeExtraArgs []string
 }
 
 func (p *Params) applyDefaults(enc encoder.Encoder) {
@@ -150,66 +155,69 @@ func (p *Params) applyDefaults(enc encoder.Encoder) {
 // VMAFScoreFunc returns a ScoreFunc that shells out to the vmaf binary at
 // vmafBin. When vmafBin is empty, "vmaf" is looked up on PATH.
 //
-// The function writes a temporary JSON output file that it removes after
-// reading the mean VMAF score.
+// The vmaf CLI reads only Y4M or raw YUV, so every input that is not a Y4M
+// file is decoded to Y4M first (see Y4MScorer); a raw .yuv input is refused,
+// because the scorer has no geometry for it. Each call decodes and removes
+// its own copies; callers that score many encodes against one reference use
+// NewY4MScorer directly so the reference is decoded once.
 //
-// Each invocation is bounded by scoreTimeout() (default 30 minutes,
+// Each subprocess is bounded by scoreTimeout() (default 30 minutes,
 // overridable via VMAFX_TUNE_SCORE_TIMEOUT). Without the timeout, a hung
 // vmaf child blocks bisect.Run forever; this is especially likely on a
 // stuck GPU device, a missing libvmaf model file, or a corrupt input
 // pipe — none of which are deadlock-recoverable from the parent without
 // an external timeout.
 func VMAFScoreFunc(vmafBin string) ScoreFunc {
-	if vmafBin == "" {
-		vmafBin = "vmaf"
-	}
 	return func(ref, distorted string) (float64, error) {
-		// Write output JSON to a temp file.
-		tmp, err := os.CreateTemp("", "vmafx-tune-score-*.json")
-		if err != nil {
-			return 0, fmt.Errorf("create score temp: %w", err)
-		}
-		tmpPath := tmp.Name()
-		if closeErr := tmp.Close(); closeErr != nil {
-			return 0, fmt.Errorf("close score temp: %w", closeErr)
-		}
-		defer func() {
-			if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-				slog.Warn("bisect: remove score temp", "error", rmErr, "path", tmpPath)
-			}
-		}()
-
-		argv := []string{
-			vmafBin,
-			"--reference", ref,
-			"--distorted", distorted,
-			"--output", tmpPath,
-			"--xml",
-		}
-
-		ctx := context.Background()
-		var cancel context.CancelFunc = func() {}
-		if to := scoreTimeout(); to > 0 {
-			ctx, cancel = context.WithTimeout(ctx, to)
-		}
-		defer cancel()
-
-		// #nosec G204 -- argv[0] is vmafBin (operator-configured at scorerFn
-		// construction); argv[1:] mixes fixed flags with `ref` / `distorted`
-		// (caller-controlled but bisect is a dev-time tool not an RPC surface)
-		// and the os.CreateTemp output path. ctx enforces scoreTimeout().
-		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		out, runErr := cmd.CombinedOutput()
-		if runErr != nil {
-			if ctx.Err() == context.DeadlineExceeded {
-				return 0, fmt.Errorf("vmaf score timed out after %s: %w\n%s",
-					scoreTimeout(), runErr, string(out))
-			}
-			return 0, fmt.Errorf("vmaf score failed: %w\n%s", runErr, string(out))
-		}
-
-		return parseVMAFXMLMean(tmpPath)
+		scorer := NewY4MScorer(Y4MScoreParams{VMAFBin: vmafBin})
+		score, err := scorer.Score(ref, distorted)
+		return score, errors.Join(err, scorer.Close())
 	}
+}
+
+// runVMAFXML runs vmaf on a Y4M pair and returns the pooled mean VMAF from
+// its XML report, which it writes to a temporary file and removes again.
+func runVMAFXML(vmafBin, ref, distorted string) (float64, error) {
+	tmp, err := os.CreateTemp("", "vmafx-tune-score-*.json")
+	if err != nil {
+		return 0, fmt.Errorf("create score temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if closeErr := tmp.Close(); closeErr != nil {
+		return 0, fmt.Errorf("close score temp: %w", closeErr)
+	}
+	defer func() {
+		if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			slog.Warn("bisect: remove score temp", "error", rmErr, "path", tmpPath)
+		}
+	}()
+
+	argv := []string{
+		vmafBin,
+		"--reference", ref,
+		"--distorted", distorted,
+		"--output", tmpPath,
+		"--xml",
+	}
+
+	ctx, cancel := scoreContext()
+	defer cancel()
+
+	// #nosec G204 -- argv[0] is vmafBin (operator-configured at scorer
+	// construction); argv[1:] mixes fixed flags with `ref` / `distorted`
+	// (caller-controlled but bisect is a dev-time tool not an RPC surface)
+	// and the os.CreateTemp output path. ctx enforces scoreTimeout().
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return 0, fmt.Errorf("vmaf score timed out after %s: %w\n%s",
+				scoreTimeout(), runErr, string(out))
+		}
+		return 0, fmt.Errorf("vmaf score failed: %w\n%s", runErr, string(out))
+	}
+
+	return parseVMAFXMLMean(tmpPath)
 }
 
 // parseVMAFXMLMean reads the vmaf XML output and extracts the pooled mean
@@ -352,6 +360,7 @@ func runProbe(
 		CRF:       crf,
 		FFmpegBin: params.FFmpegBin,
 		OutputDir: params.WorkDir,
+		ExtraArgs: append([]string(nil), params.EncodeExtraArgs...),
 	}
 	encResult, encErr := enc.Encode(src, ep)
 	if encErr != nil {

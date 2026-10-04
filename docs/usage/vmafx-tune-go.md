@@ -74,6 +74,13 @@ vmafx-tune-go report results.json --format html --output report.html
 ranked report. Stage 1 supports software encoders only: `libx264` and
 `libx265`.
 
+The `vmaf` binary reads only Y4M (or raw YUV with explicit geometry), so the
+scorer decodes the reference to Y4M once per run, unless it already is a
+`.y4m` file, and decodes each Matroska encode to Y4M as it is scored. The
+reference can therefore be a `.y4m` file or any container FFmpeg reads; a
+headerless `.yuv` reference is refused, because the scorer has no geometry for
+it. The decoded files are written to `--work-dir` and removed after use.
+
 ```text
 vmafx-tune-go compare --reference <video> [flags]
 ```
@@ -155,6 +162,13 @@ VMAF target)` cell it bisects the highest CRF that still meets the target. The
 resulting (bitrate, VMAF) cloud is reduced to its upper convex hull (the Pareto
 frontier), and a small set of knee renditions is selected from the hull.
 
+Every cell runs at its own resolution, as the Python `vmaf-tune ladder` does:
+each probe encode scales the source with `-vf scale=W:H`, and the reference is
+decoded to Y4M through the same filter once per cell, so a 640x360 rung is
+encoded at 640x360 and scored against a 640x360 reference. When no cell
+produces a scored encode, `ladder` exits `2` with the first cell's error and
+writes no ladder.
+
 ```text
 vmafx-tune-go ladder --reference <video> [flags]
 ```
@@ -187,12 +201,6 @@ The JSON is a superset of the Python `vmaf-tune ladder` schema (schema version
 `wall_time_ms`, `cloud`, `hull`, `renditions`) and works with the existing
 HLS/DASH manifest renderer. Failed points carry `ok: false`, and non-finite
 bitrate or VMAF values are written as `0` rather than `null`.
-
-!!! note
-    The ladder sampler bisects at the source's native resolution and only tags
-    each point with the requested rendition resolution. It does not scale the
-    source down per rung. `--resolutions` therefore labels the grid; it does
-    not change what is encoded.
 
 ## report: render Markdown or HTML
 
@@ -621,12 +629,13 @@ encode plus a libvmaf score.
 vmafx-tune-go auto --src <video> [flags]
 ```
 
-`--src` is always required (the flag is enforced before `--smoke` is looked
-at), including for `--smoke` runs.
+`--src` is required unless `--smoke` is given: the smoke planner probes
+nothing, and the plan then records an empty `src`. `--execute` always needs
+`--src`. A missing `--src` exits `2`.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--src` | — | **Required.** Source video. |
+| `--src` | — | Source video. **Required** unless `--smoke` (and always with `--execute`). |
 | `--target-vmaf` | `93` | Target pooled-mean VMAF on the standard `[0, 100]` scale. |
 | `--max-budget-bitrate` | `8000` | Upper bound on the picked rendition's bitrate, in kbps. |
 | `--allow-codecs` | `libx264` | Comma-separated codec list the tree may pick from. A single entry short-circuits the compare-shortlist stage. |
@@ -1461,27 +1470,29 @@ it.
 
 ## Exit codes
 
-Most subcommands exit `0` on success and `1` on any failure. The subcommands
-below add specific codes, following the Python CLI where it has them.
+Every subcommand exits `0` on success. A usage failure exits `2` on every
+subcommand, as argparse does in the Python CLI: an unknown or unparseable flag,
+a missing required flag (including `--src` of `auto` without `--smoke`, the
+input files of `report`, `--target-vmaf` of `prefilter`, and the source, size
+and preset flags of `recommend` without `--from-corpus`). Other failures exit
+`1` unless the table names another status.
 
 | Subcommand | Exit | Meaning |
 |------------|------|---------|
-| `benchmark`, `encode-profile`, `sidecar` | `2` | A usage or validation failure: an unknown or unparseable flag, a missing required flag, a missing input file, a filter that matches no recommendation, a baseline encoder absent from the corpus, an unknown `--codec`, or an unreadable feature or capture file on `sidecar`. |
+| `benchmark`, `encode-profile`, `sidecar` | `2` | Also every validation failure the command detects itself: a missing input file, a filter that matches no recommendation, a baseline encoder absent from the corpus, an unknown `--codec`, or an unreadable feature or capture file on `sidecar`. |
 | `sidecar` | `1` | The cache directory, host UUID or `state.json` could not be written (an uncaught `OSError` in Python). See [Sidecar exit codes and diagnostics](#sidecar-exit-codes-and-diagnostics). |
 | `encode-profile` | FFmpeg's own | A failed encode propagates FFmpeg's exit status. |
 | `fast` | `2` / `3` | See [fast exit codes](#fast-exit-codes). |
 | `predict` | `2` | The `fall_back` verdict, or an unreadable `--saliency-model`. |
-| `prefilter` | `2` | An invalid CRF range, a failed search, or a live-loop prerequisite that is missing (`--src`, geometry, or the `pelorus_deband_vulkan` filter). A missing `--target-vmaf` exits `1`. |
+| `prefilter` | `2` | An invalid CRF range, a failed search, or a live-loop prerequisite that is missing (`--src`, geometry, or the `pelorus_deband_vulkan` filter). |
 | `recommend-saliency` | `2` / encode status | `2` when the encoder has no ROI dispatch and no opt-in; an encode failure carries the encode's exit status. |
-| `compare`, `ladder`, `report`, `recommend`, `corpus`, `auto`, `tune-per-shot` | `1` | Every failure. |
+| `ladder` | `2` | No `(resolution, target)` cell produced a scored encode. |
+| `auto` | `2` | An empty `--allow-codecs`. |
 
-For the commands outside `benchmark`, `encode-profile` and `sidecar`, a
-required flag that is missing, or an unknown or unparseable flag, is raised by
-cobra before the command runs and exits `1`, not `2`. `fast` exits `2` only for
-the validation failures it detects itself. The Python CLI exits `2` for
-argparse failures on every subcommand, so a script that branches on `2` sees
-this difference. The earlier ports (`compare`, `ladder`, `report`) report every
-failure as `1`; that pre-existing inconsistency is tracked separately.
+`TestEveryCommandRejectsUnknownFlagWithUsageStatus` and
+`TestMissingRequiredFlagExitsWithUsageStatus` in
+`cmd/vmafx-tune/cmd/required_flags_test.go` hold every subcommand to the usage
+status.
 
 ## Configuration and logging
 

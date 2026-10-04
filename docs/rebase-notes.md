@@ -34,6 +34,21 @@ no code change.
   annotation in the same PR (`test_model_annotations_match_the_registry`).
 - An upstream sync that adds a Netflix model at `model/` root named like
   `predictor_*` would be mis-attributed by the root annotation; none exists.
+## `vmafx-tune-go` scores Y4M, scales ladder rungs, exits 2 on usage errors (2026-10-04)
+
+`fix/vmafx-tune-go-cli-contract`. Go CLI and packages only; no C source change.
+
+- `pkg/bisect/score_y4m.go` (`Y4MScorer`) is the scorer of `compare` and
+  `ladder`; `VMAFScoreFunc` wraps it. A sync must not bring back a scorer that
+  hands `vmaf` a non-Y4M file without geometry flags.
+- A ladder rung's encode filter (`bisect.Params.EncodeExtraArgs`) and its
+  reference decode both use `bisect.ScaleFilter`; QSV's upload joins that chain
+  through `appendVideoFilter` in `pkg/encoder/hardware.go`.
+- `probeBitrateKbps` reads `stream=bit_rate:format=bit_rate`; the stream entry
+  alone is `N/A` for Matroska.
+- `newRoot` installs `useUsageExitCode` and `markCommandFlagsRequired`
+  validates from `PreRunE` (`cmd/vmafx-tune/AGENTS.md` invariant 30); `auto`
+  checks `--src` in `validateAutoFlags`, not with `MarkFlagRequired`.
 
 ## The macOS tester bundle job installs the Metal compiler (2026-10-04)
 

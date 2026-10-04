@@ -61,7 +61,7 @@ Stage-4 scope (ADR-0770): Markdown and HTML. PDF and JSON-diff modes are
 Stage-5 scope.`
 	cmd.Args = func(_ *cobra.Command, args []string) error {
 		if len(args) == 0 {
-			return errors.New("at least one input JSON file is required")
+			return asUsageError(errors.New("at least one input JSON file is required"))
 		}
 		return nil
 	}

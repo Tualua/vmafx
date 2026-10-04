@@ -153,7 +153,7 @@ func registerPrefilterFlags(cmd *cobra.Command, flags *prefilterFlags) {
 // runPrefilter validates the flags, builds the probe and runs the search.
 func runPrefilter(ctx context.Context, d deps, flags *prefilterFlags) error {
 	if math.IsNaN(flags.targetVMAF) {
-		return errors.New("--target-vmaf is required")
+		return asUsageError(errors.New("--target-vmaf is required"))
 	}
 	if flags.crfMin < 0 || flags.crfMax < flags.crfMin {
 		return &exitCodeError{

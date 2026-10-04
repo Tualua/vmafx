@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -190,7 +191,19 @@ func buildCompareEncoders(codecs []string) ([]encoder.Encoder, error) {
 //
 // Stage-1 does not cap concurrency; Stage-2 adds --workers / semaphores.
 func runComparePairs(pairs []pairKey, flags *compareFlags) ([]pairResult, float64) {
-	scoreFunc := bisect.VMAFScoreFunc(flags.vmafBin)
+	// One scorer for the whole sweep: it decodes the reference to Y4M once and
+	// every encode as it is scored (the vmaf CLI reads neither a container nor
+	// a Matroska encode). Close removes the decoded reference after the sweep.
+	scorer := bisect.NewY4MScorer(bisect.Y4MScoreParams{
+		VMAFBin:   flags.vmafBin,
+		FFmpegBin: flags.ffmpegBin,
+		WorkDir:   flags.workDir,
+	})
+	defer func() {
+		if closeErr := scorer.Close(); closeErr != nil {
+			slog.Warn("compare: remove decoded reference", "error", closeErr)
+		}
+	}()
 	results := make([]pairResult, len(pairs))
 	var wg sync.WaitGroup
 	wg.Add(len(pairs))
@@ -200,45 +213,38 @@ func runComparePairs(pairs []pairKey, flags *compareFlags) ([]pairResult, float6
 	for i, pair := range pairs {
 		go func(idx int, pk pairKey) {
 			defer wg.Done()
-
-			enc, err := encoder.New(pk.codec)
-			if err != nil {
-				results[idx] = pairResult{
-					key:   pk,
-					order: idx,
-					row:   failRow(pk.codec, pk.target, flags.ffmpegBin, err.Error()),
-				}
-				return
-			}
-
-			params := bisect.Params{
-				TargetVMAF: pk.target,
-				MaxIter:    flags.maxIter,
-				FFmpegBin:  flags.ffmpegBin,
-				WorkDir:    flags.workDir,
-			}
-			if flags.crfLo > 0 || flags.crfHi > 0 {
-				params.CRFLo = flags.crfLo
-				params.CRFHi = flags.crfHi
-			}
-
-			bisectResult, bisectErr := bisect.Run(flags.reference, enc, scoreFunc, params)
-			if bisectErr != nil {
-				results[idx] = pairResult{
-					key:   pk,
-					order: idx,
-					row:   failRow(pk.codec, pk.target, flags.ffmpegBin, bisectErr.Error()),
-				}
-				return
-			}
-
-			row := rowFromBisect(pk.codec, pk.target, flags.ffmpegBin, bisectResult)
-			results[idx] = pairResult{key: pk, order: idx, row: row}
+			results[idx] = runComparePair(idx, pk, flags, scorer.Score)
 		}(i, pair)
 	}
 
 	wg.Wait()
 	return results, float64(time.Since(t0).Milliseconds())
+}
+
+// runComparePair bisects one (encoder, target) pair. A failure becomes a failure
+// row, never an abort of the sweep.
+func runComparePair(idx int, pk pairKey, flags *compareFlags, scoreFunc bisect.ScoreFunc) pairResult {
+	enc, err := encoder.New(pk.codec)
+	if err != nil {
+		return pairResult{key: pk, order: idx, row: failRow(pk.codec, pk.target, flags.ffmpegBin, err.Error())}
+	}
+
+	params := bisect.Params{
+		TargetVMAF: pk.target,
+		MaxIter:    flags.maxIter,
+		FFmpegBin:  flags.ffmpegBin,
+		WorkDir:    flags.workDir,
+	}
+	if flags.crfLo > 0 || flags.crfHi > 0 {
+		params.CRFLo = flags.crfLo
+		params.CRFHi = flags.crfHi
+	}
+
+	bisectResult, bisectErr := bisect.Run(flags.reference, enc, scoreFunc, params)
+	if bisectErr != nil {
+		return pairResult{key: pk, order: idx, row: failRow(pk.codec, pk.target, flags.ffmpegBin, bisectErr.Error())}
+	}
+	return pairResult{key: pk, order: idx, row: rowFromBisect(pk.codec, pk.target, flags.ffmpegBin, bisectResult)}
 }
 
 // renderCompareOutput turns the sweep results into the report body to write.

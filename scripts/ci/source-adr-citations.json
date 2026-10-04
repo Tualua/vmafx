@@ -3216,6 +3216,8 @@
     },
     "0501": {
       "sites": {
+        "cmd/vmafx-tune/cmd/ladder.go": 1,
+        "pkg/bisect/score_y4m.go": 1,
         "pkg/corpus/corpus.go": 2,
         "scripts/ci/tests/test_check_adr_links.py": 1,
         "tools/vmaf-tune/src/vmaftune/corpus.py": 4,

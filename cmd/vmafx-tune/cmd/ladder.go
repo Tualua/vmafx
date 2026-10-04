@@ -61,9 +61,12 @@ func newLadderCmd() *cobra.Command {
 	cmd.Long = `Build an ABR bitrate ladder for a single source clip.
 
 For each (resolution, VMAF target) cell in the sampling grid, a CRF bisect
-finds the highest CRF whose measured VMAF meets the target.  The resulting
-(bitrate, vmaf) cloud is reduced to its upper convex hull (the Pareto
-frontier), and a small set of "knee" renditions is selected from the hull.
+finds the highest CRF whose measured VMAF meets the target.  Each cell encodes
+the source scaled to its resolution and scores it against the reference scaled
+the same way.  The resulting (bitrate, vmaf) cloud is reduced to its upper
+convex hull (the Pareto frontier), and a small set of "knee" renditions is
+selected from the hull.  When no cell produces a scored encode the command
+exits 2 and writes no ladder.
 
 The JSON output is a superset of the Python vmaf-tune ladder schema and is
 compatible with the existing HLS/DASH manifest renderer.
@@ -161,7 +164,7 @@ func runLadder(ctx context.Context, d deps, flags *ladderFlags) error {
 		return fmt.Errorf("encoder %q: %w", flags.codec, encErr)
 	}
 
-	sampler := newLadderSampler(enc, bisect.VMAFScoreFunc(flags.vmafBin), flags)
+	sampler := newLadderSampler(enc, flags)
 
 	d.Log.InfoContext(ctx, "building per-title ABR ladder",
 		"reference", flags.reference,
@@ -180,6 +183,9 @@ func runLadder(ctx context.Context, d deps, flags *ladderFlags) error {
 	wallTimeMS := float64(time.Since(t0).Milliseconds())
 	if buildErr != nil {
 		return fmt.Errorf("ladder build: %w", buildErr)
+	}
+	if noneErr := errNoScoredRung(result); noneErr != nil {
+		return noneErr
 	}
 	d.Log.InfoContext(ctx, "ladder build complete",
 		"renditions", len(result.Renditions),
@@ -244,27 +250,24 @@ func parseLadderResolutions(raw []string) ([][2]int, error) {
 // newLadderSampler wires bisect.Run into the sampler the ladder build calls for each
 // (resolution, target) cell.
 //
-// The bisect operates on the source as supplied. Resolution-aware scaling (e.g. downscale
-// + encode) is Stage-3 scope; Stage-2 bisects at the native source resolution and tags the
-// point with the requested rendition resolution for hull/rendition tracking.
-func newLadderSampler(
-	enc encoder.Encoder,
-	scoreFunc bisect.ScoreFunc,
-	flags *ladderFlags,
-) ladder.SamplerFn {
+// Every rung is encoded and scored at its own geometry, as the Python ladder does
+// (corpus.iter_rows, ADR-0501): each probe encode gets "-vf scale=W:H", and the
+// reference is decoded through the same scale filter once per rung by a Y4MScorer
+// whose decoded copy is removed when the rung's bisect returns.
+func newLadderSampler(enc encoder.Encoder, flags *ladderFlags) ladder.SamplerFn {
 	return func(src, codecName string, width, height int, targetVMAF float64) (ladder.Point, error) {
-		bisectParams := bisect.Params{
-			TargetVMAF: targetVMAF,
-			MaxIter:    flags.maxIter,
-			FFmpegBin:  flags.ffmpegBin,
-			WorkDir:    flags.workDir,
+		scorer := bisect.NewY4MScorer(bisect.Y4MScoreParams{
+			VMAFBin:   flags.vmafBin,
+			FFmpegBin: flags.ffmpegBin,
+			WorkDir:   flags.workDir,
+			Width:     width,
+			Height:    height,
+		})
+		params := ladderBisectParams(flags, targetVMAF, width, height)
+		bisectResult, bisectErr := bisect.Run(src, enc, scorer.Score, params)
+		if closeErr := scorer.Close(); closeErr != nil {
+			bisectErr = errors.Join(bisectErr, closeErr)
 		}
-		if flags.crfLo > 0 || flags.crfHi > 0 {
-			bisectParams.CRFLo = flags.crfLo
-			bisectParams.CRFHi = flags.crfHi
-		}
-
-		bisectResult, bisectErr := bisect.Run(src, enc, scoreFunc, bisectParams)
 		if bisectErr != nil {
 			return ladder.Point{}, bisectErr
 		}
@@ -283,6 +286,41 @@ func newLadderSampler(
 			OK:          true,
 		}, nil
 	}
+}
+
+// ladderBisectParams builds the bisect parameters of one rung: the CRF window and
+// iteration cap from the flags, plus the scale filter that encodes at the rung's
+// geometry.
+func ladderBisectParams(flags *ladderFlags, targetVMAF float64, width, height int) bisect.Params {
+	params := bisect.Params{
+		TargetVMAF:      targetVMAF,
+		MaxIter:         flags.maxIter,
+		FFmpegBin:       flags.ffmpegBin,
+		WorkDir:         flags.workDir,
+		EncodeExtraArgs: []string{"-vf", bisect.ScaleFilter(width, height)},
+	}
+	if flags.crfLo > 0 || flags.crfHi > 0 {
+		params.CRFLo = flags.crfLo
+		params.CRFHi = flags.crfHi
+	}
+	return params
+}
+
+// errNoScoredRung reports a ladder whose every cell failed, with the first cell's
+// error. The Python ladder exits 2 when its sampler produces no scorable encode, and
+// an empty ladder written with exit 0 reads as a result.
+func errNoScoredRung(result ladder.LadderResult) error {
+	for _, pt := range result.Cloud {
+		if pt.OK {
+			return nil
+		}
+	}
+	first := "no cells sampled"
+	if len(result.Cloud) > 0 {
+		first = result.Cloud[0].Error
+	}
+	return exitCodeError{code: 2, err: fmt.Errorf(
+		"ladder build: no (resolution, target) cell produced a scored encode; first error: %s", first)}
 }
 
 // ladderWirePayload is the JSON wire format for the ladder subcommand.

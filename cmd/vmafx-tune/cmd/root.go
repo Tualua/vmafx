@@ -40,6 +40,9 @@ Subcommands:
   encode-profile       Encoder profile inspection
   auto                 Pick and run the right tuning subcommand`
 	root.Cobra().Version = version
+	// Every subcommand inherits the root's flag-error function: an unknown
+	// flag or an unparsable value exits 2, as argparse does in the Python CLI.
+	useUsageExitCode(root.Cobra())
 
 	// Ported subcommands.
 	root.AddCommand(newCompareCmd())
