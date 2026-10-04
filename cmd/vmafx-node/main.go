@@ -33,6 +33,8 @@
 //	VMAFX_SIDECAR_SOCKET  -> sidecar.socket   Online-training sidecar Unix socket (default /tmp/vmafx-sidecar.sock).
 //	VMAFX_CONTROLLER_*, VMAFX_NODE_ID, VMAFX_NODE_SLOTS
 //	                      -> controller.* / node.*  Controller client (controller_config.go).
+//	VMAFX_STORAGE_MODE, VMAFX_STORAGE_MOUNT_ROOT, VMAFX_RCLONE_BIN, VMAFX_RCLONE_CONFIG
+//	                      -> storage.* / rclone.*   Source URIs of controller jobs (storage_config.go).
 //
 // NOTE on the env-var contract change (ADR-1119): the pre-fx node used
 // VMAFX_NODE_ADDR (a bare listen address). golusoris' grpc.Module reads the
@@ -64,6 +66,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"go.uber.org/fx"
@@ -110,12 +113,12 @@ func nodeEnvOptions(watch bool) config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     watch,
-		CompoundKeys: append([]string{
+		CompoundKeys: slices.Concat([]string{
 			"grpc.cert_file",
 			"grpc.key_file",
 			"grpc.max_recv_size",
 			"grpc.max_send_size",
-		}, controllerConfigKeys...),
+		}, controllerConfigKeys, storageConfigKeys),
 	}
 }
 
@@ -166,7 +169,7 @@ func nodeDomainOptions() fx.Option {
 	return fx.Provide(
 		provideEncoderInventory, // (fx.Lifecycle, *config.Config, *slog.Logger) -> *probe.Inventory (OnStart probe, NON-FATAL)
 		provideScorer,           // (fx.Lifecycle, *config.Config, *slog.Logger) -> *libvmaf.Scorer (nil-tolerant)
-		provideExecutor,         // (*libvmaf.Scorer, *config.Config, *slog.Logger) -> *Executor
+		provideExecutor,         // (*libvmaf.Scorer, *config.Config, *slog.Logger) -> (*Executor, error); storage layer per storage_config.go
 		provideFeedbackClient,   // (fx.Lifecycle, *config.Config, *slog.Logger) -> *FeedbackClient (drainer OnStart, Close+awaited OnStop)
 		provideControllerClient, // (controllerClientParams) -> *controllerClient (nil without VMAFX_CONTROLLER_ADDR; start OnStart, drain OnStop)
 		provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry

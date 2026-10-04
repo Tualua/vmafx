@@ -52,6 +52,7 @@ const (
 type FUSEMountStorage struct {
 	rcloneBin    string
 	rcloneConfig string
+	mountRoot    string // parent of the per-job mount points; "" = os.TempDir()
 	log          *slog.Logger
 }
 
@@ -61,13 +62,9 @@ func (s *FUSEMountStorage) Mode() Mode { return ModeMount }
 // Prepare mounts the remote root at a temporary directory and returns the local
 // path to the requested asset file.
 func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (string, func(), error) {
-	// Handle local paths without spawning rclone.
-	if IsLocal(sourceURI) {
-		lp, err := localPath(sourceURI)
-		if err != nil {
-			return "", func() {}, err
-		}
-		return lp, func() {}, nil
+	// Local paths and http(s) URLs need no rclone.
+	if direct, ok, err := directSource(sourceURI); ok {
+		return direct, func() {}, err
 	}
 
 	remotePath, err := rcloneRemotePath(sourceURI)
@@ -78,7 +75,7 @@ func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (strin
 	remoteRoot, assetRel := splitRemotePath(remotePath)
 
 	// Create per-job mount directory.
-	mountDir, err := os.MkdirTemp("", "vmafx-rclone-")
+	mountDir, err := os.MkdirTemp(s.mountRoot, "vmafx-rclone-")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("storage: create mount dir: %w", err)
 	}

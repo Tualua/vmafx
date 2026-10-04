@@ -76,9 +76,11 @@ What the node does with the address:
 3. **Pull.** Each of the `VMAFX_NODE_SLOTS` slots calls `PullWork`. An empty
    answer waits about one `VMAFX_CONTROLLER_POLL_INTERVAL` (2 s, jittered);
    a failed call backs off up to 30 s.
-4. **Score.** The job runs through the vmaf CLI with `--backend` set to the
-   job's backend, or the node's `VMAFX_BACKEND` when the job names none. The
-   CLI then runs that backend or fails; it does not pick another one.
+4. **Score.** The job's sources are prepared as described in
+   [Job sources](#job-sources-local-paths-urls-and-rclone-remotes), then the
+   job runs through the vmaf CLI with `--backend` set to the job's backend, or
+   the node's `VMAFX_BACKEND` when the job names none. The CLI then runs that
+   backend or fails; it does not pick another one.
 5. **Report.** `ReportResult` carries the pooled score and features, or the
    error. A failed report is retried up to 8 times; a request the controller
    rejects as malformed is not retried. A NaN or infinite value is reported
@@ -116,6 +118,42 @@ until the stop deadline, then cancels it and reports it as failed with
 that a job was cancelled: the node finishes it and the controller ignores the
 late report.
 
+## Job sources: local paths, URLs and rclone remotes
+
+A controller job's `reference` and `distorted` can be:
+
+| Source | Example | How the node reads it |
+| --- | --- | --- |
+| Local path | `/data/ref.y4m`, `file:///data/ref.y4m` | Directly, in every mode |
+| http(s) URL | `https://media.example/ref.y4m` | Streamed, in every mode; no rclone |
+| rclone remote | `s3://bucket/ref.y4m`, `rclone://prod:bucket/ref.y4m`, `remote:path/ref.y4m` | Through rclone, as `VMAFX_STORAGE_MODE` says |
+
+The scorer reads Y4M, so a source must be a Y4M clip.
+
+`VMAFX_STORAGE_MODE` picks how rclone remotes are read
+([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)):
+
+- **`http-serve`**: the node starts `rclone serve http` for the source's
+  directory and streams the file into the vmaf CLI through a pipe. Nothing is
+  written to the node's disk, and no FUSE is needed.
+- **`mount`**: the node runs `rclone mount` under `VMAFX_STORAGE_MOUNT_ROOT`
+  (default: the temp directory) and the CLI reads the file from the mount.
+  It needs `/dev/fuse` and `fusermount3` (or `fusermount`); without them the
+  node does not start.
+- **`auto`** (the default): `mount` when FUSE is usable, else `http-serve`.
+  The node logs `storage mode auto resolved` with the mode and the reason.
+
+Any other value stops the node at startup. When either input is streamed (an
+http(s) URL or `http-serve`), a stream that breaks fails the job: the CLI
+would otherwise score the frames it received, because it treats a short
+distorted clip as the end of the clip. Streaming needs a Unix host.
+
+rclone reads its remotes and credentials from `VMAFX_RCLONE_CONFIG` (an
+`rclone.conf`), or from its own defaults when unset; `VMAFX_RCLONE_BIN` names
+the binary. Without rclone on the node, jobs on rclone remotes fail with the
+reason, and the node says so at startup. The published node image carries
+rclone but no FUSE helper: use `http-serve` or `auto` there.
+
 ## Configuration (12-factor env vars)
 
 | Variable | Default | Description |
@@ -137,6 +175,10 @@ late report.
 | `VMAFX_CONTROLLER_POLL_INTERVAL` | `2s` | Wait after an empty `PullWork`. |
 | `VMAFX_NODE_ID` | host name | Node name sent to `RegisterNode`. The Helm chart sets the pod name. |
 | `VMAFX_NODE_SLOTS` | `1` | Jobs the node runs at once (1 to 64). |
+| `VMAFX_STORAGE_MODE` | `auto` | How rclone-remote sources are read: `http-serve`, `mount` or `auto`. |
+| `VMAFX_STORAGE_MOUNT_ROOT` | temp directory | Parent of `mount` mode's per-job mount points. |
+| `VMAFX_RCLONE_BIN` | `rclone` (PATH) | rclone binary. |
+| `VMAFX_RCLONE_CONFIG` | rclone's default | rclone configuration file with the remotes and their credentials. |
 | `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
 | `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
 
@@ -194,6 +236,14 @@ helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 For a controller that verifies tokens, mount the token Secret with
 `node.volumes` / `node.volumeMounts` and set `VMAFX_CONTROLLER_TOKEN_FILE`
 through `env`.
+
+`storage.mode` becomes `VMAFX_STORAGE_MODE` (chart default `http-serve`;
+`mount` and `auto` are the other accepted values) and `storage.mountRoot`
+becomes `VMAFX_STORAGE_MOUNT_ROOT`. `storage.rclone.config` holds the
+`rclone.conf` contents; the chart mounts it as a Secret at
+`/etc/vmafx/rclone.conf` and only then sets `VMAFX_RCLONE_CONFIG`. `mount`
+needs FUSE in the pod, which the chart does not provide: add a FUSE device
+plugin or a privileged `securityContext`, and an image with `fusermount3`.
 
 ## Container images
 

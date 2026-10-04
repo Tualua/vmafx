@@ -52,16 +52,19 @@ All four CRDs belong to the group `vmafx.dev`, version `v1`
 
 ## Storage flow (zero-copy via rclone)
 
+A job's sources are local paths, http(s) URLs or rclone remotes. The node
+reads remotes in the mode `VMAFX_STORAGE_MODE` selects
+([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)); neither mode writes
+the clip to the node's disk:
+
 ```text
 Object store (S3 / GCS / Azure Blob / SFTP)
         │
-        │  rclone mount / rclone-vfs (FUSE)
-        ▼
-  /mnt/source/   (inside vmafx-node pod)
-        │
-        │  POSIX read — no intermediate disk write
-        ├──► ffmpeg subprocess (encode → encoded stream)
-        └──► libvmaf cgo (score → result JSON)
+        ├─ http-serve: rclone serve http ──► HTTP GET ──► pipe (/dev/fd/3, /dev/fd/4)
+        │                                                     │
+        └─ mount:      rclone mount (FUSE) ──► local path ────┤
+                                                              ▼
+                                                     vmaf CLI (score)
 ```
 
 ## GPU pool affinity
@@ -88,7 +91,7 @@ as done when its code or artefact exists on `master`.
 | 4b.2 | `vmafx-node` Go binary (libvmaf cgo, ffmpeg, Go ONNX Runtime) | vmafx-sys Rust bindings (Phase 4a) | Done (`cmd/vmafx-node`, ADR-0713); controller pull loop per [ADR-1524](../adr/1524-vmafx-node-controller-client.md) |
 | 4b.3 | `vmafx-operator` kubebuilder skeleton + CRDs | Phase 4b.1 | Done (`cmd/vmafx-operator`) |
 | 4b.4 | ffmpeg latest + `ffmpeg-patches/` bundled in node image | Phase 4b.2 | Done (`docker/Dockerfile.node`, ADR-0717) |
-| 4b.5 | rclone integration (node distroless layer + mount lifecycle) | Phase 4b.2 | Done (rclone stage in `docker/Dockerfile.node`) |
+| 4b.5 | rclone integration (node distroless layer + mount lifecycle) | Phase 4b.2 | Done (rclone stage in `docker/Dockerfile.node`; executor wiring per [ADR-1526](../adr/1526-node-storage-streamed-inputs.md)) |
 | 4b.6 | eBPF research digest + ONE concrete optimization | Phase 4b.2 (baseline measurement) | Research done ([Research-0733](../research/0733-vmafx-ebpf-optimization-target.md)); probe code under `cmd/vmafx-node/bpf` |
 | 4b.7 | Sidecar training v1 (Python sidecar + triple-capture API) | Phase 4b.2 + Phase 4b.3 | Helm template present (`sidecar-trainer.yaml`) |
 | 4b.8 | C ABI break + ffmpeg-patches update | Phase 4b.4 | Open; tracked by ADR-0709 |

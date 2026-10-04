@@ -151,6 +151,7 @@ clear error message.
 | `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint` or `json`. |
 | `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar. |
 | `VMAFX_CONTROLLER_ADDR` | _(unset)_ | Controller gRPC address. Set, the node registers with the controller and pulls jobs; the other `VMAFX_CONTROLLER_*` and `VMAFX_NODE_*` settings are in [the node guide](../server/node.md#pulling-jobs-from-the-controller). |
+| `VMAFX_STORAGE_MODE` | `auto` | How rclone-remote job sources are read (`http-serve`, `mount`, `auto`); see [job sources](../server/node.md#job-sources-local-paths-urls-and-rclone-remotes). The image has rclone but no FUSE helper, so `auto` resolves to `http-serve`. |
 
 `VMAFX_NODE_ADDR` was removed (ADR-1119); use `VMAFX_GRPC_LISTEN`.
 

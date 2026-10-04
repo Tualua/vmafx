@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1220), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1221), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4891,3 +4891,7 @@ Every ADR, one heading each (1220), so the site search finds an ADR by its title
 ## ADR-1524: vmafx-node pulls work from the controller, advertises exactly the backend it runs, and refuses to start when it cannot honour its configuration
 
 [1524-vmafx-node-controller-client](1524-vmafx-node-controller-client.md)
+
+## ADR-1526: vmafx-node reads job sources through pkg/storage and streams http-served inputs into the vmaf CLI through pipes
+
+[1526-node-storage-streamed-inputs](1526-node-storage-streamed-inputs.md)

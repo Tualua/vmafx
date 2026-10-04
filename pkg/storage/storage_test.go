@@ -14,10 +14,12 @@ package storage
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -271,11 +273,10 @@ func TestPrepareCleanup_LocalDoesNotHang(t *testing.T) {
 }
 
 // TestHTTPServeIntegration runs an end-to-end test with a real rclone binary
-// and a local filesystem remote.  Skipped unless VMAFX_STORAGE_INTEGRATION_TEST=1.
+// and a configured local remote. rclone is a declared test dependency (the
+// node image bundles it; go-ci.yml installs it); a missing binary fails.
 func TestHTTPServeIntegration(t *testing.T) {
-	if os.Getenv("VMAFX_STORAGE_INTEGRATION_TEST") != "1" {
-		t.Skip("set VMAFX_STORAGE_INTEGRATION_TEST=1 to run rclone integration tests")
-	}
+	rclone := requireRclone(t)
 
 	// Write a test YUV file.
 	dir := t.TempDir()
@@ -292,7 +293,7 @@ func TestHTTPServeIntegration(t *testing.T) {
 	}
 
 	s := &HTTPServeStorage{
-		rcloneBin:    "rclone",
+		rcloneBin:    rclone,
 		rcloneConfig: cfgPath,
 		log:          slog.Default(),
 	}
@@ -308,8 +309,12 @@ func TestHTTPServeIntegration(t *testing.T) {
 	}
 	defer cleanup()
 
-	// Verify the asset is reachable via HTTP.
-	resp, err := http.Get(url) //nolint:gosec,noctx -- integration test
+	// Verify the asset is reachable via HTTP and carries the file's bytes.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec -- loopback URL from Prepare
 	if err != nil {
 		t.Fatalf("GET %q: %v", url, err)
 	}
@@ -318,7 +323,18 @@ func TestHTTPServeIntegration(t *testing.T) {
 			t.Logf("close response body: %v", closeErr)
 		}
 	}()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("GET %q status = %d, want 200", url, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || err != nil || string(body) != "fake yuv data" {
+		t.Errorf("GET %q = %d %q (err %v), want 200 with the file's bytes", url, resp.StatusCode, body, err)
 	}
+}
+
+// requireRclone returns the rclone binary or fails the test.
+func requireRclone(t *testing.T) string {
+	t.Helper()
+	bin, err := exec.LookPath("rclone")
+	if err != nil {
+		t.Fatalf("rclone not on PATH (a declared test dependency; install rclone): %v", err)
+	}
+	return bin
 }

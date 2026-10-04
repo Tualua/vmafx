@@ -114,8 +114,16 @@ spec:
             # templates/node-deployment.yaml (ADR-0719 rclone integration).
             - name: VMAFX_STORAGE_MODE
               value: {{ .Values.storage.mode | default "http-serve" | quote }}
+            {{- with .Values.storage.mountRoot }}
+            - name: VMAFX_STORAGE_MOUNT_ROOT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.storage.rclone.config }}
+            # Only with the rclone Secret mounted below; without it rclone uses
+            # its own defaults (on-the-fly remotes such as :s3,env_auth:).
             - name: VMAFX_RCLONE_CONFIG
               value: "/etc/vmafx/rclone.conf"
+            {{- end }}
             - name: VMAFX_VMAF_BINARY
               value: "/usr/local/bin/vmaf"
             - name: VMAFX_MODEL_DIR

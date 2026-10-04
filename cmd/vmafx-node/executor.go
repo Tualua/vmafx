@@ -27,6 +27,7 @@ import (
 	"github.com/VMAFx/vmafx/pkg/ai"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/storage"
 )
 
 // jobType distinguishes job categories based on the scoring params.
@@ -56,6 +57,7 @@ type ExecuteResult struct {
 type Executor struct {
 	scorer  *libvmaf.Scorer
 	aiReg   *ai.Registry
+	store   storage.Storage
 	backend string
 	log     *slog.Logger
 }
@@ -73,9 +75,23 @@ func NewExecutor(scorer *libvmaf.Scorer, aiReg *ai.Registry, backend string, log
 	return &Executor{
 		scorer:  scorer,
 		aiReg:   aiReg,
+		store:   &storage.LocalStorage{},
 		backend: backend,
 		log:     log,
 	}
+}
+
+// NewExecutorWithStorage is NewExecutor with the storage layer that turns a
+// job's source URIs into inputs the scorer can read (ADR-0719, ADR-1526).
+// NewExecutor uses storage.LocalStorage, which accepts local paths only.
+func NewExecutorWithStorage(scorer *libvmaf.Scorer, aiReg *ai.Registry, store storage.Storage,
+	backend string, log *slog.Logger,
+) *Executor {
+	e := NewExecutor(scorer, aiReg, backend, log)
+	if store != nil {
+		e.store = store
+	}
+	return e
 }
 
 // Execute runs a Job and returns its result.
@@ -163,8 +179,7 @@ func (e *Executor) executeScoring(ctx context.Context, job *controllerv1.Job) Ex
 	// The backend is passed to the CLI as --backend, so a job runs on the
 	// backend the node advertised to the scheduler or fails; the CLI never
 	// substitutes another one silently.
-	score, features, err := e.scorer.ScoreOnBackend(extractCtx,
-		sp.GetReference(), sp.GetDistorted(), sp.GetModel(), jobBackend(sp, e.backend))
+	score, features, err := e.scoreJob(extractCtx, sp)
 	if err != nil {
 		outerErr = err
 		extractErr = err

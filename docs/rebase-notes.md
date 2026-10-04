@@ -44,6 +44,24 @@ search:
   resolver (`vmaftune.codec_strings`); there is no default codec string.
 - AMF `extra_params()` returns `()`; `pkg/codecadapter/testdata/python_adapters.json`
   records an empty AMF `extra`.
+## `vmafx-node` reads job sources through pkg/storage (ADR-1526, 2026-10-04)
+
+`feat/node-storage-wiring`, stacked on `feat/node-controller-client`. Go node,
+`pkg/storage`, `pkg/libvmaf`, Helm chart and `go-ci.yml`; no C source change.
+
+- `cmd/vmafx-node/executor_inputs.go` (`scoreJob`) and `storage_config.go`
+  are new; `provideExecutor` returns `(*Executor, error)`; `executeScoring`
+  calls `scoreJob`. Keep `storage.Open` (not `storage.New`) in
+  `provideStorage`.
+- `pkg/libvmaf`: `readers_unix.go` / `readers_other.go` add `ScoreReaders`;
+  `ScoreOnBackend` now uses the extracted `scoreOutputFile` and
+  `withScoreDeadline` helpers.
+- `pkg/storage`: `ParseMode`, `Open`, `IsHTTP`, `Config.MountRoot`; `New` is
+  deprecated but unchanged.
+- Helm: `storage.mode` enum `http-serve | mount | auto`, `storage.mountRoot`,
+  `VMAFX_RCLONE_CONFIG` only with the Secret. `go-ci.yml` installs `rclone`
+  and `fuse3` for the real-rclone tests.
+
 ## `vmafx-node` pulls jobs from the controller (ADR-1524, 2026-10-04)
 
 `feat/node-controller-client`. Go node, `pkg/libvmaf` and Helm chart; no C

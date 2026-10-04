@@ -2,8 +2,8 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 """The vmafx-node contract of the Helm chart, checked on real `helm template`
-renders: the controller address the node's controller client reads and the
-NetworkPolicy egress it needs.
+renders: the controller address the node's controller client reads, the
+NetworkPolicy egress it needs, and the storage mode the node accepts.
 
 Requires the `helm` binary (the helm-chart workflow installs it); a missing
 binary is a failure, not a skip.
@@ -96,6 +96,34 @@ class NodeToControllerEgress(unittest.TestCase):
         result = render("networkPolicy.allow.nodeToController.prot=1", check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("prot", result.stderr)
+
+
+class StorageMode(unittest.TestCase):
+    def test_default_is_http_serve(self) -> None:
+        env = node_env()
+        self.assertEqual(env["VMAFX_STORAGE_MODE"], "http-serve")
+        self.assertNotIn("VMAFX_STORAGE_MOUNT_ROOT", env)
+
+    def test_every_node_mode_renders(self) -> None:
+        for mode in ("http-serve", "mount", "auto"):
+            with self.subTest(mode=mode):
+                self.assertEqual(node_env(f"storage.mode={mode}")["VMAFX_STORAGE_MODE"], mode)
+
+    def test_mount_root_rendered(self) -> None:
+        env = node_env("storage.mode=mount", "storage.mountRoot=/rclone-mount")
+        self.assertEqual(env["VMAFX_STORAGE_MOUNT_ROOT"], "/rclone-mount")
+
+    def test_unknown_mode_refused(self) -> None:
+        """Negative: the old value rclone, never implemented, is refused."""
+        result = render("node.enabled=true", "storage.mode=rclone", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("/storage/mode", result.stderr)
+
+    def test_rclone_config_only_with_secret(self) -> None:
+        """Boundary: the config path is set only when the Secret is mounted."""
+        self.assertNotIn("VMAFX_RCLONE_CONFIG", node_env())
+        env = node_env("storage.rclone.config=[s3]\ntype = s3")
+        self.assertEqual(env["VMAFX_RCLONE_CONFIG"], "/etc/vmafx/rclone.conf")
 
 
 if __name__ == "__main__":

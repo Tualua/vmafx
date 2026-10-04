@@ -62,13 +62,9 @@ func (s *HTTPServeStorage) Mode() Mode { return ModeHTTPServe }
 //	                                asset = "/ref.yuv"
 //	                                URL   = "http://127.0.0.1:PORT/ref.yuv"
 func (s *HTTPServeStorage) Prepare(ctx context.Context, sourceURI string) (string, func(), error) {
-	// Handle local paths without spawning rclone.
-	if IsLocal(sourceURI) {
-		lp, err := localPath(sourceURI)
-		if err != nil {
-			return "", func() {}, err
-		}
-		return lp, func() {}, nil
+	// Local paths and http(s) URLs need no rclone.
+	if direct, ok, err := directSource(sourceURI); ok {
+		return direct, func() {}, err
 	}
 
 	remotePath, err := rcloneRemotePath(sourceURI)

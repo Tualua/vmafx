@@ -27,6 +27,8 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -68,6 +70,18 @@ type Storage interface {
 	Mode() Mode
 }
 
+// ParseMode turns a configured mode string into a Mode. Only the three modes
+// this package implements are accepted; anything else is an error, never a
+// silent fallback to another mode.
+func ParseMode(raw string) (Mode, error) {
+	switch m := Mode(strings.TrimSpace(raw)); m {
+	case ModeHTTPServe, ModeMount, ModeAuto:
+		return m, nil
+	default:
+		return "", fmt.Errorf("storage: unknown mode %q (want %s, %s or %s)", raw, ModeHTTPServe, ModeMount, ModeAuto)
+	}
+}
+
 // Config holds the configuration shared by all Storage implementations.
 type Config struct {
 	// RcloneBin is the path to the rclone binary. Defaults to "rclone".
@@ -81,16 +95,78 @@ type Config struct {
 	// Mode selects the access strategy (http-serve | mount | auto).
 	Mode Mode
 
+	// MountRoot is the directory under which mount mode creates its per-job
+	// mount points. Empty means os.TempDir().
+	MountRoot string
+
 	// Log receives diagnostic messages from the storage layer.
 	Log *slog.Logger
 }
 
-// New returns the appropriate Storage implementation for the given config.
+// Open validates cfg and returns the Storage for its mode. Unlike New it
+// refuses an unknown or empty mode, and it resolves ModeAuto to the concrete
+// mode the host supports (mount when FUSE is usable, else http-serve) and logs
+// which one it chose and why. Mode() of the result reports the concrete mode.
+func Open(cfg Config) (Storage, error) {
+	mode, err := ParseMode(string(cfg.Mode))
+	if err != nil {
+		return nil, err
+	}
+	log := cfg.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	if mode == ModeAuto {
+		mode = resolveAuto(log)
+	}
+	if mode == ModeMount {
+		if why := fuseUnavailable(); why != "" {
+			return nil, fmt.Errorf("storage: mode %s needs FUSE: %s", ModeMount, why)
+		}
+	}
+	cfg.Mode, cfg.Log = mode, log
+	return New(cfg), nil
+}
+
+// resolveAuto picks the concrete mode for ModeAuto and says why.
+func resolveAuto(log *slog.Logger) Mode {
+	if why := fuseUnavailable(); why != "" {
+		log.Info("storage mode auto resolved", "mode", ModeHTTPServe, "reason", why)
+		return ModeHTTPServe
+	}
+	log.Info("storage mode auto resolved", "mode", ModeMount, "reason", "FUSE device and fusermount available")
+	return ModeMount
+}
+
+// fuseUnavailable returns why FUSE mounts cannot work here, or "" when the
+// device node and an unmount helper exist.
+func fuseUnavailable() string {
+	if _, err := os.Stat(fuseDevice); err != nil {
+		return fuseDevice + " is not available: " + err.Error()
+	}
+	for _, bin := range []string{"fusermount3", "fusermount"} {
+		if _, err := exec.LookPath(bin); err == nil {
+			return ""
+		}
+	}
+	return "neither fusermount3 nor fusermount is on PATH"
+}
+
+// fuseDevice is the FUSE device node; a variable so tests can point it away.
+var fuseDevice = "/dev/fuse"
+
+// IsHTTP reports whether sourceURI is an http(s) URL, which a reader can
+// stream directly without rclone.
+func IsHTTP(sourceURI string) bool {
+	u, err := url.Parse(sourceURI)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+// New returns the Storage implementation for cfg.Mode without validating it.
 //
-// Selection logic when Mode == ModeAuto:
-//   - If the source URI looks like a local path (file:// or no scheme), use LocalStorage.
-//   - If FUSE is unavailable (e.g., non-privileged distroless container), use HTTPServeStorage.
-//   - Otherwise use HTTPServeStorage (default; avoids FUSE kernel dependency).
+// Deprecated: New maps an empty, unknown or auto mode to HTTPServeStorage
+// without saying so. Use Open, which refuses an unknown mode and resolves
+// auto against the host. New stays for existing callers (HISS-14).
 func New(cfg Config) Storage {
 	log := cfg.Log
 	if log == nil {
@@ -111,6 +187,7 @@ func New(cfg Config) Storage {
 		return &FUSEMountStorage{
 			rcloneBin:    rcloneBin,
 			rcloneConfig: cfg.RcloneConfig,
+			mountRoot:    cfg.MountRoot,
 			log:          log,
 		}
 	default:
@@ -138,6 +215,20 @@ func (s *LocalStorage) Prepare(_ context.Context, sourceURI string) (string, fun
 		return "", func() {}, err
 	}
 	return path, func() {}, nil
+}
+
+// directSource handles the sources that need no rclone: a local path is
+// returned as a path and an http(s) URL unchanged. ok is false for an rclone
+// remote.
+func directSource(sourceURI string) (string, bool, error) {
+	if IsHTTP(sourceURI) {
+		return sourceURI, true, nil
+	}
+	if !IsLocal(sourceURI) {
+		return "", false, nil
+	}
+	lp, err := localPath(sourceURI)
+	return lp, true, err
 }
 
 // IsLocal returns true if the URI is a local filesystem path (file:// or no scheme).

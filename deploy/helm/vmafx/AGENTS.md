@@ -44,7 +44,9 @@ Update note on merge: final UID + container-scope seccompProfile set.
 
 - `storage` stays in `values.yaml`, `mode: "http-serve"` default; schema
   defines key non-required; `additionalProperties: false` enforces user
-  `storage.*` keys match schema.
+  `storage.*` keys match schema. `mode` enum = node's `storage.ParseMode`
+  set (`http-serve | mount | auto`, ADR-1526); never re-add `rclone`.
+  `VMAFX_RCLONE_CONFIG` rendered only with `storage.rclone.config`.
 - `gpu.count` minimum = 1; never lower to 0 (0 GPUs + device plugin = silent no-op).
 - `auth` + `otelCollector` use `additionalProperties: true` (user-extensible
   oidc/rbac, otel exporter blocks).

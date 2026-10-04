@@ -122,13 +122,21 @@ func provideScorer(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) *libvm
 // provideExecutor builds the job executor that backs the controller-driven job
 // pipeline. The AI registry is constructed from the model dir (nil-tolerant via
 // the executor's own guards). backend is read from config (VMAFX_BACKEND ->
-// "backend"), defaulting to "cpu".
-func provideExecutor(scorer *libvmaf.Scorer, cfg *config.Config, log *slog.Logger) *Executor {
+// "backend"), defaulting to "cpu". The storage layer comes from
+// provideStorage; a storage setting it cannot honour is a startup error.
+func provideExecutor(scorer *libvmaf.Scorer, cfg *config.Config, log *slog.Logger) (*Executor, error) {
+	if log == nil {
+		log = slog.Default()
+	}
 	backend := cfg.Get("backend")
 	if backend == "" {
 		backend = "cpu"
 	}
-	return NewExecutor(scorer, nil, backend, log)
+	store, err := provideStorage(cfg, log)
+	if err != nil {
+		return nil, err
+	}
+	return NewExecutorWithStorage(scorer, nil, store, backend, log), nil
 }
 
 // provideFeedbackClient constructs the online-training sidecar feedback client

@@ -143,31 +143,50 @@ func (s *Scorer) ScoreOnBackend(ctx context.Context, ref, dis, modelName, backen
 		return 0, nil, err
 	}
 
-	// Write output JSON to a temp file so we can parse it.
+	out, removeOut, err := scoreOutputFile()
+	if err != nil {
+		return 0, nil, err
+	}
+	defer removeOut()
+
+	runCtx, cancel := context.WithTimeout(ctx, scoreBudget(ctx.Deadline()))
+	defer cancel()
+
+	if err := s.runScoreBinary(runCtx, scoreArgv(ref, dis, modelPath, out, backend)); err != nil {
+		return 0, nil, err
+	}
+	return parseOutput(out)
+}
+
+// scoreOutputFile creates the temp file the CLI writes its JSON to and returns
+// its path with the function that removes it.
+func scoreOutputFile() (string, func(), error) {
 	tmpOut, err := os.CreateTemp("", "vmafx-score-*.json")
 	if err != nil {
-		return 0, nil, fmt.Errorf("libvmaf: create temp output: %w", err)
+		return "", nil, fmt.Errorf("libvmaf: create temp output: %w", err)
 	}
 	if closeErr := tmpOut.Close(); closeErr != nil {
-		return 0, nil, fmt.Errorf("libvmaf: close temp output: %w", closeErr)
+		return "", nil, fmt.Errorf("libvmaf: close temp output: %w", closeErr)
 	}
-	defer func() {
+	remove := func() {
 		if rmErr := os.Remove(tmpOut.Name()); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			slog.Warn("libvmaf: remove temp output", "error", rmErr)
 		}
-	}()
-
-	runCtx := ctx
-	var cancel context.CancelFunc
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		runCtx, cancel = context.WithTimeout(ctx, 30*time.Minute)
-		defer cancel()
 	}
+	return tmpOut.Name(), remove, nil
+}
 
-	if err := s.runScoreBinary(runCtx, scoreArgv(ref, dis, modelPath, tmpOut.Name(), backend)); err != nil {
-		return 0, nil, err
+// scoreTimeout bounds a CLI run whose context carries no deadline (HISS-02).
+const scoreTimeout = 30 * time.Minute
+
+// scoreBudget is how long a CLI run may take given its context's Deadline():
+// what is left of that deadline (a caller's longer deadline is kept), else
+// scoreTimeout.
+func scoreBudget(deadline time.Time, ok bool) time.Duration {
+	if ok {
+		return time.Until(deadline)
 	}
-	return parseOutput(tmpOut.Name())
+	return scoreTimeout
 }
 
 // scoreArgv builds the vmaf CLI argument vector for one (ref, dis) pair,

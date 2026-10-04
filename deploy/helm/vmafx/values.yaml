@@ -429,16 +429,26 @@ pushgateway:
   enabled: false
 
 # ---------------------------------------------------------------------------
-# Storage — vmafx-node asset-fetch mode (ADR-1047)
+# Storage — how vmafx-node reads rclone-remote sources (ADR-0719, ADR-1526)
 # ---------------------------------------------------------------------------
-# mode selects how nodes pull scored assets: http-serve (default) fetches from
-# the controller HTTP endpoint; rclone fetches directly from an object store
-# configured via storage.rclone.config (rclone TOML).
+# A job's reference / distorted may be a local path, an http(s) URL or an
+# rclone remote (s3://bucket/key, remote:path, ...). mode picks how the node
+# reads remotes; it becomes VMAFX_STORAGE_MODE:
+#   http-serve  per-job `rclone serve http`, streamed into the scorer through
+#               pipes (nothing written to the node's disk). Needs no FUSE.
+#   mount       per-job `rclone mount` under mountRoot. Needs FUSE in the pod
+#               (a FUSE device plugin or a privileged securityContext); the
+#               node refuses to start without it.
+#   auto        mount when FUSE is usable, else http-serve; the node logs
+#               which one it chose.
+# Any other value is refused by the schema and by the node.
 # ---------------------------------------------------------------------------
 storage:
-  mode: "http-serve"   # http-serve | rclone
+  mode: "http-serve"   # http-serve | mount | auto
+  mountRoot: ""        # VMAFX_STORAGE_MOUNT_ROOT; empty = the node's temp dir
   rclone:
-    config: ""         # rclone TOML config string; used only when mode=rclone
+    config: ""         # rclone.conf contents (remotes + credentials), mounted
+                       # at /etc/vmafx/rclone.conf; empty = no rclone config
 
 # ---------------------------------------------------------------------------
 # Node — vmafx-node worker pool (Deployment)

@@ -217,8 +217,12 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["http-serve", "rclone"],
-          "description": "vmafx-node asset-fetch mode. http-serve pulls from the controller endpoint; rclone pulls directly from a remote configured via storage.rclone.config."
+          "enum": ["http-serve", "mount", "auto"],
+          "description": "How vmafx-node reads rclone-remote sources (VMAFX_STORAGE_MODE, pkg/storage). http-serve streams them from a per-job rclone serve http into the scorer; mount reads them from a per-job rclone FUSE mount (needs FUSE in the pod); auto picks mount when FUSE is usable, else http-serve. Local paths and http(s) URLs need no rclone in any mode."
+        },
+        "mountRoot": {
+          "type": "string",
+          "description": "Parent directory of mount mode's per-job mount points (VMAFX_STORAGE_MOUNT_ROOT). Empty: the node's temp dir."
         },
         "rclone": {
           "type": "object",

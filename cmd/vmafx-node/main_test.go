@@ -73,9 +73,9 @@ func TestVersionRequest(t *testing.T) {
 func TestProvideExecutorBackendDefault(t *testing.T) {
 	t.Run("unset → cpu", func(t *testing.T) {
 		cfg := newTestConfig(t, nil)
-		exec := provideExecutor(nil, cfg, nil)
-		if exec == nil {
-			t.Fatal("provideExecutor returned nil")
+		exec, err := provideExecutor(nil, cfg, nil)
+		if err != nil || exec == nil {
+			t.Fatalf("provideExecutor = %v, %v", exec, err)
 		}
 		if exec.backend != "cpu" {
 			t.Errorf("backend = %q, want \"cpu\"", exec.backend)
@@ -84,7 +84,10 @@ func TestProvideExecutorBackendDefault(t *testing.T) {
 
 	t.Run("VMAFX_BACKEND → override", func(t *testing.T) {
 		cfg := newTestConfig(t, map[string]string{"VMAFX_BACKEND": "cuda"})
-		exec := provideExecutor(nil, cfg, nil)
+		exec, err := provideExecutor(nil, cfg, nil)
+		if err != nil {
+			t.Fatalf("provideExecutor: %v", err)
+		}
 		if exec.backend != "cuda" {
 			t.Errorf("backend = %q, want \"cuda\"", exec.backend)
 		}

@@ -4381,9 +4381,14 @@
     "0719": {
       "sites": {
         ".github/workflows/docker-publish-operator-node.yml": 1,
+        "cmd/vmafx-node/executor.go": 1,
+        "cmd/vmafx-node/executor_inputs.go": 1,
+        "cmd/vmafx-node/storage_config.go": 1,
         "deploy/helm/vmafx/templates/node.yaml": 2,
         "deploy/helm/vmafx/templates/secret-rclone-config.yaml": 1,
+        "deploy/helm/vmafx/values.yaml": 1,
         "docker/Dockerfile.node": 2,
+        "pkg/libvmaf/readers_unix.go": 1,
         "pkg/storage/fuse_mount.go": 2,
         "pkg/storage/http_serve.go": 1,
         "pkg/storage/storage.go": 1,
@@ -5550,12 +5555,6 @@
         "deny.toml": 2
       },
       "target": "1036-licensing-spdx-svm-copyright.md"
-    },
-    "1047": {
-      "sites": {
-        "deploy/helm/vmafx/values.yaml": 1
-      },
-      "target": "1047-helm-schema-bug-fixes.md"
     },
     "1048": {
       "sites": {
@@ -9995,6 +9994,17 @@
         ".github/workflows/helm-chart.yml": 1
       },
       "target": "1524-vmafx-node-controller-client.md"
+    },
+    "1526": {
+      "sites": {
+        ".github/workflows/go-ci.yml": 1,
+        "cmd/vmafx-node/executor.go": 1,
+        "cmd/vmafx-node/executor_inputs.go": 1,
+        "cmd/vmafx-node/storage_config.go": 1,
+        "deploy/helm/vmafx/values.yaml": 1,
+        "pkg/libvmaf/readers_unix.go": 1
+      },
+      "target": "1526-node-storage-streamed-inputs.md"
     }
   },
   "retired": {

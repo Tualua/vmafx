@@ -261,6 +261,9 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_CONTROLLER_RPC_TIMEOUT`, `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL`, `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.rpc_timeout`, `controller.heartbeat_interval`, `controller.poll_interval` | duration | `10s`, `10s`, `2s` | Per-call deadline, heartbeat period, wait after an empty `PullWork`. |
 | `VMAFX_NODE_ID` | `node.id` | string | host name | Node name sent to `RegisterNode`. |
 | `VMAFX_NODE_SLOTS` | `node.slots` | integer | `1` | Controller jobs run at once (1 to 64). |
+| `VMAFX_STORAGE_MODE` | `storage.mode` | string | `auto` | How rclone-remote job sources are read: `http-serve`, `mount` or `auto`; anything else stops the node ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)). |
+| `VMAFX_STORAGE_MOUNT_ROOT` | `storage.mount_root` | path | temp directory | Parent of `mount` mode's per-job mount points. |
+| `VMAFX_RCLONE_BIN`, `VMAFX_RCLONE_CONFIG` | `rclone.bin`, `rclone.config` | path | `rclone`, rclone's default | rclone binary and configuration file. |
 | `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level. |
 | `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | `auto` (tint on a TTY, else JSON), `tint` or `json`. |
 

@@ -144,3 +144,14 @@ into fx graph.
     RUNNING. Controller-key underscore leaves live in `controllerConfigKeys`
     (CompoundKeys); `env_test.go` pins the set. E2E guard:
     `TestEndToEndControllerNodeJob` (real controller binary + real vmaf).
+
+14. **Storage wiring** (`executor_inputs.go`, `storage_config.go`,
+    ADR-1526): `provideExecutor` builds the executor with
+    `storage.Open` (never deprecated `storage.New`); unknown
+    `storage.mode` / mount without FUSE -> startup error. `scoreJob` prepares
+    both sources, defers both cleanups; two paths -> `ScoreOnBackend`, any
+    http(s) input -> `ScoreReaders` (pipes, no disk). Do not download to a
+    temp file and do not drop the stream-failure check: CLI scores a short
+    distorted clip with exit 0. `NewExecutor` = `LocalStorage` (local paths
+    only, remote URI refused). Guard: `TestEndToEndControllerNodeRcloneSources`
+    (real rclone, both modes), `TestStorageModeRefusedAtStartup`.

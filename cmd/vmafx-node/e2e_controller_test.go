@@ -173,40 +173,47 @@ func submit(t *testing.T, client controllerv1.VmafxControllerClient, ref, dis, b
 	return resp.GetJobId()
 }
 
-// TestEndToEndControllerNodeJob: submit -> pull -> score -> report against a
-// real controller, and the backend match keeps a foreign job PENDING.
-func TestEndToEndControllerNodeJob(t *testing.T) {
-	root := libvmaf.RepoRoot()
-	vmafBin := e2eVmafBinary(t, root)
+// e2eMedia writes the synthetic pair and returns the repository root, the
+// vmaf CLI, both paths and the CLI's own score for them.
+func e2eMedia(t *testing.T) (root, vmafBin, ref, dis string, want float64) {
+	t.Helper()
+	root = libvmaf.RepoRoot()
+	vmafBin = e2eVmafBinary(t, root)
 	media := t.TempDir()
-	ref, dis := filepath.Join(media, "ref.y4m"), filepath.Join(media, "dis.y4m")
+	ref, dis = filepath.Join(media, "ref.y4m"), filepath.Join(media, "dis.y4m")
 	writeY4M(t, ref, 0)
 	writeY4M(t, dis, 40)
-
 	scorer, err := libvmaf.New(vmafBin, filepath.Join(root, "model"))
 	if err != nil {
 		t.Fatalf("libvmaf.New: %v", err)
 	}
-	want, _, err := scorer.ScoreOnBackend(t.Context(), ref, dis, "vmaf_v0.6.1", "cpu")
+	want, _, err = scorer.ScoreOnBackend(t.Context(), ref, dis, "vmaf_v0.6.1", "cpu")
 	if err != nil {
 		t.Fatalf("direct score: %v", err)
 	}
+	return root, vmafBin, ref, dis, want
+}
 
-	ctrlAddr := startController(t, root, vmafBin)
-	client := controllerv1.NewVmafxControllerClient(dialPlain(t, ctrlAddr))
-	foreign := submit(t, client, ref, dis, "cuda")
-
+// startE2ENode runs the node's production graph against the controller.
+func startE2ENode(t *testing.T, root, vmafBin, ctrlAddr string, env map[string]string) *fxtest.App {
+	t.Helper()
 	writeNodeEnv(t)
 	t.Setenv("VMAFX_VMAF_BINARY", vmafBin)
 	t.Setenv("VMAFX_MODEL_DIR", filepath.Join(root, "model"))
 	t.Setenv("VMAFX_CONTROLLER_ADDR", ctrlAddr)
 	t.Setenv("VMAFX_CONTROLLER_POLL_INTERVAL", "100ms")
 	t.Setenv("VMAFX_NODE_ID", "e2e-node")
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
 	app := fxtest.New(t, productionGraph())
 	app.RequireStart()
-	defer app.RequireStop()
+	return app
+}
 
-	job := awaitTerminal(t, client, submit(t, client, ref, dis, "cpu"))
+// requireScored asserts the job completed with the CLI's score.
+func requireScored(t *testing.T, job *controllerv1.Job, want float64) {
+	t.Helper()
 	if job.GetStatus() != controllerv1.JobStatus_COMPLETED {
 		t.Fatalf("job finished %v with error %q, want COMPLETED", job.GetStatus(), job.GetError())
 	}
@@ -217,6 +224,20 @@ func TestEndToEndControllerNodeJob(t *testing.T) {
 		t.Fatalf("controller score %v, want the CLI's %v (strictly between 0 and 100)", got, want)
 	}
 	t.Logf("job %s scored %.6f on node %s", job.GetId(), job.GetFinalScore(), job.GetAssignedNode())
+}
+
+// TestEndToEndControllerNodeJob: submit -> pull -> score -> report against a
+// real controller, and the backend match keeps a foreign job PENDING.
+func TestEndToEndControllerNodeJob(t *testing.T) {
+	root, vmafBin, ref, dis, want := e2eMedia(t)
+	ctrlAddr := startController(t, root, vmafBin)
+	client := controllerv1.NewVmafxControllerClient(dialPlain(t, ctrlAddr))
+	foreign := submit(t, client, ref, dis, "cuda")
+
+	app := startE2ENode(t, root, vmafBin, ctrlAddr, nil)
+	defer app.RequireStop()
+
+	requireScored(t, awaitTerminal(t, client, submit(t, client, ref, dis, "cpu")), want)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -226,5 +247,25 @@ func TestEndToEndControllerNodeJob(t *testing.T) {
 	}
 	if pending.GetStatus() != controllerv1.JobStatus_PENDING {
 		t.Fatalf("cuda job is %v on a cpu-only node, want PENDING", pending.GetStatus())
+	}
+}
+
+// TestEndToEndControllerNodeRcloneSources: a job whose sources are rclone
+// remotes is scored through each storage mode with the CLI's file score:
+// http-serve streams both inputs into the CLI, mount reads them from FUSE
+// mounts. Needs rclone, and FUSE for the mount mode (declared dependencies).
+func TestEndToEndControllerNodeRcloneSources(t *testing.T) {
+	root, vmafBin, ref, dis, want := e2eMedia(t)
+	ctrlAddr := startController(t, root, vmafBin)
+	client := controllerv1.NewVmafxControllerClient(dialPlain(t, ctrlAddr))
+	for _, mode := range []string{"http-serve", "mount"} {
+		t.Run(mode, func(t *testing.T) {
+			app := startE2ENode(t, root, vmafBin, ctrlAddr, map[string]string{
+				"VMAFX_STORAGE_MODE": mode, "VMAFX_STORAGE_MOUNT_ROOT": t.TempDir(),
+			})
+			defer app.RequireStop()
+			id := submit(t, client, ":local:"+ref, ":local:"+dis, "cpu")
+			requireScored(t, awaitTerminal(t, client, id), want)
+		})
 	}
 }

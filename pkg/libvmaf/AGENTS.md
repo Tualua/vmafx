@@ -115,3 +115,11 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
     scoped `ScoreDirect` and constructor unwinds make one immediate retry and
     deliberately retain C owners after persistent failure rather than
     create use-after-free.
+
+13. **`ScoreReaders` streams through inherited pipes** (`readers_unix.go`,
+    ADR-1526): read ends passed as `cmd.ExtraFiles` -> `/dev/fd/3`,
+    `/dev/fd/4`; parent closes its read-end copies right after `Start`
+    (else a CLI that exits early leaves copiers blocked). A source read error
+    (not EOF, not caused by our own close after `Wait`) fails the score even
+    when the CLI exited 0 and is reported first. Non-Unix build returns
+    `ErrStreamInputsUnsupported`; never fall back to a temp file.

@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T04:31:05Z",
+  "generated_at": "2026-10-04T04:40:51Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "439db2a3d1b45980466cd426d27ae3c6a039b18a",
-  "total_infractions": 442,
+  "commit_sha": "d39a82de0e42ae4b5930c469ef1cfa06544f8fc1",
+  "total_infractions": 440,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -244,22 +244,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:c05a010bc5bc",
       "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:c05a010bc5bc#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/go-ci.yml",
-      "line_number": 79,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:d413ea8743c7",
-      "fingerprint": ".github/workflows/go-ci.yml:HISS-07:text:d413ea8743c7#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/go-ci.yml",
-      "line_number": 102,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:0abe8ab11908",
-      "fingerprint": ".github/workflows/go-ci.yml:HISS-02:text:0abe8ab11908#1"
     },
     {
       "rule_id": "HISS-07",

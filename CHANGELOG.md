@@ -197,6 +197,20 @@
   and [ADR-1524](docs/adr/1524-vmafx-node-controller-client.md).
 
 
+- **`vmafx-node` scores jobs whose sources are rclone remotes or http(s)
+  URLs.** The executor now prepares a job's reference and distorted through
+  `pkg/storage` (`VMAFX_STORAGE_MODE`: `http-serve`, `mount` or `auto`, the
+  default); before, it handed them to the vmaf CLI unchanged, so only local
+  paths worked. In `http-serve` mode, and for any http(s) URL, the clips are
+  streamed into the CLI through pipes without touching the node's disk, and a
+  stream that breaks fails the job instead of yielding the score of the frames
+  it delivered. `auto` picks `mount` when FUSE is usable and logs its choice;
+  an unknown mode, or `mount` without FUSE, stops the node at startup.
+  `libvmaf.Scorer.ScoreReaders` and `storage.Open` are new; `storage.New` is
+  deprecated. See [job sources](docs/server/node.md#job-sources-local-paths-urls-and-rclone-remotes)
+  and [ADR-1526](docs/adr/1526-node-storage-streamed-inputs.md).
+
+
 - **An NVIDIA GPU tester image measures every CUDA twin on an outside tester's
   NVIDIA GPU with one command and no build.**
   `ghcr.io/vmafx/vmafx:<version>-tester-cuda` (linux/amd64) runs on Linux with
@@ -1002,6 +1016,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   the CPU extractor. See
   [Motion, five-frame window](docs/metrics/motion.md#five-frame-window) and
   [ADR-1491](docs/adr/1491-gpu-motion-five-frame-window.md).
+
+
+- **Helm: `storage.mode` accepts `http-serve`, `mount` and `auto`.** The
+  previous `rclone` value matched no node mode and was ignored; the schema now
+  refuses it. Use `http-serve` (the default) or `auto`. `storage.mountRoot`
+  sets `VMAFX_STORAGE_MOUNT_ROOT`, and `VMAFX_RCLONE_CONFIG` is set only when
+  `storage.rclone.config` provides the file. See
+  [ADR-1526](docs/adr/1526-node-storage-streamed-inputs.md).
 
 
 - **Three GPU helper headers credit the reference code they reproduce.** They

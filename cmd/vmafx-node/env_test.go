@@ -53,6 +53,8 @@ func TestNodeEnvOptionsContract(t *testing.T) {
 		"controller.rpc_timeout":        true,
 		"controller.heartbeat_interval": true,
 		"controller.poll_interval":      true,
+		// Storage layer keys (storage_config.go).
+		"storage.mount_root": true,
 	}
 	got := make(map[string]bool, len(opts.CompoundKeys))
 	for _, k := range opts.CompoundKeys {
@@ -122,6 +124,27 @@ func TestNodeEnvOptionsBindControllerKeys(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("controller config = %+v, want %+v", got, want)
+	}
+}
+
+// TestNodeEnvOptionsBindStorageKeys: VMAFX_STORAGE_* and VMAFX_RCLONE_* reach
+// the keys provideStorage reads.
+func TestNodeEnvOptionsBindStorageKeys(t *testing.T) {
+	t.Setenv("VMAFX_STORAGE_MODE", "http-serve")
+	t.Setenv("VMAFX_STORAGE_MOUNT_ROOT", "/rclone-mount")
+	t.Setenv("VMAFX_RCLONE_BIN", "/usr/local/bin/rclone")
+	t.Setenv("VMAFX_RCLONE_CONFIG", "/etc/vmafx/rclone.conf")
+	raw, err := config.New(nodeEnvOptions(false))
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	for key, want := range map[string]string{
+		"storage.mode": "http-serve", "storage.mount_root": "/rclone-mount",
+		"rclone.bin": "/usr/local/bin/rclone", "rclone.config": "/etc/vmafx/rclone.conf",
+	} {
+		if got := raw.Get(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
 	}
 }
 
