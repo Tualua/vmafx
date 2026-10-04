@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1258), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1259), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4815,6 +4815,10 @@ Every ADR, one heading each (1258), so the site search finds an ADR by its title
 ## ADR-1497: The `float_moment` twins form the CPU's rounded second-moment sum past 2^53 units, and return the CPU's bits on every frame
 
 [1497-float-moment-twins-cpu-sum-past-2-53](1497-float-moment-twins-cpu-sum-past-2-53.md)
+
+## ADR-1498: Metal twins take the exact designs of their CUDA, HIP and SYCL twins, on a strict FP kernel policy
+
+[1498-metal-twins-exact-designs](1498-metal-twins-exact-designs.md)
 
 ## ADR-1499: The `float_psnr` twins add each row's exact sum in the CPU's order, and return the CPU's bits on every frame
 

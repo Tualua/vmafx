@@ -36,14 +36,15 @@
  *   - integer_motion_v2_metal.mm → "motion_v2_metal" +
  *       motion_v2_sad / motion2_v2 / motion3_v2 scores
  *   - integer_motion_metal.mm    → "integer_motion_metal" +
- *       motion_y / motion2 scores
+ *       motion_sad / motion / motion2 / motion3 scores (ADR-1498)
  *   - float_motion_metal.mm      → "float_motion_metal" +
- *       motion / motion2 scores
+ *       motion / motion2 / motion3 scores (ADR-1498)
  *
  * Provided-features keys are copied verbatim from each .mm; do not abbreviate
  * (the previous short forms "motion2_v2_score" / "motion2_score" never matched
- * any canonical name). motion3_v2 IS provided by integer_motion_v2_metal.mm
- * and is therefore listed; standalone "motion3" remains unimplemented on Metal.
+ * any canonical name). test_metal_twin_option_tables_contract.py holds this
+ * table equal to the registry names and provided features of every Metal
+ * extractor.
  */
 static const char *const g_metal_features[] = {
     /* integer_motion_v2_metal.mm */
@@ -69,10 +70,13 @@ static const char *const g_metal_features[] = {
     "float_motion_metal",
     "VMAF_feature_motion_score",
     "VMAF_feature_motion2_score",
-    /* integer_motion_metal.mm */
+    "VMAF_feature_motion3_score",
+    /* integer_motion_metal.mm (integer_motion.c's provided features, ADR-1498) */
     "integer_motion_metal",
-    "VMAF_integer_feature_motion_y_score",
+    "VMAF_integer_feature_motion_sad_score",
+    "VMAF_integer_feature_motion_score",
     "VMAF_integer_feature_motion2_score",
+    "VMAF_integer_feature_motion3_score",
     /* float_ssim_metal.mm */
     "float_ssim_metal",
     "float_ssim",
