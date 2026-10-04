@@ -29,7 +29,8 @@ def test_validate_model_registry_writes_report(tmp_path: Path) -> None:
     model_dir = tmp_path / "model" / "tiny"
     model_dir.mkdir(parents=True)
     onnx = model_dir / "smoke.onnx"
-    onnx.write_bytes(b"not a real onnx; validator only hashes bytes")
+    # The validator reads every registered graph (ADR-1546): a real, tiny ONNX.
+    onnx.write_bytes((REPO_ROOT / "model" / "tiny" / "smoke_v0.onnx").read_bytes())
     registry = model_dir / "registry.json"
     registry.write_text(
         json.dumps(

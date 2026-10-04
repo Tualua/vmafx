@@ -11,9 +11,8 @@ status check; running it locally before pushing avoids a CI round-trip.
 
 Two validators run in sequence:
 
-1. **JSON Schema** (``jsonschema`` if installed; fall back to a small
-   structural validator otherwise so distros without ``python-jsonschema``
-   still get coverage of the *required-fields* invariants).
+1. **JSON Schema** (``jsonschema``, a declared dependency; the script exits 2
+   when it is not installed rather than validate less).
 2. **Cross-file consistency** — every ``onnx`` exists, the recorded
    ``sha256`` matches the file on disk, every non-smoke entry has a
    sidecar JSON, ``int8_sha256`` is present iff ``quant_mode`` is not
@@ -49,46 +48,32 @@ DEFAULT_REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
 DEFAULT_SCHEMA = REPO_ROOT / "model" / "tiny" / "registry.schema.json"
 
 
-def _try_jsonschema_validate(reg: dict[str, Any], schema: dict[str, Any]) -> list[str]:
-    """Run jsonschema if available; return a list of error strings (empty = ok)."""
+JSONSCHEMA_LOCK = "requirements/locks/jsonschema.txt"
+
+
+class JsonschemaMissingError(RuntimeError):
+    """``jsonschema`` is not importable; the validator refuses to run without it."""
+
+
+def _jsonschema_errors(reg: dict[str, Any], schema: dict[str, Any]) -> list[str]:
+    """Validate against the schema (Draft 2020-12); return error strings (empty = ok).
+
+    ``jsonschema`` is a declared dependency (``pyproject.toml``, the CI job
+    installs ``requirements/locks/jsonschema.txt``). There is no weaker
+    stand-in: a run without it is an error, never a pass on fewer checks.
+    """
     try:
         import jsonschema  # type: ignore[import-not-found]
-    except ImportError:
-        return ["__skipped__"]
+    except ImportError as exc:
+        raise JsonschemaMissingError(
+            "the 'jsonschema' package is required and is not installed; install it with "
+            f"`pip install --require-hashes -r {JSONSCHEMA_LOCK}` (no fallback validator runs)"
+        ) from exc
     validator = jsonschema.Draft202012Validator(schema)
     errors: list[str] = []
     for err in sorted(validator.iter_errors(reg), key=lambda e: list(e.absolute_path)):
         path = "/".join(str(p) for p in err.absolute_path) or "<root>"
         errors.append(f"schema: {path}: {err.message}")
-    return errors
-
-
-def _structural_fallback_validate(reg: dict[str, Any]) -> list[str]:
-    """Minimal required-field check when ``jsonschema`` is unavailable."""
-    errors: list[str] = []
-    if not isinstance(reg, dict):
-        return ["registry must be a JSON object"]
-    if reg.get("schema_version") not in (0, 1):
-        errors.append(f"schema_version must be 0 or 1 (got {reg.get('schema_version')!r})")
-    models = reg.get("models")
-    if not isinstance(models, list):
-        return ["registry.models must be a list"]
-    required = {"id", "kind", "onnx", "sha256"}
-    for idx, m in enumerate(models):
-        if not isinstance(m, dict):
-            errors.append(f"models[{idx}] is not an object")
-            continue
-        missing = required - m.keys()
-        if missing:
-            errors.append(f"models[{idx}] missing required fields: {sorted(missing)}")
-        kind = m.get("kind")
-        if kind not in {"fr", "nr", "filter"}:
-            errors.append(f"models[{idx}].kind = {kind!r} (expected fr/nr/filter)")
-        sha = m.get("sha256", "")
-        if not (
-            isinstance(sha, str) and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
-        ):
-            errors.append(f"models[{idx}].sha256 must be 64 lowercase hex chars")
     return errors
 
 
@@ -342,11 +327,10 @@ def validate(registry_path: Path, schema_path: Path) -> tuple[int, list[str]]:
         return 2, [f"schema JSON parse error: {err}"]
 
     errors: list[str] = []
-    schema_errors = _try_jsonschema_validate(reg, schema)
-    if schema_errors == ["__skipped__"]:
-        errors.extend(_structural_fallback_validate(reg))
-    else:
-        errors.extend(schema_errors)
+    try:
+        errors.extend(_jsonschema_errors(reg, schema))
+    except JsonschemaMissingError as err:
+        return 2, [str(err)]
     errors.extend(_consistency_check(reg, registry_path.parent))
 
     return (0 if not errors else 1, errors)

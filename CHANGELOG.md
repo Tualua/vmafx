@@ -3643,6 +3643,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ([licensing](docs/licensing.md#models)).
 
 
+- **The tiny-model registry validator no longer validates less when `jsonschema` is
+  missing.** `ai/scripts/validate_model_registry.py` used to fall back to a
+  four-field structural check and print `OK`; it now exits 2 and names the
+  install command (`pip install --require-hashes -r requirements/locks/jsonschema.txt`).
+  `jsonschema` was already a declared dependency and the CI job installs it, so
+  a run that passed before still passes.
+
+
 - **`float_ms_ssim` with `enable_chroma` runs on CUDA and HIP, and HIP no
   longer drops the chroma scores.** The HIP twin `integer_ms_ssim_hip`
   accepted `enable_chroma=true`, scored luma only and wrote neither

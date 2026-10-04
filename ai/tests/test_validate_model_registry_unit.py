@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.validate_model_registry` (T6-9 / ADR-0209).
 
-Covers schema validation (jsonschema + structural fallback),
+Covers schema validation (jsonschema; fails closed when it is absent),
 cross-file consistency invariants (sha256 match, sidecar presence,
 quant_mode → int8_sha256 pairing, sigstore_bundle path shape), and the
 ``main`` CLI surface (exit codes 0/1/2, ``--out-json`` reporting).
@@ -33,77 +33,79 @@ VMR = _load_module()
 
 
 # ---------------------------------------------------------------------------
-# _structural_fallback_validate
+# _jsonschema_errors (the only schema validator; no structural stand-in)
 # ---------------------------------------------------------------------------
 
-
-def test_structural_fallback_rejects_non_dict() -> None:
-    errs = VMR._structural_fallback_validate(["not-a-dict"])
-    assert any("must be a JSON object" in e for e in errs)
+_SCHEMA = json.loads((_REPO_ROOT / "model" / "tiny" / "registry.schema.json").read_text())
 
 
-def test_structural_fallback_rejects_bad_schema_version() -> None:
-    errs = VMR._structural_fallback_validate({"schema_version": 99, "models": []})
-    assert any("schema_version must be 0 or 1" in e for e in errs)
+def _entry(**over: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {"id": "x", "kind": "fr", "onnx": "x.onnx", "sha256": "0" * 64}
+    row.update(over)
+    return row
 
 
-def test_structural_fallback_rejects_non_list_models() -> None:
-    errs = VMR._structural_fallback_validate({"schema_version": 1, "models": "oops"})
-    assert any("registry.models must be a list" in e for e in errs)
+def test_no_structural_fallback_validator_remains() -> None:
+    assert not hasattr(VMR, "_structural_fallback_validate")
+    assert not hasattr(VMR, "_try_jsonschema_validate")
 
 
-def test_structural_fallback_flags_missing_required_fields() -> None:
-    reg = {"schema_version": 1, "models": [{"id": "x"}]}  # missing kind/onnx/sha256
-    errs = VMR._structural_fallback_validate(reg)
-    assert any("missing required fields" in e for e in errs)
+def test_schema_rejects_non_dict() -> None:
+    errs = VMR._jsonschema_errors(["not-a-dict"], _SCHEMA)
+    assert errs
 
 
-def test_structural_fallback_flags_invalid_kind() -> None:
-    reg = {
-        "schema_version": 1,
-        "models": [
-            {
-                "id": "x",
-                "kind": "nonsense",
-                "onnx": "x.onnx",
-                "sha256": "a" * 64,
-            }
-        ],
-    }
-    errs = VMR._structural_fallback_validate(reg)
-    assert any("expected fr/nr/filter" in e for e in errs)
+def test_schema_rejects_bad_schema_version() -> None:
+    errs = VMR._jsonschema_errors({"schema_version": 99, "models": []}, _SCHEMA)
+    assert any("schema_version" in e for e in errs)
 
 
-def test_structural_fallback_flags_bad_sha_length() -> None:
-    reg = {
-        "schema_version": 1,
-        "models": [
-            {
-                "id": "x",
-                "kind": "fr",
-                "onnx": "x.onnx",
-                "sha256": "abc",
-            }
-        ],
-    }
-    errs = VMR._structural_fallback_validate(reg)
-    assert any("64 lowercase hex" in e for e in errs)
+def test_schema_rejects_non_list_models() -> None:
+    errs = VMR._jsonschema_errors({"schema_version": 1, "models": "oops"}, _SCHEMA)
+    assert any("models" in e for e in errs)
 
 
-def test_structural_fallback_passes_on_valid_entry() -> None:
-    reg = {
-        "schema_version": 1,
-        "models": [
-            {
-                "id": "x",
-                "kind": "fr",
-                "onnx": "x.onnx",
-                "sha256": "0" * 64,
-            }
-        ],
-    }
-    errs = VMR._structural_fallback_validate(reg)
-    assert errs == []
+def test_schema_flags_missing_required_fields() -> None:
+    errs = VMR._jsonschema_errors({"schema_version": 1, "models": [{"id": "x"}]}, _SCHEMA)
+    assert any("required" in e for e in errs)
+
+
+def test_schema_flags_invalid_kind() -> None:
+    errs = VMR._jsonschema_errors(
+        {"schema_version": 1, "models": [_entry(kind="nonsense")]}, _SCHEMA
+    )
+    assert any("kind" in e for e in errs)
+
+
+def test_schema_flags_bad_sha_length() -> None:
+    errs = VMR._jsonschema_errors({"schema_version": 1, "models": [_entry(sha256="abc")]}, _SCHEMA)
+    assert any("sha256" in e for e in errs)
+
+
+def test_schema_accepts_a_valid_entry() -> None:
+    assert VMR._jsonschema_errors({"schema_version": 1, "models": [_entry()]}, _SCHEMA) == []
+
+
+def test_validate_fails_closed_when_jsonschema_is_missing(tmp_path: Path) -> None:
+    reg = tmp_path / "registry.json"
+    reg.write_text(json.dumps({"schema_version": 1, "models": []}))
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}")
+    real_import = __import__
+
+    def _no_jsonschema(name: str, *a: Any, **k: Any) -> Any:
+        if name == "jsonschema":
+            raise ImportError("blocked for the test")
+        return real_import(name, *a, **k)
+
+    with patch("builtins.__import__", side_effect=_no_jsonschema):
+        rc, errs = VMR.validate(reg, schema)
+    assert rc == 2
+    assert (
+        len(errs) == 1
+        and "jsonschema" in errs[0]
+        and "requirements/locks/jsonschema.txt" in errs[0]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +286,7 @@ def test_validate_returns_1_on_bad_json(tmp_path: Path) -> None:
 
 
 def test_validate_returns_0_on_clean_minimal_registry(tmp_path: Path) -> None:
-    # Skip jsonschema (force structural fallback) so the test stays
-    # independent of whether jsonschema is installed.
+    # An empty schema accepts anything: only the cross-file checks decide.
     blob = b"payload"
     onnx = tmp_path / "x.onnx"
     onnx.write_bytes(blob)
@@ -308,8 +309,7 @@ def test_validate_returns_0_on_clean_minimal_registry(tmp_path: Path) -> None:
     )
     schema = tmp_path / "schema.json"
     schema.write_text("{}")
-    with patch.object(VMR, "_try_jsonschema_validate", return_value=["__skipped__"]):
-        rc, errs = VMR.validate(reg_path, schema)
+    rc, errs = VMR.validate(reg_path, schema)
     assert (rc, errs) == (0, [])
 
 
@@ -353,8 +353,7 @@ def test_main_returns_0_with_clean_registry(tmp_path: Path) -> None:
     schema = tmp_path / "schema.json"
     schema.write_text("{}")
 
-    with patch.object(VMR, "_try_jsonschema_validate", return_value=["__skipped__"]):
-        rc = VMR.main([str(reg_path), "--schema", str(schema)])
+    rc = VMR.main([str(reg_path), "--schema", str(schema)])
     assert rc == 0
 
 
@@ -382,8 +381,7 @@ def test_main_writes_out_json_on_pass(tmp_path: Path) -> None:
     schema = tmp_path / "schema.json"
     schema.write_text("{}")
     out = tmp_path / "report.json"
-    with patch.object(VMR, "_try_jsonschema_validate", return_value=["__skipped__"]):
-        rc = VMR.main([str(reg_path), "--schema", str(schema), "--out-json", str(out)])
+    rc = VMR.main([str(reg_path), "--schema", str(schema), "--out-json", str(out)])
     assert rc == 0
     payload = json.loads(out.read_text())
     assert payload["ok"] is True
@@ -412,8 +410,7 @@ def test_main_writes_out_json_on_fail(tmp_path: Path) -> None:
     schema = tmp_path / "schema.json"
     schema.write_text("{}")
     out = tmp_path / "report.json"
-    with patch.object(VMR, "_try_jsonschema_validate", return_value=["__skipped__"]):
-        rc = VMR.main([str(reg_path), "--schema", str(schema), "--out-json", str(out)])
+    rc = VMR.main([str(reg_path), "--schema", str(schema), "--out-json", str(out)])
     assert rc == 1
     payload = json.loads(out.read_text())
     assert payload["ok"] is False

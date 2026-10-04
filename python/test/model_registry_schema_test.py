@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
 from validate_model_registry import (  # noqa: E402  pylint: disable=wrong-import-position
     _consistency_check,
-    _structural_fallback_validate,
+    _jsonschema_errors,
     validate,
 )
 
@@ -97,31 +97,31 @@ def test_fr_regressor_v2_ensemble_seed_rows_are_production() -> None:
         assert sidecar["gate"]["verdict"] == "PROMOTE"
 
 
-def test_structural_fallback_rejects_bad_hex_sha256() -> None:
+def test_schema_rejects_bad_hex_sha256() -> None:
     reg = _load_registry()
     bad = copy.deepcopy(reg)
     bad["models"][0]["sha256"] = "deadbeef"  # too short
-    errors = _structural_fallback_validate(bad)
+    errors = _jsonschema_errors(bad, json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
     assert any("sha256" in e for e in errors)
 
 
-def test_structural_fallback_rejects_unknown_kind() -> None:
+def test_schema_rejects_unknown_kind() -> None:
     reg = _load_registry()
     bad = copy.deepcopy(reg)
     bad["models"][0]["kind"] = "magic"
-    errors = _structural_fallback_validate(bad)
+    errors = _jsonschema_errors(bad, json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
     assert any("kind" in e for e in errors)
 
 
-def test_structural_fallback_rejects_missing_required() -> None:
+def test_schema_rejects_missing_required() -> None:
     bad = {"schema_version": 1, "models": [{"id": "x"}]}
-    errors = _structural_fallback_validate(bad)
-    assert any("missing required" in e for e in errors)
+    errors = _jsonschema_errors(bad, json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
+    assert any("required" in e for e in errors)
 
 
-def test_structural_fallback_rejects_bad_schema_version() -> None:
+def test_schema_rejects_bad_schema_version() -> None:
     bad = {"schema_version": 99, "models": []}
-    errors = _structural_fallback_validate(bad)
+    errors = _jsonschema_errors(bad, json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
     assert any("schema_version" in e for e in errors)
 
 

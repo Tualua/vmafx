@@ -7,6 +7,15 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The registry validator has no fallback (2026-10-04)
+
+`fix/model-registry-validator-no-fallback`. One script and its tests.
+
+- `ai/scripts/validate_model_registry.py` has no structural fallback: `_jsonschema_errors`
+  replaces `_try_jsonschema_validate` and `_structural_fallback_validate`, and a
+  missing `jsonschema` is exit 2. A sync that brings either old name back fails
+  `test_no_structural_fallback_validator_remains`.
+
 ## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
 
 `docs/model-dataset-terms`. Docs and one contract test.
