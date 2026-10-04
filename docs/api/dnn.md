@@ -1,7 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # DNN session API — `libvmaf/dnn.h`
 
-The DNN surface in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)
+The DNN surface in
+[`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)
 lets callers load and run tiny ONNX models from C, either attached to a
 `VmafContext` (so DNN scores show up next to SVM scores in the normal VMAF
 report) or as a standalone session (luma-in / luma-out filter-style
@@ -18,10 +19,18 @@ surfaces: CLI, C API, ffmpeg, training).
 int vmaf_dnn_available(void);
 ```
 
-Returns `1` if libvmaf was built with `-Denable_dnn=enabled` and ONNX Runtime is
-linked, `0` otherwise. When `0`, every other entry point in `dnn.h` returns
-`-ENOSYS`. This is the cheap way to branch between DNN and classic-only
-build configs at runtime without wrapping every call in its own check.
+Returns `1` if libvmaf was built with DNN support (the `enable_dnn` Meson
+feature option, `enabled` or `auto` with ONNX Runtime found) and ONNX Runtime
+is linked, `0` otherwise. It is the cheap way to branch between DNN and
+classic-only builds at run time. It is safe to call from any thread.
+
+When it returns `0`, the other entry points in `dnn.h` return `-ENOSYS`
+(except `vmaf_dnn_is_codec_aware()`, which returns `0`, and
+`vmaf_dnn_session_attached_ep()`, which returns `NULL`). The header is
+installed only when `enable_dnn` is `enabled` or `auto`.
+
+All entry points are not thread-safe unless stated; see
+[thread-safety](#thread-safety).
 
 ## Device config — `VmafDnnConfig`
 
@@ -49,27 +58,32 @@ typedef struct VmafDnnConfig {
 } VmafDnnConfig;
 ```
 
-- `device = AUTO` — tries CUDA, OpenVINO GPU, ROCm, CoreML, then CPU.
-  OpenVINO NPU is intentionally explicit-only because small graphs can pay a
-  noticeable NPU power-state latency floor.
-- `device = CPU` — forces ORT's CPU execution provider.
-- `device = CUDA` — tries `CUDAExecutionProvider` when the linked ORT build
-  exports it. If CUDA EP append fails, the session falls back to CPU and
-  still opens.
-- `device = OPENVINO` — tries OpenVINO `device_type=GPU`, then
-  `device_type=CPU`.
-- `device = OPENVINO_NPU` / `_CPU` / `_GPU` — pins the OpenVINO EP to a
-  single `device_type` (`NPU`, `CPU`, or `GPU`). Missing EP support or
-  absent silicon still degrades to CPU through the common fallback.
-- `device = ROCM` — tries `ROCMExecutionProvider`, then falls back to CPU.
-- `device = COREML` / `_ANE` / `_GPU` / `_CPU` — tries
-  `CoreMLExecutionProvider`. The base selector lets CoreML choose compute
-  units; the variants set `MLComputeUnits` to `CPUAndNeuralEngine`,
-  `CPUAndGPU`, or `CPUOnly`. Non-Apple ORT builds fall back to CPU.
-- `fp16_io` — enables fp32-to-fp16 staging for model slots declared as
-  `FLOAT16`. OpenVINO also receives the `precision=FP16` EP option.
-- `threads = 0` — lets ORT pick. Set explicitly when pinning affinity or
-  benchmarking.
+| `device` | Execution provider (EP) tried | Fallback |
+| --- | --- | --- |
+| `AUTO` | CUDA, then OpenVINO GPU, then ROCm, then CoreML | CPU. OpenVINO NPU is explicit-only: small graphs can pay a noticeable NPU power-state latency floor. |
+| `CPU` | ORT CPU EP | none |
+| `CUDA` | `CUDAExecutionProvider`, when the linked ORT exports it | CPU if the EP append fails; the session still opens |
+| `OPENVINO` | OpenVINO `device_type=GPU` | OpenVINO `device_type=CPU`, then CPU |
+| `OPENVINO_NPU`, `_CPU`, `_GPU` | OpenVINO pinned to one `device_type` (`NPU`, `CPU`, `GPU`), no OpenVINO fallback | CPU when the EP or the silicon is missing |
+| `ROCM` | `ROCMExecutionProvider` | CPU |
+| `COREML` | `CoreMLExecutionProvider`, CoreML chooses compute units (`ALL`) | CPU on non-Apple ORT builds |
+| `COREML_ANE` | CoreML with `MLComputeUnits` = `CPUAndNeuralEngine` | CPU on non-Apple ORT builds |
+| `COREML_GPU` | CoreML with `CPUAndGPU` | CPU on non-Apple ORT builds |
+| `COREML_CPU` | CoreML with `CPUOnly` | CPU on non-Apple ORT builds |
+
+Other fields:
+
+- `device_index`: multi-GPU index; 0 for a single GPU or CPU.
+- `threads`: CPU EP intra-op threads. `0` lets ORT pick; set it explicitly
+  when pinning affinity or benchmarking.
+- `fp16_io`: stages fp32 to fp16 for model slots declared `FLOAT16`;
+  OpenVINO also receives `precision=FP16`. It does not change float32
+  slots, so it is not a speed switch for fp32-only graphs.
+
+EP choice is a preference, not a requirement: when a requested provider is
+missing from the linked ORT build, session open falls back to CPU. Check
+[which EP bound](#which-execution-provider-bound-vmaf_dnn_session_attached_ep)
+if your application must fail instead.
 
 Pass `NULL` for `cfg` in any function that accepts one to use
 `VMAF_DNN_DEVICE_AUTO` with zero device index, zero threads, and no fp16 I/O.
@@ -123,6 +137,12 @@ identity, preset ordinal, and CRF / QP. `vmaf_dnn_set_codec_context`
 populates that block on the attached tiny model so the loop body does
 not need to re-supply it per frame.
 
+!!! warning
+    Call it after `vmaf_use_tiny_model()` and before the first
+    `vmaf_read_pictures()`. The loader pre-seeds the block with the
+    "unknown" encoder baseline at attach time; this call overrides that
+    seed.
+
 ```c
 int vmaf_dnn_set_codec_context(VmafContext *ctx,
                                const char *codec_name,
@@ -135,8 +155,8 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx,
 | Parameter    | Notes                                                                                                                                  |
 |--------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `ctx`        | Context with a tiny model already attached via `vmaf_use_tiny_model()`.                                                                |
-| `codec_name` | Encoder name (`libx264`, `libx265`, `libsvtav1`, `libvpx-vp9`, `h264_nvenc`, ...). `NULL` or `""` selects the `"unknown"` bucket.      |
-| `preset`     | Preset string (`medium`, `slow`, `p4`, `5`, ...). `NULL` defaults to ordinal 5 (mid-tier).                                             |
+| `codec_name` | Encoder name (`libx264`, `libx265`, `libsvtav1`, `libvpx-vp9`, `h264_nvenc`, ...). `NULL` or `""` selects the `"unknown"` bucket. ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) map to their canonical encoder names. |
+| `preset`     | Preset string (`medium`, `slow`, `p4`, `5`, ...), looked up in a per-encoder ordinal table. `NULL` or an unknown preset defaults to ordinal 5 (mid-tier).   |
 | `crf`        | CRF / QP integer; clamped to `[0, 63]`.                                                                                                |
 
 ### Returns
@@ -154,7 +174,22 @@ Equivalent CLI flags (the `vmaf` CLI calls this internally):
 [usage/cli.md](../usage/cli.md#codec-context-flags).
 Per-codec / per-preset vocabularies live in the model's sidecar JSON
 under `encoder_vocab` and `preset_vocab`; the loader bakes them into
-the runtime descriptor at `vmaf_use_tiny_model()` time.
+the runtime descriptor at `vmaf_use_tiny_model()` time. The block layout
+is `[encoder_onehot(N_VOCAB), preset_norm, crf_norm]`.
+
+### Detect a codec-aware model
+
+```c
+int vmaf_dnn_is_codec_aware(const VmafContext *ctx);
+```
+
+Returns `1` when the tiny model attached to `ctx` requires a codec context
+(its sidecar declares `"codec_aware": true` and it was loaded with a
+`codec_block` second input). Returns `0` when no model is attached, the
+model has no codec block, `ctx` is `NULL`, or libvmaf was built without DNN.
+Call it after `vmaf_use_tiny_model()` to emit a clear error before inference
+when `--tiny-codec` style conditioning is required. It is safe to call
+before `vmaf_read_pictures()`.
 
 ## Tiny-model auto-resize — `vmaf_dnn_set_resize_mode`
 
@@ -216,7 +251,14 @@ int  vmaf_dnn_session_open (VmafDnnSession **out, const char *onnx_path, const V
 void vmaf_dnn_session_close(VmafDnnSession *sess);
 ```
 
-Both `*_session_open` and `vmaf_use_tiny_model` apply the same
+`vmaf_dnn_session_open()` returns `0`, `-ENOSYS` (no DNN support), `-EINVAL`
+(NULL `out` or `onnx_path`), `-ENOENT` (file missing), `-E2BIG` (over the
+50 MB cap) or `-EIO` (ONNX Runtime failure). `cfg` may be `NULL` for
+`VMAF_DNN_DEVICE_AUTO`. `vmaf_dnn_session_close()` accepts `NULL`, tears down
+the ORT session and its binding caches, and invalidates any pointer from
+`vmaf_dnn_session_attached_ep()`. Pair every successful open with one close.
+
+Both `vmaf_dnn_session_open` and `vmaf_use_tiny_model` apply the same
 size-cap + operator-allowlist walk. See
 [ADR-0039](../adr/0039-onnx-runtime-op-walk-registry.md) for the allowlist
 and [ADR-0041](../adr/0041-lpips-sq-extractor.md) for an example of an
@@ -250,9 +292,8 @@ Errors:
   or ORT returned fewer output elements than `w*h`.
 - `-ERANGE` — `w`/`h` don't match the graph's static input shape. Use
   `vmaf_dnn_session_run()` for dynamic shapes.
-- `-ENOSYS` — libvmaf was built without ONNX Runtime support
-  (`enable_onnx=false`); every DNN entry point returns `-ENOSYS` in that
-  configuration.
+- `-ENOSYS` — libvmaf was built without DNN support (`enable_dnn`
+  disabled); every DNN entry point returns `-ENOSYS` in that configuration.
 
 ### 10/12/16-bit convenience call
 
@@ -334,6 +375,21 @@ Errors:
 See [ADR-0040](../adr/0040-dnn-session-multi-input-api.md) for the rationale
 behind multi-input/output + named binding.
 
+### Which execution provider bound: `vmaf_dnn_session_attached_ep`
+
+```c
+const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
+```
+
+Returns the ONNX Runtime EP that actually bound to the session, for
+diagnostics and for asserting AUTO-chain behaviour. The strings are `"CPU"`,
+`"CUDA"`, `"ROCm"`, `"CoreML"`, `"CoreML:ANE"`, `"CoreML:GPU"`,
+`"CoreML:CPU"`, `"OpenVINO:CPU"`, `"OpenVINO:GPU"` and `"OpenVINO:NPU"`.
+It returns `NULL` when `sess` is `NULL` or libvmaf has no DNN support. The
+string is owned by the session and invalid after
+`vmaf_dnn_session_close()`. It is safe from any thread once the session is
+open and no inference is running on it.
+
 ## Thread-safety
 
 - A single `VmafDnnSession` is **not** re-entrant. Driving inference from two
@@ -342,7 +398,9 @@ behind multi-input/output + named binding.
   beyond process-global ORT singletons.
 - Attaching a tiny model via `vmaf_use_tiny_model()` is subject to the same
   single-driver rule as the rest of the `VmafContext` API — see
-  [index.md](index.md#thread-safety).
+  [the overview](index.md#thread-safety).
+- `vmaf_dnn_available()` and `vmaf_dnn_verify_signature()` are safe from any
+  thread.
 
 ## Runnable example — standalone luma filter
 
@@ -390,79 +448,83 @@ Build:
 cc filter.c -o filter $(pkg-config --cflags --libs libvmaf)
 ```
 
-Only works when libvmaf was built with `-Denable_dnn=enabled`.
+Needs a libvmaf built with DNN support (`-Denable_dnn=enabled`).
 
-## Sigstore signature verification — `vmaf_dnn_verify_signature`
+## Sigstore signature verification: `vmaf_dnn_verify_signature`
 
-The fork ships a Sigstore-keyless verification primitive for tiny-AI
-ONNX bundles, surfaced by both the C API
-(`vmaf_dnn_verify_signature` in `core/include/libvmaf/dnn.h`) and
-the CLI flag `--tiny-model-verify` on the `vmaf` binary
-(see [`docs/usage/cli.md`](../usage/cli.md)).
+Verify a tiny model's Sigstore bundle before loading it. The same check is
+behind the `vmaf` CLI flag `--tiny-model-verify`
+([CLI usage](../usage/cli.md)).
 
 ```c
-int vmaf_dnn_verify_signature(const char *model_path,
-                              const char *bundle_path,
-                              char **err);
+int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path);
 ```
 
-**Behaviour.** When invoked with the path to an ONNX file and a path
-to its sibling Sigstore bundle (`.sigstore` or `.sig`/`.cert` pair),
-the function shells out to the system `cosign` binary in offline
-verification mode and returns 0 on a passing signature, a negative
-errno on failure, and the cosign stderr text via `*err` (caller frees).
+| Argument | Meaning |
+| --- | --- |
+| `onnx_path` | Path to the model file. Its basename is the registry key. |
+| `registry_path` | Explicit registry file, or `NULL` to use `registry.json` next to the model. |
 
-**Build / platform requirements.**
+The function:
 
-- Requires `enable_dnn=enabled` at meson configure (no-op on
-  `enable_dnn=disabled` builds — returns `-ENOSYS`).
-- Requires `cosign` on `$PATH` at runtime. The function looks up
-  `cosign` via `posix_spawnp`; absence is reported as a clear
-  `cosign not found` error message rather than silently passing.
-- Windows is **not supported**: the function returns `-ENOSYS`
-  unconditionally on Windows builds (`core/src/dnn/model_loader.c`
-  short-circuits on `_WIN32`). The Sigstore offline-verify path
-  depends on `posix_spawnp` and a few sibling POSIX primitives that
-  do not have a clean Windows equivalent in our build matrix.
+1. Reads the registry and finds the entry for the model's basename.
+2. Reads that entry's `sigstore_bundle` field and resolves the bundle path.
+3. Runs `cosign verify-blob` through `posix_spawnp`, pinned to the identity
+   regexp `https://github.com/VMAFx/vmafx/.github/workflows/.+` and the
+   issuer `https://token.actions.githubusercontent.com`.
+4. Returns `0` only when cosign exits `0`. It fails closed: any error
+   stops model load.
 
-**CLI coupling.** The `--tiny-model-verify` flag on the `vmaf` CLI
-sets a context-level boolean that triggers the verification call
-inside `vmaf_use_tiny_model` after the ONNX bundle path is resolved.
-A failing verification aborts model load with a clear error; passing
-verification logs an info-level confirmation including the cosign
-identity / issuer that was matched.
+| Return | Meaning |
+| --- | --- |
+| `0` | Verification passed. |
+| `-ENOENT` | Registry missing, bundle missing, or no entry for the model. |
+| `-EACCES` | `cosign` is not on `PATH`. |
+| `-EPROTO` | `cosign` exited non-zero (bad or non-matching signature). |
+| `-ENOSYS` | Windows build: the supply-chain path needs POSIX process spawning. |
+| `-EINVAL` | `onnx_path` is `NULL`. This check runs before the platform check. |
 
-**Provenance contract.** The Sigstore bundle is produced by the
-fork's release-please / Sigstore signing pipeline (per ADR-0010 +
-the model-registry policy in `docs/ai/model-registry.md`). Bundles
-shipped under `model/tiny/*.sig` + `*.cert` carry a keyless OIDC
-identity tied to the GitHub Actions workflow that built the model.
+There is no error-text out parameter; the CLI prints the negated errno. Any
+cosign diagnostics go to the process's own stderr.
+
+!!! note "CLI coupling"
+    With `--tiny-model-verify` the CLI calls this function itself, before
+    `vmaf_use_tiny_model()`, and refuses to load the model on a nonzero
+    result (`--tiny-model-verify: signature verification failed for <path>
+    (errno N)`). `vmaf_use_tiny_model()` does not verify by itself.
+
+Provenance: the bundle comes from the fork's release-please and Sigstore
+signing pipeline ([ADR-0010](../adr/0010-sigstore-keyless-signing.md), and
+the policy in [the model registry](../ai/model-registry.md)). Bundles under
+`model/tiny/` carry a keyless OIDC identity tied to the GitHub Actions
+workflow that built the model. The function is part of the model-registry
+work in [ADR-0211](../adr/0211-model-registry-sigstore.md).
 
 ## Testing standalone sessions
 
-Run the existing internal and public-session tests with:
+Run the session and ORT-internals tests with:
 
 ```sh
 python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
   -C build --print-errorlogs test_ort_internals test_dnn_session_api
 ```
 
-Use a build configured with `-Denable_dnn=enabled` and a discoverable ONNX
-Runtime package to exercise inference and session creation. A disabled-DNN
-build exercises stub semantics; many other cases return early, so that result
-alone does not validate ONNX inference. The POSIX session-test fixture helper
-also checks that source read errors and destination close/flush failures cannot
-be reported as successful copies. The close-error case runs first, before ORT
-initialization, and confines its file-size limit and signal disposition to a
-child process. All 35 original session cases retain their relative order; the
-read-error case stays last, for 37 session cases on POSIX (plus 48 internals).
+- Use a build configured with `-Denable_dnn=enabled` and a discoverable ONNX
+  Runtime package to exercise inference and session creation. A
+  disabled-DNN build exercises only the stub semantics, so that result alone
+  does not validate inference.
+- The POSIX fixture helper checks that source read errors and destination
+  close or flush failures cannot be reported as successful copies. The
+  close-error case runs first, before ORT initialisation, and confines its
+  file-size limit and signal disposition to a child process. The read-error
+  case stays last.
 
 ## Known limitations
 
 - **Attached mode supports multiple scalar output tensors, not vector or image
-  output tensors.** `vmaf_use_tiny_model()` / `vmaf_ctx_dnn_attach()` can now
-  record every ONNX output when each output tensor contains exactly one scalar
-  value. If any attached output tensor has more than one element, the frame run
+  output tensors.** `vmaf_use_tiny_model()` records every ONNX output
+  when each output tensor contains exactly one scalar value. If any attached
+  output tensor has more than one element, the frame run
   returns `-ENOTSUP`. Use the standalone `vmaf_dnn_session_run()` API for
   caller-owned vector/image output buffers. See
   [ADR-0646](../adr/0646-dnn-attached-multi-output.md).
@@ -476,21 +538,16 @@ read-error case stays last, for 37 session cases on POSIX (plus 48 internals).
   shipped in `model/tiny/`; untrusted models with new op types will be
   rejected at `_open`. Extend the allowlist via the registry — see
   [ADR-0039](../adr/0039-onnx-runtime-op-walk-registry.md).
-- EP selection is a preference, not a hard requirement: when a requested
-  provider is missing from the linked ORT build, session open falls back to
-  CPU. Call `vmaf_dnn_session_attached_ep()` and assert on the returned string
-  if your application needs to fail on missing CUDA / OpenVINO / CoreML /
-  ROCm.
-- `VmafDnnConfig.fp16_io` only changes slots whose ONNX element type is
-  `FLOAT16`; float32 model inputs and outputs stay float32. It is therefore
-  harmless but not a speed switch for fp32-only graphs.
+- EP selection is a preference, not a requirement (see
+  [which EP bound](#which-execution-provider-bound-vmaf_dnn_session_attached_ep)).
 - There is no callback / progress hook; inference is synchronous per call.
 - Sessions are heap-only; no stack-allocated variant.
 
 ## Related
 
 - [ADR-0022](../adr/0022-inference-runtime-onnx.md) — choice of ONNX Runtime.
-- [ADR-0023](../adr/0023-tinyai-user-surfaces.md) — where the CLI / C API / ffmpeg / training surfaces intersect.
+- [ADR-0023](../adr/0023-tinyai-user-surfaces.md) — where the CLI / C API /
+  ffmpeg / training surfaces intersect.
 - [ADR-0036](../adr/0036-tinyai-wave1-scope-expansion.md) — Wave 1 scope
   (LPIPS, saliency, per-shot CRF, `vmaf_post`, allowlist `Loop`/`If`, MCP VLM).
 - [ADR-0039](../adr/0039-onnx-runtime-op-walk-registry.md) — operator

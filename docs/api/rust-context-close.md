@@ -67,5 +67,5 @@ guard. Raw callers must keep the `VmafContext` pointer and every imported
 backend/model dependency alive until `vmaf_close` returns exactly zero.
 
 See the [Rust development guide](../development/rust.md) for crate setup and
-the [`vmaf_close` C contract](index.md#core-lifecycle-api) for the underlying
+the [`vmaf_close` C contract](lifecycle.md#close-and-retry) for the underlying
 native API.

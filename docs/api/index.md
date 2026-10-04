@@ -1,940 +1,358 @@
 # Public C API reference
 
-libvmaf ships a stable C API under [`core/include/libvmaf/`](../../core/include/libvmaf/).
-This page is the canonical reference for the *core* API (context / picture /
-feature / model). GPU-backend entry points and the DNN session API each get
-their own page:
+Start here to score a video pair from C: this page shows a complete program,
+the header map and the rules every call shares. Per-function detail is on
+the topic pages below. Declarations live in
+[`core/include/libvmaf/`](../../core/include/libvmaf/).
 
-- [core](index.md) — this page
-- [gpu.md](gpu.md) — `libvmaf_cuda.h`, `libvmaf_sycl.h`,
-  `libvmaf_hip.h`, `libvmaf_metal.h` (Vulkan removed per
-  [ADR-0726](../adr/0726-drop-vulkan-backend.md))
-- [dnn.md](dnn.md) — `libvmaf/dnn.h` (tiny-AI ONNX session)
-- [mcp.md](mcp.md) — `libvmaf_mcp.h` (embedded MCP server)
-
-## What each header exposes
-
-| Header | Symbols | Purpose |
-| --- | --- | --- |
-| [`libvmaf.h`](../../core/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle + scoring functions | Main entry point. Everything else is pulled in transitively. |
-| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc / unref | Per-frame pixel container (YUV planes + metadata). |
-| [`feature.h`](../../core/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Key/value options passed to a feature extractor. |
-| [`model.h`](../../core/include/libvmaf/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*` | Classic SVM model + bootstrap model collection. |
-| [`dnn.h`](../../core/include/libvmaf/dnn.h) | `VmafDnnSession`, `VmafDnnConfig`, tiny-model attach | Tiny-AI (ONNX Runtime) surface. [Deep dive](dnn.md). |
-| [`libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h) | `VmafCudaState`, CUDA picture prealloc | CUDA backend. Only usable in a build with `-Denable_cuda=true`. [Deep dive](gpu.md#cuda). |
-| [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h) | `VmafSyclState`, zero-copy frame buffers, dmabuf / VA / D3D11 import | SYCL backend. Only usable in a build with `-Denable_sycl=true`. [Deep dive](gpu.md#sycl). |
-| ~~`libvmaf_vulkan.h`~~ | ~~`VmafVulkanState`, queue / device lifecycle, zero-copy `VkImage` import~~ | **Removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md).** The header, source, and `enable_vulkan` Meson option no longer exist. Historical reference: [gpu.md#vulkan-removed](gpu.md#vulkan-removed). |
-| [`libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h) | `VmafHipState`, lifecycle, picture prealloc | AMD HIP/ROCm backend. Only usable in a build with `-Denable_hip=true`. [Deep dive](gpu.md#hip). |
-| [`libvmaf_metal.h`](../../core/include/libvmaf/libvmaf_metal.h) | `VmafMetalState`, lifecycle, IOSurface import | Apple Metal backend. Runtime, IOSurface import, and the first eight feature kernels are usable in a build with `-Denable_metal=auto/enabled` on Apple Silicon; unsupported hosts return `-ENODEV`. [Deep dive](gpu.md#metal). |
-| [`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start/stop | Embedded MCP server. Only usable in a build with `-Denable_mcp=true`. [Deep dive](mcp.md). |
-| [`vmaf_assert.h`](../../core/include/libvmaf/vmaf_assert.h) | `VMAF_ASSERT*` macros | Internal assertion helpers. Not for public use — may disappear. |
-| [`version.h`](../../core/include/libvmaf/libvmaf.h) (generated) | `VMAF_VERSION_MAJOR` etc. | Compile-time version constants. Run-time: `vmaf_version()`. |
-
-All declarations are C (with `extern "C"` guards for C++ callers). The fork has
-no C++ entry points in its public API.
-
-## Compiling and linking
-
-Install or build libvmaf, then include and link:
-
-```c
-#include <libvmaf/libvmaf.h>
-#include <libvmaf/picture.h>
-#include <libvmaf/model.h>
-```
-
-```text
-cc app.c -o app $(pkg-config --cflags --libs libvmaf)
-```
-
-`pkg-config` is the canonical way to pick up the right include + link flags and
-handles optional GPU backends automatically — when libvmaf was built with
-`-Denable_cuda=true`, `pkg-config --libs` adds the CUDA link line; same for
-SYCL.
-
-## ABI stability
-
-- **Stable** — the entire `libvmaf.h`, `picture.h`, `feature.h`, and `model.h`
-  surface. These come from upstream Netflix/vmaf; the fork preserves them
-  verbatim.
-- **Stable, fork-added** — `dnn.h` public entry points (`vmaf_dnn_available`,
-  `vmaf_use_tiny_model`, the session API). Structs may grow trailing fields
-  across minor versions, callers should not over-read.
-- **Experimental** — `libvmaf_sycl.h` zero-copy imports
-  (`vmaf_sycl_import_va_surface`, `vmaf_sycl_import_d3d11_surface`, dmabuf
-  entry points). Signatures may evolve as more backends are added.
-- **Private** — `vmaf_assert.h` and anything prefixed `VMAF_ASSERT`. Do not
-  depend on it.
-
-Semantic versioning follows the independent VMAFx `vX.Y.Z` stream — see
-[ADR-1127](../adr/1127-single-semver-release-stream.md). Every change to the
-stable API that would break source or binary compatibility gets a major
-version bump.
-
-## Feature registration identity
-
-`vmaf_use_feature()` and `vmaf_use_features_from_model()` deduplicate by the
-emitted feature key, including parsed feature parameters. A default motion
-extractor and one with `motion_force_zero=true` both remain registered; their
-scores use separate keys, such as `VMAF_integer_feature_motion2_score` and
-`integer_motion2_force_0`. Equivalent defaults, canonical
-option names and aliases share a registration. Equivalent CPU/GPU twins keep
-the first registered context.
-
-Check registration return values. If allocating comparison keys or growing
-registration storage fails, the call reports `-ENOMEM` and retains previously
-registered contexts. Dictionary ownership remains as described under
-[Feature option dictionary ownership](#ownership-who-frees-the-dictionary).
-
-## Thread-safety
-
-`VmafContext` itself is **not** re-entrant. A single context's scoring
-lifecycle (init → feed pictures → score → close) must be driven from one
-thread. Internally libvmaf parallelises feature extraction across
-`VmafConfiguration.n_threads` workers — that threading is fully
-self-contained.
-
-You can run multiple `VmafContext` instances in parallel across threads with
-no shared state beyond process-global constants.
-
-Picture buffers (`VmafPicture.data[]`) are only safe to mutate or free after
-`vmaf_picture_unref()` brings the refcount to zero. See
-[Ownership and lifetime](#ownership-and-lifetime) below.
-
-## Error semantics
-
-Every non-void function returns `int` with these conventions:
-
-- `0` — success.
-- A negative number — error. The magnitude is a POSIX `errno` code (always
-  positive in `errno.h`); negate to match:
-  - `-EINVAL` — bad argument (null pointer, out-of-range enum, wrong shape).
-  - `-EAGAIN` — feature still pending; retry after the producer side
-    catches up. Returned by `vmaf_score_pooled` /
-    `vmaf_score_pooled_model_collection` /
-    `vmaf_score_at_index` when the requested frame range has been read
-    via `vmaf_read_pictures` but the feature extractor has not yet
-    completed. See [ADR-0154](../adr/0154-score-pooled-eagain-netflix-755.md). Not
-    a fatal error — the typical fix is either flushing
-    (`vmaf_read_pictures(NULL, NULL, 0)`) before scoring, or polling
-    until success.
-  - `-ENOMEM` — allocation failed.
-  - `-ENOENT` — file not found (`vmaf_model_load_from_path` etc).
-  - `-ENOSYS` — entry point compiled out (e.g. `vmaf_dnn_*` on a
-    `-Denable_dnn=disabled` build).
-  - `-EIO` — downstream library error (ONNX Runtime, libav, …).
-
-`libvmaf` does not populate a thread-local last-error; the return code is the
-sole error channel. A parallel diagnostic is written via the log callback
-configured by `VmafConfiguration.log_level`.
-
-The CLI collapses every negative return to process-exit code 1 and prints a
-message — if you need fine-grained error discrimination, call the C API
-directly.
-
-## Path encoding contract
-
-All filesystem path parameters accepted by VMAFx-owned public API entry points
-(`vmaf_write_output`, `vmaf_write_output_with_format`,
-`vmaf_model_load_from_path`, `vmaf_model_collection_load_from_path`, and model
-reader helpers) are defined as UTF-8 encoded strings across all platforms:
-
-- **POSIX (Linux, macOS, BSD)**: Path strings are passed transparently to
-  standard POSIX APIs (`open`, `fopen`), which treat path strings as raw byte
-  sequences.
-- **Windows (`_WIN32`)**: Path strings are explicitly decoded as UTF-8 using
-  `MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ...)` and passed to wide
-  CRT/Win32 APIs (`_wopen`, `_wfopen`). This ensures non-ASCII paths (such as
-  Unicode accents, Cyrillic, CJK characters, and emojis) correctly resolve
-  regardless of the active Windows system or process ANSI code page
-  (`GetACP()`). If an invalid UTF-8 sequence is passed on Windows, the call
-  fails with `errno = EILSEQ` (or `-EINVAL`).
-
-The vendored Pelorus entry point `pel_x265_csv_parse()` is a temporary exception:
-its pinned upstream source still uses the Windows narrow CRT. It remains
-tracked in `docs/state.md` and must be fixed in `VMAFx/pelorus` before being
-re-vendored under the ADR-1113 mirror invariant.
-
-See [ADR-1182](../adr/1182-windows-utf8-path-contract.md) for background and
-architectural rationale.
-
-## Lifecycle
-
-```text
-  ┌─────────────────┐
-  │ vmaf_init()     │  → VmafContext*
-  └────────┬────────┘
-           │
-  ┌────────▼─────────────────────┐
-  │ vmaf_model_load[_from_path]  │  → VmafModel*
-  │ vmaf_use_features_from_model │     (register feature extractors)
-  │ vmaf_use_feature()           │     (optional extra features)
-  └────────┬─────────────────────┘
-           │
-  ┌────────▼───────────────────────────┐
-  │ loop:                              │
-  │   vmaf_picture_alloc(ref)          │
-  │   vmaf_picture_alloc(dist)         │
-  │   fill planes                      │
-  │   vmaf_read_pictures(ref, dist, i) │  (libvmaf takes ownership)
-  │ vmaf_read_pictures(NULL, NULL, 0)  │  (flush)
-  └────────┬───────────────────────────┘
-           │
-  ┌────────▼────────────────────────┐
-  │ vmaf_score_pooled()             │  (or per-frame: vmaf_score_at_index)
-  │ vmaf_feature_score_pooled()     │
-  │ vmaf_write_output[_with_format] │
-  └────────┬────────────────────────┘
-           │
-  ┌────────▼───────────────────────────────┐
-  │ vmaf_close() → retry on nonzero │
-  │ exact 0: model_destroy()        │
-  └───────────────────────────────┘
-```
-
-Models and imported backend states are borrowed dependencies of the context.
-Keep them alive through every nonzero close result; destroy or free them only
-after `vmaf_close()` returns exactly 0.
-
-## Core configuration — `VmafConfiguration`
-
-```c
-typedef struct VmafConfiguration {
-    enum VmafLogLevel log_level;   /* NONE | ERROR | WARNING | INFO | DEBUG */
-    unsigned n_threads;             /* worker threads for feature extraction */
-    unsigned n_subsample;           /* compute scores every Nth frame (1 = all) */
-    uint64_t cpumask;               /* disable specific CPU ISAs (see below) */
-    uint64_t gpumask;               /* disable BOTH CUDA and SYCL (any non-zero value) */
-} VmafConfiguration;
-```
-
-`cpumask` bits (identical semantics to the `--cpumask` CLI flag):
-
-| Bit | Disable |
+| Page | Covers |
 | --- | --- |
-| 1 | SSE2 / NEON |
-| 2 | SSE3 / SSSE3 |
-| 4 | SSE4.1 |
-| 8 | AVX2 |
-| 16 | AVX512 |
-| 32 | AVX512ICL |
-
-> **`gpumask` caveat.** Despite the `uint64_t` type and "bitmask" name,
-> the field is treated as a boolean: any non-zero value disables *both*
-> CUDA and SYCL in [`libvmaf.c:694-698`](../../core/src/libvmaf.c).
-> There is no per-backend bit. Use `--no_cuda` / `--no_sycl` on the
-> CLI for per-backend opt-out.
->
-> **Even-`n_subsample` warning.** Setting `n_subsample` to an even value can
-> produce inaccurate motion scores because the motion feature is frame-delta
-> based. Prefer 1 (all frames) or an odd integer. See
-> [upstream issue #1214](https://github.com/Netflix/vmaf/issues/1214).
-
-## Core lifecycle API
-
-| Function | Returns | Purpose |
-| --- | --- | --- |
-| `vmaf_init(VmafContext **out, VmafConfiguration cfg)` | 0 / -errno | Allocate a context. `*out` is owned by the caller; free with `vmaf_close()`. `*out` is output-only, as in upstream: its incoming value is never read, so an uninitialised `VmafContext *` is fine. It is NULL after any failure. A handle that still holds an open context is overwritten, not closed, so close it first ([ADR-1396](../adr/1396-vmaf-init-output-only-handle.md)). |
-| `vmaf_version()` | `const char *` | Version string `vX.Y.Z + git sha`. Does not need `vmaf_init()`. |
-| `vmaf_use_features_from_model(ctx, model)` | 0 / -errno | Register every feature a model needs. Deduplicates across multiple models. |
-| `vmaf_use_features_from_model_collection(ctx, coll)` | 0 / -errno | Same, for a bootstrap model collection. |
-| `vmaf_use_feature(ctx, "psnr", opts)` | 0 / -errno | Register an extra feature not required by any loaded model. Context takes ownership of `opts`; on success never free it yourself. Selects the extractor by exact name. |
-| `vmaf_feature_backend_twin(ctx, "ciede", opts, &pic_cfg, &twin, &key)` | 0 / -errno | Ask for the imported backend's twin of a CPU extractor and whether it can run these options and this geometry. Registers nothing. See [Device twins](#device-twins-and-the-extractors-that-ran). |
-| `vmaf_registered_feature_extractor(ctx, i, &name, &backend)` | 0 / -ENOENT past the end | Name and backend of the `i`-th registered extractor. See [Device twins](#device-twins-and-the-extractors-that-ran). |
-| `vmaf_import_feature_score(ctx, name, value, index)` | 0 / -errno | Inject a pre-computed feature value (e.g. from a different pipeline). |
-| `vmaf_read_pictures(ctx, ref, dist, index)` | 0 / -errno | Feed a frame pair. `ctx` takes ownership via `vmaf_picture_unref()`. `index` must be **strictly increasing** across successive calls — non-monotonic indices return `-EINVAL` (see [ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)). Start at 0 and leave no gaps: after a skipped index the motion extractors have no previous picture, so `motion2` / `motion3` of the later pictures stay unwritten (reading them returns `-EAGAIN`, also after the flush) — see [Scoring before the flush](#scoring-before-the-flush-and-index-gaps). Pass `NULL, NULL, 0` to flush after the last frame. |
-| `vmaf_score_at_index(ctx, model, *score, index)` | 0 / -errno | Per-frame VMAF score. Before the flush it can return `-EAGAIN` (see [Scoring before the flush](#scoring-before-the-flush-and-index-gaps)); it never returns a partial score. |
-| `vmaf_score_at_index_model_collection(ctx, coll, *score, index)` | 0 / -errno | Per-frame bootstrap score (mean + stddev + 95% CI). |
-| `vmaf_feature_score_at_index(ctx, name, *score, index)` | 0 / -errno | Per-frame feature score (e.g. `"psnr_y"`). |
-| `vmaf_score_pooled(ctx, model, method, *score, lo, hi)` | 0 / -errno | Pooled VMAF over `[lo, hi]`. |
-| `vmaf_score_pooled_model_collection(...)` | 0 / -errno | Pooled bootstrap. |
-| `vmaf_feature_score_pooled(ctx, name, method, *score, lo, hi)` | 0 / -errno | Pooled feature score. |
-| `vmaf_write_output(ctx, path, fmt)` | 0 / -errno | Write report with the default `%.6f` score format (Netflix-compatible per [ADR-0119](../adr/0119-cli-precision-default-revert.md)). |
-| `vmaf_write_output_with_format(ctx, path, fmt, "%.17g")` | 0 / -errno | Write report with a caller-controlled printf format. Pass `NULL` for the `%.6f` default. Pass `"%.17g"` for IEEE-754 round-trip lossless. Format must take exactly one `double`. |
-| `vmaf_preallocate_pictures(ctx, cfg)` | 0 / -errno | Allocate a reusable picture pool (CPU path; for GPU see [gpu.md](gpu.md)). `-EINVAL` below 4 pictures while an extractor that reads frame `n-2` is registered (see below). |
-| `vmaf_fetch_preallocated_picture(ctx, *pic)` | 0 / -errno | Pull a picture from the pool; return it via `vmaf_picture_unref()`. |
-| `vmaf_close(ctx)` | 0 / -errno | Free the context only on exact 0. Any nonzero result retains a teardown-only context that must be passed to `vmaf_close()` again. |
-
-`vmaf_close()` uses a prepare/commit teardown. It first closes registered,
-pooled, and worker-private extractor contexts without freeing their owners. If
-any close callback fails, it returns a negative errno and retains the `VmafContext`
-for retry. Do not call scoring APIs or release imported GPU states and model
-dependencies after any nonzero result. Retry `vmaf_close()`; set the pointer to
-`NULL` and release those dependencies only after it returns 0.
-
-### `VmafPoolingMethod`
-
-| Enumerator | Value | Pooled result | Cost |
-| --- | --- | --- | --- |
-| `VMAF_POOL_METHOD_UNKNOWN` | 0 | sentinel — rejected with `-EINVAL` | — |
-| `VMAF_POOL_METHOD_MIN` | 1 | minimum per-frame score | O(1) memory |
-| `VMAF_POOL_METHOD_MAX` | 2 | maximum per-frame score | O(1) memory |
-| `VMAF_POOL_METHOD_MEAN` | 3 | arithmetic mean | O(1) memory |
-| `VMAF_POOL_METHOD_HARMONIC_MEAN` | 4 | harmonic mean of `score + 1`, minus 1 | O(1) memory |
-| `VMAF_POOL_METHOD_MEDIAN` | 5 | 50th percentile | O(n) memory, sorts |
-| `VMAF_POOL_METHOD_PERC5` | 6 | 5th percentile ("worst 5%") | O(n) memory, sorts |
-| `VMAF_POOL_METHOD_PERC10` | 7 | 10th percentile | O(n) memory, sorts |
-| `VMAF_POOL_METHOD_PERC20` | 8 | 20th percentile | O(n) memory, sorts |
-
-The four order-statistic methods (`MEDIAN` / `PERC*`, added in
-[ADR-1188](../adr/1188-percentile-pooling-methods.md)) sort the pooled
-per-frame scores and interpolate linearly between the two neighbouring ranks —
-identical to `numpy.percentile(scores, q, method="linear")`, which is the rule
-the Python harness applies through `ListStats.perc10` and friends. Both
-surfaces therefore report the same pooled number for the same frames:
-
-```c
-double worst10 = 0.0;
-int err = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_PERC10, &worst10, 0, n_frames - 1);
-```
-
-Notes and limits:
-
-- **Weighting.** Percentiles are pure order statistics, so ADR-1118 perceptual
-  spatial weighting does not change them — exactly as for `MIN` and `MAX`. Only
-  `MEAN` and `HARMONIC_MEAN` have weighted forms.
-- **Subsampling.** `n_subsample` skips the same frames for every method, so a
-  percentile and a mean pooled over the same interval summarise the same
-  samples.
-- **Memory.** A percentile pool retains `8 × n_frames` bytes and sorts them;
-  the accumulator methods still run in constant space. Prefer a bounded
-  `index_high` over `UINT_MAX` when pooling percentiles over a long sequence.
-- **Report output.** Pooled output in XML / JSON reports still includes exactly
-  `min`, `max`, `mean`, `harmonic_mean` in parallel — appending enumerators
-  deliberately does not widen that schema. Percentiles are available through
-  the API calls above.
-- **Enumerator values are append-only.** `VMAF_POOL_METHOD_NB` moved from 5 to
-  9; it is a count sentinel, not a stable API value, so do not switch on it or
-  persist it.
-
-## `VmafPicture`
-
-```c
-typedef struct VmafPicture {
-    enum VmafPixelFormat pix_fmt;   /* YUV420P | YUV422P | YUV444P | YUV400P | UNKNOWN */
-    unsigned bpc;                   /* 8, 10, 12, or 16 */
-    unsigned  w[3], h[3];           /* per-plane dimensions */
-    ptrdiff_t stride[3];            /* per-plane row stride in bytes */
-    void     *data[3];              /* per-plane pixel buffer */
-    VmafRef  *ref;                  /* INTERNAL — opaque refcount; do not access */
-    void     *priv;                 /* INTERNAL — opaque private slot; do not access */
-} VmafPicture;
-```
-
-Allocation:
-
-```c
-int vmaf_picture_alloc(VmafPicture *pic,
-                       enum VmafPixelFormat pix_fmt,
-                       unsigned bpc,
-                       unsigned w, unsigned h);
-int vmaf_picture_unref(VmafPicture *pic);
-```
-
-`vmaf_picture_alloc` sets `pix_fmt`, `bpc`, per-plane `w`/`h`/`stride`, and
-allocates `data[0..N]` on the heap. `vmaf_picture_unref` decrements the
-refcount and frees the buffer when it hits zero.
-
-Bits-per-component & storage:
-
-- `bpc == 8` — each sample is 1 byte.
-- `bpc == 10`, `12`, `16` — each sample is 2 bytes (little-endian), with the
-  valid bits in the low N and the high bits zero-padded.
-
-### Scoring before the flush and index gaps
-
-A per-frame query made while pictures are still being read
-(`vmaf_score_at_index()`, `vmaf_feature_score_at_index()`, the pooled calls)
-returns either the final value or an error, never a partial value:
-
-- `-EAGAIN` — a feature the score needs is not written yet. `motion2` and
-  `motion3` of picture *i* need picture *i + 1*; the GPU extractors
-  finish a frame after the call that submitted it has returned (CUDA `motion`
-  in batches of eight), and the worker threads of
-  `n_threads > 0` finish pictures out of step with the caller. Before the
-  query returns this, libvmaf waits for the worker threads and, on CUDA,
-  collects every frame the device has already finished, so a query made a few
-  frames behind the last picture usually succeeds and one for the newest
-  picture does not. Treat it as "not yet": flush
-  (`vmaf_read_pictures(ctx, NULL, NULL, 0)`) and ask again, or ask again after
-  more pictures. `vmaf_score_pooled()` returns it when any picture of the
-  interval is missing a score.
-- `-EINVAL` — invalid arguments, or a feature name no registered extractor
-  writes.
-
-Indices have to increase (`-EINVAL` otherwise) and should not skip values.
-An index that skips values is accepted, because features that look at one
-picture (`psnr`, `vif`, `adm`) do not care, but the motion extractors compare
-each picture with the one before it: after the gap their `motion2` and
-`motion3` are never written for the pictures that follow, and the picture
-before the gap gets the `motion2` the last picture of a stream gets. The
-queries then keep returning `-EAGAIN` after the flush. Feed every index from 0
-without gaps whenever the model uses `motion2` (`vmaf_v0.6.1` and the models
-derived from it do).
-
-Measured on the Netflix 576x324 pair with indices 0, 1, 2, 4, 5: `vmaf` at
-indices 0 to 2 is returned (index 2 with the last-picture `motion2`), and
-indices 3 to 5 return `-EAGAIN` after the flush.
-
-### Ownership and lifetime
-
-- Once `vmaf_read_pictures(ctx, ref, dist, i)` is called with a context and two
-  pictures, the context owns `ref` and `dist` whatever it returns. Do **not**
-  call `vmaf_picture_unref()` on them, after an error either — libvmaf releases
-  them when the extractors are done, or before the call returns when it fails
-  (a rejected index, pictures that disagree with the stream, an out-of-memory
-  on the device, a failing extractor). Pictures taken from the pool of
-  `vmaf_preallocate_pictures()` go back into it that way
-  ([ADR-1431](../adr/1431-read-pictures-owns-pictures-on-every-return.md)).
-  Only a call that has nothing to take returns with the pictures still yours:
-  a `NULL` context, or one of the two pictures `NULL` (`-EINVAL`).
-- The context keeps the reference picture of the frame before the current one
-  until the next call. While a registered extractor reads frame `n-2`
-  (`motion` or `motion_v2` with `motion_five_frame_window=true`, which the
-  `vmaf_v1.0.16_hfr_*` models set), it keeps the reference pictures of the
-  two frames before the current one
-  ([ADR-1478](../adr/1478-motion-five-frame-window-port.md)). A pool for
-  `vmaf_preallocate_pictures()` then needs `pic_cnt >= 4`, those two and the
-  current pair. A smaller one is refused: whichever comes second,
-  `vmaf_preallocate_pictures()` or the registration (`vmaf_use_feature()`,
-  `vmaf_use_features_from_model()`), returns `-EINVAL` and logs one error line
-  naming `pic_cnt` and the minimum, so the fetch for the third frame never
-  waits for a picture that does not return. Without such an extractor nothing
-  changed: a pool of three still serves a serial run. With worker threads,
-  `2 * n_threads + 2` keeps every worker supplied while the window is on.
-  Callers that allocate each picture with `vmaf_picture_alloc()` are not
-  affected, beyond one more reference picture staying allocated while the
-  window is on.
-- Stride may differ from `w * bytes_per_sample`. Always use `stride[i]` when
-  writing pixel data; do not assume packing.
-- `data[i]` alignment is implementation-defined (currently 64-byte aligned for
-  SIMD). Copy in using `memcpy` or a pixel-at-a-time loop; do not pointer-cast
-  to wider types without re-checking alignment.
-
-## `VmafFeatureDictionary`
-
-`VmafFeatureDictionary` is an opaque string→string map passed as
-per-invocation options to a feature extractor.
-
-```c
-VmafFeatureDictionary *opts = NULL;
-
-int err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "true");
-if (err < 0) { /* -errno */ }
-
-err = vmaf_feature_dictionary_set(&opts, "enable_apsnr", "true");
-
-err = vmaf_use_feature(ctx, "psnr", opts);
-/* The call consumed `opts` unless it rejected an argument — see below. */
-```
-
-### Ownership: who frees the dictionary
-
-Three calls accept a `VmafFeatureDictionary`: `vmaf_use_feature()`,
-`vmaf_model_feature_overload()` and
-`vmaf_model_collection_feature_overload()`. They share most of a rule, with
-one deliberate difference.
-
-> **All three:** a `-EINVAL` caused by a `NULL` argument takes nothing — the
-> caller still owns the dictionary. On every other return, success or failure
-> (including `-ENOMEM` from the internal merge/copy), the call has already
-> released it and the caller **must not** free it.
->
-> **`vmaf_use_feature()` only:** it also takes nothing when `feature_name`
-> names no registered feature. It resolves the name against the global
-> extractor registry and returns `-EINVAL` before touching the dictionary.
-
-The difference matters, and getting it wrong is a double free. The two model
-overloads match `feature_name` against the features of *one particular model*.
-A name that matches nothing there is **not** an error — it is a successful
-no-op that returns `0` — and the dictionary is consumed anyway. Only
-`vmaf_use_feature()` can report an unknown name and hand the dictionary back.
-
-Free the dictionary yourself only after an early argument rejection, or when
-`vmaf_use_feature()` rejects an unknown extractor name before registration.
-An invalid option value for a **known** extractor also returns `-EINVAL`, but
-consumes the supplied dictionary. The error number alone does not identify
-which ownership rule applies.
-
-`vmaf_use_features_from_model()` borrows the model's option dictionaries and
-registers private copies. Rejection of an invalid option, or failure to copy
-options, releases the failed private copy and leaves the model available for
-correction or retry. Registration is not transactional: features registered
-before a later error remain registered. Worker-context creation follows the
-same private-copy cleanup rule. These changes do not alter valid feature scores.
-See the [ownership regression](../research/2048-model-registration-ownership-2026-09-08.md)
-for the fault controls and their platform limits.
-
-```c
-/* Consumed — success. Freeing here would be a double free. */
-if (vmaf_use_feature(ctx, "psnr", opts) == 0)
-    opts = NULL;
-
-/* Consumed — the merge ran out of memory. Still do not free. */
-
-/* NOT consumed — vmaf_use_feature rejected the name before taking anything. */
-if (vmaf_use_feature(ctx, "no_such_feature", opts2) == -EINVAL)
-    vmaf_feature_dictionary_free(&opts2);
-
-/* CONSUMED, and it returned 0. The model simply has no "psnr" feature to
- * overload, which is a no-op, not an error. Freeing opts3 here is a double
- * free — this is the case the old wording got wrong. */
-if (vmaf_model_feature_overload(model, "psnr", opts3) == 0)
-    opts3 = NULL;
-```
-
-Until ADR-1166 this contract was documented two different ways —
-`<libvmaf/feature.h>` said the caller kept ownership on any failure,
-`<libvmaf/model.h>` said ownership transferred unconditionally — so one of the
-two readings was a latent double free
-([Netflix/vmaf#1242](https://github.com/Netflix/vmaf/issues/1242)). All three
-headers now state the rule above, and it matches what the implementation has
-always done. The same report's `-ENOMEM` leak in
-`vmaf_model_feature_overload()` and the swallowed copy error in
-`vmaf_model_collection_feature_overload()` are fixed in the same change.
-
-Each feature extractor publishes its own option keys — see
-[../metrics/features.md](../metrics/features.md) for the full table of
-recognised keys per feature.
-
-## `VmafModel` and built-in versions
-
-```c
-typedef struct VmafModelConfig {
-    const char *name;    /* display name in the report (e.g. "vmaf", "vmaf_neg") */
-    uint64_t    flags;   /* OR of VmafModelFlags */
-} VmafModelConfig;
-
-enum VmafModelFlags {
-    VMAF_MODEL_FLAGS_DEFAULT          = 0,
-    VMAF_MODEL_FLAG_DISABLE_CLIP      = (1 << 0),  /* no [0,100] clamp */
-    VMAF_MODEL_FLAG_ENABLE_TRANSFORM  = (1 << 1),
-    VMAF_MODEL_FLAG_DISABLE_TRANSFORM = (1 << 2),
-};
-
-int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version);
-int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg, const char *path);
-int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
-                                VmafFeatureDictionary *opts_dict);
-void vmaf_model_destroy(VmafModel *model);
-
-/* Read feature names required by a loaded model. */
-unsigned vmaf_model_feature_count(const VmafModel *model);
-const char *vmaf_model_feature_name(const VmafModel *model, unsigned index);
-
-/* Enumerate the built-in version strings compiled into this libvmaf. */
-const void *vmaf_model_version_next(const void *prev, const char **version);
-
-/* The version libvmaf scores with when no model is named. */
-const char *vmaf_default_model_version(void);
-```
-
-Built-in version strings accepted by `vmaf_model_load`:
-
-`vmaf_v0.6.1`, `vmaf_v0.6.1neg`, `vmaf_b_v0.6.3`, `vmaf_4k_v0.6.1`,
-`vmaf_4k_v0.6.1neg`, plus `vmaf_float_*` equivalents (legacy float-precision
-variants). See [../usage/cli.md#models](../usage/cli.md#models) for when to
-pick which.
-
-External JSON models loaded by `vmaf_model_load_from_path` allocate their
-`feature_names`, `slopes`, `intercepts`, `feature_opts_dicts`, and
-piecewise-linear score-transform `knots` arrays from the JSON payload. There
-is no schema-level fixed feature or knot ceiling beyond available memory and
-the unsigned parser counters; malformed array entries still fail closed with a
-negative errno.
-
-Discover the list programmatically rather than hard-coding it — the set
-depends on the build's `VMAF_BUILT_IN_MODELS` and `VMAF_FLOAT_FEATURES`
-flags:
-
-```c
-const void *handle = NULL;
-const char *name   = NULL;
-while ((handle = vmaf_model_version_next(handle, &name)) != NULL) {
-    printf("built-in model: %s\n", name);
-}
-```
-
-`vmaf_model_version_next` is an opaque-handle cursor: pass `NULL` on the
-first call, pass the previous return on subsequent calls, stop when NULL is
-returned. `*version` is left unmodified at end-of-iteration so the caller's
-last value stays valid. Pass `version == NULL` if you only need the
-iteration count. Returns NULL immediately when the library was built
-without any built-in models. See
-[ADR-0135](../adr/0135-port-netflix-1424-expose-builtin-model-versions.md)
-for the contract's correctness-relevant details (NULL-on-first-call,
-end-of-iteration semantics).
-
-### Inspecting model features
-
-Callers can query the features required by a loaded `VmafModel` without
-touching opaque struct internals:
-
-```c
-const unsigned n = vmaf_model_feature_count(model);
-for (unsigned i = 0; i < n; i++) {
-    const char *feature_name = vmaf_model_feature_name(model, i);
-    printf("feature %u: %s\n", i, feature_name);
-}
-```
-
-`vmaf_model_feature_count` returns 0 if `model` is `NULL`. `vmaf_model_feature_name`
-returns a pointer borrowed from the model (valid for the lifetime of `model`), or
-`NULL` if `model` is `NULL` or `index >= n`.
-
-### The default model
-
-When a caller names no model, libvmaf scores with a single default. Read it
-rather than assuming it:
-
-```c
-const char *dflt = vmaf_default_model_version();   /* "vmaf_v1.0.16_3d0h" */
-
-VmafModel *model = NULL;
-VmafModelConfig cfg = { .name = "vmaf" };
-int err = vmaf_model_load(&model, &cfg, vmaf_default_model_version());
-```
-
-The returned string is owned by libvmaf. It is never `NULL`, must not be freed,
-and stays valid for the life of the process. The call is thread-safe and does
-no allocation.
-
-**The default changed in 1.0.0.** The built-in default is
-**`vmaf_v1.0.16_3d0h`** (ADR-1169). It was `vmaf_v0.6.1` in every earlier build
-of this fork, and upstream Netflix still defaults to `vmaf_v0.6.1`.
-
-The two models emit **different feature families**. `vmaf_v0.6.1` reports
-`vif_scale0..3` and `motion2`; the v1.0.16 family does not emit those at all.
-Code that reads individual feature keys out of the result — rather than just the
-pooled `vmaf` score — will see a missing key, not a shifted number, if it assumed
-the old family.
-
-The NEG default stays on the v0.6.1 family (`vmaf_v0.6.1neg`): there is no
-v1.0.16 NEG model, so appending `neg` to the default would name
-`vmaf_v1.0.16_3d0hneg`, which does not exist and fails to load. The AOM CTC preset
-also keeps `vmaf_v0.6.1` deliberately, because the CTC spec mandates that exact
-model.
-
-To keep the previous behaviour, name the model explicitly instead of relying on
-the default:
-
-```c
-err = vmaf_model_load(&model, &cfg, "vmaf_v0.6.1");
-```
-
-C and C++ code compiled against these headers may use the
-`VMAF_DEFAULT_MODEL_VERSION` macro instead, which expands to the same string at
-compile time. Prefer the function from anything that is *not* compiled against
-this header — language bindings especially — so the value comes from the
-library actually loaded rather than from a constant copied into another source
-tree and left to drift.
-
-The legacy choice has a named constant of its own: `VMAF_NETFLIX_COMPAT_MODEL_VERSION`
-(`"vmaf_v0.6.1"`, also in `libvmaf/model.h`) is the model the CLI selects under
-`--netflix-compat` (see [the vmafx CLI page](../usage/vmafx-cli.md)). Use it when
-code deliberately wants the Netflix-parity model rather than the fork default, so
-the intent is visible and the string has one source.
-
-This is the fork's single source of truth for the default: nothing else in the
-tree hardcodes a fallback model name, and
-`scripts/ci/check-default-model-single-source.sh` fails the build if anything
-starts to. See [ADR-1168](../adr/1168-default-model-single-source.md), and
-[docs/development/default-model.md](../development/default-model.md) for how to
-change the default.
-
-`vmaf_model_kind` — the fork added model-kind discrimination
-(`VMAF_MODEL_KIND_SVM`, `VMAF_MODEL_KIND_DNN_FR`, `VMAF_MODEL_KIND_DNN_NR`,
-`VMAF_MODEL_KIND_DNN_FILTER`), auto-detected from file extension + sidecar
-JSON. See [ADR-0020](../adr/0020-tinyai-four-capabilities.md) and
-[ADR-0022](../adr/0022-inference-runtime-onnx.md).
-`VMAF_MODEL_KIND_DNN_FILTER` (added in
-[ADR-0168](../adr/0168-tinyai-konvid-baselines.md)) is **registry-only** —
-it identifies pre-/post-processing residual filters (e.g.
-`learned_filter_v1.onnx` consumed by ffmpeg `vmaf_pre`) for the trust-root
-sha256 audit, but is **never loaded by the libvmaf scoring path**;
-`vmaf_score_at_index` / `vmaf_score_pooled` only operate on `DNN_FR` /
-`DNN_NR` / `SVM` kinds.
-
-### Model collections (bootstrap)
-
-```c
-int vmaf_model_collection_load(VmafModel **model,
-                               VmafModelCollection **coll,
-                               VmafModelConfig *cfg,
-                               const char *version);
-int vmaf_model_collection_load_from_path(VmafModel **model,
-                                         VmafModelCollection **coll,
-                                         VmafModelConfig *cfg,
-                                         const char *path);
-void vmaf_model_collection_destroy(VmafModelCollection *coll);
-```
-
-Returns scores as `VmafModelCollectionScore`:
-
-```c
-typedef struct {
-    enum VmafModelCollectionScoreType type;  /* BOOTSTRAP for bootstrap models */
-    struct {
-        double bagging_score;   /* mean VMAF across bagged models */
-        double stddev;          /* std-dev across bagged models */
-        struct { struct { double lo, hi; } p95; } ci;  /* 95% confidence interval */
-    } bootstrap;
-} VmafModelCollectionScore;
-```
-
-See [../metrics/confidence-interval.md](../metrics/confidence-interval.md)
-for what the 95% CI means operationally.
-
-## End-to-end example
-
-Score two 1080p raw YUV420P frames using the built-in `vmaf_v0.6.1` model and
-add a PSNR sidecar. Prints the pooled mean to stdout with `%.17g` precision.
+| [Lifecycle](lifecycle.md) | `vmaf_init` to `vmaf_close`: configuration, registration, feeding, scoring, pooling, reports, backend introspection, device twins |
+| [Pictures](pictures.md) | `VmafPicture`, allocation, ownership, pools, picture v2 |
+| [Models and features](models-and-features.md) | Model loading, default model, collections, feature option dictionaries |
+| [GPU backends](gpu.md) | `libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_hip.h`, `libvmaf_metal.h` |
+| [DNN sessions](dnn.md) | `libvmaf/dnn.h`, the tiny-AI ONNX session |
+| [Embedded MCP server](mcp.md) | `libvmaf_mcp.h` |
+| [Rust close and retry](rust-context-close.md) | Retry-safe ownership in the Rust wrappers |
+| [Perceptual weighting](perceptual-weight.md) | `perceptual_weight.h` |
+
+## Minimal program
+
+This program scores two raw 8-bit 4:2:0 YUV files with the Netflix-compatible
+`vmaf_v0.6.1` model and adds a PSNR feature. It prints the pooled means with
+six decimals.
 
 ```c
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <libvmaf/libvmaf.h>
 #include <libvmaf/model.h>
 #include <libvmaf/picture.h>
 
-static int load_plane(FILE *fp, VmafPicture *pic, unsigned plane)
+/* Fill one picture from a raw planar file. Returns 0, 1 at end of file, or -errno. */
+static int read_frame(FILE *fp, VmafPicture *pic)
 {
-    const size_t row_sz = pic->w[plane] * ((pic->bpc > 8) ? 2U : 1U);
-    uint8_t *dst = pic->data[plane];
-    for (unsigned y = 0; y < pic->h[plane]; y++) {
-        if (fread(dst, 1, row_sz, fp) != row_sz) return -EIO;
-        dst += pic->stride[plane];
+    const size_t sample = (pic->bpc > 8) ? 2U : 1U;
+    for (unsigned p = 0; p < 3; p++) {
+        const size_t row = pic->w[p] * sample;
+        uint8_t *dst = pic->data[p];
+        for (unsigned y = 0; y < pic->h[p]; y++) {
+            if (fread(dst, 1, row, fp) != row)
+                return feof(fp) ? 1 : -EIO;
+            dst += pic->stride[p];
+        }
     }
+    return 0;
+}
+
+/* Feed every frame pair. Returns the frame count, or -errno. */
+static int feed(VmafContext *vmaf, FILE *fref, FILE *fdist, unsigned w, unsigned h)
+{
+    unsigned n = 0;
+    for (;;) {
+        VmafPicture ref, dist;
+        int err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, w, h);
+        if (err < 0)
+            return err;
+        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, w, h);
+        if (err < 0) {
+            vmaf_picture_unref(&ref);
+            return err;
+        }
+        int rr = read_frame(fref, &ref);
+        int rd = (rr == 0) ? read_frame(fdist, &dist) : rr;
+        if (rr != 0 || rd != 0) {
+            /* Nothing was handed to the context: release both pictures. */
+            vmaf_picture_unref(&ref);
+            vmaf_picture_unref(&dist);
+            return (rr < 0) ? rr : (rd < 0) ? rd : (int)n;
+        }
+        /* The context owns both pictures from here on, whatever it returns. */
+        err = vmaf_read_pictures(vmaf, &ref, &dist, n);
+        if (err < 0)
+            return err;
+        n++;
+    }
+}
+
+static int score(VmafContext *vmaf, VmafModel *model, unsigned n)
+{
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0); /* flush */
+    if (err < 0)
+        return err;
+
+    double vmaf_mean = 0.0, psnr_mean = 0.0;
+    err = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &vmaf_mean, 0, n - 1);
+    if (err < 0)
+        return err;
+    err = vmaf_feature_score_pooled(vmaf, "psnr_y", VMAF_POOL_METHOD_MEAN, &psnr_mean, 0, n - 1);
+    if (err < 0)
+        return err;
+    printf("VMAF (mean):   %.6f\nPSNR-Y (mean): %.6f\n", vmaf_mean, psnr_mean);
     return 0;
 }
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) { fprintf(stderr, "usage: %s ref.yuv dist.yuv\n", argv[0]); return 2; }
-
-    const unsigned W = 1920, H = 1080;
-
-    VmafConfiguration cfg = { .log_level = VMAF_LOG_LEVEL_WARNING, .n_threads = 4 };
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    if (err < 0) return 1;
-
-    VmafModel *model = NULL;
-    VmafModelConfig mcfg = { .name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT };
-    err = vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1");
-    if (err < 0) goto done;
-
-    err = vmaf_use_features_from_model(vmaf, model);
-    if (err < 0) goto done;
-
-    err = vmaf_use_feature(vmaf, "psnr", NULL);
-    if (err < 0) goto done;
-
-    FILE *fref  = fopen(argv[1], "rb");
+    if (argc != 5) {
+        fprintf(stderr, "usage: %s ref.yuv dist.yuv width height\n", argv[0]);
+        return 2;
+    }
+    const unsigned w = (unsigned)atoi(argv[3]), h = (unsigned)atoi(argv[4]);
+    FILE *fref = fopen(argv[1], "rb");
     FILE *fdist = fopen(argv[2], "rb");
-    if (!fref || !fdist) { err = -errno; goto done; }
-
-    for (unsigned i = 0; ; i++) {
-        VmafPicture ref = {0}, dist = {0};
-        err = vmaf_picture_alloc(&ref,  VMAF_PIX_FMT_YUV420P, 8, W, H);
-        if (err < 0) break;
-        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, W, H);
-        if (err < 0) { vmaf_picture_unref(&ref); break; }
-
-        int eof = 0;
-        for (unsigned p = 0; p < 3; p++) {
-            if (load_plane(fref,  &ref,  p) < 0 ||
-                load_plane(fdist, &dist, p) < 0) { eof = 1; break; }
-        }
-        if (eof) { vmaf_picture_unref(&ref); vmaf_picture_unref(&dist); break; }
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        if (err < 0) {
-            /* ownership stays with caller on error */
-            vmaf_picture_unref(&ref); vmaf_picture_unref(&dist);
-            break;
-        }
+    if (!fref || !fdist) {
+        perror("fopen");
+        return 1;
     }
 
-    fclose(fref); fclose(fdist);
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_WARNING, .n_threads = 4};
+    VmafContext *vmaf = NULL;
+    VmafModel *model = NULL;
+    VmafModelConfig mcfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
 
-    /* flush */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err < 0) goto done;
+    int err = vmaf_init(&vmaf, cfg);
+    if (err == 0)
+        err = vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1");
+    if (err == 0)
+        err = vmaf_use_features_from_model(vmaf, model);
+    if (err == 0)
+        err = vmaf_use_feature(vmaf, "psnr", NULL);
+    if (err == 0)
+        err = feed(vmaf, fref, fdist, w, h);
+    if (err > 0)
+        err = score(vmaf, model, (unsigned)err);
+    else if (err == 0)
+        err = -EINVAL; /* no frames */
 
-    double pooled = 0.0;
-    err = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &pooled, 0, UINT_MAX);
-    if (err == 0) printf("VMAF (mean): %.17g\n", pooled);
+    fclose(fref);
+    fclose(fdist);
 
-    double psnr_pooled = 0.0;
-    err = vmaf_feature_score_pooled(vmaf, "psnr_y", VMAF_POOL_METHOD_MEAN,
-                                    &psnr_pooled, 0, UINT_MAX);
-    if (err == 0) printf("PSNR-Y (mean): %.17g\n", psnr_pooled);
-
-done:
+    int status = (err < 0) ? 1 : 0;
     if (vmaf) {
         int close_err = vmaf_close(vmaf);
         if (close_err != 0)
-            close_err = vmaf_close(vmaf); /* retained teardown-only context */
+            close_err = vmaf_close(vmaf); /* one retry of the teardown-only context */
         if (close_err != 0)
-            return 1; /* model and backend dependencies must remain alive */
-        vmaf = NULL;
+            return 1; /* model must stay alive: close did not succeed */
     }
-    if (model) vmaf_model_destroy(model);
-    return err < 0 ? 1 : 0;
+    vmaf_model_destroy(model); /* NULL is a no-op */
+    return status;
 }
 ```
 
-Build:
+Build and run it against the Netflix golden pair (576x324, 48 frames):
+
+```shell
+cc app.c -o app $(pkg-config --cflags --libs libvmaf)
+./app src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv 576 324
+```
+
+Expected output (checked against a CPU build):
+
+```text
+VMAF (mean):   76.667831
+PSNR-Y (mean): 30.755064
+```
+
+With the default model `vmaf_v1.0.16_3d0h` the same pair pools to
+82.816060; see [the default model](models-and-features.md#the-default-model).
+
+Points to notice in the program:
+
+- `vmaf_read_pictures()` owns both pictures from the call onwards, so
+  `feed()` never unrefs them after it, not even on error.
+- Pictures that were never submitted (end of file, read error) are unref'd
+  by the caller.
+- `vmaf_close()` is retried once, and the model is destroyed only after it
+  returned 0.
+
+## Core lifecycle API
+
+Find a symbol: this table maps each core function and type to the page that
+documents it.
+
+| Symbol | Page |
+| --- | --- |
+| `vmaf_init`, `vmaf_close`, `vmaf_version` | [Open and close](lifecycle.md#open-and-close), [close and retry](lifecycle.md#close-and-retry) |
+| `VmafConfiguration`, `cpumask`, `gpumask` | [Configuration](lifecycle.md#configuration-vmafconfiguration) |
+| `vmaf_use_features_from_model[_collection]`, `vmaf_use_feature`, `vmaf_import_feature_score` | [Register features](lifecycle.md#register-features) |
+| `vmaf_read_pictures`, `vmaf_preallocate_pictures`, `vmaf_fetch_preallocated_picture` | [Feed pictures](lifecycle.md#feed-pictures), [pools](pictures.md#picture-pools) |
+| `vmaf_score_*`, `vmaf_feature_score_*` | [Read scores](lifecycle.md#read-scores) |
+| `VmafPoolingMethod` | [Pooling methods](lifecycle.md#vmafpoolingmethod) |
+| `vmaf_write_output[_with_format]` | [Write a report](lifecycle.md#write-a-report) |
+| `vmaf_context_get_backend`, `vmaf_feature_backend_twin`, `vmaf_registered_feature_extractor` | [Backend introspection](lifecycle.md#backend-introspection), [device twins](lifecycle.md#device-twins-and-the-extractors-that-ran) |
+| `VmafPicture`, `vmaf_picture_alloc`, `vmaf_picture_unref`, `VmafPicture2` | [Pictures](pictures.md) |
+| `VmafModel`, `vmaf_model_load*`, `vmaf_default_model_version`, `VmafModelKind` | [Models](models-and-features.md) |
+| `VmafFeatureDictionary` | [Feature options](models-and-features.md#feature-options-vmaffeaturedictionary) |
+
+### VmafPoolingMethod
+
+The pooling methods and which of them the reports carry are described under
+[pooling methods](lifecycle.md#vmafpoolingmethod).
+
+### VmafFeatureDictionary
+
+Feature options and their ownership rules are described under
+[feature options](models-and-features.md#feature-options-vmaffeaturedictionary).
+
+### Scoring before the flush and index gaps
+
+`-EAGAIN` before the flush, and what an index that jumps ahead does, are
+described under
+[scoring before the flush and index gaps](lifecycle.md#scoring-before-the-flush-and-index-gaps).
+
+## What each header exposes
+
+| Header | Symbols | Purpose |
+| --- | --- | --- |
+| [`libvmaf.h`](../../core/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle and scoring functions | Main entry point; includes `feature.h`, `model.h`, `picture.h`. |
+| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc and unref | Per-frame pixel container. [Pictures](pictures.md). |
+| [`picture_v2.h`](../../core/include/libvmaf/picture_v2.h) | `VmafPicture2`, `VmafBackendHandle`, converters | Picture with explicit backend state. [Pictures](pictures.md#picture-v2-picture_v2h). |
+| [`feature.h`](../../core/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Options for a feature extractor. [Models and features](models-and-features.md). |
+| [`model.h`](../../core/include/libvmaf/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*`, `VmafModelKind` | SVM model, bootstrap collection, default version. |
+| [`perceptual_weight.h`](../../core/include/libvmaf/perceptual_weight.h) | perceptual weight reader | Pelorus-driven pooling weights. [Perceptual weighting](perceptual-weight.md). |
+| [`dnn.h`](../../core/include/libvmaf/dnn.h) | `VmafDnnSession`, `VmafDnnConfig`, tiny-model attach | Tiny-AI (ONNX Runtime). [DNN](dnn.md). Installed when `enable_dnn` is `enabled` or `auto`. |
+| [`libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h) | `VmafCudaState`, CUDA picture preallocation | CUDA backend; needs `-Denable_cuda=true`. [GPU](gpu.md#cuda). |
+| [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h) | `VmafSyclState`, frame buffers, dmabuf, VA and D3D11 import | SYCL backend; needs `-Denable_sycl=true`. [GPU](gpu.md#sycl). |
+| [`libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h) | `VmafHipState`, lifecycle, device listing | AMD HIP/ROCm backend; needs `-Denable_hip=true`. [GPU](gpu.md#hip). |
+| [`libvmaf_metal.h`](../../core/include/libvmaf/libvmaf_metal.h) | `VmafMetalState`, lifecycle, IOSurface import | Apple Metal backend: runtime, IOSurface import and 17 registered feature extractors on Apple Silicon with `-Denable_metal=auto` or `enabled`; unsupported hosts return `-ENODEV`. [GPU](gpu.md#metal). |
+| [`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start and stop | Embedded MCP server; needs `-Denable_mcp=true`. [MCP](mcp.md). |
+| [`macros.h`](../../core/include/libvmaf/macros.h) | `VMAF_EXPORT` | Symbol visibility; always installed, included by every header. |
+| `version.h` (generated) | `VMAF_API_VERSION_*` | Compile-time version constants. At run time use `vmaf_version()`. |
+| [`vmaf_assert.h`](../../core/include/libvmaf/vmaf_assert.h) | `VMAF_ASSERT*` | Internal assertion helpers. Not installed; not public. |
+
+All declarations are C with `extern "C"` guards for C++ callers. The public
+API has no C++ entry points. The Vulkan backend and its header were removed
+([ADR-0726](../adr/0726-drop-vulkan-backend.md)).
+
+## Compile and link
+
+```c
+#include <libvmaf/libvmaf.h>
+#include <libvmaf/picture.h>
+#include <libvmaf/model.h>
+```
 
 ```shell
 cc app.c -o app $(pkg-config --cflags --libs libvmaf)
 ```
 
-Run against the Netflix golden pair:
+`pkg-config` is the supported way to pick up the include path and `-lvmaf`.
+Add `--static` to also list the private link libraries of the enabled
+backends and of ONNX Runtime. Backend headers are installed only for the
+backends the build enabled (see [GPU
+backends](gpu.md#when-these-headers-apply)).
 
-```shell
-./app src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv
-# VMAF (mean): 76.668905019705577
-# PSNR-Y (mean): 30.755064343...
-```
+## ABI stability
 
-Note: this example reads `1920x1080` — change `W`, `H` when running against
-the 576×324 fixture.
+| Surface | Status |
+| --- | --- |
+| `libvmaf.h`, `picture.h`, `feature.h`, `model.h` | Stable. Upstream-origin functions keep their upstream signatures; fork-added functions (marked "fork-added" in the topic pages) are additive. |
+| `dnn.h` (`vmaf_dnn_available`, `vmaf_use_tiny_model`, the session API) | Stable, fork-added. Structs may grow trailing fields across minor versions; do not over-read them. |
+| `picture_v2.h` | Fork-added, additive; v1 `VmafPicture` stays supported during the dual-API window ([ADR-0928](../adr/0928-vmaf-picture-v2-explicit-backend-state.md)). |
+| `libvmaf_sycl.h` zero-copy imports (`vmaf_sycl_import_va_surface`, `vmaf_sycl_import_d3d11_surface`, dmabuf entry points) | Experimental. Signatures may change as backends are added. |
+| `vmaf_assert.h`, `VMAF_ASSERT*` | Private; not installed. |
 
-## Backend introspection — `vmaf_context_get_backend()`
+Versioning follows the VMAFx `vX.Y.Z` stream
+([ADR-1127](../adr/1127-single-semver-release-stream.md)). Any change that
+breaks source or binary compatibility of the stable API bumps the major
+version.
 
-```c
-#include "libvmaf/libvmaf.h"
+## Thread-safety
 
-enum VmafBackend backend;
-int err = vmaf_context_get_backend(vmaf, &backend);
-```
+- A `VmafContext` is not re-entrant. Drive one context's lifecycle (init,
+  feed, score, close) from one thread.
+- Internally libvmaf runs feature extraction on `VmafConfiguration.n_threads`
+  workers; that threading is self-contained.
+- Several contexts may run in parallel on different threads. They share no
+  state beyond process-global constants.
+- Picture buffers (`VmafPicture.data[]`) are safe to mutate or free only
+  after `vmaf_picture_unref()` brings the refcount to zero. See
+  [pictures](pictures.md).
 
-Returns the compute backend that was imported into `vmaf` via a
-`vmaf_<backend>_import_state()` call. For CPU-only contexts (no GPU state
-imported) the value is `VMAF_BACKEND_UNKNOWN` (0).
+## Error semantics
 
-| `enum VmafBackend` value | Integer | Meaning |
-| --- | --- | --- |
-| `VMAF_BACKEND_UNKNOWN` | 0 | CPU-only — no GPU backend imported |
-| `VMAF_BACKEND_CUDA` | 1 | CUDA backend (`vmaf_cuda_import_state`) |
-| `VMAF_BACKEND_SYCL` | 2 | SYCL backend (`vmaf_sycl_import_state`) |
-| `VMAF_BACKEND_METAL` | 3 | Metal backend (`vmaf_metal_import_state`) |
-| `VMAF_BACKEND_HIP` | 4 | HIP/ROCm backend (`vmaf_hip_import_state`) |
-| `VMAF_BACKEND_VULKAN` | 5 | Reserved — Vulkan removed in ADR-0726 |
+Every non-void function returns `int`: `0` on success, a negative number
+on error. The magnitude is a POSIX `errno` value.
 
-Returns `0` on success; `-EINVAL` if `vmaf` or `out` is `NULL`.
+| Code | Meaning |
+| --- | --- |
+| `-EINVAL` | Bad argument: NULL pointer, out-of-range enum, wrong shape, a non-increasing picture index, an unknown name. |
+| `-EAGAIN` | A requested score is not written yet. Returned by the score functions before the flush. Not fatal: flush, or retry. See [scoring before the flush](lifecycle.md#scoring-before-the-flush-and-index-gaps). |
+| `-ENOMEM` | Allocation failed. |
+| `-ENOENT` | File not found (`vmaf_model_load_from_path` and similar), or the end of an enumeration. |
+| `-ENOSYS` | Entry point compiled out, for example `vmaf_dnn_*` in a `-Denable_dnn=disabled` build. |
+| `-ENODEV` | No device or backend available (twin lookup, Metal on an unsupported host). |
+| `-ENOTSUP` | The device twin cannot honour an option or geometry. |
+| `-EIO` | Downstream library error (ONNX Runtime, libav, and so on). |
 
-New enum values may be appended in future releases. Callers should treat
-unknown values as `VMAF_BACKEND_UNKNOWN` (i.e. use a `default:` branch in
-any `switch`). See [ADR-0804](../adr/0804-vmaf-context-get-backend.md).
+libvmaf keeps no thread-local last-error: the return code is the only error
+channel. A parallel diagnostic goes to the logger at
+`VmafConfiguration.log_level`.
 
-## Device twins and the extractors that ran
+### CLI exit codes
 
-`vmaf_use_feature()` registers the extractor you name, exactly. A model's
-features are different: `vmaf_use_features_from_model()` picks the imported
-backend's twin of each one, keeps the CPU extractor when the twin cannot honour
-the model's options, and swaps in the CPU extractor at the first picture when
-the twin cannot run that geometry. Two functions expose that choice to a caller
-that registers features by name, such as the `vmaf` CLI
-([ADR-1359](../adr/1359-cli-feature-backend-twin.md)).
+The `vmaf` CLI does not map errno values to exit codes. It returns:
 
-### `vmaf_feature_backend_twin()`
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `100` | An explicitly requested backend failed to initialise |
+| `101` | No frames were decoded |
+| `102` | An input stream failed to read |
+| `255` | Any other error (the CLI returns -1) |
 
-```c
-int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
-                              const VmafFeatureDictionary *opts_dict,
-                              const VmafPictureConfiguration *pic_cfg,
-                              const char **twin_name,
-                              const char **unsupported_option);
-```
+Call the C API directly when you need fine-grained error discrimination.
 
-Asks which extractor of the backend imported into `vmaf` computes what the CPU
-extractor `feature_name` computes, using the model-dispatch lookup, and whether
-it can run with `opts_dict` on pictures of `pic_cfg`'s geometry. Pass `NULL`
-for `pic_cfg` to skip the geometry check; `pic_cnt` is ignored. Nothing is
-registered and `opts_dict` is not consumed. Call it after the backend's
-`vmaf_<backend>_import_state()`.
+## Path encoding
 
-| Return | Meaning | `*twin_name` | `*unsupported_option` |
-| --- | --- | --- | --- |
-| `0` | Use the twin: register `*twin_name` with `vmaf_use_feature()` | twin | `NULL` |
-| `-ENOENT` | The backend has no twin of this extractor | `NULL` | `NULL` |
-| `-ENOTSUP` | The twin cannot honour an option | twin | the option key |
-| `-ENOTSUP` | The twin cannot run this geometry with these options | twin | `NULL` |
-| `-ENODEV` | No backend imported, or a non-zero `gpumask` disables its extractors | `NULL` | `NULL` |
-| `-EINVAL` | `vmaf`, `feature_name` or `twin_name` is `NULL`, or `feature_name` is not a registered CPU extractor (an unknown name or a twin name) | `NULL` | `NULL` |
+All filesystem paths accepted by VMAFx-owned entry points
+(`vmaf_write_output`, `vmaf_write_output_with_format`,
+`vmaf_model_load_from_path`, `vmaf_model_collection_load_from_path` and the
+model reader helpers) are UTF-8 strings on every platform.
 
-Another negative errno means an option value could not be parsed. The twin
-name is static; the option key points into `opts_dict`, so read it before you
-free the dictionary or hand it to `vmaf_use_feature()`.
+| Platform | Behaviour |
+| --- | --- |
+| POSIX (Linux, macOS, BSD) | Passed unchanged to `open` and `fopen`, which treat paths as raw bytes. |
+| Windows | Decoded with `MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ...)` and passed to `_wopen` and `_wfopen`. Non-ASCII paths resolve regardless of the active code page (`GetACP()`). Invalid UTF-8 fails with `errno = EILSEQ` (or `-EINVAL`). |
 
-```c
-const char *twin = NULL, *option = NULL;
-const char *name = "ciede";
-int err = vmaf_feature_backend_twin(vmaf, name, opts, &pic_cfg, &twin, &option);
-if (err == 0)
-    name = twin;                                  /* e.g. "ciede_sycl" */
-else if (err == -ENOTSUP && option)
-    fprintf(stderr, "%s cannot honour %s; using the CPU\n", twin, option);
-err = vmaf_use_feature(vmaf, name, opts);         /* consumes opts */
-```
+The vendored Pelorus entry point `pel_x265_csv_parse()` is a temporary
+exception: its pinned upstream source still uses the Windows narrow CRT. It
+is tracked in `docs/state.md` and must be fixed in `VMAFx/pelorus` before
+re-vendoring under the ADR-1113 mirror invariant. Background:
+[ADR-1182](../adr/1182-windows-utf8-path-contract.md).
 
-### `vmaf_registered_feature_extractor()`
+## Doxygen reference
 
-```c
-int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index,
-                                      const char **name, enum VmafBackend *backend);
-```
-
-Reports the extractor registered at `index` (after duplicate registrations were
-merged) and the backend it runs on; `VMAF_BACKEND_UNKNOWN` means the CPU. Walk
-`index` from `0` until it returns `-ENOENT`. Call it after the final
-`vmaf_read_pictures(vmaf, NULL, NULL, 0)` flush to see what actually ran,
-including a model feature whose twin was replaced by the CPU extractor at the
-first picture. Returns `-EINVAL` when `vmaf`, `name` or `backend` is `NULL`.
-The CLI builds its `backend_used` and `feature_backends` JSON keys from it
-([backend receipt](../usage/cli.md#backend-receipt-in-json-output)).
-
-## Doxygen reference (auto-generated)
-
-For browsable per-symbol HTML, run the standalone doxygen build the fork
-ships for the public-API surface — separate from the meson-driven
-full-tree generator so the warning bar stays tight on the installable
-headers:
+For browsable per-symbol HTML, run the standalone Doxygen build for the
+public headers. It is separate from the full-tree generator so the warning
+bar stays tight on the installable headers.
 
 ```bash
 sudo apt-get install -y --no-install-recommends doxygen   # one-off
 mkdir -p build/doxygen-public-api
 doxygen core/doc/Doxyfile.public-api
-open build/doxygen-public-api/html/index.html             # browse
+open build/doxygen-public-api/html/index.html
 ```
 
-The `doxygen-public-api` GitHub Actions workflow runs the same command
-on every PR that touches `core/include/libvmaf/` or the Doxyfile, gates
-the merge via `required-aggregator.yml` with `DOXYGEN_WARNING_CEILING: "0"`,
-and publishes the rendered HTML + the warning log as build artifacts.
-The build is strictly warning-clean and fails closed with
-`WARN_AS_ERROR = YES` — see [ADR-0953](../adr/0953-doxygen-public-api-clean.md)
-and [ADR-1315](../adr/1315-doxygen-public-api-fail-closed.md).
+The `doxygen-public-api` workflow runs the same command on every PR that
+touches `core/include/libvmaf/` or the Doxyfile, gates the merge through
+`required-aggregator.yml` with `DOXYGEN_WARNING_CEILING: "0"`, and publishes
+the HTML and the warning log as artifacts. The build is warning-clean and
+fails closed (`WARN_AS_ERROR = YES`); see
+[ADR-0953](../adr/0953-doxygen-public-api-clean.md) and
+[ADR-1315](../adr/1315-doxygen-public-api-fail-closed.md).
 
 ## Related
 
-- [rust-context-close.md](rust-context-close.md) — retry-safe context ownership
-  in the safe Rust wrappers
-- [gpu.md](gpu.md) — CUDA / SYCL additions to the lifecycle
-- [dnn.md](dnn.md) — tiny-AI session API
-- [../usage/cli.md](../usage/cli.md) — the `vmaf` CLI walkthrough mirrors this
-  API 1:1
-- [../metrics/features.md](../metrics/features.md) — feature names + options
-- [ADR-0119](../adr/0119-cli-precision-default-revert.md) — current `%.6f`
-  default for `vmaf_write_output_with_format(..., NULL)` (supersedes
-  [ADR-0006](../adr/0006-cli-precision-17g-default.md))
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the doc-substance
-  rule this page satisfies
-- [ADR-1182](../adr/1182-windows-utf8-path-contract.md) — Windows UTF-8 path
-  contract and internal wide path shims
+- [CLI walkthrough](../usage/cli.md): mirrors this API one to one.
+- [Feature names and options](../metrics/features.md).
+- [ADR-0119](../adr/0119-cli-precision-default-revert.md): the `%.6f`
+  default (supersedes [ADR-0006](../adr/0006-cli-precision-17g-default.md)).
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md): the
+  documentation rule these pages satisfy.
+- [ADR-1182](../adr/1182-windows-utf8-path-contract.md): Windows UTF-8 path
+  contract.

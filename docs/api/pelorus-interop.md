@@ -16,11 +16,12 @@ decision is recorded in
 re-pin and exact-mirror guard rails are recorded in
 [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md).
 
-> **The mirror is read-only.** Do not edit the vendored files. They are
-> byte-identical to their Pelorus origin (pinned at
-> `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`)
-> except for a `VENDORED FROM … DO NOT EDIT` banner and the include-path
-> rewrite described below. Fix any defect upstream in Pelorus, then re-sync.
+!!! warning "The mirror is read-only"
+    Do not edit the vendored files. They are byte-identical to their Pelorus
+    origin (pinned at `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`)
+    except for a `VENDORED FROM ... DO NOT EDIT` banner and the include-path
+    rewrite described below. Fix any defect upstream in Pelorus, then
+    [re-sync](#re-syncing-the-mirror).
 
 ## What is vendored
 
@@ -37,8 +38,8 @@ re-pin and exact-mirror guard rails are recorded in
 | [`core/src/interop/pelorus_version.c`](../../core/src/interop/pelorus_version.c) | `src/version.c` | `pelorus_version*` / `pel_result_str`. |
 | [`core/test/test_pelorus_interop.c`](../../core/test/test_pelorus_interop.c) | `test/interop_test.c` | The **shared conformance fixture** (see below). |
 
-The five `.c` files compile straight into `libvmaf` (CPU-only, dependency-free,
-no Vulkan; registered in `core/src/meson.build`). `deband_params.c`,
+The five `.c` files compile straight into `libvmaf` (CPU-only, dependency-free;
+registered in `core/src/meson.build`). `deband_params.c`,
 `denoise_params.c`, `qp_report_csv.c`, and `version.c` are vendored alongside
 `interop.c` because the shared conformance fixture links the deband / denoise
 parameter contracts, the x265 CSV QP-report reader, and the version /
@@ -83,11 +84,23 @@ A blob is a flat, pointer-free, little-endian byte image:
   per present section, so an older consumer can locate and tail-skip a newer
   producer's larger section.
 
-The full struct layout lives in `interop.h`; the `_Static_assert` size locks
-(`sizeof(PelorusSideData)==48`, banding `==24`, variance `==28`, denoise `==28`,
-filmgrain `==216`, motion `==32`, dir `==16`) are compiled in every translation
-unit that includes the header — including the conformance test — so any
-accidental layout change is a **build failure**, not a silent corruption.
+The full struct layout lives in `interop.h`. Its `_Static_assert` size locks
+are compiled in every translation unit that includes the header, including the
+conformance test, so an accidental layout change is a **build failure**, not a
+silent corruption.
+
+| Struct | Size (bytes) |
+| --- | --- |
+| `PelorusSideData` (header) | 48 |
+| `PelorusSectionDir` | 16 |
+| `PelorusBandingSection` | 24 |
+| `PelorusVarianceSection` | 28 |
+| `PelorusDenoiseSection` | 28 |
+| `PelorusFilmGrainSection` | 216 |
+| `PelorusMotionSection` | 32 |
+| `PelorusMotionConfSection` | 16 |
+| `PelorusComplexitySection` | 16 |
+| `PelorusQpReportSection` | 64 |
 
 ### Pack / parse API (`interop.h`)
 
@@ -100,16 +113,21 @@ accidental layout change is a **build failure**, not a silent corruption.
 
 Pelorus v0.2.2 accepts a blob at **any caller-buffer base alignment**. The
 parser and packer move wire headers and directory entries through aligned local
-objects with `memcpy`; they never cast an untrusted byte address to a structured
-pointer. Framing still requires `header_size` and each directory offset to be
-8-byte aligned relative to the blob, and malformed values return `PEL_ERR_ABI`.
-Because a valid section pointer is relative to the caller's possibly unaligned
-base, consumers must `memcpy` a returned section into a suitably aligned local
-object before typed access whenever the caller buffer is not suitably aligned.
+objects with `memcpy`; they never cast an untrusted byte address to a
+structured pointer.
 
-vmafx is a **reader only** — it never mutates a blob (single-writer invariant:
-Pelorus is the sole writer). The reader side (perceptual weighting) is a
-separate workstream and is not part of this vendor PR.
+Framing still requires `header_size` and each directory offset to be 8-byte
+aligned relative to the blob. Malformed values return `PEL_ERR_ABI`.
+
+!!! warning "Copy a section before typed access"
+    A valid section pointer is relative to the caller's base, which may be
+    unaligned. Whenever the caller buffer is not suitably aligned, `memcpy`
+    the returned section into an aligned local object before reading its
+    fields.
+
+vmafx is a **reader only**: it never mutates a blob (single-writer
+invariant, Pelorus is the sole writer). The reader side ships as the
+perceptual pooling weights in [perceptual-weight.md](perceptual-weight.md).
 
 ## Forward / backward compatibility (R1–R6)
 
@@ -145,33 +163,26 @@ semantics only; it does not add or alter an ABI field or section.
 exercises the following vectors against the vendored parser (the ABI-1.3 fixture
 grew the original seven to sixteen):
 
-1. `roundtrip` — pack three sections, parse them back, verify scalars + the
-   8-byte-aligned 64-bit `seed` survives.
-2. `forward_compat` — an older consumer that knows a *smaller* struct gets
-   `min(producer, consumer)` readable bytes (R4).
-3. `abi_major_mismatch` — a bumped major is detected and rejected, not misread
-   (R6).
-4. `foreign_buffer` — a non-Pelorus SEI (e.g. an x264 user-data blob) is
-   cleanly ignored.
-5. `header_only` — a zero-section blob is valid and parses.
-6. `truncation` — a short buffer is detected, never read out of bounds.
-7. `misaligned_offset` — a section whose `dir.offset` is not 8-aligned is
-   rejected (R5) rather than handed out for an unaligned cast.
-8. `misaligned_blob_base` — a valid blob re-homed at every base skew from one
-   through seven bytes parses without undefined behavior; the section payload
-   is read safely through `memcpy`.
-9. `unaligned_header_size` — a header size that would place the directory on a
-   non-8-byte boundary is rejected as corrupt framing.
-10. `pack_size_overflow` — a section size that would overflow the framing is
-   rejected, not wrapped.
-11. `qp_report_roundtrip` — pack/parse the `PEL_SEC_QPREPORT` section (ABI 1.1).
-12. `motion_conf_roundtrip` — pack/parse the `PEL_SEC_MOTION_CONF` section (1.2).
-13. `complexity_roundtrip` — pack/parse the `PEL_SEC_COMPLEXITY` section (1.3).
-14. `qp_report_fold` — fold parsed frames into a bit-weighted QP report.
-15. `x265_csv_reader` — `pel_x265_csv_parse` reads a real x265 `--csv` table,
-    drops the aggregate row, and computes `honored_fraction`.
-16. `deband_params` — the deband contract: defaults validate, out-of-range is
-    rejected with the offending field name.
+| # | Vector | What it proves |
+| --- | --- | --- |
+| 1 | `roundtrip` | pack three sections, parse them back, verify scalars + the 8-byte-aligned 64-bit `seed` survives. |
+| 2 | `forward_compat` | an older consumer that knows a *smaller* struct gets `min(producer, consumer)` readable bytes (R4). |
+| 3 | `abi_major_mismatch` | a bumped major is detected and rejected, not misread (R6). |
+| 4 | `foreign_buffer` | a non-Pelorus SEI (e.g. an x264 user-data blob) is cleanly ignored. |
+| 5 | `header_only` | a zero-section blob is valid and parses. |
+| 6 | `truncation` | a short buffer is detected, never read out of bounds. |
+| 7 | `misaligned_offset` | a section whose `dir.offset` is not 8-aligned is rejected (R5) rather than handed out for an unaligned cast. |
+| 8 | `misaligned_blob_base` | a valid blob re-homed at every base skew from one through seven bytes parses without undefined behavior; the section payload is read safely through `memcpy`. |
+| 9 | `unaligned_header_size` | a header size that would place the directory on a non-8-byte boundary is rejected as corrupt framing. |
+| 10 | `pack_size_overflow` | a section size that would overflow the framing is rejected, not wrapped. |
+| 11 | `qp_report_roundtrip` | pack/parse the `PEL_SEC_QPREPORT` section (ABI 1.1). |
+| 12 | `motion_conf_roundtrip` | pack/parse the `PEL_SEC_MOTION_CONF` section (1.2). |
+| 13 | `complexity_roundtrip` | pack/parse the `PEL_SEC_COMPLEXITY` section (1.3). |
+| 14 | `qp_report_fold` | fold parsed frames into a bit-weighted QP report. |
+| 15 | `x265_csv_reader` | `pel_x265_csv_parse` reads a real x265 `--csv` table, drops the aggregate row, and computes `honored_fraction`. |
+| 16 | `deband_params` | the deband contract: defaults validate, out-of-range is rejected with the offending field name. |
+
+### Run the fixture
 
 A green run here proves vmafx's vendored parser is byte-identical to Pelorus's
 writer: a blob packed by Pelorus parses in vmafx and vice versa. The fixture is
@@ -194,35 +205,58 @@ stays accurate even when the local Pelorus checkout's `HEAD` has moved past the
 pin. A directory that is not a Git checkout, or a checkout that lacks the exact
 object, fails closed.
 
-```bash
-# Drift check (CI gate). Path defaults to $PELORUS_DIR or ../pelorus.
-scripts/sync-pelorus-interop.sh /path/to/pelorus
-#   OK   — mirror matches pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16
-#   FAIL — mirror has drifted (prints a diff), exit 1
+### Check and re-vendor
 
-# Re-vendor after a reviewed Pelorus ABI addition or released parser
-# correctness/security fix (an ABI-minor bump is not required):
-#   1. bump PELORUS_VENDOR_SHA in the script + this doc + ADR (the banners are
-#      rewritten automatically by --update)
-#   2. add any new Pelorus source/header to the script's render manifest and
-#      scripts/ci/pelorus-mirror-paths.txt (plus core/src/meson.build + the
-#      test target if it needs to compile/link); the guard requires both path
-#      sets to match exactly
-#   3. re-vendor and confirm clean:
-scripts/sync-pelorus-interop.sh --update /path/to/pelorus
+Check for drift (the CI gate). The path defaults to `$PELORUS_DIR` or
+`../pelorus`:
+
+```bash
 scripts/sync-pelorus-interop.sh /path/to/pelorus
-#   4. rebuild + run the conformance fixture (must stay green).
 ```
 
+The output is
+`OK   - mirror matches pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`,
+or `FAIL - mirror has drifted` with a diff and exit code 1.
+
+To re-vendor after a reviewed Pelorus ABI addition or a released parser
+correctness or security fix (an ABI-minor bump is not required):
+
+1. Bump `PELORUS_VENDOR_SHA` in the script, in this page and in the ADR. The
+   banners are rewritten automatically by `--update`.
+2. Add any new Pelorus source or header to the script's render manifest and to
+   `scripts/ci/pelorus-mirror-paths.txt`, plus `core/src/meson.build` and the
+   test target if it must compile or link. The guard requires both path sets
+   to match exactly.
+3. Re-vendor:
+
+   ```bash
+   scripts/sync-pelorus-interop.sh --update /path/to/pelorus
+   ```
+
+4. Confirm the mirror is clean:
+
+   ```bash
+   scripts/sync-pelorus-interop.sh /path/to/pelorus
+   ```
+
+5. Rebuild and run the conformance fixture; it must stay green.
+
+### What the guard enforces
+
 `--update` re-vendors both the manifest files **and the complete conformance
-fixture**. It regenerates the canonical Lusoris-authored prefix with the pinned
-commit and ABI version, then appends the Pelorus body with the `pelorus/` →
-`libvmaf/pelorus/` include rewrite. The drift check compares every complete
-rendered file byte-for-byte through EOF, so a prefix mutation, stale fixture
-pin, or missing/extra final newline is drift. It also rejects any added or
-missing tracked file in the exact-mirror lint namespaces unless the manifest
-owns that path. Local formatting or tidy edits therefore fail the guard instead
-of becoming a second implementation or silently gaining a lint exemption.
+fixture**:
+
+- It regenerates the canonical Lusoris-authored prefix from the pinned commit
+  and ABI version, then appends the Pelorus body with the `pelorus/` to
+  `libvmaf/pelorus/` include rewrite.
+- The drift check compares every complete rendered file byte for byte
+  through end of file. A prefix mutation, a stale fixture pin or a
+  missing or extra final newline is drift.
+- It rejects any added or missing tracked file in the exact-mirror lint
+  namespaces unless the manifest owns that path.
+
+Local formatting or tidy edits therefore fail the guard instead of becoming a
+second implementation or silently gaining a lint exemption.
 
 A re-sync that changes the ABI is an ADR-worthy event (a new section bit or an
 appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-pin
