@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The macOS tester bundle job installs the Metal compiler (2026-10-04)
+
+`fix/tester-bundle-metal-toolchain`. CI workflow only; no source change.
+
+- `.github/workflows/macos-tester-bundle.yml`'s `build` job has the step
+  `Install Metal compiler toolchain` (`xcodebuild -downloadComponent
+  MetalToolchain`, then `xcrun -sdk macosx metal --version`) after the brew
+  step, with the same wording as `build.yml` and `libvmaf-build-matrix.yml`.
+  A sync or rebase keeps all three; dropping the step brings back the
+  `missing Metal Toolchain` failure on runner images without the component.
+
 ## The ADR navigation is collapsed behind the indexes (ADR-1510, 2026-10-04)
 
 `docs/site-adr-nav`. Documentation, its generator and tests; no source change.

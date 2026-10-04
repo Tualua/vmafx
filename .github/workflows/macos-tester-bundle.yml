@@ -138,6 +138,18 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: brew install -q meson ninja nasm pkg-config zstd
+      # Xcode 26 no longer bundles the Metal compiler with the base runner
+      # image. Metal.framework can be present while `xcrun metal` still fails,
+      # so install the separately shipped component before the bundle build
+      # compiles its .metal sources. The check right after it makes a missing
+      # compiler fail here, with a clear message, instead of mid-build.
+      - name: Install Metal compiler toolchain
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+          if ! xcrun -sdk macosx metal --version; then
+            echo "ERROR: the Metal compiler is still missing after xcodebuild -downloadComponent MetalToolchain" >&2
+            exit 1
+          fi
       - name: Build the bundle
         env:
           VMAFX_SOURCE_COMMIT: ${{ needs.validate.outputs.source-sha }}
