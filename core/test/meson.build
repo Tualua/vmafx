@@ -5884,7 +5884,8 @@ test_sycl_zerocopy_parity = executable('test_sycl_zerocopy_parity',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_zerocopy_parity', test_sycl_zerocopy_parity,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5901,7 +5902,8 @@ test_sycl_chroma_import = executable('test_sycl_chroma_import',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_chroma_import', test_sycl_chroma_import,
     suite : ['fast', 'gpu', 'sycl'],
@@ -5920,7 +5922,8 @@ test_sycl_zerocopy_guards = executable('test_sycl_zerocopy_guards',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1', '-DEXPECTED_SYCL_EXTRACTORS=' + sycl_fex_names]
+    c_args: ['-DHAVE_SYCL=1', '-DEXPECTED_SYCL_EXTRACTORS=' + sycl_fex_names],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_zerocopy_guards', test_sycl_zerocopy_guards,
     suite : ['fast', 'gpu', 'sycl'],
