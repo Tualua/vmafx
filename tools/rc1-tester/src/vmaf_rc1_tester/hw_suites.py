@@ -91,6 +91,13 @@ def test_environment(
     return env
 
 
+def command_path(test: Mapping[str, Any], root: Path) -> Path:
+    """The executable of a manifest entry: a relative `cmd` (every manifest the build
+    writes since the bundles move between machines) is resolved against the image root."""
+    command = Path(str(test["cmd"]))
+    return command if command.is_absolute() else root / command
+
+
 def run_one_test(
     test: Mapping[str, Any],
     root: Path,
@@ -116,7 +123,7 @@ def run_one_test(
         if env is not None:
             kwargs["environment"] = env
         kwargs["cwd"] = str(work)
-        argv = [str(test["cmd"]), *[str(arg) for arg in test.get("args", [])]]
+        argv = [str(command_path(test, root)), *[str(arg) for arg in test.get("args", [])]]
         try:
             result = runner(argv, **kwargs)
         except (TimeoutError, RuntimeError, ValueError, OSError):

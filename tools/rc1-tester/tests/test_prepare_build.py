@@ -201,6 +201,40 @@ def test_stage_writes_shared_executables_once_and_left_out(tmp_path: Path, monke
     assert (image / "tests" / "threads.sh").is_file()
 
 
+def test_staged_manifest_runs_after_the_bundle_moves(tmp_path: Path, monkeypatch) -> None:
+    """A bundle is built in one directory and run from wherever the tester unpacked
+    it: the manifest names each test relative to the bundle root, and the report
+    resolves it against the root it reads the manifest from."""
+    sys.path.insert(0, str(_PATH.parents[1] / "src"))
+    from vmaf_rc1_tester import hw_suites
+    from vmaf_rc1_tester.safe_process import CommandResult
+
+    names = [f"test_{i}" for i in range(pb.MIN_TESTS)]
+    build = tmp_path / "build"
+    fake_introspect(monkeypatch, build, names)
+    (build / "test").mkdir(parents=True)
+    for name in names:
+        (build / "test" / name).write_text("elf")
+    built = tmp_path / "runner" / "bundle"
+    pb.stage(build, names, built)
+    document = json.loads((built / "image" / "unit-tests.json").read_text())
+    assert {t["cmd"] for t in document["tests"]} == {f"tests/{n}" for n in names}
+    unpacked = tmp_path / "tester" / "bundle"
+    unpacked.parent.mkdir()
+    built.rename(unpacked)
+    started: list[str] = []
+
+    def run(argv, **_kwargs):
+        started.append(argv[0])
+        return CommandResult(0, "", "")
+
+    result = hw_suites.run_unit_tests(
+        unpacked / "image" / "unit-tests.json", timeout_seconds=1, runner=run
+    )
+    assert result["status"] == "pass" and result["passed"] == pb.MIN_TESTS
+    assert sorted(started) == sorted(str(unpacked.resolve() / "tests" / n) for n in names)
+
+
 def test_twin_bounds_come_from_the_staged_gate(tmp_path: Path) -> None:
     repo = Path(__file__).resolve().parents[3]
     pb.stage_gate(repo, tmp_path)

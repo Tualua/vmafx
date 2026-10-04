@@ -59974,3 +59974,13 @@ upstream parity guard's allowlist.
   `Choose the release-bot identity` and `Mint the release-bot installation
   token` steps. A rebase keeps all three and the job token on every other step.
   No score, public API or FFmpeg patch impact.
+
+## Tester manifests name tests relative to the package root
+
+- `tools/rc1-tester/image/prepare_build.py stage` writes each test's `cmd`
+  relative to the image root (`tests/<test>`), and
+  `vmaf_rc1_tester.hw_suites.command_path()` resolves a relative `cmd` against
+  the root the manifest is read from. A rebase keeps both halves: an absolute
+  path of the build machine names nothing on the machine a bundle is unpacked
+  on (`T-TESTER-BUNDLE-UNIT-PATHS-ABSOLUTE-2026-10-04`). No score, public API or
+  FFmpeg patch impact.

@@ -164,8 +164,10 @@ def first_line(argv: list[str]) -> str:
 
 
 def manifest_entry(item: dict, target: Path) -> dict:
-    """The manifest form of a staged test (hw_suites.run_unit_tests reads it)."""
-    entry: dict = {"name": item["name"], "cmd": str(target)}
+    """The manifest form of a staged test (hw_suites.run_unit_tests reads it).
+    `target` is relative to the image root: a bundle runs from wherever the tester
+    unpacked it, so an absolute path of the build machine would name nothing there."""
+    entry: dict = {"name": item["name"], "cmd": target.as_posix()}
     for key in ("args", "env"):
         if item[key]:
             entry[key] = item[key]
@@ -187,7 +189,7 @@ def stage(
         target = tests_dir / item["path"].name  # two tests may share one executable
         if not target.exists():
             shutil.copy2(item["path"], target)
-        entries.append(manifest_entry(item, target))
+        entries.append(manifest_entry(item, target.relative_to(image_root)))
     out = image_root / "image" / manifest
     out.parent.mkdir(parents=True, exist_ok=True)
     document = {"tests": entries, "left_out": left_out}
