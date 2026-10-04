@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1252), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1253), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4975,6 +4975,10 @@ Every ADR, one heading each (1252), so the site search finds an ADR by its title
 ## ADR-1564: The dev container is pushed only into a private package, checked before every push
 
 [1564-dev-image-private-guard](1564-dev-image-private-guard.md)
+
+## ADR-1565: A libx265 two-pass cell at a CRF is pass 1 at the CRF, then ABR at pass 1's bitrate
+
+[1565-vmaf-tune-x265-two-pass-abr-at-pass1-bitrate](1565-vmaf-tune-x265-two-pass-abr-at-pass1-bitrate.md)
 
 ## ADR-1566: A Windows SYCL tester zip built with /MD that carries its runtime beside every program and measures every SYCL twin on a tester's Intel GPU
 

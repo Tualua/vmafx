@@ -56,3 +56,15 @@ invariant: Subprocess boundary is test seam; run_encode_with_stats captures enco
 - **`_build_input_args` emits `-f rawvideo` block before seek args**
   (`encode.py`). `-ss` / `-t` must stay input-side, ahead of `-i`, or
   ffmpeg decodes whole source. ADR-0506 / Bug #V6-1.
+- **A libx265 two-pass cell is pass 1 at the CRF, then ABR (ADR-1565).**
+  `run_two_pass_encode` routes adapters with
+  `two_pass_abr_at_pass1_bitrate` through `_encode_abr_two_pass`: pass 1
+  writes a real file (`EncodeRequest.pass1_output`, not the null muxer),
+  `_probe_bitrate_kbps` reads its bit rate with ffprobe (next to the ffmpeg
+  binary, through the same `runner`), pass 2 sets `abr_bitrate_kbps` and
+  `_with_abr_rate_control` swaps `-crf <q>` for `-b:v <kbps>k`. x265 exits 183
+  on a pass 2 with `-crf`. No bit rate fails the cell (exit 1); never guess one
+  or fall back to single pass. The result's request lists `-b:v` in
+  `extra_params`, which is how the corpus row records the ABR rate control;
+  its `crf` stays the pass-1 CRF. Go twin: `pkg/corpus.runABRTwoPassEncode`,
+  `pkg/ffencode.withABRRateControl`.

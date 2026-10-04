@@ -15,6 +15,7 @@ package corpus
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -159,6 +160,10 @@ func RunEncode(ctx context.Context, req EncodeRequest, ffmpegBin string, run Run
 	// a failure to callers.
 	if res.ReturnCode == 0 && req.PassNumber != 1 {
 		if info, statErr := os.Stat(req.Output); statErr == nil {
+			size = info.Size()
+		}
+	} else if res.ReturnCode == 0 && req.Pass1Output != "" {
+		if info, statErr := os.Stat(req.Pass1Output); statErr == nil {
 			size = info.Size()
 		}
 	}
@@ -306,6 +311,18 @@ func RunTwoPassEncode(
 		}
 	}()
 
+	if adapter.TwoPassABRAtPass1Bitrate {
+		return runABRTwoPassEncode(ctx, req, statsPath, ffmpegBin, run)
+	}
+
+	return runPlainTwoPass(ctx, req, statsPath, ffmpegBin, run)
+}
+
+// runPlainTwoPass is the two-invocation 2-pass encode of the adapters that keep
+// their rate control in both passes: pass 1 to the null muxer, then pass 2.
+func runPlainTwoPass(
+	ctx context.Context, req EncodeRequest, statsPath, ffmpegBin string, run Runner,
+) EncodeResult {
 	pass1Req := req
 	pass1Req.PassNumber = 1
 	pass1Req.StatsPath = statsPath
@@ -325,6 +342,91 @@ func RunTwoPassEncode(
 
 	return EncodeResult{
 		Request:         req,
+		EncodeSizeBytes: pass2.EncodeSizeBytes,
+		EncodeTimeMS:    pass1.EncodeTimeMS + pass2.EncodeTimeMS,
+		EncoderVersion:  pass2.EncoderVersion,
+		FFmpegVersion:   pass2.FFmpegVersion,
+		ExitStatus:      pass2.ExitStatus,
+		StderrTail:      pass2.StderrTail,
+	}
+}
+
+// ffprobeFor is the ffprobe binary that sits next to ffmpegBin (or plain
+// "ffprobe"). Python: vmaftune.encode._ffprobe_for.
+func ffprobeFor(ffmpegBin string) string {
+	base := filepath.Base(ffmpegBinOrDefault(ffmpegBin))
+	if !strings.Contains(base, "ffmpeg") {
+		return "ffprobe"
+	}
+	return filepath.Join(filepath.Dir(ffmpegBinOrDefault(ffmpegBin)),
+		strings.ReplaceAll(base, "ffmpeg", "ffprobe"))
+}
+
+// probeBitrateKbps returns the container bit rate of path in kbps via
+// ffprobe, or 0 and false when ffprobe failed or reported no usable
+// bit_rate; the caller then fails the cell instead of guessing a bitrate.
+func probeBitrateKbps(ctx context.Context, path, ffmpegBin string, run Runner) (float64, bool) {
+	res := run(ctx, []string{
+		ffprobeFor(ffmpegBin), "-v", "error", "-show_entries", "format=bit_rate",
+		"-of", "csv=p=0", path,
+	})
+	if res.ReturnCode != 0 {
+		return 0, false
+	}
+	bps, err := strconv.ParseFloat(strings.TrimSpace(res.Stdout), 64)
+	if err != nil || math.IsNaN(bps) || math.IsInf(bps, 0) || bps <= 0 {
+		return 0, false
+	}
+	return bps / 1000.0, true
+}
+
+// runABRTwoPassEncode is the two-pass cell at a CRF for an adapter that
+// refuses -crf in pass 2 (ADR-1565). Pass 1 runs at the cell's CRF and writes
+// a real bitstream; its bitrate becomes the ABR target of pass 2. The result's
+// request carries "-b:v <kbps>k" in ExtraParams so the corpus row records that
+// the cell's rate control is ABR at that bitrate (its crf stays the pass-1
+// CRF). Python: vmaftune.encode._encode_abr_two_pass.
+func runABRTwoPassEncode(
+	ctx context.Context, req EncodeRequest, statsPath, ffmpegBin string, run Runner,
+) EncodeResult {
+	ext := filepath.Ext(req.Output)
+	if ext == "" {
+		ext = ".mp4"
+	}
+	pass1Out := statsPath + ".pass1" + ext
+	defer removeScratchFile(pass1Out)
+
+	pass1Req := req
+	pass1Req.PassNumber = 1
+	pass1Req.StatsPath = statsPath
+	pass1Req.Pass1Output = pass1Out
+	pass1 := RunEncode(ctx, pass1Req, ffmpegBin, run)
+	if pass1.ExitStatus != 0 {
+		pass1.Request = req
+		pass1.StderrTail = "[pass 1 failed]\n" + pass1.StderrTail
+		return pass1
+	}
+	kbps, ok := probeBitrateKbps(ctx, pass1Out, ffmpegBin, run)
+	if !ok {
+		pass1.Request = req
+		pass1.ExitStatus = 1
+		pass1.StderrTail = fmt.Sprintf(
+			"[pass 1 bitrate unavailable] ffprobe reported no bit_rate for the pass-1 "+
+				"bitstream of %s at CRF %d; no ABR target for pass 2", req.Encoder, req.CRF)
+		return pass1
+	}
+
+	pass2Req := req
+	pass2Req.PassNumber = 2
+	pass2Req.StatsPath = statsPath
+	pass2Req.ABRBitrateKbps = kbps
+	pass2 := RunEncode(ctx, pass2Req, ffmpegBin, run)
+
+	recorded := req
+	recorded.ExtraParams = append(append([]string(nil), req.ExtraParams...),
+		"-b:v", fmt.Sprintf("%dk", max(1, int(math.RoundToEven(kbps)))))
+	return EncodeResult{
+		Request:         recorded,
 		EncodeSizeBytes: pass2.EncodeSizeBytes,
 		EncodeTimeMS:    pass1.EncodeTimeMS + pass2.EncodeTimeMS,
 		EncoderVersion:  pass2.EncoderVersion,

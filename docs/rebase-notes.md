@@ -216,6 +216,17 @@ functions (`_extract_sample`, `_verify_encode`, `_fast_production_result`).
   that edits the job keeps the step first, without `if:` or
   `continue-on-error`, and keeps every pushed tag in that package
   (`scripts/ci/tests/test_require_private_ghcr_package.py`).
+## libx265 two-pass cells are pass 1 at the CRF, then ABR (ADR-1565, 2026-10-04)
+
+`fix/vmaf-tune-x265-two-pass-crf`. `tools/vmaf-tune` (`encode.py`,
+`codec_adapters/x265.py`) and the Go `pkg/ffencode`, `pkg/corpus`,
+`pkg/codecadapter`. Fork-only. A rebase keeps the two `EncodeRequest` fields
+(`abr_bitrate_kbps` / `pass1_output`, Go `ABRBitrateKbps` / `Pass1Output`), the
+argv swap (`_with_abr_rate_control`, `withABRRateControl`), the two drivers
+(`_encode_abr_two_pass`, `runABRTwoPassEncode`) and the adapter flag
+`two_pass_abr_at_pass1_bitrate` together; the libx265 `adapter_version` stays
+`2` in both languages. In Go's `codecadapter`, `libx265Adapter` is the single
+definition (after #2047) carrying `TwoPassABRAtPass1Bitrate`.
 
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 

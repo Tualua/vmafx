@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,6 +87,15 @@ type Request struct {
 	// (ADR-0601); "" or "auto" resolves through hwdevice.ResolveVAAPIDevice.
 	// Other encoders ignore it.
 	VAAPIDevice string
+
+	// ABRBitrateKbps > 0 replaces "-crf <q>" in the argv by "-b:v <kbps>k"
+	// (ADR-1565): pass 2 of a two-pass cell of an adapter that cannot keep
+	// -crf there (libx265), set by the driver to the bitrate pass 1 produced.
+	ABRBitrateKbps float64
+
+	// Pass1Output, when set, is where pass 1 writes its bitstream instead of
+	// the null muxer, so the driver can measure the bitrate (ADR-1565).
+	Pass1Output string
 }
 
 // Result mirrors vmaftune.encode.EncodeResult.
@@ -130,6 +140,10 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	codecArgs, err = withABRRateControl(codecArgs, req)
+	if err != nil {
+		return nil, err
+	}
 	cmd = append(cmd, codecArgs...)
 
 	if req.PassNumber != 0 {
@@ -149,12 +163,39 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 
 	cmd = append(cmd, extra...)
 
-	if req.PassNumber == 1 {
+	if req.PassNumber == 1 && req.Pass1Output == "" {
 		cmd = append(cmd, "-f", "null", "-")
+	} else if req.PassNumber == 1 {
+		cmd = append(cmd, req.Pass1Output)
 	} else {
 		cmd = append(cmd, req.Output)
 	}
 	return cmd, nil
+}
+
+// withABRRateControl swaps "-crf <q>" for "-b:v <kbps>k" when req asks for ABR
+// (ADR-1565). A request without ABRBitrateKbps is returned unchanged. An ABR
+// request whose argv carries no -crf is an error: the swap must replace the
+// constant-quality knob, never add a second rate control. Python:
+// vmaftune.encode._with_abr_rate_control.
+func withABRRateControl(args []string, req Request) ([]string, error) {
+	if req.ABRBitrateKbps <= 0 {
+		return args, nil
+	}
+	for i, a := range args {
+		if a != "-crf" || i+1 >= len(args) {
+			continue
+		}
+		kbps := int(math.RoundToEven(req.ABRBitrateKbps))
+		if kbps < 1 {
+			kbps = 1
+		}
+		out := append([]string(nil), args[:i]...)
+		out = append(out, "-b:v", fmt.Sprintf("%dk", kbps))
+		return append(out, args[i+2:]...), nil
+	}
+	return nil, fmt.Errorf(
+		"BuildFFmpegCommand: ABRBitrateKbps set but the %q argv has no -crf to replace", req.Encoder)
 }
 
 // InputArgs returns the input-side argv that precedes "-i": the raw-video
@@ -425,6 +466,10 @@ func Run(ctx context.Context, req Request, ffmpegBin string, runner Runner) (Res
 	// probe there would report a spurious zero that callers read as failure.
 	if exitStatus == 0 && req.PassNumber != 1 {
 		if info, statErr := os.Stat(req.Output); statErr == nil {
+			size = info.Size()
+		}
+	} else if exitStatus == 0 && req.Pass1Output != "" {
+		if info, statErr := os.Stat(req.Pass1Output); statErr == nil {
 			size = info.Size()
 		}
 	}

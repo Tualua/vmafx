@@ -563,3 +563,55 @@ func TestBuildFFmpegCommandQSVChain(t *testing.T) {
 		t.Errorf("non-QSV encode got the QSV chain: %v", argv)
 	}
 }
+
+// TestBuildFFmpegCommandABRSwapsCRFForBitrate is ADR-1565's pass 2. Python:
+// tests/test_x265_two_pass_abr.py::test_abr_request_swaps_crf_for_bitrate.
+func TestBuildFFmpegCommandABRSwapsCRFForBitrate(t *testing.T) {
+	t.Parallel()
+
+	req := ffencode.Request{
+		Source: "/ref.yuv", Width: 64, Height: 64, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "libx265", Preset: "medium", CRF: 28, Output: "/out.mp4",
+		PassNumber: 2, StatsPath: "/s.stats", ABRBitrateKbps: 1234.4,
+	}
+	cmd, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatalf("BuildFFmpegCommand: %v", err)
+	}
+	joined := " " + strings.Join(cmd, " ") + " "
+	if strings.Contains(joined, " -crf ") {
+		t.Errorf("ABR argv still carries -crf: %v", cmd)
+	}
+	if !strings.Contains(joined, " -b:v 1234k ") || strings.Count(joined, " -b:v ") != 1 {
+		t.Errorf("ABR argv wants exactly one -b:v 1234k: %v", cmd)
+	}
+
+	req.ABRBitrateKbps = 0
+	cmd, _ = ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if joined = " " + strings.Join(cmd, " ") + " "; !strings.Contains(joined, " -crf 28 ") ||
+		strings.Contains(joined, " -b:v ") {
+		t.Errorf("without ABR the argv must keep -crf and add no -b:v: %v", cmd)
+	}
+}
+
+func TestBuildFFmpegCommandPass1OutputReplacesTheNullMuxer(t *testing.T) {
+	t.Parallel()
+
+	req := ffencode.Request{
+		Source: "/ref.yuv", Width: 64, Height: 64, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "libx265", Preset: "medium", CRF: 28, Output: "/out.mp4",
+		PassNumber: 1, StatsPath: "/s.stats", Pass1Output: "/p1.mp4",
+	}
+	cmd, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatalf("BuildFFmpegCommand: %v", err)
+	}
+	if cmd[len(cmd)-1] != "/p1.mp4" {
+		t.Errorf("pass 1 with Pass1Output must end in it: %v", cmd)
+	}
+	req.Pass1Output = ""
+	cmd, _ = ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if got := strings.Join(cmd[len(cmd)-3:], " "); got != "-f null -" {
+		t.Errorf("pass 1 default sink = %q, want -f null -", got)
+	}
+}

@@ -17,6 +17,7 @@ The single-pass path (``pass_number == 0``, the default) is unchanged.
 from __future__ import annotations
 
 import dataclasses
+import math
 import os
 import re
 import subprocess
@@ -87,6 +88,13 @@ class EncodeRequest:
     # :func:`vmaftune.hw_devices.resolve_vaapi_device`; other encoders
     # ignore it.
     vaapi_device: str = "auto"
+    # ADR-1565: a two-pass cell of an adapter that cannot keep ``-crf`` in
+    # pass 2 (libx265). ``abr_bitrate_kbps > 0`` replaces ``-crf <q>`` in
+    # the argv by ``-b:v <kbps>k`` (pass 2, set by the driver to the bitrate
+    # pass 1 produced); ``pass1_output`` is where pass 1 writes its
+    # bitstream instead of the null muxer, so that bitrate can be measured.
+    abr_bitrate_kbps: float = 0.0
+    pass1_output: Path | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -211,11 +219,30 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
     cmd: list[str] = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
     cmd.extend(_hw_pre_input_args(adapter, req))
     cmd.extend(_build_input_args(req))
-    cmd.extend(_resolve_codec_args(req))
+    cmd.extend(_with_abr_rate_control(_resolve_codec_args(req), req))
     cmd.extend(_build_two_pass_args(req))
     cmd.extend(with_upload_filter(req.extra_params, getattr(adapter, "hw_upload_filter", "")))
     cmd.extend(_build_sink_args(req))
     return cmd
+
+
+def _with_abr_rate_control(args: list[str], req: EncodeRequest) -> list[str]:
+    """Swap ``-crf <q>`` for ``-b:v <kbps>k`` when ``req`` asks for ABR (ADR-1565).
+
+    A request without ``abr_bitrate_kbps`` is returned unchanged. An ABR
+    request whose argv carries no ``-crf`` is a ``ValueError``: the swap
+    must replace the constant-quality knob, never add a second rate control.
+    """
+    if req.abr_bitrate_kbps <= 0.0:
+        return args
+    if "-crf" not in args:
+        raise ValueError(
+            f"build_ffmpeg_command: abr_bitrate_kbps set but the {req.encoder!r} "
+            "argv has no -crf to replace"
+        )
+    at = args.index("-crf")
+    kbps = max(1, round(req.abr_bitrate_kbps))
+    return [*args[:at], "-b:v", f"{kbps}k", *args[at + 2 :]]
 
 
 def _registered_adapter(encoder: str) -> object | None:
@@ -330,6 +357,9 @@ def _build_two_pass_args(req: EncodeRequest) -> list[str]:
 def _build_sink_args(req: EncodeRequest) -> list[str]:
     """Trailing muxer/destination argv."""
     if req.pass_number == 1:
+        if req.pass1_output is not None:
+            # ADR-1565: the driver measures the bitrate of this bitstream.
+            return [str(req.pass1_output)]
         # Pass 1 only writes the stats file; the encoded bitstream is
         # discarded via the null muxer. Saves I/O + disk space (some
         # codecs emit hundreds of MB on long sources).
@@ -514,6 +544,8 @@ def run_encode(
     # encode as failure.
     if rc == 0 and req.pass_number != 1 and req.output.exists():
         size = req.output.stat().st_size
+    elif rc == 0 and req.pass1_output is not None and req.pass1_output.exists():
+        size = req.pass1_output.stat().st_size
 
     ffmpeg_v, encoder_v = parse_versions(stderr, encoder=req.encoder)
     # ADR-0498 follow-up #7: when the encode succeeded but the per-
@@ -872,6 +904,10 @@ def run_two_pass_encode(
     pass2_req = dataclasses.replace(req, pass_number=2, stats_path=stats_path)
 
     try:
+        if getattr(adapter, "two_pass_abr_at_pass1_bitrate", False):
+            return _encode_abr_two_pass(
+                req, pass1_req, pass2_req, ffmpeg_bin=ffmpeg_bin, runner=runner
+            )
         return _encode_both_passes(req, pass1_req, pass2_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
     finally:
         _remove_two_pass_files(stats_path, scratch_dir if own_scratch else None)
@@ -932,6 +968,98 @@ def _encode_both_passes(
         encoder_version=pass2.encoder_version,
         ffmpeg_version=pass2.ffmpeg_version,
         exit_status=combined_status,
+        stderr_tail=pass2.stderr_tail,
+    )
+
+
+def _ffprobe_for(ffmpeg_bin: str) -> str:
+    """The ffprobe binary that sits next to ``ffmpeg_bin`` (or plain ``ffprobe``)."""
+    path = Path(ffmpeg_bin)
+    if "ffmpeg" in path.name:
+        return str(path.with_name(path.name.replace("ffmpeg", "ffprobe")))
+    return "ffprobe"
+
+
+def _probe_bitrate_kbps(path: Path, ffmpeg_bin: str, runner: object | None) -> float | None:
+    """Container bit rate of ``path`` in kbps via ffprobe, or ``None``.
+
+    ``None`` means ffprobe failed or reported no usable ``bit_rate``; the
+    caller fails the cell instead of guessing a bitrate.
+    """
+    cmd = [
+        _ffprobe_for(ffmpeg_bin),
+        "-v",
+        "error",
+        "-show_entries",
+        "format=bit_rate",
+        "-of",
+        "csv=p=0",
+        str(path),
+    ]
+    runner_fn = runner or subprocess.run
+    completed = runner_fn(cmd, capture_output=True, text=True, check=False)  # type: ignore[operator]
+    if int(getattr(completed, "returncode", 1)) != 0:
+        return None
+    try:
+        bps = float((getattr(completed, "stdout", "") or "").strip())
+    except ValueError:
+        return None
+    return bps / 1000.0 if math.isfinite(bps) and bps > 0.0 else None
+
+
+def _encode_abr_two_pass(
+    req: EncodeRequest,
+    pass1_req: EncodeRequest,
+    pass2_req: EncodeRequest,
+    *,
+    ffmpeg_bin: str,
+    runner: object | None,
+) -> EncodeResult:
+    """Two-pass cell at a CRF for an adapter that refuses ``-crf`` in pass 2 (ADR-1565).
+
+    Pass 1 runs at the cell's CRF and writes a real bitstream; the
+    bitrate of that bitstream becomes the ABR target of pass 2. The
+    returned result's request carries ``-b:v <kbps>k`` in ``extra_params``
+    so the corpus row records that the cell's rate control is ABR at that
+    bitrate (its ``crf`` column stays the pass-1 CRF).
+    """
+    pass1_out = pass1_req.stats_path.with_name(  # type: ignore[union-attr]
+        pass1_req.stats_path.name + ".pass1" + (req.output.suffix or ".mp4")  # type: ignore[union-attr]
+    )
+    pass1_req = dataclasses.replace(pass1_req, pass1_output=pass1_out)
+    try:
+        pass1 = run_encode(pass1_req, ffmpeg_bin=ffmpeg_bin, runner=runner)
+        if pass1.exit_status != 0:
+            return dataclasses.replace(
+                pass1, request=req, stderr_tail=f"[pass 1 failed]\n{pass1.stderr_tail}"
+            )
+        kbps = _probe_bitrate_kbps(pass1_out, ffmpeg_bin, runner)
+    finally:
+        try:
+            pass1_out.unlink()
+        except OSError:
+            pass
+    if kbps is None:
+        return dataclasses.replace(
+            pass1,
+            request=req,
+            exit_status=1,
+            stderr_tail=(
+                "[pass 1 bitrate unavailable] ffprobe reported no bit_rate for the pass-1 "
+                f"bitstream of {req.encoder} at CRF {req.crf}; no ABR target for pass 2"
+            ),
+        )
+    pass2 = run_encode(
+        dataclasses.replace(pass2_req, abr_bitrate_kbps=kbps), ffmpeg_bin=ffmpeg_bin, runner=runner
+    )
+    recorded = (*req.extra_params, "-b:v", f"{max(1, round(kbps))}k")
+    return EncodeResult(
+        request=dataclasses.replace(req, extra_params=recorded),
+        encode_size_bytes=pass2.encode_size_bytes,
+        encode_time_ms=pass1.encode_time_ms + pass2.encode_time_ms,
+        encoder_version=pass2.encoder_version,
+        ffmpeg_version=pass2.ffmpeg_version,
+        exit_status=pass2.exit_status,
         stderr_tail=pass2.stderr_tail,
     )
 

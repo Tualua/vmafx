@@ -160,6 +160,7 @@ An adapter is a frozen dataclass with these members:
 | `adapter_version` | `str` | Bumped when the argv shape, presets or range change (cache key input). |
 | `probe_preset`, `probe_quality` | `str`, `int` | Fast probe encode used as a complexity barometer. |
 | `supports_qpfile`, `supports_encoder_stats`, `supports_two_pass` | `bool` | Capability flags read by saliency, stats capture and `--two-pass`. |
+| `two_pass_abr_at_pass1_bitrate` | `bool` (optional, `libx265` only) | A `--two-pass` cell at a CRF is pass 1 at the CRF, then ABR at pass 1's bitrate; see [multi-pass](vmaf-tune-multipass.md#libx265-at-a-crf). Read with `getattr(..., False)`, so other adapters need not declare it. |
 | `validate(preset, quality)` | method | Raises `ValueError` on unsupported input. |
 | `ffmpeg_codec_args(preset, quality)` | method | The `-c:v ...` argv slice. |
 | `extra_params()` | method | Extra argv, for example `("-row-mt", "1")` for `libvpx-vp9`. |

@@ -11,7 +11,10 @@ metadata + per-codec validation only.
 Phase F (ADR-0333) adds 2-pass support via the
 :meth:`X265Adapter.two_pass_args` method. libx265's 2-pass switches
 flow through ``-x265-params pass=N:stats=<path>`` rather than the
-standalone ``-pass``/``-passlogfile`` ffmpeg flags x264 uses.
+standalone ``-pass``/``-passlogfile`` ffmpeg flags x264 uses. Pass 2 cannot
+keep ``-crf`` (x265 exits 183), so a two-pass cell at a CRF is pass 1 at that
+CRF and pass 2 as ABR at pass 1's bitrate (ADR-1565,
+``two_pass_abr_at_pass1_bitrate``).
 """
 
 from __future__ import annotations
@@ -47,7 +50,7 @@ class X265Adapter:
     name: str = "libx265"
     encoder: str = "libx265"
     # Cache-key component (ADR-0298): bump when the argv, presets or range change.
-    adapter_version: str = "1"
+    adapter_version: str = "2"
     quality_knob: str = "crf"
     # x265 nominally accepts 0..51; surface the same Phase A informative
     # window as x264 so the search loop is uniform across codecs.
@@ -73,6 +76,11 @@ class X265Adapter:
     # ``-x265-params pass=N:stats=<path>``. The harness opts in via
     # ``EncodeRequest.pass_number`` + ``--two-pass`` CLI flag.
     supports_two_pass: bool = True
+    # ADR-1565: libx265 refuses ``-crf`` in pass 2 ("Constant rate-factor is
+    # incompatible with 2pass without vbv-maxrate in the previous pass",
+    # exit 183). A two-pass cell at a CRF therefore runs pass 1 at that CRF
+    # and pass 2 as ABR at the bitrate pass 1 produced.
+    two_pass_abr_at_pass1_bitrate: bool = True
 
     # x265 ships ten presets — one more than x264 (adds ``placebo``).
     presets: tuple[str, ...] = (

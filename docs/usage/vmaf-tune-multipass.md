@@ -54,7 +54,7 @@ cannot.
 | Codec | `supports_two_pass` | `two_pass_args(1, p)` returns | Notes |
 |---|---|---|---|
 | `libx264` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg-native two-invocation 2-pass. `-crf` is omitted in a 2-pass encode. |
-| `libx265` | yes | `-x265-params pass=1:stats=<path>` | x265 routes pass control through its codec-private payload. |
+| `libx265` | yes | `-x265-params pass=1:stats=<path>` | x265 routes pass control through its codec-private payload. A cell at a CRF is pass 1 at the CRF, then ABR; see [libx265 at a CRF](#libx265-at-a-crf). |
 | `libvpx-vp9` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg-native 2-pass; CRF mode pinned with `-b:v 0`. |
 | `libaom-av1` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg-native 2-pass. |
 | `libvvenc` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg 6.1 or newer translates `-pass` to VVenC's `RcStatsFile`. |
@@ -80,6 +80,26 @@ Notes on the "no" rows:
   same FFmpeg build. Calling `adapter.two_pass_args()` always raises the
   typed error, so a caller can tell an API limitation from a missing
   implementation.
+
+## libx265 at a CRF
+
+x265 refuses `-crf` in pass 2 (exit 183: "Constant rate-factor is incompatible
+with 2pass without vbv-maxrate in the previous pass"), so a `--two-pass`
+`libx265` cell at a CRF runs differently from the other adapters
+([ADR-1565](../adr/1565-vmaf-tune-x265-two-pass-abr-at-pass1-bitrate.md)):
+
+1. Pass 1 runs at the cell's CRF and writes a real bitstream next to the stats
+   file (not the null muxer).
+2. `ffprobe`, found next to the `ffmpeg` binary, reports that file's bit rate.
+3. Pass 2 is an ABR encode at that bitrate (`-b:v <kbps>k`, no `-crf`).
+
+The corpus row's `crf` column stays the pass-1 CRF and its `extra_params`
+column ends with `["-b:v", "<kbps>k"]`, which is how a reader tells that the
+row's bitrate and VMAF belong to an ABR encode. Filter on that when a trainer
+treats `crf` as the quality knob. When ffprobe reports no bit rate the cell
+fails with exit status 1 and a `stderr_tail` starting with `[pass 1 bitrate
+unavailable]`; pass 2 does not run. The Go `vmafx-tune-go corpus --two-pass`
+does the same.
 
 ## Unsupported encoders
 
@@ -130,7 +150,8 @@ run_encode(req)
   with no CLI flag. Its key holds the source hash, encoder, preset, CRF,
   adapter version and FFmpeg version. It does not hold the pass count, so
   with the cache enabled a cached 1-pass result can answer a 2-pass
-  request for the same cell.
+  request for the same cell. (The `libx265` adapter version is `2` since
+  ADR-1565, so results cached before the ABR change never answer.)
 - **Encoder statistics.** For `libvpx-vp9`, FFmpeg's pass log is binary
   first-pass data, not the x264 and x265 text schema that
   `encoder_stats.py` reads, so the per-frame statistics columns stay

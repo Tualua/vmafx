@@ -77,6 +77,12 @@ type Adapter struct {
 	SupportsEncoderStats bool
 	SupportsTwoPass      bool
 
+	// TwoPassABRAtPass1Bitrate marks an adapter whose pass 2 cannot keep
+	// "-crf" (libx265 exits 183): a two-pass cell at a CRF runs pass 1 at
+	// that CRF and pass 2 as ABR at the bitrate pass 1 produced (ADR-1565).
+	// Python: two_pass_abr_at_pass1_bitrate.
+	TwoPassABRAtPass1Bitrate bool
+
 	// quality emission
 	qualityStyle QualityFlagStyle
 	qualityFlag  string
@@ -276,8 +282,8 @@ func libx265Adapter() *Adapter {
 	return &Adapter{
 		Name: "libx265", Encoder: "libx265", QualityKnob: "crf",
 		QualityRange: [2]int{15, 40}, QualityDefault: 28, InvertQuality: true,
-		Presets: x265Presets, ProbePreset: "ultrafast", ProbeQuality: 28,
-		SupportsEncoderStats: true, SupportsTwoPass: true,
+		Presets: x265Presets, AdapterVersion: "2", ProbePreset: "ultrafast", ProbeQuality: 28,
+		SupportsEncoderStats: true, SupportsTwoPass: true, TwoPassABRAtPass1Bitrate: true,
 		twoPassStyle: TwoPassX265Params,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 		presetStyle: PresetFlagValue, presetFlag: "-preset",

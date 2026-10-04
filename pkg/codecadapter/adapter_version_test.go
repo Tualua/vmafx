@@ -16,7 +16,7 @@ func TestAdapterVersionMatchesPython(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
-		"libx264": "2", "libvpx-vp9": "1", "libvvenc": "2",
+		"libx264": "2", "libx265": "2", "libvpx-vp9": "1", "libvvenc": "2",
 		"h264_videotoolbox": "1", "hevc_videotoolbox": "1",
 		"prores_videotoolbox": "1", "av1_videotoolbox": "0-placeholder",
 	}

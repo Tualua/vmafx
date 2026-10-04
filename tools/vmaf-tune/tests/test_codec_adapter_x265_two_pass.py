@@ -273,18 +273,18 @@ def test_build_ffmpeg_command_pass0_is_single_pass(tmp_path: Path):
 
 
 def test_run_two_pass_encode_drives_both_passes_in_order(tmp_path: Path):
+    """x265: pass 1 at the CRF, an ffprobe of its bitstream, pass 2 as ABR (ADR-1565)."""
     src = _make_yuv(tmp_path / "ref.yuv")
     out = tmp_path / "out.mp4"
     invocations: list[list[str]] = []
 
     def fake_run(cmd, capture_output, text, check):
         invocations.append(list(cmd))
-        # Only pass 2 writes the output; replicate that on disk so
-        # ``run_encode`` reports a non-zero size.
+        if cmd[0] == "ffprobe":
+            return _FakeCompleted(returncode=0, stdout="179532\n")
+        # Pass 1 writes a real bitstream (to measure); pass 2 writes the output.
         if "-x265-params" in cmd:
-            params_arg = cmd[cmd.index("-x265-params") + 1]
-            if params_arg.startswith("pass=2"):
-                Path(cmd[-1]).write_bytes(b"\x00" * 8192)
+            Path(cmd[-1]).write_bytes(b"\x00" * (4096 if "pass=1" in str(cmd) else 8192))
         return _FakeCompleted(
             returncode=0,
             stderr=("ffmpeg version 6.1.1\n" "x265 [info]: HEVC encoder version 3.5+1\n"),
@@ -304,21 +304,32 @@ def test_run_two_pass_encode_drives_both_passes_in_order(tmp_path: Path):
     res = run_two_pass_encode(req, runner=fake_run)
 
     assert res.exit_status == 0
-    assert res.encode_size_bytes == 8192  # pass-2 output, not pass-1 (which is 0)
+    assert res.encode_size_bytes == 8192  # pass-2 output, not pass-1
     assert res.encode_time_ms > 0.0
-    assert len(invocations) == 2
+    assert [c[0] for c in invocations] == ["ffmpeg", "ffprobe", "ffmpeg"]
+    pass1, probe, pass2 = invocations
 
-    # Pass 1 first, pass 2 second; both target the same stats file.
-    pass1_params = invocations[0][invocations[0].index("-x265-params") + 1]
-    pass2_params = invocations[1][invocations[1].index("-x265-params") + 1]
+    pass1_params = pass1[pass1.index("-x265-params") + 1]
+    pass2_params = pass2[pass2.index("-x265-params") + 1]
     assert pass1_params.startswith("pass=1:stats=")
     assert pass2_params.startswith("pass=2:stats=")
     # Same stats path across both passes — the whole point of 2-pass.
     assert pass1_params.split("stats=", 1)[1] == pass2_params.split("stats=", 1)[1]
 
-    # Pass 1 writes to null muxer; pass 2 writes to the requested output.
-    assert invocations[0][-3:] == ["-f", "null", "-"]
-    assert invocations[1][-1] == str(out)
+    # Pass 1 keeps the CRF and writes a real file; pass 2 is ABR at pass 1's
+    # bitrate (179532 bit/s -> 180k) and never carries -crf (x265 exits 183).
+    assert pass1[pass1.index("-crf") + 1] == "28"
+    assert pass1[-1] != "-" and "null" not in pass1[-3:]
+    assert probe[-1] == pass1[-1]
+    assert "-crf" not in pass2
+    assert pass2[pass2.index("-b:v") + 1] == "180k"
+    assert pass2[-1] == str(out)
+
+    # The cell records its rate control: the result's request lists -b:v.
+    assert res.request.extra_params[-2:] == ("-b:v", "180k")
+    assert res.request.crf == 28
+    # The pass-1 bitstream is removed.
+    assert not Path(pass1[-1]).exists()
 
 
 def test_run_two_pass_encode_x264_drives_both_passes_in_order(tmp_path: Path):
@@ -447,6 +458,8 @@ def test_run_two_pass_encode_cleans_stats_file(tmp_path: Path):
     seen_stats: list[Path] = []
 
     def fake_run(cmd, capture_output, text, check):
+        if cmd[0] == "ffprobe":  # pass 1's bitrate (ADR-1565)
+            return _FakeCompleted(returncode=0, stdout="500000\n")
         # Materialise a fake stats file as the real x265 would, so we
         # can verify cleanup.
         params_arg = cmd[cmd.index("-x265-params") + 1]
@@ -455,6 +468,9 @@ def test_run_two_pass_encode_cleans_stats_file(tmp_path: Path):
         stats.parent.mkdir(parents=True, exist_ok=True)
         stats.write_text("x265 stats placeholder\n")
         seen_stats.append(stats)
+        if params_arg.startswith("pass=1"):
+            Path(cmd[-1]).write_bytes(b"\x00" * 100)  # pass-1 bitstream
+            seen_stats.append(Path(cmd[-1]))
         if params_arg.startswith("pass=2"):
             Path(cmd[-1]).write_bytes(b"\x00" * 4096)
         return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.1.1\n")
