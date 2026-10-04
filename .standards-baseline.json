@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T14:56:21Z",
+  "generated_at": "2026-10-04T15:20:38Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "2889f963a955c0cca313b261cabb2d2704b6c99c",
-  "total_infractions": 399,
+  "commit_sha": "f13ec65e7ff627f4944c32573d3909eb19af2ea2",
+  "total_infractions": 397,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3268,24 +3268,6 @@
       "message": "Function 'pick_target_vmaf_with_uncertainty' (120 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:pick_target_vmaf_with_uncertainty",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/recommend.py:HISS-04:fn:pick_target_vmaf_with_uncertainty#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/saliency.py",
-      "line_number": 278,
-      "symbol": "compute_saliency_map",
-      "message": "Function 'compute_saliency_map' (105 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:compute_saliency_map",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/saliency.py:HISS-04:fn:compute_saliency_map#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/saliency.py",
-      "line_number": 839,
-      "symbol": "saliency_aware_encode",
-      "message": "Function 'saliency_aware_encode' (110 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:saliency_aware_encode",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/saliency.py:HISS-04:fn:saliency_aware_encode#1"
     },
     {
       "rule_id": "HISS-04",

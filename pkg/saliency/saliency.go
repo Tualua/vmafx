@@ -327,19 +327,14 @@ type MapOptions struct {
 // ComputeMap runs the saliency model over a sampled subset of frames and
 // reduces them to one [H, W] aggregate mask in [0, 1], row-major.
 //
-// A height that is not a multiple of 8 is rejected up front with an
-// actionable message: the model's encoder path downsamples by 8, and an
-// off-by-one tensor shape surfaces as a cryptic runtime error otherwise.
+// Any frame size is accepted: inferMask zero-pads the tensor to a multiple of
+// 32 (which covers the model's three stride-2 stages) and crops the output
+// back, so a height or width that is not a multiple of 8 needs no refusal.
+// The shipped saliency_student_v1 was run at 576x324, 8x8, 4x4 and 1x1 with
+// that padding (ADR-1540 follow-up).
 func ComputeMap(videoPath string, width, height int, session Session, opts MapOptions) ([]float64, error) {
 	if session == nil {
 		return nil, fmt.Errorf("%w: no inference session supplied", ErrUnavailable)
-	}
-	if height%8 != 0 {
-		return nil, fmt.Errorf(
-			"saliency: height %d is not divisible by 8. The saliency_student_v1 "+
-				"encoder path requires height %% 8 == 0. Pad or crop the source to "+
-				"the next multiple of 8 (e.g. %d) before calling this function.",
-			height, ((height+7)/8)*8)
 	}
 	cfg := Config{
 		TemporalAggregator: opts.TemporalAggregator,

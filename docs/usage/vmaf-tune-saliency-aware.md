@@ -42,7 +42,7 @@ JSON is written to the `.json` path, and that path is printed.
 | Flag | Default | Meaning |
 |---|---|---|
 | `--src PATH` | required | Raw YUV reference. |
-| `--width`, `--height` | required | Source geometry. |
+| `--width`, `--height` | required | Source geometry. Any size works: the saliency model sees the frame zero-padded to a multiple of 32 and the map is cropped back, so heights such as 324 need no preparation. |
 | `--pix-fmt` | `yuv420p` | Source pixel format. |
 | `--framerate` | `24.0` | Source frame rate. |
 | `--duration-frames N` | required | Frame count to compute saliency over, typically the whole clip. |

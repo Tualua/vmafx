@@ -67,6 +67,18 @@ change.
 - `cmd/vmafx-node`: `ebpf_config.go`, `ebpf_linux.go`, `ebpf_other.go`; the
   lifecycle invoke gains `_ *ebpfBypass` between the executor and the
   controller client.
+## `vmaf-tune` saliency accepts any frame height (2026-10-04)
+
+`fix/vmaf-tune-saliency-height-pad`. Fork-local Python and Go only; no C source or
+public API change.
+
+- `tools/vmaf-tune/src/vmaftune/saliency.py::compute_saliency_map()` and
+  `pkg/saliency/saliency.go::ComputeMap()` have no `height % 8` guard: the tensor is
+  zero-padded to a multiple of 32 and the map cropped back (`_infer_frame_mask()`,
+  `inferMask()`). A sync must not restore the guard. The Python function now
+  delegates to `_MaskAccumulator`, `_open_saliency_session()` and `_infer_frame_mask()`
+  (HISS-04 split); keep that shape if upstream-style edits land in either file.
+
 ## mobilesal pads frames to a multiple of 8 (ADR-1540, 2026-10-04)
 
 `fix/saliency-frame-size`. Fork-local tiny-AI code; upstream Netflix has no

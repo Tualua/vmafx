@@ -223,6 +223,71 @@ def test_compute_saliency_map_uses_session_factory(tmp_path):
     assert mask.max() <= 1.0
 
 
+class _UNetShapeSession:
+    """Stub session that refuses what the real student refuses.
+
+    ``saliency_student_v1`` concatenates skips after three stride-2 stages,
+    so the tool pads to a multiple of 32 before inference. This stub raises
+    on a tensor whose sides are not multiples of 32 and otherwise returns a
+    mask of the *padded* size, as the ONNX graph does.
+    """
+
+    def __init__(self) -> None:
+        self.shapes: list[tuple[int, int]] = []
+
+    def run(self, _outputs, feeds):
+        _, _, ph, pw = np.asarray(feeds["input"]).shape
+        if ph % 32 or pw % 32:
+            raise RuntimeError(f"Concat: mismatched dimensions for {ph}x{pw}")
+        self.shapes.append((ph, pw))
+        return [np.full((1, 1, ph, pw), 0.5, dtype=np.float32)]
+
+
+@pytest.mark.parametrize(
+    ("w", "h", "padded"),
+    [
+        (576, 324, (352, 576)),  # the Netflix pair: 324 % 8 == 4
+        (578, 330, (352, 608)),
+        (8, 8, (32, 32)),
+        (4, 4, (32, 32)),
+        (2, 2, (32, 32)),
+    ],
+)
+def test_compute_saliency_map_height_not_multiple_of_8(tmp_path, w, h, padded):
+    """The tool pads to 32 itself; a height % 8 != 0 is no reason to refuse."""
+    src = _write_yuv420p(tmp_path / "src.yuv", w, h, nframes=2)
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    session = _UNetShapeSession()
+    mask = compute_saliency_map(
+        src,
+        w,
+        h,
+        model_path=fake_model,
+        frame_samples=2,
+        session_factory=lambda _p: session,
+    )
+    assert mask.shape == (h, w)
+    assert mask.dtype == np.float32
+    assert set(session.shapes) == {padded}
+    assert float(mask.min()) == pytest.approx(0.5)
+    assert float(mask.max()) == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize(("w", "h"), [(576, 324), (64, 36), (4, 4)])
+def test_compute_saliency_map_real_student_height_not_multiple_of_8(tmp_path, w, h):
+    """Run the shipped ``saliency_student_v1.onnx`` for real (skips without it)."""
+    pytest.importorskip("onnxruntime")
+    model = Path(__file__).resolve().parents[3] / saliency.DEFAULT_SALIENCY_MODEL_RELPATH
+    if not model.is_file():
+        pytest.skip(f"shipped saliency model not present: {model}")
+    src = _write_yuv420p(tmp_path / "src.yuv", w, h, nframes=1)
+    mask = compute_saliency_map(src, w, h, model_path=model, frame_samples=1)
+    assert mask.shape == (h, w)
+    assert np.isfinite(mask).all()
+    assert 0.0 <= float(mask.min()) <= float(mask.max()) <= 1.0
+
+
 def test_compute_saliency_map_feeds_chroma_aware_rgb(tmp_path):
     w, h = 32, 16
     src = _write_yuv420p_planes(tmp_path / "src.yuv", w, h, nframes=1, y=128, u=90, v=240)

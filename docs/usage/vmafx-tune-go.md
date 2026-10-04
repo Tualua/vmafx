@@ -397,7 +397,7 @@ required.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--src` | — | Raw YUV reference. |
-| `--width` / `--height` | — | Reference geometry. |
+| `--width` / `--height` | — | Reference geometry. Any size works: the model sees the frame zero-padded to a multiple of 32 and the map is cropped back. |
 | `--pix-fmt` | `yuv420p` | ffmpeg pix_fmt. |
 | `--framerate` | `24` | Reference framerate. |
 | `--duration-frames` | — | Frame count to score saliency over, typically the full clip. |

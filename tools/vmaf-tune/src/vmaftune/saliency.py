@@ -275,6 +275,88 @@ def _pad_to_multiple(tensor: np.ndarray, multiple: int = 32) -> tuple[np.ndarray
     return padded, H, W
 
 
+class _MaskAccumulator:
+    """Fold per-frame saliency masks into one aggregate, per ``temporal_aggregator``."""
+
+    def __init__(self, height: int, width: int, aggregator: str, ema_alpha: float) -> None:
+        np = _import_numpy()
+        self._aggregator = aggregator
+        self._ema_alpha = float(ema_alpha)
+        self._accum = np.zeros((height, width), dtype=np.float32)
+        self._max_mask = np.zeros((height, width), dtype=np.float32)
+        self._ema_mask: np.ndarray | None = None
+        self._weight_sum = 0.0
+        self._prev_y: np.ndarray | None = None
+        self._frames = 0
+
+    def add(self, mask: np.ndarray, y: np.ndarray) -> None:
+        """Fold one frame's mask in; ``y`` is its luma plane (motion weight only)."""
+        np = _import_numpy()
+        self._frames += 1
+        if self._aggregator == "mean":
+            self._accum += mask
+        elif self._aggregator == "max":
+            self._max_mask = np.maximum(self._max_mask, mask)
+        elif self._aggregator == "ema":
+            self._add_ema(mask)
+        else:
+            weight = _motion_weight(self._prev_y, y)
+            self._accum += mask * weight
+            self._weight_sum += weight
+            self._prev_y = y.copy()
+
+    def _add_ema(self, mask: np.ndarray) -> None:
+        if self._ema_mask is None:
+            self._ema_mask = mask.copy()
+        else:
+            alpha = self._ema_alpha
+            self._ema_mask = (alpha * mask) + ((1.0 - alpha) * self._ema_mask)
+
+    def result(self) -> np.ndarray:
+        """Return the aggregate mask, pinned to [0, 1] against FP drift."""
+        np = _import_numpy()
+        if self._aggregator == "mean":
+            out = self._accum / float(self._frames)
+        elif self._aggregator == "max":
+            out = self._max_mask
+        elif self._aggregator == "ema":
+            out = self._ema_mask if self._ema_mask is not None else self._accum
+        else:
+            out = self._accum / self._weight_sum
+        return np.clip(out, 0.0, 1.0)
+
+
+def _open_saliency_session(model_path: Path | None, session_factory: Any) -> Any:
+    """Check the model file exists and open an inference session on it."""
+    if model_path is None:
+        model_path = DEFAULT_SALIENCY_MODEL_RELPATH
+    if not Path(model_path).exists():
+        raise SaliencyUnavailableError(
+            f"saliency model not found: {model_path} (Bucket #2 needs "
+            "`saliency_student_v1.onnx` from PR #359 / ADR-0286)"
+        )
+    if session_factory is None:
+        ort = _import_onnxruntime()
+        session_factory = lambda p: ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
+    return session_factory(model_path)
+
+
+def _infer_frame_mask(session: Any, tensor: np.ndarray) -> np.ndarray:
+    """Run the model on one RGB tensor of any size and return a mask of its own shape.
+
+    The student is a U-Net whose skips need both sides to be multiples of
+    32, so the tensor is zero-padded up to that and the output is cropped
+    back. A height or width that is not a multiple of 8 needs no special
+    case: the padding covers it (measured against the shipped model down to
+    1x1, ADR-1540 follow-up).
+    """
+    np = _import_numpy()
+    tensor_padded, orig_h, orig_w = _pad_to_multiple(tensor, 32)
+    outputs = session.run(None, {"input": tensor_padded})
+    # saliency_student_v1 returns NCHW [1, 1, H_pad, W_pad] in [0, 1].
+    return np.asarray(outputs[0])[0, 0, :orig_h, :orig_w].astype(np.float32)
+
+
 def compute_saliency_map(
     video_path: Path,
     width: int,
@@ -288,98 +370,27 @@ def compute_saliency_map(
 ) -> np.ndarray:
     """Run ``saliency_student_v1`` over a sampled subset of frames.
 
-    Returns a ``float32 [H, W]`` aggregate saliency mask in ``[0, 1]``.
-    ``temporal_aggregator`` controls how sampled per-frame masks are
-    reduced:
-
-    - ``mean``: historical per-pixel arithmetic mean.
-    - ``ema``: exponential moving average, current-frame weight
-      ``ema_alpha``.
-    - ``max``: per-pixel maximum over sampled masks.
-    - ``motion-weighted``: per-pixel weighted mean where each frame's
-      weight is the mean luma delta from the previous sampled frame.
-
-    ``session_factory`` is the test seam: tests pass a fake that
-    returns a stub session object exposing ``.run(...)``.
+    Returns a ``float32 [H, W]`` aggregate saliency mask in ``[0, 1]``
+    for any frame size (the tool pads to a multiple of 32 itself).
+    ``temporal_aggregator`` is ``mean`` (per-pixel mean), ``ema``
+    (current-frame weight ``ema_alpha``), ``max`` (per-pixel maximum) or
+    ``motion-weighted`` (mean weighted by luma delta to the previous
+    sampled frame). ``session_factory`` is the test seam.
 
     Raises :class:`SaliencyUnavailableError` if onnxruntime or the
     model file cannot be loaded.
     """
-    np = _import_numpy()
     _validate_temporal_aggregator(temporal_aggregator, ema_alpha)
-
-    # The saliency_student_v1 model uses 8x downsampling in its encoder
-    # path; heights not divisible by 8 produce off-by-one tensor shapes
-    # that cause a runtime crash inside onnxruntime.  Reject early with a
-    # clear message rather than surfacing a cryptic internal error.
-    if height % 8 != 0:
-        raise ValueError(
-            f"compute_saliency_map: height {height} is not divisible by 8. "
-            f"The saliency_student_v1 encoder path requires height % 8 == 0. "
-            f"Pad or crop the source to the next multiple of 8 (e.g. {((height + 7) // 8) * 8}) "
-            f"before calling this function."
-        )
-
-    if model_path is None:
-        model_path = DEFAULT_SALIENCY_MODEL_RELPATH
-    if not Path(model_path).exists():
-        raise SaliencyUnavailableError(
-            f"saliency model not found: {model_path} (Bucket #2 needs "
-            "`saliency_student_v1.onnx` from PR #359 / ADR-0286)"
-        )
-
-    if session_factory is None:
-        ort = _import_onnxruntime()
-        session_factory = lambda p: ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
-    session = session_factory(model_path)
+    session = _open_saliency_session(model_path, session_factory)
 
     nframes = _frame_count(video_path, width, height)
     if nframes <= 0:
         raise ValueError(f"no frames in {video_path} for {width}x{height} yuv420p")
-    indices = _sample_frame_indices(nframes, frame_samples)
-
-    accum = np.zeros((height, width), dtype=np.float32)
-    max_mask = np.zeros((height, width), dtype=np.float32)
-    ema_mask: np.ndarray | None = None
-    weight_sum = 0.0
-    prev_y: np.ndarray | None = None
-    for fi in indices:
+    acc = _MaskAccumulator(height, width, temporal_aggregator, ema_alpha)
+    for fi in _sample_frame_indices(nframes, frame_samples):
         y, u, v = _read_yuv420p_planes(video_path, fi, width, height)
-        tensor = _yuv420p_to_rgb_imagenet(y, u, v)
-        # saliency_student_v1 uses a UNet encoder-decoder with skip
-        # connections that require H and W to be exact multiples of 32.
-        # Pad to the next multiple-of-32 boundary before inference and
-        # crop the output mask back to the original spatial dimensions.
-        tensor_padded, orig_h, orig_w = _pad_to_multiple(tensor, 32)
-        outputs = session.run(None, {"input": tensor_padded})
-        # saliency_student_v1 returns NCHW [1, 1, H_pad, W_pad] in [0, 1].
-        mask = np.asarray(outputs[0])[0, 0, :orig_h, :orig_w]
-        mask = mask.astype(np.float32)
-        if temporal_aggregator == "mean":
-            accum += mask
-        elif temporal_aggregator == "max":
-            max_mask = np.maximum(max_mask, mask)
-        elif temporal_aggregator == "ema":
-            if ema_mask is None:
-                ema_mask = mask.copy()
-            else:
-                ema_mask = (float(ema_alpha) * mask) + ((1.0 - float(ema_alpha)) * ema_mask)
-        else:
-            weight = _motion_weight(prev_y, y)
-            accum += mask * weight
-            weight_sum += weight
-            prev_y = y.copy()
-
-    if temporal_aggregator == "mean":
-        accum /= float(len(indices))
-    elif temporal_aggregator == "max":
-        accum = max_mask
-    elif temporal_aggregator == "ema":
-        accum = ema_mask if ema_mask is not None else accum
-    else:
-        accum /= weight_sum
-    # Numerically pin to [0, 1] in case of FP drift on the boundary.
-    return np.clip(accum, 0.0, 1.0)
+        acc.add(_infer_frame_mask(session, _yuv420p_to_rgb_imagenet(y, u, v)), y)
+    return acc.result()
 
 
 def saliency_to_qp_map(
@@ -836,6 +847,45 @@ def _cleanup_path_from_extra_params(extra_params: Sequence[str]) -> Path | None:
     return None
 
 
+def _plain_fallback_allowed(cfg: SaliencyConfig) -> bool:
+    """ADR-0546: unsupported-encoder fallback is opt-in (flag or env override)."""
+    env_override = os.environ.get("VMAFTUNE_SALIENCY_FALLBACK_OK", "").strip()
+    return cfg.allow_unsupported_encoder_fallback or env_override == "1"
+
+
+def _refuse_unsupported_encoder(encoder: str, cfg: SaliencyConfig) -> None:
+    """Raise for an encoder without a ROI channel unless the plain fallback is opted in."""
+    if not _plain_fallback_allowed(cfg):
+        raise SaliencyUnsupportedEncoderError(encoder, list(_SALIENCY_DISPATCH))
+    _LOG.error(
+        "saliency ROI not implemented for encoder %r; falling back to plain encode "
+        "(--saliency-fallback-plain / VMAFTUNE_SALIENCY_FALLBACK_OK=1 is set). "
+        "Supported encoders: %s",
+        encoder,
+        sorted(_SALIENCY_DISPATCH),
+    )
+
+
+def _encode_removing_sidecar(
+    augmented: EncodeRequest, cfg: SaliencyConfig, *, ffmpeg_bin: str, runner: Any
+) -> EncodeResult:
+    """Encode ``augmented``; delete the ephemeral ROI sidecar unless persisted."""
+    from .encode import run_encode  # local import to avoid cycles
+
+    if cfg.persist_qpfile:
+        return run_encode(augmented, ffmpeg_bin=ffmpeg_bin, runner=runner)
+    # The augment helper injected the sidecar path in the last ``key=<path>`` slot.
+    cleanup_path = _cleanup_path_from_extra_params(augmented.extra_params)
+    try:
+        return run_encode(augmented, ffmpeg_bin=ffmpeg_bin, runner=runner)
+    finally:
+        if cleanup_path is not None:
+            try:
+                cleanup_path.unlink(missing_ok=True)
+            except OSError:  # pragma: no cover - best effort cleanup
+                pass
+
+
 def saliency_aware_encode(
     request: EncodeRequest,
     *,
@@ -848,42 +898,22 @@ def saliency_aware_encode(
 ) -> EncodeResult:
     """Drive a single saliency-aware encode end-to-end.
 
-    Dispatches to the appropriate per-codec ROI channel based on
-    ``request.encoder``:
+    Dispatches on ``request.encoder`` through ``_SALIENCY_DISPATCH``:
+    ``libx264`` / ``libaom-av1`` (qpfile, 16x16), ``libx265`` (zones),
+    ``libsvtav1`` (qp-file, 64x64), ``libvvenc`` (ROI CSV, 64x64). Other
+    encoders raise :class:`SaliencyUnsupportedEncoderError` (exit code 2)
+    unless ``SaliencyConfig.allow_unsupported_encoder_fallback`` or
+    ``VMAFTUNE_SALIENCY_FALLBACK_OK=1`` demotes them to a plain encode
+    with an ERROR (ADR-0546 / saliency-tune-01).
 
-    - ``libx264``  — ASCII ``--qpfile`` at 16×16 macroblock granularity.
-    - ``libaom-av1`` — patched FFmpeg ``-qpfile <path>`` bridge at
-      16×16 macroblock granularity.
-    - ``libx265``  — ``--zones`` QP delta (per-clip spatial mean) via
-      ``-x265-params zones=0,N,q=<delta>``.
-    - ``libsvtav1`` — space-separated QP-offset map at 64×64 super-block
-      granularity via ``-svtav1-params qp-file=…``.
-    - ``libvvenc``  — comma-separated ROI-delta CSV at 64×64 CTU
-      granularity via ``-vvenc-params ROIFile=…``.
-
-    For encoders not listed above the function raises
-    :class:`SaliencyUnsupportedEncoderError` (exit code 2) unless the
-    caller has set ``SaliencyConfig.allow_unsupported_encoder_fallback=True``
-    (``--saliency-fallback-plain``) or ``VMAFTUNE_SALIENCY_FALLBACK_OK=1``.
-    In the opt-in fallback path the call is demoted to a plain encode and an
-    ERROR is emitted (ADR-0546 / saliency-tune-01).
-
-    Steps:
-
-    1. Run :func:`compute_saliency_map` over the source.
-    2. Map -> per-pixel QP offsets via :func:`saliency_to_qp_map`.
-    3. Dispatch to the encoder-specific augment helper (each helper
-       reduces the pixel-level map to its native ROI-map granularity).
-    4. Delegate to :func:`encode.run_encode` (or the injected runner).
-
-    Falls back to a plain encode (with a WARNING) if onnxruntime or the
-    model file is unavailable, so callers always get a result in that case.
+    Steps: :func:`compute_saliency_map`, :func:`saliency_to_qp_map`, the
+    encoder's augment helper (reduces to its native ROI granularity),
+    then :func:`encode.run_encode` (or the injected runner). Falls back to
+    a plain encode (WARNING) if onnxruntime or the model is unavailable.
     """
     from .encode import run_encode  # local import to avoid cycles
 
     cfg = config or SaliencyConfig()
-    runner = encode_runner
-
     try:
         mask = compute_saliency_map(
             request.source,
@@ -897,55 +927,19 @@ def saliency_aware_encode(
         )
     except SaliencyUnavailableError as exc:
         _LOG.warning("saliency unavailable, falling back to plain encode: %s", exc)
-        return run_encode(request, ffmpeg_bin=ffmpeg_bin, runner=runner)
+        return run_encode(request, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
 
-    # Pixel-level QP-offset map in int32 [H, W]; each dispatch helper
-    # reduces this to its encoder's native granularity.
     qp_map = saliency_to_qp_map(
         mask, baseline_qp=request.crf, foreground_offset=cfg.foreground_offset
     )
-
     augment_fn = _SALIENCY_DISPATCH.get(request.encoder)
     if augment_fn is None:
-        # ADR-0546 (saliency-tune-01): hard-fail by default (exit 2).  The
-        # caller may opt in to the pre-ADR-0546 graceful-fallback behaviour
-        # via SaliencyConfig.allow_unsupported_encoder_fallback=True
-        # (--saliency-fallback-plain) or the env override.
-        env_override = os.environ.get("VMAFTUNE_SALIENCY_FALLBACK_OK", "").strip()
-        allow_fallback = cfg.allow_unsupported_encoder_fallback or env_override == "1"
-        if not allow_fallback:
-            raise SaliencyUnsupportedEncoderError(request.encoder, list(_SALIENCY_DISPATCH))
-        _LOG.error(
-            "saliency ROI not implemented for encoder %r; falling back to plain encode "
-            "(--saliency-fallback-plain / VMAFTUNE_SALIENCY_FALLBACK_OK=1 is set). "
-            "Supported encoders: %s",
-            request.encoder,
-            sorted(_SALIENCY_DISPATCH),
-        )
-        return run_encode(request, ffmpeg_bin=ffmpeg_bin, runner=runner)
-
+        _refuse_unsupported_encoder(request.encoder, cfg)
+        return run_encode(request, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
     augmented = augment_fn(
-        request,
-        qp_map,
-        duration_frames=duration_frames,
-        persist=cfg.persist_qpfile,
+        request, qp_map, duration_frames=duration_frames, persist=cfg.persist_qpfile
     )
-
-    # For ephemeral (non-persisted) ROI files we must clean up after the
-    # encode. The augmented extra_params carries the file path injected
-    # by the augment helper in the last ``key=<path>`` slot.
-    if not cfg.persist_qpfile:
-        cleanup_path = _cleanup_path_from_extra_params(augmented.extra_params)
-        try:
-            return run_encode(augmented, ffmpeg_bin=ffmpeg_bin, runner=runner)
-        finally:
-            if cleanup_path is not None:
-                try:
-                    cleanup_path.unlink(missing_ok=True)
-                except OSError:  # pragma: no cover - best effort cleanup
-                    pass
-    else:
-        return run_encode(augmented, ffmpeg_bin=ffmpeg_bin, runner=runner)
+    return _encode_removing_sidecar(augmented, cfg, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
 
 
 __all__ = [

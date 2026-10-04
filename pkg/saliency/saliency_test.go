@@ -5,6 +5,7 @@ package saliency_test
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -312,6 +313,28 @@ func (s *stubSession) Run(input []float32, height, width int) ([]float32, error)
 	return out, nil
 }
 
+// unetShapeSession refuses what the real saliency student refuses: a tensor
+// whose sides are not multiples of 32 (its skips would not concatenate).
+type unetShapeSession struct {
+	value        float32
+	lastH, lastW int
+}
+
+func (s *unetShapeSession) Run(input []float32, height, width int) ([]float32, error) {
+	if height%32 != 0 || width%32 != 0 {
+		return nil, fmt.Errorf("Concat: mismatched dimensions for %dx%d", width, height)
+	}
+	if len(input) != 3*height*width {
+		return nil, errors.New("unet stub: input arity does not match the geometry")
+	}
+	s.lastH, s.lastW = height, width
+	out := make([]float32, height*width)
+	for i := range out {
+		out[i] = s.value
+	}
+	return out, nil
+}
+
 // writeYUV writes n identical yuv420p frames of the given geometry.
 func writeYUV(t *testing.T, dir string, width, height, frames int, luma byte) string {
 	t.Helper()
@@ -385,7 +408,7 @@ func TestComputeMap(t *testing.T) {
 	t.Run("pads unaligned geometry before inference", func(t *testing.T) {
 		t.Parallel()
 
-		// 40 is divisible by 8 (so it passes the guard) but not by 32.
+		// 40 is divisible by 8 but not by 32.
 		const uw, uh = 40, 40
 		path := writeYUV(t, t.TempDir(), uw, uh, 1, 128)
 		session := &stubSession{value: 0.5}
@@ -397,6 +420,53 @@ func TestComputeMap(t *testing.T) {
 		if session.lastH != 64 || session.lastW != 64 {
 			t.Errorf("session saw %dx%d, want the 32-aligned 64x64",
 				session.lastW, session.lastH)
+		}
+	})
+
+	// The tool pads to a multiple of 32 itself, so a height or width that is
+	// not a multiple of 8 needs no refusal (ADR-1540 follow-up). The session
+	// is shape-strict like the real U-Net: it errors on any side that is not
+	// a multiple of 32.
+	t.Run("height not a multiple of 8 is padded, not refused", func(t *testing.T) {
+		t.Parallel()
+
+		cases := []struct {
+			name       string
+			w, h       int
+			padW, padH int
+		}{
+			{"576x324 Netflix pair", 576, 324, 576, 352},
+			{"578x330", 578, 330, 608, 352},
+			{"8x8", 8, 8, 32, 32},
+			{"4x4", 4, 4, 32, 32},
+			{"2x2", 2, 2, 32, 32},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				path := writeYUV(t, t.TempDir(), tc.w, tc.h, 2, 128)
+				session := &unetShapeSession{value: 0.5}
+				mask, err := saliency.ComputeMap(path, tc.w, tc.h, session, saliency.MapOptions{
+					FrameSamples: 2, TemporalAggregator: saliency.AggMean, EMAAlpha: 0.6,
+				})
+				if err != nil {
+					t.Fatalf("ComputeMap: %v", err)
+				}
+				if len(mask) != tc.w*tc.h {
+					t.Fatalf("mask length = %d, want %d (the frame's own shape)",
+						len(mask), tc.w*tc.h)
+				}
+				for _, v := range mask {
+					if math.Abs(v-0.5) > 1e-6 {
+						t.Fatalf("mask value = %v, want 0.5", v)
+					}
+				}
+				if session.lastH != tc.padH || session.lastW != tc.padW {
+					t.Errorf("session saw %dx%d, want %dx%d",
+						session.lastW, session.lastH, tc.padW, tc.padH)
+				}
+			})
 		}
 	})
 
@@ -417,13 +487,6 @@ func TestComputeMap(t *testing.T) {
 			{
 				name: "no session", path: path, width: w, height: h,
 				session: nil,
-				opts: saliency.MapOptions{
-					TemporalAggregator: saliency.AggMean, EMAAlpha: 0.6,
-				},
-			},
-			{
-				name: "height not divisible by 8", path: path, width: w, height: 70,
-				session: &stubSession{value: 0.5},
 				opts: saliency.MapOptions{
 					TemporalAggregator: saliency.AggMean, EMAAlpha: 0.6,
 				},

@@ -3672,7 +3672,7 @@
         "pkg/saliency/saliency_test.go": 2,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/predictor_train.py": 2,
-        "tools/vmaf-tune/src/vmaftune/saliency.py": 5,
+        "tools/vmaf-tune/src/vmaftune/saliency.py": 4,
         "tools/vmaf-tune/tests/test_codec_adapter_two_pass_real.py": 1,
         "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2,
         "tools/vmaf-tune/tests/test_predictor_train.py": 2,
@@ -10219,7 +10219,10 @@
       "sites": {
         "core/src/feature/feature_mobilesal.c": 2,
         "core/test/dnn/meson.build": 1,
-        "core/test/dnn/test_mobilesal_run.c": 2
+        "core/test/dnn/test_mobilesal_run.c": 2,
+        "pkg/saliency/saliency.go": 1,
+        "pkg/saliency/saliency_test.go": 1,
+        "tools/vmaf-tune/src/vmaftune/saliency.py": 1
       },
       "target": "1540-saliency-pad-to-multiple-of-8.md"
     },
