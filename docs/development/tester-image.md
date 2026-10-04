@@ -121,8 +121,12 @@ the kits for other hardware follow the same rules. What the two packages do:
   grafted GCC runtime libraries (matched by ELF build ID); `fetch-sources` downloads them
   (`apt-get source`, falling back to snapshot.debian.org) and writes `SOURCES.txt`. The
   bundle has no copyleft object code.
-- **SBOM.** Syft v1.51.1 writes an SPDX JSON SBOM of each pushed platform image (attested on
-  its digest with `actions/attest`) and of the unpacked bundle (attested on the archive,
+- **SBOM.** Syft v1.51.1 writes an SPDX JSON SBOM of each pushed platform image (attested with
+  `actions/attest` on the platform manifest the published index lists: the build job pushes
+  a per-arch index, and `imagetools create` copies the platform manifest out of it, so the
+  publish job reads the digest back from the merged index with `imagetools inspect --raw`,
+  fails unless exactly one `linux/<arch>` manifest is there, and a last step runs
+  `gh attestation verify` on both platform digests (SPDX) and on the index (provenance)) and of the unpacked bundle (attested on the archive,
   published as the `.spdx.json` asset).
 
 The Intel GPU image is the artifact `sycl-image`. Two kinds of record exist for it: the

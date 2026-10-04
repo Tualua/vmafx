@@ -49,6 +49,15 @@ no code change.
 - `newRoot` installs `useUsageExitCode` and `markCommandFlagsRequired`
   validates from `PreRunE` (`cmd/vmafx-tune/AGENTS.md` invariant 30); `auto`
   checks `--src` in `validateAutoFlags`, not with `MarkFlagRequired`.
+## The tester image's SBOMs are attested on the platform manifests (2026-10-04)
+
+`fix/tester-sbom-attest-platform-digest`. CI workflow and docs; no source change.
+
+- `docker-publish-tester.yml`'s `publish` job selects each SBOM's subject
+  from the merged index (`Select the platform manifests the published index
+  lists`) and ends with `Verify the attestations on the published digests`.
+  A rebase keeps both; taking the per-arch digest from the build job's
+  artifact as `subject-digest` brings back an attestation no tester can find.
 
 ## The macOS tester bundle job installs the Metal compiler (2026-10-04)
 

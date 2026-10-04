@@ -4295,6 +4295,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the maintainer notes](docs/development/tester-image.md).
 
 
+- **The tester image's SPDX SBOM verifies on the digest you pull.** It was
+  attested on a per-arch index that `imagetools create` does not publish, so
+  `gh attestation verify` on the platform digest of the tag found nothing. It is
+  now attested on each platform manifest the tag's index lists, and the
+  publishing run verifies it. Commands:
+  [tester guide](docs/usage/tester-image.md#licences-of-what-you-download).
+
+
 - **The macOS tester bundle and the tester image name the version of the tested commit.** The file name and the report's version could read `tester-20261003-c12763f3-18-g2414774ea`, because `git describe` took the nearest `tester-*` release tag; they now read `v1.0.0-rc.2-311-g2414774ea`, the nearest `v*.*.*` tag. The macOS publish job also creates its prerelease as the release-bot identity, since the job token was refused (HTTP 403) when the tested commit was behind master.
 
 

@@ -734,12 +734,24 @@ workflow refuses to build a package with a file whose licence is not recorded
   so it has no source companion.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
   publishing workflow: the `.spdx.json` release asset for the macOS bundle and each
-  Windows zip, and an
-  attestation on each platform image of the container
-  (`gh attestation verify oci://ghcr.io/vmafx/vmafx@<platform digest> -R VMAFx/vmafx
-  --predicate-type https://spdx.dev/Document/v2.3`, with the platform digest from
-  `docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester`), and an
-  attestation on the digest of each GPU image.
+  Windows zip, an attestation on each platform manifest of the container, and an
+  attestation on the digest of each GPU image. The container's SBOM is attested on the
+  platform manifest the tag's index lists, so look that digest up first:
+
+  ```sh
+  docker buildx imagetools inspect --raw ghcr.io/vmafx/vmafx:<VERSION>-tester \
+    | jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest'
+  gh attestation verify oci://ghcr.io/vmafx/vmafx@<that digest> -R VMAFx/vmafx \
+    --predicate-type https://spdx.dev/Document/v2.3
+  ```
+
+  Use `arm64` for the arm64 manifest. The build provenance is attested on the index the
+  tag points at (`docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester
+  --format '{{json .Manifest}}' | jq -r .digest`):
+
+  ```sh
+  gh attestation verify oci://ghcr.io/vmafx/vmafx@<index digest> -R VMAFx/vmafx
+  ```
 
 ## What the report contains
 

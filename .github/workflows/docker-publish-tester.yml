@@ -466,14 +466,29 @@ jobs:
         with:
           pattern: tester-sbom-*
           path: ${{ runner.temp }}/sbom
-      - name: Read the platform digests the SBOMs describe
+      # The SBOM subject is the platform manifest the published index lists, not the
+      # per-arch index the build job pushed: `imagetools create` copies the platform
+      # manifest out of that index, so an attestation on the index digest does not
+      # match what a tester pulls or inspects.
+      - name: Select the platform manifests the published index lists
         id: sbom
-        working-directory: ${{ runner.temp }}/sbom
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          INDEX: ${{ steps.index.outputs.digest }}
         run: |
+          raw="$(docker buildx imagetools inspect --raw "${IMAGE}@${INDEX}")"
           for arch in amd64 arm64; do
-            digest="$(cat "tester-sbom-${arch}/digest")"
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad digest for ${arch}" >&2; exit 1; }
-            echo "${arch}=${digest}" >> "$GITHUB_OUTPUT"
+            [[ "$(cat "${RUNNER_TEMP}/sbom/tester-sbom-${arch}/digest")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "bad per-arch digest for ${arch}" >&2; exit 1; }
+            mapfile -t found < <(jq -r --arg arch "$arch" \
+              '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' \
+              <<<"$raw")
+            if [[ "${#found[@]}" -ne 1 || ! "${found[0]}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "expected one linux/${arch} manifest in ${INDEX}, found ${#found[@]}" >&2
+              exit 1
+            fi
+            echo "linux/${arch}: ${found[0]}"
+            echo "${arch}=${found[0]}" >> "$GITHUB_OUTPUT"
           done
       - name: Attest the amd64 SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
@@ -489,6 +504,28 @@ jobs:
           subject-digest: ${{ steps.sbom.outputs.arm64 }}
           sbom-path: ${{ runner.temp }}/sbom/tester-sbom-arm64/sbom.spdx.json
           push-to-registry: true
+      # The run proves what a tester runs: provenance on the tag's index digest and
+      # the SBOM on each platform manifest the index lists.
+      - name: Verify the attestations on the published digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          INDEX: ${{ steps.index.outputs.digest }}
+          AMD64: ${{ steps.sbom.outputs.amd64 }}
+          ARM64: ${{ steps.sbom.outputs.arm64 }}
+        run: |
+          verify() {  # subject, predicate type; the attestation index can lag a few seconds
+            for _ in 1 2 3 4 5 6; do
+              gh attestation verify "oci://${IMAGE}@$1" -R VMAFx/vmafx \
+                --predicate-type "$2" && return 0
+              sleep 10
+            done
+            echo "no ${2} attestation verifies on ${1}" >&2
+            return 1
+          }
+          verify "$INDEX" https://slsa.dev/provenance/v1
+          verify "$AMD64" https://spdx.dev/Document/v2.3
+          verify "$ARM64" https://spdx.dev/Document/v2.3
       # ADR-1503 rule 5: the source image, published at the same place.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
