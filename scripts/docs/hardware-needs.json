@@ -1,0 +1,132 @@
+{
+  "comment": "Hardware families the project wants tester reports from (docs/usage/hardware-we-need.md, rendered by scripts/docs/generate-hardware-reports.py). package: macos, container, sycl, cuda, hip. state: ids of docs/state.md rows the family closes. owner: the project host that covers the family, or null. match: how a report under docs/hardware-reports/ counts for the family (platform, machine, flags_all, flags_none, cpu_model_re for host; gpu_backend and gpu_families for a GPU device). The generator refuses a GPU family of the row maps in tools/rc1-tester/image/ that no row here lists, and a state id that is not in docs/state.md.",
+  "rows": [
+    {
+      "family": "Apple M-series, native (M1 to M4 Macs)",
+      "package": "macos",
+      "state": ["T-TESTER-APPLE-SILICON-EVIDENCE-2026-10-03"],
+      "metal_rows": true,
+      "owner": null,
+      "match": {"platform": "darwin"}
+    },
+    {
+      "family": "Arm without SVE2 (Apple M-series under Docker Desktop, Graviton 2, Ampere Altra, Raspberry Pi 4 and 5)",
+      "package": "container",
+      "state": ["T-TESTER-APPLE-SILICON-EVIDENCE-2026-10-03"],
+      "owner": null,
+      "match": {"platform": "linux", "machine": ["aarch64", "arm64"], "flags_all": ["neon"], "flags_none": ["sve2"]}
+    },
+    {
+      "family": "Arm with SVE2 (AWS Graviton 4, Azure Cobalt 100, Google Axion)",
+      "package": "container",
+      "state": ["T-ARM-SIMD-GATES-SVE2-VECTOR-LENGTH-UNVERIFIED-2026-10-02"],
+      "owner": null,
+      "match": {"platform": "linux", "machine": ["aarch64", "arm64"], "flags_all": ["sve2"]}
+    },
+    {
+      "family": "Intel with AVX-512 (Xeon Skylake-SP to Sapphire Rapids and later, Core 11th generation)",
+      "package": "container",
+      "state": ["T-CPU-AVX512-ZEN5-ONLY-UNVERIFIED-2026-10-02"],
+      "owner": null,
+      "match": {"machine": ["x86_64", "amd64"], "flags_all": ["avx512"], "cpu_model_re": "Intel"}
+    },
+    {
+      "family": "AMD with AVX-512 (Zen 4 and Zen 5: Ryzen 7000 and 9000, EPYC 9004 and 9005)",
+      "package": "container",
+      "state": ["T-CPU-AVX512-ZEN5-ONLY-UNVERIFIED-2026-10-02"],
+      "owner": "Ryzen 9 9950X3D (Zen 5)",
+      "match": {"machine": ["x86_64", "amd64"], "flags_all": ["avx512"], "cpu_model_re": "AMD"}
+    },
+    {
+      "family": "x86 with AVX2 and no AVX-512 (Intel Core 12th to 14th generation, AMD Zen 2 and Zen 3)",
+      "package": "container",
+      "state": ["T-CPU-AVX2-FMA-NOT-GATED-2026-10-02"],
+      "owner": null,
+      "match": {"machine": ["x86_64", "amd64"], "flags_all": ["avx2"], "flags_none": ["avx512"]}
+    },
+    {
+      "family": "NVIDIA Ampere (A100, GeForce RTX 30 series, RTX A-series)",
+      "package": "cuda",
+      "state": ["T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "cuda", "gpu_families": ["ampere"]}
+    },
+    {
+      "family": "NVIDIA Hopper (H100, H200)",
+      "package": "cuda",
+      "state": ["T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "cuda", "gpu_families": ["hopper"]}
+    },
+    {
+      "family": "NVIDIA Blackwell (B200, GeForce RTX 50 series, Jetson Thor, DGX Spark)",
+      "package": "cuda",
+      "state": ["T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "cuda", "gpu_families": ["blackwell"]}
+    },
+    {
+      "family": "NVIDIA Ada (GeForce RTX 40 series)",
+      "package": "cuda",
+      "state": ["T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03"],
+      "owner": "RTX 4090",
+      "match": {"gpu_backend": "cuda", "gpu_families": ["ada"]}
+    },
+    {
+      "family": "AMD CDNA (Instinct MI100, MI200, MI300, MI350)",
+      "package": "hip",
+      "state": ["T-HIP-TWINS-OTHER-TARGETS-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "hip", "gpu_families": ["cdna1", "cdna2", "cdna3", "cdna4"]}
+    },
+    {
+      "family": "AMD RDNA3 and RDNA3.5 (Radeon RX 7000, Radeon 780M, 860M, 890M, 8060S)",
+      "package": "hip",
+      "state": ["T-HIP-TWINS-OTHER-TARGETS-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "hip", "gpu_families": ["rdna3", "rdna3.5"]}
+    },
+    {
+      "family": "AMD RDNA4 (Radeon RX 9060 and RX 9070, AI PRO R9700)",
+      "package": "hip",
+      "state": ["T-HIP-TWINS-OTHER-TARGETS-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "hip", "gpu_families": ["rdna4", "rdna4m"]}
+    },
+    {
+      "family": "AMD RDNA1 (Radeon RX 5700, RX 5600, RX 5500)",
+      "package": "hip",
+      "state": ["T-HIP-TWINS-OTHER-TARGETS-2026-10-03"],
+      "owner": null,
+      "match": {"gpu_backend": "hip", "gpu_families": ["rdna1"]}
+    },
+    {
+      "family": "AMD RDNA2 (Radeon RX 6000, Steam Deck, Ryzen 7000 graphics)",
+      "package": "hip",
+      "state": ["T-HIP-TWINS-OTHER-TARGETS-2026-10-03"],
+      "owner": "gfx1036 (the small RDNA2 graphics of a Ryzen 7000); a discrete RX 6000 card repeats it",
+      "match": {"gpu_backend": "hip", "gpu_families": ["rdna2"]}
+    },
+    {
+      "family": "Intel Xe-LP and Xe-LPG (UHD 7xx, Iris Xe, Arc graphics of Core Ultra)",
+      "package": "sycl",
+      "state": ["T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02"],
+      "owner": null,
+      "match": {"gpu_backend": "sycl", "gpu_families": ["xe-lp", "xe-lpg"]}
+    },
+    {
+      "family": "Intel Xe2 (Arc B-series, Lunar Lake)",
+      "package": "sycl",
+      "state": ["T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02"],
+      "owner": "Arc B580 and Arc Pro B60 (home cluster)",
+      "match": {"gpu_backend": "sycl", "gpu_families": ["xe2"]}
+    },
+    {
+      "family": "Intel Xe-HPG (Arc A-series)",
+      "package": "sycl",
+      "state": ["T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02"],
+      "owner": "Arc A380",
+      "match": {"gpu_backend": "sycl", "gpu_families": ["xe-hpg"]}
+    }
+  ]
+}

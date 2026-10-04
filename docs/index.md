@@ -153,7 +153,7 @@ Have hardware the project does not own? Run the
 | Command line | [CLI reference](usage/cli.md), [`--precision`](usage/precision.md), [environment variables](usage/env-vars.md), [`vmaf_bench`](usage/bench.md) |
 | Integrations | [FFmpeg](usage/ffmpeg.md), [Python library](usage/python.md), [MATLAB](usage/matlab.md), [external resources](usage/external-resources.md) |
 | Encoding workflows | [`vmaf-tune`](usage/vmaf-tune.md) ([fast path](usage/vmaf-tune-fast-path.md), [bitrate ladder](usage/vmaf-tune-ladder.md), [codec adapters](usage/vmaf-tune-codec-adapters.md), [recommend](usage/vmaf-tune-recommend.md), [saliency-aware](usage/vmaf-tune-saliency-aware.md), [resolution-aware](usage/vmaf-tune-resolution-aware.md), [HDR and sampling](usage/vmaf-tune-hdr-and-sampling.md), [cache](usage/vmaf-tune-cache.md), [bisect](usage/vmaf-tune-bisect.md)), [per-shot scoring](usage/vmaf-perShot.md), [ROI scoring](usage/vmaf-roi.md), [BD-rate utilities](usage/bd-rate.md) |
-| Testing on your hardware | [tester image and macOS bundle](usage/tester-image.md), [build-from-source tester guide](usage/rc1-tester-guide.md), [hardware reports](hardware-reports/index.md) |
+| Testing on your hardware | [hardware we need](usage/hardware-we-need.md), [tester image and macOS bundle](usage/tester-image.md), [build-from-source tester guide](usage/rc1-tester-guide.md), [hardware reports](hardware-reports/index.md) |
 
 ## Reference
 

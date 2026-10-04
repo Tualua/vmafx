@@ -7,6 +7,9 @@ to check the fork on it. You build nothing, install no toolchain and need no
 repository checkout. You run one prepared package, it prints one JSON report, and you
 can send that report to the project and be credited for it.
 
+Not sure whether your hardware is wanted? [Hardware we need](hardware-we-need.md) lists
+every family the project has no report from yet, and which package tests it.
+
 There are five packages. On a Mac, run the **native bundle** first: it also exercises
 the Metal backend, which no container can reach. The **container image** tests the
 CPU code paths and works on any machine with Docker. The **Intel GPU image** tests the

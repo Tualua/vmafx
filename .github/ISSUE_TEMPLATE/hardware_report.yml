@@ -1,12 +1,13 @@
 name: Hardware report
-description: Send the JSON report of the tester image or the macOS tester bundle.
+description: Send the JSON report of a tester package (macOS bundle, container image, or the Intel, NVIDIA or AMD GPU image).
 title: "[hardware report] "
 labels: ["hardware-report"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for running the tester (see `docs/usage/tester-image.md`). Attach the
+        Thank you for running the tester (see `docs/usage/tester-image.md`; the hardware
+        that is still missing is listed in `docs/usage/hardware-we-need.md`). Attach the
         `report.json` it printed. It holds no host name, user name or serial number;
         read it before you attach it. A report with verdict `fail` is welcome.
 
@@ -25,6 +26,10 @@ body:
       options:
         - macOS bundle (native)
         - Container image
+        - Intel GPU image (tester-sycl)
+        - NVIDIA GPU image (tester-cuda)
+        - AMD GPU image (tester-hip)
+        - Other / built from source
     validations:
       required: true
 
@@ -32,7 +37,7 @@ body:
     id: machine
     attributes:
       label: Machine
-      description: For example "MacBook Air, Apple M4, macOS 15.1" or "Docker Desktop 4.40 on the same Mac".
+      description: For example "MacBook Air, Apple M4, macOS 15.1", "Docker Desktop 4.40 on the same Mac", "Ryzen 7 7840U with Radeon 780M, Linux 6.12" or "GeForce RTX 3080, Windows 11 with WSL2".
     validations:
       required: false
 

@@ -60008,3 +60008,14 @@ upstream parity guard's allowlist.
   path of the build machine names nothing on the machine a bundle is unpacked
   on (`T-TESTER-BUNDLE-UNIT-PATHS-ABSOLUTE-2026-10-04`). No score, public API or
   FFmpeg patch impact.
+## Hardware we need page and its generator
+
+- `docs/usage/hardware-we-need.md` holds a table between the `hardware-needs:begin` and
+  `hardware-needs:end` markers that `scripts/docs/generate-hardware-reports.py` rewrites
+  from `scripts/docs/hardware-needs.json` and the reports under `docs/hardware-reports/`;
+  never edit the table by hand. On a conflict inside the markers take master's side and
+  run `make docs-fragments-write`. A new GPU family in a row map of
+  `tools/rc1-tester/image/` needs a row in `hardware-needs.json` in the same PR (the
+  generator refuses otherwise). `.github/ISSUE_TEMPLATE/hardware_report.yml` lists all five
+  tester packages; a new package adds an entry there. No score, public API or FFmpeg patch
+  impact.

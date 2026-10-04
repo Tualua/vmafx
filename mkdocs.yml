@@ -175,6 +175,8 @@ nav:
   - Usage:
       - CLI reference: usage/cli.md
       - RC1 External Tester Guide: usage/rc1-tester-guide.md
+      - Hardware we need: usage/hardware-we-need.md
+      - Tester image and macOS bundle: usage/tester-image.md
       - vmaf_bench: usage/bench.md
       - '--precision': usage/precision.md
       - Python library: usage/python.md
