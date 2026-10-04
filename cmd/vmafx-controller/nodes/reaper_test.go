@@ -19,8 +19,8 @@ func TestEvictStale(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry(slog.New(slog.DiscardHandler))
 	t.Cleanup(r.Close)
-	stale, _, _ := r.Register("stale", Capability{})
-	edge, _, _ := r.Register("edge", Capability{})
+	stale, _, _ := r.Register("stale", "t", Capability{})
+	edge, _, _ := r.Register("edge", "t", Capability{})
 	now := time.Now()
 	r.mu.Lock()
 	r.nodes[stale].LastHeartbeat = now.Add(-HeartbeatTimeout - time.Second)
@@ -43,7 +43,7 @@ func TestReaperCallsEvictionHook(t *testing.T) {
 	r.reapInterval, r.timeout = 5*time.Millisecond, 20*time.Millisecond
 	got := make(chan string, 1)
 	r.SetEvictionHook(func(id string) { got <- id })
-	id, _, _ := r.Register("silent", Capability{})
+	id, _, _ := r.Register("silent", "t", Capability{})
 	r.StartDetached()
 	t.Cleanup(r.Close)
 	select {

@@ -116,6 +116,21 @@ source change, no upstream file touched.
   `networkpolicy.yaml` gains `allow-node-to-controller`. A rebase that brings
   the helper back reintroduces a default pointing at a Service the chart does
   not deploy.
+## Controller job reads and node sessions are tenant-scoped (ADR-1522, 2026-10-04)
+
+`fix/controller-tenant-filter`. Go controller only; no libvmaf change.
+
+- `queue.Queue.ListAll` is gone; `ListByTenant` puts `tenant_id = ?` in the SQL.
+  `PullWork` takes the tenant; `ReportResult` takes a `queue.Report` (node,
+  tenant, job, result, orphan predicate), its `UPDATE` carries
+  `AND assigned_node = ?`, and only an orphaned `RUNNING` job of the same
+  tenant may be adopted (`ErrNotAssigned` otherwise). A change to the jobs
+  schema or to these queries keeps the node, status and tenant guards.
+- `nodes.Registry.Register` / `Heartbeat` / `ValidateSession` and
+  `scheduler.Assign` take the caller's tenant; `Node.TenantID` records it.
+- `auth.AssertTenantOwns` and `AssertHTTPTenantOwns` name no tenant in their
+  error.
+
 ## Controller gRPC calls are authorised per method (ADR-1518, 2026-10-04)
 
 `fix/controller-grpc-roles`. Go controller only; no libvmaf change.

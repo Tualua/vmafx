@@ -5314,7 +5314,7 @@
         "cmd/vmafx-controller/grpc_server.go": 1,
         "cmd/vmafx-controller/grpc_server_test.go": 2,
         "cmd/vmafx-controller/nodes/registry.go": 1,
-        "cmd/vmafx-controller/queue/queue.go": 1,
+        "cmd/vmafx-controller/queue/queue.go": 2,
         "cmd/vmafx-controller/queue/queue_listall_test.go": 1,
         "cmd/vmafx-mcp/impl_grpc.go": 2,
         "cmd/vmafx-mcp/tools.go": 1
@@ -10032,9 +10032,27 @@
       },
       "target": "1521-python-mcp-console-script-name.md"
     },
+    "1522": {
+      "sites": {
+        "cmd/vmafx-controller/auth/grpc_interceptor.go": 1,
+        "cmd/vmafx-controller/auth/grpc_interceptor_test.go": 2,
+        "cmd/vmafx-controller/grpc_server.go": 4,
+        "cmd/vmafx-controller/grpc_server_test.go": 1,
+        "cmd/vmafx-controller/grpc_tenant_test.go": 1,
+        "cmd/vmafx-controller/nodes/registry.go": 2,
+        "cmd/vmafx-controller/nodes/registry_tenant_test.go": 1,
+        "cmd/vmafx-controller/queue/queue.go": 6,
+        "cmd/vmafx-controller/queue/queue_tenant_test.go": 1,
+        "cmd/vmafx-controller/scheduler/scheduler.go": 1
+      },
+      "target": "1522-controller-tenant-scoped-reads.md"
+    },
     "1524": {
       "sites": {
-        ".github/workflows/helm-chart.yml": 1
+        ".github/workflows/helm-chart.yml": 1,
+        "cmd/vmafx-controller/grpc_server.go": 1,
+        "cmd/vmafx-controller/grpc_tenant_test.go": 1,
+        "cmd/vmafx-controller/queue/queue.go": 1
       },
       "target": "1524-vmafx-node-controller-client.md"
     },

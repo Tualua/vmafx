@@ -82,7 +82,7 @@ func TestPullWorkHappyPath(t *testing.T) {
 	id := submit(t, q, "/ref.yuv", "/dis.yuv", "cpu")
 
 	cap := queue.NodeCapacity{Backends: []string{"cpu", "cuda"}, Slots: 4}
-	job, err := q.PullWork(context.Background(), "node-1", cap)
+	job, err := q.PullWork(context.Background(), "node-1", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestPullWorkEmptyQueue(t *testing.T) {
 	q := newTestQueue(t)
 
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 2}
-	job, err := q.PullWork(context.Background(), "node-1", cap)
+	job, err := q.PullWork(context.Background(), "node-1", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork on empty queue: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestPullWorkBackendFilter(t *testing.T) {
 	_ = submit(t, q, "/ref.yuv", "/dis.yuv", "cuda") // requires cuda
 
 	cpuCap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 2}
-	job, err := q.PullWork(context.Background(), "cpu-node", cpuCap)
+	job, err := q.PullWork(context.Background(), "cpu-node", "", cpuCap)
 	if err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestPullWorkBackendFilter(t *testing.T) {
 
 	// A cuda node should get it.
 	cudaCap := queue.NodeCapacity{Backends: []string{"cuda", "cpu"}, Slots: 2}
-	job, err = q.PullWork(context.Background(), "cuda-node", cudaCap)
+	job, err = q.PullWork(context.Background(), "cuda-node", "", cudaCap)
 	if err != nil {
 		t.Fatalf("PullWork (cuda): %v", err)
 	}
@@ -147,13 +147,13 @@ func TestReportResultCompleted(t *testing.T) {
 	q := newTestQueue(t)
 	id := submit(t, q, "/r.yuv", "/d.yuv", "")
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	_, _ = q.PullWork(context.Background(), "node-x", cap)
+	_, _ = q.PullWork(context.Background(), "node-x", "", cap)
 
 	result := &queue.JobResult{
 		Score:    76.6683,
 		Features: map[string]float64{"adm2": 0.98, "vif_scale0": 0.91},
 	}
-	if err := q.ReportResult(context.Background(), id, result); err != nil {
+	if err := q.ReportResult(context.Background(), queue.Report{NodeID: "node-x", JobID: id, Result: result}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 
@@ -175,10 +175,10 @@ func TestReportResultFailed(t *testing.T) {
 	q := newTestQueue(t)
 	id := submit(t, q, "/r.yuv", "/d.yuv", "")
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	_, _ = q.PullWork(context.Background(), "node-x", cap)
+	_, _ = q.PullWork(context.Background(), "node-x", "", cap)
 
 	result := &queue.JobResult{Err: "libvmaf returned exit 1"}
-	if err := q.ReportResult(context.Background(), id, result); err != nil {
+	if err := q.ReportResult(context.Background(), queue.Report{NodeID: "node-x", JobID: id, Result: result}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestCancelPending(t *testing.T) {
 
 	// PullWork should not return the cancelled job.
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	job, err := q.PullWork(context.Background(), "node-1", cap)
+	job, err := q.PullWork(context.Background(), "node-1", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork after cancel: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestNodeDisconnectedMidJob(t *testing.T) {
 	}
 	id := submit(t, q1, "/r.yuv", "/d.yuv", "")
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	_, err = q1.PullWork(context.Background(), "node-crash", cap)
+	_, err = q1.PullWork(context.Background(), "node-crash", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestPullWork_GetUnlockedFailure_RollsBackToPending(t *testing.T) {
 	})
 
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	job, err := q.PullWork(context.Background(), "node-1", cap)
+	job, err := q.PullWork(context.Background(), "node-1", "", cap)
 
 	// PullWork must return an error (not silently orphan the job).
 	if err == nil {
@@ -328,7 +328,7 @@ func TestPullWork_GetUnlockedFailure_RollsBackToPending(t *testing.T) {
 	}
 
 	// A subsequent PullWork (without the hook) must succeed and get the same job.
-	job2, err2 := q.PullWork(context.Background(), "node-2", cap)
+	job2, err2 := q.PullWork(context.Background(), "node-2", "", cap)
 	if err2 != nil {
 		t.Fatalf("PullWork after rollback: %v", err2)
 	}
@@ -359,7 +359,7 @@ func TestPendingCount(t *testing.T) {
 	}
 
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 2}
-	_, _ = q.PullWork(context.Background(), "node-1", cap)
+	_, _ = q.PullWork(context.Background(), "node-1", "", cap)
 
 	if q.PendingCount() != 1 {
 		t.Errorf("after 1 pull: got %d, want 1", q.PendingCount())

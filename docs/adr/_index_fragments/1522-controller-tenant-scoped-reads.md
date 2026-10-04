@@ -1,0 +1,1 @@
+| [ADR-1522](1522-controller-tenant-scoped-reads.md) | Every job read of the controller carries the caller's tenant in its SQL query, a node session belongs to the tenant that registered it and pulls only that tenant's jobs, and a node can report only jobs assigned to it | Accepted | security, controller, auth, multi-tenant, grpc, go, fork-local |

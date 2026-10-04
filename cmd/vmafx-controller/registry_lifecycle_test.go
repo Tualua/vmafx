@@ -63,7 +63,7 @@ func TestRequeueEvictedNodeHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
-	if _, err := q.PullWork(ctx, "gone", queue.NodeCapacity{Slots: 1}); err != nil {
+	if _, err := q.PullWork(ctx, "gone", "t", queue.NodeCapacity{Slots: 1}); err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
 	hook := requeueEvictedNode(q, slog.New(slog.DiscardHandler))

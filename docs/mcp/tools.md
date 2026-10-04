@@ -1217,7 +1217,9 @@ Request cancellation of a PENDING or RUNNING job (`job_id`, required). Returns
 
 ### `list_jobs`
 
-List the controller's current job snapshot.
+List the controller's current job snapshot: the jobs of the token's tenant
+(`VMAFX_CONTROLLER_TOKEN`), or of the `dev` tenant against a controller with
+auth disabled.
 
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -1231,8 +1233,8 @@ List the controller's current job snapshot.
 
 Each entry has the `get_job` shape. The tool drains the `StreamJobs`
 server-streaming RPC, which sends the current snapshot and closes (ADR-0962) —
-it is not a subscription. `truncated=true` means the controller had more jobs
-than `limit`.
+it is not a subscription. `truncated=true` means the controller had more of the
+tenant's jobs than `limit`.
 
 ### `vmaf_score_remote`
 

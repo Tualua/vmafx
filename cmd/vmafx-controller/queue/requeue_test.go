@@ -26,9 +26,9 @@ func submitJobs(t *testing.T, q *queue.SQLiteQueue, n int) []string {
 	return ids
 }
 
-func pullFor(t *testing.T, q *queue.SQLiteQueue, node string) *queue.Job {
+func pullJobFor(t *testing.T, q *queue.SQLiteQueue, node string) *queue.Job {
 	t.Helper()
-	j, err := q.PullWork(context.Background(), node, queue.NodeCapacity{Slots: 1})
+	j, err := q.PullWork(context.Background(), node, "t", queue.NodeCapacity{Slots: 1})
 	if err != nil {
 		t.Fatalf("PullWork(%s): %v", node, err)
 	}
@@ -42,8 +42,8 @@ func TestRequeueNode(t *testing.T) {
 	q := newTestQueue(t)
 	ctx := context.Background()
 	ids := submitJobs(t, q, 4)
-	a1, b, a2 := pullFor(t, q, "node-a"), pullFor(t, q, "node-b"), pullFor(t, q, "node-a")
-	if err := q.ReportResult(ctx, a1.ID, &queue.JobResult{Score: 80}); err != nil {
+	a1, b, a2 := pullJobFor(t, q, "node-a"), pullJobFor(t, q, "node-b"), pullJobFor(t, q, "node-a")
+	if err := q.ReportResult(ctx, queue.Report{NodeID: "node-a", JobID: a1.ID, Result: &queue.JobResult{Score: 80}}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 
@@ -61,7 +61,7 @@ func TestRequeueNode(t *testing.T) {
 	if other, _ := q.Get(ctx, b.ID); other.Status != queue.StatusRunning || other.AssignedNode != "node-b" {
 		t.Fatalf("node-b's job changed: %+v", other)
 	}
-	if next := pullFor(t, q, "node-c"); next == nil || next.ID != a2.ID {
+	if next := pullJobFor(t, q, "node-c"); next == nil || next.ID != a2.ID {
 		t.Fatalf("next pull = %+v, want the requeued job %s ahead of %s", next, a2.ID, ids[3])
 	}
 }
@@ -70,7 +70,7 @@ func TestRequeueNode(t *testing.T) {
 func TestRequeueNode_UnknownNode(t *testing.T) {
 	q := newTestQueue(t)
 	submitJobs(t, q, 1)
-	pullFor(t, q, "node-a")
+	pullJobFor(t, q, "node-a")
 	if n, err := q.RequeueNode(context.Background(), "node-z"); err != nil || n != 0 {
 		t.Fatalf("RequeueNode(node-z) = %d, %v; want 0, nil", n, err)
 	}

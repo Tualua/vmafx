@@ -78,14 +78,25 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 3. **runningSet / pendingFIFO consistent**: SQL job status changes mirror in
    `runningSet` and `pendingFIFO`. `reload()`: recovery on restart, not
    primary mechanism.
-4. **`Queue.ListAll` contract (ADR-0962)** (`queue/queue.go`): `ListAll(ctx, statuses)`
-   returns snapshot of jobs filtered by status strings. Empty `statuses` =
-   all statuses. `StreamJobs` in `grpc_server.go` relies on contract.
-5. **`ListAll` must include `tenant_id` in SELECT** (`queue/queue.go`):
+4. **`Queue.ListByTenant` contract (ADR-0962, ADR-1522)** (`queue/queue.go`):
+   `ListByTenant(ctx, tenantID, statuses)` returns snapshot of one tenant's
+   jobs, filtered by status strings. Empty `statuses` = all statuses.
+   `tenant_id = ?` sits in SQL WHERE. No all-tenants read exists; never add
+   one (old `ListAll` streamed every tenant's jobs). `StreamJobs` relies on contract.
+5. **`ListByTenant` must include `tenant_id` in SELECT** (`queue/queue.go`):
    queries select `COALESCE(tenant_id,'')` into `job.TenantID` (`Job.TenantID` was `""`).
    Missing `tenant_id` broke `StreamJobs` tenant display. Schema additions must
    update both SELECT clauses and `rows.Scan`. Guard:
-   `queue_listall_test.go:TestListAll_TenantIDRoundTrip`.
+   `queue_listall_test.go:TestListByTenant_TenantIDRoundTrip`.
+6. **Tenant-scoped `PullWork`, node-guarded `ReportResult` (ADR-1522)**:
+   `findPendingMatch` skips other tenants' jobs. `ReportResult(ctx, Report)`
+   UPDATE carries `AND assigned_node = ?`; zero rows -> `reportDecision`:
+   terminal own/orphan job = idempotent nil; RUNNING job of same tenant with
+   orphaned node (`Report.Orphaned`, no live session; ADR-1524 re-registered
+   node) -> `adoptOrphan` compare-and-set on status + tenant, moves
+   assignment; else `ErrNotAssigned`, nothing written, `runningSet` untouched.
+   Never drop node guard or tenant compare. Partial reports: `MayReport`.
+   Guards: `queue_tenant_test.go`, `grpc_tenant_test.go`.
 
 ### scheduler package
 
@@ -105,6 +116,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    eviction hook -> `queue.RequeueNode` returns the evicted node's RUNNING
    jobs to PENDING (FIFO front). Hook runs outside the registry lock; keep it
    (controller.proto promises the requeue).
+3. **Sessions belong to one tenant (ADR-1522)**: `Register(name, tenantID,
+   cap)` stores `Node.TenantID`; `ValidateSession` and `Heartbeat` compare
+   token (constant time) and tenant (exact) in `sessionMatches`. Every session
+   check takes caller tenant; no tenant-less variant.
 
 ### grpc server
 
@@ -122,6 +137,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    expectation table: change only together with ADR-0794/ADR-1518 role table.
 4. **`auth/authtest` test-only**: RS256 issuer + JWKS server for tests.
    Import from `_test.go` files only.
+5. **Tenant from context, once (ADR-1522)**: handlers read tenant via
+   `callerTenant(ctx)` once, hand value down (queue query, registry, scheduler).
+   Empty tenant -> `Unauthenticated`. Ownership refusals name no tenant
+   (`AssertTenantOwns`).
 
 ### main / shutdown
 

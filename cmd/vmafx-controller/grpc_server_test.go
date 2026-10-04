@@ -79,14 +79,14 @@ func (m *mockStreamJobsServer) RecvMsg(any) error            { return nil }
 
 // dummyStreamServer is the minimal stub required by StreamJobs's signature for
 // tests that do not introspect the sent messages.  Send swallows the payload;
-// Context returns a background context so the handler's cancellation check is
-// safe to call.
+// Context returns the test tenant's context, as the auth interceptor would
+// (StreamJobs refuses a stream without a tenant).
 type dummyStreamServer struct {
 	controllerv1.VmafxController_StreamJobsServer
 }
 
 func (d *dummyStreamServer) Send(*controllerv1.Job) error { return nil }
-func (d *dummyStreamServer) Context() context.Context     { return context.Background() }
+func (d *dummyStreamServer) Context() context.Context     { return testTenantCtx() }
 func (d *dummyStreamServer) SetHeader(metadata.MD) error  { return nil }
 func (d *dummyStreamServer) SendHeader(metadata.MD) error { return nil }
 func (d *dummyStreamServer) SetTrailer(metadata.MD)       {}
@@ -127,7 +127,8 @@ func newTestStream(ctx context.Context) *mockStreamJobsServer {
 func submitTestJob(t *testing.T, cs *controllerServer, ref, dis string) string {
 	t.Helper()
 	id, err := cs.queue.Submit(context.Background(), &queue.Job{
-		Scoring: queue.ScoringParams{Reference: ref, Distorted: dis},
+		TenantID: "test-tenant",
+		Scoring:  queue.ScoringParams{Reference: ref, Distorted: dis},
 	})
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
@@ -184,7 +185,7 @@ func codeOf(err error) codes.Code {
 // queue completes with no error and sends zero messages.
 func TestStreamJobs_EmptyQueue_ReturnsOK(t *testing.T) {
 	cs := newTestControllerServer(t)
-	stream := newTestStream(context.Background())
+	stream := newTestStream(testTenantCtx())
 
 	err := cs.StreamJobs(&controllerv1.StreamJobsRequest{}, stream)
 	if err != nil {
@@ -199,7 +200,7 @@ func TestStreamJobs_EmptyQueue_ReturnsOK(t *testing.T) {
 // all streamed by StreamJobs (no filter) before it closes.
 func TestStreamJobs_WithJobs_StreamsSnapshot(t *testing.T) {
 	cs := newTestControllerServer(t)
-	stream := newTestStream(context.Background())
+	stream := newTestStream(testTenantCtx())
 
 	// Submit 3 jobs.
 	ids := make(map[string]bool)
@@ -379,7 +380,7 @@ func TestRegisterNode_HappyPath(t *testing.T) {
 			Concurrency: 4,
 		},
 	}
-	resp, err := f.srv.RegisterNode(context.Background(), req)
+	resp, err := f.srv.RegisterNode(testTenantCtx(), req)
 	if err != nil {
 		t.Fatalf("RegisterNode: %v", err)
 	}
@@ -396,7 +397,7 @@ func TestRegisterNode_HappyPath(t *testing.T) {
 
 func TestRegisterNode_EmptyNameRejected(t *testing.T) {
 	f := newGRPCFixture(t)
-	_, err := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{Name: ""})
+	_, err := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{Name: ""})
 	if codeOf(err) != codes.InvalidArgument {
 		t.Errorf("expected InvalidArgument, got %v", codeOf(err))
 	}
@@ -404,7 +405,7 @@ func TestRegisterNode_EmptyNameRejected(t *testing.T) {
 
 func TestRegisterNode_NilCapHandled(t *testing.T) {
 	f := newGRPCFixture(t)
-	_, err := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{Name: "n", Capability: nil})
+	_, err := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{Name: "n", Capability: nil})
 	if err != nil {
 		t.Fatalf("RegisterNode with nil cap: %v", err)
 	}
@@ -412,11 +413,11 @@ func TestRegisterNode_NilCapHandled(t *testing.T) {
 
 func TestHeartbeat_HappyPath(t *testing.T) {
 	f := newGRPCFixture(t)
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
+	reg, _ := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{
 		Name:       "hb-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
-	hb, err := f.srv.Heartbeat(context.Background(), &controllerv1.HeartbeatRequest{
+	hb, err := f.srv.Heartbeat(testTenantCtx(), &controllerv1.HeartbeatRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		JobsRunning:  2,
@@ -431,11 +432,11 @@ func TestHeartbeat_HappyPath(t *testing.T) {
 
 func TestHeartbeat_BadSessionRejected(t *testing.T) {
 	f := newGRPCFixture(t)
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
+	reg, _ := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{
 		Name:       "hb-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
-	hb, _ := f.srv.Heartbeat(context.Background(), &controllerv1.HeartbeatRequest{
+	hb, _ := f.srv.Heartbeat(testTenantCtx(), &controllerv1.HeartbeatRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: "wrong-token",
 	})
@@ -450,11 +451,11 @@ func TestHeartbeat_BadSessionRejected(t *testing.T) {
 
 func TestPullWork_NoJobReturnsEmpty(t *testing.T) {
 	f := newGRPCFixture(t)
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
+	reg, _ := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{
 		Name:       "pw-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
-	resp, err := f.srv.PullWork(context.Background(), &controllerv1.PullWorkRequest{
+	resp, err := f.srv.PullWork(testTenantCtx(), &controllerv1.PullWorkRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		Capability:   &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
@@ -475,11 +476,11 @@ func TestPullWork_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitJob: %v", err)
 	}
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
+	reg, _ := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{
 		Name:       "pw-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
-	resp, err := f.srv.PullWork(context.Background(), &controllerv1.PullWorkRequest{
+	resp, err := f.srv.PullWork(testTenantCtx(), &controllerv1.PullWorkRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		Capability:   &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
@@ -497,7 +498,7 @@ func TestPullWork_HappyPath(t *testing.T) {
 
 func TestPullWork_InvalidSessionRejected(t *testing.T) {
 	f := newGRPCFixture(t)
-	_, err := f.srv.PullWork(context.Background(), &controllerv1.PullWorkRequest{
+	_, err := f.srv.PullWork(testTenantCtx(), &controllerv1.PullWorkRequest{
 		NodeId:       "no-such-node",
 		SessionToken: "bogus",
 		Capability:   &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
@@ -520,18 +521,18 @@ func TestReportResult_FinalSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitJob: %v", err)
 	}
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
+	reg, _ := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{
 		Name:       "rr-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
 	// Pull the work so the job moves to RUNNING.
-	_, _ = f.srv.PullWork(context.Background(), &controllerv1.PullWorkRequest{
+	_, _ = f.srv.PullWork(testTenantCtx(), &controllerv1.PullWorkRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		Capability:   &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
 
-	resp, err := f.srv.ReportResult(context.Background(), &controllerv1.ReportResultRequest{
+	resp, err := f.srv.ReportResult(testTenantCtx(), &controllerv1.ReportResultRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		JobId:        sub.GetJobId(),
@@ -567,17 +568,17 @@ func TestReportResult_FinalWithError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitJob: %v", err)
 	}
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
+	reg, _ := f.srv.RegisterNode(testTenantCtx(), &controllerv1.RegisterNodeRequest{
 		Name:       "rr-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
-	_, _ = f.srv.PullWork(context.Background(), &controllerv1.PullWorkRequest{
+	_, _ = f.srv.PullWork(testTenantCtx(), &controllerv1.PullWorkRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		Capability:   &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
 	})
 
-	if _, err := f.srv.ReportResult(context.Background(), &controllerv1.ReportResultRequest{
+	if _, err := f.srv.ReportResult(testTenantCtx(), &controllerv1.ReportResultRequest{
 		NodeId:       reg.GetNodeId(),
 		SessionToken: reg.GetSessionToken(),
 		JobId:        sub.GetJobId(),
@@ -595,16 +596,17 @@ func TestReportResult_FinalWithError(t *testing.T) {
 	}
 }
 
-func TestReportResult_PartialIgnored(t *testing.T) {
+// TestReportResult_PartialAcknowledged: a partial result of a job assigned to
+// the reporting node is acknowledged and changes nothing (Phase 4b.1 stores no
+// partial state); TestReportResult_PartialForUnassignedJobRefused covers the
+// refusal for any other job (ADR-1522).
+func TestReportResult_PartialAcknowledged(t *testing.T) {
 	f := newGRPCFixture(t)
-	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
-		Name:       "rr-node",
-		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
-	})
-	resp, err := f.srv.ReportResult(context.Background(), &controllerv1.ReportResultRequest{
-		NodeId:       reg.GetNodeId(),
-		SessionToken: reg.GetSessionToken(),
-		JobId:        "any-id",
+	nodeID, token, jobID := pullOneJob(t, f, testTenantCtx(), testTenantCtx())
+	resp, err := f.srv.ReportResult(testTenantCtx(), &controllerv1.ReportResultRequest{
+		NodeId:       nodeID,
+		SessionToken: token,
+		JobId:        jobID,
 		Final:        false,
 	})
 	if err != nil {
@@ -613,11 +615,15 @@ func TestReportResult_PartialIgnored(t *testing.T) {
 	if !resp.GetOk() {
 		t.Error("partial ok: got false, want true")
 	}
+	job, _ := f.srv.GetJob(testTenantCtx(), &controllerv1.GetJobRequest{JobId: jobID})
+	if job.GetStatus() != controllerv1.JobStatus_RUNNING {
+		t.Errorf("status after partial: got %v, want RUNNING", job.GetStatus())
+	}
 }
 
 func TestReportResult_InvalidSessionRejected(t *testing.T) {
 	f := newGRPCFixture(t)
-	_, err := f.srv.ReportResult(context.Background(), &controllerv1.ReportResultRequest{
+	_, err := f.srv.ReportResult(testTenantCtx(), &controllerv1.ReportResultRequest{
 		NodeId:       "no-such-node",
 		SessionToken: "bogus",
 		Final:        true,
@@ -656,7 +662,7 @@ func TestQueueStatusToProto(t *testing.T) {
 // filter returns only the pending jobs (not completed ones).
 func TestStreamJobs_WithStatusFilter_PendingOnly(t *testing.T) {
 	cs := newTestControllerServer(t)
-	stream := newTestStream(context.Background())
+	stream := newTestStream(testTenantCtx())
 
 	// Submit 2 jobs.
 	submitTestJob(t, cs, "/ref1.yuv", "/dis1.yuv")

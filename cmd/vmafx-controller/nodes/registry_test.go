@@ -34,7 +34,7 @@ func TestRegisterAndGet(t *testing.T) {
 	r := newTestRegistry(t)
 	cap := nodes.Capability{GPUVendor: "nvidia", Backends: []string{"cuda", "cpu"}, Concurrency: 4}
 
-	nodeID, token, err := r.Register("worker-1", cap)
+	nodeID, token, err := r.Register("worker-1", testTenant, cap)
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -61,12 +61,12 @@ func TestRegisterAndGet(t *testing.T) {
 // last-seen timestamp and returns true.
 func TestHeartbeatValid(t *testing.T) {
 	r := newTestRegistry(t)
-	nodeID, token, err := r.Register("worker-1", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	nodeID, token, err := r.Register("worker-1", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if ok := r.Heartbeat(nodeID, token, 0); !ok {
+	if ok := r.Heartbeat(nodeID, token, testTenant, 0); !ok {
 		t.Error("expected Heartbeat to return true for valid session")
 	}
 }
@@ -75,12 +75,12 @@ func TestHeartbeatValid(t *testing.T) {
 // false (node should re-register).
 func TestHeartbeatInvalidToken(t *testing.T) {
 	r := newTestRegistry(t)
-	nodeID, _, err := r.Register("worker-1", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	nodeID, _, err := r.Register("worker-1", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if ok := r.Heartbeat(nodeID, "wrong-token", 0); ok {
+	if ok := r.Heartbeat(nodeID, "wrong-token", testTenant, 0); ok {
 		t.Error("expected Heartbeat to return false for invalid token")
 	}
 }
@@ -90,7 +90,7 @@ func TestHeartbeatInvalidToken(t *testing.T) {
 func TestHeartbeatUnknownNode(t *testing.T) {
 	r := newTestRegistry(t)
 
-	if ok := r.Heartbeat("nonexistent-id", "any-token", 0); ok {
+	if ok := r.Heartbeat("nonexistent-id", "any-token", testTenant, 0); ok {
 		t.Error("expected Heartbeat to return false for unknown node")
 	}
 }
@@ -98,18 +98,18 @@ func TestHeartbeatUnknownNode(t *testing.T) {
 // TestValidateSession verifies the session validation helper.
 func TestValidateSession(t *testing.T) {
 	r := newTestRegistry(t)
-	nodeID, token, err := r.Register("w1", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	nodeID, token, err := r.Register("w1", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if !r.ValidateSession(nodeID, token) {
+	if !r.ValidateSession(nodeID, token, testTenant) {
 		t.Error("expected ValidateSession true for correct pair")
 	}
-	if r.ValidateSession(nodeID, "bad") {
+	if r.ValidateSession(nodeID, "bad", testTenant) {
 		t.Error("expected ValidateSession false for bad token")
 	}
-	if r.ValidateSession("bad-id", token) {
+	if r.ValidateSession("bad-id", token, testTenant) {
 		t.Error("expected ValidateSession false for bad node ID")
 	}
 }
@@ -123,7 +123,7 @@ func TestCount(t *testing.T) {
 	}
 
 	for i := range 3 {
-		_, _, err := r.Register("w", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+		_, _, err := r.Register("w", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 		if err != nil {
 			t.Fatalf("Register %d: %v", i, err)
 		}
@@ -137,8 +137,8 @@ func TestCount(t *testing.T) {
 // TestAll returns all registered nodes.
 func TestAll(t *testing.T) {
 	r := newTestRegistry(t)
-	_, _, _ = r.Register("a", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
-	_, _, _ = r.Register("b", nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
+	_, _, _ = r.Register("a", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	_, _, _ = r.Register("b", testTenant, nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
 
 	all := r.All()
 	if len(all) != 2 {
@@ -221,9 +221,9 @@ func TestRegistry_CloseWithoutStart(t *testing.T) {
 // yielded set against the expected set).
 func TestAllSeq(t *testing.T) {
 	r := newTestRegistry(t)
-	_, _, _ = r.Register("a", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
-	_, _, _ = r.Register("b", nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
-	_, _, _ = r.Register("c", nodes.Capability{Backends: []string{"hip"}, Concurrency: 4})
+	_, _, _ = r.Register("a", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	_, _, _ = r.Register("b", testTenant, nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
+	_, _, _ = r.Register("c", testTenant, nodes.Capability{Backends: []string{"hip"}, Concurrency: 4})
 
 	seen := make(map[string]bool)
 	for n := range r.AllSeq() {
@@ -248,7 +248,7 @@ func TestAllSeq(t *testing.T) {
 func TestAllSeq_earlyBreak(t *testing.T) {
 	r := newTestRegistry(t)
 	for range 5 {
-		_, _, _ = r.Register("worker", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+		_, _, _ = r.Register("worker", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	}
 
 	var walked int
@@ -275,27 +275,27 @@ func TestAllSeq_earlyBreak(t *testing.T) {
 // at the call sites) and a correctness round-trip to guard against regression.
 func TestValidateSession_ConstantTime(t *testing.T) {
 	r := newTestRegistry(t)
-	nodeID, token, err := r.Register("w1", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	nodeID, token, err := r.Register("w1", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
 	// Correct pair must pass.
-	if !r.ValidateSession(nodeID, token) {
+	if !r.ValidateSession(nodeID, token, testTenant) {
 		t.Error("ValidateSession: expected true for correct (nodeID, token)")
 	}
 	// Wrong token must fail regardless of prefix matching.
-	if r.ValidateSession(nodeID, token+"x") {
+	if r.ValidateSession(nodeID, token+"x", testTenant) {
 		t.Error("ValidateSession: expected false for appended token")
 	}
-	if r.ValidateSession(nodeID, token[:len(token)-1]) {
+	if r.ValidateSession(nodeID, token[:len(token)-1], testTenant) {
 		t.Error("ValidateSession: expected false for truncated token")
 	}
 	// Heartbeat uses the same path — exercise it too.
-	if !r.Heartbeat(nodeID, token, 0) {
+	if !r.Heartbeat(nodeID, token, testTenant, 0) {
 		t.Error("Heartbeat: expected true for correct (nodeID, token)")
 	}
-	if r.Heartbeat(nodeID, "totally-wrong", 0) {
+	if r.Heartbeat(nodeID, "totally-wrong", testTenant, 0) {
 		t.Error("Heartbeat: expected false for wrong token")
 	}
 }
@@ -305,8 +305,8 @@ func TestValidateSession_ConstantTime(t *testing.T) {
 // produces, for one release.
 func TestAll_shimMatchesAllSeq(t *testing.T) {
 	r := newTestRegistry(t)
-	_, _, _ = r.Register("a", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
-	_, _, _ = r.Register("b", nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
+	_, _, _ = r.Register("a", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	_, _, _ = r.Register("b", testTenant, nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
 
 	sliceCount := len(r.All())
 	var seqCount int

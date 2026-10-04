@@ -167,7 +167,9 @@ func (w *wrappedServerStream) Context() context.Context { return w.ctx }
 // ---------------------------------------------------------------------------
 
 // AssertTenantOwns verifies that the caller's tenant_id matches the supplied
-// jobTenantID.  Returns a gRPC PermissionDenied error if not.
+// jobTenantID.  Returns a gRPC PermissionDenied error if not.  The error names
+// neither tenant: a caller must not learn which tenant owns a resource it may
+// not read (ADR-1522).
 //
 // Usage in a gRPC handler:
 //
@@ -180,8 +182,7 @@ func AssertTenantOwns(ctx context.Context, resourceTenantID string) error {
 		return status.Errorf(codes.Unauthenticated, "tenant_id not in context")
 	}
 	if tid != resourceTenantID {
-		return status.Errorf(codes.PermissionDenied,
-			"resource belongs to tenant %q, caller is tenant %q", resourceTenantID, tid)
+		return status.Error(codes.PermissionDenied, "resource belongs to another tenant")
 	}
 	return nil
 }
@@ -193,8 +194,7 @@ func AssertHTTPTenantOwns(ctx context.Context, resourceTenantID string) error {
 		return fmt.Errorf("auth: tenant_id not in context")
 	}
 	if tid != resourceTenantID {
-		return fmt.Errorf("auth: resource belongs to tenant %q, caller is %q",
-			resourceTenantID, tid)
+		return fmt.Errorf("auth: resource belongs to another tenant")
 	}
 	return nil
 }

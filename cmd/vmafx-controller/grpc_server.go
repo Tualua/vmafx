@@ -13,6 +13,8 @@
 // ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 // ADR-0782: OpenTelemetry tracing.
+// ADR-1522: every job read is scoped to the caller's tenant, and a node session
+// to the tenant that registered it.
 
 //go:build cgo
 
@@ -20,6 +22,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -135,9 +138,9 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	}
 
 	// Extract tenant_id from the auth context (ADR-0794).
-	tenantID := auth.TenantIDFromCtx(ctx)
-	if tenantID == "" {
-		return nil, status.Errorf(codes.Unauthenticated, "tenant_id not found in token")
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	spanCtx, span := observability.StartSpan(ctx, observability.SpanJobSubmit,
@@ -206,14 +209,23 @@ func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.Canc
 }
 
 // StreamJobs is a server-streaming RPC that pushes job updates.
-// Phase 4b.1 implementation: streams the current snapshot of all jobs matching
-// the optional status filter once, then closes.  A persistent push model is a
-// Phase 4b.2 enhancement.
+// Phase 4b.1 implementation: streams the current snapshot of the caller's
+// tenant's jobs matching the optional status filter once, then closes.  A
+// persistent push model is a Phase 4b.2 enhancement and must keep the filter.
 //
 // ADR-0962: previously this was a no-op (silent return nil after a log line),
 // causing callers to see an empty stream and incorrectly infer "no jobs queued".
-// Now it performs a real SQLite snapshot via queue.ListAll and streams each job.
+// Now it performs a real SQLite snapshot via queue.ListByTenant and streams each
+// job.
+//
+// ADR-1522: the tenant is read once from the authenticated context and passed
+// into the SQL WHERE clause; no other tenant's job is read, let alone sent.
 func (c *controllerServer) StreamJobs(req *controllerv1.StreamJobsRequest, stream controllerv1.VmafxController_StreamJobsServer) error {
+	tenantID, err := callerTenant(stream.Context())
+	if err != nil {
+		return err
+	}
+
 	// Convert proto status filter values to queue status strings.
 	protoFilter := req.GetStatusFilter()
 	statusFilter := make([]string, 0, len(protoFilter))
@@ -222,13 +234,14 @@ func (c *controllerServer) StreamJobs(req *controllerv1.StreamJobsRequest, strea
 	}
 
 	c.log.Info("StreamJobs snapshot requested",
+		"tenant_id", tenantID,
 		"filter", statusFilter,
 		"filter_len", len(statusFilter),
 	)
 
-	jobs, err := c.queue.ListAll(stream.Context(), statusFilter)
+	jobs, err := c.queue.ListByTenant(stream.Context(), tenantID, statusFilter)
 	if err != nil {
-		c.log.Error("StreamJobs: ListAll failed", "error", err)
+		c.log.Error("StreamJobs: ListByTenant failed", "error", err)
 		return status.Errorf(codes.Internal, "StreamJobs: list jobs: %v", err)
 	}
 
@@ -244,32 +257,58 @@ func (c *controllerServer) StreamJobs(req *controllerv1.StreamJobsRequest, strea
 	return nil
 }
 
-// RegisterNode handles vmafx-node registration.
-func (c *controllerServer) RegisterNode(_ context.Context, req *controllerv1.RegisterNodeRequest) (*controllerv1.RegisterNodeResponse, error) {
+// callerTenant returns the tenant of the authenticated caller, or an
+// Unauthenticated status when the context carries none.
+func callerTenant(ctx context.Context) (string, error) {
+	tenantID := auth.TenantIDFromCtx(ctx)
+	if tenantID == "" {
+		return "", status.Errorf(codes.Unauthenticated, "tenant_id not found in token")
+	}
+	return tenantID, nil
+}
+
+// RegisterNode handles vmafx-node registration. The session belongs to the
+// caller's tenant: only calls with a token of that tenant may use it, and the
+// node is only given that tenant's jobs (ADR-1522).
+func (c *controllerServer) RegisterNode(ctx context.Context, req *controllerv1.RegisterNodeRequest) (*controllerv1.RegisterNodeResponse, error) {
 	if req.GetName() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "node name is required")
 	}
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	cap := protoCapToNodes(req.GetCapability())
-	nodeID, token, err := c.registry.Register(req.GetName(), cap)
+	nodeID, token, err := c.registry.Register(req.GetName(), tenantID, cap)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "register node: %v", err)
 	}
 
-	c.log.Info("node registered via gRPC", "node_id", nodeID, "name", req.GetName())
+	c.log.Info("node registered via gRPC", "node_id", nodeID, "name", req.GetName(), "tenant_id", tenantID)
 	return &controllerv1.RegisterNodeResponse{NodeId: nodeID, SessionToken: token}, nil
 }
 
-// Heartbeat processes a node keepalive ping.
-func (c *controllerServer) Heartbeat(_ context.Context, req *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
-	ok := c.registry.Heartbeat(req.GetNodeId(), req.GetSessionToken(), int(req.GetJobsRunning()))
+// Heartbeat processes a node keepalive ping. A session registered by another
+// tenant answers ok=false, as an unknown one does.
+func (c *controllerServer) Heartbeat(ctx context.Context, req *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ok := c.registry.Heartbeat(req.GetNodeId(), req.GetSessionToken(), tenantID, int(req.GetJobsRunning()))
 	return &controllerv1.HeartbeatResponse{Ok: ok}, nil
 }
 
-// PullWork assigns the next matching job to the requesting node.
+// PullWork assigns the next matching job of the caller's tenant to the
+// requesting node.
 func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullWorkRequest) (*controllerv1.PullWorkResponse, error) {
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	cap := protoCapToNodes(req.GetCapability())
-	job, err := c.sched.Assign(ctx, req.GetNodeId(), req.GetSessionToken(), cap)
+	job, err := c.sched.Assign(ctx, req.GetNodeId(), req.GetSessionToken(), tenantID, cap)
 	if err != nil {
 		return nil, status.Errorf(codes.PermissionDenied, "pull work: %v", err)
 	}
@@ -279,24 +318,36 @@ func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullW
 	return &controllerv1.PullWorkResponse{Job: queueJobToProto(job)}, nil
 }
 
-// ReportResult records the terminal (or partial) outcome of a job.
+// ReportResult records the terminal (or partial) outcome of a job. The node's
+// session must belong to the caller's tenant, and the job must be assigned to
+// the node, or be a running job of the same tenant whose node has no live
+// session (a node that registered again reports what it finished under its
+// old session, ADR-1524). A report for any other job is refused and changes
+// nothing (ADR-1522).
 func (c *controllerServer) ReportResult(ctx context.Context, req *controllerv1.ReportResultRequest) (*controllerv1.ReportResultResponse, error) {
-	if !c.registry.ValidateSession(req.GetNodeId(), req.GetSessionToken()) {
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !c.registry.ValidateSession(req.GetNodeId(), req.GetSessionToken(), tenantID) {
 		return nil, status.Errorf(codes.PermissionDenied, "invalid session for node %q", req.GetNodeId())
 	}
 
+	report := queue.Report{
+		NodeID:   req.GetNodeId(),
+		TenantID: tenantID,
+		JobID:    req.GetJobId(),
+		Result:   &queue.JobResult{Score: req.GetScore(), Features: req.GetFeatures(), Err: req.GetError()},
+		Orphaned: c.nodeOrphaned,
+	}
 	if !req.GetFinal() {
-		// Partial result: no terminal state update needed for Phase 4b.1.
-		c.log.Debug("partial result received", "job_id", req.GetJobId(), "node_id", req.GetNodeId())
-		return &controllerv1.ReportResultResponse{Ok: true}, nil
+		return c.acceptPartialResult(ctx, report)
 	}
-
-	result := &queue.JobResult{
-		Score:    req.GetScore(),
-		Features: req.GetFeatures(),
-		Err:      req.GetError(),
-	}
-	if err := c.queue.ReportResult(ctx, req.GetJobId(), result); err != nil {
+	if err := c.queue.ReportResult(ctx, report); err != nil {
+		if errors.Is(err, queue.ErrNotAssigned) {
+			return nil, status.Errorf(codes.PermissionDenied,
+				"job %q is not assigned to node %q", req.GetJobId(), req.GetNodeId())
+		}
 		return nil, status.Errorf(codes.Internal, "report result: %v", err)
 	}
 
@@ -306,6 +357,26 @@ func (c *controllerServer) ReportResult(ctx context.Context, req *controllerv1.R
 		c.metrics.JobsCompleted.Inc()
 	}
 	return &controllerv1.ReportResultResponse{Ok: true}, nil
+}
+
+// acceptPartialResult acknowledges a partial result of a job the reporting
+// node may report (queue.MayReport). Phase 4b.1 stores no partial state; the
+// check keeps the call from confirming anything about another node's job.
+func (c *controllerServer) acceptPartialResult(ctx context.Context, r queue.Report) (*controllerv1.ReportResultResponse, error) {
+	if !c.queue.MayReport(ctx, r) {
+		return nil, status.Errorf(codes.PermissionDenied,
+			"job %q is not assigned to node %q", r.JobID, r.NodeID)
+	}
+	c.log.Debug("partial result received", "job_id", r.JobID, "node_id", r.NodeID)
+	return &controllerv1.ReportResultResponse{Ok: true}, nil
+}
+
+// nodeOrphaned reports whether a node ID has no live session: the controller
+// restarted or evicted it. Node IDs are never reissued, so a node that is
+// orphaned stays orphaned.
+func (c *controllerServer) nodeOrphaned(nodeID string) bool {
+	_, live := c.registry.Get(nodeID)
+	return !live
 }
 
 // ---------------------------------------------------------------------------

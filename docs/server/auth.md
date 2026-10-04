@@ -184,23 +184,34 @@ Clients therefore need a token with the right role:
 
 ## Tenant isolation
 
-Every job is tagged with the `tenant_id` extracted from the submitter's
-token at submission time. The controller enforces:
+Every job is tagged with the `tenant_id` of the submitter's token, and every
+call reads and writes only the jobs of its own token's tenant
+([ADR-1522](../adr/1522-controller-tenant-scoped-reads.md)):
 
-- `GetJob` / `CancelJob` — returns `PERMISSION_DENIED` if the caller's
-  `tenant_id` does not match the job's stored tenant.
-- `SubmitJob` — stamps the new job with the caller's `tenant_id`.
+- `SubmitJob` stamps the new job with the caller's tenant.
+- `GetJob` and `CancelJob` answer `PERMISSION_DENIED` (`resource belongs to
+  another tenant`) for another tenant's job, without naming that tenant.
+- `StreamJobs` streams only the caller's tenant's jobs; the tenant is part of
+  the database query, so no other tenant's job is read.
+- A node session belongs to the tenant of the token that called
+  `RegisterNode`. `Heartbeat` answers `ok=false`, and `PullWork` and
+  `ReportResult` answer `PERMISSION_DENIED`, when called with that session and
+  a token of another tenant. `PullWork` gives a node only its tenant's jobs.
+- `ReportResult` accepts a result, final or partial, for a job assigned to the
+  reporting node, or for a running job of the same tenant whose node has no
+  live session any more (a node that registered again after a controller
+  restart or an eviction reports what it finished before). A report for a job
+  of another tenant, a pending job, a job of a live node or an unknown job
+  answers `PERMISSION_DENIED` (`job "<id>" is not assigned to node "<id>"`)
+  and changes nothing. Repeating a final report of a finished job succeeds
+  without changing it.
 
-`StreamJobs` is not scoped: it streams a snapshot of all jobs matching the
-optional status filter, regardless of tenant. Tenant-scoped filtering is
-planned for Phase 4b.2.
+A deployment that serves several tenants from one pool of nodes therefore
+needs a node registration per tenant; nodes shared across tenants are not
+supported. Jobs stored before the auth gateway carry the empty tenant, which
+no token can hold, so no caller can read them.
 
-!!! warning "Known gap"
-    `StreamJobs` lets any authenticated caller read the jobs of every
-    tenant.
-
-Tenant IDs are opaque strings; the controller does not interpret them beyond
-equality comparison.
+Tenant IDs are opaque strings compared exactly (case and whitespace count).
 
 ---
 
@@ -318,7 +329,7 @@ refreshes successfully.
 | --- | --- |
 | Algorithm confusion (`alg=none`, `alg=HS256`) | Only RS256 is accepted; any other `alg` header is rejected before key lookup. |
 | Token replay | `exp` checked on every request. |
-| Cross-tenant data access | `tenant_id` ownership enforced on `GetJob`, `CancelJob` and `SubmitJob`. `StreamJobs` is not tenant-scoped. |
+| Cross-tenant data access | Every job read and write is scoped to the token's tenant (`GetJob`, `CancelJob`, `StreamJobs`, `SubmitJob`); node sessions belong to one tenant, nodes pull only that tenant's jobs and report only jobs assigned to them. Refusals do not name the owning tenant. |
 | JWKS endpoint spoofing | Endpoint configured by operator via trusted Helm/env values. |
 | Privilege escalation | Every gRPC method and HTTP `POST /v1/score` require a role from the token; a gRPC method without a role entry is refused. The `allowedRoles` whitelist of VmafxTenant is not applied yet: no component reads it. |
 | Revocation | Use short-lived tokens (≤1 hour); revocation list support is a follow-up. |

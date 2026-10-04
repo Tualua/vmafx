@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1226), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1227), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4899,6 +4899,10 @@ Every ADR, one heading each (1226), so the site search finds an ADR by its title
 ## ADR-1521: `vmafx-mcp` names the Go server; the Python wheel's script of that name is a one-release alias
 
 [1521-python-mcp-console-script-name](1521-python-mcp-console-script-name.md)
+
+## ADR-1522: Every job read of the controller is scoped to the caller's tenant in the query, and a node session belongs to the tenant that registered it
+
+[1522-controller-tenant-scoped-reads](1522-controller-tenant-scoped-reads.md)
 
 ## ADR-1524: vmafx-node pulls work from the controller, advertises exactly the backend it runs, and refuses to start when it cannot honour its configuration
 

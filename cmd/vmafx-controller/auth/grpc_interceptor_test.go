@@ -14,9 +14,9 @@
 //   - RequireGRPCRole — denied when role absent.
 //   - RequireGRPCRole — denied when no claims in context.
 //   - AssertTenantOwns — owner match → nil.
-//   - AssertTenantOwns — owner mismatch → PermissionDenied.
+//   - AssertTenantOwns — owner mismatch → PermissionDenied naming no tenant.
 //   - AssertTenantOwns — empty tenant_id in context → Unauthenticated.
-//   - AssertHTTPTenantOwns — owner mismatch → error.
+//   - AssertHTTPTenantOwns — owner mismatch → error naming no tenant.
 //   - AssertHTTPTenantOwns — empty tenant_id → error.
 //   - MarshalPublicKeyPEM round-trip.
 //   - checkAudience with array audience (via middleware JWT path).
@@ -272,6 +272,10 @@ func TestAssertTenantOwns_Mismatch(t *testing.T) {
 	if st.Code() != codes.PermissionDenied {
 		t.Errorf("expected PermissionDenied, got %v", st.Code())
 	}
+	// ADR-1522: the refusal must not tell the caller who owns the resource.
+	if strings.Contains(err.Error(), "rival-corp") || strings.Contains(err.Error(), "acme") {
+		t.Errorf("error names a tenant: %v", err)
+	}
 }
 
 // TestAssertTenantOwns_EmptyTenantID verifies Unauthenticated when the context
@@ -302,8 +306,10 @@ func TestAssertHTTPTenantOwns_Mismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for tenant mismatch, got nil")
 	}
-	if !strings.Contains(err.Error(), "rival-corp") {
-		t.Errorf("error should mention resource tenant, got: %v", err)
+	// ADR-1522: the refusal must not tell the caller who owns the resource
+	// (it used to name both tenants).
+	if strings.Contains(err.Error(), "rival-corp") || strings.Contains(err.Error(), "acme") {
+		t.Errorf("error names a tenant: %v", err)
 	}
 }
 

@@ -2,11 +2,12 @@
 // Copyright 2026 Lusoris
 //
 // cmd/vmafx-controller/queue/queue_listall_test.go — table-driven tests for
-// SQLiteQueue.ListAll, Depth, and the repeatCommaQ helper (exercised via ListAll
-// filtered queries).
+// SQLiteQueue.ListByTenant, Depth, and the repeatCommaQ helper (exercised via
+// ListByTenant filtered queries). The jobs here carry the empty tenant; the
+// tenant filter itself is tested in queue_tenant_test.go.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
-// ADR-0962: StreamJobs snapshot uses ListAll.
+// ADR-0962: StreamJobs snapshot uses ListByTenant (was ListAll).
 
 package queue_test
 
@@ -51,28 +52,28 @@ func submitN(t *testing.T, q *queue.SQLiteQueue, n int) []string {
 	return ids
 }
 
-// TestListAll_EmptyQueue returns an empty slice (not nil) without error.
-func TestListAll_EmptyQueue(t *testing.T) {
+// TestListByTenant_EmptyQueue returns an empty slice (not nil) without error.
+func TestListByTenant_EmptyQueue(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
-	jobs, err := q.ListAll(context.Background(), nil)
+	jobs, err := q.ListByTenant(context.Background(), "", nil)
 	if err != nil {
-		t.Fatalf("ListAll: %v", err)
+		t.Fatalf("ListByTenant: %v", err)
 	}
 	if len(jobs) != 0 {
 		t.Errorf("empty queue: got %d jobs, want 0", len(jobs))
 	}
 }
 
-// TestListAll_NoFilter returns all jobs.
-func TestListAll_NoFilter(t *testing.T) {
+// TestListByTenant_NoFilter returns all jobs.
+func TestListByTenant_NoFilter(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 	ids := submitN(t, q, 3)
 
-	jobs, err := q.ListAll(context.Background(), nil)
+	jobs, err := q.ListByTenant(context.Background(), "", nil)
 	if err != nil {
-		t.Fatalf("ListAll: %v", err)
+		t.Fatalf("ListByTenant: %v", err)
 	}
 	if len(jobs) != 3 {
 		t.Errorf("got %d jobs, want 3", len(jobs))
@@ -85,20 +86,20 @@ func TestListAll_NoFilter(t *testing.T) {
 	}
 	for _, j := range jobs {
 		if !idSet[j.ID] {
-			t.Errorf("unexpected job ID %q in ListAll result", j.ID)
+			t.Errorf("unexpected job ID %q in ListByTenant result", j.ID)
 		}
 	}
 }
 
-// TestListAll_FilterPending returns only PENDING jobs.
-func TestListAll_FilterPending(t *testing.T) {
+// TestListByTenant_FilterPending returns only PENDING jobs.
+func TestListByTenant_FilterPending(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 	submitN(t, q, 2)
 
-	jobs, err := q.ListAll(context.Background(), []string{queue.StatusPending})
+	jobs, err := q.ListByTenant(context.Background(), "", []string{queue.StatusPending})
 	if err != nil {
-		t.Fatalf("ListAll(pending): %v", err)
+		t.Fatalf("ListByTenant(pending): %v", err)
 	}
 	if len(jobs) != 2 {
 		t.Errorf("pending filter: got %d, want 2", len(jobs))
@@ -110,48 +111,48 @@ func TestListAll_FilterPending(t *testing.T) {
 	}
 }
 
-// TestListAll_FilterRunning returns no RUNNING jobs when queue is freshly populated.
-func TestListAll_FilterRunning(t *testing.T) {
+// TestListByTenant_FilterRunning returns no RUNNING jobs when queue is freshly populated.
+func TestListByTenant_FilterRunning(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 	submitN(t, q, 2)
 
-	jobs, err := q.ListAll(context.Background(), []string{queue.StatusRunning})
+	jobs, err := q.ListByTenant(context.Background(), "", []string{queue.StatusRunning})
 	if err != nil {
-		t.Fatalf("ListAll(running): %v", err)
+		t.Fatalf("ListByTenant(running): %v", err)
 	}
 	if len(jobs) != 0 {
 		t.Errorf("running filter on fresh queue: got %d, want 0", len(jobs))
 	}
 }
 
-// TestListAll_MultipleStatusFilters exercises the IN-clause path (repeatCommaQ)
+// TestListByTenant_MultipleStatusFilters exercises the IN-clause path (repeatCommaQ)
 // with two status values.
-func TestListAll_MultipleStatusFilters(t *testing.T) {
+func TestListByTenant_MultipleStatusFilters(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 	submitN(t, q, 3)
 
 	// Filter by both pending + running — should return all 3 since they're pending.
-	jobs, err := q.ListAll(context.Background(), []string{queue.StatusPending, queue.StatusRunning})
+	jobs, err := q.ListByTenant(context.Background(), "", []string{queue.StatusPending, queue.StatusRunning})
 	if err != nil {
-		t.Fatalf("ListAll(pending+running): %v", err)
+		t.Fatalf("ListByTenant(pending+running): %v", err)
 	}
 	if len(jobs) != 3 {
 		t.Errorf("pending+running filter: got %d, want 3", len(jobs))
 	}
 }
 
-// TestListAll_OrderedByCreation verifies that ListAll returns jobs in creation
+// TestListByTenant_OrderedByCreation verifies that ListByTenant returns jobs in creation
 // order (oldest first).
-func TestListAll_OrderedByCreation(t *testing.T) {
+func TestListByTenant_OrderedByCreation(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 	ids := submitN(t, q, 3)
 
-	jobs, err := q.ListAll(context.Background(), nil)
+	jobs, err := q.ListByTenant(context.Background(), "", nil)
 	if err != nil {
-		t.Fatalf("ListAll: %v", err)
+		t.Fatalf("ListByTenant: %v", err)
 	}
 	if len(jobs) != 3 {
 		t.Fatalf("got %d jobs, want 3", len(jobs))
@@ -180,9 +181,9 @@ func TestDepth(t *testing.T) {
 	}
 }
 
-// TestListAll_ScoringFieldsRoundTrip verifies that Reference, Distorted, Model,
-// and Backend are preserved through a ListAll round-trip.
-func TestListAll_ScoringFieldsRoundTrip(t *testing.T) {
+// TestListByTenant_ScoringFieldsRoundTrip verifies that Reference, Distorted, Model,
+// and Backend are preserved through a ListByTenant round-trip.
+func TestListByTenant_ScoringFieldsRoundTrip(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 	id, err := q.Submit(context.Background(), &queue.Job{
@@ -197,9 +198,9 @@ func TestListAll_ScoringFieldsRoundTrip(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	jobs, err := q.ListAll(context.Background(), nil)
+	jobs, err := q.ListByTenant(context.Background(), "", nil)
 	if err != nil {
-		t.Fatalf("ListAll: %v", err)
+		t.Fatalf("ListByTenant: %v", err)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("got %d jobs, want 1", len(jobs))
@@ -219,13 +220,14 @@ func TestListAll_ScoringFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestListAll_TenantIDRoundTrip verifies that a job submitted with a non-empty
-// TenantID has that field preserved through the ListAll SELECT.
+// TestListByTenant_TenantIDRoundTrip verifies that a job submitted with a
+// non-empty TenantID has that field preserved through the ListByTenant SELECT.
 //
-// Regression guard for the bug where ListAll omitted tenant_id from its SELECT
-// and Scan, causing Job.TenantID to be "" in every result — which broke the
-// StreamJobs gRPC handler's ability to surface the submitter's tenant.
-func TestListAll_TenantIDRoundTrip(t *testing.T) {
+// Regression guard for the bug where ListAll (now ListByTenant) omitted
+// tenant_id from its SELECT and Scan, causing Job.TenantID to be "" in every
+// result — which broke the StreamJobs gRPC handler's ability to surface the
+// submitter's tenant.
+func TestListByTenant_TenantIDRoundTrip(t *testing.T) {
 	t.Parallel()
 	q := newListTestQueue(t)
 
@@ -237,9 +239,9 @@ func TestListAll_TenantIDRoundTrip(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	jobs, err := q.ListAll(context.Background(), nil)
+	jobs, err := q.ListByTenant(context.Background(), "acme-corp", nil)
 	if err != nil {
-		t.Fatalf("ListAll: %v", err)
+		t.Fatalf("ListByTenant: %v", err)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("got %d jobs, want 1", len(jobs))

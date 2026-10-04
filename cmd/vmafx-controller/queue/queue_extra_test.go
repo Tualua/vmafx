@@ -58,14 +58,14 @@ func TestRunningCount_TransitionsAcrossLifecycle(t *testing.T) {
 	}
 
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	if _, err := q.PullWork(ctx, "node-a", cap); err != nil {
+	if _, err := q.PullWork(ctx, "node-a", "", cap); err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
 	if got := q.RunningCount(); got != 1 {
 		t.Errorf("after PullWork RunningCount: got %d, want 1", got)
 	}
 
-	if err := q.ReportResult(ctx, id, &queue.JobResult{Score: 90.0}); err != nil {
+	if err := q.ReportResult(ctx, queue.Report{NodeID: "node-a", JobID: id, Result: &queue.JobResult{Score: 90.0}}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 	if got := q.RunningCount(); got != 0 {
@@ -96,7 +96,7 @@ func TestCancel_RunningJob(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	if _, err := q.PullWork(ctx, "node-x", cap); err != nil {
+	if _, err := q.PullWork(ctx, "node-x", "", cap); err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
 	if q.RunningCount() != 1 {
@@ -126,8 +126,8 @@ func TestCancel_AlreadyTerminalIsIdempotent(t *testing.T) {
 	j := &queue.Job{Scoring: queue.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv"}}
 	id, _ := q.Submit(ctx, j)
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
-	_, _ = q.PullWork(ctx, "node-x", cap)
-	_ = q.ReportResult(ctx, id, &queue.JobResult{Score: 90.0})
+	_, _ = q.PullWork(ctx, "node-x", "", cap)
+	_ = q.ReportResult(ctx, queue.Report{NodeID: "node-x", JobID: id, Result: &queue.JobResult{Score: 90.0}})
 
 	// Job is COMPLETED; Cancel should be a no-op (no error).
 	if err := q.Cancel(ctx, id); err != nil {
@@ -157,7 +157,7 @@ func TestPullWork_PreservesFIFOOrder(t *testing.T) {
 	}
 
 	for i := range ids {
-		got, err := q.PullWork(ctx, "node-1", cap)
+		got, err := q.PullWork(ctx, "node-1", "", cap)
 		if err != nil {
 			t.Fatalf("PullWork[%d]: %v", i, err)
 		}
@@ -170,7 +170,7 @@ func TestPullWork_PreservesFIFOOrder(t *testing.T) {
 	}
 
 	// Now empty.
-	last, err := q.PullWork(ctx, "node-1", cap)
+	last, err := q.PullWork(ctx, "node-1", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork on drained: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestPullWork_SkipsCancelledFIFOEntry(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 
-	got, err := q.PullWork(ctx, "node-1", cap)
+	got, err := q.PullWork(ctx, "node-1", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestSubmit_BackendOptionalForCPUNode(t *testing.T) {
 	ctx := context.Background()
 	_, _ = q.Submit(ctx, &queue.Job{Scoring: queue.ScoringParams{Reference: "/r.yuv", Backend: ""}})
 	cap := queue.NodeCapacity{Backends: []string{"cuda"}, Slots: 1}
-	got, err := q.PullWork(ctx, "cuda-node", cap)
+	got, err := q.PullWork(ctx, "cuda-node", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestPullWork_EmptyCapacityServesAnyJob(t *testing.T) {
 	ctx := context.Background()
 	_, _ = q.Submit(ctx, &queue.Job{Scoring: queue.ScoringParams{Reference: "/r.yuv"}})
 	cap := queue.NodeCapacity{Backends: nil, Slots: 1}
-	got, err := q.PullWork(ctx, "anon-node", cap)
+	got, err := q.PullWork(ctx, "anon-node", "", cap)
 	if err != nil {
 		t.Fatalf("PullWork: %v", err)
 	}

@@ -1225,3 +1225,4 @@
 1518-controller-grpc-authorization
 1527-transnet-v2-upstream-windows
 1517-gpu-image-licensing
+1522-controller-tenant-scoped-reads

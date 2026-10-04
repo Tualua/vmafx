@@ -51,11 +51,11 @@ func TestRegisterReturnsDistinctIDsForSameName(t *testing.T) {
 	r := newTestRegistry(t)
 	cap := nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1}
 
-	id1, _, err := r.Register("worker", cap)
+	id1, _, err := r.Register("worker", testTenant, cap)
 	if err != nil {
 		t.Fatalf("Register #1: %v", err)
 	}
-	id2, _, err := r.Register("worker", cap)
+	id2, _, err := r.Register("worker", testTenant, cap)
 	if err != nil {
 		t.Fatalf("Register #2: %v", err)
 	}
@@ -72,12 +72,12 @@ func TestRegisterReturnsDistinctIDsForSameName(t *testing.T) {
 func TestHeartbeatUpdatesJobsRunning(t *testing.T) {
 	t.Parallel()
 	r := newTestRegistry(t)
-	id, tok, err := r.Register("w", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 4})
+	id, tok, err := r.Register("w", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 4})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if ok := r.Heartbeat(id, tok, 3); !ok {
+	if ok := r.Heartbeat(id, tok, testTenant, 3); !ok {
 		t.Fatal("Heartbeat returned false")
 	}
 	n, ok := r.Get(id)
@@ -94,7 +94,7 @@ func TestHeartbeatUpdatesJobsRunning(t *testing.T) {
 func TestHeartbeatAdvancesTimestamp(t *testing.T) {
 	t.Parallel()
 	r := newTestRegistry(t)
-	id, tok, err := r.Register("w", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	id, tok, err := r.Register("w", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestHeartbeatAdvancesTimestamp(t *testing.T) {
 
 	// Sleep a small amount so the timestamp delta is observable.
 	time.Sleep(2 * time.Millisecond)
-	if ok := r.Heartbeat(id, tok, 0); !ok {
+	if ok := r.Heartbeat(id, tok, testTenant, 0); !ok {
 		t.Fatal("Heartbeat returned false")
 	}
 	after, _ := r.Get(id)
@@ -130,19 +130,19 @@ func TestConcurrentRegisterHeartbeat(t *testing.T) {
 	for range workers {
 		go func() {
 			defer wg.Done()
-			id, tok, err := r.Register("worker", nodes.Capability{Backends: []string{"cpu"}, Concurrency: cpuCnt})
+			id, tok, err := r.Register("worker", testTenant, nodes.Capability{Backends: []string{"cpu"}, Concurrency: cpuCnt})
 			if err != nil {
 				t.Errorf("Register: %v", err)
 				return
 			}
 			for range opsPerW {
-				if ok := r.Heartbeat(id, tok, jobsBurst); !ok {
+				if ok := r.Heartbeat(id, tok, testTenant, jobsBurst); !ok {
 					t.Errorf("Heartbeat returned false for %q", id)
 					return
 				}
 				_, _ = r.Get(id)
 				_ = r.Count()
-				_ = r.ValidateSession(id, tok)
+				_ = r.ValidateSession(id, tok, testTenant)
 			}
 		}()
 	}

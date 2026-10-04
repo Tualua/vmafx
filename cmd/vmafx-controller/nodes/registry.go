@@ -28,6 +28,8 @@
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 // ADR-0962: fix reaper goroutine stop signal (round-25 audit B.4).
 // ADR-1119: reaper bound to fx.Lifecycle Start/Close instead of a caller ctx.
+// ADR-1522: a node session belongs to the tenant that registered it; every
+// session check also compares that tenant.
 
 package nodes
 
@@ -64,9 +66,13 @@ type Capability struct {
 
 // Node represents an active vmafx-node session.
 type Node struct {
-	ID            string
-	Name          string
-	SessionToken  string
+	ID           string
+	Name         string
+	SessionToken string
+	// TenantID is the tenant of the token that registered the node. The
+	// session is only valid for calls made with a token of the same tenant,
+	// and the node is only given that tenant's jobs (ADR-1522).
+	TenantID      string
 	Capability    Capability
 	LastHeartbeat time.Time
 	JobsRunning   int
@@ -205,9 +211,9 @@ func (r *Registry) Close() {
 	})
 }
 
-// Register adds (or replaces) a node.  Returns the assigned node_id and
+// Register adds a node for tenantID.  Returns the assigned node_id and
 // session_token.
-func (r *Registry) Register(name string, cap Capability) (nodeID, sessionToken string, err error) {
+func (r *Registry) Register(name, tenantID string, cap Capability) (nodeID, sessionToken string, err error) {
 	nodeID, err = generateID()
 	if err != nil {
 		return "", "", fmt.Errorf("registry: generate node ID: %w", err)
@@ -222,6 +228,7 @@ func (r *Registry) Register(name string, cap Capability) (nodeID, sessionToken s
 		ID:            nodeID,
 		Name:          name,
 		SessionToken:  sessionToken,
+		TenantID:      tenantID,
 		Capability:    cap,
 		LastHeartbeat: time.Now(),
 	}
@@ -230,6 +237,7 @@ func (r *Registry) Register(name string, cap Capability) (nodeID, sessionToken s
 	r.log.Info("node registered",
 		"node_id", nodeID,
 		"name", name,
+		"tenant_id", tenantID,
 		"gpu_vendor", cap.GPUVendor,
 		"backends", cap.Backends,
 		"concurrency", cap.Concurrency,
@@ -238,12 +246,13 @@ func (r *Registry) Register(name string, cap Capability) (nodeID, sessionToken s
 }
 
 // Heartbeat updates the last-seen timestamp for a node.  Returns false if
-// the node_id / session_token pair is unknown (caller should re-register).
-func (r *Registry) Heartbeat(nodeID, sessionToken string, jobsRunning int) bool {
+// the node_id / session_token pair is unknown or belongs to another tenant
+// (caller should re-register).
+func (r *Registry) Heartbeat(nodeID, sessionToken, tenantID string, jobsRunning int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.nodes[nodeID]
-	if !ok || subtle.ConstantTimeCompare([]byte(n.SessionToken), []byte(sessionToken)) != 1 {
+	if !ok || !n.sessionMatches(sessionToken, tenantID) {
 		return false
 	}
 	n.LastHeartbeat = time.Now()
@@ -267,12 +276,19 @@ func (r *Registry) Get(nodeID string) (*Node, bool) {
 }
 
 // ValidateSession returns true if the node_id and session_token are both
-// present and match.
-func (r *Registry) ValidateSession(nodeID, sessionToken string) bool {
+// present and match, and the node was registered by tenantID.
+func (r *Registry) ValidateSession(nodeID, sessionToken, tenantID string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	n, ok := r.nodes[nodeID]
-	return ok && subtle.ConstantTimeCompare([]byte(n.SessionToken), []byte(sessionToken)) == 1
+	return ok && n.sessionMatches(sessionToken, tenantID)
+}
+
+// sessionMatches compares the session token in constant time and the tenant
+// exactly. Caller holds r.mu.
+func (n *Node) sessionMatches(sessionToken, tenantID string) bool {
+	tokenOK := subtle.ConstantTimeCompare([]byte(n.SessionToken), []byte(sessionToken)) == 1
+	return tokenOK && n.TenantID == tenantID
 }
 
 // All returns a snapshot of all live nodes.

@@ -12,9 +12,11 @@
 //   - New(dbPath, log) opens (or creates) the SQLite database, applies the
 //     schema, and loads any PENDING jobs into the in-memory FIFO.
 //   - Submit adds a job to both the database and the FIFO.
-//   - PullWork atomically moves the oldest matching PENDING job to RUNNING
-//     and assigns it to the given nodeID.
-//   - ReportResult marks the job COMPLETED or FAILED and records results.
+//   - PullWork atomically moves the oldest matching PENDING job of the given
+//     tenant to RUNNING and assigns it to the given nodeID.
+//   - ReportResult marks the job COMPLETED or FAILED and records results,
+//     provided the job is assigned to the reporting node (or to an orphaned
+//     node of the reporter's tenant).
 //   - Cancel marks the job CANCELLED (no-op if already terminal).
 //   - Get returns a snapshot of any job by ID.
 //   - Close shuts down the database connection.
@@ -23,6 +25,8 @@
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 // ADR-0961: PullWork rolls back RUNNING state when post-update Get fails.
+// ADR-1522: every read that returns jobs is scoped to one tenant; there is no
+// read of all tenants' jobs.
 
 package queue
 
@@ -95,15 +99,27 @@ type NodeCapacity struct {
 	Slots int
 }
 
+// ErrNotAssigned is returned (wrapped) by ReportResult when the job does not
+// exist, belongs to another tenant, or is not assigned to the reporting node
+// (or to an orphaned node of its tenant).
+var ErrNotAssigned = errors.New("job is not assigned to this node")
+
 // Queue is the interface implemented by *SQLiteQueue.
 type Queue interface {
 	// Submit enqueues a new job and returns its assigned ID.
 	Submit(ctx context.Context, job *Job) (string, error)
-	// PullWork atomically assigns the next matching PENDING job to nodeID.
-	// Returns (nil, nil) when no matching job is available.
-	PullWork(ctx context.Context, nodeID string, capacity NodeCapacity) (*Job, error)
-	// ReportResult records the terminal outcome of a job.
-	ReportResult(ctx context.Context, jobID string, result *JobResult) error
+	// PullWork atomically assigns the next matching PENDING job of tenantID to
+	// nodeID. Jobs of other tenants are never assigned. Returns (nil, nil)
+	// when no matching job is available.
+	PullWork(ctx context.Context, nodeID, tenantID string, capacity NodeCapacity) (*Job, error)
+	// ReportResult records the terminal outcome of a job assigned to the
+	// reporting node (or of an orphaned job of its tenant, see Report). It
+	// returns an error wrapping ErrNotAssigned, and changes nothing, for any
+	// other job.
+	ReportResult(ctx context.Context, r Report) error
+	// MayReport reports whether a partial report would be accepted; it writes
+	// nothing.
+	MayReport(ctx context.Context, r Report) bool
 	// Get returns a snapshot of a job by ID.
 	Get(ctx context.Context, jobID string) (*Job, error)
 	// Cancel requests cancellation of a pending or running job.
@@ -112,10 +128,11 @@ type Queue interface {
 	// (ahead of newer pending jobs) and reports how many it moved. The
 	// controller calls it when the node registry evicts a silent node.
 	RequeueNode(ctx context.Context, nodeID string) (int, error)
-	// ListAll returns a snapshot of all jobs, optionally filtered to the
-	// provided statuses.  An empty statuses slice returns all jobs.
-	// Used by StreamJobs to deliver a consistent point-in-time snapshot.
-	ListAll(ctx context.Context, statuses []string) ([]*Job, error)
+	// ListByTenant returns a snapshot of the jobs of tenantID, optionally
+	// filtered to the provided statuses.  An empty statuses slice returns all
+	// of the tenant's jobs.  Used by StreamJobs to deliver a consistent
+	// point-in-time snapshot (ADR-0962, ADR-1522).
+	ListByTenant(ctx context.Context, tenantID string, statuses []string) ([]*Job, error)
 	// PendingCount returns the current number of PENDING jobs.
 	PendingCount() int
 	// RunningCount returns the current number of RUNNING jobs.
@@ -251,14 +268,14 @@ func (q *SQLiteQueue) Submit(ctx context.Context, job *Job) (string, error) {
 	return job.ID, nil
 }
 
-// PullWork atomically dequeues the oldest PENDING job whose backend requirement
-// (if any) is satisfied by the requesting node's capabilities.  Returns
-// (nil, nil) when no matching job is available.
-func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID string, capacity NodeCapacity) (*Job, error) {
+// PullWork atomically dequeues the oldest PENDING job of tenantID whose backend
+// requirement (if any) is satisfied by the requesting node's capabilities.
+// Returns (nil, nil) when no matching job is available.
+func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID, tenantID string, capacity NodeCapacity) (*Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	matchIdx, matchID := q.findPendingMatch(capacity)
+	matchIdx, matchID := q.findPendingMatch(tenantID, capacity)
 	if matchIdx < 0 {
 		return nil, nil
 	}
@@ -299,12 +316,13 @@ func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID string, capacity Node
 	return job, nil
 }
 
-// findPendingMatch returns the FIFO index and id of the oldest PENDING job the node can
-// run, or (-1, "") when nothing matches. Must be called with q.mu held.
+// findPendingMatch returns the FIFO index and id of the oldest PENDING job of tenantID the
+// node can run, or (-1, "") when nothing matches. Must be called with q.mu held.
 //
 // A node that advertises no backends at all is treated as able to run anything, which is
-// what keeps a pre-capability node from starving.
-func (q *SQLiteQueue) findPendingMatch(capacity NodeCapacity) (int, string) {
+// what keeps a pre-capability node from starving. It is never given another tenant's job
+// (ADR-1522).
+func (q *SQLiteQueue) findPendingMatch(tenantID string, capacity NodeCapacity) (int, string) {
 	backendSet := make(map[string]struct{}, len(capacity.Backends))
 	for _, b := range capacity.Backends {
 		backendSet[b] = struct{}{}
@@ -315,8 +333,9 @@ func (q *SQLiteQueue) findPendingMatch(capacity NodeCapacity) (int, string) {
 			q.log.Warn("queue: failed to fetch pending job", "id", id, "error", err)
 			continue
 		}
-		if job.Status != StatusPending {
-			// Stale FIFO entry (job was cancelled externally) — drop it.
+		if job.Status != StatusPending || job.TenantID != tenantID {
+			// Stale FIFO entry (job was cancelled externally), or another
+			// tenant's job — skip it.
 			continue
 		}
 		// Backend match: if the job specifies a backend, the node must support it.
@@ -373,48 +392,155 @@ func (q *SQLiteQueue) rollbackTopending(jobID string) error {
 	return nil
 }
 
+// Report is one result report of a node: who reports (node and tenant), for
+// which job, and with what outcome. Orphaned reports whether a node ID has no
+// live session any more; a job assigned to such a node may be reported by
+// another session of the same tenant, which is how a node that registered
+// again (after a controller restart or an eviction) reports a job it finished
+// under its old session (ADR-1524, ADR-1522). Nil means no node is orphaned.
+type Report struct {
+	NodeID   string
+	TenantID string
+	JobID    string
+	Result   *JobResult
+	Orphaned func(nodeID string) bool
+}
+
 // ReportResult records the terminal outcome of a job.  If result.Err is
 // non-empty the job is marked FAILED; otherwise COMPLETED.
-func (q *SQLiteQueue) ReportResult(ctx context.Context, jobID string, result *JobResult) error {
+//
+// Only these reports are written (ADR-1522):
+//   - a job assigned to the reporting node; the UPDATE itself carries
+//     assigned_node = node, so nothing else can match it;
+//   - a RUNNING job of the reporting tenant whose node is orphaned; the
+//     UPDATE compares the status and the tenant, refuses the reporter's own
+//     node, and moves the assignment to the reporter in the same statement.
+//
+// A repeated report of a job that is already terminal and was the reporter's
+// (or its orphaned predecessor's) is an idempotent success. Every other report
+// — another tenant's job, a pending job, a job of a live node, an unknown job
+// — changes nothing and returns an error wrapping ErrNotAssigned.
+func (q *SQLiteQueue) ReportResult(ctx context.Context, r Report) error {
 	status := StatusCompleted
-	if result.Err != "" {
+	if r.Result.Err != "" {
 		status = StatusFailed
 	}
-
-	featuresJSON, err := json.Marshal(result.Features)
+	featuresJSON, err := json.Marshal(r.Result.Features)
 	if err != nil {
 		// map[string]float64 marshal can only fail on non-finite floats (NaN/Inf);
 		// surface the error rather than silently discarding per-feature scores.
-		return fmt.Errorf("queue: marshal features for job %s: %w", jobID, err)
+		return fmt.Errorf("queue: marshal features for job %s: %w", r.JobID, err)
 	}
-
 	// ExecContext propagates the caller's ctx so the node's ReportResult RPC
 	// deadline / cancellation aborts the UPDATE cleanly.
 	// The AND status NOT IN guard makes ReportResult idempotent: a node that
 	// retries after a transient gRPC error will not overwrite an already-terminal
 	// row, and a Cancel that races with ReportResult cannot be silently undone
 	// (r4-retry-idempotency finding).
-	now := time.Now().Unix()
 	res, err := q.db.ExecContext(ctx,
-		"UPDATE jobs SET status=?, score=?, features=?, error=?, updated_at=? WHERE id=? AND status NOT IN (?,?,?)",
-		status, result.Score, string(featuresJSON), result.Err, now, jobID,
+		"UPDATE jobs SET status=?, score=?, features=?, error=?, updated_at=? WHERE id=? AND assigned_node=? AND status NOT IN (?,?,?)",
+		status, r.Result.Score, string(featuresJSON), r.Result.Err, time.Now().Unix(), r.JobID, r.NodeID,
 		StatusCompleted, StatusFailed, StatusCancelled,
 	)
 	if err != nil {
-		return fmt.Errorf("queue: report result for job %s: %w", jobID, err)
+		return fmt.Errorf("queue: report result for job %s: %w", r.JobID, err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		// Already in a terminal state (completed, failed, or cancelled by the
-		// time this call arrived) — treat as idempotent success.
-		q.log.Info("ReportResult: job already in terminal state, ignoring", "job_id", jobID)
+	if n, _ := res.RowsAffected(); n == 1 {
+		q.finishReport(r, status)
+		return nil
 	}
+	return q.reportUnassigned(ctx, r, status, string(featuresJSON))
+}
 
+// reportUnassigned handles a report the guarded UPDATE did not write: an
+// idempotent retry, an orphaned job of the reporter's tenant, or a refusal.
+func (q *SQLiteQueue) reportUnassigned(ctx context.Context, r Report, status, featuresJSON string) error {
+	switch q.reportDecision(ctx, r) {
+	case reportIdempotent:
+		q.log.Info("ReportResult: job already in terminal state, ignoring", "job_id", r.JobID)
+		return nil
+	case reportAdopt:
+		adopted, err := q.adoptOrphan(ctx, r, status, featuresJSON)
+		if err != nil || adopted {
+			return err
+		}
+	}
+	q.log.Warn("ReportResult: refused, job not assigned to node", "job_id", r.JobID, "node_id", r.NodeID)
+	return fmt.Errorf("queue: job %s: %w", r.JobID, ErrNotAssigned)
+}
+
+// adoptOrphan writes the result of an orphaned RUNNING job of the reporter's
+// tenant and moves the assignment to the reporter, in one compare-and-set
+// UPDATE. It reports whether the row was written.
+func (q *SQLiteQueue) adoptOrphan(ctx context.Context, r Report, status, featuresJSON string) (bool, error) {
+	res, err := q.db.ExecContext(ctx,
+		"UPDATE jobs SET status=?, score=?, features=?, error=?, assigned_node=?, updated_at=? WHERE id=? AND assigned_node<>? AND status=? AND tenant_id=?",
+		status, r.Result.Score, featuresJSON, r.Result.Err, r.NodeID, time.Now().Unix(),
+		r.JobID, r.NodeID, StatusRunning, r.TenantID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("queue: report orphaned job %s: %w", r.JobID, err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return false, nil
+	}
+	q.log.Info("ReportResult: orphaned job reported by a new session of its tenant",
+		"job_id", r.JobID, "node_id", r.NodeID)
+	q.finishReport(r, status)
+	return true, nil
+}
+
+// finishReport drops a reported job from the running set.
+func (q *SQLiteQueue) finishReport(r Report, status string) {
 	q.mu.Lock()
-	delete(q.runningSet, jobID)
+	delete(q.runningSet, r.JobID)
 	q.mu.Unlock()
+	q.log.Info("job result recorded", "job_id", r.JobID, "status", status, "score", r.Result.Score)
+}
 
-	q.log.Info("job result recorded", "job_id", jobID, "status", status, "score", result.Score)
-	return nil
+// reportVerdict is what reportDecision decides about a report.
+type reportVerdict int
+
+const (
+	reportRefuse reportVerdict = iota
+	reportIdempotent
+	reportAdopt
+	reportOwn
+)
+
+// reportDecision reads the job and decides a report about it. A read cannot
+// widen what the guarded UPDATEs allow: an adoption is written only by its own
+// compare-and-set UPDATE, and a node ID that lost its session never gets it
+// back (RegisterNode issues a new ID every time).
+func (q *SQLiteQueue) reportDecision(ctx context.Context, r Report) reportVerdict {
+	var assigned, status, tenant string
+	err := q.db.QueryRowContext(ctx,
+		"SELECT COALESCE(assigned_node,''), status, COALESCE(tenant_id,'') FROM jobs WHERE id=?", r.JobID,
+	).Scan(&assigned, &status, &tenant)
+	if err != nil || tenant != r.TenantID || assigned == "" {
+		return reportRefuse
+	}
+	mine := assigned == r.NodeID
+	orphaned := !mine && r.Orphaned != nil && r.Orphaned(assigned)
+	terminal := status == StatusCompleted || status == StatusFailed || status == StatusCancelled
+	switch {
+	case terminal && (mine || orphaned):
+		return reportIdempotent
+	case status == StatusRunning && mine:
+		return reportOwn
+	case status == StatusRunning && orphaned:
+		return reportAdopt
+	default:
+		return reportRefuse
+	}
+}
+
+// MayReport reports whether a partial report r would be accepted: the job is
+// the reporter's, or a running job of its tenant whose node is orphaned. It
+// writes nothing.
+func (q *SQLiteQueue) MayReport(ctx context.Context, r Report) bool {
+	v := q.reportDecision(ctx, r)
+	return v == reportOwn || v == reportAdopt
 }
 
 // Get returns a snapshot of a job by ID.
@@ -590,20 +716,22 @@ func (q *SQLiteQueue) SetGetUnlockedHookForTest(fn func(id string) error) {
 	q.getUnlockedHook = fn
 }
 
-// ListAll returns a point-in-time snapshot of all jobs, optionally filtered
-// to the provided statuses.  An empty statuses slice returns every job.
+// ListByTenant returns a point-in-time snapshot of the jobs of tenantID,
+// optionally filtered to the provided statuses.  An empty statuses slice
+// returns every job of the tenant.  The tenant is part of the SQL WHERE
+// clause: no other tenant's row is ever read (ADR-1522).
 //
 // Callers receive copies — mutations to the returned slice do not affect the
 // queue.  Used by controllerServer.StreamJobs to send a consistent snapshot
 // (ADR-0962).
-func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, error) {
-	rows, err := q.queryJobs(statuses)
+func (q *SQLiteQueue) ListByTenant(ctx context.Context, tenantID string, statuses []string) ([]*Job, error) {
+	rows, err := q.queryJobs(ctx, tenantID, statuses)
 	if err != nil {
-		return nil, fmt.Errorf("queue: list all jobs: %w", err)
+		return nil, fmt.Errorf("queue: list jobs of tenant %q: %w", tenantID, err)
 	}
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
-			q.log.Warn("queue: close ListAll rows", "error", closeErr)
+			q.log.Warn("queue: close ListByTenant rows", "error", closeErr)
 		}
 	}()
 
@@ -616,34 +744,36 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 		out = append(out, job)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("queue: iterate jobs in ListAll: %w", err)
+		return nil, fmt.Errorf("queue: iterate jobs in ListByTenant: %w", err)
 	}
 	return out, nil
 }
 
-// queryJobs runs the ListAll SELECT, narrowed to statuses when any are given.
-func (q *SQLiteQueue) queryJobs(statuses []string) (*sql.Rows, error) {
+// queryJobs runs the ListByTenant SELECT for tenantID, narrowed to statuses when any
+// are given.
+func (q *SQLiteQueue) queryJobs(ctx context.Context, tenantID string, statuses []string) (*sql.Rows, error) {
 	const columns = "SELECT id, status, scoring, COALESCE(assigned_node,''), " +
 		"COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), " +
-		"COALESCE(tenant_id,''), created_at, updated_at FROM jobs"
+		"COALESCE(tenant_id,''), created_at, updated_at FROM jobs WHERE tenant_id = ?"
 	if len(statuses) == 0 {
-		return q.db.Query(columns + " ORDER BY created_at ASC")
+		return q.db.QueryContext(ctx, columns+" ORDER BY created_at ASC", tenantID)
 	}
 	// Build a parameterised IN clause.  We limit statuses to the known set
 	// (max 5) so the query never becomes unbounded.
-	placeholders := make([]any, len(statuses))
-	for i, s := range statuses {
-		placeholders[i] = s
+	args := make([]any, 0, len(statuses)+1)
+	args = append(args, tenantID)
+	for _, s := range statuses {
+		args = append(args, s)
 	}
 	// #nosec G202 -- The concatenated fragment is repeatCommaQ output, a
 	// pure ",?,?,..." placeholder string of length len(statuses)-1; no
-	// user data enters the SQL text. Status values bind through
-	// `placeholders...` as parameterised arguments.
-	query := columns + " WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
-	return q.db.Query(query, placeholders...)
+	// user data enters the SQL text. The tenant and the status values bind
+	// through `args...` as parameterised arguments.
+	query := columns + " AND status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
+	return q.db.QueryContext(ctx, query, args...)
 }
 
-// scanJobRow decodes one ListAll row into a freshly allocated Job, so callers own the
+// scanJobRow decodes one ListByTenant row into a freshly allocated Job, so callers own the
 // value rather than aliasing the loop variable.
 //
 // Unreadable features decode to an empty map rather than failing the whole snapshot: the
@@ -662,10 +792,10 @@ func scanJobRow(rows *sql.Rows) (*Job, error) {
 		&job.Score, &featuresJSON, &job.Error, &job.TenantID,
 		&createdAt, &updatedAt,
 	); err != nil {
-		return nil, fmt.Errorf("queue: scan job row in ListAll: %w", err)
+		return nil, fmt.Errorf("queue: scan job row in ListByTenant: %w", err)
 	}
 	if err := json.Unmarshal([]byte(scoringJSON), &job.Scoring); err != nil {
-		return nil, fmt.Errorf("queue: unmarshal scoring in ListAll: %w", err)
+		return nil, fmt.Errorf("queue: unmarshal scoring in ListByTenant: %w", err)
 	}
 	if err := json.Unmarshal([]byte(featuresJSON), &job.Features); err != nil {
 		job.Features = map[string]float64{}

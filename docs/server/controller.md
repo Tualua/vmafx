@@ -101,14 +101,18 @@ full service definition is in `cmd/vmafx-controller/proto/controller.proto`.
 
 | RPC | Caller | Purpose |
 | --- | --- | --- |
-| `SubmitJob` | client | Enqueue a job; returns its ID |
-| `GetJob` | client | Read the current state of a job |
-| `CancelJob` | client | Request cancellation of a pending or running job |
-| `StreamJobs` | client | Server-streaming snapshot of jobs (optional status filter); a snapshot in Phase 4b.1 |
-| `RegisterNode` | node | Register a worker with its capability |
+| `SubmitJob` | client | Enqueue a job for the caller's tenant; returns its ID |
+| `GetJob` | client | Read the current state of one of the tenant's jobs |
+| `CancelJob` | client | Request cancellation of one of the tenant's pending or running jobs |
+| `StreamJobs` | client | Server-streaming snapshot of the tenant's jobs (optional status filter); a snapshot in Phase 4b.1 |
+| `RegisterNode` | node | Register a worker with its capability; the session belongs to the caller's tenant |
 | `Heartbeat` | node | Keep the registration alive |
-| `PullWork` | node | Receive the next matching job |
-| `ReportResult` | node | Report progress or the final result |
+| `PullWork` | node | Receive the next matching job of the node's tenant |
+| `ReportResult` | node | Report progress or the final result of a job assigned to the node |
+
+Every call carries the tenant of its token, and every job it reads or writes
+belongs to that tenant; the role each call needs and the tenant rules are in
+[Auth gateway](auth.md#roles-and-rbac).
 
 #### Submit a job
 

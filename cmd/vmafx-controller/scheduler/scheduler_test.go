@@ -57,7 +57,7 @@ func TestAssignHappyPath(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	nodeID, token, err := f.r.Register("node-1", nodes.Capability{
+	nodeID, token, err := f.r.Register("node-1", "", nodes.Capability{
 		GPUVendor:   "nvidia",
 		Backends:    []string{"cuda", "cpu"},
 		Concurrency: 2,
@@ -74,7 +74,7 @@ func TestAssignHappyPath(t *testing.T) {
 	}
 
 	cap := nodes.Capability{GPUVendor: "nvidia", Backends: []string{"cuda", "cpu"}, Concurrency: 2}
-	job, err := f.s.Assign(ctx, nodeID, token, cap)
+	job, err := f.s.Assign(ctx, nodeID, token, "", cap)
 	if err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestAssignInvalidSession(t *testing.T) {
 	ctx := context.Background()
 
 	cap := nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1}
-	_, err := f.s.Assign(ctx, "nonexistent-node", "bad-token", cap)
+	_, err := f.s.Assign(ctx, "nonexistent-node", "bad-token", "", cap)
 	if err == nil {
 		t.Error("expected error for invalid session, got nil")
 	}
@@ -105,7 +105,7 @@ func TestAssignNoMatchingJob(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	nodeID, token, err := f.r.Register("cpu-node", nodes.Capability{
+	nodeID, token, err := f.r.Register("cpu-node", "", nodes.Capability{
 		GPUVendor:   "cpu",
 		Backends:    []string{"cpu"},
 		Concurrency: 1,
@@ -123,7 +123,7 @@ func TestAssignNoMatchingJob(t *testing.T) {
 	}
 
 	cpuCap := nodes.Capability{GPUVendor: "cpu", Backends: []string{"cpu"}, Concurrency: 1}
-	job, err := f.s.Assign(ctx, nodeID, token, cpuCap)
+	job, err := f.s.Assign(ctx, nodeID, token, "", cpuCap)
 	if err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 	defer r1.Close()
 	s1 := scheduler.New(q1, r1, log)
 
-	nodeID1, token1, err := r1.Register("crash-node", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	nodeID1, token1, err := r1.Register("crash-node", "", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 	}
 
 	cap := nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1}
-	job, err := s1.Assign(ctx, nodeID1, token1, cap)
+	job, err := s1.Assign(ctx, nodeID1, token1, "", cap)
 	if err != nil || job == nil {
 		t.Fatalf("Assign (pre-crash): err=%v job=%v", err, job)
 	}
@@ -182,12 +182,12 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 	s2 := scheduler.New(q2, r2, log)
 
 	// Register a new node.
-	nodeID2, token2, err := r2.Register("new-node", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	nodeID2, token2, err := r2.Register("new-node", "", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	if err != nil {
 		t.Fatalf("Register new-node: %v", err)
 	}
 
-	newJob, err := s2.Assign(ctx, nodeID2, token2, cap)
+	newJob, err := s2.Assign(ctx, nodeID2, token2, "", cap)
 	if err != nil {
 		t.Fatalf("Assign (post-restart): %v", err)
 	}
