@@ -2004,6 +2004,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [HIP backend page](docs/backends/hip/overview.md) is re-measured.
 
 
+- **`vmaf-tune`'s corpus, compare, encode and ladder modules meet the HISS-04
+  size limits.** The 13 functions over 60 lines (among them `iter_rows` at 428
+  lines) are split into helpers without a change in behaviour: the same rows,
+  argv, subprocess order, errors and messages, checked against master by the
+  test suite and by differential runs of the old and new modules. The HISS
+  baseline loses those 13 infractions.
+
+
 ### Fixed
 
 - **An aarch64 clang build and an aarch64 GCC build return the same scores

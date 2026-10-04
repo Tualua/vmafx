@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T01:49:27Z",
+  "generated_at": "2026-10-04T02:21:29Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "fef36d8ef609910e48ad79ebc4a5b8c3cad93c92",
-  "total_infractions": 458,
+  "commit_sha": "4685b45e55033e0fc0376a408599d2a76157d4b1",
+  "total_infractions": 445,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3484,96 +3484,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/compare.py",
-      "line_number": 227,
-      "symbol": "compare_codecs",
-      "message": "Function 'compare_codecs' (91 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:compare_codecs",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/compare.py:HISS-04:fn:compare_codecs#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/compare.py",
-      "line_number": 571,
-      "symbol": "probe_encoder_available",
-      "message": "Function 'probe_encoder_available' (108 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:probe_encoder_available",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/compare.py:HISS-04:fn:probe_encoder_available#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/compare.py",
-      "line_number": 700,
-      "symbol": "compare_codecs_sweep",
-      "message": "Function 'compare_codecs_sweep' (134 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:compare_codecs_sweep",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/compare.py:HISS-04:fn:compare_codecs_sweep#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
-      "line_number": 86,
-      "symbol": "_decode_source_to_yuv",
-      "message": "Function '_decode_source_to_yuv' (88 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_decode_source_to_yuv",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:HISS-04:fn:_decode_source_to_yuv#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
-      "line_number": 221,
-      "symbol": "_maybe_decode_reference",
-      "message": "Function '_maybe_decode_reference' (90 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_maybe_decode_reference",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:HISS-04:fn:_maybe_decode_reference#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
-      "line_number": 555,
-      "symbol": "iter_rows",
-      "message": "Function 'iter_rows' (428 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:iter_rows",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:HISS-04:fn:iter_rows#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
-      "line_number": 985,
-      "symbol": "_row_for",
-      "message": "Function '_row_for' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_row_for",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:HISS-04:fn:_row_for#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/corpus.py",
-      "line_number": 1284,
-      "symbol": "coarse_to_fine_search",
-      "message": "Function 'coarse_to_fine_search' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:coarse_to_fine_search",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/corpus.py:HISS-04:fn:coarse_to_fine_search#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/encode.py",
-      "line_number": 590,
-      "symbol": "build_pass1_stats_command",
-      "message": "Function 'build_pass1_stats_command' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:build_pass1_stats_command",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/encode.py:HISS-04:fn:build_pass1_stats_command#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/encode.py",
-      "line_number": 772,
-      "symbol": "run_two_pass_encode",
-      "message": "Function 'run_two_pass_encode' (106 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_two_pass_encode",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/encode.py:HISS-04:fn:run_two_pass_encode#1"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "tools/vmaf-tune/src/vmaftune/encoder_profile.py",
       "line_number": 143,
       "symbol": "build_encode_request",
@@ -3661,33 +3571,6 @@
       "message": "Direct recursion in nan_to_none; the call graph must form an acyclic DAG",
       "anchor": "fn:nan_to_none",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/jsonio.py:HISS-01:fn:nan_to_none#2"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/ladder.py",
-      "line_number": 209,
-      "symbol": "make_default_sampler",
-      "message": "Function 'make_default_sampler' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:make_default_sampler",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/ladder.py:HISS-04:fn:make_default_sampler#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/ladder.py",
-      "line_number": 281,
-      "symbol": "_default_sampler",
-      "message": "Function '_default_sampler' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_default_sampler",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/ladder.py:HISS-04:fn:_default_sampler#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/ladder.py",
-      "line_number": 718,
-      "symbol": "build_and_emit",
-      "message": "Function 'build_and_emit' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:build_and_emit",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/ladder.py:HISS-04:fn:build_and_emit#1"
     },
     {
       "rule_id": "HISS-04",
