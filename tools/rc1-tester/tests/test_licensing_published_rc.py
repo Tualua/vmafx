@@ -124,6 +124,85 @@ def test_vendor_packages_matched_by_pattern_bring_no_debian_source(tmp_path: Pat
     assert "cuda-cudart-13-4=13.4.92-1" in lic.debian_specs(lic.Context(root, REPO, record), record)
 
 
+INTEL_APT = {
+    "intel-opencl-icd": "25.18.33578.15-1146~24.04",
+    "libze-intel-gpu1": "25.18.33578.15-1146~24.04",
+    "libigc2": "2.11.12-1146~24.04",
+    "libigdfcl2": "2.11.12-1146~24.04",
+    "libigdgmm12": "22.7.2-1135~24.04",
+    "libze1": "1.21.9.0-1136~24.04",
+    "libze-dev": "1.21.9.0-1136~24.04",
+}
+SOURCES_OF = {
+    "intel-opencl-icd": "intel-compute-runtime",
+    "libze-intel-gpu1": "intel-compute-runtime",
+}
+
+
+def intel_tree(root: Path, licence: str) -> Path:
+    stanzas = [f"Package: {n}\nStatus: install ok installed\nVersion: {v}\n"
+               + (f"Source: {SOURCES_OF[n]}\n" if n in SOURCES_OF else "")
+               for n, v in {**INTEL_APT, "zlib1g": "1:1.3-1"}.items()]  # fmt: skip
+    write(root / "var/lib/dpkg/status", "\n".join(stanzas))
+    for name in INTEL_APT:
+        write(root / f"usr/share/doc/{name}/copyright",
+              f"Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n\n"
+              f"Files: *\nCopyright: Intel Corporation\nLicense: {licence}\n")  # fmt: skip
+    return root
+
+
+def oneapi_record() -> dict:
+    return lic.artifact_record(lic.load_manifest(), "published-rc-oneapi-image")
+
+
+def test_intel_apt_packages_of_the_oneapi_image_bring_no_source(tmp_path: Path) -> None:
+    """The rc oneapi image's MIT / BSD Intel GPU packages (version suffix -1146~24.04)
+    are not in any archive; no licence obliges their source (dry runs 37222220784 and
+    37222222915 failed fetching intel-compute-runtime)."""
+    record = oneapi_record()
+    specs = lic.debian_specs(
+        lic.Context(intel_tree(tmp_path / "root", "MIT"), REPO, record), record
+    )
+    assert specs == {"zlib1g=1:1.3-1"}
+
+
+def test_the_old_source_for_everything_rule_asks_for_the_intel_packages(tmp_path: Path) -> None:
+    """Planted defect: the record without the vendor component, the old behaviour."""
+    record = oneapi_record()
+    record["components"] = [c for c in record["components"] if c["id"] != "intel-gpu-stack-apt"]
+    ctx = lic.Context(intel_tree(tmp_path / "root", "MIT"), REPO, record)
+    assert "intel-compute-runtime=25.18.33578.15-1146~24.04" in lic.debian_specs(ctx, record)
+
+
+@pytest.mark.parametrize("licence", ["GPL-2+", "LGPL-2.1", "MPL-2.0", "GPL-3 or MIT"])
+def test_a_vendor_package_declaring_copyleft_keeps_its_source_and_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, licence: str
+) -> None:
+    record = oneapi_record()
+    ctx = lic.Context(intel_tree(tmp_path / "root", licence), REPO, record)
+    specs = lic.debian_specs(ctx, record)
+    assert "intel-compute-runtime=25.18.33578.15-1146~24.04" in specs
+    assert "libigc2=2.11.12-1146~24.04" in specs
+    listing = write(tmp_path / "sources.list", "\n".join(f"debian {s}" for s in sorted(specs)))
+    for name in ("snapshot_fetch", "launchpad_fetch"):
+        monkeypatch.setattr(
+            lic, name, lambda spec, out: (_ for _ in ()).throw(lic.LicensingError("none"))
+        )
+    monkeypatch.setattr(
+        lic.subprocess,
+        "run",
+        lambda *a, **k: lic.subprocess.CompletedProcess(a, 100, "", "E: none"),
+    )
+    args = lic.argparse.Namespace(out=str(tmp_path / "out"), list=str(listing))
+    with pytest.raises(lic.LicensingError, match="no source for"):
+        lic.fetch_sources(args, lic.load_manifest())
+
+
+def test_permissive_licence_names_are_not_copyleft() -> None:
+    for name in ("MIT", "Expat", "BSD-3-clause", "SGI", "Apache-2.0", "Zlib"):
+        assert lic.copyright_copyleft(f"License: {name}\n") == set(), name
+
+
 # ---------------------------------------------------- Ubuntu source fetch
 
 
@@ -156,6 +235,34 @@ def test_launchpad_serves_the_exact_version(
     monkeypatch.setattr(lic, "download", answers.download)
     lic.launchpad_fetch("zlib=1:1.3-1ubuntu2", tmp_path)
     assert answers.downloads == [(files[0]["url"], "zlib_1.3-1ubuntu2.dsc", "ab")]
+
+
+def test_launchpad_serves_a_deleted_version_whose_files_remain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """linux=6.8.0-90.91 (the linux-libc-dev headers of the rc oneapi image) is
+    "Deleted" on Launchpad in both pockets, and its files are still served: the
+    dry runs failed on it with 'no source files'."""
+    files = [{"url": "https://lp/+sourcefiles/linux/6.8.0-90.91/linux_6.8.0-90.91.dsc", "sha256": "ab"}]  # fmt: skip
+    answers = Answers([entry("6.8.0-90.91", "Deleted", "https://lp/security"),
+                       entry("6.8.0-90.91", "Deleted", "https://lp/updates")], files)  # fmt: skip
+    monkeypatch.setattr(lic, "json_get", answers.json_get)
+    monkeypatch.setattr(lic, "download", answers.download)
+    lic.launchpad_fetch("linux=6.8.0-90.91", tmp_path)
+    assert answers.downloads == [(files[0]["url"], "linux_6.8.0-90.91.dsc", "ab")]
+
+
+def test_launchpad_deleted_version_with_purged_files_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def purged(url: str, destination: Path, sha256: str | None) -> None:
+        raise urllib.error.URLError(f"404 {url}")
+
+    answers = Answers([entry("6.8.0-90.91", "Deleted")], [{"url": "https://lp/x.dsc", "sha256": "ab"}])  # fmt: skip
+    monkeypatch.setattr(lic, "json_get", answers.json_get)
+    monkeypatch.setattr(lic, "download", purged)
+    with pytest.raises(lic.LicensingError, match="no source files"):
+        lic.launchpad_fetch("linux=6.8.0-90.91", tmp_path)
 
 
 def test_launchpad_refuses_another_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,6 +319,27 @@ def test_the_workflow_publishes_only_when_asked() -> None:
         block = text.split(f"name: {step}", 1)[1].split("\n      - ", 1)[0]
         assert "if: inputs.publish" in block, step
     assert text.index("Check the digest and unpack") < text.index("Write the notices")
+
+
+def workflow_path_problems(text: str) -> list[str]:
+    """What actions/upload-artifact refuses, or what cannot work: a `..` in a work or
+    artifact path, and the runner context in a job-level env (six-space keys), where it
+    does not exist."""
+    problems = [
+        f"parent path: {m}"
+        for m in re.findall(r"^ *(?:WORK:|\$\{\{).*\.\./.*$", text, re.MULTILINE)
+    ]
+    problems += [f"job-level runner context: {m}" for m in re.findall(r"^ {6}\w+: .*runner\..*$", text, re.MULTILINE)]  # fmt: skip
+    return problems
+
+
+def test_the_workflow_writes_its_outputs_without_parent_paths() -> None:
+    text = (REPO / ".github/workflows/published-rc-licence-companions.yml").read_text()
+    assert workflow_path_problems(text) == []
+    assert text.count('echo "WORK=${RUNNER_TEMP}/') == 2  # companion and native jobs
+    # planted defects: the dry runs' path, and the same under a job-level runner context
+    assert workflow_path_problems("    env:\n      WORK: ${{ github.workspace }}/../companion\n")  # fmt: skip
+    assert workflow_path_problems("    env:\n      WORK: ${{ runner.temp }}/x\n")  # fmt: skip
 
 
 def test_notices_naming_a_text_the_image_lacks_are_refused(tmp_path: Path) -> None:

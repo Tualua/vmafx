@@ -10422,7 +10422,7 @@
         "REUSE.toml": 1,
         "docker/Dockerfile.published-source": 1,
         "scripts/release/published_rc_companion.py": 2,
-        "tools/rc1-tester/image/licensing.py": 1,
+        "tools/rc1-tester/image/licensing.py": 2,
         "tools/rc1-tester/tests/test_licensing.py": 1,
         "tools/rc1-tester/tests/test_licensing_published_rc.py": 1
       },

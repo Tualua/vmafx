@@ -99,6 +99,14 @@ records and docs; no build or runtime change.
 - `tools/rc1-tester/image/published-rc/` (data, recorded scans) and the
   `published-rc-*` records describe immutable images: never regenerate a scan
   from another commit than the release's `source_commit`.
+- Dry-run fix (`fix/rc-companions-dry-run`): `published-rc-licence-companions.yml`
+  sets `WORK` to `${RUNNER_TEMP}/...` in a first step (never a `..` path:
+  upload-artifact refuses it; never the runner context in a job-level `env`).
+  `licensing.py` `debian_specs()` fetches a `dpkg-foreign` package's source only when
+  its copyright file declares a copyleft licence (`copyleft_declared()`); the
+  `intel-gpu-stack-apt` component of `published-rc-oneapi-image` lists Intel's
+  MIT / BSD apt packages, which no archive holds. A rebase keeps both, and a failed
+  fetch of a copyleft package stays an error.
 ## zstd image layers and zopfli zips (ADR-1594, 2026-10-04)
 
 `build/compress-packages-2`, stacked on ADR-1591. Workflows, the Windows zip builder,

@@ -90,8 +90,13 @@ jobs:
     env:
       RELEASE: ${{ inputs.release }}
       ARTIFACT: ${{ matrix.artifact }}
-      WORK: ${{ github.workspace }}/../companion
     steps:
+      # The runner context is not available in a job-level env, so the work
+      # directory is set here. It is under RUNNER_TEMP, never under a `..` of the
+      # workspace: actions/upload-artifact refuses a path with a `..` in it.
+      - name: Work directory
+        run: echo "WORK=${RUNNER_TEMP}/companion" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -219,8 +224,10 @@ jobs:
       contents: write        # gh release upload
     env:
       RELEASE: ${{ inputs.release }}
-      WORK: ${{ github.workspace }}/../native
     steps:
+      - name: Work directory
+        run: echo "WORK=${RUNNER_TEMP}/native" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false

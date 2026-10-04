@@ -4086,6 +4086,55 @@
      ]
     },
     {
+     "id": "intel-gpu-stack-apt",
+     "kind": "dpkg-foreign",
+     "name": "Intel GPU user-mode stack of the base image (Debian packages built by Intel and installed from its apt repository, version suffix -NNNN~24.04: compute-runtime, Intel Graphics Compiler, gmmlib, Level Zero loader)",
+     "package_patterns": [
+      "intel-opencl-icd",
+      "libze-intel-gpu1",
+      "libigc2",
+      "libigdfcl2",
+      "libigdgmm12",
+      "libze1",
+      "libze-dev"
+     ],
+     "licence": "MIT AND BSD-3-Clause AND SGI (per package, from its copyright file; no copyleft licence is declared)",
+     "copyright": [
+      "Copyright (C) Intel Corporation"
+     ],
+     "source": "MIT, BSD-3-Clause and SGI packages: no source is owed and none is fetched. Their upstream projects are https://github.com/intel/compute-runtime, https://github.com/intel/intel-graphics-compiler, https://github.com/intel/gmmlib and https://github.com/oneapi-src/level-zero. A package of this component whose copyright file declares a copyleft licence would have its source fetched, and the fetch fails when none is found (licensing.py fetch-sources).",
+     "texts": [
+      {
+       "artifact": "usr/share/doc/intel-opencl-icd/copyright",
+       "label": "intel-opencl-icd copyright file"
+      },
+      {
+       "artifact": "usr/share/doc/libze-intel-gpu1/copyright",
+       "label": "libze-intel-gpu1 copyright file"
+      },
+      {
+       "artifact": "usr/share/doc/libigc2/copyright",
+       "label": "libigc2 copyright file"
+      },
+      {
+       "artifact": "usr/share/doc/libigdfcl2/copyright",
+       "label": "libigdfcl2 copyright file"
+      },
+      {
+       "artifact": "usr/share/doc/libigdgmm12/copyright",
+       "label": "libigdgmm12 copyright file"
+      },
+      {
+       "artifact": "usr/share/doc/libze1/copyright",
+       "label": "libze1 copyright file"
+      },
+      {
+       "artifact": "usr/share/doc/libze-dev/copyright",
+       "label": "libze-dev copyright file"
+      }
+     ]
+    },
+    {
      "id": "debian-packages",
      "kind": "dpkg",
      "name": "Ubuntu 24.04 packages of the base image (its devel tag includes GCC, CMake and Python 3.12)"

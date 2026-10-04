@@ -1088,12 +1088,34 @@ def check_notices(record: dict, ctx: Context, scan: dict, manifest: dict,
 # --------------------------------------------------------------------- sources
 
 
+DEP5_COPYLEFT = re.compile(r"(?i)^(?:a|l)?gpl|^mpl|^epl|^eupl|^cddl|^cpl|^osl|^sspl")
+DEP5_ALTERNATIVE = re.compile(r"\s+(?:or|and)\s+|\s*,\s*")
+
+
+def copyright_copyleft(text: str) -> set[str]:
+    """Copyleft licences a Debian copyright file declares: the `License:` names of a
+    machine-readable file, and the licence classes of any licence text it quotes."""
+    found = {classify_licence_text(text)} & COPYLEFT_CLASSES
+    for name in re.findall(r"^License:\s*(.+)$", text, re.MULTILINE):
+        found.update(n for n in DEP5_ALTERNATIVE.split(name.strip()) if DEP5_COPYLEFT.match(n))
+    return found
+
+
+def copyleft_declared(ctx: Context, fields: dict) -> bool:
+    """A vendor package whose copyright file declares a copyleft licence."""
+    path = copyright_file(ctx.root, fields["Package"])
+    if not path.is_file():
+        return False
+    return bool(copyright_copyleft(path.read_text(encoding="utf-8", errors="replace")))
+
+
 def debian_specs(ctx: Context, record: dict) -> set[str]:
     specs: set[str] = set()
     foreign, patterns = foreign_packages(record), foreign_patterns(record)
     for fields in ctx.packages:
-        # a vendor package's component names its source
-        if not is_foreign(fields["Package"], foreign, patterns):
+        # a vendor package's component names its source, unless the package's own
+        # copyright file declares a copyleft licence: that source is owed (ADR-1578)
+        if not is_foreign(fields["Package"], foreign, patterns) or copyleft_declared(ctx, fields):
             specs.update(package_sources(fields))
     specs |= copied_specs(ctx)
     for component in record["components"]:
@@ -1193,22 +1215,33 @@ def json_get(url: str) -> dict | list:
 
 def launchpad_fetch(spec: str, out: Path) -> None:
     """Ubuntu source package files of an exact version from Launchpad, which keeps
-    every version it published (an Ubuntu mirror keeps only the current ones)."""
+    every version it published (an Ubuntu mirror keeps only the current ones). A
+    superseded version is "Deleted" there, yet its files stay served (the kernel
+    source of a base image's linux-libc-dev); the published entries come first, a
+    deleted one is used only when its files still download, hash-verified."""
     name, version = spec.split("=", 1)
     query = urllib.parse.urlencode({"ws.op": "getPublishedSources", "source_name": name,
                                     "version": version, "exact_match": "true"})  # fmt: skip
     listing = json_get(f"{LAUNCHPAD_ARCHIVE}?{query}")
     entries = listing.get("entries", []) if isinstance(listing, dict) else []
-    for entry in entries:
-        if entry.get("source_package_version") != version or entry.get("status") == "Deleted":
-            continue
-        files = json_get(f"{entry['self_link']}?ws.op=sourceFileUrls&include_meta=true")
-        for item in files if isinstance(files, list) else []:
-            file_name = urllib.parse.unquote(item["url"].rsplit("/", 1)[-1])
-            download(item["url"], out / file_name, item["sha256"])
-        if files:
-            return
+    exact = [e for e in entries if e.get("source_package_version") == version]
+    for entry in sorted(exact, key=lambda e: e.get("status") == "Deleted"):
+        try:
+            if launchpad_files(entry, out):
+                return
+        except (urllib.error.URLError, LicensingError, KeyError, ValueError):
+            if entry.get("status") != "Deleted":
+                raise
     raise LicensingError(f"Launchpad has no source files for {spec}")
+
+
+def launchpad_files(entry: dict, out: Path) -> bool:
+    """Download the files of one published-source record; False when it lists none."""
+    files = json_get(f"{entry['self_link']}?ws.op=sourceFileUrls&include_meta=true")
+    for item in files if isinstance(files, list) else []:
+        file_name = urllib.parse.unquote(item["url"].rsplit("/", 1)[-1])
+        download(item["url"], out / file_name, item["sha256"])
+    return bool(files)
 
 
 def fetch_debian(spec: str, out: Path) -> str:
