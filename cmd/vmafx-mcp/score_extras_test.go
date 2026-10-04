@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -478,10 +478,7 @@ func TestE2EScoreCPUWithTinyAIFlagsAndErrorPath(t *testing.T) {
 	if _, err := os.Stat(dis); err != nil {
 		t.Skipf("Netflix fixture dis missing: %v", err)
 	}
-	vmafBin := libvmaf.FindBinary()
-	if _, err := os.Stat(vmafBin); err != nil {
-		t.Skipf("vmaf binary %s not found: %v", vmafBin, err)
-	}
+	t.Setenv("VMAF_BIN", vmaftest.Binary(t))
 
 	realRef, err := filepath.EvalSymlinks(ref)
 	if err == nil {

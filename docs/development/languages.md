@@ -90,6 +90,13 @@ go vet ./...
 go test ./...
 ```
 
+Go tests that score with the `vmaf` CLI use the build under test, never a host
+install. `internal/vmaftest` resolves it from `VMAF_BIN` or, when that is unset,
+`core/build-cpu/tools/vmaf` (the build the commands above link against); with
+neither present the test fails and says how to build it. A `vmaf` on `PATH` or
+under `/usr/local/bin` is not consulted, so a stale host binary cannot make a
+test pass or fail for the wrong reason.
+
 `make go-fix` applies the pinned toolchain's source rewrites. Re-run it when
 the tool asks for another pass, then use `make go-fix-check`; CI runs the same
 non-mutating `go fix -diff ./...` check and rejects any remaining patch. The

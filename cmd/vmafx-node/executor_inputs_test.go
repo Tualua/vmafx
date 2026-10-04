@@ -23,6 +23,7 @@ import (
 	"go.uber.org/fx"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/storage"
 )
@@ -30,7 +31,7 @@ import (
 func realExecutor(t *testing.T, store storage.Storage) (*Executor, string) {
 	t.Helper()
 	root := libvmaf.RepoRoot()
-	scorer, err := libvmaf.New(e2eVmafBinary(t, root), filepath.Join(root, "model"))
+	scorer, err := libvmaf.New(vmaftest.Binary(t), filepath.Join(root, "model"))
 	if err != nil {
 		t.Fatalf("libvmaf.New: %v", err)
 	}

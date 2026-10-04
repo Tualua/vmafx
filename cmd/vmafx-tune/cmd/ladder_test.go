@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 )
 
 // TestLadder_helpFlag verifies that "vmafx-tune-go ladder --help" exits 0 and
@@ -107,16 +109,17 @@ func TestLadder_invalidResolution(t *testing.T) {
 	}
 }
 
-// TestLadder_outputSchemaJSON runs an integration ladder sweep when both
-// ffmpeg and vmaf are available on PATH and validates the JSON output schema.
+// TestLadder_outputSchemaJSON runs an integration ladder sweep when ffmpeg is
+// on PATH and validates the JSON output schema. The sweep scores with the vmaf
+// CLI under test (VMAF_BIN or core/build-cpu, see internal/vmaftest) and fails
+// when there is none: a vmaf from PATH is a host install, not the tree's build.
 func TestLadder_outputSchemaJSON(t *testing.T) {
 	t.Parallel()
 
-	for _, bin := range []string{"ffmpeg", "vmaf"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s not found on PATH — skipping integration ladder test", bin)
-		}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found on PATH — skipping integration ladder test")
 	}
+	vmafBin := vmaftest.Binary(t)
 
 	dir := t.TempDir()
 	binPath := filepath.Join(dir, "vmafx-tune-go")
@@ -153,6 +156,7 @@ func TestLadder_outputSchemaJSON(t *testing.T) {
 		"--reference", srcPath,
 		"--codec", "libx264",
 		"--targets", "60",
+		"--vmaf", vmafBin,
 		"--resolutions", "320x240,288x216",
 		"--output", outJSON,
 		"--format", "json",

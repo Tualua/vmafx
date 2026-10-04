@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 )
 
 // ---------------------------------------------------------------------------
@@ -194,8 +196,9 @@ func TestToolSchemasMatchPython(t *testing.T) {
 // fixture pair and verifies the pooled mean VMAF score matches the expected
 // value (76.668 to 3 decimal places, matching the Python server's output).
 //
-// This test is skipped when the vmaf binary or Netflix golden YUVs are
-// not available (e.g. on CI runners without the test corpus).
+// This test is skipped when the Netflix golden YUVs are not available (e.g.
+// on CI runners without the test corpus) and fails when the vmaf CLI under test
+// is missing (internal/vmaftest).
 // ---------------------------------------------------------------------------
 
 func TestVmafScoreTool(t *testing.T) {
@@ -215,24 +218,8 @@ func TestVmafScoreTool(t *testing.T) {
 		}
 	}
 
-	vmafBin := os.Getenv("VMAF_BIN")
-	if vmafBin == "" {
-		candidates := []string{
-			"/usr/local/bin/vmaf",
-			repoRoot + "/core/build/tools/vmaf",
-			repoRoot + "/build/tools/vmaf",
-		}
-		for _, c := range candidates {
-			if _, err := os.Stat(c); err == nil {
-				vmafBin = c
-				break
-			}
-		}
-	}
-	if vmafBin == "" {
-		t.Skip("vmaf binary not found; build first with meson compile -C build")
-	}
-	t.Setenv("VMAF_BIN", vmafBin)
+	// The build under test (VMAF_BIN or core/build-cpu), never a host install.
+	t.Setenv("VMAF_BIN", vmaftest.Binary(t))
 
 	allowPath := repoRoot + "/python/test/resource"
 	if realRef, err := filepath.EvalSymlinks(refYUV); err == nil {

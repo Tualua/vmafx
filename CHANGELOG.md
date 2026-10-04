@@ -3143,6 +3143,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [licensing](docs/licensing.md)).
 
 
+- **Go tests that score with the `vmaf` CLI use the build under test.** They
+  looked for `vmaf` on `PATH` or under `/usr/local/bin` and so passed or failed
+  on whatever release the host had installed. `internal/vmaftest` resolves
+  `VMAF_BIN`, else `core/build-cpu/tools/vmaf`, and fails the test, naming the
+  build command, when neither exists. See
+  [Go development](docs/development/languages.md).
+
+
 - **The `test-netflix-golden` target checks for pytest before execution.** When
   invoked in a fresh worktree where `.venv` only contains build-time dependencies,
   `make test-netflix-golden` previously stopped with `No module named pytest`.

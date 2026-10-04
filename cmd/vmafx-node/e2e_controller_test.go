@@ -31,6 +31,7 @@ import (
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
@@ -39,19 +40,6 @@ const (
 	e2eHeight = 240
 	e2eFrames = 5
 )
-
-// e2eVmafBinary returns VMAF_BIN or the in-tree CPU build's vmaf CLI.
-func e2eVmafBinary(t *testing.T, root string) string {
-	t.Helper()
-	bin := os.Getenv("VMAF_BIN")
-	if bin == "" {
-		bin = filepath.Join(root, "core", "build-cpu", "tools", "vmaf")
-	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Fatalf("vmaf CLI not found at %s (build core/build-cpu or set VMAF_BIN): %v", bin, err)
-	}
-	return bin
-}
 
 // writeY4M writes a synthetic 4:2:0 8-bit clip. noise > 0 perturbs the luma
 // deterministically so the distorted clip differs from the reference.
@@ -178,7 +166,7 @@ func submit(t *testing.T, client controllerv1.VmafxControllerClient, ref, dis, b
 func e2eMedia(t *testing.T) (root, vmafBin, ref, dis string, want float64) {
 	t.Helper()
 	root = libvmaf.RepoRoot()
-	vmafBin = e2eVmafBinary(t, root)
+	vmafBin = vmaftest.Binary(t)
 	media := t.TempDir()
 	ref, dis = filepath.Join(media, "ref.y4m"), filepath.Join(media, "dis.y4m")
 	writeY4M(t, ref, 0)

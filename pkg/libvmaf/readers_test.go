@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 )
 
 // synthY4M returns a deterministic 4:2:0 clip; noise > 0 perturbs the luma.
@@ -39,19 +41,6 @@ func synthY4M(w, h, frames, noise int) []byte {
 		buf.Write(bytes.Repeat([]byte{128}, 2*(w/2)*(h/2)))
 	}
 	return buf.Bytes()
-}
-
-// realVmaf returns the in-tree CPU build's vmaf CLI or VMAF_BIN.
-func realVmaf(t *testing.T) string {
-	t.Helper()
-	bin := os.Getenv("VMAF_BIN")
-	if bin == "" {
-		bin = filepath.Join(RepoRoot(), "core", "build-cpu", "tools", "vmaf")
-	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Fatalf("vmaf CLI not found at %s (build core/build-cpu or set VMAF_BIN): %v", bin, err)
-	}
-	return bin
 }
 
 // failingReader yields data, then err.
@@ -76,7 +65,7 @@ func readCloser(b []byte) io.ReadCloser { return io.NopCloser(bytes.NewReader(b)
 // TestScoreReaders_MatchesFileScore: streaming the clips gives the CLI's file
 // score exactly (positive).
 func TestScoreReaders_MatchesFileScore(t *testing.T) {
-	bin := realVmaf(t)
+	bin := vmaftest.Binary(t)
 	s, err := New(bin, filepath.Join(RepoRoot(), "model"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -106,7 +95,7 @@ func TestScoreReaders_MatchesFileScore(t *testing.T) {
 // TestScoreReaders_BrokenStreamFails: a reference that breaks after two frames
 // fails the score, although the CLI could score the frames it got (negative).
 func TestScoreReaders_BrokenStreamFails(t *testing.T) {
-	bin := realVmaf(t)
+	bin := vmaftest.Binary(t)
 	s, err := New(bin, filepath.Join(RepoRoot(), "model"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -123,7 +112,7 @@ func TestScoreReaders_BrokenStreamFails(t *testing.T) {
 // right after a whole frame would let the CLI score the frames before it; the
 // score still fails (boundary of the truncation case).
 func TestScoreReaders_StreamBrokenAtFrameBoundaryFails(t *testing.T) {
-	s, err := New(realVmaf(t), filepath.Join(RepoRoot(), "model"))
+	s, err := New(vmaftest.Binary(t), filepath.Join(RepoRoot(), "model"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -139,7 +128,7 @@ func TestScoreReaders_StreamBrokenAtFrameBoundaryFails(t *testing.T) {
 
 // TestScoreReaders_EmptyStreamsFail: two empty streams are no clip (boundary).
 func TestScoreReaders_EmptyStreamsFail(t *testing.T) {
-	s, err := New(realVmaf(t), filepath.Join(RepoRoot(), "model"))
+	s, err := New(vmaftest.Binary(t), filepath.Join(RepoRoot(), "model"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

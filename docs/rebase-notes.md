@@ -60745,3 +60745,12 @@ upstream parity guard's allowlist.
   them. `gen_dists_sq_placeholder_onnx.py` and `gen_mobilesal_placeholder_onnx.py`
   are real and guarded by `ai/tests/test_no_stub_scripts.py`. No score, public API
   or FFmpeg patch impact.
+
+## Go tests resolve the vmaf CLI through internal/vmaftest
+
+- Go tests that run the `vmaf` CLI call `vmaftest.Binary(t)`
+  (`internal/vmaftest/vmaftest.go`): `VMAF_BIN`, else `core/build-cpu/tools/vmaf`,
+  else a failure. Do not add a `PATH` lookup, a `/usr/local/bin/vmaf` candidate or
+  a private resolver to a test; `libvmaf.FindBinary()` (production code, keeps the
+  installed-container candidate) is not a test resolver. No score, public API or
+  FFmpeg patch impact.
