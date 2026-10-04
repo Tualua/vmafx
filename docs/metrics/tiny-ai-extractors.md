@@ -211,7 +211,13 @@ offsets.
   `model_path` set on the dictionary.
 
 **Output metrics** — `saliency_mean` (one scalar per frame: mean saliency
-across the H×W output map).
+across the frame's H×W of the output map).
+
+**Frame size** — the saliency students need both sides to be multiples of
+8, so the extractor pads the frame to the next multiple of 8 by repeating its
+last column and row and leaves the padding out of the mean
+([ADR-1540](../adr/1540-saliency-pad-to-multiple-of-8.md)). A 576x324 clip
+runs as 576x328; a frame that already is a multiple of 8 is fed unchanged.
 
 **Backends** — scalar only on the libvmaf side; ORT-dispatched to the
 selected execution provider.

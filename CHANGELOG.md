@@ -3600,6 +3600,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   absence and the declared review values. The live ruleset is unchanged.
 
 
+- **`--feature mobilesal` scores frames whose sides are not multiples of 8
+  with the saliency students.** `saliency_student_v1` and `v2` need both
+  sides divisible by 8; a 576x324 clip failed inside ONNX Runtime with a
+  `Concat` dimension mismatch. The extractor now pads the frame to the next
+  multiple of 8 by repeating its last column and row and averages the saliency
+  map over the frame's own area
+  ([ADR-1540](docs/adr/1540-saliency-pad-to-multiple-of-8.md)). Frames that
+  already are multiples of 8 score exactly as before.
+
+
 - The platform setup scripts (`scripts/setup/*.sh`, `scripts/setup/windows.ps1`)
   end with a configure command that works: `meson setup build core ...` from
   the repository root. They printed `meson setup build ...`, which Meson refuses

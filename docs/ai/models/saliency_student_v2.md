@@ -178,11 +178,15 @@ Inherited from v1:
 
 Specific to v2:
 
-- **Frame size must be a multiple of 8**: the U-Net has three pooling stages,
-  so a width or height that is not divisible by 8 fails at run time with an
-  ONNX Runtime `Concat` dimension mismatch (for example a 576x324 clip, since
-  324 / 8 is not an integer; 1920x1080 and 1280x720 work). Scale or crop the
-  input first.
+- **Frame sizes that are not multiples of 8 are padded**: the U-Net has three
+  pooling stages and needs both sides divisible by 8. The `mobilesal`
+  extractor pads the frame to the next multiple of 8 by repeating its last
+  column and row, and averages the map over the frame's own area
+  ([ADR-1540](../../adr/1540-saliency-pad-to-multiple-of-8.md)); a 576x324
+  clip runs as 576x328. Frames that already are multiples of 8 (1920x1080,
+  1280x720) are not touched. A caller running the ONNX graph directly must
+  pad itself: an unpadded 576x324 input fails with an ONNX Runtime `Concat`
+  dimension mismatch.
 - The "Resize + 3×3 Conv" pattern adds ~10 K parameters vs v1
   (3×3 vs 2×2 kernel). Inference latency at 256×256 is within
   measurement noise of v1 on RTX 4090 / Intel Xeon.

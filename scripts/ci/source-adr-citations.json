@@ -6189,6 +6189,7 @@
         "core/test/ciede_twin_parity.h": 1,
         "core/test/dnn/test_dnn_session_api.c": 1,
         "core/test/dnn/test_ep_fp16.c": 1,
+        "core/test/dnn/test_mobilesal_run.c": 1,
         "core/test/dnn/test_model_loader.c": 1,
         "core/test/dnn/test_onnx_scan.c": 1,
         "core/test/dnn/test_op_allowlist.c": 1,
@@ -10089,6 +10090,14 @@
         "cmd/vmafx-node/ebpf_other.go": 1
       },
       "target": "1539-node-ebpf-tracker-wiring.md"
+    },
+    "1540": {
+      "sites": {
+        "core/src/feature/feature_mobilesal.c": 2,
+        "core/test/dnn/meson.build": 1,
+        "core/test/dnn/test_mobilesal_run.c": 2
+      },
+      "target": "1540-saliency-pad-to-multiple-of-8.md"
     }
   },
   "retired": {

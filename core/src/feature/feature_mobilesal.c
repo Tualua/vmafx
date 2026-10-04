@@ -11,9 +11,17 @@
  *    YUV420P/422P/444P 8-bit (distorted)
  *       → upsample chroma to 4:4:4 (shared pattern with feature_lpips.c)
  *       → BT.709 limited-range YUV → RGB (uint8 planes)
+ *       → pad width and height to a multiple of 8 by repeating the last
+ *         column and row (ADR-1540)
  *       → vmaf_tensor_from_rgb_imagenet()  (single input)
  *       → vmaf_dnn_session_run() with named binding "input" → "saliency_map"
- *       → reduce mean over the [1,1,H,W] map → scalar "saliency_mean"
+ *       → reduce mean over the frame's own H x W of the map → "saliency_mean"
+ *
+ *  The saliency students (saliency_student_v1 / v2) halve the resolution
+ *  three times and concatenate each decoder stage with its encoder skip,
+ *  so a side that is not a multiple of 8 fails inside ONNX Runtime with a
+ *  Concat shape mismatch (576x324). The padding feeds them a size they
+ *  accept and leaves frames that already are multiples of 8 untouched.
  *
  *  Output contract (mirrors the upstream MobileSal paper, "MobileSal:
  *  Extremely Efficient RGB-D Salient Object Detection"):
@@ -76,14 +84,52 @@
 typedef struct MobilesalState {
     char *model_path; /**< feature option, owned by opt.c */
     VmafDnnSession *sess;
-    unsigned w, h;
+    unsigned w, h;   /**< frame size */
+    unsigned pw, ph; /**< model input size: w and h rounded up to a multiple of 8 */
     /* Scratch RGB planes (uint8) + ImageNet-normalised float tensor,
-     * sized once at init and reused per-frame. The saliency output map
-     * is also sized once — [1, 1, H, W] floats. */
+     * sized once at init for the padded size and reused per-frame. The
+     * saliency output map is also sized once — [1, 1, ph, pw] floats. */
     uint8_t *rgb8[3];
-    float *tensor_in; /**< 3 * w * h floats, NCHW */
-    float *sal_map;   /**< 1 * w * h floats, NCHW [1,1,H,W] */
+    float *tensor_in; /**< 3 * pw * ph floats, NCHW */
+    float *sal_map;   /**< 1 * pw * ph floats, NCHW [1,1,ph,pw] */
 } MobilesalState;
+
+/* The saliency students downsample three times by 2 (ADR-1540). */
+#define MOBILESAL_SIZE_MULTIPLE 8u
+
+static unsigned mobilesal_padded(unsigned v)
+{
+    return ((v + MOBILESAL_SIZE_MULTIPLE - 1u) / MOBILESAL_SIZE_MULTIPLE) * MOBILESAL_SIZE_MULTIPLE;
+}
+
+/* Spread a plane written at stride w (rows 0..h-1) to stride pw, repeating
+ * each row's last sample into its padding, then repeat the last row into
+ * the rows below it. Rows move last first: row y's destination starts at
+ * y * pw >= y * w, past every row above it that has not moved yet. */
+static void mobilesal_pad_plane(uint8_t *p, unsigned w, unsigned h, unsigned pw, unsigned ph)
+{
+    for (unsigned i = 0; i < h; ++i) {
+        const unsigned y = h - 1u - i;
+        uint8_t *row = p + (size_t)y * pw;
+        memmove(row, p + (size_t)y * w, w);
+        memset(row + w, row[w - 1u], pw - w);
+    }
+    for (unsigned y = h; y < ph; ++y)
+        memcpy(p + (size_t)y * pw, p + (size_t)(h - 1u) * pw, pw);
+}
+
+/* Mean of the map over the frame's own h x w; the padding is not part of
+ * the frame. */
+static double mobilesal_cropped_mean(const float *map, unsigned w, unsigned h, unsigned pw)
+{
+    double sum = 0.0;
+    for (unsigned y = 0; y < h; ++y) {
+        const float *row = map + (size_t)y * pw;
+        for (unsigned x = 0; x < w; ++x)
+            sum += (double)row[x];
+    }
+    return sum / ((double)w * (double)h);
+}
 
 /* BT.709 limited-range YUV→RGB lives in
  * `dnn/tiny_extractor_template.h` (`vmaf_tiny_ai_yuv8_to_rgb8_planes`),
@@ -195,7 +241,9 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->w = w;
     s->h = h;
-    rc = mobilesal_alloc_buffers(s, (size_t)w * (size_t)h);
+    s->pw = mobilesal_padded(w);
+    s->ph = mobilesal_padded(h);
+    rc = mobilesal_alloc_buffers(s, (size_t)s->pw * (size_t)s->ph);
     if (rc < 0) {
         mobilesal_release(s);
         return rc;
@@ -223,15 +271,17 @@ static int mobilesal_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (rc < 0) {
         return rc;
     }
+    for (unsigned c = 0; c < 3u; ++c)
+        mobilesal_pad_plane(s->rgb8[c], s->w, s->h, s->pw, s->ph);
 
-    rc = vmaf_tensor_from_rgb_imagenet(s->rgb8[0], s->w, s->rgb8[1], s->w, s->rgb8[2], s->w,
-                                       (int)s->w, (int)s->h, s->tensor_in);
+    rc = vmaf_tensor_from_rgb_imagenet(s->rgb8[0], s->pw, s->rgb8[1], s->pw, s->rgb8[2], s->pw,
+                                       (int)s->pw, (int)s->ph, s->tensor_in);
     if (rc < 0) {
         return rc;
     }
 
-    const int64_t in_shape[4] = {1, 3, (int64_t)s->h, (int64_t)s->w};
-    const size_t plane = (size_t)s->w * (size_t)s->h;
+    const int64_t in_shape[4] = {1, 3, (int64_t)s->ph, (int64_t)s->pw};
+    const size_t plane = (size_t)s->pw * (size_t)s->ph;
     VmafDnnInput inputs[1] = {
         {.name = "input", .data = s->tensor_in, .shape = in_shape, .rank = 4u},
     };
@@ -243,26 +293,16 @@ static int mobilesal_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (rc < 0) {
         return rc;
     }
-    if (outputs[0].written == 0u) {
+    /* The map must cover the input: a model that returns another size
+     * cannot be cropped back to the frame (CERT INT30-C). */
+    if (outputs[0].written != plane) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "mobilesal: saliency_map has %zu values for a %ux%u input; expected %zu\n",
+                 outputs[0].written, s->pw, s->ph, plane);
         return -EIO;
     }
 
-    /* Reduce-mean over the saliency map. The session writes ``written``
-     * elements; clamp to the allocated plane size to be defensive
-     * against a model returning a partial tile (CERT INT30-C). */
-    size_t n = outputs[0].written;
-    if (n > plane) {
-        n = plane;
-    }
-    if (n == 0u) {
-        return -EIO;
-    }
-    double sum = 0.0;
-    for (size_t i = 0u; i < n; ++i) {
-        sum += (double)s->sal_map[i];
-    }
-    const double mean = sum / (double)n;
-
+    const double mean = mobilesal_cropped_mean(s->sal_map, s->w, s->h, s->pw);
     return vmaf_feature_collector_append(feature_collector, "saliency_mean", mean, index);
 }
 

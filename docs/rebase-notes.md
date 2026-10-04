@@ -31,6 +31,14 @@ change.
 - `cmd/vmafx-node`: `ebpf_config.go`, `ebpf_linux.go`, `ebpf_other.go`; the
   lifecycle invoke gains `_ *ebpfBypass` between the executor and the
   controller client.
+## mobilesal pads frames to a multiple of 8 (ADR-1540, 2026-10-04)
+
+`fix/saliency-frame-size`. Fork-local tiny-AI code; upstream Netflix has no
+`mobilesal` extractor.
+
+- `core/src/feature/feature_mobilesal.c`: buffers sized for `pw` / `ph`,
+  `mobilesal_pad_plane()` and `mobilesal_cropped_mean()`. Do not size the
+  tensor from the frame alone again or average the padded rows.
 
 ## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
 

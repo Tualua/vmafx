@@ -55,7 +55,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `/core/test/test_feature_isa_invariance.c` | [isa-invariance](AGENTS.d/isa-invariance.md) | Feature scores must not depend on host ISA; promotions and reductions must match scalar. |
 | `vif_tools.c`, `vif_tools.h` | [lanczos4](AGENTS.d/lanczos4.md) | lanczos4 prescale weights single implementation shared with GPU twins. |
 | `float_motion.c`, `float_vif.c` | [min-dimension-guards](AGENTS.d/min-dimension-guards.md) | Minimum-dimension guards cover every plane, not just luma. |
-| `feature_mobilesal.c`, `/core/test/test_mobilesal.c` | [mobilesal](AGENTS.d/mobilesal.md) | MobileSal saliency extractor smoke-only gating and ONNX runtime integration. |
+| `feature_mobilesal.c`, `/core/test/test_mobilesal.c`, `/core/test/dnn/test_mobilesal_run.c` | [mobilesal](AGENTS.d/mobilesal.md) | MobileSal extractor pads sides to a multiple of 8 for the students and averages only the frame's own area. |
 | `feature_collector.cpp`, `feature_name.cpp` | [model-options](AGENTS.d/model-options.md) | Model options gate GPU twin selection; every option must be parsed or safely rejected. |
 | `integer_motion_v2.c`, `motion_tools.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 option-surface parity, five-frame window on prev_prev_ref, and NEON shift semantics. |
 | `motion.c`, `float_motion.c`, `integer_motion.c` | [motion](AGENTS.d/motion.md) | Motion plane structures, upstream options, mirror implementations, and chroma min dims. |

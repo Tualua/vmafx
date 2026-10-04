@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1227), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1228), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4919,3 +4919,7 @@ Every ADR, one heading each (1227), so the site search finds an ADR by its title
 ## ADR-1539: vmafx-node starts the eBPF descriptor tracker on request, fails closed when the host cannot run it, and ships the compiled BPF object
 
 [1539-node-ebpf-tracker-wiring](1539-node-ebpf-tracker-wiring.md)
+
+## ADR-1540: The mobilesal extractor pads frames to a multiple of 8 for the saliency students
+
+[1540-saliency-pad-to-multiple-of-8](1540-saliency-pad-to-multiple-of-8.md)
