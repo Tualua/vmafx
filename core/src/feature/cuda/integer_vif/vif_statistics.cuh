@@ -23,6 +23,11 @@
 
 #include "common.h"
 
+/* integer_vif.c's residual variance runs in device code here: one definition,
+ * x86's value without the undefined conversion below INT32_MIN (ADR-1561). */
+#define VMAF_IVIF_FUNC static __device__ __forceinline__
+#include "feature/integer_vif_sv_sq.h"
+
 __device__ __forceinline__ uint16_t get_best16_from32(uint32_t temp, int *x)
 {
     int k = __clz(temp);
@@ -137,7 +142,6 @@ vif_statistic_calculation(const aligned_dtype &mu1, const aligned_dtype &mu2,
             // changed to one
             const double eps = 65536 * 1.0e-10;
             double g = 0.0;
-            int32_t sv_sq = sigma2_sq;
 
             // if sigma1_sq > 0 then sigma1_sq >= 1 and thus greater eps => only
             // the case sigma1_sq == 0 matters
@@ -147,8 +151,7 @@ vif_statistic_calculation(const aligned_dtype &mu1, const aligned_dtype &mu2,
             if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0) {
                 g = tmp;
             }
-            sv_sq = sigma2_sq - g * sigma12;
-            sv_sq = (uint32_t)(max(sv_sq, (int32_t)eps));
+            const uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
 
             g = min(g, vif_enhn_gain_limit);
 

@@ -58,3 +58,10 @@ invariant: vif_cuda enforces 16-pixel minimum, reads CPU log2 table, and resets 
   body. Stages are integer-only; same operation sequence as before, so
   verify on device: `test_cuda_exact_twins`, `test_cuda_vif_parity`, `vif`
   gate cell (tolerance 0).
+
+- **Residual variance via `vif_sv_sq()` (ADR-1561).** Kernel defines
+  `VMAF_IVIF_FUNC` as `static __device__ __forceinline__` and includes
+  `feature/integer_vif_sv_sq.h`; `sv_sq` is `uint32_t`. No raw
+  `double` -> `int32_t` conversion of `sigma2_sq - g * sigma12`
+  (`test_integer_vif_sv_sq_contract.py`). Header listed in the backend's
+  `depend_files` (`core/src/meson.build`).

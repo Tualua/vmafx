@@ -34,6 +34,7 @@
 
 #include "picture.h"
 #include "integer_vif.h"
+#include "integer_vif_sv_sq.h"
 
 #if ARCH_X86
 #include "x86/vif_avx2.h"
@@ -315,9 +316,10 @@ static FORCE_INLINE void vif_accumulate_pixel(VifResiduals *acc, const uint16_t 
 
             const double eps = 65536 * 1.0e-10;
             double g = sigma12 / (sigma1_sq + eps); // this epsilon can go away
-            int32_t sv_sq = sigma2_sq - g * sigma12;
-
-            sv_sq = (uint32_t)(MAX(sv_sq, 0));
+            /* Upstream converts the difference to int32_t and clamps it at 0;
+             * vif_sv_sq() keeps x86's value without the undefined conversion
+             * below INT32_MIN (ADR-1561). */
+            uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
 
             g = MIN(g, vif_enhn_gain_limit);
 

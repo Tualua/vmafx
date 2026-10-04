@@ -2397,6 +2397,25 @@ test_integer_vif_log2 = executable('test_integer_vif_log2',
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
 )
 
+# ADR-1561: integer VIF's residual variance takes x86's value on every
+# target. Drives vif_sv_sq() and the scalar statistic shared by the AVX2,
+# AVX-512 and NEON kernels (vif_compute_line_residuals) on variances that put
+# sigma2_sq - g * sigma12 below INT32_MIN.
+test_integer_vif_sv_sq = executable('test_integer_vif_sv_sq',
+    ['test.c', 'test_integer_vif_sv_sq.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, sycl_dependency],
+)
+test('test_integer_vif_sv_sq', test_integer_vif_sv_sq, suite : ['fast'])
+test('test_integer_vif_sv_sq_contract',
+    import('python').find_installation(),
+    args : files('test_integer_vif_sv_sq_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Coverage round 2 — iqa/convolve.c boundary helpers (KBND_*) and the
 # 2-D iqa_img_filter / iqa_filter_pixel paths.
 test_iqa_convolve_coverage = executable('test_iqa_convolve_coverage',
@@ -5098,7 +5117,9 @@ if not is_sycl_acpp
     endif
     test_sycl_integer_vif_math = executable('test_sycl_integer_vif_math',
         ['test.c', 'test_sycl_integer_vif_math.c'] + sycl_integer_vif_math_probe_objects,
-        include_directories : [test_inc],
+        # ../src for feature/integer_vif_sv_sq.h, the reference's residual
+        # variance (ADR-1561).
+        include_directories : [test_inc, include_directories('../src/')],
         dependencies : [math_lib, sycl_dependency],
         c_args : vmaf_strict_fp_args,
         link_language : 'cpp',

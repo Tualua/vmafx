@@ -22,6 +22,17 @@ invariant: Integer VIF scalar reference tails, log2 table generation, score appe
   fork's `-std=c23` (contraction off) and no `-march` (no FMA) flags; if
   either changes, re-run 31-case `--precision max` matrix in
   [`docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md`](../../../../docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md).
+- **Residual variance = `vif_sv_sq()` (ADR-1561).** `integer_vif_sv_sq.h`
+  holds upstream's `int32_t sv_sq = sigma2_sq - g * sigma12; sv_sq =
+  (uint32_t)(MAX(sv_sq, 0));` as one defined helper: difference truncated
+  when in (0, 2^31), else 0 = x86's value (upstream conversion UB below
+  INT32_MIN; aarch64 vectorised loop keeps low 32 bits). Callers:
+  `vif_accumulate_pixel()`, `x86/vif_avx2.c::vif_num_log256()`,
+  `arm64/vif_neon.c::vif_num_log()`, CUDA `vif_statistics.cuh`, HIP
+  `vif_statistics.hip`, `test_sycl_integer_vif_math.c::reference_terms()`.
+  Never re-inline the raw conversion; `sv_sq` stays `uint32_t` (unsigned
+  `sv_sq + sigma_nsq`). Guards: `test_integer_vif_sv_sq` (fails under clang
+  `-fsanitize=undefined` without it), `test_integer_vif_sv_sq_contract.py`.
 - **`vif_log2_table_generate()` (`vif_log2_table.h`, included by
   `integer_vif.h`; plain C valid as C++ / Objective-C++) uses `roundf`**, proven
   bit-identical to upstream's `round` over all `VIF_LOG2_TABLE_SIZE` entries.

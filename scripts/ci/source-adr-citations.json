@@ -6435,6 +6435,7 @@
         "core/test/test_integer_vif_avx512_stages.c": 1,
         "core/test/test_integer_vif_cpu_cuda_parity.c": 1,
         "core/test/test_integer_vif_log2.c": 1,
+        "core/test/test_integer_vif_sv_sq.c": 1,
         "core/test/test_iqa_convolve.c": 1,
         "core/test/test_iqa_convolve_coverage.c": 2,
         "core/test/test_iqa_helpers.c": 1,
@@ -8716,6 +8717,7 @@
         "core/src/feature/hip/integer_ms_ssim/ms_ssim_arith.h": 1,
         "core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip": 2,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 3,
+        "core/src/feature/integer_vif_sv_sq.h": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
         "core/src/meson.build": 3,
         "core/test/meson.build": 1,
@@ -9086,6 +9088,7 @@
         "core/src/feature/sycl/sycl_integer_vif_math.h": 1,
         "core/src/feature/sycl/sycl_soft_double.h": 1,
         "core/test/meson.build": 2,
+        "core/test/test_integer_vif_sv_sq_contract.py": 1,
         "core/test/test_strict_fp_compiler_args.py": 1,
         "core/test/test_sycl_integer_vif_math.c": 1,
         "core/test/test_sycl_integer_vif_math_probe.cpp": 1,
@@ -9480,6 +9483,7 @@
       "sites": {
         "Makefile": 2,
         "build-aux/aarch64-linux-gnu-clang.ini": 1,
+        "core/src/feature/integer_vif_sv_sq.h": 1,
         "core/src/feature/speed_givens.h": 1,
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
@@ -10248,6 +10252,23 @@
         "cmd/vmafx-node/bpf/rclone_bypass.bpf.c": 1
       },
       "target": "1559-ebpf-kernel-licence-string.md"
+    },
+    "1561": {
+      "sites": {
+        "core/src/feature/arm64/vif_neon.c": 1,
+        "core/src/feature/cuda/integer_vif/vif_statistics.cuh": 1,
+        "core/src/feature/hip/integer_vif/vif_statistics.hip": 1,
+        "core/src/feature/integer_vif.c": 1,
+        "core/src/feature/integer_vif_sv_sq.h": 1,
+        "core/src/feature/x86/vif_avx2.c": 1,
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_integer_vif_sv_sq.c": 1,
+        "core/test/test_integer_vif_sv_sq_contract.py": 2,
+        "core/test/test_sycl_integer_vif_math.c": 1,
+        "core/test/test_sycl_vif_exact_gain_contract.py": 1
+      },
+      "target": "1561-integer-vif-sv-sq-defined.md"
     },
     "1569": {
       "sites": {

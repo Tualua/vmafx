@@ -452,6 +452,8 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/hip_tile_index.h',
         'feature/hip/integer_adm/adm_dwt2_rows.h',
         'feature/hip/integer_vif_hip.h',
+        # ADR-1561: the residual variance, one definition with the CPU statistic.
+        'feature/integer_vif_sv_sq.h',
         'feature/hip/integer_motion_v2_hip.h',
         'feature/hip/integer_psnr_hip.h',
         'feature/hip/float_moment_hip.h',
@@ -1658,6 +1660,8 @@ if is_cuda_enabled
         'feature/cuda/integer_adm/adm_dwt2_rows.h',
         'feature/cuda/integer_vif_cuda.h',
         'feature/cuda/integer_vif/vif_statistics.cuh',
+        # ADR-1561: the residual variance, one definition with the CPU statistic.
+        'feature/integer_vif_sv_sq.h',
         'feature/cuda/cuda_tile_index.h',
         'feature/cuda/integer_motion_cuda.h',
         'feature/cuda/integer_motion_v2_cuda.h',

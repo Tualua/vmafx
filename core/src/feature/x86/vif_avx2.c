@@ -27,6 +27,7 @@
 #include "vif_avx2.h"
 #include "feature/common/macros.h"
 #include "feature/x86/vif_avx2.h"
+#include "feature/integer_vif_sv_sq.h"
 
 /* Preserve Netflix NULL spelling and avoid relying on undocumented MSVC C
  * nullptr support (ADR-1138); the C++ nullptr ratchet remains unchanged. */
@@ -268,9 +269,9 @@ static FORCE_INLINE int64_t vif_num_log256(const uint16_t *log2_table, double vi
 
     const double eps = 65536 * 1.0e-10;
     double g = sigma12 / (sigma1_sq + eps); // this epsilon can go away
-    int32_t sv_sq = sigma2_sq - g * sigma12;
-
-    sv_sq = (uint32_t)(MAX(sv_sq, 0));
+    /* integer_vif.c's residual variance, x86's value on every target
+     * (ADR-1561). */
+    uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
 
     g = MIN(g, vif_enhn_gain_limit);
 

@@ -93,6 +93,11 @@
 
 #include "hip/integer_vif_hip.h"
 
+/* integer_vif.c's residual variance runs in device code here: one definition,
+ * x86's value without the undefined conversion below INT32_MIN (ADR-1561). */
+#define VMAF_IVIF_FUNC static __device__ __forceinline__
+#include "feature/integer_vif_sv_sq.h"
+
 /* Filter widths per scale — matches libvmaf/src/feature/integer_vif.h
  * `vif_filter1d_width[4] = {17, 9, 5, 3}`. */
 #define VIF_FW_S0 17
@@ -160,7 +165,7 @@ __device__ __forceinline__ static int32_t log2_lookup(const uint16_t *log2_table
  * `g` is the gain already capped at vif_enhn_gain_limit, `sv_sq` the clamped
  * residual variance. */
 __device__ __forceinline__ static void vif_statistic_log_domain(
-    int32_t sigma1_sq, int32_t sigma12, int32_t sv_sq, double g,
+    int32_t sigma1_sq, int32_t sigma12, uint32_t sv_sq, double g,
     const uint16_t *log2_table, vif_accums_hip *acc)
 {
     uint32_t log_den_stage1 = (uint32_t)(VIF_SIGMA_NSQ + sigma1_sq);
@@ -176,7 +181,7 @@ __device__ __forceinline__ static void vif_statistic_log_domain(
      * get_best16_from64 call cannot receive 0.  A negative sigma12 adds
      * nothing to the numerator. */
     if (sigma12 >= 0) {
-        uint32_t numer1     = (uint32_t)(sv_sq + VIF_SIGMA_NSQ);
+        uint32_t numer1     = sv_sq + (uint32_t)VIF_SIGMA_NSQ;
         int64_t  numer1_tmp = (int64_t)(g * g * sigma1_sq) + (int64_t)numer1;
 
         int x1, x2;
@@ -221,8 +226,7 @@ __device__ __forceinline__ static void vif_statistic_one(
     double g = 0.0;
     if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0)
         g = sigma12 / ((double)sigma1_sq + eps);
-    int32_t sv_sq = (int32_t)(sigma2_sq - g * sigma12);
-    if (sv_sq < (int32_t)eps) sv_sq = (int32_t)eps;
+    const uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
     if (g > vif_enhn_gain_limit) g = vif_enhn_gain_limit;
 
     vif_statistic_log_domain(sigma1_sq, sigma12, sv_sq, g, log2_table, acc);

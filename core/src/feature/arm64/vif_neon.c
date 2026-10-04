@@ -32,6 +32,7 @@
 #include "feature/arm64/vif_neon.h"
 #include "feature/common/macros.h"
 #include "feature/integer_vif.h"
+#include "feature/integer_vif_sv_sq.h"
 #include "libvmaf/vmaf_assert.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -479,9 +480,9 @@ static FORCE_INLINE int64_t vif_num_log(const VifPublicState *s, int32_t sigma1_
 
     const double eps = 65536 * 1.0e-10;
     double g = sigma12 / (sigma1_sq + eps); // this epsilon can go away
-    int32_t sv_sq = sigma2_sq - g * sigma12;
-
-    sv_sq = (uint32_t)(MAX(sv_sq, 0));
+    /* integer_vif.c's residual variance, x86's value on every target
+     * (ADR-1561). */
+    uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
 
     g = MIN(g, s->vif_enhn_gain_limit);
 

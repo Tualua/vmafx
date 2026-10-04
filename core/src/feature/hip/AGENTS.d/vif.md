@@ -37,3 +37,10 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
   CPU `vif` below bound (ADR-1324). `init()` refuses direct request with
   `-EINVAL` before any device work, after the scaffold `-ENOSYS` (ADR-1264).
   Guard: `test_hip_vif_min_dim` (skips on scaffold builds).
+
+- **Residual variance via `vif_sv_sq()` (ADR-1561).** Kernel defines
+  `VMAF_IVIF_FUNC` as `static __device__ __forceinline__` and includes
+  `feature/integer_vif_sv_sq.h`; `sv_sq` is `uint32_t`. No raw
+  `double` -> `int32_t` conversion of `sigma2_sq - g * sigma12`
+  (`test_integer_vif_sv_sq_contract.py`). Header listed in the backend's
+  `depend_files` (`core/src/meson.build`).

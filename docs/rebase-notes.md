@@ -81,6 +81,28 @@ languages by the same table. Do not restore `_smallest_passing_crf`,
 `SmallestPassingCRF` or the `abs(vmaf - target)` objective. A conflict in
 `fast.py` also moves the three helpers split out of its former over-length
 functions (`_extract_sample`, `_verify_encode`, `_fast_production_result`).
+## Integer VIF's residual variance goes through `vif_sv_sq()` (ADR-1561, 2026-10-04)
+
+`fix/integer-vif-sv-sq-defined`. CPU, AVX2, NEON, CUDA and HIP.
+
+- Netflix's `int32_t sv_sq = sigma2_sq - g * sigma12; sv_sq =
+  (uint32_t)(MAX(sv_sq, 0));` is `uint32_t sv_sq = vif_sv_sq(sigma2_sq, g,
+  sigma12);` in `integer_vif.c::vif_accumulate_pixel()`,
+  `x86/vif_avx2.c::vif_num_log256()` and `arm64/vif_neon.c::vif_num_log()`,
+  and in the CUDA (`vif_statistics.cuh`) and HIP (`vif_statistics.hip`)
+  kernels. An upstream sync that touches those lines keeps the call: the
+  upstream conversion is undefined below INT32_MIN (`vif_sv_sq()` returns the
+  value x86 computes from it). `sv_sq` is `uint32_t`, so `sv_sq + sigma_nsq`
+  stays an unsigned addition.
+- `core/src/feature/integer_vif_sv_sq.h` is in the CUDA and HIP
+  `depend_files` lists of `core/src/meson.build`
+  (`test_device_target_header_dependencies`).
+- `test_integer_vif_sv_sq_contract.py` fails on any C, C++, CUDA, HIP,
+  Objective-C++ or Metal file under `core/src/feature` or `core/test` that
+  converts the raw difference to a signed integer, and
+  `test_sycl_vif_exact_gain_contract.py` now expects the call in
+  `vif_accumulate_pixel()` and in `test_sycl_integer_vif_math.c`'s
+  `reference_terms()`. No score, public API or FFmpeg patch impact.
 
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 

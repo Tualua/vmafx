@@ -8,10 +8,14 @@ truncates two results to integers before the log2 table::
 
     const double eps = 65536 * 1.0e-10;
     double g = sigma12 / (sigma1_sq + eps);
-    int32_t sv_sq = sigma2_sq - g * sigma12;
-    sv_sq = (uint32_t)(MAX(sv_sq, 0));
+    uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
     g = MIN(g, vif_enhn_gain_limit);
     ... (int64_t)((g * g * sigma1_sq)) ...
+
+``vif_sv_sq()`` (``integer_vif_sv_sq.h``) is upstream's
+``int32_t sv_sq = sigma2_sq - g * sigma12; sv_sq = (uint32_t)(MAX(sv_sq, 0));``
+with x86's value and without the undefined conversion below INT32_MIN
+(ADR-1561).
 
 A SYCL kernel has no fp64 type (ADR-0220). ``sycl_integer_vif_math.h``
 returns the same two integers from integer arithmetic and replays the
@@ -47,8 +51,7 @@ FP64 = re.compile(r"\b(?:long\s+)?double\b")
 REFERENCE_LINES = (
     "const double eps = 65536 * 1.0e-10;",
     "double g = sigma12 / (sigma1_sq + eps);",
-    "int32_t sv_sq = sigma2_sq - g * sigma12;",
-    "sv_sq = (uint32_t)(MAX(sv_sq, 0));",
+    "uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);",
     "g = MIN(g, vif_enhn_gain_limit);",
     "(int64_t)((g * g * sigma1_sq))",
 )

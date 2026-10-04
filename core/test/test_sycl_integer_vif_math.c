@@ -15,8 +15,7 @@
  *
  *     const double eps = 65536 * 1.0e-10;
  *     double g = sigma12 / (sigma1_sq + eps);
- *     int32_t sv_sq = sigma2_sq - g * sigma12;
- *     sv_sq = (uint32_t)(MAX(sv_sq, 0));
+ *     uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
  *     g = MIN(g, vif_enhn_gain_limit);
  *     ... (int64_t)((g * g * sigma1_sq)) ...
  *
@@ -50,6 +49,7 @@
 #include <stdio.h>
 
 #include "test.h"
+#include "feature/integer_vif_sv_sq.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
@@ -66,7 +66,6 @@ enum {
     PATH_REPLAY = 2,
 };
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static const double GAIN_LIMIT[LIMIT_COUNT] = {100.0, 1.0, 1.2, 37.0};
@@ -86,13 +85,13 @@ static void reference_terms(int32_t sigma1_sq, int32_t sigma2_sq, int32_t sigma1
 {
     const double eps = 65536 * 1.0e-10;
     double g = sigma12 / (sigma1_sq + eps); // this epsilon can go away
-    int32_t sv_sq = sigma2_sq - g * sigma12;
-
-    sv_sq = (uint32_t)(MAX(sv_sq, 0));
+    /* Upstream's int32_t conversion and clamp, x86's value on every target
+     * (ADR-1561). */
+    uint32_t sv_sq = vif_sv_sq(sigma2_sq, g, sigma12);
 
     g = MIN(g, vif_enhn_gain_limit);
 
-    *sv_out = (uint32_t)sv_sq;
+    *sv_out = sv_sq;
     *gg_out = (int64_t)((g * g * sigma1_sq));
 }
 
