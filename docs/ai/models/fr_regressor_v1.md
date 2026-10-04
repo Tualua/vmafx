@@ -91,8 +91,9 @@ ADR-0249 PLCC gate.
 ## Provenance
 
 **What it was trained on.** The training corpus (`.corpus/netflix/`) is the
-Netflix Public Dataset, distributed by Netflix under a license that forbids
-redistribution. The shipped ONNX is a derivative: parameters were fitted to
+Netflix Public Dataset, which Netflix shares on request "for training, testing
+and verification of results purposes" (its terms are quoted under
+[Training data terms](#training-data-terms)). The shipped ONNX is a derivative: parameters were fitted to
 per-frame `vmaf_v0.6.1` teacher scores computed locally on that corpus.
 
 **Why BSD-2-Clause-Patent applies.** The fork ships the resulting ONNX (a
@@ -104,6 +105,35 @@ the YUV bitstreams or of the (separately access-gated) DMOS sidecar CSV.
     If your jurisdiction reads "derivative work" more broadly, treat the
     checkpoint as Netflix-license-encumbered and rebuild it from your own
     copy of the dataset.
+
+## Training data terms
+
+This model was trained on the Netflix Public Dataset. The terms below are
+quoted as each source states them (read 2026-10-04); the [dataset
+terms](../training-data.md#dataset-terms) list where each comes from and which
+models it trained.
+
+**Netflix Public Dataset**:
+<https://github.com/Netflix/vmaf/blob/0fb4152418d0351901e9c5fd2d30668dced89cdb/resource/doc/datasets.md>
+
+> We provide a dataset publicly available to the community for training, testing
+> and verification of results purposes.
+>
+> (please request for access and we will grant it)
+
+The stated purpose includes training; the page states no other terms.
+
+**Reading.** The fork ships these weights under BSD-2-Clause-Patent: they are
+fitted parameters that cannot reproduce a clip, an image or a label, and no
+dataset file is redistributed. That is the fork's reading, not a permission
+from the dataset's authors. Where a dataset limits its use to research and
+that limit binds the weights where you use them, treat the model as
+research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../state.md);
+[ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
 
 ## Usage — CLI
 

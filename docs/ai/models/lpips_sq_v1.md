@@ -122,6 +122,42 @@ per_frame = fex.results[0].get_ordered_list_scores_key("lpips_scores")
 print("mean LPIPS:", ListStats.nonemean(per_frame))
 ```
 
+## Training data terms
+
+This model was trained on torchvision's ImageNet-trained SqueezeNet 1.1
+features, under LPIPS's linear layers. The terms below are quoted as each
+source states them (read 2026-10-04); the [dataset
+terms](../training-data.md#dataset-terms) list where each comes from and which
+models it trained.
+
+**torchvision pretrained weights (0.29)**:
+<https://docs.pytorch.org/vision/stable/models.html>
+
+> The pre-trained models provided in this library may have their own licenses or
+> terms and conditions derived from the dataset used for training. It is your
+> responsibility to determine whether you have permission to use the models for
+> your use case.
+
+**ImageNet terms of access**:
+<https://image-net.org/download.php>
+
+> Researcher shall use the Database only for non-commercial research and
+> educational purposes.
+
+ImageNet restricts the images to non-commercial research and education.
+
+**Reading.** The fork ships these weights under its upstream licences
+(BSD-2-Clause, BSD-3-Clause): they are fitted parameters that cannot reproduce
+a clip, an image or a label, and no dataset file is redistributed. That is the
+fork's reading, not a permission from the dataset's authors. Where a dataset
+limits its use to research and that limit binds the weights where you use
+them, treat the model as research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../state.md);
+[ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
+
 ## Training and evaluation
 
 The fork does not train or fine-tune this model. The weights are the

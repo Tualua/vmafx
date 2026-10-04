@@ -51,11 +51,41 @@ output, and registry target so a refreshed filter baseline can be replayed.
 | --- | --- |
 | Dataset | KoNViD-1k |
 | Source | <http://database.mmsp-kn.de/konvid-1k-database.html> |
-| Terms | No licence named: the database page says KoNViD-1k "is freely available to the research community" (read 2026-10-04); its clips are YFCC100M videos under assorted Creative Commons licences. Clips are not redistributed in-tree; whether these terms bind the trained weights is open (`T-PROD-LICENCE-MODEL-TRAINING-DATA-2026-10-04` in [state](../../state.md)). |
+| Terms | No licence named: the database page says KoNViD-1k "is freely available to the research community" (read 2026-10-04); its clips are YFCC100M videos under assorted Creative Commons licences. Clips are not redistributed in-tree; the terms and the fork's reading are under [Training data terms](#training-data-terms). |
 | Usage | Middle frame extracted per clip; synthetic degradation applied (Gaussian blur σ=1.2 + JPEG quality=35); self-supervised (degraded→clean pairs, no external MOS labels used for the filter task) |
 
 **Acknowledgement.** Training uses KoNViD-1k frames for self-supervised
 degradation recovery. The clips are not committed to this repository.
+
+## Training data terms
+
+This model was trained on KoNViD-1k frames. The terms below are quoted as each
+source states them (read 2026-10-04); the [dataset
+terms](../training-data.md#dataset-terms) list where each comes from and which
+models it trained.
+
+**KoNViD-1k**:
+<http://database.mmsp-kn.de/konvid-1k-database.html>
+
+> KoNViD-1k is freely available to the research community.
+>
+> We took YFCC100m as a baseline database, consisting of 793436 Creative Commons
+> (CC) video sequences
+
+The page names no licence and offers the database to the research community;
+each clip keeps the Creative Commons licence of its YFCC100M upload.
+
+**Reading.** The fork ships these weights under BSD-2-Clause-Patent: they are
+fitted parameters that cannot reproduce a clip, an image or a label, and no
+dataset file is redistributed. That is the fork's reading, not a permission
+from the dataset's authors. Where a dataset limits its use to research and
+that limit binds the weights where you use them, treat the model as
+research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../state.md);
+[ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
 
 ## Op-allowlist conformance
 

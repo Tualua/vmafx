@@ -73,7 +73,7 @@ arguments, and original argv.
 | Citation | "Learning to Detect Salient Objects with Image-Level Supervision", CVPR 2017 |
 | Project page | <http://saliencydetection.net/duts/> |
 | Direct URL | `https://saliencydetection.net/duts/download/DUTS-TR.zip` |
-| Distribution licence | "Free for academic and research purposes" (see project page) |
+| Distribution terms | "All rights reserved by the original authors of DUTS Image Dataset." (project page); the images are ImageNet's, see [Training data terms](#training-data-terms) |
 | Last-Modified header (at training time) | 2025-03-10 |
 | Content-Length | 270 997 309 bytes (~271 MB) |
 | SHA-256 | `ce61e023c8f59d022b4d46981cf16813b83d089242e6489a45630d83962ea058` |
@@ -81,9 +81,43 @@ arguments, and original argv.
 
 **Acknowledgement.** This fork's `saliency_student_v1` weights were
 trained on DUTS-TR. We thank the DUTS authors for distributing the
-dataset under permissive academic-research terms. The DUTS images
+dataset. The DUTS images
 themselves are deliberately *not* committed to this repository; only
 the trained weights are.
+
+## Training data terms
+
+This model was trained on DUTS-TR, whose images are ImageNet images. The terms
+below are quoted as each source states them (read 2026-10-04); the [dataset
+terms](../training-data.md#dataset-terms) list where each comes from and which
+models it trained.
+
+**DUTS-TR**:
+<http://saliencydetection.net/duts/>
+
+> All rights reserved by the original authors of DUTS Image Dataset.
+>
+> All training images are collected from the ImageNet DET training/val sets
+
+**ImageNet terms of access**:
+<https://image-net.org/download.php>
+
+> Researcher shall use the Database only for non-commercial research and
+> educational purposes.
+
+ImageNet restricts the images to non-commercial research and education.
+
+**Reading.** The fork ships these weights under BSD-2-Clause-Patent: they are
+fitted parameters that cannot reproduce a clip, an image or a label, and no
+dataset file is redistributed. That is the fork's reading, not a permission
+from the dataset's authors. Where a dataset limits its use to research and
+that limit binds the weights where you use them, treat the model as
+research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../state.md);
+[ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
 
 ## Input / output contract
 

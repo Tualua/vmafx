@@ -10251,6 +10251,12 @@
         "pkg/controllerclient/credentials_test.go": 1
       },
       "target": "1569-operator-controller-auth.md"
+    },
+    "1570": {
+      "sites": {
+        "scripts/ci/tests/test_model_card_dataset_terms.py": 1
+      },
+      "target": "1570-tiny-model-dataset-terms-retrain-rc9.md"
     }
   },
   "retired": {

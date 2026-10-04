@@ -63,11 +63,45 @@ Identical to v1 — DUTS-TR (Wang, Lu, Wang, Feng, Wang, Yin, Ruan,
 "Learning to Detect Salient Objects with Image-Level Supervision",
 CVPR 2017). Project page: <http://saliencydetection.net/duts/>.
 Direct URL: `https://saliencydetection.net/duts/download/DUTS-TR.zip`.
-Distribution: free for academic and research purposes (see project
-page). SHA-256 of the redistributed zip — see
+Terms: see [Training data terms](#training-data-terms). SHA-256 of the
+redistributed zip — see
 [`saliency_student_v1.md`](saliency_student_v1.md#training-corpus-provenance).
 The DUTS images are not committed to this repository; only the
 trained weights are.
+
+## Training data terms
+
+This model was trained on DUTS-TR, whose images are ImageNet images. The terms
+below are quoted as each source states them (read 2026-10-04); the [dataset
+terms](../training-data.md#dataset-terms) list where each comes from and which
+models it trained.
+
+**DUTS-TR**:
+<http://saliencydetection.net/duts/>
+
+> All rights reserved by the original authors of DUTS Image Dataset.
+>
+> All training images are collected from the ImageNet DET training/val sets
+
+**ImageNet terms of access**:
+<https://image-net.org/download.php>
+
+> Researcher shall use the Database only for non-commercial research and
+> educational purposes.
+
+ImageNet restricts the images to non-commercial research and education.
+
+**Reading.** The fork ships these weights under BSD-2-Clause-Patent: they are
+fitted parameters that cannot reproduce a clip, an image or a label, and no
+dataset file is redistributed. That is the fork's reading, not a permission
+from the dataset's authors. Where a dataset limits its use to research and
+that limit binds the weights where you use them, treat the model as
+research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../state.md);
+[ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
 
 ## Op-allowlist conformance
 

@@ -56,6 +56,40 @@ random crops.
 The training script (`ai/scripts/train_saliency_student_v2.py`) is
 deterministic given the seed and pinned PyTorch / CUDA versions.
 
+## Training data terms
+
+This model was trained on DUTS-TR, whose images are ImageNet images. The terms
+below are quoted as each source states them (read 2026-10-04); the [dataset
+terms](../../docs/ai/training-data.md#dataset-terms) list where each comes
+from and which models it trained.
+
+**DUTS-TR**:
+<http://saliencydetection.net/duts/>
+
+> All rights reserved by the original authors of DUTS Image Dataset.
+>
+> All training images are collected from the ImageNet DET training/val sets
+
+**ImageNet terms of access**:
+<https://image-net.org/download.php>
+
+> Researcher shall use the Database only for non-commercial research and
+> educational purposes.
+
+ImageNet restricts the images to non-commercial research and education.
+
+**Reading.** The fork ships these weights under BSD-2-Clause-Patent: they are
+fitted parameters that cannot reproduce a clip, an image or a label, and no
+dataset file is redistributed. That is the fork's reading, not a permission
+from the dataset's authors. Where a dataset limits its use to research and
+that limit binds the weights where you use them, treat the model as
+research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../docs/state.md);
+[ADR-1490](../../docs/adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../docs/adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
+
 ## Op-allowlist conformance
 
 ONNX op set:

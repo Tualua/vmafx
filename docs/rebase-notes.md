@@ -7,6 +7,16 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
+
+`docs/model-dataset-terms`. Docs and one contract test.
+
+- `docs/ai/training-data.md` gains `## Dataset terms` (canonical verbatim
+  quotes, one `###` per dataset). Fourteen cards gain `## Training data terms`
+  with the same quotes; `scripts/ci/tests/test_model_card_dataset_terms.py`
+  fails when they differ. An upstream sync never touches these fork-local
+  cards; a rebase that edits a card keeps the section whole.
+
 ## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
 
 `fix/package-licence-metadata-test`. Packaging metadata and tests only.

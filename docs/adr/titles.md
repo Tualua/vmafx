@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1238), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1239), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4963,3 +4963,7 @@ Every ADR, one heading each (1238), so the site search finds an ADR by its title
 ## ADR-1569: the operator presents a bearer token to the controller from a file it reads on every call, through credentials shared with the node
 
 [1569-operator-controller-auth](1569-operator-controller-auth.md)
+
+## ADR-1570: Tiny models trained on restricted data stay, their cards quote the data's terms, and RC9 retrains them on cleared data
+
+[1570-tiny-model-dataset-terms-retrain-rc9](1570-tiny-model-dataset-terms-retrain-rc9.md)

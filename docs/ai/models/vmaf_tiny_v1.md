@@ -51,6 +51,35 @@ No KoNViD-1k or BVI-DVC rows were included at v1 training time. This
 is the key difference vs v2's 4-corpus union; v1 generalises less well
 to UGC content.
 
+## Training data terms
+
+This model was trained on the Netflix Public Dataset. The terms below are
+quoted as each source states them (read 2026-10-04); the [dataset
+terms](../training-data.md#dataset-terms) list where each comes from and which
+models it trained.
+
+**Netflix Public Dataset**:
+<https://github.com/Netflix/vmaf/blob/0fb4152418d0351901e9c5fd2d30668dced89cdb/resource/doc/datasets.md>
+
+> We provide a dataset publicly available to the community for training, testing
+> and verification of results purposes.
+>
+> (please request for access and we will grant it)
+
+The stated purpose includes training; the page states no other terms.
+
+**Reading.** The fork ships these weights under BSD-2-Clause-Patent: they are
+fitted parameters that cannot reproduce a clip, an image or a label, and no
+dataset file is redistributed. That is the fork's reading, not a permission
+from the dataset's authors. Where a dataset limits its use to research and
+that limit binds the weights where you use them, treat the model as
+research-only.
+
+**Retrain.** RC9 retrains this model on data cleared for redistribution
+(`T-TINY-AI-RETRAIN-CLEARED-DATA-2026-10-04` in [state](../../state.md);
+[ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1570](../../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
+
 ## Validation
 
 v1 has **not** been re-evaluated on the full Phase-3 chain. The relevant
