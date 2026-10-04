@@ -7,7 +7,7 @@ encode. With `--execute` it then runs that encode and scores it. It composes the
 other subcommands (`corpus`, `recommend`, `predict`, `tune-per-shot`,
 `recommend-saliency`, `ladder`, `compare`) and the orthogonal modes (HDR
 auto-detect, sample clip, resolution-aware scoring) into one deterministic
-decision tree (ADR-0325, [ADR-0397](../adr/0397-vmaf-tune-phase-f-auto.md)). The
+decision tree ([ADR-0397](../adr/0397-vmaf-tune-phase-f-auto.md)). The
 tool overview is in
 [`vmaf-tune.md`](vmaf-tune.md).
 
@@ -99,7 +99,7 @@ predicate is a `_should_short_circuit_<N>` helper in
 | 7 | `skip-per-shot` | `duration < 5 min` and `shot_variance < 0.15` | The `tune_per_shot.refine` pass (ADR-0392). |
 | 8 | `low-complexity` | `meta.complexity_score < 200` kbps (probe-encode bitrate) | The `recommend.coarse_to_fine` sweep: the predictor's estimate is already tight on simple content. `0.0` or `NaN` does not fire, because no probe has run. |
 | 9 | `baseline-meets-target` | `meta.baseline_vmaf >= target_vmaf` | The full predictor sweep: the default-CRF encode already meets the target. `0.0` or `NaN` does not fire, because no baseline is scored yet. |
-| 10 | `no-two-pass` | `adapter.supports_two_pass == False` (ADR-0333, ADR-0546) | The two-pass calibration stage. |
+| 10 | `no-two-pass` | `adapter.supports_two_pass == False` (ADR-0333, ADR-0595) | The two-pass calibration stage. |
 
 Notes on the table:
 
@@ -137,7 +137,7 @@ encode target, not a substitute for the final encode and score pass.
 
 ## Execute mode
 
-`--execute` (ADR-0454) drives real FFmpeg encodes and libvmaf scores for the
+`--execute` (ADR-0579) drives real FFmpeg encodes and libvmaf scores for the
 selected cell after the planning pass:
 
 ```shell
@@ -173,7 +173,7 @@ vmaf-tune auto \
 Two further executors exist in `vmaftune.executor`. The CLI does not call
 them; use them from Python.
 
-`run_plan_per_shot` (ADR-0468) splits the source into shots with
+`run_plan_per_shot` (ADR-0588) splits the source into shots with
 `vmaf-perShot` ([ADR-0223](../adr/0223-transnet-v2-shot-detector.md)) and
 scores each segment on its own. It appends to
 `<runs-dir>/tune_results_per_shot.jsonl`. Each top-level row carries
@@ -196,7 +196,7 @@ for r in per_shot_results:
           f"weighted VMAF={r.weighted_vmaf:.2f}")
 ```
 
-`run_plan_saliency` (ADR-0468) encodes through `saliency_aware_encode` (see
+`run_plan_saliency` (ADR-0588) encodes through `saliency_aware_encode` (see
 [`vmaf-tune-saliency-aware.md`](vmaf-tune-saliency-aware.md)) before scoring.
 It appends to `<runs-dir>/tune_results_saliency.jsonl`.
 `saliency_available` is `True` when the ONNX model ran. `False` means the

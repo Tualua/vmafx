@@ -59,13 +59,13 @@ class X265Adapter:
     probe_preset: str = "ultrafast"
     probe_quality: int = 28
     # libx265 saliency ROI is delivered via the --zones argv format
-    # (ADR-0370). ``supports_qpfile`` tracks x264-compatible qpfile
+    # (ADR-0414). ``supports_qpfile`` tracks x264-compatible qpfile
     # support; x265 uses its own zones channel and does not share the
     # x264 ASCII qpfile format, so this remains False.
     supports_qpfile: bool = False
-    # Zones-based saliency ROI is available for x265 (ADR-0370).
+    # Zones-based saliency ROI is available for x265 (ADR-0414).
     supports_saliency_roi: bool = True
-    # ADR-0332: libx265 emits a pass-1 text stats file whose q-aq and
+    # ADR-0400: libx265 emits a pass-1 text stats file whose q-aq and
     # CTU-count aliases are normalised by ``encoder_stats``.
     supports_encoder_stats: bool = True
 

@@ -83,13 +83,13 @@ class RecommendResult:
     the numeric fields at sentinel values; the report renderer skips
     such rows in the ranking but still surfaces them in the table.
 
-    ``bisect_samples`` (ADR-0530, schema-v2 additive) carries every
+    ``bisect_samples`` (ADR-0534, schema-v2 additive) carries every
     encode+score probe the underlying target-VMAF bisect walked
     through before converging on ``best_crf``. Each entry is a dict
     with ``crf`` / ``bitrate_kbps`` / ``vmaf_score`` /
     ``encode_time_ms`` keys. The rate-quality chart consumes this list
     instead of the picked-CRF point to avoid the connect-the-dots
-    artefact described in ADR-0530. Empty tuple means the predicate
+    artefact described in ADR-0534. Empty tuple means the predicate
     is not a bisect (older predicates / hand-written stubs).
     """
 
@@ -121,7 +121,7 @@ class RecommendResult:
             "ok": self.ok,
             "error": self.error,
         }
-        # Additive (ADR-0530): only emit the key when the predicate
+        # Additive (ADR-0534): only emit the key when the predicate
         # actually populated samples — keeps v1 CSV / single-target
         # JSON exporters unchanged and lets v2 readers detect "old
         # v2-without-samples" by the key's absence.
@@ -419,7 +419,7 @@ def _emit_json(report: ComparisonReport) -> str:
 def _emit_csv(report: ComparisonReport) -> str:
     buf = io.StringIO()
     # ``extrasaction="ignore"`` keeps CSV output stable when ``to_row``
-    # learns optional columns over time (ADR-0530 added
+    # learns optional columns over time (ADR-0534 added
     # ``bisect_samples``, which is structured and intentionally not
     # surfaced in the flat CSV view).
     writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS), extrasaction="ignore")
@@ -865,7 +865,7 @@ def emit_sweep_json(report: SweepReport) -> str:
 def emit_sweep_csv(report: SweepReport) -> str:
     buf = io.StringIO()
     # ``extrasaction="ignore"`` keeps CSV output stable when ``to_row``
-    # learns optional columns over time (ADR-0530 added
+    # learns optional columns over time (ADR-0534 added
     # ``bisect_samples``, which is structured and intentionally not
     # surfaced in the flat CSV view).
     writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS), extrasaction="ignore")

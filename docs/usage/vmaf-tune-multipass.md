@@ -7,7 +7,7 @@ pass 2 reads it to allocate bits better. The default stays single-pass.
 Only some adapters can do a true two-invocation 2-pass; the codec matrix
 below says which, and what the others offer instead
 ([ADR-0333](../adr/0333-vmaf-tune-multi-pass-encoding.md),
-[ADR-0546](../adr/0546-audit-bundle-vulkan-saliency-modelcard.md)).
+[ADR-0595](../adr/0595-codec-adapter-two-pass-real.md)).
 
 ## Quick start
 
@@ -46,7 +46,7 @@ contract:
 
 ## Codec support matrix
 
-ADR-0546 closed the contract for every adapter. An adapter either runs a
+ADR-0595 closed the contract for every adapter. An adapter either runs a
 real two-invocation 2-pass, returns single-invocation quality-boost flags
 you can splice into `extra_params`, or raises a typed error saying why it
 cannot.

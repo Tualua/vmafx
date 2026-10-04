@@ -19,7 +19,7 @@ __version__ = "0.0.2"
 # Bump on any backward-incompatible row-schema change.
 #
 # - v2 added the ``clip_mode`` key (additive, default ``"full"``) for
-#   the sample-clip mode introduced under ADR-0297.
+#   the sample-clip mode introduced under ADR-0301.
 # - v3 adds the HDR provenance triple (``hdr_transfer`` / ``hdr_primaries``
 #   / ``hdr_forced``) wired up by the ``corpus.iter_rows`` HDR integration
 #   (ADR-0300 status update 2026-05-08), plus the canonical-6 per-frame
@@ -32,7 +32,7 @@ __version__ = "0.0.2"
 #   ``shot_duration_std_sec``) is also additive in v3 — keys default to
 #   ``0`` / ``0.0`` / ``0.0`` when shot detection is unavailable (ADR-0223
 #   / research-0086). Also additive in v3: ten ``enc_internal_*`` scalar
-#   aggregates (per ADR-0332) capturing x264's pass-1 stats-file signal
+#   aggregates (per ADR-0400) capturing x264's pass-1 stats-file signal
 #   — predicted bitrate, QP, motion-vector cost, texture cost, intra /
 #   skip macroblock ratios. Hardware encoders (NVENC / AMF / QSV /
 #   VideoToolbox) opt out and emit ``0.0``.
@@ -99,7 +99,7 @@ CORPUS_ROW_KEYS: tuple[str, ...] = (
     "shot_avg_duration_sec",
     "shot_duration_std_sec",
     *CANONICAL6_AGGREGATE_KEYS,
-    # ADR-0332: per-frame encoder-internal stats aggregates.
+    # ADR-0400: per-frame encoder-internal stats aggregates.
     # Populated for codecs whose adapter declares
     # ``supports_encoder_stats = True`` (libx264 in v1; libx265
     # capture wired with parser support deferred). libvpx-vp9 writes

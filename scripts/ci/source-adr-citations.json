@@ -25,7 +25,8 @@
         "scripts/ci/tests/test_check_silent_revert.py": 11,
         "scripts/ci/tests/test_check_source_adr_citations.py": 5,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
-        "scripts/docs/tests/test_generators.py": 1
+        "scripts/docs/tests/test_generators.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2
       }
     }
   },
@@ -205,6 +206,7 @@
         "tools/vmaf-tune/src/vmaftune/prefilter.py": 3,
         "tools/vmaf-tune/tests/test_cli_prefilter.py": 1,
         "tools/vmaf-tune/tests/test_filter_adapter_pelorus_deband.py": 7,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1,
         "tools/vmaf-tune/tests/test_prefilter.py": 1
       },
       "target": "0110-coverage-gate-fprofile-update-atomic.md"
@@ -1752,7 +1754,6 @@
     },
     "0277": {
       "sites": {
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 1,
         "tools/vmaf-tune/tests/test_codec_adapter_svtav1.py": 1
       },
       "target": "0277-ffmpeg-patches-refresh-2026-05-04.md"
@@ -1912,11 +1913,7 @@
         "pkg/tune/auto/confidence.go": 1,
         "pkg/uncertainty/uncertainty.go": 1,
         "tools/vmaf-tune/src/vmaftune/auto.py": 7,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
-        "tools/vmaf-tune/src/vmaftune/conformal.py": 1,
-        "tools/vmaf-tune/src/vmaftune/ladder.py": 2,
         "tools/vmaf-tune/src/vmaftune/recommend.py": 3,
-        "tools/vmaf-tune/src/vmaftune/uncertainty.py": 2,
         "tools/vmaf-tune/tests/test_auto_confidence_aware.py": 1,
         "tools/vmaf-tune/tests/test_ladder_uncertainty.py": 1,
         "tools/vmaf-tune/tests/test_recommend_uncertainty.py": 2
@@ -1966,8 +1963,7 @@
     },
     "0287": {
       "sites": {
-        "pkg/saliency/saliency.go": 2,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1
+        "pkg/saliency/saliency.go": 2
       },
       "target": "0287-vmaf-tiny-v5-corpus-expansion.md"
     },
@@ -1998,6 +1994,7 @@
         "ai/scripts/train_predictor_v2_realcorpus.py": 1,
         "pkg/fast/proxy.go": 1,
         "scripts/ci/ensemble_prod_gate.py": 1,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 2,
         "tools/vmaf-tune/src/vmaftune/proxy.py": 5,
         "tools/vmaf-tune/tests/test_codec_adapter_prores_videotoolbox.py": 1,
         "tools/vmaf-tune/tests/test_coverage_push_lowcov_modules.py": 1
@@ -2010,6 +2007,7 @@
         "pkg/saliency/saliency.go": 1,
         "pkg/tune/auto/auto.go": 2,
         "tools/vmaf-tune/src/vmaftune/auto.py": 3,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/saliency.py": 1,
         "tools/vmaf-tune/tests/test_saliency.py": 1
       },
@@ -2020,9 +2018,7 @@
         "ai/scripts/train_fr_regressor_v2.py": 1,
         "pkg/codecadapter/codecadapter.go": 1,
         "pkg/encoder/adapter.go": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/x264.py": 1
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 1
       },
       "target": "0294-vmaf-tune-codec-adapter-svtav1.md"
     },
@@ -2059,10 +2055,8 @@
         "pkg/encoder/adapter.go": 1,
         "pkg/pershot/pershot.go": 2,
         "pkg/pershot/pershot_test.go": 1,
-        "tools/vmaf-tune/src/vmaftune/__init__.py": 1,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
-        "tools/vmaf-tune/src/vmaftune/corpus.py": 1,
-        "tools/vmaf-tune/src/vmaftune/encode.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/x264.py": 1,
         "tools/vmaf-tune/tests/test_bbb_e2e_v6_bug_cluster.py": 1,
         "tools/vmaf-tune/tests/test_encode_multi_codec.py": 1
       },
@@ -2138,9 +2132,12 @@
         "pkg/scorecli/scorecli.go": 1,
         "pkg/tune/auto/auto.go": 1,
         "pkg/tune/executor/executor.go": 1,
+        "tools/vmaf-tune/src/vmaftune/__init__.py": 1,
         "tools/vmaf-tune/src/vmaftune/auto.py": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 2,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 2,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 3,
+        "tools/vmaf-tune/src/vmaftune/corpus.py": 1,
+        "tools/vmaf-tune/src/vmaftune/encode.py": 1,
         "tools/vmaf-tune/src/vmaftune/score.py": 2,
         "tools/vmaf-tune/tests/test_corpus.py": 1
       },
@@ -2331,7 +2328,6 @@
         "scripts/release/build-native-release-artifacts.sh": 3,
         "tools/vmaf-tune/src/vmaftune/auto.py": 8,
         "tools/vmaf-tune/src/vmaftune/predictor.py": 3,
-        "tools/vmaf-tune/src/vmaftune/sidecar.py": 2,
         "tools/vmaf-tune/tests/test_auto_recipe_overrides.py": 2,
         "tools/vmaf-tune/tests/test_calibrated_recipes.py": 2,
         "tools/vmaf-tune/tests/test_predict_mos.py": 1,
@@ -2386,22 +2382,6 @@
         "tools/external-bench/dover-mobile/run.sh": 1,
         "tools/external-bench/tests/test_compare.py": 1,
         "tools/external-bench/x264-pvmaf/run.sh": 1,
-        "tools/vmaf-tune/src/vmaftune/__init__.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_amf_common.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_nvenc_common.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/h264_videotoolbox.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/hevc_videotoolbox.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/libaom.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/prores_videotoolbox.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/x264.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py": 1,
-        "tools/vmaf-tune/src/vmaftune/corpus.py": 2,
-        "tools/vmaf-tune/src/vmaftune/encode.py": 1,
         "tools/vmaf-tune/tests/test_codec_adapter_supports_encoder_stats.py": 1,
         "tools/vmaf-tune/tests/test_corpus.py": 3,
         "tools/vmaf-tune/tests/test_corpus_emits_encoder_stats.py": 1,
@@ -2481,6 +2461,7 @@
         "pyproject.toml": 1,
         "scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh": 1,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py": 4,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 1,
         "tools/vmaf-tune/tests/test_codec_adapter_av1_videotoolbox.py": 2,
         "tools/vmaf-tune/tests/test_crashes_dead_flags.py": 1,
         "tools/vmaf-tune/tests/test_encode_dispatcher_per_adapter.py": 3
@@ -2623,7 +2604,6 @@
         "cmd/vmafx-tune/cmd/auto.go": 1,
         "pkg/tune/auto/auto.go": 1,
         "tools/vmaf-tune/src/vmaftune/auto.py": 5,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/tests/test_auto_confidence_aware.py": 1,
         "tools/vmaf-tune/tests/test_auto_short_circuits.py": 1
       },
@@ -2682,9 +2662,6 @@
       "sites": {
         "ai/scripts/live_vqc_to_corpus_jsonl.py": 4,
         "ai/tests/test_live_vqc.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py": 2,
         "tools/vmaf-tune/tests/test_saliency_roi_adapters.py": 1
       },
       "target": "0370-live-vqc-corpus-ingestion.md"
@@ -2817,11 +2794,21 @@
       },
       "target": "0389-vmaf-tiny-v3-mlp-medium.md"
     },
+    "0393": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
+        "tools/vmaf-tune/src/vmaftune/conformal.py": 1,
+        "tools/vmaf-tune/src/vmaftune/ladder.py": 2,
+        "tools/vmaf-tune/src/vmaftune/uncertainty.py": 2
+      },
+      "target": "0393-fr-regressor-v2-probabilistic.md"
+    },
     "0394": {
       "sites": {
         "cmd/vmafx-tune/cmd/sidecar.go": 1,
         "pkg/tune/sidecar/sidecar.go": 1,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
+        "tools/vmaf-tune/src/vmaftune/sidecar.py": 2
       },
       "target": "0394-local-sidecar-training.md"
     },
@@ -2832,6 +2819,34 @@
         "tools/vmaf-tune/src/vmaftune/saliency.py": 1
       },
       "target": "0396-video-saliency-extension.md"
+    },
+    "0397": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1
+      },
+      "target": "0397-vmaf-tune-phase-f-auto.md"
+    },
+    "0400": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/__init__.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_amf_common.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_nvenc_common.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/h264_videotoolbox.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/hevc_videotoolbox.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/libaom.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/prores_videotoolbox.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/x264.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py": 1,
+        "tools/vmaf-tune/src/vmaftune/corpus.py": 2,
+        "tools/vmaf-tune/src/vmaftune/encode.py": 1
+      },
+      "target": "0400-encoder-internal-stats-capture.md"
     },
     "0403": {
       "sites": {
@@ -2853,6 +2868,14 @@
         "scripts/ci/tests/test-pr-body-input-selection.sh": 1
       },
       "target": "0409-ffmpeg-patches-surface-gate.md"
+    },
+    "0414": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py": 2
+      },
+      "target": "0414-saliency-roi-x265-svtav1-vvenc.md"
     },
     "0415": {
       "sites": {
@@ -3008,7 +3031,8 @@
         "pkg/tune/auto/auto.go": 1,
         "pkg/tune/executor/executor.go": 1,
         "tools/vmaf-tune/src/vmaftune/executor.py": 1,
-        "tools/vmaf-tune/tests/test_executor.py": 1
+        "tools/vmaf-tune/tests/test_executor.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2
       },
       "target": "0454-vif-cuda-smem-staging.md"
     },
@@ -3291,8 +3315,7 @@
         "dev/Containerfile": 1,
         "dev/docker-compose.yml": 1,
         "dev/scripts/dev-mcp-entrypoint.sh": 1,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
-        "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 3,
         "tools/vmaf-tune/tests/test_compare.py": 2,
         "tools/vmaf-tune/tests/test_ladder_score_backend_0511.py": 5
       },
@@ -3310,6 +3333,8 @@
       "sites": {
         "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 1,
         "mcp-server/vmaf-mcp/tests/test_backend_probe_and_allowlist_0511.py": 1,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
+        "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
         "tools/vmaf-tune/tests/test_backend_precheck_0613.py": 1,
         "tools/vmaf-tune/tests/test_ladder_score_backend_0511.py": 5
       },
@@ -3318,9 +3343,7 @@
     "0512": {
       "sites": {
         "pkg/corpus/shots.go": 2,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 2,
-        "tools/vmaf-tune/src/vmaftune/per_shot.py": 3,
-        "tools/vmaf-tune/src/vmaftune/report.py": 1
+        "tools/vmaf-tune/src/vmaftune/per_shot.py": 3
       },
       "target": "0512-vulkan-vif-two-variant-shader.md"
     },
@@ -3332,7 +3355,8 @@
         "mcp-server/vmaf-mcp/tests/test_path_and_bench_env.py": 1,
         "pkg/pershot/pershot.go": 4,
         "testdata/bench_all.sh": 3,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 2,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
+        "tools/vmaf-tune/src/vmaftune/report.py": 1,
         "tools/vmaf-tune/tests/test_per_shot.py": 1,
         "tools/vmaf-tune/tests/test_report.py": 2
       },
@@ -3489,9 +3513,6 @@
         "pkg/report/report_test.go": 1,
         "python/test/gpu_default_model_test.py": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 2,
-        "tools/vmaf-tune/src/vmaftune/compare.py": 5,
-        "tools/vmaf-tune/src/vmaftune/report.py": 6,
         "tools/vmaf-tune/tests/test_bisect.py": 1,
         "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py": 2,
         "tools/vmaf-tune/tests/test_per_shot.py": 5
@@ -3530,7 +3551,9 @@
     },
     "0534": {
       "sites": {
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 3,
+        "tools/vmaf-tune/src/vmaftune/compare.py": 5,
+        "tools/vmaf-tune/src/vmaftune/report.py": 6,
         "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py": 5
       },
       "target": "0534-compare-rate-quality-chart-from-bisect-samples.md"
@@ -3606,7 +3629,6 @@
     },
     "0542": {
       "sites": {
-        "tools/vmaf-tune/src/vmaftune/cli.py": 5,
         "tools/vmaf-tune/tests/test_compare_no_bisect.py": 1,
         "tools/vmaf-tune/tests/test_tune_per_shot_container_src.py": 1
       },
@@ -3647,21 +3669,11 @@
         "dev/scripts/dev-mcp-entrypoint.sh": 1,
         "pkg/saliency/saliency.go": 3,
         "pkg/saliency/saliency_test.go": 2,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 3,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_amf_common.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_nvenc_common.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/_videotoolbox_common.py": 1,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/h264_videotoolbox.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/hevc_videotoolbox.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/libaom.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/prores_videotoolbox.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 2,
-        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 2,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/predictor_train.py": 2,
         "tools/vmaf-tune/src/vmaftune/saliency.py": 5,
         "tools/vmaf-tune/tests/test_codec_adapter_two_pass_real.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2,
         "tools/vmaf-tune/tests/test_predictor_train.py": 2,
         "tools/vmaf-tune/tests/test_saliency_roi_codec.py": 4
       },
@@ -3670,7 +3682,8 @@
     "0548": {
       "sites": {
         "cmd/vmafx-tune/cmd/pershot.go": 4,
-        "pkg/encoder/probe.go": 1
+        "pkg/encoder/probe.go": 1,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 5
       },
       "target": "0548-vmaf-tune-full-file-and-no-bisect.md"
     },
@@ -3687,8 +3700,6 @@
         "scripts/ci/cross_backend_parity_gate.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
-        "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
         "tools/vmaf-tune/tests/test_bbb_e2e_v15_shared_ref.py": 1,
         "tools/vmaf-tune/tests/test_workdir_enospc.py": 1
       },
@@ -3849,6 +3860,22 @@
       },
       "target": "0594-hip-ssimulacra2-blur-fp-contract-off.md"
     },
+    "0595": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_amf_common.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_nvenc_common.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/_videotoolbox_common.py": 1,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/h264_videotoolbox.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/hevc_videotoolbox.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/libaom.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/prores_videotoolbox.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py": 2,
+        "tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py": 2
+      },
+      "target": "0595-codec-adapter-two-pass-real.md"
+    },
     "0597": {
       "sites": {
         "core/src/feature/cuda/integer_vif_cuda.c": 5,
@@ -3861,7 +3888,9 @@
     "0598": {
       "sites": {
         "cmd/vmafx-tune/cmd/pershot.go": 3,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1
+        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
+        "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2
       },
       "target": "0598-vmaftune-workdir-relocation.md"
     },
@@ -3939,7 +3968,6 @@
         "core/src/picture.h": 2,
         "mcp-server/vmaf-mcp/tests/test_iserror_invariant.py": 1,
         "mcp-server/vmaf-mcp/tests/test_smoke_e2e.py": 1,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/tests/test_backend_precheck_0613.py": 8,
         "tools/vmaf-tune/tests/test_ladder_score_backend_0511.py": 5,
         "tools/vmaf-tune/tests/test_per_shot.py": 1
@@ -4028,6 +4056,12 @@
         ".github/workflows/tests-and-quality-gates.yml": 1
       },
       "target": "0637-ci-test-failures-omnibus.md"
+    },
+    "0639": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1
+      },
+      "target": "0639-scaffold-audit-p1-feature-plumbing-fixes.md"
     },
     "0641": {
       "sites": {
@@ -4456,6 +4490,7 @@
         "tools/vmaf-tune/tests/test_bbb_e2e_v2_bug_cluster.py": 3,
         "tools/vmaf-tune/tests/test_bbb_e2e_v4_bug_cluster.py": 3,
         "tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py": 6,
+        "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1,
         "tools/vmaf-tune/tests/test_ladder_score_backend_0511.py": 4,
         "tools/vmaf-tune/tests/test_score_backend.py": 4
       },

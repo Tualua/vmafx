@@ -35,7 +35,7 @@ class EncodeRequest:
     """Single (preset, crf) request against one raw YUV source.
 
     ``sample_clip_seconds`` opts the request into sample-clip mode
-    (ADR-0297): FFmpeg input is sliced to the centre N-second window of
+    (ADR-0301): FFmpeg input is sliced to the centre N-second window of
     the reference, cutting encode time roughly linearly with the slice
     length. ``0.0`` (default) keeps the legacy full-source encode.
     ``sample_clip_start_s`` is the start offset (set by the caller from
@@ -748,7 +748,7 @@ def run_encode_with_stats(
        the bitstream the corpus scores.
 
     The result is the regular :class:`EncodeResult` with the
-    ``encoder_stats`` tuple populated. Per ADR-0332 this doubles the
+    ``encoder_stats`` tuple populated. Per ADR-0400 this doubles the
     per-encode wall-clock cost — that is the documented trade-off for
     closing the loop on the encoder's RC ledger.
 

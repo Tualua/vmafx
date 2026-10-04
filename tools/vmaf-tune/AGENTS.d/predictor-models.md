@@ -7,7 +7,7 @@ invariant: Predictor stub models: 3-step retrain, commit new bytes, refresh card
 <!-- markdownlint-disable MD024 -->
 # Predictor models retrain policy
 
-## Predictor stub-models policy (ADR-0325)
+## Predictor stub-models policy (ADR-0395)
 
 Fork ships one `model/predictor_<codec>.onnx` per codec adapter.
 As of 2026-05-14 NVENC / QSV predictors (`h264_nvenc`,

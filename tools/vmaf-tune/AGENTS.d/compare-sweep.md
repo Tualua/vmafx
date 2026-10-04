@@ -77,7 +77,7 @@ invariant: compare_codecs_sweep builds one bisect predicate per target; runtime 
   family); when adding new `_TrackedDefaultAction` flag, extend
   hardcoded tuple in `_stamp_tracked_default_sentinels`.
 - **`compare --no-bisect` skips bisect;
-  `_run_compare_crf_sweep` owns schema-v3 output (ADR-0542).**
+  `_run_compare_crf_sweep` owns schema-v3 output (ADR-0548).**
   When `args.no_bisect` is truthy, `_run_compare()` delegates
   immediately to
   `_run_compare_crf_sweep(args, encoders)` — normal bisect path

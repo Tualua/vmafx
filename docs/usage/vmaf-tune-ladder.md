@@ -349,4 +349,4 @@ noted:
 - [Ladder API](../api/ladder.md) — `convex_hull`, `select_knees`,
   `emit_manifest`.
 - [`docs/ai/conformal-vqa.md`](../ai/conformal-vqa.md) — the conformal
-  prediction surface (ADR-0279).
+  prediction surface (ADR-0393).

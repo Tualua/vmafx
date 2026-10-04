@@ -26,7 +26,7 @@ MODULE:CALLABLE` bypasses the default bisect, and the Python API accepts
 ## Quick start
 
 A container source needs no pre-extraction. Its geometry, framerate and frame
-count are auto-probed with `ffprobe` (ADR-0542):
+count are auto-probed with `ffprobe` (ADR-0548):
 
 ```shell
 vmaf-tune tune-per-shot \

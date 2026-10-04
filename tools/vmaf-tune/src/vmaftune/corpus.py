@@ -398,7 +398,7 @@ class CorpusOptions:
     """Knobs that govern a corpus run.
 
     ``sample_clip_seconds`` opts the run into sample-clip mode
-    (ADR-0297): each grid point encodes the centre N-second window of
+    (ADR-0301): each grid point encodes the centre N-second window of
     the reference YUV instead of the full source, scoring the matching
     reference window via the libvmaf CLI's ``--frame_skip_ref`` /
     ``--frame_cnt``. ``0.0`` (default) keeps the legacy full-source
@@ -1138,7 +1138,7 @@ def _encode_cell(
         # 2-pass; keeps mixed-codec corpora honest.
         return run_two_pass_encode(enc_req, ffmpeg_bin=opts.ffmpeg_bin, runner=encode_runner)
     if getattr(sweep.adapter, "supports_encoder_stats", False):
-        # ADR-0332: codec adapters that emit a parseable pass-1 stats
+        # ADR-0400: codec adapters that emit a parseable pass-1 stats
         # file opt in via ``supports_encoder_stats``; the dispatcher
         # routes those through the stats-capturing wrapper. Hardware
         # encoders fall through to the legacy single-pass path.
@@ -1276,7 +1276,7 @@ def _row_for(
     )
     row.update(_row_context_columns(hdr_info, hdr_forced, shot_meta))
     row.update(_row_canonical6_columns(score_res))
-    # ADR-0332: encoder-internal stats aggregates. Always emit the
+    # ADR-0400: encoder-internal stats aggregates. Always emit the
     # ten ``enc_internal_*`` columns so v3 rows are schema-uniform
     # across codecs; aggregator returns zeros for empty input.
     encoder_stats_frames = getattr(enc_res, "encoder_stats", ())

@@ -193,7 +193,7 @@ seams that default to `subprocess.run`. Production callers leave them `None`.
 | `encoder_version` | `str` | Parsed from ffmpeg stderr, for example `libx264-164`. |
 | `ok` | `bool` | `False` on unreachable target, monotonicity violation or encode failure. |
 | `error` | `str` | Human-readable error; empty on success. |
-| `samples` | tuple of `BisectSample` | Every successful probe (`crf`, `bitrate_kbps`, `vmaf_score`, `encode_time_ms`), so a rate-quality chart plots the measured curve (ADR-0530). |
+| `samples` | tuple of `BisectSample` | Every successful probe (`crf`, `bitrate_kbps`, `vmaf_score`, `encode_time_ms`), so a rate-quality chart plots the measured curve (ADR-0534). |
 | `fr_calls_total`, `fr_calls_saved` | `int` | Full-reference scoring calls made and skipped by NR pre-scoring; both `0` without `--fast-nr`. |
 
 `BisectResult.to_recommend_result()` projects onto `compare.RecommendResult`

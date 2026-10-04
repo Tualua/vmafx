@@ -197,12 +197,12 @@ The HTML and Markdown profile cards contain:
 
 ### Why these defaults
 
-ADR-0538 supersedes ADR-0530.
+ADR-0538 supersedes the target defaults of ADR-0534.
 
 - **`94,96,97,98` covers premium-archival operating points.** The fork's
   primary use is archival masters at VMAF 95 and above. VMAF 94 is the
   subjectively transparent floor on 4K source and 98 is the near-lossless
-  ceiling. The earlier ADR-0530 / ADR-0534 default (`75,80,85,90,93`) served
+  ceiling. The earlier ADR-0534 default (`75,80,85,90,93`) served
   streaming and broadcast workflows, so its chart held no points that an
   archival user picks CRFs from.
 - **VMAF 95 and above is reachable.** The earlier "top stops at 93" limit was
@@ -242,8 +242,8 @@ Every payload also has the top-level keys `src`, `tool_version`,
 
 `bisect_samples` is an optional list of `{crf, bitrate_kbps, vmaf_score,
 encode_time_ms}` objects, one per encode and score probe of the underlying
-bisect (ADR-0530). It is additive and absent on v2 dumps that predate
-ADR-0530. The CSV emitter drops it (`extrasaction="ignore"`), so it stays a
+bisect (ADR-0534). It is additive and absent on v2 dumps that predate
+ADR-0534. The CSV emitter drops it (`extrasaction="ignore"`), so it stays a
 JSON-only field.
 
 ### How `report` reads the schema
@@ -258,7 +258,7 @@ presence of `target_vmafs`.
 - **v2 without `bisect_samples`** (old dumps) falls back to the legacy
   connect-the-dots line, with a caveat note in the title. That line can show
   physically impossible dips when the per-target overshoot varies, which is
-  the failure that ADR-0530 fixes for the new path.
+  the failure that ADR-0534 fixes for the new path.
 
 !!! note "Encode time is wall clock"
     `encode_time_ms` is wall clock on whatever machine ran the predicate.
@@ -285,7 +285,7 @@ vmaf-tune compare \
 
 Three codecs times four CRFs give 12 rows in `cmp_sweep.json`.
 
-- **Schema.** The output is v3 (ADR-0542): `schema_version: 3`,
+- **Schema.** The output is v3 (ADR-0548): `schema_version: 3`,
   `mode: "crf_sweep"`, `crf_sweep: [18, 23, 28, 33]`. Each row carries `codec`,
   `adapter`, `runtime_variant`, `ffmpeg_bin`, `crf`, `bitrate_kbps`,
   `vmaf_score`, `encode_time_ms`, `encoder_version`, `ok` and `error`.

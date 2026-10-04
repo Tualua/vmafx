@@ -588,18 +588,26 @@ Any one of these unblocks it:
 3. A single-port re-export of `fr_regressor_v2` that concatenates the two
    inputs inside the graph, shipped alongside the current model.
 
-### Divergences from the Python fast implementation
+### Parity with the Python fast implementation
 
-The Go port fixes four defects found in `vmaf-tune fast` while reading it. The
-CLI surface and the JSON schema are unchanged; only the numbers the proxy would
-see differ.
+The Go port found four defects in `vmaf-tune fast`; the Python path was fixed
+to match on 2026-09-04 (`T-VMAFTUNE-FAST-PY-PROBE-BROKEN-2026-08-30` in
+[the bug ledger](../state.md)). Both implementations now:
 
-| # | Python behaviour | Go behaviour |
-|---|------------------|--------------|
-| 1 | `cli._build_fast_sample_extractor` hands the probe `.mp4` straight to the libvmaf CLI, which reads raw YUV only. Every probe score fails and the feature vector degrades to six zeros. | Container-shaped encodes are decoded to raw YUV first (the `score.maybe_decode_distorted` step the Python probe leg skips), on both the probe and verify legs. |
-| 2 | `cli._parse_canonical6_means` looks up bare `adm2` / `vif_scale0` keys in `pooled_metrics`; modern libvmaf emits `integer_adm2` / `integer_vif_scale0`. `score.py` knows this and carries a mapping, but the fast path does not use it. | The `integer_`-prefixed key is tried first, then the bare key, then a per-frame average of either. |
-| 3 | `proxy.py`'s hardcoded `ENCODER_VOCAB_V2` disagrees with the trainer and the shipped sidecar from index 3 on (`libaom-av1` vs `libvvenc`), so the codec one-hot lands in the wrong slot for every codec past `libsvtav1`, and the model's own `unknown` catch-all is unreachable. | The vocabulary is read from the model sidecar's `encoder_vocab`, so it cannot drift from the installed checkpoint. Out-of-vocabulary codecs map to `unknown` when the model has that slot, and are a hard error otherwise. |
-| 4 | The sidecar ships `feature_mean` / `feature_std`, and `run_proxy` documents that the caller must apply them, but no caller on the fast path does, so raw libvmaf means reach a model trained on standardised features. | The sidecar's StandardScaler is applied before inference. |
+1. decode container-shaped probe and verify encodes to raw YUV before the
+   libvmaf CLI scores them;
+2. read the `integer_`-prefixed canonical-6 keys first, then the bare key, then
+   a per-frame average;
+3. place the codec one-hot by the model's vocabulary (`libvvenc` at index 3,
+   `unknown` at index 11), mapping a codec outside it to `unknown`. Go reads
+   the vocabulary from the model sidecar's `encoder_vocab`; Python keeps
+   `proxy.ENCODER_VOCAB_V2` aligned with that sidecar and names the
+   substitution on stderr and as `proxy_encoder_slot` in its JSON;
+4. standardise the features with the sidecar's `feature_mean` / `feature_std`
+   before inference.
+
+`tools/vmaf-tune/tests/test_fast_parity.py::test_e2e_probe_extraction_parity`
+runs both on the same clip and holds the raw and normalised features to 1e-6.
 
 One behaviour is weaker in Go than in Python: TPE reproducibility. Optuna's
 `TPESampler(seed=0)` makes a run bit-reproducible. The Go port uses

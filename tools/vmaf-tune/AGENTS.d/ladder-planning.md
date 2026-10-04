@@ -20,7 +20,7 @@ invariant: Ladder math is two-pass and order-sensitive; default 5-point CRF samp
   `quality_range` or per-adapter default sweeps. Bug N-2 regression
   covered by `tests/test_ladder_svtav1_default_crf.py`.
 - **Ladder uncertainty is post-hull / pre-knee.** `vmaf-tune ladder
-  --with-uncertainty` must run ADR-0279 prune/insert recipe only
+  --with-uncertainty` must run ADR-0393 prune/insert recipe only
   after `convex_hull()` and before `select_knees()`. Preserve
   corpus row `vmaf_interval` payloads when present; when rows are
   point-only, use active `wide_interval_min_width` as conservative

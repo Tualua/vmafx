@@ -187,7 +187,7 @@ model omits VIF, including the default `vmaf_v1.0.16_3d0h` model
 with option suffixes, so every canonical-6 column holds a real value
 instead of `NaN`.
 
-### Encoder-internal statistics (v3+, ADR-0332)
+### Encoder-internal statistics (v3+, ADR-0400)
 
 | Key | Type | Description |
 |-----|------|-------------|

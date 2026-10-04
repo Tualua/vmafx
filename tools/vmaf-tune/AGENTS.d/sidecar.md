@@ -24,7 +24,7 @@ invariant: FEATURE_DIM = 14; anonymous host UUID by construction; sidecar state 
   silently coerce them back to zero because that would hide
   corrupt correction.
 
-## Sidecar (ADR-0325) rebase-sensitive invariants
+## Sidecar (ADR-0394) rebase-sensitive invariants
 
 - **`FEATURE_DIM = 14` and column order in
   `sidecar._feature_vector` are load-bearing pin** for online-ridge
@@ -44,9 +44,9 @@ invariant: FEATURE_DIM = 14; anonymous host UUID by construction; sidecar state 
   `<cache_dir>/host-uuid`. **Never** swap it for `uuid.getnode()`
   / `socket.gethostname()` / `/etc/machine-id` / CPUID — that
   would re-identify operator and break privacy precondition for
-  future opt-in upload PR (ADR-0325 §Future work).
+  future opt-in upload PR (ADR-0394 §Future work).
 - **Sidecar state is local-only by default.** Harness has no
   upload code path. Adding one requires dedicated opt-in upload
-  ADR + signing chain spelled out in ADR-0325 §Future work. Do not
+  ADR + signing chain spelled out in ADR-0394 §Future work. Do not
   slip network call into `SidecarPredictor` or any of its callers
   without that ADR landing first.

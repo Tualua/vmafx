@@ -77,9 +77,9 @@ class LibaomAdapter:
     probe_quality: int = 35
     supports_qpfile: bool = True
     supports_saliency_roi: bool = True
-    # ADR-0332: this encoder has no parseable first-pass stats file.
+    # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # ADR-0546 (Phase F real 2-pass): libaom-av1 honours FFmpeg's generic
+    # ADR-0595 (Phase F real 2-pass): libaom-av1 honours FFmpeg's generic
     # ``-pass`` / ``-passlogfile`` pair — same mechanism libvpx uses.
     supports_two_pass: bool = True
 
@@ -156,7 +156,7 @@ class LibaomAdapter:
         return _gop_common.default_force_keyframes_args(timestamps)
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """FFmpeg argv slice for libaom-av1 2-pass encoding (ADR-0546).
+        """FFmpeg argv slice for libaom-av1 2-pass encoding (ADR-0595).
 
         FFmpeg's libaom wrapper routes through the generic ``-pass`` /
         ``-passlogfile`` pair (the same path libvpx uses). The path is

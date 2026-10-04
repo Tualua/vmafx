@@ -86,7 +86,7 @@ flag table and examples.
 | Subcommand | Purpose | Page |
 |------------|---------|------|
 | `corpus` | Encoder grid sweep plus scoring; writes the JSONL corpus | [corpus](vmaf-tune-corpus.md) |
-| `recommend` | Smallest CRF that meets a target VMAF or bitrate | [recommend](vmaf-tune-recommend.md) |
+| `recommend` | Smallest CRF that meets a target VMAF, or the row closest to a target bitrate | [recommend](vmaf-tune-recommend.md) |
 | `predict` | Predict per-shot VMAF with an ONNX predictor and validate it | [predict](vmaf-tune-predict.md) |
 | `fast` | Proxy model plus Bayesian search, verified once by a real encode | [fast path](vmaf-tune-fast-path.md) |
 | `tune-per-shot` | Per-shot CRF zones from shot detection | [per-shot](vmaf-tune-per-shot.md) |
@@ -141,7 +141,7 @@ These pages cover behaviour shared across subcommands.
 |---------|--------|
 | Tool and corpus | [ADR-0237](../adr/0237-quality-aware-encode-automation.md), [Research-0061](../research/0061-vmaf-tune-capability-audit.md) |
 | `tune-per-shot` | [ADR-0392](../adr/0392-vmaf-tune-phase-d-per-shot.md) |
-| `recommend-saliency` | [ADR-0287](../adr/0287-vmaf-tiny-v5-corpus-expansion.md) (consumes `vmaf-roi` sidecars) |
+| `recommend-saliency` | [ADR-0293](../adr/0293-vmaf-tune-saliency-aware.md) (consumes `vmaf-roi` sidecars) |
 | `ladder` | [ADR-0295](../adr/0295-vmaf-tune-phase-e-bitrate-ladder.md) |
 | `fast` | [ADR-0276](../adr/0276-vmaf-tune-fast-path.md), [ADR-0291](../adr/0291-fr-regressor-v2-prod-ship.md) |
 | `prefilter` | [ADR-1116](../adr/1116-autotune-prefilter-control-plane.md) |

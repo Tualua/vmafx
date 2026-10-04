@@ -180,9 +180,9 @@ class BaseQsvAdapter:
     probe_preset: str = "veryfast"
     probe_quality: int = 23
     supports_qpfile: bool = False
-    # ADR-0332: hardware encoders have no parseable first-pass stats file.
+    # ADR-0400: hardware encoders have no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # ADR-0546: QSV's "two-pass" equivalent is the in-encoder
+    # ADR-0595: QSV's "two-pass" equivalent is the in-encoder
     # extended-BRC look-ahead (``-extbrc 1 -look_ahead_depth 40``)
     # which runs inside a single ffmpeg invocation. There is no
     # standalone first-pass stats sidecar, so the
@@ -231,7 +231,7 @@ class BaseQsvAdapter:
         return _gop_common.default_force_keyframes_args(timestamps)
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """Intel QSV extended-BRC look-ahead argv (ADR-0546).
+        """Intel QSV extended-BRC look-ahead argv (ADR-0595).
 
         QSV does not implement a software-style two-invocation 2-pass.
         The closest analogue is the extended bit-rate controller's

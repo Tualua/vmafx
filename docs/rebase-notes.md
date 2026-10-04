@@ -39,6 +39,19 @@ change.
 - `core/src/feature/feature_mobilesal.c`: buffers sized for `pw` / `ph`,
   `mobilesal_pad_plane()` and `mobilesal_cropped_mean()`. Do not size the
   tensor from the frame alone again or average the padded rows.
+## `vmaf-tune` help texts and ADR references (2026-10-04)
+
+`docs/vmaf-tune-help-texts`. Fork-local Python and docs only; no C source change.
+
+- `ladder --crf-sweep`, the `auto` subcommand help and `corpus --two-pass`
+  build their text from `DEFAULT_SAMPLER_CRF_SWEEP`, `auto.ShortCircuit` and
+  the adapters' `supports_two_pass`; a sync must not reintroduce literal lists.
+- Many vmaf-tune ADR numbers were reassigned (for example ADR-0279 is now the
+  libaom adapter, the conformal record is ADR-0393). When porting a comment or
+  help string that cites an ADR, check the record's title;
+  `tests/test_help_texts_and_adr_refs.py` fails on an unrelated record in the
+  help, the usage pages and the AGENTS.d pages.
+- `cli._fast_proxy_encoder_slot` adds `proxy_encoder_slot` to the `fast` JSON.
 
 ## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
 

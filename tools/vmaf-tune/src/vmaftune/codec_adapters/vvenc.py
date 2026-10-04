@@ -38,7 +38,7 @@ adapter exposed an ``nnvc_intra`` toggle that emitted
 ``-vvenc-params IntraNN=1``; that key has never existed in any
 released VVenC and was a fabrication. Per ADR-0285's 2026-05-09
 status update the toggle has been removed; if NN-VC ever lands in
-upstream VVenC the placeholder pattern from ADR-0294's
+upstream VVenC the placeholder pattern from ADR-0339's
 self-activating adapter set applies.
 """
 
@@ -115,11 +115,11 @@ class VVenCAdapter:
     probe_preset: str = "faster"
     probe_quality: int = 32
     supports_qpfile: bool = False
-    # ADR-0332: this encoder has no parseable first-pass stats file.
+    # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # VVenC ROI-map file (ADR-0370): delivered via -vvenc-params ROIFile=.
+    # VVenC ROI-map file (ADR-0414): delivered via -vvenc-params ROIFile=.
     supports_saliency_roi: bool = True
-    # ADR-0546 (Phase F real 2-pass): the FFmpeg ``libvvenc`` wrapper
+    # ADR-0595 (Phase F real 2-pass): the FFmpeg ``libvvenc`` wrapper
     # accepts ``-pass N -passlogfile <prefix>`` since FFmpeg 6.1 — the
     # wrapper translates internally to VVenC's RcStatsFile config key
     # (``-vvenc-params RcStatsFile=...``). We rely on the generic
@@ -329,7 +329,7 @@ class VVenCAdapter:
         ]
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """FFmpeg argv slice for libvvenc 2-pass encoding (ADR-0546).
+        """FFmpeg argv slice for libvvenc 2-pass encoding (ADR-0595).
 
         FFmpeg's ``libvvenc`` wrapper honours the generic ``-pass`` /
         ``-passlogfile`` pair; internally the wrapper translates that
@@ -364,7 +364,7 @@ class VVenCAdapter:
 
         ``block_offsets`` must be at 64x64 CTU granularity — reduce via
         :func:`vmaftune.saliency.reduce_qp_map_to_blocks` with
-        ``block=VVENC_CTU_SIDE`` (ADR-0370).
+        ``block=VVENC_CTU_SIDE`` (ADR-0414).
         """
         from pathlib import Path as _Path
 

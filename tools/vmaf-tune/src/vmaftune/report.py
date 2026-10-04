@@ -334,7 +334,7 @@ class CodecSweepPoint:
     output (schema v1) ingests as :class:`CodecRow` and renders the
     historical bar+dot chart for back-compat.
 
-    ``bisect_samples`` (ADR-0530, schema v2 additive) carries every
+    ``bisect_samples`` (ADR-0534, schema v2 additive) carries every
     encode+score probe the underlying bisect walked through. When
     populated, the rate-quality chart aggregates these per codec
     (across all targets) and draws a single monotonic R-Q curve
@@ -1092,7 +1092,7 @@ def compute_pareto_frontier(
 def _has_bisect_samples(points: Sequence[CodecSweepPoint]) -> bool:
     """True when at least one ok point carries a populated samples tuple.
 
-    ADR-0530: gates the new chart variant. Old v2 dumps without samples
+    ADR-0534: gates the new chart variant. Old v2 dumps without samples
     plus all v1 dumps fall through to the legacy connect-the-dots line
     with a caveat note.
     """
@@ -1131,7 +1131,7 @@ def _dedup_bisect_samples(
 
 
 def _draw_sweep_sample_curves(ax, data: ReportData) -> bool:
-    """Draw the ADR-0530 bisect-sample curves; True when anything was drawn.
+    """Draw the ADR-0534 bisect-sample curves; True when anything was drawn.
 
     One thin line per codec through every CRF the bisect probed, with
     the picked-CRF rows circled on top so the per-target winners stay
@@ -1327,7 +1327,7 @@ def _set_sweep_title(ax, *, use_samples: bool) -> None:
 
     Connect-the-dots mode can show a lower VMAF at a higher target when
     the bisect overshoots, so the caveat box is part of the contract for
-    that mode (ADR-0530), not decoration.
+    that mode (ADR-0534), not decoration.
     """
     if use_samples:
         ax.set_title("Rate-quality sweep — bisect samples; picked-CRF circled")
@@ -1402,7 +1402,7 @@ def _style_sweep_axes(ax, data: ReportData, *, use_samples: bool) -> None:
 def _sweep_plot_fn(data: ReportData):
     """Rate-quality line plot — one curve per codec, pareto highlighted.
 
-    Two modes (ADR-0530):
+    Two modes (ADR-0534):
 
     - **From-bisect-samples** (schema-v2 with ``bisect_samples``):
       each codec's curve is built from every CRF the underlying
@@ -1414,7 +1414,7 @@ def _sweep_plot_fn(data: ReportData):
       one line per codec connecting its picked-CRF rows by target.
       Carries a caveat note in the title because the bisect's
       target-overshoot can flip the apparent VMAF order between
-      adjacent targets — that's the bug ADR-0530 fixes for the new
+      adjacent targets — that's the bug ADR-0534 fixes for the new
       mode.
     """
 
@@ -1445,7 +1445,7 @@ def _sweep_plot_fn(data: ReportData):
 def _draw_shot_bands(ax, ax2, data: ReportData) -> None:
     """Draw one CRF band (left axis) and one VMAF band (right axis) per shot.
 
-    ADR-0512 Bug B: the historical ``ax.step([start], [crf], ...)``
+    ADR-0513 Bug B: the historical ``ax.step([start], [crf], ...)``
     produced a zero-length path for a single-shot source, which the SVG
     backend silently dropped and left the chart visually empty. Bands
     over each frame range always give the user a drawable element; the

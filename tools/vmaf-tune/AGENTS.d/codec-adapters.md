@@ -60,7 +60,7 @@ invariant: CodecAdapter Protocol declares all fields; ten-name preset vocabulary
   future codecs tomorrow) implement hook and return string for
   argv. Do not promote it to required protocol method without
   same-PR pass over every existing adapter.
-- **`two_pass_args` is implemented on every adapter (ADR-0546).**
+- **`two_pass_args` is implemented on every adapter (ADR-0595).**
   No adapter inherits protocol-default `NotImplementedError` body.
   `libaom-av1` + `libvvenc` are now `supports_two_pass=True`
   (FFmpeg generic `-pass N -passlogfile <prefix>`). `libsvtav1`
@@ -79,7 +79,7 @@ invariant: CodecAdapter Protocol declares all fields; ten-name preset vocabulary
   `NotImplementedError` — search loop assumes contract is
   uniformly implemented.
 - **Adapter `quality_range` is search-space boundary, not
-  user-input gate (ADR-0296).** Widening libx264's range from `(15,
+  user-input gate (ADR-0306).** Widening libx264's range from `(15,
   40)` to `(0, 51)` was deliberate: recommend / coarse-to-fine
   flow must be allowed to probe boundary CRFs to
   bracket answer. If future codec adapter wants to restrict
@@ -96,7 +96,7 @@ itself separate Phase A follow-up. Phases B–F per ADR-0237
 scope here; do not add that code into this tree without ADR-0237
 follow-up promoting corresponding phase.
 Phase A (corpus generation): grid sweep + JSONL emit, x264 only.
-Phase D (per-shot CRF tuning, ADR-0276): orchestrates shot
+Phase D (per-shot CRF tuning, ADR-0392): orchestrates shot
 detection (via C-side `vmaf-perShot` binary, ADR-0222), extracts
 each shot to raw YUV, and binds pluggable per-shot CRF predicate
 to Phase B's real bisect backend by default. CLI deliberately

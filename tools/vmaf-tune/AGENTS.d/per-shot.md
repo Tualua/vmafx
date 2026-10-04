@@ -26,7 +26,7 @@ invariant: vmaf-perShot is canonical detector; scene-threshold + uniform-window 
   TransNet V2 is hot-pathed (e.g. Phase E ladder generation
   re-running detection), extend ``detect_shots`` to call
   ``vmaf-perShot`` once and cache, not to bypass binary.
-- **Scene-threshold + uniform-window splitter (ADR-0512).**
+- **Scene-threshold + uniform-window splitter (ADR-0513).**
   ``detect_shots`` accepts ``diff_threshold`` (forwarded to C
   binary as ``--diff-threshold``) and ``max_shot_duration_sec``
   (post-processing splitter, requires ``framerate``). CLI exposes
@@ -42,7 +42,6 @@ invariant: vmaf-perShot is canonical detector; scene-threshold + uniform-window 
   and downstream merge / concat-listing code depends on
   contiguity property.
 - **Segment-dir priority order is load-bearing (ADR-0532).** CLI
-- **Segment-dir priority order is load-bearing (ADR-0530).** CLI
   resolves concat-listing directory in this exact order: (1)
   ``--segment-dir`` when set; (2) ``plan_out.parent / "segments"``
   when ``--plan-out`` is set; (3) ``output.parent / "segments"``
@@ -88,7 +87,7 @@ invariant: vmaf-perShot is canonical detector; scene-threshold + uniform-window 
   directly need not set `bitrate_kbps` unless testing bitrate
   column.
 - **`tune-per-shot` geometry auto-probe: patch `args` in-place
-  before any downstream call (ADR-0542).** `_run_tune_per_shot`
+  before any downstream call (ADR-0548).** `_run_tune_per_shot`
   writes ffprobe-derived width, height, framerate, and
   total-frames back onto `args` namespace at top of function.
   This lets `_build_per_shot_bisect_predicate`, `merge_shots`,

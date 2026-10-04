@@ -111,7 +111,7 @@ __all__ = [
 
 
 #: Default nominal miscoverage level. ``alpha = 0.05`` corresponds to
-#: a 95 % prediction interval — the convention adopted by ADR-0279
+#: a 95 % prediction interval — the convention adopted by ADR-0393
 #: (deep-ensemble + conformal scaffold) and by the
 #: ``vmaf-tune --quality-confidence`` consumer.
 def default_alpha() -> float:

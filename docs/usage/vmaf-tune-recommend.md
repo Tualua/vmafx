@@ -276,6 +276,6 @@ req = UncertaintyAwareRequest(
 - [`vmaf-tune-ladder.md`](vmaf-tune-ladder.md) — the ABR-ladder consumer of the
   same intervals.
 - [`docs/ai/conformal-vqa.md`](../ai/conformal-vqa.md) — the conformal
-  prediction surface (PR #488, ADR-0279).
+  prediction surface (ADR-0393).
 - [Research-0067](../research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md)
   — provenance of the threshold defaults.

@@ -15,7 +15,7 @@ invariant: Phase A JSONL corpus row schema is API contract; canonical-6 uncondit
   and updating every downstream consumer in same PR. Canonical key
   list lives in `src/vmaftune/__init__.py` (`CORPUS_ROW_KEYS`) and
   is asserted on every emitted row by `corpus._row_for`. Schema v3
-  ([ADR-0331](../../../docs/adr/0331-corpus-schema-v3.md)) added 12
+  ([ADR-0366](../../../docs/adr/0366-corpus-schema-v3.md)) added 12
   canonical-6 per-feature aggregate columns (`adm2_mean`,
   `vif_scale[0..3]_mean`, `motion2_mean` plus matching `_std`); they
   are sourced from libvmaf's `pooled_metrics.<feature>` block and
@@ -85,7 +85,7 @@ invariant: Phase A JSONL corpus row schema is API contract; canonical-6 uncondit
   output-side `-ss` (it decodes full source first, defeating
   speedup).
 - **Coarse-to-fine search is layered on `iter_rows`, not
-  duplicated (ADR-0296).** `corpus.coarse_to_fine_search()` builds
+  duplicated (ADR-0306).** `corpus.coarse_to_fine_search()` builds
   two `dataclasses.replace(job, cells=...)` jobs (coarse + fine)
   and delegates to `iter_rows` for each. Do **not** factor out
   parallel encoder dispatch path inside search loop — JSONL row

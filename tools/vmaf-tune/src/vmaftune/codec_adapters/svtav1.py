@@ -90,7 +90,7 @@ class SvtAv1Adapter:
     adapter_version: str = "1"
     quality_knob: str = "crf"
     # SVT-AV1 nominally accepts CRF 0..63. Phase A surfaces the
-    # perceptually informative window — ADR-0277 covers the choice.
+    # perceptually informative window — ADR-0294 covers the choice.
     quality_range: tuple[int, int] = (20, 50)
     quality_default: int = 35
     invert_quality: bool = True  # higher CRF = lower quality
@@ -100,11 +100,11 @@ class SvtAv1Adapter:
     probe_preset: str = "veryfast"
     probe_quality: int = 35
     supports_qpfile: bool = False
-    # ADR-0332: this encoder has no parseable first-pass stats file.
+    # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # SVT-AV1 QP-offset map (ADR-0370): delivered via --qp-file / -svtav1-params.
+    # SVT-AV1 QP-offset map (ADR-0414): delivered via --qp-file / -svtav1-params.
     supports_saliency_roi: bool = True
-    # ADR-0546 (Phase F real 2-pass): SVT-AV1 supports multi-pass
+    # ADR-0595 (Phase F real 2-pass): SVT-AV1 supports multi-pass
     # **only in VBR mode**. Quoting the encoder's runtime error
     # (verified against SVT-AV1 v4.1.0): "CRF does not support
     # multi-pass. Use single pass." vmaf-tune pins libsvtav1 to CRF
@@ -211,7 +211,7 @@ class SvtAv1Adapter:
         return str(preset_to_int(preset))
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """FFmpeg argv slice for libsvtav1 2-pass encoding (ADR-0546).
+        """FFmpeg argv slice for libsvtav1 2-pass encoding (ADR-0595).
 
         SVT-AV1 supports multi-pass **only in VBR / target-bitrate
         mode**. The encoder enforces this at runtime: pass 2 of a CRF
@@ -258,7 +258,7 @@ class SvtAv1Adapter:
 
         ``block_offsets`` must be at 64x64 super-block granularity —
         reduce via :func:`vmaftune.saliency.reduce_qp_map_to_blocks`
-        with ``block=SVTAV1_SB_SIDE`` (ADR-0370).
+        with ``block=SVTAV1_SB_SIDE`` (ADR-0414).
         """
         from pathlib import Path as _Path
 

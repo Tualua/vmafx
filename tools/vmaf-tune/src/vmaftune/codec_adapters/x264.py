@@ -43,7 +43,7 @@ class X264Adapter:
     # libx264 honours --qpfile via FFmpeg's -x264-params, so the saliency
     # QP-offset map (saliency.py) drives x264 directly.
     supports_qpfile: bool = True
-    # ADR-0332: libx264 emits per-frame pass-1 stats via
+    # ADR-0400: libx264 emits per-frame pass-1 stats via
     # ``-pass 1 -passlogfile <prefix>``; the parser is in
     # :mod:`vmaftune.encoder_stats`.
     supports_encoder_stats: bool = True
@@ -75,7 +75,7 @@ class X264Adapter:
         """FFmpeg argv slice for libx264.
 
         Adapter-contract entry point used by the codec-agnostic
-        dispatcher (ADR-0294). Identical to the legacy hard-coded
+        dispatcher (ADR-0297). Identical to the legacy hard-coded
         x264 path: ``-c:v libx264 -preset <p> -crf <q>`` on single-pass
         (pass_number == 0). In 2-pass mode (pass_number in (1, 2)), omits
         -crf to avoid conflicting rate-control flags (T-VMAFTUNE-TWOPASS-CRF-INVALID-2026-08-30).

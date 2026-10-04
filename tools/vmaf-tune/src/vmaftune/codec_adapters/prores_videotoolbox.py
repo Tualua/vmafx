@@ -101,9 +101,9 @@ class ProresVideoToolboxAdapter:
     probe_preset: str = "ultrafast"
     probe_quality: int = 0  # proxy
     supports_qpfile: bool = False
-    # ADR-0332: ProRes VideoToolbox does not emit a parseable stats file.
+    # ADR-0400: ProRes VideoToolbox does not emit a parseable stats file.
     supports_encoder_stats: bool = False
-    # ADR-0546: ProRes is intra-only and VideoToolbox is single-pass
+    # ADR-0595: ProRes is intra-only and VideoToolbox is single-pass
     # by API; 2-pass has no meaning here. :meth:`two_pass_args` raises.
     supports_two_pass: bool = False
 
@@ -160,5 +160,5 @@ class ProresVideoToolboxAdapter:
         return _gop_common.default_probe_args(self)
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """Always raise — VideoToolbox is single-pass only (ADR-0546)."""
+        """Always raise — VideoToolbox is single-pass only (ADR-0595)."""
         return videotoolbox_two_pass_args(self.encoder, pass_number, stats_path)

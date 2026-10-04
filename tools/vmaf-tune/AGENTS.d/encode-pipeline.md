@@ -28,7 +28,7 @@ invariant: Subprocess boundary is test seam; run_encode_with_stats captures enco
   `tests/test_corpus.py` and `tests/test_codec_adapter_qsv.py`
   will silently stop covering path.
 
-## ADR-0332 invariants (encoder-internal stats capture)
+## ADR-0400 invariants (encoder-internal stats capture)
 
 - Corpus row schema is at v3; new columns added to
   ``CORPUS_ROW_KEYS`` and ``SCHEMA_VERSION`` must keep v3 ten

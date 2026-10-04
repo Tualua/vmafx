@@ -147,9 +147,9 @@ class _AMFAdapterBase:
     probe_preset: str = "ultrafast"
     probe_quality: int = 28
     supports_qpfile: bool = False
-    # ADR-0332: AMF is hardware; no first-pass stats-file surface.
+    # ADR-0400: AMF is hardware; no first-pass stats-file surface.
     supports_encoder_stats: bool = False
-    # ADR-0546: AMF's "two-pass" equivalent is the encoder-internal
+    # ADR-0595: AMF's "two-pass" equivalent is the encoder-internal
     # pre-analysis stage (``-preanalysis true``) which runs inside a
     # single ffmpeg invocation. No standalone first-pass stats sidecar
     # is written; the 2-pass driver therefore falls back to single-
@@ -231,7 +231,7 @@ class _AMFAdapterBase:
         return _gop_common.default_force_keyframes_args(timestamps)
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """AMD AMF pre-analysis argv (ADR-0546).
+        """AMD AMF pre-analysis argv (ADR-0595).
 
         AMF does not implement a software-style two-invocation 2-pass.
         The closest analogue is the encoder-internal pre-analysis

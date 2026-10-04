@@ -54,7 +54,7 @@ from .x265 import X265Adapter
 
 
 class CodecAdapter(Protocol):
-    """Codec-adapter contract (ADR-0237 Phase A + ADR-0294 dispatcher).
+    """Codec-adapter contract (ADR-0237 Phase A + ADR-0297 dispatcher).
 
     The encode dispatcher (``encode.run_encode``) consumes the
     runtime-shaped subset (``encoder``, ``ffmpeg_codec_args``,
@@ -86,7 +86,7 @@ class CodecAdapter(Protocol):
     probe_preset: str
     probe_quality: int
     supports_qpfile: bool
-    # ADR-0332: opt-in to the pass-1 stats-file capture path. True
+    # ADR-0400: opt-in to the pass-1 stats-file capture path. True
     # iff the encoder writes a parseable per-frame stats file under
     # ``-pass 1 -passlogfile <prefix>``. Software encoders that
     # share x264-family rate-distortion tracking (libx264, libx265)

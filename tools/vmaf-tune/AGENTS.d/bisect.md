@@ -48,7 +48,7 @@ invariant: Bisect assumes monotone VMAF; default targets 94,96,97,98; PredicateF
   `score.run_score`: tests inject `encode_runner` / `score_runner`
   stubs; production callers leave them `None`.
 - **`bisect_target_vmaf` public kwarg `workdir`** — added by
-  ADR-0549. Resolution order: `workdir=` kwarg (explicit Path) >
+  ADR-0598. Resolution order: `workdir=` kwarg (explicit Path) >
   `VMAFTUNE_WORKDIR` env var > OS default (`/tmp`). Private
   helpers `_workdir_parent`, `_estimate_yuv_bytes`, and
   `_check_disk_space` are **not** in `__all__` —
@@ -61,7 +61,7 @@ invariant: Bisect assumes monotone VMAF; default targets 94,96,97,98; PredicateF
   any new compare-path caller must carry this kwarg through or
   `test_cli_compare_binds_real_bisect_predicate` assertion will
   catch omission.
-  ([ADR-0549](../../../docs/adr/0549-vmaftune-workdir-relocation.md))
+  ([ADR-0598](../../../docs/adr/0598-vmaftune-workdir-relocation.md))
 
 ## Phase D rebase-sensitive invariants
 

@@ -26,7 +26,7 @@ fixed Apple HLS authoring spec, JND-based, etc.) and
 ``docs/adr/0307-vmaf-tune-ladder-default-sampler.md`` for the
 default-sampler wiring decision.
 
-Uncertainty-aware rung selection (ADR-0279, this PR)
+Uncertainty-aware rung selection (ADR-0393)
 -----------------------------------------------------
 
 The conformal-VQA prediction surface (PR #488) attaches a
@@ -156,10 +156,10 @@ def build_ladder(
     :class:`LadderPoint`. Production callers leave ``sampler`` ``None``
     to dispatch to :func:`_default_sampler`, which composes the Phase A
     corpus encode+score loop with :func:`recommend.pick_target_vmaf` to
-    pick the (preset_default, CRF) row whose VMAF is closest to
-    ``target_vmaf`` over the canonical 5-point CRF sweep
-    ``(18, 23, 28, 33, 38)`` (ADR-0307, Research-0079). Tests inject a
-    stub via ``sampler=`` to avoid live encoder runs.
+    pick the (preset_default, CRF) row with the smallest CRF whose VMAF
+    clears ``target_vmaf`` (the highest-VMAF row when none clears it)
+    over :data:`DEFAULT_SAMPLER_CRF_SWEEP` (ADR-0307, Research-0079).
+    Tests inject a stub via ``sampler=`` to avoid live encoder runs.
     """
     if sampler is None:
         sampler = _default_sampler
@@ -235,7 +235,7 @@ def make_default_sampler(
     ``src_width`` / ``src_height`` (ADR-0498) carry the source resolution
     separately from the rung target: a raw-YUV source is read at its own
     geometry and scaled to the rung (BBB e2e v2 Bug #v2-B).
-    ``score_backend`` (Bug C / ADR-0509) threads ``--score-backend`` into
+    ``score_backend`` (Bug C / ADR-0511) threads ``--score-backend`` into
     every corpus call; ``None`` lets libvmaf pick. ``vmaf_model`` pins
     the model of every rung; ``None`` (the CLI's) picks it per rung
     height (ADR-0289), and ``neg`` takes the NEG variant (ADR-0622).
@@ -263,7 +263,7 @@ class SamplerResources:
     ``workdir`` is the parent of each rung's scratch directory (the raw
     YUV reference decode and the encodes); ``None`` takes
     ``VMAFTUNE_WORKDIR`` when it is writable, else the system temporary
-    directory (ADR-0549). ``decode_semaphore`` caps the reference decodes
+    directory (ADR-0598). ``decode_semaphore`` caps the reference decodes
     in flight (ADR-0577); the sampler encodes one rung at a time, so at
     most one decode runs unless several samplers share the semaphore.
     """
@@ -972,7 +972,7 @@ def _dedup_samples(samples: Sequence[LadderPoint]) -> list[LadderPoint]:
 
 
 # ---------------------------------------------------------------------------
-# Uncertainty-aware rung selection (ADR-0279, PR #488 wiring)
+# Uncertainty-aware rung selection (ADR-0393)
 # ---------------------------------------------------------------------------
 
 

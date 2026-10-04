@@ -75,7 +75,7 @@ def videotoolbox_two_pass_args(encoder: str, pass_number: int, stats_path: Path)
     raise VideoToolboxTwoPassUnsupportedError(
         f"{encoder!r}: Apple VideoToolbox is single-pass only — the "
         "VTCompressionSession C API does not expose a multi-pass encode "
-        "interface (see ADR-0546). pass_number="
+        "interface (see ADR-0595). pass_number="
         f"{pass_number} is therefore not supported. Switch to a "
         "software encoder (libx264 / libx265 / libsvtav1 / libaom-av1 "
         "/ libvvenc) for true 2-pass on macOS."

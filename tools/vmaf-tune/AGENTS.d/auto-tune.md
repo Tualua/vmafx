@@ -91,15 +91,15 @@ invariant: Auto emits one selected winner; 7 short-circuit predicates ordered; F
   never insert in middle. Phase D thresholds
   (`PHASE_D_DURATION_GATE_S = 300.0` and
   `PHASE_D_SHOT_VARIANCE_GATE = 0.15`) are placeholders pending
-  F.3 empirical fit — change them via ADR-0325 follow-up, not
+  F.3 empirical fit — change them via ADR-0397 follow-up, not
   drive-by tweak. See
-  [ADR-0325](../../../docs/adr/0325-vmaf-tune-phase-f-auto.md).
+  [ADR-0397](../../../docs/adr/0397-vmaf-tune-phase-f-auto.md).
 - **F.3 confidence-aware thresholds are corpus-derived; do not
   hand-pick.** `DEFAULT_TIGHT_INTERVAL_MAX_WIDTH = 2.0` and
   `DEFAULT_WIDE_INTERVAL_MIN_WIDTH = 5.0` in `auto.py` are
   emergency floor (Research-0067), not target. Production
   thresholds load from calibration JSON sidecar emitted by
-  conformal-VQA pipeline (ADR-0279) — keys
+  conformal-VQA pipeline (ADR-0393) — keys
   `tight_interval_max_width` and `wide_interval_min_width`.
   `load_confidence_thresholds` falls back to defaults with
   one-line WARNING when no sidecar found; do not silence that
@@ -136,4 +136,4 @@ invariant: Auto emits one selected winner; 7 short-circuit predicates ordered; F
   only predictor's effective target; input `--target-vmaf` (gate
   that ships models) is preserved verbatim in
   `plan.metadata.target_vmaf`. See
-  [ADR-0325](../../../docs/adr/0325-vmaf-tune-phase-f-auto.md) §F.4.
+  [ADR-0397](../../../docs/adr/0397-vmaf-tune-phase-f-auto.md) §F.4.

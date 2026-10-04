@@ -93,9 +93,14 @@ vmaf-tune fast \
 | `--encode-dir` | `.workingdir/cache/vmafx-tune/fast` | Scratch directory for probe and verify encodes. |
 | `--output` | stdout | JSON destination for the recommendation. |
 
-Production mode accepts any registered codec adapter. An encoder outside the
-proxy's 12-way codec vocabulary (`ENCODER_VOCAB_V2`) is scored as `unknown`.
-Smoke mode stays synthetic and x264-shaped by design.
+Production mode accepts any registered codec adapter. The proxy's codec
+one-hot has twelve slots (`ENCODER_VOCAB_V2`, ADR-0291): `libx264`, `libx265`,
+`libsvtav1`, `libvvenc`, `libvpx-vp9`, the three NVENC and the three QSV
+encoders, and `unknown`. Any other adapter (`libaom-av1`, AMF, VideoToolbox)
+takes the `unknown` slot. The run says so on stderr and adds
+`"proxy_encoder_slot": "unknown"` to the JSON; the verify encode still measures
+the pick with the requested encoder. Smoke mode stays synthetic and
+x264-shaped by design.
 
 ## Time budget
 
@@ -108,7 +113,8 @@ is hit.
 ## Output
 
 The JSON payload has the same recommendation core as `vmaf-tune recommend`,
-plus the fast-path diagnostics `verify_vmaf` and `proxy_verify_gap`:
+plus the fast-path diagnostics `verify_vmaf` and `proxy_verify_gap`, and
+`proxy_encoder_slot` when the encoder took the proxy's `unknown` slot:
 
 ```json
 {

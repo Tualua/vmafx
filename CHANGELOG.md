@@ -4509,6 +4509,19 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `rows_examined=N/M`.
 
 
+- **`vmaf-tune` help texts match the code, its ADR references name the right
+  records, and `fast` says when the proxy scores an encoder as `unknown`.**
+  `ladder --crf-sweep` names the sampler's sweep (`20,25,30,35,40`), the
+  `auto` help counts its ten short-circuits, `corpus --two-pass` lists the five
+  adapters that run a 2-pass encode, and `compare` / `tune-per-shot --workdir`
+  cite ADR-0598. A production `fast` run with an encoder outside the proxy's
+  vocabulary (`libaom-av1`, AMF, VideoToolbox) now notes on stderr that the
+  proxy used its `unknown` slot and adds `"proxy_encoder_slot": "unknown"` to
+  the JSON. ADR numbers in the help, the usage pages and the code comments that
+  pointed at renumbered, unrelated records now point at the vmaf-tune records
+  they meant.
+
+
 - **`vmaf-tune` honours `--vmaf-model` and `--neg`, keys its cache on every
   input, gives real QSV encodes their device chain, names each ladder rung's
   codec, and emits AMF's rate control once.** `corpus` and live `recommend`

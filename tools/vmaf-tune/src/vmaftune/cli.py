@@ -248,6 +248,11 @@ def _add_corpus_grid_args(corpus: argparse.ArgumentParser) -> None:
     _add_neg_flag(corpus)
 
 
+def _two_pass_encoders() -> tuple[str, ...]:
+    """Registered encoders whose adapter runs a real 2-pass encode."""
+    return tuple(c for c in known_codecs() if getattr(get_adapter(c), "supports_two_pass", False))
+
+
 def _add_corpus_runtime_args(corpus: argparse.ArgumentParser) -> None:
     """Add executable, backend, and search-strategy arguments."""
     corpus.add_argument("--ffmpeg-bin", default="ffmpeg")
@@ -274,10 +279,10 @@ def _add_corpus_runtime_args(corpus: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Phase F (ADR-0333): run a 2-pass encode for codecs that "
-            "support it (libx264 / libx265 today; libsvtav1 / libvvenc "
-            "follow as sibling PRs). Default off; single-pass remains "
-            "the canonical path. Adapters where supports_two_pass = "
-            "False fall back to single-pass with a stderr warning."
+            f"support it ({', '.join(_two_pass_encoders())}). Default off; "
+            "single-pass remains the canonical path. Adapters where "
+            "supports_two_pass = False fall back to single-pass with a "
+            "stderr warning."
         ),
     )
     corpus.add_argument(
@@ -290,7 +295,7 @@ def _add_corpus_runtime_args(corpus: argparse.ArgumentParser) -> None:
             "(default 0 = full source). Encode time scales linearly with "
             "the slice length, so e.g. 10s of a 60s source is a ~6x "
             "speedup; expect a 1-2 VMAF-point delta vs full-clip on "
-            "diverse content. See ADR-0297."
+            "diverse content. See ADR-0301."
         ),
     )
     _add_coarse_to_fine_flags(corpus)
@@ -447,7 +452,7 @@ def _add_predict_uncertainty_args(predict: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "emit conformal prediction intervals alongside each "
-            "predicted VMAF point estimate (per ADR-0279). Each "
+            "predicted VMAF point estimate (per ADR-0393). Each "
             "residual row gains an ``interval`` field with "
             "``{low, high, alpha}``. Requires a calibration sidecar "
             "(``--calibration-sidecar``) to produce a non-trivial "
@@ -509,7 +514,7 @@ def _add_per_shot_source_args(per_shot: argparse.ArgumentParser) -> None:
         help=(
             "source width. Required for raw YUV (`.yuv`/`.raw`) sources. "
             "Auto-probed from ffprobe for container sources (mp4, mkv, mov, …) "
-            "when omitted. (ADR-0542)"
+            "when omitted. (ADR-0548)"
         ),
     )
     per_shot.add_argument(
@@ -518,7 +523,7 @@ def _add_per_shot_source_args(per_shot: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "source height. Required for raw YUV sources. "
-            "Auto-probed from ffprobe for container sources when omitted. (ADR-0542)"
+            "Auto-probed from ffprobe for container sources when omitted. (ADR-0548)"
         ),
     )
     per_shot.add_argument("--pix-fmt", default="yuv420p")
@@ -528,7 +533,7 @@ def _add_per_shot_source_args(per_shot: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "source framerate. Auto-probed from ffprobe for container sources when "
-            "omitted; defaults to 24.0 if the probe cannot determine a rate. (ADR-0542)"
+            "omitted; defaults to 24.0 if the probe cannot determine a rate. (ADR-0548)"
         ),
     )
     per_shot.add_argument(
@@ -569,7 +574,7 @@ def _add_per_shot_detection_args(per_shot: argparse.ArgumentParser) -> None:
         help=(
             "override vmaf-perShot --diff-threshold (mean-absolute-luma-delta "
             "cutoff for cut classification; lower = more shots). Omit to keep "
-            "the C-side compiled default (12.0 on 8-bit content). ADR-0512."
+            "the C-side compiled default (12.0 on 8-bit content). ADR-0513."
         ),
     )
     per_shot.add_argument(
@@ -581,7 +586,7 @@ def _add_per_shot_detection_args(per_shot: argparse.ArgumentParser) -> None:
             "many seconds is sliced into equal-length sub-shots so the "
             "per-shot tuner sees a non-degenerate timeline even when the "
             "detector under-cuts (e.g. 5 s clips on the BBB fixtures). Set "
-            "to 0 to disable; default 2.0. ADR-0512."
+            "to 0 to disable; default 2.0. ADR-0513."
         ),
     )
     per_shot.add_argument(
@@ -694,7 +699,7 @@ def _add_per_shot_output_args(per_shot: argparse.ArgumentParser) -> None:
             "directory for temporary bisect encode / decode artefacts. "
             "Overrides VMAFTUNE_WORKDIR and the OS /tmp default. "
             "Ensure the volume has sufficient free space for raw YUV decodes. "
-            "(ADR-0546)"
+            "(ADR-0598)"
         ),
     )
     per_shot.add_argument(
@@ -825,7 +830,7 @@ def _add_recommend_saliency_subparser(sub: argparse._SubParsersAction) -> None:
         help=(
             "saliency-aware ROI encode — biases bits toward salient regions "
             "via the fork-trained ``saliency_student_v1`` ONNX model "
-            "(Bucket #2 / ADR-0287)"
+            "(Bucket #2 / ADR-0293)"
         ),
     )
     _add_saliency_source_args(rec_sal)
@@ -895,7 +900,7 @@ def _add_ladder_uncertainty_args(ladder: argparse.ArgumentParser) -> None:
         "--with-uncertainty",
         action="store_true",
         help=(
-            "apply ADR-0279 uncertainty-aware rung selection: prune "
+            "apply ADR-0393 uncertainty-aware rung selection: prune "
             "adjacent rungs whose conformal intervals overlap above "
             "the threshold, then insert mid-rungs in wide-interval "
             "regions. No-op without per-rung intervals from the "
@@ -927,6 +932,8 @@ def _add_ladder_uncertainty_args(ladder: argparse.ArgumentParser) -> None:
 
 def _add_ladder_sampler_args(ladder: argparse.ArgumentParser) -> None:
     """Add default-sampler source geometry and CRF arguments."""
+    from .ladder import DEFAULT_SAMPLER_CRF_SWEEP
+
     ladder.add_argument(
         "--framerate",
         type=float,
@@ -950,7 +957,8 @@ def _add_ladder_sampler_args(ladder: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "comma-separated CRF list to use instead of the canonical "
-            "5-point sweep (18,23,28,33,38). Useful for smoke runs that "
+            f"sweep ({','.join(str(c) for c in DEFAULT_SAMPLER_CRF_SWEEP)}). "
+            "Useful for smoke runs that "
             "want to exercise the ladder plumbing with a 1-2 CRF "
             "schedule (Bug #5, BBB e2e 2026-05-17)."
         ),
@@ -985,7 +993,7 @@ def _add_ladder_backend_args(ladder: argparse.ArgumentParser) -> None:
             "(cuda > sycl > hip > cpu); a specific name is honoured "
             "strictly and errors out if unavailable. Use 'cpu' to force "
             "bit-exact CPU scoring for verification against golden data. "
-            "(Bug C / ADR-0509)"
+            "(Bug C / ADR-0511)"
         ),
     )
     ladder.add_argument("--vmaf-bin", default="vmaf", help="path to the vmaf binary")
@@ -1053,7 +1061,7 @@ def _add_compare_source_args(compare: argparse.ArgumentParser) -> None:
             "--target-vmafs lists more than one target (ADR-0516). "
             "When passed explicitly and --target-vmafs is left at its "
             "default sweep, the v1 single-target schema is emitted "
-            "(ADR-0530 back-compat)."
+            "(ADR-0534 back-compat)."
         ),
     )
 
@@ -1264,7 +1272,7 @@ def _add_compare_mode_args(compare: argparse.ArgumentParser) -> None:
         help=(
             "CRF sweep mode: skip target-VMAF bisect and encode each "
             "(codec, CRF) pair from --crf-sweep exactly once. Requires "
-            "--crf-sweep. Output is schema-version-3 JSON. (ADR-0542)"
+            "--crf-sweep. Output is schema-version-3 JSON. (ADR-0548)"
         ),
     )
     compare.add_argument(
@@ -1273,7 +1281,7 @@ def _add_compare_mode_args(compare: argparse.ArgumentParser) -> None:
         metavar="LIST",
         help=(
             "comma-separated CRF values for --no-bisect mode "
-            "(e.g. 18,23,28,33). Required when --no-bisect is passed. (ADR-0542)"
+            "(e.g. 18,23,28,33). Required when --no-bisect is passed. (ADR-0548)"
         ),
     )
     compare.add_argument(
@@ -1286,7 +1294,7 @@ def _add_compare_mode_args(compare: argparse.ArgumentParser) -> None:
             "Overrides the VMAFTUNE_WORKDIR environment variable and the "
             "OS default (/tmp). Use a path on a volume with sufficient free "
             "space — a full 1080p60 source decode can exceed 100 GB. "
-            "(ADR-0546)"
+            "(ADR-0598)"
         ),
     )
 
@@ -1466,13 +1474,15 @@ def _add_auto_execute_args(auto: argparse.ArgumentParser) -> None:
 
 def _add_auto_subparser(sub: argparse._SubParsersAction) -> None:
     """Wire ``vmaf-tune auto`` flags onto the subparser group."""
+    from .auto import ShortCircuit
+
     auto = sub.add_parser(
         "auto",
         help=(
             "Phase F — adaptive recipe-aware tuning entry point "
-            "(ADR-0364). Composes the per-phase subcommands into one "
-            "deterministic decision tree with seven short-circuits "
-            "and non-smoke source metadata probing."
+            "(ADR-0397). Composes the per-phase subcommands into one "
+            f"deterministic decision tree with {len(ShortCircuit)} "
+            "short-circuits and non-smoke source metadata probing."
         ),
     )
     _add_auto_plan_args(auto)
@@ -1725,8 +1735,8 @@ def _add_prefilter_subparser(sub: argparse._SubParsersAction) -> None:
         "prefilter",
         help=(
             "control-plane autotune — joint TPE search over the Pelorus "
-            "deband pre-filter strengths (frozen ADR-0110 contract) + CRF, "
-            "with VMAF as the oracle (ADR-1116 / ADR-0106). Emits ffmpeg "
+            "deband pre-filter strengths (frozen Pelorus ADR-0110 contract) + CRF, "
+            "with VMAF as the oracle (ADR-1116 / Pelorus ADR-0106). Emits ffmpeg "
             "-vf pelorus_deband_vulkan=... strings; the live encode needs "
             "the Pelorus Vulkan filter in the ffmpeg build."
         ),
@@ -1769,8 +1779,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="vmaf-tune",
         description=(
             "Quality-aware encode automation harness. Phase A drives a "
-            "(preset, crf) grid through libx264 + libvmaf and emits a JSONL "
-            "corpus."
+            "(preset, crf) grid through any registered codec adapter and "
+            "libvmaf and emits a JSONL corpus."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -1993,7 +2003,7 @@ def _add_recommend_args(p: argparse.ArgumentParser) -> None:
 
 
 def _add_recommend_uncertainty_flags(p: argparse.ArgumentParser) -> None:
-    """Wire the ADR-0279 conformal-interval flags onto ``recommend``.
+    """Wire the ADR-0393 conformal-interval flags onto ``recommend``.
 
     These flags are passive when ``--with-uncertainty`` is omitted —
     the existing point-estimate recipe runs unchanged. When set, the
@@ -2006,8 +2016,8 @@ def _add_recommend_uncertainty_flags(p: argparse.ArgumentParser) -> None:
         "--with-uncertainty",
         action="store_true",
         help=(
-            "consume conformal prediction intervals (per ADR-0279 / "
-            "PR #488) when picking the recommended CRF. Tight "
+            "consume conformal prediction intervals (per ADR-0393) "
+            "when picking the recommended CRF. Tight "
             "intervals short-circuit the search early; wide "
             "intervals fall back to the full point-estimate scan "
             "with the result tagged ``(UNCERTAIN)``."
@@ -3035,7 +3045,7 @@ def _build_per_shot_bisect_predicate(
     work_dir = scratch / "bisect"
     refs_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
-    # ADR-0613: backend pre-resolution now happens in _run_tune_per_shot
+    # ADR-0639: backend pre-resolution now happens in _run_tune_per_shot
     # before _build_per_shot_bisect_predicate is called.  The resolved value
     # passes through args.score_backend (never "auto" at this point for
     # explicit requests; "auto" means let libvmaf self-select, mapped to None).
@@ -3315,7 +3325,7 @@ def _build_ladder_manifest(
         score_backend=_resolve_ladder_backend(args),
         neg=neg,
         # --workdir holds each rung's scratch directory; the decode cap
-        # gates the reference decode (ADR-0549 / ADR-0577), as in compare.
+        # gates the reference decode (ADR-0598 / ADR-0577), as in compare.
         resources=SamplerResources(
             workdir=getattr(args, "workdir", None),
             decode_semaphore=threading.Semaphore(int(getattr(args, "max_concurrent_decodes", 1))),
@@ -4455,7 +4465,12 @@ def _add_fast_target_args(parser: argparse.ArgumentParser) -> None:
         "--encoder",
         default="libx264",
         choices=list(known_codecs()),
-        help="codec adapter (must be in ENCODER_VOCAB_V2 for production mode)",
+        help=(
+            "codec adapter. Production mode feeds it to the proxy's encoder "
+            "one-hot (ENCODER_VOCAB_V2, ADR-0291); an adapter outside that "
+            "vocabulary takes the proxy's 'unknown' slot, which the run "
+            "reports on stderr and as proxy_encoder_slot in the JSON."
+        ),
     )
     parser.add_argument(
         "--preset",
@@ -4870,8 +4885,30 @@ def _emit_fast_result(args: argparse.Namespace, result: dict[str, Any]) -> None:
     sys.stderr.write(f"wrote fast recommendation -> {args.output}\n")
 
 
+def _fast_proxy_encoder_slot(args: argparse.Namespace) -> str | None:
+    """Name the proxy slot of an encoder outside the proxy's vocabulary.
+
+    Production ``fast`` maps an adapter outside ``ENCODER_VOCAB_V2`` to the
+    proxy's ``unknown`` one-hot slot (``fast._proxy_score``). The
+    run says so on stderr and returns the slot for the JSON payload, so the
+    substitution is never silent. ``None`` in smoke mode (no proxy) and for
+    an encoder in the vocabulary.
+    """
+    from .proxy import ENCODER_VOCAB_V2
+
+    if args.smoke or args.encoder in ENCODER_VOCAB_V2:
+        return None
+    sys.stderr.write(
+        f"vmaf-tune fast: encoder {args.encoder!r} is not in the proxy's encoder "
+        "vocabulary (ENCODER_VOCAB_V2, ADR-0291); the proxy scores it with its "
+        "'unknown' slot, and the verify encode measures the pick.\n"
+    )
+    return "unknown"
+
+
 def _run_fast(args: argparse.Namespace) -> int:
     """Drive fast recommendation and mandatory production verification."""
+    proxy_slot = _fast_proxy_encoder_slot(args)
     try:
         sample_extractor, encode_runner, backend = _prepare_fast_runtime(args)
         result = fast_recommend(
@@ -4891,6 +4928,8 @@ def _run_fast(args: argparse.Namespace) -> int:
         return 2
     if backend is not None:
         result["score_backend"] = backend
+    if proxy_slot is not None:
+        result["proxy_encoder_slot"] = proxy_slot
     _emit_fast_result(args, result)
     gap = result.get("proxy_verify_gap")
     return 3 if gap is not None and gap > args.proxy_tolerance else 0
@@ -5480,7 +5519,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:
     Missing / non-finite numerics map to ``NaN`` so the chart renderer
     drops them rather than drawing a broken segment.
 
-    ``bisect_samples`` (ADR-0530, optional) is read when present and
+    ``bisect_samples`` (ADR-0534, optional) is read when present and
     populated; absent or empty means an old v2 dump pre-dating the
     bisect-samples plumb, which renders via the legacy connect-the-
     dots path with a caveat note.

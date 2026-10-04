@@ -35,7 +35,7 @@ invariant: QSV shares _qsv_common; VideoToolbox shares _videotoolbox_common; AMF
   binary libvpx packet stream, not x264/x265 text stats schema
   consumed by `encoder_stats.py`.
 - **`PRESET_NAME_TO_INT` in `codec_adapters/svtav1.py` is closed and
-  order-stable** (ADR-0278). Mapping (`placebo`→`0`, `slowest`→`1`,
+  order-stable** (ADR-0294). Mapping (`placebo`→`0`, `slowest`→`1`,
   `slower`→`3`, `slow`→`5`, `medium`→`7`, `fast`→`9`, `faster`→`11`,
   `veryfast`→`13`) is exercised by every corpus row that records
   `encoder == "libsvtav1"`. Adding name is schema bump for any

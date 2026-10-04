@@ -55,9 +55,9 @@ class H264VideoToolboxAdapter:
     probe_preset: str = "ultrafast"
     probe_quality: int = 60
     supports_qpfile: bool = False
-    # ADR-0332: this encoder has no parseable first-pass stats file.
+    # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # ADR-0546: VideoToolbox is single-pass only — the underlying
+    # ADR-0595: VideoToolbox is single-pass only — the underlying
     # ``VTCompressionSession`` C API has no multi-pass interface.
     # :meth:`two_pass_args` always raises so callers fail loud rather
     # than producing a silently-wrong bitstream.
@@ -105,5 +105,5 @@ class H264VideoToolboxAdapter:
         return _gop_common.default_probe_args(self)
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """Always raise — VideoToolbox is single-pass only (ADR-0546)."""
+        """Always raise — VideoToolbox is single-pass only (ADR-0595)."""
         return videotoolbox_two_pass_args(self.encoder, pass_number, stats_path)

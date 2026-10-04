@@ -53,7 +53,7 @@ invariant: Fast-path is opt-in; Optuna is optional dependency; probe features no
   ENCODER_VOCAB v2 one-hot + preset_norm + crf_norm). Do not call
   onnxruntime directly from `fast.py` / `recommend.py` /
   `per_shot.py`; future probabilistic-head / ensemble migrations
-  (ADR-0279 follow-up) must land in `proxy.py` so callers see no
+  (ADR-0393 follow-up) must land in `proxy.py` so callers see no
   diff. Onnxruntime and numpy stay lazy-imported inside `proxy.py`
   so corpus path on hosts without those deps stays zero-dep.
   **Single** GPU verify pass at `fast_recommend` end is mandatory —

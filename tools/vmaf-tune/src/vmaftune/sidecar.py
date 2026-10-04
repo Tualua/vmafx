@@ -17,7 +17,7 @@ predictor's output:
 The shipped predictor is **never** mutated — model upgrades stay
 deterministic and reproducible across hosts.
 
-Persistence layout (per ADR-0325 / Research-0086):
+Persistence layout (per ADR-0394 / Research-0086):
 
 * ``${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/host-uuid``
   — random 128-bit hex token generated on first install. Anonymous
@@ -439,7 +439,7 @@ def get_or_create_host_uuid(cache_dir: Path) -> str:
     from :func:`secrets.token_hex`. **Never** derived from MAC,
     hostname, ``/etc/machine-id``, CPUID, or any other
     machine-identifying signal — this is a load-bearing precondition
-    for the future opt-in upload PR (see ADR-0325 §Future work).
+    for the future opt-in upload PR (see ADR-0394 §Future work).
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
     path = _host_uuid_path(cache_dir)

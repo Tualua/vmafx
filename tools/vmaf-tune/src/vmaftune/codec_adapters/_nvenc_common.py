@@ -123,9 +123,9 @@ class BaseNvencAdapter:
     probe_preset: str = "ultrafast"
     probe_quality: int = 28
     supports_qpfile: bool = False
-    # ADR-0332: hardware encoders have no parseable first-pass stats file.
+    # ADR-0400: hardware encoders have no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # ADR-0546: NVENC's "two-pass" is a single-invocation in-encoder
+    # ADR-0595: NVENC's "two-pass" is a single-invocation in-encoder
     # analysis pre-pass (``-multipass fullres``), not a true ffmpeg
     # two-invocation 2-pass with a stats sidecar. The 2-pass driver in
     # :func:`vmaftune.encode.run_two_pass_encode` therefore leaves
@@ -180,7 +180,7 @@ class BaseNvencAdapter:
         return _gop_common.default_force_keyframes_args(timestamps) + ("-forced-idr", "1")
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """NVENC hardware multipass argv (ADR-0546).
+        """NVENC hardware multipass argv (ADR-0595).
 
         NVENC implements "two-pass" as an in-encoder full-resolution
         analysis stage inside a single ffmpeg invocation — there is no

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Shared uncertainty-aware recipe helpers for vmaf-tune.
 
-The conformal-VQA prediction surface shipped in PR #488 (ADR-0279)
+The conformal-VQA prediction surface (ADR-0393)
 turns the predictor's verdict from binary GOSPEL / FALL_BACK into a
 continuous (point, low, high) interval. PR #495 (Phase F.3 of the
 ``auto`` driver) carved an empirical-floor pair of width thresholds
@@ -93,7 +93,7 @@ class ConfidenceThresholds:
     The two fields gate the per-call ``ConfidenceDecision``. Defaults
     are the emergency floor (Research-0067); production values come
     from a calibration sidecar produced by the conformal-VQA pipeline
-    (ADR-0279 / PR #488). ``source`` records where the values came
+    (ADR-0393). ``source`` records where the values came
     from for the JSON metadata block emitted by downstream recipes.
 
     A valid threshold pair satisfies

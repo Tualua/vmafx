@@ -164,10 +164,10 @@ class Av1VideoToolboxAdapter:
     # in FFmpeg upstream. The activation PR flips this default to
     # ``True`` together with bumping ``adapter_version``.
     supports_runtime: bool = False
-    # ADR-0332: VideoToolbox does not emit a parseable x264/x265-style
+    # ADR-0400: VideoToolbox does not emit a parseable x264/x265-style
     # stats file — opt out of encoder-internal stats capture.
     supports_encoder_stats: bool = False
-    # ADR-0546: VideoToolbox is single-pass only — see h264_videotoolbox.
+    # ADR-0595: VideoToolbox is single-pass only — see h264_videotoolbox.
     supports_two_pass: bool = False
 
     def _runtime_available(self) -> bool:
@@ -234,5 +234,5 @@ class Av1VideoToolboxAdapter:
         return _gop_common.default_probe_args(self)
 
     def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
-        """Always raise — VideoToolbox is single-pass only (ADR-0546)."""
+        """Always raise — VideoToolbox is single-pass only (ADR-0595)."""
         return videotoolbox_two_pass_args(self.encoder, pass_number, stats_path)

@@ -7,7 +7,7 @@ invariant: HDR detection fails safe to SDR; select_hdr_vmaf_model resolves per s
 <!-- markdownlint-disable MD024 -->
 # HDR detection and model resolution
 
-- **HDR detection is fail-safe to SDR (ADR-0295).**
+- **HDR detection is fail-safe to SDR (ADR-0300).**
   `hdr.detect_hdr` returns `None` on any classification ambiguity
   (missing file, ffprobe failure, malformed JSON, mismatched
   primaries vs. PQ/HLG transfer). Misclassifying SDR as HDR is

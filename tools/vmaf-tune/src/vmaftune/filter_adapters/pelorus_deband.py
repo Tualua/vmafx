@@ -27,7 +27,7 @@ from collections.abc import Mapping
 from typing import Literal
 
 #: The ffmpeg filter name emitted in the ``-vf`` fragment. The vmafx
-#: side hard-codes the Vulkan variant because the contract (ADR-0110)
+#: side hard-codes the Vulkan variant because the contract (Pelorus ADR-0110)
 #: freezes ``vf_pelorus_deband_vulkan`` specifically.
 FILTER_NAME: str = "pelorus_deband_vulkan"
 
@@ -110,7 +110,7 @@ def _format_value(knob: Knob, value: float) -> str:
 
 @dataclasses.dataclass(frozen=True)
 class PelorusDebandAdapter:
-    """Filter adapter for ``vf_pelorus_deband_vulkan`` (ADR-1116 / ADR-0110).
+    """Filter adapter for ``vf_pelorus_deband_vulkan`` (ADR-1116 / Pelorus ADR-0110).
 
     Mirrors the :class:`vmaftune.filter_adapters.FilterAdapter` Protocol.
     Stateless and frozen — safe to share across threads / TPE trials.
@@ -134,7 +134,7 @@ class PelorusDebandAdapter:
         if name not in _KNOB_BY_NAME:
             raise KeyError(
                 f"unknown pelorus deband knob {name!r}; the frozen contract "
-                f"(ADR-0110) exposes: {sorted(_KNOB_BY_NAME)}"
+                f"(Pelorus ADR-0110) exposes: {sorted(_KNOB_BY_NAME)}"
             )
         return _KNOB_BY_NAME[name]
 
@@ -155,7 +155,7 @@ class PelorusDebandAdapter:
             if key not in _KNOB_BY_NAME:
                 raise ValueError(
                     f"{key!r} is not an autotune knob in the pelorus deband "
-                    f"control-plane contract (ADR-0110). Tunable knobs: "
+                    f"control-plane contract (Pelorus ADR-0110). Tunable knobs: "
                     f"{sorted(_KNOB_BY_NAME)}. Note sample/blur/planes/meta "
                     f"are intentionally out-of-contract and must not be swept."
                 )
@@ -189,7 +189,8 @@ class PelorusDebandAdapter:
         for key, value in params.items():
             if key not in _KNOB_BY_NAME:
                 raise ValueError(
-                    f"cannot clamp unknown knob {key!r}; not in the frozen " f"contract (ADR-0110)"
+                    f"cannot clamp unknown knob {key!r}; not in the frozen "
+                    f"contract (Pelorus ADR-0110)"
                 )
             knob = _KNOB_BY_NAME[key]
             fval = float(value)

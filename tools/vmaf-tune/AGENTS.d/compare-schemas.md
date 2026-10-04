@@ -24,12 +24,12 @@ invariant: compare JSON supports v1 and v2 schemas; bisect_samples row field is 
   can `if payload.get("schema_version", 1) >= 2:` branch on
   contract.
 - **v2 schema's `bisect_samples` row field is optional and additive
-  (ADR-0530).** Every successful encode+score round-trip underlying
+  (ADR-0534).** Every successful encode+score round-trip underlying
   bisect computes is appended to `BisectResult.samples` and
   projected through `RecommendResult.bisect_samples` (tuple of
   dicts with `crf`, `bitrate_kbps`, `vmaf_score`, `encode_time_ms`).
   `to_row` emits field only when populated so absence of key still
-  identifies "old v2 dump (pre-ADR-0530)" — renderer falls back to
+  identifies "old v2 dump (pre-ADR-0534)" — renderer falls back to
   legacy connect-the-dots chart with caveat note in that case. Chart
   deduplicates samples per codec by CRF, sorts by bitrate, draws
   monotonic-friendly per-codec curve with picked-CRF rows

@@ -12,7 +12,7 @@ The first member is the Pelorus deband filter
 (``vf_pelorus_deband_vulkan``). Its 10 tunable knobs are frozen by the
 two-repo control-plane contract (Pelorus ADR-0110); the vmafx side
 hard-codes its search space against that table. See ADR-1116 for the
-adapter-family decision and ADR-0106 for the coupling design.
+adapter-family decision and Pelorus ADR-0106 for the coupling design.
 
 The :class:`FilterAdapter` Protocol mirrors the
 :class:`vmaftune.codec_adapters.CodecAdapter` shape: the search loop

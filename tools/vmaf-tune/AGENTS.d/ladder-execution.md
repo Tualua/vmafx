@@ -48,7 +48,7 @@ invariant: Reference decode scales to rung target; ladder --duration bounds enco
   branch re-introduces "ladder smoke run takes 10 minutes per
   cell" bug. Encoder will process full source while only
   `duration_s` seconds of reference is decoded for scoring.
-  Sample-clip mode (ADR-0297) keeps precedence because it carries
+  Sample-clip mode (ADR-0301) keeps precedence because it carries
   centred start offset.
 - **Raw-YUV reference decode emits demuxer-side flags before
   `-i` (ADR-0506, Bug #V6-2).** `_decode_source_to_yuv` requires
