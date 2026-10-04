@@ -13,12 +13,14 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import importlib
+import itertools
 import json
 import math
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+import threading
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
@@ -993,10 +995,10 @@ def _add_ladder_backend_args(ladder: argparse.ArgumentParser) -> None:
         default=None,
         metavar="PATH",
         help=(
-            "directory for temporary corpus-sampler encode / decode artefacts. "
-            "Overrides VMAFTUNE_WORKDIR and the OS /tmp default. "
-            "Ensure the volume has sufficient free space for raw YUV decodes. "
-            "(ADR-0546)"
+            "parent of each rung's scratch directory (the raw-YUV reference "
+            "decode and the encodes). Overrides VMAFTUNE_WORKDIR and the OS "
+            "temporary directory. Ensure the volume has room for a raw-YUV "
+            "decode of the analysed window. (ADR-0598)"
         ),
     )
     ladder.add_argument(
@@ -1006,11 +1008,10 @@ def _add_ladder_backend_args(ladder: argparse.ArgumentParser) -> None:
         metavar="N",
         dest="max_concurrent_decodes",
         help=(
-            "maximum number of reference-YUV decode operations that may "
-            "run simultaneously across all codec bisect threads (ADR-0577). "
-            "Default 1 (serial decodes). Raise on hosts with large --workdir "
-            "volumes. Encoder runs are always parallel; only the "
-            "decode-to-raw-YUV step is serialized at the default."
+            "maximum number of reference-YUV decodes in flight (ADR-0577). "
+            "Default 1. The ladder samples one rung at a time, so it runs at "
+            "most one decode whatever N is; the cap is held by each rung's "
+            "reference decode."
         ),
     )
     _add_neg_flag(ladder)
@@ -1413,7 +1414,7 @@ def _add_auto_execute_args(auto: argparse.ArgumentParser) -> None:
         "--execute",
         action="store_true",
         help=(
-            "Phase F execute mode (ADR-0454): after planning, run real FFmpeg "
+            "Phase F execute mode (ADR-0579): after planning, run real FFmpeg "
             "encodes and libvmaf scores for the selected cell(s). Results are "
             "written to --runs-dir/tune_results.jsonl. Default: plan-only."
         ),
@@ -1434,6 +1435,32 @@ def _add_auto_execute_args(auto: argparse.ArgumentParser) -> None:
             "with --execute: run every plan cell, not just the selected winner "
             "(useful for post-hoc A/B comparison)."
         ),
+    )
+    auto.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        help=(
+            "with --execute: source width. Required for a raw-YUV --src; a "
+            "container's is probed with ffprobe when omitted."
+        ),
+    )
+    auto.add_argument(
+        "--height",
+        type=int,
+        default=None,
+        help="with --execute: source height (see --width).",
+    )
+    auto.add_argument(
+        "--framerate",
+        type=float,
+        default=None,
+        help="with --execute: source frame rate (see --width).",
+    )
+    auto.add_argument(
+        "--pix-fmt",
+        default="yuv420p",
+        help="with --execute: pixel format of a raw-YUV --src (default yuv420p).",
     )
 
 
@@ -1832,7 +1859,7 @@ def _add_coarse_to_fine_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "run a 2-pass coarse-then-fine CRF search instead of the "
-            "full grid (ADR-0296). With defaults: 5 coarse + up to 10 "
+            "full grid (ADR-0306). With defaults: 5 coarse + up to 10 "
             "fine = 15 encodes vs 52 for a full 0..51 sweep."
         ),
     )
@@ -2089,45 +2116,68 @@ def _run_corpus(args: argparse.Namespace) -> int:
     except (BackendUnavailableError, EncoderUnavailableError) as exc:
         sys.stderr.write(f"vmaf-tune: {exc}\n")
         return 2
+    try:
+        streams = _corpus_row_streams(args, opts)
+    except ValueError as exc:
+        # A preset / CRF the adapter refuses, or a coarse-to-fine window
+        # outside its range: one line, before any encode (no traceback).
+        sys.stderr.write(f"vmaf-tune corpus: {exc}\n")
+        return 2
+    if streams is None:
+        return 2
+    n = write_jsonl(itertools.chain.from_iterable(streams), opts.output)
+    label = "coarse-to-fine: " if args.coarse_to_fine else ""
+    sys.stderr.write(f"{label}wrote {n} rows -> {opts.output}\n")
+    return 0
 
+
+def _corpus_row_streams(
+    args: argparse.Namespace, opts: CorpusOptions
+) -> list[Iterator[dict[str, Any]]] | None:
+    """One row iterator per source, every cell checked against the adapter first.
+
+    Coarse-to-fine ignores ``--crf`` and searches the adapter's window
+    (:func:`vmaftune.corpus.coarse_search_window`); ``coarse_to_fine_search``
+    checks the window when called. A grid run checks each ``(preset, crf)``
+    cell here. Raises ``ValueError`` for a refused cell or window; returns
+    ``None`` (after printing why) when a required flag is missing.
+    """
     if args.coarse_to_fine:
-        # Coarse-to-fine ignores --crf and uses the configured grid.
-        # Use a sentinel preset-only cell list so coarse_to_fine_search
-        # can extract the preset axis.
         if not args.preset:
             sys.stderr.write("--preset is required\n")
-            return 2
+            return None
+        # A sentinel preset-only cell list: coarse_to_fine_search extracts
+        # the preset axis and supplies the CRFs.
         sentinel_cells = tuple((p, 0) for p in args.preset)
-
-        def _all_rows():
-            for src in args.source:
-                job = _build_job(args, src, sentinel_cells)
-                yield from coarse_to_fine_search(
-                    job,
-                    opts,
-                    target_vmaf=args.target_vmaf,
-                    coarse_step=args.coarse_step,
-                    fine_radius=args.fine_radius,
-                    fine_step=args.fine_step,
-                )
-
-        n = write_jsonl(_all_rows(), opts.output)
-        sys.stderr.write(f"coarse-to-fine: wrote {n} rows -> {opts.output}\n")
-        return 0
-
+        return [
+            coarse_to_fine_search(
+                _build_job(args, src, sentinel_cells),
+                opts,
+                target_vmaf=args.target_vmaf,
+                coarse_step=args.coarse_step,
+                fine_radius=args.fine_radius,
+                fine_step=args.fine_step,
+            )
+            for src in args.source
+        ]
     if not args.crf:
         sys.stderr.write("--crf is required (or use --coarse-to-fine)\n")
-        return 2
+        return None
     cells = tuple(iter_grid(args.preset, args.crf))
+    _check_cells(args.encoder, cells)
+    return [iter_rows(_build_job(args, src, cells), opts) for src in args.source]
 
-    def _all_rows():
-        for src in args.source:
-            job = _build_job(args, src, cells)
-            yield from iter_rows(job, opts)
 
-    n = write_jsonl(_all_rows(), opts.output)
-    sys.stderr.write(f"wrote {n} rows -> {opts.output}\n")
-    return 0
+def _check_cells(encoder: str, cells: Sequence[tuple[str, int]]) -> None:
+    """Raise ``ValueError`` naming the encoder when its adapter refuses a cell."""
+    from .codec_adapters import get_adapter
+
+    adapter = get_adapter(encoder)
+    for preset, crf in cells:
+        try:
+            adapter.validate(preset, crf)
+        except ValueError as exc:
+            raise ValueError(f"{encoder} refuses preset {preset!r} at {crf}: {exc}") from exc
 
 
 def _read_corpus_rows(corpus_path: Path) -> list[dict[str, Any]]:
@@ -2170,6 +2220,7 @@ def _run_uncertainty_corpus_pick(
     except ValueError as exc:
         sys.stderr.write(f"recommend: {exc}\n")
         return 2
+    note = _uncertainty_unavailable_note(rows)
     if getattr(args, "json_output", False):
         sys.stdout.write(json.dumps(result.row) + "\n")
         return 0
@@ -2178,10 +2229,39 @@ def _run_uncertainty_corpus_pick(
     sys.stdout.write(
         f"crf={row.get('crf', '?')}  vmaf={row.get('vmaf_score', math.nan):.3f}  "
         f"kbps={row.get('bitrate_kbps', math.nan):.0f}  predicate={result.predicate}"
-        f"  decision={result.decision.value}  visited={result.visited}/{len(rows)}"
-        f"  [{status}]\n"
+        f"  decision={result.decision.value}  "
+        f"rows_examined={result.visited}/{len(rows)}{note}  [{status}]\n"
     )
     return 0
+
+
+def _rows_with_interval(rows: list[dict[str, Any]]) -> int:
+    """How many rows carry a usable ``vmaf_interval`` (``low`` and ``high``)."""
+    return sum(
+        1
+        for row in rows
+        if isinstance(row.get("vmaf_interval"), dict)
+        and row["vmaf_interval"].get("low") is not None
+        and row["vmaf_interval"].get("high") is not None
+    )
+
+
+def _uncertainty_unavailable_note(rows: list[dict[str, Any]]) -> str:
+    """Say on stderr when ``--with-uncertainty`` has no interval to use.
+
+    No in-tree command writes ``vmaf_interval`` into corpus rows (their
+    VMAF is measured, not predicted), so every such row classifies as
+    MIDDLE and the pick is the point-estimate one. Returns the suffix the
+    result line carries in that case, else ``""``.
+    """
+    if _rows_with_interval(rows):
+        return ""
+    sys.stderr.write(
+        "vmaf-tune recommend: --with-uncertainty: no row carries a vmaf_interval "
+        "(corpus VMAF is measured, not predicted), so every row is MIDDLE and the "
+        "pick is the point-estimate one\n"
+    )
+    return "  uncertainty=unavailable"
 
 
 def _run_point_corpus_pick(
@@ -2260,23 +2340,29 @@ def _validate_live_recommend_args(args: argparse.Namespace) -> bool:
 def _collect_live_recommend_rows(
     args: argparse.Namespace, opts: CorpusOptions
 ) -> list[dict[str, Any]]:
-    """Run coarse-to-fine search and persist every visited row."""
+    """Run coarse-to-fine search and persist every visited row.
+
+    Every source's search window is checked against the adapter before
+    the first encode; a refused window raises ``ValueError``.
+    """
     sentinel_cells = tuple((preset, 0) for preset in args.preset)
+    streams = [
+        coarse_to_fine_search(
+            _build_job(args, src, sentinel_cells),
+            opts,
+            target_vmaf=args.target_vmaf,
+            coarse_step=args.coarse_step,
+            fine_radius=args.fine_radius,
+            fine_step=args.fine_step,
+        )
+        for src in args.source
+    ]
     visited: list[dict[str, Any]] = []
 
     def _capture():
-        for src in args.source:
-            job = _build_job(args, src, sentinel_cells)
-            for row in coarse_to_fine_search(
-                job,
-                opts,
-                target_vmaf=args.target_vmaf,
-                coarse_step=args.coarse_step,
-                fine_radius=args.fine_radius,
-                fine_step=args.fine_step,
-            ):
-                visited.append(row)
-                yield row
+        for row in itertools.chain.from_iterable(streams):
+            visited.append(row)
+            yield row
 
     write_jsonl(_capture(), opts.output)
     return visited
@@ -2302,11 +2388,13 @@ def _emit_live_uncertainty_pick(
         )
         return 1
     row = result.row
+    note = _uncertainty_unavailable_note(visited)
     sys.stdout.write(
         f"src={row.get('src')} preset={row.get('preset')} "
         f"crf={row.get('crf')} vmaf={float(row['vmaf_score']):.3f} "
-        f"decision={result.decision.value} visited={result.visited}/{len(visited)} "
-        f"predicate={result.predicate}\n"
+        f"decision={result.decision.value} "
+        f"rows_examined={result.visited}/{len(visited)} (all {len(visited)} encoded) "
+        f"predicate={result.predicate}{note}\n"
     )
     return 0
 
@@ -2342,7 +2430,11 @@ def _run_recommend(args: argparse.Namespace) -> int:
     except (BackendUnavailableError, EncoderUnavailableError) as exc:
         sys.stderr.write(f"vmaf-tune: {exc}\n")
         return 2
-    visited = _collect_live_recommend_rows(args, opts)
+    try:
+        visited = _collect_live_recommend_rows(args, opts)
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-tune recommend: {exc}\n")
+        return 2
     if getattr(args, "with_uncertainty", False):
         return _emit_live_uncertainty_pick(args, visited, opts.output)
     return _emit_live_point_pick(args, visited, opts.output)
@@ -3198,7 +3290,12 @@ def _build_ladder_manifest(
     thresholds: Any | None,
 ) -> str:
     """Bind the production sampler and build one ladder manifest."""
-    from .ladder import LadderPoint, build_and_emit, make_default_sampler
+    from .ladder import (
+        LadderPoint,
+        SamplerResources,
+        build_and_emit,
+        make_default_sampler,
+    )
 
     src_w, src_h = _resolve_ladder_source_dimensions(args, resolutions)
     _require_hardware_encoder(args.encoder, "ffmpeg")
@@ -3217,6 +3314,12 @@ def _build_ladder_manifest(
         cloud_sink=cloud_sink,
         score_backend=_resolve_ladder_backend(args),
         neg=neg,
+        # --workdir holds each rung's scratch directory; the decode cap
+        # gates the reference decode (ADR-0549 / ADR-0577), as in compare.
+        resources=SamplerResources(
+            workdir=getattr(args, "workdir", None),
+            decode_semaphore=threading.Semaphore(int(getattr(args, "max_concurrent_decodes", 1))),
+        ),
     )
     return build_and_emit(
         src=args.src,
@@ -4250,6 +4353,11 @@ def _run_auto(args: argparse.Namespace) -> int:
     if execute:
         from .executor import run_plan
 
+        try:
+            geometry = _auto_execute_geometry(args)
+        except ValueError as exc:
+            sys.stderr.write(f"vmaf-tune auto: {exc}\n")
+            return 2
         runs_dir: Path = getattr(args, "runs_dir", Path("runs"))
         execute_all: bool = getattr(args, "execute_all", False)
         sys.stderr.write(f"vmaf-tune auto: execute mode — runs dir: {runs_dir}\n")
@@ -4258,6 +4366,7 @@ def _run_auto(args: argparse.Namespace) -> int:
             args.src,
             runs_dir,
             execute_all=execute_all,
+            **geometry,
         )
         n_ok = sum(1 for r in results if r.score is not None and r.score.exit_status == 0)
         sys.stderr.write(
@@ -4268,6 +4377,43 @@ def _run_auto(args: argparse.Namespace) -> int:
             return 1
 
     return 0
+
+
+def _auto_execute_geometry(args: argparse.Namespace) -> dict[str, Any]:
+    """Source geometry ``run_plan`` encodes and scores with.
+
+    ``run_plan`` defaults to 1920x1080 at 25 fps, which mis-reads every
+    other source. Explicit ``--width`` / ``--height`` / ``--framerate``
+    win; a container's missing values come from ffprobe; a raw-YUV
+    source (no header) needs all three. Raises ``ValueError`` naming the
+    missing flags.
+    """
+    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry
+    from .score import VMAF_RAW_SUFFIXES
+
+    src = Path(args.src)
+    is_container = src.suffix.lower() not in VMAF_RAW_SUFFIXES
+    width, height, fps = args.width, args.height, args.framerate
+    if is_container and None in (width, height, fps):
+        probed = _probe_video_geometry(src, FeatureExtractorConfig(), subprocess.run)
+        width = width or probed[0] or None
+        height = height or probed[1] or None
+        fps = fps or probed[2] or None
+    missing = [
+        flag
+        for flag, value in (("--width", width), ("--height", height), ("--framerate", fps))
+        if not value
+    ]
+    if missing:
+        kind = "a container ffprobe could not read" if is_container else "raw YUV"
+        raise ValueError(f"--execute on {kind} needs {', '.join(missing)}")
+    return {
+        "width": int(width),
+        "height": int(height),
+        "framerate": float(fps),
+        "pix_fmt": args.pix_fmt,
+        "source_is_container": is_container,
+    }
 
 
 def _add_fast_source_args(parser: argparse.ArgumentParser) -> None:

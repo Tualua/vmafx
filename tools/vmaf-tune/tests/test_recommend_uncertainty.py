@@ -245,7 +245,7 @@ def test_from_corpus_with_uncertainty_uses_interval_aware_predictor(tmp_path: Pa
     and picks crf=18 (smallest CRF clearing the 90-VMAF bar).  With
     ``--with-uncertainty`` the tight interval on crf=18 fires on the
     first row examined and the output must include the ``decision=``
-    and ``visited=`` fields that signal the uncertainty-aware code path
+    and ``rows_examined=`` fields that signal the uncertainty-aware code path
     ran.
     """
     rows = [
@@ -269,7 +269,8 @@ def test_from_corpus_with_uncertainty_uses_interval_aware_predictor(tmp_path: Pa
     assert rc_plain == 0
     assert "decision=" not in out_plain, "plain path must not emit decision= field"
 
-    # With --with-uncertainty: interval-aware output must include decision= and visited=.
+    # With --with-uncertainty: interval-aware output must include decision= and
+    # rows_examined= (it said visited=, which read as encodes saved).
     rc_ua = cli_main(
         [
             "recommend",
@@ -285,7 +286,8 @@ def test_from_corpus_with_uncertainty_uses_interval_aware_predictor(tmp_path: Pa
     assert (
         "decision=" in out_ua
     ), "--with-uncertainty must emit decision= field (interval-aware path was skipped)"
-    assert "visited=" in out_ua, "--with-uncertainty must emit visited= field"
+    assert "rows_examined=1/3" in out_ua, "--with-uncertainty must emit rows_examined= field"
+    assert "uncertainty=unavailable" not in out_ua
     # The tight-interval short-circuit must pick crf=18 on the first row.
     assert "crf=18" in out_ua
     assert "TIGHT" in out_ua

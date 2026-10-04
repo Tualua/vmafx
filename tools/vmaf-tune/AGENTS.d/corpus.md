@@ -50,6 +50,18 @@ invariant: Phase A JSONL corpus row schema is API contract; canonical-6 uncondit
   Mixed-ladder corpora legitimately contain multiple distinct
   `vmaf_model` values across rows. Downstream consumers (Phase B/C/D)
   must group/filter by `vmaf_model` rather than assuming constant.
+- **The coarse-to-fine window comes from the adapter.**
+  `corpus.coarse_search_window()` intersects `COARSE_WINDOW` (10..50)
+  with the adapter's `quality_range`, and `coarse_to_fine_search` checks
+  the window against `adapter.validate()` when it is called, before it
+  returns the row iterator, so a refused window raises `ValueError`
+  before any encode (the CLI turns it into exit 2). Keep the eager check:
+  a generator body would raise mid-write. The fine-pass centre follows
+  `invert_quality` (`higher_is_better` for VideoToolbox's `-q:v`).
+- **`CorpusOptions.decode_semaphore` gates the once-per-sweep reference
+  decode** (ADR-0577); the ladder sampler passes
+  `--max-concurrent-decodes` through it and puts each rung's scratch
+  directory under `--workdir` (`ladder.SamplerResources`).
 - **The encode-cache key covers every input of the cell (cache key
   version 2).** `_cell_cache_key` passes the adapter's
   `adapter_version`, the ffmpeg version probed once per sweep through

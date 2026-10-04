@@ -91,20 +91,14 @@ a bisect-backed loop or a precomputed corpus stream.
 | `--with-uncertainty` | off | Prune and insert rungs from conformal intervals. See [below](#uncertainty-aware-extension). |
 | `--uncertainty-sidecar PATH` | built-in thresholds | Calibration sidecar JSON for the recipe. |
 | `--rung-overlap-threshold F` | `0.5` | Interval-overlap fraction above which the lower-bitrate rung of a pair is dropped. |
-| `--workdir PATH` | none | Accepted for consistency with `compare`; see the warning below. |
-| `--max-concurrent-decodes N` | `1` | Accepted for consistency with `compare` and `tune-per-shot`; a no-op for `ladder`. |
+| `--workdir PATH` | `VMAFTUNE_WORKDIR`, else the system temporary directory | Parent of each rung's scratch directory: the raw-YUV reference decode and the encodes ([workdir](vmaf-tune-workdir.md)). |
+| `--max-concurrent-decodes N` | `1` | Cap on reference decodes in flight ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)). The ladder samples one rung at a time, so it never runs more than one decode; the cap matters only for callers that share the semaphore. |
 
 `--score-backend auto` prefers `cuda`, then `sycl`, `hip`, `cpu`. A named
 backend is honoured strictly: the run exits with code 2 before any encode when
 the local `vmaf` binary does not offer it, so use `cpu` to force bit-exact
 scoring against the Netflix golden gate. The resolved backend is printed on
 stderr (`vmaf-tune ladder: scoring backend = ...`).
-
-!!! warning "`--workdir` and `--max-concurrent-decodes` have no effect on `ladder`"
-    The default sampler creates its scratch directory in the system temporary
-    directory (`TMPDIR`), and it does not use the bisect decode path that the
-    concurrency cap governs. For a long source, point `TMPDIR` at a volume with
-    room for the raw-YUV decode.
 
 ## Source files
 
@@ -339,7 +333,8 @@ noted:
 - **ADR-0511 and ADR-0667.** Added `--score-backend` and `--vmaf-bin`; ADR-0667
   added `hip` and the native-first `auto` order.
 - **ADR-0598 and ADR-0577.** Added `--workdir` and `--max-concurrent-decodes`
-  for consistency with `compare`.
+  for consistency with `compare`; until 2026-10-04 the sampler ignored both
+  (its scratch directory went to the system temporary directory).
 
 ## See also
 

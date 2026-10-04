@@ -16,7 +16,7 @@ A 2-pass coarse-to-fine search is also exposed via
 smallest CRF that still meets a VMAF target. The full ``--crf-range
 0:51:1`` grid wastes encode wall time once the target is bracketed;
 coarse-to-fine visits ~15 points instead of 52 for the canonical
-defaults (3.5x speedup) — see ADR-0296.
+defaults (3.5x speedup) — see ADR-0306.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import logging
 import math
 import os
 import sys
+import threading
 import uuid
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -458,6 +459,10 @@ class CorpusOptions:
     # VMAF NEG (ADR-0622): score with the NEG variant of whichever model
     # the two fields above select (vmaftune.resolution.neg_model_for).
     neg: bool = False
+    # ADR-0577: a semaphore the once-per-sweep reference decode holds, so
+    # callers that run sweeps concurrently cap the raw-YUV decodes in
+    # flight (``ladder --max-concurrent-decodes``). ``None``: no cap.
+    decode_semaphore: threading.Semaphore | None = None
 
 
 def _encode_path(opts: CorpusOptions, source: Path, preset: str, crf: int) -> Path:
@@ -729,10 +734,9 @@ def _decode_job_reference(job: CorpusJob, opts: CorpusOptions) -> tuple[Path, in
     scorable encodes". Doing this once per :func:`iter_rows` call
     (instead of per cell) keeps the cost flat across CRF/preset sweeps.
     ``subprocess.run`` is used directly: test stubs injected via
-    ``score_runner`` mock the vmaf CLI, not ffmpeg decodes.
+    ``score_runner`` mock the vmaf CLI, not ffmpeg decodes. The decode
+    holds ``opts.decode_semaphore`` when one is set (ADR-0577).
     """
-    import subprocess as _sp
-
     ref_target_w, ref_target_h = _reference_scale_target(job)
     # BBB e2e v6 Bug #V6-2 (ADR-0506): pass the source's native
     # geometry into the reference decoder so a raw-YUV source can be
@@ -741,6 +745,21 @@ def _decode_job_reference(job: CorpusJob, opts: CorpusOptions) -> tuple[Path, in
     # detects and the ``source_*`` hints are unused.
     src_dim_w = int(job.src_width) if job.src_width is not None else int(job.width)
     src_dim_h = int(job.src_height) if job.src_height is not None else int(job.height)
+    with opts.decode_semaphore or contextlib.nullcontext():
+        return _decode_reference_leg(job, opts, ref_target_w, ref_target_h, src_dim_w, src_dim_h)
+
+
+def _decode_reference_leg(
+    job: CorpusJob,
+    opts: CorpusOptions,
+    ref_target_w: int | None,
+    ref_target_h: int | None,
+    src_dim_w: int,
+    src_dim_h: int,
+) -> tuple[Path, int]:
+    """The :func:`_maybe_decode_reference` call of :func:`_decode_job_reference`."""
+    import subprocess as _sp
+
     return _maybe_decode_reference(
         job.source,
         encode_dir=opts.encode_dir,
@@ -1430,9 +1449,9 @@ def _upgrade_row_in_place(row: dict) -> None:
 #   2. Fine pass at step ``fine_step`` within ``±fine_radius`` of the
 #      best-coarse point.
 #
-# Defaults (10/5/1 over 0..51) produce 5 + 10 = 15 unique encodes — a 3.5x
-# wall-time speedup vs the full grid with no measurable quality loss on the
-# Netflix Public corpus (see docs/research/0067 + ADR-0296).
+# Defaults (10/5/1 over libx264's 10..50 window, see COARSE_WINDOW) produce
+# 5 + up to 10 = 15 unique encodes, against 52 for the full 0..51 grid
+# (ADR-0306).
 #
 # When no ``target_vmaf`` is supplied, the orchestrator still runs both
 # passes and refines around the highest-VMAF coarse point.
@@ -1503,12 +1522,16 @@ def _pick_best_crf(
     rows: Sequence[dict],
     *,
     target_vmaf: float | None,
+    higher_is_better: bool = False,
 ) -> int | None:
     """Identify the "best" coarse CRF for refinement.
 
     With a target: highest CRF whose ``vmaf_score`` meets ``target_vmaf``.
     That's the smallest-quality candidate that still passes the gate, so
-    refining around it locates the smallest acceptable CRF.
+    refining around it locates the smallest acceptable CRF. For an
+    adapter whose quality value rises with quality (``higher_is_better``,
+    VideoToolbox's ``-q:v``) the smallest-quality passing candidate is
+    the *lowest* value.
 
     Without a target: the CRF with the highest VMAF (lowest CRF in
     practice, but tie-broken by score). NaN / failed rows are ignored.
@@ -1534,7 +1557,8 @@ def _pick_best_crf(
     if passing:
         # Highest CRF that still passes — refining around it finds the
         # smallest CRF that still meets the target.
-        winner = max(passing, key=lambda r: int(r["crf"]))
+        pick = min if higher_is_better else max
+        winner = pick(passing, key=lambda r: int(r["crf"]))
         return int(winner["crf"])
     # Nothing met the target on the coarse pass. Fall back to the
     # highest-VMAF coarse point so the fine pass at least probes near
@@ -1550,6 +1574,8 @@ def _should_skip_refinement(
     target_vmaf: float | None,
     best_score: float,
     crf_max: int,
+    higher_is_better: bool = False,
+    crf_min: int = 0,
 ) -> bool:
     """Decide whether the coarse pass alone is enough.
 
@@ -1572,7 +1598,10 @@ def _should_skip_refinement(
         return False
     # Target met — refining to the right would only check higher CRFs
     # (lower quality). We can skip if we're already at the max-CRF
-    # coarse cell or pinned at crf_max.
+    # coarse cell or pinned at crf_max (mirrored when higher values
+    # mean higher quality).
+    if higher_is_better:
+        return best_crf <= min(coarse_grid) or best_crf <= crf_min
     return best_crf >= max(coarse_grid) or best_crf >= crf_max
 
 
@@ -1599,13 +1628,16 @@ def _fine_pass_crfs(
     fine_step: int,
     crf_min: int,
     crf_max: int,
+    higher_is_better: bool = False,
 ) -> tuple[int, ...]:
     """Return the CRFs the fine pass visits after ``coarse_rows``.
 
     Empty when :func:`_should_skip_refinement` skips the fine pass or
     the window around the best coarse CRF holds no unmeasured point.
     """
-    best_crf = _pick_best_crf(coarse_rows, target_vmaf=target_vmaf)
+    best_crf = _pick_best_crf(
+        coarse_rows, target_vmaf=target_vmaf, higher_is_better=higher_is_better
+    )
     best_score = _coarse_score_at(coarse_rows, best_crf)
     if _should_skip_refinement(
         best_crf=best_crf,
@@ -1613,6 +1645,8 @@ def _fine_pass_crfs(
         target_vmaf=target_vmaf,
         best_score=best_score,
         crf_max=crf_max,
+        higher_is_better=higher_is_better,
+        crf_min=crf_min,
     ):
         return ()
 
@@ -1629,6 +1663,53 @@ def _fine_pass_crfs(
     )
 
 
+# The coarse window shaped for libx264 (ADR-0306): CRF below 10 is visually
+# lossless on most content and 51 is the codec floor. Other adapters search
+# the part of their quality_range inside it.
+COARSE_WINDOW: tuple[int, int] = (10, 50)
+
+
+def coarse_search_window(encoder: str) -> tuple[int, int]:
+    """Default CRF window of the coarse-to-fine search for ``encoder``.
+
+    :data:`COARSE_WINDOW` intersected with the adapter's
+    ``quality_range``: libx264 keeps 10..50, libx265 and the AMF and
+    NVENC adapters search 15..40, libsvtav1 20..50, libvvenc 17..50.
+    An adapter whose range lies outside the window (ProRes tiers 0..5)
+    searches its whole range.
+    """
+    lo, hi = get_adapter(encoder).quality_range
+    window_lo, window_hi = max(COARSE_WINDOW[0], lo), min(COARSE_WINDOW[1], hi)
+    return (window_lo, window_hi) if window_lo <= window_hi else (int(lo), int(hi))
+
+
+def _resolve_search_window(
+    encoder: str, presets: Sequence[str], crf_min: int | None, crf_max: int | None
+) -> tuple[int, int]:
+    """The search window, checked against the adapter before any encode.
+
+    ``None`` takes :func:`coarse_search_window`'s bound. Raises
+    ``ValueError`` naming the encoder when the adapter refuses either
+    bound with any preset, so a bad window never reaches an encode.
+    """
+    default_lo, default_hi = coarse_search_window(encoder)
+    lo = default_lo if crf_min is None else int(crf_min)
+    hi = default_hi if crf_max is None else int(crf_max)
+    if lo > hi:
+        raise ValueError(f"crf_min ({lo}) > crf_max ({hi})")
+    adapter = get_adapter(encoder)
+    for preset in presets:
+        for crf in (lo, hi):
+            try:
+                adapter.validate(preset, crf)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{encoder} refuses the coarse-to-fine window [{lo}, {hi}] "
+                    f"(preset {preset!r}): {exc}"
+                ) from exc
+    return lo, hi
+
+
 def coarse_to_fine_search(
     job: CorpusJob,
     opts: CorpusOptions,
@@ -1637,8 +1718,8 @@ def coarse_to_fine_search(
     coarse_step: int = 10,
     fine_radius: int = 5,
     fine_step: int = 1,
-    crf_min: int = 10,
-    crf_max: int = 50,
+    crf_min: int | None = None,
+    crf_max: int | None = None,
     encode_runner: object | None = None,
     score_runner: object | None = None,
 ) -> Iterator[dict]:
@@ -1651,14 +1732,51 @@ def coarse_to_fine_search(
 
     The presets in ``job.cells`` are honoured: the search runs once
     per distinct preset, with the CRF axis replaced by the
-    coarse-then-fine sweep.
+    coarse-then-fine sweep. ``crf_min`` / ``crf_max`` default to
+    :func:`coarse_search_window` for ``opts.encoder``; the window is
+    checked against the adapter when this function is called, before
+    the first encode, and a refused bound raises ``ValueError``.
     """
     presets = tuple(dict.fromkeys(p for p, _crf in job.cells))
     if not presets:
-        return
+        return iter(())
+    lo, hi = _resolve_search_window(opts.encoder, presets, crf_min, crf_max)
+    return _coarse_to_fine_rows(
+        job,
+        opts,
+        presets,
+        _SearchShape(target_vmaf, coarse_step, fine_radius, fine_step, lo, hi),
+        encode_runner=encode_runner,
+        score_runner=score_runner,
+    )
 
-    coarse_grid = coarse_grid_crfs(crf_min=crf_min, crf_max=crf_max, coarse_step=coarse_step)
 
+@dataclasses.dataclass(frozen=True)
+class _SearchShape:
+    """Target and grid of one coarse-to-fine search."""
+
+    target_vmaf: float | None
+    coarse_step: int
+    fine_radius: int
+    fine_step: int
+    crf_min: int
+    crf_max: int
+
+
+def _coarse_to_fine_rows(
+    job: CorpusJob,
+    opts: CorpusOptions,
+    presets: tuple[str, ...],
+    shape: _SearchShape,
+    *,
+    encode_runner: object | None,
+    score_runner: object | None,
+) -> Iterator[dict]:
+    """Rows of :func:`coarse_to_fine_search`: coarse pass, then fine pass, per preset."""
+    coarse_grid = coarse_grid_crfs(
+        crf_min=shape.crf_min, crf_max=shape.crf_max, coarse_step=shape.coarse_step
+    )
+    higher_is_better = not getattr(get_adapter(opts.encoder), "invert_quality", True)
     for preset in presets:
         coarse_job = dataclasses.replace(job, cells=tuple((preset, c) for c in coarse_grid))
         coarse_rows: list[dict] = []
@@ -1671,17 +1789,15 @@ def coarse_to_fine_search(
         fine_crfs = _fine_pass_crfs(
             coarse_rows,
             coarse_grid,
-            target_vmaf=target_vmaf,
-            fine_radius=fine_radius,
-            fine_step=fine_step,
-            crf_min=crf_min,
-            crf_max=crf_max,
+            target_vmaf=shape.target_vmaf,
+            fine_radius=shape.fine_radius,
+            fine_step=shape.fine_step,
+            crf_min=shape.crf_min,
+            crf_max=shape.crf_max,
+            higher_is_better=higher_is_better,
         )
         if not fine_crfs:
             continue
 
         fine_job = dataclasses.replace(job, cells=tuple((preset, c) for c in fine_crfs))
-        for row in iter_rows(
-            fine_job, opts, encode_runner=encode_runner, score_runner=score_runner
-        ):
-            yield row
+        yield from iter_rows(fine_job, opts, encode_runner=encode_runner, score_runner=score_runner)

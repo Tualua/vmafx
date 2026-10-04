@@ -28,10 +28,12 @@ refines around the highest-VMAF coarse point. `--preset` is required.
 
 ## How it works
 
-1. **Coarse pass.** Encode and score the CRFs `10, 20, 30, 40, 50`
-   (`--coarse-step` apart, across a fixed 10..50 window): 5 encodes.
+1. **Coarse pass.** Encode and score CRFs `--coarse-step` apart across the
+   encoder's search window: for libx264 the window is 10..50, so the grid is
+   `10, 20, 30, 40, 50` (5 encodes). See [Search window](#search-window).
 2. **Pick the centre.** With a target, the centre is the highest coarse CRF
-   whose VMAF meets the target. When no coarse CRF meets it, or when no target
+   whose VMAF meets the target (the lowest `-q:v` for VideoToolbox, whose
+   value rises with quality). When no coarse CRF meets it, or when no target
    was given, the centre is the coarse CRF with the highest VMAF.
 3. **Fine pass.** Encode and score every CRF within `--fine-radius` of the
    centre at `--fine-step` spacing, skipping CRFs the coarse pass already
@@ -55,34 +57,36 @@ The same flags exist on `corpus` and `recommend`.
 | --- | --- | --- |
 | `--coarse-to-fine` | off | Enable the search on `corpus`. `recommend` runs it unconditionally, so the flag is accepted there but redundant. |
 | `--target-vmaf V` | none | Target that centres the fine pass. Optional for `corpus`, required for `recommend`. |
-| `--coarse-step N` | `10` | CRF spacing of the coarse pass. With defaults the grid is `[10, 20, 30, 40, 50]`. |
+| `--coarse-step N` | `10` | CRF spacing of the coarse pass across the encoder's window; for libx264 the grid is `[10, 20, 30, 40, 50]`. |
 | `--fine-radius R` | `5` | Fine pass covers the centre CRF plus or minus `R`. |
 | `--fine-step S` | `1` | CRF spacing inside the fine window. |
 
-The coarse window (10..50) and the fine-pass clamp (0..51) are fixed in
-`corpus.coarse_to_fine_search`; no CLI flag changes them.
+### Search window
 
-!!! warning "Adapters with a narrower CRF range"
-    The window is shaped for libx264. An adapter rejects any CRF outside its
-    `quality_range`, and the search then stops with a `ValueError` traceback
-    before encoding that cell.
+The coarse grid and the fine pass stay inside a window that comes from the
+encoder: the libx264-shaped window 10..50 intersected with the adapter's
+`quality_range` (`corpus.coarse_search_window`). No CLI flag changes it; the
+Python API takes `crf_min` / `crf_max`.
 
-- **Rejected by the default grid:** `libx265` (range 15..40; rejects 10 and
-  50), `libsvtav1` (20..50; rejects 10), `libvvenc` (17..50; rejects 10),
-  the AMF adapters (15..40; reject 10 and 50), `av1_videotoolbox` and
-  `prores_videotoolbox`.
-- **Accepted by the whole grid:** `libx264`, `libaom-av1`, `libvpx-vp9`,
-  the NVENC and QSV adapters, `h264_videotoolbox` and
-  `hevc_videotoolbox`.
+| Encoders | Window | Coarse grid at step 10 |
+|---|---|---|
+| `libx264`, `libaom-av1`, `libvpx-vp9`, the QSV and VideoToolbox H.264 / HEVC / AV1 adapters | 10..50 | 10, 20, 30, 40, 50 |
+| `libx265`, the NVENC and AMF adapters | 15..40 | 15, 25, 35 |
+| `libsvtav1` | 20..50 | 20, 30, 40, 50 |
+| `libvvenc` | 17..50 | 17, 27, 37, 47 |
+| `prores_videotoolbox` (tiers 0..5) | 0..5 | 0, then the fine pass covers 1..5 |
 
-For the rejected codecs, run `corpus` with an explicit `--crf` list or use
-[`compare`](vmaf-tune-compare.md), which bisects inside the encoder's own
-range.
+A window the adapter refuses (from the Python API) raises `ValueError`
+before the first encode, and the CLI reports any refused `--preset` /
+`--crf` cell the same way: one line on stderr and exit status 2. Until
+2026-10-04 the window was 10..50 for every encoder, and `libx265`,
+`libsvtav1`, `libvvenc`, the AMF adapters and ProRes stopped with a
+`ValueError` traceback.
 
 ## Hardware encoders
 
-NVENC, AMF and QSV adapters work with this search as long as their range
-accepts the grid (see the warning above). The `--crf` value carries the
+NVENC, AMF and QSV adapters search their own window (see the table
+above). The `--crf` value carries the
 quality number whether the encoder names it CRF or CQ; the NVENC adapter
 forwards it as `-cq`.
 

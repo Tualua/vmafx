@@ -71,6 +71,7 @@ import dataclasses
 import itertools
 import math
 import tempfile
+import threading
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -221,27 +222,24 @@ def make_default_sampler(
     score_backend: str | None = None,
     vmaf_model: str | None = None,
     neg: bool = False,
+    resources: SamplerResources | None = None,
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
     The module-level :func:`_default_sampler` defaults to placeholder
-    shape values (24 fps, 1 s, ``yuv420p``); a 1080p30 / 60 s source
-    sampled with them produced nonsense bitrate math (Bug #4 and #5,
-    BBB e2e 2026-05-17). This factory closes over the real source shape
-    (``--framerate`` / ``--duration`` / ``--pix-fmt`` or ffprobe) and an
-    optional CRF sweep override (``--crf-sweep``).
+    shape values (24 fps, 1 s, ``yuv420p``), which produced nonsense
+    bitrate math on real sources (Bug #4 and #5, BBB e2e 2026-05-17).
+    This factory closes over the real source shape and an optional CRF
+    sweep override (``--crf-sweep``).
 
     ``src_width`` / ``src_height`` (ADR-0498) carry the source resolution
     separately from the rung target: a raw-YUV source is read at its own
-    geometry and scaled to the rung (BBB e2e v2 Bug #v2-B). ``None``
-    keeps the target dims as both source and encode dims.
-
+    geometry and scaled to the rung (BBB e2e v2 Bug #v2-B).
     ``score_backend`` (Bug C / ADR-0509) threads ``--score-backend`` into
-    every corpus call; ``None`` lets libvmaf pick.
-
-    ``vmaf_model`` pins the model of every rung; ``None`` (the default,
-    and the CLI's) picks it per rung height (ADR-0289). ``neg`` scores
-    with the NEG variant of either (ADR-0622).
+    every corpus call; ``None`` lets libvmaf pick. ``vmaf_model`` pins
+    the model of every rung; ``None`` (the CLI's) picks it per rung
+    height (ADR-0289), and ``neg`` takes the NEG variant (ADR-0622).
+    ``resources`` carries ``--workdir`` and ``--max-concurrent-decodes``.
     """
     return _SamplerSettings(
         pix_fmt=pix_fmt,
@@ -254,7 +252,33 @@ def make_default_sampler(
         score_backend=score_backend,
         vmaf_model=vmaf_model,
         neg=neg,
+        resources=resources,
     ).bind()
+
+
+@dataclasses.dataclass(frozen=True)
+class SamplerResources:
+    """Scratch space and decode cap of the default sampler.
+
+    ``workdir`` is the parent of each rung's scratch directory (the raw
+    YUV reference decode and the encodes); ``None`` takes
+    ``VMAFTUNE_WORKDIR`` when it is writable, else the system temporary
+    directory (ADR-0549). ``decode_semaphore`` caps the reference decodes
+    in flight (ADR-0577); the sampler encodes one rung at a time, so at
+    most one decode runs unless several samplers share the semaphore.
+    """
+
+    workdir: Path | None = None
+    decode_semaphore: threading.Semaphore | None = None
+
+    def scratch_parent(self) -> Path | None:
+        """The directory a rung's scratch directory is created in, made on demand."""
+        from .bisect import _workdir_parent
+
+        parent = self.workdir or _workdir_parent()
+        if parent is not None:
+            parent.mkdir(parents=True, exist_ok=True)
+        return parent
 
 
 def _resolve_crf_sweep(crf_sweep: Sequence[int] | None) -> tuple[int, ...]:
@@ -282,6 +306,7 @@ class _SamplerSettings:
     score_backend: str | None
     vmaf_model: str | None
     neg: bool = False
+    resources: SamplerResources | None = None
 
     def bind(self) -> SamplerFn:
         """Closure calling :func:`_default_sampler` with these settings.
@@ -309,6 +334,7 @@ class _SamplerSettings:
                 score_backend=self.score_backend,
                 vmaf_model=self.vmaf_model,
                 neg=self.neg,
+                resources=self.resources,
             )
 
         return _sampler
@@ -323,7 +349,10 @@ class _SamplerSettings:
 
         preset = _default_sampler_preset(encoder)
         cells = tuple((preset, crf) for crf in _resolve_crf_sweep(self.crf_sweep))
-        with tempfile.TemporaryDirectory(prefix="vmaftune-ladder-") as tmp:
+        resources = self.resources or SamplerResources()
+        with tempfile.TemporaryDirectory(
+            prefix="vmaftune-ladder-", dir=resources.scratch_parent()
+        ) as tmp:
             job = _sweep_corpus_job(src, width, height, cells, self)
             opts = _sweep_corpus_options(encoder, Path(tmp), self)
             rows = [r for r in iter_rows(job, opts) if int(r.get("exit_status", 0)) == 0]
@@ -351,6 +380,7 @@ def _default_sampler(
     score_backend: str | None = None,
     vmaf_model: str | None = None,
     neg: bool = False,
+    resources: SamplerResources | None = None,
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
@@ -387,6 +417,7 @@ def _default_sampler(
         score_backend=score_backend,
         vmaf_model=vmaf_model,
         neg=neg,
+        resources=resources,
     ).sample(src, encoder, width, height, target_vmaf)
 
 
@@ -455,6 +486,7 @@ def _sweep_corpus_options(
         vmaf_model=settings.vmaf_model or DEFAULT_MODEL,
         resolution_aware=settings.vmaf_model is None,
         neg=settings.neg,
+        decode_semaphore=settings.resources.decode_semaphore if settings.resources else None,
     )
 
 

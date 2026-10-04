@@ -28,7 +28,8 @@ ffmpeg or ONNX. Add `--execute` to also run the selected encode, see
 
 Exit codes: `0` for a plan-only run, whatever the plan holds; `1` when
 `--execute` ran at least one cell and none scored; `2` for an empty
-`--allow-codecs` or a planner error.
+`--allow-codecs`, a planner error, or `--execute` without the source
+geometry (see [Execute mode](#execute-mode)).
 
 ## Flags
 
@@ -45,6 +46,9 @@ Exit codes: `0` for a plan-only run, whatever the plan holds; `1` when
 | `--execute` | off | Run real encodes and scores for the selected cell. Plan-only without it. |
 | `--runs-dir PATH` | `runs` | Destination of the encodes and `tune_results.jsonl`. |
 | `--execute-all` | off | Run every plan cell instead of only the selected winner. |
+| `--width N`, `--height N` | probed | With `--execute`: source geometry. Required for a raw-YUV `--src`; a container's is read with ffprobe when omitted. |
+| `--framerate F` | probed | With `--execute`: source frame rate, same rule. |
+| `--pix-fmt FMT` | `yuv420p` | With `--execute`: pixel format of a raw-YUV `--src`. |
 
 ## How planning works
 
@@ -154,9 +158,13 @@ vmaf-tune auto \
   per-feature means and standard deviations, vmaf binary version).
 - **Appending.** The file grows on every run, so partial runs and incremental
   re-runs never overwrite earlier results.
-- **Source type.** The CLI executes with the container-source defaults of
-  `run_plan()`. Use a container as `--src`; the Python API takes explicit
-  geometry for raw YUV.
+- **Source geometry.** The encode and the score use the source's own
+  geometry and frame rate: `--width`, `--height` and `--framerate` when given,
+  otherwise what ffprobe reads from a container. A raw-YUV `--src` has no
+  header, so it needs all three (and `--pix-fmt` when it is not `yuv420p`);
+  without them `--execute` exits 2 naming the missing flags. Before
+  2026-10-04 the CLI passed no geometry and every source was encoded and
+  scored as 1920x1080 at 25 fps.
 - **Exit status.** `1` when at least one cell ran and none scored (encode
   failures, missing `vmaf` binary and the like), otherwise `0`.
 

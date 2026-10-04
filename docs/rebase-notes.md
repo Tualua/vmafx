@@ -7,6 +7,23 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
+
+`fix/vmaf-tune-crashes-dead-flags`. Fork-local Python only; no C source change.
+
+- `corpus.coarse_to_fine_search` is a plain function that resolves and
+  validates the window (`_resolve_search_window`) before it returns the row
+  generator. Do not turn it back into a generator: the `ValueError` would
+  surface mid-write. `crf_min` / `crf_max` default to `None`, meaning
+  `coarse_search_window(encoder)`.
+- `ladder.SamplerResources` carries `--workdir` and the decode semaphore into
+  the default sampler; `CorpusOptions.decode_semaphore` gates
+  `_decode_job_reference`.
+- `cli._auto_execute_geometry` feeds `run_plan(**geometry)`; raw YUV without
+  `--width/--height` exits 2.
+- `cli._uncertainty_unavailable_note` is the only path that answers
+  `--with-uncertainty` without intervals.
+
 ## `vmaf-tune` model overrides, cache key v2, QSV chain on encodes, ladder codec strings (2026-10-04)
 
 `fix/vmaf-tune-silent-overrides`. Fork-local Python and Go only; no C source change.

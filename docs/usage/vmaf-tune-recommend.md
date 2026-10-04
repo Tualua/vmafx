@@ -181,10 +181,12 @@ Extra keys are ignored.
 ### Worked example
 
 The example assumes the visited rows carry a `vmaf_interval` object. No
-`vmaf-tune` subcommand writes that object into corpus rows today, so rows from
-a plain `corpus` or live run have no intervals and land in MIDDLE, with
-`decision=middle` in the output. Supply intervals from a calibrated predictor
-pipeline, or use the library override shown below.
+`vmaf-tune` subcommand writes that object into corpus rows (their VMAF is
+measured, not predicted), so rows from a plain `corpus` or live run land in
+MIDDLE and the pick is the point-estimate one. The command says so: stderr
+reads `vmaf-tune recommend: --with-uncertainty: no row carries a vmaf_interval
+...` and the result line ends with `uncertainty=unavailable`. Supply intervals
+from a calibrated predictor pipeline, or use the library override shown below.
 
 ```text
 $ vmaf-tune recommend --source ref.yuv --width 1920 --height 1080 \
@@ -195,15 +197,16 @@ $ vmaf-tune recommend --source ref.yuv --width 1920 --height 1080 \
 
 vmaf-tune: scoring backend = cpu
 src=ref.yuv preset=medium crf=20 vmaf=94.250 \
-    decision=tight visited=2/15 \
+    decision=tight rows_examined=2/15 (all 15 encoded) \
     predicate=target_vmaf>=93.0 (TIGHT, low=93.420)
 ```
 
 - `decision=tight`: the interval at CRF 20 has `width=0.6 <= tight_max=2.0`
   and `low=93.42 >= target=93.0`, so the search stopped there.
-- `visited=2/15`: two rows examined out of the 15 the coarse-to-fine sweep
-  produced. In live mode every encode has already run when the pick starts,
-  so `visited` reports the rows examined, not encodes saved.
+- `rows_examined=2/15 (all 15 encoded)`: the pick examined two of the 15
+  rows the coarse-to-fine sweep produced. Every encode has already run when
+  the pick starts, so the short-circuit saves no encode. With `--from-corpus`
+  the line carries `rows_examined=N/M` alone (no encodes run there).
 - `predicate=...(TIGHT, low=93.420)`: the predicate that fired, with the lower
   bound that promoted the row.
 
@@ -211,7 +214,7 @@ If the predictor's intervals were all `width >= 5.0`, the output would read:
 
 ```text
 src=ref.yuv preset=medium crf=20 vmaf=94.250 \
-    decision=wide visited=15/15 \
+    decision=wide rows_examined=15/15 (all 15 encoded) \
     predicate=target_vmaf>=93.0 (UNCERTAIN)
 ```
 

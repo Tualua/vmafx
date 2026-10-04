@@ -2056,8 +2056,6 @@
         "pkg/corpusrow/corpusrow.go": 1,
         "tools/vmaf-roi-score/src/vmafroiscore/__init__.py": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 1,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
-        "tools/vmaf-tune/src/vmaftune/corpus.py": 2,
         "tools/vmaf-tune/tests/test_corpus.py": 1
       },
       "target": "0296-vmaf-roi-saliency-weighted.md"
@@ -2209,8 +2207,9 @@
     "0306": {
       "sites": {
         "pkg/corpus/coarse_to_fine.go": 1,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/x264.py": 1,
-        "tools/vmaf-tune/src/vmaftune/corpus.py": 1,
+        "tools/vmaf-tune/src/vmaftune/corpus.py": 4,
         "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
         "tools/vmaf-tune/tests/test_corpus.py": 1
       },
@@ -2495,6 +2494,7 @@
         "scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh": 1,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py": 4,
         "tools/vmaf-tune/tests/test_codec_adapter_av1_videotoolbox.py": 2,
+        "tools/vmaf-tune/tests/test_crashes_dead_flags.py": 1,
         "tools/vmaf-tune/tests/test_encode_dispatcher_per_adapter.py": 3
       },
       "target": "0339-av1-videotoolbox-placeholder-adapter.md"
@@ -3012,7 +3012,6 @@
         "cmd/vmafx-tune/cmd/auto.go": 1,
         "pkg/tune/auto/auto.go": 1,
         "pkg/tune/executor/executor.go": 1,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/executor.py": 1,
         "tools/vmaf-tune/tests/test_executor.py": 1
       },
@@ -3653,7 +3652,7 @@
         "dev/scripts/dev-mcp-entrypoint.sh": 1,
         "pkg/saliency/saliency.go": 3,
         "pkg/saliency/saliency_test.go": 2,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 3,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/_amf_common.py": 2,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/_nvenc_common.py": 2,
         "tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py": 2,
@@ -3693,6 +3692,8 @@
         "scripts/ci/cross_backend_parity_gate.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1,
+        "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
         "tools/vmaf-tune/tests/test_bbb_e2e_v15_shared_ref.py": 1,
         "tools/vmaf-tune/tests/test_workdir_enospc.py": 1
       },
@@ -3814,12 +3815,20 @@
         "cmd/vmafx-tune/cmd/pershot.go": 3,
         "pkg/bisect/score_yuv.go": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 9,
-        "tools/vmaf-tune/src/vmaftune/cli.py": 4,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 5,
+        "tools/vmaf-tune/src/vmaftune/corpus.py": 2,
+        "tools/vmaf-tune/src/vmaftune/ladder.py": 1,
         "tools/vmaf-tune/tests/test_bisect.py": 1,
         "tools/vmaf-tune/tests/test_bisect_concurrency_cap.py": 5,
         "tools/vmaf-tune/tests/test_compare.py": 1
       },
       "target": "0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md"
+    },
+    "0579": {
+      "sites": {
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1
+      },
+      "target": "0579-vmaf-tune-auto-execute-mode.md"
     },
     "0584": {
       "sites": {
@@ -3856,7 +3865,8 @@
     },
     "0598": {
       "sites": {
-        "cmd/vmafx-tune/cmd/pershot.go": 3
+        "cmd/vmafx-tune/cmd/pershot.go": 3,
+        "tools/vmaf-tune/src/vmaftune/cli.py": 1
       },
       "target": "0598-vmaftune-workdir-relocation.md"
     },
