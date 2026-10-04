@@ -592,8 +592,9 @@ def _metrics(pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
 def _build_fr_v2_notes(smoke: bool, in_sample_plcc: float, notes_extra: str = "") -> str:
     notes = (
         "Tiny FR regressor v2 (codec-aware) — 6 canonical libvmaf features "
-        "(adm2, vif_scale0..3, motion2) + 8-D codec block "
-        "(6 encoder one-hot + preset_norm + crf_norm) -> VMAF teacher score. "
+        f"(adm2, vif_scale0..3, motion2) + {len(ENCODER_VOCAB) + 2}-D codec block "
+        f"({len(ENCODER_VOCAB)}-entry encoder one-hot incl. unknown + preset_norm + crf_norm) "
+        "-> VMAF teacher score. "
         "Trained on the vmaf-tune Phase A JSONL corpus (ADR-0237). "
         f"{'SMOKE / placeholder build (synthetic corpus).' if smoke else 'Production checkpoint.'} "
         f"In-sample PLCC={in_sample_plcc:.4f}. "
@@ -637,6 +638,7 @@ def _write_sidecar_and_registry(
     smoke: bool,
     run_provenance: dict[str, Any],
     notes_extra: str = "",
+    architecture: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     digest = sha256(onnx_path)
     notes = _build_fr_v2_notes(smoke, in_sample["plcc"], notes_extra)
@@ -667,6 +669,9 @@ def _write_sidecar_and_registry(
             "in_sample_srocc": in_sample["srocc"],
             "in_sample_rmse": in_sample["rmse"],
             "smoke": smoke,
+            # The MLP shape the graph was trained with: a default trainer run
+            # and the shipped checkpoint differed before (docs-audit defect 27).
+            **(architecture or {}),
         },
         "run_provenance": run_provenance,
     }
@@ -695,10 +700,15 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--hidden",
         type=int,
-        default=16,
-        help="MLP hidden width. v2 default 16 (matches the user's 6->16->8->1 spec).",
+        default=32,
+        help="MLP hidden width. Default 32, the shipped checkpoint's (ADR-0291).",
     )
-    ap.add_argument("--depth", type=int, default=2)
+    ap.add_argument(
+        "--depth",
+        type=int,
+        default=3,
+        help="Number of hidden layers. Default 3, the shipped checkpoint's (ADR-0291).",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument(
         "--out-onnx",
@@ -886,6 +896,7 @@ def main() -> int:
         n_rows=len(rows),
         smoke=args.smoke,
         run_provenance=run_provenance,
+        architecture={"hidden": args.hidden, "depth": args.depth},
     )
     print(f"[fr-v2] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
     return 0

@@ -39,6 +39,7 @@ REPO_ROOT: Path = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.onnx_signature import read_signature  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Guard the pytorch_lightning → torchmetrics → torchvision import chain.
@@ -110,11 +111,13 @@ def _write_sidecar(
     run_provenance: dict[str, Any] | None = None,
 ) -> Path:
     sidecar: Path = TINY_DIR / f"{model_id}.json"
-    payload = {
+    payload: dict[str, Any] = {
         "id": model_id,
         "kind": kind,
         "onnx": onnx_path.name,
-        "opset": 17,
+        # torch's dynamo exporter raises a requested opset 17 to 18; record
+        # what the file imports, not what was asked for.
+        "opset": read_signature(onnx_path).default_opset,
         "sha256": sha256(onnx_path),
         "notes": notes,
     }
@@ -185,11 +188,11 @@ def _export_c2(args: Namespace, raw_argv: list[str]) -> dict[str, Any] | None:
         "notes": (
             "Tiny NR MobileNet baseline trained on KoNViD-1k "
             "(not redistributed). 224×224 grayscale "
-            "input; ~19K params; opset 17. See "
+            "input; ~19K params. See "
             "docs/adr/0168-tinyai-konvid-baselines.md."
         ),
         "onnx": c2_onnx.name,
-        "opset": 17,
+        "opset": read_signature(c2_onnx).default_opset,
         "sha256": sha256(c2_onnx),
     }
 
@@ -235,11 +238,11 @@ def _export_c3(args: Namespace, raw_argv: list[str]) -> dict[str, Any] | None:
         "notes": (
             "Tiny residual filter baseline for vmaf_pre — "
             "self-supervised on KoNViD-1k frames with synthetic "
-            "blur+JPEG degradation. ~19K params; opset 17. See "
+            "blur+JPEG degradation. ~19K params. See "
             "docs/adr/0168-tinyai-konvid-baselines.md."
         ),
         "onnx": c3_onnx.name,
-        "opset": 17,
+        "opset": read_signature(c3_onnx).default_opset,
         "sha256": sha256(c3_onnx),
     }
 

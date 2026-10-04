@@ -15,8 +15,9 @@ required.
 
 Calibration format: a numpy ``.npz`` with one entry per model input
 name, each containing a stack of `[N, ...]` representative inputs.
-``ai/scripts/build_calibration_set.py`` (future) will produce this
-from a parquet feature cache; for now operators hand-craft it.
+Operators build it; no in-tree script writes it. For the feature-vector
+FR regressors, ``vmaf-train quantize-int8`` runs static PTQ calibrated
+from a parquet feature cache directly (``ai/src/vmaf_train/quantize.py``).
 
 Usage::
 
@@ -67,7 +68,8 @@ def _parse_args(raw_argv: list[str]) -> Namespace:
     return parser.parse_args(raw_argv)
 
 
-def _load_quantization_api() -> tuple[Any, Any, Any, Any, Any]:
+def _load_quantization_api() -> tuple[Any, Any, Any, Any, Any] | None:
+    """The quantisation entry points, or None (reported) when they are missing."""
     try:
         import numpy as np
         from onnxruntime.quantization import (
@@ -77,8 +79,31 @@ def _load_quantization_api() -> tuple[Any, Any, Any, Any, Any]:
             quantize_static,
         )
     except ImportError as exc:
-        sys.exit(f"onnxruntime.quantization / numpy not available: {exc}")
+        print(f"onnxruntime.quantization / numpy not available: {exc}", file=sys.stderr)
+        return None
     return np, CalibrationDataReader, QuantFormat, QuantType, quantize_static
+
+
+def _resolve_paths(args: Namespace) -> tuple[Path, Path, Path] | None:
+    """Input, calibration and output paths, or None (reported) when one is unusable."""
+    src = args.onnx.resolve()
+    if not src.is_file():
+        print(f"input not found: {src}", file=sys.stderr)
+        return None
+    cal = args.calibration.resolve()
+    if not cal.is_file():
+        print(f"calibration set not found: {cal}", file=sys.stderr)
+        return None
+    dst = args.output or src.with_name(src.stem + ".int8.onnx")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if not os.access(dst.parent, os.W_OK):
+        print(
+            f"error: destination directory is not writable: {dst.parent}\n"
+            f"hint: pass --output /path/to/writable/dir/{dst.name}",
+            file=sys.stderr,
+        )
+        return None
+    return src, cal, dst
 
 
 def _quantize(
@@ -153,20 +178,12 @@ def _write_report(
 
 def _run(args: Namespace, raw_argv: list[str]) -> int:
     quantization_api = _load_quantization_api()
-
-    src = args.onnx.resolve()
-    if not src.is_file():
-        sys.exit(f"input not found: {src}")
-    cal = args.calibration.resolve()
-    if not cal.is_file():
-        sys.exit(f"calibration set not found: {cal}")
-    dst = args.output or src.with_name(src.stem + ".int8.onnx")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if not os.access(dst.parent, os.W_OK):
-        sys.exit(
-            f"error: destination directory is not writable: {dst.parent}\n"
-            f"hint: pass --output /path/to/writable/dir/{dst.name}"
-        )
+    if quantization_api is None:
+        return 1
+    paths = _resolve_paths(args)
+    if paths is None:
+        return 1
+    src, cal, dst = paths
 
     print(f"[ptq_static] {src}  ->  {dst}  cal={cal}  per-channel={args.per_channel}")
 

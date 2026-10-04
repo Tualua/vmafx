@@ -27,9 +27,15 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
       re-running `export_ensemble_v2_seeds.py`, which is part of the locked
       one-shot RC9 retrain (ADR-1105, ADR-1341, ADR-1490; the ensemble is in
       scope). The per-seed sidecars (`fr_regressor_v2_ensemble_v1_seed{N}.json`)
-      still describe the older production
-      weights and keep their PROMOTE provenance; the retrain regenerates ONNX
-      and sidecars together.
+      describe the shipped smoke graphs: their sha256, the 6-slot
+      `codec_vocab`, the smoke manifest's standardisation and the one-epoch
+      smoke recipe. The production weights' PROMOTE record is
+      `model/tiny/fr_regressor_v2_ensemble_v1_seed_flip_PROMOTE.json`; the
+      retrain regenerates ONNX and sidecars together.
+    - **Not loadable through `--tiny-model`:** the members' codec input is a
+      pure 6-slot one-hot with no preset or CRF slot, a layout libvmaf's
+      codec block does not fill, so `vmaf --tiny-model` refuses them
+      ([ADR-1520](../../adr/1520-tiny-model-feature-inputs-at-flush.md)).
     - **Guard:** `test_fr_regressor_v2_ensemble_seed_rows_are_production` is
       marked `xfail(strict=True)`. It fails the suite as soon as real weights
       land (`smoke: false` and a matching sidecar sha), which forces removal

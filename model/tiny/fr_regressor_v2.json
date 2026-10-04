@@ -61,7 +61,7 @@
     "codec"
   ],
   "kind": "fr",
-  "notes": "Tiny FR regressor v2 (codec-aware) \u2014 6 canonical libvmaf features (adm2, vif_scale0..3, motion2) + 8-D codec block (6 encoder one-hot + preset_norm + crf_norm) -> VMAF teacher score. Trained on the vmaf-tune Phase A JSONL corpus (ADR-0237). Production checkpoint. In-sample PLCC=0.9794. Exported via ai/scripts/train_fr_regressor_v2.py. See docs/ai/models/fr_regressor_v2.md + ADR-0272 + ADR-0235.",
+  "notes": "Tiny FR regressor v2 (codec-aware) \u2014 6 canonical libvmaf features (adm2, vif_scale0..3, motion2) + 14-D codec block (12-entry encoder one-hot incl. unknown + preset_norm + crf_norm) -> VMAF teacher score. Trained on the vmaf-tune Phase A JSONL corpus (ADR-0237). Production checkpoint. In-sample PLCC=0.9794. Exported via ai/scripts/train_fr_regressor_v2.py. See docs/ai/models/fr_regressor_v2.md + ADR-0272 + ADR-0235.",
   "onnx": "fr_regressor_v2.onnx",
   "opset": 17,
   "output_names": [
@@ -70,6 +70,8 @@
   "sha256": "67934b0b61c73eb852d84ffb34e3333756e8da2530179ecc830336133e63e69e",
   "training": {
     "dataset": "vmaf-tune-corpus",
+    "depth": 3,
+    "hidden": 32,
     "in_sample_plcc": 0.9793642241386716,
     "in_sample_rmse": 3.0142839798780483,
     "in_sample_srocc": 0.9640398194786792,

@@ -1989,7 +1989,7 @@
     },
     "0291": {
       "sites": {
-        "ai/scripts/train_fr_regressor_v2.py": 1,
+        "ai/scripts/train_fr_regressor_v2.py": 3,
         "ai/scripts/train_fr_regressor_v2_ensemble_loso.py": 8,
         "ai/scripts/train_fr_regressor_v3.py": 6,
         "ai/scripts/train_predictor_v2_realcorpus.py": 1,

@@ -75,6 +75,19 @@ change.
   preset.
 - `model/tiny/fr_regressor_v3.json` gains the five `codec_*` keys;
   `ai/scripts/train_fr_regressor_v3.py` writes them (`crf_range`).
+## Tiny-model metadata checked against the graphs (ADR-1546, 2026-10-04)
+
+`fix/tiny-model-metadata`. Fork-local AI tooling and model metadata; no
+libvmaf change.
+
+- `ai/scripts/validate_model_registry.py` gains `_check_graph_metadata()` and
+  helpers on top of the new `ai/src/aiutils/onnx_signature.py`.
+- `model/tiny/`: `nr_metric_v1` opset 18, `fr_regressor_v2` notes and
+  `training.hidden` / `depth`, the five ensemble seed sidecars rewritten,
+  `transnet_v2.json` `output_name` `output_0`, schema texts and
+  `release_url`. A re-export must keep these in step with its graph or the
+  required validator job fails.
+- `ai/scripts/build_calibration_set.py` is removed.
 
 ## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
 

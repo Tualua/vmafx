@@ -14,6 +14,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -417,3 +418,112 @@ def test_main_writes_out_json_on_fail(tmp_path: Path) -> None:
     payload = json.loads(out.read_text())
     assert payload["ok"] is False
     assert payload["error_count"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Graph metadata: registry opset and sidecars against the shipped graphs
+# ---------------------------------------------------------------------------
+
+_TINY = _REPO_ROOT / "model" / "tiny"
+
+
+def _stage_graph(
+    tmp_path: Path, src: str, name: str, sidecar: dict[str, Any] | None, **entry: Any
+) -> dict[str, Any]:
+    """Copy a shipped graph into @p tmp_path as <name>.onnx with an optional
+    sidecar, and return a registry entry for it (sha256 filled in)."""
+    data = (_TINY / src).read_bytes()
+    (tmp_path / f"{name}.onnx").write_bytes(data)
+    if sidecar is not None:
+        (tmp_path / f"{name}.json").write_text(json.dumps(sidecar), encoding="utf-8")
+    row: dict[str, Any] = {"id": name, "kind": "fr", "onnx": f"{name}.onnx", "smoke": True}
+    row["sha256"] = hashlib.sha256(data).hexdigest()
+    row.update(entry)
+    return row
+
+
+def _graph_errors(tmp_path: Path, *rows: dict[str, Any]) -> list[str]:
+    errors: list[str] = VMR._consistency_check(
+        {"schema_version": 1, "models": list(rows)}, tmp_path
+    )
+    return errors
+
+
+def test_graph_metadata_accepts_matching_sidecar(tmp_path: Path) -> None:
+    sidecar = {
+        "opset": 17,
+        "features": ["adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2"],
+        "input_names": ["features"],
+        "output_names": ["vmaf"],
+    }
+    row = _stage_graph(tmp_path, "vmaf_tiny_v2.onnx", "fv", sidecar, opset=17)
+    assert _graph_errors(tmp_path, row) == []
+
+
+def test_graph_metadata_flags_registry_opset(tmp_path: Path) -> None:
+    row = _stage_graph(tmp_path, "vmaf_tiny_v2.onnx", "fv", None, opset=18)
+    errs = _graph_errors(tmp_path, row)
+    assert any("registry opset 18 but fv.onnx imports opset 17" in e for e in errs)
+
+
+def test_graph_metadata_flags_sidecar_opset_and_names(tmp_path: Path) -> None:
+    sidecar = {"opset": 18, "output_name": "boundary_logits", "input_names": ["frames", "x"]}
+    row = _stage_graph(tmp_path, "transnet_v2.onnx", "tn", sidecar)
+    errs = _graph_errors(tmp_path, row)
+    assert any("tn.json: opset 18" in e for e in errs)
+    assert any("output_name 'boundary_logits' is not a graph output" in e for e in errs)
+    assert any("input_names ['frames', 'x']" in e for e in errs)
+
+
+def test_graph_metadata_flags_feature_count(tmp_path: Path) -> None:
+    sidecar = {"feature_order": ["adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3"]}
+    row = _stage_graph(tmp_path, "vmaf_tiny_v2.onnx", "fv", sidecar)
+    errs = _graph_errors(tmp_path, row)
+    assert any("5 feature names for a 6-wide input" in e for e in errs)
+
+
+def test_graph_metadata_flags_codec_block_width(tmp_path: Path) -> None:
+    """fr_regressor_v2's codec input is 14 wide: 12 encoders + preset + CRF."""
+    sidecar = {
+        "encoder_vocab": [f"enc{i}" for i in range(11)],
+        "codec_block_dim": 13,
+        "codec_block_layout": [f"slot{i}" for i in range(14)],
+    }
+    row = _stage_graph(tmp_path, "fr_regressor_v2.onnx", "frv2", sidecar)
+    errs = _graph_errors(tmp_path, row)
+    assert any("encoder_vocab of 11 entries describes a codec block of 13" in e for e in errs)
+    assert any("codec_block_dim 13, graph 14" in e for e in errs)
+    assert not any("codec_block_layout" in e for e in errs)
+
+
+def test_graph_metadata_flags_stale_sidecar_sha(tmp_path: Path) -> None:
+    sidecar = {"sha256": "0" * 64}
+    row = _stage_graph(tmp_path, "vmaf_tiny_v2.onnx", "fv", sidecar)
+    errs = _graph_errors(tmp_path, row)
+    assert any("fv.json: sha256 " + "0" * 64 in e for e in errs)
+
+
+def test_graph_metadata_checks_the_int8_sibling(tmp_path: Path) -> None:
+    """Boundary: the fp32 graph matches, its int8 sibling imports another opset."""
+    int8 = (_TINY / "nr_metric_v1.int8.onnx").read_bytes()
+    (tmp_path / "fv.int8.onnx").write_bytes(int8)
+    row = _stage_graph(
+        tmp_path,
+        "vmaf_tiny_v2.onnx",
+        "fv",
+        None,
+        opset=17,
+        quant_mode="dynamic",
+        int8_sha256=hashlib.sha256(int8).hexdigest(),
+    )
+    errs = _graph_errors(tmp_path, row)
+    assert errs == ["fv: registry opset 17 but fv.int8.onnx imports opset 18"]
+
+
+def test_graph_metadata_reports_unreadable_graph(tmp_path: Path) -> None:
+    data = b"fixture-onnx"
+    (tmp_path / "bad.onnx").write_bytes(data)
+    row = {"id": "bad", "kind": "fr", "onnx": "bad.onnx", "smoke": True}
+    row["sha256"] = hashlib.sha256(data).hexdigest()
+    errs = _graph_errors(tmp_path, row)
+    assert any("cannot read bad.onnx as ONNX" in e for e in errs)

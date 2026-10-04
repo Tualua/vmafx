@@ -3,7 +3,7 @@
   "generated_at": "2026-10-04T07:17:17Z",
   "repository": "VMAFx/vmafx",
   "commit_sha": "094d51c8e8793b2767cf571cd69597630f111693",
-  "total_infractions": 420,
+  "total_infractions": 414,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -315,14 +315,6 @@
       "fingerprint": "ai/scripts/batch_materialize_second_opinion_features.py:HISS-04:fn:run_batch#1"
     },
     {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/build_calibration_set.py",
-      "line_number": 27,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/build_calibration_set.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/bvi_dvc_to_full_features.py",
       "line_number": 478,
@@ -588,46 +580,6 @@
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
       "anchor": "text:4cf92c48f933",
       "fingerprint": "ai/scripts/my_corpus_to_corpus_jsonl.py:HISS-07:text:4cf92c48f933#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/ptq_static.py",
-      "line_number": 80,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "fn:_load_quantization_api",
-      "fingerprint": "ai/scripts/ptq_static.py:HISS-07:fn:_load_quantization_api#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/ptq_static.py",
-      "line_number": 159,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "fn:_run",
-      "fingerprint": "ai/scripts/ptq_static.py:HISS-07:fn:_run#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/ptq_static.py",
-      "line_number": 162,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "fn:_run",
-      "fingerprint": "ai/scripts/ptq_static.py:HISS-07:fn:_run#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/ptq_static.py",
-      "line_number": 166,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "fn:_run",
-      "fingerprint": "ai/scripts/ptq_static.py:HISS-07:fn:_run#3"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/quantize_int8.py",
-      "line_number": 28,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:4cf92c48f933",
-      "fingerprint": "ai/scripts/quantize_int8.py:HISS-07:text:4cf92c48f933#1"
     },
     {
       "rule_id": "HISS-04",

@@ -61,3 +61,12 @@ Rules for new script in `ai/scripts/` or module in
 - `run_manifest.py` — deterministic `run_provenance` sidecar helpers plus
   strict string/file JSON emitters
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers
+
+## ONNX graph metadata (ADR-1546)
+
+Read a graph's opsets and input / output names and shapes with
+`aiutils.onnx_signature.read_signature()`, not ad-hoc byte scans or a new
+`onnx` dependency: the registry validator runs where only `jsonschema` is
+installed. The reader skips nodes and initializers by their length prefix;
+keep it free of recursion and of third-party imports.
+`ai/tests/test_onnx_signature.py` pins it to the shipped graphs.

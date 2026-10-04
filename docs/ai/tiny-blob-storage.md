@@ -22,7 +22,7 @@ tree but is not applied to any registry entry yet.
 ADR-0457 decided to move the three large blobs to the `tiny-blobs-v1` GitHub
 Release. That move is not done: no entry of
 [`model/tiny/registry.json`](../../model/tiny/registry.json) carries a
-`release_url`, and `registry.schema.json` has no such property.
+`release_url` (the schema accepts the field, an `https://` URL).
 
 ## The fetcher
 
@@ -73,8 +73,8 @@ stay inline in git, because per-file fetch overhead dominates below that size.
       --repo VMAFx/vmafx
     ```
 
-4. Add `release_url` to the registry entry, pointing at the upload. The schema
-   must accept the field first, see [model-registry.md](model-registry.md).
+4. Add `release_url` to the registry entry, pointing at the upload (see
+   [model-registry.md](model-registry.md) for the field).
 5. `git rm` the local file so the fetcher serves it from the release.
 6. Open the PR. Reviewers run the fetcher locally: `--check` should report the
    new file as missing and `--force` should download and verify it.

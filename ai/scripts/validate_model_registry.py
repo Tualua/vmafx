@@ -42,6 +42,7 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.onnx_signature import OnnxSignature, OnnxWireError, read_signature  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 DEFAULT_REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
@@ -186,6 +187,107 @@ def _check_quant_consistency(
             )
 
 
+def _rank2_width(sig: OnnxSignature, slot: int) -> int | None:
+    """Width of graph input @p slot when it is a rank-2 [batch, N] tensor."""
+    if slot >= len(sig.inputs):
+        return None
+    dims = sig.inputs[slot].dims
+    if len(dims) != 2 or not isinstance(dims[1], int):
+        return None
+    return dims[1]
+
+
+def _sidecar_name_errors(label: str, sdata: dict[str, Any], sig: OnnxSignature) -> list[str]:
+    """Tensor names the sidecar states that the graph does not have."""
+    errors: list[str] = []
+    names = {
+        "input": [t.name for t in sig.inputs],
+        "output": [t.name for t in sig.outputs],
+    }
+    for io, actual in names.items():
+        listed = sdata.get(f"{io}_names")
+        if listed is not None and list(listed) != actual:
+            errors.append(f"{label}: {io}_names {listed} but the graph's {io}s are {actual}")
+        single = sdata.get(f"{io}_name")
+        if single is not None and single not in actual:
+            errors.append(f"{label}: {io}_name {single!r} is not a graph {io} ({actual})")
+    return errors
+
+
+def _sidecar_width_errors(label: str, sdata: dict[str, Any], sig: OnnxSignature) -> list[str]:
+    """Feature-list and codec-block widths that differ from the graph inputs."""
+    errors: list[str] = []
+    features = sdata.get("feature_order") or sdata.get("features")
+    width = _rank2_width(sig, 0)
+    if features is not None and width is not None and len(features) != width:
+        errors.append(f"{label}: {len(features)} feature names for a {width}-wide input")
+    codec = _rank2_width(sig, 1)
+    vocab = sdata.get("encoder_vocab")
+    if vocab is not None and codec != len(vocab) + 2:
+        errors.append(
+            f"{label}: encoder_vocab of {len(vocab)} entries describes a codec block of "
+            f"{len(vocab) + 2} slots, the graph's second input has {codec}"
+        )
+    if "codec_block_dim" in sdata and sdata["codec_block_dim"] != codec:
+        errors.append(f"{label}: codec_block_dim {sdata['codec_block_dim']}, graph {codec}")
+    layout = sdata.get("codec_block_layout")
+    if layout is not None and len(layout) != codec:
+        errors.append(f"{label}: codec_block_layout has {len(layout)} slots, graph {codec}")
+    return errors
+
+
+def _sidecar_graph_errors(mid: str, graph_path: Path, sig: OnnxSignature) -> list[str]:
+    """Hold the companion sidecar of @p graph_path to the graph it describes."""
+    sidecar = sidecar_for(graph_path)
+    if not sidecar.is_file():
+        return []
+    try:
+        sdata = json.loads(sidecar.read_text(encoding="utf-8"))
+    except ValueError as err:
+        return [f"{mid}: {sidecar.name} JSON parse error: {err}"]
+    label = f"{mid}: {sidecar.name}"
+    errors: list[str] = []
+    if "opset" in sdata and sdata["opset"] != sig.default_opset:
+        errors.append(
+            f"{label}: opset {sdata['opset']} but {graph_path.name} imports "
+            f"opset {sig.default_opset}"
+        )
+    # The sha256 of a sidecar names its own graph; an int8 file that falls
+    # back to the fp32 sidecar is not that graph.
+    if "sha256" in sdata and sidecar.stem == graph_path.stem:
+        got = hashlib.sha256(graph_path.read_bytes()).hexdigest()
+        if sdata["sha256"] != got:
+            errors.append(f"{label}: sha256 {sdata['sha256']} but {graph_path.name} is {got}")
+    return (
+        errors + _sidecar_name_errors(label, sdata, sig) + _sidecar_width_errors(label, sdata, sig)
+    )
+
+
+def _check_graph_metadata(m: dict[str, Any], mid: str, onnx_path: Path, errors: list[str]) -> None:
+    """Registry opset and sidecar metadata against the shipped graphs.
+
+    Reads every graph with ``aiutils.onnx_signature`` (no ``onnx`` needed),
+    the fp32 file and, for a quantised entry, its int8 sibling.
+    """
+    graphs = [onnx_path]
+    int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
+    if m.get("quant_mode", "fp32") != "fp32" and int8_path.is_file():
+        graphs.append(int8_path)
+    for graph_path in graphs:
+        try:
+            sig = read_signature(graph_path)
+        except (OSError, OnnxWireError, UnicodeDecodeError) as err:
+            errors.append(f"{mid}: cannot read {graph_path.name} as ONNX: {err}")
+            continue
+        opset = m.get("opset")
+        if opset is not None and sig.default_opset != opset:
+            errors.append(
+                f"{mid}: registry opset {opset} but {graph_path.name} imports "
+                f"opset {sig.default_opset}"
+            )
+        errors.extend(_sidecar_graph_errors(mid, graph_path, sig))
+
+
 def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
     """Cross-file invariants the schema cannot express (file existence, sha match)."""
     errors: list[str] = []
@@ -214,6 +316,8 @@ def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
                 errors.append(f"{mid}: missing sidecar {sidecar.name}")
 
         _check_quant_consistency(m, mid, onnx_path, errors)
+        if got == want:
+            _check_graph_metadata(m, mid, onnx_path, errors)
 
         bundle_rel = m.get("sigstore_bundle")
         if bundle_rel and not bundle_rel.endswith(".sigstore.json"):

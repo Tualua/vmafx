@@ -63,9 +63,11 @@ per-channel setting, the output path and `run_provenance`.
 ### Static PTQ
 
 1. Build a calibration `.npz`: one entry per ONNX input name, each a stack of
-   `[N, ...]` representative samples. Hand-craft it from a parquet feature
-   cache. `ai/scripts/build_calibration_set.py` is a stub that exits 1 with
-   "not yet implemented".
+   `[N, ...]` representative samples. No in-tree script writes it; hand-craft
+   it from a parquet feature cache or decoded frames. For the feature-vector
+   FR regressors, `vmaf-train quantize-int8` (see [training.md](training.md))
+   runs static PTQ calibrated from a parquet feature cache directly, without
+   an `.npz`.
 2. Quantise:
 
     ```bash

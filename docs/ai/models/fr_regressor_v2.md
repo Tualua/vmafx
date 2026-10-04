@@ -71,10 +71,12 @@ Two named tensors, dynamic batch axis:
 
 The shipped graph (read from the ONNX initialisers) is a GELU MLP over the
 concatenated 20-D input (6 features + 14 codec values): three hidden layers
-of 32 units, then a single output unit (about 2 820 parameters). The
-trainer's own defaults are `--hidden 16 --depth 2`
-(`ai/scripts/train_fr_regressor_v2.py`); the shipped checkpoint was exported
-with a wider setting, so pass `--hidden 32 --depth 3` to reproduce its shape.
+of 32 units, then a single output unit (about 2 820 parameters), the shape
+[ADR-0291](../../adr/0291-fr-regressor-v2-prod-ship.md) records. The trainer's
+defaults (`--hidden 32 --depth 3` in `ai/scripts/train_fr_regressor_v2.py`)
+reproduce it, and the sidecar's `training` block records `hidden` and
+`depth`. Before 2026-10-04 the defaults were `--hidden 16 --depth 2`, a
+smaller model than the shipped one.
 
 ## Output
 

@@ -42,7 +42,7 @@ reference stream.
 | Architecture | MobileNet-tiny — depthwise separable Conv stack; ~19 K params |
 | Input | `frame` — float32 NCHW `[batch, 1, 224, 224]` grayscale luma in `[0, 1]` |
 | Output | `mos` — float32 `[batch]` scalar MOS estimate |
-| ONNX opset | 18 declared in the ONNX file (registry and sidecar record 17) |
+| ONNX opset | 18 (the file, the registry and the sidecar agree; torch's exporter raises a requested 17 to 18) |
 | Training corpus | KoNViD-1k (1 200 clips; not redistributed in-tree; terms below) |
 | Val MSE | ~0.382 (RMSE ≈ 0.62 on 1–5 MOS, KoNViD-1k validation split) |
 | Quantisation | Dynamic-PTQ INT8 via `ai/scripts/ptq_dynamic.py`; `quant_accuracy_budget_plcc = 0.01` |

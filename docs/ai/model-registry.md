@@ -52,10 +52,10 @@ schema rejects unknown properties (`additionalProperties: false`).
 | `kind` | yes | `fr`, `nr` or `filter`. |
 | `onnx` | yes | ONNX path relative to `model/tiny/`. |
 | `sha256` | yes | Lowercase hex, 64 characters, of the exact ONNX bytes. A mismatch against the on-disk file is a hard error. |
-| `opset` | non-smoke | ONNX opset, 7 to 21; mirrors the sidecar `onnx_opset`. |
+| `opset` | non-smoke | ONNX opset of the default domain, 7 to 21, as the graph's `opset_import` declares it; the sidecar `opset` carries the same value. The validator checks both against the file and its int8 sibling. |
 | `smoke` | no | `true` for CI load-path probes, which are not quality models. |
 | `quant_mode` | no | `fp32` (default), `dynamic`, `static` or `qat`. Any other value than `fp32` makes the runtime load `<onnx>.int8.onnx`; see [quantization.md](quantization.md). |
-| `int8_sha256` | iff `quant_mode != "fp32"` | SHA-256 of the `.int8.onnx` file; checked before the runtime redirects to it. |
+| `int8_sha256` | iff `quant_mode != "fp32"` | SHA-256 of the `.int8.onnx` file. The validator checks it; the runtime redirect to the int8 file does not ([quantization.md](quantization.md)). |
 | `quant_calibration_set` | `static` only | Calibration tensor blob, relative to the repo root. |
 | `quant_accuracy_budget_plcc` | no | Maximum PLCC drop versus fp32; the CI `ai-quant-accuracy` job fails a quantised model beyond it. Default 0.01. |
 | `license` | schema version 1 | SPDX identifier. Fork-trained models use `BSD-2-Clause-Patent`, matching libvmaf. Upstream-derived models keep the upstream license verbatim (LPIPS-Sq is `BSD-2-Clause`). |
@@ -63,23 +63,25 @@ schema rejects unknown properties (`additionalProperties: false`).
 | `sigstore_bundle` | no | Path relative to `model/tiny/`, ending in `.sigstore.json`. |
 | `description` | no | One-line summary, distinct from `notes`. |
 | `notes` | no | Free-text provenance and training recipe, at most 512 characters. |
+| `release_url` | no | HTTPS URL of a release attachment holding the ONNX bytes, for a model not tracked in git; `scripts/ai/fetch-tiny-blobs.sh` downloads it and checks `sha256`. No shipped entry sets it, see [tiny-blob-storage.md](tiny-blob-storage.md). |
 
 The Sigstore bundle file is generated at release time by
 [`.github/workflows/supply-chain.yml`](../../.github/workflows/supply-chain.yml).
 Before a release the path is declared but the file may be absent. The runtime
 verifier (`--tiny-model-verify`) treats an absent bundle as fail-closed.
 
-!!! note
-    `scripts/ai/fetch-tiny-blobs.sh` reads an optional per-entry `release_url`
-    to fetch release-hosted blobs. The schema does not define that field yet and
-    no entry carries it, see [tiny-blob-storage.md](tiny-blob-storage.md).
-
 ## Validate the registry
 
 [`ai/scripts/validate_model_registry.py`](../../ai/scripts/validate_model_registry.py)
 runs the JSON Schema check and the cross-file consistency check: every ONNX
-exists, every `sha256` matches, every non-smoke entry has a sidecar. It is a CI
-gate; run it before pushing:
+exists, every `sha256` matches, every non-smoke entry has a sidecar. It also
+reads each graph (and its int8 sibling) with
+[`ai/src/aiutils/onnx_signature.py`](../../ai/src/aiutils/onnx_signature.py),
+which needs no `onnx` package, and fails when the registry `opset` or a
+sidecar's `opset`, `sha256`, `input_names` / `output_names`, `input_name` /
+`output_name`, feature-list length, `encoder_vocab`, `codec_block_dim` or
+`codec_block_layout` disagrees with the graph. It is a CI gate; run it before
+pushing:
 
 ```bash
 python3 ai/scripts/validate_model_registry.py \

@@ -1,51 +1,30 @@
 {
-  "codec_aware": true,
+  "codec_block_dim": 6,
   "codec_block_layout": [
-    "encoder_onehot[libx264]",
-    "encoder_onehot[libx265]",
+    "encoder_onehot[x264]",
+    "encoder_onehot[x265]",
     "encoder_onehot[libsvtav1]",
     "encoder_onehot[libvvenc]",
     "encoder_onehot[libvpx-vp9]",
-    "encoder_onehot[h264_nvenc]",
-    "encoder_onehot[hevc_nvenc]",
-    "encoder_onehot[av1_nvenc]",
-    "encoder_onehot[h264_qsv]",
-    "encoder_onehot[hevc_qsv]",
-    "encoder_onehot[av1_qsv]",
-    "encoder_onehot[unknown]",
-    "preset_norm",
-    "crf_norm"
+    "encoder_onehot[unknown]"
   ],
-  "corpus": {
-    "cq_max": 37.0,
-    "cq_min": 19.0,
-    "n_rows": 5640,
-    "path": "runs/phase_a/full_grid/per_frame_canonical6.jsonl",
-    "sha256": "58512e6c2400a8c7962d29f6a16fa090e6742f5746f2897128c381fb00808e3f"
-  },
-  "encoder_vocab": [
-    "libx264",
-    "libx265",
+  "codec_vocab": [
+    "x264",
+    "x265",
     "libsvtav1",
     "libvvenc",
     "libvpx-vp9",
-    "h264_nvenc",
-    "hevc_nvenc",
-    "av1_nvenc",
-    "h264_qsv",
-    "hevc_qsv",
-    "av1_qsv",
     "unknown"
   ],
-  "encoder_vocab_version": 2,
+  "codec_vocab_version": 1,
   "ensemble_id": "fr_regressor_v2_ensemble_v1",
   "feature_mean": [
-    0.9488429659574469,
-    0.48863492748226944,
-    0.8324482487588651,
-    0.8906773783687942,
-    0.924247489893617,
-    8.916842046099292
+    0.7032142877578735,
+    0.5660693049430847,
+    0.600159227848053,
+    0.6904767751693726,
+    0.7392338514328003,
+    14.969714164733887
   ],
   "feature_order": [
     "adm2",
@@ -56,57 +35,38 @@
     "motion2"
   ],
   "feature_std": [
-    0.04836998478470506,
-    0.175385340029403,
-    0.15623573778256045,
-    0.12199218152247363,
-    0.09415006541030543,
-    6.211059477666515
+    0.18295080959796906,
+    0.22868846356868744,
+    0.1891641765832901,
+    0.162204772233963,
+    0.13887861371040344,
+    8.37546443939209
   ],
-  "gate": {
-    "mean_plcc": 0.9972533887602454,
-    "mean_plcc_threshold": 0.95,
-    "passed": true,
-    "per_seed_min_threshold": 0.95,
-    "plcc_spread": 0.0009510602756565012,
-    "plcc_spread_max": 0.005,
-    "this_seed_loso_plcc": 0.9971592269106849,
-    "verdict": "PROMOTE"
-  },
   "id": "fr_regressor_v2_ensemble_v1_seed1",
   "input_names": [
     "features",
     "codec_onehot"
   ],
   "kind": "fr",
-  "loso_mean_plcc": 0.9972533887602454,
-  "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=1). Fit on full Phase A canonical-6 corpus (5640 rows) after the 9-fold LOSO gate passed per PROMOTE.json (verdict=PROMOTE, mean_plcc=0.9973). 6 canonical libvmaf features (adm2, vif_scale0..3, motion2) + 14-D codec block (12-slot encoder one-hot v2 + preset_norm + crf_norm) -> VMAF teacher score. See docs/ai/models/fr_regressor_v2_probabilistic.md, fr_regressor_v2_ensemble_v1.json (ensemble manifest), ADR-0303, ADR-0309, ADR-0319, ADR-0321.",
+  "notes": "Smoke member of fr_regressor_v2_ensemble_v1 (seed=1): trained by ai/scripts/train_fr_regressor_v2_ensemble.py --smoke on a synthetic corpus (manifest in-sample PLCC -0.197), not a quality model. Inputs: 6 canonical libvmaf features standardised with feature_mean / feature_std, and a 6-slot one-hot over codec_vocab with no preset or CRF slot; libvmaf's --tiny-model path cannot fill that block and refuses the model. The LOSO-gated production weights (ADR-0321, codec_vocab 14) are not shipped; their gate record is fr_regressor_v2_ensemble_v1_seed_flip_PROMOTE.json and the production flip waits for the one-shot retrain (ADR-1105).",
   "onnx": "fr_regressor_v2_ensemble_v1_seed1.onnx",
   "opset": 17,
   "output_names": [
     "score"
   ],
-  "parent_adrs": [
-    "ADR-0303",
-    "ADR-0309",
-    "ADR-0319",
-    "ADR-0321"
-  ],
   "seed": 1,
-  "sha256": "42d86249d41aaff5d93547a744bb251d89085475e6e10197815a612c44894f5a",
+  "sha256": "4d6824fafceb6e3f1fdb6b2306167e0951b5eac8f54318c7cb4eb82284c3025b",
+  "smoke": true,
   "training_recipe": {
-    "batch_size": 32,
+    "batch_size": 256,
+    "corpus": "synthetic (--smoke)",
     "depth": 2,
     "dropout": 0.1,
-    "epochs": 200,
-    "fit_set": "full_corpus",
+    "epochs": 1,
     "hidden": 64,
     "in_features": 6,
-    "loss": "MSE",
-    "lr": 0.0005,
-    "num_codecs": 14,
-    "optimizer": "Adam",
-    "scaler": "fit_on_full_corpus",
+    "lr": 0.001,
+    "num_codecs": 6,
     "weight_decay": 1e-05
   }
 }
