@@ -47,7 +47,7 @@ and `psnr_hvs_sycl` (luma and chroma), `float_psnr_sycl`, `float_adm_sycl`,
 `float_vif_sycl`, `integer_ssim_sycl`, `float_ssim_sycl`,
 `float_ms_ssim_sycl`, `ciede_sycl`, `ssimulacra2_sycl`, `speed_chroma_sycl`
 and `speed_temporal_sycl`. Both `vmaf_v0.6.1` and `vmaf_float_v0.6.1` score
-on it. On an Arc A380 the full FFmpeg harness (`pass=48 fail=0 nonexact=0`,
+on it. On an Arc A380 the full FFmpeg harness (`pass=50 fail=0 nonexact=0`,
 8-bit NV12 and 10-bit P010) finds every value equal to the CPU's, or, for
 `motion_add_uv` (the integer CPU `motion` has no such option), equal to the
 host-upload run of the same twin. Two cases are still refused with

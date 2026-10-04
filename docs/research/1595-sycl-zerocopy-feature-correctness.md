@@ -253,7 +253,7 @@ The branch was rebased from `397997897` onto `VMAFx/master` `b01ffe42d` (104
 master commits, among them the SYCL raster-order sums of `float_ssim` and
 `float_ms_ssim`, strict FP in every translation unit, the Xe2 sub-group sizes
 and master's own `motion3` and SpEED fixes). The branch's ADRs moved to
-ADR-1595 to ADR-1599 and this digest from Research-1461. Three branch commits
+ADR-1504 to ADR-1508 (now ADR-1595 to ADR-1599) and this digest from Research-1461. Three branch commits
 were dropped because master fixed the same thing first: `float_motion_sycl`'s
 `motion3` (#1914), the correctly rounded CPU SpEED `log2` with its ADR
 (master's [ADR-1477](../adr/1477-speed-upstream-double-math.md) forms the
@@ -282,6 +282,29 @@ on src01 at 10 bit (identical before the rebase). Master's builds link glibc's
 `libm` in icx builds ([ADR-1495](../adr/1495-icx-system-libm.md)), so the CPU
 `ciede` leg's `powf` changed library; the twin's arithmetic is master's.
 
+## Re-validation after the rebase onto master `7fdefb4e8` (2026-10-04)
+
+The branch was rebased onto master `7fdefb4e8` with
+`feat/vmafx-container-hybrid-toolchain` (ADR-1439, ADR-1593, ADR-1594)
+underneath. Master and other open branches had taken ADR numbers 1504 to 1508
+and 1561 to 1568 in the meantime, so the branch's ADRs moved (1504 to 1508, then
+1564 to 1568) to ADR-1595 to ADR-1599 and this digest to Research-1595.
+Master had moved the SYCL backend page into sub-pages; the zero-copy behaviour
+now lives in `docs/backends/sycl/zero-copy.md`. The three zero-copy test
+executables pass ADR-1593's `test_link_kwargs`.
+
+Arc A380, `scripts/test/sycl-dev-container.sh` (JIT build from scratch,
+`UR_L0_USE_IMMEDIATE_COMMANDLISTS=0`):
+
+| Check | Result |
+| --- | --- |
+| `meson test --suite sycl` | 70 of 70 |
+| `meson test --suite fast` | 360 OK, 1 skipped, 0 failures (`test_sycl_ordered_sum` passes with the probe fix) |
+| `zerocopy-e2e.sh --stage 3 --bench --repeat 5`, 8-bit NV12 | `pass=50 fail=0 nonexact=0`, 76.92 fps |
+| same, 10-bit P010 | `pass=50 fail=0 nonexact=0`, 76.34 fps |
+| Netflix golden gate (GCC golden profile, ADR-1317) | 280 passed, 3 skipped |
+| FFmpeg series replay on `n9.0.2` | 20 of 20 patches, `libvmaf` and `libvmaf_sycl` filters built |
+
 ## Open items
 
 - **Stage 2** (done, above): chroma import for `psnr`, `psnr_hvs`, `motion_add_uv`.
@@ -289,5 +312,7 @@ on src01 at 10 bit (identical before the rebase). Master's builds link glibc's
 - **Stage 3** (done, above): the float, SSIM, MS-SSIM, ciede, ssimulacra2 and SpEED
   extractors read the shared planes; `float_motion_sycl` gained `motion_add_uv`.
 - The D3D11 import has no chroma (out of scope); readers fail loudly there too.
-- `test_sycl_ordered_sum` fails on the A380 independently of this work
-  (`T-SYCL-ORDERED-SUM-A380-GARBAGE-2026-10-02`).
+- `test_sycl_ordered_sum` failed on the A380 because its probe freed the host
+  sources of a deferred copy; fixed on this branch
+  (`T-SYCL-ORDERED-SUM-A380-GARBAGE-2026-10-02`,
+  `T-SYCL-ORDERED-SUM-MALLOC-PERTURB-2026-10-03`).

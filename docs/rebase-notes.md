@@ -811,27 +811,6 @@ rebased onto master `b01ffe42d`, where it was first ADR-1439..1441).
   `scripts/ci/run_meson_test.py` and is listed in the runner inventory of
   `core/test/test_meson_secret_env_sanitization.py`.
 
-## The images add `libm.so.6` to oneAPI's `libimf.so` dependencies (ADR-1563, 2026-10-04)
-
-`feat/vmafx-container-hybrid-toolchain`. Fork-only container and test
-change; no upstream file is touched and no score moves.
-
-- `scripts/ci/patch-oneapi-libimf.sh` (new) is the one implementation; it
-  runs in `Containerfile.vmafx` (`build` stage, after `intel-basekit`) and
-  `dev/Containerfile` (`gpu-sdks`, after the oneAPI environment). A rebase
-  that moves or replaces a oneAPI install keeps the step after it, with its
-  pinned patchelf (Ubuntu 26.04 `0.18.0-1.4build1`). The `prod` stage runs
-  `LD_BIND_NOW=1 vmaf --version` as a build gate; keep it.
-- `docker/Dockerfile.production-gpu` is not patched: since ADR-1517 its
-  `-oneapi2026` image copies Intel's runtime files unmodified
-  (`tools/rc1-tester/image/sycl-runtime.json`). Patching `libimf.so` there
-  needs a licensing decision.
-- `core/test/test_icx_system_libm.py::_loader_trace()` runs the loader check
-  against a patched private copy when the `libimf.so` the CLI loads lacks
-  `libm.so.6`, and skips without patchelf. Never substitute
-  `LD_PRELOAD=libimf.so`: it rebinds libvmaf's math to libimf (ADR-1495).
-- On a oneAPI bump, re-check `readelf -d` of the new `libimf.so`; once it
-  lists `libm.so.6` the step is a no-op and can go with a superseding ADR.
 ## SYCL zero-copy Stage 3: every extractor reads the shared planes, and the fixes the harness forced (2026-10-03)
 
 `fix/sycl-zerocopy-features`, Stage 3 of the zero-copy feature-correctness work,
@@ -60890,23 +60869,3 @@ upstream parity guard's allowlist.
   `queue.CancelledAmong`; the node's `runJob` uses a per-job
   `context.WithCancelCause`. Keep the tenant in the SQL `WHERE` and the
   64-entry bound. No score, public C API or FFmpeg patch impact.
-  An upstream change to `float_motion.c`'s `motion3` must reach this twin and
-  `float_motion_cuda.c` in the same PR.
-
-## ADR-1596 — SYCL primary queue on immediate command lists (2026-10-02)
-
-`fix/sycl-zerocopy-features`, [ADR-1596](adr/1596-sycl-va-import-immediate-cmdlist.md);
-row `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02` in [state.md](state.md).
-
-- `core/src/sycl/common.cpp::sycl_queue_props()` adds
-  `sycl::ext::intel::property::queue::immediate_command_list` (under
-  `SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`) to the primary queue in both
-  the profiling and the plain form. The VA import in `dmabuf_import.cpp` must
-  stay on that queue (`vmaf_sycl_get_queue_ptr()`): a separate immediate
-  import-only queue next to a batched primary queue still drops the import.
-- A rebase that restructures queue creation (another adapter, a queue pool, a
-  merge with the copy or combined queue) keeps the property on the queue the
-  imports are made against and `vmaf_sycl_queue_wait()` waits on, and re-runs
-  `scripts/test/zerocopy-e2e.sh --stage 1 --repeat 10 --cases cambi,vif,model-vmaf_v0.6.1`
-  at 8 and 10 bit under `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` (0 differing runs).
-- No Netflix golden-data, public API or FFmpeg patch impact.
