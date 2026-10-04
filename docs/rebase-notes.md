@@ -60717,3 +60717,11 @@ upstream parity guard's allowlist.
   `auth.tenants[].scoring` carry the configuration. Deny by default: a sync
   must not make an empty root list admit inputs, nor drop the node-side
   check. No score, public C API or FFmpeg patch impact.
+
+## vmaf-tune predictor trainer uses the shared ONNX exporter
+
+- `tools/vmaf-tune/src/vmaftune/predictor_train.py::_export_onnx()` delegates to
+  `ai/src/vmaf_train/models/exports.py::export_to_onnx()`; it must not regain a
+  `torch.onnx.export(..., dynamo=False)` call. `_ensure_ai_src_importable()` is
+  the single place that adds `ai/src` to `sys.path`. No score, public API or
+  FFmpeg patch impact. Guard: `tools/vmaf-tune/tests/test_predictor_train.py`.

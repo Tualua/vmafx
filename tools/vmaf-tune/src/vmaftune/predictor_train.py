@@ -546,22 +546,44 @@ def _ranks(values: Sequence[float]) -> list[float]:
     return ranks
 
 
-def _export_onnx(model: Any, output: Path, opset: int) -> None:
-    """Export ``model`` to ONNX. Caller must hand a CPU model in eval mode."""
-    import torch  # type: ignore[import-not-found]
+def _ensure_ai_src_importable() -> bool:
+    """Put ``ai/src`` on ``sys.path`` so ``vmaf_train`` imports; False if absent.
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    dummy = torch.zeros(1, INPUT_DIM, dtype=torch.float32)
-    torch.onnx.export(
+    The trainer lives in ``tools/``, whose default ``sys.path`` does not
+    see the ``vmaf_train`` package.
+    """
+    repo_root = Path(__file__).resolve().parents[4]
+    ai_src = repo_root / "ai" / "src"
+    if not ai_src.is_dir():
+        return False
+    if str(ai_src) not in sys.path:
+        sys.path.insert(0, str(ai_src))
+    return True
+
+
+def _export_onnx(model: Any, output: Path, opset: int) -> None:
+    """Export ``model`` to ONNX. Caller must hand a CPU model in eval mode.
+
+    One exporter for every tiny-model trainer: ``vmaf_train``'s
+    ``export_to_onnx()`` (torch.export based, dynamic batch axis, op
+    allowlist and onnxruntime roundtrip checks). The TorchScript
+    exporter this function used to call is deprecated since torch 2.9.
+    """
+    if not _ensure_ai_src_importable():
+        raise RuntimeError(
+            "ai/src is missing next to tools/: the ONNX export needs "
+            "vmaf_train.models.exports.export_to_onnx"
+        )
+    from vmaf_train.models.exports import (
+        export_to_onnx,  # type: ignore[import-not-found]
+    )
+
+    export_to_onnx(
         model,
-        dummy,
-        str(output),
-        input_names=["input"],
-        output_names=["vmaf"],
-        opset_version=opset,
-        do_constant_folding=True,
-        training=torch.onnx.TrainingMode.EVAL,
-        dynamo=False,
+        output,
+        in_shape=(1, INPUT_DIM),
+        output_name="vmaf",
+        opset=opset,
     )
 
 
@@ -574,12 +596,7 @@ def _check_op_allowlist(onnx_path: Path) -> tuple[bool, tuple[str, ...]]:
     runtime predictor stack.
     """
     try:
-        # Make ai/src importable; the trainer lives in tools/ so the
-        # default sys.path does not see it.
-        repo_root = Path(__file__).resolve().parents[4]
-        ai_src = repo_root / "ai" / "src"
-        if ai_src.is_dir() and str(ai_src) not in sys.path:
-            sys.path.insert(0, str(ai_src))
+        _ensure_ai_src_importable()
         from vmaf_train.op_allowlist import (
             check_model,  # type: ignore[import-not-found]
         )

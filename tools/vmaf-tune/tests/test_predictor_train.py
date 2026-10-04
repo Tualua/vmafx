@@ -102,6 +102,22 @@ def test_train_synthetic_corpus_emits_onnx(tmp_path: Path) -> None:
     assert 0.0 <= val <= 100.0
 
 
+def test_export_onnx_uses_shared_exporter_with_dynamic_batch(tmp_path: Path) -> None:
+    """``_export_onnx`` goes through ``vmaf_train``'s exporter (no TorchScript path).
+
+    The shared exporter exports a dynamic batch axis; a batch of 3 through
+    onnxruntime proves the graph is not frozen at the dummy's batch of 1.
+    """
+    model = predictor_train._build_model().cpu().eval()
+    out = tmp_path / "m.onnx"
+    predictor_train._export_onnx(model, out, opset=17)
+    sess = ort.InferenceSession(str(out), providers=["CPUExecutionProvider"])
+    assert [o.name for o in sess.get_outputs()] == ["vmaf"]
+    batch = np.zeros((3, INPUT_DIM), dtype=np.float32)
+    (got,) = sess.run(None, {"input": batch})
+    assert got.shape == (3, 1)
+
+
 def test_train_val_split_is_deterministic_with_seed() -> None:
     rows = [{"i": i} for i in range(20)]
     a_train, a_val = train_val_split(rows, val_fraction=0.2, seed=42)
@@ -377,7 +393,11 @@ def test_pick_crf_uses_onnx_when_present() -> None:
     if not onnx_path.is_file():
         pytest.skip("shipped model not present")
 
-    p = Predictor(model_path=onnx_path)
+    # The shipped model is the synthetic-stub placeholder;
+    # Predictor warns at load, and the warning is part of the contract.
+    with pytest.warns(UserWarning, match="synthetic-stub"):
+        p = Predictor(model_path=onnx_path)
+    assert p.is_stub
     assert p._onnx_session is not None, "ONNX session must be live when model_path is set"
 
     feats = ShotFeatures(

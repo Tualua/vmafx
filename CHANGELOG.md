@@ -4878,6 +4878,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   they meant.
 
 
+- **`vmaf-tune`'s predictor trainer exports ONNX through the shared exporter.**
+  `predictor_train._export_onnx()` called the TorchScript exporter, deprecated
+  since torch 2.9, and failed under warnings-as-errors with torch installed.
+  It now calls `vmaf_train.models.exports.export_to_onnx()` like the other tiny
+  model trainers: torch.export based, dynamic batch axis, op-allowlist and
+  onnxruntime round-trip checks. The exported graph keeps the input name
+  `input` and the output name `vmaf`; its batch axis is now dynamic.
+
+
 - **`vmaf-tune` and `vmafx-tune-go recommend-saliency` accept frame heights that are
   not a multiple of 8.** Both tools refused them (a 576x324 clip included) before
   running the saliency model, although they already zero-pad the tensor to a multiple
