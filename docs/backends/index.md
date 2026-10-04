@@ -274,7 +274,7 @@ VA-API import (QSV) imports the 4:2:0 chroma planes too, so `psnr`, `psnr_hvs`,
 `ciede`, `ssimulacra2`, `speed_chroma` and `motion_add_uv` run there. The
 D3D11 import is luma only and its chroma readers fail with `needs chroma planes,
 which this zero-copy import did not provide`, see the
-[SYCL overview](sycl/overview.md#psnr-psnr_hvs-and-motion_v2-share-the-uploaded-frame-adr-1369-2026-09-29).
+[SYCL backend history](sycl/history.md#psnr-psnr_hvs-and-motion_v2-share-the-uploaded-frame-adr-1369-2026-09-29).
 
 ## Related
 

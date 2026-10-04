@@ -45,6 +45,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 VMAF = os.environ.get("VMAF_BIN", "/src/vmafx/build/tools/vmaf")
 YUV = Path(os.environ.get("YUV_DIR", "python/test/resource/yuv"))
@@ -101,7 +102,7 @@ XBACKEND_METRICS = [
 ]
 
 
-def run(ref, dist, w, h, backend):
+def run(ref: str, dist: str, w: int, h: int, backend: str) -> dict[str, Any] | None:
     """Run vmaf for one pair on one backend; return pooled_metrics or None."""
     out = Path(tempfile.gettempdir()) / ("reference_report_%s.json" % backend)
     cmd = [
@@ -138,22 +139,23 @@ def run(ref, dist, w, h, backend):
         return None
     try:
         with out.open() as f:
-            return json.load(f)["pooled_metrics"]
+            pooled: dict[str, Any] = json.load(f)["pooled_metrics"]
+            return pooled
     except (OSError, ValueError, KeyError) as e:
         sys.stderr.write("  [report] parse failed: %s\n" % e)
         return None
 
 
-def cell(v):
+def cell(v: float | None) -> str:
     return "%.6f" % v if v is not None else "  n/a"
 
 
-def verdict(delta, tol):
+def verdict(delta: float | None, tol: float) -> tuple[str, bool]:
     ok = delta is not None and delta <= tol
     return (GRN + "PASS" + C0) if ok else (RED + "FAIL" + C0), ok
 
 
-def golden_table(gpu):
+def golden_table(gpu: bool) -> bool:
     """Netflix golden: VMAF vs the Netflix reference (CPU + SYCL). True if all pass."""
     all_ok = True
     print("\n  Netflix golden — VMAF vs Netflix reference (CPU%s)" % (" + SYCL" if gpu else ""))
@@ -189,7 +191,7 @@ def golden_table(gpu):
     return all_ok
 
 
-def parity_table():
+def parity_table() -> bool:
     """Cross-backend parity: SYCL vs CPU per feature (ADR-0214). True if all pass."""
     all_ok = True
     print(
@@ -221,7 +223,7 @@ def parity_table():
     return all_ok
 
 
-def main():
+def main() -> int:
     gpu = not NO_SYCL
     all_ok = golden_table(gpu)
     if gpu:
