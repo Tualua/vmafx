@@ -4863,6 +4863,7 @@
     "0819": {
       "sites": {
         ".github/workflows/dev-container-build.yml": 1,
+        ".github/workflows/release-dry-run.yml": 1,
         ".github/workflows/supply-chain.yml": 2,
         "scripts/ci/build-dev-container-stage.sh": 1,
         "scripts/ci/check-dev-container-build-secret.py": 2,
@@ -6615,7 +6616,8 @@
         ".github/workflows/security-scans.yml": 4,
         ".github/workflows/tests-and-quality-gates.yml": 15,
         ".pre-commit-config.yaml": 1,
-        "scripts/ci/plan-ci-impact.py": 1
+        "scripts/ci/plan-ci-impact.py": 1,
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1
       },
       "target": "1140-ci-impact-planner.md"
     },
@@ -10045,7 +10047,7 @@
     },
     "1516": {
       "sites": {
-        ".github/workflows/windows-tester-bundle.yml": 4,
+        ".github/workflows/windows-tester-bundle.yml": 5,
         "scripts/ci/build-windows-tester-bundle.py": 1,
         "tools/rc1-tester/src/vmaf_rc1_tester/hw_cuda.py": 1,
         "tools/rc1-tester/src/vmaf_rc1_tester/hw_cudaprobe.py": 1,
@@ -10293,7 +10295,7 @@
     },
     "1566": {
       "sites": {
-        ".github/workflows/windows-tester-bundle.yml": 4,
+        ".github/workflows/windows-tester-bundle.yml": 5,
         "core/test/test_sycl_kernel_scratch.c": 1,
         "scripts/ci/build-windows-tester-bundle.py": 2,
         "scripts/ci/check-windows-bundle-imports.py": 1,
@@ -10453,6 +10455,17 @@
         "tools/rc1-tester/tests/test_windows_bundle.py": 2
       },
       "target": "1594-zstd-images-zopfli-zips.md"
+    },
+    "1595": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 3,
+        ".github/workflows/macos-tester-bundle.yml": 1,
+        ".github/workflows/release-dry-run.yml": 1,
+        ".github/workflows/windows-tester-bundle.yml": 2,
+        "scripts/ci/release-dry-run-plan.sh": 1,
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1
+      },
+      "target": "1595-pr-time-verify-push-only-workflows.md"
     }
   },
   "retired": {

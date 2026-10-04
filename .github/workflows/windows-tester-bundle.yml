@@ -1,6 +1,11 @@
 # windows-tester-bundle -- build, test, attest and publish the Windows tester zips.
 #
 # Triggers:
+#   - pull request that touches the zip's own inputs (same path list as the push): the
+#     x64 zip only, built, run and verified, uploaded as a workflow artifact; nothing is
+#     published. The arm64, x64 CUDA and x64 SYCL zips stay with the push run: three more Windows
+#     builds of up to 150 minutes each are too much runner time per pull request, and
+#     the x64 zip exercises every script and the licence gate they share (ADR-1595)
 #   - push to master that touches the zip's own inputs: build and verify both zips
 #     (x64, arm64) and upload them as workflow artifacts; nothing is published
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
@@ -26,6 +31,19 @@
 name: Publish Windows Tester Bundle
 
 on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/windows-tester-bundle.yml
+      - scripts/ci/build-windows-tester-bundle.py
+      - requirements/locks/windows-tester-zip.txt
+      - scripts/ci/check-windows-bundle-imports.py
+      - tools/rc1-tester/image/windows/**
+      - tools/rc1-tester/image/unit-tests-windows.txt
+      - tools/rc1-tester/image/cuda-tests.txt
+      - tools/rc1-tester/image/sycl-tests.txt
+      - tools/rc1-tester/image/sycl-runtime-windows.json
   push:
     branches: [master]
     paths:
@@ -55,8 +73,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-tester-bundle-${{ github.event.inputs.ref || github.event.inputs.tag || github.sha }}
-  cancel-in-progress: false
+  group: windows-tester-bundle-${{ github.event.pull_request.number || github.event.inputs.ref || github.event.inputs.tag || github.sha }}
+  # A newer push to a pull request replaces its older verify run; a master push or a
+  # dispatch (which can publish) is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # python-build-standalone 20261001, CPython 3.13.16 (the macOS bundle's release),
@@ -83,11 +103,14 @@ env:
 jobs:
   validate:
     name: Validate source
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     outputs:
+      build-matrix: ${{ steps.src.outputs.build_matrix }}
+      verify-matrix: ${{ steps.src.outputs.verify_matrix }}
       source-sha: ${{ steps.src.outputs.source_sha }}
       describe: ${{ steps.src.outputs.describe }}
       release-tag: ${{ steps.src.outputs.release_tag }}
@@ -104,14 +127,16 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           PUBLISH_INPUT: ${{ github.event.inputs.publish }}
         run: |
-          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" != pull_request && \
+                "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
             echo "ERROR: run this workflow on $DEFAULT_BRANCH, not $GITHUB_REF" >&2
             exit 1
           fi
           git fetch --tags --force origin
           publish=false
-          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
-            # A push to master: build and verify only.
+          if [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            # A push to master or a pull request (its merge commit): build and
+            # verify only.
             source_sha="$GITHUB_SHA"
           elif [[ -n "$TAG" && -n "$REF" ]] || [[ -z "$TAG" && -z "$REF" ]]; then
             echo "ERROR: give exactly one of the inputs ref and tag" >&2
@@ -145,7 +170,23 @@ jobs:
             echo "ERROR: no v*.*.* tag is reachable from $source_sha" >&2
             exit 1
           fi
+          # The zips the build and verify jobs cover: all four on a push or a dispatch,
+          # the x64 CPU zip alone on a pull request (ADR-1595). arm64 is the native
+          # ARM64 MSVC runner of the `Windows ARM64 MSVC` lane (libvmaf-build-matrix.yml,
+          # ADR-1260 / ADR-1297). x64-cuda is the CUDA zip (ADR-1516): the CPU zip's
+          # build with the CUDA backend and its device tests; the runner has no GPU, so
+          # its report says no_device and the device measurements happen on the
+          # tester's PC. x64-sycl is the SYCL zip (ADR-1566): icx-cl, /MD, the SYCL
+          # backend and its device tests, with no Intel GPU on the runner either.
+          build_matrix='{"include":[{"name":"x64","arch":"x64","gpu":"","runner":"windows-2025"},{"name":"arm64","arch":"arm64","gpu":"","runner":"windows-11-vs2026-arm"},{"name":"x64-cuda","arch":"x64","gpu":"cuda","runner":"windows-2025"},{"name":"x64-sycl","arch":"x64","gpu":"sycl","runner":"windows-2025"}]}'
+          verify_matrix='{"name":["x64","arm64","x64-cuda","x64-sycl"]}'
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            build_matrix="$(jq -c '{include: [.include[] | select(.name == "x64")]}' <<<"$build_matrix")"
+            verify_matrix='{"name":["x64"]}'
+          fi
           {
+            echo "build_matrix=$build_matrix"
+            echo "verify_matrix=$verify_matrix"
             echo "source_sha=$source_sha"
             echo "describe=$describe"
             echo "release_tag=tester-windows-$(date -u +%Y%m%d)-${source_sha:0:8}"
@@ -162,32 +203,9 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: x64
-            arch: x64
-            gpu: ''
-            runner: windows-2025
-          # Native ARM64 MSVC, the runner of the `Windows ARM64 MSVC` lane
-          # (libvmaf-build-matrix.yml, ADR-1260 / ADR-1297).
-          - name: arm64
-            arch: arm64
-            gpu: ''
-            runner: windows-11-vs2026-arm
-          # The CUDA zip (ADR-1516): the CPU zip's build with the CUDA backend
-          # and its device tests; the runner has no GPU, so its report says
-          # no_device and the device measurements happen on the tester's PC.
-          - name: x64-cuda
-            arch: x64
-            gpu: cuda
-            runner: windows-2025
-          # The SYCL zip (ADR-1566): icx-cl, /MD, the SYCL backend and its device
-          # tests; the runner has no Intel GPU, so its report says no_device and the
-          # device measurements happen on the tester's PC.
-          - name: x64-sycl
-            arch: x64
-            gpu: sycl
-            runner: windows-2025
+      # x64 (CPU), arm64, x64-cuda (ADR-1516) and x64-sycl (ADR-1566); the validate job
+      # narrows it to x64 on a pull request.
+      matrix: ${{ fromJSON(needs.validate.outputs.build-matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -378,8 +396,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        name: [x64, arm64, x64-cuda, x64-sycl]
+      matrix: ${{ fromJSON(needs.validate.outputs.verify-matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

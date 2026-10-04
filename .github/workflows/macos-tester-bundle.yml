@@ -1,7 +1,13 @@
 # macos-tester-bundle -- build, test, attest and publish the macOS arm64 tester bundle.
 #
-# Trigger: workflow_dispatch on master with exactly one of `ref` (a master commit SHA,
-# or `master`) or `tag` (an existing published release tag). The bundle is built from
+# Triggers:
+#   - schedule (weekly, Monday 04:23 UTC): build and verify master's head, no publish.
+#     A macOS runner bills at ten times a Linux one, so this is not a per-pull-request
+#     gate; the weekly run is the standing check that the bundle still builds, and a
+#     failure of it is a defect to open (ADR-1595). Pull requests that change the
+#     bundle's inputs are verified here by a dispatch on their merge commit.
+#   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA,
+#     or `master`) or `tag` (an existing published release tag). The bundle is built from
 # that commit's source with this ref's build recipe (ADR-1347 pattern). A bundle is
 # evidence for the commit it was built from, not a product release (ADR-1493).
 # `publish: false` (default) builds, runs the bundle's own report on the hosted
@@ -17,6 +23,8 @@
 name: Publish macOS Tester Bundle
 
 on:
+  schedule:
+    - cron: "23 4 * * 1"
   workflow_dispatch:
     inputs:
       ref:
@@ -77,12 +85,16 @@ jobs:
             echo "ERROR: dispatch this workflow on $DEFAULT_BRANCH, not $GITHUB_REF" >&2
             exit 1
           fi
-          if [[ -n "$TAG" && -n "$REF" ]] || [[ -z "$TAG" && -z "$REF" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" != schedule ]] && \
+             { [[ -n "$TAG" && -n "$REF" ]] || [[ -z "$TAG" && -z "$REF" ]]; }; then
             echo "ERROR: give exactly one of the inputs ref and tag" >&2
             exit 1
           fi
           git fetch --tags --force origin
-          if [[ -n "$TAG" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            # The weekly run: master's head, build and verify only.
+            source_sha="$GITHUB_SHA"
+          elif [[ -n "$TAG" ]]; then
             git checkout --detach "refs/tags/$TAG"
             scripts/release/verify-release-version.sh "$TAG"
             release_json="$RUNNER_TEMP/github-release.json"

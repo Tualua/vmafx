@@ -1,6 +1,12 @@
 # docker-publish-tester -- build, test, push, sign and attest the VMAFx tester image.
 #
 # Triggers:
+#   - pull request that touches the tester image inputs (same path list as the push):
+#     the amd64 image only, built, run through the documented `docker run` line and
+#     its report validated; nothing is pushed. The arm64 image and the three GPU
+#     images are left to the push run below because their runners (a native arm64
+#     host, two hours of GPU-toolkit builds) cost too much per pull request; the
+#     Dockerfile stage contract tests cover the GPU stages in the meantime (ADR-1595)
 #   - push to master that touches the tester image inputs: build, run the
 #     documented `docker run` line and validate the report; nothing is pushed
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
@@ -32,6 +38,22 @@
 name: Publish Tester Image
 
 on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - docker/Dockerfile.tester
+      - tools/rc1-tester/**
+      - scripts/ci/install-intel-ocloc.sh
+      - scripts/ci/install-cuda-toolkit.sh
+      - scripts/ci/install-rocm-from-image.sh
+      - build-config.env
+      - dev/scripts/fetch-intel-neo.py
+      - python/requirements-test-lock.txt
+      - REUSE.toml
+      - LICENSES/**
+      - docs/hardware-reports/report.schema.json
+      - .github/workflows/docker-publish-tester.yml
   push:
     branches: [master]
     paths:
@@ -60,8 +82,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-publish-tester-${{ github.event.inputs.ref || github.event.inputs.tag || github.sha }}
-  cancel-in-progress: false
+  group: docker-publish-tester-${{ github.event.pull_request.number || github.event.inputs.ref || github.event.inputs.tag || github.sha }}
+  # A newer push to a pull request replaces its older verify run; a master push or a
+  # dispatch (which can publish) is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io
@@ -79,11 +103,13 @@ env:
 jobs:
   validate:
     name: Validate source
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     outputs:
+      matrix: ${{ steps.src.outputs.matrix }}
       publish: ${{ steps.src.outputs.publish }}
       ref: ${{ steps.src.outputs.ref }}
       source-sha: ${{ steps.src.outputs.source_sha }}
@@ -102,7 +128,8 @@ jobs:
         run: |
           git fetch --tags --force origin
           if [[ -z "$PUBLISH_TAG" && -z "$SOURCE_REF" ]]; then
-            # A push to master: build and test only.
+            # A push to master or a pull request (its merge commit): build and
+            # test only.
             source_sha="$GITHUB_SHA"
             publish=false
           elif [[ -n "$PUBLISH_TAG" && -n "$SOURCE_REF" ]]; then
@@ -151,7 +178,14 @@ jobs:
             echo "ERROR: no v*.*.* tag is reachable from $source_sha" >&2
             exit 1
           fi
+          # The platforms the build job covers: both on a push or a dispatch, amd64 only
+          # on a pull request (ADR-1595).
+          matrix='{"include":[{"arch":"amd64","platform":"linux/amd64","runner":"ubuntu-latest"},{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-26.04-arm"}]}'
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            matrix="$(jq -c '{include: [.include[] | select(.arch == "amd64")]}' <<<"$matrix")"
+          fi
           {
+            echo "matrix=$matrix"
             echo "publish=$publish"
             echo "ref=$source_sha"
             echo "source_sha=$source_sha"
@@ -205,14 +239,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-26.04-arm
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
     permissions:
       contents: read
       packages: write
@@ -574,6 +601,10 @@ jobs:
   build-gpu:
     name: Build and test the ${{ matrix.vendor }} GPU image (amd64)
     needs: validate
+    # Not on a pull request: three toolkit images are up to six hours of runner time
+    # (ADR-1595). The push to master that merges the change runs them, and the
+    # Dockerfile stage contract test checks the stages meanwhile.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:

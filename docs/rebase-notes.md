@@ -41,6 +41,18 @@ search:
   finds the launch section by content. A sync keeps both; the contract must not
   go back to pinning a heading. The third failure on master
   (`test_validation_report_provenance.py`) is fixed by #2045.
+## Release and tester workflows verify before they publish (ADR-1595, 2026-10-04)
+
+`feat/ci-release-workflow-dry-run`. Workflow triggers, one new workflow, one extracted script.
+
+- `docker-publish-tester.yml` and `windows-tester-bundle.yml` carry a `pull_request`
+  trigger whose `paths:` equals their `push` list, and their `validate` jobs output the
+  build matrix (`matrix`; `build-matrix`, `verify-matrix`). A sync that adds a leg adds
+  it to that JSON, not to a literal `matrix:`; one that adds a path adds it to both
+  lists (`test_pull_request_trigger_has_the_push_paths`).
+- `supply-chain.yml` (job `sbom`) calls `scripts/release/verify-mcp-sbom.sh`; the
+  inline `jq` is gone. `release-dry-run.yml` mirrors the release's image targets and
+  `vmaf-mcp` commands (`test_the_images_it_builds_are_the_images_the_release_builds`).
 
 ## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
 

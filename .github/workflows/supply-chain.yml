@@ -394,55 +394,9 @@ jobs:
                   .alg == "SHA-256" and .content == $sha))
             ' sbom/vmafx.cdx.json >/dev/null
           done
-          # SemVer on purpose, not pep440_version: hatchling 1.32 writes the
-          # pyproject spelling (1.0.0-rc.1) into METADATA and Syft 1.51 copies
-          # it verbatim into versionInfo and the purl.
-          jq -e --arg version "$VMAFX_VERSION" '
-            . as $doc
-            | first(
-                $doc.packages[]?
-                | select(
-                    .name == "vmaf-mcp"
-                    and .versionInfo == $version
-                    and any(.externalRefs[]?;
-                      .referenceType == "purl"
-                      and .referenceLocator == ("pkg:pypi/vmaf-mcp@" + $version)))
-                | .SPDXID
-              ) as $root
-            | ((["anyio", "mcp", "pydantic"] - [$doc.packages[]?.name]) == [])
-              and any($doc.relationships[]?;
-                .relationshipType == "DEPENDENCY_OF"
-                and .relatedSpdxElement == $root)
-          ' sbom/vmaf-mcp.spdx.json >/dev/null
-          jq -e --arg version "$VMAFX_VERSION" '
-            . as $doc
-            | ("pkg:pypi/vmaf-mcp@" + $version) as $purl
-            | ($doc.metadata.component.name == "vmaf-mcp")
-              and ($doc.metadata.component.version == $version)
-              and ((["anyio", "mcp", "pydantic"] - [$doc.components[]?.name]) == [])
-              and any($doc.components[]?; .purl == $purl)
-              and any($doc.dependencies[]?;
-                (((.ref // "") == $purl) or ((.ref // "") | startswith($purl + "?")))
-                and ((.dependsOn // []) | length) >= 3)
-          ' sbom/vmaf-mcp.cdx.json >/dev/null
-          for f in mcp-dist/*; do
-            [[ -f "$f" ]] || continue
-            name="$(basename "$f")"
-            sha="$(sha256sum -- "$f" | cut -d" " -f1)"
-            jq -e --arg name "$name" --arg sha "$sha" '
-              any(.files[]?;
-                ((.fileName // "") | endswith("/" + $name))
-                and any(.checksums[]?;
-                  .algorithm == "SHA256" and .checksumValue == $sha))
-            ' sbom/vmaf-mcp.spdx.json >/dev/null
-            jq -e --arg name "$name" --arg sha "$sha" '
-              any(.components[]?;
-                .type == "file"
-                and ((.name // "") | endswith("/" + $name))
-                and any(.hashes[]?;
-                  .alg == "SHA-256" and .content == $sha))
-            ' sbom/vmaf-mcp.cdx.json >/dev/null
-          done
+          # SemVer on purpose, not pep440_version (see the script's header). The
+          # same script runs on pull requests (release-dry-run.yml).
+          bash scripts/release/verify-mcp-sbom.sh "$VMAFX_VERSION" sbom mcp-dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: sbom

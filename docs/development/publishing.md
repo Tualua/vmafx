@@ -135,6 +135,10 @@ are *not* `dev/Containerfile`. The published images are built from their own
 Dockerfiles; `dev/Containerfile` is the development and artifact-build
 container.
 
+The release-only workflows above are built and smoke-tested without publishing on
+the pull request that changes their inputs, and weekly; see
+[Verifying the release and tester workflows before they publish](release-workflow-verification.md).
+
 See [docs/development/ci.md](ci.md) for the full CI gate list and
 [docs/development/dev-mcp.md](dev-mcp.md) for the container operator guide.
 

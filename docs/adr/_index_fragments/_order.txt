@@ -1252,3 +1252,4 @@
 1594-zstd-images-zopfli-zips
 1564-dev-image-private-guard
 1565-vmaf-tune-x265-two-pass-abr-at-pass1-bitrate
+1595-pr-time-verify-push-only-workflows

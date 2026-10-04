@@ -1,0 +1,285 @@
+# release-dry-run -- build and run, without publishing, what the release-only
+# workflows publish (ADR-1595).
+#
+# docker-publish-production.yml, docker-publish-operator-node.yml and
+# supply-chain.yml start only when a release is published, so a change to their
+# inputs (a Dockerfile, a toolkit pin, the vmaf-mcp package) is first built by the
+# release itself. This workflow builds the same targets on the pull request that
+# changes those inputs, with no registry login, no push, no signature and no
+# attestation, and runs the images through the same smoke checks.
+#
+# Triggers:
+#   - pull request: each job runs only when the diff touches its inputs
+#     (scripts/ci/release-dry-run-plan.sh decides; the files that change a group are
+#     listed there). Images are built for linux/amd64 only: the release also builds
+#     arm64, but on a native arm64 runner that costs more than the amd64 build tells.
+#   - schedule (weekly) and workflow_dispatch: every job, so a base-image or archive
+#     drift that no pull request touches is found within a week.
+#
+# What stays release-only: signing, build provenance, SBOM attestation, the PyPI
+# publication, the multi-arch manifest, and the HTTP startup smoke of the server
+# images. The native Linux artifacts (job `build-artifacts` of supply-chain.yml) are
+# rehearsed on pull requests by dev-container-build.yml (ADR-0819).
+
+name: Release Dry Run
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "41 3 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-dry-run-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    name: Plan release dry run
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      images: ${{ steps.plan.outputs.images }}
+      gpu: ${{ steps.plan.outputs.gpu }}
+      mcp: ${{ steps.plan.outputs.mcp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the dry runs the change needs
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            git diff --name-only "$BASE_SHA...$HEAD_SHA" | bash scripts/ci/release-dry-run-plan.sh
+          else
+            bash scripts/ci/release-dry-run-plan.sh --all
+          fi | tee -a "$GITHUB_OUTPUT"
+          {
+            echo "### Release dry run"
+            echo "Event: $EVENT_NAME. A group that is false here is not exercised by this run;"
+            echo "the release itself (and the weekly run) still builds it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  images:
+    name: Image dry run (${{ matrix.name }})
+    needs: plan
+    if: needs.plan.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `kind` is the smoke check scripts/ci/release-image-smoke.sh runs.
+          - name: CPU CLI
+            file: docker/Dockerfile.production
+            target: cli
+            kind: vmaf
+          - name: MCP server
+            file: docker/Dockerfile.production
+            target: server
+            kind: mcp
+          - name: operator
+            file: docker/Dockerfile.operator
+            target: operator
+            kind: binary
+          - name: vmafx-server
+            file: Dockerfile.go-server
+            target: go-server
+            kind: wrapped
+          - name: vmafx-node
+            file: docker/Dockerfile.node
+            target: node-cpu
+            kind: node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      # The release stamps its images with the tag, `v<version>` (PUBLISH_TAG), and the
+      # Go binaries print it back from --version.
+      - name: Read the tag the images are stamped with
+        id: version
+        run: |
+          echo "value=v$(jq -r '.["."]' .release-please-manifest.json)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      # The release builds read and write the GHA cache; a pull request only reads
+      # it, so a dry run never evicts the release's layers.
+      - name: Build into the local image store (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: release-dry-run:${{ matrix.target }}
+          cache-from: type=gha
+          build-args: |
+            VMAFX_VERSION=${{ steps.version.outputs.value }}
+            VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ github.sha }}
+            VMAFX_IMAGE_TAG=${{ steps.version.outputs.value }}
+      - name: Run the release smoke checks against it
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          KIND: ${{ matrix.kind }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker image inspect "release-dry-run:$TARGET" --format 'size {{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
+          bash scripts/ci/release-image-smoke.sh "release-dry-run:$TARGET" "$KIND" "$VERSION"
+
+  gpu:
+    name: GPU image dry run (${{ matrix.name }})
+    needs: plan
+    if: needs.plan.outputs.gpu == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: CUDA 13
+            target: final-cuda13
+          - name: ROCm 10
+            target: final-rocm10
+          - name: oneAPI 2026
+            target: final-oneapi2026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      # A GPU toolkit image is several gigabytes and the runner has no GPU: the
+      # image is built, not loaded or run. What the release smoke runs on these
+      # images (--version, a CPU-path score, the oneAPI adapter check) needs the
+      # image in the local store and stays a release smoke test.
+      - name: Build (no push, no load)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.production-gpu
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: false
+          outputs: type=cacheonly
+          cache-from: type=gha
+          build-args: |
+            VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ github.sha }}
+            VMAFX_IMAGE_TAG=dry-run-${{ matrix.target }}
+
+  mcp:
+    name: vmaf-mcp dist and SBOM dry run
+    needs: plan
+    if: needs.plan.outputs.mcp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.8"
+      - name: Read the version the distribution is built as
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.["."]' .release-please-manifest.json)"
+          {
+            echo "semver=$version"
+            echo "pep440=$(scripts/release/pep440-version.sh "$version")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Install build deps
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes \
+          -r requirements/locks/package-build.txt
+      # The commands of job `mcp-build` in supply-chain.yml.
+      - name: Build wheel + sdist
+        working-directory: mcp-server/vmaf-mcp
+        run: |
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          export PYTHONHASHSEED=0
+          python -m build --no-isolation --wheel --sdist --outdir ../../mcp-dist
+      - name: Check the distribution names the release's version
+        env:
+          VMAFX_PEP440_VERSION: ${{ steps.version.outputs.pep440 }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl)
+          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz)
+          distributions=(mcp-dist/*)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
+                ${#distributions[@]} -ne 2 ||
+                ! -f "${sdists[0]}" ]]; then
+            echo "ERROR: expected one wheel and one sdist named for $VMAFX_PEP440_VERSION" >&2
+            ls -l mcp-dist >&2
+            exit 1
+          fi
+      # The commands of job `sbom` in supply-chain.yml, for vmaf-mcp.
+      - name: Prepare the SBOM root
+        env:
+          VMAFX_PEP440_VERSION: ${{ steps.version.outputs.pep440 }}
+        run: |
+          set -euo pipefail
+          mkdir -p sbom mcp-sbom-root/distributions
+          python -m pip install --disable-pip-version-check --no-compile \
+            --ignore-installed --only-binary=:all: --target mcp-sbom-root \
+            --require-hashes -r mcp-server/vmaf-mcp/requirements-runtime-lock.txt
+          python -m pip install --disable-pip-version-check --no-compile \
+            --ignore-installed --no-deps --target mcp-sbom-root mcp-dist/vmaf_mcp-*.whl
+          cp -- mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl \
+            mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz mcp-sbom-root/distributions/
+      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        env:
+          SYFT_SOURCE_NAME: vmaf-mcp
+          SYFT_SOURCE_VERSION: ${{ steps.version.outputs.semver }}
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          syft-version: v1.51.1
+          format: spdx-json
+          output-file: sbom/vmaf-mcp.spdx.json
+          path: mcp-sbom-root/
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        env:
+          SYFT_SOURCE_NAME: vmaf-mcp
+          SYFT_SOURCE_VERSION: ${{ steps.version.outputs.semver }}
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          syft-version: v1.51.1
+          format: cyclonedx-json
+          output-file: sbom/vmaf-mcp.cdx.json
+          path: mcp-sbom-root/
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Verify the SBOMs against the distribution files
+        env:
+          VMAFX_VERSION: ${{ steps.version.outputs.semver }}
+        run: bash scripts/release/verify-mcp-sbom.sh "$VMAFX_VERSION" sbom mcp-dist

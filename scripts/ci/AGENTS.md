@@ -12,29 +12,23 @@ repository root. New invariant: a page under `AGENTS.d/` ([how](../../docs/devel
 
 Parent: [../AGENTS.md](../AGENTS.md).
 
-Fork-local CI utilities. Anything here invoked from
-`.github/workflows/*.yml` (see "Rebase-sensitive surfaces" below);
-upstream Netflix/vmaf has no equivalent tree, so rebase risk =
-"workflow drift", not "merge conflict".
+Fork-local CI utilities invoked from `.github/workflows/*.yml`.
+Upstream Netflix/vmaf has no equivalent tree; rebase risk =
+workflow drift, not merge conflict.
 
 ## Rebase-sensitive surfaces
 
-### Workflow coupling
-
-Following pairs tightly coupled — rename or signature
-change in one **must** land alongside matching update in
-other, in **same PR**. Required-status-check names derive
-from workflow file's `name:` fields, so check dropped
-or renamed turns into phantom-required gate that blocks every PR
+Workflow coupling: rename or signature change must land with
+matching update in same PR. Required-status-check names derive
+from workflow `name:`; dropped or renamed check blocks every PR
 until master fixed.
 
 ## When updating from upstream
 
-`scripts/ci/` fork-introduced; nothing here merges from
-upstream. Risk on `/sync-upstream` = opposite: upstream
-change to feature extractor's emitted-metric names would silently
-invalidate `FEATURE_METRICS` rows. Re-run matrix gate after any
-upstream sync touching `core/src/feature/`.
+Fork-introduced; nothing merges from upstream. Risk on
+`/sync-upstream`: upstream change to feature extractor emitted-metric
+names silently invalidates `FEATURE_METRICS`. Re-run matrix gate
+after upstream sync touching `core/src/feature/`.
 
 ## CI impact planner (ADR-1140)
 
@@ -75,6 +69,7 @@ upstream sync touching `core/src/feature/`.
 | `validate-pr-body.sh`, `deliverables-check.sh`, `test-validate-pr-body.sh`, `/scripts/git-hooks/pre-push`, `/scripts/git-hooks/pre-push-pr-body-lint.sh`, `/scripts/git-hooks/test-pre-push-pr-body-lint.py` | [pr-body-validator](AGENTS.d/pr-body-validator.md) | `deliverables-check.sh` is the only parser; the validator shims `git diff --name-only` and nothing else. |
 | `/.pre-commit-config.yaml` | [pre-commit-hygiene](AGENTS.d/pre-commit-hygiene.md) | Third-party code enters through Meson wraps or `ffmpeg-patches/`, never a submodule; verify hook revision bumps. |
 | `check_python_dependency_locks.py`, `tests/test_python_dependency_locks.py`, `/requirements/locks/*` | [python-locks](AGENTS.d/python-locks.md) | Every lock registered in `manifest.json`; installs hash-pinned, exact-path bound; scanners fail closed. |
+| `/.github/workflows/release-dry-run.yml`, `release-*.sh` | [release-dry-run](AGENTS.d/release-dry-run.md) | Mirrors the release builds; publishes nothing. |
 | `release-pr-exempt.sh`, `tests/test-release-pr-exempt.sh` | [release-pr-exempt](AGENTS.d/release-pr-exempt.md) | Exempt = `release-please--` head ref AND bot author; always exits 0; only four authoring gates consult it. |
 | `classify-dependency-pr.sh`, `test-classify-dependency-pr.sh`, `tests/test_renovate_file_patterns.py`, `/renovate.json` | [renovate-dependency-prs](AGENTS.d/renovate-dependency-prs.md) | Bot exemption = bot author AND every changed path allowlisted; new pinning surface -> allowlist entry plus fixture. |
 | `check-aggregator-names.sh`, `tests/test-check-aggregator-names.sh`, `required_aggregator_harness.py`, `test_go_workflow_contract.py` | [required-aggregator](AGENTS.d/required-aggregator.md) | `required` list = `# required-aggregator` markers; one reporter per required name; contract suites share one harness. |
