@@ -76,7 +76,8 @@
         "kind": {
           "enum": [
             "container-image",
-            "macos-bundle"
+            "macos-bundle",
+            "windows-zip"
           ]
         },
         "source_commit": {
@@ -167,7 +168,8 @@
         "platform": {
           "enum": [
             "linux",
-            "darwin"
+            "darwin",
+            "windows"
           ]
         },
         "machine": {

@@ -55,6 +55,15 @@ class StatusTests(unittest.TestCase):
         )
         self.assertEqual(GEN._status(row("Arm with SVE2"), reports), "no report yet")
 
+    def test_windows_report_counts_for_its_architecture_and_the_cpu_rows(self) -> None:
+        reports = [host(platform="windows")]
+        self.assertIn("1 reported", GEN._status(row("Windows on x64"), reports))
+        self.assertEqual(GEN._status(row("Windows on Arm"), reports), "no report yet")
+        self.assertIn("1 reported", GEN._status(row("Intel with AVX-512"), reports))
+        self.assertEqual(GEN._status(row("Windows on x64"), [host()]), "no report yet")
+        arm = [host(platform="windows", machine="aarch64", dispatch_flags=["neon"])]
+        self.assertIn("1 reported", GEN._status(row("Windows on Arm"), arm))
+
     def test_gpu_report_counts_for_its_family_and_a_fail_wins(self) -> None:
         reports = [gpu_report("hopper"), gpu_report("hopper", rows="fail")]
         self.assertIn("2 reported, worst fail", GEN._status(row("Hopper"), reports))

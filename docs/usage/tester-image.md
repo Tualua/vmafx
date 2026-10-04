@@ -10,21 +10,23 @@ can send that report to the project and be credited for it.
 Not sure whether your hardware is wanted? [Hardware we need](hardware-we-need.md) lists
 every family the project has no report from yet, and which package tests it.
 
-There are five packages. On a Mac, run the **native bundle** first: it also exercises
-the Metal backend, which no container can reach. The **container image** tests the
-CPU code paths and works on any machine with Docker. The **Intel GPU image** tests the
+There are six packages. On a Mac, run the **native bundle** first: it also exercises
+the Metal backend, which no container can reach. On a Windows PC, run the **Windows
+zip**: it tests the build Microsoft's compiler makes, natively, on x64 or Arm64. The
+**container image** tests the CPU code paths and works on any machine with Docker. The
+**Intel GPU image** tests the
 SYCL backend on an Intel GPU (integrated UHD or Iris Xe graphics, Arc, Data Center),
 on Linux or on Windows with WSL2. The **NVIDIA GPU image** tests the CUDA backend on
 an NVIDIA GPU (GeForce RTX 30 series or newer, RTX professional cards, A100, H100,
 B200). The **AMD GPU image** tests the HIP backend on an AMD GPU (Radeon RX 6000, 7000
 and 9000 series, Ryzen graphics, Instinct), on Linux.
 
-| | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image | AMD GPU image |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) |
-| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests | AVX2 / AVX-512 default dispatch against scalar, **every HIP twin against the CPU on every AMD GPU**, the parity gate, the HIP device tests |
-| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate | Metal, CUDA, SYCL, the Python golden gate |
-| You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit | Docker and access to `/dev/kfd` and the GPU's render node |
+| | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image | AMD GPU image | Native Windows zip |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) | Linux x86-64 with an AMD GPU (not Windows) | Windows 10 (2004 or later) or 11, on x64 or Arm64 |
+| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests | AVX2 / AVX-512 default dispatch against scalar, **every HIP twin against the CPU on every AMD GPU**, the parity gate, the HIP device tests | **the MSVC build's** AVX2 / AVX-512 (or NEON) default dispatch against scalar and against baked references, SIMD unit tests and the Windows-only unit tests |
+| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate | Metal, CUDA, SYCL, the Python golden gate | GPU twins, Metal, SVE2, the Python golden gate |
+| You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit | Docker and access to `/dev/kfd` and the GPU's render node | PowerShell or the Command Prompt |
 
 Each prints what it did and did not exercise inside the report (`not_exercised`).
 
@@ -514,14 +516,151 @@ and see [Licences of what you download](#licences-of-what-you-download).
 The image holds no compiler, no development package and no GPU driver, and it cannot
 reach the network when run with the commands above.
 
+## F. Native Windows zip (x64 or Arm64)
+
+You need Windows 10 (version 2004 or later) or Windows 11, PowerShell or the Command
+Prompt, and about 1 GB of free disk space. You install nothing: the zip carries the
+VMAFx programs and the Python interpreter that runs the report, and the programs need no
+Visual C++ runtime on your machine.
+
+There is one zip per processor type. Take `x64` for an Intel or AMD processor and
+`arm64` for Windows on Arm (Snapdragon X and other Arm laptops). If you are not sure,
+run `echo $env:PROCESSOR_ARCHITECTURE` in PowerShell: `AMD64` means x64, `ARM64` means
+arm64. The x64 zip refuses to start on an Arm machine, because it would run under
+emulation and measure the emulator.
+
+Five steps in PowerShell. Replace `<TESTER-TAG>` and `<VERSION>` with what the
+maintainer gives you (the tag looks like `tester-windows-20261004-1a2b3c4d`), and
+`<ARCH>` with `x64` or `arm64`:
+
+```powershell
+# 1. Download the zip and its checksum. curl.exe comes with Windows 10 and 11, and
+#    a file it downloads carries no "downloaded from the internet" mark.
+curl.exe -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip
+curl.exe -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256
+
+# 2. Check the download against the checksum; it prints True and nothing else.
+(Get-FileHash vmafx-tester-windows-<ARCH>-<VERSION>.zip).Hash -eq (Get-Content vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256).Split(' ')[0]
+
+# 3. Unpack into one new folder (tar.exe comes with Windows 10 and 11).
+tar -xf vmafx-tester-windows-<ARCH>-<VERSION>.zip
+
+# 4. Run the report (a few minutes). It writes report.json into this folder and a
+#    summary to the window.
+cd vmafx-tester-windows-<ARCH>-<VERSION>; .\run.cmd
+
+# 5. Look at the verdict before you send anything.
+Select-String -Path report.json -Pattern '"(verdict|cpu_model|os_version)"'
+```
+
+In the Command Prompt the steps are the same with two differences: check the download
+with `certutil -hashfile vmafx-tester-windows-<ARCH>-<VERSION>.zip SHA256` and compare
+the printed value with the first word of the `.sha256` file by eye, and run `run.cmd`
+instead of `.\run.cmd`.
+
+What the run does: it reads the files of the folder, starts `build\tools\vmaf.exe` and
+the test programs in `tests\` with the interpreter in `runtime\`, and writes
+`report.json` into the folder you ran it from. It writes nothing else outside the
+folder except your temporary folder, needs no administrator rights and reads one
+registry key, the one where Windows describes your processor. Windows has no
+equivalent of the macOS sandbox a user can start without administrator rights, so the
+run is not cut off from the network; the report program contains no network code.
+
+What the run does not do: install anything, change a setting, contact a server, or read
+your files outside the folder. The report contains no host name, user name, serial
+number or UUID.
+
+### What runs on Windows
+
+| Check | What it does | x64 zip | arm64 zip |
+| :--- | :--- | :--- | :--- |
+| Dispatch equivalence | every CPU feature extractor on four test videos at full precision, your processor's SIMD code against plain C, compared exactly | AVX2, and AVX-512 when your processor has it | NEON |
+| Reference equivalence | the same scores against scores the same build recorded on GitHub's runner | yes | yes, without the x86_64 cross-check |
+| Unit tests | the SIMD and dispatch tests, and the tests of what only a Windows build has: the Windows thread and option-parsing shims, UTF-8 file names, temporary files, locales | about 57 | those that exist for Arm64 |
+| Not run | GPU twins (CUDA, SYCL, HIP), Metal, the Python golden gate, ONNX Runtime, SVE2 | | |
+
+The programs are built with Microsoft's compiler (MSVC), the build most Windows users
+of VMAFx make. No tester has run that build on his own machine before, and nobody has
+compared its AVX2 and AVX-512 code with the plain C code yet, so a `fail` from this zip
+is especially useful.
+
+### What is in the zip
+
+Sizes are approximate; the exact file list with sizes is `bundle-files.txt` in the
+workflow run that built it.
+
+| Path | What |
+| :--- | :--- |
+| `run.cmd` | the one command (about 20 lines) |
+| `runtime\` | a Python 3.13 interpreter ([python-build-standalone](https://github.com/astral-sh/python-build-standalone), pinned by SHA-256, standard library only, about 31 MB) with the two Microsoft Visual C++ runtime DLLs it needs |
+| `tester\` | the report program, plain Python (`tools/rc1-tester/` in the repository) |
+| `build\tools\vmaf.exe` | the VMAFx command line tool; libvmaf and the C runtime are linked in |
+| `tests\` | unit test programs, each with libvmaf linked in (most of the zip's size) |
+| `python\test\resource\` | Netflix test videos, each checked against a pinned SHA-256 (about 57 MB) |
+| `reference\`, `image\` | scores recorded by the build, manifests |
+| `licenses\` | `THIRD_PARTY_NOTICES.txt` and the licence texts of everything above |
+
+### Windows SmartScreen and Smart App Control
+
+The programs carry no code signature, because the project has no code-signing
+certificate. Check the zip as in step 2 (and, if you can, as in the next section)
+before you run anything from it.
+
+- **Downloaded with `curl.exe` and unpacked with `tar.exe`** (the steps above): the
+  files carry no "downloaded from the internet" mark, and Windows does not ask.
+- **Downloaded with a browser**: the browser may say the file is not commonly
+  downloaded, and Windows marks the zip; files unpacked from it with Explorer carry
+  the mark too, and Microsoft Defender SmartScreen may show "Windows protected your PC"
+  when such a program starts. Check the zip first (step 2), then remove the mark from
+  the zip before you unpack it: `Unblock-File vmafx-tester-windows-<ARCH>-<VERSION>.zip`.
+  This removes only that mark, like clearing the quarantine flag on a Mac; it does not
+  change any Windows setting. Do not click "Run anyway" for a zip you have not checked.
+- **Smart App Control** (Windows 11; Windows Security, App & browser control) blocks
+  programs without a signature whatever way they came. If it is on, the zip cannot run
+  on that machine. We do not ask you to turn it off; use another machine, or the
+  container image of [B](#b-container-image) if you have Docker.
+
+### Check the download more closely (optional)
+
+The checksum in step 2 comes from the same place as the zip, so it detects a broken
+download, not a forged one. Two independent checks tie the zip to the repository's
+hosted build. Either needs a tool you may not have; neither is needed to run the zip.
+
+```powershell
+# GitHub build provenance (needs the GitHub CLI, gh):
+gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx
+
+# Sigstore keyless signature (needs cosign; the .bundle file is next to the zip):
+cosign verify-blob --bundle vmafx-tester-windows-<ARCH>-<VERSION>.zip.bundle `
+  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com `
+  vmafx-tester-windows-<ARCH>-<VERSION>.zip
+
+# The SPDX software bill of materials (the .spdx.json asset) is attested on the zip:
+gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx `
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+To read what you are about to run: `run.cmd` is in the zip, the report program is
+[`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/VMAFx/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
+with its neighbours `hw_*.py` (the Windows host facts are `hw_winfacts.py`), and the
+build is [`scripts/ci/build-windows-tester-bundle.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/build-windows-tester-bundle.py)
+run by [`windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml).
+
+### Remove it afterwards
+
+```powershell
+cd ..; Remove-Item -Recurse -Force vmafx-tester-windows-<ARCH>-<VERSION>, vmafx-tester-windows-<ARCH>-<VERSION>.zip*
+```
+
 ## Licences of what you download
 
 Every package carries the licence of everything in it, and its publishing
 workflow refuses to build a package with a file whose licence is not recorded
 ([ADR-1503](../adr/1503-tester-artifact-licensing.md)).
 
-- **Where**: `licenses/THIRD_PARTY_NOTICES.txt` in the macOS bundle,
-  `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the container images. The file lists
+- **Where**: `licenses/THIRD_PARTY_NOTICES.txt` in the macOS bundle and the Windows
+  zip, `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the container images. The file lists
   every component, its licence and copyright notices, and the licence texts are in
   `texts/` next to it. Debian packages in the container keep their own terms in
   `/usr/share/doc/<package>/copyright`; Python packages keep theirs in their
@@ -584,8 +723,18 @@ workflow refuses to build a package with a file whose licence is not recorded
   may replace them, and their corresponding source (the upstream archives and the
   TheRock tree that built them) is in `ghcr.io/vmafx/vmafx:<VERSION>-tester-hip-source`
   with the source of the image's Debian packages.
+- **Windows zip only**: the C and C++ runtime is Microsoft's, linked into `vmaf.exe`
+  and the test programs when they were built (`/MT`), so no runtime DLL is installed or
+  shipped for them. The interpreter needs two Microsoft Visual C++ runtime DLLs
+  (`runtime\vcruntime140.dll`, `vcruntime140_1.dll`); they are Microsoft Distributable
+  Code, copied unmodified from the Visual Studio of GitHub's build machine. The notices
+  state the terms Microsoft asks a distributor to pass on (use with these programs only,
+  no reverse engineering where the law does not allow it, provided as is), and that
+  EUPL-1.2 covers only VMAFx files, never Microsoft's. Nothing in the zip is copyleft,
+  so it has no source companion.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
-  publishing workflow: the `.spdx.json` release asset for the macOS bundle, and an
+  publishing workflow: the `.spdx.json` release asset for the macOS bundle and each
+  Windows zip, and an
   attestation on each platform image of the container
   (`gh attestation verify oci://ghcr.io/vmafx/vmafx@<platform digest> -R VMAFx/vmafx
   --predicate-type https://spdx.dev/Document/v2.3`, with the platform digest from
@@ -600,7 +749,10 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
   feature flags, `AT_HWCAP` / `AT_HWCAP2` on Linux, the dispatch flags the fork selects
   (NEON always on arm64, SVE2 only when the kernel reports it, as `core/src/arm/cpu.c`
   does), kernel release, macOS version and hardware model identifier (for example
-  `Mac16,1`) and the Metal device name and family on a Mac.
+  `Mac16,1`) and the Metal device name and family on a Mac. On Windows the processor's
+  name, vendor and family come from the registry key where Windows describes it, the
+  features from `IsProcessorFeaturePresent`, and the Windows version from Python's
+  `platform` module.
 - **Dispatch equivalence**: every CPU feature extractor on four fixtures at
   `--precision max` (`%.17g`), default dispatch against scalar C: identical and
   differing value counts per fixture and, for a difference, metric, first frame and
@@ -702,6 +854,10 @@ Reports from outside the project's own hosts are listed on the
 
 - `run.sh: this bundle is for macOS on Apple silicon` — the bundle is arm64-only; use
   the container on other machines.
+- `run.cmd: this zip is for AMD64 Windows, this machine is ARM64` (or the other way
+  round) — download the zip for your processor (see [F](#f-native-windows-zip-x64-or-arm64)).
+- Windows says "Windows protected your PC", or Smart App Control blocked a program —
+  see [Windows SmartScreen and Smart App Control](#windows-smartscreen-and-smart-app-control).
 - macOS says the developer cannot be verified — see [Gatekeeper](#gatekeeper).
 - The report ends `verdict: fail` — that is a result, send it.
 - The Intel GPU image says `gpu (sycl): no_device` — the container could not open your

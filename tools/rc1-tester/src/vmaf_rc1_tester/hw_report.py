@@ -24,7 +24,7 @@ from typing import Any
 from . import __version__
 from .hw_cuda import CUDA
 from .hw_equiv import run_dispatch_equivalence
-from .hw_facts import collect_host_facts, read_build_info
+from .hw_facts import collect_host_facts, read_build_info, vmaf_binary
 from .hw_gate import run_metal_gate
 from .hw_gpu import Budget, GpuBackend, gpu_not_exercised, run_gpu_section
 from .hw_gpu import summary_lines as gpu_summary_lines
@@ -94,7 +94,7 @@ def vmaf_version(vmaf: Path) -> str:
 def image_block(root: Path, digest: str | None) -> dict[str, Any]:
     """Facts about the image, ending with the checks that tie the files to the build."""
     info = read_build_info(str(root / "image" / "build-info.json"))
-    vmaf = root / "build" / "tools" / "vmaf"
+    vmaf = vmaf_binary(root)
     libs = sorted((root / "build" / "src").glob("libvmaf.so.*.*.*"))
     vmaf_hash = sha256_file(vmaf)
     lib_hash = sha256_file(libs[0]) if libs else None
@@ -122,30 +122,13 @@ def not_exercised(
     report: Mapping[str, Any], skipped: Sequence[str], not_applicable: Mapping[str, str]
 ) -> list[dict[str, str]]:
     """What this report does not cover, and why."""
-    host = report["host"]
-    on_mac = host["platform"] == "darwin"
     items = [("tiny-AI / ONNX Runtime", "built with -Denable_dnn=disabled")]
-    if on_mac:
-        items.append(("CUDA, SYCL and HIP twins", "not available on macOS"))
-        if report["metal_equivalence"]["status"] == "no_device":
-            items.append(("Metal twins", "this host exposes no usable Metal device"))
-            items.append(("Metal parity gate", "this host exposes no usable Metal device"))
-    else:
-        items.append(("Metal", "needs macOS; this is a Linux container with no Metal device"))
-        items.append(other_gpu_backends(report.get("image", {}).get("gpu_backend")))
+    items += platform_items(report)
     if "golden" not in not_applicable:
         items.append(
             ("slow-marked Python tests", "the golden gate runs -m 'not slow', as make does")
         )
-    flags = host["dispatch_flags"]
-    if host["machine"] in ("aarch64", "arm64"):
-        if "sve2" not in flags:
-            items.append(("SVE2 kernels", "this CPU does not report SVE2 (AT_HWCAP2 bit 1)"))
-        items.append(("x86 kernels", "not applicable on arm64"))
-    else:
-        items.append(("NEON and SVE2 kernels", "not applicable on x86_64"))
-        if "avx512" not in flags:
-            items.append(("AVX-512 kernels", "this CPU does not report AVX-512"))
+    items += cpu_items(report["host"])
     items += [
         (f"{name} check", reason)
         for name, reason in not_applicable.items()
@@ -156,9 +139,49 @@ def not_exercised(
     return [{"item": item, "reason": reason} for item, reason in items]
 
 
-def other_gpu_backends(backend: str | None) -> tuple[str, str]:
-    """The GPU backends a Linux image does not exercise, and why."""
+def platform_items(report: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """The backends this package's platform cannot reach."""
+    host = report["host"]
+    if host["platform"] == "darwin":
+        items = [("CUDA, SYCL and HIP twins", "not available on macOS")]
+        if report["metal_equivalence"]["status"] == "no_device":
+            items.append(("Metal twins", "this host exposes no usable Metal device"))
+            items.append(("Metal parity gate", "this host exposes no usable Metal device"))
+        return items
+    where = (
+        "this is the Windows zip"
+        if host["platform"] == "windows"
+        else "this is a Linux container with no Metal device"
+    )
+    backend = report.get("image", {}).get("gpu_backend")
+    return [("Metal", f"needs macOS; {where}"), other_gpu_backends(backend, host["platform"])]
+
+
+def cpu_items(host: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """The CPU kernels this host's architecture or dispatch flags leave out."""
+    flags = host["dispatch_flags"]
+    if host["machine"] not in ("aarch64", "arm64"):
+        items = [("NEON and SVE2 kernels", "not applicable on x86_64")]
+        if "avx512" not in flags:
+            items.append(("AVX-512 kernels", "this CPU does not report AVX-512"))
+        return items
+    items = []
+    if "sve2" not in flags:
+        reason = (
+            "the MSVC build has no SVE2 code path (ADR-1260)"
+            if host["platform"] == "windows"
+            else "this CPU does not report SVE2 (AT_HWCAP2 bit 1)"
+        )
+        items.append(("SVE2 kernels", reason))
+    items.append(("x86 kernels", "not applicable on arm64"))
+    return items
+
+
+def other_gpu_backends(backend: str | None, platform_name: str = "linux") -> tuple[str, str]:
+    """The GPU backends a Linux image or the Windows zip does not exercise, and why."""
     if not backend:
+        if platform_name == "windows":
+            return ("CUDA, SYCL and HIP twins", "this zip holds the CPU-only MSVC build")
         return ("CUDA, SYCL and HIP twins", "the image holds no GPU SDK and a CPU-only build")
     others = [name for name in ("CUDA", "SYCL", "HIP") if name.lower() != backend]
     return (" and ".join(others) + " twins", f"this image is the {backend.upper()} build")
@@ -221,7 +244,7 @@ def _equivalence_sections(
     raw_scores: dict[str, Any] = {"cpu": {}, "metal": {}}
     if "dispatch" in skipped:
         return sections, raw_scores
-    vmaf = str(root / "build" / "tools" / "vmaf")
+    vmaf = str(vmaf_binary(root))
     fixtures = load_fixtures(root)
     sections["dispatch_equivalence"], raw = run_dispatch_equivalence(
         vmaf, fixtures, timeout_seconds=args.fixture_timeout
@@ -247,7 +270,7 @@ def _gate_section(
         return {"status": "not_run"}
     return run_metal_gate(
         root,
-        str(root / "build" / "tools" / "vmaf"),
+        str(vmaf_binary(root)),
         load_fixtures(root),
         row_map.get("gate") if row_map else None,
         metal_status=metal_status,
@@ -351,10 +374,12 @@ def _rows_line(rows: Mapping[str, Any]) -> str:
 
 
 def suggested_file_name(report: Mapping[str, Any]) -> str:
-    """`docs/hardware-reports/<date>-<cpu-slug>[-<gpu backend>].json` for this report:
-    a GPU image's report on the same day as the CPU image's gets its own name."""
+    """`docs/hardware-reports/<date>-<cpu-slug>[-windows][-<gpu backend>].json` for this
+    report: a GPU image's or the Windows zip's report on the same day as the CPU image's
+    gets its own name."""
     backend = report["image"].get("gpu_backend")
-    suffix = f"-{backend}" if backend else ""
+    parts = ["windows"] if report["image"].get("kind") == "windows-zip" else []
+    suffix = "".join(f"-{part}" for part in [*parts, *([backend] if backend else [])])
     slug = re.sub(r"[^a-z0-9]+", "-", report["host"]["cpu_model"].lower()).strip("-")
     slug = slug[: 60 - len(suffix)].strip("-") or "cpu"
     return f"docs/hardware-reports/{report['generated_utc'][:10]}-{slug}{suffix}.json"
@@ -390,6 +415,10 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--note", default="", help="free text, at most 500 characters")
     parser.add_argument("--fixture-timeout", type=float, default=FIXTURE_TIMEOUT_SECONDS)
     parser.add_argument(
+        "--output", default=None,
+        help="write the JSON report to this file (UTF-8) instead of standard output",
+    )  # fmt: skip
+    parser.add_argument(
         "--skip", action="append", default=[], choices=CHECKS,
         help="maintainer option: skip a check; the verdict becomes 'incomplete'",
     )  # fmt: skip
@@ -404,7 +433,7 @@ def generate(args: argparse.Namespace) -> int:
     root = Path(args.image_root)
     host = collect_host_facts()
     paths = generate_reference(
-        str(root / "build" / "tools" / "vmaf"),
+        str(vmaf_binary(root)),
         load_fixtures(root),
         Path(args.out_dir),
         machine=host["machine"],
@@ -421,6 +450,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "generate-reference":
         return generate(args)
     report = build_report(args)
-    print(json.dumps(report, indent=2, ensure_ascii=True))
+    text = json.dumps(report, indent=2, ensure_ascii=True)
+    if args.output:
+        Path(args.output).write_text(text + "\n", encoding="utf-8", newline="\n")
+    else:
+        print(text)
     print(summarize(report), file=sys.stderr)
+    if args.output:
+        print(f"report written to {args.output}", file=sys.stderr)
     return {"pass": 0, "fail": 1}.get(report["verdict"], 2)

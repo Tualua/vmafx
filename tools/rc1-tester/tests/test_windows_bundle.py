@@ -1,0 +1,350 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+"""Tests for the Windows tester zip (ADR-1515), on Linux: host facts, report wording,
+the launcher, the PE import check and the build script's own steps."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import struct
+import sys
+import zipfile
+from pathlib import Path
+
+import pytest
+
+_HERE = Path(__file__).resolve().parent
+_REPO = _HERE.parents[2]
+sys.path.insert(0, str(_HERE.parent / "src"))
+
+from vmaf_rc1_tester import hw_facts, hw_report, hw_winfacts
+
+
+def load_script(name: str):
+    path = _REPO / "scripts" / "ci" / name
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_").removesuffix(".py"), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+imports_check = load_script("check-windows-bundle-imports.py")
+builder = load_script("build-windows-tester-bundle.py")
+SCHEMA = json.loads((_REPO / "docs/hardware-reports/report.schema.json").read_text())
+
+X86_REGISTRY = {
+    "ProcessorNameString": "13th Gen Intel(R) Core(TM) i9-13900K  ",
+    "VendorIdentifier": "GenuineIntel",
+    "Identifier": "Intel64 Family 6 Model 183 Stepping 1",
+}
+ARM_REGISTRY = {
+    "ProcessorNameString": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+    "VendorIdentifier": "Qualcomm Technologies Inc",
+    "Identifier": "ARMv8 (64-bit) Family 8 Model 1 Revision 201",
+}
+
+
+def probe(numbers: set[int]):
+    return lambda number: number in numbers
+
+
+# ---- host facts ------------------------------------------------------------------------
+
+
+def test_windows_machine_names_are_the_linux_ones() -> None:
+    assert hw_winfacts.windows_machine("AMD64") == "x86_64"
+    assert hw_winfacts.windows_machine("ARM64") == "aarch64"
+    assert hw_winfacts.windows_machine("x86") == "x86"
+
+
+def test_cpu_registry_values_map_to_allow_listed_keys() -> None:
+    x86 = hw_winfacts.read_cpu("x86_64", X86_REGISTRY.get)
+    assert x86 == {"model name": "13th Gen Intel(R) Core(TM) i9-13900K", "vendor_id": "GenuineIntel",
+                   "cpu family": "6", "model": "183", "stepping": "1"}  # fmt: skip
+    arm = hw_winfacts.read_cpu("aarch64", ARM_REGISTRY.get)
+    assert arm["cpu architecture"] == "8" and arm["cpu part"] == "1"
+    assert arm["cpu revision"] == "201"
+    assert set(x86) | set(arm) <= hw_facts.ALLOWED_CPUINFO_KEYS
+    assert hw_winfacts.read_cpu("x86_64", {}.get) == {}  # no registry: nothing invented
+
+
+def test_x86_dispatch_follows_the_cpu_c_levels() -> None:
+    every = set(hw_winfacts.X86_FEATURES.values())
+    found = hw_winfacts.features("x86_64", probe(every))
+    assert hw_winfacts.dispatch_flags("x86_64", found) == ["sse2", "ssse3", "sse4.1", "avx2",
+                                                           "avx512"]  # fmt: skip
+    no_sse3 = hw_winfacts.features("x86_64", probe(every - {13}))
+    assert hw_winfacts.dispatch_flags("x86_64", no_sse3) == ["sse2", "avx2", "avx512"]
+    no_avx2 = hw_winfacts.features("x86_64", probe(every - {40}))
+    assert "avx2" not in hw_winfacts.dispatch_flags("x86_64", no_avx2)
+    assert "avx512" not in hw_winfacts.dispatch_flags("x86_64", no_avx2)  # AVX-512 needs AVX2
+    assert hw_winfacts.dispatch_flags("x86_64", []) == []
+
+
+def test_arm64_dispatch_is_neon_only() -> None:
+    found = hw_winfacts.features("aarch64", probe({47}))
+    assert found == ["sve2"]  # reported as a feature, never dispatched by the MSVC build
+    assert hw_winfacts.dispatch_flags("aarch64", found) == ["neon"]
+
+
+@pytest.mark.parametrize(("raw", "registry"), [("AMD64", X86_REGISTRY), ("ARM64", ARM_REGISTRY)])
+def test_windows_facts_fit_the_schema_and_carry_no_identifier(monkeypatch, raw, registry) -> None:
+    monkeypatch.setattr(hw_winfacts.platform, "machine", lambda: raw)
+    monkeypatch.setattr(hw_winfacts.platform, "release", lambda: "11")
+    monkeypatch.setattr(hw_winfacts.platform, "version", lambda: "10.0.26100")
+    facts = hw_winfacts.collect_windows_facts(registry.get, probe({10, 13, 36, 37, 39, 40}))
+    host = SCHEMA["properties"]["host"]
+    assert set(host["required"]) <= set(facts) <= set(host["properties"])
+    assert facts["platform"] in host["properties"]["platform"]["enum"]
+    assert facts["os_version"] == "Windows 11 (10.0.26100)"
+    assert facts["machine"] == hw_winfacts.windows_machine(raw)
+    text = json.dumps(facts).lower()
+    assert "hostname" not in text and "serial" not in text and "uuid" not in text
+
+
+def test_vmaf_binary_prefers_the_windows_executable(tmp_path: Path) -> None:
+    tools = tmp_path / "build" / "tools"
+    tools.mkdir(parents=True)
+    assert hw_facts.vmaf_binary(tmp_path) == tools / "vmaf"
+    (tools / "vmaf.exe").write_bytes(b"MZ")
+    assert hw_facts.vmaf_binary(tmp_path) == tools / "vmaf.exe"
+
+
+# ---- report wording, file name, output file --------------------------------------------
+
+
+def windows_report(machine: str, flags: list[str]) -> dict:
+    host = {"platform": "windows", "machine": machine, "dispatch_flags": flags}
+    return {"host": host, "metal_equivalence": {"status": "not_applicable"},
+            "image": {"kind": "windows-zip", "gpu_backend": None}}  # fmt: skip
+
+
+def test_windows_not_exercised_names_metal_gpu_and_the_cpu_gaps() -> None:
+    na = {"golden": "not in the Windows zip"}
+    x64 = {e["item"]: e["reason"] for e in hw_report.not_exercised(
+        windows_report("x86_64", ["sse2", "avx2"]), [], na)}  # fmt: skip
+    assert "Windows zip" in x64["Metal"] and "MSVC" in x64["CUDA, SYCL and HIP twins"]
+    assert "AVX-512 kernels" in x64 and "golden check" in x64
+    arm = {e["item"]: e["reason"] for e in hw_report.not_exercised(
+        windows_report("aarch64", ["neon"]), [], na)}  # fmt: skip
+    assert "ADR-1260" in arm["SVE2 kernels"] and "x86 kernels" in arm
+
+
+def test_a_windows_report_gets_its_own_file_name() -> None:
+    report = {"image": {"kind": "windows-zip", "gpu_backend": None},
+              "host": {"cpu_model": "AMD Ryzen 7 7840U"}, "generated_utc": "2026-10-04T10:00:00Z"}  # fmt: skip
+    name = hw_report.suggested_file_name(report)
+    assert name == "docs/hardware-reports/2026-10-04-amd-ryzen-7-7840u-windows.json"
+    report["image"]["kind"] = "container-image"
+    assert hw_report.suggested_file_name(report).endswith("7840u.json")
+
+
+def test_output_writes_the_report_as_utf8_and_keeps_stdout_empty(tmp_path, capsys) -> None:
+    image = tmp_path / "image-root"
+    (image / "image").mkdir(parents=True)
+    (image / "image" / "fixtures.json").write_text('{"fixtures": []}')
+    out = tmp_path / "report.json"
+    args = ["--image-root", str(image), "--output", str(out)]
+    for check in hw_report.CHECKS:
+        args += ["--skip", check]
+    assert hw_report.main(args) == 1  # files_match_build is false without build info
+    captured = capsys.readouterr()
+    assert captured.out == "" and f"report written to {out}" in captured.err
+    report = json.loads(out.read_bytes().decode("utf-8"))
+    assert report["schema_version"] == hw_report.SCHEMA_VERSION
+
+
+# ---- the launcher ------------------------------------------------------------------------
+
+
+def test_run_cmd_checks_the_architecture_and_writes_report_json() -> None:
+    text = (_REPO / "tools/rc1-tester/image/windows/run.cmd").read_text()
+    assert "image\\package-arch.txt" in text and "%PROCESSOR_ARCHITECTURE%" in text
+    assert "exit /b 64" in text
+    assert "-I -B -X utf8" in text and "--output report.json %*" in text
+    # LF-only batch files misparse labels; the launcher must not need one.
+    assert not [line for line in text.splitlines() if line.lstrip().startswith(":")]
+
+
+# ---- PE import check ---------------------------------------------------------------------
+
+
+def make_pe(machine: int, names: list[str], delay: list[str] = ()) -> bytes:
+    """A minimal PE32+ image with one section holding its import tables."""
+    section_rva, section_raw = 0x1000, 0x200
+    blob = bytearray()
+    imports_at = 0
+    blob += bytes(20 * (len(names) + 1))
+    delay_at = len(blob)
+    blob += bytes(32 * (len(delay) + 1))
+    for index, name in enumerate(names):
+        struct.pack_into("<I", blob, imports_at + 20 * index + 12, section_rva + len(blob))
+        blob += name.encode() + b"\0"
+    for index, name in enumerate(delay):
+        struct.pack_into("<II", blob, delay_at + 32 * index, 1, section_rva + len(blob))
+        blob += name.encode() + b"\0"
+    header = bytearray(section_raw)
+    header[:2] = b"MZ"
+    struct.pack_into("<I", header, 0x3C, 0x40)
+    header[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HHIIIHH", header, 0x44, machine, 1, 0, 0, 0, 240, 0x22)
+    optional = 0x58
+    struct.pack_into("<H", header, optional, 0x20B)
+    struct.pack_into("<I", header, optional + 108, 16)
+    struct.pack_into("<II", header, optional + 112 + 8, section_rva + imports_at, 20 * len(names))
+    if delay:
+        struct.pack_into("<II", header, optional + 112 + 8 * 13, section_rva + delay_at, 32)
+    table = optional + 240
+    header[table : table + 8] = b".idata\0\0"
+    struct.pack_into("<IIII", header, table + 8, len(blob), section_rva, len(blob), section_raw)
+    return bytes(header) + bytes(blob)
+
+
+def write_pe(root: Path, rel: str, data: bytes) -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def test_pe_imports_and_delay_imports_are_read() -> None:
+    machine, names = imports_check.imports(make_pe(0x8664, ["KERNEL32.dll"], ["bcrypt.dll"]))
+    assert machine == 0x8664 and names == ["bcrypt.dll", "kernel32.dll"]
+    with pytest.raises(imports_check.PeError):
+        imports_check.imports(b"#!/bin/sh\n" + bytes(100))
+
+
+def test_a_clean_bundle_passes(tmp_path: Path) -> None:
+    write_pe(tmp_path, "build/tools/vmaf.exe", make_pe(0x8664, ["KERNEL32.dll"]))
+    write_pe(tmp_path, "tests/test_cpu.exe", make_pe(0x8664, ["kernel32.dll", "ADVAPI32.dll"]))
+    write_pe(tmp_path, "runtime/python.exe",
+             make_pe(0x8664, ["python313.dll", "VCRUNTIME140.dll", "api-ms-win-crt-heap-l1-1-0.dll"]))  # fmt: skip
+    write_pe(tmp_path, "runtime/python313.dll", make_pe(0x8664, ["kernel32.dll"]))
+    write_pe(tmp_path, "runtime/vcruntime140.dll", make_pe(0x8664, ["kernel32.dll"]))
+    write_pe(tmp_path, "runtime/DLLs/_ctypes.pyd", make_pe(0x8664, ["libffi-8.dll"]))
+    write_pe(tmp_path, "runtime/DLLs/libffi-8.dll", make_pe(0x8664, ["kernel32.dll"]))
+    assert imports_check.check(tmp_path, "x64") == []
+    assert imports_check.main([str(tmp_path), "--machine", "x64"]) == 0
+
+
+def test_planted_defects_are_found(tmp_path: Path) -> None:
+    write_pe(tmp_path, "build/tools/vmaf.exe", make_pe(0x8664, ["VCRUNTIME140.dll"]))
+    write_pe(tmp_path, "tests/test_a.exe", make_pe(0x8664, ["api-ms-win-crt-runtime-l1-1-0.dll"]))
+    write_pe(tmp_path, "tests/test_b.exe", make_pe(0xAA64, ["kernel32.dll"]))
+    write_pe(tmp_path, "tests/test_c.exe", make_pe(0x8664, ["libvendor.dll"]))
+    write_pe(tmp_path, "runtime/python.exe", make_pe(0x8664, ["python313.dll"]))
+    write_pe(tmp_path, "tests/notes.dll", b"not a PE")
+    problems = imports_check.check(tmp_path, "x64")
+    joined = "\n".join(problems)
+    assert "build/tools/vmaf.exe: imports the runtime DLL vcruntime140.dll" in joined
+    assert "tests/test_a.exe: imports the runtime DLL api-ms-win-crt-runtime" in joined
+    assert "tests/test_b.exe: machine 0xaa64, expected 0x8664" in joined
+    assert "tests/test_c.exe: imports libvendor.dll, which is not part of Windows" in joined
+    assert "runtime/python.exe: imports python313.dll, neither part of Windows" in joined
+    assert "tests/notes.dll: not a readable PE image" in joined
+    assert imports_check.main([str(tmp_path), "--machine", "x64"]) == 1
+
+
+def test_an_empty_bundle_is_not_clean(tmp_path: Path) -> None:
+    assert imports_check.check(tmp_path, "arm64") == ["no VMAFx program under build/ or tests/"]
+
+
+# ---- build script steps --------------------------------------------------------------------
+
+
+def test_the_build_needs_every_input() -> None:
+    env = {name: "x" for name in builder.REQUIRED}
+    env["VMAFX_ARCH"] = "x64"
+    assert builder.require_environment(env)["VMAFX_ARCH"] == "x64"
+    with pytest.raises(builder.BuildError, match="missing environment: PBS_URL"):
+        builder.require_environment({**env, "PBS_URL": ""})
+    with pytest.raises(builder.BuildError, match="VMAFX_ARCH"):
+        builder.require_environment({**env, "VMAFX_ARCH": "x86"})
+
+
+def touch(root: Path, *rels: str) -> None:
+    for rel in rels:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(b"x")
+
+
+def test_prune_keeps_the_interpreter_and_drops_what_the_report_does_not_use(tmp_path) -> None:
+    keep = ("python.exe", "python313.dll", "vcruntime140.dll", "LICENSE.txt", "DLLs/_ctypes.pyd",
+            "DLLs/libffi-8.dll", "Lib/json/__init__.py", "Lib/site-packages/README.txt")  # fmt: skip
+    drop = ("pythonw.exe", "include/Python.h", "libs/python313.lib", "Scripts/pip.exe",
+            "tcl/tcl8.6/init.tcl", "DLLs/tcl86t.dll", "DLLs/tk86t.dll", "DLLs/_tkinter.pyd",
+            "DLLs/zlib1.dll", "DLLs/_testcapi.pyd", "DLLs/_ctypes_test.pyd", "Lib/test/x.py",
+            "Lib/idlelib/x.py", "Lib/tkinter/x.py", "Lib/ensurepip/x.py",
+            "Lib/site-packages/pip/x.py", "Lib/site-packages/pip-25.2.dist-info/RECORD",
+            "Lib/json/__pycache__/x.pyc", "Lib/stray.pyc")  # fmt: skip
+    touch(tmp_path, *keep, *drop)
+    builder.prune_runtime(tmp_path)
+    assert all((tmp_path / rel).exists() for rel in keep)
+    assert not [rel for rel in drop if (tmp_path / rel).exists()]
+
+
+def test_the_runtime_dlls_come_unmodified_from_the_redist_folder(tmp_path: Path) -> None:
+    crt = tmp_path / "redist" / "x64" / "Microsoft.VC145.CRT"
+    crt.mkdir(parents=True)
+    (crt / "vcruntime140.dll").write_bytes(b"microsoft-140")
+    (crt / "vcruntime140_1.dll").write_bytes(b"microsoft-140-1")
+    runtime = tmp_path / "bundle" / "runtime"
+    runtime.mkdir(parents=True)
+    (runtime / "vcruntime140.dll").write_bytes(b"pbs-140")
+    (runtime / "vcruntime140_1.dll").write_bytes(b"pbs-140-1")
+    assert builder.redist_crt_dir(tmp_path / "redist", "x64") == crt
+    copied = builder.replace_vc_runtime(runtime, crt)
+    assert [entry["file"] for entry in copied] == ["runtime/vcruntime140.dll",
+                                                   "runtime/vcruntime140_1.dll"]  # fmt: skip
+    assert (runtime / "vcruntime140.dll").read_bytes() == b"microsoft-140"
+    (crt / "vcruntime140_1.dll").unlink()
+    with pytest.raises(builder.BuildError, match="vcruntime140_1.dll is not in"):
+        builder.replace_vc_runtime(runtime, crt)
+    with pytest.raises(builder.BuildError, match="Microsoft.VC14"):
+        builder.redist_crt_dir(tmp_path / "redist", "arm64")
+
+
+def test_pack_is_reproducible_and_has_one_top_level_folder(tmp_path: Path) -> None:
+    bundle = tmp_path / "vmafx-tester-windows-x64-v1"
+    touch(bundle, "run.cmd", "runtime/python.exe", "tests/test_cpu.exe")
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    first = builder.pack(bundle, tmp_path / "a")
+    second = builder.pack(bundle, tmp_path / "b")
+    assert first.read_bytes() == second.read_bytes()
+    names = zipfile.ZipFile(first).namelist()
+    assert names == sorted(names) and all(n.startswith(f"{bundle.name}/") for n in names)
+    digest, name = (tmp_path / "a" / f"{first.name}.sha256").read_text().split()
+    assert name == first.name and digest == builder.sha256(first)
+
+
+def test_download_refuses_plain_http_and_a_wrong_hash(tmp_path: Path, monkeypatch) -> None:
+    with pytest.raises(builder.BuildError, match="not an https URL"):
+        builder.download("http://example.invalid/x", tmp_path / "x", "0" * 64)
+
+    class Response:
+        def __init__(self) -> None:
+            self.chunks = [b"payload", b""]
+
+        def read(self, _size: int) -> bytes:
+            return self.chunks.pop(0)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+    monkeypatch.setattr(builder.urllib.request, "urlopen", lambda *_a, **_k: Response())
+    with pytest.raises(builder.BuildError, match="is not the pinned"):
+        builder.download("https://example.invalid/x", tmp_path / "x", "0" * 64)
+
+
+def test_zstd_needs_the_module_or_the_program(monkeypatch) -> None:
+    def no_module(name: str):
+        raise ImportError(name)
+
+    monkeypatch.setattr(builder.importlib, "import_module", no_module)
+    monkeypatch.setattr(builder.shutil, "which", lambda _name: None)
+    with pytest.raises(builder.BuildError, match="neither compression.zstd"):
+        builder.zstd_decompress(b"")

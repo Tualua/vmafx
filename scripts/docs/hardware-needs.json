@@ -1,5 +1,5 @@
 {
-  "comment": "Hardware families the project wants tester reports from (docs/usage/hardware-we-need.md, rendered by scripts/docs/generate-hardware-reports.py). package: macos, container, sycl, cuda, hip. state: ids of docs/state.md rows the family closes. owner: the project host that covers the family, or null. match: how a report under docs/hardware-reports/ counts for the family (platform, machine, flags_all, flags_none, cpu_model_re for host; gpu_backend and gpu_families for a GPU device). The generator refuses a GPU family of the row maps in tools/rc1-tester/image/ that no row here lists, and a state id that is not in docs/state.md.",
+  "comment": "Hardware families the project wants tester reports from (docs/usage/hardware-we-need.md, rendered by scripts/docs/generate-hardware-reports.py). package: macos, container, sycl, cuda, hip, windows. state: ids of docs/state.md rows the family closes. owner: the project host that covers the family, or null. match: how a report under docs/hardware-reports/ counts for the family (platform, machine, flags_all, flags_none, cpu_model_re for host; gpu_backend and gpu_families for a GPU device). The generator refuses a GPU family of the row maps in tools/rc1-tester/image/ that no row here lists, and a state id that is not in docs/state.md.",
   "rows": [
     {
       "family": "Apple M-series, native (M1 to M4 Macs)",
@@ -43,6 +43,20 @@
       "state": ["T-CPU-AVX2-FMA-NOT-GATED-2026-10-02"],
       "owner": null,
       "match": {"machine": ["x86_64", "amd64"], "flags_all": ["avx2"], "flags_none": ["avx512"]}
+    },
+    {
+      "family": "Windows on x64 (Intel and AMD processors; AVX-512 where the processor has it)",
+      "package": "windows",
+      "state": ["T-TESTER-WINDOWS-NATIVE-EVIDENCE-2026-10-04"],
+      "owner": null,
+      "match": {"platform": "windows", "machine": ["x86_64"]}
+    },
+    {
+      "family": "Windows on Arm (Snapdragon X and other Arm laptops)",
+      "package": "windows",
+      "state": ["T-TESTER-WINDOWS-NATIVE-EVIDENCE-2026-10-04"],
+      "owner": null,
+      "match": {"platform": "windows", "machine": ["aarch64"]}
     },
     {
       "family": "NVIDIA Ampere (A100, GeForce RTX 30 series, RTX A-series)",

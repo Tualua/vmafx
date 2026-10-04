@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD024 -->
-# Tester image and macOS bundle: maintainer notes
+# Tester image, macOS bundle and Windows zip: maintainer notes
 
 What the tester packages are, how they are built and published, what to do by hand,
 and how reports reach the tree. The tester-facing steps are in
@@ -8,7 +8,8 @@ and how reports reach the tree. The tester-facing steps are in
 [ADR-1493](../adr/1493-macos-tester-bundle.md) and, for the GPU images,
 [ADR-1505](../adr/1505-intel-gpu-tester-image.md) (Intel),
 [ADR-1509](../adr/1509-nvidia-gpu-tester-image.md) (NVIDIA) and
-[ADR-1511](../adr/1511-amd-gpu-tester-image.md) (AMD).
+[ADR-1511](../adr/1511-amd-gpu-tester-image.md) (AMD), and for the Windows zip
+[ADR-1515](../adr/1515-windows-tester-zip.md).
 
 ## Pieces
 
@@ -19,19 +20,21 @@ and how reports reach the tree. The tester-facing steps are in
 | AMD GPU image | target `final-hip` of the same Dockerfile; `image/hip-tests.txt` (device tests), `hip-rows.json` (state rows), `hip-runtime.json` (the ROCm runtime files it ships); `image/hip-targets.json` is written by the build from its offload targets; its licence record is the `hip-image` artifact of `licensing.json` |
 | NVIDIA GPU image | target `final-cuda` of the same Dockerfile; `image/cuda-tests.txt` (device tests), `cuda-rows.json` (state rows); `image/cuda-targets.json` is written by the build from its gencode list; its licence record is the `cuda-image` artifact of `licensing.json` |
 | macOS bundle | `scripts/ci/build-macos-tester-bundle.sh`, `tools/rc1-tester/image/macos/` |
+| Windows zip | `scripts/ci/build-windows-tester-bundle.py` (build, stage, notices, pack), `scripts/ci/check-windows-bundle-imports.py` (PE import check), `tools/rc1-tester/image/windows/` (`run.cmd`, `README.txt`), `tools/rc1-tester/image/unit-tests-windows.txt`; its licence record is the `windows-zip` artifact of `licensing.json`; the Windows host facts are `hw_winfacts.py` |
 | Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report`; the GPU section is `hw_gpu.py`, its SYCL backend `hw_sycl.py` and `hw_l0probe.py`, its CUDA backend `hw_cuda.py` and `hw_cudaprobe.py`, its HIP backend `hw_hip.py` and `hw_hipprobe.py` |
 | Report schema and gate | `docs/hardware-reports/report.schema.json`, `scripts/ci/check-hardware-reports.py` (in `make docs-fragments-check`) |
 | Index page | `scripts/docs/generate-hardware-reports.py --write` (in `make docs-fragments-write`) |
-| Workflows | `.github/workflows/docker-publish-tester.yml`, `.github/workflows/macos-tester-bundle.yml` |
+| Workflows | `.github/workflows/docker-publish-tester.yml`, `.github/workflows/macos-tester-bundle.yml`, `.github/workflows/windows-tester-bundle.yml` |
 | Licence record, notices and gate | `tools/rc1-tester/image/licensing.json`, `tools/rc1-tester/image/licensing.py` ([ADR-1503](../adr/1503-tester-artifact-licensing.md)) |
 
-One implementation serves both packages: the macOS bundle ships the same Python report
-code, under a bundled interpreter, and the same schema and gate validate both reports
-(HISS-19).
+One implementation serves every package: the macOS bundle and the Windows zip ship the
+same Python report code under a bundled interpreter, and the same schema and gate
+validate every report (HISS-19). Test manifests name each program relative to the
+package root, so a bundle runs wherever it is unpacked.
 
 ## Publishing, by hand
 
-Nothing publishes on merge except a build-and-test run of the image on pushes to master.
+Nothing publishes on merge except build-and-test runs of the image and of the Windows zips on pushes to master.
 
 1. **Container**: dispatch `Publish Tester Image` on `master` with exactly one of `ref`
    (a commit SHA reachable from master, or `master`, resolved to its SHA) or `tag` (a
@@ -73,6 +76,20 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
    [Licensing](#licensing)). The hosted runner has no GPU: every device measurement
    happens on the tester's machine. Before giving a tag to a tester, run it on the
    project's Arc A380, RTX 4090 or gfx1036 (see [Local checks](#local-checks)).
+
+4. **Windows zips**: dispatch `Publish Windows Tester Bundle` on `master` with `ref`
+   (or `tag`) and `publish: true`. Two jobs build `vmafx-tester-windows-x64-<describe>.zip`
+   on `windows-2025` and `vmafx-tester-windows-arm64-<describe>.zip` on
+   `windows-11-vs2026-arm`, each runs its own report through `run.cmd` and fails before
+   packing on a missing licence or a program that imports a runtime DLL; a Linux job per
+   zip checks the checksum, writes the SPDX SBOM (syft) and validates the runner's report.
+   With `publish: true` the `tester-publish` gate applies, then both zips are attested
+   (provenance, SBOM), signed (cosign) and attached to a prerelease
+   `tester-windows-<date>-<sha8>` made by the release-bot identity, as for the macOS
+   bundle. A push to master that changes the zip's own inputs (the workflow, the two
+   scripts, `tools/rc1-tester/image/windows/`, the Windows unit list) runs the build and
+   verify jobs without publishing. The workflow summary of each verify job lists the
+   runner's verdict, unit-test failures and the unpacked size.
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
 
@@ -179,6 +196,23 @@ gate and the verdict need no change; `tools/rc1-tester/tests/test_hw_gpu.py` sho
 contract with a fake backend. The Metal sections of the macOS bundle predate this and
 keep their schema-2 form.
 
+## The Windows zip's licences
+
+The Windows zip is the artifact `windows-zip`. The VMAFx programs link the Microsoft C
+and C++ runtime statically (`-Db_vscrt=mt`), so no runtime DLL ships for them; that code
+is component `microsoft-static-runtime`, without paths, whose notes pass on the terms
+Microsoft asks a distributor to pass on. The interpreter's `vcruntime140*.dll` are
+component `microsoft-vc-runtime`: the build replaces python-build-standalone's copies
+with the unmodified files of the runner's `VC\Redist\MSVC\<version>\<arch>\Microsoft.VC14x.CRT`
+(`VCToolsRedistDir` of vcvarsall), checks the copies byte for byte and records the
+folder and SHA-256 in `image/msvc-redist.json`; nothing comes from `debug_nonredist` and
+no Universal CRT file ships. The VMAFx programs' component claims only
+`build/tools/vmaf.exe` and `tests/*.exe`, so any other file there (a stray DLL) fails the
+gate. `check-windows-bundle-imports.py` then proves `/MT` on every program: a VMAFx
+program importing `vcruntime*`, `msvcp*`, `ucrtbase` or `api-ms-win-crt-*`, or any DLL
+that is not part of Windows, fails the build, as does an interpreter import that is
+neither a Windows DLL nor a file of `runtime\`, or a program of the other architecture.
+
 ## What the hosted macOS runner cannot show
 
 The hosted runner is a virtual machine. The workflow runs the bundle's report there and
@@ -188,6 +222,16 @@ failure) and the Metal parity unit tests exit 77 (skipped). Whatever the runner 
 exercise is first proven on the tester's machine: the Metal twins on a real GPU, the
 bundle under Gatekeeper and `sandbox-exec` on his macOS version, the ad-hoc signature
 on his hardware, and the interpreter on his system libraries.
+
+## What the hosted Windows runners cannot show
+
+The hosted runners are virtual machines with whatever processor Azure assigns, so the
+zip's report there is a smoke test of the build, the launcher and the interpreter. They
+are also the first runs of the MSVC build's x86 SIMD unit tests: a failure there is a
+finding in the MSVC build (record it as a state row), not a fault of the zip. What only
+a tester's machine shows: the AVX-512 paths on a processor that has them, Windows on
+Arm hardware other than the runner's, SmartScreen and Smart App Control on a consumer
+installation, and an x64 zip refused on Arm.
 
 ## Report intake
 
@@ -209,9 +253,11 @@ tracked files other than a commit trailer the person asked for.
 | Python test stack | `python/requirements-test-lock.txt` | `make python-locks-write` |
 | Fixtures | `tools/rc1-tester/image/fixtures.sha256`, `VMAF_RESOURCE_COMMIT` | change both together; the build checks every SHA-256 |
 | macOS interpreter | `PBS_URL`, `PBS_SHA256`, `PBS_FULL_URL`, `PBS_FULL_SHA256` in `macos-tester-bundle.yml` | the `install_only_stripped` archive and the `pgo+lto-full` archive of the same release (its licence texts); take both hashes from the release's `SHA256SUMS` |
+| Windows interpreters | `PBS_X64_*` and `PBS_ARM64_*` in `windows-tester-bundle.yml` | the `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` `install_only_stripped` and `pgo-full` archives of one release, hashes from its `SHA256SUMS`; a new CPython version needs its `Doc/license.rst` in `cpython_license_rst` and the `windows-zip` record's `python.version` |
+| Windows runtime DLLs | the runner image's Visual Studio | nothing to pin: the build copies the redistributable folder's files and records their SHA-256; a toolset without one of the interpreter's `vcruntime140*.dll` fails the build with the name |
 | Licence record | `tools/rc1-tester/image/licensing.json` | change with the package contents; the build fails until it matches |
 | Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
-| Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
+| Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt`, `unit-tests-windows.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
 | Intel GPU runtime | `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`, `ONEAPI_*` in `build-config.env`; `tools/rc1-tester/image/sycl-runtime.json`; `fetched_texts` and the `intel-gpu-stack` component of `licensing.json` | a moved compute runtime or loader version fails the build until the licence text of the new version is recorded in `fetched_texts` (URL and SHA-256) and named by the component; a runtime file must stay in the compiler's `credist.txt` |
 | Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_gpu_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
 | CUDA toolkit | `CUDA_VERSION` and the `CUDA_APT_*` versions in `build-config.env` (NVIDIA's `debian13` repository, `scripts/ci/install-cuda-toolkit.sh`); `NV_CODEC_HEADERS_COMMIT` in `docker/Dockerfile.tester` | a new CUDA version brings a new EULA: the build checks the EULA's "Last updated" date, so update that check, the `nvidia-cuda-device-code` component and ADR-1509's citation together after reading the new Attachment A |
@@ -234,7 +280,8 @@ the link check under a real bash 3.2 with stub tools.
 
 ```sh
 python3 -m pytest -q tools/rc1-tester/tests          # report code, schema gate, bundle scripts
-actionlint .github/workflows/docker-publish-tester.yml .github/workflows/macos-tester-bundle.yml
+actionlint .github/workflows/docker-publish-tester.yml .github/workflows/macos-tester-bundle.yml \
+  .github/workflows/windows-tester-bundle.yml
 shellcheck tools/rc1-tester/image/macos/run.sh scripts/ci/check-macos-bundle-links.sh \
   scripts/ci/build-macos-tester-bundle.sh
 docker build -f docker/Dockerfile.tester -t vmafx-tester:dev .

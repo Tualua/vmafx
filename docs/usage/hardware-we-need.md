@@ -10,8 +10,8 @@ the project a report it cannot produce itself, and you can be credited for it.
 
 1. Find your hardware in the table. A row says which package to run.
 2. Follow that package's section of the [tester guide](tester-image.md). You build
-   nothing and install no toolchain; you run one container image (or, on a Mac, one
-   archive) and it prints a JSON report.
+   nothing and install no toolchain; you run one container image (or, on a Mac or a
+   Windows PC, one archive) and it prints a JSON report.
 3. Open a [hardware report issue](https://github.com/VMAFx/vmafx/issues/new?template=hardware_report.yml)
    and attach the report. A report with verdict `fail` is welcome: it is a finding.
 
@@ -35,6 +35,8 @@ machine still repeats the measurement on different silicon and is welcome.
 | Intel with AVX-512 (Xeon Skylake-SP to Sapphire Rapids and later, Core 11th generation) | [container image](tester-image.md#b-container-image) | [`T-CPU-AVX512-ZEN5-ONLY-UNVERIFIED-2026-10-02`](../state.md) | no report yet |
 | AMD with AVX-512 (Zen 4 and Zen 5: Ryzen 7000 and 9000, EPYC 9004 and 9005) | [container image](tester-image.md#b-container-image) | [`T-CPU-AVX512-ZEN5-ONLY-UNVERIFIED-2026-10-02`](../state.md) | covered by Ryzen 9 9950X3D (Zen 5) |
 | x86 with AVX2 and no AVX-512 (Intel Core 12th to 14th generation, AMD Zen 2 and Zen 3) | [container image](tester-image.md#b-container-image) | [`T-CPU-AVX2-FMA-NOT-GATED-2026-10-02`](../state.md) | no report yet |
+| Windows on x64 (Intel and AMD processors; AVX-512 where the processor has it) | [Windows zip](tester-image.md#f-native-windows-zip-x64-or-arm64) | [`T-TESTER-WINDOWS-NATIVE-EVIDENCE-2026-10-04`](../state.md) | no report yet |
+| Windows on Arm (Snapdragon X and other Arm laptops) | [Windows zip](tester-image.md#f-native-windows-zip-x64-or-arm64) | [`T-TESTER-WINDOWS-NATIVE-EVIDENCE-2026-10-04`](../state.md) | no report yet |
 | NVIDIA Ampere (A100, GeForce RTX 30 series, RTX A-series) | [NVIDIA GPU image](tester-image.md#d-nvidia-gpu-image-linux-or-windows-with-wsl2) | [`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03`](../state.md) | no report yet |
 | NVIDIA Hopper (H100, H200) | [NVIDIA GPU image](tester-image.md#d-nvidia-gpu-image-linux-or-windows-with-wsl2) | [`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03`](../state.md) | no report yet |
 | NVIDIA Blackwell (B200, GeForce RTX 50 series, Jetson Thor, DGX Spark) | [NVIDIA GPU image](tester-image.md#d-nvidia-gpu-image-linux-or-windows-with-wsl2) | [`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03`](../state.md) | no report yet |
@@ -69,5 +71,5 @@ the report. Only a report in [hardware reports](../hardware-reports/index.md) co
 The project's own hosts, which the "covered" rows name: an RTX 4090 (Ada), an Arc A380
 (Xe-HPG), the small RDNA2 graphics of a Ryzen 7000 (`gfx1036`), a Ryzen 9 9950X3D
 (Zen 5, AVX-512), and an Arc B580 and an Arc Pro B60 (Xe2) on the maintainer's home
-cluster. No project host is an Apple Mac, an Arm server, an Intel processor with
-AVX-512, or an NVIDIA, AMD or Intel card of another family.
+cluster. No project host is an Apple Mac, a Windows machine, an Arm server, an Intel
+processor with AVX-512, or an NVIDIA, AMD or Intel card of another family.

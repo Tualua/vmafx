@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1217), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1218), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4879,3 +4879,7 @@ Every ADR, one heading each (1217), so the site search finds an ADR by its title
 ## ADR-1514: The Go service images record every linked module's licence from the binary, and the node image ships a redistributable FFmpeg, a source-built rclone and the records of the libraries it copies
 
 [1514-go-and-node-image-licensing](1514-go-and-node-image-licensing.md)
+
+## ADR-1515: A native Windows tester zip for x64 and Arm64, built by the hosted runners with MSVC and a static C runtime
+
+[1515-windows-tester-zip](1515-windows-tester-zip.md)

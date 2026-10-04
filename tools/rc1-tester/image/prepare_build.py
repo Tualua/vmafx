@@ -52,6 +52,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from vmaf_rc1_tester.hw_facts import machine_name, vmaf_binary
+
 MIN_TESTS = 10
 # The parity gate and what it imports or reads (ADR-1496): it runs under the
 # bundle's standard-library interpreter, so nothing outside these files.
@@ -197,9 +200,21 @@ def stage(
 
 
 def libc_description() -> str:
+    """The C library of the build: `VMAFX_LIBC` when the build names it (the Windows
+    zip links the C runtime statically), else libSystem or glibc as the host reports."""
+    if os.environ.get("VMAFX_LIBC"):
+        return os.environ["VMAFX_LIBC"]
     if platform.system() == "Darwin":
         return "libSystem, macOS " + first_line(["sw_vers", "-productVersion"])
     return first_line(["ldd", "--version"])
+
+
+def compiler_description() -> str:
+    """`VMAFX_COMPILER` when the build names it (MSVC's cl has no --version), else the
+    first line of `$VMAFX_CC --version`."""
+    if os.environ.get("VMAFX_COMPILER"):
+        return os.environ["VMAFX_COMPILER"]
+    return first_line([os.environ.get("VMAFX_CC", "gcc"), "--version"])
 
 
 def info(image_root: Path) -> None:
@@ -211,11 +226,11 @@ def info(image_root: Path) -> None:
         "built_by_workflow": os.environ.get("VMAFX_BUILT_BY_WORKFLOW", "false") == "true",
         "tag": os.environ.get("VMAFX_IMAGE_TAG", "unknown"),
         "base_image": os.environ.get("VMAFX_BASE_IMAGE", "unknown"),
-        "image_arch": platform.machine().lower(),
-        "compiler": first_line([os.environ.get("VMAFX_CC", "gcc"), "--version"]),
+        "image_arch": machine_name(),
+        "compiler": compiler_description(),
         "libc": libc_description(),
         "meson": first_line(["meson", "--version"]),
-        "vmaf_sha256": sha256(image_root / "build" / "tools" / "vmaf"),
+        "vmaf_sha256": sha256(vmaf_binary(image_root)),
         "libvmaf_sha256": sha256(libs[0]) if libs else None,  # None: libvmaf is static
         "kind": os.environ.get("VMAFX_ARTIFACT_KIND", "container-image"),
         "not_applicable": json.loads(os.environ.get("VMAFX_NOT_APPLICABLE", "{}")),
@@ -423,7 +438,7 @@ def write_hip_targets(build_dir: Path, rocm_root: Path, image_root: Path) -> Non
 
 def print_targets(build_dir: Path, names: list[str]) -> None:
     """Build targets of the listed tests that are executables of the build."""
-    targets = {str(t["path"].relative_to(build_dir)) for t in native_tests(build_dir, names)}
+    targets = {t["path"].relative_to(build_dir).as_posix() for t in native_tests(build_dir, names)}
     print("\n".join(sorted(targets)))
 
 

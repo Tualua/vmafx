@@ -1,5 +1,5 @@
 name: Hardware report
-description: Send the JSON report of a tester package (macOS bundle, container image, or the Intel, NVIDIA or AMD GPU image).
+description: Send the JSON report of a tester package (macOS bundle, container image, Windows zip, or the Intel, NVIDIA or AMD GPU image).
 title: "[hardware report] "
 labels: ["hardware-report"]
 body:
@@ -29,6 +29,7 @@ body:
         - Intel GPU image (tester-sycl)
         - NVIDIA GPU image (tester-cuda)
         - AMD GPU image (tester-hip)
+        - Windows zip (native, x64 or Arm64)
         - Other / built from source
     validations:
       required: true
@@ -37,7 +38,7 @@ body:
     id: machine
     attributes:
       label: Machine
-      description: For example "MacBook Air, Apple M4, macOS 15.1", "Docker Desktop 4.40 on the same Mac", "Ryzen 7 7840U with Radeon 780M, Linux 6.12" or "GeForce RTX 3080, Windows 11 with WSL2".
+      description: For example "MacBook Air, Apple M4, macOS 15.1", "Docker Desktop 4.40 on the same Mac", "Ryzen 7 7840U with Radeon 780M, Linux 6.12", "GeForce RTX 3080, Windows 11 with WSL2" or "Surface Laptop 7, Snapdragon X Elite, Windows 11 24H2".
     validations:
       required: false
 

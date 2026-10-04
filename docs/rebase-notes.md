@@ -60046,4 +60046,22 @@ upstream parity guard's allowlist.
   `tools/rc1-tester/image/` needs a row in `hardware-needs.json` in the same PR (the
   generator refuses otherwise). `.github/ISSUE_TEMPLATE/hardware_report.yml` lists all five
   tester packages; a new package adds an entry there. No score, public API or FFmpeg patch
+
+## Windows tester zip (ADR-1515)
+
+- `.github/workflows/windows-tester-bundle.yml` builds the zips on
+  `windows-2025` and `windows-11-vs2026-arm` with
+  `scripts/ci/build-windows-tester-bundle.py`; `-Db_vscrt=mt` is load-bearing
+  (ADR-1503 rule 7: no runtime DLL for VMAFx programs), and
+  `scripts/ci/check-windows-bundle-imports.py` must stay between the notices and
+  the pack, as must the `windows-zip` licence check. The interpreter's
+  `vcruntime140*.dll` come from the runner's `VCToolsRedistDir`, never from
+  python-build-standalone or `debug_nonredist`.
+- `tools/rc1-tester/src/vmaf_rc1_tester/hw_winfacts.py` gives Windows hosts the
+  Linux machine names (`x86_64`, `aarch64`); `hw_facts.machine_name()` and
+  `hw_facts.vmaf_binary()` are the one place the report and `prepare_build.py`
+  learn the architecture and the `vmaf` program's name. The report schema keeps
+  `schema_version` 3 and gains the enum values `windows` and `windows-zip`.
+- `scripts/ci/check-vcs-version-not-bare-sha.sh` holds the new workflow's
+  `git describe` to `--match 'v*.*.*'`. No score, public API or FFmpeg patch
   impact.

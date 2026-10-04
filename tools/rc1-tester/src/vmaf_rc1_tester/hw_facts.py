@@ -15,6 +15,7 @@ import platform
 from pathlib import Path
 from typing import Any
 
+from .hw_winfacts import collect_windows_facts, windows_machine
 from .probe import probe_os
 from .safe_process import run_bounded
 
@@ -205,7 +206,24 @@ def collect_host_facts(cpuinfo_path: str = "/proc/cpuinfo", runner: Any = run_bo
     """Host facts block of the report, in fixed key order."""
     if platform.system() == "Darwin":
         return collect_darwin_facts(runner)
+    if platform.system() == "Windows":
+        return collect_windows_facts()
     return collect_linux_facts(cpuinfo_path)
+
+
+def machine_name() -> str:
+    """The architecture name reports and reference files use: `platform.machine()`,
+    with Windows' `AMD64` / `ARM64` given their Linux names (x86_64, aarch64)."""
+    if platform.system() == "Windows":
+        return windows_machine(platform.machine())
+    return platform.machine().lower()
+
+
+def vmaf_binary(root: Path) -> Path:
+    """The package's `vmaf` program: `build/tools/vmaf.exe` in the Windows zip,
+    `build/tools/vmaf` everywhere else."""
+    windows = root / "build" / "tools" / "vmaf.exe"
+    return windows if windows.is_file() else root / "build" / "tools" / "vmaf"
 
 
 def collect_linux_facts(cpuinfo_path: str) -> dict[str, Any]:

@@ -681,14 +681,80 @@ def test_the_bundle_script_checks_before_it_packs() -> None:
     assert "PBS_FULL_SHA256" in text
 
 
+def test_the_windows_build_checks_before_it_packs() -> None:
+    text = (REPO / "scripts/ci/build-windows-tester-bundle.py").read_text()
+    body = text.split("def build_all(", 1)[1]
+    assert body.index('licensing("check", "--artifact", "windows-zip"') < body.index("pack(bundle")
+    assert body.index('licensing("notices", "--artifact", "windows-zip"') < body.index(
+        "run_own_report("
+    )
+    assert body.index("check-windows-bundle-imports.py") < body.index("pack(bundle")
+
+
 @pytest.mark.parametrize(("workflow", "needle"), [
     ("docker-publish-tester.yml", "sbom-path: ${{ runner.temp }}/sbom/tester-sbom-arm64/sbom.spdx.json"),
     ("docker-publish-tester.yml", "target: source-export"),
     ("macos-tester-bundle.yml", "sbom-path: ${{ steps.sbom.outputs.path }}"),
     ("macos-tester-bundle.yml", "PBS_FULL_SHA256:"),
+    ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_x64 }}"),
+    ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_arm64 }}"),
+    ("windows-tester-bundle.yml", "PBS_ARM64_FULL_SHA256:"),
 ])  # fmt: skip
 def test_both_workflows_attest_an_sbom(workflow: str, needle: str) -> None:
     assert needle in (REPO / ".github/workflows" / workflow).read_text()
+
+
+# ------------------------------------------------------------ the Windows zip
+
+
+def windows_tree(tmp: Path) -> argparse.Namespace:
+    """A tree shaped like the Windows zip, checked against the real windows-zip record."""
+    root = tmp / "zip"
+    for rel in ("build/tools/vmaf.exe", "tests/test_cpu.exe", "runtime/python.exe",
+                "runtime/python313.dll", "runtime/vcruntime140.dll", "runtime/vcruntime140_1.dll",
+                "runtime/DLLs/_ctypes.pyd", "runtime/Lib/os.py",
+                "runtime/LICENSE.txt", "python/test/resource/yuv/src01_hrc00_576x324.yuv",
+                "reference/x86_64-default.json", "image/build-info.json", "image/unit-tests.json",
+                "image/package-arch.txt", "image/msvc-redist.json"):  # fmt: skip
+        write(root / rel, "x")
+    for artifact, repo in (("tester/vmaf-tester-report", "tools/rc1-tester/vmaf-tester-report"),
+                           ("tester/src/vmaf_rc1_tester/hw_report.py",
+                            "tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py"),
+                           ("image/fixtures.json", "tools/rc1-tester/image/fixtures.json"),
+                           ("run.cmd", "tools/rc1-tester/image/windows/run.cmd"),
+                           ("README.txt", "tools/rc1-tester/image/windows/README.txt")):  # fmt: skip
+        write(root / artifact, (REPO / repo).read_bytes())
+    texts = tmp / "texts"
+    write(texts / "cpython-license.rst", "Doc/license.rst\n")
+    write(texts / "python-build-standalone/LICENSE.openssl-3.txt", "Apache-2.0\n")
+    scan_path = write(tmp / "scan.json", json.dumps(scan(("EUPL-1.2", "BSD-2-Clause-Patent"))))
+    return argparse.Namespace(artifact="windows-zip", root=str(root), repo=str(REPO),
+                              build_scan=str(scan_path), texts=str(texts), source_commit="c0ffee",
+                              tag="v1.0.0-test", python_version="3.13.16", receipt=None)  # fmt: skip
+
+
+def test_the_windows_zip_record_passes_a_recorded_tree(tmp_path: Path) -> None:
+    args = windows_tree(tmp_path)
+    data = lic.load_manifest()
+    assert notices_then_check(args, data) == []
+    notices = (Path(args.root) / "licenses/THIRD_PARTY_NOTICES.txt").read_text()
+    for component in ("microsoft-static-runtime", "microsoft-vc-runtime", "cpython"):
+        assert f"[component {component}]" in notices
+    assert "not covered by EUPL-1.2" in notices
+
+
+def test_the_windows_zip_gate_refuses_planted_defects(tmp_path: Path) -> None:
+    args = windows_tree(tmp_path)
+    data = lic.load_manifest()
+    lic.write_notices(args, data)
+    root = Path(args.root)
+    write(root / "tests/vcruntime140.dll", "a Microsoft DLL where only VMAFx programs belong")
+    write(root / "runtime-extra.dll", "x")
+    (root / "runtime/LICENSE.txt").unlink()
+    problems = lic.run_check(args, data)
+    assert "no recorded licence: tests/vcruntime140.dll" in problems
+    assert "no recorded licence: runtime-extra.dll" in problems
+    assert "licence text /runtime/LICENSE.txt is missing" in problems
 
 
 # ------------------------------------------------- vendor packages, fetched texts

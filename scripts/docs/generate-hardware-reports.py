@@ -41,6 +41,7 @@ PACKAGES = {
     "sycl": ("Intel GPU image", "c-intel-gpu-image-linux-or-windows-with-wsl2"),
     "cuda": ("NVIDIA GPU image", "d-nvidia-gpu-image-linux-or-windows-with-wsl2"),
     "hip": ("AMD GPU image", "e-amd-gpu-image-linux"),
+    "windows": ("Windows zip", "f-native-windows-zip-x64-or-arm64"),
 }
 GPU_BACKENDS = ("cuda", "hip", "sycl")
 

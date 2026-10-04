@@ -1,0 +1,57 @@
+# Meson tests of the Windows tester zip: the Linux list plus the tests the hosted MSVC
+# lanes run on Windows (build.yml "Run CPU tests (Windows)": the Win32 pthread shim, the
+# getopt shim, temporary files through GetTempPathW) and the Windows path and locale
+# tests. A name absent from a build is skipped (x86 tests on arm64, NEON tests on x64);
+# fewer than ten found fails the build. Tests that read source-tree files (test_model,
+# test_cambi) are left out, as in the Linux list.
+test_ssim_x86_simd
+test_cambi_dispatch_invariance
+test_psnr_hvs_dispatch_invariance
+test_cambi_simd
+test_cambi_spatial_mask_simd
+test_cambi_stage_simd
+test_ms_ssim_decimate
+test_moment_simd
+test_speed_simd
+test_iqa_convolve
+test_psnr_hvs_avx2
+test_vif_simd
+test_psnr_hvs_simd
+test_integer_adm_simd
+test_adm_dwt2_x86
+test_float_adm_x86
+test_integer_ssim_simd
+test_ciede_simd_parity
+test_motion_v2_simd
+test_motion_avx512_parity
+test_ssimulacra2_simd
+test_integer_vif_avx2_stages
+test_integer_vif_avx512_stages
+test_cpu
+test_feature_isa_invariance
+test_integer_adm_cm_threshold
+test_integer_adm_simd_noise
+test_integer_adm_aim_unclipped
+test_adm_cm_row_rounding
+test_float_motion_sad
+test_ordered_sum
+test_integer_vif_log2
+test_predict
+test_feature_extractor
+test_version
+test_psnr_hvs_score
+test_speed
+test_dict
+test_ref
+test_log
+test_thread_pool
+test_feature
+test_cli_parse
+test_ciede
+test_psnr
+test_luminance_tools
+test_feature_collector
+test_framesync
+test_output
+test_path_utf8
+test_locale_handling

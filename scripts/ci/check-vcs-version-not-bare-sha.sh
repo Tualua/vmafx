@@ -97,6 +97,7 @@ fi
 tester_workflows=(
   .github/workflows/macos-tester-bundle.yml
   .github/workflows/docker-publish-tester.yml
+  .github/workflows/windows-tester-bundle.yml
 )
 for wf in "${tester_workflows[@]}"; do
   if [ ! -f "$wf" ]; then

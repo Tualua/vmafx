@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from .hw_equiv import FixtureRunError, Runner, Scores, compare_scores, run_fixture_meta
+from .hw_facts import vmaf_binary
 from .hw_gate import run_gate
 from .hw_rows import evaluate_device_rows, load_row_map
 from .hw_suites import run_unit_tests
@@ -249,7 +250,7 @@ def run_device(
     """Every measurement of one device."""
     selector, budget, runner = backend.device_env(device), context["budget"], context["runner"]
     env = {**os.environ, **selector}
-    vmaf = str(root / "build" / "tools" / "vmaf")
+    vmaf = str(vmaf_binary(root))
     twins, lines = run_twins(
         vmaf, context["fixtures"], cpu, context["bounds"], backend=backend.name,
         environment=env, timeout_seconds=budget.fixture, runner=runner,

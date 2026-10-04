@@ -5734,6 +5734,7 @@
         ".github/workflows/macos-tester-bundle.yml": 1,
         ".github/workflows/rule-enforcement.yml": 2,
         ".github/workflows/supply-chain.yml": 4,
+        ".github/workflows/windows-tester-bundle.yml": 1,
         "dev/Containerfile": 3,
         "scripts/ci/check-container-build.sh": 2,
         "scripts/ci/tests/test-check-container-build.sh": 1,
@@ -7376,9 +7377,12 @@
       "sites": {
         ".github/workflows/libvmaf-build-matrix.yml": 1,
         ".github/workflows/required-aggregator.yml": 1,
+        ".github/workflows/windows-tester-bundle.yml": 1,
         "core/src/feature/simd_dx.h": 3,
         "core/src/meson.build": 1,
-        "core/test/test_ciede_neon.c": 1
+        "core/test/test_ciede_neon.c": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py": 1,
+        "tools/rc1-tester/tests/test_windows_bundle.py": 1
       },
       "target": "1260-windows-arm64-cpu-lane.md"
     },
@@ -7555,6 +7559,7 @@
         ".github/workflows/sanitizers.yml": 1,
         ".github/workflows/security-scans.yml": 2,
         ".github/workflows/tests-and-quality-gates.yml": 2,
+        ".github/workflows/windows-tester-bundle.yml": 1,
         "scripts/ci/tests/test_hiss_replay_contract.py": 1
       },
       "target": "1297-ci-gate-every-reporting-check.md"
@@ -7857,6 +7862,7 @@
         ".github/workflows/docker-publish-production.yml": 6,
         ".github/workflows/docker-publish-tester.yml": 1,
         ".github/workflows/macos-tester-bundle.yml": 1,
+        ".github/workflows/windows-tester-bundle.yml": 1,
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1,
         "scripts/release/tests/test-publication-environment-binding.sh": 2
       },
@@ -9706,6 +9712,7 @@
     "1493": {
       "sites": {
         ".github/workflows/macos-tester-bundle.yml": 2,
+        ".github/workflows/windows-tester-bundle.yml": 1,
         "scripts/ci/build-macos-tester-bundle.sh": 1
       },
       "target": "1493-macos-tester-bundle.md"
@@ -9830,6 +9837,7 @@
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
         ".github/workflows/supply-chain.yml": 1,
+        ".github/workflows/windows-tester-bundle.yml": 6,
         "Dockerfile.go-server": 3,
         "REUSE.toml": 2,
         "docker/Dockerfile.node": 4,
@@ -9837,6 +9845,8 @@
         "docker/Dockerfile.production": 8,
         "docker/Dockerfile.tester": 13,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
+        "scripts/ci/build-windows-tester-bundle.py": 6,
+        "scripts/ci/check-windows-bundle-imports.py": 1,
         "scripts/ci/install-rocm-from-image.sh": 1,
         "scripts/release/build-native-release-artifacts.sh": 1,
         "tools/rc1-tester/image/licensing.py": 4,
@@ -9905,6 +9915,15 @@
         "tools/rc1-tester/tests/test_licensing_production.py": 3
       },
       "target": "1513-production-artifact-licensing.md"
+    },
+    "1515": {
+      "sites": {
+        ".github/workflows/windows-tester-bundle.yml": 2,
+        "scripts/ci/build-windows-tester-bundle.py": 1,
+        "scripts/ci/check-windows-bundle-imports.py": 1,
+        "tools/rc1-tester/tests/test_windows_bundle.py": 1
+      },
+      "target": "1515-windows-tester-zip.md"
     }
   },
   "retired": {
