@@ -118,3 +118,28 @@ device walk returns a wrong sum on this A380 setup.
 
 The numerical reasons of the first measurement are gone on this base; the
 speed difference is within noise on this short run.
+
+## Re-measurement on `b01ffe42d` at 1080p (2026-10-04)
+
+The short run above (576x324, 48 frames) was too small to show the gain. A
+1080p run settles it: checkerboard `..._0_0` vs `..._1_0` concatenated to 60
+frames, `--backend cpu`, `--precision max --json`, 9 interleaved rounds with
+the build order rotated, all builds `--buildtype=release -Db_lto=false`, gcc
+15.2.0 and icx/icpx 2026.1.1 in `vmafx:build-ocloc`, Intel Xeon D-2143IT
+(16 logical CPUs, `powersave` governor). Seconds, median (min):
+
+| Configuration | icx | hybrid | GCC | hybrid vs icx | GCC vs icx | Spread icx / hyb / gcc |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 thread, `vmaf_v0.6.1` | 4.47 (4.41) | 4.25 (4.22) | 4.25 (4.20) | -4.9 % | -4.9 % | 2.2 / 1.8 / 3.1 % |
+| 1 thread, `vmaf_float_v0.6.1` | 17.95 (17.83) | 16.00 (15.84) | 16.01 (15.92) | -10.9 % | -10.8 % | 1.2 / 1.9 / 1.4 % |
+| 1 thread, `speed_chroma` + `speed_temporal` | 2.58 (2.54) | 2.55 (2.52) | 2.54 (2.52) | -1.1 % | -1.3 % | 3.1 / 1.9 / 1.9 % |
+| 1 thread, `cambi` | 6.49 (6.46) | 6.07 (6.03) | 6.03 (6.01) | -6.5 % | -7.0 % | 0.9 / 1.8 / 1.2 % |
+| 16 threads, `vmaf_v0.6.1` | 1.02 (0.99) | 0.99 (0.97) | 0.99 (0.96) | -2.6 % | -2.7 % | 5.1 / 5.3 / 6.0 % |
+| SYCL `vmaf_v0.6.1`, Arc A380 | 0.74 (0.72) | 0.73 (0.72) | - | -0.6 % | - | 4.2 / 3.0 % |
+
+All JSON outputs are identical across the three builds once the `fps` field
+is removed (0 mismatches over 9 rounds and six configurations). The gain is
+beyond the round-to-round spread for the three heavy single-threaded
+configurations and within it for SpEED, 16 threads and SYCL. The hybrid
+matches pure GCC everywhere, so the speed comes from GCC compiling the CPU C
+code; the hybrid keeps it while still building the SYCL backend.

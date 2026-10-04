@@ -26,8 +26,12 @@ cover:
 - **Speed.** On the old base the GCC-compiled CPU path was 8-12 % faster
   single-threaded at 1080p and 2.7 % faster with 16 threads, SYCL unchanged.
   On master `b01ffe42d` (strict model on every translation unit, glibc math)
-  the difference is within run-to-run noise (about 3 % single-threaded on the
-  Netflix 576x324 pair, research digest).
+  a 1080p re-measurement (60 frames, 9 interleaved rounds, 1-3 % round-to-round
+  spread, research digest) still shows it single-threaded: `vmaf_v0.6.1`
+  -4.9 %, `vmaf_float_v0.6.1` -10.9 %, `cambi` -6.5 % against icx; SpEED
+  -1.1 %, 16 threads -2.6 % and SYCL -0.6 % are within noise. The hybrid
+  equals a pure GCC build in every CPU configuration (at most 0.4 points), so
+  the gain is GCC compiling the CPU C code, and the hybrid keeps SYCL.
 - **The mixed toolchain itself.** With `CC=gcc CXX=icpx`, ADR-1461's policy
   block keys on the C compiler (`cc.get_id()`), so the C++ translation units
   icpx compiles got GCC's spelling, `-ffp-contract=off`, and stayed in icpx's
@@ -62,7 +66,7 @@ covered there.
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
 | **GCC C + icpx C++, the C++ strict spelling for icpx (chosen)** | Faster CPU path; C++ under icpx as strict as in an icx build; SYCL unchanged | Two compilers in one build; LTO off; CUDA/HIP host C in the dev image is GCC-built | — |
-| Keep `icx` everywhere | One compiler; LTO on; since ADR-1461 and ADR-1495 the same scores as GCC | Slower CPU path (measured on the old base) | Speed |
+| Keep `icx` everywhere | One compiler; LTO on; since ADR-1461 and ADR-1495 the same scores as GCC | CPU path 5-11 % slower single-threaded at 1080p (re-measured on `b01ffe42d`) | Speed |
 | Hybrid with `-fp-model=precise` on libsvm only (first version of this ADR) | One target | Other C++ translation units stay in icpx's fast model; after ADR-1461's project argument the flag re-enables contraction in `svm.cpp`, which `test_strict_fp_compiler_args` rejects | Wrong scope, now also wrong order |
 | Hybrid with ADR-1461's block keyed on the C++ compiler as well | One block | The block's variables feed C-only targets and the CUDA host flags; splitting them per language changes every consumer | Larger change for the same effect |
 | Hybrid with `b_lto=true` | Whole-program LTO | GCC GIMPLE LTO objects cannot be read by the icpx/lld link | Does not link |
@@ -77,11 +81,12 @@ covered there.
   and its tests link, and its C++ units are as strict as an icx build's.
 - **Negative**: no LTO in these container builds. The dev image's CUDA and
   HIP host C is GCC-compiled; there is no NVIDIA or AMD GPU on the
-  measurement host, so that path is build-verified only. The 8-12 % speed
-  gain measured on the old base did not reproduce on `b01ffe42d` (within
-  noise on a short single-threaded run); with the numerical reasons gone
-  (ADR-1461, ADR-1495) the container toolchain choice rests on that
-  measurement, which a longer 1080p run should repeat.
+  measurement host, so that path is build-verified only. With the numerical
+  reasons gone (ADR-1461, ADR-1495) the toolchain choice rests on speed: a
+  short single-threaded run on the 576x324 pair after the rebase showed no
+  clear gain, and the 1080p re-measurement above (bit-identical outputs
+  across icx, hybrid and GCC) shows 5-11 % on the heavy single-threaded
+  configurations and noise elsewhere.
 - **Neutral / follow-ups**: every new test executable must pass
   `kwargs : test_link_kwargs` unless it sets `link_language` itself. The
   release images (`docker/Dockerfile.production-gpu`) could adopt the same
