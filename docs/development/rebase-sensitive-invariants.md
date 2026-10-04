@@ -3,17 +3,33 @@
 
 Cross-package invariants that any upstream-sync or rebase agent must preserve.
 Referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness. Per-subtree
-detail lives in the `AGENTS.md` under each subtree; this page is the index. When a
-rebase touches a cited translation unit, read that subtree harness before resolving
-conflicts. A subtree `AGENTS.md` with an `AGENTS.d/` next to it is a generated index:
-read the pages its table names for the paths you touch, and add an invariant as a
-page there ([agents index and topic pages](agents-index.md)).
+detail (the load-bearing reasons and mechanics) lives in the `AGENTS.md` under
+each subtree; this page is the index. When a rebase touches a cited translation
+unit, read that subtree harness before resolving conflicts. A subtree
+`AGENTS.md` with an `AGENTS.d/` next to it is a generated index: read the pages
+its table names for the paths you touch, and add an invariant as a page there
+([agents index and topic pages](agents-index.md)).
 
-Cross-package invariants that any upstream-sync / rebase agent must
-preserve. Per-subtree details (the load-bearing reasons + load-bearing
-mechanics) live in the relevant `AGENTS.md` under that subtree; this
-list is the index. When a rebase touches the cited TUs, walk the
-linked AGENTS.md before resolving conflicts.
+The invariants are grouped by area. A GPU or SIMD twin that returns the CPU
+extractor's bits has one entry per backend; find the feature's section, then the
+backend within it.
+
+- [Documentation and site](#documentation-and-site): entry points, the site toolchain, navigation and search
+- [Build, test and CI](#build-test-and-ci): test-runner sanitisation, editor settings, coverage and CI pins, the dev container, nox, security evidence
+- [Upstream sync and provenance](#upstream-sync-and-provenance): the recorded upstream head, deliberate deviations, upstream ports
+- [Backends, extractors and the parity gate](#backends-extractors-and-the-parity-gate): which backends and extractors exist, how twins are registered and declared exact
+- [Floating-point policy and device contracts](#floating-point-policy-and-device-contracts): contraction, libm, strict-FP lines, SYCL scratch / fp64 / sub-group rules
+- [psnr_hvs](#psnr_hvs): CUDA, SYCL and HIP twins, the masking threshold
+- [psnr and float_moment](#psnr-and-float_moment): integer block sums, float squares, the NEON / SVE2 order
+- [SpEED and CAMBI](#speed-and-cambi): fp64 expressions, device-resident pipelines, the parity fixture
+- [SSIMULACRA 2](#ssimulacra-2): CPU sum order and single-readback pipelines
+- [SSIM and MS-SSIM](#ssim-and-ms-ssim): decimation, raster-order sums, option parity
+- [Motion](#motion): SAD order and the five-frame window
+- [VIF](#vif): statistic arithmetic, the log2 table
+- [ADM](#adm): integer and float ADM, AIM, the divide, row rounding
+- [CIEDE2000](#ciede2000): CPU arithmetic on each backend
+
+## Documentation and site
 
 - **Documentation entry points**: keep `README.md` concise and link to the
   topic guides for changing build requirements, backend coverage and model
@@ -64,6 +80,8 @@ linked AGENTS.md before resolving conflicts.
   `scripts/docs/check_search_scope.py` reads the built index. See
   [Documentation site design](docs-site-design.md#search).
 
+## Build, test and CI
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,
@@ -86,6 +104,122 @@ linked AGENTS.md before resolving conflicts.
   `scripts/ci/tests/test_zed_project_config.py`. The scoped mechanics live in
   [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
 
+- **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
+  [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
+  floors live in `scripts/ci/coverage-check.sh`
+  (`OVERALL_MIN=70`, `CRITICAL_MIN=90`, `PER_FILE_MIN[...]`); per-PR
+  drop tolerance lives in `scripts/ci/coverage-delta-check.sh`
+  (default 0.5pp on overall and per-touched-file). Lowering any
+  floor or loosening the delta tolerance requires a new ADR
+  superseding ADR-0922. The Coverage Gate job in
+  `.github/workflows/tests-and-quality-gates.yml` invokes both
+  scripts; the delta gate needs `actions/checkout` with
+  `fetch-depth: 0` because it runs `git merge-base`. See
+  [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md) §Coverage Gate
+  ratchet for the full coupling.
+
+- **CI action pins — Windows MSVC dev env**
+  ([ADR-0635](../adr/0635-ci-warning-omnibus-2026-05-19.md)):
+  `.github/workflows/libvmaf-build-matrix.yml` uses
+  `TheMrMilchmann/setup-msvc-dev@79dac248…` (v4.0.0, Node.js 24) for the
+  Windows GPU build legs. If upstream ADR-0121 is re-implemented or the
+  Windows legs are rebased, do **not** reintroduce `ilammy/msvc-dev-cmd`
+  (Node.js 20, deprecated 2026-06-02). The `TheMrMilchmann` action is a
+  drop-in replacement with identical `vcvarsall.bat` semantics.
+  Also: both Windows jobs are pinned to `windows-2025`; do not revert to
+  `windows-latest` (redirect to `windows-2025-vs2026` takes effect
+  2026-06-15).
+
+- **dev-MCP Docker container**
+  ([ADR-0451](../adr/0451-local-dev-mcp-container.md)):
+  `dev/Containerfile` installs CUDA through the shared installer's exact
+  `--mode=full` contract (ADR-1306). `build-config.env` owns the apt series,
+  release lock, and exact toolkit/nvcc/cudart package versions; do not restore a
+  floating `cuda-toolkit-13-4` command in the Containerfile. It also pins the unversioned
+  `intel-basekit` meta-package (Intel does not publish a
+  `intel-basekit-2025.3` apt package), and the digest-pinned
+  `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage
+  (ADR-1225 / ADR-1231). If SDK versions are bumped (routine security
+  maintenance), update their shared pins in `build-config.env` and regenerate
+  the mirrors before merging; a ROCm bump
+  additionally means re-validating the `rocm-src` prune list against its
+  hipcc smoke check.
+  `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
+  `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
+  — do not rename these files. The probe JSON schema fields (`ts`,
+  `host_id`, `backend_results`, `mcp_results`) are an internal format;
+  update `docs/development/dev-mcp.md` if the schema changes. This
+  directory does not affect the libvmaf C build or any CI gate.
+
+- **Top-level `noxfile.py` is a local-dev affordance, not a CI gate (ADR-0914)**:
+  The repo-root `noxfile.py` exposes one session per Python package
+  (`ai`, `mcp`, `vmaf_tune`, `dev_llm`, `roi_score`, `ensemble_kit`,
+  `python_harness`) plus `all` / `lint` meta-sessions. CI does **not**
+  call nox — each package keeps its own `python3 -m venv && pip install
+  -e .[dev] && pytest` recipe in
+  `.github/workflows/tests-and-quality-gates.yml`. When adding a new
+  Python package, update **both** `noxfile.py` and the CI YAML; missing
+  one drifts the dev experience away from CI. See
+  [`docs/development/python-test-orchestrator.md`](python-test-orchestrator.md).
+  The `python_harness` session intentionally delegates to `tox -c
+  python` rather than duplicating the Cython + Netflix golden-data
+  setup that lives in `python/tox.ini`; do not collapse them.
+
+- **Security support and badge evidence** — `SECURITY.md` describes actual
+  VMAFx release support, not inherited Netflix/libvmaf version strings.
+  Keep [the passing worksheet](best-practices-assessment.md)
+  tied to a reviewed source revision and the live project record. Configuration,
+  future releases and agent-authored prose cannot establish historical response
+  times, a human developer's knowledge or a completed external badge. The
+  project website is GitHub Pages; keep the short purpose and participation
+  links in `docs/index.md`, and verify deployed pages before citing new text.
+
+## Upstream sync and provenance
+
+- **Recorded upstream head ([ADR-1474](../adr/1474-relicense-helper-headers-and-ci-check.md))**:
+  `docs/development/known-upstream-bugs.md` carries exactly one heading
+  ``## Upstream head the fork is at parity with: `<commit id>` (<date>)``.
+  `scripts/ci/upstream_parity_pin.py` reads it and the required check
+  `Licence Provenance` compares every file's licence header against that
+  Netflix/vmaf commit. An upstream port or sync moves the id in the same pull
+  request and keeps the heading's wording; a second heading of that form, or a
+  reworded one, fails the check. A port that brings a file whose path or name
+  now exists upstream changes that file's verdict: run
+  `scripts/dev/relicense_fork_files.py --check --upstream-ref <new id>`
+  before pushing. See [the guide](licence-provenance-check.md).
+
+- **Deliberate deviations from Netflix's source, by ADR**: code inherited
+  from Netflix/vmaf evaluates as Netflix's source does unless an ADR says
+  otherwise. Eight fixes that predate that rule have their ADR since
+  2026-10-02, each with upstream's lines at Netflix `9e48141b`, the measured
+  size and the upstream pull request that would end it:
+  [ADR-1479](../adr/1479-ciede-422-chroma-subsampling-flags.md) (`ciede`
+  4:2:2 chroma flags),
+  [ADR-1480](../adr/1480-speed-frame-buffers-prescale-above-one.md)
+  (`speed_temporal` buffers at `speed_prescale` above 1),
+  [ADR-1481](../adr/1481-extractor-failure-fails-the-run.md) (a worker's
+  error fails the run),
+  [ADR-1482](../adr/1482-integer-adm-frames-17-to-32.md) (integer `adm` on
+  frames of 17 to 32 pixels),
+  [ADR-1483](../adr/1483-odd-size-chroma-planes-round-up.md) (odd-sized
+  chroma planes round up),
+  [ADR-1484](../adr/1484-float-ms-ssim-magnitude-before-pow.md)
+  (`float_ms_ssim` magnitude before `pow()`),
+  [ADR-1485](../adr/1485-apsnr-zero-error-plane-reports-cap.md) (`apsnr` of a
+  plane without error) and
+  [ADR-1486](../adr/1486-float-motion-scale1-uses-callers-stride.md)
+  (`float_motion` scale-1 stride). A sync keeps the fork's side of these
+  lines until the named upstream pull request is merged; the table is in
+  [rebase-notes](../rebase-notes.md) under "Eight deliberate deviations".
+
+- **Upstream port — feature/motion options from b949cebf
+  (T-NEW-1)**: PR #197 (`b949cebf`, MERGED 2026-04-29) ported
+  Netflix's feature/motion several-options commit; PR #213 ported
+  `d3647c73` `feature/speed` extractors (`speed_chroma` +
+  `speed_temporal`; `speed.c` is in the tree).
+
+## Backends, extractors and the parity gate
+
 - **GPU long-tail terminus reached** — every registered feature
   extractor has at least one GPU twin (lpips remains ORT-delegated
   per [ADR-0022](../adr/0022-inference-runtime-onnx.md)).
@@ -98,26 +232,35 @@ linked AGENTS.md before resolving conflicts.
   motion_v2 / float-twins / ssimulacra2 / cambi; `float_ansnr` removed
   in commit 70ed8b3ce3 / PR #38).
   See [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md).
+
 - **Vulkan backend removed ([ADR-0726](../adr/0726-drop-vulkan-backend.md))** —
   the Vulkan backend, its `libvmaf_vulkan.h` surface, the `core/src/vulkan/`
   tree, the Volk-symbol-hiding machinery, and all `*_vulkan` GLSL kernels
   (ssim / ms_ssim / motion_v2 / cambi / psnr chroma) no longer exist in the
   tree. No rebase invariant survives. Treat any lingering Vulkan reference as
   stale.
-- **MCP embedded scaffold (T5-2a, ADR-0209)**:
+
+- **MCP embedded server (ADR-0128, ADR-0209; runtime v3)**:
   [ADR-0209](../adr/0209-mcp-embedded-scaffold.md). Public header
-  `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
-  `core/src/mcp/mcp.c`, `enable_mcp` + 3 transport sub-flags. T5-2b
-  (cJSON + mongoose + transport bodies) is open. See
-  [core/AGENTS.md §Rebase-sensitive invariants](../../core/AGENTS.md).
-- **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
-  audit-first AMD HIP backend scaffold. Public `libvmaf_hip.h`,
-  19 registered feature extractors + 3 unregistered legacy stubs,
-  `enable_hip` meson option default `false`.
-- **SVE2 SIMD ports (T7-38, ADR-0213 placeholder, PR #201)** —
+  `libvmaf_mcp.h`; the runtime is live in `core/src/mcp/` (`mcp.c`,
+  `dispatcher.c`, `compute_vmaf.c`, the `transport_{stdio,uds,sse}.c` bodies,
+  vendored cJSON) behind `enable_mcp` plus three transport sub-flags. The
+  stdio transport is newline-delimited JSON-RPC; `-ENOSYS` means only "feature
+  or transport not built"; the SPSC command ring is v4 work, so
+  `queue_depth` / `max_drain_per_frame` are validated and stored, nothing
+  more. User page: [embedded MCP](../mcp/embedded.md). See
+  [core/src/mcp/AGENTS.md](../../core/src/mcp/AGENTS.md).
+
+- **HIP backend (T7-10, [ADR-0212](../adr/0212-hip-backend-scaffold.md), PR #200)** —
+  public `libvmaf_hip.h`, 19 registered feature extractors
+  ([HIP overview](../backends/hip/overview.md)), `enable_hip` meson option
+  default `false`, device kernels behind `enable_hipcc`.
+
+- **SVE2 SIMD ports (T7-38, [ADR-0213](../adr/0213-ssimulacra2-sve2.md), PR #201)** —
   SSIMULACRA 2 PTLR + IIR-blur SVE2 ports developed against
   `qemu-aarch64-static`. Same bit-exact contract as the existing
   NEON ports.
+
 - **GPU-parity CI gate (T6-8, ADR-0214)**:
   [ADR-0214](../adr/0214-gpu-parity-ci-gate.md). Single source of
   truth for cross-backend tolerances:
@@ -131,6 +274,139 @@ linked AGENTS.md before resolving conflicts.
   `docs/development/cross-backend-exact-twins.md` take master's side and run
   `make docs-fragments-write`. See
   [core/AGENTS.md](../../core/AGENTS.md).
+
+- **FastDVDnet temporal pre-filter (T6-7, [ADR-0215](../adr/0215-fastdvdnet-pre-filter.md),
+  PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
+
+- **MobileSal saliency extractor (T6-2a, [ADR-0218](../adr/0218-mobilesal-saliency-extractor.md),
+  PR #208)** — first half of T6-2 (encoder-side ROI bundle).
+  Saliency-weighted VMAF, sidecar emit for `tools/vmaf-roi`.
+
+- **TransNet V2 shot-boundary extractor (T6-3a, PR #210)** —
+  ~1M params; feeds `tools/vmaf-perShot` CRF predictor.
+
+- **Model registry + Sigstore (T6-9, [ADR-0211](../adr/0211-model-registry-sigstore.md), PR #199)**:
+  `--tiny-model-verify` flag + registry schema + Sigstore bundle
+  paths. Pairs with
+  [ADR-0010](../adr/0010-sigstore-keyless-signing.md) (release
+  signing).
+
+- **CPU extractors declare the features they write ([ADR-1359](../adr/1359-cli-feature-backend-twin.md))**:
+  the twin lookup pairs a CPU extractor with a device twin through
+  `provided_features`. `core/src/feature/float_moment.c` is an upstream-mirror
+  file whose list the fork changed from upstream's pseudo-name
+  `"float_moment"` to the four emitted `float_moment_*` names; an upstream
+  sync must keep the fork's list, or `--backend <gpu> --feature float_moment`
+  falls back to the CPU again. `vmaf_feature_extractor_twin_audit()` and
+  `test_every_device_twin_is_reachable` (`core/test/test_feature_extractor.c`)
+  fail when any registered device twin is unreachable. See
+  [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md).
+
+- **CUDA twins declared exact as a group ([ADR-1457](../adr/1457-cuda-exact-twins-declared.md))**:
+  `scripts/ci/exact_twins.d/{motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,float_ms_ssim,float_ms_ssim_lcs,cambi}.cuda`
+  make the parity gate compare those cells with tolerance 0, and
+  `core/test/test_cuda_exact_twins.c` holds `motion_cuda`, `motion_v2_cuda`,
+  `psnr_cuda`, `float_ssim_cuda`, `float_ms_ssim_cuda` and `cambi_cuda` to
+  `==` on every output. A rebase that changes one of these twins or its CPU
+  extractor keeps them bit-identical; a twin that drifts is fixed, never
+  given a tolerance or taken off the list.
+
+- **SYCL twins declared exact as a group ([ADR-1451](../adr/1451-sycl-exact-twins-declared.md))**:
+  `scripts/ci/exact_twins.d/{adm,motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,cambi}.sycl`
+  make the parity gate compare those cells with tolerance 0, and
+  `core/test/test_sycl_exact_twins.c` holds `adm_sycl`, `motion_sycl`,
+  `motion_v2_sycl`, `psnr_sycl`, `float_ssim_sycl` and `cambi_sycl` to `==`
+  on every output. A rebase that changes one of these twins or its CPU
+  extractor keeps them bit-identical; a twin that drifts is fixed, never
+  given a tolerance or taken off the list.
+
+## Floating-point policy and device contracts
+
+- **No C or C++ translation unit is built with FP contraction ([ADR-1461](../adr/1461-strict-fp-every-translation-unit.md))**:
+  `core/src/meson.build` declares `vmaf_strict_fp_args` as a project argument
+  for C and C++ directly after the `VMAF strict FP compiler-argument policy`
+  block, above the first build target. Keep both there on a rebase (Meson
+  refuses `add_project_arguments()` after a target), and never give a target
+  `vmaf_fp_model_args` alone or any flag that turns contraction back on.
+  `core/test/test_strict_fp_compiler_args.py` reads the compile database of
+  the build it runs in; `make test-netflix-golden-arm64` runs the golden gate
+  on an aarch64 cross build, where a clang build and a GCC build used to
+  differ. See [core/AGENTS.md](../../core/AGENTS.md).
+
+- **icx and icpx builds link glibc's libm, not Intel's libimf ([ADR-1495](../adr/1495-icx-system-libm.md))**:
+  `core/src/meson.build` declares the `VMAF host math library link policy`
+  block directly after the strict FP policy and passes its lists with
+  `add_project_link_arguments()` for C and C++, above the first build target:
+  an `intel-llvm` compiler gets `-no-intel-lib=libimf`, every other compiler
+  nothing. The Intel driver otherwise links `libimf` into every link (it turns
+  a given `-lm` into `-limf -lm`), and an icx-built `vmaf` exported libimf's
+  copies of the math functions `libvmaf.so` imports, so the CPU scores of an
+  icx build differed from a GCC build's. Keep the block and both lines on a
+  rebase, and never link Intel's math library back by name or substitute
+  `-shared-intel`. `core/test/test_icx_system_libm.py` reads the build's own
+  `libvmaf.so` and `vmaf` (skips on non-icx builds) and
+  `core/test/test_strict_fp_compiler_args.py` executes the block per compiler
+  pair. See [core/AGENTS.md](../../core/AGENTS.md).
+
+- **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
+  `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
+  `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets
+  `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
+  -foffload-fp32-prec-sqrt` in that order (precise implies contraction on, so
+  contraction-off must follow it), AdaptiveCpp `-ffp-contract=off`. Every
+  feature TU takes it through `sycl_feature_tail_args`; no TU gets a private
+  FP list. `sycl_link_args` also carries `sycl_fp32_prec_args` to every link
+  the icpx driver runs, because the SPIR-V JIT image is generated there;
+  dropping it leaves `-Dsycl_icpx_aot_targets=` builds with approximate `/`
+  and sqrt. The MSVC build's explicit device link (ADR-1364) generates every
+  image and takes `sycl_strict_fp_args` whole.
+  `core/test/test_strict_fp_compiler_args.py` executes the policy and
+  `test_sycl_fp_arith_contract` checks the device arithmetic.
+
+- **CUDA device FP policy ([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md))**:
+  every CUDA fatbin takes `cuda_device_strict_fp_args` (`--fmad=false` under
+  nvcc, `-ffp-contract=off` under clang CUDA), defined once between the
+  `VMAF CUDA device strict FP policy` markers in `core/src/meson.build`;
+  `cuda_cu_extra_flags` carries no floating-point flag. A kernel whose
+  reference fuses writes `__fmaf_rn()`. `float_ms_ssim_cuda` reproduces
+  `ms_ssim_decimate.c`, `iqa_convolve()` and
+  `ssim_accumulate_default_scalar()` operation for operation and is
+  bit-identical to the CPU. `core/test/test_strict_fp_compiler_args.py`,
+  `core/test/test_cuda_kernel_source_contract.py` and
+  `core/test/test_cuda_float_ms_ssim_parity.c` guard it. See
+  [core/src/cuda/AGENTS.md](../../core/src/cuda/AGENTS.md) and
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
+- **SYCL kernels use no scratch memory ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md))**:
+  on an Arc A-series GPU under the Linux xe driver, kernels with a private array
+  in memory or spilled registers return wrong values. `test_sycl_kernel_scratch`
+  fails on a scratch kernel missing from `core/src/sycl/scratch_ratchet.txt`,
+  whose extractors must match `kScratchExtractors` in
+  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl`'s
+  SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
+  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
+- **SYCL fp64-less device contract (T7-17, ADR-0220)**:
+  [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
+  kernels are unconditionally fp64-free; a single fp64 instruction
+  in any lambda blocks the whole TU on Arc A-series. See
+  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md).
+
+- **SYCL kernels require sub-group size 16 or 32 ([ADR-1468](../adr/1468-sycl-sub-group-sizes-every-aot-target.md))**:
+  the default build compiles every kernel ahead of time for the 19 targets
+  of `sycl_icpx_aot_targets`, and the Xe2 targets do not compile a kernel
+  that requires 8. `core/src/feature/sycl/sycl_compat.h` rejects another
+  size at compile time (`VmafSyclSubGroupSize`); a rebase must not bring a
+  raw `[[sycl::reqd_sub_group_size(N)]]` or `sub_group_size<N>` into a
+  kernel, nor a size 8. `core/test/test_sycl_sub_group_size_contract.py`
+  (device-free) and `core/test/test_sycl_aot_default_targets.py` (suite
+  `sycl-aot`, compiles every SYCL translation unit for the full default
+  list) guard it; `core/test/sycl_aot_targets.py` holds the measured sizes
+  per target family and needs an entry for a target added to the list.
+
+## psnr_hvs
+
 - **`psnr_hvs_cuda` returns the CPU's scores bit for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md))**:
   `psnr_hvs_score.cu` stores the 64 terms `calc_psnrhvs()` sums per block, in
   the CPU's arithmetic (double masking table, the threshold's float product
@@ -143,6 +419,7 @@ linked AGENTS.md before resolving conflicts.
   `test_psnr_hvs_score` guard it without a device, `test_cuda_psnr_hvs_parity`
   on one; the parity gate compares the twin with tolerance 0 (`EXACT_TWINS`).
   See [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
 - **The `psnr_hvs` masking threshold is upstream's statement ([ADR-1488](../adr/1488-psnr-hvs-upstream-mask-product.md))**:
   `calc_psnrhvs()` writes `s_mask = sqrt(s_mask * s_gvar) / 32.f` (and the
   same for `d_mask`), as Netflix `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`
@@ -156,6 +433,7 @@ linked AGENTS.md before resolving conflicts.
   `test_psnr_hvs_dispatch_invariance` (recorded blocks scored as Netflix
   master scores them), `test_psnr_hvs_simd` and
   `test_psnr_hvs_twin_exact_sum_contract.py` guard it.
+
 - **`psnr_hvs_sycl` and `psnr_hvs_hip` return the CPU's scores bit for bit ([ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md))**:
   both store the 64 terms `calc_psnrhvs()` sums per block and call
   `core/src/feature/psnr_hvs_score.c`, as the CUDA twin does. The HIP kernel
@@ -173,17 +451,113 @@ linked AGENTS.md before resolving conflicts.
   and `test_sycl_fp_arith_contract` on one. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
   [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
-- **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
-  PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
+
+## psnr and float_moment
+
 - **psnr chroma GPU twins (T3-15(b), PR #204)** — `psnr_cb` /
   `psnr_cr` device kernels alongside the existing `psnr_y` from
   [ADR-0182](../adr/0182-gpu-long-tail-batch-1.md). (The original
   Vulkan implementation was removed with the backend in ADR-0726.)
-- **MobileSal saliency extractor (T6-2a, ADR-0218 placeholder,
-  PR #208)** — first half of T6-2 (encoder-side ROI bundle).
-  Saliency-weighted VMAF, sidecar emit for `tools/vmaf-roi`.
-- **TransNet V2 shot-boundary extractor (T6-3a, PR #210)** —
-  ~1M params; feeds `tools/vmaf-perShot` CRF predictor.
+
+- **`float_psnr_cuda` adds integers ([ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md))**:
+  `core/src/feature/cuda/float_psnr/float_psnr_score.cu` forms the CPU's term
+  (`diff * diff` in `float`, as `float_psnr.c` does) with `__fmul_rn()` as an
+  integer in units of 1 / scaler^2 and reduces `uint64` values per warp and
+  per block; `float_psnr_cuda.c::float_psnr_noise()` adds the blocks in
+  `uint64` and divides the exact total by scaler^2 and the pixel count. An
+  fp32 block sum is exact only up to 24 bits. A change to how `float_psnr.c`
+  forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
+  device, `test_cuda_float_psnr_parity` (`==`) on one.
+  Each block / work-group lies in ONE row (256 x 1), and the host adds each
+  row's exact sum into a double in row order with
+  `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
+  as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
+  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
+
+- **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
+  `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
+  (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of
+  1 / scaler^2 and reduces `uint64` values per sub-group, per work-group and on
+  the host; an fp32 group sum is exact only up to 24 bits. The host divides
+  the exact total by scaler^2 and the pixel count. A change to how
+  `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
+  device, `test_sycl_float_psnr_parity` (`==`) on one.
+  Each block / work-group lies in ONE row (256 x 1), and the host adds each
+  row's exact sum into a double in row order with
+  `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
+  as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
+  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
+
+- **`float_moment_hip` adds the CPU's float squares ([ADR-1447](../adr/1447-hip-float-moment-cpu-float-squares.md))**:
+  the 16-bit kernel of `core/src/feature/hip/float_moment/moment_score.hip`
+  adds `moment_float_square()`, one fp32 product of the sample with itself
+  converted to an integer, where `moment.c::compute_2nd_moment()` forms the
+  square in `float`; an exact integer square is another number at 16 bits. The
+  host recovers the moment with the CPU's two divisions. A change to how
+  `moment.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_hip_float_moment_exact_contract.py` guards it without a
+  device, `test_hip_float_moment_parity` on one (`==`, past 2^53 units too,
+  ADR-1497 below).
+
+- **The NEON and SVE2 `float_moment` kernels add in the scalar's order ([ADR-1500](../adr/1500-arm-float-moment-scalar-order.md))**:
+  `core/src/feature/arm64/moment_neon.c` and `moment_sve2.c` store each
+  vector of samples (squared in `float` for the second moment) and add the
+  lanes into one `double` one after the other, as `moment.c` and
+  `x86/moment_avx2.c` do; the SVE2 kernel adds the first `svcntp_b32` active
+  lanes of a `svwhilelt_b32` predicate and does not depend on the vector
+  length. A sync must not bring back lane accumulators, per-row vector sums or
+  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past 2^53 units the sum
+  rounds on every add. `core/test/test_moment_simd.c` (`==`) guards it; run
+  it under `qemu-aarch64` with `sve=off`, `sve128`, `sve256`, `sve512` and
+  `sve2048` after touching any of the four kernels.
+
+- **`float_moment_cuda` adds the CPU's float squares ([ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md))**:
+  the 16bpc kernel of `core/src/feature/cuda/integer_moment/moment_score.cu`
+  adds `moment_float_square()`, one `__fmul_rn()` product of the sample with
+  itself converted to an integer, where `moment.c::compute_2nd_moment()` forms
+  the square in `float`; an exact integer square is another number at 16 bits.
+  The host recovers the moment with the CPU's two divisions. A change to how
+  `moment.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_cuda_float_moment_exact_contract.py` guards it without a
+  device, `test_cuda_float_moment_parity` on one (`==`, past 2^53 units too,
+  ADR-1497 below).
+
+- **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
+  the kernel of `core/src/feature/sycl/integer_moment_sycl.cpp` adds
+  `moment_float_square()`, one fp32 product of the sample with itself
+  converted to an integer, where `moment.c::compute_2nd_moment()` forms the
+  square in `float`; an exact integer square is another number at 16 bits. The
+  host recovers the moment with the CPU's two divisions. A change to how
+  `moment.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_sycl_float_moment_exact_contract.py` guards it without a
+  device, `test_sycl_float_moment_parity` on one (`==`, past 2^53 units too,
+  ADR-1497 below).
+
+- **The `float_moment` twins form the CPU's rounded second-moment sum past 2^53 units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
+  on a frame whose sum of float squares can pass 2^53 units
+  (`vmaf_moment_sum_may_round()`), the CUDA, SYCL and HIP hosts run four more
+  kernels after the frame kernel (row totals, row plans, row units, ordered
+  totals) that replace accumulators 2 and 3 with the CPU's sequentially
+  rounded sums. The arithmetic and every lane's steps are
+  `core/src/feature/float_moment_sum.h` (integers only); the CUDA and HIP
+  kernels are `core/src/feature/float_moment_sum_gpu.h`, compiled into
+  `moment_score.cu` / `moment_score.hip`; the SYCL kernels are in
+  `integer_moment_sycl.cpp` and pick planes by value. A sync must not drop the
+  four kernels, add a row from its increments without
+  `vmaf_moment_sum_add_run()`'s check, reorder the tree, or bring back the
+  exact sum rounded once. A change to `compute_2nd_moment()`'s order or term
+  changes the header and `test_float_moment_sum` in the same PR.
+  `test_float_moment_sum` (host, the kernels' steps against
+  `picture_copy()` + `compute_2nd_moment()` up to 7680x4320) and
+  `test_float_moment_sum_contract.py` guard it without a device,
+  `test_{cuda,sycl,hip}_float_moment_parity` on one.
+
+## SpEED and CAMBI
+
 - **SpEED evaluates Netflix's fp64 expressions ([ADR-1477](../adr/1477-speed-upstream-double-math.md))**:
   three places of `core/src/feature/speed.c` are fp64 arithmetic rounded to
   `float` once, as Netflix master has them: `1.0 / sqrt(1 + t * t)` in
@@ -208,6 +582,7 @@ linked AGENTS.md before resolving conflicts.
   on glibc only, the CPU against Netflix's values, without a device (its
   `_foreign_libm` variant runs the other libcs' path); the three source contract tests and
   `test_{cuda,hip,sycl}_speed_*_parity` (`==`) guard the twins.
+
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
   and reproduces `speed.c` operation for operation, up to the variances
@@ -218,6 +593,44 @@ linked AGENTS.md before resolving conflicts.
   mid-frame. `core/test/test_sycl_kernel_source_contract.py` guards the
   layout; `scripts/dev/speed_gpu_parity.py --backend sycl` re-checks bit
   parity. See [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
+- **SpEED twin parity fixture ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md), [ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md))**:
+  `core/test/test_cuda_speed_chroma_parity.c` and
+  `core/test/test_hip_speed_chroma_parity.c` keep the 960x960 textured
+  fixture of `core/test/speed_chroma_twin_parity.h`: a smaller or ramp
+  fixture has a singular covariance and never reaches the scoring path. The
+  comparison is `==` since ADR-1477; the `LIBM_TWINS` bounds those two ADRs
+  introduced (`5e-6`, and `4e-5` for `speed_temporal`, ADR-1460) are gone.
+
+- **CUDA CAMBI and SpEED device-resident ([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md),
+  [ADR-1380](../adr/1380-cuda-speed-device-resident-pipeline.md))**:
+  `cambi_cuda`, `speed_chroma_cuda` and `speed_temporal_cuda` read back one
+  result block and wait once per frame, in `collect()`; a sync must not bring
+  back the host c-values, host pooling, host SpEED linear algebra or a
+  mid-frame `cuStreamSynchronize`. SpEED's block is the tail of ADR-1477
+  (status words, eigenvalues, variances), from which the host forms the
+  entropies and the score after the wait. The host constants come from `cambi.c`
+  (`vmaf_cambi_*` helpers in `cambi_internal.h`) and
+  `speed_internal_gpu_configure()`, shared with the SYCL twins;
+  `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`
+  (every CUDA fatbin's, ADR-1403).
+  `core/test/test_cuda_device_resident_contract.py` guards the design. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
+- **HIP CAMBI and SpEED device-resident pipelines ([ADR-1378](../adr/1378-hip-cambi-device-resident.md), [ADR-1384](../adr/1384-hip-speed-device-resident.md))**:
+  no host stage of `cambi.c` / `speed.c` before the frame's wait and no
+  mid-frame wait; one staged upload, one readback, the wait in `collect()`.
+  SpEED's readback is the tail block of ADR-1477 and `collect()` forms the
+  entropies and the score from it on the host. Per-work-item math lives in
+  `integer_cambi/cambi_hip_device.h` and `speed/speed_hip_device.h`, which the
+  host replay tests compile; the SpEED kernel TU keeps `-ffp-contract=off
+  -fhip-fp32-correctly-rounded-divide-sqrt`. The init-time helpers are
+  `cambi.c`'s (`cambi_internal.h`) and `speed_internal_gpu_configure()`,
+  shared with SYCL. `core/test/test_hip_device_resident_contract.py` guards
+  the layout. See [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
+## SSIMULACRA 2
+
 - **`ssimulacra2_hip` returns the CPU's score bit for bit ([ADR-1445](../adr/1445-hip-ssimulacra2-cpu-sum-order.md))**:
   `ssimulacra2_device.hip` evaluates the six per-pixel terms with the CPU's
   fp64 expressions (`ss2h_terms()`, no fp32 pairs) and forms their sums with
@@ -229,6 +642,7 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_ordered_sum.c` guard it without a device,
   `test_hip_ssimulacra2_parity` (`==`) on one. See
   [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
 - **SYCL ssimulacra2 / float_ms_ssim single wait ([ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md))**:
   `ssimulacra2_sycl.cpp` runs the whole frame on the device and reads one
   block of per-scale sums in `collect()`. The exact-fp
@@ -237,6 +651,7 @@ linked AGENTS.md before resolving conflicts.
   `integer_ms_ssim_sycl.cpp` enqueues every scale in `submit()` into its own
   partials span and waits once. `core/test/test_sycl_kernel_source_contract.py`
   guards all of it.
+
 - **`ssimulacra2_sycl` returns the CPU's score bit for bit ([ADR-1446](../adr/1446-sycl-ssimulacra2-cpu-bits.md))**:
   a SYCL kernel has no fp64 type, so the six per-sample terms are the CPU's
   doubles computed in 64-bit integers
@@ -254,76 +669,7 @@ linked AGENTS.md before resolving conflicts.
   `test_sycl_ssimulacra2_parity` (`==`) and
   `scripts/dev/speed_gpu_parity.py --backend sycl --feature ssimulacra2` on
   one. See [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-- **CUDA CAMBI and SpEED device-resident ([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md),
-  [ADR-1380](../adr/1380-cuda-speed-device-resident-pipeline.md))**:
-  `cambi_cuda`, `speed_chroma_cuda` and `speed_temporal_cuda` read back one
-  result block and wait once per frame, in `collect()`; a sync must not bring
-  back the host c-values, host pooling, host SpEED linear algebra or a
-  mid-frame `cuStreamSynchronize`. SpEED's block is the tail of ADR-1477
-  (status words, eigenvalues, variances), from which the host forms the
-  entropies and the score after the wait. The host constants come from `cambi.c`
-  (`vmaf_cambi_*` helpers in `cambi_internal.h`) and
-  `speed_internal_gpu_configure()`, shared with the SYCL twins;
-  `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`
-  (every CUDA fatbin's, ADR-1403).
-  `core/test/test_cuda_device_resident_contract.py` guards the design. See
-  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-- **SpEED twin parity fixture ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md), [ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md))**:
-  `core/test/test_cuda_speed_chroma_parity.c` and
-  `core/test/test_hip_speed_chroma_parity.c` keep the 960x960 textured
-  fixture of `core/test/speed_chroma_twin_parity.h`: a smaller or ramp
-  fixture has a singular covariance and never reaches the scoring path. The
-  comparison is `==` since ADR-1477; the `LIBM_TWINS` bounds those two ADRs
-  introduced (`5e-6`, and `4e-5` for `speed_temporal`, ADR-1460) are gone.
-- **No C or C++ translation unit is built with FP contraction ([ADR-1461](../adr/1461-strict-fp-every-translation-unit.md))**:
-  `core/src/meson.build` declares `vmaf_strict_fp_args` as a project argument
-  for C and C++ directly after the `VMAF strict FP compiler-argument policy`
-  block, above the first build target. Keep both there on a rebase (Meson
-  refuses `add_project_arguments()` after a target), and never give a target
-  `vmaf_fp_model_args` alone or any flag that turns contraction back on.
-  `core/test/test_strict_fp_compiler_args.py` reads the compile database of
-  the build it runs in; `make test-netflix-golden-arm64` runs the golden gate
-  on an aarch64 cross build, where a clang build and a GCC build used to
-  differ. See [core/AGENTS.md](../../core/AGENTS.md).
-- **icx and icpx builds link glibc's libm, not Intel's libimf ([ADR-1495](../adr/1495-icx-system-libm.md))**:
-  `core/src/meson.build` declares the `VMAF host math library link policy`
-  block directly after the strict FP policy and passes its lists with
-  `add_project_link_arguments()` for C and C++, above the first build target:
-  an `intel-llvm` compiler gets `-no-intel-lib=libimf`, every other compiler
-  nothing. The Intel driver otherwise links `libimf` into every link (it turns
-  a given `-lm` into `-limf -lm`), and an icx-built `vmaf` exported libimf's
-  copies of the math functions `libvmaf.so` imports, so the CPU scores of an
-  icx build differed from a GCC build's. Keep the block and both lines on a
-  rebase, and never link Intel's math library back by name or substitute
-  `-shared-intel`. `core/test/test_icx_system_libm.py` reads the build's own
-  `libvmaf.so` and `vmaf` (skips on non-icx builds) and
-  `core/test/test_strict_fp_compiler_args.py` executes the block per compiler
-  pair. See [core/AGENTS.md](../../core/AGENTS.md).
-- **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
-  `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
-  `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets
-  `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
-  -foffload-fp32-prec-sqrt` in that order (precise implies contraction on, so
-  contraction-off must follow it), AdaptiveCpp `-ffp-contract=off`. Every
-  feature TU takes it through `sycl_feature_tail_args`; no TU gets a private
-  FP list. `sycl_link_args` also carries `sycl_fp32_prec_args` to every link
-  the icpx driver runs, because the SPIR-V JIT image is generated there;
-  dropping it leaves `-Dsycl_icpx_aot_targets=` builds with approximate `/`
-  and sqrt. The MSVC build's explicit device link (ADR-1364) generates every
-  image and takes `sycl_strict_fp_args` whole.
-  `core/test/test_strict_fp_compiler_args.py` executes the policy and
-  `test_sycl_fp_arith_contract` checks the device arithmetic.
-- **HIP CAMBI and SpEED device-resident pipelines ([ADR-1378](../adr/1378-hip-cambi-device-resident.md), [ADR-1384](../adr/1384-hip-speed-device-resident.md))**:
-  no host stage of `cambi.c` / `speed.c` before the frame's wait and no
-  mid-frame wait; one staged upload, one readback, the wait in `collect()`.
-  SpEED's readback is the tail block of ADR-1477 and `collect()` forms the
-  entropies and the score from it on the host. Per-work-item math lives in
-  `integer_cambi/cambi_hip_device.h` and `speed/speed_hip_device.h`, which the
-  host replay tests compile; the SpEED kernel TU keeps `-ffp-contract=off
-  -fhip-fp32-correctly-rounded-divide-sqrt`. The init-time helpers are
-  `cambi.c`'s (`cambi_internal.h`) and `speed_internal_gpu_configure()`,
-  shared with SYCL. `core/test/test_hip_device_resident_contract.py` guards
-  the layout. See [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
 - **CUDA ssimulacra2 single readback ([ADR-1391](../adr/1391-cuda-ssimulacra2-device-resident.md))**:
   `ssimulacra2_cuda.c` enqueues the whole frame in `submit()` on the picture
   stream and reads one block of per-scale sums in `collect()`; no host compute
@@ -347,15 +693,9 @@ linked AGENTS.md before resolving conflicts.
   `scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2`
   re-check parity. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-- **SYCL kernels use no scratch memory ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md))**:
-  on an Arc A-series GPU under the Linux xe driver, kernels with a private array
-  in memory or spilled registers return wrong values. `test_sycl_kernel_scratch`
-  fails on a scratch kernel missing from `core/src/sycl/scratch_ratchet.txt`,
-  whose extractors must match `kScratchExtractors` in
-  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl`'s
-  SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
-  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
-  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
+## SSIM and MS-SSIM
+
 - **`float_ms_ssim_cuda` and `integer_ms_ssim_hip` score every plane `enable_chroma` asks for (`T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`)**:
   both keep geometry, pyramid and term buffers per plane and run the luma
   pipeline once per scored plane, as `float_ms_ssim.c` does; both declare the
@@ -370,6 +710,7 @@ linked AGENTS.md before resolving conflicts.
   `float_ms_ssim_chroma`. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
   [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
 - **`float_ms_ssim_cuda` per-scale sums are the CPU's, in the CPU's order ([ADR-1465](../adr/1465-cuda-float-ms-ssim-raster-order-sum.md))**:
   `ms_ssim_vert_lcs` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
   stores every window's `l`, `c` and `s` at its raster position and
@@ -382,48 +723,7 @@ linked AGENTS.md before resolving conflicts.
   kernel, the host loop,
   `core/test/test_cuda_float_ms_ssim_order.c` and
   `core/test/test_cuda_float_ms_ssim_exact_contract.py` together.
-- **CUDA device FP policy ([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md))**:
-  every CUDA fatbin takes `cuda_device_strict_fp_args` (`--fmad=false` under
-  nvcc, `-ffp-contract=off` under clang CUDA), defined once between the
-  `VMAF CUDA device strict FP policy` markers in `core/src/meson.build`;
-  `cuda_cu_extra_flags` carries no floating-point flag. A kernel whose
-  reference fuses writes `__fmaf_rn()`. `float_ms_ssim_cuda` reproduces
-  `ms_ssim_decimate.c`, `iqa_convolve()` and
-  `ssim_accumulate_default_scalar()` operation for operation and is
-  bit-identical to the CPU. `core/test/test_strict_fp_compiler_args.py`,
-  `core/test/test_cuda_kernel_source_contract.py` and
-  `core/test/test_cuda_float_ms_ssim_parity.c` guard it. See
-  [core/src/cuda/AGENTS.md](../../core/src/cuda/AGENTS.md) and
-  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-- **`float_motion_cuda` adds its SAD in the CPU's order ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md))**:
-  `float_motion.c::compute_motion_simd()` keeps one fp32 running sum per row
-  and one over the rows. The twin's `float_motion_row_sad` kernel runs one
-  thread per row with a plain left-to-right loop, and the host finishes
-  through `core/src/feature/float_motion_sad.h`; the scores are the CPU's bit
-  for bit and the parity gate compares them with tolerance 0 (`EXACT_TWINS`).
-  A change to the CPU's SAD order, or to `convolution_f32_c_s()`'s tap order,
-  changes the kernel and the helper in the same PR.
-  `core/test/test_cuda_float_motion_parity.c`,
-  `core/test/test_float_motion_sad.c` and
-  `core/test/test_cuda_kernel_source_contract.py` guard it.
-- **`float_motion_sycl` adds its SAD in the CPU's order ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md))**:
-  the same contract as the CUDA twin above. `fm_row_sad()` in
-  `core/src/feature/sycl/float_motion_sycl.cpp` is one plain left-to-right
-  loop per work-item, launched over `sycl::range<1>(height)` at sub-group
-  size 16 (ADR-1468), and `collect()` finishes through
-  `core/src/feature/float_motion_sad.h`. No group, sub-group or atomic
-  reduction may return to the TU, and the blur needs the SYCL strict FP line
-  (ADR-1367). `core/test/test_sycl_float_motion_parity.c` (`==`) and
-  `core/test/test_sycl_kernel_source_contract.py` guard it; the row kernel
-  must stay free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395).
-  Since 2026-10-03 the twin also emits `motion3` on the host with the CPU's
-  `motion_blend_clip()` and declares `motion_blend_factor` /
-  `motion_blend_offset` as the CPU table does
-  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`). A change to how
-  `float_motion.c` emits `motion3` (index 0 from the first SAD, the flush
-  tail, 0 for one frame) changes `collect_fex_sycl()` / `flush_fex_sycl()` in
-  the same PR; `test_sycl_twin_option_parity` compares every output with
-  `==`, and the gate's `float_motion` cell lists `motion3`.
+
 - **`float_ms_ssim_sycl` is the CPU's arithmetic ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md))**:
   the decimate spells each tap `sycl::fma()` as `ms_ssim_decimate.c` fuses
   it; the window sums and the `l` / `c` / `s` terms come from
@@ -442,38 +742,91 @@ linked AGENTS.md before resolving conflicts.
   the CUDA and HIP tests) and `core/test/test_sycl_kernel_source_contract.py`
   guard it. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-- **`float_vif_sycl` returns the CPU's scores bit for bit ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md))**:
-  the same contract as the CUDA twin, without an fp64 type. The host takes
-  each scale's Gaussian from `vif_get_filter()` and hands it to the kernels by
-  value. `core/src/feature/sycl/sycl_float_vif_math.h` is
-  `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation; its
-  `one_plus_ratio()` evaluates the reference's two fp64 expressions as exact
-  fp32 pairs and replays the fp64 operations in integers next to a rounding
-  boundary. `vif_row_sums()` adds the terms of a row in one work-item and
-  `sum_vif_rows()` adds the rows on the host, both in fp32. A change to
-  `vif_get_filter()`, to `VIF_OPT_FAST_LOG2` / `log2f_approx()`, to
-  `vif_pixel_statistic_s()` or to `vif_statistic_s()` in `vif_tools.c` changes
-  that header in the same PR. `core/test/test_sycl_float_vif_math.c` (host and
-  device), `core/test/test_sycl_float_vif_exact_contract.py` and
-  `core/test/test_sycl_float_vif_parity.c` guard it; every kernel must stay
-  free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395). See
+
+- **Metal `float_ms_ssim` option parity ([ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md))**:
+  `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
+  matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and
+  `float_ms_ssim_cr` on the GPU, enforces the >= 176 minimum plane dimension at init,
+  resolves YUV400P to one plane before chroma validation, and uses the exact
+  ceil-subsampled 351x351 YUV420P luma boundary. It wires
+  `s->enable_db, s->max_db` into `vmaf_ms_ssim_emit_scores` /
+  `vmaf_ssim_emit_score_named`. Device-free contracts in
+  `core/test/test_metal_ms_ssim_option_semantics`,
+  `core/test/test_metal_ms_ssim_options_contract.py`, and
+  `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
+
+- **SYCL `float_ssim` decimation mirrors the CPU's ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md))**:
+  `float_ssim_sycl` reproduces `ssim.c`'s box low-pass and
+  `iqa/decimate.c::iqa_decimate()` bit for bit (int64 fixed-point window sum,
+  `KBND_SYMMETRIC`, `picture_copy()` scaling) and sizes its planes with the
+  shared `iqa/decimate_dim.h`. A change on the CPU side of that pipeline
+  changes `core/src/feature/sycl/integer_ssim_sycl.cpp` in the same PR. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
+  [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
+
+- **HIP `float_ssim` decimation mirrors the CPU's ([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md))**:
+  `core/src/feature/hip/float_ssim/ssim_decimate.h` is the window sum of
+  `iqa/decimate.c::iqa_decimate()` with `ssim.c`'s box low-pass (int64
+  fixed-point sum, `KBND_SYMMETRIC`, `picture_copy()` scaling), compiled by
+  the kernel and by `core/test/test_hip_float_ssim_decimate.c`, which holds
+  it against `iqa_decimate()` byte for byte. A change on the CPU side of that
+  pipeline changes the header in the same PR. See
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
+- **CUDA `float_ssim` is the CPU pipeline on the device ([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md))**:
+  `core/src/feature/cuda/integer_ssim/ssim_score.cu` reproduces `ssim.c`'s box
+  low-pass and `iqa/decimate.c::iqa_decimate()` (exact int64 window sum, one
+  rounding, `KBND_SYMMETRIC`), `iqa/convolve.c`'s fp32 products added to a
+  `double` sum in both Gaussian passes, and the ADR-1373 per-pixel combine;
+  the host sizes the planes with the shared `iqa/decimate_dim.h`. Its score
+  equals the CPU's on every measured frame, and `test_cuda_float_ssim_parity`
+  asserts equality. A change on the CPU side of that pipeline changes the
+  kernel in the same PR. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
+  [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
+
+- **`integer_ssim_cuda` returns the CPU's `ssim` bit for bit ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md))**:
+  `integer_ssim.c::calc_ssim()` adds every pixel's term into one double in
+  raster order, so `integer_ssim_vert_combine`
+  (`core/src/feature/cuda/integer_ssim/integer_ssim_score.cu`) stores the
+  terms unreduced and `ssim_cuda.c::issim_frame_sum()` adds the plane it reads
+  back in index order. Do not reduce the double terms on the device and do not
+  reorder the host loop; the int64 weights may stay a block reduction. A
+  change to `ssim_reduce_row_range()` or to the order `calc_ssim()` visits
+  pixels changes the kernel's `issim_term()` or the host sum in the same PR.
+  `core/test/test_cuda_ssim_exact_contract.py` guards it without a device,
+  `test_cuda_ssim_parity` on one; the parity gate compares the twin with
+  tolerance 0 (`EXACT_TWINS`, feature `ssim`). See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
+- **`float_ssim_cuda` frame sums are the CPU's, in the CPU's order ([ADR-1464](../adr/1464-cuda-float-ssim-raster-order-sum.md))**:
+  the pass-2 kernels of `core/src/feature/cuda/integer_ssim/ssim_score.cu`
+  store every window's terms at its raster position and
+  `integer_ssim_cuda.c::float_ssim_frame_sum()` /
+  `float_ssim_frame_sums_lcs()` add them in index order, as
+  `iqa/ssim_tools.c::iqa_ssim()` adds them. A sync must not bring back a
+  device reduction of the terms: on the frame of
+  `core/test/float_ssim_order_frame.h` a per-block sum returns the
+  neighbouring `float`. That header is shared with the HIP and SYCL twin
+  tests and its bytes are fixed. Preserve the kernels, the two host loops,
+  `core/test/test_cuda_float_ssim_order.c` and
+  `core/test/test_cuda_float_ssim_exact_contract.py` together.
+
+- **SYCL `float_ssim` adds the CPU's terms in the CPU's order ([ADR-1463](../adr/1463-sycl-float-ssim-raster-sum.md))**:
+  `core/src/feature/sycl/sycl_ssim_terms.h::ssim_double_terms()` forms
+  `iqa/ssim_accumulate_lane.h`'s `lv` and `cv` as the CPU's doubles in 64-bit
+  integers; `float_ssim_sycl` stores every window's term unreduced and the
+  host adds them in raster order, as `iqa/ssim_tools.c::iqa_ssim()` does. No
+  reduction may return to the float twin and no host sum may change its
+  order: either moves the `float` mean by one step on frames whose terms
+  cancel. A change to `ssim_accumulate_lane.h` or to the means of
+  `ssim_tools.c` changes the header in the same PR.
+  `core/test/test_sycl_float_ssim_exact_contract.py` (device-free) and
+  `core/test/test_sycl_float_ssim_parity.c` (`==`, with the constructed pair
+  of `core/test/float_ssim_order_frame.h`, a file shared byte for byte with
+  the CUDA and HIP tests) guard it. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-- **`vif_sycl` returns the CPU's scores bit for bit ([ADR-1432](../adr/1432-sycl-integer-vif-exact-gain.md))**:
-  `core/src/feature/sycl/sycl_integer_vif_math.h` returns the two integers
-  `integer_vif.c::vif_accumulate_pixel()` truncates from its fp64 gain
-  (`sigma2_sq - g * sigma12` and `g * g * sigma1_sq`), from one integer
-  division and, for a sample within the fp64 chain's rounding error of an
-  integer, from the reference's fp64 operations replayed in 64-bit integers
-  (`core/src/feature/sycl/sycl_soft_double.h`, shared with `float_vif_sycl`).
-  The host tail rounds each scale's sums to `float` as
-  `vif_store_residuals()` does. A change to those lines of `integer_vif.c`
-  (the same lines are in `x86/vif_avx2.c`, `x86/vif_avx512.c` and
-  `arm64/vif_neon.c`) changes the header in the same PR. The kernels stay
-  free of fp64, of `sycl::mul_hi()` on 64-bit operands (wrong values on an
-  Arc A380) and of scratch memory. `core/test/test_sycl_integer_vif_math.c`,
-  `core/test/test_sycl_vif_exact_gain_contract.py` and
-  `core/test/test_sycl_vif_parity.c` guard it. See
-  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
 - **`integer_ssim_sycl` returns the CPU's score bit for bit ([ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md))**:
   `core/src/feature/sycl/sycl_integer_ssim_math.h` runs the fp64 operations of
   `integer_ssim.c::ssim_reduce_row_range()`'s per-pixel term, one for one and
@@ -488,40 +841,60 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_sycl_ssim_exact_contract.py` and
   `core/test/test_sycl_ssim_parity.c` guard it. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-- **`float_adm_sycl` returns the CPU's scores bit for bit ([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md))**:
-  `core/src/feature/sycl/sycl_float_adm_math.h` is the same arithmetic as the
-  CUDA twin's device header, without an fp64 type: the three expressions
-  `adm_tools.c` evaluates in `double` (the enhancement gain, the 1/30 product
-  and the centre tap's 1/15 product) are exact fp32 pairs, and a result next
-  to an fp32 rounding boundary replays the fp64 operations in 64-bit integers
-  (`sycl_soft_double.h`). The decouple's quotient is fp32 `n / d`, as the
-  reference's `DIVS()` is since ADR-1442; it must not become a product with a
-  reciprocal. The header also holds what one work-item of the decouple, term
-  and row-sum kernels does; `float_adm_sycl.cpp` only launches them. A row is
-  added by one work-item and the rows by the host, both in fp32. The weights,
-  the region, the pooling and the floor are the reference's own. A change to
-  `adm_decouple_s()`, `adm_csf_s()`, `adm_cm_thresh3x3_s()`,
-  `adm_csf_den_scale_s()` or `adm_cm_s()` changes this header and the CUDA
-  one in the same PR. `core/test/test_sycl_float_adm_math.c` and
-  `core/test/test_sycl_float_adm_exact_contract.py` guard it,
-  `test_sycl_float_adm_parity` on a device; the twin is declared exact by
-  `scripts/ci/exact_twins.d/float_adm.sycl`. See
-  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-- **SYCL fp64-less device contract (T7-17, ADR-0220)**:
-  [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
-  kernels are unconditionally fp64-free; a single fp64 instruction
-  in any lambda blocks the whole TU on Arc A-series. See
-  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md).
-- **Model registry + Sigstore (T6-9, ADR-0211 placeholder, PR #199)**:
-  `--tiny-model-verify` flag + registry schema + Sigstore bundle
-  paths. Pairs with
-  [ADR-0010](../adr/0010-sigstore-keyless-signing.md) (release
-  signing).
-- **Upstream port — feature/motion options from b949cebf
-  (T-NEW-1)**: PR #197 (`b949cebf`, MERGED 2026-04-29) ported
-  Netflix's feature/motion several-options commit; PR #213 (open)
-  ports `d3647c73` `feature/speed` extractors (`speed_chroma` +
-  `speed_temporal`).
+
+## Motion
+
+- **CUDA RC3 CPU parity ([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md),
+  [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
+  [ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md))**: both CUDA
+  motion twins run the diff-first SAD kernel of
+  `integer_motion_v2/motion_v2_score.cu` through `integer_motion_sad_cuda.c`;
+  an upstream sync must not bring back the blur-each-frame `motion_score.cu`.
+  `psnr_cuda`, `integer_ssim_cuda`, `float_ssim_cuda` and `float_motion_cuda`
+  carry the CPU option tables and call the CPU's helpers (`psnr_score.h`,
+  `vmaf_ssim_max_db()`, `motion_clip()`); `ssim_score.cu::ssim_terms()` mirrors
+  the CPU's `l * c * s` rounding point for rounding point, and
+  `integer_ssim_score` builds with `--fmad=false` (every CUDA fatbin's,
+  ADR-1403) and the CPU's grouping.
+  The integer ADM DWT row and tap arithmetic lives in
+  `integer_adm/adm_dwt2_rows.h`, and `vif_cuda` falls back to the CPU below 16
+  pixels. `float_motion_cuda` emits the CPU's `motion3` (`motion_blend_clip()`).
+  The motion SAD, PSNR and moment kernels add one atomic per block (per
+  accumulator) and PSNR selects its plane with constant indices
+  ([ADR-1392](../adr/1392-cuda-integer-reductions-one-atomic-per-block.md)).
+  Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
+- **`float_motion_cuda` adds its SAD in the CPU's order ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md))**:
+  `float_motion.c::compute_motion_simd()` keeps one fp32 running sum per row
+  and one over the rows. The twin's `float_motion_row_sad` kernel runs one
+  thread per row with a plain left-to-right loop, and the host finishes
+  through `core/src/feature/float_motion_sad.h`; the scores are the CPU's bit
+  for bit and the parity gate compares them with tolerance 0 (`EXACT_TWINS`).
+  A change to the CPU's SAD order, or to `convolution_f32_c_s()`'s tap order,
+  changes the kernel and the helper in the same PR.
+  `core/test/test_cuda_float_motion_parity.c`,
+  `core/test/test_float_motion_sad.c` and
+  `core/test/test_cuda_kernel_source_contract.py` guard it.
+
+- **`float_motion_sycl` adds its SAD in the CPU's order ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md))**:
+  the same contract as the CUDA twin above. `fm_row_sad()` in
+  `core/src/feature/sycl/float_motion_sycl.cpp` is one plain left-to-right
+  loop per work-item, launched over `sycl::range<1>(height)` at sub-group
+  size 16 (ADR-1468), and `collect()` finishes through
+  `core/src/feature/float_motion_sad.h`. No group, sub-group or atomic
+  reduction may return to the TU, and the blur needs the SYCL strict FP line
+  (ADR-1367). `core/test/test_sycl_float_motion_parity.c` (`==`) and
+  `core/test/test_sycl_kernel_source_contract.py` guard it; the row kernel
+  must stay free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395).
+  Since 2026-10-03 the twin also emits `motion3` on the host with the CPU's
+  `motion_blend_clip()` and declares `motion_blend_factor` /
+  `motion_blend_offset` as the CPU table does
+  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`). A change to how
+  `float_motion.c` emits `motion3` (index 0 from the first SAD, the flush
+  tail, 0 for one frame) changes `collect_fex_sycl()` / `flush_fex_sycl()` in
+  the same PR; `test_sycl_twin_option_parity` compares every output with
+  `==`, and the gate's `float_motion` cell lists `motion3`.
+
 - **`motion_five_frame_window` is Netflix's, on the fork's picture ownership ([ADR-1478](../adr/1478-motion-five-frame-window-port.md))**:
   `extract()` and the window of `core/src/feature/integer_motion.c` are
   upstream's statements (`a2b59b77`, `a4a1492d`); a sync takes upstream's side
@@ -547,17 +920,128 @@ linked AGENTS.md before resolving conflicts.
   `test_read_pictures_failure_ownership` and the Netflix golden gate guard
   it. See [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md) and
   [core/src/AGENTS.md](../../core/src/AGENTS.md).
-- **Metal `float_ms_ssim` option parity ([ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md))**:
-  `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
-  matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and
-  `float_ms_ssim_cr` on the GPU, enforces the >= 176 minimum plane dimension at init,
-  resolves YUV400P to one plane before chroma validation, and uses the exact
-  ceil-subsampled 351x351 YUV420P luma boundary. It wires
-  `s->enable_db, s->max_db` into `vmaf_ms_ssim_emit_scores` /
-  `vmaf_ssim_emit_score_named`. Device-free contracts in
-  `core/test/test_metal_ms_ssim_option_semantics`,
-  `core/test/test_metal_ms_ssim_options_contract.py`, and
-  `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
+
+- **The CUDA, SYCL and HIP motion twins compute `motion_five_frame_window` ([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md))**:
+  with the option each twin of `motion` and `motion_v2` takes its SAD against
+  the frame two back (CUDA and `motion_v2_sycl`: a ring of three raw planes;
+  HIP: two kept planes; `motion_sycl`: two planes with fixed roles, advanced
+  by two device copies behind the graph replay, with the kernel enqueued on
+  every frame) and derives `motion2` / `motion3` with the CPU's
+  `vmaf_motion_window_flush()` (`core/src/feature/motion_window.h`). The
+  `motion_v2` twins hold no copy of the CPU flush. A sync or a cleanup must
+  not bring back a twin's own window arithmetic, a
+  `VMAF_OPT_FLAG_DEFAULT_ONLY` or `-ENOTSUP` for the option on these six
+  twins, or move `motion_sycl`'s plane copies into the recorded graph. A
+  change to `min_idx` or to the frame `extract()` differences against in
+  `integer_motion.c` / `integer_motion_v2.c` changes the twins' `ring` /
+  `depth` in the same PR. `test_{cuda,sycl,hip}_motion_five_frame_window`
+  (`==`, fixture `core/test/motion_five_frame_twin_parity.h`) and the exact
+  gate cells `motion_mffw` / `motion_v2_mffw` guard it on a device;
+  `core/test/test_gpu_option_value_capability_contract.py` and
+  `core/test/test_{cuda,sycl,hip}_kernel_source_contract.py` (the twins call
+  the function and read no stored score back) without one. The Metal twins do
+  not declare the option; the CPU extractor computes it there.
+
+## VIF
+
+- **`float_vif_sycl` returns the CPU's scores bit for bit ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md))**:
+  the same contract as the CUDA twin, without an fp64 type. The host takes
+  each scale's Gaussian from `vif_get_filter()` and hands it to the kernels by
+  value. `core/src/feature/sycl/sycl_float_vif_math.h` is
+  `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation; its
+  `one_plus_ratio()` evaluates the reference's two fp64 expressions as exact
+  fp32 pairs and replays the fp64 operations in integers next to a rounding
+  boundary. `vif_row_sums()` adds the terms of a row in one work-item and
+  `sum_vif_rows()` adds the rows on the host, both in fp32. A change to
+  `vif_get_filter()`, to `VIF_OPT_FAST_LOG2` / `log2f_approx()`, to
+  `vif_pixel_statistic_s()` or to `vif_statistic_s()` in `vif_tools.c` changes
+  that header in the same PR. `core/test/test_sycl_float_vif_math.c` (host and
+  device), `core/test/test_sycl_float_vif_exact_contract.py` and
+  `core/test/test_sycl_float_vif_parity.c` guard it; every kernel must stay
+  free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395). See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
+- **`vif_sycl` returns the CPU's scores bit for bit ([ADR-1432](../adr/1432-sycl-integer-vif-exact-gain.md))**:
+  `core/src/feature/sycl/sycl_integer_vif_math.h` returns the two integers
+  `integer_vif.c::vif_accumulate_pixel()` truncates from its fp64 gain
+  (`sigma2_sq - g * sigma12` and `g * g * sigma1_sq`), from one integer
+  division and, for a sample within the fp64 chain's rounding error of an
+  integer, from the reference's fp64 operations replayed in 64-bit integers
+  (`core/src/feature/sycl/sycl_soft_double.h`, shared with `float_vif_sycl`).
+  The host tail rounds each scale's sums to `float` as
+  `vif_store_residuals()` does. A change to those lines of `integer_vif.c`
+  (the same lines are in `x86/vif_avx2.c`, `x86/vif_avx512.c` and
+  `arm64/vif_neon.c`) changes the header in the same PR. The kernels stay
+  free of fp64, of `sycl::mul_hi()` on 64-bit operands (wrong values on an
+  Arc A380) and of scratch memory. `core/test/test_sycl_integer_vif_math.c`,
+  `core/test/test_sycl_vif_exact_gain_contract.py` and
+  `core/test/test_sycl_vif_parity.c` guard it. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
+- **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
+  the host takes each scale's Gaussian from `vif_get_filter()`, as
+  `float_vif.c` does, and hands it to the kernels; no kernel file holds a tap.
+  `core/src/feature/float_vif_gpu_common.h` (shared with `float_vif_hip`
+  since [ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md); CUDA compiles
+  it through `core/src/feature/cuda/float_vif/float_vif_device.h`, which maps
+  its operators to the `__fmul_rn()` family) is
+  `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation
+  (`vif_sigma_nsq` in fp64), `float_vif_row_sums` adds the terms of a row in
+  one thread, and `fvif_sum_rows()` adds the rows on the host, both in fp32 as
+  `vif_statistic_s()` does. A change to `vif_get_filter()`, to
+  `VIF_OPT_FAST_LOG2` / `log2f_approx()`, to `vif_pixel_statistic_s()` or to
+  `vif_statistic_s()` in `vif_tools.c` changes that header in the same PR.
+  `core/test/test_float_vif_device_math.c` and
+  `core/test/test_cuda_float_vif_exact_contract.py` guard it without a device,
+  `test_cuda_float_vif_parity` on one; the parity gate compares the twin with
+  tolerance 0 (`EXACT_TWINS`). See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
+- **`vif_cuda` reads the CPU's log2 table ([ADR-1462](../adr/1462-cuda-vif-reads-host-log2-table.md))**:
+  `core/src/feature/cuda/integer_vif/vif_statistics.cuh` holds the table as
+  the module global `vif_cuda_log2_table`, `log2_lookup()` reads it with the
+  CPU's mask, and no vif kernel source evaluates a logarithm.
+  `integer_vif_cuda.c::init_fex_cuda()` fills it with
+  `vif_log2_table_generate()`'s values through
+  `vmaf_cuda_vif_upload_log2_table()` before any frame is submitted. When
+  upstream changes `vif_statistics.cuh` or `filter1d.cu`, keep the lookup and
+  do not bring `log_generate()` back; `filter1d.cu` itself is untouched by
+  the fork. `core/test/test_cuda_vif_log2_contract.py` guards it without a
+  device, `test_cuda_vif_log2_table` on one.
+
+- **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
+  the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default
+  operators, which round once only because every HIP kernel is built with
+  `hip_strict_fp_args`; `float_vif_score.hip` defines no operator, holds no
+  tap and reduces nothing per block. The host takes the taps from
+  `vif_get_filter()` and passes `vif_sigma_nsq` as a `double`. A change to the
+  shared header is a change to both twins:
+  `core/test/test_hip_float_vif_exact_contract.py` and
+  `core/test/test_float_vif_device_math.c` guard it without a device,
+  `test_hip_float_vif_parity` on one. See
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
+## ADM
+
+- **`float_adm_sycl` returns the CPU's scores bit for bit ([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md))**:
+  `core/src/feature/sycl/sycl_float_adm_math.h` is the same arithmetic as the
+  CUDA twin's device header, without an fp64 type: the three expressions
+  `adm_tools.c` evaluates in `double` (the enhancement gain, the 1/30 product
+  and the centre tap's 1/15 product) are exact fp32 pairs, and a result next
+  to an fp32 rounding boundary replays the fp64 operations in 64-bit integers
+  (`sycl_soft_double.h`). The decouple's quotient is fp32 `n / d`, as the
+  reference's `DIVS()` is since ADR-1442; it must not become a product with a
+  reciprocal. The header also holds what one work-item of the decouple, term
+  and row-sum kernels does; `float_adm_sycl.cpp` only launches them. A row is
+  added by one work-item and the rows by the host, both in fp32. The weights,
+  the region, the pooling and the floor are the reference's own. A change to
+  `adm_decouple_s()`, `adm_csf_s()`, `adm_cm_thresh3x3_s()`,
+  `adm_csf_den_scale_s()` or `adm_cm_s()` changes this header and the CUDA
+  one in the same PR. `core/test/test_sycl_float_adm_math.c` and
+  `core/test/test_sycl_float_adm_exact_contract.py` guard it,
+  `test_sycl_float_adm_parity` on a device; the twin is declared exact by
+  `scripts/ci/exact_twins.d/float_adm.sycl`. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
 - **Float ADM CSF weights are upstream's float arithmetic ([ADR-1489](../adr/1489-float-adm-barten-upstream-float.md))**:
   `dwt_quant_step()` in `core/src/feature/adm_tools.h` keeps `r`, `temp` and
@@ -575,6 +1059,7 @@ linked AGENTS.md before resolving conflicts.
   build, C against C++) and
   `core/test/test_float_adm_csf_upstream_contract.py` (source shapes, the
   Metal copy) guard it; the Netflix golden gate would not notice.
+
 - **Integer ADM quantisation step is upstream's ([ADR-1475](../adr/1475-integer-adm-quant-step-upstream-float.md))**:
   `dwt_quant_step()` in `core/src/feature/integer_adm_kernels.h` raises 10 to
   `params->k * temp * temp`, a `float` product, exactly as upstream's
@@ -644,314 +1129,6 @@ linked AGENTS.md before resolving conflicts.
   mirror list for upstream `integer_adm.c` changes:
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
-- **SYCL `float_ssim` decimation mirrors the CPU's ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md))**:
-  `float_ssim_sycl` reproduces `ssim.c`'s box low-pass and
-  `iqa/decimate.c::iqa_decimate()` bit for bit (int64 fixed-point window sum,
-  `KBND_SYMMETRIC`, `picture_copy()` scaling) and sizes its planes with the
-  shared `iqa/decimate_dim.h`. A change on the CPU side of that pipeline
-  changes `core/src/feature/sycl/integer_ssim_sycl.cpp` in the same PR. See
-  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
-  [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
-
-- **HIP `float_ssim` decimation mirrors the CPU's ([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md))**:
-  `core/src/feature/hip/float_ssim/ssim_decimate.h` is the window sum of
-  `iqa/decimate.c::iqa_decimate()` with `ssim.c`'s box low-pass (int64
-  fixed-point sum, `KBND_SYMMETRIC`, `picture_copy()` scaling), compiled by
-  the kernel and by `core/test/test_hip_float_ssim_decimate.c`, which holds
-  it against `iqa_decimate()` byte for byte. A change on the CPU side of that
-  pipeline changes the header in the same PR. See
-  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
-
-- **CUDA RC3 CPU parity ([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md),
-  [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
-  [ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md))**: both CUDA
-  motion twins run the diff-first SAD kernel of
-  `integer_motion_v2/motion_v2_score.cu` through `integer_motion_sad_cuda.c`;
-  an upstream sync must not bring back the blur-each-frame `motion_score.cu`.
-  `psnr_cuda`, `integer_ssim_cuda`, `float_ssim_cuda` and `float_motion_cuda`
-  carry the CPU option tables and call the CPU's helpers (`psnr_score.h`,
-  `vmaf_ssim_max_db()`, `motion_clip()`); `ssim_score.cu::ssim_terms()` mirrors
-  the CPU's `l * c * s` rounding point for rounding point, and
-  `integer_ssim_score` builds with `--fmad=false` (every CUDA fatbin's,
-  ADR-1403) and the CPU's grouping.
-  The integer ADM DWT row and tap arithmetic lives in
-  `integer_adm/adm_dwt2_rows.h`, and `vif_cuda` falls back to the CPU below 16
-  pixels. `float_motion_cuda` emits the CPU's `motion3` (`motion_blend_clip()`).
-  The motion SAD, PSNR and moment kernels add one atomic per block (per
-  accumulator) and PSNR selects its plane with constant indices
-  ([ADR-1392](../adr/1392-cuda-integer-reductions-one-atomic-per-block.md)).
-  Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-
-- **CUDA `float_ssim` is the CPU pipeline on the device ([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md))**:
-  `core/src/feature/cuda/integer_ssim/ssim_score.cu` reproduces `ssim.c`'s box
-  low-pass and `iqa/decimate.c::iqa_decimate()` (exact int64 window sum, one
-  rounding, `KBND_SYMMETRIC`), `iqa/convolve.c`'s fp32 products added to a
-  `double` sum in both Gaussian passes, and the ADR-1373 per-pixel combine;
-  the host sizes the planes with the shared `iqa/decimate_dim.h`. Its score
-  equals the CPU's on every measured frame, and `test_cuda_float_ssim_parity`
-  asserts equality. A change on the CPU side of that pipeline changes the
-  kernel in the same PR. See
-  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
-  [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
-
-- **`integer_ssim_cuda` returns the CPU's `ssim` bit for bit ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md))**:
-  `integer_ssim.c::calc_ssim()` adds every pixel's term into one double in
-  raster order, so `integer_ssim_vert_combine`
-  (`core/src/feature/cuda/integer_ssim/integer_ssim_score.cu`) stores the
-  terms unreduced and `ssim_cuda.c::issim_frame_sum()` adds the plane it reads
-  back in index order. Do not reduce the double terms on the device and do not
-  reorder the host loop; the int64 weights may stay a block reduction. A
-  change to `ssim_reduce_row_range()` or to the order `calc_ssim()` visits
-  pixels changes the kernel's `issim_term()` or the host sum in the same PR.
-  `core/test/test_cuda_ssim_exact_contract.py` guards it without a device,
-  `test_cuda_ssim_parity` on one; the parity gate compares the twin with
-  tolerance 0 (`EXACT_TWINS`, feature `ssim`). See
-
-- **`ciede_cuda` runs the CPU's arithmetic ([ADR-1426](../adr/1426-cuda-ciede-cpu-arithmetic.md))**:
-  `core/src/feature/cuda/integer_ciede/ciede_device.h` is `ciede.c`'s
-  `get_lab_color()` and `ciede2000()` statement for statement: fp64 where the
-  reference computes in double, float where it stores in float, every
-  float-to-double promotion of a libm argument written out (the kernel is
-  C++). The reference's two float products, `c_prime_1 * c_prime_2` and
-  `r_sub_t * chroma * hue`, are upstream's and are float products in every
-  twin ([ADR-1476](../adr/1476-ciede-upstream-expression.md)); a sync takes
-  upstream's side of them and no `(double)` goes in front of either. The kernel stores one float per pixel and
-  `ciede_frame_sum()` (`core/src/feature/ciede_frame_sum.h`, one definition
-  for the CUDA, SYCL and HIP hosts) adds the read-back plane in raster order. Do not
-  introduce float math functions, a device reduction or another form of the
-  formula. A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or
-  the order of `extract()`'s sum in `ciede.c` changes that header in the same
-  PR. The twin is not bit-identical (glibc's math library against CUDA's);
-  the gate bounds it at `1e-9` through `LIBM_TWINS`.
-  `core/test/test_ciede_device_math.c` and
-  `core/test/test_cuda_ciede_exact_contract.py` guard it without a device,
-  `test_cuda_ciede_parity` on one. See
-  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-
-- **`ciede_sycl` runs the CPU's arithmetic on fp32 pairs ([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md))**:
-  `core/src/feature/ciede_ff_math.h` is the same statements as the
-  CUDA twin's `ciede_device.h` for a device without an fp64 type: every fp64
-  value is an fp32 pair, every math-library call a function of
-  `core/src/feature/ff_math.h`, every `float` of the reference a
-  float rounded from the pair at the reference's statement. Both headers are
-  backend-neutral and shared with `ciede_hip` (ADR-1448);
-  `core/src/feature/sycl/sycl_ciede_math.h` and `sycl_ff_math.h` only name
-  the SYCL primitives they are built on. The kernel stores
-  one float per pixel and `ciede_frame_sum()` adds the read-back plane in
-  raster order. Do not introduce the device's fp32 math functions, a device
-  reduction, another form of the formula, or a call the compiler does not
-  inline: `ciede_pixel()` is flattened into the kernel because a call frame is
-  scratch memory (ADR-1395). The header's constants and tables come from
-  `scripts/dev/gen_sycl_ff_math.py`; the tables are read from device memory.
-  A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or the order
-  of `extract()`'s sum in `ciede.c` changes this header and the CUDA one in
-  the same PR. The twin is not bit-identical (the host's `powf`); the gate
-  bounds it at `1e-9` through `LIBM_TWINS`.
-  `core/test/test_sycl_ciede_exact_contract.py` guards it without a device,
-  `test_sycl_ciede_math` and `test_sycl_ciede_parity` on one. See
-  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-
-- **`ciede_hip` runs the same fp32-pair statements ([ADR-1448](../adr/1448-hip-ciede-cpu-arithmetic.md))**:
-  `core/src/feature/hip/integer_ciede/ciede_score.hip` includes
-  `core/src/feature/ciede_ff_math.h` through
-  `core/src/feature/hip/integer_ciede/ciede_hip_math.h`, which names the HIP
-  primitives (`core/src/feature/ff_pair.h` on plain fp32 operators under the
-  strict FP list, `fmaf()`, `sqrtf()`, `cbrtf()`, `expf(0.2f * logf(x))`).
-  The device has fp64, but its fp64 math functions cost 17 times the frame
-  time; do not bring them back. The kernel stores one float per pixel and the
-  host adds the plane with `ciede_frame_sum()`. A change to a shared header
-  changes the SYCL twin too: both are re-measured (A380 and gfx1036) in the
-  same PR. The gate bounds the cell at `1e-9` (`LIBM_TWINS`), not 0.
-  `core/test/test_hip_ciede_exact_contract.py` and `test_hip_ciede_math`
-  guard it without a device, `test_hip_ciede_parity` on one.
-
-- **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
-  the host takes each scale's Gaussian from `vif_get_filter()`, as
-  `float_vif.c` does, and hands it to the kernels; no kernel file holds a tap.
-  `core/src/feature/float_vif_gpu_common.h` (shared with `float_vif_hip`
-  since [ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md); CUDA compiles
-  it through `core/src/feature/cuda/float_vif/float_vif_device.h`, which maps
-  its operators to the `__fmul_rn()` family) is
-  `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation
-  (`vif_sigma_nsq` in fp64), `float_vif_row_sums` adds the terms of a row in
-  one thread, and `fvif_sum_rows()` adds the rows on the host, both in fp32 as
-  `vif_statistic_s()` does. A change to `vif_get_filter()`, to
-  `VIF_OPT_FAST_LOG2` / `log2f_approx()`, to `vif_pixel_statistic_s()` or to
-  `vif_statistic_s()` in `vif_tools.c` changes that header in the same PR.
-  `core/test/test_float_vif_device_math.c` and
-  `core/test/test_cuda_float_vif_exact_contract.py` guard it without a device,
-  `test_cuda_float_vif_parity` on one; the parity gate compares the twin with
-  tolerance 0 (`EXACT_TWINS`). See
-  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-- **`float_moment_hip` adds the CPU's float squares ([ADR-1447](../adr/1447-hip-float-moment-cpu-float-squares.md))**:
-  the 16-bit kernel of `core/src/feature/hip/float_moment/moment_score.hip`
-  adds `moment_float_square()`, one fp32 product of the sample with itself
-  converted to an integer, where `moment.c::compute_2nd_moment()` forms the
-  square in `float`; an exact integer square is another number at 16 bits. The
-  host recovers the moment with the CPU's two divisions. A change to how
-  `moment.c` forms or adds its terms changes the kernel in the same PR.
-  `core/test/test_hip_float_moment_exact_contract.py` guards it without a
-  device, `test_hip_float_moment_parity` on one (`==`, past 2^53 units too,
-  ADR-1497 below).
-- **The NEON and SVE2 `float_moment` kernels add in the scalar's order ([ADR-1500](../adr/1500-arm-float-moment-scalar-order.md))**:
-  `core/src/feature/arm64/moment_neon.c` and `moment_sve2.c` store each
-  vector of samples (squared in `float` for the second moment) and add the
-  lanes into one `double` one after the other, as `moment.c` and
-  `x86/moment_avx2.c` do; the SVE2 kernel adds the first `svcntp_b32` active
-  lanes of a `svwhilelt_b32` predicate and does not depend on the vector
-  length. A sync must not bring back lane accumulators, per-row vector sums or
-  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past 2^53 units the sum
-  rounds on every add. `core/test/test_moment_simd.c` (`==`) guards it; run
-  it under `qemu-aarch64` with `sve=off`, `sve128`, `sve256`, `sve512` and
-  `sve2048` after touching any of the four kernels.
-- **CUDA twins declared exact as a group ([ADR-1457](../adr/1457-cuda-exact-twins-declared.md))**:
-  `scripts/ci/exact_twins.d/{motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,float_ms_ssim,float_ms_ssim_lcs,cambi}.cuda`
-  make the parity gate compare those cells with tolerance 0, and
-  `core/test/test_cuda_exact_twins.c` holds `motion_cuda`, `motion_v2_cuda`,
-  `psnr_cuda`, `float_ssim_cuda`, `float_ms_ssim_cuda` and `cambi_cuda` to
-  `==` on every output. A rebase that changes one of these twins or its CPU
-  extractor keeps them bit-identical; a twin that drifts is fixed, never
-  given a tolerance or taken off the list.
-- **`float_ssim_cuda` frame sums are the CPU's, in the CPU's order ([ADR-1464](../adr/1464-cuda-float-ssim-raster-order-sum.md))**:
-  the pass-2 kernels of `core/src/feature/cuda/integer_ssim/ssim_score.cu`
-  store every window's terms at its raster position and
-  `integer_ssim_cuda.c::float_ssim_frame_sum()` /
-  `float_ssim_frame_sums_lcs()` add them in index order, as
-  `iqa/ssim_tools.c::iqa_ssim()` adds them. A sync must not bring back a
-  device reduction of the terms: on the frame of
-  `core/test/float_ssim_order_frame.h` a per-block sum returns the
-  neighbouring `float`. That header is shared with the HIP and SYCL twin
-  tests and its bytes are fixed. Preserve the kernels, the two host loops,
-  `core/test/test_cuda_float_ssim_order.c` and
-  `core/test/test_cuda_float_ssim_exact_contract.py` together.
-
-- **SYCL kernels require sub-group size 16 or 32 ([ADR-1468](../adr/1468-sycl-sub-group-sizes-every-aot-target.md))**:
-  the default build compiles every kernel ahead of time for the 19 targets
-  of `sycl_icpx_aot_targets`, and the Xe2 targets do not compile a kernel
-  that requires 8. `core/src/feature/sycl/sycl_compat.h` rejects another
-  size at compile time (`VmafSyclSubGroupSize`); a rebase must not bring a
-  raw `[[sycl::reqd_sub_group_size(N)]]` or `sub_group_size<N>` into a
-  kernel, nor a size 8. `core/test/test_sycl_sub_group_size_contract.py`
-  (device-free) and `core/test/test_sycl_aot_default_targets.py` (suite
-  `sycl-aot`, compiles every SYCL translation unit for the full default
-  list) guard it; `core/test/sycl_aot_targets.py` holds the measured sizes
-  per target family and needs an entry for a target added to the list.
-- **SYCL `float_ssim` adds the CPU's terms in the CPU's order ([ADR-1463](../adr/1463-sycl-float-ssim-raster-sum.md))**:
-  `core/src/feature/sycl/sycl_ssim_terms.h::ssim_double_terms()` forms
-  `iqa/ssim_accumulate_lane.h`'s `lv` and `cv` as the CPU's doubles in 64-bit
-  integers; `float_ssim_sycl` stores every window's term unreduced and the
-  host adds them in raster order, as `iqa/ssim_tools.c::iqa_ssim()` does. No
-  reduction may return to the float twin and no host sum may change its
-  order: either moves the `float` mean by one step on frames whose terms
-  cancel. A change to `ssim_accumulate_lane.h` or to the means of
-  `ssim_tools.c` changes the header in the same PR.
-  `core/test/test_sycl_float_ssim_exact_contract.py` (device-free) and
-  `core/test/test_sycl_float_ssim_parity.c` (`==`, with the constructed pair
-  of `core/test/float_ssim_order_frame.h`, a file shared byte for byte with
-  the CUDA and HIP tests) guard it. See
-  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
-- **SYCL twins declared exact as a group ([ADR-1451](../adr/1451-sycl-exact-twins-declared.md))**:
-  `scripts/ci/exact_twins.d/{adm,motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,cambi}.sycl`
-  make the parity gate compare those cells with tolerance 0, and
-  `core/test/test_sycl_exact_twins.c` holds `adm_sycl`, `motion_sycl`,
-  `motion_v2_sycl`, `psnr_sycl`, `float_ssim_sycl` and `cambi_sycl` to `==`
-  on every output. A rebase that changes one of these twins or its CPU
-  extractor keeps them bit-identical; a twin that drifts is fixed, never
-  given a tolerance or taken off the list.
-- **`float_psnr_cuda` adds integers ([ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md))**:
-  `core/src/feature/cuda/float_psnr/float_psnr_score.cu` forms the CPU's term
-  (`diff * diff` in `float`, as `float_psnr.c` does) with `__fmul_rn()` as an
-  integer in units of 1 / scaler^2 and reduces `uint64` values per warp and
-  per block; `float_psnr_cuda.c::float_psnr_noise()` adds the blocks in
-  `uint64` and divides the exact total by scaler^2 and the pixel count. An
-  fp32 block sum is exact only up to 24 bits. A change to how `float_psnr.c`
-  forms or adds its terms changes the kernel in the same PR.
-  `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
-  device, `test_cuda_float_psnr_parity` (`==`) on one.
-  Each block / work-group lies in ONE row (256 x 1), and the host adds each
-  row's exact sum into a double in row order with
-  `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
-  as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
-  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
-  rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
-
-- **`vif_cuda` reads the CPU's log2 table ([ADR-1462](../adr/1462-cuda-vif-reads-host-log2-table.md))**:
-  `core/src/feature/cuda/integer_vif/vif_statistics.cuh` holds the table as
-  the module global `vif_cuda_log2_table`, `log2_lookup()` reads it with the
-  CPU's mask, and no vif kernel source evaluates a logarithm.
-  `integer_vif_cuda.c::init_fex_cuda()` fills it with
-  `vif_log2_table_generate()`'s values through
-  `vmaf_cuda_vif_upload_log2_table()` before any frame is submitted. When
-  upstream changes `vif_statistics.cuh` or `filter1d.cu`, keep the lookup and
-  do not bring `log_generate()` back; `filter1d.cu` itself is untouched by
-  the fork. `core/test/test_cuda_vif_log2_contract.py` guards it without a
-  device, `test_cuda_vif_log2_table` on one.
-
-- **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
-  `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
-  (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of
-  1 / scaler^2 and reduces `uint64` values per sub-group, per work-group and on
-  the host; an fp32 group sum is exact only up to 24 bits. The host divides
-  the exact total by scaler^2 and the pixel count. A change to how
-  `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
-  `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
-  device, `test_sycl_float_psnr_parity` (`==`) on one.
-  Each block / work-group lies in ONE row (256 x 1), and the host adds each
-  row's exact sum into a double in row order with
-  `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
-  as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
-  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
-  rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
-- **`float_moment_cuda` adds the CPU's float squares ([ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md))**:
-  the 16bpc kernel of `core/src/feature/cuda/integer_moment/moment_score.cu`
-  adds `moment_float_square()`, one `__fmul_rn()` product of the sample with
-  itself converted to an integer, where `moment.c::compute_2nd_moment()` forms
-  the square in `float`; an exact integer square is another number at 16 bits.
-  The host recovers the moment with the CPU's two divisions. A change to how
-  `moment.c` forms or adds its terms changes the kernel in the same PR.
-  `core/test/test_cuda_float_moment_exact_contract.py` guards it without a
-  device, `test_cuda_float_moment_parity` on one (`==`, past 2^53 units too,
-  ADR-1497 below).
-
-- **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
-  the kernel of `core/src/feature/sycl/integer_moment_sycl.cpp` adds
-  `moment_float_square()`, one fp32 product of the sample with itself
-  converted to an integer, where `moment.c::compute_2nd_moment()` forms the
-  square in `float`; an exact integer square is another number at 16 bits. The
-  host recovers the moment with the CPU's two divisions. A change to how
-  `moment.c` forms or adds its terms changes the kernel in the same PR.
-  `core/test/test_sycl_float_moment_exact_contract.py` guards it without a
-  device, `test_sycl_float_moment_parity` on one (`==`, past 2^53 units too,
-  ADR-1497 below).
-- **The `float_moment` twins form the CPU's rounded second-moment sum past 2^53 units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
-  on a frame whose sum of float squares can pass 2^53 units
-  (`vmaf_moment_sum_may_round()`), the CUDA, SYCL and HIP hosts run four more
-  kernels after the frame kernel (row totals, row plans, row units, ordered
-  totals) that replace accumulators 2 and 3 with the CPU's sequentially
-  rounded sums. The arithmetic and every lane's steps are
-  `core/src/feature/float_moment_sum.h` (integers only); the CUDA and HIP
-  kernels are `core/src/feature/float_moment_sum_gpu.h`, compiled into
-  `moment_score.cu` / `moment_score.hip`; the SYCL kernels are in
-  `integer_moment_sycl.cpp` and pick planes by value. A sync must not drop the
-  four kernels, add a row from its increments without
-  `vmaf_moment_sum_add_run()`'s check, reorder the tree, or bring back the
-  exact sum rounded once. A change to `compute_2nd_moment()`'s order or term
-  changes the header and `test_float_moment_sum` in the same PR.
-  `test_float_moment_sum` (host, the kernels' steps against
-  `picture_copy()` + `compute_2nd_moment()` up to 7680x4320) and
-  `test_float_moment_sum_contract.py` guard it without a device,
-  `test_{cuda,sycl,hip}_float_moment_parity` on one.
-- **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
-  the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default
-  operators, which round once only because every HIP kernel is built with
-  `hip_strict_fp_args`; `float_vif_score.hip` defines no operator, holds no
-  tap and reduces nothing per block. The host takes the taps from
-  `vif_get_filter()` and passes `vif_sigma_nsq` as a `double`. A change to the
-  shared header is a change to both twins:
-  `core/test/test_hip_float_vif_exact_contract.py` and
-  `core/test/test_float_vif_device_math.c` guard it without a device,
-  `test_hip_float_vif_parity` on one. See
-  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **Integer AIM is not clipped, float AIM is ([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md))**:
   `core/src/feature/integer_adm.c` reports `aim_num / den`
   (`vmaf_adm_scale_ratios()`), `core/src/feature/adm.c` reports
@@ -1011,137 +1188,63 @@ linked AGENTS.md before resolving conflicts.
   `float_adm` file of every backend and `core/src/meson.build`;
   `core/test/test_float_adm_device_math.c` checks the value on inputs where
   the estimate and the quotient differ.
-- **Recorded upstream head ([ADR-1474](../adr/1474-relicense-helper-headers-and-ci-check.md))**:
-  `docs/development/known-upstream-bugs.md` carries exactly one heading
-  ``## Upstream head the fork is at parity with: `<commit id>` (<date>)``.
-  `scripts/ci/upstream_parity_pin.py` reads it and the required check
-  `Licence Provenance` compares every file's licence header against that
-  Netflix/vmaf commit. An upstream port or sync moves the id in the same pull
-  request and keeps the heading's wording; a second heading of that form, or a
-  reworded one, fails the check. A port that brings a file whose path or name
-  now exists upstream changes that file's verdict: run
-  `scripts/dev/relicense_fork_files.py --check --upstream-ref <new id>`
-  before pushing. See [the guide](licence-provenance-check.md).
 
-- **Deliberate deviations from Netflix's source, by ADR**: code inherited
-  from Netflix/vmaf evaluates as Netflix's source does unless an ADR says
-  otherwise. Eight fixes that predate that rule have their ADR since
-  2026-10-02, each with upstream's lines at Netflix `9e48141b`, the measured
-  size and the upstream pull request that would end it:
-  [ADR-1479](../adr/1479-ciede-422-chroma-subsampling-flags.md) (`ciede`
-  4:2:2 chroma flags),
-  [ADR-1480](../adr/1480-speed-frame-buffers-prescale-above-one.md)
-  (`speed_temporal` buffers at `speed_prescale` above 1),
-  [ADR-1481](../adr/1481-extractor-failure-fails-the-run.md) (a worker's
-  error fails the run),
-  [ADR-1482](../adr/1482-integer-adm-frames-17-to-32.md) (integer `adm` on
-  frames of 17 to 32 pixels),
-  [ADR-1483](../adr/1483-odd-size-chroma-planes-round-up.md) (odd-sized
-  chroma planes round up),
-  [ADR-1484](../adr/1484-float-ms-ssim-magnitude-before-pow.md)
-  (`float_ms_ssim` magnitude before `pow()`),
-  [ADR-1485](../adr/1485-apsnr-zero-error-plane-reports-cap.md) (`apsnr` of a
-  plane without error) and
-  [ADR-1486](../adr/1486-float-motion-scale1-uses-callers-stride.md)
-  (`float_motion` scale-1 stride). A sync keeps the fork's side of these
-  lines until the named upstream pull request is merged; the table is in
-  [rebase-notes](../rebase-notes.md) under "Eight deliberate deviations".
-- **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
-  [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
-  floors live in `scripts/ci/coverage-check.sh`
-  (`OVERALL_MIN=70`, `CRITICAL_MIN=90`, `PER_FILE_MIN[...]`); per-PR
-  drop tolerance lives in `scripts/ci/coverage-delta-check.sh`
-  (default 0.5pp on overall and per-touched-file). Lowering any
-  floor or loosening the delta tolerance requires a new ADR
-  superseding ADR-0922. The Coverage Gate job in
-  `.github/workflows/tests-and-quality-gates.yml` invokes both
-  scripts; the delta gate needs `actions/checkout` with
-  `fetch-depth: 0` because it runs `git merge-base`. See
-  [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md) §Coverage Gate
-  ratchet for the full coupling.
-- **CI action pins — Windows MSVC dev env**
-  ([ADR-0635](../adr/0635-ci-warning-omnibus-2026-05-19.md)):
-  `.github/workflows/libvmaf-build-matrix.yml` uses
-  `TheMrMilchmann/setup-msvc-dev@79dac248…` (v4.0.0, Node.js 24) for the
-  Windows GPU build legs. If upstream ADR-0121 is re-implemented or the
-  Windows legs are rebased, do **not** reintroduce `ilammy/msvc-dev-cmd`
-  (Node.js 20, deprecated 2026-06-02). The `TheMrMilchmann` action is a
-  drop-in replacement with identical `vcvarsall.bat` semantics.
-  Also: both Windows jobs are pinned to `windows-2025`; do not revert to
-  `windows-latest` (redirect to `windows-2025-vs2026` takes effect
-  2026-06-15).
+## CIEDE2000
 
-- **The CUDA, SYCL and HIP motion twins compute `motion_five_frame_window` ([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md))**:
-  with the option each twin of `motion` and `motion_v2` takes its SAD against
-  the frame two back (CUDA and `motion_v2_sycl`: a ring of three raw planes;
-  HIP: two kept planes; `motion_sycl`: two planes with fixed roles, advanced
-  by two device copies behind the graph replay, with the kernel enqueued on
-  every frame) and derives `motion2` / `motion3` with the CPU's
-  `vmaf_motion_window_flush()` (`core/src/feature/motion_window.h`). The
-  `motion_v2` twins hold no copy of the CPU flush. A sync or a cleanup must
-  not bring back a twin's own window arithmetic, a
-  `VMAF_OPT_FLAG_DEFAULT_ONLY` or `-ENOTSUP` for the option on these six
-  twins, or move `motion_sycl`'s plane copies into the recorded graph. A
-  change to `min_idx` or to the frame `extract()` differences against in
-  `integer_motion.c` / `integer_motion_v2.c` changes the twins' `ring` /
-  `depth` in the same PR. `test_{cuda,sycl,hip}_motion_five_frame_window`
-  (`==`, fixture `core/test/motion_five_frame_twin_parity.h`) and the exact
-  gate cells `motion_mffw` / `motion_v2_mffw` guard it on a device;
-  `core/test/test_gpu_option_value_capability_contract.py` and
-  `core/test/test_{cuda,sycl,hip}_kernel_source_contract.py` (the twins call
-  the function and read no stored score back) without one. The Metal twins do
-  not declare the option; the CPU extractor computes it there.
+- **`ciede_cuda` runs the CPU's arithmetic ([ADR-1426](../adr/1426-cuda-ciede-cpu-arithmetic.md))**:
+  `core/src/feature/cuda/integer_ciede/ciede_device.h` is `ciede.c`'s
+  `get_lab_color()` and `ciede2000()` statement for statement: fp64 where the
+  reference computes in double, float where it stores in float, every
+  float-to-double promotion of a libm argument written out (the kernel is
+  C++). The reference's two float products, `c_prime_1 * c_prime_2` and
+  `r_sub_t * chroma * hue`, are upstream's and are float products in every
+  twin ([ADR-1476](../adr/1476-ciede-upstream-expression.md)); a sync takes
+  upstream's side of them and no `(double)` goes in front of either. The kernel stores one float per pixel and
+  `ciede_frame_sum()` (`core/src/feature/ciede_frame_sum.h`, one definition
+  for the CUDA, SYCL and HIP hosts) adds the read-back plane in raster order. Do not
+  introduce float math functions, a device reduction or another form of the
+  formula. A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or
+  the order of `extract()`'s sum in `ciede.c` changes that header in the same
+  PR. The twin is not bit-identical (glibc's math library against CUDA's);
+  the gate bounds it at `1e-9` through `LIBM_TWINS`.
+  `core/test/test_ciede_device_math.c` and
+  `core/test/test_cuda_ciede_exact_contract.py` guard it without a device,
+  `test_cuda_ciede_parity` on one. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
-- **CPU extractors declare the features they write ([ADR-1359](../adr/1359-cli-feature-backend-twin.md))**:
-  the twin lookup pairs a CPU extractor with a device twin through
-  `provided_features`. `core/src/feature/float_moment.c` is an upstream-mirror
-  file whose list the fork changed from upstream's pseudo-name
-  `"float_moment"` to the four emitted `float_moment_*` names; an upstream
-  sync must keep the fork's list, or `--backend <gpu> --feature float_moment`
-  falls back to the CPU again. `vmaf_feature_extractor_twin_audit()` and
-  `test_every_device_twin_is_reachable` (`core/test/test_feature_extractor.c`)
-  fail when any registered device twin is unreachable. See
-  [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md).
+- **`ciede_sycl` runs the CPU's arithmetic on fp32 pairs ([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md))**:
+  `core/src/feature/ciede_ff_math.h` is the same statements as the
+  CUDA twin's `ciede_device.h` for a device without an fp64 type: every fp64
+  value is an fp32 pair, every math-library call a function of
+  `core/src/feature/ff_math.h`, every `float` of the reference a
+  float rounded from the pair at the reference's statement. Both headers are
+  backend-neutral and shared with `ciede_hip` (ADR-1448);
+  `core/src/feature/sycl/sycl_ciede_math.h` and `sycl_ff_math.h` only name
+  the SYCL primitives they are built on. The kernel stores
+  one float per pixel and `ciede_frame_sum()` adds the read-back plane in
+  raster order. Do not introduce the device's fp32 math functions, a device
+  reduction, another form of the formula, or a call the compiler does not
+  inline: `ciede_pixel()` is flattened into the kernel because a call frame is
+  scratch memory (ADR-1395). The header's constants and tables come from
+  `scripts/dev/gen_sycl_ff_math.py`; the tables are read from device memory.
+  A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or the order
+  of `extract()`'s sum in `ciede.c` changes this header and the CUDA one in
+  the same PR. The twin is not bit-identical (the host's `powf`); the gate
+  bounds it at `1e-9` through `LIBM_TWINS`.
+  `core/test/test_sycl_ciede_exact_contract.py` guards it without a device,
+  `test_sycl_ciede_math` and `test_sycl_ciede_parity` on one. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
-- **dev-MCP Docker container**
-  ([ADR-0451](../adr/0451-local-dev-mcp-container.md)):
-  `dev/Containerfile` installs CUDA through the shared installer's exact
-  `--mode=full` contract (ADR-1306). `build-config.env` owns the apt series,
-  release lock, and exact toolkit/nvcc/cudart package versions; do not restore a
-  floating `cuda-toolkit-13-4` command in the Containerfile. It also pins the unversioned
-  `intel-basekit` meta-package (Intel does not publish a
-  `intel-basekit-2025.3` apt package), and the digest-pinned
-  `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage
-  (ADR-1225 / ADR-1231). If SDK versions are bumped (routine security
-  maintenance), update their shared pins in `build-config.env` and regenerate
-  the mirrors before merging; a ROCm bump
-  additionally means re-validating the `rocm-src` prune list against its
-  hipcc smoke check.
-  `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
-  `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
-  — do not rename these files. The probe JSON schema fields (`ts`,
-  `host_id`, `backend_results`, `mcp_results`) are an internal format;
-  update `docs/development/dev-mcp.md` if the schema changes. This
-  directory does not affect the libvmaf C build or any CI gate.
-- **Top-level `noxfile.py` is a local-dev affordance, not a CI gate (ADR-0914)**:
-  The repo-root `noxfile.py` exposes one session per Python package
-  (`ai`, `mcp`, `vmaf_tune`, `dev_llm`, `roi_score`, `ensemble_kit`,
-  `python_harness`) plus `all` / `lint` meta-sessions. CI does **not**
-  call nox — each package keeps its own `python3 -m venv && pip install
-  -e .[dev] && pytest` recipe in
-  `.github/workflows/tests-and-quality-gates.yml`. When adding a new
-  Python package, update **both** `noxfile.py` and the CI YAML; missing
-  one drifts the dev experience away from CI. See
-  [`docs/development/python-test-orchestrator.md`](python-test-orchestrator.md).
-  The `python_harness` session intentionally delegates to `tox -c
-  python` rather than duplicating the Cython + Netflix golden-data
-  setup that lives in `python/tox.ini`; do not collapse them.
-
-- **Security support and badge evidence** — `SECURITY.md` describes actual
-  VMAFx release support, not inherited Netflix/libvmaf version strings.
-  Keep [the passing worksheet](best-practices-assessment.md)
-  tied to a reviewed source revision and the live project record. Configuration,
-  future releases and agent-authored prose cannot establish historical response
-  times, a human developer's knowledge or a completed external badge. The
-  project website is GitHub Pages; keep the short purpose and participation
-  links in `docs/index.md`, and verify deployed pages before citing new text.
+- **`ciede_hip` runs the same fp32-pair statements ([ADR-1448](../adr/1448-hip-ciede-cpu-arithmetic.md))**:
+  `core/src/feature/hip/integer_ciede/ciede_score.hip` includes
+  `core/src/feature/ciede_ff_math.h` through
+  `core/src/feature/hip/integer_ciede/ciede_hip_math.h`, which names the HIP
+  primitives (`core/src/feature/ff_pair.h` on plain fp32 operators under the
+  strict FP list, `fmaf()`, `sqrtf()`, `cbrtf()`, `expf(0.2f * logf(x))`).
+  The device has fp64, but its fp64 math functions cost 17 times the frame
+  time; do not bring them back. The kernel stores one float per pixel and the
+  host adds the plane with `ciede_frame_sum()`. A change to a shared header
+  changes the SYCL twin too: both are re-measured (A380 and gfx1036) in the
+  same PR. The gate bounds the cell at `1e-9` (`LIBM_TWINS`), not 0.
+  `core/test/test_hip_ciede_exact_contract.py` and `test_hip_ciede_math`
+  guard it without a device, `test_hip_ciede_parity` on one.

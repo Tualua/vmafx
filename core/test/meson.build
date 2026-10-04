@@ -581,6 +581,15 @@ test('test_cli_frame_reader_asserts_contract',
     timeout : 30,
 )
 
+# The two pages AGENTS.md imports (rebase-sensitive invariants, hard rules) stay
+# grouped, linked and true; every agent reads them (docs audit 2026-10-03).
+test('test_agent_pages_contract',
+    import('python').find_installation(),
+    args : files('test_agent_pages_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.

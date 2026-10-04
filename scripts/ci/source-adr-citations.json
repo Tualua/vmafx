@@ -9594,6 +9594,7 @@
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
         "core/test/speed_chroma_twin_parity.h": 3,
+        "core/test/test_agent_pages_contract.py": 1,
         "core/test/test_cuda_device_resident_contract.py": 4,
         "core/test/test_cuda_speed_chroma_parity.c": 1,
         "core/test/test_cuda_speed_singular_parity.c": 1,

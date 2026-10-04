@@ -60126,3 +60126,12 @@ upstream parity guard's allowlist.
   `generate-hardware-reports.py` lets a GPU row name a platform; such a row
   covers no family in the coverage check. No score, public API or FFmpeg patch
   impact.
+## Agent-imported pages regrouped
+
+- `docs/development/rebase-sensitive-invariants.md` is grouped under H2 sections by area
+  (documentation, build and CI, upstream, backends and the gate, floating-point policy, then
+  one section per feature family). A sync that adds an invariant puts it in its area's section
+  and keeps the contents list at the top in step; `core/test/test_agent_pages_contract.py`
+  fails when an entry stops at "See", a link or path stops resolving, or retired status text
+  returns. On a conflict in the page, resolve per hunk inside the section of the entry, never
+  take a whole side. No score, public API or FFmpeg patch impact.

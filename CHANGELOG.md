@@ -332,6 +332,15 @@
   behaviour changes; the scores were already these.
 
 
+- **The pages `AGENTS.md` imports are grouped and corrected.** `docs/development/rebase-sensitive-invariants.md`
+  is now organised under H2 sections by area with a contents list (every invariant kept); its
+  stale MCP, HIP and "placeholder ADR" texts and a dangling "See" are fixed. Rule 8 of
+  `docs/development/agent-hard-rules.md` names `make docs-fragments-write`, rule 12 the real MCP
+  attachment (`docker exec -i vmaf-dev-mcp vmafx-mcp`)
+  ([invariants](docs/development/rebase-sensitive-invariants.md),
+  [hard rules](docs/development/agent-hard-rules.md)). FFmpeg patch impact: none.
+
+
 - Rewrote agent-facing documentation into caveman internal register across 6 subtree AGENTS.md files: `cmd/vmafx-controller/AGENTS.md`, `cmd/vmafx-mcp/AGENTS.md`, `compat/python-vmaf/AGENTS.md`, `deploy/helm/vmafx/AGENTS.md`, `mcp-server/AGENTS.md`, and `pkg/tune/AGENTS.md`. All load-bearing tokens and invariants preserved under determinism and context gates.
 
 
