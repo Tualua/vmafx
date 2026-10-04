@@ -17,6 +17,10 @@
    "url": "https://raw.githubusercontent.com/python/cpython/v3.13.16/Doc/license.rst",
    "sha256": "952ac05720d7f1dcb63589b35eb0931b1442eb250230a4ad31198eddf0ad6abc"
   },
+  "3.14.7": {
+   "url": "https://raw.githubusercontent.com/python/cpython/v3.14.7/Doc/license.rst",
+   "sha256": "cd6f471c0bfdb099efefc25ddff9b3df8bf62e10428987f1f05e6f2f9e35d563"
+  },
   "3.14.8": {
    "url": "https://raw.githubusercontent.com/python/cpython/v3.14.8/Doc/license.rst",
    "sha256": "cd6f471c0bfdb099efefc25ddff9b3df8bf62e10428987f1f05e6f2f9e35d563"
@@ -3697,6 +3701,501 @@
      ]
     }
    ]
+  },
+  "published-rc-cli-image": {
+   "title": "the VMAFx production image (vmaf command)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published after the fact for this already-published image (Debian source packages of every installed package at the installed version); SOURCES.txt inside it is the index. This notice was written after publication (ADR-1578) and accompanies the image on its GitHub release page; the image itself carries no notices.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "This image was published before the licensing rules of ADR-1513; it is unchanged and identified by the digest named on the release page. Its notices, licence texts and the source of its copyleft parts were published afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files of this image; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-binaries"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "debian-packages"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "system-state"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "published-rc-server-image": {
+   "title": "the VMAFx production MCP server image",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published after the fact for this already-published image (Debian source packages of every installed package at the installed version, and the source RPMs listed under [grafted]); SOURCES.txt inside it is the index. This notice was written after publication (ADR-1578) and accompanies the image on its GitHub release page; the image itself carries no notices.",
+   "python": {
+    "version": "3.14.7"
+   },
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "This image was published before the licensing rules of ADR-1513; it is unchanged and identified by the digest named on the release page. Its notices, licence texts and the source of its copyleft parts were published afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files of this image; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "production-server-image",
+     "id": "vmafx-binaries"
+    },
+    {
+     "from": "production-server-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-server-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-server-image",
+     "id": "cpython"
+    },
+    {
+     "from": "production-server-image",
+     "id": "python-venv"
+    },
+    {
+     "from": "production-server-image",
+     "id": "python-packages",
+     "texts": [
+      {
+       "artifact": "venv/lib/python3.14/site-packages/onnxruntime/LICENSE",
+       "dist": "onnxruntime",
+       "label": "onnxruntime keeps its LICENSE in the package, not the dist-info"
+      },
+      {
+       "artifact": "venv/lib/python3.14/site-packages/onnxruntime/ThirdPartyNotices.txt",
+       "dist": "onnxruntime",
+       "label": "onnxruntime third-party notices"
+      },
+      {
+       "fetched": "flatbuffers-25.12.19-LICENSE",
+       "name": "flatbuffers-25.12.19-LICENSE.txt",
+       "dist": "flatbuffers",
+       "label": "flatbuffers 25.12.19 (Apache-2.0) ships no licence file in its wheel"
+      },
+      {
+       "fetched": "cython-3.2.4-LICENSE.txt",
+       "name": "cython-3.2.4-LICENSE.txt",
+       "dist": "Cython",
+       "label": "Cython 3.2.4 (Apache-2.0) keeps no licence file in its dist-info"
+      },
+      {
+       "repo": "LICENSES/EUPL-1.2.txt",
+       "name": "EUPL-1.2.txt",
+       "dist": "vmaf-mcp",
+       "label": "the licence of the vmaf-mcp files (EUPL-1.2), which its metadata misstates"
+      },
+      {
+       "repo": "LICENSES/EUPL-1.2.txt",
+       "name": "EUPL-1.2.txt",
+       "dist": "vmaf-tune",
+       "label": "the licence of the vmaf-tune files (EUPL-1.2)"
+      },
+      {
+       "repo": "LICENSE",
+       "name": "BSD-2-Clause-Patent.txt",
+       "dist": "vmaf-tune",
+       "label": "vmaftune/executor.py (BSD-2-Clause-Patent)"
+      }
+     ]
+    },
+    {
+     "from": "production-server-image",
+     "id": "debian-packages"
+    },
+    {
+     "from": "production-server-image",
+     "id": "system-state"
+    },
+    {
+     "from": "production-server-image",
+     "id": "notices"
+    },
+    {
+     "id": "vmafx-python-wheels",
+     "kind": "fixed",
+     "name": "The vmaf-mcp and vmaf-tune wheels in this image",
+     "notes": [
+      "The dist-info metadata of these two wheels declares BSD-2-Clause-Patent and they carry no licence file. That metadata is wrong: their files are EUPL-1.2 (vmaftune/executor.py BSD-2-Clause-Patent), as each file's SPDX header says (ADR-1250); the texts are under texts/."
+     ]
+    }
+   ]
+  },
+  "published-rc-cuda-image": {
+   "title": "the VMAFx production NVIDIA GPU image (vmaf command, CUDA)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published after the fact for this already-published image (Ubuntu source packages of every installed Ubuntu package at the installed version; NVIDIA publishes no source for its packages); SOURCES.txt inside it is the index. This notice was written after publication (ADR-1578) and accompanies the image on its GitHub release page; the image itself carries no notices.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "This image was published before the licensing rules of ADR-1513; it is unchanged and identified by the digest named on the release page. Its notices, licence texts and the source of its copyleft parts were published afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files of this image; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-binaries",
+     "name": "VMAFx: the vmaf command and libvmaf (CUDA build)"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "cuda-image",
+     "id": "nvidia-cuda-device-code",
+     "source": "binary only; compiled in by the nvcc of CUDA 13.4 in the v1.0.0-rc builder (NVIDIA's ubuntu2604 repository)",
+     "texts": [
+      {
+       "artifact": "usr/share/doc/cuda-cudart-13-4/copyright",
+       "name": "CUDA-EULA.txt",
+       "label": "NVIDIA CUDA Toolkit End User License Agreement v13.4, the copyright file of cuda-cudart-13-4 in this image"
+      }
+     ]
+    },
+    {
+     "from": "cuda-image",
+     "id": "nv-codec-headers",
+     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d",
+     "texts": [
+      {
+       "repo": "tools/rc1-tester/image/licenses/nv-codec-headers.txt",
+       "name": "nv-codec-headers.txt",
+       "label": "the MIT notice of the two headers"
+      }
+     ]
+    },
+    {
+     "id": "nvidia-cuda-packages",
+     "kind": "dpkg-foreign",
+     "name": "NVIDIA packages from NVIDIA's apt repository: cuda-cudart-13-4 (libcudart), its configuration packages and cuda-keyring",
+     "package_patterns": [
+      "cuda-*"
+     ],
+     "licence": "LicenseRef-NVIDIA-CUDA-EULA",
+     "copyright": [
+      "Copyright (c) NVIDIA Corporation"
+     ],
+     "source": "binary only; NVIDIA publishes no source for these packages",
+     "texts": [
+      {
+       "artifact": "usr/share/doc/cuda-cudart-13-4/copyright",
+       "name": "CUDA-EULA.txt",
+       "label": "NVIDIA CUDA Toolkit End User License Agreement v13.4"
+      }
+     ],
+     "notes": [
+      "libcudart.so is listed as distributable in Attachment A of the CUDA EULA and ships unmodified; libvmaf does not load it.",
+      "You may not reverse engineer, decompile or disassemble these files or remove NVIDIA's notices (EULA 1.2); NVIDIA provides them as is (1.4), with the limitation of liability of 1.5.",
+      "cuda-keyring holds NVIDIA's apt signing key and no copyright file."
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Ubuntu 26.04 packages of the base image"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "published-rc-oneapi-image": {
+   "title": "the VMAFx production Intel GPU image (vmaf command, SYCL)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published after the fact for this already-published image (Ubuntu source packages of every installed Ubuntu package at the installed version; Intel publishes no source for its oneAPI packages); SOURCES.txt inside it is the index. This notice was written after publication (ADR-1578) and accompanies the image on its GitHub release page; the image itself carries no notices.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "This image was published before the licensing rules of ADR-1513; it is unchanged and identified by the digest named on the release page. Its notices, licence texts and the source of its copyleft parts were published afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files of this image; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-binaries",
+     "name": "VMAFx: the vmaf command and libvmaf (SYCL build)"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-models"
+    },
+    {
+     "id": "intel-oneapi-runtime",
+     "kind": "dpkg-foreign",
+     "name": "Intel oneAPI runtime packages of the intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04 base image (/opt/intel/oneapi: compiler runtime, SYCL, MKL, IPP, TBB, MPI, CCL, DAL, DNNL, UMF, TCM, OpenCL CPU device)",
+     "package_patterns": [
+      "intel-oneapi-*"
+     ],
+     "licence": "LicenseRef-Intel-EULA-Developer-Tools AND LicenseRef-Intel-ISSL AND Apache-2.0 (per component; the texts below)",
+     "copyright": [
+      "Copyright (C) Intel Corporation"
+     ],
+     "source": "binary only from Intel's apt repository, unmodified; Intel publishes no source for the EULA and ISSL components (DNNL, ippcp and UMF: their open-source releases)",
+     "texts": [
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/compiler/licensing/c/LICENSE",
+       "name": "intel/compiler-LICENSE.txt",
+       "label": "Intel End User License Agreement for Developer Tools (compiler runtime and SYCL)"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/mkl/licensing/license.txt",
+       "name": "intel/mkl-license.txt",
+       "label": "Intel Simplified Software License (MKL)"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/ipp/licensing/license.txt",
+       "name": "intel/ipp-license.txt",
+       "label": "IPP licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/ippcp/licensing/license.txt",
+       "name": "intel/ippcp-license.txt",
+       "label": "IPP Cryptography licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/tbb/licensing/license.txt",
+       "name": "intel/tbb-license.txt",
+       "label": "oneTBB licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/mpi/license.txt",
+       "name": "intel/mpi-license.txt",
+       "label": "Intel MPI licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/ccl/licensin/license.txt",
+       "name": "intel/ccl-license.txt",
+       "label": "oneCCL licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/dal/licensing/license.txt",
+       "name": "intel/dal-license.txt",
+       "label": "oneDAL licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/dnnl/LICENSE",
+       "name": "intel/dnnl-LICENSE.txt",
+       "label": "oneDNN licence (Apache-2.0)"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/tcm/licensing/license.txt",
+       "name": "intel/tcm-license.txt",
+       "label": "TCM licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/umf/1.0/share/doc/umf/LICENSE.TXT",
+       "name": "intel/umf-LICENSE.txt",
+       "label": "UMF licence"
+      },
+      {
+       "artifact": "opt/intel/oneapi/redist/share/doc/compiler/licensing/fortran/LICENSE",
+       "name": "intel/fortran-LICENSE.txt",
+       "label": "Fortran runtime licence"
+      }
+     ],
+     "notes": [
+      "These files are provided to you in executable code only, as part of this image, for use with the VMAFx programs in it.",
+      "You may not reverse engineer, decompile or disassemble them (Intel EULA for Developer Tools, section 2.1.D(2); Intel Simplified Software License).",
+      "Intel and its suppliers provide them as is; the disclaimers and the limitation of liability of sections 6 and 7 of that agreement apply to you as they apply to the distributor (section 7.3).",
+      "Nothing in this image is certified or guaranteed by Intel; Intel's names identify the components only.",
+      "The oneAPI packages hold no /usr/share/doc copyright file; their licence texts are the ones listed here, as installed in /opt/intel."
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Ubuntu 24.04 packages of the base image (its devel tag includes GCC, CMake and Python 3.12)"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "published-rc-go-server-image": {
+   "title": "the VMAFx scoring server image (vmafx-server)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-server:{tag}-source in the same registry package, published after the fact for this already-published image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/); SOURCES.txt inside it is the index. This notice was written after publication (ADR-1578) and accompanies the image on its GitHub release page; the image itself carries no notices.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "This image was published before the licensing rules of ADR-1513; it is unchanged and identified by the digest named on the release page. Its notices, licence texts and the source of its copyleft parts were published afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files of this image; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "vmafx-binaries"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "go-modules"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "debian-packages"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "system-state"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "published-rc-operator-image": {
+   "title": "the VMAFx Kubernetes operator image",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-operator:{tag}-source in the same registry package, published after the fact for this already-published image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/); SOURCES.txt inside it is the index. This notice was written after publication (ADR-1578) and accompanies the image on its GitHub release page; the image itself carries no notices.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "This image was published before the licensing rules of ADR-1513; it is unchanged and identified by the digest named on the release page. Its notices, licence texts and the source of its copyleft parts were published afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files of this image; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "production-operator-image",
+     "id": "vmafx-binaries"
+    },
+    {
+     "from": "production-operator-image",
+     "id": "go-modules"
+    },
+    {
+     "from": "production-operator-image",
+     "id": "debian-packages"
+    },
+    {
+     "from": "production-operator-image",
+     "id": "system-state"
+    },
+    {
+     "from": "production-operator-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "published-rc-native": {
+   "title": "the VMAFx native release files (libvmaf, vmaf)",
+   "licence_root": "licenses",
+   "source_offer": "no copyleft object code is in these files; VMAFx's own source is the commit above and the source archives GitHub attaches to the same release.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "These release files were published before the licensing rules of ADR-1513 and are unchanged. Their notices and licence texts were attached to the release page afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "release-native",
+     "id": "vmafx-binaries"
+    },
+    {
+     "from": "release-native",
+     "id": "models-archive",
+     "notes": [
+      "The models.tar.gz of this release carries no licenses/ directory: its notices are THIRD_PARTY_NOTICES-models.txt on the same release page, its licence texts in licenses-native.tar.gz."
+     ]
+    },
+    {
+     "from": "release-native",
+     "id": "build-records"
+    },
+    {
+     "from": "release-native",
+     "id": "notices"
+    }
+   ]
+  },
+  "published-rc-models": {
+   "title": "the VMAFx models archive (models.tar.gz)",
+   "licence_root": "licenses",
+   "source_offer": "no copyleft object code is in these files; VMAFx's own source is the commit above and the source archives GitHub attaches to the same release.",
+   "components": [
+    {
+     "kind": "fixed",
+     "id": "published-before-adr-1513",
+     "name": "About this notice",
+     "notes": [
+      "These release files were published before the licensing rules of ADR-1513 and are unchanged. Their notices and licence texts were attached to the release page afterwards (ADR-1578).",
+      "EUPL-1.2 covers only the VMAFx files; every other component keeps its own terms."
+     ]
+    },
+    {
+     "from": "release-models",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "release-models",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "release-models",
+     "id": "notices"
+    }
+   ]
   }
  },
  "fetched_texts": {
@@ -3795,6 +4294,11 @@
    "sha256": "dd2ab92a7c2bb90dd509e16572707a34b13bc0bc09b9199d115f25594ac39053",
    "extract": "docx-text",
    "why": "the licence terms of Visual Studio Enterprise 2026 and Professional 2026 (Last Updated: October 1, 2025), whose DISTRIBUTABLE CODE section governs the Microsoft runtime code of the Windows zips; visualstudio.microsoft.com/license-terms/vs2026-ga-pro-enterprise/ shows only this document, through an embedded viewer (Last-Modified 2025-10-31, read 2026-10-04)"
+  },
+  "cython-3.2.4-LICENSE.txt": {
+   "url": "https://raw.githubusercontent.com/cython/cython/3.2.4/LICENSE.txt",
+   "sha256": "9568a2b155e66ac3e0ba1fd80b52b827b9460e6cf6f233125e7cbca8e206ddc3",
+   "why": "Cython 3.2.4 (Apache-2.0) keeps no licence file in its dist-info; the v1.0.0-rc server images ship it in the runtime venv"
   }
  },
  "go_own_modules": [

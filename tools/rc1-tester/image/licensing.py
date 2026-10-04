@@ -44,6 +44,8 @@ import shutil
 import struct
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -658,16 +660,33 @@ def foreign_packages(record: dict) -> set[str]:
         name
         for component in record["components"]
         if component["kind"] == "dpkg-foreign"
-        for name in component["packages"]
+        for name in component.get("packages", [])
     }
+
+
+def foreign_patterns(record: dict) -> list[str]:
+    """Glob patterns of a `dpkg-foreign` component (`package_patterns`): the vendor
+    packages of an image whose exact package set is fixed by a base image the fork
+    did not choose package by package (the already-published images, ADR-1578)."""
+    return [
+        pattern
+        for component in record["components"]
+        if component["kind"] == "dpkg-foreign"
+        for pattern in component.get("package_patterns", [])
+    ]
+
+
+def is_foreign(package: str, names: set[str], patterns: list[str]) -> bool:
+    return package in names or any(fnmatch.fnmatchcase(package, p) for p in patterns)
 
 
 def check_dpkg(ctx: Context) -> list[str]:
     problems = []
     foreign = foreign_packages(ctx.record)
+    patterns = foreign_patterns(ctx.record)
     installed = {fields["Package"] for fields in ctx.packages}
     for fields in ctx.packages:
-        if fields["Package"] in foreign:
+        if is_foreign(fields["Package"], foreign, patterns):
             continue
         if not copyright_file(ctx.root, fields["Package"]).is_file():
             problems.append(f"package {fields['Package']} has no /usr/share/doc/*/copyright")
@@ -1071,9 +1090,10 @@ def check_notices(record: dict, ctx: Context, scan: dict, manifest: dict,
 
 def debian_specs(ctx: Context, record: dict) -> set[str]:
     specs: set[str] = set()
-    foreign = foreign_packages(record)
+    foreign, patterns = foreign_packages(record), foreign_patterns(record)
     for fields in ctx.packages:
-        if fields["Package"] not in foreign:  # its component names the vendor's source
+        # a vendor package's component names its source
+        if not is_foreign(fields["Package"], foreign, patterns):
             specs.update(package_sources(fields))
     specs |= copied_specs(ctx)
     for component in record["components"]:
@@ -1162,15 +1182,52 @@ def snapshot_fetch(spec: str, out: Path) -> None:
         raise LicensingError(f"snapshot.debian.org has no source files for {spec}")
 
 
+LAUNCHPAD_ARCHIVE = "https://api.launchpad.net/1.0/ubuntu/+archive/primary"
+
+
+def json_get(url: str) -> dict | list:
+    request = urllib.request.Request(url, headers={"User-Agent": "vmafx-licensing"})
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        return json.load(response)
+
+
+def launchpad_fetch(spec: str, out: Path) -> None:
+    """Ubuntu source package files of an exact version from Launchpad, which keeps
+    every version it published (an Ubuntu mirror keeps only the current ones)."""
+    name, version = spec.split("=", 1)
+    query = urllib.parse.urlencode({"ws.op": "getPublishedSources", "source_name": name,
+                                    "version": version, "exact_match": "true"})  # fmt: skip
+    listing = json_get(f"{LAUNCHPAD_ARCHIVE}?{query}")
+    entries = listing.get("entries", []) if isinstance(listing, dict) else []
+    for entry in entries:
+        if entry.get("source_package_version") != version or entry.get("status") == "Deleted":
+            continue
+        files = json_get(f"{entry['self_link']}?ws.op=sourceFileUrls&include_meta=true")
+        for item in files if isinstance(files, list) else []:
+            file_name = urllib.parse.unquote(item["url"].rsplit("/", 1)[-1])
+            download(item["url"], out / file_name, item["sha256"])
+        if files:
+            return
+    raise LicensingError(f"Launchpad has no source files for {spec}")
+
+
 def fetch_debian(spec: str, out: Path) -> str:
+    """One source package at its exact version: the configured apt archive, else
+    snapshot.debian.org (Debian), else Launchpad (Ubuntu); fails if none has it."""
     result = subprocess.run(
         ["apt-get", "source", "--download-only", "-qq", spec],
         cwd=out, capture_output=True, text=True, timeout=TIMEOUT, check=False,
     )  # fmt: skip
     if result.returncode == 0:
         return "archive"
-    snapshot_fetch(spec, out)
-    return "snapshot"
+    failures = [f"apt-get source: {result.stderr.strip()[:120]}"]
+    for where, fetch in (("snapshot", snapshot_fetch), ("launchpad", launchpad_fetch)):
+        try:
+            fetch(spec, out)
+            return where
+        except (LicensingError, urllib.error.URLError, KeyError, ValueError) as error:
+            failures.append(f"{where}: {error}")
+    raise LicensingError(f"no source for {spec}: " + "; ".join(failures))
 
 
 COMMIT_ID = re.compile(r"[0-9a-f]{40}")

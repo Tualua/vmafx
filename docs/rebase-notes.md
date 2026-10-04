@@ -38,6 +38,20 @@ search:
 - `test_gpu_dispatch_env_contract.py` ties `docs/usage/env-vars.md`'s
   `VMAF_*_DISPATCH` rows to readers with a caller in `core/src`. No score,
   public C API or FFmpeg patch impact.
+## Notices and source for the rc.1 / rc.2 images (ADR-1578, 2026-10-04)
+
+`fix/published-rc-licence-companions`. Licence tooling, a manual workflow,
+records and docs; no build or runtime change.
+
+- `tools/rc1-tester/image/licensing.py`: `fetch_debian` falls back from the
+  apt archive to snapshot.debian.org and then to Launchpad (`launchpad_fetch`);
+  `dpkg-foreign` components accept `package_patterns`. A rebase keeps both,
+  and keeps a failed fetch an error.
+- `.github/actions/image-licence-artifacts` gains `source-context` (default
+  `.`); the production callers do not pass it.
+- `tools/rc1-tester/image/published-rc/` (data, recorded scans) and the
+  `published-rc-*` records describe immutable images: never regenerate a scan
+  from another commit than the release's `source_commit`.
 
 ## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
 

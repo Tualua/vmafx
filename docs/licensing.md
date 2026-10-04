@@ -125,5 +125,55 @@ fails when a package's metadata or texts disagree with them:
 python3 -m pytest python/test/setup_metadata_test.py -k licence
 ```
 
-The releases up to 1.0.0-rc.2 predate these rules
-([Research-2140](research/2140-production-artifact-licence-audit.md)).
+## Releases 1.0.0-rc.1 and 1.0.0-rc.2
+
+The images and release files of the first two release candidates were
+published before these rules
+([Research-2140](research/2140-production-artifact-licence-audit.md)). The
+project withdrew two kinds of image and completed the rest
+([ADR-1578](adr/1578-published-rc-licence-companions.md)):
+
+- **Withdrawn** on 2026-10-04, deleted from the registry together with the
+  untagged images of the same runs:
+  - `ghcr.io/vmafx/vmafx:v1.0.0-rc.1-rocm10` and `:v1.0.0-rc.2-rocm10`. They were
+    the whole ROCm 10 development image, including `librocprof-trace-decoder.so`,
+    a binary-only AMD library whose licence forbids distributing it, and ROCgdb
+    (GPL-3.0) without its source.
+  - The whole `ghcr.io/vmafx/vmafx-node` package, with its `v1.0.0-rc.1` and
+    `v1.0.0-rc.2` images. Their FFmpeg was configured with `--enable-nonfree`,
+    which makes the build not legally redistributable, and they shipped GPL and
+    LGPL libraries without source. Every version of the package came from that
+    recipe. The node image of 1.0.0-rc.3 is published into a new
+    `vmafx-node` package, and a new package starts private until it is made
+    public.
+
+  Use 1.0.0-rc.3 or later for a ROCm or node image.
+- **Yanked** on 2026-10-04: `vmaf-mcp` 1.0.0rc1 and 1.0.0rc2 on PyPI, all four
+  files, with the reason "Wrong licence metadata: the files are EUPL-1.2, the
+  metadata says BSD-2-Clause-Patent." A yanked release still installs when it
+  is pinned exactly (`vmaf-mcp==1.0.0rc2`); the files' own SPDX headers are what
+  applies to it.
+- **Kept, unchanged**: the CPU, server, CUDA and oneAPI images, `vmafx-server`
+  and `vmafx-operator` of both releases, and the release files (`libvmaf.so*`,
+  `vmaf`, `models.tar.gz`). Each kept image now has:
+  - its notices on the release page, as
+    `THIRD_PARTY_NOTICES-<image>-<platform>.txt`, with its licence texts in
+    `licenses-<image>.tar.gz`;
+  - the corresponding source of its copyleft parts as the image `<tag>-source`
+    in the same registry package;
+  - an SPDX SBOM attested on its digest.
+
+  The release files have `THIRD_PARTY_NOTICES-native.txt`,
+  `THIRD_PARTY_NOTICES-models.txt` and `licenses-native.tar.gz` on the same page.
+  The images and files themselves are not changed, and their digests stay valid.
+  For example:
+
+  ```bash
+  docker pull ghcr.io/vmafx/vmafx:v1.0.0-rc.2-source
+  gh release download v1.0.0-rc.2 --repo VMAFx/vmafx -p 'THIRD_PARTY_NOTICES-*'
+  ```
+
+The licence section of each release page lists the withdrawn images, the
+yanked PyPI release, and every kept image with its digest and its source image.
+The registry also lost 34 untagged images built from `master` after the release
+candidates; no tag referred to them.

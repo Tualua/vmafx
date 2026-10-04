@@ -30,6 +30,10 @@ inputs:
     description: Dockerfile target that holds the corresponding source (build mode)
     required: false
     default: ""
+  source-context:
+    description: Build context of the source stage (build mode); the repository by default
+    required: false
+    default: "."
   source-digests:
     description: Space-separated sha256 digests of source images already pushed per platform (merge mode)
     required: false
@@ -90,7 +94,7 @@ runs:
       if: inputs.source-digests == ''
       uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
       with:
-        context: .
+        context: ${{ inputs.source-context }}
         file: ${{ inputs.source-file }}
         target: ${{ inputs.source-target }}
         platforms: ${{ inputs.platforms }}

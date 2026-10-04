@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Dockerfile.published-source — the corresponding-source companion of an image
+# published for v1.0.0-rc.1 or rc.2 before ADR-1513 (ADR-1578). The build
+# context is the directory .github/workflows/published-rc-licence-companions.yml
+# fills with `licensing.py fetch-sources`: Debian and Ubuntu source packages,
+# recorded source archives and Go module zips, indexed by sources/SOURCES.txt.
+# It holds files only and is pushed as <tag>-source next to the image.
+
+FROM scratch AS published-source
+COPY sources /sources

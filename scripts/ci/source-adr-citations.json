@@ -10016,21 +10016,26 @@
         ".github/actions/image-licence-artifacts/action.yml": 1,
         ".github/workflows/docker-publish-operator-node.yml": 7,
         ".github/workflows/docker-publish-production.yml": 2,
+        ".github/workflows/published-rc-licence-companions.yml": 1,
         ".github/workflows/supply-chain.yml": 2,
         "Dockerfile.go-server": 2,
-        "REUSE.toml": 1,
+        "REUSE.toml": 2,
         "docker/Dockerfile.node": 5,
         "docker/Dockerfile.operator": 2,
         "docker/Dockerfile.production": 2,
         "docker/Dockerfile.production-gpu": 1,
+        "docker/Dockerfile.published-source": 1,
         "python/test/setup_metadata_test.py": 3,
         "scripts/ci/record-copied-debian-libs.sh": 1,
         "scripts/release/build-native-release-artifacts.sh": 2,
+        "scripts/release/published_rc_companion.py": 2,
         "scripts/release/tests/test-build-native-release-artifacts.sh": 3,
         "scripts/release/tests/test-docker-image-runtime-contract.sh": 1,
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1,
+        "tools/rc1-tester/tests/test_licensing.py": 1,
         "tools/rc1-tester/tests/test_licensing_go.py": 1,
-        "tools/rc1-tester/tests/test_licensing_production.py": 2
+        "tools/rc1-tester/tests/test_licensing_production.py": 2,
+        "tools/rc1-tester/tests/test_licensing_published_rc.py": 1
       },
       "target": "1513-production-artifact-licensing.md"
     },
@@ -10350,6 +10355,18 @@
         "scripts/ci/tests/test_helm_controller_auth.py": 1
       },
       "target": "1577-scoring-paths-per-tenant.md"
+    },
+    "1578": {
+      "sites": {
+        ".github/workflows/published-rc-licence-companions.yml": 1,
+        "REUSE.toml": 1,
+        "docker/Dockerfile.published-source": 1,
+        "scripts/release/published_rc_companion.py": 2,
+        "tools/rc1-tester/image/licensing.py": 1,
+        "tools/rc1-tester/tests/test_licensing.py": 1,
+        "tools/rc1-tester/tests/test_licensing_published_rc.py": 1
+      },
+      "target": "1578-published-rc-licence-companions.md"
     },
     "1590": {
       "sites": {

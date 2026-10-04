@@ -1,0 +1,114 @@
+{
+ "schema_version": 1,
+ "licences": [
+  "EUPL-1.2"
+ ],
+ "files": [
+  {
+   "path": "api/vmafx/v1/groupversion_info.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "api/vmafx/v1/vmafxjob_types.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "api/vmafx/v1/vmafxmodeltraining_types.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "api/vmafx/v1/vmafxnode_types.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "api/vmafx/v1/zz_generated_deepcopy.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "cmd/vmafx-operator/internal/controller/vmafxjob_controller.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "cmd/vmafx-operator/internal/controller/vmafxnode_controller.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "cmd/vmafx-operator/internal/webhook/vmafxjob_webhook.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "cmd/vmafx-operator/internal/webhook/vmafxnode_webhook.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "cmd/vmafx-operator/main.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "gen/go/controller/controller.pb.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "gen/go/controller/controller_grpc.pb.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "internal/app/bootstrap/bootstrap.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "pkg/version/version.go",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  }
+ ],
+ "system_inputs": 0
+}

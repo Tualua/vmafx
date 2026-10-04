@@ -1,0 +1,3174 @@
+{
+ "schema_version": 1,
+ "licences": [
+  "BSD-2-Clause",
+  "BSD-2-Clause-Patent",
+  "BSD-3-Clause",
+  "EUPL-1.2",
+  "ISC",
+  "MIT",
+  "Unlicense"
+ ],
+ "files": [
+  {
+   "path": "core/include/libvmaf/dnn.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/feature.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/libvmaf.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/libvmaf_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/libvmaf_hip.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/libvmaf_metal.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/macros.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/model.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/pelorus/deband.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/pelorus/denoise.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/pelorus/interop.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/pelorus/pelorus.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/perceptual_weight.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/picture.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/picture_v2.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/include/libvmaf/vmaf_assert.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/bootstrap_names.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/compat/path_utf8.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/compat/path_utf8.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/cpu.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/cpu.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/cuda/common.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/cuda/common.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/cuda/cuda_helper.cuh",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/cuda/dispatch_strategy.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/cuda/dispatch_strategy.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/cuda/drain_batch.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/cuda/drain_batch.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/cuda/kernel_template.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/cuda/picture_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/cuda/picture_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/dict.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/dict.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/dict_internal.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/dnn/dnn_api.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/dnn_attach_api.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/dnn_ctx.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/model_loader.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/model_loader.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/onnx_scan.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/onnx_scan.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/op_allowlist.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/op_allowlist.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/ort_backend.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/ort_backend.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/ort_backend_internal.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/tensor_io.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/tensor_io.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/dnn/tiny_extractor_template.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/ext/x86/x86inc.asm",
+   "licence": "ISC",
+   "copyright": [
+    "Copyright 2005-2020 x264 project"
+   ]
+  },
+  {
+   "path": "core/src/feature/adm.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/adm.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_angle_flag.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_cm_accumulator.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_csf_fixed_point.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_csf_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_options.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_score.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_tools.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/adm_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/alias.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/alias.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/barten_csf_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/brisque.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/brisque_math.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/brisque_model.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cambi.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cambi.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cambi_c_values_frame.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cambi_internal.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ciede.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/alignment.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/alignment.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/blur_array.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/blur_array.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/convolution.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/convolution.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/convolution_avx.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/convolution_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/convolution_internal.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/common/fmaf_exact.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/common/macros.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/compat_builtin.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_adm/float_adm_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_adm_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_adm_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_motion/float_motion_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_motion_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_motion_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_psnr/float_psnr_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_psnr_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_psnr_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_vif/float_vif_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_vif_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/float_vif_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm/adm_cm.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm/adm_csf.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm/adm_csf_den.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm/adm_dwt2.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_adm_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_cambi/cambi_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_cambi_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_cambi_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ciede/ciede_score.cu",
+   "licence": "BSD-2-Clause-Patent AND MIT",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2019 Joshua Holmer",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ciede_cuda.c",
+   "licence": "BSD-2-Clause-Patent AND MIT",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2019 Joshua Holmer",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ciede_cuda.h",
+   "licence": "BSD-2-Clause-Patent AND MIT",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2019 Joshua Holmer",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_moment/moment_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_moment_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_moment_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_motion/motion_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_motion_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_motion_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_motion_v2_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_motion_v2_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ms_ssim_cuda.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ms_ssim_cuda.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_psnr/psnr_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_psnr_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_psnr_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_psnr_hvs_cuda.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_psnr_hvs_cuda.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ssim/integer_ssim_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ssim/ssim_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ssim_cuda.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_ssim_cuda.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_vif/filter1d.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_vif/vif_statistics.cuh",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_vif_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/integer_vif_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/speed/speed_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/speed_chroma_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/speed_chroma_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/speed_temporal_cuda.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/speed_temporal_cuda.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/ssim_cuda.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/ssim_cuda.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/ssimulacra2_cuda.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/cuda/ssimulacra2_cuda.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/delta_e_itp.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/delta_e_itp_math.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/fastdvdnet_pre.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_characteristics.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_collector.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_collector.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_collector_internal.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_dimensions.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_dists.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_extractor.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_extractor.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_lpips.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_mobilesal.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_name.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/feature_name.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_adm.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_moment.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_motion.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_ms_ssim.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_psnr.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_ssim.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/float_vif.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_adm.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_adm.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_motion.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_motion.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_motion_v2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_psnr.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_ssim.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_ssim.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_vif.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/integer_vif.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/convolve.c",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/convolve.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/decimate.c",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/decimate.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/iqa.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/iqa_options.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/iqa_os.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/math_utils.c",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/math_utils.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/ssim_accumulate_lane.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/ssim_simd.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/ssim_tools.c",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/iqa/ssim_tools.h",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2011, Tom Distler (http://tdistler.com)"
+   ]
+  },
+  {
+   "path": "core/src/feature/luminance_tools.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/luminance_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/mkdirp.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/mkdirp.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/moment.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/moment.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/moment_options.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/motion.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/motion.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/motion_blend_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/motion_options.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/motion_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/ms_ssim.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/ms_ssim.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/ms_ssim_decimate.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ms_ssim_decimate.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/niqe.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/niqe_math.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/niqe_model.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/nonfinite_score.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/null.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/offset.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/offset.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/perceptual_weight.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/perceptual_weight.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/picture_copy.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/picture_copy.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/psnr.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/psnr.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/psnr_options.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/psnr_tools.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/psnr_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/pu21.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/pu21_math.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/pu21_ssim.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/pu21_ssim.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/speed.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/speed_internal.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/speed_internal.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/speed_matmul.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/speed_qa.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ssim.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/ssim.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/ssimulacra2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ssimulacra2_eotf_lut.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ssimulacra2_math.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ssimulacra2_score.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/ssimulacra2_simd_common.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/third_party/xiph/psnr_hvs.c",
+   "licence": "BSD-3-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors."
+   ]
+  },
+  {
+   "path": "core/src/feature/transnet_v2.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/transnet_v2_score.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/vif.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/vif.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/vif_options.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/vif_tools.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/vif_tools.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/adm_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/adm_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/adm_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/adm_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/cambi_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/cambi_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/cambi_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/cambi_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ciede_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ciede_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ciede_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ciede_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/convolve_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/convolve_avx2.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/convolve_avx512.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/convolve_avx512.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_adm_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_adm_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_adm_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_adm_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_motion_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_motion_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_motion_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_motion_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_psnr_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_psnr_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_psnr_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/float_psnr_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/integer_ssim_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/integer_ssim_avx2.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/moment_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/moment_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/moment_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/moment_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/motion_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/motion_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/motion_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/motion_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ms_ssim_decimate_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ms_ssim_decimate_avx2.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ms_ssim_decimate_avx512.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ms_ssim_decimate_avx512.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/psnr_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/psnr_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/psnr_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/psnr_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/psnr_hvs_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/psnr_hvs_avx2.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_matmul_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_matmul_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_matmul_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/speed_matmul_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssim_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2023 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssim_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssim_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssim_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssimulacra2_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssimulacra2_avx2.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssimulacra2_avx512.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssimulacra2_avx512.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssimulacra2_host_avx2.c",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/ssimulacra2_host_avx2.h",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/vif_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/vif_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/vif_avx512.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/vif_avx512.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/vif_statistic_avx2.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/x86/vif_statistic_avx2.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/feature/y_funque_plus.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/fex_ctx_vector.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/fex_ctx_vector.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/fex_ctx_vector_internal.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/framesync.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/framesync.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/gpu_dispatch_env.cpp",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/gpu_dispatch_env.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/gpu_dispatch_parse.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/gpu_picture_pool.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/gpu_picture_pool.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/hip/stubs.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/interop/pelorus_deband_params.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/interop/pelorus_denoise_params.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/interop/pelorus_interop.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/interop/pelorus_qp_report_csv.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/interop/pelorus_version.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/libvmaf.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/libvmaf_priv.h",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/log.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/log.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/mem.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/mem.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/metadata.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/metadata_handler.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/metadata_handler.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/metal/stubs.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/model.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/model.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/opt.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/opt.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/output.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/output.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/pdjson.c",
+   "licence": "Unlicense",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/pdjson.h",
+   "licence": "Unlicense",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/percentile.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/picture.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/picture.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/picture_pool.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/picture_pool.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/picture_v2.c",
+   "licence": "EUPL-1.2",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/src/predict.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/predict.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/predict_internal.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/read_json_model.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/read_json_model.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/ref.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/ref.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/svm.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/svm.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/thread_locale.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/thread_locale.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/thread_pool.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/thread_pool.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/x86/cpu.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/x86/cpu.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/src/x86/cpuid.asm",
+   "licence": "BSD-2-Clause",
+   "copyright": [
+    "Copyright 2018, VideoLAN and dav1d authors",
+    "Copyright 2018, Two Orioles, LLC"
+   ]
+  },
+  {
+   "path": "core/tools/cli_parse.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/cli_parse.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/spinner.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/vidinput.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/vidinput.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/vmaf.cpp",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/vmaf_close_retry.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/tools/vmaf_close_retry.h",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "core/tools/y4m_input.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "core/tools/yuv_input.c",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "include/vcs_version.h",
+   "licence": "NONE",
+   "copyright": []
+  },
+  {
+   "path": "src/adm_cm.fatbin.c",
+   "from": "core/src/feature/cuda/integer_adm/adm_cm.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/adm_csf.fatbin.c",
+   "from": "core/src/feature/cuda/integer_adm/adm_csf.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/adm_csf_den.fatbin.c",
+   "from": "core/src/feature/cuda/integer_adm/adm_csf_den.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/adm_dwt2.fatbin.c",
+   "from": "core/src/feature/cuda/integer_adm/adm_dwt2.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/brisque_live.model.c",
+   "from": "model/other_models/brisque_live.model",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/cambi_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_cambi/cambi_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/ciede_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_ciede/ciede_score.cu",
+   "licence": "BSD-2-Clause-Patent AND MIT",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2019 Joshua Holmer",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/config.asm",
+   "licence": "NONE",
+   "copyright": []
+  },
+  {
+   "path": "src/config.h",
+   "licence": "NONE",
+   "copyright": []
+  },
+  {
+   "path": "src/filter1d.fatbin.c",
+   "from": "core/src/feature/cuda/integer_vif/filter1d.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/float_adm_score.fatbin.c",
+   "from": "core/src/feature/cuda/float_adm/float_adm_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/float_motion_score.fatbin.c",
+   "from": "core/src/feature/cuda/float_motion/float_motion_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/float_psnr_score.fatbin.c",
+   "from": "core/src/feature/cuda/float_psnr/float_psnr_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/float_vif_score.fatbin.c",
+   "from": "core/src/feature/cuda/float_vif/float_vif_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/integer_ssim_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_ssim/integer_ssim_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/moment_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_moment/moment_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/motion_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_motion/motion_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/motion_v2_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/ms_ssim_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/psnr_hvs_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/psnr_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_psnr/psnr_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/speed_score.fatbin.c",
+   "from": "core/src/feature/cuda/speed/speed_score.cu",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2025 Netflix, Inc.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/ssim_score.fatbin.c",
+   "from": "core/src/feature/cuda/integer_ssim/ssim_score.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause",
+   "copyright": [
+    "Copyright 2016-2026 Netflix, Inc.",
+    "Copyright (c) 2011, Tom Distler (http://tdistler.com)",
+    "Copyright 2001-2012 Xiph.Org and contributors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/ssimulacra2_blur.fatbin.c",
+   "from": "core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/ssimulacra2_mul.fatbin.c",
+   "from": "core/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu",
+   "licence": "BSD-2-Clause-Patent AND BSD-3-Clause",
+   "copyright": [
+    "Copyright (c) the JPEG XL Project Authors.",
+    "Copyright 2026 Lusoris"
+   ]
+  },
+  {
+   "path": "src/vmaf_4k_v0.6.1.json.c",
+   "from": "model/vmaf_4k_v0.6.1.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_4k_v0.6.1neg.json.c",
+   "from": "model/vmaf_4k_v0.6.1neg.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_b_v0.6.3.json.c",
+   "from": "model/vmaf_b_v0.6.3.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_float_4k_v0.6.1.json.c",
+   "from": "model/vmaf_float_4k_v0.6.1.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_float_b_v0.6.3.json.c",
+   "from": "model/vmaf_float_b_v0.6.3/vmaf_float_b_v0.6.3.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_float_v0.6.1.json.c",
+   "from": "model/vmaf_float_v0.6.1.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_float_v0.6.1neg.json.c",
+   "from": "model/vmaf_float_v0.6.1neg.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v0.6.1.json.c",
+   "from": "model/vmaf_v0.6.1.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v0.6.1neg.json.c",
+   "from": "model/vmaf_v0.6.1neg.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_1d5h_2160.json.c",
+   "from": "model/vmaf_v1.0.16/vmaf_v1.0.16_1d5h_2160.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_3d0h.json.c",
+   "from": "model/vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_3d0h_2160.json.c",
+   "from": "model/vmaf_v1.0.16/vmaf_v1.0.16_3d0h_2160.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_5d0h.json.c",
+   "from": "model/vmaf_v1.0.16/vmaf_v1.0.16_5d0h.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_hfr_1d5h_2160.json.c",
+   "from": "model/vmaf_v1.0.16_hfr/vmaf_v1.0.16_hfr_1d5h_2160.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_hfr_3d0h.json.c",
+   "from": "model/vmaf_v1.0.16_hfr/vmaf_v1.0.16_hfr_3d0h.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_hfr_3d0h_2160.json.c",
+   "from": "model/vmaf_v1.0.16_hfr/vmaf_v1.0.16_hfr_3d0h_2160.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  },
+  {
+   "path": "src/vmaf_v1.0.16_hfr_5d0h.json.c",
+   "from": "model/vmaf_v1.0.16_hfr/vmaf_v1.0.16_hfr_5d0h.json",
+   "licence": "BSD-2-Clause-Patent",
+   "copyright": [
+    "Copyright 2016-2020 Netflix, Inc."
+   ]
+  }
+ ],
+ "system_inputs": 569
+}

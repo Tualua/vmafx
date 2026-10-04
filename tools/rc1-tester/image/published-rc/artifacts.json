@@ -1,0 +1,304 @@
+{
+ "comment": "Images published for v1.0.0-rc.1 and v1.0.0-rc.2 before the licensing rules of ADR-1513, and what happens to each (ADR-1578). `keep` images get notices on their release page and a <tag>-source companion from .github/workflows/published-rc-licence-companions.yml; `withdrawn` images are deleted from GHCR. scans/<release>/<build>.json are the licence scans of the files the release tag's build compiles into the shipped programs (`ninja_targets`: vmaf and the libvmaf it links), made by `scripts/release/published_rc_companion.py scan`.",
+ "schema_version": 1,
+ "builds": {
+  "cpu": {
+   "options": [
+    "--buildtype=release",
+    "--strip",
+    "-Denable_cuda=false",
+    "-Denable_sycl=false",
+    "-Denable_dnn=disabled",
+    "-Denable_avx512=true",
+    "-Denable_tests=false"
+   ]
+  },
+  "cuda": {
+   "options": [
+    "--buildtype=release",
+    "--strip",
+    "-Denable_cuda=true",
+    "-Denable_nvcc=true",
+    "-Denable_sycl=false",
+    "-Denable_dnn=disabled",
+    "-Dc_std=c2x",
+    "-Dcpp_std=c++23",
+    "-Denable_avx512=true"
+   ],
+   "needs": "nvcc on PATH"
+  },
+  "sycl": {
+   "options": [
+    "--buildtype=release",
+    "--strip",
+    "-Denable_cuda=false",
+    "-Denable_sycl=true",
+    "-Denable_dnn=disabled",
+    "-Db_lto=false",
+    "-Dc_std=c2x",
+    "-Denable_avx512=true",
+    "-Dsycl_icpx_aot_targets="
+   ],
+   "env": {
+    "CC": "icx",
+    "CXX": "icpx"
+   },
+   "needs": "icx and icpx on PATH (source /opt/intel/oneapi/setvars.sh)"
+  },
+  "go-server": {
+   "from": "cpu",
+   "go_packages": [
+    "./cmd/vmafx-server"
+   ],
+   "needs": "go on PATH"
+  },
+  "operator": {
+   "go_packages": [
+    "./cmd/vmafx-operator"
+   ],
+   "needs": "go on PATH"
+  }
+ },
+ "releases": {
+  "v1.0.0-rc.1": {
+   "source_commit": "ce00cf2455f48424221a584208be64e66d039f52",
+   "keep": [
+    {
+     "name": "cpu",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.1",
+     "digest": "sha256:951c039e2d8774bea1d346411232873c8abced35f78123c2c0c4aa0d43b6282a",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-cli-image",
+     "build": "cpu"
+    },
+    {
+     "name": "server",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.1-server",
+     "digest": "sha256:acf83335cf9415faf03682f35f2911080a4189ac243163376b8b148293b5eb67",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-server-image",
+     "build": "cpu",
+     "python_version": "3.14.7"
+    },
+    {
+     "name": "cuda13",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.1-cuda13",
+     "digest": "sha256:4c2fc9b6a453b32e4a493c226617308b8db2860d93ff27a586406e6bd512b2fc",
+     "platforms": [
+      "linux/amd64"
+     ],
+     "record": "published-rc-cuda-image",
+     "build": "cuda"
+    },
+    {
+     "name": "oneapi2025",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.1-oneapi2025",
+     "digest": "sha256:eb344ad1ee5c2571622a208716e200b2fd282b74f641ecb20dbb6bdc3a78e2b7",
+     "platforms": [
+      "linux/amd64"
+     ],
+     "record": "published-rc-oneapi-image",
+     "build": "sycl"
+    },
+    {
+     "name": "go-server",
+     "image": "ghcr.io/vmafx/vmafx-server",
+     "tag": "v1.0.0-rc.1",
+     "digest": "sha256:4f1a63ea61a4bd20f8e4b2c1d1b4d4fd80a5947174a3764f59e0484952b86dc5",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-go-server-image",
+     "build": "go-server",
+     "go_binaries": [
+      "usr/local/bin/vmafx-server"
+     ]
+    },
+    {
+     "name": "operator",
+     "image": "ghcr.io/vmafx/vmafx-operator",
+     "tag": "v1.0.0-rc.1",
+     "digest": "sha256:b5c4dae1d90bd368a88dfc4e9f3a508c5aa65e543d9f6ac038f580e95333aeb1",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-operator-image",
+     "build": "operator",
+     "go_binaries": [
+      "usr/local/bin/vmafx-operator"
+     ]
+    }
+   ],
+   "native": {
+    "files": [
+     "vmaf",
+     "libvmaf.so",
+     "libvmaf.so.3",
+     "libvmaf.so.3.0.0",
+     "container-build-provenance.txt"
+    ],
+    "models": "models.tar.gz",
+    "build": "cpu"
+   },
+   "pypi_yanked": [
+    {
+     "project": "vmaf-mcp",
+     "version": "1.0.0rc1"
+    }
+   ]
+  },
+  "v1.0.0-rc.2": {
+   "source_commit": "c894eb9d0758fe092aea16c301cd4e5bf739a3ba",
+   "keep": [
+    {
+     "name": "cpu",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.2",
+     "digest": "sha256:9f15cd78555a5417376068ba907101161429ccfe015ff02eeeb3273a385b5ddb",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-cli-image",
+     "build": "cpu"
+    },
+    {
+     "name": "server",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.2-server",
+     "digest": "sha256:33629cde3008e8acda098ceb689e0350ab5e92dcefb66bf504ba6c989b1dc9d0",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-server-image",
+     "build": "cpu",
+     "python_version": "3.14.7"
+    },
+    {
+     "name": "cuda13",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.2-cuda13",
+     "digest": "sha256:a55021a3bba685a96315aa6ceb16677436c5ecc15630760df6de3ba230918687",
+     "platforms": [
+      "linux/amd64"
+     ],
+     "record": "published-rc-cuda-image",
+     "build": "cuda"
+    },
+    {
+     "name": "oneapi2025",
+     "image": "ghcr.io/vmafx/vmafx",
+     "tag": "v1.0.0-rc.2-oneapi2025",
+     "digest": "sha256:fa891f635262e19ed3f6524ec242234fed7c2a36bfba103d5e4627d95481cb88",
+     "platforms": [
+      "linux/amd64"
+     ],
+     "record": "published-rc-oneapi-image",
+     "build": "sycl"
+    },
+    {
+     "name": "go-server",
+     "image": "ghcr.io/vmafx/vmafx-server",
+     "tag": "v1.0.0-rc.2",
+     "digest": "sha256:7fd4968dde4f9f9fa470119e987ce58408bd7b557cf9045bf054645451d9e693",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-go-server-image",
+     "build": "go-server",
+     "go_binaries": [
+      "usr/local/bin/vmafx-server"
+     ]
+    },
+    {
+     "name": "operator",
+     "image": "ghcr.io/vmafx/vmafx-operator",
+     "tag": "v1.0.0-rc.2",
+     "digest": "sha256:ad04b000133e19a1769e9da26cd9c051f333f6472603e3337c990381cf9f145c",
+     "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+     ],
+     "record": "published-rc-operator-image",
+     "build": "operator",
+     "go_binaries": [
+      "usr/local/bin/vmafx-operator"
+     ]
+    }
+   ],
+   "native": {
+    "files": [
+     "vmaf",
+     "libvmaf.so",
+     "libvmaf.so.3",
+     "libvmaf.so.3.0.0",
+     "container-build-provenance.txt"
+    ],
+    "models": "models.tar.gz",
+    "build": "cpu"
+   },
+   "pypi_yanked": [
+    {
+     "project": "vmaf-mcp",
+     "version": "1.0.0rc2"
+    }
+   ]
+  }
+ },
+ "withdrawn": [
+  {
+   "image": "ghcr.io/vmafx/vmafx",
+   "tag": "v1.0.0-rc.1-rocm10",
+   "digest": "sha256:b2246824e76aea93ccfc94da650de79438a2b665f6f7289298f24cdef299b181",
+   "reason": "rocm"
+  },
+  {
+   "image": "ghcr.io/vmafx/vmafx",
+   "tag": "v1.0.0-rc.2-rocm10",
+   "digest": "sha256:f37141f53a11bc67df5540b30a8530d2cbfd9d756ce3c5a82ba7bd7abb77e4fa",
+   "reason": "rocm"
+  },
+  {
+   "image": "ghcr.io/vmafx/vmafx-node",
+   "tag": "v1.0.0-rc.1",
+   "digest": "sha256:cffb0a973086c42e3de339e61582888730e8c89bb3236fd8f7f26d98e1f5007d",
+   "reason": "node"
+  },
+  {
+   "image": "ghcr.io/vmafx/vmafx-node",
+   "tag": "v1.0.0-rc.2",
+   "digest": "sha256:1b3fac584d4ed4fb055b42241e4ce6415a5f3131c21044cef5fcb01aca97366c",
+   "reason": "node"
+  }
+ ],
+ "withdrawal_reasons": {
+  "rocm": "The image was the whole rocm/dev-ubuntu-26.04:10.0.0-full development image. It redistributed librocprof-trace-decoder.so, a binary-only AMD library whose licence (AMD Software End User License Agreement 3.2) forbids distributing it, and ROCgdb (GPL-3.0-or-later) without its source.",
+  "node": "Its FFmpeg was configured with --enable-nonfree, which makes the build declare itself not legally redistributable, and it shipped GPL and LGPL libraries, and an rclone with an LGPL-3.0 module, without their source or notices."
+ },
+ "ninja_targets": [
+  "tools/vmaf"
+ ],
+ "pypi_yank_reason": "Wrong licence metadata: the files are EUPL-1.2, the metadata says BSD-2-Clause-Patent.",
+ "deleted_packages": [
+  {
+   "package": "ghcr.io/vmafx/vmafx-node",
+   "date": "2026-10-04",
+   "note": "Every version of the package came from the --enable-nonfree recipe, so the whole package was deleted. A later vmafx-node image is published into a new package, which starts private until it is made public."
+  }
+ ],
+ "withdrawn_on": "2026-10-04"
+}

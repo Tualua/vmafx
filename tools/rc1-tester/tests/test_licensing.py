@@ -576,19 +576,29 @@ def test_the_record_names_texts_and_archives_that_exist() -> None:
     assert [e for e in entries if "repo" in e and not (REPO / e["repo"]).is_file()] == []
 
 
+# The records of the artifacts published before ADR-1513 (ADR-1578) have the
+# shape of the record they mirror.
+PUBLISHED_RC_MIRRORS = {
+    "published-rc-operator-image": "production-operator-image",
+    "published-rc-native": "release-native",
+    "published-rc-models": "release-models",
+}
+
+
 def test_every_artifact_records_its_interpreter_and_core_components() -> None:
     data = lic.load_manifest()
     for kind, record in data["artifacts"].items():
+        shape = PUBLISHED_RC_MIRRORS.get(kind, kind)
         kinds = {c["kind"] for c in record["components"]}
         assert "notices" in kinds, kind
         # every artifact that ships compiled VMAFx files records them from the build
-        assert "build" in kinds or kind == "release-models", kind
+        assert "build" in kinds or shape == "release-models", kind
         # every artifact that ships repository files (models, report code) maps them
-        assert "repo" in kinds or kind in {"production-operator-image", "release-native"}, kind
+        assert "repo" in kinds or shape in {"production-operator-image", "release-native"}, kind
         if "python" in record:  # a python.org interpreter with its packages
             assert record["python"]["version"] in data["cpython_license_rst"], kind
             assert "python-dist" in kinds, kind
-        elif not kind.startswith("release-"):  # an image: its distribution's packages
+        elif not shape.startswith("release-"):  # an image: its distribution's packages
             assert "dpkg" in kinds, kind
 
 

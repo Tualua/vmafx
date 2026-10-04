@@ -381,6 +381,14 @@ precedence = "override"
 SPDX-FileCopyrightText = ["2016-2022 INRIA, CMU and Microsoft Corporation", "2022-2023 HACL* Contributors"]
 SPDX-License-Identifier = "MIT"
 
+# The MIT notice of nv-codec-headers, reproduced for the notices of the CUDA
+# images published before ADR-1513 (ADR-1578).
+[[annotations]]
+path = ["tools/rc1-tester/image/licenses/nv-codec-headers.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "2016 (as the nv-codec-headers notice states it)"
+SPDX-License-Identifier = "MIT"
+
 [[annotations]]
 path = [
     "docs/ai/models/u2netp_mirror_card.md",

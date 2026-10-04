@@ -406,6 +406,42 @@ The node image adds:
   (`build-config.env`), so the source image can hold the exact source of it and
   of every module it links (it links an LGPL-3.0 module).
 
+### Images published before these rules
+
+The images of 1.0.0-rc.1 and rc.2 were published without notices or source
+([ADR-1578](../adr/1578-published-rc-licence-companions.md)). The images that
+stay are listed under `keep` in
+`tools/rc1-tester/image/published-rc/artifacts.json`, each with its digest and
+licence record (`published-rc-*` in `licensing.json`). The manual workflow
+`.github/workflows/published-rc-licence-companions.yml` completes them:
+
+1. It refuses an image whose tag no longer names the recorded digest.
+2. It unpacks every platform of that digest (`docker export`) and writes its
+   notices with `licensing.py notices`. The licence scan of the release tag's
+   build is recorded in `published-rc/scans/<release>/<build>.json`, so the
+   workflow compiles nothing.
+3. It fetches the source of every installed package at its installed version.
+   Debian packages come from the archive or snapshot.debian.org, Ubuntu
+   packages from Launchpad. It also fetches the recorded archives of the
+   grafted GCC runtimes and the copyleft Go modules.
+4. With `publish` set, it pushes the sources as `<tag>-source` through
+   `.github/actions/image-licence-artifacts`, which also attests an SPDX SBOM on
+   the published digest. It attaches the notices to the release page and
+   writes the release page's licence section.
+
+Without `publish`, the workflow keeps the notices and source lists as a workflow
+artifact, for review. Run a step locally:
+
+```bash
+python3 scripts/release/published_rc_companion.py export --release v1.0.0-rc.2 --artifact operator --work /tmp/op
+python3 scripts/release/published_rc_companion.py licence --release v1.0.0-rc.2 --artifact operator \
+  --work /tmp/op --source-tree <checkout of v1.0.0-rc.2>
+```
+
+Regenerating a scan builds the tag's configuration and needs its toolchain
+(`nvcc` for `cuda`, `icx` / `icpx` for `sycl`, `go` for the Go images):
+`python3 scripts/release/published_rc_companion.py scan --release v1.0.0-rc.2 --build cuda`.
+
 ## Building locally
 
 ```bash

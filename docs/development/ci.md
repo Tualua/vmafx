@@ -89,6 +89,7 @@ required and which ADR owns it, see
 | [`dev-container-publish.yml`](../../.github/workflows/dev-container-publish.yml) | Builds, pushes and signs the canonical dev container image to GHCR. |
 | [`docker-publish-production.yml`](../../.github/workflows/docker-publish-production.yml) | Builds, pushes, signs and SBOMs the production image on release publication. |
 | [`docker-publish-operator-node.yml`](../../.github/workflows/docker-publish-operator-node.yml) | The same for the VMAFX Go service images. |
+| [`published-rc-licence-companions.yml`](../../.github/workflows/published-rc-licence-companions.yml) | Manual: notices, `<tag>-source` companions and SBOMs for the images and release files published for 1.0.0-rc.1 and rc.2 ([ADR-1578](../adr/1578-published-rc-licence-companions.md)). |
 | [`docker-publish-tester.yml`](../../.github/workflows/docker-publish-tester.yml) | Builds, tests, signs and attests the tester image. |
 | [`macos-tester-bundle.yml`](../../.github/workflows/macos-tester-bundle.yml) | Builds, tests, attests and publishes the macOS arm64 tester bundle. |
 | [`upstream-watcher.yml`](../../.github/workflows/upstream-watcher.yml) | Polls FFmpeg master for upstream-blocked features ([upstream watchers](upstream-watchers.md)). |
