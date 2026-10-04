@@ -60893,3 +60893,14 @@ upstream parity guard's allowlist.
   `vmafxtenants` rule. A sync of the operator RBAC must not bring the tenant
   rule back (ADR-1058's rule is replaced). No score, public C API or FFmpeg
   patch impact.
+
+## `Python Package Tests (vmaf-tune)` runs the two real-x265 tests (2026-10-04)
+
+`.github/workflows/tests-and-quality-gates.yml`, job `vmaf-tune-tests`:
+installs the distribution `ffmpeg` (libx265 included), sets
+`VMAF_TUNE_INTEGRATION=1` for the suite step, and fails the job on a skip whose
+reason is `ffmpeg not on PATH` or `libx265 unavailable`. A rebase keeps the
+install step, the variable and the widened skip pattern together. The research
+digest `docs/research/1178-dev-container-image-publish.md` no longer calls the
+dev image published "for transparency" (ADR-1564: the package stays private).
+No score, public API or FFmpeg patch impact.

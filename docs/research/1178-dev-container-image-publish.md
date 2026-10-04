@@ -82,4 +82,4 @@ The native release compilation in `supply-chain.yml` executes:
 - **Execution**: Release compilation runs on `runs-on: [self-hosted, linux, x64, sycl-arc]` with concurrency group `release-artifacts-build` and `timeout-minutes: 90`.
 - **Provenance**: `scripts/ci/check-container-build.sh --stamp artifacts` drops `container-build-provenance.txt`. The gate script was updated to accept both `vmaf-dev-mcp` and `vmaf-sycl-arc-runner` as canonical images while rejecting bare `ubuntu-latest` and unauthorized images.
 - **Verification**: `verify-native-artifacts` on `ubuntu-latest` downloads the artifacts and runs `check-container-build.sh --verify artifacts` and `verify-native-release-artifacts.sh`.
-- **Optional GHCR Image**: `dev-container-publish.yml` continues to build and publish `ghcr.io/vmafx/vmafx-dev-mcp` on master pushes for external transparency and remote contributors, decoupled from the release path.
+- **Optional GHCR Image**: `dev-container-publish.yml` continues to build and publish `ghcr.io/vmafx/vmafx-dev-mcp` on master pushes for the organisation's own use (the package stays private, ADR-1564), decoupled from the release path.

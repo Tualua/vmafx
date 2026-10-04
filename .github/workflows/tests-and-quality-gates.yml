@@ -729,6 +729,15 @@ jobs:
         run: |
           tar -C "${RUNNER_TEMP}/vmaf-cli" -xf "${RUNNER_TEMP}/vmaf-cli/vmaf-cli.tar"
           "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
+      - name: Install ffmpeg with libx265
+        if: steps.impact.outputs.python == 'true'
+        # The two real-x265 integration tests (test_codec_adapter_x265.py,
+        # test_codec_adapter_x265_two_pass.py; ADR-1565) encode with the
+        # distribution ffmpeg, which links libx265 (ffmpeg 8.0.1 on 26.04).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -hide_banner -encoders | grep -E '^ V.* libx265 '
       - name: Fetch the Netflix golden YUV fixtures
         if: steps.impact.outputs.python == 'true'
         run: bash scripts/test/fetch-test-yuvs.sh
@@ -736,10 +745,12 @@ jobs:
         if: steps.impact.outputs.python == 'true'
         env:
           VMAF_BIN_FOR_TESTS: ${{ runner.temp }}/vmaf-cli/tools/vmaf
+          # Opt in to the real ffmpeg/libx265 tests (ADR-1565).
+          VMAF_TUNE_INTEGRATION: "1"
         # The registry names the files (ADR-1568): a file another suite owns
         # runs in that suite's job, not here. A test that skips because it
         # cannot reach the binary or the golden YUVs fails the job: those are
-        # this job's inputs, not optional.
+        # this job's inputs, not optional; so are ffmpeg and its libx265.
         run: |
           set -o pipefail
           python scripts/ci/suite_registry.py list vmaf-tune > "${RUNNER_TEMP}/vmaf-tune-files.txt"
@@ -749,7 +760,7 @@ jobs:
             exit 1
           fi
           python -m pytest "${files[@]}" -rs | tee "${RUNNER_TEMP}/vmaf-tune-pytest.log"
-          if grep -E '^SKIPPED .*(no vmaf binary reachable|Netflix golden YUV fixtures not available)' \
+          if grep -E '^SKIPPED .*(no vmaf binary reachable|Netflix golden YUV fixtures not available|ffmpeg not on PATH|libx265 unavailable)' \
               "${RUNNER_TEMP}/vmaf-tune-pytest.log"; then
             echo "::error::vmaf-tune tests skipped for a missing vmaf binary or golden YUVs" >&2
             exit 1
