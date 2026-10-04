@@ -324,11 +324,42 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"
 SPDX-License-Identifier = "BSD-2-Clause-Patent"
 
+# Model weights that carry upstream work keep its licence and copyright notice,
+# which travels with every copy of the model (ADR-1513): the notices of every
+# published artifact are computed from these annotations. The licences match
+# model/tiny/registry.json (test_model_annotations_match_the_registry).
 [[annotations]]
 path = ["model/tiny/fastdvdnet_pre.*"]
 precedence = "closest"
-SPDX-FileCopyrightText = "2020 Matias Tassano, Julie Delon, Thomas Veit"
+SPDX-FileCopyrightText = "2024 Matias Tassano <mtassano@meta.com>"
 SPDX-License-Identifier = "MIT"
+
+# LPIPS-SqueezeNet: the LPIPS linear layers (richzhang/PerceptualSimilarity v0.1)
+# on torchvision's SqueezeNet 1.1 ImageNet features (lpips.LPIPS(net="squeeze"),
+# ai/lpips_export.py).
+[[annotations]]
+path = ["model/tiny/lpips_sq.*"]
+precedence = "closest"
+SPDX-FileCopyrightText = [
+    "2018 Richard Zhang, Phillip Isola, Alexei A. Efros, Eli Shechtman, Oliver Wang",
+    "Soumith Chintala 2016",
+]
+SPDX-License-Identifier = "BSD-2-Clause AND BSD-3-Clause"
+
+# TransNet V2 shot-boundary weights from soCzech/TransNetV2 (ADR-0261).
+[[annotations]]
+path = ["model/tiny/transnet_v2.*"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2020 Tomáš Souček"
+SPDX-License-Identifier = "MIT"
+
+# Fork-trained models and model cards at the model/ root: not Netflix's work, so
+# the model/** default above names the wrong holder for them.
+[[annotations]]
+path = ["model/predictor_*", "model/konvid_mos_head_v1*", "model/*_card.md"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
 
 # The BRISQUE model is the LIVE laboratory's trained release (ADR-1115), used
 # under that release's notice as written (ADR-1507): any purpose, the notice in

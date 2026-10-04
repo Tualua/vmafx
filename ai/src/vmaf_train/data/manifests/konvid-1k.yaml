@@ -3,6 +3,6 @@
 #   vmaf-train manifest-scan --dataset konvid-1k --root $VMAF_DATA_ROOT/konvid-1k \
 #       --mos-csv path/to/konvid_mos.csv
 name: konvid-1k
-license: "CC BY 4.0"
+license: "research community (no licence named)"
 description: "KoNViD-1k UGC no-reference MOS dataset."
 entries: []

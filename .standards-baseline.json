@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T01:23:13Z",
+  "generated_at": "2026-10-04T01:33:55Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "22a8044959c08a5a87c339cd0d2f34ae7497fbaf",
-  "total_infractions": 462,
+  "commit_sha": "45fb1b55ee28f9f1098d4d6e0c58f1628282e9bd",
+  "total_infractions": 460,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -504,22 +504,6 @@
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
       "anchor": "fn:_update_registry",
       "fingerprint": "ai/scripts/export_fastdvdnet_pre_placeholder.py:HISS-07:fn:_update_registry#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/export_tiny_models.py",
-      "line_number": 52,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "text:f795c908b8f1",
-      "fingerprint": "ai/scripts/export_tiny_models.py:HISS-07:text:f795c908b8f1#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "ai/scripts/export_tiny_models.py",
-      "line_number": 129,
-      "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
-      "anchor": "fn:_update_registry",
-      "fingerprint": "ai/scripts/export_tiny_models.py:HISS-07:fn:_update_registry#1"
     },
     {
       "rule_id": "HISS-07",

@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 DATASETS: dict[str, dict[str, str]] = {
     "nflx": {"capability": "C1/C2", "license": "Netflix research"},
-    "konvid-1k": {"capability": "C2", "license": "CC BY 4.0"},
+    "konvid-1k": {"capability": "C2", "license": "research community (no licence named)"},
     "live-vqc": {"capability": "C2", "license": "Academic"},
     "youtube-ugc": {"capability": "C2", "license": "CC BY 3.0"},
     "bvi-dvc": {"capability": "C3", "license": "Academic"},

@@ -71,7 +71,7 @@ features [N, 6]
 ## Training data
 
 - Netflix Public Dataset (9 sources × encodings — local extract).
-- KoNViD-1k (5-fold extract; CC BY 4.0; not redistributed).
+- KoNViD-1k (5-fold extract; not redistributed; terms in [nr_metric_v1](nr_metric_v1.md#training-corpus-provenance)).
 - BVI-DVC subsets A + B + C + D (full coverage).
 
 All combined into `runs/full_features_4corpus.parquet` (330 499

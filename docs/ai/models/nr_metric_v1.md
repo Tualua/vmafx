@@ -7,7 +7,7 @@ luma frame. It is the C2 baseline for the fork's tiny-AI NR capability
 KoNViD-1k crowd-sourced MOS labels.
 
 > **Status — shipped 2026-04-25.** Production baseline for C2 NR scoring
-> (KoNViD-1k, CC BY 4.0). An INT8 sidecar is available via
+> (KoNViD-1k). An INT8 sidecar is available via
 > `nr_metric_v1.int8.onnx` (dynamic-PTQ). See
 > [ADR-0168](../../adr/0168-tinyai-konvid-baselines.md) and
 > [ADR-0174](../../adr/0174-first-model-quantisation.md).
@@ -43,7 +43,7 @@ reference stream.
 | Input | `frame` — float32 NCHW `[batch, 1, 224, 224]` grayscale luma in `[0, 1]` |
 | Output | `mos` — float32 `[batch]` scalar MOS estimate |
 | ONNX opset | 18 declared in the ONNX file (registry and sidecar record 17) |
-| Training corpus | KoNViD-1k (1 200 clips; CC BY 4.0; not redistributed in-tree) |
+| Training corpus | KoNViD-1k (1 200 clips; not redistributed in-tree; terms below) |
 | Val MSE | ~0.382 (RMSE ≈ 0.62 on 1–5 MOS, KoNViD-1k validation split) |
 | Quantisation | Dynamic-PTQ INT8 via `ai/scripts/ptq_dynamic.py`; `quant_accuracy_budget_plcc = 0.01` |
 | License | BSD-2-Clause-Patent |
@@ -60,15 +60,15 @@ shell history.
 | Field | Value |
 | --- | --- |
 | Dataset | KoNViD-1k |
-| Source | <https://datasets.vqa.mmsp-kn.de/databases/KoNViD-1k/> |
-| Licence | CC BY 4.0 — clips are not redistributed in-tree |
+| Source | <http://database.mmsp-kn.de/konvid-1k-database.html> |
+| Terms | No licence named: the database page says KoNViD-1k "is freely available to the research community" (read 2026-10-04); its clips are YFCC100M videos under assorted Creative Commons licences. Clips are not redistributed in-tree; whether these terms bind the trained weights is open (`T-PROD-LICENCE-MODEL-TRAINING-DATA-2026-10-04` in [state](../../state.md)). |
 | Clips | 1 200 user-generated video clips, 8 s each at various resolutions |
 | MOS labels | Crowd-sourced mean opinion score (1–5 scale, Amazon Mechanical Turk) |
 | Split used | ~973 train / ~107 val / ~120 test (about 80/9/10 %; the trainer's default is 80/10/10 with seed 42) |
 | Feature | Middle frame extracted per clip at 224×224 grayscale |
 
 **Acknowledgement.** This model was trained on KoNViD-1k. We thank the
-dataset authors for distributing the clips and MOS labels under CC BY 4.0.
+dataset authors for distributing the clips and MOS labels.
 The clips themselves are not committed to this repository.
 
 ## Op-allowlist conformance

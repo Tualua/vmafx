@@ -50,8 +50,8 @@ output, and registry target so a refreshed filter baseline can be replayed.
 | Field | Value |
 | --- | --- |
 | Dataset | KoNViD-1k |
-| Source | <https://datasets.vqa.mmsp-kn.de/databases/KoNViD-1k/> |
-| Licence | CC BY 4.0 — clips are not redistributed in-tree |
+| Source | <http://database.mmsp-kn.de/konvid-1k-database.html> |
+| Terms | No licence named: the database page says KoNViD-1k "is freely available to the research community" (read 2026-10-04); its clips are YFCC100M videos under assorted Creative Commons licences. Clips are not redistributed in-tree; whether these terms bind the trained weights is open (`T-PROD-LICENCE-MODEL-TRAINING-DATA-2026-10-04` in [state](../../state.md)). |
 | Usage | Middle frame extracted per clip; synthetic degradation applied (Gaussian blur σ=1.2 + JPEG quality=35); self-supervised (degraded→clean pairs, no external MOS labels used for the filter task) |
 
 **Acknowledgement.** Training uses KoNViD-1k frames for self-supervised

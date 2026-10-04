@@ -62,7 +62,7 @@ with `vmaf-train manifest-scan --dataset <name> --root <dir>`.
 | Dataset | Use | License | Purpose |
 | --- | --- | --- | --- |
 | Netflix Public (NFLX) | C1, C2 | Netflix research | Same source as upstream `vmaf_v0.6.1` |
-| KoNViD-1k | C2 | CC BY 4.0 | NR-friendly UGC clips with MOS |
+| KoNViD-1k | C2 | No licence named ("freely available to the research community") | NR-friendly UGC clips with MOS |
 | LIVE-VQC | C2 | Academic | NR validation |
 | YouTube-UGC | C2 | CC BY 3.0 | Large-scale NR |
 | BVI-DVC | C3 | Academic | Encoder distortion pairs for learned filters |

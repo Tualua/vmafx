@@ -1675,6 +1675,7 @@
     },
     "0261": {
       "sites": {
+        "REUSE.toml": 1,
         "ai/scripts/export_transnet_v2.py": 2,
         "tools/vmaf-tune/tests/test_hdr.py": 1
       },
@@ -9890,13 +9891,14 @@
         ".github/workflows/docker-publish-operator-node.yml": 7,
         ".github/workflows/docker-publish-production.yml": 2,
         "Dockerfile.go-server": 2,
+        "REUSE.toml": 1,
         "docker/Dockerfile.node": 5,
         "docker/Dockerfile.operator": 2,
         "docker/Dockerfile.production": 2,
         "scripts/ci/record-copied-debian-libs.sh": 1,
         "scripts/release/tests/test-docker-image-runtime-contract.sh": 1,
         "tools/rc1-tester/tests/test_licensing_go.py": 1,
-        "tools/rc1-tester/tests/test_licensing_production.py": 2
+        "tools/rc1-tester/tests/test_licensing_production.py": 3
       },
       "target": "1513-production-artifact-licensing.md"
     }

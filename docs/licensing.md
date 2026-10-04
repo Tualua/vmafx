@@ -29,7 +29,12 @@ written ([ADR-1507](adr/1507-brisque-live-notice-terms.md)): a publication that
 reports research using it acknowledges LIVE and CPS at UT Austin and cites the
 two works the notice names. The tiny-AI models list their licence and upstream
 in [`model/tiny/registry.json`](https://github.com/VMAFx/vmafx/blob/master/model/tiny/registry.json)
-and in their model cards ([model registry](ai/model-registry.md)).
+and in their model cards ([model registry](ai/model-registry.md)). Three of them
+carry upstream weights and keep their authors' terms: FastDVDnet (MIT, Matias
+Tassano), TransNet V2 (MIT, Tomáš Souček) and LPIPS-SqueezeNet (BSD-2-Clause,
+Zhang et al., on torchvision's BSD-3-Clause SqueezeNet features). The models the
+fork trained itself are BSD-2-Clause-Patent; their cards name the data they were
+trained on and that data's terms.
 
 ## What the published packages carry
 

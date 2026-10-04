@@ -252,3 +252,17 @@ def test_notices_of_a_distroless_tree_list_its_packages(tmp_path: Path) -> None:
     )
     assert lic.run_check(args, data) == []
     assert lic.source_list(args, data) == ["debian glibc=2.41-12"]
+
+
+def test_model_annotations_match_the_registry() -> None:
+    """Every tiny model's weights carry, through REUSE.toml, the licence its registry
+    entry declares, so the computed notices name the upstream holder (ADR-1513)."""
+    registry = json.loads((REPO / "model/tiny/registry.json").read_text())
+    reuse = lic.load_reuse(REPO)
+    for model in registry["models"]:
+        rel = f"model/tiny/{model['onnx']}"
+        expression, copyrights = lic.file_licence(REPO / rel, rel, reuse)
+        assert lic.spdx_ids(model["license"]) <= lic.spdx_ids(expression), (rel, expression)
+        assert copyrights, rel
+    for rel in ("model/predictor_libx264.onnx", "model/konvid_mos_head_v1.onnx"):
+        assert lic.file_licence(REPO / rel, rel, reuse)[1] == ["Copyright 2026 Lusoris"], rel

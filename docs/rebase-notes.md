@@ -7,6 +7,21 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Model attribution in REUSE.toml (ADR-1513, 2026-10-04)
+
+`fix/prod-licensing-model-attribution`. `REUSE.toml` and model documentation;
+no code change.
+
+- `REUSE.toml` annotates `model/tiny/lpips_sq.*` (BSD-2-Clause AND
+  BSD-3-Clause), `model/tiny/transnet_v2.*` (MIT), `model/tiny/fastdvdnet_pre.*`
+  (MIT, the upstream LICENSE's copyright line) and the fork's root models and
+  cards (`model/predictor_*`, `model/konvid_mos_head_v1*`, `model/*_card.md`,
+  2026 Lusoris). The annotations sit after `model/tiny/**` because REUSE applies
+  the last matching table. A new tiny model with upstream weights adds its
+  annotation in the same PR (`test_model_annotations_match_the_registry`).
+- An upstream sync that adds a Netflix model at `model/` root named like
+  `predictor_*` would be mis-attributed by the root annotation; none exists.
+
 ## The macOS tester bundle job installs the Metal compiler (2026-10-04)
 
 `fix/tester-bundle-metal-toolchain`. CI workflow only; no source change.

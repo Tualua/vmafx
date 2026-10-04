@@ -49,11 +49,11 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 try:
     from vmaf_train.models import LearnedFilter, NRMetric
 except Exception as _torchvision_err:  # pragma: no cover
-    sys.exit(
+    raise ImportError(
         f"Failed to import vmaf_train.models: {_torchvision_err}\n"
         "This is usually a torch/torchvision ABI mismatch.  "
         "Run: pip install -U 'torchvision>=0.27.0,<0.28.0'"
-    )
+    ) from _torchvision_err
 
 TINY_DIR: Path = REPO_ROOT / "model" / "tiny"
 REGISTRY: Path = TINY_DIR / "registry.json"
@@ -126,7 +126,7 @@ def _write_sidecar(
 
 def _update_registry(*entries: dict[str, Any]) -> None:
     if not REGISTRY.exists():
-        sys.exit(f"missing {REGISTRY}")
+        raise FileNotFoundError(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
     by_id: dict[str, Any] = {m["id"]: m for m in doc.get("models", [])}
     for e in entries:
@@ -184,7 +184,7 @@ def _export_c2(args: Namespace, raw_argv: list[str]) -> dict[str, Any] | None:
         "kind": "nr",
         "notes": (
             "Tiny NR MobileNet baseline trained on KoNViD-1k "
-            "(CC BY 4.0; not redistributed). 224×224 grayscale "
+            "(not redistributed). 224×224 grayscale "
             "input; ~19K params; opset 17. See "
             "docs/adr/0168-tinyai-konvid-baselines.md."
         ),
@@ -255,7 +255,11 @@ def main(argv: list[str] | None = None) -> int:
     if not new_entries:
         sys.exit("no checkpoints found — nothing to export")
 
-    _update_registry(*new_entries)
+    try:
+        _update_registry(*new_entries)
+    except FileNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 1
     for e in new_entries:
         sha = str(e["sha256"])
         print(f"[registry] {e['id']} sha256={sha[:16]}…")

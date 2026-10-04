@@ -167,7 +167,7 @@
       "kind": "nr",
       "license": "BSD-2-Clause-Patent",
       "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "Tiny NR MobileNet baseline trained on KoNViD-1k (CC BY 4.0; not redistributed). 224\u00d7224 grayscale input; ~19K params; opset 17. Dynamic-PTQ int8 sidecar produced via ai/scripts/ptq_dynamic.py (T5-3d). See docs/adr/0168-tinyai-konvid-baselines.md and docs/adr/0174-per-model-ptq.md.",
+      "notes": "Tiny NR MobileNet baseline trained on KoNViD-1k (not redistributed). 224\u00d7224 grayscale input; ~19K params; opset 17. Dynamic-PTQ int8 sidecar produced via ai/scripts/ptq_dynamic.py (T5-3d). See docs/adr/0168-tinyai-konvid-baselines.md and docs/adr/0174-per-model-ptq.md.",
       "onnx": "nr_metric_v1.onnx",
       "opset": 17,
       "quant_accuracy_budget_plcc": 0.01,
