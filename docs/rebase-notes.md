@@ -42,6 +42,15 @@ search:
   keeps its key order.
 - `test_help_texts_and_adr_refs.py` now scans these six modules for ADR
   citations; `recommend.py` is still outside it (its own state row).
+## Tester image build stages copy `tools/rc1-tester/src` (2026-10-04)
+
+`fix/tester-image-prepare-build-src`. Dockerfile and one test; no C change.
+
+- `docker/Dockerfile.tester`: `vmaf-build`, `sycl-build`, `cuda-build` and
+  `hip-build` each copy `tools/rc1-tester/src` next to `tools/rc1-tester/image`,
+  because `image/prepare_build.py` imports `vmaf_rc1_tester.hw_facts`. A rebase
+  keeps all four lines; `test_dockerfile_script_imports.py` fails when one is
+  missing.
 
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 
