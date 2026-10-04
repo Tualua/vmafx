@@ -89,7 +89,7 @@ repos:
         exclude: '^subprojects/|^core/test/data/'
 
   - repo: https://github.com/psf/black
-    rev: 26.5.1
+    rev: 26.10.0
     hooks:
       - id: black
         files: '^(python|ai|scripts|tools)/.*\.py$'
