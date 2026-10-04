@@ -159,14 +159,21 @@ VMAFX_AUTH_TENANT_CLAIM=tid
 
 ## Roles and RBAC
 
-Three roles are recognised. Include one or more in the `vmafx_roles` claim (a
+Four roles are recognised. Include one or more in the `vmafx_roles` claim (a
 JSON array, or a single string):
 
 | Role | May call |
 | --- | --- |
 | `vmafx:reader` | `GetJob`, `StreamJobs`, `VmafxScoring.Health` |
 | `vmafx:writer` | Everything a reader may, plus `SubmitJob`, `CancelJob`, `VmafxScoring.Score`, `VmafxScoring.ScoreStream` and HTTP `POST /v1/score` |
-| `vmafx:admin` | Everything a writer may, plus the node API: `RegisterNode`, `Heartbeat`, `PullWork`, `ReportResult` |
+| `vmafx:admin` | Everything a writer may |
+| `vmafx:node` | The node API only: `RegisterNode`, `Heartbeat`, `PullWork`, `ReportResult` |
+
+`vmafx:node` is the only role that reaches the node API, and it reaches
+nothing else: a node's token cannot read, submit or cancel jobs or score, and
+no user token can register a node or take jobs from the queue
+([ADR-1563](../adr/1563-controller-node-role.md)). Give a node a token that
+holds `vmafx:node` alone.
 
 The controller enforces this table on every call
 ([ADR-1518](../adr/1518-controller-grpc-authorization.md)):
@@ -193,7 +200,8 @@ Clients therefore need a token with the right role:
 - `vmafx-mcp` sends `VMAFX_CONTROLLER_TOKEN` with every controller call; its
   `submit_job` and `cancel_job` tools need `vmafx:writer`, `get_job` and
   `list_jobs` need `vmafx:reader`.
-- A compute node needs `vmafx:admin`.
+- A compute node needs `vmafx:node` (before ADR-1563 it needed `vmafx:admin`,
+  which no longer reaches the node API).
 
 ---
 
@@ -301,8 +309,10 @@ it belongs to exactly one configured, enabled tenant:
 Defaults follow the CRD: `enabled: true`, `tenantClaim: tid`,
 `rolesClaim: vmafx_roles`, `defaultRole: vmafx:reader`,
 `allowedRoles: [vmafx:reader, vmafx:writer]`. So by default no token of a
-registry tenant can act as a node: list `vmafx:admin` in `allowedRoles` for a
-tenant that runs its own nodes.
+registry tenant can act as a node: list `vmafx:node` in `allowedRoles` for a
+tenant that runs its own nodes. `defaultRole: vmafx:node` is refused (the CRD
+does not offer it and the controller rejects it from a file source): a token
+without a role claim never acts as a node.
 
 Set `oidc.audience`: without it, a token the tenant's provider issues for any
 other application, with the tenant's claim, is accepted. The controller logs
@@ -497,8 +507,9 @@ For internal deployments or integration-test pipelines:
 VMAFX_AUTH_DISABLED=true vmafx-controller
 ```
 
-When disabled, all requests are processed as tenant `dev` with role
-`vmafx:admin`. Never use this in production.
+When disabled, all requests are processed as tenant `dev` with the roles
+`vmafx:admin` and `vmafx:node`, so a local node can register. Never use this in
+production.
 
 ---
 

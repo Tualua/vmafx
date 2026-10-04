@@ -332,6 +332,11 @@ func tenantRoles(rbac *TenantRBAC) (string, []string, error) {
 	if !slices.Contains(allowed, defaultRole) {
 		return "", nil, fmt.Errorf("defaultRole %q is not in allowedRoles %v", defaultRole, allowed)
 	}
+	if defaultRole == RoleNode {
+		// A token without a role claim must never act as a compute node: the
+		// node role is granted by the token alone (ADR-1563).
+		return "", nil, fmt.Errorf("defaultRole %q is refused: a compute node needs the role in its token", RoleNode)
+	}
 	return defaultRole, allowed, nil
 }
 

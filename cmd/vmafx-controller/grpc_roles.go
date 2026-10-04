@@ -11,11 +11,15 @@
 // server does not serve, so adding an RPC forces a decision about who may
 // call it.
 //
-// The roles are ADR-0794's: a reader reads the jobs of its tenant, a writer
-// also submits and cancels them and scores directly (as HTTP POST /v1/score
-// requires), and only an admin may act as a compute node.
+// The roles are ADR-0794's plus the node role of ADR-1563: a reader reads the
+// jobs of its tenant, a writer also submits and cancels them and scores
+// directly (as HTTP POST /v1/score requires), an admin may do what a writer
+// may, and only vmafx:node may act as a compute node. A node token reaches
+// nothing but the node API, so a stolen node credential cannot read, submit or
+// cancel jobs, and no user token can register a node.
 //
 // ADR-0794: multi-tenant auth gateway. ADR-1518: gRPC authorisation.
+// ADR-1563: the node role.
 
 //go:build cgo
 
@@ -32,7 +36,7 @@ import (
 func controllerMethodRoles() auth.MethodRoles {
 	read := []string{auth.RoleReader, auth.RoleWriter, auth.RoleAdmin}
 	write := []string{auth.RoleWriter, auth.RoleAdmin}
-	node := []string{auth.RoleAdmin}
+	node := []string{auth.RoleNode}
 	return auth.MethodRoles{
 		vmafxv1.VmafxScoring_Score_FullMethodName:       write,
 		vmafxv1.VmafxScoring_ScoreStream_FullMethodName: write,

@@ -102,7 +102,8 @@ spec:
                       default: "vmafx_roles"
                       description: >
                         JWT claim field containing the list of vmafx role
-                        strings (vmafx:reader | vmafx:writer | vmafx:admin).
+                        strings (vmafx:reader | vmafx:writer | vmafx:admin |
+                        vmafx:node).
                 rbac:
                   type: object
                   description: >
@@ -115,17 +116,23 @@ spec:
                       enum: [vmafx:reader, vmafx:writer, vmafx:admin]
                       description: >
                         Role assigned to authenticated users whose token does
-                        not contain an explicit vmafx role claim.
+                        not contain an explicit vmafx role claim. vmafx:node
+                        is not offered: a compute node needs the role in its
+                        token.
                     allowedRoles:
                       type: array
                       items:
                         type: string
-                        enum: [vmafx:reader, vmafx:writer, vmafx:admin]
+                        enum: [vmafx:reader, vmafx:writer, vmafx:admin, vmafx:node]
                       default: [vmafx:reader, vmafx:writer]
                       description: >
                         Whitelist of roles this tenant's users may hold.
                         Roles present in the JWT but not in this list are
-                        silently stripped.
+                        silently stripped. vmafx:node is the compute node's
+                        role: it calls the node API (RegisterNode, Heartbeat,
+                        PullWork, ReportResult) and nothing else, and no other
+                        role calls the node API. List it for a tenant that
+                        runs its own nodes.
                 scoring:
                   type: object
                   description: >

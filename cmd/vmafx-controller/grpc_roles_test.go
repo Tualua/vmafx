@@ -2,7 +2,7 @@
 // Copyright 2026 Lusoris
 //
 // cmd/vmafx-controller/grpc_roles_test.go — per-RPC role enforcement on the
-// production gRPC server (ADR-1518).
+// production gRPC server (ADR-1518, node row ADR-1563).
 //
 // TestEveryServedRPCHasARolePolicy ties controllerMethodRoles to the methods
 // the production server actually serves, in both directions.
@@ -10,7 +10,8 @@
 // TestGRPCRolesEnforcedPerRPC boots the production fx graph with auth enabled
 // against a test identity provider and calls every RPC over the wire with a
 // token per role. The expected minimum role of each RPC is written out here,
-// independently of controllerMethodRoles, from the role table of ADR-0794 and
+// independently of controllerMethodRoles, from the role table of ADR-0794,
+// ADR-1563 (the node API needs vmafx:node, and only vmafx:node) and
 // docs/server/auth.md: a refused call must fail with the policy's
 // PermissionDenied before its handler runs, an admitted one must reach the
 // handler (whatever the handler then answers to an empty request).
@@ -119,11 +120,13 @@ func callScoreStream(ctx context.Context, cc *googlegrpc.ClientConn) error {
 	return ignoreEOF(err)
 }
 
-// Minimum role classes of docs/server/auth.md's role table.
+// Role classes of docs/server/auth.md's role table. The node API is its own
+// class: no other role reaches it, and vmafx:node reaches nothing else
+// (ADR-1563).
 const (
 	minReader = "reader"
 	minWriter = "writer"
-	minAdmin  = "admin"
+	nodeAPI   = "node"
 )
 
 // controllerRPCs lists every RPC of the controller with its minimum role.
@@ -149,16 +152,16 @@ var controllerRPCs = []struct {
 	{"CancelJob", minWriter, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.CancelJobResponse, error) {
 		return controllerClient(cc).CancelJob(ctx, &controllerv1.CancelJobRequest{})
 	})},
-	{"RegisterNode", minAdmin, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.RegisterNodeResponse, error) {
+	{"RegisterNode", nodeAPI, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.RegisterNodeResponse, error) {
 		return controllerClient(cc).RegisterNode(ctx, &controllerv1.RegisterNodeRequest{})
 	})},
-	{"Heartbeat", minAdmin, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.HeartbeatResponse, error) {
+	{"Heartbeat", nodeAPI, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.HeartbeatResponse, error) {
 		return controllerClient(cc).Heartbeat(ctx, &controllerv1.HeartbeatRequest{})
 	})},
-	{"PullWork", minAdmin, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.PullWorkResponse, error) {
+	{"PullWork", nodeAPI, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.PullWorkResponse, error) {
 		return controllerClient(cc).PullWork(ctx, &controllerv1.PullWorkRequest{})
 	})},
-	{"ReportResult", minAdmin, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.ReportResultResponse, error) {
+	{"ReportResult", nodeAPI, unary(func(ctx context.Context, cc *googlegrpc.ClientConn) (*controllerv1.ReportResultResponse, error) {
 		return controllerClient(cc).ReportResult(ctx, &controllerv1.ReportResultRequest{})
 	})},
 }
@@ -176,8 +179,12 @@ var callerRoles = []struct {
 		[]string{minReader}},
 	{auth.RoleWriter, map[string]any{"tid": "acme", "vmafx_roles": []string{auth.RoleWriter}},
 		[]string{minReader, minWriter}},
-	{auth.RoleAdmin, map[string]any{"tid": "acme", "vmafx_roles": []string{auth.RoleAdmin}},
-		[]string{minReader, minWriter, minAdmin}},
+	{"vmafx:admin", map[string]any{"tid": "acme", "vmafx_roles": []string{"vmafx:admin"}},
+		[]string{minReader, minWriter}},
+	{"vmafx:node", map[string]any{"tid": "acme", "vmafx_roles": []string{"vmafx:node"}},
+		[]string{nodeAPI}},
+	{"vmafx:reader and vmafx:node", map[string]any{"tid": "acme", "vmafx_roles": []string{"vmafx:reader", "vmafx:node"}},
+		[]string{minReader, nodeAPI}},
 }
 
 // startAuthEnabledController boots the production graph with auth enabled

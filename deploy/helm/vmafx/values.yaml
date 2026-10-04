@@ -560,7 +560,7 @@ node:
 #
 # For internal / dev deployments set auth.disabled: true (sets
 # VMAFX_AUTH_DISABLED=true: every request runs as tenant "dev" with
-# vmafx:admin).
+# vmafx:admin and vmafx:node).
 #
 # Quick-start (single tenant, Auth0):
 #
@@ -633,7 +633,8 @@ auth:
   #       rolesClaim: vmafx_roles
   #     rbac:
   #       defaultRole: vmafx:reader
-  #       allowedRoles: [vmafx:reader, vmafx:writer]
+  #       # vmafx:node: the role of this tenant's compute nodes (node API only).
+  #       allowedRoles: [vmafx:reader, vmafx:writer, vmafx:node]
   #     # Inputs acme may score (ADR-1577); none means nothing is scored.
   #     scoring:
   #       roots: ["/media/acme", "s3:media/acme"]

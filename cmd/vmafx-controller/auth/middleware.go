@@ -16,14 +16,15 @@
 //     JWT's "tid" or "tenant_id" claim.  All controller operations (job submit,
 //     get, cancel, stream) are scoped to that tenant.
 //
-//  3. RBAC — three roles per tenant extracted from the JWT "vmafx_roles" claim.
+//  3. RBAC — four roles per tenant extracted from the JWT "vmafx_roles" claim.
 //     The gRPC interceptors enforce the per-method table the caller passes in
 //     Config.MethodRoles (policy.go, ADR-1518); the controller's table is:
 //       vmafx:reader  — GetJob, StreamJobs, VmafxScoring.Health
 //       vmafx:writer  — the reader calls + SubmitJob, CancelJob, Score,
 //                       ScoreStream and HTTP POST /v1/score
-//       vmafx:admin   — the writer calls + the node API (RegisterNode,
-//                       Heartbeat, PullWork, ReportResult)
+//       vmafx:admin   — the writer calls
+//       vmafx:node    — the node API only (RegisterNode, Heartbeat, PullWork,
+//                       ReportResult); no other role reaches it (ADR-1563)
 //
 // Token structure expected
 // ========================
@@ -70,11 +71,14 @@ import (
 // Public constants / sentinel values
 // ---------------------------------------------------------------------------
 
-// Role constants that appear in the "vmafx_roles" JWT claim.
+// Role constants that appear in the "vmafx_roles" JWT claim. RoleNode is the
+// compute node's role: it may call the node API and nothing else, and it is
+// the only role that may call the node API (ADR-1563).
 const (
 	RoleReader = "vmafx:reader"
 	RoleWriter = "vmafx:writer"
 	RoleAdmin  = "vmafx:admin"
+	RoleNode   = "vmafx:node"
 )
 
 // contextKey is an unexported type for context keys in this package.
@@ -115,8 +119,8 @@ type Config struct {
 
 	// Disabled bypasses all auth checks.  FOR TESTING ONLY.
 	// In production this must be false.  The role policy still applies: the
-	// synthetic caller holds vmafx:admin, and a method without a policy entry
-	// stays refused.
+	// synthetic caller holds vmafx:admin and vmafx:node (so a local node can
+	// register), and a method without a policy entry stays refused.
 	Disabled bool
 
 	// MethodRoles is the role policy of the gRPC interceptors: full method
@@ -685,9 +689,11 @@ func (c *Config) validateMode() error {
 	return nil
 }
 
-// devClaims is the synthetic caller of disabled mode.
+// devClaims is the synthetic caller of disabled mode. It holds vmafx:node as
+// well as vmafx:admin: since ADR-1563 admin no longer reaches the node API, and
+// a node of a disabled-mode controller must still be able to register.
 func devClaims() Claims {
-	return Claims{Subject: "dev", TenantID: "dev", Roles: []string{RoleAdmin}}
+	return Claims{Subject: "dev", TenantID: "dev", Roles: []string{RoleAdmin, RoleNode}}
 }
 
 // HTTPHandler wraps the given http.Handler and enforces JWT authentication.

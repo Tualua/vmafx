@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1518: The controller authorises every gRPC call against one per-method role table, and a method without an entry is refused
 
-- **Status**: Accepted
+- **Status**: Accepted (node-API row amended by [ADR-1563](1563-controller-node-role.md))
 - **Date**: 2026-10-04
 - **Deciders**: maintainer, agent
 - **Tags**: security, controller, auth, grpc, go, fork-local

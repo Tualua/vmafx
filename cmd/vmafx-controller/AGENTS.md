@@ -18,6 +18,7 @@ Per-package invariants for subtree.
 | [ADR-1518](../../docs/adr/1518-controller-grpc-authorization.md) | gRPC authorisation: per-method role table, deny by default | auth interceptors, `grpc_roles.go` |
 | [ADR-1522](../../docs/adr/1522-controller-tenant-scoped-reads.md) | tenant-scoped job reads, tenant-bound node sessions | queue, nodes, scheduler, gRPC handlers |
 | [ADR-1519](../../docs/adr/1519-controller-tenant-registry.md) | tenant registry from VmafxTenant resources or file | `auth/tenants.go`, `tenants/`, `tenant_config.go` |
+| [ADR-1563](../../docs/adr/1563-controller-node-role.md) | `vmafx:node` only role on node API, nothing else | `grpc_roles.go`, `auth/policy.go`, `auth/tenants.go` |
 
 ## Protobuf bindings (ADR-1119) — GENERATED, never hand-written
 
@@ -144,6 +145,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    otherwise. Never chain separate role interceptor; never move role checks
    into handlers. `TestGRPCRolesEnforcedPerRPC` holds independent
    expectation table: change only together with ADR-0794/ADR-1518 role table.
+   Node API = `auth.RoleNode` (`vmafx:node`) only, in no other entry; admin
+   never on node API (ADR-1563). `devClaims` holds admin + node (disabled-mode
+   nodes register). `tenantRoles` refuses `defaultRole: vmafx:node`; CRD
+   offers node in `allowedRoles` only. Never re-add admin to node API.
 4. **`auth/authtest` test-only**: RS256 issuer + JWKS server for tests.
    Import from `_test.go` files only.
 5. **Tenant from context, once (ADR-1522)**: handlers read tenant via

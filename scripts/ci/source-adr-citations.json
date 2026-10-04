@@ -10271,6 +10271,18 @@
       },
       "target": "1561-integer-vif-sv-sq-defined.md"
     },
+    "1563": {
+      "sites": {
+        "cmd/vmafx-controller/auth/middleware.go": 3,
+        "cmd/vmafx-controller/auth/policy.go": 2,
+        "cmd/vmafx-controller/auth/tenants.go": 1,
+        "cmd/vmafx-controller/auth/tenants_test.go": 1,
+        "cmd/vmafx-controller/grpc_roles.go": 2,
+        "cmd/vmafx-controller/grpc_roles_test.go": 3,
+        "scripts/ci/tests/test_helm_controller_auth.py": 1
+      },
+      "target": "1563-controller-node-role.md"
+    },
     "1564": {
       "sites": {
         ".github/workflows/dev-container-publish.yml": 2,

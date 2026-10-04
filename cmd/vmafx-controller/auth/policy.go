@@ -13,7 +13,8 @@
 // added to a service without a policy entry fails closed instead of being
 // open to any token (ADR-1518).
 //
-// ADR-0794: multi-tenant auth gateway (the three roles).
+// ADR-0794: multi-tenant auth gateway (the three user roles). ADR-1563: the
+// node role.
 // ADR-1518: controller gRPC authorisation.
 
 package auth
@@ -32,9 +33,10 @@ import (
 // roles that may call it. A caller needs at least one of the listed roles.
 type MethodRoles map[string][]string
 
-// IsKnownRole reports whether r is one of the three roles of ADR-0794.
+// IsKnownRole reports whether r is one of the roles of ADR-0794 or the node
+// role of ADR-1563.
 func IsKnownRole(r string) bool {
-	return r == RoleReader || r == RoleWriter || r == RoleAdmin
+	return r == RoleReader || r == RoleWriter || r == RoleAdmin || r == RoleNode
 }
 
 // cloneMethodRoles validates policy and returns a private copy of it, so a

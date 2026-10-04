@@ -15,6 +15,7 @@ runs this file; it needs ``helm`` on PATH.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -150,11 +151,40 @@ RENDER_FAILURES: dict[str, tuple[list[str], str | None, str]] = {
 }
 
 
+ROLES_GO = CHART.parents[2] / "cmd" / "vmafx-controller" / "auth" / "middleware.go"
+
+
+def controller_roles() -> set[str]:
+    """The role strings the controller defines (``Role* = "vmafx:..."``)."""
+    text = ROLES_GO.read_text(encoding="utf-8")
+    return set(re.findall(r'^\s*Role[A-Za-z]+\s*=\s*"(vmafx:[a-z]+)"', text, re.MULTILINE))
+
+
+def tenant_rbac_schema() -> dict[str, Any]:
+    """The rbac properties of the VmafxTenant CRD's v1 schema."""
+    crd = yaml.safe_load(
+        (CHART / "crds" / "vmafx.dev_vmafxtenants.yaml").read_text(encoding="utf-8")
+    )
+    spec = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+    rbac: dict[str, Any] = spec["properties"]["rbac"]["properties"]
+    return rbac
+
+
 class HelmControllerAuthTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("helm") is None:
             raise AssertionError("helm is not on PATH; this test renders the chart")
+
+    def test_crd_role_enums_follow_the_controller(self) -> None:
+        """ADR-1563: allowedRoles offers every controller role, vmafx:node
+        included; defaultRole offers every role except vmafx:node."""
+        roles = controller_roles()
+        self.assertIn("vmafx:node", roles)
+        rbac = tenant_rbac_schema()
+        self.assertEqual(set(rbac["allowedRoles"]["items"]["enum"]), roles)
+        self.assertEqual(set(rbac["defaultRole"]["enum"]), roles - {"vmafx:node"})
+        self.assertNotIn("vmafx:node", rbac["allowedRoles"]["default"])
 
     def test_defaults_render_no_tenant_resources(self) -> None:
         docs = render()

@@ -104,8 +104,10 @@ client enabled the node refuses to start on it. A host with GPUs of two
 vendors runs one node process per backend.
 
 **Authentication.** When the controller verifies tokens, give the node a
-bearer token that carries a tenant claim and the role the controller requires
-for the Node API (`vmafx:admin`). Put it in a file and set
+bearer token that carries a tenant claim and the node role, `vmafx:node`,
+which the controller requires for the Node API and which reaches nothing else
+([roles](auth.md#roles-and-rbac)). A token with `vmafx:admin` no longer
+registers a node. Put it in a file and set
 `VMAFX_CONTROLLER_TOKEN_FILE`; the node reads the file on every call, so a
 rotated Kubernetes projected token or Secret applies without a restart. A JWT
 whose `exp` has passed is not sent: the call fails with `controller token file

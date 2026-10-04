@@ -60852,3 +60852,13 @@ upstream parity guard's allowlist.
   a private resolver to a test; `libvmaf.FindBinary()` (production code, keeps the
   installed-container candidate) is not a test resolver. No score, public API or
   FFmpeg patch impact.
+## Controller node role (ADR-1563)
+
+- `cmd/vmafx-controller/grpc_roles.go` lists `auth.RoleNode` alone for the
+  four node-API methods; `auth.IsKnownRole` and `devClaims` include it, and
+  `tenantRoles` refuses it as `defaultRole`. The `VmafxTenant` CRD
+  (`deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml`) offers it in
+  `allowedRoles` only. A sync that touches the role table must not put
+  `vmafx:admin` back on the node API; `TestGRPCRolesEnforcedPerRPC` holds the
+  table independently of the code. No score, public C API or FFmpeg patch
+  impact.

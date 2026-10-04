@@ -36,15 +36,17 @@ import (
 const (
 	readMethod  = "/test.Service/Read"
 	adminMethod = "/test.Service/Admin"
+	nodeMethod  = "/test.Service/Node"
 )
 
-// tierPolicy grants readMethod to every role, writeMethod to writers and
-// admins, adminMethod to admins.
+// tierPolicy grants readMethod to every user role, writeMethod to writers and
+// admins, adminMethod to admins and nodeMethod to the node role only.
 func tierPolicy() auth.MethodRoles {
 	return auth.MethodRoles{
 		readMethod:  {auth.RoleReader, auth.RoleWriter, auth.RoleAdmin},
 		writeMethod: {auth.RoleWriter, auth.RoleAdmin},
 		adminMethod: {auth.RoleAdmin},
+		nodeMethod:  {auth.RoleNode},
 	}
 }
 
@@ -109,6 +111,9 @@ func TestTenantSpecValidation(t *testing.T) {
 		"default outside explicit": func(s *auth.TenantSpec) { s.RBAC = &auth.TenantRBAC{AllowedRoles: []string{auth.RoleWriter}} },
 		"admin default not in admin": func(s *auth.TenantSpec) {
 			s.RBAC = &auth.TenantRBAC{DefaultRole: auth.RoleWriter, AllowedRoles: []string{auth.RoleAdmin}}
+		},
+		"node as default role": func(s *auth.TenantSpec) {
+			s.RBAC = &auth.TenantRBAC{DefaultRole: auth.RoleNode, AllowedRoles: []string{auth.RoleNode, auth.RoleReader}}
 		},
 	}
 	for name, fn := range mutate {
@@ -252,6 +257,33 @@ func TestAllowedRolesAndDefaultRole(t *testing.T) {
 		{"admin alone is stripped to nothing", []string{auth.RoleAdmin}, nil, []string{readMethod, writeMethod, adminMethod}},
 		{"admin stripped, writer kept", []string{auth.RoleAdmin, auth.RoleWriter}, []string{readMethod, writeMethod}, []string{adminMethod}},
 	}
+	checkRoleCases(t, mw, iss, cases)
+}
+
+// TestNodeRoleOnlyWhereAllowed: vmafx:node reaches the node method only for a
+// tenant that lists it, reaches nothing else, and a tenant with the CRD
+// defaults strips it (ADR-1563).
+func TestNodeRoleOnlyWhereAllowed(t *testing.T) {
+	iss := authtest.NewIssuer(t)
+	nodes := tenantSpec("acme", iss)
+	nodes.Spec.RBAC = &auth.TenantRBAC{AllowedRoles: []string{auth.RoleReader, auth.RoleWriter, auth.RoleNode}}
+	mw := tenantMiddleware(t, newRegistry(t, nodes))
+	all := []string{readMethod, writeMethod, adminMethod}
+	checkRoleCases(t, mw, iss, []roleCase{
+		{"node alone reaches only the node method", []string{auth.RoleNode}, []string{nodeMethod}, all},
+		{"reader and node", []string{auth.RoleReader, auth.RoleNode}, []string{readMethod, nodeMethod}, []string{writeMethod, adminMethod}},
+		{"writer never reaches the node method", []string{auth.RoleWriter}, []string{readMethod, writeMethod}, []string{nodeMethod}},
+	})
+	defaults := tenantMiddleware(t, newRegistry(t, tenantSpec("acme", iss))) // allowedRoles: reader, writer
+	checkRoleCases(t, defaults, iss, []roleCase{
+		{"node stripped by the CRD defaults", []string{auth.RoleNode}, nil, append(all, nodeMethod)},
+	})
+}
+
+// checkRoleCases runs each case's token against the methods it must reach
+// and the ones it must be refused.
+func checkRoleCases(t *testing.T, mw *auth.Middleware, iss *authtest.Issuer, cases []roleCase) {
+	t.Helper()
 	for _, tc := range cases {
 		claims := map[string]any{"tid": "acme"}
 		if tc.roles != nil {
