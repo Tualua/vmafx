@@ -274,6 +274,7 @@ func tokenCtx(t *testing.T, token string) context.Context {
 
 func TestCrossTenantReadRefusedOverTheWire(t *testing.T) {
 	iss := authtest.NewIssuer(t)
+	t.Setenv("VMAFX_SCORING_ROOTS", "/") // every local path (ADR-1577); tenancy is the subject here
 	cc := startAuthEnabledController(t, iss)
 	writerA := iss.Token(t, map[string]any{"tid": tenantA, "vmafx_roles": []string{auth.RoleWriter}})
 	readerB := iss.Token(t, map[string]any{"tid": tenantB, "vmafx_roles": []string{auth.RoleReader}})
@@ -306,7 +307,7 @@ func restartedController(t *testing.T, f *grpcFixture) *grpcFixture {
 	t.Cleanup(reg.Close)
 	sch := scheduler.New(f.queue, reg, log)
 	return &grpcFixture{
-		srv:   newControllerServer(f.queue, reg, sch, f.metrics, log),
+		srv:   newControllerServer(f.queue, reg, sch, allowAllScopes(), f.metrics, log),
 		queue: f.queue, registry: reg, sched: sch, metrics: f.metrics,
 	}
 }

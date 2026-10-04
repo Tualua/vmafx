@@ -50,6 +50,7 @@
 //	VMAFX_AUTH_TENANT_CLAIM     -> auth.tenant_claim Tenant-id claim field (CompoundKey; default "tid").
 //	VMAFX_AUTH_ROLES_CLAIM      -> auth.roles_claim  Roles claim field (CompoundKey; default "vmafx_roles").
 //	VMAFX_AUTH_TENANTS_*        -> auth.tenants.*    Tenant registry source (tenant_config.go, ADR-1519).
+//	VMAFX_SCORING_ROOTS         -> scoring.roots     Scoring roots without a registry (scoring_scope.go, ADR-1577).
 //
 // NOTE on the env-var contract change (ADR-1119): the pre-fx controller used
 // VMAFX_PORT / VMAFX_GRPC_PORT (bare port numbers). golusoris' httpx/server and
@@ -183,6 +184,7 @@ func controllerProviders() fx.Option {
 		provideNodeRegistry,
 		provideScheduler,
 		provideTenantRegistry,
+		provideScoringScopes,
 		provideAuthMW,
 		newScoringServer,
 		newControllerServer,
@@ -342,12 +344,13 @@ func wireControllerSources(
 func mountControllerHTTP(
 	router chi.Router,
 	scorer *libvmaf.Scorer,
+	scopes *scoringScopes,
 	metrics *observability.Metrics,
 	registry *prometheus.Registry,
 	mw *auth.Middleware,
 	log *slog.Logger,
 ) {
-	hs := newHTTPServer(scorer, metrics, registry, mw, log)
+	hs := newHTTPServer(scorer, scopes, metrics, registry, mw, log)
 
 	router.Get("/healthz", hs.handleHealthz)
 	router.Get("/readyz", hs.handleReadyz)

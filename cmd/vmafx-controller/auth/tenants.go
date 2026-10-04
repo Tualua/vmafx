@@ -42,16 +42,26 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/VMAFx/vmafx/pkg/scoringscope"
 )
 
 // TenantSpec is the spec of one VmafxTenant resource
 // (deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml). Omitted fields take
 // the CRD's defaults.
 type TenantSpec struct {
-	TenantID string      `json:"tenantId"`
-	Enabled  *bool       `json:"enabled,omitempty"`
-	OIDC     TenantOIDC  `json:"oidc"`
-	RBAC     *TenantRBAC `json:"rbac,omitempty"`
+	TenantID string         `json:"tenantId"`
+	Enabled  *bool          `json:"enabled,omitempty"`
+	OIDC     TenantOIDC     `json:"oidc"`
+	RBAC     *TenantRBAC    `json:"rbac,omitempty"`
+	Scoring  *TenantScoring `json:"scoring,omitempty"`
+}
+
+// TenantScoring limits the inputs the tenant's callers may score (ADR-1577):
+// local directories and remote prefixes (pkg/scoringscope). No roots, the
+// default, means the tenant may score nothing.
+type TenantScoring struct {
+	Roots []string `json:"roots,omitempty"`
 }
 
 // TenantOIDC is the identity provider of one tenant.
@@ -93,12 +103,14 @@ type tenant struct {
 	rolesClaim  string
 	defaultRole string
 	allowed     []string
+	roots       scoringscope.Roots
 	cache       *jwksCache
 }
 
 // tenantSet is one immutable snapshot of the registry.
 type tenantSet struct {
 	byIssuer map[string][]*tenant
+	byID     map[string]*tenant
 	count    int
 	loadedAt time.Time
 }
@@ -178,6 +190,20 @@ func (r *TenantRegistry) MarkRefreshFailed(err error) {
 		"age", age, "refused_after", r.staleAfter)
 }
 
+// ScoringRoots returns the scoring roots of tenantID in the current set; ok is
+// false for a tenant the set does not hold (ADR-1577).
+func (r *TenantRegistry) ScoringRoots(tenantID string) (scoringscope.Roots, bool) {
+	set := r.state.Load()
+	if set == nil {
+		return scoringscope.Roots{}, false
+	}
+	t, ok := set.byID[tenantID]
+	if !ok {
+		return scoringscope.Roots{}, false
+	}
+	return t.roots, true
+}
+
 // Count returns the number of tenants in the current set.
 func (r *TenantRegistry) Count() int {
 	if set := r.state.Load(); set != nil {
@@ -190,12 +216,14 @@ func (r *TenantRegistry) Count() int {
 // caches no tenant names any more.
 func (r *TenantRegistry) publish(tenants []*tenant) {
 	byIssuer := make(map[string][]*tenant, len(tenants))
+	byID := make(map[string]*tenant, len(tenants))
 	referenced := make(map[*jwksCache]bool, len(tenants))
 	for _, t := range tenants {
 		byIssuer[t.issuer] = append(byIssuer[t.issuer], t)
+		byID[t.id] = t
 		referenced[t.cache] = true
 	}
-	r.state.Store(&tenantSet{byIssuer: byIssuer, count: len(tenants), loadedAt: r.now()})
+	r.state.Store(&tenantSet{byIssuer: byIssuer, byID: byID, count: len(tenants), loadedAt: r.now()})
 	r.mu.Lock()
 	for endpoint, c := range r.caches {
 		if !referenced[c] {
@@ -254,6 +282,10 @@ func (r *TenantRegistry) buildTenant(ns NamedTenantSpec) (*tenant, error) {
 	if err != nil {
 		return fail("rbac: %v", err)
 	}
+	roots, err := tenantScoringRoots(s.Scoring)
+	if err != nil {
+		return fail("scoring: %v", err)
+	}
 	return &tenant{
 		id:          s.TenantID,
 		source:      ns.Source,
@@ -264,8 +296,18 @@ func (r *TenantRegistry) buildTenant(ns NamedTenantSpec) (*tenant, error) {
 		rolesClaim:  orDefault(s.OIDC.RolesClaim, "vmafx_roles"),
 		defaultRole: defaultRole,
 		allowed:     allowed,
+		roots:       roots,
 		cache:       r.cacheFor(s.OIDC.JWKSEndpoint),
 	}, nil
+}
+
+// tenantScoringRoots validates the tenant's scoring roots; none is valid and
+// admits no input.
+func tenantScoringRoots(s *TenantScoring) (scoringscope.Roots, error) {
+	if s == nil {
+		return scoringscope.Parse(nil)
+	}
+	return scoringscope.Parse(s.Roots)
 }
 
 // tenantRoles applies the CRD defaults to rbac and validates it: every role

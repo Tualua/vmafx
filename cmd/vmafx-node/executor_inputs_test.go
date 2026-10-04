@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,8 +37,21 @@ func realExecutor(t *testing.T, store storage.Storage) (*Executor, string) {
 	return NewExecutorWithStorage(scorer, nil, store, "cpu", slog.New(slog.DiscardHandler)), root
 }
 
+// scoringJobFor builds a job for ref and dis with scoring roots that admit
+// both (ADR-1577): the input's directory, the URL's server or the remote.
 func scoringJobFor(ref, dis string) *controllerv1.Job {
-	return &controllerv1.Job{Id: "in", Scoring: &controllerv1.ScoringParams{Reference: ref, Distorted: dis, Model: "vmaf_v0.6.1"}}
+	return &controllerv1.Job{
+		Id: "in", Scoring: &controllerv1.ScoringParams{Reference: ref, Distorted: dis, Model: "vmaf_v0.6.1"},
+		ScoringRoots: []string{rootOf(ref), rootOf(dis)},
+	}
+}
+
+// rootOf returns a scoring root that holds input.
+func rootOf(input string) string {
+	if u, err := url.Parse(input); err == nil && u.Host != "" {
+		return u.Scheme + "://" + u.Host + "/"
+	}
+	return filepath.Dir(input)
 }
 
 // TestExecuteScoring_StreamsHTTPInput: a reference served over HTTP scores
@@ -71,7 +85,8 @@ func TestExecuteScoring_HTTPStatusFails(t *testing.T) {
 // (negative).
 func TestExecuteScoring_RemoteWithoutRcloneModeFails(t *testing.T) {
 	exec, _ := realExecutor(t, nil)
-	res := exec.Execute(context.Background(), scoringJobFor("s3://bucket/ref.y4m", "/tmp/dis.y4m"))
+	_, _, _, dis, _ := e2eMedia(t)
+	res := exec.Execute(context.Background(), scoringJobFor("s3://bucket/ref.y4m", dis))
 	if res.Error == nil || !strings.Contains(res.Error.Error(), "prepare reference") {
 		t.Fatalf("job error = %v, want the reference preparation failure", res.Error)
 	}

@@ -232,6 +232,7 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_AUTH_TENANTS_SOURCE` | string | _(none)_ | `auth.tenants.source` | `kubernetes` (the namespace's `VmafxTenant` resources) or `file`: verify tokens per tenant ([tenant registry](../server/auth.md#tenant-registry)). Excludes the five global provider variables above and `VMAFX_AUTH_DISABLED=true`. |
 | `VMAFX_AUTH_TENANTS_FILE` | path | _(none)_ | `auth.tenants.file` | YAML or JSON file of `VmafxTenant` documents (source `file`). |
 | `VMAFX_AUTH_TENANTS_NAMESPACE` | string | pod namespace | `auth.tenants.namespace` | Namespace of the `VmafxTenant` resources (source `kubernetes`). |
+| `VMAFX_SCORING_ROOTS` | list | _(none: every input refused)_ | `scoring.roots` | Comma-separated scoring roots of every caller without a tenant registry; `{tenant}` becomes the caller's tenant ID ([scoring roots](../server/auth.md#scoring-roots)). |
 | `VMAFX_AUTH_TENANTS_REFRESH` | duration | `30s` | `auth.tenants.refresh` | Re-read interval of the tenant source, `1s` to `1h`; the tenant set is refused after ten intervals without a successful read. |
 
 ### Server (`cmd/vmafx-server`)

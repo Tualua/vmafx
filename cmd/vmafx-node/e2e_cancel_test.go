@@ -78,6 +78,7 @@ func TestEndToEndCancelStopsTheNodesVmaf(t *testing.T) {
 	writeY4M(t, ref, 0)
 	writeY4M(t, dis, 40)
 
+	t.Setenv("VMAFX_SCORING_ROOTS", media)
 	ctrlAddr := startController(t, root, vmafBin)
 	client := controllerv1.NewVmafxControllerClient(dialPlain(t, ctrlAddr))
 	app := startE2ENode(t, root, vmafBin, ctrlAddr, map[string]string{

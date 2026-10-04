@@ -230,6 +230,9 @@ func requireScored(t *testing.T, job *controllerv1.Job, want float64) {
 // real controller, and the backend match keeps a foreign job PENDING.
 func TestEndToEndControllerNodeJob(t *testing.T) {
 	root, vmafBin, ref, dis, want := e2eMedia(t)
+	// The controller admits only inputs under the tenant's scoring roots
+	// (ADR-1577); the node checks them again with the roots of the job.
+	t.Setenv("VMAFX_SCORING_ROOTS", filepath.Dir(ref))
 	ctrlAddr := startController(t, root, vmafBin)
 	client := controllerv1.NewVmafxControllerClient(dialPlain(t, ctrlAddr))
 	foreign := submit(t, client, ref, dis, "cuda")
@@ -256,6 +259,7 @@ func TestEndToEndControllerNodeJob(t *testing.T) {
 // mounts. Needs rclone, and FUSE for the mount mode (declared dependencies).
 func TestEndToEndControllerNodeRcloneSources(t *testing.T) {
 	root, vmafBin, ref, dis, want := e2eMedia(t)
+	t.Setenv("VMAFX_SCORING_ROOTS", ":local:"+filepath.Dir(ref))
 	ctrlAddr := startController(t, root, vmafBin)
 	client := controllerv1.NewVmafxControllerClient(dialPlain(t, ctrlAddr))
 	for _, mode := range []string{"http-serve", "mount"} {

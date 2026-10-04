@@ -126,6 +126,27 @@ spec:
                         Whitelist of roles this tenant's users may hold.
                         Roles present in the JWT but not in this list are
                         silently stripped.
+                scoring:
+                  type: object
+                  description: >
+                    Which inputs this tenant's callers may score (ADR-1577).
+                    The controller refuses every reference or distorted input
+                    of Score, POST /v1/score and SubmitJob that does not lie
+                    under one of the roots, and the node checks a job's inputs
+                    again, following symlinks, before it reads them.
+                  properties:
+                    roots:
+                      type: array
+                      maxItems: 32
+                      description: >
+                        Absolute directories (/data/acme), http(s) URL
+                        prefixes (https://media.example.com/acme/) and rclone
+                        remote prefixes (s3:bucket/acme, s3://bucket/acme).
+                        ".." is refused. Empty or absent: the tenant may score
+                        nothing (deny by default).
+                      items:
+                        type: string
+                        minLength: 1
             status:
               type: object
               properties:

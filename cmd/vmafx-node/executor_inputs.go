@@ -23,6 +23,7 @@ import (
 	"time"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/pkg/scoringscope"
 	"github.com/VMAFx/vmafx/pkg/storage"
 )
 
@@ -37,17 +38,23 @@ var inputClient = &http.Client{Transport: &http.Transport{
 	TLSHandshakeTimeout:   inputHeaderTimeout,
 }}
 
-// scoreJob prepares both sources, scores them on the job's backend and
-// releases the storage resources (rclone processes, mounts) afterwards.
-func (e *Executor) scoreJob(ctx context.Context, sp *controllerv1.ScoringParams) (float64, map[string]float64, error) {
-	ref, refDone, err := e.store.Prepare(ctx, sp.GetReference())
+// scoreJob admits both sources under the job's scoring roots, prepares them,
+// scores them on the job's backend and releases the storage resources (rclone
+// processes, mounts) afterwards.
+func (e *Executor) scoreJob(ctx context.Context, job *controllerv1.Job) (float64, map[string]float64, error) {
+	sp := job.GetScoring()
+	refSrc, disSrc, err := scopedSources(job)
 	if err != nil {
-		return 0, nil, fmt.Errorf("prepare reference %q: %w", sp.GetReference(), err)
+		return 0, nil, err
+	}
+	ref, refDone, err := e.store.Prepare(ctx, refSrc)
+	if err != nil {
+		return 0, nil, fmt.Errorf("prepare reference %q: %w", refSrc, err)
 	}
 	defer refDone()
-	dis, disDone, err := e.store.Prepare(ctx, sp.GetDistorted())
+	dis, disDone, err := e.store.Prepare(ctx, disSrc)
 	if err != nil {
-		return 0, nil, fmt.Errorf("prepare distorted %q: %w", sp.GetDistorted(), err)
+		return 0, nil, fmt.Errorf("prepare distorted %q: %w", disSrc, err)
 	}
 	defer disDone()
 	backend := jobBackend(sp, e.backend)
@@ -64,6 +71,27 @@ func (e *Executor) scoreJob(ctx context.Context, sp *controllerv1.ScoringParams)
 		return 0, nil, fmt.Errorf("open distorted: %w", err)
 	}
 	return e.scorer.ScoreReaders(ctx, refIn, disIn, sp.GetModel(), backend)
+}
+
+// scopedSources admits the job's inputs under the scoring roots the
+// controller sent with it (ADR-1577) and returns what to read: the real path
+// of a local input (symlinks followed on this node, where the files are), a
+// remote input unchanged. A job without roots is refused (deny by default).
+func scopedSources(job *controllerv1.Job) (string, string, error) {
+	roots, err := scoringscope.Parse(job.GetScoringRoots())
+	if err != nil {
+		return "", "", fmt.Errorf("scoring roots from the controller: %w", err)
+	}
+	sp := job.GetScoring()
+	ref, err := roots.Resolve(sp.GetReference())
+	if err != nil {
+		return "", "", fmt.Errorf("reference: %w", err)
+	}
+	dis, err := roots.Resolve(sp.GetDistorted())
+	if err != nil {
+		return "", "", fmt.Errorf("distorted: %w", err)
+	}
+	return ref, dis, nil
 }
 
 // openInput opens a prepared input as a stream: an http(s) URL with a GET,

@@ -272,6 +272,11 @@ func pickFreePort() (int, error) {
 	return port, nil
 }
 
+// RcloneRemote returns sourceURI in rclone's remote:path form, the form the
+// node hands rclone (scoring-root checks compare it, ADR-1577). http(s) URLs
+// come back unchanged.
+func RcloneRemote(sourceURI string) (string, error) { return rcloneRemotePath(sourceURI) }
+
 // rcloneRemotePath splits a sourceURI into the rclone remote:path form.
 //
 // Supported URI schemes:

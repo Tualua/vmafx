@@ -102,9 +102,10 @@ func (JobStatus) EnumDescriptor() ([]byte, []int) {
 // ScoringParams mirrors proto/vmafx.proto ScoreRequest, carried inside a Job.
 type ScoringParams struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Absolute or rclone-mount-relative path to the reference video file.
+	// Reference video: an absolute path, an http(s) URL or an rclone remote. It
+	// must lie under one of the caller tenant's scoring roots (ADR-1577).
 	Reference string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
-	// Absolute or rclone-mount-relative path to the distorted video file.
+	// Distorted video, under the same rule as reference.
 	Distorted string `protobuf:"bytes,2,opt,name=distorted,proto3" json:"distorted,omitempty"`
 	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
 	Model string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
@@ -196,7 +197,11 @@ type Job struct {
 	// final_score is the aggregate VMAF score written by the controller when
 	// the job reaches COMPLETED. The vmafx-operator copies it into the
 	// VmafxJob CR status. Zero until the job completes successfully.
-	FinalScore    float64 `protobuf:"fixed64,9,opt,name=final_score,json=finalScore,proto3" json:"final_score,omitempty"`
+	FinalScore float64 `protobuf:"fixed64,9,opt,name=final_score,json=finalScore,proto3" json:"final_score,omitempty"`
+	// scoring_roots are the scoring roots of the job's tenant, set only in a
+	// PullWork answer: the node scores the inputs only when they resolve under
+	// one of them, and refuses the job when the list is empty (ADR-1577).
+	ScoringRoots  []string `protobuf:"bytes,10,rep,name=scoring_roots,json=scoringRoots,proto3" json:"scoring_roots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -292,6 +297,13 @@ func (x *Job) GetFinalScore() float64 {
 		return x.FinalScore
 	}
 	return 0
+}
+
+func (x *Job) GetScoringRoots() []string {
+	if x != nil {
+		return x.ScoringRoots
+	}
+	return nil
 }
 
 // NodeCapability encodes what a vmafx-node instance can run.
@@ -1134,7 +1146,7 @@ const file_controller_proto_rawDesc = "" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x1c\n" +
 	"\tdistorted\x18\x02 \x01(\tR\tdistorted\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x18\n" +
-	"\abackend\x18\x04 \x01(\tR\abackend\"\xce\x02\n" +
+	"\abackend\x18\x04 \x01(\tR\abackend\"\xf3\x02\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x126\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1e.vmafx.controller.v1.JobStatusR\x06status\x12<\n" +
@@ -1147,7 +1159,9 @@ const file_controller_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\b \x01(\x03R\tupdatedAt\x12\x1f\n" +
 	"\vfinal_score\x18\t \x01(\x01R\n" +
-	"finalScore\"m\n" +
+	"finalScore\x12#\n" +
+	"\rscoring_roots\x18\n" +
+	" \x03(\tR\fscoringRoots\"m\n" +
 	"\x0eNodeCapability\x12\x1d\n" +
 	"\n" +
 	"gpu_vendor\x18\x01 \x01(\tR\tgpuVendor\x12\x1a\n" +

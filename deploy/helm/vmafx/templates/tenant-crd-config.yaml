@@ -45,5 +45,11 @@ spec:
       {{- toYaml .rbac.allowedRoles | nindent 6 }}
     {{- end }}
   {{- end }}
+  {{- with (.scoring | default dict).roots }}
+  {{- /* ADR-1577: without roots the tenant may score nothing. */}}
+  scoring:
+    roots:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
 {{- end }}
 {{- end }}

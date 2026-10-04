@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc/status"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
@@ -58,6 +59,7 @@ type errorResponse struct {
 // httpServer groups the HTTP handler state.
 type httpServer struct {
 	scorer   *libvmaf.Scorer
+	scopes   *scoringScopes
 	metrics  *observability.Metrics
 	log      *slog.Logger
 	registry *prometheus.Registry
@@ -67,6 +69,7 @@ type httpServer struct {
 // newHTTPServer creates an httpServer.
 func newHTTPServer(
 	scorer *libvmaf.Scorer,
+	scopes *scoringScopes,
 	metrics *observability.Metrics,
 	registry *prometheus.Registry,
 	authMW *auth.Middleware,
@@ -74,6 +77,7 @@ func newHTTPServer(
 ) *httpServer {
 	return &httpServer{
 		scorer:   scorer,
+		scopes:   scopes,
 		metrics:  metrics,
 		log:      log,
 		registry: registry,
@@ -119,30 +123,18 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ScoreRequests.Inc()
 	start := time.Now()
 
-	// Cap the request body at maxScoreRequestBodyBytes. http.MaxBytesReader
-	// closes the underlying body when the limit trips and surfaces the cause
-	// to the decoder as *http.MaxBytesError, which we map to 413 below.
-	// ADR-1065: mirrors the same guard in cmd/vmafx-server/http_server.go.
-	r.Body = http.MaxBytesReader(w, r.Body, maxScoreRequestBodyBytes)
-
-	var req scoreRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, code, msg := h.decodeScoreRequest(w, r)
+	if code != 0 {
 		h.metrics.ScoreErrors.Inc()
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			scoringservice.WriteJSON(h.log, w, http.StatusRequestEntityTooLarge, errorResponse{
-				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
-			})
-			return
-		}
-		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
-			errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
+		scoringservice.WriteJSON(h.log, w, code, errorResponse{Error: msg})
 		return
 	}
-
-	if req.Reference == "" || req.Distorted == "" {
+	// Only inputs under the caller tenant's scoring roots, scored by their
+	// real paths (ADR-1577).
+	ref, dis, err := h.scopes.resolveInputs(auth.TenantIDFromCtx(r.Context()), req.Reference, req.Distorted)
+	if err != nil {
 		h.metrics.ScoreErrors.Inc()
-		scoringservice.WriteJSON(h.log, w, http.StatusBadRequest,
-			errorResponse{Error: "reference and distorted are required"})
+		scoringservice.WriteJSON(h.log, w, http.StatusForbidden, errorResponse{Error: status.Convert(err).Message()})
 		return
 	}
 
@@ -150,7 +142,7 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	// server's read/write timeout) propagates SIGKILL to the vmaf
 	// subprocess via exec.CommandContext.  Fixes
 	// T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-	score, features, err := h.scorer.Score(r.Context(), req.Reference, req.Distorted, req.Model)
+	score, features, err := h.scorer.Score(r.Context(), ref, dis, req.Model)
 	elapsed := time.Since(start).Seconds()
 	h.metrics.ScoreDuration.Observe(elapsed)
 
@@ -168,6 +160,29 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	)
 	scoringservice.WriteJSON(h.log, w, http.StatusOK,
 		scoreResponse{Score: score, Features: features})
+}
+
+// decodeScoreRequest reads the /v1/score body. A non-zero code is the HTTP
+// status to answer with msg.
+func (h *httpServer) decodeScoreRequest(w http.ResponseWriter, r *http.Request) (scoreRequest, int, string) {
+	// Cap the request body at maxScoreRequestBodyBytes. http.MaxBytesReader
+	// closes the underlying body when the limit trips and surfaces the cause
+	// to the decoder as *http.MaxBytesError, which we map to 413 below.
+	// ADR-1065: mirrors the same guard in cmd/vmafx-server/http_server.go.
+	r.Body = http.MaxBytesReader(w, r.Body, maxScoreRequestBodyBytes)
+
+	var req scoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return req, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes)
+		}
+		return req, http.StatusBadRequest, fmt.Sprintf("invalid JSON body: %v", err)
+	}
+	if req.Reference == "" || req.Distorted == "" {
+		return req, http.StatusBadRequest, "reference and distorted are required"
+	}
+	return req, 0, ""
 }
 
 // Serving note (ADR-1119): the controller no longer hand-rolls an *http.Server.

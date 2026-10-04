@@ -92,7 +92,7 @@ func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR") // suppress noise in tests
-	return newHTTPServer(scorer, metrics, reg, nil, log), reg
+	return newHTTPServer(scorer, allowAllScopes(), metrics, reg, nil, log), reg
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ func TestReadyEndpointNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR")
-	hs := newHTTPServer(nil, metrics, reg, nil, log) // nil scorer → not ready
+	hs := newHTTPServer(nil, allowAllScopes(), metrics, reg, nil, log) // nil scorer → not ready
 	mux := http.NewServeMux()
 	hs.routes(mux)
 	ts := httptest.NewServer(mux)
@@ -195,7 +195,8 @@ func TestScoreEndpoint(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	reqBody := `{"reference":"/tmp/ref.yuv","distorted":"/tmp/dis.yuv","model":"vmaf_v0.6.1"}`
+	ref, dis := scoringInputFiles(t)
+	reqBody := `{"reference":"` + ref + `","distorted":"` + dis + `","model":"vmaf_v0.6.1"}`
 	resp, err := ts.Client().Post(ts.URL+"/v1/score", "application/json", strings.NewReader(reqBody))
 	if err != nil {
 		t.Fatalf("POST /v1/score: %v", err)

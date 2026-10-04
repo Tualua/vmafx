@@ -152,14 +152,15 @@ exit 1
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR")
-	hs := newHTTPServer(scorer, metrics, reg, nil, log)
+	hs := newHTTPServer(scorer, allowAllScopes(), metrics, reg, nil, log)
 
 	mux := http.NewServeMux()
 	hs.routes(mux)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	reqBody := `{"reference":"/tmp/ref.yuv","distorted":"/tmp/dis.yuv"}`
+	ref, dis := scoringInputFiles(t)
+	reqBody := `{"reference":"` + ref + `","distorted":"` + dis + `"}`
 	resp, err := ts.Client().Post(ts.URL+"/v1/score", "application/json", strings.NewReader(reqBody))
 	if err != nil {
 		t.Fatalf("POST /v1/score: %v", err)

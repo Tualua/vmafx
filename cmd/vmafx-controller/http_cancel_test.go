@@ -95,7 +95,7 @@ func TestScoreHandler_ClientDisconnectKillsSubprocess(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR")
-	hs := newHTTPServer(scorer, metrics, reg, nil, log)
+	hs := newHTTPServer(scorer, allowAllScopes(), metrics, reg, nil, log)
 
 	mux := http.NewServeMux()
 	hs.routes(mux)
@@ -105,7 +105,8 @@ func TestScoreHandler_ClientDisconnectKillsSubprocess(t *testing.T) {
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	body := `{"reference":"/tmp/ref.yuv","distorted":"/tmp/dis.yuv","model":"vmaf_v0.6.1"}`
+	ref, dis := scoringInputFiles(t)
+	body := `{"reference":"` + ref + `","distorted":"` + dis + `","model":"vmaf_v0.6.1"}`
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
 		ts.URL+"/v1/score", strings.NewReader(body))
 	if err != nil {

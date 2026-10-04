@@ -30,9 +30,10 @@ option go_package = "github.com/VMAFx/vmafx/gen/go/controller;controllerv1";
 
 // ScoringParams mirrors proto/vmafx.proto ScoreRequest, carried inside a Job.
 message ScoringParams {
-  // Absolute or rclone-mount-relative path to the reference video file.
+  // Reference video: an absolute path, an http(s) URL or an rclone remote. It
+  // must lie under one of the caller tenant's scoring roots (ADR-1577).
   string reference = 1;
-  // Absolute or rclone-mount-relative path to the distorted video file.
+  // Distorted video, under the same rule as reference.
   string distorted = 2;
   // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
   string model = 3;
@@ -85,6 +86,11 @@ message Job {
   // the job reaches COMPLETED. The vmafx-operator copies it into the
   // VmafxJob CR status. Zero until the job completes successfully.
   double final_score = 9;
+
+  // scoring_roots are the scoring roots of the job's tenant, set only in a
+  // PullWork answer: the node scores the inputs only when they resolve under
+  // one of them, and refuses the job when the list is empty (ADR-1577).
+  repeated string scoring_roots = 10;
 }
 
 // NodeCapability encodes what a vmafx-node instance can run.

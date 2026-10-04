@@ -10094,6 +10094,7 @@
         "cmd/vmafx-controller/auth/tenants_internal_test.go": 1,
         "cmd/vmafx-controller/auth/tenants_test.go": 1,
         "cmd/vmafx-controller/main.go": 3,
+        "cmd/vmafx-controller/scoring_scope.go": 1,
         "cmd/vmafx-controller/tenant_config.go": 1,
         "cmd/vmafx-controller/tenant_config_test.go": 1,
         "cmd/vmafx-controller/tenants/refresher.go": 1,
@@ -10320,6 +10321,35 @@
         "core/test/test_gpu_dispatch_env_contract.py": 1
       },
       "target": "1571-gpu-dispatch-env-consulted.md"
+    },
+    "1577": {
+      "sites": {
+        "cmd/vmafx-controller/auth/tenants.go": 2,
+        "cmd/vmafx-controller/auth/tenants_scoring_test.go": 1,
+        "cmd/vmafx-controller/grpc_server.go": 3,
+        "cmd/vmafx-controller/grpc_tenant_test.go": 1,
+        "cmd/vmafx-controller/http_server.go": 1,
+        "cmd/vmafx-controller/main.go": 1,
+        "cmd/vmafx-controller/proto/controller.proto": 2,
+        "cmd/vmafx-controller/scoring_scope.go": 1,
+        "cmd/vmafx-controller/scoring_scope_test.go": 2,
+        "cmd/vmafx-controller/tenant_config_test.go": 1,
+        "cmd/vmafx-node/e2e_controller_test.go": 1,
+        "cmd/vmafx-node/executor_inputs.go": 1,
+        "cmd/vmafx-node/executor_inputs_test.go": 1,
+        "cmd/vmafx-node/executor_scope_test.go": 1,
+        "deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml": 1,
+        "deploy/helm/vmafx/templates/auth-validate.yaml": 2,
+        "deploy/helm/vmafx/templates/deployment.yaml": 1,
+        "deploy/helm/vmafx/templates/tenant-crd-config.yaml": 1,
+        "deploy/helm/vmafx/values.yaml": 2,
+        "gen/go/controller/controller.pb.go": 2,
+        "pkg/scoringscope/scope.go": 1,
+        "pkg/scoringscope/scope_test.go": 1,
+        "pkg/storage/storage.go": 1,
+        "scripts/ci/tests/test_helm_controller_auth.py": 1
+      },
+      "target": "1577-scoring-paths-per-tenant.md"
     },
     "1590": {
       "sites": {

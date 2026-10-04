@@ -60681,3 +60681,16 @@ upstream parity guard's allowlist.
 - `core/test/test_sycl_kernel_scratch.c` reads `VMAF_SYCL_SCRATCH_RATCHET_FILE` before
   its compiled path; an upstream or fork change to the test keeps that override, which
   the zip's manifest sets. No score, public API or FFmpeg patch impact.
+
+## Scoring roots per tenant (ADR-1577)
+
+- `pkg/scoringscope` decides which inputs a tenant may score; the controller
+  calls it in `Score`, `POST /v1/score` (`scoring_scope.go`,
+  `http_server.go::decodeScoreRequest` split out of `handleScore`) and
+  `SubmitJob`, and sets `Job.scoring_roots` (proto field 10) only in
+  `PullWork` answers; the node's `scopedSources` resolves a job's inputs
+  before `pkg/storage` prepares them. `TenantSpec.Scoring`, the CRD's
+  `spec.scoring.roots` and the chart's `auth.scoringRoots` /
+  `auth.tenants[].scoring` carry the configuration. Deny by default: a sync
+  must not make an empty root list admit inputs, nor drop the node-side
+  check. No score, public C API or FFmpeg patch impact.

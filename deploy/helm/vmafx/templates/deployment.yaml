@@ -91,6 +91,11 @@ spec:
             - name: VMAFX_AUTH_ROLES_CLAIM
               value: {{ .Values.auth.rolesClaim | quote }}
             {{- end }}
+            {{- with .Values.auth.scoringRoots }}
+            {{- /* ADR-1577: inputs every caller may score, {tenant} expanded. */}}
+            - name: VMAFX_SCORING_ROOTS
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
           {{- range $k, $v := .Values.env }}

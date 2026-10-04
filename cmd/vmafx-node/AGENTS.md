@@ -146,6 +146,10 @@ ADR-1539), fail closed.
     `TestEndToEndControllerNodeJob` (real controller binary + real vmaf).
     TLS + bearer = `pkg/controllerclient` (`controllerConfig.Creds`, shared
     with the operator, ADR-1569); no node-local copy.
+    Scoring roots (ADR-1577): `scopedSources` resolves both inputs under
+    `job.GetScoringRoots()` (symlinks followed here) before `store.Prepare`;
+    empty roots = job refused; the real path is scored. Never prepare or
+    open an input first. Guard: `executor_scope_test.go`.
     Cancel (ADR-1567): each job runs under own
     `context.WithCancelCause(execCtx)`, cancel func kept in `jobs` by ID;
     heartbeat sends `running_job_ids` (sorted, <= slots <= 64); answer

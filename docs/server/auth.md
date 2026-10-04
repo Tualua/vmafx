@@ -228,6 +228,54 @@ no token can hold, so no caller can read them.
 
 Tenant IDs are opaque strings compared exactly (case and whitespace count).
 
+## Scoring roots
+
+A caller may score only inputs that lie under its tenant's scoring roots
+([ADR-1577](../adr/1577-scoring-paths-per-tenant.md)). Without that rule a
+writer of one tenant could make the controller or a node read another
+tenant's media, or any file the process can open, and read the scores as an
+oracle. A tenant without roots scores nothing: every input is refused (deny
+by default).
+
+A root is one of:
+
+| Kind | Example root | Admits |
+| --- | --- | --- |
+| Absolute directory | `/media/acme` | `/media/acme/ref.y4m`, `file:///media/acme/x/dis.y4m` |
+| http(s) prefix | `https://media.example.com/acme/` | `https://media.example.com/acme/a.y4m` (scheme and host compared case-insensitively) |
+| rclone remote prefix | `s3:media/acme`, `s3://media/acme`, `:local:/srv/acme` | `s3:media/acme/k/ref.y4m`, `s3://media/acme/ref.y4m` |
+
+An input is refused when it is relative, contains a `..` element (also
+percent-encoded in a URL), or lies outside every root (`/media/acme-old` is
+not under `/media/acme`). The refusal is `PERMISSION_DENIED` over gRPC and
+`403` over HTTP, with the message `scoring input "<input>" is outside the
+tenant's scoring roots`.
+
+Where the check runs:
+
+- `VmafxScoring.Score` and `POST /v1/score` read the files on the controller:
+  each input is resolved there, symlinks followed, and must still lie under a
+  root; the controller then scores the resolved path, so a link changed
+  after the check is not followed. A link inside `/media/acme` that points at
+  `/media/rival/secret.y4m` is refused.
+- `SubmitJob`'s inputs are read by a node: the controller checks them as
+  written, and `PullWork` hands the job's tenant roots to the node
+  (`Job.scoring_roots`), which resolves the inputs on its own file system
+  before it prepares or scores them, and fails the job otherwise. A node
+  refuses a job that arrives without roots.
+
+Where the roots come from:
+
+- With a [tenant registry](#tenant-registry): `spec.scoring.roots` of each
+  `VmafxTenant` (at most 32). An invalid root makes the tenant invalid, like
+  any other setting.
+- With one identity provider or with auth disabled: `VMAFX_SCORING_ROOTS`, a
+  comma-separated list for every caller; `{tenant}` in an entry becomes the
+  caller's tenant ID (`/media/{tenant},s3:media/{tenant}`). A tenant ID that
+  contains `/`, `\`, `:` or is `.` or `..` is refused rather than
+  substituted. `VMAFX_SCORING_ROOTS` together with a tenant registry stops
+  the controller at startup.
+
 ---
 
 ## Tenant registry
@@ -341,7 +389,13 @@ auth:
   audience: vmafx-api          # optional
   tenantClaim: tid             # default
   rolesClaim: vmafx_roles      # default
+  scoringRoots:                # VMAFX_SCORING_ROOTS; none refuses every input
+    - /media/{tenant}
 ```
+
+With a tenant registry, give each entry of `auth.tenants` its
+`scoring.roots`; the chart refuses `auth.scoringRoots` next to a registry and
+without `auth.enabled`.
 
 These values become the `VMAFX_*` variables of the [environment
 table](#environment-variables).
@@ -465,6 +519,7 @@ environment-only (ADR-1119).
 | `VMAFX_AUTH_TENANTS_FILE` | — | Tenant file (`VMAFX_AUTH_TENANTS_SOURCE=file`). |
 | `VMAFX_AUTH_TENANTS_NAMESPACE` | pod namespace | Namespace of the `VmafxTenant` resources (`VMAFX_AUTH_TENANTS_SOURCE=kubernetes`). |
 | `VMAFX_AUTH_TENANTS_REFRESH` | `30s` | Re-read interval of the tenant source (`1s` to `1h`); the set is refused after ten intervals without a successful read. |
+| `VMAFX_SCORING_ROOTS` | — | [Scoring roots](#scoring-roots) of every caller without a tenant registry; `{tenant}` becomes the caller's tenant ID. Unset: every input is refused. |
 
 The listen addresses and the other controller settings are in
 [controller.md](controller.md#configuration).

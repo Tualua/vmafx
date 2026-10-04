@@ -168,7 +168,10 @@ func startTenantController(t *testing.T, path string) *googlegrpc.ClientConn {
 
 func TestTenantRegistryEnforcedOverTheWire(t *testing.T) {
 	issA, issB := authtest.NewIssuer(t), authtest.NewIssuer(t)
-	docs := []string{tenantDoc("acme", issA.URL(), ""), tenantDoc("rival", issB.URL(), ", enabled: false")}
+	// acme may score every local path (ADR-1577), so the submit check below
+	// is decided by roles and suspension alone.
+	acmeRoots := `, scoring: {roots: ["/"]}`
+	docs := []string{tenantDoc("acme", issA.URL(), acmeRoots), tenantDoc("rival", issB.URL(), ", enabled: false")}
 	path := writeTenantFile(t, docs...)
 	cc := startTenantController(t, path)
 
@@ -193,7 +196,7 @@ func TestTenantRegistryEnforcedOverTheWire(t *testing.T) {
 	}
 
 	// Suspend acme in the file; the next refresh must refuse its writer.
-	if err := os.WriteFile(path, []byte(tenantDoc("acme", issA.URL(), ", enabled: false")), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(tenantDoc("acme", issA.URL(), acmeRoots+", enabled: false")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(10 * time.Second)

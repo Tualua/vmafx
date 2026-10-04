@@ -608,6 +608,15 @@ auth:
   # rolesClaim — JWT claim field that holds the list of vmafx role strings.
   rolesClaim: "vmafx_roles"
 
+  # scoringRoots — the inputs callers may score when there is no tenant
+  # registry (VMAFX_SCORING_ROOTS, ADR-1577): absolute directories, http(s)
+  # URL prefixes or rclone remote prefixes; "{tenant}" becomes the caller's
+  # tenant ID. Empty: the controller refuses every input (deny by default).
+  # With a tenant registry, set scoring.roots on each auth.tenants entry
+  # instead; the chart refuses both.
+  #   scoringRoots: ["/media/{tenant}", "s3:media/{tenant}"]
+  scoringRoots: []
+
   # tenants — VmafxTenant resources to create in the release namespace. Each
   # entry maps to one VmafxTenant (see the CRD for every field). Leave empty
   # and set tenantSource: kubernetes to manage VmafxTenants out-of-band.
@@ -625,6 +634,9 @@ auth:
   #     rbac:
   #       defaultRole: vmafx:reader
   #       allowedRoles: [vmafx:reader, vmafx:writer]
+  #     # Inputs acme may score (ADR-1577); none means nothing is scored.
+  #     scoring:
+  #       roots: ["/media/acme", "s3:media/acme"]
   #   - tenantId: rival-corp
   #     oidc:
   #       issuer: https://keycloak.rival-corp.example/realms/vmafx

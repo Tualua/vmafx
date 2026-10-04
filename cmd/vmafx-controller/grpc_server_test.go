@@ -116,7 +116,7 @@ func newTestControllerServer(t *testing.T) *controllerServer {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 
-	return newControllerServer(q, r, s, metrics, log)
+	return newControllerServer(q, r, s, allowAllScopes(), metrics, log)
 }
 
 func newTestStream(ctx context.Context) *mockStreamJobsServer {
@@ -163,7 +163,7 @@ func newGRPCFixture(t *testing.T) *grpcFixture {
 	metrics := observability.NewMetrics(reg2)
 
 	return &grpcFixture{
-		srv:      newControllerServer(q, reg, sch, metrics, log),
+		srv:      newControllerServer(q, reg, sch, allowAllScopes(), metrics, log),
 		queue:    q,
 		registry: reg,
 		sched:    sch,
@@ -753,7 +753,7 @@ func TestScoringServer_HealthReportsOK(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	s := newScoringServer(nil, metrics, log)
+	s := newScoringServer(nil, allowAllScopes(), metrics, log)
 	// Health does not touch the scorer.
 	resp, err := s.Health(context.Background(), nil)
 	if err != nil {

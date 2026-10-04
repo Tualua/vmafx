@@ -80,7 +80,12 @@ What the node does with the address:
 3. **Pull.** Each of the `VMAFX_NODE_SLOTS` slots calls `PullWork`. An empty
    answer waits about one `VMAFX_CONTROLLER_POLL_INTERVAL` (2 s, jittered);
    a failed call backs off up to 30 s.
-4. **Score.** The job's sources are prepared as described in
+4. **Score.** The job's inputs must resolve, symlinks followed on the node,
+   under the scoring roots the controller sends with the job
+   ([scoring roots](auth.md#scoring-roots)); otherwise, or when the job
+   carries no roots, the job fails with `scoring input "<input>" ... outside
+   the tenant's scoring roots` before any file is opened. The real path of a
+   local input is what the CLI reads. The job's sources are prepared as described in
    [Job sources](#job-sources-local-paths-urls-and-rclone-remotes), then the
    job runs through the vmaf CLI with `--backend` set to the job's backend, or
    the node's `VMAFX_BACKEND` when the job names none. The CLI then runs that

@@ -11,6 +11,8 @@ apply, instead of deploying a server that silently runs without them.
   environment.
 - A tenant registry cannot be combined with auth.disabled, and auth.tenants /
   auth.tenantSource mean nothing without auth.enabled.
+- auth.scoringRoots applies without a tenant registry only, and needs
+  auth.enabled (ADR-1577).
 - env.VMAFX_AUTH_* / env.VMAFX_JWKS_* would override the auth settings
   behind these checks; an empty rbac.allowedRoles would be dropped and the
   CRD would default it to reader and writer.
@@ -38,6 +40,11 @@ ADR-0794: multi-tenant auth gateway. ADR-1519: tenant registry.
 {{- if and $source .Values.auth.disabled }}
 {{- fail "auth.disabled cannot be combined with a tenant registry (auth.tenants / auth.tenantSource)" }}
 {{- end }}
+{{- if and $source .Values.auth.scoringRoots }}
+{{- fail "auth.scoringRoots is not used with a tenant registry: set scoring.roots on each auth.tenants entry (ADR-1577)" }}
+{{- end }}
 {{- else if $source }}
 {{- fail "auth.tenants and auth.tenantSource need auth.enabled: true" }}
+{{- else if .Values.auth.scoringRoots }}
+{{- fail "auth.scoringRoots needs auth.enabled: true (only the vmafx-controller reads it)" }}
 {{- end }}

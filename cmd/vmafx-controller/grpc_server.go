@@ -49,12 +49,13 @@ import (
 type scoringServer struct {
 	vmafxv1.UnimplementedVmafxScoringServer
 	scorer  *libvmaf.Scorer
+	scopes  *scoringScopes
 	metrics *observability.Metrics
 	log     *slog.Logger
 }
 
-func newScoringServer(scorer *libvmaf.Scorer, metrics *observability.Metrics, log *slog.Logger) *scoringServer {
-	return &scoringServer{scorer: scorer, metrics: metrics, log: log}
+func newScoringServer(scorer *libvmaf.Scorer, scopes *scoringScopes, metrics *observability.Metrics, log *slog.Logger) *scoringServer {
+	return &scoringServer{scorer: scorer, scopes: scopes, metrics: metrics, log: log}
 }
 
 // Score implements VmafxScoring.Score.
@@ -72,11 +73,16 @@ func (s *scoringServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*
 		s.metrics.ScoreErrors.Inc()
 		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
 	}
+	ref, dis, err := s.scopedInputs(ctx, req.GetReference(), req.GetDistorted())
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		return nil, err
+	}
 
 	// Pass the gRPC handler context so a client disconnect or RPC
 	// deadline tears down the vmaf subprocess via exec.CommandContext.
 	// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-	score, features, err := s.scorer.Score(ctx, req.GetReference(), req.GetDistorted(), req.GetModel())
+	score, features, err := s.scorer.Score(ctx, ref, dis, req.GetModel())
 	elapsed := time.Since(start).Seconds()
 	s.metrics.ScoreDuration.Observe(elapsed)
 
@@ -96,6 +102,16 @@ func (s *scoringServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*
 	}, nil
 }
 
+// scopedInputs admits both inputs only under the caller tenant's scoring
+// roots and returns their real paths, the ones scored (ADR-1577).
+func (s *scoringServer) scopedInputs(ctx context.Context, ref, dis string) (string, string, error) {
+	tenantID, err := callerTenant(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	return s.scopes.resolveInputs(tenantID, ref, dis)
+}
+
 // Health implements VmafxScoring.Health.
 func (s *scoringServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vmafxv1.HealthResponse, error) {
 	s.metrics.HealthRequests.Inc()
@@ -112,6 +128,7 @@ type controllerServer struct {
 	queue    queue.Queue
 	registry *nodes.Registry
 	sched    *scheduler.Scheduler
+	scopes   *scoringScopes
 	metrics  *observability.Metrics
 	log      *slog.Logger
 }
@@ -120,10 +137,11 @@ func newControllerServer(
 	q queue.Queue,
 	r *nodes.Registry,
 	s *scheduler.Scheduler,
+	scopes *scoringScopes,
 	metrics *observability.Metrics,
 	log *slog.Logger,
 ) *controllerServer {
-	return &controllerServer{queue: q, registry: r, sched: s, metrics: metrics, log: log}
+	return &controllerServer{queue: q, registry: r, sched: s, scopes: scopes, metrics: metrics, log: log}
 }
 
 // SubmitJob enqueues a new scoring job.
@@ -140,6 +158,11 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	// Extract tenant_id from the auth context (ADR-0794).
 	tenantID, err := callerTenant(ctx)
 	if err != nil {
+		return nil, err
+	}
+	// A node reads the inputs; the controller admits them under the tenant's
+	// scoring roots here and the node resolves them again (ADR-1577).
+	if err := c.scopes.checkInputs(tenantID, sp.GetReference(), sp.GetDistorted()); err != nil {
 		return nil, err
 	}
 
@@ -337,7 +360,12 @@ func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullW
 	if job == nil {
 		return &controllerv1.PullWorkResponse{}, nil
 	}
-	return &controllerv1.PullWorkResponse{Job: queueJobToProto(job)}, nil
+	pj := queueJobToProto(job)
+	// The node checks the inputs again where it reads them (ADR-1577).
+	if pj.ScoringRoots, err = c.scopes.rootsFor(tenantID); err != nil {
+		c.log.Error("PullWork: scoring roots", "tenant_id", tenantID, "error", err)
+	}
+	return &controllerv1.PullWorkResponse{Job: pj}, nil
 }
 
 // ReportResult records the terminal (or partial) outcome of a job. The node's

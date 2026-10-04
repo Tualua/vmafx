@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1246), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1247), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4991,6 +4991,10 @@ Every ADR, one heading each (1246), so the site search finds an ADR by its title
 ## ADR-1571: a GPU dispatch variable is documented only when library code reads it; `VMAF_CUDA_DISPATCH` is read at extractor init, `VMAF_HIP_DISPATCH` and its predicate are removed
 
 [1571-gpu-dispatch-env-consulted](1571-gpu-dispatch-env-consulted.md)
+
+## ADR-1577: each tenant scores only inputs under its own scoring roots, denied by default, checked by the controller and again by the node
+
+[1577-scoring-paths-per-tenant](1577-scoring-paths-per-tenant.md)
 
 ## ADR-1590: Every build stores its GPU device code compressed at the toolchain's strongest setting, and the build refuses raw device code
 

@@ -136,6 +136,17 @@ RENDER_FAILURES: dict[str, tuple[list[str], str | None, str]] = {
         None,
         "tenantSource",
     ),
+    "scoringRoots with a tenant registry": (
+        [*CONTROLLER, "--set", "auth.enabled=true"],
+        "auth: {issuer: https://a/, jwksEndpoint: https://a/k, scoringRoots: [/media],"
+        " tenants: [{tenantId: acme}]}",
+        "auth.scoringRoots is not used with a tenant registry",
+    ),
+    "scoringRoots without auth": (
+        [],
+        "auth: {scoringRoots: [/media]}",
+        "auth.scoringRoots needs auth.enabled",
+    ),
 }
 
 
@@ -219,6 +230,29 @@ class HelmControllerAuthTest(unittest.TestCase):
         self.assertEqual(env["VMAFX_AUTH_ISSUER"], "https://idp.example.com/")
         self.assertNotIn("VMAFX_AUTH_TENANTS_SOURCE", env)
         self.assertEqual(kinds(docs, "Role"), [])
+
+    def test_scoring_roots_reach_the_controller(self) -> None:
+        """ADR-1577: auth.scoringRoots becomes VMAFX_SCORING_ROOTS without a
+        registry; a tenant's scoring.roots reach its VmafxTenant; none
+        renders no roots (the controller then refuses every input)."""
+        docs = render(
+            *CONTROLLER,
+            values="auth: {enabled: true, issuer: https://a/, jwksEndpoint: https://a/k,"
+            " scoringRoots: ['/media/{tenant}', 's3:media/{tenant}']}",
+        )
+        self.assertEqual(
+            server_env(docs)["VMAFX_SCORING_ROOTS"], "/media/{tenant},s3:media/{tenant}"
+        )
+        docs = render(
+            values=TENANTS.replace(
+                "oidc: {audience: vmafx-api}",
+                "oidc: {audience: vmafx-api}\n      scoring: {roots: [/media/acme]}",
+            )
+        )
+        tenants = {t["spec"]["tenantId"]: t["spec"] for t in kinds(docs, "VmafxTenant")}
+        self.assertEqual(tenants["acme"]["scoring"], {"roots": ["/media/acme"]})
+        self.assertNotIn("scoring", tenants["rival"])
+        self.assertNotIn("VMAFX_SCORING_ROOTS", server_env(docs))
 
     def test_auth_settings_the_workload_would_ignore_fail_the_render(self) -> None:
         for name, (args, values, needle) in RENDER_FAILURES.items():

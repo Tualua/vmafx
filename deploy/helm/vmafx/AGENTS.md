@@ -131,6 +131,11 @@ Pod template.
 - `enabled:` in `tenant-crd-config.yaml` uses `hasKey`, never
   `default true` (`false | default true` renders `true`; suspension vanished).
 - Guard: `scripts/ci/tests/test_helm_controller_auth.py` (`helm-chart.yml`).
+- Scoring roots (ADR-1577): `auth.scoringRoots` -> `VMAFX_SCORING_ROOTS`
+  (joined with `,`) in single-provider mode only; `auth.tenants[].scoring.roots`
+  -> VmafxTenant `spec.scoring.roots`. `auth-validate.yaml` refuses
+  scoringRoots with registry or without `auth.enabled`. No default roots:
+  controller denies every input until set.
 
 ## Active GPU backends
 

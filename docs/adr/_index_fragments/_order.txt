@@ -1245,3 +1245,4 @@
 1567-job-cancel-reaches-node
 1566-windows-sycl-tester-zip
 1571-gpu-dispatch-env-consulted
+1577-scoring-paths-per-tenant

@@ -134,9 +134,16 @@ func TestExecuteScoring_PassesBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		media := t.TempDir()
+		for _, name := range []string{"r.y4m", "d.y4m"} {
+			if err := os.WriteFile(filepath.Join(media, name), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
 		job := &controllerv1.Job{Id: "b", Scoring: &controllerv1.ScoringParams{
-			Reference: "/r.y4m", Distorted: "/d.y4m", Model: "vmaf_v0.6.1", Backend: jobBackendName,
-		}}
+			Reference: filepath.Join(media, "r.y4m"), Distorted: filepath.Join(media, "d.y4m"),
+			Model: "vmaf_v0.6.1", Backend: jobBackendName,
+		}, ScoringRoots: []string{media}}
 		NewExecutor(scorer, nil, "cpu", slog.New(slog.DiscardHandler)).Execute(context.Background(), job)
 		raw, err := os.ReadFile(argsFile)
 		if err != nil {

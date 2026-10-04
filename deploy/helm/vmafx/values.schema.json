@@ -396,6 +396,12 @@
         "audience": { "type": "string" },
         "tenantClaim": { "type": "string" },
         "rolesClaim": { "type": "string" },
+        "scoringRoots": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Inputs callers may score without a tenant registry (VMAFX_SCORING_ROOTS, ADR-1577); {tenant} becomes the caller's tenant ID; empty refuses every input."
+        },
         "tenantSource": { "type": "string", "enum": ["", "kubernetes"] },
         "tenants": { "type": "array" }
       }

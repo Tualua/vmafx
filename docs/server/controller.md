@@ -29,8 +29,12 @@ The controller exposes **two gRPC services** on the same port:
     VMAFX_HTTP_ADDR=:8080 \
     VMAFX_GRPC_LISTEN=:9090 \
     VMAFX_DB_PATH=/tmp/vmafx-controller.db \
+    VMAFX_SCORING_ROOTS=/media \
     go run ./cmd/vmafx-controller
     ```
+
+    `VMAFX_SCORING_ROOTS` names the inputs callers may score; without it
+    every input is refused ([scoring roots](auth.md#scoring-roots)).
 
 2. Or build and run the container image.
 
@@ -58,6 +62,7 @@ flags beyond `--version` since ADR-1119. Listen addresses are full addresses
 | `VMAFX_VMAF_BINARY` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
 | `VMAFX_MODEL_DIR` | _(none)_ | Directory containing VMAF `.json` model files |
 | `VMAFX_DB_PATH` | `vmafx-controller.db` | Path to the SQLite job-persistence database |
+| `VMAFX_SCORING_ROOTS` | _(none: every input refused)_ | Scoring roots of every caller without a tenant registry, comma-separated, `{tenant}` expanded ([scoring roots](auth.md#scoring-roots)) |
 
 The authentication variables (`VMAFX_AUTH_DISABLED`, `VMAFX_JWKS_ENDPOINT`,
 `VMAFX_AUTH_ISSUER`, `VMAFX_AUTH_AUDIENCE`, `VMAFX_AUTH_TENANT_CLAIM`,
@@ -118,6 +123,11 @@ belongs to that tenant; the role each call needs and the tenant rules are in
 [Auth gateway](auth.md#roles-and-rbac).
 
 #### Submit a job
+
+The reference and the distorted input must lie under the tenant's
+[scoring roots](auth.md#scoring-roots), or the call fails with
+`PERMISSION_DENIED`; the node checks them again, following symlinks, before
+it reads them.
 
 ```bash
 grpcurl -plaintext \

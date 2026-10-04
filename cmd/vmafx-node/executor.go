@@ -179,7 +179,7 @@ func (e *Executor) executeScoring(ctx context.Context, job *controllerv1.Job) Ex
 	// The backend is passed to the CLI as --backend, so a job runs on the
 	// backend the node advertised to the scheduler or fails; the CLI never
 	// substitutes another one silently.
-	score, features, err := e.scoreJob(extractCtx, sp)
+	score, features, err := e.scoreJob(extractCtx, job)
 	if err != nil {
 		outerErr = err
 		extractErr = err
