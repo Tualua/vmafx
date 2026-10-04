@@ -59,8 +59,11 @@ Update note on merge: final UID + container-scope seccompProfile set.
 - **RBAC split**: ClusterRole (`*-operator-crds`) covers CRD resources only.
   Namespaced resources (pods, events, leases) sit in namespace Role
   (`*-operator-ns`). Never merge into single ClusterRole.
-- **VmafxTenant in ClusterRole**: `vmafxtenants` rule required in CRD
-  ClusterRole; removal fails controller-runtime watch silently.
+- **VmafxTenant only for the controller (ADR-1592, replaces ADR-1058's
+  rule)**: no `vmafxtenants` rule in the operator ClusterRole (no tenant
+  reconciler exists). Tenant-reader RoleBinding binds only
+  `vmafx.controllerServiceAccountName`, used only by controller pods. Guard:
+  `scripts/ci/tests/test_helm_service_accounts.py`.
 - **PDB template**: `templates/pdb.yaml` uses `policy/v1` (k8s >= 1.21).
   Older clusters require `capabilities.apiVersions.has` guard.
 - **Metrics NetworkPolicy**: `networkPolicy.allow.nodeMetrics` in schema.
@@ -136,6 +139,21 @@ Pod template.
   -> VmafxTenant `spec.scoring.roots`. `auth-validate.yaml` refuses
   scoringRoots with registry or without `auth.enabled`. No default roots:
   controller denies every input until set.
+
+## Controller workload (ADR-1589)
+
+- `templates/controller.yaml`: replicas fixed 1, strategy `Recreate`
+  (SQLite queue); never add replicaCount or RollingUpdate. `/data` = queue
+  volume (`controller.persistence`). Selector + Service carry
+  `component: controller` (selector isolation check).
+- Auth env only via `vmafx.controllerAuthEnv`; server `deployment.yaml` gets
+  none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
+  `*vmafx-controller` `image.repository` refused; `controller.env` auth keys
+  refused.
+- Nodes: `vmafx.nodeControllerAddr` (node.controllerAddr, else chart Service).
+  Operator: controller addresses only with `controller.enabled`. Tokens:
+  `vmafx.controllerTokenVolume` / `Mount` -> `VMAFX_CONTROLLER_TOKEN_FILE`.
+- Guard: `scripts/ci/tests/test_helm_controller_workload.py` (`helm-chart.yml`).
 
 ## Active GPU backends
 

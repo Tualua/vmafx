@@ -381,17 +381,20 @@ tenant was suspended.
 
 ## Helm configuration
 
-The auth gateway is part of `vmafx-controller`. The chart's default image,
-`vmafx-server`, has no auth gateway, so with `auth.enabled` the chart refuses
-to render unless `image.repository` names a controller image (built from
-`docker/Dockerfile.controller`; the project publishes none yet) and
-`workload` is `Deployment`.
+The auth gateway is part of `vmafx-controller`, which the chart deploys as
+its own workload with `controller.enabled`
+([ADR-1589](../adr/1589-helm-controller-workload.md),
+[Kubernetes guide](../development/k8s-deployment.md#controller)). `auth.*`
+configures that workload only; `auth.enabled` and `controller.enabled` go
+together, and the render fails for one without the other. The server
+workload (`vmafx-server`) has no auth gateway and gets no auth settings; an
+`image.repository` naming a `vmafx-controller` image is refused.
 
 One identity provider:
 
 ```yaml
-image:
-  repository: registry.example.com/vmafx-controller
+controller:
+  enabled: true
 auth:
   enabled: true
   jwksEndpoint: https://idp.example.com/.well-known/jwks.json
@@ -413,8 +416,8 @@ table](#environment-variables).
 A tenant registry:
 
 ```yaml
-image:
-  repository: registry.example.com/vmafx-controller
+controller:
+  enabled: true
 auth:
   enabled: true
   issuer: https://idp.example.com/               # default for entries without one
@@ -444,27 +447,39 @@ the tenant registry. The chart then:
 - passes `VMAFX_AUTH_TENANTS_SOURCE=kubernetes` and
   `VMAFX_AUTH_TENANTS_NAMESPACE=<release namespace>`, and none of the global
   provider variables;
-- grants the workload's service account `get`, `list` and `watch` on
-  `vmafxtenants` in the release namespace (Role and RoleBinding
-  `<release>-tenant-reader`);
+- grants the controller's own service account (`<serviceAccount
+  name>-controller`) `get`, `list` and `watch` on `vmafxtenants` in the
+  release namespace (Role and RoleBinding `<release>-tenant-reader`);
 - with `networkPolicy.enabled`, allows the controller's egress to the API
-  server (`networkPolicy.allow.serverToApiserver`, ports 443 and 6443). The
-  rule allows those ports to any address, as the operator's rule does,
-  because the API server's Service IP cannot be selected; it also lets the
-  controller reach `https` JWKS endpoints. Narrow it to your control plane's
-  and identity providers' CIDRs where you know them.
+  server (`networkPolicy.allow.serverToApiserver`, policy
+  `<release>-allow-controller-to-apiserver`, ports 443 and 6443). The rule
+  allows those ports to any address, as the operator's rule does, because the
+  API server's Service IP cannot be selected. The controller's JWKS fetches
+  have their own rule while auth is on
+  (`networkPolicy.allow.controllerToIdentityProvider`, port 443). Narrow both
+  to your control plane's and identity providers' CIDRs where you know them.
 
-The Role is bound to the chart's service account (`serviceAccount.name`,
-default: the chart's full name; with `serviceAccount.create: false`, the
-namespace's `default` account unless named), which the node and job pods use
-too, so they can also read the namespace's `VmafxTenant` resources (identity
-provider URLs, audiences and role lists; no secrets).
+The Role is bound to the controller's own service account and to no other
+account ([ADR-1592](../adr/1592-helm-split-service-accounts.md)): the
+chart creates `<name>-controller` (from `serviceAccount.name`, default the
+chart's full name, as the operator's `<name>-operator`) whenever
+`controller.enabled`, and only the controller pods use it. The server, job
+and node pods keep the chart's shared account, which holds no RBAC, and the
+operator's `ClusterRole` grants nothing on `vmafxtenants`. So only the
+controller can read the namespace's `VmafxTenant` resources (identity
+provider URLs, audiences and role lists).
 
 The render also fails for `auth.tenants` or `auth.tenantSource` without
 `auth.enabled`, for `auth.disabled` combined with a tenant registry, for any
-`env.VMAFX_AUTH_*` or `env.VMAFX_JWKS_*` entry (set those through `auth.*`),
+`env.VMAFX_AUTH_*` / `env.VMAFX_JWKS_*` or `controller.env.VMAFX_AUTH_*` /
+`VMAFX_JWKS_*` / `VMAFX_SCORING_ROOTS` entry (set those through `auth.*`),
 and for an entry with an empty `rbac.allowedRoles` (the CRD would default it
 to reader and writer).
+
+Nodes and the operator present tokens of their own to the controller:
+`node.controllerToken` and `operator.controllerToken` name a Secret whose key
+is mounted as `VMAFX_CONTROLLER_TOKEN_FILE`
+([Kubernetes guide](../development/k8s-deployment.md#controller)).
 
 ---
 

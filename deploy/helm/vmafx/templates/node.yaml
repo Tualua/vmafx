@@ -1,9 +1,11 @@
 {{- /*
   templates/node.yaml — vmafx-node worker pool Deployment.
 
-  This template deploys the vmafx-node Go worker pool.  It is independent
-  of the main vmafx-controller Deployment (templates/deployment.yaml) and
-  is enabled via .Values.node.enabled.
+  This template deploys the vmafx-node Go worker pool, enabled via
+  .Values.node.enabled. With controller.enabled the nodes register with the
+  chart's controller (templates/controller.yaml, ADR-1589) unless
+  node.controllerAddr names another one; node.controllerToken mounts the
+  node's bearer token.
 
   GPU vendor → Kubernetes resource mapping (vmafx.gpuResourceName; an explicit
   gpu.resourceName overrides it):
@@ -94,11 +96,16 @@ spec:
               containerPort: {{ .Values.node.metricsPort | default 9090 }}
               protocol: TCP
           env:
-            {{- with .Values.node.controllerAddr }}
+            {{- with include "vmafx.nodeControllerAddr" . }}
             # The node's controller client registers here and pulls jobs; unset
-            # (no node.controllerAddr) the node serves direct scoring only.
+            # (no controller) the node serves direct scoring only.
             - name: VMAFX_CONTROLLER_ADDR
               value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.node.controllerToken.secretName }}
+            # Bearer token (vmafx:node), re-read on every call (ADR-1524).
+            - name: VMAFX_CONTROLLER_TOKEN_FILE
+              value: {{ include "vmafx.controllerTokenPath" . | quote }}
             {{- end }}
             # The binary defaults grpc.listen to :50052 for standalone use.
             # Pin it explicitly to deploy's configurable grpcPort so the
@@ -181,6 +188,7 @@ spec:
               mountPath: {{ .Values.persistence.models.mountPath }}
               readOnly: true
             {{- end }}
+            {{- include "vmafx.controllerTokenMount" (dict "token" .Values.node.controllerToken) | nindent 12 }}
             {{- with .Values.node.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -199,6 +207,7 @@ spec:
             claimName: {{ include "vmafx.fullname" . }}-models
             readOnly: true
         {{- end }}
+        {{- include "vmafx.controllerTokenVolume" (dict "token" .Values.node.controllerToken) | nindent 8 }}
         {{- with .Values.node.volumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

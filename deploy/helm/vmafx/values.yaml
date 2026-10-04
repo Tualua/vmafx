@@ -39,6 +39,52 @@ operator:
     requests:
       cpu: "100m"
       memory: 64Mi
+  # controllerToken — Secret holding the bearer token the operator's GetJob
+  # polls send to the controller (VMAFX_CONTROLLER_TOKEN_FILE, re-read on every
+  # poll). Needed when the controller verifies tokens; the token's
+  # tenant is the one whose VmafxJobs the operator tracks (vmafx:reader).
+  controllerToken:
+    secretName: ""
+    key: token
+
+# ---------------------------------------------------------------------------
+# Controller — vmafx-controller: job queue, node API, auth gateway (ADR-1589)
+# ---------------------------------------------------------------------------
+# One replica: the job queue is an embedded SQLite database (ADR-1119), so the
+# Deployment uses the Recreate strategy and a ReadWriteOnce volume. The node
+# pool (node.enabled) and the operator (operator.enabled) find it through the
+# <fullname>-controller Service. controller.enabled needs auth.enabled (an
+# identity provider, a tenant registry or auth.disabled for dev) and the other
+# way round: the auth settings below configure this workload.
+controller:
+  enabled: false
+  image:
+    repository: ghcr.io/vmafx/vmafx-controller
+    tag: ""       # Defaults to v<Chart.AppVersion> when empty.
+    pullPolicy: IfNotPresent
+  # httpPort serves /healthz, /readyz, /metrics and POST /v1/score;
+  # grpcPort serves VmafxScoring and VmafxController (nodes, operator, clients).
+  httpPort: 8080
+  grpcPort: 9090
+  # persistence keeps the SQLite job queue (VMAFX_DB_PATH=/data/...) across
+  # restarts. Disabled: an emptyDir, and every job is lost with the pod.
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+    existingClaim: ""
+  resources:
+    limits:
+      cpu: "2"
+      memory: 1Gi
+    requests:
+      cpu: "250m"
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  # env — extra environment variables of the controller container only. The
+  # auth settings come from auth.*; env.VMAFX_AUTH_* / VMAFX_JWKS_* are refused.
+  env: {}
 
 # ---------------------------------------------------------------------------
 # Image
@@ -242,6 +288,10 @@ persistence:
 
 # ---------------------------------------------------------------------------
 # Service Account
+# The server, job and node pods share this account, which holds no RBAC. The
+# operator runs as <name>-operator and the controller as <name>-controller
+# (created with controller.enabled; the only account that reads VmafxTenants,
+# ADR-1592).
 # ---------------------------------------------------------------------------
 serviceAccount:
   create: true
@@ -315,15 +365,33 @@ networkPolicy:
       # only when the node listens elsewhere.
       # nodePort: 50052
     # node → controller (the nodes' controller client: RegisterNode,
-    # Heartbeat, PullWork, ReportResult). Rendered only when
-    # node.controllerAddr is set. port is the controller's gRPC port;
-    # podSelector / namespaceSelector pick the controller pods (empty
-    # podSelector = every pod in the release namespace).
+    # Heartbeat, PullWork, ReportResult). Rendered when the nodes have a
+    # controller (node.controllerAddr or controller.enabled). port is the
+    # controller's gRPC port; podSelector / namespaceSelector pick the
+    # controller pods. Empty podSelector: the chart's controller pods when
+    # controller.enabled, else every pod in the release namespace.
     nodeToController:
       enabled: true
       port: 9090
       podSelector: {}
       namespaceSelector: {}
+    # clients → controller: ingress to the controller's HTTP and gRPC ports
+    # (controller.enabled). Empty fromPodSelector admits every pod of the
+    # release namespace (nodes, operator, in-namespace clients).
+    controllerIngress:
+      enabled: true
+      fromPodSelector: {}
+    # operator → controller (GetJob polls, /healthz probes; controller.enabled).
+    operatorToController:
+      enabled: true
+    # controller → identity providers: JWKS fetches over HTTPS while auth is on
+    # (auth.enabled and not auth.disabled). Tighten cidrs to your providers.
+    controllerToIdentityProvider:
+      enabled: true
+      ports:
+        - 443
+      cidrs:
+        - 0.0.0.0/0
     # node → object store (rclone egress to S3/GCS/Azure/etc.)
     nodeEgressObjectStore:
       enabled: true
@@ -349,7 +417,8 @@ networkPolicy:
         - 6443
     # controller → kube-apiserver: reading VmafxTenant resources. Rendered
     # only when the controller reads its tenants from them (ADR-1519:
-    # auth.enabled with auth.tenants or auth.tenantSource: kubernetes).
+    # auth.enabled with auth.tenants or auth.tenantSource: kubernetes). The key
+    # keeps its pre-ADR-1589 name; it applies to the controller pods.
     serverToApiserver:
       enabled: true
       ports:
@@ -502,13 +571,21 @@ node:
 
   # controllerAddr is the gRPC address (host:port) of the vmafx-controller the
   # nodes register with and pull jobs from; it becomes VMAFX_CONTROLLER_ADDR.
-  # This chart does not deploy the controller, so there is no default: empty
-  # leaves the variable unset and the nodes serve direct VmafxScoring calls
-  # only. Use the controller's gRPC port (VMAFX_GRPC_LISTEN, default 9090),
-  # not its HTTP port. Token, TLS and polling settings are the
-  # VMAFX_CONTROLLER_* variables (docs/server/node.md), set through `env` and
-  # a Secret mounted with node.volumes / node.volumeMounts.
+  # Empty: the chart's own controller (<fullname>-controller:<grpcPort>) when
+  # controller.enabled, else unset and the nodes serve direct VmafxScoring
+  # calls only. Use the controller's gRPC port, not its HTTP port. TLS and
+  # polling settings are the VMAFX_CONTROLLER_* variables
+  # (docs/server/node.md), set through `env`.
   controllerAddr: ""
+
+  # controllerToken — Secret holding the node's bearer token for the
+  # controller (a token with vmafx:node), mounted read-only and
+  # passed as VMAFX_CONTROLLER_TOKEN_FILE (re-read on every call, so a
+  # rotated Secret applies without a restart). Needed when the controller
+  # verifies tokens.
+  controllerToken:
+    secretName: ""
+    key: token
 
   # metricsPort is the Prometheus scrape port exposed by vmafx-node.
   # Changing this value updates the node Deployment containerPort, the
@@ -538,10 +615,11 @@ node:
 # ---------------------------------------------------------------------------
 # Auth — multi-tenant JWT / OIDC gateway (ADR-0794, ADR-1518, ADR-1519)
 # ---------------------------------------------------------------------------
-# The auth gateway is part of vmafx-controller. The chart's default workload
-# image, vmafx-server, has no auth gateway, so auth.enabled requires
-# image.repository to name a vmafx-controller image and workload: Deployment;
-# the chart refuses to render otherwise instead of deploying an open server.
+# The auth gateway is part of vmafx-controller, which the chart deploys with
+# controller.enabled (ADR-1589). auth.enabled and controller.enabled go
+# together; the chart refuses one without the other, and refuses
+# image.repository naming a vmafx-controller image (the server workload no
+# longer receives the auth settings).
 #
 # Two ways to verify tokens:
 #   1. One identity provider for every tenant (auth.tenantSource ""): the
@@ -553,7 +631,8 @@ node:
 #      resources of the release namespace and accepts only their tenants, each
 #      with its own identity provider, suspension switch and role whitelist.
 #      The chart creates one VmafxTenant per auth.tenants entry and grants the
-#      controller's service account read access to VmafxTenants; resources
+#      controller's own service account (<serviceAccount>-controller, and no
+#      other account, ADR-1592) read access to VmafxTenants; resources
 #      applied with kubectl are read the same way. jwksEndpoint, issuer,
 #      audience, tenantClaim and rolesClaim below then only fill the fields an
 #      auth.tenants entry leaves out; they are not passed to the controller.
@@ -564,8 +643,8 @@ node:
 #
 # Quick-start (single tenant, Auth0):
 #
-#   image:
-#     repository: ghcr.io/vmafx/vmafx-controller
+#   controller:
+#     enabled: true
 #   auth:
 #     enabled: true
 #     tenants:
@@ -577,9 +656,8 @@ node:
 #
 # See docs/server/auth.md for the full OIDC configuration guide.
 auth:
-  # enabled — pass the auth settings below to the controller. When false the
-  # chart passes no auth setting; vmafx-controller then refuses to start
-  # unless VMAFX_AUTH_DISABLED or an identity provider comes from env/envFrom.
+  # enabled — pass the auth settings below to the controller workload
+  # (controller.enabled; the two go together).
   enabled: false
 
   # disabled — explicitly bypass auth even when enabled is true.

@@ -58,6 +58,25 @@ spec:
     - Ingress
     - Egress
 {{- end }}
+{{- if .Values.controller.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-controller-default-deny
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: controller
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
 {{- if .Values.node.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -141,10 +160,115 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
-# Allow rule: node -> controller (the nodes' controller client dials the
-# controller's gRPC port).  Rendered only when node.controllerAddr is set.
+# Allow rule: clients -> controller (ADR-1589).  The nodes, the operator and
+# in-namespace clients reach the controller's HTTP and gRPC ports.
 # ----------------------------------------------------------------------------
-{{- if and .Values.node.enabled .Values.node.controllerAddr .Values.networkPolicy.allow.nodeToController.enabled }}
+{{- if and .Values.controller.enabled .Values.networkPolicy.allow.controllerIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-controller-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            {{- with .Values.networkPolicy.allow.controllerIngress.fromPodSelector }}
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+            {{- else }} {}
+            {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controller.httpPort }}
+        - protocol: TCP
+          port: {{ .Values.controller.grpcPort }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: operator -> controller (GetJob polls on the gRPC port, /healthz
+# probes on the HTTP port; ADR-1589).
+# ----------------------------------------------------------------------------
+{{- if and .Values.operator.enabled .Values.controller.enabled .Values.networkPolicy.allow.operatorToController.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-operator-to-controller
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: operator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $selector | nindent 14 }}
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controller.grpcPort }}
+        - protocol: TCP
+          port: {{ .Values.controller.httpPort }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: controller -> identity providers (JWKS over HTTPS) while auth is
+# on (ADR-1589; ADR-1519 tenants each name their own JWKS endpoint).
+# ----------------------------------------------------------------------------
+{{- if and .Values.controller.enabled .Values.auth.enabled (not .Values.auth.disabled) .Values.networkPolicy.allow.controllerToIdentityProvider.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-controller-to-identity-provider
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: controller
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.allow.controllerToIdentityProvider.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.allow.controllerToIdentityProvider.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: node -> controller (the nodes' controller client dials the
+# controller's gRPC port).  Rendered when the nodes have a controller
+# (node.controllerAddr, or the chart's controller with controller.enabled).
+# ----------------------------------------------------------------------------
+{{- if and .Values.node.enabled (include "vmafx.nodeControllerAddr" .) .Values.networkPolicy.allow.nodeToController.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -164,14 +288,22 @@ spec:
   egress:
     - to:
         - podSelector:
+            {{- if .Values.networkPolicy.allow.nodeToController.podSelector }}
             {{- toYaml .Values.networkPolicy.allow.nodeToController.podSelector | nindent 12 }}
+            {{- else if and .Values.controller.enabled (not .Values.node.controllerAddr) }}
+            matchLabels:
+              {{- $selector | nindent 14 }}
+              app.kubernetes.io/component: controller
+            {{- else }}
+            {}
+            {{- end }}
           {{- with .Values.networkPolicy.allow.nodeToController.namespaceSelector }}
           namespaceSelector:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       ports:
         - protocol: TCP
-          port: {{ .Values.networkPolicy.allow.nodeToController.port }}
+          port: {{ if and .Values.controller.enabled (not .Values.node.controllerAddr) }}{{ .Values.controller.grpcPort }}{{ else }}{{ .Values.networkPolicy.allow.nodeToController.port }}{{ end }}
 {{- end }}
 
 # ----------------------------------------------------------------------------
@@ -255,23 +387,23 @@ spec:
 # ----------------------------------------------------------------------------
 # Allow rule: controller -> kube-apiserver, when the controller reads its
 # tenants from VmafxTenant resources (ADR-1519). Same ipBlock reasoning as the
-# operator rule above.
+# operator rule above. Values key serverToApiserver kept from before ADR-1589.
 # ----------------------------------------------------------------------------
-{{- if and .Values.auth.enabled (eq (include "vmafx.tenantSource" .) "kubernetes") .Values.networkPolicy.allow.serverToApiserver.enabled }}
+{{- if and .Values.controller.enabled .Values.auth.enabled (eq (include "vmafx.tenantSource" .) "kubernetes") .Values.networkPolicy.allow.serverToApiserver.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ $fullName }}-allow-server-to-apiserver
+  name: {{ $fullName }}-allow-controller-to-apiserver
   namespace: {{ $ns }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: controller
 spec:
   podSelector:
     matchLabels:
       {{- $selector | nindent 6 }}
-      app.kubernetes.io/component: server
+      app.kubernetes.io/component: controller
   policyTypes:
     - Egress
   egress:

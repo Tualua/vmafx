@@ -294,3 +294,108 @@ else "". ADR-1519.
 kubernetes
 {{- end -}}
 {{- end }}
+
+{{/*
+The controller's own service account (ADR-1592): the only account bound to
+the VmafxTenant reader Role. The server, job and node pods keep
+vmafx.serviceAccountName, which holds no RBAC.
+*/}}
+{{- define "vmafx.controllerServiceAccountName" -}}
+{{- printf "%s-controller" (include "vmafx.serviceAccountName" .) -}}
+{{- end }}
+
+{{/*
+vmafx-controller image (ADR-1589); the tag defaults to the release tag.
+*/}}
+{{- define "vmafx.controllerImage" -}}
+{{- $tag := .Values.controller.image.tag | default (include "vmafx.releaseImageTag" .) -}}
+{{- printf "%s:%s" .Values.controller.image.repository $tag -}}
+{{- end }}
+
+{{/*
+In-cluster host of the chart's controller Service.
+*/}}
+{{- define "vmafx.controllerHost" -}}
+{{- printf "%s-controller.%s.svc" (include "vmafx.fullname" .) .Release.Namespace -}}
+{{- end }}
+
+{{/*
+gRPC address the nodes use: node.controllerAddr, else the chart's controller
+when controller.enabled, else empty (standalone nodes).
+*/}}
+{{- define "vmafx.nodeControllerAddr" -}}
+{{- if .Values.node.controllerAddr -}}
+{{ .Values.node.controllerAddr }}
+{{- else if .Values.controller.enabled -}}
+{{ printf "%s:%v" (include "vmafx.controllerHost" .) .Values.controller.grpcPort }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Controller token volume and mount (vmafx.controllerTokenVolume /
+vmafx.controllerTokenMount) for a workload whose <component>.controllerToken
+names a Secret; call with (dict "token" .Values.node.controllerToken).
+*/}}
+{{- define "vmafx.controllerTokenPath" -}}
+/var/run/secrets/vmafx/controller-token/token
+{{- end }}
+{{- define "vmafx.controllerTokenVolume" -}}
+{{- with .token.secretName }}
+- name: controller-token
+  secret:
+    secretName: {{ . }}
+    defaultMode: 0400
+    items:
+      - key: {{ $.token.key | default "token" }}
+        path: token
+{{- end }}
+{{- end }}
+{{- define "vmafx.controllerTokenMount" -}}
+{{- if .token.secretName }}
+- name: controller-token
+  mountPath: /var/run/secrets/vmafx/controller-token
+  readOnly: true
+{{- end }}
+{{- end }}
+
+{{/*
+Auth environment of the controller (ADR-0794, ADR-1519, ADR-1577). With a
+tenant registry the controller reads VmafxTenants and gets no global provider
+setting (it refuses them next to a registry); otherwise the single provider and
+the scoring roots.
+*/}}
+{{- define "vmafx.controllerAuthEnv" -}}
+- name: VMAFX_AUTH_DISABLED
+  value: {{ .Values.auth.disabled | toString | quote }}
+{{- if eq (include "vmafx.tenantSource" .) "kubernetes" }}
+- name: VMAFX_AUTH_TENANTS_SOURCE
+  value: "kubernetes"
+- name: VMAFX_AUTH_TENANTS_NAMESPACE
+  value: {{ .Release.Namespace | quote }}
+{{- else }}
+{{- with .Values.auth.jwksEndpoint }}
+- name: VMAFX_JWKS_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.auth.issuer }}
+- name: VMAFX_AUTH_ISSUER
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.auth.audience }}
+- name: VMAFX_AUTH_AUDIENCE
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.auth.tenantClaim }}
+- name: VMAFX_AUTH_TENANT_CLAIM
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.auth.rolesClaim }}
+- name: VMAFX_AUTH_ROLES_CLAIM
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.auth.scoringRoots }}
+- name: VMAFX_SCORING_ROOTS
+  value: {{ join "," . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

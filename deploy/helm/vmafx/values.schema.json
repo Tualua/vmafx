@@ -23,7 +23,33 @@
         "image": { "$ref": "#/$defs/imageSpec" },
         "logLevel": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
         "leaderElect": { "type": "boolean" },
-        "resources": { "$ref": "#/$defs/resourceSpec" }
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "controllerToken": { "$ref": "#/$defs/tokenSecretSpec" }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "vmafx-controller workload: job queue, node API and auth gateway (ADR-1589). One replica (SQLite queue).",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "grpcPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "size": { "type": "string" },
+            "storageClass": { "type": "string" },
+            "existingClaim": { "type": "string" }
+          }
+        },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "env": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } }
       }
     },
     "image": { "$ref": "#/$defs/imageSpec" },
@@ -269,8 +295,9 @@
         },
         "controllerAddr": {
           "type": "string",
-          "description": "gRPC host:port of the vmafx-controller, rendered as VMAFX_CONTROLLER_ADDR. Empty leaves the node standalone (direct VmafxScoring only)."
+          "description": "gRPC host:port of the vmafx-controller, rendered as VMAFX_CONTROLLER_ADDR. Empty: the chart's controller when controller.enabled, else the node stays standalone (direct VmafxScoring only)."
         },
+        "controllerToken": { "$ref": "#/$defs/tokenSecretSpec" },
         "metricsPort": {
           "type": "integer",
           "minimum": 1,
@@ -327,12 +354,39 @@
             "nodeToController": {
               "type": "object",
               "additionalProperties": false,
-              "description": "Egress from vmafx-node to the controller's gRPC port, rendered when node.controllerAddr is set.",
+              "description": "Egress from vmafx-node to the controller's gRPC port, rendered when the nodes have a controller (node.controllerAddr or controller.enabled).",
               "properties": {
                 "enabled": { "type": "boolean" },
                 "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
                 "podSelector": { "type": "object", "additionalProperties": true },
                 "namespaceSelector": { "type": "object", "additionalProperties": true }
+              }
+            },
+            "controllerIngress": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Ingress to the controller's HTTP and gRPC ports (controller.enabled).",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "fromPodSelector": { "type": "object", "additionalProperties": true }
+              }
+            },
+            "operatorToController": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Egress from the operator to the controller (GetJob, /healthz).",
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
+            "controllerToIdentityProvider": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Egress from the controller to the identity providers' JWKS endpoints while auth is on.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                "cidrs": { "type": "array", "items": { "type": "string" } }
               }
             },
             "nodeEgressObjectStore": {
@@ -448,6 +502,15 @@
             "oneOf": [{ "type": "string" }, { "type": "integer" }]
           }
         }
+      }
+    },
+    "tokenSecretSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A Secret key holding a bearer token for the controller, mounted read-only and passed as VMAFX_CONTROLLER_TOKEN_FILE.",
+      "properties": {
+        "secretName": { "type": "string" },
+        "key": { "type": "string", "minLength": 1 }
       }
     },
     "volumeSpec": {

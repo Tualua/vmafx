@@ -648,6 +648,8 @@ repo or in CI secrets.
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
 - **Go service images** (`ghcr.io/vmafx/vmafx-server:<tag>`,
+  `ghcr.io/vmafx/vmafx-controller:<tag>` (since
+  [ADR-1589](../adr/1589-helm-controller-workload.md)),
   `ghcr.io/vmafx/vmafx-operator:<tag>`, and
   `ghcr.io/vmafx/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
   and GitHub-native build provenance, emitted by
@@ -961,8 +963,11 @@ including all VMAFx and libvmaf code, is the tag's.
 
 #### Making the container images public
 
-The four packages (`vmafx`, `vmafx-server`, `vmafx-operator`, `vmafx-node`)
-must be public so that anyone can pull the release images. The organization
+The five packages (`vmafx`, `vmafx-server`, `vmafx-controller`,
+`vmafx-operator`, `vmafx-node`) must be public so that anyone can pull the
+release images. `vmafx-controller` does not exist until the first release
+that publishes it (ADR-1589): after that publish, check its visibility and, if
+it was created private, switch it as described below. The organization
 setting **Organization settings → Packages → Package creation → Public** decides
 what a new package gets; it has been checked since v1.0.0-rc.1:
 

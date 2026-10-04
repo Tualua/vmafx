@@ -91,6 +91,22 @@
   container image, the Intel, NVIDIA and AMD GPU images, and "Other / built from source".
 
 
+- **The Helm chart deploys vmafx-controller, and releases publish its image
+  ([ADR-1589](docs/adr/1589-helm-controller-workload.md)).**
+  `controller.enabled` renders a one-replica controller (Recreate, SQLite job
+  queue on a ReadWriteOnce claim) with a Service carrying its HTTP (8080) and
+  gRPC (9090) ports; the nodes and the operator are pointed at it,
+  `node.controllerToken` / `operator.controllerToken` mount their bearer
+  tokens from Secrets, and the NetworkPolicies open the flows between them.
+  `ghcr.io/vmafx/vmafx-controller:<tag>` is built like the other Go images,
+  signed, with SBOMs, licence notices and a `<tag>-source` image; the binary
+  gains `--version`. **Migration:** `auth.*` now configures only the
+  controller workload and needs `controller.enabled`; a release that ran a
+  controller through `image.repository` fails to render and moves to
+  `controller.enabled` (docs/development/k8s-deployment.md, "Upgrading to the
+  controller workload").
+
+
 - **`scripts/dev/hip_dispatch_drop_probe.hip` checks whether an AMD GPU runs
   every command of a HIP stream.** Built with `hipcc`, it runs frames of one
   memset, several small kernels and a readback on one stream and reports the
@@ -3053,6 +3069,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   on master again.
 
 
+- **The Kubernetes E2E workflow bounds its tool downloads and stops hiding
+  failed diagnostics.** The kind, kubectl, Helm and kuttl downloads had
+  retries but no deadline, so a stalled server held the job until its
+  45-minute limit; each now has `--max-time 300`. The failure diagnostics
+  discarded every error with `|| true` and `2>/dev/null`; each command now
+  reports a warning when it fails and the next one still runs.
+
+
 - **The node's eBPF program declares `"GPL"` to the kernel instead of
   `"Dual BSD/GPL"`
   ([ADR-1559](docs/adr/1559-ebpf-kernel-licence-string.md)).** The source of
@@ -5165,6 +5189,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (a node that registered again after a controller restart); before, any
   node could complete any job, a pending one included. Cross-tenant refusals no longer name the owning tenant. A
   deployment serving several tenants needs a node registration per tenant.
+
+
+- **Only the controller can read `VmafxTenant`s
+  ([ADR-1592](docs/adr/1592-helm-split-service-accounts.md)).** With a tenant
+  registry the chart bound the tenant reader Role to the service account the
+  server, job and node pods share, and the operator's ClusterRole granted
+  cluster-wide `vmafxtenants` access for a reconciler that does not exist. The
+  controller now runs under its own account, `<name>-controller`, the only one
+  bound to the Role, and the operator's tenant rules are gone.
 
 ## [1.0.0-rc.2] - 2026-09-28
 ### Changed

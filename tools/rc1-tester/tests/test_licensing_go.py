@@ -257,6 +257,7 @@ def test_a_listed_library_missing_from_the_artifact_fails(tmp_path: Path) -> Non
 @pytest.mark.parametrize(("dockerfile", "target", "kind", "source"), [
     ("docker/Dockerfile.operator", "operator", "production-operator-image", "source-export"),
     ("Dockerfile.go-server", "go-server", "production-go-server-image", "source-export"),
+    ("docker/Dockerfile.controller", "controller", "production-controller-image", "source-export"),
     ("docker/Dockerfile.node", "node-cpu", "production-node-image", "node-source-export"),
 ])  # fmt: skip
 def test_the_go_images_collect_module_licences_and_publish_source(

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1255), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1257), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5016,6 +5016,10 @@ Every ADR, one heading each (1255), so the site search finds an ADR by its title
 
 [1578-published-rc-licence-companions](1578-published-rc-licence-companions.md)
 
+## ADR-1589: the Helm chart deploys vmafx-controller as its own one-replica workload, and the release publishes a licence-gated controller image
+
+[1589-helm-controller-workload](1589-helm-controller-workload.md)
+
 ## ADR-1590: Every build stores its GPU device code compressed at the toolchain's strongest setting, and the build refuses raw device code
 
 [1590-device-code-compression](1590-device-code-compression.md)
@@ -5023,6 +5027,10 @@ Every ADR, one heading each (1255), so the site search finds an ADR by its title
 ## ADR-1591: Publish every archive and image at the strongest compression its documented consumers open
 
 [1591-package-compression](1591-package-compression.md)
+
+## ADR-1592: the controller runs under its own service account, the only one that may read VmafxTenants
+
+[1592-helm-split-service-accounts](1592-helm-split-service-accounts.md)
 
 ## ADR-1594: zstd image layers with a Docker Engine 23.0 floor, and zopfli for the Windows zips
 

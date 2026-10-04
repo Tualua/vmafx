@@ -40,16 +40,17 @@ class GoWorkflowContract(unittest.TestCase):
             makefile,
         )
 
-        for container in (SERVER_DOCKERFILE, NODE_DOCKERFILE, DEV_CONTAINERFILE):
+        # ADR-1589: the controller links the fork's libvmaf like the server,
+        # never a distro libvmaf-dev package.
+        for container in (
+            SERVER_DOCKERFILE,
+            NODE_DOCKERFILE,
+            CONTROLLER_DOCKERFILE,
+            DEV_CONTAINERFILE,
+        ):
             with self.subTest(container=container.name):
                 source = container.read_text(encoding="utf-8")
                 self.assertIn('CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm"', source)
-
-        controller = CONTROLLER_DOCKERFILE.read_text(encoding="utf-8")
-        self.assertIn(
-            'CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lvmaf -lm"',
-            controller,
-        )
 
     def test_ready_pr_and_master_runs_are_routed_inside_the_job(self) -> None:
         workflow = (WORKFLOWS / "go-ci.yml").read_text(encoding="utf-8")

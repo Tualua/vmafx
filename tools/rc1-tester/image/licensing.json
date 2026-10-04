@@ -3144,6 +3144,48 @@
     }
    ]
   },
+  "production-controller-image": {
+   "title": "the VMAFx controller image (vmafx-controller)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-controller:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/); SOURCES.txt inside it is the index.",
+   "rewrite": {
+    "vmafx-server": "vmafx-controller"
+   },
+   "components": [
+    {
+     "from": "production-go-server-image",
+     "id": "vmafx-binaries"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "go-modules"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "build-records"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "debian-packages"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "system-state"
+    },
+    {
+     "from": "production-go-server-image",
+     "id": "notices"
+    }
+   ]
+  },
   "production-node-image": {
    "title": "the VMAFx worker node image (vmafx-node)",
    "licence_root": "usr/local/share/vmafx/licenses",

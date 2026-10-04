@@ -296,13 +296,13 @@ aggregate used by the Helm operator RBAC template.
 
 The chart also installs `VmafxTenant` (`vmtenant`, namespaced), which holds a
 tenant's OIDC provider and RBAC policy for the multi-tenant auth gateway of
-the vmafx-controller. The operator's `ClusterRole` grants access to it
-(`deploy/helm/vmafx/templates/operator-rbac.yaml`), but the operator has no
-reconciler for it: the controller lists the `VmafxTenant` resources of its
-namespace itself and enforces them
+the vmafx-controller. The operator has no reconciler for it and its
+`ClusterRole` grants nothing on it: the controller lists the `VmafxTenant`
+resources of its namespace itself and enforces them
 ([ADR-1519](../adr/1519-controller-tenant-registry.md)). The chart renders one
 `VmafxTenant` per entry of `auth.tenants` when `auth.enabled` is set and
-grants the controller's service account read access to them. The CRD schema
+grants the controller's own service account, and no other, read access to
+them ([ADR-1592](../adr/1592-helm-split-service-accounts.md)). The CRD schema
 is `deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml`; fields, example and
 Helm values are in [server/auth.md](../server/auth.md#tenant-registry).
 

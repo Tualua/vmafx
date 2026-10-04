@@ -10,6 +10,8 @@
 #   ghcr.io/vmafx/vmafx-operator:latest  (same)
 #   ghcr.io/vmafx/vmafx-server:<tag>     (amd64 + arm64, Go HTTP/gRPC server)
 #   ghcr.io/vmafx/vmafx-server:latest    (same)
+#   ghcr.io/vmafx/vmafx-controller:<tag> (amd64 + arm64, job queue + auth gateway, ADR-1589)
+#   ghcr.io/vmafx/vmafx-controller:latest (same)
 #   ghcr.io/vmafx/vmafx-node:<tag>       (amd64 + arm64, CPU variant)
 #   ghcr.io/vmafx/vmafx-node:latest      (same)
 #
@@ -48,6 +50,7 @@ env:
   REGISTRY: ghcr.io
   OPERATOR_IMAGE: vmafx/vmafx-operator
   SERVER_IMAGE: vmafx/vmafx-server
+  CONTROLLER_IMAGE: vmafx/vmafx-controller
   NODE_IMAGE: vmafx/vmafx-node
   PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
   # Layer compression of every image this workflow pushes (ADR-1594): zstd at
@@ -704,6 +707,287 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
   # -------------------------------------------------------------------------
+  # Build + push vmafx-controller (amd64 + arm64; ADR-1589). A new GHCR
+  # package starts private: the first publish creates
+  # ghcr.io/vmafx/vmafx-controller with private visibility until a maintainer
+  # makes it public in the package settings.
+  # -------------------------------------------------------------------------
+  build-controller:
+    # ADR-1589: the controller image, built like vmafx-server (its Dockerfile
+    # mirrors Dockerfile.go-server's licence-gated stages); ADR-1349: each
+    # architecture on its own native runner. publish-controller merges the two
+    # digests into the published index.
+    name: Build vmafx-controller (${{ matrix.arch }})
+    needs: validate-release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    environment: release-publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-26.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          submodules: recursive
+          persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
+
+      # ADR-1347: a recovery dispatch builds the tag's source with the build
+      # recipe of the default-branch commit it runs from (ADR-1350: including
+      # the patches to the bundled FFmpeg); nothing else moves.
+      - name: Use the recovery dispatch's build recipe
+        if: needs.validate-release.outputs.recovery == 'true'
+        env:
+          RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/ \
+            tools/rc1-tester/image/ .github/actions/ scripts/ci/record-copied-debian-libs.sh
+          git status --short
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}
+          labels: |
+            io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
+
+      - name: Build and push by digest (${{ matrix.platform }})
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.controller
+          target: controller
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
+          cache-from: type=gha,scope=controller-${{ matrix.arch }}
+          cache-to: type=gha,scope=controller-${{ matrix.arch }},mode=max
+          build-args: |
+            VMAFX_VERSION=${{ env.PUBLISH_TAG }}
+            VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}
+
+      - name: Record the platform digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload the platform digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: controller-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      # ADR-1503 rule 5 / ADR-1513: the corresponding source of this platform
+      # image, built from the same stages and pushed by digest; the publish job
+      # merges both platforms into <tag>-source.
+      - name: Push the source image by digest (${{ matrix.platform }})
+        id: push-source
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.controller
+          target: source-export
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }},push-by-digest=true,name-canonical=true,push=true,${{ env.IMAGE_COMPRESSION }}
+          cache-from: type=gha,scope=controller-${{ matrix.arch }}
+          build-args: |
+            VMAFX_VERSION=${{ env.PUBLISH_TAG }}
+            VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}
+
+      - name: Upload the source digest
+        env:
+          DIGEST: ${{ steps.push-source.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/source-digests"
+          printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/source-digests/${DIGEST#sha256:}"
+
+      - name: Upload the source digest artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: controller-source-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/source-digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-controller:
+    name: Publish vmafx-controller
+    needs:
+      - validate-release
+      - build-controller
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release-publish
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.index.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.recipe-sha }}
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
+      - name: Download the platform digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: controller-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}
+          tags: |
+            type=raw,value=${{ env.PUBLISH_TAG }}
+            type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
+
+      - name: Merge the platform images into one index
+        id: index
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}
+          META_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          mapfile -t digests < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [[ "${#digests[@]}" -ne 2 ]]; then
+            echo "expected 2 platform digests, got ${#digests[@]}" >&2
+            exit 1
+          fi
+          mapfile -t tag_args < <(jq -r '.tags[] | "--tag", .' <<< "${META_JSON}")
+          sources=()
+          for digest in "${digests[@]}"; do
+            sources+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          index="$(docker buildx imagetools inspect "${IMAGE}:${PUBLISH_TAG}" \
+            --format '{{json .Manifest}}' | jq -r .digest)"
+          docker buildx imagetools inspect "${IMAGE}@${index}"
+          echo "digest=${index}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.1.3"
+
+      - name: Sign image (keyless OIDC via Sigstore)
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ steps.index.outputs.digest }}"
+
+      - name: Attest build provenance (GitHub native)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ steps.index.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-controller.cdx.json
+
+      - name: Attach SBOM via cosign attest
+        run: |
+          cosign attest --yes \
+            --predicate sbom-controller.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ steps.index.outputs.digest }}"
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-controller
+          path: sbom-controller.cdx.json
+          retention-days: 90
+
+      - name: Download the source digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: controller-source-digest-*
+          path: ${{ runner.temp }}/source-digests
+          merge-multiple: true
+
+      - name: Read the source digests
+        id: source-digests
+        working-directory: ${{ runner.temp }}/source-digests
+        run: |
+          mapfile -t digests < <(find . -maxdepth 1 -type f -printf 'sha256:%f\n' | sort)
+          if [[ "${#digests[@]}" -ne 2 ]]; then
+            echo "expected 2 source digests, got ${#digests[@]}" >&2
+            exit 1
+          fi
+          echo "digests=${digests[*]}" >> "$GITHUB_OUTPUT"
+
+      # ADR-1503 / ADR-1513: SPDX SBOM per platform attested on its digest, and
+      # the platform source images merged into <tag>-source.
+      - name: Licence artifacts (SPDX SBOM attestations, source image)
+        uses: ./.github/actions/image-licence-artifacts
+        with:
+          compression: ${{ env.IMAGE_COMPRESSION }}
+          image: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}
+          digest: ${{ steps.index.outputs.digest }}
+          name: controller
+          source-tag: ${{ env.PUBLISH_TAG }}-source
+          source-digests: ${{ steps.source-digests.outputs.digests }}
+          platforms: linux/amd64,linux/arm64
+
+  # -------------------------------------------------------------------------
   # Build + push vmafx-node CPU variant (amd64 + arm64)
   # CGO + ffmpeg stages require QEMU for arm64 emulation.
   # -------------------------------------------------------------------------
@@ -990,6 +1274,7 @@ jobs:
     needs:
       - publish-operator
       - publish-server
+      - publish-controller
       - publish-node
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1022,6 +1307,11 @@ jobs:
               "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.publish-server.outputs.digest }}"
+          cosign verify \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ needs.publish-controller.outputs.digest }}"
           cosign verify \
             --certificate-identity \
               "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
@@ -1110,6 +1400,45 @@ jobs:
           done
           test "${ready}" = "true"
 
+      # ADR-1589: entrypoint, nonroot user, --version, and an HTTP start with
+      # auth disabled whose SQLite queue lands in the image's /data.
+      - name: Smoke-test vmafx-controller runtime
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ needs.publish-controller.outputs.digest }}"
+          docker pull "${image}"
+          test "$(docker image inspect --format '{{json .Config.Entrypoint}}' "${image}")" = \
+            '["/usr/local/bin/vmafx-controller"]'
+          test "$(docker image inspect --format '{{.Config.User}}' "${image}")" = '65532:65532'
+          version="$(docker run --rm "${image}" --version)"
+          test "${version}" = "${{ env.PUBLISH_TAG }}"
+          name="vmafx-controller-release-smoke"
+          cleanup() {
+            status=$?
+            if [[ "${status}" -ne 0 ]] && ! docker logs "${name}" 2>&1; then
+              echo "::warning::no container logs for ${name}" >&2
+            fi
+            if docker inspect "${name}" >/dev/null 2>&1; then
+              docker rm --force "${name}" >/dev/null
+            fi
+          }
+          trap cleanup EXIT
+          docker run --detach --name "${name}" --env VMAFX_AUTH_DISABLED=true \
+            --publish 127.0.0.1::8080 "${image}"
+          http_address="$(docker port "${name}" 8080/tcp)"
+          ready=false
+          for _ in $(seq 1 30); do
+            if [[ "$(docker inspect --format '{{.State.Running}}' "${name}")" != "true" ]]; then
+              echo "vmafx-controller exited before becoming ready" >&2
+              exit 1
+            fi
+            if curl --fail --silent --show-error --max-time 5 "http://${http_address}/readyz" >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "${ready}" = "true"
+
       - name: Smoke-test vmafx-node runtime
         run: |
           image="${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node.outputs.digest }}"
@@ -1148,6 +1477,8 @@ jobs:
       - publish-operator
       - build-server
       - publish-server
+      - build-controller
+      - publish-controller
       - build-node
       - publish-node
       - smoke-test
@@ -1169,6 +1500,14 @@ jobs:
           fi
           if [[ "${{ needs.publish-server.result }}" != "success" ]]; then
             echo "publish-server failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build-controller.result }}" != "success" ]]; then
+            echo "build-controller failed"
+            exit 1
+          fi
+          if [[ "${{ needs.publish-controller.result }}" != "success" ]]; then
+            echo "publish-controller failed"
             exit 1
           fi
           if [[ "${{ needs.build-node.result }}" != "success" ]]; then

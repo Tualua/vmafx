@@ -1254,3 +1254,5 @@
 1565-vmaf-tune-x265-two-pass-abr-at-pass1-bitrate
 1595-pr-time-verify-push-only-workflows
 1563-controller-node-role
+1589-helm-controller-workload
+1592-helm-split-service-accounts

@@ -3,7 +3,7 @@ paths:
   - .github/workflows/build.yml
   - .github/workflows/helm-chart.yml
   - .github/workflows/e2e-k8s.yml
-invariant: ORT and Helm version and SHA-256 update together; E2E node-cpu and go-server targets; verify kuttl step outcome.
+invariant: ORT/Helm version+SHA together; E2E targets; kuttl outcome checked; downloads bounded; diagnostics not silenced.
 ---
 # ONNX Runtime and Helm versions, digests, and E2E contract
 
@@ -48,3 +48,12 @@ writes `VMAFX_E2E_KUBECONFIG` and `KUBECONFIG` to
 same new file below `RUNNER_TEMP`; every Kubernetes step must first prove
 exact `kind-${KIND_CLUSTER_NAME}` context and loopback API server. Teardown
 must fail visibly if that identity guard cannot prove exact named cluster.
+
+## Downloads bounded, diagnostics never silenced (HISS-02, HISS-07)
+
+Every `curl` of `e2e-k8s.yml`'s tool installs carries `--connect-timeout 20
+--max-time 300` next to its retries; never drop the deadline. The diagnostics
+step runs each command through `diag()`, which prints a `::warning::` on
+failure and continues; never return to `|| true` or `2>/dev/null`, which hid
+the failures. Helm-chart workflow runs `test_helm_controller_workload.py`
+and renders the selector check with `controller.enabled` (ADR-1589).

@@ -149,6 +149,79 @@ helm upgrade --install vmafx-mcp deploy/helm/vmafx/ \
 
 Each pod gets a dedicated `1Gi` PVC at `/var/lib/vmafx`.
 
+## Controller, nodes and operator {#controller}
+
+`controller.enabled` deploys `vmafx-controller`, the job queue, node API and
+auth gateway of the distributed platform
+([ADR-1589](../adr/1589-helm-controller-workload.md)):
+
+```yaml
+controller:
+  enabled: true
+  persistence:
+    size: 5Gi              # the SQLite job queue at /data
+auth:
+  enabled: true            # the controller needs auth settings
+  issuer: https://idp.example.com/
+  jwksEndpoint: https://idp.example.com/.well-known/jwks.json
+  scoringRoots: ["/media/{tenant}"]   # inputs callers may score (ADR-1577)
+node:
+  enabled: true            # registers with the controller automatically
+  controllerToken:
+    secretName: vmafx-node-token      # key "token": a JWT with vmafx:node
+operator:
+  enabled: true            # polls the controller's GetJob
+  controllerToken:
+    secretName: vmafx-operator-token  # key "token": a JWT with vmafx:reader
+```
+
+What the chart renders:
+
+- **`<release>-controller` Deployment.** One replica with the `Recreate`
+  strategy: the queue is an embedded SQLite database, so two pods would each
+  own a different queue. `VMAFX_DB_PATH=/data/vmafx-controller.db` on a
+  `ReadWriteOnce` PersistentVolumeClaim (`controller.persistence`;
+  `existingClaim` reuses one, `enabled: false` uses an emptyDir and loses the
+  queue with the pod). Liveness and readiness probe `/healthz` and `/readyz`
+  on the HTTP port. Image `ghcr.io/vmafx/vmafx-controller:v<appVersion>`.
+- **`<release>-controller` service account**, used only by the controller
+  pods and the only account bound to the `VmafxTenant` reader Role
+  ([ADR-1592](../adr/1592-helm-split-service-accounts.md)); the server, job
+  and node pods share the chart's account, which holds no RBAC.
+- **`<release>-controller` Service** with `http` (`controller.httpPort`,
+  8080: `/healthz`, `/readyz`, `/metrics`, `POST /v1/score`) and `grpc`
+  (`controller.grpcPort`, 9090: `VmafxController`, `VmafxScoring`).
+- **Auth settings.** Everything under `auth.*` configures the controller only
+  ([auth guide](../server/auth.md#helm-configuration)). `controller.enabled`
+  and `auth.enabled` go together; for a cluster without an identity provider
+  set `auth.disabled: true` (development only).
+- **Nodes** get `VMAFX_CONTROLLER_ADDR=<release>-controller.<namespace>.svc:9090`
+  unless `node.controllerAddr` names another controller.
+- **Operator** gets `VMAFX_CONTROLLER_GRPC_ADDR` and `VMAFX_CONTROLLER_HTTP_ADDR`
+  of the same Service.
+- **Tokens.** `node.controllerToken` / `operator.controllerToken` mount key
+  `key` (default `token`) of Secret `secretName` read-only at
+  `/var/run/secrets/vmafx/controller-token/token` and set
+  `VMAFX_CONTROLLER_TOKEN_FILE`. Both programs read the file on every call, so
+  updating the Secret rotates the token without a restart (the kubelet
+  refreshes the mounted file after its sync period). A node token carries
+  `vmafx:node`, an operator token `vmafx:reader` of the tenant whose
+  `VmafxJob`s it tracks.
+
+The chart refuses `image.repository` naming a `vmafx-controller` image: the
+server workload (`workload`, default `Deployment` with `vmafx-server`) no
+longer receives auth settings, so a controller there would run without them.
+Move such a release to `controller.enabled` (see
+[upgrading](#upgrading-to-the-controller-workload)).
+
+The controller image is published with the other Go images by
+`docker-publish-operator-node.yml`, with licence notices in the image, signed
+SBOMs and a `<tag>-source` image (see [what is signed](release.md#what-is-signed)).
+Its GHCR package is new: the first release that publishes it creates it, and
+until a maintainer has checked that it is public
+([making the images public](release.md#making-the-container-images-public))
+anonymous pulls can fail.
+
 ## Environment variable reference
 
 | Variable | Set by | Description |
@@ -336,6 +409,35 @@ Argo CD and Flux report the same immutable-field error. Delete the server
 workload the same way and let them sync again. Releases installed from
 1.0.0-rc.2 or later upgrade without this step.
 
+## Upgrading to the controller workload {#upgrading-to-the-controller-workload}
+
+Before [ADR-1589](../adr/1589-helm-controller-workload.md) a controller ran
+as the server workload with `image.repository` set to a self-built
+`vmafx-controller` image, and `auth.*` was rendered into that Deployment.
+That form now fails to render. Replace it:
+
+```yaml
+# before
+image:
+  repository: registry.example.com/vmafx-controller
+auth:
+  enabled: true
+  # ...
+# after
+controller:
+  enabled: true
+  image:
+    repository: registry.example.com/vmafx-controller   # or the published image
+auth:
+  enabled: true
+  # ...
+```
+
+The job queue of the old Deployment lived wherever its `VMAFX_DB_PATH`
+pointed (an emptyDir unless you mounted a volume); copy the database to the
+new `<release>-controller-data` claim before the first start if you need its
+jobs. Nodes and the operator follow the new Service by themselves.
+
 ## Pod security {#pod-security}
 
 Every pod the chart emits — controller `Deployment`, batch `Job`, sticky
@@ -376,19 +478,22 @@ Calico GlobalNetworkPolicy) or do not install a NetworkPolicy controller —
 in the latter case the chart's NetworkPolicies render but are inert.
 
 Opt in with `--set networkPolicy.enabled=true`.  The chart then emits a
-default-deny baseline plus narrow allow-rules (`allow-node-to-controller` only
-with `node.controllerAddr`, `allow-server-to-apiserver` only with a tenant
-registry):
+default-deny baseline plus narrow allow-rules (the controller rules only with
+`controller.enabled`, `allow-node-to-controller` when the nodes have a
+controller, `allow-controller-to-apiserver` only with a tenant registry):
 
 | Policy                          | Direction | Peer                                            | Ports               | Purpose                                              |
 |---------------------------------|-----------|-------------------------------------------------|---------------------|------------------------------------------------------|
 | `default-deny`                  | both      | _(no allow)_                                    | _(all)_             | Safety net — drops everything that is not explicitly allowed. Emitted per workload component (root / operator / node) so a new component without an allow-rule remains isolated. |
 | `allow-http-ingress`            | ingress   | every pod in the release namespace              | `service.targetPort`| Scoring server reachable from any in-namespace client. |
 | `allow-controller-to-node`      | ingress   | controller pods (selector match)                | `node.grpcPort` (50052; `nodePort` overrides) | gRPC dispatch from controller to `vmafx-node` workers. |
-| `allow-node-to-controller`      | egress    | pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `9090` (configurable) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered only when `node.controllerAddr` is set. |
+| `allow-controller-ingress`      | ingress   | every pod in the release namespace (`controllerIngress.fromPodSelector` narrows) | `controller.httpPort`, `controller.grpcPort` | Nodes, operator and in-namespace clients reach the controller. |
+| `allow-operator-to-controller`  | egress    | the chart's controller pods                     | `controller.grpcPort`, `controller.httpPort` | The operator's `GetJob` polls and `/healthz` probes. |
+| `allow-controller-to-identity-provider` | egress | `controllerToIdentityProvider.cidrs` (default `0.0.0.0/0`) | `443` | JWKS fetches while auth is on (not with `auth.disabled`). |
+| `allow-node-to-controller`      | egress    | the chart's controller pods with `controller.enabled`, else pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `controller.grpcPort`, else `nodeToController.port` (9090) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered when the nodes have a controller. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
-| `allow-server-to-apiserver`     | egress    | `0.0.0.0/0` (same reason)                       | `443`, `6443`       | The controller listing `VmafxTenant` resources; rendered with `auth.enabled` and `auth.tenants` / `auth.tenantSource: kubernetes`. |
+| `allow-controller-to-apiserver` | egress    | `0.0.0.0/0` (same reason)                       | `443`, `6443`       | The controller listing `VmafxTenant` resources; rendered with `auth.enabled` and `auth.tenants` / `auth.tenantSource: kubernetes` (values key `serverToApiserver`). |
 | `allow-node-metrics-ingress`    | ingress   | any in-namespace pod (or a narrower `fromPodSelector`) | `9090` | Prometheus scraping of the vmafx-node metrics endpoint. Tighten `networkPolicy.allow.nodeMetrics.fromPodSelector` to `{app.kubernetes.io/name: prometheus}` in production. |
 | `allow-dns-egress`              | egress    | `kube-system` / CoreDNS pods                    | `53/udp`, `53/tcp`  | Cluster DNS resolution — required for the other allow-rules to function. |
 

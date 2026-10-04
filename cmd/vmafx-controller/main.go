@@ -76,6 +76,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -98,14 +99,19 @@ import (
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
-// buildVersion is a build-time version string, populated by ldflags:
-// -ldflags "-X main.buildVersion=v1.2.3". Falls back to "dev".
-var buildVersion = "dev"
+// version returns the release string pkg/version carries (ldflags
+// -X github.com/VMAFx/vmafx/pkg/version.version=vX.Y.Z, else "dev"), the one
+// the server, node and operator report too (ADR-1129).
+func version() string { return buildversion.Version() }
 
-// version returns the build-time version string, falling back to "dev".
-func version() string { return buildVersion }
+// isVersionRequest keeps the release-image smoke path independent of the auth
+// configuration, the listeners and the fx lifecycle (ADR-1589).
+func isVersionRequest(args []string) bool {
+	return len(args) == 2 && args[1] == "--version"
+}
 
 // controllerEnvOptions returns the config.Options that pin the VMAFX_ env
 // contract for the controller. The two auth-claim leaf keys carry underscores
@@ -125,6 +131,10 @@ func controllerEnvOptions() config.Options {
 }
 
 func main() {
+	if isVersionRequest(os.Args) {
+		fmt.Println(version())
+		return
+	}
 	// golusoris v0.5.0 (#234) reads log.level / log.format from the prefixed
 	// config tree directly, so VMAFX_LOG_LEVEL / VMAFX_LOG_FORMAT bind through
 	// the same VMAFX_ prefix as every other key — no env bridge needed.

@@ -4216,7 +4216,6 @@
         "cmd/vmafx-server/main_test.go": 1,
         "deploy/helm/vmafx/values.yaml": 1,
         "dev/Containerfile": 1,
-        "docker/Dockerfile.controller": 1,
         "gen/go/vmafx.pb.go": 1,
         "gen/go/vmafx_grpc.pb.go": 1,
         "pkg/conformal/conformal_test.go": 1,
@@ -4329,6 +4328,7 @@
         "cmd/vmafx-mcp/tools.go": 3,
         "cmd/vmafx-operator/internal/controller/vmafxjob_controller.go": 1,
         "cmd/vmafx-operator/main.go": 1,
+        "deploy/helm/vmafx/templates/controller.yaml": 1,
         "docker/Dockerfile.controller": 1,
         "gen/go/controller/controller.pb.go": 2,
         "gen/go/controller/controller_grpc.pb.go": 2,
@@ -4809,7 +4809,7 @@
         "cmd/vmafx-controller/queue/schema.sql": 2,
         "deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml": 2,
         "deploy/helm/vmafx/templates/auth-validate.yaml": 1,
-        "deploy/helm/vmafx/templates/operator-rbac.yaml": 1,
+        "deploy/helm/vmafx/templates/controller.yaml": 1,
         "deploy/helm/vmafx/templates/tenant-crd-config.yaml": 1,
         "deploy/helm/vmafx/values.yaml": 1
       },
@@ -5748,7 +5748,7 @@
     },
     "1086": {
       "sites": {
-        ".github/workflows/docker-publish-operator-node.yml": 3,
+        ".github/workflows/docker-publish-operator-node.yml": 4,
         ".github/workflows/upstream-watcher.yml": 1
       },
       "target": "1086-ci-workflow-least-privilege-permissions.md"
@@ -5980,6 +5980,9 @@
         "cmd/vmafx-tune/cmd/otel_test.go": 1,
         "cmd/vmafx-tune/cmd/root.go": 1,
         "cmd/vmafx-tune/cmd/root_test.go": 1,
+        "deploy/helm/vmafx/templates/controller.yaml": 1,
+        "deploy/helm/vmafx/values.yaml": 1,
+        "docker/Dockerfile.controller": 2,
         "internal/app/bootstrap/bootstrap.go": 3,
         "internal/app/bootstrap/bootstrap_test.go": 2,
         "internal/oteltest/oteltest.go": 1,
@@ -6043,6 +6046,8 @@
     "1129": {
       "sites": {
         "Dockerfile.go-server": 1,
+        "cmd/vmafx-controller/main.go": 1,
+        "docker/Dockerfile.controller": 1,
         "docker/Dockerfile.node": 1,
         "docker/Dockerfile.operator": 1,
         "docker/Dockerfile.production": 1,
@@ -7940,7 +7945,7 @@
     },
     "1347": {
       "sites": {
-        ".github/workflows/docker-publish-operator-node.yml": 4,
+        ".github/workflows/docker-publish-operator-node.yml": 5,
         ".github/workflows/docker-publish-production.yml": 6,
         ".github/workflows/docker-publish-tester.yml": 1,
         ".github/workflows/macos-tester-bundle.yml": 1,
@@ -7958,14 +7963,14 @@
     },
     "1349": {
       "sites": {
-        ".github/workflows/docker-publish-operator-node.yml": 3,
+        ".github/workflows/docker-publish-operator-node.yml": 4,
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1
       },
       "target": "1349-native-arch-node-image-build.md"
     },
     "1350": {
       "sites": {
-        ".github/workflows/docker-publish-operator-node.yml": 3,
+        ".github/workflows/docker-publish-operator-node.yml": 4,
         ".github/workflows/docker-publish-production.yml": 5,
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1
       },
@@ -9927,7 +9932,7 @@
       "sites": {
         ".github/actions/image-licence-artifacts/action.yml": 2,
         ".github/actions/image-licence-artifacts/sbom.sh": 1,
-        ".github/workflows/docker-publish-operator-node.yml": 6,
+        ".github/workflows/docker-publish-operator-node.yml": 8,
         ".github/workflows/docker-publish-production.yml": 5,
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
@@ -9935,6 +9940,7 @@
         ".github/workflows/windows-tester-bundle.yml": 8,
         "Dockerfile.go-server": 3,
         "REUSE.toml": 2,
+        "docker/Dockerfile.controller": 3,
         "docker/Dockerfile.node": 4,
         "docker/Dockerfile.operator": 2,
         "docker/Dockerfile.production": 8,
@@ -10004,12 +10010,13 @@
     "1513": {
       "sites": {
         ".github/actions/image-licence-artifacts/action.yml": 1,
-        ".github/workflows/docker-publish-operator-node.yml": 7,
+        ".github/workflows/docker-publish-operator-node.yml": 9,
         ".github/workflows/docker-publish-production.yml": 2,
         ".github/workflows/published-rc-licence-companions.yml": 1,
         ".github/workflows/supply-chain.yml": 2,
         "Dockerfile.go-server": 2,
         "REUSE.toml": 2,
+        "docker/Dockerfile.controller": 3,
         "docker/Dockerfile.node": 5,
         "docker/Dockerfile.operator": 2,
         "docker/Dockerfile.production": 2,
@@ -10097,8 +10104,8 @@
         "cmd/vmafx-controller/tenants/source_test.go": 1,
         "deploy/helm/vmafx/templates/auth-validate.yaml": 1,
         "deploy/helm/vmafx/templates/controller-tenant-rbac.yaml": 1,
-        "deploy/helm/vmafx/templates/deployment.yaml": 1,
-        "deploy/helm/vmafx/templates/networkpolicy.yaml": 1,
+        "deploy/helm/vmafx/templates/controller.yaml": 1,
+        "deploy/helm/vmafx/templates/networkpolicy.yaml": 2,
         "deploy/helm/vmafx/templates/tenant-crd-config.yaml": 1,
         "deploy/helm/vmafx/values.yaml": 2,
         "scripts/ci/tests/test_helm_controller_auth.py": 1
@@ -10146,6 +10153,7 @@
         "cmd/vmafx-controller/grpc_server.go": 1,
         "cmd/vmafx-controller/grpc_tenant_test.go": 1,
         "cmd/vmafx-controller/queue/queue.go": 1,
+        "deploy/helm/vmafx/templates/node.yaml": 1,
         "pkg/controllerclient/credentials.go": 1
       },
       "target": "1524-vmafx-node-controller-client.md"
@@ -10398,7 +10406,6 @@
         "cmd/vmafx-node/executor_scope_test.go": 1,
         "deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml": 1,
         "deploy/helm/vmafx/templates/auth-validate.yaml": 2,
-        "deploy/helm/vmafx/templates/deployment.yaml": 1,
         "deploy/helm/vmafx/templates/tenant-crd-config.yaml": 1,
         "deploy/helm/vmafx/values.yaml": 2,
         "gen/go/controller/controller.pb.go": 2,
@@ -10420,6 +10427,25 @@
         "tools/rc1-tester/tests/test_licensing_published_rc.py": 1
       },
       "target": "1578-published-rc-licence-companions.md"
+    },
+    "1589": {
+      "sites": {
+        ".github/workflows/docker-publish-operator-node.yml": 4,
+        ".github/workflows/helm-chart.yml": 1,
+        "cmd/vmafx-controller/main.go": 1,
+        "cmd/vmafx-controller/version_flag_test.go": 1,
+        "deploy/helm/vmafx/templates/auth-validate.yaml": 3,
+        "deploy/helm/vmafx/templates/controller.yaml": 1,
+        "deploy/helm/vmafx/templates/networkpolicy.yaml": 4,
+        "deploy/helm/vmafx/templates/node.yaml": 1,
+        "deploy/helm/vmafx/templates/operator-deployment.yaml": 1,
+        "deploy/helm/vmafx/values.yaml": 3,
+        "docker/Dockerfile.controller": 1,
+        "scripts/ci/test_go_workflow_contract.py": 1,
+        "scripts/ci/tests/test_helm_controller_auth.py": 1,
+        "scripts/ci/tests/test_helm_controller_workload.py": 1
+      },
+      "target": "1589-helm-controller-workload.md"
     },
     "1590": {
       "sites": {
@@ -10449,6 +10475,18 @@
         "tools/rc1-tester/tests/test_windows_bundle.py": 1
       },
       "target": "1591-package-compression.md"
+    },
+    "1592": {
+      "sites": {
+        ".github/workflows/helm-chart.yml": 1,
+        "deploy/helm/vmafx/templates/controller-tenant-rbac.yaml": 1,
+        "deploy/helm/vmafx/templates/controller.yaml": 1,
+        "deploy/helm/vmafx/templates/operator-rbac.yaml": 3,
+        "deploy/helm/vmafx/values.yaml": 2,
+        "scripts/ci/tests/test_helm_controller_auth.py": 1,
+        "scripts/ci/tests/test_helm_service_accounts.py": 1
+      },
+      "target": "1592-helm-split-service-accounts.md"
     },
     "1594": {
       "sites": {

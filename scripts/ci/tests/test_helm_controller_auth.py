@@ -26,9 +26,9 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 CHART = Path(__file__).resolve().parents[3] / "deploy" / "helm" / "vmafx"
-CONTROLLER = ["--set", "image.repository=ghcr.io/vmafx/vmafx-controller"]
+CONTROLLER = ["--set", "controller.enabled=true"]
 TENANTS = """
-image: {repository: ghcr.io/vmafx/vmafx-controller}
+controller: {enabled: true}
 auth:
   enabled: true
   issuer: https://idp.example.com/
@@ -68,27 +68,48 @@ def kinds(docs: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
     return [d for d in docs if d["kind"] == kind]
 
 
-def server_env(docs: list[dict[str, Any]]) -> dict[str, str]:
-    deploy = next(d for d in kinds(docs, "Deployment") if d["metadata"]["name"] == "vmafx")
+def deployment_env(docs: list[dict[str, Any]], name: str) -> dict[str, str]:
+    deploy = next(d for d in kinds(docs, "Deployment") if d["metadata"]["name"] == name)
     container = deploy["spec"]["template"]["spec"]["containers"][0]
-    return {e["name"]: e.get("value", "") for e in container["env"]}
+    return {e["name"]: e.get("value", "") for e in container.get("env", [])}
+
+
+def server_env(docs: list[dict[str, Any]]) -> dict[str, str]:
+    """The auth settings' workload: the controller (ADR-1589)."""
+    return deployment_env(docs, "vmafx-controller")
 
 
 # Render failures: name -> (helm args, extra values file, stderr needle).
 RENDER_FAILURES: dict[str, tuple[list[str], str | None, str]] = {
-    "vmafx-server image": (["--set", "auth.enabled=true"], None, "no auth gateway"),
-    "StatefulSet workload": (
-        [*CONTROLLER, "--set", "auth.enabled=true", "--set", "workload=StatefulSet"],
+    "auth without the controller workload": (
+        ["--set", "auth.enabled=true"],
         None,
-        "only workload Deployment",
+        "set controller.enabled",
+    ),
+    "controller without auth": ([*CONTROLLER], None, "controller.enabled needs auth.enabled"),
+    "controller image on the server workload": (
+        ["--set", "image.repository=ghcr.io/vmafx/vmafx-controller"],
+        None,
+        "no longer runs the controller",
+    ),
+    "auth via controller.env": (
+        [
+            *CONTROLLER,
+            "--set",
+            "auth.enabled=true",
+            "--set",
+            "controller.env.VMAFX_AUTH_DISABLED=true",
+        ],
+        None,
+        "controller.env.VMAFX_AUTH_DISABLED",
     ),
     "tenants without auth.enabled": (
-        [*CONTROLLER],
+        [],
         "auth: {tenants: [{tenantId: acme}]}",
         "need auth.enabled",
     ),
     "tenantSource without auth.enabled": (
-        [*CONTROLLER, "--set", "auth.tenantSource=kubernetes"],
+        ["--set", "auth.tenantSource=kubernetes"],
         None,
         "need auth.enabled",
     ),
@@ -190,7 +211,9 @@ class HelmControllerAuthTest(unittest.TestCase):
         docs = render()
         self.assertEqual(kinds(docs, "VmafxTenant"), [])
         self.assertEqual(kinds(docs, "Role"), [])
-        self.assertNotIn("VMAFX_AUTH_DISABLED", server_env(docs))
+        names = {d["metadata"]["name"] for d in kinds(docs, "Deployment")}
+        self.assertNotIn("vmafx-controller", names, "the controller is opt-in")
+        self.assertNotIn("VMAFX_AUTH_DISABLED", deployment_env(docs, "vmafx"))
 
     def test_tenant_registry_wiring(self) -> None:
         docs = render(values=TENANTS)
@@ -219,10 +242,10 @@ class HelmControllerAuthTest(unittest.TestCase):
             ],
         )
         binding = kinds(docs, "RoleBinding")[0]
-        self.assertEqual(binding["subjects"][0]["name"], "vmafx")
+        self.assertEqual(binding["subjects"][0]["name"], "vmafx-controller")  # ADR-1592
         self.assertEqual(binding["roleRef"]["name"], role["metadata"]["name"])
         policies = {p["metadata"]["name"] for p in kinds(docs, "NetworkPolicy")}
-        self.assertIn("vmafx-allow-server-to-apiserver", policies)
+        self.assertIn("vmafx-allow-controller-to-apiserver", policies)
 
     def test_rendered_tenants_take_global_defaults_and_keep_enabled_false(self) -> None:
         tenants = {

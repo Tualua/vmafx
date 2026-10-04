@@ -60862,3 +60862,26 @@ upstream parity guard's allowlist.
   `vmafx:admin` back on the node API; `TestGRPCRolesEnforcedPerRPC` holds the
   table independently of the code. No score, public C API or FFmpeg patch
   impact.
+## Controller workload in the Helm chart (ADR-1589)
+
+- `deploy/helm/vmafx/templates/controller.yaml` is the controller workload;
+  `vmafx.controllerAuthEnv` (`_helpers.tpl`) is the only place the auth
+  settings are rendered, and `templates/deployment.yaml` (server) carries none.
+  `auth-validate.yaml` requires `controller.enabled` with `auth.enabled` and
+  the other way round, and refuses a `vmafx-controller` `image.repository`.
+  The tenant-reader Role and the API-server NetworkPolicy select
+  `component: controller`. `docker/Dockerfile.controller` mirrors
+  `Dockerfile.go-server` stage for stage; a change to one build recipe
+  changes the other, and licence record `production-controller-image` reuses
+  the go-server components through `rewrite`. `cmd/vmafx-controller` has
+  `--version` (pkg/version). `e2e-k8s.yml` downloads carry `--max-time` and
+  its diagnostics use `diag()`. No score, public C API or FFmpeg patch impact.
+
+## Controller service account (ADR-1592)
+
+- `templates/controller.yaml` creates and uses
+  `vmafx.controllerServiceAccountName` (`<serviceAccount>-controller`);
+  `controller-tenant-rbac.yaml` binds only it; `operator-rbac.yaml` has no
+  `vmafxtenants` rule. A sync of the operator RBAC must not bring the tenant
+  rule back (ADR-1058's rule is replaced). No score, public C API or FFmpeg
+  patch impact.

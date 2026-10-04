@@ -9,7 +9,7 @@
 
   Split into two bindings per the principle of least privilege:
   1. ClusterRole + ClusterRoleBinding — CRD access only (vmafxjobs,
-     vmafxnodes, vmafxmodeltrainings, vmafxtenants).  CRDs are cluster-scoped
+     vmafxnodes, vmafxmodeltrainings; not vmafxtenants, ADR-1592).  CRDs are cluster-scoped
      resources and require a ClusterRole to watch across namespaces.
   2. Role + RoleBinding (namespace-scoped) — pods, events, leader-election
      leases.  These resources are namespaced; restricting them to the release
@@ -33,8 +33,8 @@ metadata:
 
 # ---------------------------------------------------------------------------
 # ClusterRole: CRD access (cluster-scoped resources)
-# VmafxJob, VmafxNode, VmafxModelTraining, VmafxTenant are cluster-scoped
-# CRD objects that the operator reconciles across all instances.
+# VmafxJob, VmafxNode and VmafxModelTraining are the CRD objects the operator
+# reconciles across all instances (VmafxTenant is the controller's, ADR-1592).
 # ---------------------------------------------------------------------------
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -75,15 +75,9 @@ rules:
   - apiGroups: [vmafx.dev]
     resources: [vmafxmodeltrainings/finalizers]
     verbs: [update]
-  # VmafxTenant CRD — operator watches tenant CRs to enforce per-tenant auth
-  # policy (ADR-0794).  The RBAC rule was previously absent, causing the
-  # reconciler to silently fail watch setup at startup (ADR-1058).
-  - apiGroups: [vmafx.dev]
-    resources: [vmafxtenants]
-    verbs: [get, list, watch]
-  - apiGroups: [vmafx.dev]
-    resources: [vmafxtenants/status]
-    verbs: [get, update, patch]
+  # No VmafxTenant rule: the operator has no tenant reconciler; only the
+  # controller's own service account reads VmafxTenants (ADR-1592, which
+  # replaces ADR-1058's tenant rule).
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

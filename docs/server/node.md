@@ -221,18 +221,23 @@ health check.
 ## Kubernetes deployment
 
 The Helm chart (`deploy/helm/vmafx/`) ships a node worker pool Deployment gated
-on `.Values.node.enabled`. The chart does not deploy the controller; point the
-nodes at one with `node.controllerAddr` (its gRPC port). Left empty, the
+on `.Values.node.enabled`. With `controller.enabled` the nodes register with
+the chart's own controller (`<release>-controller.<namespace>.svc:9090`,
+[ADR-1589](../adr/1589-helm-controller-workload.md)); `node.controllerAddr`
+points them at another controller instead (its gRPC port). With neither, the
 nodes serve direct scoring only. With `networkPolicy.enabled`, the chart also
-opens egress from the nodes to `networkPolicy.allow.nodeToController.port`
-(9090) on the pods `nodeToController.podSelector` selects.
+opens egress from the nodes to the controller's gRPC port: the chart's
+controller pods, or for `node.controllerAddr` the pods
+`networkPolicy.allow.nodeToController.podSelector` selects on
+`nodeToController.port` (9090).
 
 ```yaml
 # values.yaml
 node:
   enabled: true
   replicaCount: 3
-  controllerAddr: vmafx-controller.vmafx.svc:9090
+  controllerToken:
+    secretName: vmafx-node-token   # key "token": a JWT with vmafx:node
   nodeSelector:
     nvidia.com/gpu.present: "true"
   tolerations:
@@ -250,9 +255,11 @@ gpu:
 helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 ```
 
-For a controller that verifies tokens, mount the token Secret with
-`node.volumes` / `node.volumeMounts` and set `VMAFX_CONTROLLER_TOKEN_FILE`
-through `env`.
+For a controller that verifies tokens, `node.controllerToken.secretName`
+names the Secret holding the node's token (key `node.controllerToken.key`,
+default `token`); the chart mounts it read-only and sets
+`VMAFX_CONTROLLER_TOKEN_FILE`, which the node re-reads on every call, so
+updating the Secret rotates the token.
 
 `storage.mode` becomes `VMAFX_STORAGE_MODE` (chart default `http-serve`;
 `mount` and `auto` are the other accepted values) and `storage.mountRoot`

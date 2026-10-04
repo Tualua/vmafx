@@ -1,0 +1,173 @@
+{{- /*
+SPDX-License-Identifier: EUPL-1.2
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/controller.yaml
+The vmafx-controller workload (ADR-1589): a one-replica Deployment (the job
+queue is an embedded SQLite database, ADR-1119, so Recreate and a
+ReadWriteOnce volume), its Service with the HTTP and gRPC ports the nodes, the
+operator and the clients use, and the queue's PersistentVolumeClaim. The auth
+settings of auth.* configure this workload only (vmafx.controllerAuthEnv).
+
+ADR-0711: vmafx-controller. ADR-0794: auth gateway. ADR-1519: tenant registry.
+*/ -}}
+{{- if .Values.controller.enabled }}
+{{- $fullName := include "vmafx.fullname" . }}
+{{- $claim := .Values.controller.persistence.existingClaim | default (printf "%s-controller-data" $fullName) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "vmafx.controllerServiceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullName }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  # One replica: two controllers would each own a different SQLite queue.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      # Its own account (ADR-1592): the only one that may read VmafxTenants.
+      serviceAccountName: {{ include "vmafx.controllerServiceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vmafx-controller
+          image: {{ include "vmafx.controllerImage" . | quote }}
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.controller.httpPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.controller.grpcPort }}
+              protocol: TCP
+          env:
+            - name: VMAFX_HTTP_ADDR
+              value: ":{{ .Values.controller.httpPort }}"
+            - name: VMAFX_GRPC_LISTEN
+              value: ":{{ .Values.controller.grpcPort }}"
+            - name: VMAFX_DB_PATH
+              value: /data/vmafx-controller.db
+            {{- include "vmafx.controllerAuthEnv" . | nindent 12 }}
+            {{- range $k, $v := .Values.controller.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          {{- if .Values.controller.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $claim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullName }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "vmafx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+  ports:
+    - name: http
+      port: {{ .Values.controller.httpPort }}
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: {{ .Values.controller.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+{{- if and .Values.controller.persistence.enabled (not .Values.controller.persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $claim }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.controller.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.controller.persistence.size }}
+{{- end }}
+{{- end }}

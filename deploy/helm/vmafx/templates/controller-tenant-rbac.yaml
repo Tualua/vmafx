@@ -4,7 +4,7 @@ Copyright 2026 Lusoris
 
 deploy/helm/vmafx/templates/controller-tenant-rbac.yaml
 Read access to the release namespace's VmafxTenant resources for the
-workload's service account, rendered when the controller reads its tenants
+controller's own service account (ADR-1592), and for no other account, rendered when the controller reads its tenants
 from them (VMAFX_AUTH_TENANTS_SOURCE=kubernetes). Namespace-scoped: the
 controller reads no other namespace's tenants.
 
@@ -19,7 +19,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: controller
 rules:
   - apiGroups: ["vmafx.dev"]
     resources: ["vmafxtenants"]
@@ -32,13 +32,13 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "vmafx.fullname" . }}-tenant-reader
 subjects:
   - kind: ServiceAccount
-    name: {{ include "vmafx.serviceAccountName" . }}
+    name: {{ include "vmafx.controllerServiceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}

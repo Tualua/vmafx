@@ -95,7 +95,9 @@
       "paths": [
         "scripts/ci/tests/test_check_helm_selector_isolation.py",
         "scripts/ci/tests/test_helm_controller_auth.py",
-        "scripts/ci/tests/test_helm_node_contract.py"
+        "scripts/ci/tests/test_helm_controller_workload.py",
+        "scripts/ci/tests/test_helm_node_contract.py",
+        "scripts/ci/tests/test_helm_service_accounts.py"
       ],
       "checks": ["helm lint + template"],
       "runs": "unittest in the helm lint + template job, which installs the pinned, checksum-verified helm these tests render the chart with; the most specific path wins over the tooling suite's scripts/ (ADR-1568)"

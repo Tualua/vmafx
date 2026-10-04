@@ -201,6 +201,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 
 ### main / shutdown
 
+0. **`--version` before fx (ADR-1589)**: `isVersionRequest` prints
+   `pkg/version` and returns before `fx.New`; no config, no listeners. Image
+   smoke test depends on it. Guard: `version_flag_test.go`.
+
 1. **Shutdown ordering (ADR-1119)** (`main.go`): graceful shutdown owned by
    fx lifecycle. Order: gRPC `GracefulStop` → queue `Close` + node reaper stop
    → scorer `Close`. Replaced `observability.NewShutdownContext()` / `errgroup` /

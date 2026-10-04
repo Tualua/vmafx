@@ -124,6 +124,16 @@ jobs:
       - name: Controller auth and tenant registry renders
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_controller_auth.py' -v
 
+      # ADR-1589: the controller workload (one replica, queue volume, Service
+      # ports), the nodes' and operator's addresses and tokens, and the
+      # NetworkPolicies between them.
+      - name: Controller workload renders
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_controller_workload.py' -v
+
+      # ADR-1592: only the controller's own service account reads VmafxTenants.
+      - name: Service accounts and tenant RBAC
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_service_accounts.py' -v
+
       # ADR-1353: the server Deployment selected every Pod of the release, the
       # operator's and node's included. Render each server workload with every
       # other component on and require each selector to pick only its own Pods.
@@ -138,6 +148,9 @@ jobs:
               --set "workload=${workload}" \
               --set operator.enabled=true \
               --set node.enabled=true \
+              --set controller.enabled=true \
+              --set auth.enabled=true \
+              --set auth.disabled=true \
               --set podDisruptionBudget.enabled=true > "$rendered"
             python3 scripts/ci/check-helm-selector-isolation.py "$rendered"
           done

@@ -48,6 +48,28 @@ The MCP server is accessible at:
 Each pod has a dedicated PVC for session state at /var/lib/vmafx.
 {{- end }}
 
+{{- if .Values.controller.enabled }}
+----------------------------------------------------------------------
+vmafx-controller — job queue, node API, auth gateway (ADR-1589)
+----------------------------------------------------------------------
+gRPC (VmafxController, VmafxScoring):
+  {{ include "vmafx.controllerHost" . }}:{{ .Values.controller.grpcPort }}
+HTTP (/healthz, /readyz, /metrics, POST /v1/score):
+  http://{{ include "vmafx.controllerHost" . }}:{{ .Values.controller.httpPort }}
+{{- if .Values.auth.disabled }}
+WARNING: auth.disabled — every call runs unauthenticated as tenant "dev".
+         Never use this in production.
+{{- end }}
+{{- if and (not .Values.auth.scoringRoots) (not (include "vmafx.tenantSource" .)) }}
+NOTE: no scoring roots are set, so the controller refuses every input until
+      auth.scoringRoots (or auth.tenants[].scoring.roots) names some (ADR-1577).
+{{- end }}
+{{- if not .Values.controller.persistence.enabled }}
+NOTE: controller.persistence is off; the job queue lives in an emptyDir and
+      is lost when the pod is replaced.
+{{- end }}
+{{- end }}
+
 ----------------------------------------------------------------------
 GPU device-plugin reference
 ----------------------------------------------------------------------

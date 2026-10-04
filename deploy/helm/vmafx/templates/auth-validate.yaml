@@ -6,9 +6,11 @@ deploy/helm/vmafx/templates/auth-validate.yaml
 Renders nothing. Refuses auth settings that the rendered workload would not
 apply, instead of deploying a server that silently runs without them.
 
-- The auth gateway is part of vmafx-controller; vmafx-server (the default
-  image) has none, and only the Deployment workload receives the auth
-  environment.
+- The auth gateway is part of vmafx-controller, deployed with
+  controller.enabled (ADR-1589); auth.enabled and controller.enabled go
+  together. The server workload no longer receives auth settings, so an
+  image.repository naming a controller image is refused instead of running a
+  controller without them.
 - A tenant registry cannot be combined with auth.disabled, and auth.tenants /
   auth.tenantSource mean nothing without auth.enabled.
 - auth.scoringRoots applies without a tenant registry only, and needs
@@ -30,12 +32,20 @@ ADR-0794: multi-tenant auth gateway. ADR-1519: tenant registry.
 {{- fail (printf "auth.tenants %s: rbac.allowedRoles is empty (the CRD would default it to reader and writer)" .tenantId) }}
 {{- end }}
 {{- end }}
-{{- if .Values.auth.enabled }}
-{{- if hasSuffix "vmafx-server" .Values.image.repository }}
-{{- fail (printf "auth.enabled: image.repository %q is vmafx-server, which has no auth gateway; set image.repository to a vmafx-controller image" .Values.image.repository) }}
+{{- if hasSuffix "vmafx-controller" .Values.image.repository }}
+{{- fail (printf "image.repository %q: the server workload no longer runs the controller or receives auth settings; set controller.enabled (and controller.image) instead (ADR-1589)" .Values.image.repository) }}
 {{- end }}
-{{- if ne .Values.workload "Deployment" }}
-{{- fail (printf "auth.enabled: only workload Deployment receives the auth settings, workload is %q" .Values.workload) }}
+{{- range $name, $_ := .Values.controller.env }}
+{{- if or (hasPrefix "VMAFX_AUTH_" $name) (hasPrefix "VMAFX_JWKS_" $name) (eq $name "VMAFX_SCORING_ROOTS") }}
+{{- fail (printf "controller.env.%s: set auth settings through auth.*, not env (the auth guards cannot see env)" $name) }}
+{{- end }}
+{{- end }}
+{{- if and .Values.controller.enabled (not .Values.auth.enabled) }}
+{{- fail "controller.enabled needs auth.enabled: an identity provider (auth.issuer, auth.jwksEndpoint), a tenant registry (auth.tenants) or auth.disabled: true for development" }}
+{{- end }}
+{{- if .Values.auth.enabled }}
+{{- if not .Values.controller.enabled }}
+{{- fail "auth.enabled configures the controller workload: set controller.enabled: true (ADR-1589)" }}
 {{- end }}
 {{- if and $source .Values.auth.disabled }}
 {{- fail "auth.disabled cannot be combined with a tenant registry (auth.tenants / auth.tenantSource)" }}
