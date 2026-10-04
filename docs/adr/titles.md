@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1243), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1244), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4971,6 +4971,10 @@ Every ADR, one heading each (1243), so the site search finds an ADR by its title
 ## ADR-1562: Every vmaf-tune command returns the lowest-bitrate encode that meets the target
 
 [1562-vmaf-tune-lowest-passing-bitrate-pick](1562-vmaf-tune-lowest-passing-bitrate-pick.md)
+
+## ADR-1567: a cancelled running job reaches its node through the heartbeat answer, and the node stops the vmaf process
+
+[1567-job-cancel-reaches-node](1567-job-cancel-reaches-node.md)
 
 ## ADR-1569: the operator presents a bearer token to the controller from a file it reads on every call, through credentials shared with the node
 

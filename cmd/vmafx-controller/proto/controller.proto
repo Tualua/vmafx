@@ -108,7 +108,8 @@ service VmafxController {
   // GetJob retrieves the current state of a job by ID.
   rpc GetJob(GetJobRequest) returns (Job);
 
-  // CancelJob requests cancellation of a pending or running job.
+  // CancelJob cancels a pending or running job. A running job's node learns
+  // of it from its next Heartbeat (cancel_job_ids) and stops the job.
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
 
   // StreamJobs opens a server-streaming RPC that pushes Job updates to the
@@ -123,7 +124,8 @@ service VmafxController {
 
   // Heartbeat is called by a vmafx-node every ~10 s.  A node that misses
   // heartbeats for 60 s is deregistered and its in-flight jobs are
-  // re-queued.
+  // re-queued.  The response names the node's running jobs that were
+  // cancelled.
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 
   // PullWork is called by a vmafx-node when it has capacity.  Returns the
@@ -191,6 +193,9 @@ message HeartbeatRequest {
   string session_token = 2;
   // jobs_running is the count of jobs the node is currently executing.
   int32 jobs_running = 3;
+  // running_job_ids lists the IDs of the jobs the node is executing now, at
+  // most 64 (the node's slot limit); the controller refuses a longer list.
+  repeated string running_job_ids = 4;
 }
 
 message HeartbeatResponse {
@@ -198,6 +203,11 @@ message HeartbeatResponse {
   // (e.g. after a controller restart without persistent sessions).
   // The node should re-register when ok == false.
   bool ok = 1;
+  // cancel_job_ids lists the entries of running_job_ids that belong to the
+  // caller's tenant and were cancelled (CancelJob) while the node ran them.
+  // The node stops each one, which kills its vmaf process, and reports it as
+  // failed; the job stays CANCELLED. Empty when ok is false.
+  repeated string cancel_job_ids = 2;
 }
 
 message PullWorkRequest {

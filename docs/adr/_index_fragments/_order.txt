@@ -1242,3 +1242,4 @@
 1590-device-code-compression
 1562-vmaf-tune-lowest-passing-bitrate-pick
 1561-integer-vif-sv-sq-defined
+1567-job-cancel-reaches-node

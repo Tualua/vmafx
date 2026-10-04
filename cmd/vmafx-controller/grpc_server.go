@@ -189,7 +189,8 @@ func (c *controllerServer) GetJob(ctx context.Context, req *controllerv1.GetJobR
 	return queueJobToProto(j), nil
 }
 
-// CancelJob requests cancellation of a pending or running job, scoped to caller's tenant.
+// CancelJob cancels a pending or running job, scoped to the caller's tenant.
+// A running job's node is told on its next Heartbeat and stops it (ADR-1567).
 func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.CancelJobRequest) (*controllerv1.CancelJobResponse, error) {
 	if req.GetJobId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
@@ -289,15 +290,36 @@ func (c *controllerServer) RegisterNode(ctx context.Context, req *controllerv1.R
 	return &controllerv1.RegisterNodeResponse{NodeId: nodeID, SessionToken: token}, nil
 }
 
+// maxHeartbeatJobs bounds running_job_ids: a node runs at most 64 jobs at
+// once (cmd/vmafx-node maxNodeSlots), and the list sizes one SQL IN clause.
+const maxHeartbeatJobs = 64
+
 // Heartbeat processes a node keepalive ping. A session registered by another
-// tenant answers ok=false, as an unknown one does.
+// tenant answers ok=false, as an unknown one does. An accepted heartbeat names
+// the node's running jobs that were cancelled, so the node stops them
+// (ADR-1567).
 func (c *controllerServer) Heartbeat(ctx context.Context, req *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
 	tenantID, err := callerTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ok := c.registry.Heartbeat(req.GetNodeId(), req.GetSessionToken(), tenantID, int(req.GetJobsRunning()))
-	return &controllerv1.HeartbeatResponse{Ok: ok}, nil
+	running := req.GetRunningJobIds()
+	if len(running) > maxHeartbeatJobs {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"running_job_ids has %d entries, at most %d are accepted", len(running), maxHeartbeatJobs)
+	}
+	if !c.registry.Heartbeat(req.GetNodeId(), req.GetSessionToken(), tenantID, int(req.GetJobsRunning())) {
+		return &controllerv1.HeartbeatResponse{Ok: false}, nil
+	}
+	cancelled, err := c.queue.CancelledAmong(ctx, tenantID, running)
+	if err != nil {
+		c.log.Error("Heartbeat: look up cancelled jobs", "node_id", req.GetNodeId(), "error", err)
+		return nil, status.Errorf(codes.Internal, "heartbeat: look up cancelled jobs: %v", err)
+	}
+	if len(cancelled) > 0 {
+		c.log.Info("telling node to stop cancelled jobs", "node_id", req.GetNodeId(), "jobs", cancelled)
+	}
+	return &controllerv1.HeartbeatResponse{Ok: true, CancelJobIds: cancelled}, nil
 }
 
 // PullWork assigns the next matching job of the caller's tenant to the

@@ -100,6 +100,13 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    Never drop node guard or tenant compare. Partial reports: `MayReport`.
    Guards: `queue_tenant_test.go`, `grpc_tenant_test.go`.
 
+7. **`CancelledAmong` (ADR-1567)**: tenant + `status='cancelled'` in SQL
+   WHERE, IDs bound (`repeatCommaQ`), input order kept, writes nothing.
+   `Heartbeat` answers `cancel_job_ids` from it; `maxHeartbeatJobs` = 64
+   (node slot limit) -> InvalidArgument above. Refused session -> ok=false,
+   nothing named. Guards: `queue/cancelled_test.go`,
+   `heartbeat_cancel_test.go`.
+
 ### scheduler package
 
 - Invariants pending scheduler ADR.

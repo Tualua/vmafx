@@ -42,6 +42,10 @@ type fakeController struct {
 	onPull      func(call int, token string) (*controllerv1.Job, error)
 	onReport    func(call int) error
 	reports     chan *controllerv1.ReportResultRequest
+	// cancelRunning, when set, answers an accepted heartbeat's
+	// running_job_ids with the cancel_job_ids to send back.
+	cancelRunning func(running []string) []string
+	running       [][]string
 }
 
 func newFakeController() *fakeController {
@@ -97,11 +101,18 @@ func (f *fakeController) RegisterNode(_ context.Context, req *controllerv1.Regis
 
 func (f *fakeController) Heartbeat(_ context.Context, req *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
 	call := f.count("Heartbeat")
+	f.mu.Lock()
+	f.running = append(f.running, req.GetRunningJobIds())
+	f.mu.Unlock()
 	ok := req.GetSessionToken() == f.currentToken()
 	if ok && f.onHeartbeat != nil {
 		ok = f.onHeartbeat(call)
 	}
-	return &controllerv1.HeartbeatResponse{Ok: ok}, nil
+	resp := &controllerv1.HeartbeatResponse{Ok: ok}
+	if ok && f.cancelRunning != nil {
+		resp.CancelJobIds = f.cancelRunning(req.GetRunningJobIds())
+	}
+	return resp, nil
 }
 
 func (f *fakeController) PullWork(_ context.Context, req *controllerv1.PullWorkRequest) (*controllerv1.PullWorkResponse, error) {
@@ -142,6 +153,13 @@ func (f *fakeController) recordAuth(ctx context.Context, req any, _ *googlegrpc.
 	f.auth = append(f.auth, md.Get("authorization")...)
 	f.mu.Unlock()
 	return handler(ctx, req)
+}
+
+// runningSeen returns the running_job_ids of every heartbeat so far.
+func (f *fakeController) runningSeen() [][]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][]string(nil), f.running...)
 }
 
 func (f *fakeController) authHeaders() []string {

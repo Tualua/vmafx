@@ -124,6 +124,11 @@ type Queue interface {
 	Get(ctx context.Context, jobID string) (*Job, error)
 	// Cancel requests cancellation of a pending or running job.
 	Cancel(ctx context.Context, jobID string) error
+	// CancelledAmong returns the IDs of ids that name a CANCELLED job of
+	// tenantID, in the order of ids. Unknown IDs and other tenants' jobs are
+	// left out. The controller answers a node's Heartbeat with it, so the node
+	// stops the running jobs a CancelJob reached (ADR-1567).
+	CancelledAmong(ctx context.Context, tenantID string, ids []string) ([]string, error)
 	// RequeueNode returns every RUNNING job assigned to nodeID to PENDING
 	// (ahead of newer pending jobs) and reports how many it moved. The
 	// controller calls it when the node registry evicts a silent node.
@@ -629,6 +634,61 @@ func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) error {
 
 	q.log.Info("job cancelled", "job_id", jobID)
 	return nil
+}
+
+// CancelledAmong returns the entries of ids that name a CANCELLED job of
+// tenantID, in the order of ids; it writes nothing. The tenant sits in the SQL
+// WHERE clause like ListByTenant's, so a node never learns anything about
+// another tenant's job (ADR-1522, ADR-1567).
+func (q *SQLiteQueue) CancelledAmong(ctx context.Context, tenantID string, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(ids)+2)
+	args = append(args, tenantID, StatusCancelled)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	// #nosec G202 -- the concatenated fragment is repeatCommaQ output, a pure
+	// ",?,?,..." placeholder string; the tenant, the status and every ID bind
+	// through `args...`.
+	rows, err := q.db.QueryContext(ctx,
+		"SELECT id FROM jobs WHERE tenant_id=? AND status=? AND id IN (?"+repeatCommaQ(len(ids)-1)+")", args...)
+	if err != nil {
+		return nil, fmt.Errorf("queue: look up cancelled jobs: %w", err)
+	}
+	found, err := q.scanIDs(rows)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, id := range ids {
+		if _, ok := found[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// scanIDs reads a one-column result of job IDs into a set and closes rows.
+func (q *SQLiteQueue) scanIDs(rows *sql.Rows) (map[string]struct{}, error) {
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			q.log.Warn("queue: close rows", "error", closeErr)
+		}
+	}()
+	found := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("queue: scan job id: %w", err)
+		}
+		found[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queue: iterate job ids: %w", err)
+	}
+	return found, nil
 }
 
 // RequeueNode returns the RUNNING jobs assigned to nodeID to PENDING, at the

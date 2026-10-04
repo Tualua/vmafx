@@ -146,6 +146,13 @@ ADR-1539), fail closed.
     `TestEndToEndControllerNodeJob` (real controller binary + real vmaf).
     TLS + bearer = `pkg/controllerclient` (`controllerConfig.Creds`, shared
     with the operator, ADR-1569); no node-local copy.
+    Cancel (ADR-1567): each job runs under own
+    `context.WithCancelCause(execCtx)`, cancel func kept in `jobs` by ID;
+    heartbeat sends `running_job_ids` (sorted, <= slots <= 64); answer
+    `cancel_job_ids` -> `cancel(errCancelledByController)` -> vmaf killed via
+    `exec.CommandContext`; report = `cancelled by the controller: ...`. Never
+    cancel IDs not in `jobs`; keep the cause check (shutdown wording differs).
+    Guards: `controller_cancel_test.go`, `TestEndToEndCancelStopsTheNodesVmaf`.
 
 14. **Storage wiring** (`executor_inputs.go`, `storage_config.go`,
     ADR-1526): `provideExecutor` builds the executor with

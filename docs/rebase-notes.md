@@ -60641,3 +60641,13 @@ upstream parity guard's allowlist.
   `--offload-compression-level=`. Guard: `core/test/test_device_code_compression.py`.
   No score, public API or FFmpeg patch impact; builds with the clang CUDA
   driver or AdaptiveCpp need `-Dcompress_device_code=false`.
+## Job cancel reaches the node (ADR-1567)
+
+- `cmd/vmafx-controller/proto/controller.proto` adds `running_job_ids` (4) to
+  `HeartbeatRequest` and `cancel_job_ids` (2) to `HeartbeatResponse`; the
+  bindings under `gen/go/controller/` are regenerated with
+  `cmd/vmafx-controller/proto/generate.sh` and keep their two `// SAFETY:`
+  comments (protoc does not emit them). `Heartbeat` answers with
+  `queue.CancelledAmong`; the node's `runJob` uses a per-job
+  `context.WithCancelCause`. Keep the tenant in the SQL `WHERE` and the
+  64-entry bound. No score, public C API or FFmpeg patch impact.

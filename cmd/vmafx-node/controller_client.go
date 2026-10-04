@@ -16,6 +16,10 @@
 //     the job through the Executor and report the result. An empty PullWork
 //     waits one jittered poll interval; a failed one backs off.
 //   - Every RPC carries its own deadline (controller.rpc_timeout, HISS-02).
+//   - Each heartbeat names the jobs the node runs; the controller answers with
+//     the ones a CancelJob reached, and the node cancels their contexts, which
+//     kills their vmaf processes (exec.CommandContext). Such a job is
+//     reported as failed, "cancelled by the controller" (ADR-1567).
 //
 // Shutdown (fx OnStop, after the gRPC server drained): the slots stop pulling,
 // a running job may finish until the stop deadline, a job still running then
@@ -30,6 +34,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,6 +58,10 @@ const (
 	controllerEvictionWindow = 60 * time.Second
 )
 
+// errCancelledByController is the cause a job's context carries when the
+// controller's heartbeat answer named the job as cancelled.
+var errCancelledByController = errors.New("cancelled by the controller")
+
 // jobExecutor is the part of *Executor the controller client drives.
 type jobExecutor interface {
 	Execute(ctx context.Context, job *controllerv1.Job) ExecuteResult
@@ -68,6 +77,11 @@ type controllerClient struct {
 	sessions   *sessionHolder
 	running    atomic.Int32
 
+	// jobs maps the ID of each running job to the cancel function of its
+	// context, so a heartbeat answer can stop it.
+	jobsMu sync.Mutex
+	jobs   map[string]context.CancelCauseFunc
+
 	pullCtx, execCtx, keepCtx          context.Context
 	cancelPull, cancelExec, cancelKeep context.CancelFunc
 	slots, keeper                      sync.WaitGroup
@@ -78,7 +92,10 @@ type controllerClient struct {
 func newControllerClient(cfg controllerConfig, rpc controllerv1.VmafxControllerClient,
 	exec jobExecutor, capability *controllerv1.NodeCapability, log *slog.Logger,
 ) *controllerClient {
-	c := &controllerClient{cfg: cfg, rpc: rpc, exec: exec, capability: capability, log: log, sessions: newSessionHolder()}
+	c := &controllerClient{
+		cfg: cfg, rpc: rpc, exec: exec, capability: capability, log: log,
+		sessions: newSessionHolder(), jobs: make(map[string]context.CancelCauseFunc),
+	}
 	c.pullCtx, c.cancelPull = context.WithCancel(context.Background())
 	c.execCtx, c.cancelExec = context.WithCancel(context.Background())
 	c.keepCtx, c.cancelKeep = context.WithCancel(context.Background())
@@ -209,10 +226,12 @@ func (c *controllerClient) heartbeatLost(ctx context.Context, s nodeSession, fai
 	defer cancel()
 	resp, err := c.rpc.Heartbeat(rpcCtx, &controllerv1.HeartbeatRequest{
 		NodeId: s.nodeID, SessionToken: s.token, JobsRunning: c.running.Load(),
+		RunningJobIds: c.runningJobIDs(),
 	})
 	switch {
 	case err == nil && resp.GetOk():
 		*failingSince = time.Time{}
+		c.stopCancelled(resp.GetCancelJobIds())
 		return false
 	case err == nil:
 		c.log.Warn("controller no longer knows this session; registering again", "node_id", s.nodeID)
@@ -276,16 +295,65 @@ func (c *controllerClient) pullOnce(ctx context.Context) (*controllerv1.Job, err
 	return resp.GetJob(), nil
 }
 
-// runJob executes one job and reports its result.
+// runJob executes one job under its own cancellable context and reports its
+// result.
 func (c *controllerClient) runJob(slot int, job *controllerv1.Job) {
+	ctx, cancel := context.WithCancelCause(c.execCtx)
+	defer cancel(nil)
+	c.trackJob(job.GetId(), cancel)
 	c.running.Add(1)
 	c.log.Info("job pulled", "slot", slot, "job_id", job.GetId())
-	res := c.exec.Execute(c.execCtx, job)
+	res := c.exec.Execute(ctx, job)
 	c.running.Add(-1)
-	if res.Error != nil && c.execCtx.Err() != nil {
+	c.untrackJob(job.GetId())
+	switch {
+	case res.Error == nil:
+	case errors.Is(context.Cause(ctx), errCancelledByController):
+		res.Error = fmt.Errorf("%w: %w", errCancelledByController, res.Error)
+	case c.execCtx.Err() != nil:
 		res.Error = fmt.Errorf("node shutting down, job interrupted: %w", res.Error)
 	}
 	c.report(job.GetId(), res)
+}
+
+// trackJob records a running job's cancel function.
+func (c *controllerClient) trackJob(id string, cancel context.CancelCauseFunc) {
+	c.jobsMu.Lock()
+	defer c.jobsMu.Unlock()
+	c.jobs[id] = cancel
+}
+
+// untrackJob forgets a job that finished.
+func (c *controllerClient) untrackJob(id string) {
+	c.jobsMu.Lock()
+	defer c.jobsMu.Unlock()
+	delete(c.jobs, id)
+}
+
+// runningJobIDs lists the running jobs, sorted, for the heartbeat. Their
+// number never exceeds node.slots (at most 64), the controller's limit.
+func (c *controllerClient) runningJobIDs() []string {
+	c.jobsMu.Lock()
+	defer c.jobsMu.Unlock()
+	ids := make([]string, 0, len(c.jobs))
+	for id := range c.jobs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// stopCancelled cancels the running jobs the controller named. A job that
+// finished since the heartbeat was sent is no longer tracked and is skipped.
+func (c *controllerClient) stopCancelled(ids []string) {
+	c.jobsMu.Lock()
+	defer c.jobsMu.Unlock()
+	for _, id := range ids {
+		if cancel, ok := c.jobs[id]; ok {
+			c.log.Info("controller cancelled the job; stopping it", "job_id", id)
+			cancel(errCancelledByController)
+		}
+	}
 }
 
 // report delivers a final result, retrying transient failures with backoff.

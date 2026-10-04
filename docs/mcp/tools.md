@@ -1213,6 +1213,8 @@ controller's `NotFound` status.
 
 Request cancellation of a PENDING or RUNNING job (`job_id`, required). Returns
 `{"job_id": …, "ok": true, "message": "cancellation requested", "controller": …}`.
+A running job's node stops it within one heartbeat interval (10 s by default,
+[controller guide](../server/controller.md#cancel-a-job)).
 `ok=false` means the controller declined; the `message` says why.
 
 ### `list_jobs`

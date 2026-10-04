@@ -21,6 +21,7 @@ export default {
   ],
   describe: [
     'A node that misses heartbeats for 60 s is evicted, and its running jobs return to pending.',
+    'A running job that is cancelled is stopped by its node after the next heartbeat names it.',
     'PullWork assigns the oldest pending job whose backend the node lists in its capability.',
   ],
   props: {
@@ -66,6 +67,7 @@ export default {
       { from: 'running', to: 'completed', label: 'ok' },
       { from: 'running', to: 'failed', label: 'error' },
       { from: 'pending', to: 'cancelled', label: 'CancelJob', around: 'below', quiet: true },
+      { from: 'running', to: 'cancelled', label: 'CancelJob', quiet: true },
       { id: 'evict', from: 'running', to: 'pending', label: 'node evicted', around: 'above', quiet: true },
     ],
     steps: [

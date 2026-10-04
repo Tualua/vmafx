@@ -10137,9 +10137,10 @@
         "cmd/vmafx-controller/grpc_server.go": 4,
         "cmd/vmafx-controller/grpc_server_test.go": 1,
         "cmd/vmafx-controller/grpc_tenant_test.go": 1,
+        "cmd/vmafx-controller/heartbeat_cancel_test.go": 1,
         "cmd/vmafx-controller/nodes/registry.go": 2,
         "cmd/vmafx-controller/nodes/registry_tenant_test.go": 1,
-        "cmd/vmafx-controller/queue/queue.go": 6,
+        "cmd/vmafx-controller/queue/queue.go": 7,
         "cmd/vmafx-controller/queue/queue_tenant_test.go": 1,
         "cmd/vmafx-controller/scheduler/scheduler.go": 1
       },
@@ -10269,6 +10270,18 @@
         "core/test/test_sycl_vif_exact_gain_contract.py": 1
       },
       "target": "1561-integer-vif-sv-sq-defined.md"
+    },
+    "1567": {
+      "sites": {
+        "cmd/vmafx-controller/grpc_server.go": 2,
+        "cmd/vmafx-controller/heartbeat_cancel_test.go": 1,
+        "cmd/vmafx-controller/queue/cancelled_test.go": 1,
+        "cmd/vmafx-controller/queue/queue.go": 2,
+        "cmd/vmafx-node/controller_cancel_test.go": 1,
+        "cmd/vmafx-node/controller_client.go": 1,
+        "cmd/vmafx-node/e2e_cancel_test.go": 1
+      },
+      "target": "1567-job-cancel-reaches-node.md"
     },
     "1569": {
       "sites": {

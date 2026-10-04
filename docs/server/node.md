@@ -69,7 +69,11 @@ What the node does with the address:
    controller is unreachable or refuses, the node retries with jittered
    exponential backoff (0.5 s growing to 30 s) until it answers.
 2. **Heartbeat.** Every `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` (10 s) the node
-   reports how many jobs it runs. When the controller answers that it no
+   reports the jobs it runs. When the answer names one of them as cancelled
+   (`CancelJob` on the controller), the node cancels that job, which kills its
+   `vmaf` process, and reports it as failed, `cancelled by the controller: ...`
+   ([ADR-1567](../adr/1567-job-cancel-reaches-node.md)); the log says
+   `controller cancelled the job; stopping it`. When the controller answers that it no
    longer knows the session, refuses a call with `PermissionDenied`, or no
    heartbeat has been accepted for 60 s (the controller evicts a node after
    60 s of silence), the node registers again.

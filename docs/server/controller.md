@@ -106,10 +106,10 @@ full service definition is in `cmd/vmafx-controller/proto/controller.proto`.
 | --- | --- | --- |
 | `SubmitJob` | client | Enqueue a job for the caller's tenant; returns its ID |
 | `GetJob` | client | Read the current state of one of the tenant's jobs |
-| `CancelJob` | client | Request cancellation of one of the tenant's pending or running jobs |
+| `CancelJob` | client | Cancel one of the tenant's pending or running jobs; a running job's node stops it (see [Cancelling a job](#cancel-a-job)) |
 | `StreamJobs` | client | Server-streaming snapshot of the tenant's jobs (optional status filter); a snapshot in Phase 4b.1 |
 | `RegisterNode` | node | Register a worker with its capability; the session belongs to the caller's tenant |
-| `Heartbeat` | node | Keep the registration alive |
+| `Heartbeat` | node | Keep the registration alive; the answer names the node's running jobs that were cancelled |
 | `PullWork` | node | Receive the next matching job of the node's tenant |
 | `ReportResult` | node | Report progress or the final result of a job assigned to the node |
 
@@ -135,6 +135,24 @@ grpcurl -plaintext \
 # → {"id":"...","status":"COMPLETED","scoring":{...},"assignedNode":"node-abc"}
 ```
 
+#### Cancel a job
+
+```bash
+grpcurl -plaintext \
+    -d '{"jobId":"550e8400-e29b-41d4-a716-446655440000"}' \
+    localhost:9090 vmafx.controller.v1.VmafxController/CancelJob
+# → {"ok":true,"message":"cancellation requested"}
+```
+
+The job becomes `CANCELLED` at once and stays so. A pending job is never
+handed out. A running job keeps running on its node until the node's next
+heartbeat, at most `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` (10 s) later: the
+heartbeat lists the jobs the node runs, the controller answers with those
+that were cancelled, and the node cancels them, which kills their `vmaf`
+processes, and reports them as failed (`cancelled by the controller: ...`).
+That report does not change the job's status
+([ADR-1567](../adr/1567-job-cancel-reaches-node.md)).
+
 ### Node API
 
 Used by `vmafx-node` worker processes to pull and report work (the node RPCs in
@@ -146,8 +164,10 @@ set; see [node.md](node.md#pulling-jobs-from-the-controller)):
 1. On startup, the node calls `RegisterNode` with its capability (GPU vendor,
    available backends, concurrency slots).  The controller returns a `node_id`
    and a `session_token`.
-2. The node calls `Heartbeat` every ~10 s with the `node_id` and
-   `session_token`.
+2. The node calls `Heartbeat` every ~10 s with the `node_id`, the
+   `session_token` and the IDs of the jobs it runs (`running_job_ids`, at most
+   64). The answer's `cancel_job_ids` names those of them that were cancelled;
+   the node stops them.
    A node that misses heartbeats for 60 s is evicted, and its running jobs
    return to `PENDING` ahead of newer work, so another node picks them up. A
    node that comes back registers again; if it still finishes such a job, the
