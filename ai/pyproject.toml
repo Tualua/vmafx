@@ -88,8 +88,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/vmaf_train", "src/aiutils"]
 
+# configs/ lies outside the package directories, so it is force-included;
+# src/vmaf_train/data/manifests is already inside src/vmaf_train, and listing
+# it again makes hatchling refuse the wheel ("a second file is being added").
 [tool.hatch.build.targets.wheel.force-include]
-"src/vmaf_train/data/manifests" = "vmaf_train/data/manifests"
 "configs" = "vmaf_train/configs"
 
 [tool.pytest.ini_options]

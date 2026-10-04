@@ -2277,6 +2277,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ADR and tag page was still in the navigation of every page.
 
 
+- **The `vmaf-train` (`ai/`) and `vmaf-dev-llm` wheels build again.** Their
+  `force-include` repeated directories the packages already ship, which
+  hatchling 1.32 refuses ("A second file is being added to the wheel
+  archive"). The wheels still carry the dataset manifests, the training
+  configurations and the prompt templates.
+
+
 - **`libvmaf.h` and the API guide say what an index gap and an early query do.**
   `vmaf_read_pictures()` has always rejected a repeated or earlier index with
   `-EINVAL`; it also accepts an index that skips values, and then the motion

@@ -16,6 +16,13 @@ search:
   with the same quotes; `scripts/ci/tests/test_model_card_dataset_terms.py`
   fails when they differ. An upstream sync never touches these fork-local
   cards; a rebase that edits a card keeps the section whole.
+## Wheel force-include no longer repeats package files (2026-10-04)
+
+`fix/wheel-force-include-duplicates`. Packaging metadata and one test.
+
+- `ai/pyproject.toml` keeps only `configs` in `force-include`;
+  `dev-llm/pyproject.toml` has none. A sync that brings an in-package
+  `force-include` back fails `test_no_wheel_force_includes_a_file_its_packages_already_ship`.
 
 ## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
 

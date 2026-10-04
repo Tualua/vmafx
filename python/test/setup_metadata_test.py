@@ -549,3 +549,39 @@ def test_the_extension_closure_follows_cython_externs_and_includes(tmp_path: Pat
     closure = _include_closure([root / "pkg/core/ext.pyx"], [root / "include"], root)
     names = {path.relative_to(root.resolve()).as_posix() for path in closure}
     assert names == {"pkg/core/ext.pyx", "src/a.c", "include/inc/b.h", "include/inc/c.h"}
+
+
+# ------------------------------------------------------------ wheel contents
+
+
+def _force_include_duplicates(project_dir: Path, data: dict) -> list[str]:
+    """force-include sources that lie inside a wheel package directory: hatchling
+    already ships them and refuses the wheel when it is asked to add them twice
+    ("A second file is being added to the wheel archive at the same path")."""
+    wheel = data.get("tool", {}).get("hatch", {}).get("build", {}).get("targets", {})
+    wheel = wheel.get("wheel", {})
+    packages = [(project_dir / package).resolve() for package in wheel.get("packages", [])]
+    return [
+        source
+        for source in wheel.get("force-include", {})
+        if any((project_dir / source).resolve().is_relative_to(p) for p in packages)
+    ]
+
+
+@pytest.mark.parametrize(
+    "pyproject", PACKAGE_PYPROJECTS, ids=lambda path: path.parent.relative_to(REPO_ROOT).as_posix()
+)
+def test_no_wheel_force_includes_a_file_its_packages_already_ship(pyproject: Path):
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    duplicates = _force_include_duplicates(pyproject.parent, data)
+    assert duplicates == [], f"{pyproject}: force-include repeats package files: {duplicates}"
+
+
+def test_the_duplicate_check_refuses_a_path_inside_a_package(tmp_path: Path):
+    """Planted defect: the force-include ai/ and dev-llm/ carried before."""
+    data = tomllib.loads(
+        '[tool.hatch.build.targets.wheel]\npackages = ["src/pkg"]\n'
+        "[tool.hatch.build.targets.wheel.force-include]\n"
+        '"src/pkg/data" = "pkg/data"\n"configs" = "pkg/configs"\n'
+    )
+    assert _force_include_duplicates(tmp_path, data) == ["src/pkg/data"]
