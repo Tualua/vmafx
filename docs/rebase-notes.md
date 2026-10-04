@@ -63,6 +63,18 @@ change.
 - `networkpolicy.yaml`: `allow-controller-to-node` takes
   `controllerToNode.nodePort | default node.grpcPort`; the values file no
   longer sets `nodePort: 50051`.
+## Codec-block encoding from the sidecar (ADR-1558, 2026-10-04)
+
+`fix/fr-regressor-v3-codec-block`. Fork-local DNN code and model metadata.
+
+- `core/src/dnn/model_loader.{c,h}`: `VmafCodecBlockEncoding`,
+  `parse_codec_preset_norm()` / `parse_codec_crf_norm()`,
+  `vmaf_dnn_codec_block_fill_encoded()` (the old fill is a wrapper).
+- `core/src/libvmaf.c`: `vmaf_ctx_dnn_set_codec_context()` passes the
+  sidecar's encoding and `dnn_warn_constant_preset()` reports an ignored
+  preset.
+- `model/tiny/fr_regressor_v3.json` gains the five `codec_*` keys;
+  `ai/scripts/train_fr_regressor_v3.py` writes them (`crf_range`).
 
 ## `vmaf-tune` adapter-aware coarse window, ladder workdir, auto geometry, uncertainty note (2026-10-04)
 

@@ -142,8 +142,8 @@ smallest bundle.
 | `--tiny-fp16` | off | Request fp16 I/O when the EP supports it. |
 | `--tiny-model-verify` | off | Require Sigstore-bundle verification (`cosign verify-blob`) before model load. Refuses to load on a missing bundle, missing `cosign`, or non-zero exit. See [model-registry.md](model-registry.md) and [security.md](security.md). |
 | `--tiny-codec NAME` | none | Encoder of the distorted clip; required by codec-aware models (`fr_regressor_v2`, `fr_regressor_v3`). Must be an entry of the model sidecar's `encoder_vocab`. See [codec-aware models](#codec-aware-models). |
-| `--tiny-preset STR` | `medium` | Encoder preset (`medium`, `slow`, `p4`, `5`, ...). Encoder-specific; mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`. Unknown presets fall back to ordinal 5. |
-| `--tiny-crf N` | none | CRF or QP integer used during encoding; clamped to `[0, 63]` and divided by 63 to match the trainer. Required with `--tiny-codec` or `--tiny-preset`. |
+| `--tiny-preset STR` | `medium` | Encoder preset (`medium`, `slow`, `p4`, `5`, ...). Encoder-specific; mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`. Unknown presets fall back to ordinal 5. A model trained with one preset value (`fr_regressor_v3`) ignores it and warns. |
+| `--tiny-crf N` | none | CRF or QP integer used during encoding, normalised as the model's sidecar declares (see [codec-aware models](#codec-aware-models)). Required with `--tiny-codec` or `--tiny-preset`. |
 | `--tiny-resize MODE` | `disabled` | Auto-resize for fixed-shape image models: `disabled`, `bilinear`, `nearest`, `bicubic`. |
 | `--no-reference` | off | Skip reference loading; valid only with an NR tiny model. |
 
@@ -156,8 +156,15 @@ smallest bundle.
   For v2 that is 12 entries: `libx264`, `libx265`, `libsvtav1`, `libvvenc`,
   `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`,
   `hevc_qsv`, `av1_qsv`, `unknown`.
-- The last two slots are `preset_norm = preset_ordinal / 9.0` and
-  `crf_norm = crf / 63.0`.
+- The last two slots are `preset_norm` and `crf_norm`, normalised as the
+  model's trainer did. For `fr_regressor_v2` (and any sidecar without the
+  keys below) that is `preset_ordinal / 9.0` and `crf / 63.0`. A sidecar can
+  declare another encoding
+  ([ADR-1558](../adr/1558-codec-block-encoding-from-sidecar.md)):
+  `codec_preset_norm` `ordinal` or `constant` (with `codec_preset_value`), and
+  `codec_crf_norm` `div63` or `minmax` (with `codec_crf_min` and
+  `codec_crf_max`). `fr_regressor_v3` uses a constant 0.5 and CRF min-max over
+  19..37. An unknown value refuses the model at load.
 
 A codec-aware model needs `--tiny-codec` (and the encode's `--tiny-preset`
 and `--tiny-crf`). Without it the run stops on the first frame with

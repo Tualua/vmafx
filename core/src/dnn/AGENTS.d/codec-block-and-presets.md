@@ -44,3 +44,16 @@ must agree. If future codec-aware model uses different layout
 (e.g. multi-scale codec mixing), bump sidecar
 `codec_block_layout` array, add dispatch branch — never silently
 extend `vmaf_dnn_codec_block_fill` to different layout.
+
+## Invariant — the sidecar declares the scalar slots' normalisation (ADR-1558)
+
+`VmafModelSidecar.codec_encoding` comes from `codec_preset_norm` /
+`codec_preset_value` / `codec_crf_norm` / `codec_crf_min` / `codec_crf_max`;
+absent keys mean the `fr_regressor_v2` encoding (ordinal / 9, CRF / 63), and
+an unknown value or a missing bound makes `vmaf_dnn_sidecar_load()` return
+`-EINVAL`. `vmaf_dnn_codec_block_fill_encoded()` is the one fill routine
+(`vmaf_dnn_codec_block_fill()` passes NULL): min-max is the v3 trainer's
+formula, unclamped, 0.5 for an empty range. Never infer a model's encoding
+in C from its id or vocabulary, and never clamp the min-max value.
+`test_codec_block_fill_encoded_*`, `test_sidecar_codec_encoding_*` and
+`test_fr_v3_preset_slot_is_the_trained_constant` guard it.

@@ -240,6 +240,42 @@ void print_usage_options_part1(FILE *const out, const char *const app)
                        "                              [Vulkan backend removed in ADR-0726]\n");
 }
 
+/* The codec-context and NR flags of tiny models; split out of
+ * print_usage_options_part2() for the HISS-04 function-size limit. */
+void print_usage_options_tiny_codec(FILE *const out)
+{
+    (void)fprintf(
+        out, " --tiny-codec $name:           encoder of the distorted clip; required by\n"
+             "                               codec-aware tiny models (fr_regressor_v2/v3),\n"
+             "                               which refuse to score without it. Must be an\n"
+             "                               entry of the model sidecar's encoder_vocab\n"
+             "                               (the vocabulary differs per model). Common\n"
+             "                               ffprobe aliases (h264|hevc|av1|vp9|vvc) are\n"
+             "                               accepted. Unknown names are rejected at attach\n"
+             "                               time. No default\n"
+             " --tiny-preset $string:        encoder preset string (medium|slow|p4|5|...);\n"
+             "                               interpretation is encoder-specific and mirrors\n"
+             "                               train_fr_regressor_v2.py::PRESET_ORDINAL.\n"
+             "                               Default: ordinal 5 (medium-equivalent). A model\n"
+             "                               trained with one preset value (fr_regressor_v3)\n"
+             "                               ignores it and warns\n"
+             " --tiny-crf $unsigned:         CRF / QP integer used during encoding, normalised\n"
+             "                               as the model's sidecar declares (default: clamp to\n"
+             "                               [0, 63], divide by 63; fr_regressor_v3: min-max\n"
+             "                               over 19..37). Required with --tiny-codec /\n"
+             "                               --tiny-preset. No default\n"
+             " --no-reference:               no-reference mode; valid only with an NR tiny model\n"
+             " --tiny-resize $string:        enable auto-resize for NCHW tiny models when the\n"
+             "                               input frame dims don't match the model's expected\n"
+             "                               shape (e.g. 576x324 input -> 224x224 nr_metric_v1).\n"
+             "                               One of: bilinear, nearest, bicubic, disabled.\n"
+             "                               Default: disabled (mismatch -> -ERANGE hard-error;\n"
+             "                               operator must opt in to resize explicitly).\n"
+             "                               Warning: bilinear/nearest/bicubic produce scores\n"
+             "                               that differ by ~2%% on the same input -- document\n"
+             "                               the filter alongside your model checkpoint.\n");
+}
+
 void print_usage_options_part2(FILE *const out)
 {
     (void)fprintf(
@@ -269,32 +305,10 @@ void print_usage_options_part2(FILE *const out)
         " --tiny-fp16:                  request fp16 IO where the EP supports it\n"
         " --tiny-model-verify:          require Sigstore-bundle verification (cosign verify-blob)\n"
         "                               of the loaded tiny model before use; refuses to load\n"
-        "                               on missing bundle, missing cosign, or non-zero exit\n"
-        " --tiny-codec $name:           encoder of the distorted clip; required by\n"
-        "                               codec-aware tiny models (fr_regressor_v2/v3),\n"
-        "                               which refuse to score without it. Must be an\n"
-        "                               entry of the model sidecar's encoder_vocab\n"
-        "                               (the vocabulary differs per model). Common\n"
-        "                               ffprobe aliases (h264|hevc|av1|vp9|vvc) are\n"
-        "                               accepted. Unknown names are rejected at attach\n"
-        "                               time. No default\n"
-        " --tiny-preset $string:        encoder preset string (medium|slow|p4|5|...);\n"
-        "                               interpretation is encoder-specific and mirrors\n"
-        "                               train_fr_regressor_v2.py::PRESET_ORDINAL.\n"
-        "                               Default: ordinal 5 (medium-equivalent)\n"
-        " --tiny-crf $unsigned:         CRF / QP integer used during encoding; clamped\n"
-        "                               to [0, 63] and normalised by 63. Required with\n"
-        "                               --tiny-codec / --tiny-preset. No default\n"
-        " --no-reference:               no-reference mode; valid only with an NR tiny model\n"
-        " --tiny-resize $string:        enable auto-resize for NCHW tiny models when the\n"
-        "                               input frame dims don't match the model's expected\n"
-        "                               shape (e.g. 576x324 input -> 224x224 nr_metric_v1).\n"
-        "                               One of: bilinear, nearest, bicubic, disabled.\n"
-        "                               Default: disabled (mismatch -> -ERANGE hard-error;\n"
-        "                               operator must opt in to resize explicitly).\n"
-        "                               Warning: bilinear/nearest/bicubic produce scores\n"
-        "                               that differ by ~2%% on the same input -- document\n"
-        "                               the filter alongside your model checkpoint.\n"
+        "                               on missing bundle, missing cosign, or non-zero exit\n");
+    print_usage_options_tiny_codec(out);
+    (void)fprintf(
+        out,
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
         " --netflix-compat:             restore Netflix-upstream legacy defaults (CPU backend,\n"

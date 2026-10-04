@@ -627,8 +627,8 @@ encoding rationale.
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--tiny-codec` | none (required by codec-aware models) | Must match an entry of the model sidecar's `encoder_vocab`; the vocabulary differs per model (`fr_regressor_v2` lists 11 encoders and `unknown`, `fr_regressor_v3` 16 encoders and no `unknown`). Common ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) are accepted. |
-| `--tiny-preset` | ordinal 5 (medium-equivalent) | Encoder-specific; mirrors `train_fr_regressor_v2.py::PRESET_ORDINAL`. |
-| `--tiny-crf` | none (required with `--tiny-codec` / `--tiny-preset`) | Clamped to [0, 63] and normalised by 63. |
+| `--tiny-preset` | ordinal 5 (medium-equivalent) | Encoder-specific; mirrors `train_fr_regressor_v2.py::PRESET_ORDINAL`. A model trained with one preset value (`fr_regressor_v3`) ignores it and logs a warning. |
+| `--tiny-crf` | none (required with `--tiny-codec` / `--tiny-preset`) | Normalised as the model's sidecar declares: clamped to [0, 63] and divided by 63 by default, min-max over 19..37 for `fr_regressor_v3` ([ADR-1558](../adr/1558-codec-block-encoding-from-sidecar.md)). |
 
 !!! warning "Unknown codec names are rejected"
     A `--tiny-codec` value that is not in the model's `encoder_vocab` stops the

@@ -374,6 +374,30 @@ static int extract_int(const char *doc, const char *key, int *out)
     return 0;
 }
 
+/* "key": number as a finite float. -ENOENT when absent, -EINVAL / -ERANGE
+ * for a value that is not a finite number. */
+static int extract_float(const char *doc, const char *key, float *out)
+{
+    char needle[64];
+    const int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
+    if (n < 0 || (size_t)n >= sizeof(needle))
+        return -EINVAL;
+    const char *p = find_key_in_doc(doc, needle, (size_t)n);
+    if (!p)
+        return -ENOENT;
+    while (*p && json_is_space(*p))
+        p++;
+    errno = 0;
+    char *endp = NULL;
+    const double v = strtod(p, &endp);
+    if (endp == p)
+        return -EINVAL;
+    if (errno == ERANGE || !isfinite(v))
+        return -ERANGE;
+    *out = (float)v;
+    return 0;
+}
+
 /* Derive the sidecar JSON path from @p onnx_path: ".onnx" is replaced by
  * ".json", any other suffix gets ".json" appended. Returns 0, or
  * -ENAMETOOLONG when the result does not fit in @p out_sz. */
@@ -596,6 +620,45 @@ static void parse_sidecar_encoder_vocab(const char *doc, VmafModelSidecar *out)
     }
 }
 
+/* `codec_preset_norm`: absent or "ordinal", or "constant" with
+ * `codec_preset_value`. Anything else is an encoding the runtime cannot
+ * reproduce, and the sidecar is refused (ADR-1558). */
+static int parse_codec_preset_norm(const char *doc, VmafCodecBlockEncoding *enc)
+{
+    char *mode = extract_string(doc, "codec_preset_norm");
+    if (!mode)
+        return 0;
+    int rc = -EINVAL;
+    if (strcmp(mode, "ordinal") == 0) {
+        rc = 0;
+    } else if (strcmp(mode, "constant") == 0) {
+        enc->preset_norm = VMAF_CODEC_PRESET_CONSTANT;
+        rc = extract_float(doc, "codec_preset_value", &enc->preset_value) == 0 ? 0 : -EINVAL;
+    }
+    free(mode);
+    return rc;
+}
+
+/* `codec_crf_norm`: absent or "div63", or "minmax" with `codec_crf_min` <=
+ * `codec_crf_max`. Anything else refuses the sidecar (ADR-1558). */
+static int parse_codec_crf_norm(const char *doc, VmafCodecBlockEncoding *enc)
+{
+    char *mode = extract_string(doc, "codec_crf_norm");
+    if (!mode)
+        return 0;
+    int rc = -EINVAL;
+    if (strcmp(mode, "div63") == 0) {
+        rc = 0;
+    } else if (strcmp(mode, "minmax") == 0) {
+        enc->crf_norm = VMAF_CODEC_CRF_MINMAX;
+        const int lo = extract_float(doc, "codec_crf_min", &enc->crf_min);
+        const int hi = extract_float(doc, "codec_crf_max", &enc->crf_max);
+        rc = (lo == 0 && hi == 0 && enc->crf_min <= enc->crf_max) ? 0 : -EINVAL;
+    }
+    free(mode);
+    return rc;
+}
+
 int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
 {
     if (!onnx_path || !out)
@@ -627,8 +690,15 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     parse_sidecar_feature_schema(buf, out);
     parse_sidecar_onnx_has_scaler(buf, out);
     parse_sidecar_encoder_vocab(buf, out);
+    rc = parse_codec_preset_norm(buf, &out->codec_encoding);
+    if (rc == 0)
+        rc = parse_codec_crf_norm(buf, &out->codec_encoding);
 
     free(buf);
+    if (rc != 0) {
+        vmaf_dnn_sidecar_free(out);
+        return rc;
+    }
     return 0;
 }
 
@@ -846,8 +916,38 @@ static size_t codec_block_slot(const char *const *vocab, size_t n_vocab, const c
     return unknown_idx;
 }
 
+/* preset_norm under @p enc (NULL: the encoder's ordinal / 9). */
+static float codec_block_preset_slot(const VmafCodecBlockEncoding *enc, const char *enc_key,
+                                     const char *preset_lc)
+{
+    if (enc && enc->preset_norm == VMAF_CODEC_PRESET_CONSTANT)
+        return enc->preset_value;
+    return codec_block_preset_ordinal(enc_key, preset_lc);
+}
+
+/* crf_norm under @p enc (NULL: clamp to [0, 63], divide by 63). The min-max
+ * form is the v3 trainer's `_build_codec_block()`: unclamped, 0.5 for an
+ * empty range. */
+static float codec_block_crf_slot(const VmafCodecBlockEncoding *enc, int crf)
+{
+    if (enc && enc->crf_norm == VMAF_CODEC_CRF_MINMAX) {
+        const float span = enc->crf_max - enc->crf_min;
+        return span < 1e-6f ? 0.5f : ((float)crf - enc->crf_min) / span;
+    }
+    const int crf_clamped = crf < 0 ? 0 : (crf > 63 ? 63 : crf);
+    return (float)crf_clamped / 63.0f;
+}
+
 int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *vocab, size_t n_vocab,
                               const char *codec_name, const char *preset, int crf)
+{
+    return vmaf_dnn_codec_block_fill_encoded(buf, buf_len, vocab, n_vocab, codec_name, preset, crf,
+                                             NULL);
+}
+
+int vmaf_dnn_codec_block_fill_encoded(float *buf, size_t buf_len, const char *const *vocab,
+                                      size_t n_vocab, const char *codec_name, const char *preset,
+                                      int crf, const VmafCodecBlockEncoding *enc)
 {
     if (!buf || !vocab || n_vocab == 0u)
         return -EINVAL;
@@ -871,16 +971,13 @@ int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *voc
         return -ENOENT;
     buf[codec_idx] = 1.0f;
 
-    /* preset_norm: encoder-specific ordinal table, normalised by 9.0. */
+    /* preset_norm and crf_norm in the trainer's normalisation (ADR-1558). */
     char preset_lc[64];
     const char *preset_ptr = lower_copy(preset_lc, sizeof(preset_lc), preset);
 
     const char *enc_key = codec_lc ? codec_lc : "";
-    buf[n_vocab] = codec_block_preset_ordinal(enc_key, preset_ptr);
-
-    /* crf_norm: clamp to [0, 63] then divide. */
-    const int crf_clamped = crf < 0 ? 0 : (crf > 63 ? 63 : crf);
-    buf[n_vocab + 1u] = (float)crf_clamped / 63.0f;
+    buf[n_vocab] = codec_block_preset_slot(enc, enc_key, preset_ptr);
+    buf[n_vocab + 1u] = codec_block_crf_slot(enc, crf);
 
     return found ? 0 : -ENOENT;
 }

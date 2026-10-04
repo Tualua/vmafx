@@ -20,6 +20,11 @@
     "preset_norm",
     "crf_norm"
   ],
+  "codec_crf_max": 37.0,
+  "codec_crf_min": 19.0,
+  "codec_crf_norm": "minmax",
+  "codec_preset_norm": "constant",
+  "codec_preset_value": 0.5,
   "corpus": "runs/phase_a/full_grid/per_frame_canonical6.jsonl",
   "corpus_sha256": "58512e6c2400a8c7962d29f6a16fa090e6742f5746f2897128c381fb00808e3f",
   "encoder_vocab": [

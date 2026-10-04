@@ -1109,6 +1109,19 @@ int vmaf_ctx_dnn_has_session(const VmafContext *ctx)
     return (ctx && ctx->dnn.sess) ? 1 : 0;
 }
 
+/* ADR-1558: a model trained with one preset value for every encode ignores
+ * the caller's preset; say so rather than let it look honoured. */
+static void dnn_warn_constant_preset(const VmafContext *ctx, const VmafCodecBlockEncoding *enc,
+                                     const char *preset)
+{
+    if (!preset || enc->preset_norm != VMAF_CODEC_PRESET_CONSTANT)
+        return;
+    vmaf_log(VMAF_LOG_LEVEL_WARNING,
+             "tiny model %s takes preset_norm %g for every encode (its trainer did); "
+             "preset '%s' has no effect\n",
+             ctx->dnn.feature_name, (double)enc->preset_value, preset);
+}
+
 /* ADR-0519: bridge for vmaf_dnn_set_codec_context. The public symbol
  * lives in dnn_attach_api.c and forwards here so VmafContext stays
  * opaque to the DNN module. */
@@ -1137,10 +1150,12 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
     if (ctx->dnn.extra_in_width != ctx->dnn.meta.n_encoder_vocab + 2u) {
         return -ENOTSUP;
     }
-    const int rc =
-        vmaf_dnn_codec_block_fill(ctx->dnn.extra_in_buf, ctx->dnn.extra_in_width,
-                                  (const char *const *)ctx->dnn.meta.encoder_vocab,
-                                  ctx->dnn.meta.n_encoder_vocab, codec_name, preset, crf);
+    const VmafCodecBlockEncoding *enc = &ctx->dnn.meta.codec_encoding;
+    dnn_warn_constant_preset(ctx, enc, preset);
+    const int rc = vmaf_dnn_codec_block_fill_encoded(
+        ctx->dnn.extra_in_buf, ctx->dnn.extra_in_width,
+        (const char *const *)ctx->dnn.meta.encoder_vocab, ctx->dnn.meta.n_encoder_vocab, codec_name,
+        preset, crf, enc);
     /* ADR-1520: only a codec the vocabulary names makes the block usable;
      * -ENOENT leaves the model refusing to score. */
     ctx->dnn.codec_ready = rc == 0;

@@ -1207,6 +1207,80 @@ static char *test_sidecar_onnx_has_scaler_absent(void)
     return NULL;
 }
 
+/* ADR-1558: stage @p json as the sidecar of an empty model file and load it.
+ * Returns the loader's status; @p meta is freed by the caller on 0. */
+static int load_sidecar_text(const char *json, VmafModelSidecar *meta)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-enc-XXXXXX";
+    const int fd = mkstemp(tmpl);
+    if (fd < 0)
+        return -EIO;
+    (void)close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    int rc = -EIO;
+    if (s) {
+        (void)fputs(json, s);
+        (void)fclose(s);
+        rc = vmaf_dnn_sidecar_load(onnx, meta);
+    }
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return rc;
+}
+
+/* ADR-1558: fr_regressor_v3's encoding (constant preset, CRF min-max over
+ * the training corpus) is read from the sidecar; without the keys the v2
+ * encoding applies. */
+static char *test_sidecar_codec_encoding_parsed(void)
+{
+    VmafModelSidecar meta;
+    int rc = load_sidecar_text("{\"kind\": \"fr\", \"codec_preset_norm\": \"constant\", "
+                               "\"codec_preset_value\": 0.5, \"codec_crf_norm\": \"minmax\", "
+                               "\"codec_crf_min\": 19.0, \"codec_crf_max\": 37.0}\n",
+                               &meta);
+    mu_assert("v3 encoding sidecar loads", rc == 0);
+    const VmafCodecBlockEncoding e = meta.codec_encoding;
+    vmaf_dnn_sidecar_free(&meta);
+    mu_assert("constant preset 0.5",
+              e.preset_norm == VMAF_CODEC_PRESET_CONSTANT && e.preset_value == 0.5f);
+    mu_assert("CRF min-max 19..37",
+              e.crf_norm == VMAF_CODEC_CRF_MINMAX && e.crf_min == 19.0f && e.crf_max == 37.0f);
+    rc = load_sidecar_text("{\"kind\": \"fr\"}\n", &meta);
+    mu_assert("plain sidecar loads", rc == 0);
+    const VmafCodecBlockEncoding d = meta.codec_encoding;
+    vmaf_dnn_sidecar_free(&meta);
+    mu_assert("default is the v2 encoding",
+              d.preset_norm == VMAF_CODEC_PRESET_ORDINAL && d.crf_norm == VMAF_CODEC_CRF_DIV63);
+    return NULL;
+}
+
+/* ADR-1558: an encoding the runtime cannot reproduce refuses the sidecar
+ * instead of falling back to another normalisation. */
+static char *test_sidecar_codec_encoding_refused(void)
+{
+    static const char *const BAD[] = {
+        "{\"codec_crf_norm\": \"log\"}\n",
+        "{\"codec_crf_norm\": \"minmax\", \"codec_crf_min\": 19}\n",
+        "{\"codec_crf_norm\": \"minmax\", \"codec_crf_min\": 37, \"codec_crf_max\": 19}\n",
+        "{\"codec_preset_norm\": \"constant\"}\n",
+        "{\"codec_preset_norm\": \"median\"}\n",
+    };
+    for (size_t i = 0; i < sizeof(BAD) / sizeof(BAD[0]); ++i) {
+        VmafModelSidecar meta;
+        mu_assert("unreproducible codec encoding is -EINVAL",
+                  load_sidecar_text(BAD[i], &meta) == -EINVAL);
+    }
+    return NULL;
+}
+
 /* ADR-0519: sidecar carrying an encoder_vocab array populates
  * VmafModelSidecar.encoder_vocab / n_encoder_vocab and flips
  * codec_aware. Models without it stay codec_aware == false. */
@@ -1773,6 +1847,52 @@ static char *test_codec_block_fill_unknown_found_by_name(void)
     return NULL;
 }
 
+/* ADR-1558: the v3 encoding — the preset slot is the trained constant
+ * whatever preset is given, the CRF slot is (crf - 19) / 18, not clamped. */
+static char *test_codec_block_fill_encoded_v3(void)
+{
+    static const char *VOCAB[] = {"libx264", "libx265", "hevc_videotoolbox"};
+    const VmafCodecBlockEncoding enc = {
+        .preset_norm = VMAF_CODEC_PRESET_CONSTANT,
+        .preset_value = 0.5f,
+        .crf_norm = VMAF_CODEC_CRF_MINMAX,
+        .crf_min = 19.0f,
+        .crf_max = 37.0f,
+    };
+    float buf[5] = {0};
+    int rc = vmaf_dnn_codec_block_fill_encoded(buf, 5u, VOCAB, 3u, "libx264", "slow", 28, &enc);
+    mu_assert("rc == 0", rc == 0);
+    mu_assert("libx264 one-hot", buf[0] == 1.0f && buf[1] == 0.0f && buf[2] == 0.0f);
+    mu_assert("preset slot is the constant", buf[3] == 0.5f);
+    mu_assert("CRF 28 -> (28 - 19) / 18", buf[4] == 0.5f);
+    rc = vmaf_dnn_codec_block_fill_encoded(buf, 5u, VOCAB, 3u, "libx264", NULL, 46, &enc);
+    mu_assert("CRF 46 -> 1.5, unclamped like the trainer", rc == 0 && buf[4] == 1.5f);
+    rc = vmaf_dnn_codec_block_fill_encoded(buf, 5u, VOCAB, 3u, "libx264", NULL, 19, &enc);
+    mu_assert("CRF 19 -> 0", rc == 0 && buf[4] == 0.0f);
+    return NULL;
+}
+
+/* ADR-1558: an empty CRF range gives 0.5, as the trainer does; a NULL
+ * encoding is exactly vmaf_dnn_codec_block_fill(). */
+static char *test_codec_block_fill_encoded_edges(void)
+{
+    static const char *VOCAB[] = {"libx264", "unknown"};
+    const VmafCodecBlockEncoding flat = {
+        .crf_norm = VMAF_CODEC_CRF_MINMAX, .crf_min = 23.0f, .crf_max = 23.0f};
+    float buf[4] = {0};
+    int rc = vmaf_dnn_codec_block_fill_encoded(buf, 4u, VOCAB, 2u, "libx264", "medium", 40, &flat);
+    mu_assert("empty range -> 0.5", rc == 0 && buf[3] == 0.5f);
+    float ref[4] = {0};
+    rc = vmaf_dnn_codec_block_fill(ref, 4u, VOCAB, 2u, "libx264", "slow", 30);
+    mu_assert("v2 fill", rc == 0);
+    rc = vmaf_dnn_codec_block_fill_encoded(buf, 4u, VOCAB, 2u, "libx264", "slow", 30, NULL);
+    unsigned same = 0u;
+    for (size_t i = 0; i < 4u; ++i)
+        same += buf[i] == ref[i];
+    mu_assert("NULL encoding == v2 fill", rc == 0 && same == 4u);
+    return NULL;
+}
+
 /* ADR-0519: vmaf_dnn_codec_block_fill — ffprobe alias "h264" is
  * remapped to libx264 (not bucketed to unknown). */
 static char *test_codec_block_fill_h264_alias(void)
@@ -2061,6 +2181,8 @@ static const MuTest SIDECAR_TESTS[] = {
     MU_TEST(test_sidecar_feature_vector_no_scaler),
     MU_TEST(test_sidecar_onnx_has_scaler_flag),
     MU_TEST(test_sidecar_onnx_has_scaler_absent),
+    MU_TEST(test_sidecar_codec_encoding_parsed),
+    MU_TEST(test_sidecar_codec_encoding_refused),
     MU_TEST(test_sidecar_encoder_vocab_v2),
     MU_TEST(test_sidecar_no_encoder_vocab),
     MU_TEST(test_sidecar_encoder_vocab_malformed_no_leak),
@@ -2080,6 +2202,8 @@ static const MuTest CODEC_BLOCK_TESTS[] = {
     MU_TEST(test_codec_block_fill_libx264_medium_28),
     MU_TEST(test_codec_block_fill_unknown_returns_enoent),
     MU_TEST(test_codec_block_fill_null_codec_is_ok),
+    MU_TEST(test_codec_block_fill_encoded_v3),
+    MU_TEST(test_codec_block_fill_encoded_edges),
     MU_TEST(test_codec_block_fill_no_unknown_slot_fails),
     MU_TEST(test_codec_block_fill_unknown_found_by_name),
     MU_TEST(test_codec_block_fill_h264_alias),

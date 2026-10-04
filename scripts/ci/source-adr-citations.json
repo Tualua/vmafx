@@ -10208,6 +10208,18 @@
         "core/test/dnn/test_mobilesal_run.c": 2
       },
       "target": "1540-saliency-pad-to-multiple-of-8.md"
+    },
+    "1558": {
+      "sites": {
+        "ai/scripts/train_fr_regressor_v3.py": 1,
+        "ai/tests/test_fr_regressor_run_provenance.py": 1,
+        "core/src/dnn/model_loader.c": 3,
+        "core/src/dnn/model_loader.h": 3,
+        "core/src/libvmaf.c": 1,
+        "core/test/dnn/test_model_loader.c": 5,
+        "core/test/dnn/test_vmaf_use_tiny_model.c": 2
+      },
+      "target": "1558-codec-block-encoding-from-sidecar.md"
     }
   },
   "retired": {

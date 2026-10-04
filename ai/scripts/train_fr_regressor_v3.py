@@ -611,6 +611,67 @@ def export_onnx(model, onnx_path: Path) -> None:  # type: ignore[no-untyped-def]
         raise RuntimeError(f"torch vs onnxruntime drift {max_abs:g} exceeds atol 1e-4")
 
 
+def _v3_notes(loso_summary: dict[str, Any], gate_passed: bool) -> str:
+    note_tail = (
+        "v3 retrain pending — first attempt did not clear the v2 baseline gate."
+        if not gate_passed
+        else "Production checkpoint."
+    )
+    return (
+        "Tiny FR regressor v3 (codec-aware, ENCODER_VOCAB v3 16-slot) - 6 canonical "
+        "libvmaf features (adm2, vif_scale0..3, motion2) + 18-D codec block "
+        "(16 encoder one-hot + preset_norm + crf_norm) -> VMAF teacher score. "
+        f"LOSO mean PLCC={loso_summary['mean_plcc']:.4f} "
+        f"(gate >= {SHIP_GATE_MEAN_PLCC}). "
+        f"{note_tail} See docs/ai/models/fr_regressor_v3.md + ADR-0323 + "
+        "ADR-0302 + ADR-0291 + ADR-0235."
+    )
+
+
+def _v3_training_block(
+    loso_summary: dict[str, Any], n_rows: int, smoke: bool, gate_passed: bool
+) -> dict[str, Any]:
+    return {
+        "dataset": "phase-a-canonical6" if not smoke else "synthetic-smoke",
+        "n_rows": n_rows,
+        "loso_mean_plcc": loso_summary["mean_plcc"],
+        "loso_std_plcc": loso_summary["std_plcc"],
+        "loso_min_plcc": loso_summary["min_plcc"],
+        "loso_max_plcc": loso_summary["max_plcc"],
+        "loso_mean_srocc": loso_summary["mean_srocc"],
+        "loso_mean_rmse": loso_summary["mean_rmse"],
+        "loso_folds": loso_summary["folds"],
+        "ship_gate_mean_plcc": SHIP_GATE_MEAN_PLCC,
+        "gate_passed": gate_passed,
+        "smoke": smoke,
+    }
+
+
+def _v3_codec_encoding(crf_range: tuple[float, float]) -> dict[str, Any]:
+    """How :func:`_build_codec_block` normalised the two scalar slots.
+
+    libvmaf reads these keys to fill the block the same way (ADR-1558):
+    ``preset_norm`` is 0.5 on every row and ``crf_norm`` is the CRF min-max
+    over the training corpus.
+    """
+    return {
+        "codec_preset_norm": "constant",
+        "codec_preset_value": 0.5,
+        "codec_crf_norm": "minmax",
+        "codec_crf_min": float(crf_range[0]),
+        "codec_crf_max": float(crf_range[1]),
+    }
+
+
+def _upsert_v3_registry_row(registry_path: Path, row: dict[str, Any]) -> None:
+    registry = json.loads(registry_path.read_text())
+    models = [m for m in registry.get("models", []) if m.get("id") != "fr_regressor_v3"]
+    models.append(row)
+    models.sort(key=lambda e: e.get("id", ""))
+    registry["models"] = models
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+
+
 def write_sidecar_and_registry(
     *,
     onnx_path: Path,
@@ -623,24 +684,10 @@ def write_sidecar_and_registry(
     smoke: bool,
     gate_passed: bool,
     run_provenance: dict[str, Any],
+    crf_range: tuple[float, float],
 ) -> None:
     digest = sha256(onnx_path)
-    corpus_digest = sha256(corpus_path) if corpus_path.is_file() else None
-    note_tail = (
-        "v3 retrain pending — first attempt did not clear the v2 baseline gate."
-        if not gate_passed
-        else "Production checkpoint."
-    )
-    notes = (
-        "Tiny FR regressor v3 (codec-aware, ENCODER_VOCAB v3 16-slot) - 6 canonical "
-        "libvmaf features (adm2, vif_scale0..3, motion2) + 18-D codec block "
-        "(16 encoder one-hot + preset_norm + crf_norm) -> VMAF teacher score. "
-        f"LOSO mean PLCC={loso_summary['mean_plcc']:.4f} "
-        f"(gate >= {SHIP_GATE_MEAN_PLCC}). "
-        f"{note_tail} See docs/ai/models/fr_regressor_v3.md + ADR-0323 + "
-        "ADR-0302 + ADR-0291 + ADR-0235."
-    )
-
+    notes = _v3_notes(loso_summary, gate_passed)
     sidecar = {
         "id": "fr_regressor_v3",
         "kind": "fr",
@@ -661,45 +708,28 @@ def write_sidecar_and_registry(
             "preset_norm",
             "crf_norm",
         ],
-        "training": {
-            "dataset": "phase-a-canonical6" if not smoke else "synthetic-smoke",
-            "n_rows": n_rows,
-            "loso_mean_plcc": loso_summary["mean_plcc"],
-            "loso_std_plcc": loso_summary["std_plcc"],
-            "loso_min_plcc": loso_summary["min_plcc"],
-            "loso_max_plcc": loso_summary["max_plcc"],
-            "loso_mean_srocc": loso_summary["mean_srocc"],
-            "loso_mean_rmse": loso_summary["mean_rmse"],
-            "loso_folds": loso_summary["folds"],
-            "ship_gate_mean_plcc": SHIP_GATE_MEAN_PLCC,
-            "gate_passed": gate_passed,
-            "smoke": smoke,
-        },
+        **_v3_codec_encoding(crf_range),
+        "training": _v3_training_block(loso_summary, n_rows, smoke, gate_passed),
         "corpus": str(corpus_path),
-        "corpus_sha256": corpus_digest,
+        "corpus_sha256": sha256(corpus_path) if corpus_path.is_file() else None,
         "loso_mean_plcc": loso_summary["mean_plcc"],
         "gate_passed": gate_passed,
         "run_provenance": run_provenance,
     }
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     write_manifest_json(sidecar_path, sidecar)
-
-    registry = json.loads(registry_path.read_text())
-    models = registry.get("models", [])
-    new_entry = {
-        "id": "fr_regressor_v3",
-        "kind": "fr",
-        "onnx": onnx_path.name,
-        "opset": 17,
-        "sha256": digest,
-        "notes": notes,
-        "smoke": (not gate_passed),
-    }
-    models = [m for m in models if m.get("id") != "fr_regressor_v3"]
-    models.append(new_entry)
-    models.sort(key=lambda e: e.get("id", ""))
-    registry["models"] = models
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    _upsert_v3_registry_row(
+        registry_path,
+        {
+            "id": "fr_regressor_v3",
+            "kind": "fr",
+            "onnx": onnx_path.name,
+            "opset": 17,
+            "sha256": digest,
+            "notes": notes,
+            "smoke": (not gate_passed),
+        },
+    )
 
 
 def _write_smoke_corpus(path: Path, n_per_source: int = 4) -> None:
@@ -853,6 +883,7 @@ def _ship_gate_fail_scaffold(
         smoke=False,
         gate_passed=False,
         run_provenance=run_provenance,
+        crf_range=(corpus["cq_min"], corpus["cq_max"]),
     )
     return 1
 
@@ -881,6 +912,7 @@ def _ship_gated_model(
         smoke=args.smoke,
         gate_passed=gate_passed,
         run_provenance=run_provenance,
+        crf_range=(corpus["cq_min"], corpus["cq_max"]),
     )
     print(
         f"[fr-v3] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})",

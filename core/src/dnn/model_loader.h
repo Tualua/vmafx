@@ -61,6 +61,26 @@ typedef enum VmafModelQuantMode {
  *  depend on the ORT wrapper header. */
 #define VMAF_DNN_MAX_OUTPUT_NAMES 8u
 
+/** How the two scalar slots of a codec block are normalised (ADR-1558).
+ *  The defaults (zero) are the fr_regressor_v2 trainer's encoding. */
+typedef enum VmafCodecPresetNorm {
+    VMAF_CODEC_PRESET_ORDINAL = 0, /**< encoder-specific ordinal / 9 */
+    VMAF_CODEC_PRESET_CONSTANT,    /**< one value for every encode */
+} VmafCodecPresetNorm;
+
+typedef enum VmafCodecCrfNorm {
+    VMAF_CODEC_CRF_DIV63 = 0, /**< clamp(crf, 0, 63) / 63 */
+    VMAF_CODEC_CRF_MINMAX,    /**< (crf - crf_min) / (crf_max - crf_min) */
+} VmafCodecCrfNorm;
+
+typedef struct VmafCodecBlockEncoding {
+    VmafCodecPresetNorm preset_norm;
+    float preset_value; /**< VMAF_CODEC_PRESET_CONSTANT */
+    VmafCodecCrfNorm crf_norm;
+    float crf_min; /**< VMAF_CODEC_CRF_MINMAX: the training corpus' CRF range */
+    float crf_max;
+} VmafCodecBlockEncoding;
+
 typedef struct VmafModelSidecar {
     VmafModelKind kind; /**< mirrors sidecar "kind" field */
     int opset;
@@ -114,6 +134,10 @@ typedef struct VmafModelSidecar {
     size_t n_encoder_vocab;
     char *encoder_vocab[VMAF_DNN_MAX_ENCODER_VOCAB]; /**< owned */
     bool codec_aware; /**< true iff encoder_vocab was present in the sidecar */
+    /** Normalisation of preset_norm / crf_norm the trainer used; read from
+     *  `codec_preset_norm`, `codec_preset_value`, `codec_crf_norm`,
+     *  `codec_crf_min`, `codec_crf_max` (ADR-1558). */
+    VmafCodecBlockEncoding codec_encoding;
 } VmafModelSidecar;
 
 /**
@@ -142,6 +166,19 @@ typedef struct VmafModelSidecar {
  */
 int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *vocab, size_t n_vocab,
                               const char *codec_name, const char *preset, int crf);
+
+/**
+ * vmaf_dnn_codec_block_fill() with the sidecar's normalisation of the two
+ * scalar slots (ADR-1558). @p enc NULL is the fr_regressor_v2 encoding
+ * (preset ordinal / 9, CRF / 63). With VMAF_CODEC_PRESET_CONSTANT the
+ * preset slot is enc->preset_value whatever @p preset says; with
+ * VMAF_CODEC_CRF_MINMAX the CRF slot is (crf - crf_min) / (crf_max -
+ * crf_min), not clamped, or 0.5 when the range is empty, as the v3
+ * trainer computes it. Same returns as vmaf_dnn_codec_block_fill().
+ */
+int vmaf_dnn_codec_block_fill_encoded(float *buf, size_t buf_len, const char *const *vocab,
+                                      size_t n_vocab, const char *codec_name, const char *preset,
+                                      int crf, const VmafCodecBlockEncoding *enc);
 
 /** Byte-identical magic check. Returns VMAF_MODEL_KIND_SVM for libsvm json/pkl,
  *  DNN_FR/DNN_NR for ONNX (kind refined from sidecar), or -1 on unknown. */

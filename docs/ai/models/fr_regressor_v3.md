@@ -67,8 +67,23 @@ Shape `(N, 18)`: codec block, **not** normalised (already in `[0, 1]`):
 | 13    | `encoder_onehot[libsvtav1]`          |
 | 14    | `encoder_onehot[h264_videotoolbox]`  |
 | 15    | `encoder_onehot[hevc_videotoolbox]`  |
-| 16    | `preset_norm`  (preset ordinal / 9)  |
-| 17    | `crf_norm`     (cq normalised)       |
+| 16    | `preset_norm`  (0.5 on every row)    |
+| 17    | `crf_norm`     ((CRF - 19) / 18)     |
+
+The two scalar slots are not v2's. The trainer (`_build_codec_block()` in
+`ai/scripts/train_fr_regressor_v3.py`) sets `preset_norm` to 0.5 on every
+row and min-max normalises the CRF over its corpus. The shipped checkpoint's
+corpus (`corpus_sha256` `58512e6c...`) spans CQ 19 to 37: the ensemble
+trainer records that range for the same file, and both trainers compute it
+with the same min and max. The sidecar declares the encoding
+(`codec_preset_norm: constant`, `codec_preset_value: 0.5`,
+`codec_crf_norm: minmax`, `codec_crf_min: 19`, `codec_crf_max: 37`), and
+libvmaf fills the block that way
+([ADR-1558](../../adr/1558-codec-block-encoding-from-sidecar.md)): with
+`--tiny-crf 28` the slot is 0.5, `--tiny-preset` has no effect (the run says
+so in a warning), and a CRF outside 19..37 gives a value outside [0, 1], as
+the trainer's formula would. Before 2026-10-04 libvmaf filled v2's ordinal
+preset / 9 and CRF / 63 here, inputs the model was not trained on.
 
 The encoder vocabulary is closed and order-stable per
 [ADR-0235](../../adr/0235-codec-aware-fr-regressor.md): the index of each
@@ -173,7 +188,9 @@ For inference paths that don't carry codec metadata, pass an
 all-zeros codec block with `encoder_onehot[libx264]=1` (slot 0 is the
 fork's "default" canonical SW encoder), `preset_norm=0.5`,
 `crf_norm=0.5`. The model degrades to a v1-like estimate; no graph
-surgery required.
+surgery required. Through libvmaf that is `--tiny-codec libx264 --tiny-crf 28`;
+the vocabulary has no `unknown` entry, so libvmaf does not choose an encoder
+for you.
 
 ## Training recipe
 

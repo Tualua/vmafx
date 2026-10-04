@@ -81,9 +81,15 @@ def test_fr_regressor_v3_sidecar_records_run_provenance(tmp_path: Path) -> None:
         smoke=False,
         gate_passed=True,
         run_provenance=provenance,
+        crf_range=(19.0, 37.0),
     )
 
     written = json.loads(sidecar.read_text(encoding="utf-8"))
     assert written["run_provenance"] == provenance
     assert written["gate_passed"] is True
     assert written["corpus_sha256"]
+    # ADR-1558: the sidecar says how the trainer normalised the codec block.
+    assert written["codec_preset_norm"] == "constant"
+    assert written["codec_preset_value"] == 0.5
+    assert written["codec_crf_norm"] == "minmax"
+    assert (written["codec_crf_min"], written["codec_crf_max"]) == (19.0, 37.0)

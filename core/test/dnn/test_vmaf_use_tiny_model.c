@@ -66,6 +66,7 @@
 #define TINY_V2_MODEL "model/tiny/vmaf_tiny_v2.onnx"
 #define FR_V2_MODEL "model/tiny/fr_regressor_v2.onnx"
 #define FR_V2_DATA "model/tiny/fr_regressor_v2.onnx.data"
+#define FR_V3_MODEL "model/tiny/fr_regressor_v3.onnx"
 
 #ifndef _WIN32
 static const unsigned char kAllowedOnnx[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
@@ -649,6 +650,44 @@ static char *test_codec_aware_model_refuses_without_codec(void)
     return NULL;
 }
 
+/* Score two frames with fr_regressor_v3 and the codec context libx264 /
+ * @p preset / @p crf. */
+static char *score_fr_v3(const char *preset, int crf, double out[2])
+{
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    mu_assert("fr_regressor_v3 attach", vmaf_use_tiny_model(ctx, FR_V3_MODEL, &kFvCpu) == 0);
+    mu_assert("codec context accepted",
+              vmaf_dnn_set_codec_context(ctx, "libx264", preset, crf) == 0);
+    static const unsigned frames[] = {0u, 1u};
+    mu_assert("frames read and flushed", read_fv_frames(ctx, frames, 2u) == 0);
+    int got = 0;
+    for (unsigned i = 0; i < 2u; ++i)
+        got += vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &out[i], i) == 0;
+    (void)vmaf_close(ctx);
+    mu_assert("both frames scored", got == 2);
+    return NULL;
+}
+
+/* ADR-1558: fr_regressor_v3 was trained with preset_norm 0.5 on every row,
+ * so the preset the caller names must not change its input; with the v2
+ * ordinal encoding "medium" and "veryslow" gave other scores. */
+static char *test_fr_v3_preset_slot_is_the_trained_constant(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    double medium[2] = {0.0, 0.0};
+    double veryslow[2] = {0.0, 0.0};
+    char *err = score_fr_v3("medium", 28, medium);
+    if (!err)
+        err = score_fr_v3("veryslow", 28, veryslow);
+    if (err)
+        return err;
+    mu_assert("ADR-1558: the preset does not reach the v3 codec block",
+              medium[0] == veryslow[0] && medium[1] == veryslow[1]);
+    return NULL;
+}
+
 /* Positive: with the codec named, the same model scores every frame. */
 static char *test_codec_aware_model_scores_with_codec(void)
 {
@@ -969,6 +1008,7 @@ char *run_tests(void)
         MU_TEST(test_feature_vector_missing_input_fails_flush),
         MU_TEST(test_codec_aware_model_refuses_without_codec),
         MU_TEST(test_codec_aware_model_scores_with_codec),
+        MU_TEST(test_fr_v3_preset_slot_is_the_trained_constant),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

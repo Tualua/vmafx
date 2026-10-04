@@ -3,7 +3,7 @@
   "generated_at": "2026-10-04T07:17:17Z",
   "repository": "VMAFx/vmafx",
   "commit_sha": "094d51c8e8793b2767cf571cd69597630f111693",
-  "total_infractions": 421,
+  "total_infractions": 420,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -637,15 +637,6 @@
       "message": "Function '_export_and_register' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "anchor": "fn:_export_and_register",
       "fingerprint": "ai/scripts/train_fr_regressor.py:HISS-04:fn:_export_and_register#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/train_fr_regressor_v3.py",
-      "line_number": 614,
-      "symbol": "write_sidecar_and_registry",
-      "message": "Function 'write_sidecar_and_registry' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:write_sidecar_and_registry",
-      "fingerprint": "ai/scripts/train_fr_regressor_v3.py:HISS-04:fn:write_sidecar_and_registry#1"
     },
     {
       "rule_id": "HISS-07",
