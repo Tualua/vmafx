@@ -1230,3 +1230,4 @@
 1519-controller-tenant-registry
 1523-hip-twins-run-on-the-state-device
 1547-helm-gpu-resource-name
+1528-test-suite-registry

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1231), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1232), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4923,6 +4923,10 @@ Every ADR, one heading each (1231), so the site search finds an ADR by its title
 ## ADR-1527: TransNet V2 runs upstream's 100-frame windows on 0..255 thumbnails and binds its output by position
 
 [1527-transnet-v2-upstream-windows](1527-transnet-v2-upstream-windows.md)
+
+## ADR-1528: Every test file belongs to a suite that a required check runs
+
+[1528-test-suite-registry](1528-test-suite-registry.md)
 
 ## ADR-1539: vmafx-node starts the eBPF descriptor tracker on request, fails closed when the host cannot run it, and ships the compiled BPF object
 

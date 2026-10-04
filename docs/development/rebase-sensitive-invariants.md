@@ -152,14 +152,19 @@ backend within it.
   directory does not affect the libvmaf C build or any CI gate.
 
 - **Top-level `noxfile.py` is a local-dev affordance, not a CI gate (ADR-0914)**:
-  The repo-root `noxfile.py` exposes one session per Python package
-  (`ai`, `mcp`, `vmaf_tune`, `dev_llm`, `roi_score`, `ensemble_kit`,
-  `python_harness`) plus `all` / `lint` meta-sessions. CI does **not**
-  call nox — each package keeps its own `python3 -m venv && pip install
-  -e .[dev] && pytest` recipe in
-  `.github/workflows/tests-and-quality-gates.yml`. When adding a new
-  Python package, update **both** `noxfile.py` and the CI YAML; missing
-  one drifts the dev experience away from CI. See
+  The repo-root `noxfile.py` exposes one session per Python suite
+  (`ai`, `compat_decorator`, `mcp`, `vmaf_tune`, `dev_llm`,
+  `roi_score`, `ensemble_kit`, `rc1_tester`, `tooling`, `python_harness`)
+  plus `all` / `lint` meta-sessions. CI does **not** call nox: each suite
+  runs in its own job (`Tiny AI`, `MCP Smoke`, `RC1 Tester Report`,
+  `Tooling Tests`, one `Python Package Tests` leg per remaining package),
+  which installs the suite's hash lock and runs `pytest -rs`.
+  [`.github/test-suites.json`](../../.github/test-suites.json) maps every
+  tracked test file to one suite and every suite to its required checks;
+  `scripts/ci/suite_registry.py check` fails on an unwired test file
+  ([ADR-1528](../adr/1528-test-suite-registry.md)). When adding a new
+  Python package, update `noxfile.py`, the CI job and the registry
+  together. See [test suites](test-suites.md) and
   [`docs/development/python-test-orchestrator.md`](python-test-orchestrator.md).
   The `python_harness` session intentionally delegates to `tox -c
   python` rather than duplicating the Cython + Netflix golden-data

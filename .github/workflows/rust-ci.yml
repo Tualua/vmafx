@@ -114,12 +114,14 @@ jobs:
           LIBVMAF_PREFIX: /usr/local
         run: cargo build -p vmafx-sys
 
-      - name: Cargo test (unit + integration)
+      - name: Cargo test (unit + integration, every workspace crate)
+        # --workspace: vmafx (the safe binding) and vmafx-tad carry tests too;
+        # `-p vmafx-sys` ran none of them (ADR-1528).
         env:
           LIBVMAF_PREFIX: /usr/local
           VMAFX_REPO: ${{ github.workspace }}
           LD_LIBRARY_PATH: /usr/local/lib
-        run: cargo test -p vmafx-sys --all-features
+        run: cargo test --workspace --all-features
 
       - name: Rebuild vmafx-tad after a source edit
         # build.rs reruns on a src/lib.rs change; an unchanged cbindgen header

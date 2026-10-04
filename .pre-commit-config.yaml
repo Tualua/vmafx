@@ -261,6 +261,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: suite-registry
+        name: Every test file belongs to a suite a required check runs (ADR-1528)
+        entry: python3 scripts/ci/suite_registry.py check
+        language: system
+        files: '(^|/)(test_[^/]*\.(py|sh|c|cpp|cu)|[^/]*_test\.(py|sh|go|rs)|test-[^/]*\.sh)$|/tests/[^/]*\.rs$|^(\.pre-commit-config\.yaml|\.github/(test-suites\.json|workflows/required-aggregator\.yml)|scripts/ci/suite_registry\.py)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: meson-test-secret-env-contract
         name: Meson parent and test environment sanitization contract
         entry: python3 -m unittest core.test.test_meson_secret_env_sanitization

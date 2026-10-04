@@ -46,7 +46,10 @@ _EXPECTED_VMAF_SCORE = 76.66890519623612
 
 
 def _binary_present() -> bool:
-    return (REPO / "build" / "tools" / "vmaf").exists()
+    # The server's own resolution (VMAF_BIN first): MCP Smoke builds into
+    # core/build-mcp and points VMAF_BIN there, so a fixed build/ path skipped
+    # this test in CI on every run.
+    return srv._vmaf_binary().is_file()
 
 
 def _fixtures_present() -> bool:

@@ -194,6 +194,13 @@ jobs:
               'Coverage Gate',
               'MCP Smoke',
               'RC1 Tester Report',
+              // ADR-1528: every tracked test file belongs to a suite that one
+              // of these required checks runs; Tooling Tests enforces that.
+              'Tooling Tests',
+              'Python Package Tests (compat)',
+              'Python Package Tests (dev-llm)',
+              'Python Package Tests (vmaf-roi-score)',
+              'Python Package Tests (vmaf-tune)',
               'Sanitizers ASan+UBSan',
               // Lint gates. ADR-0217 made `Tidy SYCL` advisory until one
               // green master run confirmed the wrapper; the last six Lint
@@ -283,6 +290,14 @@ jobs:
               // ADR-1342 — the shipped external tester package always runs;
               // absence means its workflow registration failed.
               'RC1 Tester Report',
+              // ADR-1528 — no path filter and no conditional skip at job level;
+              // the package legs skip only their work, so all five always
+              // report.
+              'Tooling Tests',
+              'Python Package Tests (compat)',
+              'Python Package Tests (dev-llm)',
+              'Python Package Tests (vmaf-roi-score)',
+              'Python Package Tests (vmaf-tune)',
               'Markdown Lint',
               'No Conflict Markers',
               'Tiny-Model Registry Validate',

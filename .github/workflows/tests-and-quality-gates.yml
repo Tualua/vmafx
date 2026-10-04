@@ -396,8 +396,10 @@ jobs:
         if: steps.impact.outputs.tiny_ai == 'true'
         run: |
           sudo apt-get update
+          # ffmpeg: test_chug_extract_features_smoke.py encodes its clips with
+          # it (ADR-1528: it skipped in CI on every run without it).
           sudo apt-get install -y ninja-build nasm pkg-config \
-            python3-pip python3-venv
+            python3-pip python3-venv ffmpeg
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet --require-hashes \
@@ -418,7 +420,7 @@ jobs:
           ort_archive="${RUNNER_TEMP}/${ort_name}"
           ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
-            --output "${ort_archive}" \
+            --max-time 600 --output "${ort_archive}" \
             "${ort_url}"
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
@@ -472,10 +474,20 @@ jobs:
             -r requirements/locks/package-build.txt
           "${venv}/bin/pip" install --require-hashes -r ai/requirements-dev-lock.txt
           "${venv}/bin/pip" install --no-deps --no-build-isolation -e ai
+      - name: Fetch the Netflix golden YUV fixtures
+        # test_e2e_frame_to_score.py scores the src01 pair; md5-checked.
+        if: steps.impact.outputs.tiny_ai == 'true'
+        run: bash scripts/test/fetch-test-yuvs.sh
       - name: Run ai/ pytests
         if: steps.impact.outputs.tiny_ai == 'true'
+        env:
+          # The binary this job built: the e2e and CHUG smoke tests run it
+          # instead of skipping (ADR-1528). -rs prints every remaining skip
+          # with its reason.
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
+          VMAF_BIN_FOR_TESTS: ${{ github.workspace }}/core/build/tools/vmaf
         run: |
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v --timeout=60 --timeout-method=signal
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v -rs --timeout=60 --timeout-method=signal
 
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
@@ -516,6 +528,143 @@ jobs:
         run: |
           python -c "from pathlib import Path; from vmaf_rc1_tester.probe import REPO_ROOT; assert REPO_ROOT == Path.cwd().resolve()"
           vmaf-rc1-report list-tools >/dev/null
+
+  # ===== Test-suite registry + tooling suite (ADR-1528) =====
+  # `.github/test-suites.json` maps every tracked test file to one suite and
+  # every suite to the required checks that run it. This job fails when a test
+  # file lies outside every suite (tools/vmaf-tune/tests and 60 script tests
+  # once ran nowhere) and runs the tooling suite: every Python and shell test
+  # under scripts/, dev/scripts/, ffmpeg-patches/test/, testdata/ and two tool
+  # test directories. The tests read workflows, Dockerfiles and Meson files as
+  # well as the scripts under test, so no path routing could prove a change
+  # irrelevant: the job always runs.
+  tooling-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1528 — required and in strictMustReport: no path filter and no
+    # conditional skip.
+    # required-aggregator
+    name: Tooling Tests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.8"
+      - name: Every test file belongs to a suite that a required check runs
+        run: python scripts/ci/suite_registry.py check
+      - name: Install the tooling test lock
+        # package-build first: the docs half of the lock has sdists that build
+        # without isolation (the Docs job installs the docs lock the same way).
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          python -m pip install --require-hashes -r requirements/locks/package-build.txt
+          python -m pip install --no-build-isolation --require-hashes \
+            -r requirements/locks/tooling-tests.txt
+      - name: Run the tooling suite
+        run: python scripts/ci/suite_registry.py run tooling
+
+  # ===== Python package suites (ADR-1528) =====
+  # One leg per package suite of .github/test-suites.json that no other job
+  # runs. Each leg installs the package's manifest-owned hash lock, installs
+  # the package itself with --no-deps --no-build-isolation, and runs the
+  # suite with -rs, so every remaining skip prints its reason. CI does not
+  # call nox (ADR-0914); `nox -s <session>` is the local equivalent.
+  # required-aggregator: Python Package Tests (compat)
+  # required-aggregator: Python Package Tests (dev-llm)
+  # required-aggregator: Python Package Tests (vmaf-roi-score)
+  # required-aggregator: Python Package Tests (vmaf-tune)
+  python-package-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1528 — required and in strictMustReport: the impact plan may skip
+    # the work, but every leg runs and reports.
+    name: Python Package Tests (${{ matrix.name }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: compat
+            tests: compat/vmaf/tests
+          - name: dev-llm
+            tests: dev-llm/tests
+          - name: vmaf-roi-score
+            tests: tools/vmaf-roi-score/tests
+          - name: vmaf-tune
+            tests: tools/vmaf-tune/tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Python package suite skipped by plan
+        if: steps.impact.outputs.python != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+          SUITE: ${{ matrix.name }}
+        run: echo "::notice::python not impacted (mode=$MODE reason=$REASON) — Python Package Tests ($SUITE) satisfied without running (ADR-1140)"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        if: steps.impact.outputs.python == 'true'
+        with:
+          python-version: "3.14.8"
+      # One install step per leg: the lock checker
+      # (scripts/ci/check_python_dependency_locks.py) accepts only literal lock
+      # paths that the manifest owns, never a matrix variable.
+      - name: Install the build backends
+        if: steps.impact.outputs.python == 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: python -m pip install --require-hashes -r requirements/locks/package-build.txt
+      - name: Install the compat suite's lock
+        if: steps.impact.outputs.python == 'true' && matrix.name == 'compat'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          python -m pip install --no-build-isolation --require-hashes \
+            -r python/requirements-test-lock.txt
+      - name: Install dev-llm and its lock
+        if: steps.impact.outputs.python == 'true' && matrix.name == 'dev-llm'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          python -m pip install --no-build-isolation --require-hashes \
+            -r dev-llm/requirements-dev-lock.txt
+          python -m pip install --no-deps --no-build-isolation -e dev-llm
+      - name: Install vmaf-roi-score and its lock
+        if: steps.impact.outputs.python == 'true' && matrix.name == 'vmaf-roi-score'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          python -m pip install --no-build-isolation --require-hashes \
+            -r tools/vmaf-roi-score/requirements-dev-lock.txt
+          python -m pip install --no-deps --no-build-isolation -e tools/vmaf-roi-score
+      - name: Install vmaf-tune and its lock
+        if: steps.impact.outputs.python == 'true' && matrix.name == 'vmaf-tune'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          python -m pip install --no-build-isolation --require-hashes \
+            -r tools/vmaf-tune/requirements-dev-lock.txt
+          python -m pip install --no-deps --no-build-isolation -e tools/vmaf-tune
+      - name: Run the suite
+        if: steps.impact.outputs.python == 'true'
+        env:
+          TESTS: ${{ matrix.tests }}
+        run: python -m pytest "$TESTS" -rs
 
   # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
   # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
@@ -617,6 +766,11 @@ jobs:
           "${venv}/bin/pip" install --no-deps --no-build-isolation \
             -e mcp-server/vmaf-mcp
 
+      - name: Fetch the Netflix golden YUV fixtures
+        # test_server.py, test_smoke_e2e.py and test_score_extras_adr1117.py
+        # score the src01 pair; without it they skipped (ADR-1528).
+        run: bash scripts/test/fetch-test-yuvs.sh
+
       - name: Run Python MCP server pytests
         # The MCP server's `_vmaf_binary()` defaults to
         # `<repo-root>/build/tools/vmaf` (`Path(__file__).parents[4]`
@@ -630,10 +784,11 @@ jobs:
         run: |
           test -x "$VMAF_BIN" || {
             echo "vmaf binary missing at $VMAF_BIN" >&2
-            ls -la "$(dirname "$VMAF_BIN")" >&2 || true
+            ls -la "$(dirname "$VMAF_BIN")" >&2 ||
+              echo "::warning::cannot list $(dirname "$VMAF_BIN")" >&2
             exit 1
           }
-          "${RUNNER_TEMP}/mcp-venv/bin/pytest" mcp-server/vmaf-mcp/tests/ -v --tb=short \
+          "${RUNNER_TEMP}/mcp-venv/bin/pytest" mcp-server/vmaf-mcp/tests/ -v -rs --tb=short \
             --timeout=60 --timeout-method=signal
 
   # ===== Coverage gate (principles.md §3) =====
@@ -683,8 +838,9 @@ jobs:
           # "no longer signed", failing `apt-get update` with exit 100
           # (observed on the Coverage Gate 2026-06-13). vmaf needs none of
           # them — drop them before updating. See T-CI-APT-MS-REPO-FLAKE.
+          # rm -f succeeds when a pattern matches nothing.
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
-                     /etc/apt/sources.list.d/*azure* || true
+                     /etc/apt/sources.list.d/*azure*
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm pkg-config gcc \
             python3-pip
@@ -747,7 +903,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/ort-cache"
           tarball="${RUNNER_TEMP}/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           if [ ! -f "$tarball" ]; then
-            curl -sSL --retry 3 --retry-delay 5 -o "$tarball" \
+            curl -fsSL --retry 3 --retry-delay 5 --max-time 600 -o "$tarball" \
               "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           fi
           sudo tar -xzf "$tarball" -C /opt/
@@ -959,7 +1115,7 @@ jobs:
               --json-summary build-coverage/coverage.json \
               --xml build-coverage/coverage.xml \
               build-coverage \
-            2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2 || true)
+            2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2)
           echo "----- Per-file summary -----"
           cat build-coverage/coverage.txt
       - name: Enforce coverage thresholds
@@ -1139,7 +1295,7 @@ jobs:
               --json-summary build-coverage-gpu/coverage.json \
               --xml build-coverage-gpu/coverage.xml \
               build-coverage-gpu \
-            2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2 || true)
+            2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2)
           cat build-coverage-gpu/coverage.txt
       - name: Enforce coverage thresholds (GPU)
         run: |

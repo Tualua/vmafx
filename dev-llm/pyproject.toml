@@ -16,6 +16,19 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=9.1.1", "ruff>=0.16.10", "mypy>=2.4.0"]
+# `vmaf-dev-llm modelcard` reads the ONNX graph and, with --features, scores the
+# model on a parquet split. Its development lock includes this extra so the
+# fact-collector tests run instead of skipping.
+modelcard = [
+  # onnx 1.23 writes IR version 14 by default; onnxruntime 1.30 loads at most
+  # IR 13 (the same cap as tools/ensemble-training-kit).
+  "onnx>=1.22.0,<1.23",
+  "onnxruntime>=1.30.0",
+  "numpy>=2.5.3",
+  "pandas>=3.0.6",
+  "pyarrow>=25.0.1",
+  "scipy>=1.18.1",
+]
 cloud = [
   "anthropic>=1.11.0",
   "openai>=3.24.0",

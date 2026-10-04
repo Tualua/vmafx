@@ -12,7 +12,14 @@ default); cloud providers (Anthropic, OpenAI-compatible) are opt-in via the
 ```bash
 pip install -e dev-llm
 # optional: pip install -e dev-llm[cloud]
+# optional: pip install -e 'dev-llm[modelcard]'   # ONNX graph facts and --features evaluation
 ```
+
+`modelcard` reads the ONNX graph with `onnx` and, given `--features`, scores
+the model on a parquet split with `onnxruntime`, `pandas`, `pyarrow` and
+`scipy`. The `modelcard` extra installs them; without it the card leaves those
+facts out. The development lock (`requirements-dev-lock.txt`) includes the
+extra, so the fact-collector tests run in CI instead of skipping.
 
 Then make sure Ollama is running locally (`ollama serve`) and pull a
 coder-capable model:

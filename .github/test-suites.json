@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "comment": "Every tracked test file belongs to exactly one suite, and every suite names the required checks that run it (ADR-1528). scripts/ci/suite_registry.py check enforces both; scripts/ci/suite_registry.py run tooling runs the tooling suite. docs/development/test-suites.md describes each suite.",
+  "name_patterns": [
+    "test_*.py",
+    "*_test.py",
+    "test_*.sh",
+    "test-*.sh",
+    "*_test.sh",
+    "*_test.go",
+    "*_test.rs",
+    "test_*.c",
+    "test_*.cpp",
+    "test_*.cu"
+  ],
+  "path_patterns": [
+    "*/tests/*.rs"
+  ],
+  "suites": [
+    {
+      "name": "core",
+      "paths": ["core/test/", "core/tools/test/"],
+      "checks": ["Ubuntu gcc", "Linux Intel LLVM"],
+      "runs": "Meson tests registered in core/test/meson.build and core/tools/test/meson.build; backend-gated tests run in the all-backend Linux Intel LLVM leg"
+    },
+    {
+      "name": "python-harness",
+      "paths": ["python/test/"],
+      "checks": ["Coverage Gate", "Ubuntu gcc"],
+      "runs": "pytest python/test/ (Coverage Gate) and tox -c python (Ubuntu gcc, on C-core changes)"
+    },
+    {
+      "name": "compat",
+      "paths": ["compat/python-vmaf/tests/"],
+      "checks": ["Python Package Tests (compat)"],
+      "runs": "pytest compat/vmaf/tests with python/requirements-test-lock.txt"
+    },
+    {
+      "name": "ai",
+      "paths": ["ai/tests/", "ai/sidecar/tests/"],
+      "checks": ["Tiny AI"],
+      "runs": "pytest ai/tests/ ai/sidecar/tests/ with ai/requirements-dev-lock.txt"
+    },
+    {
+      "name": "mcp",
+      "paths": ["mcp-server/vmaf-mcp/tests/"],
+      "checks": ["MCP Smoke"],
+      "runs": "pytest mcp-server/vmaf-mcp/tests/ with mcp-server/vmaf-mcp/requirements-dev-lock.txt"
+    },
+    {
+      "name": "rc1-tester",
+      "paths": ["tools/rc1-tester/tests/"],
+      "checks": ["RC1 Tester Report"],
+      "runs": "pytest tools/rc1-tester/tests/ with tools/rc1-tester/requirements-dev-lock.txt"
+    },
+    {
+      "name": "vmaf-tune",
+      "paths": ["tools/vmaf-tune/tests/"],
+      "checks": ["Python Package Tests (vmaf-tune)"],
+      "runs": "pytest tools/vmaf-tune/tests with tools/vmaf-tune/requirements-dev-lock.txt"
+    },
+    {
+      "name": "dev-llm",
+      "paths": ["dev-llm/tests/"],
+      "checks": ["Python Package Tests (dev-llm)"],
+      "runs": "pytest dev-llm/tests with dev-llm/requirements-dev-lock.txt"
+    },
+    {
+      "name": "vmaf-roi-score",
+      "paths": ["tools/vmaf-roi-score/tests/"],
+      "checks": ["Python Package Tests (vmaf-roi-score)"],
+      "runs": "pytest tools/vmaf-roi-score/tests with tools/vmaf-roi-score/requirements-dev-lock.txt on Python 3.12"
+    },
+    {
+      "name": "go",
+      "paths": ["api/", "cmd/", "internal/", "pkg/"],
+      "checks": ["go vet + go test"],
+      "runs": "go test ./... against the CPU + ONNX Runtime libvmaf build"
+    },
+    {
+      "name": "rust",
+      "paths": ["bindings/rust/"],
+      "checks": ["vmafx-sys CI"],
+      "runs": "cargo test --workspace --all-features against the installed CPU libvmaf"
+    },
+    {
+      "name": "tooling",
+      "paths": [
+        "dev/scripts/",
+        "ffmpeg-patches/test/",
+        "scripts/",
+        "testdata/",
+        "tools/ensemble-training-kit/tests/",
+        "tools/external-bench/tests/"
+      ],
+      "checks": ["Tooling Tests"],
+      "runs": "scripts/ci/suite_registry.py run tooling: one pytest run over every Python test file, then every shell test file with bash"
+    }
+  ],
+  "not_tests": [
+    {
+      "path": "python/test/resource/",
+      "reason": "dataset definition modules named after their dataset (test_*.py); the Coverage Gate ignores the directory"
+    },
+    {
+      "path": "scripts/ci/run_meson_test.py",
+      "reason": "the Meson test runner wrapper (ADR-1333), not a test"
+    },
+    {
+      "path": "scripts/test-matrix.sh",
+      "reason": "local driver that runs make ci inside every docker/dev image; it builds containers and is not a test"
+    },
+    {
+      "path": "testdata/test_all_backends.sh",
+      "reason": "benchmark driver that needs oneAPI, an installed vmaf and GPU devices; it prints scores and asserts nothing"
+    }
+  ]
+}

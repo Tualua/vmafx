@@ -5,10 +5,10 @@
 
 This file lets a developer run any package's pytest suite via a single
 command without remembering each package's venv recipe. CI workflows
-(see ``.github/workflows/tests-and-quality-gates.yml``) keep their
-existing per-package ``python3 -m venv ... && pip install ... && pytest``
-invocations intact — nox does **not** replace them. It is a local
-dev affordance, not a CI gate.
+(see ``.github/workflows/tests-and-quality-gates.yml``) install the same
+hash locks per job and run each suite directly — nox does **not** replace
+them. It is a local dev affordance, not a CI gate. Which required check runs
+which suite is ``.github/test-suites.json`` (ADR-1528).
 
 Usage::
 
@@ -16,6 +16,7 @@ Usage::
     nox -l                          # list every defined session
     nox -s ai                       # run the ai/ pytest suite
     nox -s compat_decorator         # run compat memoization regressions
+    nox -s tooling                  # run the scripts/ and testdata/ tooling suite
     nox -s mcp vmaf_tune            # run multiple suites in sequence
     nox -s rc1_tester                # run the external tester report suite
     nox -s python_harness           # run the legacy python/ tox harness
@@ -71,6 +72,17 @@ def compat_decorator_tests(session: nox.Session) -> None:
     )
 
 
+@nox.session(name="tooling", python="3.14")
+def tooling_tests(session: nox.Session) -> None:
+    """Run the tooling suite of ``.github/test-suites.json`` as the CI job does."""
+    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
+    session.install(
+        "--no-build-isolation", "--require-hashes", "-r", "requirements/locks/tooling-tests.txt"
+    )
+    session.run("python", "scripts/ci/suite_registry.py", "check")
+    session.run("python", "scripts/ci/suite_registry.py", "run", "tooling")
+
+
 @nox.session(name="mcp", python="3.14")
 def mcp_tests(session: nox.Session) -> None:
     """Run the ``mcp-server/vmaf-mcp/`` pytest suite."""
@@ -117,7 +129,7 @@ def dev_llm_tests(session: nox.Session) -> None:
     session.run("pytest", "dev-llm/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="roi_score", python="3.12")
+@nox.session(name="roi_score", python="3.14")
 def roi_score_tests(session: nox.Session) -> None:
     """Run the ``tools/vmaf-roi-score/`` pytest suite."""
     session.install(
@@ -130,22 +142,14 @@ def roi_score_tests(session: nox.Session) -> None:
     session.run("pytest", "tools/vmaf-roi-score/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="ensemble_kit", python="3.12")
+@nox.session(name="ensemble_kit", venv_backend="none")
 def ensemble_kit_tests(session: nox.Session) -> None:
-    """Run the ``tools/ensemble-training-kit/`` pytest suite."""
-    session.install(
-        "--no-build-isolation",
-        "--require-hashes",
-        "-r",
-        "tools/ensemble-training-kit/requirements-dev-lock.txt",
-    )
-    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/ensemble-training-kit")
-    session.run(
-        "pytest",
-        "tools/ensemble-training-kit/tests/",
-        "-v",
-        *session.posargs,
-    )
+    """Run the ``tools/ensemble-training-kit/`` platform-detection tests.
+
+    The kit's only tests are a shell script; it needs none of the kit's
+    Python dependencies (torch, onnx), so the session creates no venv.
+    """
+    session.run("bash", "tools/ensemble-training-kit/tests/test_platform_detect.sh", external=True)
 
 
 @nox.session(name="rc1_tester", python="3.14")
@@ -195,6 +199,7 @@ def all_tests(session: nox.Session) -> None:
         "roi_score",
         "ensemble_kit",
         "rc1_tester",
+        "tooling",
     ):
         session.notify(name)
 

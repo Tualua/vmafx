@@ -110,6 +110,16 @@ ADR_1342_STRICT_CONTEXTS = {"RC1 Tester Report"}
 # skip, and reports on `pull_request` and on `push` to master.
 ADR_1474_STRICT_CONTEXTS = {"Licence Provenance"}
 
+# ADR-1528 — the test-suite registry and tooling suite, and one leg per Python
+# package suite; no job-level path filter or conditional skip.
+ADR_1528_STRICT_CONTEXTS = {
+    "Tooling Tests",
+    "Python Package Tests (compat)",
+    "Python Package Tests (dev-llm)",
+    "Python Package Tests (vmaf-roi-score)",
+    "Python Package Tests (vmaf-tune)",
+}
+
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
 
@@ -259,7 +269,8 @@ class HissReplayContractTests(unittest.TestCase):
             | ADR_1297_STRICT_CONTEXTS
             | BUG_098_STRICT_CONTEXTS
             | ADR_1342_STRICT_CONTEXTS
-            | ADR_1474_STRICT_CONTEXTS,
+            | ADR_1474_STRICT_CONTEXTS
+            | ADR_1528_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

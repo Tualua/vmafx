@@ -3987,7 +3987,7 @@
     },
     "0620": {
       "sites": {
-        "python/test/test_adr0620_scaffold_audit_p0.py": 1
+        "python/test/adr0620_scaffold_audit_p0_test.py": 1
       },
       "target": "0620-scaffold-audit-p0-silent-correctness-fixes.md"
     },
@@ -5096,6 +5096,7 @@
     },
     "0914": {
       "sites": {
+        ".github/workflows/tests-and-quality-gates.yml": 1,
         "noxfile.py": 1
       },
       "target": "0914-unified-python-test-orchestrator.md"
@@ -6611,7 +6612,7 @@
         ".github/workflows/rust-ci.yml": 1,
         ".github/workflows/sanitizers.yml": 4,
         ".github/workflows/security-scans.yml": 4,
-        ".github/workflows/tests-and-quality-gates.yml": 11,
+        ".github/workflows/tests-and-quality-gates.yml": 13,
         ".pre-commit-config.yaml": 1,
         "scripts/ci/plan-ci-impact.py": 1
       },
@@ -10141,6 +10142,22 @@
         "core/test/dnn/test_transnet_v2_run.c": 5
       },
       "target": "1527-transnet-v2-upstream-windows.md"
+    },
+    "1528": {
+      "sites": {
+        ".github/workflows/required-aggregator.yml": 2,
+        ".github/workflows/rust-ci.yml": 1,
+        ".github/workflows/tests-and-quality-gates.yml": 7,
+        ".pre-commit-config.yaml": 1,
+        "Makefile": 1,
+        "noxfile.py": 1,
+        "requirements/locks/tooling-tests.in": 1,
+        "scripts/ci/suite_registry.py": 2,
+        "scripts/ci/tests/test_hiss_replay_contract.py": 1,
+        "scripts/ci/tests/test_python_dependency_locks.py": 1,
+        "scripts/ci/tests/test_suite_registry.py": 1
+      },
+      "target": "1528-test-suite-registry.md"
     },
     "1539": {
       "sites": {

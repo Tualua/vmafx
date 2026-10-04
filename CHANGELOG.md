@@ -38,6 +38,13 @@
   access and opens the API server in the NetworkPolicy.
 
 
+- **`vmaf-dev-llm[modelcard]` extra** (ADR-1528). It installs `onnx`,
+  `onnxruntime`, `pandas`, `pyarrow` and `scipy`, which `vmaf-dev-llm modelcard`
+  needs to read the ONNX graph and to score the model with `--features`.
+  Without them the card leaves those facts out. See
+  [the dev-llm README](dev-llm/README.md#install).
+
+
 - **Charts in the documentation, drawn from repository data.** Three
   Vega-Lite charts render to static SVG in light and dark at docs-generation
   time and turn interactive in the browser, with exact values on hover: the
@@ -2121,6 +2128,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   frames) and `vif_hip` on a gfx1036; the Metal change is not built or run on
   this host. The table "Which HIP twins return the CPU's bits" on the
   [HIP backend page](docs/backends/hip/overview.md) is re-measured.
+
+
+- **`vmaf-roi-score` installs on Python 3.13 and 3.14** (ADR-1528). Its
+  metadata allowed only Python 3.10 to 3.12, although nothing in the tool or
+  its optional runtime dependencies needs that limit. The package's tests now
+  run in CI on the pinned Python 3.14 interpreter
+  (`Python Package Tests (vmaf-roi-score)`).
 
 
 - **`vmaf-tune`'s corpus, compare, encode and ladder modules meet the HISS-04

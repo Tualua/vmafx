@@ -187,8 +187,13 @@ end of the file; the golden pair has 48. The assertion tolerance is
 ```bash
 VMAFX_REPO=$(git rev-parse --show-toplevel) \
     LD_LIBRARY_PATH=/usr/local/lib \
-    cargo test -p vmafx-sys --all-features
+    cargo test --workspace --all-features
 ```
+
+`--workspace` runs every crate's tests, as the `vmafx-sys CI` job does
+([ADR-1528](../adr/1528-test-suite-registry.md)): `vmafx-sys`, the safe
+`vmafx` binding (unit tests and `tests/smoke.rs`) and `vmafx-tad`. Use
+`-p <crate>` to run one of them.
 
 The integration test (`tests/integration_test.rs`) scores the Netflix golden YUV
 pair and asserts the mean VMAF equals 76.669 within 5e-3 (places=3; the Python

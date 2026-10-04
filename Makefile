@@ -769,7 +769,7 @@ setup-envtest-env:
 # ── Rust workspace (ADR-0702) ────────────────────────────────────────────────
 #
 # rust-build: cargo check --all (no members yet; validates the workspace manifest).
-# rust-test:  cargo test --all (no tests until vmafx-sys crate is added).
+# rust-test:  cargo test --all (every workspace crate; CI runs it with --all-features, ADR-1528).
 #
 # Both targets require a stable Rust toolchain on PATH.
 

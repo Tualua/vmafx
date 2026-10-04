@@ -24,4 +24,8 @@ carry legacy form. Grep matching only one format causes script
 to silently exit 0 ("no fork-added files found; skipping"), bypassing
 assertion-density gate for all files carrying other format.
 
-Test coverage: `scripts/ci/tests/test-assertion-density.sh` (T1–T6).
+Test coverage: `scripts/ci/tests/test-assertion-density.sh` (T1–T7). The
+source listing runs in a checked command substitution: a failing `git
+ls-files` or `pelorus_mirror.py filter` exits 2 (T7); inside the process
+substitution its status was lost and the gate passed. The fixture repos carry
+the real filter.

@@ -941,8 +941,11 @@ class RepositoryContractTests(unittest.TestCase):
                 )
                 session_pythons[name_node.value] = python_value
 
-        self.assertEqual(session_pythons["roi_score"], "3.12")
-        self.assertEqual(session_pythons["ensemble_kit"], "3.12")
+        # vmaf-roi-score allows Python 3.10 to 3.14 since ADR-1528, so its
+        # session uses the CI interpreter series. The ensemble kit's only test
+        # is a shell script: its session creates no venv and pins no Python.
+        self.assertEqual(session_pythons["roi_score"], "3.14")
+        self.assertIsNone(session_pythons["ensemble_kit"])
 
     def test_nox_consumed_locks_have_no_python_platform_and_are_universal(self) -> None:
         manifest = self.checker.load_manifest(ROOT)
