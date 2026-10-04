@@ -14,10 +14,20 @@ ciede, adm and float_adm differed from a GCC build in the last digits
 This test reads the binaries of the build it runs in: libvmaf.so must not need
 libimf.so and must import the six functions from glibc (versioned references),
 must import no vectorised SVML math routine, and `vmaf` must define none of
-them. Then the dynamic loader runs `vmaf --version` with every symbol bound at
-start-up and must bind each reference to the six functions to libm.so.6. On a
-build whose C and C++ compilers are not Intel LLVM the binary checks skip with
-the reason; the parser checks run on every build.
+them. Then the dynamic loader relocates `vmaf` and everything it loads with
+every symbol bound, in its list mode (what `ldd -r` does: the program is not
+run and no IFUNC resolver is called), and must bind each reference to the six
+functions to libm.so.6. On a build whose C and C++ compilers are not Intel
+LLVM the binary checks skip with the reason; the parser checks and the
+loader-trace check run on every build.
+
+Running the program with `LD_BIND_NOW=1` instead crashed a SYCL build on
+Ubuntu (T-ICX-LIBM-TEST-BIND-NOW-CRASH-2026-10-04): the SYCL runtime loads
+Intel's libimf.so, which binds `cosf` to libm.so.6's IFUNC without depending
+on libm.so.6, so glibc relocated it first and called libm's resolver before
+libm was relocated (`Relink ... for IFUNC symbol 'cosf'`, signal 11). glibc's
+list mode relocates with `__RTLD_NOIFUNC` (elf/rtld.c), from the same search
+list, so the bindings are the ones a run makes.
 """
 
 from __future__ import annotations
@@ -132,9 +142,20 @@ def _readelf(*args: str) -> str:
 
 
 def _loader_trace(cli: Path) -> str:
-    env = dict(os.environ, LD_BIND_NOW="1", LD_DEBUG="bindings")
+    """glibc's bindings for every relocation of `cli` and its libraries.
+
+    LD_TRACE_LOADED_OBJECTS with LD_WARN relocates every object and runs
+    nothing; LD_BIND_NOW makes it bind the function references too.
+    """
+    env = dict(
+        os.environ,
+        LD_TRACE_LOADED_OBJECTS="1",
+        LD_WARN="1",
+        LD_BIND_NOW="1",
+        LD_DEBUG="bindings",
+    )
     result = subprocess.run(  # noqa: S603 -- the CLI of this build.
-        [str(cli), "--version"],
+        [str(cli)],
         capture_output=True,
         check=False,
         encoding="utf-8",
@@ -143,7 +164,7 @@ def _loader_trace(cli: Path) -> str:
     )
     if result.returncode != 0:
         raise AssertionError(
-            f"{cli} --version exited {result.returncode}:\n{result.stderr[-2000:]}"
+            f"loader trace of {cli} exited {result.returncode}:\n{result.stderr[-2000:]}"
         )
     return result.stderr
 
@@ -231,6 +252,23 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(binding_failures(good + noise, ("libvmaf", "vmaf")), [])
         # Boundary: a trace without any binding (no glibc loader) is a failure.
         self.assertEqual(len(binding_failures("", ("libvmaf", "vmaf"))), len(MATH_FUNCTIONS))
+
+
+class LoaderTraceTest(unittest.TestCase):
+    """The trace runs nothing, so no program or IFUNC resolver can crash it."""
+
+    def test_trace_does_not_run_the_program(self) -> None:
+        libc = os.confstr("CS_GNU_LIBC_VERSION") if hasattr(os, "confstr") else None
+        if not libc or not libc.startswith("glibc"):
+            self.skipTest(f"the loader trace needs glibc's ld.so (C library: {libc})")
+        false = shutil.which("false")
+        if false is None or "(NEEDED)" not in _readelf("-d", false):
+            self.skipTest("no dynamically linked `false` to trace")
+        # Run, `false` exits 1 and the old trace raised; traced, it binds
+        # its references to libc and exits 0.
+        trace = _loader_trace(Path(false))
+        targets = {Path(m.group(2)).name for m in BINDING.finditer(trace)}
+        self.assertTrue(any(name.startswith("libc.so") for name in targets), trace[-2000:])
 
 
 class ThisBuildTest(unittest.TestCase):

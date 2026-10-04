@@ -427,10 +427,15 @@ By hand:
 ```bash
 readelf -d build/src/libvmaf.so.3 | grep NEEDED       # libm.so.6, no libimf.so
 readelf -W --dyn-syms build/src/libvmaf.so.3 | grep ' pow@'   # pow@GLIBC_2.29
-LD_BIND_NOW=1 LD_DEBUG=bindings build/tools/vmaf --version 2>&1 | grep "symbol \`pow'"
+LD_TRACE_LOADED_OBJECTS=1 LD_WARN=1 LD_BIND_NOW=1 LD_DEBUG=bindings build/tools/vmaf 2>&1 | grep "symbol \`pow'"
 ```
 
-The last line must name `libm.so.6` as the target.
+The last line must name `libm.so.6` as the target. It relocates the program
+and its libraries as `ldd -r` does, without running anything. Running the
+program with `LD_BIND_NOW=1` instead crashes a SYCL build on Ubuntu with
+`Relink ... libimf.so ... for IFUNC symbol 'cosf'`: the SYCL runtime loads
+Intel's `libimf.so`, which binds `cosf` to `libm.so.6` without depending on
+it, and glibc then calls libm's IFUNC resolver before libm is relocated.
 
 ### Measured effect
 
