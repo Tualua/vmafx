@@ -4,9 +4,12 @@
 # The licence artifacts of one published production image (ADR-1503, ADR-1513):
 # an SPDX SBOM (Syft v1.51.1) of every platform image, attested on its digest with
 # actions/attest, and the image's corresponding-source companion (the Dockerfile's
-# `<target>-source-export` stage) pushed as <tag>-<suffix>, signed and attested.
-# The calling job has pushed the image, installed cosign, logged in to the
-# registry and holds packages/id-token/attestations write permissions.
+# source-export stage) pushed as <tag>-<suffix>, signed and attested. A job that
+# built its platform images by digest on native runners passes the source images
+# those jobs pushed in `source-digests`; they are merged into one index instead
+# of building the source stage here. The calling job has pushed the image,
+# installed cosign, logged in to the registry and holds packages/id-token/
+# attestations write permissions.
 name: Image licence artifacts
 description: Attest an SPDX SBOM per platform and publish the corresponding-source image
 inputs:
@@ -20,11 +23,17 @@ inputs:
     description: Short name for the SBOM files and artifacts, e.g. cpu
     required: true
   source-file:
-    description: Dockerfile that defines the source stage
-    required: true
+    description: Dockerfile that defines the source stage (build mode)
+    required: false
+    default: ""
   source-target:
-    description: Dockerfile target that holds the corresponding source
-    required: true
+    description: Dockerfile target that holds the corresponding source (build mode)
+    required: false
+    default: ""
+  source-digests:
+    description: Space-separated sha256 digests of source images already pushed per platform (merge mode)
+    required: false
+    default: ""
   source-tag:
     description: Tag of the source image, e.g. v1.0.0-source
     required: true
@@ -78,6 +87,7 @@ runs:
     # at the same place as the image for as long as the image is.
     - name: Build and push the source image
       id: source
+      if: inputs.source-digests == ''
       uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
       with:
         context: .
@@ -88,11 +98,30 @@ runs:
         tags: ${{ inputs.image }}:${{ inputs.source-tag }}
         cache-from: type=gha
         build-args: ${{ inputs.build-args }}
+    - name: Merge the platform source images into one index
+      id: merge
+      if: inputs.source-digests != ''
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        TAG: ${{ inputs.source-tag }}
+        DIGESTS: ${{ inputs.source-digests }}
+      run: |
+        read -r -a digests <<<"$DIGESTS"
+        sources=()
+        for digest in "${digests[@]}"; do
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad source digest: $digest" >&2; exit 1; }
+          sources+=("${IMAGE}@${digest}")
+        done
+        docker buildx imagetools create --tag "${IMAGE}:${TAG}" "${sources[@]}"
+        index="$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+        [[ "$index" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no index digest for ${IMAGE}:${TAG}" >&2; exit 1; }
+        echo "digest=${index}" >>"$GITHUB_OUTPUT"
     - name: Sign the source image
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
-        DIGEST: ${{ steps.source.outputs.digest }}
+        DIGEST: ${{ steps.source.outputs.digest || steps.merge.outputs.digest }}
         TAG: ${{ inputs.source-tag }}
       run: |
         cosign sign --yes "${IMAGE}@${DIGEST}"
@@ -101,5 +130,5 @@ runs:
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
       with:
         subject-name: ${{ inputs.image }}
-        subject-digest: ${{ steps.source.outputs.digest }}
+        subject-digest: ${{ steps.source.outputs.digest || steps.merge.outputs.digest }}
         push-to-registry: true

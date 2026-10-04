@@ -95,9 +95,17 @@ def validate(texts: dict[str, str]) -> None:
 
     # pkg/storage runs rclone for remote inputs (ADR-0719); the v1.0.0-rc.1
     # node image shipped without it although the storage guide promised it.
+    # ADR-1513: rclone is built from its release's module source, at the
+    # version build-config.env pins, so its corresponding source is exact.
     node_stages = stages(texts["docker/Dockerfile.node"])
-    if node_stages.get("rclone-bin", ("", ""))[0] != "${RCLONE_IMAGE}":
-        raise AssertionError("docker/Dockerfile.node has no rclone-bin stage from ${RCLONE_IMAGE}")
+    if node_stages.get("rclone-bin", ("", ""))[0] != "${RELEASE_GO_BASE}":
+        raise AssertionError("docker/Dockerfile.node has no rclone-bin stage built on ${RELEASE_GO_BASE}")
+    if '"github.com/rclone/rclone@${RCLONE_VERSION}"' not in node_stages["rclone-bin"][1]:
+        raise AssertionError("the rclone-bin stage does not build rclone from its module source")
+    pinned = re.search(r'(?m)^RCLONE_VERSION="(v[0-9.]+)"$', texts["build-config.env"])
+    mirrored = re.search(r"(?m)^ARG RCLONE_VERSION=(\S+)$", node_stages["rclone-bin"][1])
+    if pinned is None or mirrored is None or pinned.group(1) != mirrored.group(1):
+        raise AssertionError("Dockerfile.node's RCLONE_VERSION does not mirror build-config.env")
     if "COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone" not in node_stages["runtime-base"][1]:
         raise AssertionError("the node runtime does not bundle rclone")
     if '--entrypoint /usr/local/bin/rclone "${image}" version' not in texts[OPERATOR_NODE]:
@@ -186,6 +194,18 @@ no_rclone["docker/Dockerfile.node"] = no_rclone["docker/Dockerfile.node"].replac
     "COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone\n", ""
 )
 expect_rejected("a node runtime without rclone", no_rclone)
+
+vendor_rclone = deepcopy(texts)
+vendor_rclone["docker/Dockerfile.node"] = vendor_rclone["docker/Dockerfile.node"].replace(
+    "FROM ${RELEASE_GO_BASE} AS rclone-bin", "FROM rclone/rclone:1.75.1 AS rclone-bin"
+)
+expect_rejected("an rclone copied out of the vendor image", vendor_rclone)
+
+drifted_rclone = deepcopy(texts)
+drifted_rclone["build-config.env"] = drifted_rclone["build-config.env"].replace(
+    'RCLONE_VERSION="v1.75.1"', 'RCLONE_VERSION="v1.75.2"'
+)
+expect_rejected("an rclone version that does not mirror build-config.env", drifted_rclone)
 
 print(
     "PASS: images build their models in, the oneAPI image carries its pinned GPU runtime, "

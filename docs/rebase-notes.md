@@ -35,6 +35,30 @@ search:
 - `scripts/docs/check_search_scope.py` runs after the strict build in both
   docs CI jobs; a new record directory that must stay out of the index gets a
   `.meta.yml` and a pattern in that script.
+## Go service and node images carry their licences and source (ADR-1514, 2026-10-04)
+
+`fix/prod-licensing-go-images`. Fork-added build and packaging files only; no
+libvmaf source change.
+
+- `docker/Dockerfile.operator`, `Dockerfile.go-server`, `docker/Dockerfile.node`:
+  the published targets (`operator`, `go-server`, `node-cpu`) copy the receipt of
+  their licence-check stage; the go-builder stages run `licensing.py scan-go` and
+  `go-licences`. A change that adds a Go program, a module with an unusual licence
+  file or a copied library changes `tools/rc1-tester/image/licensing.json` in the
+  same PR.
+- `docker/Dockerfile.node`: never re-add `--enable-nonfree` to the FFmpeg
+  configure line (the binary then declares itself unredistributable); the
+  `ffmpeg-builder-cpu` stage writes `/ffmpeg-source/` (the patched tree, the
+  configure line, the patch series) and records the copied libraries with
+  `scripts/ci/record-copied-debian-libs.sh`. An FFmpeg patch refresh keeps those
+  steps after `make install`.
+- `build-config.env` `RCLONE_VERSION` replaces `RCLONE_IMAGE`; the `rclone-bin`
+  stage runs `go install github.com/rclone/rclone@${RCLONE_VERSION}` and drops
+  `RCLONE_VERSION` from the environment before running rclone (rclone reads
+  `RCLONE_*` variables as flags).
+- The `libvmaf.so*` copies in Dockerfile.go-server and Dockerfile.node use
+  `find -maxdepth 1 \( -type f -o -type l \)`: the glob took Meson's object
+  directory `libvmaf.so.3.0.0.p/` into the images.
 
 ## The ADR navigation is collapsed behind the indexes (ADR-1510, 2026-10-04)
 

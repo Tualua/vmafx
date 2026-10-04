@@ -6,8 +6,13 @@
 #
 # Stages:
 #   vmaf-builder: compiles libvmaf + vmaf CLI on Debian 13
-#   go-builder  : compiles cmd/vmafx-server against that exact libvmaf build
-#   go-server   : distroless Debian 13 runtime carrying both binaries
+#   go-builder  : compiles cmd/vmafx-server against that exact libvmaf build,
+#                 and collects the licence texts of every module it links
+#   go-server   : distroless Debian 13 runtime carrying both binaries and its
+#                 notices; it copies the receipt of `licence-check` (ADR-1513)
+#   source-export: the corresponding source of the copyleft parts (Debian
+#                 packages of the base, MPL-2.0 and EUPL-1.2 Go modules),
+#                 published as <tag>-source
 #
 # Build:
 #   docker build -f Dockerfile.go-server -t ghcr.io/vmafx/vmafx-server:dev .
@@ -49,6 +54,7 @@ ARG VMAFX_VERSION=dev
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:3b77fc618ec235a1ab412de7737f120dd507c57e8d87de4cbb7994fb94275ed5"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4"
 
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
@@ -87,12 +93,23 @@ RUN meson setup /build core \
         -Denable_avx512=true \
     && ninja -C /build -j"${VMAF_BUILD_JOBS}" tools/vmaf
 
+# The SONAME chain only: the glob would also take Meson's object directory
+# libvmaf.so.3.0.0.p/.
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
-    && cp -a /build/src/libvmaf.so* /dist/lib/ \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) \
+        -exec cp -a {} /dist/lib/ \; \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && ln -s vmaf /dist/bin/vmafx \
     && cp -r model/. /dist/model/
+
+# The licence and copyright of every repository file the build compiled
+# (ADR-1503 rule 2); bind mounts keep the build layer above independent of them.
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/src/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/src/REUSE.toml \
+    mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-build --build /build --repo /src \
+        --out /licence-inputs/vmafx-sources.json
 
 # ---------------------------------------------------------------------------
 # Stage 2 — go-builder: compile the Go server against the staged libvmaf
@@ -134,15 +151,31 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
         exit 1; \
     fi
 
+# The licences of the program (ADR-1513): our own Go files merged into the C
+# library's scan, and the licence and notice files of every module the binary
+# links, read from its build information.
+COPY --from=vmaf-builder /licence-inputs/vmafx-sources.json /tmp/vmaf-sources.json
+# hadolint ignore=DL3008
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && apt-get clean \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-go --repo /src \
+        --package ./cmd/vmafx-server --merge /tmp/vmaf-sources.json \
+        --out /licence-inputs/vmafx-sources.json \
+    && python3 tools/rc1-tester/image/licensing.py go-licences \
+        --binary /out/vmafx-server --out /licence-inputs/go
+
 # ---------------------------------------------------------------------------
-# Stage 3 — go-server: distroless runtime (glibc, no shell)
+# Stage 3 — go-server-assembled: distroless runtime (glibc, no shell)
 # ---------------------------------------------------------------------------
-FROM ${RELEASE_RUNTIME_CC} AS go-server
+FROM ${RELEASE_RUNTIME_CC} AS go-server-assembled
 
 LABEL org.opencontainers.image.title="vmafx-server"
-LABEL org.opencontainers.image.description="VMAFX scoring server — Go gRPC + HTTP, backed by libvmaf"
+LABEL org.opencontainers.image.description="VMAFX scoring server — Go gRPC + HTTP, backed by libvmaf. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 # Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.
@@ -152,6 +185,71 @@ COPY --from=vmaf-builder /dist/model/ /usr/local/share/vmafx/model/
 
 # Copy the Go server binary.
 COPY --from=go-builder /out/vmafx-server /usr/local/bin/vmafx-server
+
+# ---------------------------------------------------------------------------
+# notices: written on a copy of the distroless tree, which has no interpreter
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS notices
+COPY --from=go-server-assembled / /rootfs
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
+    mkdir /texts \
+    && python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-go-server-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --go-licences /licence-inputs/go \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+
+FROM go-server-assembled AS go-server-with-notices
+COPY --from=notices /rootfs/usr/local/share/vmafx/licenses /usr/local/share/vmafx/licenses
+
+# ---------------------------------------------------------------------------
+# licence-check: every file of the image has a recorded licence (ADR-1503
+# rule 3); `go-server` copies its receipt, so it cannot be built without it
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS licence-check
+RUN --mount=type=bind,from=go-server-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact production-go-server-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# source-export: Debian sources of the base's packages and the module zips of
+# the copyleft Go modules, published as <tag>-source (ADR-1503 rule 5)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=go-server-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-go-server-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+
+FROM scratch AS source-export
+COPY --from=source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# go-server: the published image
+# ---------------------------------------------------------------------------
+FROM go-server-with-notices AS go-server
+
+COPY --from=licence-check /out/licence-check.json /usr/local/share/vmafx/licence-check.json
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
 ENV VMAFX_VMAF_BINARY="/usr/local/bin/vmaf"

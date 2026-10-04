@@ -19,7 +19,14 @@ sources      --artifact KIND --root DIR --repo DIR --out FILE
              list the source packages the artifact's copyleft object code needs
 fetch-sources --list FILE --out DIR
              download those source packages (apt-get source, snapshot.debian.org,
-             recorded archives by SHA-256, recorded source trees by git commit)
+             recorded archives by SHA-256, recorded source trees by git commit,
+             Go module zips from proxy.golang.org by the binary's h1 hash)
+scan-go      --package PKG [--package PKG ...] --repo DIR --out FILE [--merge FILE]
+             licence and copyright of every own Go file the programs compile
+             (`go list -deps`), merged into a scan-build output when given
+go-licences  --binary FILE [--binary FILE ...] --out DIR
+             copy the licence and notice files of every module the Go programs
+             link out of the module cache into DIR/<module>@<version>/
 
 The record is licensing.json next to this file.
 """
@@ -260,6 +267,57 @@ def scan_build(build: Path, repo: Path, manifest: dict) -> dict:
     licences = sorted(set().union(*(spdx_ids(f["licence"]) for f in files)) - {"NONE"})
     return {"schema_version": 1, "licences": licences, "files": files,
             "system_inputs": len(groups["system"])}  # fmt: skip
+
+
+def go_list_files(package: str, repo: Path, own: set[str]) -> list[str]:
+    """Repository files `go build` compiles or embeds for a package and its
+    dependencies inside our own modules (`go list -deps -json`)."""
+    result = subprocess.run(["go", "list", "-deps", "-json", package], cwd=repo, capture_output=True,
+                            text=True, timeout=TIMEOUT, check=False, env=git_environment())  # fmt: skip
+    if result.returncode != 0:
+        raise LicensingError(f"go list {package}: {result.stderr.strip()[:300]}")
+    decoder, text, pos, files = json.JSONDecoder(), result.stdout, 0, set()
+    for _ in range(MAX_FILES):
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos >= len(text):
+            break
+        package_info, pos = decoder.raw_decode(text, pos)
+        if (package_info.get("Module") or {}).get("Path") in own:
+            files |= package_files(package_info, repo)
+    return sorted(files)
+
+
+def package_files(info: dict, repo: Path) -> set[str]:
+    base = Path(info["Dir"]).resolve()
+    names = info.get("GoFiles", []) + info.get("CgoFiles", []) + info.get("EmbedFiles", [])
+    return {(base / name).resolve().relative_to(repo.resolve()).as_posix() for name in names}
+
+
+def scan_go(args: argparse.Namespace, manifest: dict) -> dict:
+    """The build scan of our own Go files a Go program compiles, merged into an
+    existing scan (the C library's) when one is given."""
+    repo = Path(args.repo)
+    annotations = load_reuse(repo)
+    own = set(manifest.get("go_own_modules", []))
+    scan = json.loads(Path(args.merge).read_text(encoding="utf-8")) if args.merge else {
+        "schema_version": 1, "licences": [], "files": [], "system_inputs": 0}  # fmt: skip
+    known = {entry["path"] for entry in scan["files"]}
+    for package in args.package:
+        for rel in go_list_files(package, repo, own):
+            if rel in known:
+                continue
+            expression, copyrights = file_licence(repo / rel, rel, annotations)
+            if not expression:
+                raise LicensingError(
+                    f"compiled Go file {rel} has no SPDX header and no REUSE.toml entry"
+                )
+            scan["files"].append({"path": rel, "licence": expression, "copyright": copyrights})
+            known.add(rel)
+    scan["licences"] = sorted(
+        set().union(*(spdx_ids(f["licence"]) for f in scan["files"])) - {"NONE"}
+    )
+    return scan
 
 
 # ----------------------------------------------------------------- artifact facts
@@ -506,6 +564,8 @@ def claims(component: dict, globs: list, listed: set[str], ctx: Context, rel: st
         return rel in ctx.recorded or in_dist_info(component, rel)
     if kind == "repo":
         return repo_path(component, rel) is not None
+    if kind == "dpkg-copied":
+        return copied_claims(component, ctx, rel)
     return rel in listed or any(glob.match(rel) for glob in globs)
 
 
@@ -889,9 +949,16 @@ def write_notices(args: argparse.Namespace, manifest: dict) -> None:
         install_text(target, entry, licence_root, repo, Path(args.texts))
     lines = notice_header(record, args)
     for component in record["components"]:
-        if component["kind"] not in {"dpkg", "python-dist", "notices", "state"}:
+        if component["kind"] not in {"dpkg", "dpkg-copied", "python-dist", "notices", "state"}:
             lines += component_section(component, per_component.get(component["id"]))
-    lines += dpkg_section(ctx) + dist_section(ctx, manifest)
+    if getattr(args, "go_licences", None):
+        shutil.copytree(args.go_licences, licence_root / "go", dirs_exist_ok=True)
+    lines += (
+        copied_section(ctx)
+        + dpkg_section(ctx)
+        + dist_section(ctx, manifest)
+        + go_section(ctx, manifest)
+    )
     (licence_root / NOTICES_NAME).write_text("\n".join(lines), encoding="utf-8")
     shutil.copyfile(args.build_scan, licence_root / "vmafx-compiled-sources.json")
 
@@ -906,6 +973,7 @@ def run_check(args: argparse.Namespace, manifest: dict) -> list[str]:
     problems += check_python(record, args.python_version)
     problems += check_dpkg(ctx) + check_dists(ctx) + check_grafted(ctx, manifest)
     problems += check_vendored(ctx, owned)
+    problems += go_problems(ctx, manifest) + copied_problems(ctx)
     reuse = load_reuse(repo)
     per_component: dict[str, list[dict]] = {}
     for component in record["components"]:
@@ -968,6 +1036,7 @@ def debian_specs(ctx: Context, record: dict) -> set[str]:
     for fields in ctx.packages:
         if fields["Package"] not in foreign:  # its component names the vendor's source
             specs.update(package_sources(fields))
+    specs |= copied_specs(ctx)
     for component in record["components"]:
         spec_file = component.get("debian_source_file")
         if spec_file:
@@ -1011,7 +1080,8 @@ def source_list(args: argparse.Namespace, manifest: dict) -> list[str]:
     record = artifact_record(manifest, args.artifact)
     ctx = Context(Path(args.root), Path(args.repo), record)
     specs, archives = debian_specs(ctx, record), archive_ids(ctx, manifest)
-    return [f"debian {s}" for s in sorted(specs)] + [f"archive {a}" for a in sorted(archives)]
+    return ([f"debian {s}" for s in sorted(specs)] + [f"archive {a}" for a in sorted(archives)]
+            + go_source_lines(ctx, manifest))  # fmt: skip
 
 
 def download(url: str, destination: Path, sha256: str | None) -> None:
@@ -1124,6 +1194,8 @@ def fetch_sources(args: argparse.Namespace, manifest: dict) -> list[str]:
         kind, value = line.split(" ", 1)
         if kind == "debian":
             index.append(f"{value}  debian/  ({fetch_debian(value, out / 'debian')})")
+        elif kind == "gomod":
+            index.append(fetch_go_module(value, out))
         else:
             index.append(fetch_archive(manifest["source_archives"][value], out))
     return index
@@ -1158,6 +1230,374 @@ def fetch_texts(args: argparse.Namespace, manifest: dict) -> None:
         download(spec["url"], out / name, spec["sha256"])
 
 
+# ------------------------------------------------- libraries copied out of dpkg
+
+
+def copied_entries(root: Path, component: dict) -> list[dict]:
+    """Rows of a `dpkg-copied` component's list: a shared library copied out of a
+    Debian package into an image without that package's dpkg record (the node
+    image's FFmpeg dependencies). Row: `<path> <package> <version> <source>=<version>`."""
+    listing = root / component["list"]
+    if not listing.is_file():
+        return []
+    rows = []
+    for line in listing.read_text(encoding="utf-8").splitlines():
+        fields = line.split()
+        if len(fields) == 4:
+            rows.append({"path": fields[0].lstrip("/"), "package": fields[1], "version": fields[2],
+                         "source": fields[3]})  # fmt: skip
+    return rows
+
+
+def copied_problems(ctx: Context) -> list[str]:
+    problems = []
+    for component in ctx.record["components"]:
+        if component["kind"] != "dpkg-copied":
+            continue
+        if not (ctx.root / component["list"]).is_file():
+            problems.append(f"{component['list']} (list of component {component['id']}) is missing")
+        for row in copied_entries(ctx.root, component):
+            if not (ctx.root / row["path"]).exists():
+                problems.append(f"copied library {row['path']} is listed but not in the artifact")
+            if not (ctx.root / component["root"] / row["package"] / "copyright").is_file():
+                problems.append(
+                    f"copied library {row['path']}: package {row['package']} has no copyright file"
+                )
+    return problems
+
+
+def copied_claims(component: dict, ctx: Context, rel: str) -> bool:
+    if rel == component["list"] or rel.startswith(component["root"].rstrip("/") + "/"):
+        return True
+    return rel in {row["path"] for row in copied_entries(ctx.root, component)}
+
+
+def copied_section(ctx: Context) -> list[str]:
+    lines = []
+    for component in ctx.record["components"]:
+        if component["kind"] != "dpkg-copied":
+            continue
+        lines.append(f"[component {component['id']}] {component['name']}: each package's terms are "
+                     f"{component['root']}/<package>/copyright")  # fmt: skip
+        lines += [f"  {row['path']}: {row['package']} {row['version']}  source {row['source']}"
+                  for row in copied_entries(ctx.root, component)]  # fmt: skip
+        lines.append("")
+    return lines
+
+
+def copied_specs(ctx: Context) -> set[str]:
+    return {row["source"] for component in ctx.record["components"] if component["kind"] == "dpkg-copied"
+            for row in copied_entries(ctx.root, component)}  # fmt: skip
+
+
+# --------------------------------------------------------------------- Go modules
+
+GO_MAGIC = b"\xff Go buildinf:"
+LICENCE_CLASSES = (  # first match wins; the text of a module's licence file
+    ("AGPL-3.0", re.compile(r"GNU AFFERO GENERAL PUBLIC LICENSE")),
+    ("LGPL-3.0", re.compile(r"GNU LESSER GENERAL PUBLIC LICENSE\s+Version 3")),
+    ("LGPL-2.1", re.compile(r"GNU LESSER GENERAL PUBLIC LICENSE\s+Version 2\.1")),
+    ("LGPL-2.0", re.compile(r"GNU LIBRARY GENERAL PUBLIC LICENSE")),
+    ("GPL-3.0", re.compile(r"GNU GENERAL PUBLIC LICENSE\s+Version 3")),
+    ("GPL-2.0", re.compile(r"GNU GENERAL PUBLIC LICENSE\s+Version 2")),
+    ("EUPL-1.2", re.compile(r"EUROPEAN UNION PUBLIC LICEN[CS]E", re.IGNORECASE)),
+    ("MPL-2.0", re.compile(r"Mozilla Public License,? [Vv]ersion 2\.0")),
+    ("EPL-2.0", re.compile(r"Eclipse Public License - v 2\.0")),
+    ("Apache-2.0", re.compile(r"Apache License,?\s+Version 2\.0")),
+    ("MIT", re.compile(r"Permission is hereby granted, free of charge")),
+    (
+        "BSD-3-Clause",
+        re.compile(
+            r"Redistribution and use in source and binary forms[\s\S]*?(?:endorse|promote) products"
+        ),
+    ),
+    ("BSD-2-Clause", re.compile(r"Redistribution and use in source and binary forms")),
+    (
+        "ISC",
+        re.compile(
+            r"Permission to use, copy, modify, and(?:/or)? distribute this software for any"
+        ),
+    ),
+    (
+        "Unlicense",
+        re.compile(r"This is free and unencumbered software released into the public domain"),
+    ),
+    ("CC0-1.0", re.compile(r"CC0 1\.0 Universal|Creative Commons Legal Code\s+CC0")),
+    ("BSL-1.0", re.compile(r"Boost Software License - Version 1\.0")),
+    ("Zlib", re.compile(r"This software is provided 'as-is', without any express or implied")),
+)
+COPYLEFT_CLASSES = {
+    "AGPL-3.0",
+    "LGPL-3.0",
+    "LGPL-2.1",
+    "LGPL-2.0",
+    "GPL-3.0",
+    "GPL-2.0",
+    "EUPL-1.2",
+    "MPL-2.0",
+    "EPL-2.0",
+}
+LINKING_CLASSES = {"AGPL-3.0", "LGPL-3.0", "LGPL-2.1", "LGPL-2.0", "GPL-3.0", "GPL-2.0"}
+GO_LICENCE_FILE = re.compile(r"(?i)^(licen[cs]e|copying|unlicense|notice|patents)([._-].*)?$")
+
+
+def classify_licence_text(text: str) -> str:
+    for name, pattern in LICENCE_CLASSES:
+        if pattern.search(text):
+            return name
+    return "UNKNOWN"
+
+
+def elf_section(data: bytes, wanted: str) -> bytes | None:
+    """Bytes of a named section of a 64-bit little-endian ELF file, or None."""
+    if data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+        return None
+    (shoff,) = struct.unpack_from("<Q", data, 0x28)
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x3A)
+    if shoff == 0 or shstrndx >= shnum:
+        return None
+    names_off, names_size = struct.unpack_from("<QQ", data, shoff + shstrndx * shentsize + 0x18)
+    names = data[names_off : names_off + names_size]
+    for index in range(min(shnum, 4096)):
+        base = shoff + index * shentsize
+        (name_at,) = struct.unpack_from("<I", data, base)
+        name = names[name_at : names.find(b"\0", name_at)].decode("ascii", "replace")
+        if name == wanted:
+            offset, size = struct.unpack_from("<QQ", data, base + 0x18)
+            return data[offset : offset + size]
+    return None
+
+
+def read_varint_string(data: bytes, pos: int) -> tuple[str, int]:
+    length, shift = 0, 0
+    for _ in range(10):
+        byte = data[pos]
+        pos += 1
+        length |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            break
+        shift += 7
+    return data[pos : pos + length].decode("utf-8", "replace"), pos + length
+
+
+def go_buildinfo(path: Path) -> dict | None:
+    """The module information Go 1.18+ writes into `.go.buildinfo` (inline-string
+    form): main module and every linked dependency, replacements applied."""
+    section = elf_section(path.read_bytes(), ".go.buildinfo")
+    if section is None or not section.startswith(GO_MAGIC):
+        return None
+    if not section[15] & 0x2:
+        raise LicensingError(f"{path}: Go build info is not in the inline-string form (Go < 1.18)")
+    version, pos = read_varint_string(section, 32)
+    modinfo, _ = read_varint_string(section, pos)
+    return parse_modinfo(version, modinfo[16:-16] if len(modinfo) >= 32 else "")
+
+
+def parse_modinfo(version: str, modinfo: str) -> dict:
+    info: dict = {"go": version, "main": None, "deps": []}
+    for line in modinfo.splitlines():
+        fields = line.split("\t")
+        if fields[0] == "mod" and len(fields) >= 3:
+            info["main"] = {
+                "path": fields[1],
+                "version": fields[2],
+                "sum": fields[3] if len(fields) > 3 else "",
+            }
+        elif fields[0] == "dep" and len(fields) >= 3:
+            info["deps"].append(
+                {
+                    "path": fields[1],
+                    "version": fields[2],
+                    "sum": fields[3] if len(fields) > 3 else "",
+                }
+            )
+        elif fields[0] == "=>" and len(fields) >= 3 and info["deps"]:
+            info["deps"][-1] = {
+                "path": fields[1],
+                "version": fields[2],
+                "sum": fields[3] if len(fields) > 3 else "",
+            }
+    return info
+
+
+def go_modules(path: Path, own_modules: set[str]) -> list[dict]:
+    """The third-party modules a Go binary links: its dependencies, and its main
+    module when that is not one of ours (a vendor program built from source)."""
+    info = go_buildinfo(path)
+    if info is None:
+        raise LicensingError(f"{path} carries no Go build information")
+    modules = list(info["deps"])
+    main = info["main"]
+    if main and main["path"] not in own_modules:
+        modules.append(main)
+    return [m for m in modules if m["path"] not in own_modules]
+
+
+def module_key(module: dict) -> str:
+    return f"{module['path']}@{module['version']}"
+
+
+def go_module_dir(module: dict) -> Path:
+    result = subprocess.run(
+        ["go", "mod", "download", "-json", module_key(module)],
+        capture_output=True, text=True, timeout=TIMEOUT, check=False,
+        env={**git_environment(), "GOFLAGS": "-mod=mod"},
+    )  # fmt: skip
+    try:
+        found = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise LicensingError(
+            f"go mod download {module_key(module)}: {result.stderr.strip()[:200]}"
+        ) from error
+    if "Dir" not in found:
+        raise LicensingError(
+            f"go mod download {module_key(module)}: {found.get('Error', 'no directory')}"
+        )
+    return Path(found["Dir"])
+
+
+def copy_module_texts(source: Path, target: Path) -> list[str]:
+    copied = []
+    for item in sorted(source.iterdir()):
+        if item.is_file() and GO_LICENCE_FILE.match(item.name):
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(item, target / item.name)
+            copied.append(item.name)
+    return copied
+
+
+def collect_go_licences(args: argparse.Namespace, manifest: dict) -> dict:
+    """Licence and notice files of every module the binaries link, copied out of
+    the module cache into <out>/<module>@<version>/ (go-licences command)."""
+    out = Path(args.out)
+    rules = manifest.get("go_module_licences", {})
+    own = set(manifest.get("go_own_modules", []))
+    found: dict[str, dict] = {}
+    for binary in args.binary:
+        for module in go_modules(Path(binary), own):
+            found.setdefault(module_key(module), module)
+    for key, module in sorted(found.items()):
+        same = rules.get(module["path"], {}).get("same_as")
+        source = go_module_dir({"path": same, "version": module["version"]} if same else module)
+        if not copy_module_texts(source, out / key):
+            raise LicensingError(
+                f"Go module {key} keeps no licence file; record it in go_module_licences"
+            )
+    return {"modules": sorted(found)}
+
+
+def go_binary_files(ctx: Context) -> list[Path]:
+    """The Go programs `go-binary` components name (exact paths, not globs)."""
+    return [ctx.root / rel for component in ctx.record["components"]
+            if component["kind"] == "go-binary" for rel in component["paths"]]  # fmt: skip
+
+
+def go_problems(ctx: Context, manifest: dict) -> list[str]:
+    """Every recorded Go program is in the artifact, every module it links has its
+    licence texts in the licence directory, and each licence is classifiable."""
+    problems = [f"recorded Go program {path.relative_to(ctx.root)} is not in the artifact"
+                for path in go_binary_files(ctx) if not path.is_file()]  # fmt: skip
+    licence_root = ctx.root / ctx.record["licence_root"] / "go"
+    for module in shipped_go_modules(ctx, manifest):
+        problems += go_module_problems(licence_root / module_key(module), module, manifest)
+    return problems
+
+
+def go_module_problems(texts: Path, module: dict, manifest: dict) -> list[str]:
+    files = sorted(texts.glob("*")) if texts.is_dir() else []
+    if not files:
+        return [f"Go module {module_key(module)} has no licence text in the licence directory"]
+    licence = go_module_licence(module, files, manifest)
+    return (
+        [f"Go module {module_key(module)}: licence not recognised; record it in go_module_licences"]
+        if licence == "UNKNOWN"
+        else []
+    )
+
+
+def go_module_licence(module: dict, files: list[Path], manifest: dict) -> str:
+    recorded = manifest.get("go_module_licences", {}).get(module["path"], {}).get("licence")
+    if recorded:
+        return recorded
+    classes = {classify_licence_text(f.read_text(encoding="utf-8", errors="replace"))
+               for f in files if not re.match(r"(?i)^(notice|patents)", f.name)}  # fmt: skip
+    classes.discard("UNKNOWN")
+    return " AND ".join(sorted(classes)) if classes else "UNKNOWN"
+
+
+def shipped_go_modules(ctx: Context, manifest: dict) -> list[dict]:
+    own = set(manifest.get("go_own_modules", []))
+    found: dict[str, dict] = {}
+    for path in go_binary_files(ctx):
+        if path.is_file():
+            for module in go_modules(path, own):
+                found.setdefault(module_key(module), module)
+    return [found[key] for key in sorted(found)]
+
+
+def go_section(ctx: Context, manifest: dict) -> list[str]:
+    modules = shipped_go_modules(ctx, manifest)
+    if not modules:
+        return []
+    licence_root = ctx.root / ctx.record["licence_root"] / "go"
+    lines = ["[go] Go modules linked into the Go programs: module version, licence, texts in go/"]
+    for module in modules:
+        files = sorted((licence_root / module_key(module)).glob("*"))
+        lines.append(
+            f"  {module['path']} {module['version']}: {go_module_licence(module, files, manifest)}"
+        )
+    return lines + [""]
+
+
+def go_source_lines(ctx: Context, manifest: dict) -> list[str]:
+    """`gomod <module>@<version> <h1 sum>` for the corresponding source: every
+    copyleft module, and every module of a binary that links an LGPL or GPL one
+    (LGPL-3.0 4(d): the application's code in a form that can be relinked)."""
+    own = set(manifest.get("go_own_modules", []))
+    licence_root = ctx.root / ctx.record["licence_root"] / "go"
+    lines: set[str] = set()
+    for path in go_binary_files(ctx):
+        if path.is_file():
+            lines |= binary_source_lines(go_modules(path, own), licence_root, manifest)
+    return sorted(lines)
+
+
+def binary_source_lines(modules: list[dict], licence_root: Path, manifest: dict) -> set[str]:
+    licences = {module_key(m): go_module_licence(m, sorted((licence_root / module_key(m)).glob("*")), manifest)
+                for m in modules}  # fmt: skip
+    linked_gpl = any(spdx_ids(licence) & LINKING_CLASSES for licence in licences.values())
+    return {f"gomod {module_key(m)} {m['sum']}" for m in modules
+            if linked_gpl or spdx_ids(licences[module_key(m)]) & COPYLEFT_CLASSES}  # fmt: skip
+
+
+def module_escape(path: str) -> str:
+    """The module proxy's case encoding: an upper-case letter becomes '!' + lower."""
+    return re.sub(r"[A-Z]", lambda m: "!" + m.group(0).lower(), path)
+
+
+def go_zip_hash(zip_path: Path) -> str:
+    """golang.org/x/mod/sumdb/dirhash Hash1 of a module zip ('h1:' + base64)."""
+    import base64
+    import zipfile
+
+    with zipfile.ZipFile(zip_path) as archive:
+        names = sorted(n for n in archive.namelist() if not n.endswith("/"))
+        summary = "".join(f"{hashlib.sha256(archive.read(n)).hexdigest()}  {n}\n" for n in names)
+    return "h1:" + base64.b64encode(hashlib.sha256(summary.encode()).digest()).decode()
+
+
+def fetch_go_module(value: str, out: Path) -> str:
+    key, digest = value.split(" ", 1)
+    path, version = key.rsplit("@", 1)
+    target = out / "go" / f"{module_escape(path).replace('/', '_')}@{version}.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    download(f"https://proxy.golang.org/{module_escape(path)}/@v/{version}.zip", target, None)
+    if go_zip_hash(target) != digest:
+        target.unlink()
+        raise LicensingError(f"{key}: module zip hash is not the binary's {digest}")
+    return f"{key}  go/{target.name}  proxy.golang.org, {digest}"
+
+
 # ------------------------------------------------------------------------- CLI
 
 
@@ -1171,6 +1611,8 @@ def parser() -> argparse.ArgumentParser:
         "check": ("artifact", "root", "repo", "build_scan", "python_version"),
         "sources": ("artifact", "root", "repo", "out"),
         "fetch-sources": ("list", "out"),
+        "go-licences": ("out",),
+        "scan-go": ("repo", "out"),
     }
     for name, options in commands.items():
         command = sub.add_parser(name)
@@ -1180,6 +1622,13 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument(
                 "--receipt", help="write a JSON summary here when the check passes"
             )
+        if name == "notices":
+            command.add_argument("--go-licences", help="output of go-licences, copied to go/")
+        if name == "go-licences":
+            command.add_argument("--binary", action="append", required=True, help="a Go program")
+        if name == "scan-go":
+            command.add_argument("--package", action="append", required=True, help="a main package")
+            command.add_argument("--merge", help="an existing scan (scan-build output) to extend")
     return top
 
 
@@ -1195,6 +1644,15 @@ def dispatch(args: argparse.Namespace, manifest: dict) -> int:
         return report_check(args, run_check(args, manifest))
     elif args.command == "sources":
         Path(args.out).write_text("\n".join(source_list(args, manifest)) + "\n", encoding="utf-8")
+    elif args.command == "scan-go":
+        Path(args.out).write_text(
+            json.dumps(scan_go(args, manifest), indent=1) + "\n", encoding="utf-8"
+        )
+    elif args.command == "go-licences":
+        collected = collect_go_licences(args, manifest)
+        (Path(args.out) / "modules.json").write_text(
+            json.dumps(collected, indent=1) + "\n", encoding="utf-8"
+        )
     else:
         index = fetch_sources(args, manifest)
         (Path(args.out) / "SOURCES.txt").write_text("\n".join(index) + "\n", encoding="utf-8")

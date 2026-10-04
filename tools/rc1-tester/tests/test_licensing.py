@@ -578,7 +578,9 @@ def test_every_artifact_records_its_interpreter_and_core_components() -> None:
     data = lic.load_manifest()
     for kind, record in data["artifacts"].items():
         kinds = {c["kind"] for c in record["components"]}
-        assert {"build", "repo", "notices"} <= kinds, kind
+        assert {"build", "notices"} <= kinds, kind
+        # every artifact that ships repository files (models, report code) maps them
+        assert "repo" in kinds or kind == "production-operator-image", kind
         if "python" in record:  # a python.org interpreter with its packages
             assert record["python"]["version"] in data["cpython_license_rst"], kind
             assert "python-dist" in kinds, kind

@@ -347,6 +347,34 @@ docker buildx build --target cli-source-export -f docker/Dockerfile.production \
   --output type=local,dest=./cli-source .
 ```
 
+### Go service and node images
+
+`docker/Dockerfile.operator`, `Dockerfile.go-server` and `docker/Dockerfile.node`
+(`node-cpu`) follow the same pattern
+([ADR-1514](../adr/1514-go-and-node-image-licensing.md)): the go-builder stage
+runs `licensing.py scan-go` (the licences of our own Go files the program
+compiles) and `licensing.py go-licences`, which reads the module list from the
+binary's build information and copies every module's `LICENSE*`, `COPYING*`,
+`NOTICE*` and `PATENTS*` files into `/usr/local/share/vmafx/licenses/go/`. The
+licence check fails on a module without a text or with a licence it cannot
+classify (`go_module_licences` in `licensing.json` records exceptions, such as a
+nested module that shares its repository's `LICENSE`). The `source-export` /
+`node-source-export` stages hold the module zips of every copyleft module,
+checked against the binary's `h1:` sums, and the Debian sources of the base.
+
+The node image adds:
+
+- FFmpeg built with `--enable-gpl --enable-version3` (never `--enable-nonfree`),
+  its licence files in `/usr/local/share/vmafx/ffmpeg/`, and in the source image
+  the patched tree exactly as compiled with `CONFIGURE.txt` and the patch series;
+- the libraries copied out of Debian packages for FFmpeg, recorded by
+  `scripts/ci/record-copied-debian-libs.sh` in
+  `/usr/local/share/vmafx/copied-packages/packages.list` with each package's
+  copyright file (the source image holds their Debian sources);
+- rclone built from its release's module source at `RCLONE_VERSION`
+  (`build-config.env`), so the source image can hold the exact source of it and
+  of every module it links (it links an LGPL-3.0 module).
+
 ## Building locally
 
 ```bash

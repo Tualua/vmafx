@@ -5,7 +5,9 @@ The `pkg/storage` package turns a remote asset URI into something ffmpeg can
 read without writing the content to local disk or RAM. It uses
 [rclone](https://rclone.org), a single Go binary that supports 70+ storage
 backends, bundled into the node container image at `/usr/local/bin/rclone`. The
-version is pinned by `RCLONE_IMAGE` in `build-config.env` (rclone 1.75.1).
+version is pinned by `RCLONE_VERSION` in `build-config.env` (rclone 1.75.1); the
+image builds that release from its module source, so its source is published
+with the image ([licensing](../licensing.md)).
 
 !!! warning "Not yet wired into `vmafx-node`"
     `pkg/storage` is implemented and unit-tested, but no non-test code under

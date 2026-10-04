@@ -121,16 +121,13 @@ def published_targets(workflow: str) -> set[tuple[str, str]]:
 
 
 # Published production targets whose licence gate lands with a later PR of the
-# production-licensing train (ADR-1513; docs/state.md rows
-# T-PROD-LICENCE-GPU-IMAGES-2026-10-04 and T-PROD-LICENCE-GO-IMAGES-2026-10-04).
+# production-licensing train (ADR-1513; docs/state.md row
+# T-PROD-LICENCE-GPU-IMAGES-2026-10-04).
 # The set only shrinks; the test fails on an entry that has gained its gate.
 PENDING = {
     ("docker/Dockerfile.production-gpu", "final-cuda13"),
     ("docker/Dockerfile.production-gpu", "final-rocm10"),
     ("docker/Dockerfile.production-gpu", "final-oneapi2026"),
-    ("docker/Dockerfile.operator", "operator"),
-    ("Dockerfile.go-server", "go-server"),
-    ("docker/Dockerfile.node", "node-cpu"),
 }
 
 

@@ -4346,7 +4346,7 @@
         ".github/workflows/docker-publish-operator-node.yml": 1,
         "deploy/helm/vmafx/templates/node.yaml": 2,
         "deploy/helm/vmafx/templates/secret-rclone-config.yaml": 1,
-        "docker/Dockerfile.node": 1,
+        "docker/Dockerfile.node": 2,
         "pkg/storage/fuse_mount.go": 2,
         "pkg/storage/http_serve.go": 1,
         "pkg/storage/storage.go": 1,
@@ -9824,10 +9824,14 @@
       "sites": {
         ".github/actions/image-licence-artifacts/action.yml": 2,
         ".github/actions/image-licence-artifacts/sbom.sh": 1,
+        ".github/workflows/docker-publish-operator-node.yml": 6,
         ".github/workflows/docker-publish-production.yml": 2,
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
+        "Dockerfile.go-server": 3,
         "REUSE.toml": 2,
+        "docker/Dockerfile.node": 4,
+        "docker/Dockerfile.operator": 2,
         "docker/Dockerfile.production": 8,
         "docker/Dockerfile.tester": 13,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
@@ -9883,8 +9887,15 @@
     "1513": {
       "sites": {
         ".github/actions/image-licence-artifacts/action.yml": 1,
+        ".github/workflows/docker-publish-operator-node.yml": 7,
         ".github/workflows/docker-publish-production.yml": 2,
+        "Dockerfile.go-server": 2,
+        "docker/Dockerfile.node": 5,
+        "docker/Dockerfile.operator": 2,
         "docker/Dockerfile.production": 2,
+        "scripts/ci/record-copied-debian-libs.sh": 1,
+        "scripts/release/tests/test-docker-image-runtime-contract.sh": 1,
+        "tools/rc1-tester/tests/test_licensing_go.py": 1,
         "tools/rc1-tester/tests/test_licensing_production.py": 2
       },
       "target": "1513-production-artifact-licensing.md"

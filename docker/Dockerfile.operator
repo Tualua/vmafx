@@ -4,9 +4,14 @@
 # docker/Dockerfile.operator — multi-stage build for the vmafx-operator Go binary.
 #
 # Stages:
-#   go-builder : compiles cmd/vmafx-operator using ${RELEASE_GO_BASE}
+#   go-builder : compiles cmd/vmafx-operator using ${RELEASE_GO_BASE}, and
+#                collects the licence texts of every module it links
 #   operator   : ${RELEASE_RUNTIME_STATIC} runtime (no libc needed;
-#                pure-Go binary, no cgo)
+#                pure-Go binary, no cgo), with its notices; it copies the
+#                receipt of `licence-check` (ADR-1513)
+#   source-export : the corresponding source of the copyleft parts (Debian
+#                packages of the base, MPL-2.0 and EUPL-1.2 Go modules),
+#                published as <tag>-source
 #
 # The operator has no libvmaf dependency — it drives Kubernetes CRD reconciliation
 # (VmafxJob / VmafxNode / VmafxModelTraining) and never calls the VMAF scoring
@@ -51,6 +56,7 @@ ARG VMAFX_VERSION=dev
 # these lines, then run that script with --write.
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:3b77fc618ec235a1ab412de7737f120dd507c57e8d87de4cbb7994fb94275ed5"
 ARG RELEASE_RUNTIME_STATIC="gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4"
 
 FROM ${RELEASE_GO_BASE} AS go-builder
 
@@ -78,21 +84,97 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
         -o /out/vmafx-operator \
         ./cmd/vmafx-operator
 
+# The licences of the program (ADR-1513): those of our own Go files from their
+# SPDX headers (`go list -deps`), and the licence and notice files of every
+# module the binary links, read from its build information.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && apt-get clean \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-go --repo /src \
+        --package ./cmd/vmafx-operator --out /licence-inputs/vmafx-sources.json \
+    && python3 tools/rc1-tester/image/licensing.py go-licences \
+        --binary /out/vmafx-operator --out /licence-inputs/go
+
 # ---------------------------------------------------------------------------
-# Stage 2 — operator: distroless static runtime (no libc, no shell)
+# Stage 2 — operator-assembled: distroless static runtime (no libc, no shell)
 # ---------------------------------------------------------------------------
 # gcr.io/distroless/static-debian13 is appropriate for CGO_ENABLED=0 binaries.
 # It contains only the CA bundle and timezone data — no libc, no shell.
 # This is 2 MB smaller than distroless/cc and has a smaller attack surface.
-FROM ${RELEASE_RUNTIME_STATIC} AS operator
+FROM ${RELEASE_RUNTIME_STATIC} AS operator-assembled
 
 LABEL org.opencontainers.image.title="vmafx-operator"
-LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining"
+LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+LABEL org.opencontainers.image.licenses="EUPL-1.2"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 COPY --from=go-builder /out/vmafx-operator /usr/local/bin/vmafx-operator
+
+# ---------------------------------------------------------------------------
+# notices: written on a copy of the distroless tree, which has no interpreter
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS notices
+COPY --from=operator-assembled / /rootfs
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
+    mkdir /texts \
+    && python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-operator-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --go-licences /licence-inputs/go \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+
+FROM operator-assembled AS operator-with-notices
+COPY --from=notices /rootfs/usr/local/share/vmafx/licenses /usr/local/share/vmafx/licenses
+
+# ---------------------------------------------------------------------------
+# licence-check: every file of the image has a recorded licence (ADR-1503
+# rule 3); `operator` copies its receipt, so it cannot be built without it
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS licence-check
+RUN --mount=type=bind,from=operator-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact production-operator-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# source-export: Debian sources of the base's packages and the module zips of
+# the copyleft Go modules, published as <tag>-source (ADR-1503 rule 5)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=operator-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-operator-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+
+FROM scratch AS source-export
+COPY --from=source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# operator: the published image
+# ---------------------------------------------------------------------------
+FROM operator-with-notices AS operator
+
+COPY --from=licence-check /out/licence-check.json /usr/local/share/vmafx/licence-check.json
 
 # Expose the golusoris operator defaults: Prometheus metrics and health probes.
 EXPOSE 8080 8081

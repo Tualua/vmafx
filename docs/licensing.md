@@ -42,6 +42,8 @@ next to it ([ADR-1513](adr/1513-production-artifact-licensing.md),
 | --- | --- | --- |
 | `ghcr.io/vmafx/vmafx:<tag>` (CPU) | `/usr/local/share/vmafx/licenses/` in the image | `ghcr.io/vmafx/vmafx:<tag>-source` |
 | `ghcr.io/vmafx/vmafx:<tag>-server` | `/usr/local/share/vmafx/licenses/` | `ghcr.io/vmafx/vmafx:<tag>-server-source` |
+| `ghcr.io/vmafx/vmafx-operator:<tag>`, `vmafx-server:<tag>` | `/usr/local/share/vmafx/licenses/` (Go modules under `go/`) | `<image>:<tag>-source` |
+| `ghcr.io/vmafx/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/` | `ghcr.io/vmafx/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
 | Tester images and bundles | `/opt/vmafx/licenses/`, `licenses/` in a bundle | `<image>-source` |
 | `vmaf-mcp` on PyPI | the wheel's `licenses/` directory (EUPL-1.2) | the sdist |
 
@@ -61,6 +63,11 @@ The source image holds only files: pull it and copy `/sources` out the same way
 [docker-production.md](development/docker-production.md#verifying-image-provenance)
 shows how to verify it.
 
-The GPU, Go service and node images, and the files attached to a GitHub release,
-gain the same treatment in the changes that follow ADR-1513; until then the
-releases up to 1.0.0-rc.2 lack it ([Research-2140](research/2140-production-artifact-licence-audit.md)).
+The FFmpeg in the node image is built with `--enable-gpl --enable-version3`
+and is distributed under the GNU GPL version 3 or later; the Go programs list
+every module they link with its licence in the `[go]` section of the notices
+([ADR-1514](adr/1514-go-and-node-image-licensing.md)).
+
+The GPU images and the files attached to a GitHub release gain the same
+treatment in the changes that follow ADR-1513; the releases up to 1.0.0-rc.2
+lack it ([Research-2140](research/2140-production-artifact-licence-audit.md)).

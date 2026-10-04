@@ -46,7 +46,7 @@ See [docs/development/base-images.md](../docs/development/base-images.md).
 
 `Dockerfile.production`: `cli` + `server` copy receipt of `cli-licence-check` /
 `server-licence-check` (`licensing.py check`, kinds `production-cli-image` /
-`production-server-image`). Distroless CLI has no interpreter: notices written
+`production-server-image`). Distroless CLI, no interpreter: notices written
 on copy of tree (`cli-notices`), copied back (`cli-with-notices`).
 `*-source-export` = corresponding source, pushed as `<tag>-source` /
 `<tag>-server-source` by `.github/actions/image-licence-artifacts` (also SPDX
@@ -55,6 +55,19 @@ SBOM per platform via `actions/attest`). Wheels built in `/build-venv`; runtime
 in image -> `tools/rc1-tester/image/licensing.json` same PR, else build fails.
 Label `org.opencontainers.image.licenses` = `vmafx-binaries` licence set
 (test-held).
+
+## Go service and node licence gate (ADR-1514)
+
+`Dockerfile.operator`, `Dockerfile.go-server`, `Dockerfile.node` (`node-cpu`):
+final target copies receipt of licence-check stage; go-builder runs
+`licensing.py scan-go` + `go-licences`; `*source-export` built per platform in
+build jobs, merged to `<image>:<tag>-source` by composite action. Node: FFmpeg
+never `--enable-nonfree`; `ffmpeg-builder-cpu` writes `/ffmpeg-source/`
+(patched tree via `git archive`, `CONFIGURE.txt`, patch series) + runs
+`record-copied-debian-libs`; `rclone-bin` = `go install` at `RCLONE_VERSION`
+(build-config.env), rclone smoke run under `env -u RCLONE_VERSION` (rclone
+reads `RCLONE_*` as flags). `libvmaf.so*` copies via `find -maxdepth 1`, never
+glob (`libvmaf.so.3.0.0.p/`).
 
 ## oneAPI production image (ADR-1368)
 

@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T00:44:05Z",
+  "generated_at": "2026-10-04T01:23:13Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "cd2088fe0658a1f1e0a1978d9c156b087163721a",
-  "total_infractions": 467,
+  "commit_sha": "22a8044959c08a5a87c339cd0d2f34ae7497fbaf",
+  "total_infractions": 462,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -156,46 +156,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:90891aa10dd2",
       "fingerprint": ".github/workflows/docker-image.yml:HISS-07:text:90891aa10dd2#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-publish-operator-node.yml",
-      "line_number": 124,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:cfd5f221951c",
-      "fingerprint": ".github/workflows/docker-publish-operator-node.yml:HISS-07:text:cfd5f221951c#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-publish-operator-node.yml",
-      "line_number": 845,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:fb8cfb41bca3",
-      "fingerprint": ".github/workflows/docker-publish-operator-node.yml:HISS-07:text:fb8cfb41bca3#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-publish-operator-node.yml",
-      "line_number": 847,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:ad8fd02d4394",
-      "fingerprint": ".github/workflows/docker-publish-operator-node.yml:HISS-07:text:ad8fd02d4394#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/docker-publish-operator-node.yml",
-      "line_number": 862,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:c2d380963fe1",
-      "fingerprint": ".github/workflows/docker-publish-operator-node.yml:HISS-02:text:c2d380963fe1#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/docker-publish-operator-node.yml",
-      "line_number": 863,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:bec94358d1d7",
-      "fingerprint": ".github/workflows/docker-publish-operator-node.yml:HISS-02:text:bec94358d1d7#1"
     },
     {
       "rule_id": "HISS-02",

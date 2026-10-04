@@ -2142,6 +2142,476 @@
      ]
     }
    ]
+  },
+  "production-operator-image": {
+   "title": "the VMAFx Kubernetes operator image",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-operator:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/); SOURCES.txt inside it is the index.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: the vmafx-operator program (our own Go files)",
+     "paths": [
+      "usr/local/bin/vmafx-operator"
+     ],
+     "licences": [
+      "EUPL-1.2"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository Go file the program compiles (go list -deps)."
+     ]
+    },
+    {
+     "id": "go-modules",
+     "kind": "go-binary",
+     "name": "Go modules linked into vmafx-operator",
+     "paths": [
+      "usr/local/bin/vmafx-operator"
+     ],
+     "notes": [
+      "Each module's licence and notice files are in go/<module>@<version>/ next to this file; the [go] section lists every module with its licence, read from the program's build information.",
+      "MPL-2.0, EUPL-1.2 and other copyleft modules have their module source in the -source image (go/), with every module of a program that links an LGPL or GPL module."
+     ]
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "The licence check receipt written by this image's build",
+     "paths": [
+      "usr/local/share/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the distroless static base image"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and package records the distroless base image writes",
+     "paths": [
+      "bin",
+      "sbin",
+      "lib",
+      "lib32",
+      "lib64",
+      "libx32",
+      "etc/debian_version",
+      "etc/dpkg/origins/*",
+      "etc/ethertypes",
+      "etc/group",
+      "etc/host.conf",
+      "etc/issue",
+      "etc/issue.net",
+      "etc/ld.so.conf.d/*",
+      "etc/mime.types",
+      "etc/nsswitch.conf",
+      "etc/os-release",
+      "etc/passwd",
+      "etc/protocols",
+      "etc/rpc",
+      "etc/services",
+      "etc/ssl/certs/ca-certificates.crt",
+      "etc/update-motd.d/*",
+      "usr/share/zoneinfo/localtime",
+      "var/lib/dpkg/status.d/**"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "usr/local/share/vmafx/licenses/**"
+     ]
+    }
+   ]
+  },
+  "production-go-server-image": {
+   "title": "the VMAFx scoring server image (vmafx-server)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-server:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/); SOURCES.txt inside it is the index.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: vmafx-server, the vmaf command and libvmaf",
+     "paths": [
+      "usr/local/bin/vmafx-server",
+      "usr/local/bin/vmaf",
+      "usr/local/bin/vmafx",
+      "usr/local/lib/libvmaf.so*",
+      "usr/local/lib/pkgconfig/libvmaf.pc"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "EUPL-1.2 covers the VMAFx files only; every other component keeps its own terms."
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "usr/local/share/vmafx/model/other_models/brisque_live.model",
+      "usr/local/share/vmafx/model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-models",
+     "kind": "repo",
+     "name": "VMAFx models (files from the repository's model/ directory)",
+     "map": [
+      {
+       "artifact": "usr/local/share/vmafx/model/",
+       "repo": "model/"
+      }
+     ],
+     "licences": [
+      "BSD-2-Clause-Patent",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above (model/)"
+    },
+    {
+     "id": "go-modules",
+     "kind": "go-binary",
+     "name": "Go modules linked into vmafx-server",
+     "paths": [
+      "usr/local/bin/vmafx-server"
+     ],
+     "notes": [
+      "Each module's licence and notice files are in go/<module>@<version>/ next to this file; the [go] section lists every module with its licence, read from the program's build information.",
+      "MPL-2.0, EUPL-1.2 and other copyleft modules have their module source in the -source image (go/), with every module of a program that links an LGPL or GPL module."
+     ]
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "The licence check receipt written by this image's build",
+     "paths": [
+      "usr/local/share/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the distroless base image"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and package records the distroless base image writes",
+     "paths": [
+      "bin",
+      "sbin",
+      "lib",
+      "lib32",
+      "lib64",
+      "libx32",
+      "etc/debian_version",
+      "etc/dpkg/origins/*",
+      "etc/ethertypes",
+      "etc/group",
+      "etc/host.conf",
+      "etc/issue",
+      "etc/issue.net",
+      "etc/ld.so.conf.d/*",
+      "etc/mime.types",
+      "etc/nsswitch.conf",
+      "etc/os-release",
+      "etc/passwd",
+      "etc/protocols",
+      "etc/rpc",
+      "etc/services",
+      "etc/ssl/certs/ca-certificates.crt",
+      "etc/update-motd.d/*",
+      "usr/share/zoneinfo/localtime",
+      "var/lib/dpkg/status.d/**"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "usr/local/share/vmafx/licenses/**"
+     ]
+    }
+   ]
+  },
+  "production-node-image": {
+   "title": "the VMAFx worker node image (vmafx-node)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-node:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/, every module of rclone, FFmpeg as compiled under ffmpeg/, and the Debian sources of the copied libraries); SOURCES.txt inside it is the index.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: vmafx-node, the vmaf command and libvmaf",
+     "paths": [
+      "usr/local/bin/vmafx-node",
+      "usr/local/bin/vmaf",
+      "usr/local/lib/libvmaf.so*",
+      "usr/local/lib/pkgconfig/libvmaf.pc"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "EUPL-1.2 covers the VMAFx files only; every other component keeps its own terms."
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "usr/local/share/vmafx/model/other_models/brisque_live.model",
+      "usr/local/share/vmafx/model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-models",
+     "kind": "repo",
+     "name": "VMAFx models (files from the repository's model/ directory)",
+     "map": [
+      {
+       "artifact": "usr/local/share/vmafx/model/",
+       "repo": "model/"
+      }
+     ],
+     "licences": [
+      "BSD-2-Clause-Patent",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above (model/)"
+    },
+    {
+     "id": "ffmpeg",
+     "kind": "fixed",
+     "name": "FFmpeg with the VMAFx patch series (ffmpeg, ffprobe, libav*, libsw*)",
+     "paths": [
+      "usr/local/bin/ffmpeg",
+      "usr/local/bin/ffprobe",
+      "usr/local/lib/libav*.so*",
+      "usr/local/lib/libsw*.so*",
+      "usr/local/share/vmafx/ffmpeg/**"
+     ],
+     "licence": "GPL-3.0-or-later",
+     "copyright": [
+      "Copyright (c) 2000-2026 the FFmpeg developers"
+     ],
+     "source": "the FFmpeg release named by build-config.env FFMPEG_TAG with ffmpeg-patches/ applied, exactly as compiled, in the -source image (ffmpeg/, with CONFIGURE.txt and the patch series)",
+     "texts": [
+      {
+       "artifact": "usr/local/share/vmafx/ffmpeg/LICENSE.md",
+       "label": "FFmpeg LICENSE.md"
+      },
+      {
+       "artifact": "usr/local/share/vmafx/ffmpeg/COPYING.GPLv3",
+       "label": "GPL-3.0 (the build is --enable-gpl --enable-version3)"
+      },
+      {
+       "artifact": "usr/local/share/vmafx/ffmpeg/COPYING.GPLv2",
+       "label": "GPL-2.0"
+      },
+      {
+       "artifact": "usr/local/share/vmafx/ffmpeg/COPYING.LGPLv2.1",
+       "label": "LGPL-2.1"
+      },
+      {
+       "artifact": "usr/local/share/vmafx/ffmpeg/COPYING.LGPLv3",
+       "label": "LGPL-3.0"
+      }
+     ],
+     "notes": [
+      "Configured with --enable-gpl --enable-version3 and GPL-2.0-or-later libraries (x264, x265): the binaries are distributed under the GNU GPL version 3 or later. No --enable-nonfree component is built."
+     ]
+    },
+    {
+     "id": "svt-av1",
+     "kind": "fixed",
+     "name": "SVT-AV1 encoder library (libSvtAv1Enc)",
+     "paths": [
+      "usr/local/lib/libSvtAv1Enc.so*",
+      "usr/local/share/vmafx/svt-av1/**"
+     ],
+     "licence": "BSD-3-Clause-Clear AND LicenseRef-AOM-Patent-License-1.0",
+     "copyright": [
+      "Copyright (c) 2021, Alliance for Open Media"
+     ],
+     "source": "https://gitlab.com/AOMediaCodec/SVT-AV1 at the release tag build-config.env and Dockerfile.node name (SVTAV1_VERSION)",
+     "texts": [
+      {
+       "artifact": "usr/local/share/vmafx/svt-av1/LICENSE.md",
+       "label": "SVT-AV1 LICENSE.md (BSD 3-Clause Clear)"
+      },
+      {
+       "artifact": "usr/local/share/vmafx/svt-av1/PATENTS.md",
+       "label": "Alliance for Open Media Patent License 1.0"
+      }
+     ]
+    },
+    {
+     "id": "copied-debian-libraries",
+     "kind": "dpkg-copied",
+     "name": "Shared libraries copied out of Debian packages for FFmpeg",
+     "list": "usr/local/share/vmafx/copied-packages/packages.list",
+     "root": "usr/local/share/vmafx/copied-packages"
+    },
+    {
+     "id": "go-modules",
+     "kind": "go-binary",
+     "name": "Go modules linked into vmafx-node and rclone",
+     "paths": [
+      "usr/local/bin/vmafx-node",
+      "usr/local/bin/rclone"
+     ],
+     "notes": [
+      "Each module's licence and notice files are in go/<module>@<version>/ next to this file; the [go] section lists every module with its licence, read from the program's build information.",
+      "MPL-2.0, EUPL-1.2 and other copyleft modules have their module source in the -source image (go/), with every module of a program that links an LGPL or GPL module."
+     ]
+    },
+    {
+     "id": "rclone",
+     "kind": "fixed",
+     "name": "rclone (built from its release's module source)",
+     "paths": [
+      "usr/local/bin/rclone"
+     ],
+     "licence": "MIT",
+     "copyright": [
+      "Copyright (C) 2012 by Nick Craig-Wood http://www.craig-wood.com/nick/"
+     ],
+     "source": "github.com/rclone/rclone at the version build-config.env names (RCLONE_VERSION); its module zip and every module it links are in the -source image (go/)",
+     "notes": [
+      "rclone's own licence (COPYING) and those of its modules are under go/; rclone links the LGPL-3.0 module github.com/cloudsoda/sddl, so the source of every module of rclone is published."
+     ]
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "The licence check receipt written by this image's build",
+     "paths": [
+      "usr/local/share/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the distroless base image"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and package records the distroless base image writes",
+     "paths": [
+      "bin",
+      "sbin",
+      "lib",
+      "lib32",
+      "lib64",
+      "libx32",
+      "etc/debian_version",
+      "etc/dpkg/origins/*",
+      "etc/ethertypes",
+      "etc/group",
+      "etc/host.conf",
+      "etc/issue",
+      "etc/issue.net",
+      "etc/ld.so.conf.d/*",
+      "etc/mime.types",
+      "etc/nsswitch.conf",
+      "etc/os-release",
+      "etc/passwd",
+      "etc/protocols",
+      "etc/rpc",
+      "etc/services",
+      "etc/ssl/certs/ca-certificates.crt",
+      "etc/update-motd.d/*",
+      "usr/share/zoneinfo/localtime",
+      "var/lib/dpkg/status.d/**"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "usr/local/share/vmafx/licenses/**"
+     ]
+    }
+   ]
   }
  },
  "fetched_texts": {
@@ -2234,6 +2704,15 @@
    "url": "https://raw.githubusercontent.com/google/flatbuffers/v25.12.19/LICENSE",
    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
    "why": "the flatbuffers 25.12.19 wheel (an onnxruntime dependency) ships no licence file"
+  }
+ },
+ "go_own_modules": [
+  "github.com/VMAFx/vmafx"
+ ],
+ "go_module_licences": {
+  "github.com/pgvector/pgvector-go/pgx": {
+   "same_as": "github.com/pgvector/pgvector-go",
+   "why": "a nested module of the pgvector-go repository; its licence is the repository's LICENSE"
   }
  }
 }

@@ -16,6 +16,18 @@
 #   - Full soft-codec inventory: libx264, libx265, libvpx, libsvtav1, libdav1d
 #   - libvmaf filter + fork-specific VMAF filters compiled in
 #
+# Licences (ADR-1513): node-cpu carries /usr/local/share/vmafx/licenses/
+# (THIRD_PARTY_NOTICES.txt and every licence text, written by
+# tools/rc1-tester/image/licensing.py, artifact production-node-image) and
+# copies the receipt of `node-licence-check`; `node-source-export` holds the
+# corresponding source (FFmpeg as built, the Debian sources of every library
+# copied out of a package, the Go modules of rclone and the copyleft modules of
+# vmafx-node), published as <tag>-source. FFmpeg is GPL-3.0-or-later
+# (--enable-gpl --enable-version3); never --enable-nonfree, which makes the
+# result unredistributable. rclone is built from its release's module source
+# so that its corresponding source is exact (the official image's binary
+# reports vcs.modified=true).
+#
 # FFmpeg version policy (ADR-0717):
 #   Pinned to the latest stable tagged release at image-build time.
 #   The reviewed stable tag is owned by build-config.env and mirrored below.
@@ -46,7 +58,7 @@ ARG VMAFX_VERSION=dev
 # these lines, then run `make base-images-sync`.
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:3b77fc618ec235a1ab412de7737f120dd507c57e8d87de4cbb7994fb94275ed5"
-ARG RCLONE_IMAGE="rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
 ARG CUDA_RUNTIME="ubuntu:26.04@sha256:3595d7fc4286a33fad0fd853a4063e654287a9c3787437d7937c94ca3f7a804e"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
@@ -68,7 +80,18 @@ COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-oneapi.sh /tmp/vmafx/scripts/ci/install-intel-oneapi.sh
 RUN bash /tmp/vmafx/scripts/ci/install-intel-oneapi.sh --mode=runtime /tmp/vmafx \
     && rm -rf /tmp/vmafx /var/lib/apt/lists/*
-FROM ${RCLONE_IMAGE} AS rclone-bin
+# rclone (ADR-0719) from its release's module source: `go install` verifies
+# every module against the checksum database, so the -source image can hold the
+# exact source the binary was built from (LGPL-3.0 cloudsoda/sddl, MPL-2.0
+# modules). RCLONE_VERSION mirrors build-config.env; rclone reads RCLONE_*
+# variables as flags, so the smoke run drops it from the environment.
+FROM ${RELEASE_GO_BASE} AS rclone-bin
+ARG RCLONE_VERSION=v1.75.1
+RUN CGO_ENABLED=0 GOFLAGS=-mod=mod go install -trimpath \
+        -ldflags "-s -X github.com/rclone/rclone/fs.Version=${RCLONE_VERSION}" \
+        "github.com/rclone/rclone@${RCLONE_VERSION}" \
+    && install -D -m 0755 /go/bin/rclone /usr/local/bin/rclone \
+    && env -u RCLONE_VERSION /usr/local/bin/rclone version
 
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
@@ -78,7 +101,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 LABEL org.opencontainers.image.title="vmafx-node-vmaf-builder"
 LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (release/stripped)"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 
 # hadolint ignore=DL3008
 RUN apt-get update \
@@ -113,12 +135,23 @@ RUN meson setup /build core \
         -Denable_tests=false \
     && ninja -C /build -j"${VMAF_BUILD_JOBS}"
 
+# The SONAME chain only: the glob would also take Meson's object directory
+# libvmaf.so.3.0.0.p/.
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
-    && cp -a /build/src/libvmaf.so* /dist/lib/ \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) \
+        -exec cp -a {} /dist/lib/ \; \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/ \
     && test -f /dist/model/vmaf_v0.6.1.json
+
+# The licence and copyright of every repository file the build compiled
+# (ADR-1503 rule 2); bind mounts keep the build layer above independent of them.
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/src/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/src/REUSE.toml \
+    mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-build --build /build --repo /src \
+        --out /licence-inputs/vmafx-sources.json
 
 # ---------------------------------------------------------------------------
 # Stage 2 — ffmpeg-builder: build ffmpeg n9.0.2 with ffmpeg-patches/ applied
@@ -186,6 +219,8 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
     && cmake --build /tmp/SVT-AV1/build -j"$(nproc)" \
     && cmake --install /tmp/SVT-AV1/build \
     && ldconfig \
+    && install -D -m 0644 -t /usr/local/share/vmafx/svt-av1 \
+        /tmp/SVT-AV1/LICENSE.md /tmp/SVT-AV1/PATENTS.md \
     && rm -rf /tmp/SVT-AV1
 
 # ---------------------------------------------------------------------------
@@ -225,7 +260,7 @@ RUN multiarch="$(gcc -print-multiarch)" \
     ./configure \
         --fatal-warnings \
         --prefix=/ffmpeg-install \
-        --enable-gpl --enable-version3 --enable-nonfree \
+        --enable-gpl --enable-version3 \
         --enable-libvmaf \
         --enable-libx264 --enable-libx265 \
         --enable-libvpx --enable-libdav1d \
@@ -249,6 +284,18 @@ RUN multiarch="$(gcc -print-multiarch)" \
     && rm /tmp/ffmpeg-build.log \
     && make install
 
+# The corresponding source of the GPL-3.0-or-later build (ADR-1513): the patched
+# tree exactly as compiled (`git am` committed the series), the configure line,
+# and FFmpeg's own licence files for the image.
+RUN mkdir -p /ffmpeg-source /ffmpeg-install/licenses \
+    && git archive --format=tar.gz --prefix="ffmpeg-${FFMPEG_TAG}-vmafx/" \
+        -o "/ffmpeg-source/ffmpeg-${FFMPEG_TAG}-vmafx.tar.gz" HEAD \
+    && sed -n 's/^FFMPEG_CONFIGURATION=//p' ffbuild/config.mak > /ffmpeg-source/CONFIGURE.txt \
+    && test -s /ffmpeg-source/CONFIGURE.txt \
+    && cp -r /src/ffmpeg-patches /ffmpeg-source/ffmpeg-patches \
+    && cp LICENSE.md COPYING.GPLv2 COPYING.GPLv3 COPYING.LGPLv2.1 COPYING.LGPLv3 \
+        /ffmpeg-install/licenses/
+
 # Stage the complete non-glibc dependency closure for ffmpeg/ffprobe. `ldd`
 # resolves the native Debian multiarch directory on both amd64 and arm64, so
 # the final image never hard-codes `/usr/lib/x86_64-linux-gnu`. The distroless
@@ -269,9 +316,15 @@ RUN mkdir -p /ffmpeg-install/runtime-libs \
                     ;; \
             esac; \
             cp -L "${library}" /ffmpeg-install/runtime-libs/ || exit 1; \
+            printf '%s\n' "${library}" >> /tmp/ffmpeg-origins.txt; \
         done \
     && test -n "$(find /ffmpeg-install/runtime-libs -maxdepth 1 -type f -print -quit)" \
     && rm /tmp/ffmpeg-ldd.txt
+
+# Which Debian package each copied library comes from, with its copyright file
+# (the `dpkg-copied` component of the licence record, ADR-1513).
+COPY --chmod=0755 scripts/ci/record-copied-debian-libs.sh /usr/local/bin/record-copied-debian-libs
+RUN record-copied-debian-libs /tmp/ffmpeg-origins.txt /ffmpeg-install/copied-packages /usr/local/lib
 
 # ---------------------------------------------------------------------------
 # Stage 4 — go-builder: compile the vmafx-node Go binary
@@ -309,15 +362,31 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
         -o /out/vmafx-node \
         ./cmd/vmafx-node
 
+# The licences of the Go programs (ADR-1513): our own Go files merged into the
+# C library's scan, and the licence and notice files of every module vmafx-node
+# and rclone link, read from their build information.
+COPY --from=rclone-bin /usr/local/bin/rclone /out/rclone
+COPY --from=vmaf-builder /licence-inputs/vmafx-sources.json /tmp/vmaf-sources.json
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && apt-get clean \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-go --repo /src \
+        --package ./cmd/vmafx-node --merge /tmp/vmaf-sources.json \
+        --out /licence-inputs/vmafx-sources.json \
+    && python3 tools/rc1-tester/image/licensing.py go-licences \
+        --binary /out/vmafx-node --binary /out/rclone --out /licence-inputs/go
+
 # ---------------------------------------------------------------------------
 # Stage 5 — runtime-base: Debian 13 glibc runtime foundation
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
-LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service"
+LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND GPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
@@ -334,9 +403,9 @@ COPY --from=vmaf-builder /dist/bin/vmaf /usr/local/bin/vmaf
 COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone
 
 # ---------------------------------------------------------------------------
-# Stage 6 (target: node-cpu) — CPU-only node worker
+# Stage 6 — node-assembled: the CPU-only node worker's content
 # ---------------------------------------------------------------------------
-FROM runtime-base AS node-cpu
+FROM runtime-base AS node-assembled
 
 # ffmpeg binary + libav*.so*
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffmpeg   /usr/local/bin/ffmpeg
@@ -344,10 +413,86 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffprobe  /usr/local/bin/ffpro
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 
-# Architecture-native codec/font/VA dependency closure collected by ldd.
+# Architecture-native codec/font/VA dependency closure collected by ldd, the
+# record of the Debian packages it came from with their copyright files, and
+# the licence files of FFmpeg and SVT-AV1 (ADR-1513).
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
+COPY --from=ffmpeg-builder-cpu /ffmpeg-install/copied-packages/ /usr/local/share/vmafx/copied-packages/
+COPY --from=ffmpeg-builder-cpu /ffmpeg-install/licenses/ /usr/local/share/vmafx/ffmpeg/
+COPY --from=ffmpeg-deps-base /usr/local/share/vmafx/svt-av1/ /usr/local/share/vmafx/svt-av1/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
+
+# ---------------------------------------------------------------------------
+# node-notices: written on a copy of the distroless tree, which has no
+# interpreter (ADR-1503 rule 4)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-notices
+COPY --from=node-assembled / /rootfs
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
+    mkdir /texts \
+    && python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-node-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --go-licences /licence-inputs/go \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+
+FROM node-assembled AS node-with-notices
+COPY --from=node-notices /rootfs/usr/local/share/vmafx/licenses /usr/local/share/vmafx/licenses
+
+# ---------------------------------------------------------------------------
+# node-licence-check: every file of the image has a recorded licence
+# (ADR-1503 rule 3); `node-cpu` copies its receipt, so it cannot be built
+# without it
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-licence-check
+RUN --mount=type=bind,from=node-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact production-node-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# node-source-export: the corresponding source, published as <tag>-source
+# (ADR-1503 rule 5): FFmpeg as compiled with its configure line and patch
+# series, the Debian sources of the base's packages and of every copied
+# library, and the module zips of rclone (it links an LGPL-3.0 module) and of
+# vmafx-node's copyleft modules
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=node-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-node-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+COPY --from=ffmpeg-builder-cpu /ffmpeg-source/ /sources/ffmpeg/
+
+FROM scratch AS node-source-export
+COPY --from=node-source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# Stage 6 (target: node-cpu) — CPU-only node worker
+# ---------------------------------------------------------------------------
+FROM node-with-notices AS node-cpu
+
+COPY --from=node-licence-check /out/licence-check.json /usr/local/share/vmafx/licence-check.json
 
 EXPOSE 50052
 
