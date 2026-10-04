@@ -17,6 +17,7 @@
  *  speed_sycl_pipeline.cpp (core/test/test_sycl_kernel_source_contract.py).
  */
 
+#include <cassert>
 #include <cerrno>
 #include <cstddef>
 
@@ -245,6 +246,9 @@ int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat format, uns
  * import marked it for this frame (ADR-1597). */
 int upload_chroma_frame(SpeedChromaSyclState *s, VmafPicture *reference, VmafPicture *distorted)
 {
+    assert(s != nullptr && s->sycl_state != nullptr && s->pipeline != nullptr);
+    /* Host upload hands both pictures, zero-copy hands neither. */
+    assert((reference == nullptr) == (distorted == nullptr));
     if (vmaf_sycl_require_chroma(s->sycl_state, "speed_chroma_sycl", reference, distorted)) {
         return -ENOTSUP;
     }
