@@ -16,8 +16,11 @@
 // Thread safety: all exported methods are safe for concurrent use.
 //
 // Lifecycle (ADR-1119): NewRegistry does NOT spawn the reaper goroutine.
-// Call Start(ctx) (wired to an fx OnStart hook) to launch it and Close()
-// (wired to an fx OnStop hook) to stop and await it.  The reaper is bound
+// Call StartDetached (wired to an fx OnStart hook) to launch it and Close()
+// (wired to an fx OnStop hook) to stop and await it. Start(ctx) also stops
+// the reaper when ctx ends; never hand it the fx OnStart context, which fx
+// lets expire after its start timeout (15 s by default), stopping eviction
+// for good shortly after startup.  The reaper is bound
 // to a Close-owned context, so its lifetime is governed entirely by the
 // Start/Close pair and no goroutine leaks past Close().  This mirrors the
 // vmafx-node FeedbackClient Start/Close lifecycle pattern.
@@ -92,6 +95,15 @@ type Registry struct {
 	// done is closed when the reaper goroutine has returned.  Close blocks
 	// on this so callers observe a synchronous shutdown.
 	done chan struct{}
+
+	// onEvict, when set, is called once per evicted node ID after the
+	// registry lock is released (SetEvictionHook).
+	onEvict func(nodeID string)
+
+	// reapInterval and timeout are HeartbeatTimeout/3 and HeartbeatTimeout;
+	// fields so in-package tests can run the reaper on a millisecond scale.
+	reapInterval time.Duration
+	timeout      time.Duration
 }
 
 // NewRegistry creates an empty Registry.  It does NOT launch the background
@@ -107,11 +119,41 @@ func NewRegistry(log *slog.Logger) *Registry {
 	}
 	reaperCtx, cancel := context.WithCancel(context.Background())
 	return &Registry{
-		nodes:     make(map[string]*Node),
-		log:       log,
-		reaperCtx: reaperCtx,
-		cancel:    cancel,
-		done:      make(chan struct{}),
+		nodes:        make(map[string]*Node),
+		log:          log,
+		reaperCtx:    reaperCtx,
+		cancel:       cancel,
+		done:         make(chan struct{}),
+		reapInterval: HeartbeatTimeout / 3,
+		timeout:      HeartbeatTimeout,
+	}
+}
+
+// SetEvictionHook registers fn to be called with the ID of every node the
+// reaper evicts, outside the registry lock. Set it before Start; the
+// controller uses it to return the evicted node's running jobs to the queue.
+func (r *Registry) SetEvictionHook(fn func(nodeID string)) {
+	r.mu.Lock()
+	r.onEvict = fn
+	r.mu.Unlock()
+}
+
+// StartDetached launches the reaper bound only to Close. Use it from an fx
+// OnStart hook: the context fx passes to OnStart expires after the start
+// timeout, and Start(ctx) would stop the reaper with it.
+func (r *Registry) StartDetached() { r.Start(r.reaperCtx) }
+
+// ReaperRunning reports whether the reaper goroutine was started and has not
+// been stopped.
+func (r *Registry) ReaperRunning() bool {
+	if !r.started.Load() {
+		return false
+	}
+	select {
+	case <-r.done:
+		return false
+	default:
+		return r.reaperCtx.Err() == nil
 	}
 }
 
@@ -303,27 +345,50 @@ func (r *Registry) Count() int {
 // ctx.Err() ends the loop between ticks, and the ctx.Done() arm of the select
 // ends it while the goroutine is parked waiting for the next tick.
 func (r *Registry) reaper(ctx context.Context) {
-	ticker := time.NewTicker(HeartbeatTimeout / 3)
+	ticker := time.NewTicker(r.reapInterval)
 	defer ticker.Stop()
 	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			deadline := time.Now().Add(-HeartbeatTimeout)
-			r.mu.Lock()
-			for id, n := range r.nodes {
-				if n.LastHeartbeat.Before(deadline) {
-					r.log.Warn("node evicted (heartbeat timeout)",
-						"node_id", id,
-						"name", n.Name,
-						"last_heartbeat", n.LastHeartbeat,
-					)
-					delete(r.nodes, id)
-				}
-			}
-			r.mu.Unlock()
+			r.notifyEvicted(r.evictStale(time.Now()))
 		}
+	}
+}
+
+// evictStale removes every node whose last heartbeat is older than the
+// timeout at now and returns their IDs.
+func (r *Registry) evictStale(now time.Time) []string {
+	deadline := now.Add(-r.timeout)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var evicted []string
+	for id, n := range r.nodes {
+		if n.LastHeartbeat.Before(deadline) {
+			r.log.Warn("node evicted (heartbeat timeout)",
+				"node_id", id,
+				"name", n.Name,
+				"last_heartbeat", n.LastHeartbeat,
+			)
+			delete(r.nodes, id)
+			evicted = append(evicted, id)
+		}
+	}
+	return evicted
+}
+
+// notifyEvicted runs the eviction hook for each evicted node, without the
+// registry lock held (the hook writes to the job queue).
+func (r *Registry) notifyEvicted(evicted []string) {
+	r.mu.RLock()
+	hook := r.onEvict
+	r.mu.RUnlock()
+	if hook == nil {
+		return
+	}
+	for _, id := range evicted {
+		hook(id)
 	}
 }
 

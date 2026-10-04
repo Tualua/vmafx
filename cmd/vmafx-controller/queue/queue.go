@@ -108,6 +108,10 @@ type Queue interface {
 	Get(ctx context.Context, jobID string) (*Job, error)
 	// Cancel requests cancellation of a pending or running job.
 	Cancel(ctx context.Context, jobID string) error
+	// RequeueNode returns every RUNNING job assigned to nodeID to PENDING
+	// (ahead of newer pending jobs) and reports how many it moved. The
+	// controller calls it when the node registry evicts a silent node.
+	RequeueNode(ctx context.Context, nodeID string) (int, error)
 	// ListAll returns a snapshot of all jobs, optionally filtered to the
 	// provided statuses.  An empty statuses slice returns all jobs.
 	// Used by StreamJobs to deliver a consistent point-in-time snapshot.
@@ -499,6 +503,61 @@ func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) error {
 
 	q.log.Info("job cancelled", "job_id", jobID)
 	return nil
+}
+
+// RequeueNode returns the RUNNING jobs assigned to nodeID to PENDING, at the
+// front of the FIFO in submission order, and reports how many it moved. A
+// node that comes back after its eviction reports such a job under its new
+// session; ReportResult's terminal-state guard keeps the first final result.
+func (q *SQLiteQueue) RequeueNode(ctx context.Context, nodeID string) (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	ids, err := q.runningJobsOf(ctx, nodeID)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	_, err = q.db.ExecContext(ctx,
+		"UPDATE jobs SET status=?, assigned_node=NULL, updated_at=? WHERE assigned_node=? AND status=?",
+		StatusPending, time.Now().Unix(), nodeID, StatusRunning,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("queue: requeue jobs of node %s: %w", nodeID, err)
+	}
+	for _, id := range ids {
+		delete(q.runningSet, id)
+	}
+	q.pendingFIFO = append(ids, q.pendingFIFO...)
+	q.log.Warn("jobs of evicted node returned to the queue", "node_id", nodeID, "jobs", len(ids))
+	return len(ids), nil
+}
+
+// runningJobsOf lists the RUNNING jobs assigned to nodeID, oldest first.
+// Must be called with q.mu held.
+func (q *SQLiteQueue) runningJobsOf(ctx context.Context, nodeID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx,
+		"SELECT id FROM jobs WHERE assigned_node=? AND status=? ORDER BY created_at, rowid",
+		nodeID, StatusRunning,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("queue: list jobs of node %s: %w", nodeID, err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			q.log.Warn("queue: close rows", "error", closeErr)
+		}
+	}()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("queue: scan job of node %s: %w", nodeID, err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queue: iterate jobs of node %s: %w", nodeID, err)
+	}
+	return ids, nil
 }
 
 // PendingCount returns the current number of PENDING jobs (from in-memory FIFO).

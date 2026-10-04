@@ -73,6 +73,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
@@ -238,16 +239,21 @@ func provideJobQueue(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (que
 }
 
 // provideNodeRegistry constructs the in-memory node registry and binds its
-// reaper goroutine to the fx lifecycle: Start(ctx) launches the reaper in
+// reaper goroutine to the fx lifecycle: StartDetached launches the reaper in
 // OnStart (no goroutine spawned at construction) and Close() — which stops and
-// awaits the reaper — runs in OnStop. This eliminates the prior pattern where
-// NewRegistry(ctx) spawned a goroutine bound to a caller ctx, and guarantees a
-// leak-free shutdown (mirrors the vmafx-node FeedbackClient lifecycle).
-func provideNodeRegistry(lc fx.Lifecycle, log *slog.Logger) *nodes.Registry {
+// awaits the reaper — runs in OnStop. The reaper must not take the OnStart
+// context: fx lets it expire after the start timeout, which stopped eviction
+// about 15 s after startup.
+//
+// The eviction hook returns an evicted node's RUNNING jobs to the queue, as
+// controller.proto promises ("its in-flight jobs are re-queued"); before, they
+// stayed RUNNING for ever when the node never came back.
+func provideNodeRegistry(lc fx.Lifecycle, q queue.Queue, log *slog.Logger) *nodes.Registry {
 	r := nodes.NewRegistry(log)
+	r.SetEvictionHook(requeueEvictedNode(q, log))
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			r.Start(ctx)
+		OnStart: func(_ context.Context) error {
+			r.StartDetached()
 			return nil
 		},
 		OnStop: func(_ context.Context) error {
@@ -257,6 +263,26 @@ func provideNodeRegistry(lc fx.Lifecycle, log *slog.Logger) *nodes.Registry {
 		},
 	})
 	return r
+}
+
+// requeueTimeout bounds the queue write the eviction hook performs (HISS-02).
+const requeueTimeout = 10 * time.Second
+
+// requeueEvictedNode is the registry's eviction hook: it moves the evicted
+// node's RUNNING jobs back to PENDING.
+func requeueEvictedNode(q queue.Queue, log *slog.Logger) func(nodeID string) {
+	return func(nodeID string) {
+		ctx, cancel := context.WithTimeout(context.Background(), requeueTimeout)
+		defer cancel()
+		n, err := q.RequeueNode(ctx, nodeID)
+		if err != nil {
+			log.Error("could not return the evicted node's jobs to the queue", "node_id", nodeID, "error", err)
+			return
+		}
+		if n > 0 {
+			log.Info("evicted node's running jobs returned to the queue", "node_id", nodeID, "jobs", n)
+		}
+	}
 }
 
 // provideScheduler builds the FIFO + capability-match scheduler over the queue

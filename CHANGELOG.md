@@ -2401,6 +2401,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   negligible (~15–20s) overhead, and is enforced in the required checks aggregator.
 
 
+- **The controller evicts silent nodes after startup and returns their
+  running jobs to the queue.** The node registry's reaper stopped about 15 s
+  after startup, because it was tied to the fx start context, which fx lets
+  expire after its start timeout; dead nodes stayed registered for ever. And
+  an evicted node's running jobs stayed `RUNNING` for ever, although
+  `controller.proto` promised they would be re-queued. The reaper now runs
+  until shutdown, and an eviction returns the node's running jobs to
+  `PENDING` ahead of newer work. See [the controller guide](docs/server/controller.md#node-api).
+
+
 - **The `Cppcheck` check passes again.** The first complete hosted run on
   master since 2026-09-30 reported three findings (cppcheck 2.19.0,
   `--check-level=exhaustive`): `identicalInnerCondition` in

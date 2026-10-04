@@ -7,6 +7,17 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
+
+`fix/controller-requeue-evicted-node-jobs`. Go controller only.
+
+- `nodes.Registry`: `StartDetached`, `SetEvictionHook`, `ReaperRunning`;
+  the reaper's eviction is `evictStale` + `notifyEvicted`. `Start(ctx)` stays
+  for callers with a long-lived context.
+- `queue.Queue` gains `RequeueNode`; `provideNodeRegistry` takes the queue,
+  starts the reaper detached and installs `requeueEvictedNode`. A rebase that
+  edits `provideNodeRegistry` keeps both.
+
 ## `vmafx-node` starts the eBPF descriptor tracker on request (ADR-1539, 2026-10-04)
 
 `feat/node-ebpf-loader`. Go node and `cmd/vmafx-node/bpf`; no C library

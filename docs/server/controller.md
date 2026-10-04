@@ -141,9 +141,10 @@ set; see [node.md](node.md#pulling-jobs-from-the-controller)):
    and a `session_token`.
 2. The node calls `Heartbeat` every ~10 s with the `node_id` and
    `session_token`.
-   A node that misses heartbeats for 60 s is evicted. Its running jobs stay
-   `RUNNING`: the reaper removes the node, not its jobs. A node that comes
-   back registers again and reports them under the new session.
+   A node that misses heartbeats for 60 s is evicted, and its running jobs
+   return to `PENDING` ahead of newer work, so another node picks them up. A
+   node that comes back registers again; if it still finishes such a job, the
+   first final result the controller receives is kept.
 3. When the node has capacity, it calls `PullWork`.  The controller assigns the
    oldest `PENDING` job whose `backend` requirement matches the node's
    capabilities.
