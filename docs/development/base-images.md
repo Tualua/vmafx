@@ -82,7 +82,11 @@ Use named stages or an earlier numeric stage index for `COPY --from`.
 ## ROCm and oneAPI bases
 
 The ROCm builder and runtime source use AMD's released Ubuntu 26.04
-`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`.
+`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`. The
+published ROCm image and the AMD GPU tester image do not build `FROM` it: their
+Debian 13 builders stream `/opt/rocm` out of `ROCM_BUILDER` with
+`scripts/ci/install-rocm-from-image.sh`, and their runtimes copy only the HIP
+runtime files `vmaf` loads ([ADR-1517](../adr/1517-gpu-image-licensing.md)).
 
 - The `rocm-src` stage compiles and links a small HIP kernel after pruning the
   SDK, then runs its host-only entry point. This checks the compiler and loader
@@ -133,7 +137,11 @@ the version-locked toolkit via `scripts/ci/install-cuda-toolkit.sh`
 (`--mode=builder`, `--mode=runtime`, or `--mode=full`). The two CUDA bases must
 equal `DEV_BASE` exactly, including its digest; the same owner also writes the
 narrow `docker/dev/ubuntu-26.04-cuda.Dockerfile` mirror. This decouples CUDA
-release bumps from upstream NVIDIA OCI image publication latency.
+release bumps from upstream NVIDIA OCI image publication latency. The published
+CUDA image and the NVIDIA GPU tester image build on the release track's Debian 13
+(`RELEASE_BUILDER_BASE`) instead, with the same script installing `nvcc` from
+NVIDIA's `debian13` repository, and their runtimes hold no NVIDIA file
+([ADR-1517](../adr/1517-gpu-image-licensing.md)).
 
 #### One release, seven spellings
 

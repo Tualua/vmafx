@@ -120,17 +120,6 @@ def published_targets(workflow: str) -> set[tuple[str, str]]:
     return {(f, t) for f, t in pairs if not t.endswith("source-export")}
 
 
-# Published production targets whose licence gate lands with a later PR of the
-# production-licensing train (ADR-1513; docs/state.md row
-# T-PROD-LICENCE-GPU-IMAGES-2026-10-04).
-# The set only shrinks; the test fails on an entry that has gained its gate.
-PENDING = {
-    ("docker/Dockerfile.production-gpu", "final-cuda13"),
-    ("docker/Dockerfile.production-gpu", "final-rocm10"),
-    ("docker/Dockerfile.production-gpu", "final-oneapi2026"),
-}
-
-
 def final_stage(dockerfile: str, target: str) -> str:
     text = (REPO / dockerfile).read_text()
     match = re.search(
@@ -150,22 +139,41 @@ def has_licence_gate(dockerfile: str, target: str) -> bool:
     "workflow", ["docker-publish-production.yml", "docker-publish-operator-node.yml"]
 )
 def test_every_published_production_target_passes_a_licence_check(workflow: str) -> None:
-    for dockerfile, target in sorted(published_targets(workflow)):
-        gated = has_licence_gate(dockerfile, target)
-        if (dockerfile, target) in PENDING:
-            assert not gated, f"{target} has its gate now: remove it from PENDING"
-        else:
-            assert gated, f"{dockerfile} target {target} is published without a licence check"
+    targets = published_targets(workflow)
+    assert targets
+    for dockerfile, target in sorted(targets):
+        assert has_licence_gate(
+            dockerfile, target
+        ), f"{dockerfile} target {target} is published without a licence check"
 
 
-@pytest.mark.parametrize(("target", "kind", "source"), [
-    ("cli", "production-cli-image", "cli-source-export"),
-    ("server", "production-server-image", "server-source-export"),
+def test_the_gate_detector_refuses_a_target_without_the_receipt(tmp_path: Path) -> None:
+    """has_licence_gate() is the whole contract above, so it must see a missing receipt."""
+    stage = final_stage("docker/Dockerfile.production-gpu", "final-rocm10")
+    assert "COPY --from=rocm10-licence-check /out/licence-check.json" in stage
+    assert has_licence_gate("docker/Dockerfile.production-gpu", "final-rocm10")
+    ungated = (
+        (REPO / "docker/Dockerfile.production-gpu")
+        .read_text()
+        .replace(
+            "COPY --from=rocm10-licence-check /out/licence-check.json", "COPY licence-check.json"
+        )
+    )
+    write(tmp_path / "Dockerfile", ungated)
+    assert not has_licence_gate(str(tmp_path / "Dockerfile"), "final-rocm10")
+
+
+@pytest.mark.parametrize(("dockerfile", "kind", "source"), [
+    ("docker/Dockerfile.production", "production-cli-image", "cli-source-export"),
+    ("docker/Dockerfile.production", "production-server-image", "server-source-export"),
+    ("docker/Dockerfile.production-gpu", "production-cuda-image", "cuda13-source-export"),
+    ("docker/Dockerfile.production-gpu", "production-rocm-image", "rocm10-source-export"),
+    ("docker/Dockerfile.production-gpu", "production-oneapi-image", "oneapi2026-source-export"),
 ])  # fmt: skip
-def test_the_cpu_images_carry_notices_and_publish_their_source(
-    target: str, kind: str, source: str
+def test_the_production_images_carry_notices_and_publish_their_source(
+    dockerfile: str, kind: str, source: str
 ) -> None:
-    text = (REPO / "docker/Dockerfile.production").read_text()
+    text = (REPO / dockerfile).read_text()
     assert f"licensing.py notices --artifact {kind}" in text
     assert f"licensing.py check --artifact {kind}" in text
     assert f"FROM scratch AS {source}\n" in text
@@ -182,13 +190,20 @@ def test_the_licence_artifacts_action_attests_spdx_with_the_pinned_tools() -> No
     assert "attest-sbom" not in action  # deprecated (ADR-1503 rule 6)
 
 
-def test_the_image_licence_label_is_the_compiled_licence_set() -> None:
-    record = lic.load_manifest()["artifacts"]["production-cli-image"]
-    binaries = next(c for c in record["components"] if c["id"] == "vmafx-binaries")
-    expected = " AND ".join(binaries["licences"])
+@pytest.mark.parametrize(("dockerfile", "kinds"), [
+    ("docker/Dockerfile.production", ["production-cli-image", "production-server-image"]),
+    ("docker/Dockerfile.production-gpu",
+     ["production-cuda-image", "production-rocm-image", "production-oneapi-image"]),
+])  # fmt: skip
+def test_the_image_licence_label_is_the_compiled_licence_set(dockerfile: str, kinds: list) -> None:
+    records = lic.load_manifest()["artifacts"]
+    expected = set()
+    for kind in kinds:
+        binaries = next(c for c in records[kind]["components"] if c["id"] == "vmafx-binaries")
+        expected.add(" AND ".join(binaries["licences"]))
     labels = re.findall(r'org\.opencontainers\.image\.licenses="([^"]*)"',
-                        (REPO / "docker/Dockerfile.production").read_text())  # fmt: skip
-    assert labels and set(labels) == {expected}
+                        (REPO / dockerfile).read_text())  # fmt: skip
+    assert labels and set(labels) == expected
 
 
 @pytest.mark.parametrize(("project", "sources"), [
@@ -223,6 +238,63 @@ def test_the_production_records_name_every_text_they_fetch() -> None:
         data["artifacts"]["production-server-image"]["python"]["version"]
         in data["cpython_license_rst"]
     )
+
+
+# ------------------------------------------------------ shared components
+
+
+def shared_manifest() -> dict:
+    vendor = {"id": "vendor", "kind": "fixed", "name": "a vendor runtime",
+              "paths": ["opt/vmafx/lib/v/libv.so*"], "licence": "MIT",
+              "texts": [{"artifact": "opt/vmafx/licenses/v/LICENSE", "label": "its licence"}],
+              "notes": ["shipped in opt/vmafx/lib/v/"]}  # fmt: skip
+    return {"artifacts": {
+        "tester": {"components": [vendor]},
+        "prod": {"rewrite": {"opt/vmafx/lib/": "usr/local/lib/",
+                             "opt/vmafx/licenses/": "usr/local/share/vmafx/licenses/"},
+                 "components": [{"from": "tester", "id": "vendor", "name": "renamed"}]},
+    }}  # fmt: skip
+
+
+def test_a_shared_component_is_rewritten_and_overridden() -> None:
+    expanded = lic.expand_shared(shared_manifest())["artifacts"]
+    component = expanded["prod"]["components"][0]
+    assert component["paths"] == ["usr/local/lib/v/libv.so*"]
+    assert component["texts"][0]["artifact"] == "usr/local/share/vmafx/licenses/v/LICENSE"
+    assert component["notes"] == ["shipped in usr/local/lib/v/"]
+    assert component["name"] == "renamed" and "from" not in component
+    assert expanded["tester"]["components"][0]["paths"] == ["opt/vmafx/lib/v/libv.so*"]
+
+
+def test_a_shared_component_that_does_not_exist_is_refused() -> None:
+    data = shared_manifest()
+    data["artifacts"]["prod"]["components"][0]["id"] = "gone"
+    with pytest.raises(lic.LicensingError, match="no component 'gone'"):
+        lic.expand_shared(data)
+
+
+def test_a_shared_component_never_names_another_shared_one() -> None:
+    data = shared_manifest()
+    data["artifacts"]["third"] = {"components": [{"from": "prod", "id": "vendor"}]}
+    with pytest.raises(lic.LicensingError, match="of its own"):
+        lic.expand_shared(data)
+
+
+def test_the_gpu_records_share_the_tester_vendor_components() -> None:
+    """The production GPU images ship the vendor runtime files of the tester images;
+    their record takes those components, not copies of them (ADR-1517)."""
+    raw = json.loads((_IMAGE / "licensing.json").read_text())["artifacts"]
+    expanded = lic.load_manifest()["artifacts"]
+    for kind, tester in (("production-cuda-image", "cuda-image"),
+                         ("production-rocm-image", "hip-image"),
+                         ("production-oneapi-image", "sycl-image")):  # fmt: skip
+        shared = {c["id"] for c in raw[kind]["components"] if c.get("from") == tester}
+        tester_only = {"netflix-test-videos", "brisque-live-model", "build-records"}
+        vendor = {c["id"] for c in raw[tester]["components"]
+                  if c["kind"] in {"fixed", "dpkg-foreign"} and c["id"] not in tester_only}  # fmt: skip
+        assert vendor and vendor <= shared, (kind, vendor - shared)
+        text = json.dumps(expanded[kind]["components"])
+        assert "opt/vmafx/" not in text, kind
 
 
 def test_notices_of_a_distroless_tree_list_its_packages(tmp_path: Path) -> None:

@@ -14,10 +14,11 @@
 #
 
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
-# The CPU and server images also carry their licence texts and pass a licence
-# check in their build, get an SPDX SBOM per platform attested with actions/attest,
-# and publish their corresponding source as <tag>-source / <tag>-server-source
-# (.github/actions/image-licence-artifacts, ADR-1503, ADR-1513).
+# Every image also carries its licence texts and passes a licence check in its
+# build, gets an SPDX SBOM per platform attested with actions/attest, and
+# publishes its corresponding source as <tag>-source, <tag>-server-source,
+# <tag>-cuda13-source, <tag>-rocm10-source or <tag>-oneapi2026-source
+# (.github/actions/image-licence-artifacts, ADR-1503, ADR-1513, ADR-1517).
 # ADR-0698: vmafx-production-dockerfile
 
 name: Publish Production
@@ -391,7 +392,8 @@ jobs:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/ \
+            tools/rc1-tester/image/ .github/actions/
           git status --short
 
       - name: Set up Docker Buildx
@@ -428,6 +430,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-cuda13
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
@@ -449,6 +454,24 @@ jobs:
       # syft pulls the pushed image from the registry into /tmp. After a
       # multi-GB GPU build the buildx cache leaves too little disk for that:
       # v1.0.0-rc.1's ROCm SBOM failed with "no space left on device".
+      # ADR-1503 / ADR-1517: the SPDX SBOM attested on the digest, and the
+      # corresponding source of the copyleft parts as <tag>-cuda13-source. It
+      # runs before the disk cleanup below, so the source stage reuses this
+      # job's build cache.
+      - name: Licence artifacts (SPDX SBOM attestation, source image)
+        uses: ./.github/actions/image-licence-artifacts
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+          name: cuda13
+          source-file: docker/Dockerfile.production-gpu
+          source-target: cuda13-source-export
+          source-tag: ${{ env.PUBLISH_TAG }}-cuda13-source
+          platforms: linux/amd64
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-cuda13
+
       - name: Free runner disk for the SBOM scan
         run: |
           df -h /
@@ -512,7 +535,8 @@ jobs:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/ \
+            tools/rc1-tester/image/ .github/actions/
           git status --short
 
       - name: Set up Docker Buildx
@@ -549,6 +573,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-rocm10
 
       - name: Install cosign + sign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
@@ -570,6 +597,24 @@ jobs:
       # syft pulls the pushed image from the registry into /tmp. After a
       # multi-GB GPU build the buildx cache leaves too little disk for that:
       # v1.0.0-rc.1's ROCm SBOM failed with "no space left on device".
+      # ADR-1503 / ADR-1517: the SPDX SBOM attested on the digest, and the
+      # corresponding source of the copyleft parts as <tag>-rocm10-source. It
+      # runs before the disk cleanup below, so the source stage reuses this
+      # job's build cache.
+      - name: Licence artifacts (SPDX SBOM attestation, source image)
+        uses: ./.github/actions/image-licence-artifacts
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+          name: rocm10
+          source-file: docker/Dockerfile.production-gpu
+          source-target: rocm10-source-export
+          source-tag: ${{ env.PUBLISH_TAG }}-rocm10-source
+          platforms: linux/amd64
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-rocm10
+
       - name: Free runner disk for the SBOM scan
         run: |
           df -h /
@@ -635,7 +680,8 @@ jobs:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/ \
+            tools/rc1-tester/image/ .github/actions/
           git status --short
 
       - name: Set up Docker Buildx
@@ -673,6 +719,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-oneapi2026
           # The NEO and Level Zero release lookups call the GitHub API; the
           # optional BuildKit secret lifts the anonymous rate limit.
           secrets: |
@@ -698,6 +747,24 @@ jobs:
       # syft pulls the pushed image from the registry into /tmp. After a
       # multi-GB GPU build the buildx cache leaves too little disk for that:
       # v1.0.0-rc.1's ROCm SBOM failed with "no space left on device".
+      # ADR-1503 / ADR-1517: the SPDX SBOM attested on the digest, and the
+      # corresponding source of the copyleft parts as <tag>-oneapi2026-source. It
+      # runs before the disk cleanup below, so the source stage reuses this
+      # job's build cache.
+      - name: Licence artifacts (SPDX SBOM attestation, source image)
+        uses: ./.github/actions/image-licence-artifacts
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+          name: oneapi2026
+          source-file: docker/Dockerfile.production-gpu
+          source-target: oneapi2026-source-export
+          source-tag: ${{ env.PUBLISH_TAG }}-oneapi2026-source
+          platforms: linux/amd64
+          build-args: |
+            VMAFX_SOURCE_COMMIT=${{ needs.validate-release.outputs.source-sha }}
+            VMAFX_IMAGE_TAG=${{ env.PUBLISH_TAG }}-oneapi2026
+
       - name: Free runner disk for the SBOM scan
         run: |
           df -h /
@@ -800,7 +867,7 @@ jobs:
           # lacked libumf.so.1 and no SYCL device could be found.
           image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-oneapi2026.outputs.digest }}"
           docker run --rm --entrypoint /bin/bash "${image}" -c '
-            for adapter in /opt/intel/oneapi/redist/lib/libur_adapter_*.so.0; do
+            for adapter in /usr/local/lib/intel/libur_adapter_*.so.0; do
               if ldd "${adapter}" | grep "not found"; then
                 echo "unresolved dependency in ${adapter}" >&2
                 exit 1

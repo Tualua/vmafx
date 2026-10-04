@@ -24,6 +24,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 
 python3 - "$REPO_ROOT" <<'PY'
+import json
 import re
 import sys
 from copy import deepcopy
@@ -39,6 +40,7 @@ DOCKERFILES = (
 )
 PRODUCTION = ".github/workflows/docker-publish-production.yml"
 OPERATOR_NODE = ".github/workflows/docker-publish-operator-node.yml"
+SYCL_RUNTIME = "tools/rc1-tester/image/sycl-runtime.json"
 SCORE_CHECK = "jq -e '.pooled_metrics.vmaf.mean'"
 
 
@@ -56,10 +58,22 @@ def has_xxd(all_stages: dict[str, tuple[str, str]], name: str) -> bool:
     while name in all_stages and name not in seen:
         seen.add(name)
         parent, body = all_stages[name]
-        if re.search(r"(?m)^\s+xxd\b", body):
+        # xxd in the package list of an apt-get install, on its own line or not.
+        if re.search(r"apt-get install(?:(?!&&)[\s\S])*?\bxxd\b", body):
             return True
         name = parent
     return False
+
+
+def lineage(all_stages: dict[str, tuple[str, str]], name: str) -> str:
+    """The bodies of a stage and of every stage it is built FROM, in one string."""
+    bodies, seen = [], set()
+    while name in all_stages and name not in seen:
+        seen.add(name)
+        parent, body = all_stages[name]
+        bodies.append(body)
+        name = parent
+    return "\n".join(bodies)
 
 
 def validate(texts: dict[str, str]) -> None:
@@ -73,17 +87,23 @@ def validate(texts: dict[str, str]) -> None:
                 )
 
     gpu_stages = stages(texts["docker/Dockerfile.production-gpu"])
-    oneapi = gpu_stages["final-oneapi2026"][1]
+    oneapi = lineage(gpu_stages, "final-oneapi2026")
     for snippet in (
-        # Intel's SYCL runtime with UMF, at the compiler's exact apt build.
-        "install-intel-oneapi.sh --mode=runtime",
+        # Intel's SYCL runtime files, UMF among them, from the compiler's own
+        # installation (ADR-1517).
+        "COPY --from=builder-oneapi2026 /stage/lib/intel/ /usr/local/lib/intel/",
         # The compute-runtime GPU driver at INTEL_NEO_VERSION (ADR-1368).
         "install-intel-ocloc.sh --components runtime",
-        "/opt/intel/oneapi/umf/latest/lib",
         'ldd "${adapter}" | grep \'not found\'',
     ):
         if snippet not in oneapi:
             raise AssertionError(f"final-oneapi2026 lacks {snippet!r}")
+    staging = "prepare_build.py intel-runtime \\\n        tools/rc1-tester/image/sycl-runtime.json"
+    if staging not in gpu_stages["builder-oneapi2026"][1]:
+        raise AssertionError("builder-oneapi2026 does not stage the runtime files of sycl-runtime.json")
+    spec = json.loads(texts[SYCL_RUNTIME])
+    if not any("libumf.so.1" in c["names"] for c in spec["components"]):
+        raise AssertionError(f"{SYCL_RUNTIME} does not ship UMF, which the adapters load")
     if gpu_stages.get("final-oneapi2025", ("", ""))[0] != "final-oneapi2026":
         raise AssertionError("final-oneapi2025 is no longer an alias of final-oneapi2026")
     config = texts["build-config.env"]
@@ -144,7 +164,7 @@ def expect_rejected(name: str, texts: dict[str, str]) -> None:
 
 texts = {
     path: (root / path).read_text(encoding="utf-8")
-    for path in (*DOCKERFILES, PRODUCTION, OPERATOR_NODE, "build-config.env")
+    for path in (*DOCKERFILES, PRODUCTION, OPERATOR_NODE, "build-config.env", SYCL_RUNTIME)
 }
 validate(texts)
 
@@ -154,12 +174,36 @@ no_xxd["docker/Dockerfile.production"] = re.sub(
 )
 expect_rejected("a libvmaf builder without xxd", no_xxd)
 
+no_xxd_inline = deepcopy(texts)
+no_xxd_inline["docker/Dockerfile.production-gpu"] = no_xxd_inline[
+    "docker/Dockerfile.production-gpu"
+].replace("pkg-config python3 xxd zstd \\\n", "pkg-config python3 zstd \\\n", 1)
+expect_rejected("a libvmaf builder whose one-line package list lacks xxd", no_xxd_inline)
+
+xxd_in_comment = deepcopy(texts)
+xxd_in_comment["docker/Dockerfile.production"] = re.sub(
+    r"(?m)^\s+xxd \\\n", "", xxd_in_comment["docker/Dockerfile.production"], count=1
+).replace("RUN apt-get update", "# xxd comes later\nRUN apt-get update", 1)
+expect_rejected("a builder that names xxd only in a comment", xxd_in_comment)
+
 no_umf = deepcopy(texts)
 no_umf["build-config.env"] = no_umf["build-config.env"].replace(
     'ONEAPI_RUNTIME_APT_PACKAGES="intel-oneapi-runtime-dpcpp-cpp intel-oneapi-umf"',
     'ONEAPI_RUNTIME_APT_PACKAGES="intel-oneapi-runtime-dpcpp-cpp"',
 )
 expect_rejected("a oneAPI runtime without UMF", no_umf)
+
+no_staged_umf = deepcopy(texts)
+umf_spec = json.loads(no_staged_umf[SYCL_RUNTIME])
+umf_spec["components"] = [c for c in umf_spec["components"] if "libumf.so.1" not in c["names"]]
+no_staged_umf[SYCL_RUNTIME] = json.dumps(umf_spec)
+expect_rejected("a oneAPI image whose staged runtime lacks UMF", no_staged_umf)
+
+unstaged = deepcopy(texts)
+unstaged["docker/Dockerfile.production-gpu"] = unstaged["docker/Dockerfile.production-gpu"].replace(
+    "COPY --from=builder-oneapi2026 /stage/lib/intel/ /usr/local/lib/intel/\n", ""
+)
+expect_rejected("a oneAPI image without the staged SYCL runtime", unstaged)
 
 old_driver = deepcopy(texts)
 old_driver["docker/Dockerfile.production-gpu"] = old_driver[

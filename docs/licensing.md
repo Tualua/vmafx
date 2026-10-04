@@ -47,6 +47,7 @@ next to it ([ADR-1513](adr/1513-production-artifact-licensing.md),
 | --- | --- | --- |
 | `ghcr.io/vmafx/vmafx:<tag>` (CPU) | `/usr/local/share/vmafx/licenses/` in the image | `ghcr.io/vmafx/vmafx:<tag>-source` |
 | `ghcr.io/vmafx/vmafx:<tag>-server` | `/usr/local/share/vmafx/licenses/` | `ghcr.io/vmafx/vmafx:<tag>-server-source` |
+| `ghcr.io/vmafx/vmafx:<tag>-cuda13`, `-rocm10`, `-oneapi2026` (and `-oneapi2025`) | `/usr/local/share/vmafx/licenses/`; the GPU vendors' texts under `nvidia/`, `rocm/` and `intel/` | `ghcr.io/vmafx/vmafx:<tag>-cuda13-source`, `-rocm10-source`, `-oneapi2026-source` |
 | `ghcr.io/vmafx/vmafx-operator:<tag>`, `vmafx-server:<tag>` | `/usr/local/share/vmafx/licenses/` (Go modules under `go/`) | `<image>:<tag>-source` |
 | `ghcr.io/vmafx/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/` | `ghcr.io/vmafx/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
 | Tester images and bundles | `/opt/vmafx/licenses/`, `licenses/` in a bundle | `<image>-source` |
@@ -75,6 +76,20 @@ and is distributed under the GNU GPL version 3 or later; the Go programs list
 every module they link with its licence in the `[go]` section of the notices
 ([ADR-1514](adr/1514-go-and-node-image-licensing.md)).
 
-The GPU images gain the same treatment in the change that follows; the
-releases up to 1.0.0-rc.2 lack it
+The GPU images carry only the vendor files `vmaf` loads
+([ADR-1517](adr/1517-gpu-image-licensing.md)):
+
+- the CUDA image holds no NVIDIA library. The CUDA kernels inside `libvmaf`
+  contain NVIDIA code from the CUDA Toolkit (its headers and the `libdevice`
+  maths library), distributed under the CUDA Toolkit EULA; the notices pass its
+  terms on, and the GPU driver (`libcuda`) comes from your host;
+- the ROCm image holds the HIP runtime libraries and the system libraries ROCm
+  bundles for them (two of them LGPL, with their source in the `-rocm10-source`
+  image);
+- the oneAPI image holds the Intel SYCL runtime files the compiler's licence
+  lists as redistributable, provided for use with the VMAFx programs in the
+  image (the Intel EULA forbids reverse engineering them), and the Intel GPU
+  compute runtime.
+
+The releases up to 1.0.0-rc.2 predate these rules
 ([Research-2140](research/2140-production-artifact-licence-audit.md)).

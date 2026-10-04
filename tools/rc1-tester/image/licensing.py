@@ -73,7 +73,44 @@ class LicensingError(RuntimeError):
 
 
 def load_manifest(path: Path = MANIFEST) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return expand_shared(json.loads(path.read_text(encoding="utf-8")))
+
+
+def shared_component(artifacts: dict, entry: dict, rewrite: dict[str, str]) -> dict:
+    """The component `entry` names ({"from": <artifact>, "id": <component>}), with the
+    record's `rewrite` path prefixes applied to every string in it and the entry's
+    other keys replacing the shared ones (ADR-1517)."""
+    source = next(
+        (c for c in artifacts.get(entry["from"], {}).get("components", [])
+         if c.get("id") == entry["id"]),
+        None,
+    )  # fmt: skip
+    if source is None or "from" in source:
+        raise LicensingError(
+            f"{entry['from']} has no component {entry['id']!r} of its own in {MANIFEST.name}"
+        )
+    text = json.dumps(source)
+    for old, new in rewrite.items():
+        text = text.replace(old, new)
+    overrides = {key: value for key, value in entry.items() if key != "from"}
+    return {**json.loads(text), **overrides}
+
+
+def expand_shared(manifest: dict) -> dict:
+    """Replace every shared-component entry by the component it names, so one
+    component (a vendor runtime, its texts and notes) has one definition however
+    many artifacts ship it; a shared component never names another one."""
+    artifacts = manifest.get("artifacts", {})
+    expanded = {}
+    for kind, record in artifacts.items():
+        rewrite = record.get("rewrite", {})
+        components = [
+            shared_component(artifacts, c, rewrite) if "from" in c else c
+            for c in record.get("components", [])
+        ]
+        expanded[kind] = {**record, "components": components}
+    manifest["artifacts"] = expanded
+    return manifest
 
 
 def artifact_record(manifest: dict, kind: str) -> dict:

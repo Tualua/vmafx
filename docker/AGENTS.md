@@ -33,6 +33,9 @@ installed-version checks. `build-config.env` owns release lock and exact
 toolkit/nvcc/cudart versions; series-only apt package is not pin.
 Renovate discovers `CUDA_VERSION` through official NVIDIA redist HTML index
 (`custom.nvidia-cuda-redist`), never through `nvidia/cuda` Docker tags.
+`Dockerfile.production-gpu` uses neither `CUDA_*` nor `ROCM_RUNTIME`: every GPU
+builder + runtime = `RELEASE_BUILDER_BASE` (ADR-1517); `ROCM_BUILDER` only as
+image `install-rocm-from-image.sh` streams `/opt/rocm` from.
 
 oneAPI bases (ADR-1368): `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` equal
 `RELEASE_BUILDER_BASE` exactly, digest included (gate). Never bring back
@@ -56,6 +59,17 @@ in image -> `tools/rc1-tester/image/licensing.json` same PR, else build fails.
 Label `org.opencontainers.image.licenses` = `vmafx-binaries` licence set
 (test-held).
 
+`Dockerfile.production-gpu` (ADR-1517): `final-cuda13` / `final-rocm10` /
+`final-oneapi2026` copy receipt of `<variant>-licence-check` (kinds
+`production-cuda-image` / `-rocm-image` / `-oneapi-image`); notices on copy of
+tree (`<variant>-notices`); `<variant>-source-export` pushed as
+`<tag>-<variant>-source`. Runtime = only vendor files libvmaf loads: CUDA none
+(build fails on NVIDIA file or NEEDED), ROCm `hip-runtime.json` ->
+`/usr/local/lib/rocm`, Intel `sycl-runtime.json` -> `/usr/local/lib/intel`,
+staged by `prepare_build.py` in builder to `/stage`. Records take tester vendor
+components by reference (`"from"` + `rewrite`), never copies. ROCm targets =
+`dist_amdgpu_targets` of ROCm's `dist_info.json`.
+
 ## Go service and node licence gate (ADR-1514)
 
 `Dockerfile.operator`, `Dockerfile.go-server`, `Dockerfile.node` (`node-cpu`):
@@ -69,17 +83,18 @@ never `--enable-nonfree`; `ffmpeg-builder-cpu` writes `/ffmpeg-source/`
 reads `RCLONE_*` as flags). `libvmaf.so*` copies via `find -maxdepth 1`, never
 glob (`libvmaf.so.3.0.0.p/`).
 
-## oneAPI production image (ADR-1368)
+## oneAPI production image (ADR-1368, ADR-1517)
 
 `builder-oneapi2026` runs `scripts/ci/install-intel-oneapi.sh --mode=builder`,
-then `scripts/ci/install-intel-ocloc.sh --components build`. `final-oneapi2026`
-runs `--mode=runtime`, then `--components runtime`, then purges curl, gpg and
-python3 in same `RUN`. Versions come from `build-config.env` only
-(`ONEAPI_APT_VERSION`, `ONEAPI_UMF_APT_VERSION`,
-`INTEL_ONEAPI_APT_SIGNER_FINGERPRINT`, `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`).
-Load-bearing: NEO `runtime` set (B580 crash without it); `intel-oneapi-umf` in
-`ONEAPI_RUNTIME_APT_PACKAGES` (adapters need `libumf.so.1`); adapter `ldd`
-check; `ldd` + `--version` of `vmaf`; `USER 65532:65532`. `final-oneapi2025`
+then `scripts/ci/install-intel-ocloc.sh --components build`, then stages
+`sycl-runtime.json` files (`prepare_build.py intel-runtime`). `oneapi2026-assembled`
+runs `install-intel-ocloc.sh --components runtime` in `/tmp/vmafx`, purges
+`intel-ocloc intel-opencl-icd intel-igc-opencl-2 ocl-icd-libopencl1`, then
+ca-certificates + python3, same `RUN` (Level Zero only, as tester). Versions
+come from `build-config.env` only (`ONEAPI_APT_VERSION`, `INTEL_NEO_VERSION`,
+`LEVEL_ZERO_VERSION`). Load-bearing: NEO `runtime` set (B580 crash without it);
+`libumf.so.1` in `sycl-runtime.json` (adapters need it); adapter `ldd` check
+on `/usr/local/lib/intel`; `ldd` + `--version` of `vmaf`; `USER 65532:65532`. `final-oneapi2025`
 stays alias stage; publish tags digest `-oneapi2026` and `-oneapi2025`
 (HISS-14). Retire alias only in breaking release with `!` + `Migration:` footer.
 `scripts/release/tests/test-docker-image-runtime-contract.sh` pins all of it.

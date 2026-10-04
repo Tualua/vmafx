@@ -1,5 +1,5 @@
 {
- "comment": "The Intel SYCL runtime files the Intel GPU tester image ships, copied unmodified from the oneAPI installation of its build stage (prepare_build.py intel-runtime), and the licence texts that go with them. Files of the compiler must be listed in its credist.txt (the Redistributables of the Intel End User License Agreement for Developer Tools); UMF (Apache-2.0 WITH LLVM-exception) and hwloc from TCM (BSD-3-Clause, under Intel's licence for the binary) carry their own texts. Paths are relative to the oneAPI root.",
+ "comment": "The Intel SYCL runtime files the Intel GPU tester image and the production oneAPI image ship, copied unmodified from the oneAPI installation of their build stages (prepare_build.py intel-runtime), and the licence texts that go with them. Files of the compiler must be listed in its credist.txt (the Redistributables of the Intel End User License Agreement for Developer Tools); UMF (Apache-2.0 WITH LLVM-exception) and hwloc from TCM (BSD-3-Clause, under Intel's licence for the binary) carry their own texts. Paths are relative to the oneAPI root.",
  "credist": "compiler/latest/share/doc/compiler/credist.txt",
  "components": [
   {

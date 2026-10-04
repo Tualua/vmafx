@@ -45,9 +45,9 @@ docker run --rm \
 |-----|-----------|-------------|--------------|
 | `vX.Y.Z` (also `latest` for a final release) | amd64, arm64 | CPU-only CLI (default) | ~144 MB unpacked, ~55 MB compressed |
 | `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~1.1 GB unpacked, ~283 MB compressed |
-| `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~313 MB unpacked, ~100 MB compressed |
-| `vX.Y.Z-rocm10` | amd64 | ROCm 10 HIP runtime added | ~29 GB unpacked, ~8.3 GB compressed |
-| `vX.Y.Z-oneapi2026` (also `vX.Y.Z-oneapi2025`) | amd64 | Intel oneAPI 2026.1 SYCL runtime and Intel GPU compute runtime added | ~2.4 GB unpacked, ~0.6 GB compressed |
+| `vX.Y.Z-cuda13` | amd64 | CUDA 13 build of the CLI; no NVIDIA library (the host driver provides `libcuda`) | ~234 MB unpacked, ~76 MB compressed |
+| `vX.Y.Z-rocm10` | amd64 | HIP build of the CLI with the ROCm 10 runtime files it loads | ~611 MB unpacked, ~175 MB compressed |
+| `vX.Y.Z-oneapi2026` (also `vX.Y.Z-oneapi2025`) | amd64 | SYCL build of the CLI with the oneAPI 2026.1 SYCL runtime files it loads and the Intel GPU compute runtime | ~590 MB unpacked, ~163 MB compressed |
 
 ### Base images
 
@@ -55,9 +55,15 @@ docker run --rm \
 |---------|------------|-----|
 | CPU CLI | `gcr.io/distroless/cc-debian13:nonroot` | Matches its Debian 13 builder ABI. |
 | Server | Official Python 3.14 slim image (also Debian 13) | A virtualenv requires its matching interpreter and standard library. |
-| CUDA | Digest-pinned Ubuntu 26.04, for builder and runtime | Installs exact NVIDIA apt packages in each stage. |
-| ROCm | AMD's pinned `rocm/dev-ubuntu-26.04` image | Builder and runtime. |
-| oneAPI | `debian:13-slim`, the CPU image's builder base, for builder and runtime | Installs exact Intel packages in each stage; see [oneAPI 2026.1](#oneapi-20261-sycl-intel-arc). |
+| CUDA | `debian:13-slim`, the CPU image's builder base, for builder and runtime | The builder installs `nvcc` from NVIDIA's `debian13` repository; the runtime holds no NVIDIA file. |
+| ROCm | `debian:13-slim` for builder and runtime | The builder streams `/opt/rocm` out of AMD's pinned `rocm/dev-ubuntu-26.04` image; the runtime holds only the HIP runtime files `vmaf` loads. |
+| oneAPI | `debian:13-slim` for builder and runtime | The builder installs Intel's compiler at an exact apt build; the runtime holds the SYCL runtime files `vmaf` loads; see [oneAPI 2026.1](#oneapi-20261-sycl-intel-arc). |
+
+The three GPU images carry no vendor toolchain: no `nvcc`, `hipcc` or
+Intel runtime tree under `/opt/intel/oneapi`
+([ADR-1517](../adr/1517-gpu-image-licensing.md)). The ROCm runtime files are in
+`/usr/local/lib/rocm`, the Intel ones in `/usr/local/lib/intel`; each image's
+`LD_LIBRARY_PATH` names them.
 
 ### oneAPI tag names
 
@@ -119,8 +125,10 @@ docker run --rm --gpus all \
 ```
 
 Requires the NVIDIA Container Toolkit and a host driver compatible with
-CUDA 13.4.2. Without `--gpus all` the container has no GPU: `--backend cuda`
-exits with code `100`, and the default auto mode scores on the CPU.
+CUDA 13.4.2. The image holds no NVIDIA library: `libvmaf` loads the host
+driver's `libcuda.so.1`, which the toolkit mounts. Without `--gpus all` the
+container has no GPU: `--backend cuda` exits with code `100`, and the default
+auto mode scores on the CPU.
 
 ### ROCm 10.0.0 (HIP)
 
@@ -153,7 +161,9 @@ docker run --rm \
 ```
 
 Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>`
-accessible.
+accessible. The HIP kernels cover every GPU target ROCm 10.0.0 builds its own
+libraries for (the `dist_amdgpu_targets` list of ROCm's
+`share/therock/dist_info.json`, 25 targets from `gfx908` to `gfx1250`).
 
 ### oneAPI 2026.1 (SYCL, Intel Arc)
 
@@ -163,10 +173,14 @@ set in `build-config.env`:
 
 | Component | Where it comes from | Pin |
 |-----------|---------------------|-----|
-| oneAPI DPC++/C++ compiler (builder) and SYCL runtime (image) | Intel's oneAPI apt repository | `ONEAPI_APT_VERSION` (2026.1.1-325) |
-| Unified Memory Framework (`libumf.so.1`) | Intel's oneAPI apt repository | `ONEAPI_UMF_APT_VERSION` |
-| GPU compute runtime: Level Zero GPU driver, OpenCL ICD, IGC, gmmlib | the `intel/compute-runtime` GitHub release | `INTEL_NEO_VERSION` (26.35.39758.10) |
+| oneAPI DPC++/C++ compiler (builder) | Intel's oneAPI apt repository | `ONEAPI_APT_VERSION` (2026.1.1-325) |
+| SYCL runtime: `libsycl`, the Unified Runtime loader and its Level Zero adapters, the compiler's maths and support libraries, UMF (`libumf.so.1`) and hwloc (image, `/usr/local/lib/intel`) | copied from the builder's compiler installation, every compiler file listed in its `credist.txt` (`tools/rc1-tester/image/sycl-runtime.json`) | `ONEAPI_APT_VERSION` |
+| GPU compute runtime: Level Zero GPU driver, IGC, gmmlib | the `intel/compute-runtime` GitHub release | `INTEL_NEO_VERSION` (26.35.39758.10) |
 | Level Zero loader (`libze_loader.so.1`) | the `oneapi-src/level-zero` GitHub release | `LEVEL_ZERO_VERSION` |
+
+SYCL reaches the GPU through Level Zero only: the compute runtime's OpenCL ICD
+and offline compiler are removed again after installation, as in the Intel GPU
+tester image, so `ONEAPI_DEVICE_SELECTOR=opencl:*` finds no device.
 
 The GPU compute runtime is the part the host does not provide: the host
 supplies only the kernel driver (`i915` or `xe`) and the device node.
@@ -199,14 +213,13 @@ accessible. With more than one Intel GPU, pick one with
 
 On Windows, Docker Desktop's WSL 2 backend exposes the GPUs through
 `/dev/dxg` instead of a render node, and the GPU driver's user-space half
-lives in the host's `/usr/lib/wsl/lib`. Pass both, and append that directory to
-the image's library path:
+lives in the host's `/usr/lib/wsl/lib`, which the image's library path already
+names. Pass both:
 
 ```bash
 docker run --rm \
   --device /dev/dxg \
   -v /usr/lib/wsl:/usr/lib/wsl:ro \
-  -e LD_LIBRARY_PATH=/usr/local/lib:/opt/intel/oneapi/redist/lib:/opt/intel/oneapi/umf/latest/lib:/usr/lib/wsl/lib \
   -e ONEAPI_DEVICE_SELECTOR=level_zero:0 \
   -v /path/to/videos:/data:ro \
   ghcr.io/vmafx/vmafx:$tag-oneapi2026 \
@@ -306,10 +319,11 @@ gh attestation verify oci://ghcr.io/vmafx/vmafx:$tag --repo VMAFx/vmafx \
 
 ## Licences and corresponding source
 
-The CPU (`cli`) and server targets write their notices into the image and
-cannot be built without passing the licence check
+Every published target writes its notices into the image and cannot be built
+without passing the licence check
 ([ADR-1513](../adr/1513-production-artifact-licensing.md), the rules of
-[ADR-1503](../adr/1503-tester-artifact-licensing.md)):
+[ADR-1503](../adr/1503-tester-artifact-licensing.md); GPU images
+[ADR-1517](../adr/1517-gpu-image-licensing.md)):
 
 | Path or tag | What it holds |
 | --- | --- |
@@ -317,7 +331,7 @@ cannot be built without passing the licence check
 | `/usr/local/share/vmafx/licenses/texts/` | the licence texts the notices name |
 | `/usr/local/share/vmafx/licenses/vmafx-compiled-sources.json` | the licence of every repository file the build compiled |
 | `/usr/local/share/vmafx/licence-check.json` | the receipt of the licence check |
-| `ghcr.io/vmafx/vmafx:<tag>-source`, `<tag>-server-source` | the corresponding source of the copyleft parts: Debian source packages of every installed package at the installed version, and (server) the GCC source RPMs of the runtimes grafted into the numpy and scipy wheels; `SOURCES.txt` is the index |
+| `ghcr.io/vmafx/vmafx:<tag>-source`, `<tag>-server-source`, `<tag>-cuda13-source`, `<tag>-rocm10-source`, `<tag>-oneapi2026-source` | the corresponding source of the copyleft parts: Debian source packages of every installed package at the installed version, (server) the GCC source RPMs of the runtimes grafted into the numpy and scipy wheels, and (ROCm) the elfutils and numactl archives and the TheRock tree that built the LGPL libraries of the ROCm runtime; `SOURCES.txt` is the index |
 
 How the gate works, per stage of `docker/Dockerfile.production`:
 
@@ -346,6 +360,23 @@ docker buildx build --target cli -f docker/Dockerfile.production -t vmafx:test-c
 docker buildx build --target cli-source-export -f docker/Dockerfile.production \
   --output type=local,dest=./cli-source .
 ```
+
+### GPU images
+
+`docker/Dockerfile.production-gpu` follows the same pattern per variant
+([ADR-1517](../adr/1517-gpu-image-licensing.md)): `builder-<variant>` runs
+`scan-build` and stages the vendor files the image ships into `/stage`
+(`prepare_build.py rocm-runtime` / `intel-runtime` with the tester images'
+`hip-runtime.json` / `sycl-runtime.json`; for CUDA only the EULA text and the
+`nv-codec-headers` notices); `<variant>-notices` writes the notices on a copy of
+the assembled tree; `<variant>-licence-check` runs the check (artifact kinds
+`production-cuda-image`, `production-rocm-image`, `production-oneapi-image`) and
+`final-<variant>` copies its receipt; `<variant>-source-export` holds the
+source, published as `<tag>-<variant>-source`. The variants are `cuda13`,
+`rocm10` and `oneapi2026`. The CUDA build also fails when a binary links an
+NVIDIA library or an NVIDIA file is in the image. The three records take the
+vendor components of the tester records by reference, so a vendor runtime is
+recorded once for both images.
 
 ### Go service and node images
 
@@ -394,13 +425,15 @@ docker buildx build \
   -t vmafx:test-server \
   .
 
-# GPU variant (CUDA example)
+# GPU variant (CUDA example), and its corresponding source
 docker buildx build \
   --platform linux/amd64 \
   --target final-cuda13 \
   -f docker/Dockerfile.production-gpu \
   -t vmafx:test-cuda13 \
   .
+docker buildx build --target cuda13-source-export -f docker/Dockerfile.production-gpu \
+  --output type=local,dest=./cuda13-source .
 
 # oneAPI variant. Its build looks up the Intel compute-runtime and Level Zero
 # releases through the GitHub API; the optional secret lifts the anonymous rate
@@ -426,14 +459,15 @@ Both Dockerfiles use a multi-stage build:
    the compiled binary, shared libraries, and model files.
 4. **Server runtime** (the same pinned `python:3.14-slim` image): provides the
    interpreter to which `/venv/bin/python` links. It runs as UID/GID 65532.
-5. **GPU builders and runtimes**: one pinned base per variant, with exact
-   vendor package versions in each stage.
+5. **GPU builders and runtimes**: `debian:13-slim` for every builder and
+   runtime ([ADR-1517](../adr/1517-gpu-image-licensing.md)); the runtimes carry
+   only the vendor files `vmaf` loads.
 
-| Variant | Builder and runtime base | Vendor packages installed |
-|---------|--------------------------|---------------------------|
-| CUDA 13.4.2 | Digest-pinned Ubuntu 26.04 (same base for both) | Exact NVIDIA apt packages in each stage |
-| ROCm 10.0.0 | AMD's `rocm/dev-ubuntu-26.04:10.0.0-full` (both) | The image's own ROCm payload |
-| Intel oneAPI 2026.1 | `debian:13-slim` (both) | oneAPI compiler (builder) or runtime (image) at one exact apt build, plus the pinned Intel GPU compute runtime and Level Zero loader ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)) |
+| Variant | Builder toolchain | Vendor files in the image |
+|---------|-------------------|---------------------------|
+| CUDA 13.4.2 | `nvcc` from NVIDIA's `debian13` repository at exact versions (`scripts/ci/install-cuda-toolkit.sh --mode=builder`) | None; the host driver provides `libcuda.so.1` |
+| ROCm 10.0.0 | `/opt/rocm` streamed out of AMD's pinned `rocm/dev-ubuntu-26.04:10.0.0-full` (`scripts/ci/install-rocm-from-image.sh`) | The HIP runtime files of `tools/rc1-tester/image/hip-runtime.json` |
+| Intel oneAPI 2026.1 | oneAPI compiler at one exact apt build ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)) | The SYCL runtime files of `tools/rc1-tester/image/sycl-runtime.json`, the pinned Intel GPU compute runtime and Level Zero loader |
 
 Every base-image reference is digest-pinned.
 
@@ -457,6 +491,15 @@ See [ADR-0698](../adr/0698-vmafx-production-dockerfile.md) for the full
 rationale, alternatives considered, and tag matrix design decisions.
 
 ## History
+
+- **GPU images before 1.0.0-rc.3.** Up to v1.0.0-rc.2 the ROCm image was AMD's
+  whole `rocm/dev` image (about 29 GB, with compilers, a GPL debugger and a
+  profiler library whose licence forbids redistribution), the CUDA image an
+  Ubuntu 26.04 base with `libcudart` that nothing loaded, and the oneAPI image
+  Intel's full runtime set; none carried notices or published source
+  ([Research-2140](../research/2140-production-artifact-licence-audit.md)). Since
+  [ADR-1517](../adr/1517-gpu-image-licensing.md) they are Debian 13 images with
+  only the vendor files `vmaf` loads.
 
 - **oneAPI compute runtime.** Releases up to v1.0.0-rc.2 shipped the compute
   runtime of Intel's `oneapi-runtime:2025.3.1` image (version 25.18). On an Arc

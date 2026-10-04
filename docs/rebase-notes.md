@@ -128,6 +128,31 @@ source change, no upstream file touched.
   an entry there in the same change (`TestEveryServedRPCHasARolePolicy`).
 - `cmd/vmafx-controller/auth/authtest` mints the RS256 tokens of the auth and
   controller tests; the auth tests' `fakeIssuer` signs through it.
+## The GPU images carry their licences and source (ADR-1517, 2026-10-04)
+
+`fix/prod-licensing-gpu-images`. Fork-added build and packaging files only; no
+libvmaf source change.
+
+- `docker/Dockerfile.production-gpu` builds `final-cuda13`, `final-rocm10` and
+  `final-oneapi2026` on `RELEASE_BUILDER_BASE` / `ONEAPI_*` (Debian 13); it no
+  longer declares `CUDA_BUILDER`, `CUDA_RUNTIME` or `ROCM_RUNTIME`, and
+  `final-cpu` is gone (the CPU image is `docker/Dockerfile.production`). Each
+  final target copies the receipt of `<variant>-licence-check`; keep that line
+  on a rebase (`test_every_published_production_target_passes_a_licence_check`).
+- The runtimes hold only the vendor files `vmaf` loads: none for CUDA (the build
+  fails on an NVIDIA file or NEEDED entry), `hip-runtime.json` in
+  `/usr/local/lib/rocm`, `sycl-runtime.json` in `/usr/local/lib/intel`. A change
+  to one of those lists changes the tester and the production image together.
+- `licensing.json`: `production-cuda-image`, `production-rocm-image` and
+  `production-oneapi-image` take components by reference
+  (`{"from": ..., "id": ...}` with the record's `rewrite`); edit a vendor
+  component in its tester record, never a copy. `licensing.py`
+  `expand_shared()` resolves the references in `load_manifest()`.
+- `docker-publish-production.yml`: the GPU jobs pass `VMAFX_SOURCE_COMMIT` /
+  `VMAFX_IMAGE_TAG`, run `.github/actions/image-licence-artifacts` before the
+  disk cleanup, and the oneAPI smoke checks `/usr/local/lib/intel/libur_adapter_*`.
+  `scripts/release/tests/test-docker-image-runtime-contract.sh` holds the oneAPI
+  staging and the UMF entry of `sycl-runtime.json`.
 
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 

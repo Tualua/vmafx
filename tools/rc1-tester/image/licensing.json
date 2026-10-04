@@ -1,5 +1,5 @@
 {
- "comment": "Licence record of the published tester and production artifacts (ADR-1503), read by licensing.py. Every file of an artifact must be claimed by one component (first match in list order). Change this file with the artifact: a new package, wheel library, licence or interpreter version fails the build until it is recorded here.",
+ "comment": "Licence record of the published tester and production artifacts (ADR-1503), read by licensing.py. Every file of an artifact must be claimed by one component (first match in list order). Change this file with the artifact: a new package, wheel library, licence or interpreter version fails the build until it is recorded here. A component written {\"from\": <artifact>, \"id\": <component>} is that artifact's component, its paths rewritten by the record's `rewrite` prefixes and its other keys replaced by the entry's (ADR-1517), so a vendor runtime is recorded once.",
  "schema_version": 1,
  "spdx_texts": {
   "BSD-2-Clause": "LICENSES/BSD-2-Clause.txt",
@@ -1643,7 +1643,7 @@
       }
      ],
      "notes": [
-      "Part of the object code in this image is NVIDIA's: the device code of the CUDA kernels in libvmaf and in the test executables contains code from the CUDA Toolkit's headers and from its libdevice library, which Attachment A of the CUDA Toolkit EULA lists as distributable (NVIDIA Common Device Math Functions Library, CUDA Floating Point Type Headers, CUDA Headers for Runtime Compilation), incorporated in object code into this application (EULA 1.1.1(c)).",
+      "Part of the object code in this image is NVIDIA's: the device code of the CUDA kernels in this image's VMAFx binaries contains code from the CUDA Toolkit's headers and from its libdevice library, which Attachment A of the CUDA Toolkit EULA lists as distributable (NVIDIA Common Device Math Functions Library, CUDA Floating Point Type Headers, CUDA Headers for Runtime Compilation), incorporated in object code into this application (EULA 1.1.1(c)).",
       "These NVIDIA portions are accessed only by the VMAFx programs in this image (EULA 1.1.2). You may not reverse engineer, decompile or disassemble them or remove NVIDIA's notices (EULA 1.2); NVIDIA provides them as is (1.4), with the limitation of liability of 1.5.",
       "The image ships no NVIDIA library. The NVIDIA driver (libcuda.so.1 and the PTX JIT compiler) comes from your host, mounted by the NVIDIA Container Toolkit or by WSL2, under the driver's own licence.",
       "EUPL-1.2 covers only the VMAFx files of this image, never NVIDIA's components. VMAFx is not sponsored or endorsed by NVIDIA; NVIDIA's names identify the components only."
@@ -3078,6 +3078,184 @@
      "paths": [
       "usr/local/share/vmafx/licenses/**"
      ]
+    }
+   ]
+  },
+  "production-cuda-image": {
+   "title": "the VMAFx production NVIDIA GPU image (vmaf command, CUDA)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed Debian package at the installed version); SOURCES.txt inside it is the index. The image holds no NVIDIA library and no other copyleft object code.",
+   "rewrite": {
+    "opt/vmafx/licenses/": "usr/local/share/vmafx/licenses/",
+    "opt/vmafx/lib/": "usr/local/lib/"
+   },
+   "components": [
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-binaries",
+     "name": "VMAFx: the vmaf command and libvmaf (CUDA build)"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "build-records"
+    },
+    {
+     "from": "cuda-image",
+     "id": "nvidia-cuda-device-code"
+    },
+    {
+     "from": "cuda-image",
+     "id": "nv-codec-headers"
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the base image"
+    },
+    {
+     "from": "cuda-image",
+     "id": "system-state",
+     "name": "Configuration and package records the Debian base image writes"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "production-rocm-image": {
+   "title": "the VMAFx production AMD GPU image (vmaf command, HIP on ROCm)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image: the Debian source packages of every installed Debian package at the installed version, and the upstream archives of elfutils 0.195 and numactl 2.0.19 with the TheRock tree that built the LGPL libraries of the ROCm runtime ([component rocm-sysdeps]); SOURCES.txt inside it is the index.",
+   "rewrite": {
+    "opt/vmafx/licenses/": "usr/local/share/vmafx/licenses/",
+    "opt/vmafx/lib/": "usr/local/lib/"
+   },
+   "components": [
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-binaries",
+     "name": "VMAFx: the vmaf command and libvmaf (HIP build)"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "build-records"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-clr"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-rocr"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-comgr"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-rocprofiler-register"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-kpack"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-llvm"
+    },
+    {
+     "from": "hip-image",
+     "id": "rocm-sysdeps"
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the base image"
+    },
+    {
+     "from": "hip-image",
+     "id": "system-state",
+     "name": "Configuration and package records the Debian base image writes"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "notices"
+    }
+   ]
+  },
+  "production-oneapi-image": {
+   "title": "the VMAFx production Intel GPU image (vmaf command, SYCL on oneAPI)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed Debian package at the installed version); SOURCES.txt inside it is the index. The Intel GPU stack's source is named in [component intel-gpu-stack].",
+   "rewrite": {
+    "opt/vmafx/licenses/": "usr/local/share/vmafx/licenses/",
+    "opt/vmafx/lib/": "usr/local/lib/"
+   },
+   "components": [
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-binaries",
+     "name": "VMAFx: the vmaf command and libvmaf (SYCL build)"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "build-records"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-oneapi-dpcpp-runtime"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-oneapi-umf"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-oneapi-tcm-hwloc"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-gpu-stack"
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the base image and of the Intel GPU stack's dependencies"
+    },
+    {
+     "from": "sycl-image",
+     "id": "system-state",
+     "name": "Configuration and package records the Debian base image writes"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "notices"
     }
    ]
   },
