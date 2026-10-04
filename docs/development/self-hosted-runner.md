@@ -1,29 +1,42 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Self-hosted GPU runner — enrollment guide
 
-A CI job (`coverage-gpu` in
-[`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml))
-requires a self-hosted runner that exposes both NVIDIA and Intel GPUs
-alongside an AVX-512-capable CPU. Hosted GitHub runners cannot reach those
-code paths. The Arc-only SYCL parity lane is a separate capability and has
-its own [operator guide](ci-self-hosted-sycl.md).
+Follow this runbook to enroll a self-hosted runner for the `coverage-gpu` CI
+job (in
+[`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)).
+The job needs a runner that exposes both NVIDIA and Intel GPUs alongside an
+AVX-512-capable CPU; hosted GitHub runners cannot reach those code paths. The
+Arc-only SYCL parity lane is a separate capability with its own
+[operator guide](ci-self-hosted-sycl.md).
+
+This page is a provisioning runbook, not evidence that the hardware lane has
+run.
+
+## How the job is admitted
 
 The `coverage-gpu` job runs only after a hosted admission job sees both
 `GPU_COVERAGE_ENABLED=true` and an online runner carrying every label in its
-`runs-on` set. A missing, partial or offline match fails the hosted probe and
-skips self-hosted dispatch, so the hardware job cannot queue forever. While
-the switch is enabled, the required-check aggregator treats that skip as a
-failure. This is the [ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md)
-contract.
+`runs-on` set.
 
-**Current state (2026-09-25):** the repository and organisation runner APIs
-both return zero runners, `GPU_COVERAGE_ENABLED` is absent, and the documented
-local runner service/environment/state paths are absent. This page is a
-provisioning runbook, not evidence that the hardware lane has run.
+- A missing, partial or offline match fails the hosted probe and skips
+  self-hosted dispatch, so the hardware job cannot queue forever.
+- While the switch is enabled, the required-check aggregator treats that skip
+  as a failure.
+
+This is the
+[ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md) contract.
+
+!!! note
+    State on 2026-09-25 (dated snapshot): the repository and organisation
+    runner APIs both returned zero runners, `GPU_COVERAGE_ENABLED` was absent,
+    and the documented local runner service, environment and state paths were
+    absent. Re-check with
+    `gh api /repos/VMAFx/vmafx/actions/runners --jq '.total_count'` and
+    `gh variable list -R VMAFx/vmafx`.
 
 Historical backlog reference: T7-3. The local `.workingdir/BACKLOG.md`
-notebook is not part of the published documentation; the linked workflow
-is the current configuration source.
+notebook is not part of the published documentation; the linked workflow is
+the current configuration source.
 
 ## Required labels
 
@@ -37,12 +50,17 @@ The workflows match on a label triple. Match these exactly:
 
 ## Hardware expectations
 
-The runner needs to satisfy the union of all jobs that target it:
+The runner needs to satisfy the union of all jobs that target it. Toolkit
+versions are the ones pinned in `build-config.env` (`CUDA_VERSION`,
+`ONEAPI_VERSION`); an older toolkit cannot build the current tree
+([ADR-1223](../adr/1223-cuda-ampere-architecture-floor.md) raises the CUDA floor
+to Ampere,
+compute capability 8.0).
 
-- **NVIDIA GPU + driver + CUDA toolkit ≥ 12.0** — drives the
+- **NVIDIA GPU + driver + the pinned CUDA toolkit** — drives the
   `coverage-gpu` CUDA build (`-Denable_cuda=true`) and the CUDA test
   suite. `nvidia-smi` must succeed without `sudo`.
-- **Intel GPU + Level Zero + oneAPI Base Toolkit ≥ 2024.2** — drives
+- **Intel GPU + Level Zero + the pinned oneAPI toolkit** — drives
   the SYCL build (`-Denable_sycl=true`). `sycl-ls` must list at least
   one Intel GPU device.
 - **Intel `ocloc`** — the SYCL build compiles native GPU code ahead of time
@@ -62,8 +80,8 @@ The runner needs to satisfy the union of all jobs that target it:
   label before CI can claim hardware coverage.
 
 A typical workstation that runs the fork's local dev loop already
-satisfies all of the above; the user's primary dev box has been
-greenlit (per popup 2026-04-25) as the first runner.
+satisfies all of the above. Per maintainer direction (2026-04-25), the
+primary dev workstation is the first runner.
 
 ## Enrollment steps
 
@@ -92,7 +110,8 @@ Pick a working directory the agent will own (e.g. `~/actions-runner`):
 ```bash
 mkdir -p ~/actions-runner && cd ~/actions-runner
 
-# Pin to a known release; bump deliberately.
+# Pin to a known release; bump deliberately. 2.319.1 is an example:
+# take the current release from https://github.com/actions/runner/releases.
 RUNNER_VERSION=2.319.1
 curl -O -L \
   "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
@@ -163,20 +182,29 @@ the aggregator rejects.
   shared user accounts, audit `~/.ssh/authorized_keys` quarterly.
 - **Fork pull requests**: the hosted probe excludes fork heads, so untrusted
   fork code never reaches this self-hosted runner.
-- **Concurrency**: a single runner serialises GPU jobs. Inside a Meson test
-  job, every test tagged `gpu` sets `is_parallel : false`; Meson drains running
-  tests before each one and does not start another test until it finishes.
-  Keep the normal parallel Meson invocation — `-j1` and inflated timeouts hide
+- **Concurrency**: see [GPU test serialisation](#gpu-test-serialisation) below.
+- **Second runner**: adding a runner with the same label set (for example a
+  remote Intel-only or NVIDIA-only host) lets `coverage-gpu` parallelise with
+  whatever fine-grained-label job comes next without label collisions.
+
+### GPU test serialisation
+
+A single runner serialises GPU jobs.
+
+- Inside a Meson test job, every test tagged `gpu` sets `is_parallel : false`.
+  Meson drains running tests before each one and does not start another until
+  it finishes.
+- Keep the normal parallel Meson invocation. `-j1` and inflated timeouts hide
   accelerator contention instead of enforcing the shared-device contract.
-  Verify both the source registry and configured metadata with
-  `python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" --
-  -C build --no-rebuild test_gpu_serialization_contract check_gpu_test_serialization`.
-  The source guard covers dormant backends that
-  cannot be configured on the current host; the metadata guard checks Meson's
-  effective scheduling flags. Adding a
-  second runner with the same label set (e.g. a remote Intel-only or
-  NVIDIA-only host) lets `coverage-gpu` parallelise with whatever
-  fine-grained-label job comes next without label collisions.
+- The source guard covers dormant backends that cannot be configured on the
+  current host; the metadata guard checks Meson's effective scheduling flags.
+
+Verify both the source registry and the configured metadata:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build --no-rebuild test_gpu_serialization_contract check_gpu_test_serialization
+```
 
 ## Decommissioning
 
@@ -194,8 +222,10 @@ rm -rf ~/actions-runner
 
 - Historical T7-3 reference: `.workingdir/BACKLOG.md` (local notebook,
   not shipped with this documentation).
-- [`tests-and-quality-gates.yml` § coverage-gpu](../../.github/workflows/tests-and-quality-gates.yml) —
+- [`tests-and-quality-gates.yml` §
+  coverage-gpu](../../.github/workflows/tests-and-quality-gates.yml) —
   the first consumer of the `gpu-full` label.
-- [GitHub Actions: self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners)
-- `req` — user popup choice 2026-04-25: "we can test cuda and intel
-  on my pc, so just use my local gpu's for now lol".
+- [GitHub Actions: self-hosted
+  runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners)
+- Maintainer direction, 2026-04-25 (paraphrased): use the local workstation GPUs
+  for CUDA and Intel testing for now.

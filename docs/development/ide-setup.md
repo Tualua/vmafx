@@ -1,23 +1,52 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # IDE setup (VS Code + Zed + clangd)
 
-`.vscode/settings.json` ships with clangd as the C/C++ language
-server (Microsoft IntelliSense is explicitly disabled). clangd
-reads compile flags from `${workspaceFolder}/build/compile_commands.json`,
-which Meson generates during `meson setup`.
+Use this page to get working code navigation in VS Code or Zed. Both editors
+use clangd as the C/C++ language server (VS Code disables Microsoft
+IntelliSense explicitly), and clangd needs a Meson build directory that
+contains `compile_commands.json`.
 
-## Make sure `build/` covers every backend you touch
+## Quick start
 
-`compile_commands.json` only contains entries for files that
-were actually compiled. If `build/` was set up CPU-only, clangd
-has no include paths for CUDA / SYCL headers and lights up every
-`VmafCudaBuffer` / `sycl::queue` symbol as "undeclared identifier".
+1. Configure one build directory with every backend your host has a toolchain
+   for (see
+   [below](#make-sure-the-build-directory-covers-every-backend-you-touch)).
+2. Open the repository in VS Code or Zed.
+3. Restart clangd so it re-reads `compile_commands.json`.
+4. Open a backend file such as `core/src/feature/cuda/` or
+   `core/src/feature/sycl/` and confirm there are no "undeclared identifier"
+   errors.
 
-> **Vulkan removed (ADR-0726):** The `enable_vulkan` option no longer exists.
-> Do not pass `-Denable_vulkan=enabled`; Meson will reject it as an unknown
-> option. Warnings about `volk.h`, `vk_mem_alloc.h`, `VkInstance`, or
-> `VkDevice` mean that the build directory predates the removal and should be
-> reconfigured.
+## Which build directory each tool reads
+
+The tools do not all read the same directory. Make sure the directory each one
+reads exists, or configure both:
+
+| Tool | Reads | Defined in |
+|---|---|---|
+| VS Code clangd | `core/build/compile_commands.json` | `.vscode/settings.json` (`--compile-commands-dir=core/build`) |
+| VS Code C/C++ extension | `build/compile_commands.json` | `.vscode/c_cpp_properties.json` |
+| Zed clangd | `build/compile_commands.json` | `.zed/settings.json` (`--compile-commands-dir=build`) |
+| `make` targets | `core/build` | `BUILD_DIR` in the `Makefile` |
+| `meson setup build core` | `build` | the command in `AGENTS.md` section 2 |
+
+`meson setup build core` writes `build/`; a `make` build writes `core/build/`.
+For VS Code, configure `core/build` (or change `--compile-commands-dir`
+locally); for Zed, configure `build`.
+
+## Make sure the build directory covers every backend you touch
+
+`compile_commands.json` only contains entries for files that were actually
+compiled. If the build directory was set up CPU-only, clangd has no include
+paths for CUDA / SYCL headers and lights up every `VmafCudaBuffer` /
+`sycl::queue` symbol as "undeclared identifier".
+
+!!! note "Vulkan removed (ADR-0726)"
+    The `enable_vulkan` option no longer exists. Do not pass
+    `-Denable_vulkan=enabled`: Meson rejects an undeclared option with an
+    `Unknown options` error and configuration fails. Warnings about `volk.h`,
+    `vk_mem_alloc.h`, `VkInstance`, or `VkDevice` mean that the build directory
+    predates the removal and should be reconfigured.
 
 Configure the IDE build with every backend for which the host has a toolchain:
 
@@ -49,7 +78,7 @@ CC=icx CXX=icpx meson setup build-sycl-test core \
 The cross-backend gate scripts under `scripts/ci/` accept a selected binary
 through `--vmaf-binary`.
 
-## Symptoms of a misconfigured `build/`
+## Symptoms of a misconfigured build directory
 
 - `unknown type name 'VmafCudaBuffer'` / `VmafCudaState` under
   `core/src/feature/cuda/`;
@@ -73,22 +102,20 @@ Zed parses `.zed/settings.json` with its restricted project-settings schema.
 The repository therefore keeps only settings that can actually be applied to
 this worktree:
 
-- clangd reads `build/compile_commands.json` and uses the repository's own
-  `.clang-tidy` policy;
-- CUDA, HIP, Metal, and Objective-C++ suffixes map to C++, while Meson files
-  map to the Meson language;
-- edit predictions are disabled for models, corpora, golden fixtures,
-  `.workingdir/`, build output, and binary dataset formats;
-- file scanning preserves Zed's inherited defaults through the `"..."`
-  entry and additionally skips large build, model, and corpus artefacts; and
-- the `vmafx-mcp` context server starts the current Go MCP binary inside the
-  dev container.
+| In `.zed/settings.json` (project) | Effect |
+|---|---|
+| clangd | Reads `build/compile_commands.json` and uses the repository's `.clang-tidy` policy. |
+| File associations | CUDA, HIP, Metal, and Objective-C++ suffixes map to C++; Meson files map to Meson. |
+| Edit predictions | Disabled for models, corpora, golden fixtures, `.workingdir/`, build output, and binary dataset formats. |
+| File scanning | Keeps Zed's inherited defaults through the `"..."` entry and skips large build, model, and corpus artefacts. |
+| `vmafx-mcp` context server | Starts the current Go MCP binary inside the dev container. |
 
-Project settings cannot install ACP agents or set native-agent permissions.
-`agent`, `agent_servers`, UI preferences, telemetry, and extension installation
-belong in the developer's user settings. Keeping them out of the repository is
-also a trust boundary: cloning a project must not silently choose a provider,
-model, or permission policy for a developer.
+These belong in the developer's user settings, not in the project:
+`agent`, `agent_servers`, UI preferences, telemetry, and extension
+installation. Project settings cannot install ACP agents or set native-agent
+permissions, and keeping them out of the repository is a trust boundary:
+cloning a project must not silently choose a provider, model, or permission
+policy for a developer.
 
 Zed opens new worktrees in Restricted Mode. Trust the worktree only after
 reviewing `.zed/settings.json`; until then Zed deliberately will not launch the
@@ -118,7 +145,8 @@ manifest, this is the supported shape in `~/.config/zed/settings.json`:
 }
 ```
 
-Do not add provider model IDs here. External ACP agents own their authentication,
+Do not add provider model IDs here. External ACP agents own their
+authentication,
 subscription, model selection, and native permission policy. Zed's
 `agent.tool_permissions` applies to the native Zed Agent and is user-global;
 it is not a project-level substitute for an external agent's write mode.
@@ -155,6 +183,7 @@ adoption and adds current, executable workflows:
 | `Standards: Compile Context` | Verify generated standards context. |
 | `Dev container: build exact source` | Build with the source-revision guard. |
 | `Dev container: start` | Start only the primary `dev-mcp` service. |
+| `Dev container: shell` | Open an interactive shell in the running container. |
 | `Dev container: CPU fast gate` | Build in writable `/probes/zed-build-cpu` and run the fast suite. |
 | `MCP: probe running container` | Exercise the running container and write its normal probe receipt. |
 | `vmaf-tune: compare CPU smoke` | Run the current `vmaf-tune compare --src ...` CLI in the container. |
@@ -194,8 +223,10 @@ tasks.
 
 ### Authoritative Zed references
 
-- [Project settings parser at the verified 1.18.1 commit](https://github.com/zed-industries/zed/blob/bebe92f469834a287f5a57ed78e8d51a918b8ada/crates/settings_content/src/project.rs)
-- [Settings-store project parser at the verified commit](https://github.com/zed-industries/zed/blob/bebe92f469834a287f5a57ed78e8d51a918b8ada/crates/settings/src/settings_store.rs)
+- [Project settings parser at the verified 1.18.1
+  commit](https://github.com/zed-industries/zed/blob/bebe92f469834a287f5a57ed78e8d51a918b8ada/crates/settings_content/src/project.rs)
+- [Settings-store project parser at the verified
+  commit](https://github.com/zed-industries/zed/blob/bebe92f469834a287f5a57ed78e8d51a918b8ada/crates/settings/src/settings_store.rs)
 - [External agents](https://zed.dev/docs/ai/external-agents)
 - [Model Context Protocol](https://zed.dev/docs/ai/mcp)
 - [Edit predictions](https://zed.dev/docs/ai/edit-prediction)

@@ -1,13 +1,17 @@
 # PR-body deliverables validator (pre-push hook)
 
-The fork's [rule-enforcement workflow][rule-yml] runs a **deep-dive
-deliverables checklist** gate (ADR-0108) on every non-draft PR. The
-parser is strict: a tick that does not match the documented checkbox
-shape, or a label substring that drifts by one character, fails the
-gate. Each retry costs a 3–10 minute CI cycle.
+To check a PR body before pushing, run `make pr-check PR=<number>` or install
+the pre-push hook with `make hooks-install`. Both run the same parser as the
+CI gate, so a malformed body is caught locally instead of after a 3-10 minute
+CI cycle.
 
-The pre-push hook described here mirrors that gate locally so a
-malformed PR body is caught **before** the push.
+The [rule-enforcement workflow][rule-yml] runs a **deep-dive deliverables
+checklist** gate (ADR-0108) on every non-draft PR. The parser is strict: a
+tick that does not match the documented checkbox shape, or a label substring
+that drifts by one character, fails the gate. For the user-facing syntax
+(checkbox forms, opt-out sentences) read the
+[PR body sentinel guide](pr-body-sentinel-guide.md); this page covers the
+validator's internals and the hook.
 
 ## What it checks
 
@@ -41,8 +45,7 @@ parser enforces:
 
 ## Parser shape gotchas
 
-The strict parser tripped PRs #461, #438, #470, #473, #486, #511, #468,
-and #526 on these specific patterns:
+These patterns have each failed real PRs under the strict parser:
 
 - **Numbered-list shape fails.** `1. **Research digest** …` is not a
   checkbox — the parser only recognises `- [x]` (or `- [ ]`).
@@ -51,7 +54,7 @@ and #526 on these specific patterns:
   substring after markdown emphasis is stripped. `**Reproducer /
   smoke-test command**` matches; `**Reproducer / smoke-test**` (no
   trailing "command") does **not**.
-- **Sentinel without un-tick is fine — but redundant.** A ticked box
+- **A sentence next to a ticked box is redundant.** A ticked box
   satisfies the gate on its own. The opt-out sentence is only required
   when the box is unticked. Mixing both is harmless.
 - **Sentinel without ticked-OR-unticked checkbox is fine.** A bare
@@ -61,18 +64,24 @@ and #526 on these specific patterns:
 
 ## Installing the hook
 
-The hook ships as a tracked file at
-[`scripts/git-hooks/pre-push`](../../scripts/git-hooks/pre-push). Wire
-it into `.git/hooks/` via:
+Run `make hooks-install` (an alias of `make install-hooks`,
+[ADR-1241](../adr/1241-worktree-hook-dispatch.md)). It needs `pre-commit` in
+the active Python environment and runs
+[`scripts/githooks/install.py`](../../scripts/githooks/install.py), which:
 
-```bash
-make hooks-install
-```
+1. Validates `.pre-commit-config.yaml` and prepares the hook environments.
+2. Writes the dispatcher `scripts/githooks/dispatch.sh` into `.git/hooks/` as
+   `pre-commit`, `commit-msg`, `pre-push` and `pre-rebase` (a copy, not a
+   symlink).
+3. Preserves any existing managed hook next to it as
+   `<hook>.vmafx-backup-*`, and refuses to touch a custom hook it does not
+   own.
 
-The Make target installs the hook as a symlink (idempotent). Existing
-non-symlink `pre-push` hooks are preserved with a `.local-backup`
-suffix so a contributor's hand-rolled hook is never silently
-overwritten.
+The PR-body check is the `validate-pr-body` hook in
+[`.pre-commit-config.yaml`](../../.pre-commit-config.yaml) (stage
+`pre-push`). Its entry point is
+[`scripts/git-hooks/pre-push-pr-body-lint.sh`](../../scripts/git-hooks/pre-push-pr-body-lint.sh);
+the dispatcher reaches it through the pre-commit framework.
 
 ## Standalone CLI
 
@@ -105,7 +114,7 @@ through the shared helper [`scripts/ci/pr-body-input.sh`][input]:
 |-----------------------------------|----------------------------------|
 | [`deliverables-check.sh`][deliv]  | ADR-0108 six deliverables        |
 | `validate-pr-body.sh`             | the same parser, run locally     |
-| `ffmpeg-patches-surface-check.sh` | ADR-0186 ffmpeg-patch surface    |
+| `ffmpeg-patches-surface-check.sh` | ADR-0409 ffmpeg-patch surface    |
 | `state-md-touch-check.sh`         | ADR-0165 `docs/state.md` hygiene |
 
 The body is resolved in this order:
@@ -145,6 +154,8 @@ terminal", not "did anybody pipe a PR body":
 | closed (`0<&-`)         | true         | named as closed, never read — used to hang   |
 | terminal                | false        | named as a terminal (unchanged)              |
 
+### Why fd 0 is classified
+
 The closed case was the sharp one. `PR_BODY="$(cat)"` with fd 0 closed does
 not fail, it **deadlocks**: the command substitution opens a pipe, the
 kernel hands out the lowest free descriptor, with fd 0 free that pipe's
@@ -157,14 +168,20 @@ timeout 12 env -u PR_BODY bash -c \
     'bash scripts/ci/state-md-touch-check.sh 0<&-' ; echo $?               # 124
 ```
 
+### Reading the classified stream
+
 Reading the classified stream is a three-step contract, and the third step is
-not optional: `pr_body_classify_stdin` hands out a **duplicate** of fd 0 (the
-duplicate is what makes the read safe, since no later command substitution can
-claim a descriptor that is already taken), `pr_body_read_stdin` reads it, and
-`pr_body_close_stdin` releases it. The release cannot be folded into the read
-— that runs inside `$( )`, so closing there would close the subshell's copy
-and leave the caller's open, inherited by every `git`, `python3` and `mktemp`
-the gate spawns afterwards.
+not optional:
+
+1. `pr_body_classify_stdin` hands out a **duplicate** of fd 0. The duplicate
+   makes the read safe, since no later command substitution can claim a
+   descriptor that is already taken.
+2. `pr_body_read_stdin` reads the duplicate.
+3. `pr_body_close_stdin` releases it.
+
+The release cannot be folded into the read. The read runs inside `$( )`, so
+closing there would close the subshell's copy and leave the caller's open,
+inherited by every `git`, `python3` and `mktemp` the gate spawns afterwards.
 
 `scripts/ci/tests/test-pr-body-input-selection.sh` pins every row of that
 table for all four gates, plus the descriptor release, under `timeout`, so a
@@ -173,36 +190,41 @@ re-regression is reported as a hang instead of becoming one.
 ## What the hook does on push
 
 1. Resolves the current branch via `git rev-parse --abbrev-ref HEAD`.
-2. Looks up the open PR for that branch via
-   `gh pr view <branch> --json body,state,isDraft`.
-3. **Skips silently** if any of the following hold (these mirror CI's
-   own skip conditions, so they never produce a stricter gate than
-   what CI runs):
-   - `gh` is not installed,
+2. Looks up the open PR for that branch with a bounded `gh pr view`
+   (timeout `VMAFX_PR_LOOKUP_TIMEOUT_SECONDS`, default 15 s). If `gh` is not
+   installed or fails, it falls back to the public GitHub pull-request pages.
+3. **Fails closed** when neither source can establish the PR state: the push
+   is blocked with `cannot determine PR state via gh or GitHub's public
+   pages`. Restore connectivity or credentials and push again.
+4. **Skips** (exit 0, with a message) in these cases, which mirror CI's own
+   skip conditions so the hook is never stricter than CI:
    - the branch has no open PR (first push of a feature branch),
    - the PR is `MERGED` / `CLOSED`,
-   - the PR is a draft (CI's `deep-dive-checklist` job has the same
+   - the PR is a draft (the `deep-dive-checklist` job has the same
      `pull_request.draft == false` predicate),
-   - the PR body is empty,
-   - `origin/master` is missing locally.
-4. Otherwise, computes
-   `git diff --name-only $(git merge-base origin/master HEAD)..HEAD`
-   and feeds body + diff into
-   `scripts/ci/validate-pr-body.sh`.
-5. Non-zero exit blocks the push and prints the same `::error` lines
-   the CI gate would emit.
+   - the PR is the machine-generated release-please PR (ADR-1151; needs
+     `gh` metadata, the public-page fallback never exempts),
+   - the PR body is empty (CI will catch it),
+   - `origin/master` is missing locally (run `git fetch origin master`).
+5. Otherwise computes
+   `git diff --name-only $(git merge-base origin/master HEAD)..HEAD` and
+   feeds body and diff into `scripts/ci/validate-pr-body.sh`.
+6. A non-zero exit blocks the push and prints the same `::error` lines the CI
+   gate would emit.
 
 ## Bypassing
 
-Standard escape hatch:
+Do not skip the hook. AGENTS.md operational rule 6 forbids agents from
+evading hooks, and the PR body is checked again in CI.
 
-```bash
-git push --no-verify
-```
+If `gh` authentication is broken, the public-page fallback usually still
+reads the PR. When it cannot, fix connectivity or credentials and retry.
 
-This skips **all** pre-push checks, not just this one. Use sparingly —
-the most common legitimate reason is "the PR body is correct, but the
-hook can't see it because `gh` auth is broken on this machine".
+!!! note
+    Only a human, in their own terminal, may skip pre-push checks with
+    git's standard skip flag, and that skips **all** pre-push checks, not
+    just this one. Correct the PR body (`gh pr edit --body-file <path>`)
+    instead whenever possible.
 
 ## Caveats — local pass is **not** a guarantee
 
@@ -243,3 +265,10 @@ GitHub Actions log surfaces them as inline annotations.
 [rule-yml]: ../../.github/workflows/rule-enforcement.yml
 [deliv]: ../../scripts/ci/deliverables-check.sh
 [input]: ../../scripts/ci/pr-body-input.sh
+
+## History
+
+The strict parser tripped PRs #461, #438, #470, #473, #486, #511, #468
+and #526 on the shape patterns listed under "Parser shape gotchas". The fd 0
+classification was added after a closed `fd 0` deadlocked all four body-reading
+gates.

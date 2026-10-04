@@ -1,8 +1,22 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Kubernetes Deployment (Helm)
 
-VMAFX ships a Helm chart under `deploy/helm/vmafx/` that supports three
-workload types and all three GPU device-plugin vendors (NVIDIA, AMD, Intel).
+Use the Helm chart under `deploy/helm/vmafx/` to run VMAFX on Kubernetes. It
+supports three workload types (Deployment, Job, StatefulSet) and all three GPU
+device-plugin vendors (NVIDIA, AMD, Intel).
+
+The page runs from installation (Prerequisites, Quick start, GPU vendor
+matrix, Workload types) through configuration (Environment variables,
+Persistence, Scaling, Monitoring, Ingress) and operations (Common operations,
+Upgrading from 1.0.0-rc.1) to hardening (Pod security, NetworkPolicy,
+PodDisruptionBudget).
+
+The chart installs four custom resource definitions from
+`deploy/helm/vmafx/crds/`: `VmafxJob`, `VmafxNode` and `VmafxModelTraining`,
+which the operator reconciles ([operator.md](operator.md)), and `VmafxTenant`,
+which holds per-tenant OIDC and RBAC settings for the controller's auth gateway
+(`auth.tenants` in `values.yaml`; see
+[server/auth.md](../server/auth.md#vmafxtenant-crd)).
 
 A `values.schema.json` (Draft 2020-12) sits next to `values.yaml` and is
 consulted automatically by `helm install`, `helm upgrade`, and `helm lint
@@ -57,7 +71,7 @@ helm upgrade --install vmafx deploy/helm/vmafx/ \
 | `gpu.vendor` | Kubernetes resource | VMAFX backend | Required device-plugin |
 |---|---|---|---|
 | `nvidia` | `nvidia.com/gpu` | `cuda` | [NVIDIA device plugin](https://github.com/NVIDIA/k8s-device-plugin) |
-| `amd` | `amd.com/gpu` | `hip` | [AMD ROCm device plugin](https://github.com/RadeonOpenCompute/k8s-device-plugin) |
+| `amd` | `amd.com/gpu` | `hip` | [AMD ROCm device plugin](https://github.com/ROCm/k8s-device-plugin) |
 | `intel` | `gpu.intel.com/i915` | `sycl` | [Intel GPU plugin](https://github.com/intel/intel-device-plugins-for-kubernetes) |
 | `cpu` | _(none)_ | `cpu` | _(none)_ |
 
@@ -86,7 +100,8 @@ The server exposes:
 
 - `GET /healthz` — liveness probe
 - `GET /readyz` — readiness probe
-- `GET /metrics` — Prometheus metrics (optional; enable `monitoring.enabled=true`)
+- `GET /metrics` — Prometheus metrics (optional; enable
+  `monitoring.enabled=true`)
 
 ### Job — one-shot batch scoring
 
@@ -169,10 +184,17 @@ persistence:
 # Horizontal scale (Deployment only)
 kubectl scale -n vmafx deployment/vmafx --replicas=4
 
-# Rolling update to a new image
+# Rolling update to a new image (replace the tag with a published release,
+# for example v1.0.0-rc.2)
 kubectl set image -n vmafx deployment/vmafx \
-  vmafx=ghcr.io/vmafx/vmafx-server:v3.2.1
+  vmafx=ghcr.io/vmafx/vmafx-server:<release tag>
 ```
+
+The chart's `image.repository` defaults to `ghcr.io/vmafx/vmafx-server`, the
+Go server image. The release workflow `docker-publish-operator-node.yml`
+publishes it, together with the operator and node images, when a release is
+published. The CLI and GPU images (`ghcr.io/vmafx/vmafx`) are documented in
+[docker-production.md](docker-production.md).
 
 The controller Deployment and the vmafx-node worker Deployment both use
 `RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1` by default,
@@ -291,9 +313,12 @@ StatefulSet binds them again. Without `--cascade=orphan` the server Pods are
 deleted with the workload, and scoring is unavailable until the upgrade has
 started new ones.
 
-Uninstalling and installing again also works (`helm uninstall vmafx -n vmafx`,
-then the `helm upgrade --install` command from [Quick start](#quick-start)).
-It removes the operator and node workloads too, and leaves PVCs in place (see
+Alternatively, uninstall and install again:
+
+1. `helm uninstall vmafx -n vmafx`
+2. Run the `helm upgrade --install` command from [Quick start](#quick-start).
+
+This removes the operator and node workloads too, and leaves PVCs in place (see
 [Uninstall](#uninstall)).
 
 Argo CD and Flux report the same immutable-field error. Delete the server
@@ -318,7 +343,8 @@ profile (ADR-0930):
 | `seccompProfile.type`            | `RuntimeDefault`                   | Engages the container-runtime default syscall filter (Docker/containerd ship a reasonable allow-list).  Required by `restricted` since k8s 1.25. |
 
 To enforce the profile cluster-side, label your install namespace
-([k8s docs](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-admission-labels-for-namespaces)):
+([k8s
+docs](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-admission-labels-for-namespaces)):
 
 ```bash
 kubectl label --overwrite namespace vmafx-prod \
@@ -339,7 +365,7 @@ Calico GlobalNetworkPolicy) or do not install a NetworkPolicy controller —
 in the latter case the chart's NetworkPolicies render but are inert.
 
 Opt in with `--set networkPolicy.enabled=true`.  The chart then emits a
-default-deny baseline plus four narrow allow-rules:
+default-deny baseline plus six narrow allow-rules:
 
 | Policy                          | Direction | Peer                                            | Ports               | Purpose                                              |
 |---------------------------------|-----------|-------------------------------------------------|---------------------|------------------------------------------------------|
@@ -397,7 +423,10 @@ Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058, ADR-1094.
 
 - [GPU scheduling guide](gpu-scheduling.md)
 - [Production Dockerfile](../../docker/Dockerfile.production) — ADR-0698
-- [Cloud-native server foundation](../adr/0701-vmafx-cloud-native-redesign.md) — ADR-0701
+- [Cloud-native server foundation](../adr/0701-vmafx-cloud-native-redesign.md) —
+  ADR-0701
 - [Helm chart ADR](../../docs/adr/0699-vmafx-helm-chart-k8s.md) — ADR-0699
-- [Security hardening ADR](../../docs/adr/1058-helm-chart-security-hardening.md) — ADR-1058
-- [Rolling-update correctness ADR](../../docs/adr/1094-helm-rolling-update-correctness.md) — ADR-1094
+- [Security hardening ADR](../../docs/adr/1058-helm-chart-security-hardening.md)
+  — ADR-1058
+- [Rolling-update correctness
+  ADR](../../docs/adr/1094-helm-rolling-update-correctness.md) — ADR-1094

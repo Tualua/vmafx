@@ -1,21 +1,26 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # VMAFX Production Docker Images
 
-This page covers pulling, running, and building the VMAFX production container images
-hosted at `ghcr.io/vmafx/vmafx`.
+This page covers pulling, running, and building the VMAFX production container
+images hosted at `ghcr.io/vmafx/vmafx`.
 
-> For the **development MCP container** (full GPU toolchain, oneAPI, CUDA, HIP, MCP
-> server pre-installed), see [docs/development/dev-mcp.md](dev-mcp.md). That container
-> is separate from the production images described here.
+!!! note
+    For the **development MCP container** (full GPU toolchain, oneAPI, CUDA,
+    HIP, MCP server pre-installed), see [dev-mcp.md](dev-mcp.md). That
+    container is separate from the production images described here, and it
+    carries a different MCP server: the dev container runs the Go
+    `vmafx-mcp`, while the `-server` image below still runs the Python
+    `vmaf-mcp` (see [MCP server variant](#mcp-server-variant)).
 
 ## Quick start
 
 Name the release you want. `latest` points at the newest final release only;
 release candidates (`vX.Y.Z-rc.N`) are never tagged `latest`, so until 1.0.0
-is out, `latest` does not exist.
+is out, `latest` does not exist. The examples use `v1.0.0-rc.2`; substitute the
+newest release listed on the GitHub releases page.
 
 ```bash
-tag=v1.0.0-rc.1
+tag=v1.0.0-rc.2
 
 # Pull and run the vmaf CLI (CPU, smallest image)
 docker pull ghcr.io/vmafx/vmafx:$tag
@@ -44,14 +49,17 @@ docker run --rm \
 | `vX.Y.Z-rocm10` | amd64 | ROCm 10 HIP runtime added | ~29 GB unpacked, ~8.3 GB compressed |
 | `vX.Y.Z-oneapi2026` (also `vX.Y.Z-oneapi2025`) | amd64 | Intel oneAPI 2026.1 SYCL runtime and Intel GPU compute runtime added | ~2.4 GB unpacked, ~0.6 GB compressed |
 
-The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
-builder ABI. The server uses the official Python 3.14 slim image (also Debian 13)
-because a virtualenv requires its matching interpreter and standard library. The
-CUDA variant uses the same digest-pinned Ubuntu 26.04 base for its builder and
-runtime and installs exact NVIDIA apt packages in each stage. The ROCm variant
-uses AMD's pinned image. The oneAPI variant uses `debian:13-slim`, the CPU
-image's builder base, for both its builder and its runtime, and installs exact
-Intel packages in each stage; see [oneAPI 2026.1](#oneapi-20261-sycl-intel-arc).
+### Base images
+
+| Variant | Base image | Why |
+|---------|------------|-----|
+| CPU CLI | `gcr.io/distroless/cc-debian13:nonroot` | Matches its Debian 13 builder ABI. |
+| Server | Official Python 3.14 slim image (also Debian 13) | A virtualenv requires its matching interpreter and standard library. |
+| CUDA | Digest-pinned Ubuntu 26.04, for builder and runtime | Installs exact NVIDIA apt packages in each stage. |
+| ROCm | AMD's pinned `rocm/dev-ubuntu-26.04` image | Builder and runtime. |
+| oneAPI | `debian:13-slim`, the CPU image's builder base, for builder and runtime | Installs exact Intel packages in each stage; see [oneAPI 2026.1](#oneapi-20261-sycl-intel-arc). |
+
+### oneAPI tag names
 
 Releases up to v1.0.0-rc.2 published the oneAPI image only as `-oneapi2025`.
 Later releases publish the same image under both `-oneapi2026` and
@@ -70,11 +78,16 @@ tag=vX.Y.Z
 gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
 ```
 
-The preflight rejects unpublished tags, a prerelease flag that disagrees with
-the tag, a dispatch ref other than `refs/tags/$tag` or `master`, a source SHA
-mismatch, or coordinated version drift before granting package-write or OIDC
-permissions. A dispatch on `master` is the recovery for a broken build recipe:
-it builds the tag's source with `master`'s build recipe (`docker/`,
+The preflight rejects, before granting package-write or OIDC permissions:
+
+- an unpublished tag;
+- a prerelease flag that disagrees with the tag;
+- a dispatch ref other than `refs/tags/$tag` or `master`;
+- a source SHA mismatch;
+- coordinated version drift.
+
+A dispatch on `master` is the recovery for a broken build recipe: it builds
+the tag's source with `master`'s build recipe (`docker/`,
 `Dockerfile.go-server`, `ffmpeg-patches/`) and signs as `master`; see
 [Recovering a release's container images](release.md#recovering-a-releases-container-images).
 
@@ -105,18 +118,22 @@ docker run --rm --gpus all \
   --output /dev/stdout
 ```
 
-Requires the NVIDIA Container Toolkit and a host driver compatible with CUDA 13.4.2.
-Without `--gpus all` the container has no GPU: `--backend cuda` exits with
-code `100`, and the default auto mode scores on the CPU.
+Requires the NVIDIA Container Toolkit and a host driver compatible with
+CUDA 13.4.2. Without `--gpus all` the container has no GPU: `--backend cuda`
+exits with code `100`, and the default auto mode scores on the CPU.
 
 ### ROCm 10.0.0 (HIP)
 
 Pass `/dev/kfd` and the render node of the GPU to use, found from its PCI
 address under `/dev/dri/by-path/`. Passing all of `/dev/dri` also works, but
-exposes every GPU in the host. Add the host's `render` and `video` groups by
-numeric ID: the image has no `render` group, so `--group-add render` fails
-with `unable to find group render`, and `--group-add video` resolves to the
-image's GID 44 rather than the host's `video` group.
+exposes every GPU in the host.
+
+Add the host's `render` and `video` groups by numeric ID:
+
+- The image has no `render` group, so `--group-add render` fails with
+  `unable to find group render`.
+- `--group-add video` resolves to the image's GID 44 rather than the host's
+  `video` group.
 
 ```bash
 # The GPU's PCI address; list them with: ls -l /dev/dri/by-path/
@@ -135,13 +152,14 @@ docker run --rm \
   --output /dev/stdout
 ```
 
-Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` accessible.
+Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>`
+accessible.
 
 ### oneAPI 2026.1 (SYCL, Intel Arc)
 
-The image is built and run on Debian 13, the base of the CPU image. Everything
-Intel-specific is installed from pinned packages, with the versions set in
-`build-config.env`:
+The image is built and run on Debian 13, the base of the CPU image.
+Everything Intel-specific is installed from pinned packages, with the versions
+set in `build-config.env`:
 
 | Component | Where it comes from | Pin |
 |-----------|---------------------|-----|
@@ -151,20 +169,9 @@ Intel-specific is installed from pinned packages, with the versions set in
 | Level Zero loader (`libze_loader.so.1`) | the `oneapi-src/level-zero` GitHub release | `LEVEL_ZERO_VERSION` |
 
 The GPU compute runtime is the part the host does not provide: the host
-supplies only the kernel driver (`i915` or `xe`) and the device node. Releases
-up to v1.0.0-rc.2 shipped the compute runtime of Intel's
-`oneapi-runtime:2025.3.1` image (version 25.18). On an Arc B580 it crashed
-every `--backend sycl` run with a segmentation fault (exit code 139) right after
-device selection, while an Arc A380 and a UHD 770 worked. The image now carries
-the same compute runtime as the development container.
+supplies only the kernel driver (`i915` or `xe`) and the device node.
 
-`vmaf --version` loads only the libraries `vmaf` links directly. It does not
-load the oneAPI Unified Runtime adapters, which SYCL opens with `dlopen()`
-when it looks for a device. The `v1.0.0-rc.1` image passed `--version` while
-every adapter failed to load for want of `libumf.so.1`: SYCL reported "No
-device of requested type available" and `--backend sycl` exited with code
-`100`. The image build and the publication smoke test now check the adapters
-with `ldd`.
+#### Run it
 
 Pass the render node and the host's `render` group by numeric ID, as for
 ROCm:
@@ -184,9 +191,11 @@ docker run --rm \
   --output /dev/stdout
 ```
 
-Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>` accessible.
-With more than one Intel GPU, pick one with `ONEAPI_DEVICE_SELECTOR`, for
-example `-e ONEAPI_DEVICE_SELECTOR=level_zero:0`.
+Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>`
+accessible. With more than one Intel GPU, pick one with
+`ONEAPI_DEVICE_SELECTOR`, for example `-e ONEAPI_DEVICE_SELECTOR=level_zero:0`.
+
+#### Windows (WSL 2)
 
 On Windows, Docker Desktop's WSL 2 backend exposes the GPUs through
 `/dev/dxg` instead of a render node, and the GPU driver's user-space half
@@ -207,9 +216,19 @@ docker run --rm \
   --output /dev/stdout
 ```
 
+!!! note
+    `vmaf --version` loads only the libraries `vmaf` links directly. It does
+    not load the oneAPI Unified Runtime adapters, which SYCL opens with
+    `dlopen()` when it looks for a device. The image build and the publication
+    smoke test check the adapters with `ldd`; a forced `--backend sycl` score
+    is the only check that exercises the device.
+
 ## MCP server variant
 
-The `-server` tag starts the vmaf-mcp JSON-RPC server on port 8080:
+The `-server` tag starts the Python `vmaf-mcp` JSON-RPC server on port 8080
+(entry point `/venv/bin/vmaf-mcp --transport http`). The Go server
+`vmafx-mcp`, which [ADR-1229](../adr/1229-mcp-go-runtime.md) made the MCP
+server in the dev container, is not in this image.
 
 ```bash
 docker run --rm -p 8080:8080 \
@@ -255,7 +274,7 @@ Every image is signed via Sigstore keyless cosign and carries a CycloneDX SBOM
 attestation. Verify before deploying in a security-sensitive context:
 
 ```bash
-tag=v1.0.0-rc.1
+tag=vX.Y.Z
 # The signing identity is the workflow at the ref it ran on: refs/tags/$tag for
 # a normal publish, refs/heads/master for a recovered image (every
 # v1.0.0-rc.1 image; see release.md). Pin the one that applies.
@@ -379,19 +398,24 @@ Both Dockerfiles use a multi-stage build:
    the compiled binary, shared libraries, and model files.
 4. **Server runtime** (the same pinned `python:3.14-slim` image): provides the
    interpreter to which `/venv/bin/python` links. It runs as UID/GID 65532.
-5. **GPU builders/runtimes**: CUDA 13.4.2 uses the same digest-pinned Ubuntu 26.04
-   base for its builder and runtime, installing exact NVIDIA apt packages in each
-   stage. ROCm 10.0.0 uses AMD's `rocm/dev-ubuntu-26.04:10.0.0-full` image for
-   both its builder and runtime. The Intel image uses `debian:13-slim` for both
-   and installs Intel's oneAPI 2026.1 compiler (builder) or runtime (image) at
-   one exact apt build, plus the pinned Intel GPU compute runtime and Level Zero
-   loader ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)). Every
-   base-image reference is digest-pinned.
+5. **GPU builders and runtimes**: one pinned base per variant, with exact
+   vendor package versions in each stage.
+
+| Variant | Builder and runtime base | Vendor packages installed |
+|---------|--------------------------|---------------------------|
+| CUDA 13.4.2 | Digest-pinned Ubuntu 26.04 (same base for both) | Exact NVIDIA apt packages in each stage |
+| ROCm 10.0.0 | AMD's `rocm/dev-ubuntu-26.04:10.0.0-full` (both) | The image's own ROCm payload |
+| Intel oneAPI 2026.1 | `debian:13-slim` (both) | oneAPI compiler (builder) or runtime (image) at one exact apt build, plus the pinned Intel GPU compute runtime and Level Zero loader ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)) |
+
+Every base-image reference is digest-pinned.
+
+### Release publishing and smoke checks
 
 Publishing a GitHub release drives the two Docker workflows through the
 `release.published` event. Each workflow checks out
 `github.event.release.tag_name` and uses that same value for every image tag,
 so a release cannot accidentally publish a branch tip under a release tag.
+
 After each GPU image is signed and receives its SBOM and provenance, the
 workflow verifies the digest-pinned signature before pulling the image and
 runs `vmaf --version`, which needs no accelerator hardware. That proves only
@@ -401,5 +425,19 @@ image the smoke also runs `ldd` on the Unified Runtime adapters. Neither check
 exercises a GPU; run a forced-backend score from
 [GPU variants](#gpu-variants) on the target hardware for that.
 
-See [ADR-0698](../adr/0698-vmafx-production-dockerfile.md) for the full rationale,
-alternatives considered, and tag matrix design decisions.
+See [ADR-0698](../adr/0698-vmafx-production-dockerfile.md) for the full
+rationale, alternatives considered, and tag matrix design decisions.
+
+## History
+
+- **oneAPI compute runtime.** Releases up to v1.0.0-rc.2 shipped the compute
+  runtime of Intel's `oneapi-runtime:2025.3.1` image (version 25.18). On an Arc
+  B580 it crashed every `--backend sycl` run with a segmentation fault (exit
+  code 139) right after device selection, while an Arc A380 and a UHD 770
+  worked. The image now carries the same compute runtime as the development
+  container.
+- **`libumf.so.1` missing in v1.0.0-rc.1.** The `v1.0.0-rc.1` oneAPI image
+  passed `vmaf --version` while every Unified Runtime adapter failed to load
+  for want of `libumf.so.1`: SYCL reported "No device of requested type
+  available" and `--backend sycl` exited with code `100`. The image build and
+  the publication smoke test now check the adapters with `ldd`.

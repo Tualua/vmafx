@@ -34,11 +34,15 @@ of `core/src/`), and the full matrix when the recorded upstream head moves.
 | Environment | the dev container image, for both builds and every run (below) | the same image |
 | Program | `scripts/dev/upstream_parity_harness.c`, linked statically against that tree's `libvmaf.a` | the same source |
 
+### The harness
+
 The harness makes one request through the C API (`vmaf_use_feature()` or a
 model load, `vmaf_read_pictures()`, the flush) with one worker thread, and
 prints everything the feature collector holds at `%.17g`: each per-frame
 value, each aggregate, and the mean and harmonic-mean pool of each metric.
 Neither tree's `vmaf` tool can serve: upstream's prints six decimals.
+
+### Request set
 
 The requests come from `scripts/dev/upstream_parity_matrix.py`:
 
@@ -51,22 +55,23 @@ The requests come from `scripts/dev/upstream_parity_matrix.py`:
   built-in versions, with `transform` and `noclip` for two of them.
 - **Dispatch**: `scalar` (`cpumask` 63) and `default` (`cpumask` 0); the full
   matrix adds `avx2` (`cpumask` 48) on x86.
-- **Fixtures**:
-
-  | Fixtures | Source | Needed |
-  | --- | --- | --- |
-  | `nflx8`, `cb1`, `cb10` | the three Netflix golden pairs, `scripts/test/fetch-test-yuvs.sh` | yes |
-  | `noise8` to `noise16`, `nflx422`, `nflx444`, `nflx400`, `nflx10w`, `nflx16w`, `odd444`, `s256x144` down to `s8x8` | derived by the guard from the 576x324 pair: full-range noise (SHAKE-256), chroma repeated to 4:2:2 and 4:4:4, luma only, samples widened to 10 and 16 bits, top-left crops | no file needed |
-  | `nflx10`, `nflx12`, `nflx16`, `nflx422p10`, `sparks10`, `q160x90`, `akiyo352`, `akiyo18x22` | the other Netflix clips under `python/test/resource/yuv` | compared when present |
-  | `bbb4k` | `testdata/bbb` (6 frames) | compared when present |
-
-  A fixture whose file is absent is listed as `fixture not compared` and its
-  runs are not counted.
 
 The probe set is every extractor at its defaults on 18 of the fixtures, the
 option variants on `nflx8`, `cb1` and `noise8`, and seven models on the same
 three. The full matrix is every fixture, the option variants on five
 fixtures and every model on eight.
+
+### Fixtures
+
+| Fixtures | Source | Needed |
+| --- | --- | --- |
+| `nflx8`, `cb1`, `cb10` | the three Netflix golden pairs, `scripts/test/fetch-test-yuvs.sh` | yes |
+| `noise8` to `noise16`, `nflx422`, `nflx444`, `nflx400`, `nflx10w`, `nflx16w`, `odd444`, `s256x144` down to `s8x8` | derived by the guard from the 576x324 pair: full-range noise (SHAKE-256), chroma repeated to 4:2:2 and 4:4:4, luma only, samples widened to 10 and 16 bits, top-left crops | no file needed |
+| `nflx10`, `nflx12`, `nflx16`, `nflx422p10`, `sparks10`, `q160x90`, `akiyo352`, `akiyo18x22` | the other Netflix clips under `python/test/resource/yuv` | compared when present |
+| `bbb4k` | `testdata/bbb` (6 frames) | compared when present |
+
+A fixture whose file is absent is listed as `fixture not compared` and its
+runs are not counted.
 
 ### What counts as a difference
 
@@ -205,6 +210,8 @@ table is [allowed differences from Netflix/vmaf](upstream-parity-allowlist.md).
 <!-- markdownlint-restore -->
 <!-- <<< CHART upstream-parity-allowlist -->
 
+### Fragment keys
+
 | Key | Meaning |
 | --- | --- |
 | `kind` | `value`, `error`, `name`, `pending-revert` or `pending-port` |
@@ -276,15 +283,19 @@ workstation runs the full matrix nightly:
 make upstream-parity-full UPSTREAM_PARITY_JOBS=8 > upstream-parity.log 2>&1 || echo "upstream parity: exit $?"
 ```
 
-A run that did not happen is not a pass: read the log's last line
-(`upstream parity: PASS` or `FAIL`) or the exit status, never their absence.
+!!! warning
+    A run that did not happen is not a pass. Read the log's last line
+    (`upstream parity: PASS` or `FAIL`) or the exit status, never their
+    absence.
 
-The script's own tests need no build: `scripts/ci/tests/test_upstream_parity_allowlist.py`
+The script's own tests need no build:
+`scripts/ci/tests/test_upstream_parity_allowlist.py`
 and `scripts/dev/tests/test_upstream_parity.py` (a pre-commit hook runs both).
 
 ## The A/B bench
 
-`testdata/bench_upstream_ab.py` ([ADR-1228](../adr/1228-upstream-ab-perf-milestone.md))
+`testdata/bench_upstream_ab.py`
+([ADR-1228](../adr/1228-upstream-ab-perf-milestone.md))
 times upstream against this tree. It builds upstream through the guard, at the
 recorded head unless `--upstream-ref` names another commit or tag, and takes
 its score verdict from the guard: the model `vmaf_v0.6.1` on the bench's
@@ -293,6 +304,11 @@ prints beside the timing is informational. The bench times on the host, so
 its verdict there is marked advisory; run in the dev image it is the guard's.
 
 ## Result on master
+
+!!! note
+    This section is a dated measurement, not a standing claim. It goes stale
+    at the next upstream head move; re-measure with
+    `make upstream-parity-full`.
 
 Full matrix: measured on 2026-10-03 in the rebuilt dev image
 (`sha256:14db4c43070a`, GCC 15.2.0, glibc 2.43) on `ryzen-4090-arc` (Ryzen 9
@@ -316,17 +332,24 @@ five-frame motion port landed.
 | Heap check: upstream outputs that change / this tree's | not run | 1,675 in 45 runs / 0 |
 | Verdict | PASS | PASS |
 
-The integer ADM, `ciede`, `float_adm` and `psnr_hvs` reverts are on master
-(fork PRs #1891, #1892, #1894, #1895), and so is the five-frame motion port
-(#1887): their fragments are gone. The port is exact: the four
-`vmaf_v1.0.16_hfr` models and `motion_five_frame_window` now run on both
-trees (114 more runs complete), and no difference they add is outside the
-allowlist. With the last revert, SpEED, applied in a scratch copy of the tree
-before the port landed, the full matrix in the same image had 795,000
-identical values of 886,002, no difference outside the allowlist and none
-above a bound, and exactly the 3 `pending-revert` fragments of that branch
-reported as stale. That is the state master reaches when it lands and its
-fragments are removed.
+### Changes since the probe-set run
+
+What changed on master since the probe-set run:
+
+- The integer ADM, `ciede`, `float_adm` and `psnr_hvs` reverts are on master
+  (fork PRs #1891, #1892, #1894, #1895), and so is the five-frame motion port
+  (#1887): their fragments are gone.
+- The port is exact: the four `vmaf_v1.0.16_hfr` models and
+  `motion_five_frame_window` now run on both trees (114 more runs complete),
+  and no difference they add is outside the allowlist.
+- With the last revert, SpEED, applied in a scratch copy of the tree before
+  the port landed, the full matrix in the same image had 795,000 identical
+  values of 886,002, no difference outside the allowlist and none above a
+  bound, and exactly the 3 `pending-revert` fragments of that branch reported
+  as stale. That is the state master reaches when it lands and its fragments
+  are removed.
+
+### What no fragment covers
 
 No fragment covers a value of `cambi`, `vif`, `float_vif`, `motion`,
 `float_psnr`, `float_moment`, `float_ssim` or `psnr_y`: wherever both trees
@@ -339,6 +362,8 @@ Three bounds are `inf` because upstream's value is undefined there:
 `float_motion.scale1-stride` and `speed_temporal.prescale-above-one`. On the
 host, before the heap check existed, filling the heap moved the first two
 above the finite bounds they had then (0.3 and 26).
+
+### Run time
 
 Time on that host, eight workers, with other builds running: from an empty
 work directory the probe set took 129 s in all, the export, both builds and

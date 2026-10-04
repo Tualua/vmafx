@@ -37,29 +37,37 @@ Or from the GitHub UI: **Actions → Builds → Run workflow**.
 
 Access is restricted to the SSH public keys of the GitHub account that
 triggered the workflow (`limit-access-to-actor: true`). Make sure your account
-has at least one SSH public key registered at <https://github.com/settings/keys>.
+has at least one SSH public key registered at
+<https://github.com/settings/keys>.
 
 ## What to debug once connected
 
-The source tree is at `/Users/runner/work/vmaf/vmaf`.
-Test binaries are under `core/build/test/`.
+The source tree is the runner's checkout directory,
+`/Users/runner/work/vmafx/vmafx`
+(`$GITHUB_WORKSPACE`). Test binaries are under `core/build/test/`.
 
 ### Typical session for a SIGSEGV in the test suite
 
-```bash
-# Find which test binary triggered the crash
-ls /Users/runner/work/vmaf/vmaf/core/build/test/
+1. Find which test binary triggered the crash:
 
-# Attach lldb to the binary that crashed
-lldb /Users/runner/work/vmaf/vmaf/core/build/test/test_output
+    ```bash
+    ls /Users/runner/work/vmafx/vmafx/core/build/test/
+    ```
 
-# Inside lldb:
-run
-# When the SIGSEGV fires:
-bt          # full backtrace
-frame info  # current frame details
-p <var>     # inspect variables
-```
+2. Attach `lldb` to the binary that crashed:
+
+    ```bash
+    lldb /Users/runner/work/vmafx/vmafx/core/build/test/test_output
+    ```
+
+3. Inside `lldb`, run it and inspect the crash when the SIGSEGV fires:
+
+    ```text
+    run
+    bt          # full backtrace
+    frame info  # current frame details
+    p <var>     # inspect variables
+    ```
 
 ### Useful environment flags
 
@@ -68,7 +76,7 @@ the standard allocator hides:
 
 ```bash
 MallocScribble=1 MallocGuardEdges=1 \
-  lldb /Users/runner/work/vmaf/vmaf/core/build/test/test_output
+  lldb /Users/runner/work/vmafx/vmafx/core/build/test/test_output
 ```
 
 `MALLOC_PERTURB_=198` (the value used to expose the ADR-0606 off-by-one) is
@@ -76,22 +84,17 @@ also useful:
 
 ```bash
 MALLOC_PERTURB_=198 \
-  lldb /Users/runner/work/vmaf/vmaf/core/build/test/test_output
+  lldb /Users/runner/work/vmafx/vmafx/core/build/test/test_output
 ```
 
 ## Session limits
 
-- The tmate step waits up to **30 minutes** (`connect-timeout-seconds: 1800`)
-  for you to connect. If you do not connect within that window, the step exits
-  and the job completes normally (with a failure status from the earlier test
-  step).
-- Once connected, the session remains open until you exit the shell or the
-  GitHub-hosted runner's hard timeout fires (6 hours for macOS runners).
-- Only the actor who triggered the `workflow_dispatch` can connect
-  (`limit-access-to-actor: true`).
-- Each session consumes roughly 30 min of macOS runner minutes at the
-  GitHub-hosted rate (~$0.08/min for macOS = ~$2.40 per session at the cap).
-  Avoid leaving sessions idle.
+| Limit | Value | Why |
+| --- | --- | --- |
+| Time to connect | 30 minutes (`connect-timeout-seconds: 1800`) | If you do not connect in that window the step exits and the job completes normally, with the failure status of the earlier test step. |
+| Session length | Until you exit the shell or the runner's hard timeout (6 hours for macOS runners) | The session stays open while you are connected. |
+| Who can connect | Only the actor who triggered the `workflow_dispatch` (`limit-access-to-actor: true`) | Access is tied to that account's SSH keys. |
+| Cost | About 30 minutes of macOS runner time at the cap, roughly 2.40 USD at about 0.08 USD per minute (external price, unverified here) | Avoid leaving sessions idle. |
 
 ## When to remove this step
 

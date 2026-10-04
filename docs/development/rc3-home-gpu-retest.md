@@ -2,7 +2,8 @@
 # RC3 home GPU retest kit
 
 `scripts/dev/rc3-home-gpu-retest.sh` runs, in one go, the verify-and-time
-commands that the open RC3 and RC8 rows of [`docs/state.md`](../state.md) carry for
+commands that the open RC3 and RC8 rows of [`docs/state.md`](../state.md) carry
+for
 the home GPU box `ryzen-4090-arc`: an RTX 4090 (CUDA), an Arc A380 (SYCL over
 Level Zero) and the Zen 5 integrated GPU, gfx1036 (HIP). Each row states what
 its twin must match and how to time it; the kit runs exactly those commands,
@@ -10,9 +11,7 @@ compares the outputs, and writes one summary line per row.
 
 Use it to record what `master` does on these devices, and then to check a pull
 request against that record. The design decision is
-[ADR-1386](../adr/1386-rc3-home-gpu-retest-kit.md); the first `master` baseline
-and what it found are in
-[Research-1386](../research/1386-rc3-home-gpu-retest-master-baseline.md).
+[ADR-1386](../adr/1386-rc3-home-gpu-retest-kit.md).
 
 ## Quick start
 
@@ -32,6 +31,10 @@ scripts/dev/rc3-home-gpu-retest.sh                 # every row
 
 A full run takes about an hour on an otherwise idle box. Most of that is the
 4K CPU references (ssimulacra2 and SpEED) and the oneAPI image build.
+
+Pick one of the three invocations: `--list` prints the entries and runs
+nothing, `--backend cuda` runs one backend's rows, and no argument runs every
+row.
 
 ## Comparing a pull request with master
 
@@ -85,6 +88,11 @@ an entry missed its row's expectation, and 2 when an entry could not run
 Every entry holds its row's own commands. A CPU reference always comes from
 the same `vmaf` binary as the twin.
 
+Each row below lists what it runs and its pass condition. The ADM row is
+longer than the others and is described under the tables.
+
+CUDA and HIP rows:
+
 | Row | Backend | Runs | Passes when |
 |---|---|---|---|
 | `T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`, `T-HIP-PSNR-HVS-HOST-CONVERT-2026-09-29` | cuda, hip | `--feature psnr_hvs --precision max` on the twin and the 16-thread CPU; 576x324, and 22 frames of 4K; timing | within [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md) (5e-4 at 576x324, 3.34e-3 at 4K) and `feature_backends` names `psnr_hvs_<backend>` |
@@ -95,8 +103,24 @@ the same `vmaf` binary as the twin.
 | `T-CUDA-SSIMULACRA2-HOST-COMBINE-2026-09-29`, `T-HIP-SSIMULACRA2-HOST-COMBINE-2026-09-29` | cuda, hip | `speed_gpu_parity.py --feature ssimulacra2 --max-abs-diff 1e-9` | the script exits 0 |
 | `T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`, `T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29` | cuda, hip | `--feature cambi_<backend>` against the CPU `cambi`, 576x324 and 50 frames of 4K; timing | 576x324 bit-exact, 4K within 2.2e-15 |
 | `T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`, `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29` | cuda, hip | `speed_gpu_parity.py` (speed_chroma and speed_temporal) | bit-identical (exit 0) |
-| `T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` | hip | `adm_hip` against the CPU `adm`, plain and with the default model's options, 576x324 and 50 frames of 4K; `test_hip_adm_parity`, `test_hip_adm_small_border`, `test_hip_adm_wide_rounding`; `python/test/gpu_default_model_test.py`; default-model timing | `integer_aim` and `integer_adm3` identical, `integer_adm2` within 5e-5 (places=4), the tests pass |
+| `T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` | hip | see "The ADM row" below | `integer_aim` and `integer_adm3` identical, `integer_adm2` within 5e-5 (places=4), the tests pass |
+
+SYCL row:
+
+| Row | Backend | Runs | Passes when |
+|---|---|---|---|
 | `T-RELEASE-ONEAPI-IMAGE-B580-SIGSEGV-2026-09-29` | sycl | `docker build ... --target final-oneapi2026` from the checkout, then the default model on the tracked 576x324 pair with `--backend cpu` and `--backend sycl` in the image | the SYCL run reports `sycl` and a pooled VMAF within 5e-5 of the CPU run |
+
+### The ADM row
+
+`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` runs:
+
+- `adm_hip` against the CPU `adm`, plain and with the default model's options,
+  on 576x324 and on 50 frames of 4K;
+- `test_hip_adm_parity`, `test_hip_adm_small_border` and
+  `test_hip_adm_wide_rounding`;
+- `python/test/gpu_default_model_test.py`;
+- default-model timing.
 
 "Timing" means the rows' method: runs of 2 and N frames (N = 22 at 4K; 48 at
 576x324 for psnr_hvs, motion_v2 and the upload row; 22 for cambi and the

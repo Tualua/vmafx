@@ -1,696 +1,15 @@
 # CI overview
 
-This page documents the fork's CI surface for contributors. The
-authoritative trigger / gate behaviour lives in the workflow files
-under [`.github/workflows/`](../../.github/workflows/); this doc
-explains the rules a contributor needs to know without reading every
-file.
-
-## Workflows
-
-The main `pull_request`-triggered workflows include:
-
-| File | Purpose |
-| --- | --- |
-| [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build (advisory). |
-| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
-| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
-| [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
-| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke, and tests (ADRs 1238 and 1338). |
-| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
-| [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix: 17 lanes, six of them required. |
-| [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
-| [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
-| [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS/context verification and the fail-closed duplicate-implementation scan. |
-| [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. |
-| [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
-| [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
-| [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan+UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
-| [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity tests on self-hosted Intel Arc A380 runner (ADR-1177; see [runbook](ci-self-hosted-sycl.md)). |
-
-For the complete inventory, mapping of shortened names, and conventions,
-see [CI job display names](ci-job-names.md). For every build lane, whether it
-is required and which ADR owns it, see
-[ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md).
-
-## Python type-check gate
-
-`Python Lint` is a required, fail-closed check. It installs the reviewed
-`requirements/locks/mypy.txt` lock and runs the same merge-base gate as the
-local `mypy-local` pre-push hook:
-
-```bash
-python3 scripts/git-hooks/pre-push-mypy.py
-```
-
-The gate checks added, copied, modified, renamed, and type-changed tracked
-`*.py` paths under `ai/` and `scripts/`. It reports only findings absent from
-the selected merge base, but an analysis crash, missing tool/base/file, or
-unattributable nonzero status fails the job. `ai/src/` is checked separately
-with `--explicit-package-bases` so each module has one canonical identity.
-
-Pull requests compare with `origin/master`. A master push compares with the
-event's previous commit, so hosted post-merge validation covers the pushed
-range. See [ADR-1310](../adr/1310-mypy-ci-fail-closed.md) and the detailed
-[hook contract](pre-commit-hooks.md#python-push-scope).
-
-## Draft pull requests defer heavy CI
-
-Per [ADR-0331](../adr/0331-skip-ci-on-draft-prs.md), every
-`pull_request`-triggered workflow above is gated to skip when the PR
-is in `draft` state, except the aggregator, which explicitly fails drafts.
-Concretely:
-
-- Each workflow's `pull_request:` block lists
-  `types: [opened, synchronize, reopened, ready_for_review]`.
-- Each top-level job carries an `if:` clause of the form
-  `github.event_name != 'pull_request' || github.event.pull_request.draft == false`.
-
-What this means for contributors:
-
-1. **A draft PR cannot satisfy the required aggregator.** The aggregator
-   starts and fails with a request to mark the PR ready. Heavy jobs remain
-   skipped until ready-for-review. This prevents skipped draft-era checks
-   from being mistaken for completed validation.
-2. **Promoting the draft to ready-for-review fires CI exactly once.**
-   GitHub's `ready_for_review` event is what re-triggers the
-   workflows; subsequent `synchronize` events on the now-ready PR
-   fire CI as before.
-3. **Pushing to `master` is unaffected.** The job-level `if:` clause
-   short-circuits to `true` when there is no PR object (for example
-   on `push:` events).
-
-To preview CI status before merging, mark the PR ready-for-review.
-You can flip back to draft afterwards if more work is needed; the next
-`ready_for_review` will fire a fresh matrix.
-
-## CI impact routing (ADR-1140)
-
-Required checks no longer decide *whether they apply* from a workflow-level
-`paths:` / `paths-ignore:` filter. Every workflow that hosts a check named in
-`required-aggregator.yml` starts on every non-draft PR and every push to
-`master`; the first step of each required job runs the planner:
-
-```bash
-python3 scripts/ci/plan-ci-impact.py --event pull_request \
-  --base <base-sha> --head <head-sha> --github-output "$GITHUB_OUTPUT"
-```
-
-It diffs the event's exact revisions — the **merge-base** of head and base for
-a PR, the exact `before..head` for a push — and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`:
-
-| Selector | Owns | Gates |
-| --- | --- | --- |
-| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | build legs, sanitizers, cppcheck, CodeQL C/C++, assertion density |
-| `golden_harness` | `c_core` ∪ `python` | Netflix golden tests, coverage gate |
-| `tiny_ai` | `c_core` ∪ `ai` ∪ `python` | Tiny AI (DNN suite + `ai/` pytests) |
-| `python_lint` | `python` ∪ `ai` | CodeQL Python |
-| `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |
-| `actions` | `.github/` | CodeQL Actions |
-| `go_checks` | `go` ∪ `c_core` | Go vet, security scan, native/ORT smoke, and Go tests |
-| `rust`, `shell`, `container` | their trees | (non-required workflows — still path-filtered, follow-up) |
-
-Steps gated on a selector that is **not** impacted are skipped and the job
-emits `::notice::<selector> not impacted (mode=… reason=…)` before reporting
-`success`, so the aggregator always sees a real conclusion with a real reason.
-
-The planner **fails closed**: an unknown top-level path, any status other
-than add/modify (delete, rename, copy, mode change), a change to a
-CI-authority file (the map, the planner, `scripts/ci/**`, the workflows
-hosting required contexts, `.pre-commit-config.yaml`, `Makefile`,
-`.clang-tidy`, …), a missing merge-base, a non-linear push or an over-large
-diff all produce `mode=full` — every selector true, i.e. the pre-ADR-1140
-behaviour.
-
-Local use:
-
-```bash
-python3 scripts/ci/plan-ci-impact.py --event pull_request \
-  --base "$(git merge-base origin/master HEAD)" --head HEAD --print
-python3 -m unittest scripts/ci/tests/test_ci_impact.py   # map ↔ tree contract
-```
-
-Adding a top-level directory or file? Add it to `known_prefixes` /
-`known_files` (and to a selector if a required check owns it); the contract
-test fails otherwise, because an unknown path would silently force `full`
-mode on every PR that touches it.
-
-## Required-checks aggregator
-
-The single required check on `master` branch protection is the
-**Required Checks Aggregator** (see
-[ADR-0313](../adr/0313-ci-required-checks-aggregator.md)). It runs on
-every PR and master push. Draft PRs fail immediately; ready PRs poll for
-the named sibling check runs to reach a terminal state and accept
-`success`, `skipped`, or `neutral` per check. Results predating the current
-run are excluded, so skipped draft-era checks cannot mask ready validation.
-
-The `go vet + go test` job is required under
-[ADR-1238](../adr/1238-go-security-required-gate.md). Its native build,
-security scan, runner smoke, and tests run for Go or core/model inputs;
-unrelated documentation changes report success after an explicit impact
-notice. A failing `gosec` scan blocks merging even though it prevents later
-Go tests from running. The job also starts on ready-for-review events, so
-draft-era results cannot replace the current validation run.
-
-Before installing native build dependencies, that job runs
-`go fix -diff ./...` under the exact `go.mod` toolchain. Per
-[ADR-1338](../adr/1338-go-fix-clean-tree-gate.md), any available source
-rewrite is a blocking failure; CI never mutates the checkout. Run
-`make go-fix`, repeat if the Go tool reports cascading fixes, and finish with
-`make go-fix-check` locally.
-
-For the hardware-dependent `SYCL Parity (Arc A380)` check
-([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator
-reads the repository variable `SYCL_ARC_RUNNER_ENABLED`. While it is not
-`true` (lane not provisioned or paused by the operator) an absent or skipped
-job is accepted as passing; while it is `true` the job must report
-`success`, and a skip — which is what the loud probe failure in
-`sycl-parity.yml` produces when the runner is unregistered, offline, or the
-probe token is rejected — fails the aggregator. Operator runbook:
-[ci-self-hosted-sycl.md](ci-self-hosted-sycl.md).
-
-`Coverage GPU` uses the same fail-closed shape under
-[ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md), but remains a
-distinct `gpu-full` capability: a hosted job checks
-`GPU_COVERAGE_ENABLED` and the complete `self-hosted,linux,gpu-full` online
-label set before the hardware job can be dispatched. Disabled means
-absence/skip is permitted. Enabled means `Coverage GPU` must report success;
-probe failure, absence, skip or neutral blocks the aggregator. The Arc-only
-runner must not be relabelled to satisfy this CUDA + SYCL contract. Operator
-runbook: [self-hosted-runner.md](self-hosted-runner.md).
-
-## Twin-drift gate
-
-`core/` carries same-directory `.c`/`.cpp` twin pairs left by the C++23
-migration ([ADR-0729](../adr/0729-cpp23-wave3-bundle.md)). Twice a fix
-landed on one twin and never reached the other, and twice a rename
-(`mem.c` → `mem.cpp`, `dict.c` → `dict.cpp`) left a stale path in a build
-file that only nightly or opt-in lanes configure.
-[ADR-1135](../adr/1135-ci-twin-drift-gate.md) turns both into a blocking,
-required check — `Twin Drift` in
-[`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml),
-backed by
-[`scripts/ci/twin-drift-check.sh`](../../scripts/ci/twin-drift-check.sh).
-
-**The gate fails when either holds:**
-
-1. A same-directory `.c`/`.cpp` pair exists and one side is compiled by
-   **no** build file (`meson.build`, `setup.py`, `*.pyx`) — unless that
-   side is listed in
-   [`scripts/ci/twin-drift-allowlist.txt`](../../scripts/ci/twin-drift-allowlist.txt)
-   **with a reason**.
-2. Any build file names a source path (`.c .cpp .cc .cxx .cu .hip .m .mm
-   .metal .pyx`) that does not exist in the tree.
-
-**How references are resolved:**
-
-| Build-file form | Resolution |
-| --- | --- |
-| `'../src/x.c'`, `'x.c'` | relative to the build file's directory |
-| `src_dir + 'x.c'` | through the `src_dir = './…/'` assignment in the same file |
-| `_m + '_parity.c'` (prefix is not a literal directory) | suffix search over `git ls-files`; reported as `NOTE` |
-| `os.path.join("..", "core", "x.c")` | joined; identifiers resolve through assignments |
-| `output: 'gen.c'`, `'@PLAINNAME@.c'` | skipped — generated files |
-| `/abs/path.c` | skipped — toolchain-provided |
-| `# …` comments | ignored (quote-aware) |
-
-**Clearing a failure:**
-
-- *Stale source reference* — fix the path in the build file. There is no
-  allowlist for this class. If the parser genuinely cannot model a
-  construct, append `# twin-drift-ignore: <reason>` to that line; the
-  reason is mandatory and the line is reported as `NOTE`.
-- *Dead twin side* — wire the side into a build file, delete it, or add a
-  row `path  reason` to the allowlist. Rows without a reason, rows whose
-  file is gone, whose side is compiled again, or whose pair no longer
-  exists fail the gate, so the allowlist cannot rot.
-
-Sides compiled only by test / fuzz build files are printed as `INFO`
-(non-failing): that is the drift-risk shape to keep an eye on when
-touching one of them.
-
-**Local run** (identical to CI, about two seconds, no build needed; also
-wired as a `pre-push` hook):
-
-```bash
-bash scripts/ci/twin-drift-check.sh
-bash scripts/ci/tests/test-twin-drift-check.sh   # 24 fixture cases
-```
-
-## Whole-tree lint ratchet (ADR-1142)
-
-Since [ADR-1142](../adr/1142-whole-codebase-standards.md) the coding standards
-apply to every file in the tree, and CI enforces that with a **ratchet**
-instead of a touched-files rule:
-
-- `scripts/ci/tidy-ratchet.py` runs clang-tidy over **every** translation
-  unit in a `compile_commands.json`, deduplicates diagnostics by
-  `(path, line, column, check)`, counts `NOLINT` markers with no inline
-  `ADR-NNNN` citation (a citation counts on the previous, the same or the
-  next line, or anywhere in the `/* ... */` block comment that holds the
-  marker), and compares the per-file numbers with the committed baseline
-  `scripts/ci/tidy-baseline-<lane>.json`.
-- The rule is *baseline equals measurement*. Exit codes: `0` match, `2` a file
-  is above its baseline (fix the code, never raise the baseline), `3` a file is
-  below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
-  in the same PR), `4` a compilation, tool or diagnostic-parse failure made
-  the measurement unusable (fail closed), `5` usage/IO or scoped-validation error.
-- **`cpu` lane** — the required context `Tidy Ratchet` in
-  `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
-  it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
-  impact planner (`scripts/ci/plan-ci-impact.py`, step id `impact`); the
-  install / build / ratchet steps run only when the planner's `c_core`
-  selector is `true`, otherwise a `Not impacted` notice satisfies the context.
-  `.clang-tidy`, `scripts/ci/**` (the ratchet and its baselines) and the
-  workflow file are CI-authority inputs that force `mode=full`, so a ratchet
-  or baseline edit always runs the lane. The baseline is written in the dev
-  container with `make tidy-lane-write LANE=cpu`
-  ([ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md),
-  [measuring the lanes](tidy-lanes.md)), which configures what this job
-  configures and reproduces its report byte for byte; a baseline written on
-  a workstation outside the container records that machine's C library and
-  compilers and fails here. The job uploads `tidy-ratchet-cpu` (the
-  measurement JSON with every diagnostic) so a difference can be read without
-  a rerun. The guarded scoped update below can tighten measured translation
-  units while retaining the full-report metadata. The compile
-  database also lists the translation units meson generates into the build
-  directory: the `xxd` model embeds `src/vmaf_v0.6.1.json.c`, … and
-  `src/brisque_live.model.c`. They are build products, which
-  [ADR-1142](../adr/1142-whole-codebase-standards.md) exempts, so the ratchet
-  skips every source and header under `--build-dir`. An in-repo `build/` (the
-  nightly workflow, `make tidy-ratchet`'s default `core/build`) therefore
-  measures the same checked-in files as the out-of-repo build the required job
-  uses. The nightly workflow runs the same lane and fails on drift (it used to
-  swallow the full scan with `|| true`).
-- **`cuda`, `sycl`, `hip` lanes** — measured in the dev container with the
-  device toolchains (`nvcc`, `hipcc`, `icpx`), so the device bodies and the
-  kernels are parsed and not the `-ENOSYS` stubs of a host without them:
-  `make tidy-lane LANE=cuda` (or `hip`, `sycl`, `all`) checks a lane and
-  `make tidy-lane-write` rewrites its baseline
-  ([ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md)). The lane
-  configurations, the reason a host measurement differs and the nightly run
-  are in [measuring the lanes](tidy-lanes.md). Inside the container the lane
-  is two `make` targets, which also work on any machine that has the lane's
-  toolchain, as a look at the numbers rather than a measurement:
-
-  ```bash
-  make tidy-ratchet-build LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
-  make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
-  ```
-
-  Every lane configures with **`-Db_lto=false`**. `core/meson.build` sets
-  `b_lto_threads=4`
-  ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which meson renders
-  as GCC's `-flto=4`. clang-tidy parses these compile commands with clang,
-  which rejects the argument outright, so *every* TU comes back as a compile
-  failure and the run exits 4. The directory may be
-  inside or outside the repository: generated sources under it (`*.json.c`,
-  HIP `*_hsaco.c`) are skipped either way, and the committed baselines contain
-  checked-in paths only. The ratchet now enforces what ADR-1290 stated as a
-  precondition (build directory outside the repository), so an in-tree build
-  can no longer count generated files.
-
-  The `sycl` lane additionally needs `scripts/ci/gen-sycl-compile-commands.py`
-  to run between the native database export and the measurement: meson emits
-  the SYCL feature TUs as `CUSTOM_COMMAND` rules (`icpx -fsycl`), so
-  `write-compile-commands.py` never sees them. `make tidy-ratchet` /
-  `tidy-ratchet-write` now do this automatically per lane
-  (`TIDY_RATCHET_COMPDB_<lane>`, contract-tested by
-  `scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py`). Before that hook
-  existed the lane measured **zero** SYCL translation units and
-  `tidy-baseline-sycl.json` recorded an empty backend.
-
-  The `cuda` and `hip` lanes need the same treatment for a different
-  generator: meson compiles `.cu` and `.hip` through custom targets too, so
-  `scripts/ci/gen-gpu-compile-commands.py` runs in the same slot
-  (`TIDY_RATCHET_COMPDB_cuda` / `_hip`, contract-tested by
-  `scripts/ci/tests/test_gen_gpu_compile_commands.py`). It reads the kernel
-  file from the explicit inputs of each build statement and the compiler from
-  its command, and it exits 1 when a statement names a `.cu` / `.hip` file it
-  could not turn into an entry. The first version matched
-  `<kernel> | <compiler>` only; once the kernel targets listed their headers
-  as dependencies it found no rule at all, and both lanes measured the host
-  files alone until 2026-10-02. The `.hip` kernels are parsed by the ROCm
-  toolchain's own clang-tidy through `scripts/ci/clang-tidy-hip.sh`, because
-  ROCm 10's device headers use a builtin that stock LLVM 22 rejects.
-
-  These lanes become PR-required contexts as soon as a hosted
-  toolchain exists for the lane; until then a lane that cannot run is reported
-  as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
-  toolchain and is tracked by structural proxy only, so its `NOLINT` citations
-  are checked by the tree-wide scan rather than by a lane measurement.
-- **`arm64` lane** ([ADR-1283](../adr/1283-whole-tree-ratchet-arm64-lane.md)) —
-  the NEON and SVE2 tree. 32 translation units are compiled only on an
-  aarch64 host — the 20 sources under `core/src/feature/arm64/`,
-  `core/src/arm/cpu.c`, and the 11 `core/test/test_*_neon.c` parity tests — so
-  before this lane existed no compile database in the project held them and the
-  `cpu` lane's "whole tree" stopped at the architecture boundary. Like the
-  other lanes it is measured in the dev container
-  (`make tidy-lane LANE=arm64`,
-  [ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md)), which installs the
-  cross compiler and `qemu-user` and configures with the in-tree cross file
-  plus `build-aux/aarch64-linux-gnu-qemu-user.ini`. By hand, for a look at the
-  numbers on a machine with a cross toolchain, the lane cross-compiles with
-  the in-tree cross file:
-
-  ```bash
-  meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
-      -Denable_cuda=false -Denable_sycl=false -Db_lto=false
-  # Codegen outputs must exist on disk before clang-tidy parses the TUs that
-  # include or are them — exactly why the cpu lane builds before it measures.
-  # A full `ninja -C build-arm64` does it; these are the only two groups needed:
-  ninja -C build-arm64 include/vcs_version.h
-  ninja -C build-arm64 $(ninja -C build-arm64 -t targets all \
-      | sed -n 's/^\(src\/[^:]*\.c\): CUSTOM_COMMAND.*/\1/p')
-  make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
-  ```
-
-  Skipping the codegen step is not a quiet inaccuracy: `vcs_version.h` alone
-  takes three translation units to `clang-diagnostic-error` and the ratchet
-  fails closed with exit 4 (a *failed* measurement, never a clean one).
-
-  Prerequisites are an aarch64 cross gcc and a glibc sysroot —
-  `aarch64-linux-gnu-gcc` plus `aarch64-linux-gnu-glibc` on Arch,
-  `gcc-aarch64-linux-gnu` plus `libc6-dev-arm64-cross` on Debian/Ubuntu — and
-  clang-tidy. `make` forwards `--target=$(AARCH64_TARGET)` and
-  `--sysroot=$(AARCH64_SYSROOT)` to clang-tidy so it parses the
-  `aarch64-linux-gnu-gcc` compile commands as AArch64; without the target it
-  reads `<arm_neon.h>` against the host's x86 headers and reports every NEON
-  translation unit as a compile failure (exit 4). Both default to the cross
-  package's own paths and are overridable on the `make` command line. Like the
-  GPU lanes this one is measured and committed but is not a PR-required
-  context. Its baseline names the container's cross compiler
-  (`aarch64-linux-gnu-gcc (Ubuntu 15.2.0-16ubuntu1)`), because the counts
-  depend on the C compiler's system headers (ADR-1230).
-- The changed-files job `Tidy Changed` stays as fast
-  feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
-  file ends the PR at zero" is unchanged. The ratchet adds the bound on
-  untouched files.
-
-When a full matching CPU build is unavailable, [ADR-1243](../adr/1243-tidy-scoped-baseline-tightening.md)
-allows an existing compilation database to measure and tighten selected source
-files without replacing other entries:
-
-```bash
-python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
-  --only core/src/thread_pool.c \
-  --only core/test/test_thread_pool_backpressure.c \
-  --report /tmp/thread-pool-tidy.json --write
-```
-
-Run from the repository root after building the selected targets so generated
-headers exist. Every `--only` path must be a translation unit in that database;
-a missing/empty selection, failed tool, unparsed diagnostic or compiler error
-leaves the baseline unchanged. The clang-tidy version must exactly match the
-baseline. Existing checks promoted by `WarningsAsErrors` are still counted as
-warning debt; genuine tool failures cannot produce a clean measurement.
-
-A scoped write may only lower allowances. It rejects every observed increase,
-including in included headers, and preserves **all** unselected source/header
-entries. It removes a selected entry measured at zero, updates aggregate totals,
-and records selected sources, before/after counts and the preceding baseline's
-canonical JSON hash in `scoped_updates`. Original `tus`, generator and tool
-metadata describe the last full measurement, not a new whole-tree scan. The
-separate report records the actual measured sources and failures; it must not
-alias the baseline. Replacement is atomic after validation, and repeating an
-unchanged scoped measurement leaves the baseline byte-identical.
-
-Both full and scoped baseline writes require POSIX advisory locking, available
-in the Linux CI and Linux/macOS developer lanes. A second writer fails with exit
-5 while the first owns the resolved baseline path; retry after that process
-exits. Lock ownership releases on exit, and the empty lock file under the
-per-user temporary directory is retained to keep its inode stable. Writers also
-reject content drift since measurement and before replacement. External editors
-and Git operations do not honor this lock, so keep the checkout stable during
-measurement; a successful write does not certify safety against arbitrary
-concurrent repository mutation. Unreadable NOLINT source/header files also fail
-closed instead of clearing their allowance.
-
-`--only` without `--write` remains diagnostic-only and skips comparison. Required
-CI continues to measure the full configured tree; a successful scoped write
-cannot stand in for that gate or clear unmeasured debt.
-
-Baselines at the time this landed (2026-09-02): cpu 5,241 warnings / 281 TUs /
-83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,780).
-
-### Carve-outs still open after ADR-1142
-
-The 2026-09-02 inventory ([research digest](../research/2027-lint-carveout-inventory-2026-09-02.md))
-found 218 scope restrictions across the lint/CI configuration. This ADR's PR
-retires the nightly `|| true` and bounds the whole CPU tree; the remaining
-rows are owned by the wave that brings the blocking toolchain or build option
-to CI:
-
-| Carve-out | Blocker | Owner / plan |
-| --- | --- | --- |
-| Changed-files clang-tidy job excludes `core/src/cuda/`, `core/src/feature/cuda/`, `core/test/test_cuda_*`, `core/test/test_gpu_picture_pool.c` | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | cuda lane → PR-required; retire the `grep -v` lines in the same PR |
-| `Tidy Changed` excludes `core/src/sycl/`, `core/src/feature/sycl/`, and `core/test/test_sycl*`; the separate `Tidy SYCL` job now covers those changed-file globs as a required, fail-closed gate, but no workflow runs `tidy-ratchet.py --lane sycl` and `core/tools/vmaf_vpl.c` remains outside that job's selectors | The CPU ratchet has no complete SYCL/oneVPL compile database; the dedicated oneAPI job currently measures changed SYCL TUs rather than the whole SYCL baseline | add a required whole-lane SYCL ratchet and include `core/tools/vmaf_vpl.c`; keep `Tidy SYCL` required |
-| … excludes `core/src/hip/`, `core/src/feature/hip/`, `core/test/test_hip*` | ROCm headers on the hosted runner | hip lane → PR-required |
-| … excludes `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
-| … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |
-| `.cppcheck-suppressions.txt` per-file suppressions, `.clang-tidy` disabled checks, `.semgrep.yml` path excludes, `pyproject.toml` per-file ignores | none — each is a fix-the-code item | rework waves; each removal is a ratchet decrease |
-
-## Resolving a `docs/state.md` rebase conflict
-
-[`docs/state.md`](../state.md) conflicts on almost every rebase of a branch
-that touches it, and unlike the other append-only bookkeeping files it is
-**deliberately not** in the `merge=union` list in
-[`.gitattributes`](../../.gitattributes). Its rows *move* between the
-"Open bugs" and "Recently closed" sections, so a union merge would duplicate
-the row and leave a closed bug reading as open forever.
-
-When `git rebase` stops on it, run the resolver and continue:
-
-```bash
-# mid-rebase, with docs/state.md conflicted
-python3 scripts/dev/resolve-state-md-conflict.py docs/state.md
-git add docs/state.md && git rebase --continue
-```
-
-Exit 0 means the file is written and
-[`scripts/ci/check-state-md-rows.sh`](../../scripts/ci/check-state-md-rows.sh)
-already passed on it; the resolver runs the gate itself. The file is written
-with LF line endings on every platform.
-
-### What the resolver does
-
-[`scripts/dev/resolve-state-md-conflict.py`](../../scripts/dev/resolve-state-md-conflict.py)
-ignores the conflict markers. It reads the three versions git keeps in the
-index for a conflicted path (`git show :1:docs/state.md` is the merge base,
-`:2:` is *ours*, `:3:` is *theirs*) and merges them three-way:
-
-| Line | Keyed by | Rule |
-| --- | --- | --- |
-| Bug row (first cell opens with an id: `**T-ID**`, `T-ID`, `**T7-16**`, `Netflix#NNN`, `**Netflix/vmaf#NNN**`) | bug id | Its state is its text plus its `##` section. Same on both sides: kept. Changed on one side only: that side wins, so an edit, a move to "Recently closed", or a deletion carries over. Changed differently on both: conflict. |
-| Move tombstone (`<!-- T-ID moved to Recently closed ... -->`) | bug id | Same as a bug row. |
-| Disposition row under "First-release phase classification" (first cell a bold label such as `**RC8 benchmarks, profiling and tuning**`, second cell a `<br>` list of ids) | bold label | Both sides changed it: the id list merges as a set (ours, plus the ids theirs added, minus the ids either side removed; ours' order, theirs' additions after) and every other cell three-way by text. Rows repeating a label on one side are folded into one first, and the resolver says so. |
-| Anything else (headings, prose, `_Updated` lines) | line text | Line-level three-way. Lines both sides add at the same place are all kept, theirs after ours. A non-blank line both sides added is kept once, which is what a branch stacked on an already squash-merged PR needs. Lines either side deleted go, even where the two deletions overlap. |
-
-The row and tombstone shapes are the ones `check-state-md-rows.sh` recognises,
-so the two agree on what a row is. Placement keeps ours' order; a line only
-theirs has goes after its nearest theirs neighbour that is still present in
-the same section. Two consequences are deliberate: your branch's new
-`_Updated` line and its newly closed rows land *below* the ones master added
-since you branched (move them up by hand if you want the ledger newest-first),
-and a reorder of existing rows within one section on your branch is not
-carried over.
-
-During a rebase *ours* is master **plus the branch commits already replayed**
-and *theirs* is the commit being replayed. That is why neither side may simply
-win. "Ours wins" keeps master's stale Open copy of a row the branch closes. It
-also keeps an earlier branch commit's text of a row that a later commit of the
-same branch rewrote. The resolver before this one did exactly that, three
-times on 2026-09-30 ([ADR-1383](../adr/1383-state-md-three-way-conflict-resolver.md)).
-
-### When it stops
-
-When both sides changed the same row, tombstone, disposition cell or line
-differently, the resolver writes nothing, names each one with its base, ours
-and theirs text, and exits 1. Decide which side is right and rerun with one
-`--take` per reported name:
-
-```bash
-python3 scripts/dev/resolve-state-md-conflict.py docs/state.md \
-    --take T-FOO-2026-09-30=theirs \
-    --take 'RC8 benchmarks, profiling and tuning=ours' \
-    --take line:468=theirs
-```
-
-A bug id takes that side's row *and* tombstone; a disposition label takes that
-side's whole row; `line:N` is the handle the report prints for a conflicting
-plain line (N is its line number in the merge-base version). A `--take` that
-names nothing in the file is an error.
-
-| Exit | Meaning |
-| --- | --- |
-| 0 | Written; the row gate passes. |
-| 1 | Conflicts; nothing written. |
-| 2 | Bad usage, or the path has no unmerged index stages (not mid-rebase, or already `git add`-ed). |
-| 3 | Written, but the row gate rejects the result or a bug id sits in two disposition rows. Fix the file before `git add`. |
-
-The resolver only works while git still holds the three stages. After a bad
-resolution has been committed, fix `docs/state.md` by hand; the gate in CI
-still catches duplicated and misfiled rows.
-
-### Tests
-
-[`scripts/dev/test-resolve-state-md-conflict.py`](../../scripts/dev/test-resolve-state-md-conflict.py)
-builds throwaway repositories and drives the resolver through real
-`git rebase` conflicts: a branch closing a bug, a later commit rewriting an
-earlier one's row, both sides adding `_Updated` lines and closed rows, a branch
-stacked on a PR master already squash-merged, a row closed on master while the
-branch edited it, one-side and overlapping deletions, tombstones, disposition
-rows edited on both sides, and the refusals. Every resolved file
-must pass the row gate.
-
-```bash
-python3 scripts/dev/test-resolve-state-md-conflict.py -v
-```
-
-CI runs it in the `state.md row hygiene (ADR-0165)` step of the
-`Release Script Contract` job in
-[`.github/workflows/rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml),
-next to the gate's own self-test.
-
-### The other way a closed bug reads as open
-
-A duplicate is not the only shape. A row filed under `## Open bugs` whose own
-rightmost cell already says `closed` or `fixed` reads as an open bug forever
-without any duplicate being involved — the PR appended its row to the section
-it happened to be reading instead of moving it, or a rebase dropped the move
-hunk and kept the status edit. 24 of the 62 rows under `## Open bugs` were in
-that state on 2026-09-21.
-
-`scripts/ci/check-state-md-rows.sh` now reads the section heading each row sits
-under together with the status token in its status cell and requires them to
-agree:
-
-- `closed` / `fixed` / `resolved` / `done` only under `## Recently closed`
-- `open` only under `## Open bugs`
-- the status cell is the column a table header calls `Status`, or the last
-  non-empty cell when no header names one
-- the token read is the word that *opens* that cell, so `fixed (PR #1425)` is
-  judged exactly like `fixed`
-- rows that lead with no status token — a verification date, a branch name,
-  prose — make no status claim and are not judged
-
-The fix is always to **move the row**, never to rewrite its status to match
-where it landed.
-
-The check is a floor on this class of drift, not a proof of its absence. It
-reads one cell per row, so a status it does not recognise — buried mid-cell, in
-a column that is neither the last nor headed `Status`, or spelled outside the
-vocabulary above — is passed over in silence and the file still reports clean.
-Of the two ways the check can be silently disabled it fails closed on one: if
-any row claims a status that belongs to a section and that section's heading is
-missing, the gate errors instead of passing over rows that have quietly become
-ungated. The other — an unrecognised status cell — is uncovered, and is the
-likelier of the two, since it takes a single row edit rather than a heading
-rename.
-
-An explicit move tombstone closes that last common no-status case. If a comment
-under `## Open bugs` says an id "moved to Recently closed", the same id may not
-still have a table row in Open bugs. This is checked independently of table
-status columns: a bookkeeping change once added the PTQ row's tombstone while
-leaving the stale Open row directly above it, and all status-token checks
-reported clean. The valid result is the tombstone in Open bugs plus the single
-authoritative row under `## Recently closed`.
-
-## Bug-status hygiene gate (ADR-0165 / ADR-0334)
-
-Per [CLAUDE.md §12 rule 13](../../CLAUDE.md) and
-[ADR-0165](../adr/0165-state-md-bug-tracking.md), every PR that
-closes a bug, opens a bug, or rules a Netflix upstream report
-not-affecting-the-fork updates [`docs/state.md`](../state.md) in the
-**same PR**. Until [ADR-0334](../adr/0334-state-md-touch-check-ci-gate.md)
-this rule was reviewer-enforced; it now runs as the
-`state-md-touch-check` job in
-[`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml),
-backed by the single-purpose script
-[`scripts/ci/state-md-touch-check.sh`](../../scripts/ci/state-md-touch-check.sh).
-
-**The gate fires when any of the following hold:**
-
-- PR title carries a Conventional-Commit `fix:` or `fix(scope):` prefix.
-- PR title contains the bare token `bug` (word-boundary, so `debug`
-  does not fire).
-- PR title or body contains a `closes` / `fixes` / `resolves`
-  `#N` GitHub-issue close keyword (case-insensitive).
-- PR body has the `## Bug-status hygiene` template section with the
-  `docs/state.md` checkbox left unchecked.
-
-**The gate clears when either:**
-
-1. The diff against `BASE_SHA..HEAD_SHA` includes
-   [`docs/state.md`](../state.md) (the row landed in the
-   appropriate section: Open / Recently closed / Confirmed
-   not-affected / Deferred) **AND** none of the inserted lines
-   carry a placeholder PR/commit reference (see
-   "Placeholder-ref hardening" below), **or**
-2. The PR description contains `no state delta: REASON` (REASON is
-   any non-empty token that is not the literal placeholder
-   `REASON`). Use this for pure `feat` / `refactor` / `infra` PRs
-   that genuinely have no bug-status impact.
-
-**Placeholder-ref hardening (ADR-0334 status update 2026-05-09).**
-Touching `docs/state.md` is necessary but not sufficient. PR #541's
-row audit found that the dominant staleness pattern is post-merge
-backfill drift — closing PRs write `this PR` as the closer-PR
-placeholder, the merge happens, the placeholder never gets rewritten
-to the merged numeric refs. The gate therefore additionally rejects
-any inserted line in `docs/state.md` containing:
-
-| Placeholder | Why |
-| --- | --- |
-| `this PR` | post-merge backfill drift (most common) |
-| `this commit` | same drift mode for SHA-shaped refs |
-| `TBD` | obvious fill-it-in-later marker |
-| `<PR>` | template placeholder |
-| `#NNN` | template placeholder (real refs are digits) |
-
-Canonical accept forms — explicitly NOT matched — are `PR #N` (any
-positive integer) and ``commit `<sha>` `` (the SHA wrapped in
-backticks). For an in-flight PR whose number is not yet final, you
-can either:
-
-1. Land the row with a placeholder, then push a follow-up commit
-   that rewrites it to `PR #<number>` after `gh pr create` returns
-   the number, **or**
-2. Use `PR #<this-pr-number>` once GitHub has assigned it (the PR
-   number is known the moment `gh pr create` exits).
-
-**Local dry-run** (mirrors the
-[`deliverables-check.sh`](../../scripts/ci/deliverables-check.sh)
-pattern):
-
-```bash
-PR_TITLE="fix: foo segfault" \
-PR_BODY="$(gh pr view 999 --json body -q .body)" \
-  bash scripts/ci/state-md-touch-check.sh
-```
-
-Or pipe the body on stdin if `gh` isn't on `PATH`:
-
-```bash
-gh pr view 999 --json body -q .body \
-  | PR_TITLE="fix: foo segfault" bash scripts/ci/state-md-touch-check.sh
-```
-
-The companion fixture script
-[`scripts/ci/test-state-md-touch-check.sh`](../../scripts/ci/test-state-md-touch-check.sh)
-exercises the gate against 18 cases (5 primary + 3 regression + 10
-placeholder-ref). Run it after touching either script:
-
-```bash
-bash scripts/ci/test-state-md-touch-check.sh
-```
-
-## Local pre-flight gate
-
-Before pushing, run the local subset of CI to catch the common
-formatter / lint / fast-test failures:
+Run the local gate before you push, then let CI repeat it. This page tells a
+contributor which checks exist, which of them block a merge, and where to find
+the detail. The authoritative trigger and gate behaviour lives in the workflow
+files under [`.github/workflows/`](../../.github/workflows/); the topic pages
+linked below carry the long procedures.
+
+## Before you push
+
+Run the local subset of CI. It catches the usual formatter, lint and fast-test
+failures in seconds, against a 10-minute CI round trip:
 
 ```bash
 make verify-all     # HISS/context/evidence, duplicate implementations, docs gate
@@ -702,352 +21,390 @@ bash scripts/ci/twin-drift-check.sh  # .c/.cpp twin drift + stale source refs (A
 pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 ```
 
-The format-check + pre-commit pair catches roughly the same surface as
-`lint-and-format.yml`'s `pre-commit` job in seconds, vs. a 10-minute
-CI round-trip.
+The format-check and pre-commit pair catches roughly the same surface as the
+`pre-commit` job of `lint-and-format.yml`.
 
-The duplicate scan is intentionally separate from `standardsctl audit`: the
-audit baseline does not include AST clones. `make verify-all`, pre-commit,
-pre-push, and the required Standards job therefore invoke
-`standardsctl dedupe scan .` explicitly. A finding is a hard failure; there is
-no origin, generated-code, or historical-debt exemption.
+The duplicate scan is deliberately separate from `standardsctl audit`: the audit
+baseline does not include AST clones. `make verify-all`, pre-commit, pre-push
+and the required Standards job therefore invoke `standardsctl dedupe scan .`
+explicitly. A finding is a hard failure; there is no origin, generated-code or
+historical-debt exemption.
 
-### Praetor documentation gate
+| Topic | Page |
+| --- | --- |
+| Configure a lint build, read receipts, cppcheck models | [Local lint](local-lint.md) |
+| Whole-tree clang-tidy baselines and lanes | [Tidy ratchet](tidy-ratchet.md), [measuring the lanes](tidy-lanes.md) |
+| `docs/state.md` gates and rebase conflicts | [state.md gates](state-md-gates.md) |
+| Praetor documentation gate, text register, pin moves | [Praetor gate](praetor-gate.md) |
+| Display names of every check | [CI job display names](ci-job-names.md) |
 
-`make verify-all` also runs two targets from praetor's Documentation Governance
-gate, which the `docs:seo-portal` facet in `.standards.yaml` requires:
+## Workflows
 
-- `make docs-lint` runs `node tools/markdownlint/verify.mjs`. It installs its
-  pinned markdownlint-cli2 from the npm registry into a temporary directory, so
-  it needs network access and leaves no `node_modules` in the tree.
-- `make docs-figures` runs `node tools/figures/build.mjs check` and `sources`.
-  It skips, and says why, while the repository has no figure spec under
-  `docs/figures/` and no output under `docs/assets/figures/`.
+The files under `.github/workflows/` and what each is for. Which checks block a
+merge is decided by the [aggregator](#required-checks-aggregator); for the
+mapping of shortened names and conventions see
+[CI job display names](ci-job-names.md), and for every build lane, whether it is
+required and which ADR owns it, see
+[ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md).
 
-Both need Node.js 24. The hosted copy is
-[`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml), whose check name
-is `Documentation Governance`.
+### Pull-request checks
 
-Praetor owns these files. `praetorctl audit` locks them byte for byte:
-`.github/workflows/praetor-docs.yml`, everything under `tools/markdownlint/`
-and `tools/figures/`, the `# BEGIN praetor documentation gate` block in the
-`Makefile` and the `# BEGIN praetor managed attributes` block in
-`.gitattributes`. Renovate is told to leave them alone. Do not edit them by
-hand: a praetor pin move in `standards-gate.yml` brings their updates. For the
-same reason the workflow keeps praetor's name, which is two characters over the
-30-character budget in [CI job display names](ci-job-names.md). `.gitignore`
-re-includes `tools/figures/dist/`, which the repository-wide `dist/` rule would
-otherwise hide from a checkout that audit then fails on. The repository's own
-black, ruff and markdownlint pre-commit hooks skip `tools/figures/`, since a
-rewrite there fails the audit
-([cordanaLLM/praetor#578](https://github.com/cordanaLLM/praetor/issues/578)).
-Praetor also requires Git to ignore the retired numbered workspace root, so the
-[ADR-1277](../adr/1277-workingdir-contract-cleanup.md) contract check accepts
-praetor's managed rule for it and nothing else
-([ADR-1351](../adr/1351-praetor-engine-pin-move.md)).
+| File | Purpose |
+| --- | --- |
+| [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
+| [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
+| [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
+| [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion density. |
+| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review. |
+| [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform, cross-backend libvmaf build matrix: 17 lanes, six of them required. |
+| [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; required since ADR-1297. |
+| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke and tests (ADRs 1238 and 1338). |
+| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg plus libvmaf build (Linux GCC, macOS Clang, SYCL). |
+| [`ffmpeg-patch-stack.yml`](../../.github/workflows/ffmpeg-patch-stack.yml) | Replays the cumulative FFmpeg patch series (see [FFmpeg patch automation](ffmpeg-patch-automation.md)). |
+| [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity on the self-hosted Intel Arc A380 runner (ADR-1177; see the [runbook](ci-self-hosted-sycl.md)). |
+| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build. |
+| [`doxygen-public-api.yml`](../../.github/workflows/doxygen-public-api.yml) | Doxygen build of the public C API; required since ADR-1297. |
+| [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build. |
+| [`dev-container-build.yml`](../../.github/workflows/dev-container-build.yml) | PR-time build gate for `dev/Containerfile` (ADR-0819). |
+| [`helm-chart.yml`](../../.github/workflows/helm-chart.yml) | `helm lint` of the chart. |
+| [`rust-ci.yml`](../../.github/workflows/rust-ci.yml) | Rust crates (still path-filtered, not required). |
+| [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan and UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
+| [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
+| [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
+| [`scorecard-policy.yml`](../../.github/workflows/scorecard-policy.yml) | OpenSSF Scorecard PR policy (ADR-1247). |
+| [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. |
 
-The gate's settings live in the `documentation` block of `.standards.yaml`:
+### Scheduled, release and watcher workflows
 
-| Setting | Value | Reason |
-| --- | --- | --- |
-| `max_files` | 8192 | The tree holds about 4,000 Markdown files, close to the default bound of 4,096. |
-| `max_file_bytes` | 4194304 | `docs/rebase-notes.md`, `docs/changelog-archive/1.0.0-rc.1.md` and `docs/state.md` exceed the default 1 MiB. 4 MiB is praetor's ceiling. |
-| `style_exclude` | `docs/adr/README.md`, `docs/adr/_index_fragments/[0-9]*.md`, `**/testdata/**` | The generated ADR index, the per-ADR row fragments and test fixtures, which the repository's own markdownlint hook in `.pre-commit-config.yaml` also skips. |
+| File | Purpose |
+| --- | --- |
+| [`nightly.yml`](../../.github/workflows/nightly.yml) | Nightly jobs, including the whole-tree clang-tidy ratchet of the `cpu` lane. |
+| [`nightly-bisect.yml`](../../.github/workflows/nightly-bisect.yml) | Nightly bisect-model-quality smoke against a committed fixture timeline. |
+| [`fuzz.yml`](../../.github/workflows/fuzz.yml) | Nightly libFuzzer smoke over every harness under `core/test/fuzz/`. |
+| [`scorecard.yml`](../../.github/workflows/scorecard.yml) | Weekly OpenSSF Scorecard scan. |
+| [`e2e-k8s.yml`](../../.github/workflows/e2e-k8s.yml) | Kubernetes integration harness for the VMAFx runtime; label- and schedule-gated. |
+| [`release-please.yml`](../../.github/workflows/release-please.yml) | On each push to `master`: opens or updates the release PR, or creates the draft release (ADR-1127, ADR-1128). |
+| [`supply-chain.yml`](../../.github/workflows/supply-chain.yml) | Build provenance, Sigstore signing and SBOM when a release draft is published. |
+| [`dev-container-publish.yml`](../../.github/workflows/dev-container-publish.yml) | Builds, pushes and signs the canonical dev container image to GHCR. |
+| [`docker-publish-production.yml`](../../.github/workflows/docker-publish-production.yml) | Builds, pushes, signs and SBOMs the production image on release publication. |
+| [`docker-publish-operator-node.yml`](../../.github/workflows/docker-publish-operator-node.yml) | The same for the VMAFX Go service images. |
+| [`docker-publish-tester.yml`](../../.github/workflows/docker-publish-tester.yml) | Builds, tests, signs and attests the tester image. |
+| [`macos-tester-bundle.yml`](../../.github/workflows/macos-tester-bundle.yml) | Builds, tests, attests and publishes the macOS arm64 tester bundle. |
+| [`upstream-watcher.yml`](../../.github/workflows/upstream-watcher.yml) | Polls FFmpeg master for upstream-blocked features ([upstream watchers](upstream-watchers.md)). |
+| [`upstream-ffmpeg-hip-hwdec-watcher.yml`](../../.github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml) | Weekly watch for an FFmpeg ROCm/HIP hwdec context type (ADR-0448). |
+| [`upstream-netflix-645-hdr-model-watcher.yml`](../../.github/workflows/upstream-netflix-645-hdr-model-watcher.yml) | Watches Netflix/vmaf#645 and the upstream HDR model (ADR-0448). |
+| [`upstream-netflix-955-watcher.yml`](../../.github/workflows/upstream-netflix-955-watcher.yml) | Watches Netflix/vmaf#1494, the upstream fix for #955 (ADR-0448). |
 
-Excluded files still go through the gate's private-link rule. The style rules
-come from praetor's locked `tools/markdownlint/markdownlint-cli2.yaml`, not
-from the root `.markdownlint.json`, which the gate ignores. The two disagree on
-`MD013`: praetor turns it off, the root file limits lines to 80 characters.
-To exempt a block from line length, wrap it in `<!-- markdownlint-capture -->`
-and `<!-- markdownlint-disable MD013 -->` and close it with
-`<!-- markdownlint-restore -->`. A closing `markdownlint-enable MD013` switches
-the rule on with markdownlint's defaults under praetor's configuration, tables
-included.
+## Python type-check gate
 
-`docs/rebase-notes.md` grows with every rebase-sensitive change. It is 2.9 MB
-now and must be split before it reaches the 4 MiB ceiling.
-
-### Moving the praetor pin
-
-`PRAETOR_REF` in [`standards-gate.yml`](../../.github/workflows/standards-gate.yml)
-names the praetor commit that CI installs with `go install`. The same engine
-has to run in your hooks: lefthook calls whatever `praetorctl` is first on
-`PATH`, not the pin. Check yours before you commit or push:
+`Python Lint` is a required, fail-closed check. It installs the reviewed
+`requirements/locks/mypy.txt` lock and runs the same merge-base gate as the
+local `mypy-local` pre-push hook:
 
 ```bash
-praetorctl version   # prints the first 12 hex digits of PRAETOR_REF
+python3 scripts/git-hooks/pre-push-mypy.py
 ```
 
-To move the pin, change `PRAETOR_REF` to a commit whose own CI is green, install
-that engine, and let it regenerate what it owns:
+The gate checks added, copied, modified, renamed and type-changed tracked
+`*.py` paths under `ai/` and `scripts/`. It reports only findings absent from
+the selected merge base, but an analysis crash, a missing tool, base or file, or
+an unattributable nonzero status fails the job. `ai/src/` is checked separately
+with `--explicit-package-bases` so each module has one canonical identity.
+
+Pull requests compare with `origin/master`. A master push compares with the
+event's previous commit, so hosted post-merge validation covers the pushed
+range. See [ADR-1310](../adr/1310-mypy-ci-fail-closed.md) and the detailed
+[hook contract](pre-commit-hooks.md#python-push-scope).
+
+## Draft pull requests defer heavy CI
+
+A draft PR cannot satisfy the required aggregator. Per
+[ADR-0331](../adr/0331-skip-ci-on-draft-prs.md), every `pull_request`-triggered
+workflow is gated to skip while the PR is a draft, except the aggregator, which
+explicitly fails drafts:
+
+- each workflow's `pull_request:` block lists
+  `types: [opened, synchronize, reopened, ready_for_review]`;
+- each top-level job carries an `if:` clause of the form
+  `github.event_name != 'pull_request' || github.event.pull_request.draft == false`.
+
+What this means for contributors:
+
+1. **A draft PR cannot satisfy the required aggregator.** The aggregator starts
+   and fails with a request to mark the PR ready. Heavy jobs remain skipped
+   until ready-for-review, so skipped draft-era checks are never mistaken for
+   completed validation.
+2. **Promoting the draft to ready-for-review fires CI exactly once.** GitHub's
+   `ready_for_review` event re-triggers the workflows; later `synchronize`
+   events on the now-ready PR fire CI as before.
+3. **Pushing to `master` is unaffected.** The job-level `if:` clause
+   short-circuits to `true` when there is no PR object (for example on `push:`
+   events).
+
+To preview CI status before merging, mark the PR ready-for-review. You can flip
+back to draft afterwards; the next `ready_for_review` fires a fresh matrix.
+
+## CI impact routing (ADR-1140)
+
+Required checks do not decide whether they apply from a workflow-level `paths:`
+or `paths-ignore:` filter. Every workflow that hosts a check named in
+`required-aggregator.yml` starts on every non-draft PR and every push to
+`master`; the first step of each required job runs the planner:
 
 ```bash
-GOBIN=<engine>/bin go install github.com/cordanaLLM/praetor/cmd/standardsctl@<sha>
-ln -s standardsctl <engine>/bin/praetorctl
-export PATH=<engine>/bin:$PATH
-praetorctl profile set --lock-source-root=<praetor checkout at sha>
-praetorctl compile-context
-praetorctl baseline -record -allow-increase -reason "<what the engine measures that it did not>"
-praetorctl audit
-praetorctl hiss coverage --verify
-praetorctl dedupe scan .
-make verify-all
+python3 scripts/ci/plan-ci-impact.py --event pull_request \
+  --base <base-sha> --head <head-sha> --github-output "$GITHUB_OUTPUT"
 ```
 
-Run `praetorctl adopt --force --lock-source-root=<praetor checkout>` in a
-throwaway copy of the tree, never in the real one, and copy back only the
-files that audit reports as stale (the documentation gate assets and the
-`.devcontainer/` bootstrap in the last move). `adopt --force` also rewrites the
-`AGENTS.md` harness with a table that marks every invariant as not enforced,
-adds `praetorctl hook` entries to the agent settings files and writes
-`.gemini/settings.json`, which the local exclude file hides. None of that is
-wanted here ([ADR-1351](../adr/1351-praetor-engine-pin-move.md)).
+The planner diffs the event's exact revisions (the merge-base of head and base
+for a PR, the exact `before..head` for a push) and maps the changed paths onto
+the selectors declared in `.github/ci-impact.json`. There are 17 selectors:
 
-Three rules hold the move together:
-
-- **Record the baseline with the new engine, on the final tree.** The baseline
-  is keyed by file and line, and the engine decides what counts. A move may
-  raise it with `--allow-increase` only when the old engine records no growth on
-  the same tree and every added entry traces to an engine change, as ADR-1351
-  shows for the last move. Growth caused by code stays forbidden.
-- **Update the README governance block by hand if audit says it is stale.** The
-  line `<n> recorded infractions; audit forbids growth.` must equal
-  `total_infractions` in `.standards-baseline.json`.
-- **Move every hook engine at the same time, and rebase.** The two engines do
-  not read each other's trees. Measured on the move to `6c772713a133`: the new
-  engine fails `compile-context --verify`, `audit` and `hiss coverage --verify`
-  on a branch at the old pin (register block, 244 entries the old baseline does
-  not record, a renamed HISS-01 catalog title). The old engine fails the same
-  three and `flavor audit` on the new tree, because it cannot parse
-  `repository.default_branch`, `documentation` or `register.sources` in
-  `.standards.yaml`. `dedupe scan .` passes in both directions. A branch moves
-  by rebasing onto the merged pin and switching `PATH` to the new engine.
-
-`scripts/git-hooks/hiss-audit.sh` runs the audit in both the pre-commit and the
-pre-push hook. Since praetor `6c772713a133` an audit reads the live Actions
-permissions and the last workflow runs from GitHub, which takes about 40
-seconds here against 2 seconds offline, so the hooks pass `--offline` when the
-engine has the flag. CI and `make verify-all` keep the forge read.
-
-Moving to `0af07a733e65` (ADR-1506) dropped `markdownlint-cli2` and the `braces`
-chain from the gate's lock, and added praetor's `Go API Compatibility` workflow
-(`.github/workflows/praetor-api.yml`, `tools/apicompat/`), which audit now
-requires. The Required Checks Aggregator lists it in `required` (maintainer
-decision, 2026-10-03). The workflow has no path filter, so a pull request
-without a Go change still reports and the comparison passes; it is not in
-`strictMustReport`, because praetor's locked file does not run on
-`ready_for_review`. Audit locks the workflow byte for byte, so its `#
-required-aggregator-job: Go API Compatibility` marker sits in
-`standards-gate.yml`; `scripts/ci/check-aggregator-names.sh` fails when no job
-reports a name marked that way, which a rename of the job would cause. The
-engine also reads shell, workflow and systemd files, so the baseline went from
-227 to 503 with the old engine recording no growth on the same tree.
-
-#### What the text register checks
-
-The `register:` section of `.standards.yaml` declares who reads which text.
-`forge` is `social`, `docs` is `docs`; `agent`, `context`, `ledger`, `hooks`,
-`prompts` and `mcp` are `internal`, the terse `caveman` form. The gate measures
-only what it can read as a file:
-
-| Text | Checked by | Gate |
+| Selector | Owns | Gates |
 | --- | --- | --- |
-| Root `AGENTS.md` and the compiled vendor files | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
-| Canonical personas under `.agents/agents/` | the same commands | blocks |
-| `.paperclip/harness.json` strings (`register.sources`) | `praetorctl audit` | blocks |
-| The 70 nested `AGENTS.md` files, `.claude/` skills, agents and workflows | `praetorctl caveman check --kind=context <file>` | none; run it by hand |
-| `.workingdir` ledger text, briefs, PR bodies, commit bodies | nothing | none |
+| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | Build legs, sanitizers, cppcheck, CodeQL C/C++, assertion density, Tidy Ratchet |
+| `python` | `python/`, `compat/`, `mcp-server/`, `tools/`, `dev-llm/`, `scripts/**/*.py`, `requirements/` | Inherited by the composite selectors below |
+| `ai` | `ai/`, `model/` | Inherited by `tiny_ai` and `python_lint` |
+| `go` | `cmd/`, `pkg/`, `internal/`, `api/`, `proto/`, `gen/`, `*.go`, `go.mod` | Inherited by `go_checks` |
+| `golden_harness` | `c_core` plus `python` | Netflix golden tests, coverage gate |
+| `tiny_ai` | `c_core` plus `ai` plus `python` | Tiny AI (DNN suite and `ai/` pytests) |
+| `python_lint` | `python` plus `ai` | CodeQL Python |
+| `go_checks` | `go` plus `c_core` | Go vet, security scan, native and ORT smoke, and Go tests |
+| `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |
+| `actions` | `.github/` | CodeQL Actions, FFmpeg patch stack |
+| `docker_image` | `c_core` plus the `Dockerfile` and Python requirements | Docker image build |
+| `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
+| `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
+| `helm` | `deploy/helm/` | Helm chart |
+| `rust` | `bindings/`, `Cargo.*`, `core/src/feature/rust/` | Rust CI (path-filtered, not required) |
+| `shell` | `*.sh` | Not required, still path-filtered |
+| `container` | `Dockerfile*`, `dev/`, `docker/`, `deploy/`, `.devcontainer/` | Not required, still path-filtered |
 
-The nested `AGENTS.md` files are not linted by the gate, so no baseline covers
-them. `praetorctl caveman check --kind=context` fails 39 of them today, mostly
-on article density. A converted file passes the same command.
+Steps gated on a selector that is not impacted are skipped and the job emits
+`::notice::<selector> not impacted (mode=... reason=...)` before reporting
+`success`, so the aggregator always sees a real conclusion with a real reason.
+
+The planner fails closed. Each of these produces `mode=full`, which sets every
+selector true (the behaviour before ADR-1140):
+
+- an unknown top-level path;
+- any status other than add or modify (delete, rename, copy, mode change);
+- a change to a CI-authority file (the map, the planner, `scripts/ci/**`, the
+  workflows hosting required contexts, `.pre-commit-config.yaml`, `Makefile`,
+  `.clang-tidy` and the like);
+- a missing merge-base, a non-linear push or an over-large diff.
+
+Run it locally:
+
+```bash
+python3 scripts/ci/plan-ci-impact.py --event pull_request \
+  --base "$(git merge-base origin/master HEAD)" --head HEAD --print
+python3 -m unittest scripts/ci/tests/test_ci_impact.py   # map and tree contract
+```
+
+Adding a top-level directory or file? Add it to `known_prefixes` or
+`known_files` (and to a selector if a required check owns it); the contract test
+fails otherwise, because an unknown path would silently force `full` mode on
+every PR that touches it.
+
+## Required-checks aggregator
+
+The single required check on `master` branch protection is the **Required
+Checks Aggregator** ([ADR-0313](../adr/0313-ci-required-checks-aggregator.md)).
+The `required` array in `required-aggregator.yml` is the merge gate in full: a
+check missing from it can be red while the merge button stays green
+([ADR-1297](../adr/1297-ci-gate-every-reporting-check.md)).
+
+It runs on every PR and master push. Draft PRs fail immediately; ready PRs poll
+for the named sibling check runs to reach a terminal state and accept
+`success`, `skipped` or `neutral` per check. Results predating the current run
+are excluded, so skipped draft-era checks cannot mask ready validation.
+
+### Go checks
+
+The `go vet + go test` job is required under
+[ADR-1238](../adr/1238-go-security-required-gate.md). Its native build,
+security scan, runner smoke and tests run for Go or core and model inputs;
+unrelated documentation changes report success after an explicit impact notice.
+A failing `gosec` scan blocks merging even though it prevents later Go tests
+from running. The job also starts on ready-for-review events, so draft-era
+results cannot replace the current validation run.
+
+Before installing native build dependencies, the job runs `go fix -diff ./...`
+under the exact `go.mod` toolchain. Per
+[ADR-1338](../adr/1338-go-fix-clean-tree-gate.md), any available source rewrite
+is a blocking failure; CI never mutates the checkout. Run `make go-fix`, repeat
+if the Go tool reports cascading fixes, and finish with `make go-fix-check`
+locally.
+
+### Hardware-dependent lanes
+
+Two checks depend on self-hosted hardware. Both fail closed when their lane is
+enabled and accept a skip only while it is disabled.
+
+| Check | Switch | While disabled | While enabled | Runbook |
+| --- | --- | --- | --- | --- |
+| `SYCL Parity (Arc A380)` ([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)) | repository variable `SYCL_ARC_RUNNER_ENABLED` | An absent or skipped job is accepted. | The job must report `success`; a skip, which is what the loud probe failure in `sycl-parity.yml` produces when the runner is unregistered, offline or the probe token is rejected, fails the aggregator. | [ci-self-hosted-sycl.md](ci-self-hosted-sycl.md) |
+| `Coverage GPU` ([ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md)) | `GPU_COVERAGE_ENABLED` plus the complete `self-hosted,linux,gpu-full` online label set | Absence or skip is permitted. | `Coverage GPU` must report success; probe failure, absence, skip or neutral blocks the aggregator. | [self-hosted-runner.md](self-hosted-runner.md) |
+
+`Coverage GPU` is a distinct `gpu-full` capability: a hosted job checks the
+variable and the label set before the hardware job can be dispatched. The
+Arc-only runner must not be relabelled to satisfy this CUDA plus SYCL contract.
+
+## Twin-drift gate
+
+`core/` carries same-directory `.c`/`.cpp` twin pairs left by the C++23
+migration ([ADR-0729](../adr/0729-cpp23-wave3-bundle.md)). Twice a fix landed
+on one twin and never reached the other, and twice a rename (`mem.c` to
+`mem.cpp`, `dict.c` to `dict.cpp`) left a stale path in a build file that only
+nightly or opt-in lanes configure.
+[ADR-1135](../adr/1135-ci-twin-drift-gate.md) turns both into a blocking,
+required check: `Twin Drift` (job `twin-drift-check`) in
+[`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml), backed by
+[`scripts/ci/twin-drift-check.sh`](../../scripts/ci/twin-drift-check.sh).
+
+### What fails
+
+The gate fails when either holds:
+
+1. A same-directory `.c`/`.cpp` pair exists and one side is compiled by no build
+   file (`meson.build`, `setup.py`, `*.pyx`), unless that side is listed in
+   [`scripts/ci/twin-drift-allowlist.txt`](../../scripts/ci/twin-drift-allowlist.txt)
+   with a reason.
+2. Any build file names a source path (`.c .cpp .cc .cxx .cu .hip .m .mm .metal
+   .pyx`) that does not exist in the tree.
+
+### How references are resolved
+
+| Build-file form | Resolution |
+| --- | --- |
+| `'../src/x.c'`, `'x.c'` | relative to the build file's directory |
+| `src_dir + 'x.c'` | through the `src_dir = './.../'` assignment in the same file |
+| `_m + '_parity.c'` (prefix is not a literal directory) | suffix search over `git ls-files`; reported as `NOTE` |
+| `os.path.join("..", "core", "x.c")` | joined; identifiers resolve through assignments |
+| `output: 'gen.c'`, `'@PLAINNAME@.c'` | skipped; generated files |
+| `/abs/path.c` | skipped; toolchain-provided |
+| `# ...` comments | ignored (quote-aware) |
+
+### Clearing a failure
+
+- **Stale source reference:** fix the path in the build file. There is no
+  allowlist for this class. If the parser genuinely cannot model a construct,
+  append `# twin-drift-ignore: <reason>` to that line; the reason is mandatory
+  and the line is reported as `NOTE`.
+- **Dead twin side:** wire the side into a build file, delete it, or add a row
+  `path  reason` to the allowlist. Rows without a reason, rows whose file is
+  gone, whose side is compiled again, or whose pair no longer exists fail the
+  gate, so the allowlist cannot rot.
+
+Sides compiled only by test or fuzz build files are printed as `INFO`
+(non-failing): that is the drift-risk shape to keep an eye on when touching one
+of them.
+
+The local run is identical to CI, takes about two seconds, needs no build, and
+is also wired as a `pre-push` hook:
+
+```bash
+bash scripts/ci/twin-drift-check.sh
+bash scripts/ci/tests/test-twin-drift-check.sh   # 24 fixture cases
+```
+
+## Lint, standards and bookkeeping gates
+
+These sections keep their anchors for existing links; the content lives on the
+pages named here.
+
+### Whole-tree lint ratchet (ADR-1142)
+
+CI bounds clang-tidy findings for every file with a per-lane baseline
+(`scripts/ci/tidy-baseline-<lane>.json`): a file may never exceed its baseline,
+and a cleaner file must tighten it in the same PR. The required context is
+`Tidy Ratchet` (the `cpu` lane); the `cuda`, `sycl`, `hip` and `arm64` lanes are
+measured in the dev container and are not PR-required. Rules, commands and
+exit codes are in [Tidy ratchet](tidy-ratchet.md); measuring is in
+[measuring the lanes](tidy-lanes.md).
+
+### Carve-outs still open after ADR-1142
+
+The open scope restrictions of the lint configuration (which paths
+`Tidy Changed` excludes, and what blocks each) are in the
+[carve-out table of the tidy ratchet page](tidy-ratchet.md#carve-outs-still-open-after-adr-1142).
 
 ### Local lint build profile and receipts
 
-`make lint` runs clang-tidy and cppcheck for the configured tracked native
-sources, Ruff and Black for `python/`, `ai/` and `scripts/`, shell checks,
-Markdown checks, gosec, and generated-document consistency checks. Mypy
-remains advisory. IWYU and Semgrep are separate tools/jobs; this Make target
-does not invoke them. Markdown defaults to changed files against
-`origin/master`; use `MDLINT_SCOPE=all` for the configured whole-document
-scope.
+`make lint` against a configured build, its receipt directory and the cppcheck
+model files are in [Local lint](local-lint.md).
 
-The root Makefile resolves its project-venv executables to absolute paths
-before calling Meson. This is load-bearing: Meson records the selected Ninja
-executable and later invokes it from inside `core/build` while generating
-`compile_commands.json`. Replacing `$(VIRTUAL_ENV_PATH)` with a relative
-`$(VENV)/bin` recipe prefix makes the native build succeed but leaves the lint
-database absent, so the single-source contract test rejects that spelling.
+### Praetor documentation gate
 
-Configure the intended profile before linting. `lint-c` asks Meson to
-reconfigure the existing build with no option overrides, then runs the
-existing `build` target so generated headers and sources exist. For a CPU
-profile without optional backends:
+`make docs-lint` and `make docs-figures` are praetor's Documentation Governance
+gate, and praetor owns several files byte for byte. See
+[Praetor gate](praetor-gate.md#praetor-documentation-gate).
 
-```bash
-meson setup core/build-cpu core --buildtype=release \
-  -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
-  -Denable_metal=disabled -Denable_dnn=disabled -Denable_mcp=false
-make lint BUILD_DIR=core/build-cpu LINT_JOBS=4
-```
+### Moving the praetor pin
 
-`make lint-c` explicitly exports `compile_commands.json` after Meson regenerates
-the Ninja manifest and builds generated prerequisites. This is required because
-Meson 1.12 no longer materialises the database itself. The exporter requests
-only Ninja's `c_COMPILER` and `cpp_COMPILER` rules, validates every entry, and
-atomically replaces the last valid database; missing rules, invalid JSON, an
-empty result, or a failed Ninja command stops the gate without destroying the
-previous file. Never substitute unfiltered `ninja -t compdb`: that includes
-link, custom and phony entries which are not native compile commands.
+`PRAETOR_REF` in `standards-gate.yml` names the engine CI installs; the move
+procedure is in [Praetor gate](praetor-gate.md#moving-the-praetor-pin).
 
-The Make entrypoints prepend the project virtual environment to `PATH` as an
-absolute path. Meson records the Ninja path it resolves and later invokes it
-with the build directory as its working directory; a relative `.venv/bin`
-prefix therefore becomes an invalid `core/build/.venv/bin/ninja` lookup during
-reconfiguration. Keep the absolute-path assertion in
-`test_lint_configured.py` when changing the build recipes.
+### Resolving a `docs/state.md` rebase conflict
 
-The configured lint driver then selects every tracked native source with a
-configured command,
-including top-level engine files, C++ CLI tools, tests and tracked vendored
-sources. It keeps all command variants for a source, including different test
-defines and include paths. Unconfigured backends are listed as outside the
-profile; a CPU result does not validate CUDA, SYCL, HIP, ARM or Metal sources
-absent from that database. Untracked/generated sources are recorded as
-excluded; the separate whole-tree ratchet retains its generated-source and
-lane policies.
+Run `python3 scripts/dev/resolve-state-md-conflict.py docs/state.md` mid-rebase;
+see [state.md gates](state-md-gates.md#resolving-a-statemd-rebase-conflict).
 
-Each run prints a private `BUILD_DIR/lint-configured-*/` receipt directory:
-`scope.json` records the input database hash, selected sources, command count,
-excluded scope and LTO adaptations; `compile_commands.json` is the analyzer
-copy; per-source clang-tidy logs, `cppcheck.log` and `result.json` retain
-results. The helper leaves Meson's resulting native database and build options
-unchanged. Positive numeric GCC `-flto=N` becomes clang-compatible `-flto`
-only in that copy; other spellings, including invalid options, remain visible
-to the analyzer. Every clang-tidy invocation includes
-`--warnings-as-errors=*`; without it clang-tidy prints ordinary diagnostics but
-normally exits zero. Consequently, any configured-source diagnostic fails
-`lint-c`, regardless of whether the source originated in Netflix, a vendor, or
-the fork. Missing source files, missing/invalid/empty databases and missing
-tools also fail the gate. Cppcheck still runs after clang-tidy reports source
-diagnostics so one analyzer cannot hide the other's report.
+### Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
-Local and CI cppcheck load the official `posix` library model shipped with the
-installed tool. It describes the pthread types and functions used by the fork,
-including the Windows pthread compatibility surface; it does not select a Unix
-target or replace compile-database platform defines. Without this model,
-cppcheck can mistake an opaque `pthread_mutex_t` member for a C++ object that
-initializes itself and incorrectly demand constructors for the surrounding C
-aggregate. Keep the shipped model installed with the cppcheck binary. A missing
-model is an error, not an ignored diagnostic.
-
-The Cppcheck job also runs actual-tool controls against the repository's shared
-C headers. Valid zero-initialized C and C++ uses must pass; an uninitialized
-member read and a broken C++ constructor must still fail. Run those controls
-locally with an installed cppcheck (`CPPCHECK_BIN` selects an explicit binary):
-
-```bash
-python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
-```
-
-This configuration adds type/function knowledge without disabling any diagnostic
-category. Local `--enable=all` and the CI job's existing
-`warning,performance,portability` selection remain unchanged.
-
-Both paths also load the shared
-[`cppcheck-public-entrypoints.cfg`](../../scripts/ci/cppcheck-public-entrypoints.cfg)
-model ([ADR-1246](../adr/1246-cppcheck-public-entrypoints.md)). It identifies
-16 reviewed public C functions whose external callers are absent from the CPU
-database, including disabled HIP/Metal fallbacks. It does not mark private
-helpers or every backend scaffold as public. The model does not disable body
-checks: unlisted unused functions and defects inside listed functions still
-fail their applicable checks. Missing or invalid model files fail analysis.
-
-Before adding a name, verify its `VMAF_EXPORT` declaration and the header's
-unconditional or conditional installation in `core/include/libvmaf/meson.build`.
-The existing configured-driver tests enforce those declarations and reject empty,
-duplicate, misspelled and non-public entries. The real-tool suite above checks
-the external-root behavior, private-function/body-defect negatives and malformed
-models. Cppcheck compares names without linkage or scope: a same-named static
-function is also treated as an entrypoint. Keep public C names unique; this
-model is not a visibility or ABI checker. See
-[the verified roots and version limits](../research/1246-cppcheck-public-entrypoints.md).
-
-Both paths use `--check-level=exhaustive` ([ADR-1245](../adr/1245-cppcheck-exhaustive-configured-analysis.md)).
-This removes Cppcheck's normal forward-branch budget instead of suppressing its
-coverage notice. It can take substantially longer and can expose additional
-real findings. The existing CI timeout and diagnostic selections remain in
-force: timeout, memory exhaustion or any analyzer failure is a failed run.
-The real-tool suite above also checks a small branch-heavy function against
-normal and exhaustive analysis; actual uninitialized reads must still fail.
-See the [measured profile and tool-version limits](../research/1245-cppcheck-exhaustive-configured-analysis.md).
-
-`LINT_JOBS` limits concurrent clang-tidy source jobs (default four). Use
-`LINT_CONFIGURED_ARGS` for helper options such as repeated
-`--clang-tidy-arg=--extra-arg=...` when the configured backend needs explicit
-clang frontend arguments, or `--clang-tidy=/path/to/analyzer` and
-`--cppcheck=/path/to/analyzer` for explicit tool paths. Backend toolchains
-must exist; the helper does not install SDKs or convert unavailable backend
-checks into passes. Receipts are disposable build output and can be archived
-before normal build cleanup.
-
-This local source lint does not replace required CI, the Tidy Ratchet, Netflix
-golden tests, sanitizer tests or backend runtime/parity checks. Regression
-coverage runs locally and in the required Pre-Commit job:
-
-```bash
-python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
-```
+A `fix:` PR, a `bug` title or a close keyword must touch `docs/state.md` (rule
+15 of the [agent hard rules](agent-hard-rules.md)), or say
+`no state delta: REASON` in the body. See
+[state.md gates](state-md-gates.md#bug-status-hygiene-gate-adr-0165-adr-0334).
 
 ## Flaky legs (2026-09-04 audit)
 
-An audit of CI runs on `master` across all workflows identified two leg
-reliability issues, addressed under epic #1236. Summary (counts taken with
-`gh run list --branch master --limit 40` on 2026-09-05; the per-leg details
-follow the table):
+An audit of CI runs on `master` across all workflows found two leg reliability
+issues, addressed under epic #1236. Counts were taken with
+`gh run list --branch master --limit 40` on 2026-09-05:
 
-| Leg | Symptom | Frequency (n/N runs) | Cause | Status |
+| Leg | Symptom | Frequency | Cause | Status |
 | --- | --- | --- | --- | --- |
-| `tests-and-quality-gates.yml` / MCP Smoke (Embedded C + Python Server) | `test_mcp_smoke TIMEOUT 60.04s`, killed after test 15 (`test_uds_roundtrip`) | 1/40 master runs (27 passed, 11 cancelled, 1 failed) | `stop_uds()` closed the AF_UNIX listener without `shutdown()`; on Linux that never wakes a worker already blocked in `accept(2)`, so `pthread_join()` hung. Race: only when the worker re-entered `accept()` before `close()`. | real bug, fixed in `ci/flaky-legs-1236` (`T-CI-MCP-SMOKE-TIMEOUT-2026-09-04`) |
-| `build.yml` / `libvmaf-build-matrix.yml` macOS `brew install ... llvm` | Homebrew bottle download failure | 0/40 `build.yml` runs (25 passed, 14 cancelled on master; 0 download failures) | GitHub-hosted runner network / Homebrew CDN (infrastructure) | infrastructure, hardened with a 3-attempt retry + `brew fetch --retry`; documented (`T-CI-MACOS-BREW-LLVM-FLAKE-2026-09-04`) |
-| `release-please.yml` | fails on every master push | 3/3 master runs in the window | missing GitHub App credentials | infrastructure, tracked in #1289 (out of scope here) |
-| every other workflow on master | none | 0 failures in the last 40 master runs (one `CI` run was cancelled by a superseding push, not failed) | n/a | nothing to fix |
+| `tests-and-quality-gates.yml` / MCP Smoke (Embedded C + Python Server) | `test_mcp_smoke TIMEOUT 60.04s`, killed after test 15 (`test_uds_roundtrip`) | 1 of 40 master runs (27 passed, 11 cancelled, 1 failed) | `stop_uds()` closed the AF_UNIX listener without `shutdown()`; on Linux that never wakes a worker already blocked in `accept(2)`, so `pthread_join()` hung. A race: only when the worker re-entered `accept()` before `close()`. | Real bug, fixed in `ci/flaky-legs-1236` (`T-CI-MCP-SMOKE-TIMEOUT-2026-09-04`) |
+| `build.yml` / `libvmaf-build-matrix.yml` macOS `brew install ... llvm` | Homebrew bottle download failure | 0 of 40 `build.yml` runs (25 passed, 14 cancelled on master; 0 download failures) | GitHub-hosted runner network or Homebrew CDN | Infrastructure; hardened with a 3-attempt retry plus `brew fetch --retry` (`T-CI-MACOS-BREW-LLVM-FLAKE-2026-09-04`) |
+| `release-please.yml` | Fails on every master push | 3 of 3 master runs in the window | Missing GitHub App credentials | Infrastructure; tracked in #1289 |
+| Every other workflow on master | None | 0 failures in the last 40 master runs (one `CI` run was cancelled by a superseding push, not failed) | n/a | Nothing to fix |
 
-1. **`test_mcp_smoke` timeout (run 33916590280, commit `0a8727ca7`)**:
-   - **Symptom**: The `MCP Smoke (Embedded C + Python Server)` job in
-     `tests-and-quality-gates.yml` hit the 60-second Meson timeout during
-     `test_uds_roundtrip`.
-   - **Root cause**: In `core/src/mcp/mcp.c`, `stop_uds()` called
-     `close(server->uds_listen_fd)` without calling
-     `shutdown(server->uds_listen_fd, SHUT_RDWR)` first. On Linux,
-     closing a listening `AF_UNIX` stream socket does not unblock a
-     concurrent `accept(2)` in the worker thread
-     (`vmaf_mcp_uds_thread_main`), leaving the thread asleep in the
-     socket wait queue while `stop_uds()` waited indefinitely on
-     `pthread_join()`.
-   - **Measured passing distribution**: Measured across 20 iterations,
-     `test_mcp_smoke` takes ~0.03s (range: 0.01s–0.05s). The 60s timeout
-     was a true deadlock/hang rather than a slow test.
-   - **Fix**: Added `shutdown(server->uds_listen_fd, SHUT_RDWR)` before
-     `close()` in `stop_uds()`, mirroring the existing SSE listener
-     shutdown contract, and added defensive early-stop guards in
-     `vmaf_mcp_uds_thread_main`.
+### MCP smoke timeout (run 33916590280, commit `0a8727ca7`)
 
-2. **macOS Homebrew `llvm` download reliability (`build.yml`)**:
-   - **Symptom**: Intermittent network dropouts or CDN blips when
-     downloading large Homebrew bottles (such as `llvm`, ~500 MB) on
-     GitHub-hosted macOS runners.
-   - **Audit**: An audit of 40 recent runs of `build.yml` found 0/40
-     failures in the audit window, confirming low baseline rate, but
-     network flakiness is an established infrastructure failure mode.
-   - **Mitigation**: Wrapped Homebrew package installation in `build.yml`
-     and `libvmaf-build-matrix.yml` in a 3-attempt retry loop with backoff
-     (10s, 20s) and fallback `brew fetch --retry`. Exported
-     `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1` to
-     prevent costly auto-updates and cleanup from consuming runner time.
+The `MCP Smoke (Embedded C + Python Server)` job hit the 60-second Meson
+timeout during `test_uds_roundtrip`.
 
-3. **Other master workflow legs audit**:
-   - Audited the last 40 and 100 master runs across all workflows. Zero
-     other flaky test or build failures were observed (the only other
-     master failure was `release-please` token permissions, tracked in
-     #1289).
+- **Root cause:** in `core/src/mcp/mcp.c`, `stop_uds()` called
+  `close(server->uds_listen_fd)` without `shutdown(server->uds_listen_fd,
+  SHUT_RDWR)` first. On Linux, closing a listening `AF_UNIX` stream socket does
+  not unblock a concurrent `accept(2)` in the worker thread
+  (`vmaf_mcp_uds_thread_main`), leaving the thread asleep in the socket wait
+  queue while `stop_uds()` waited indefinitely on `pthread_join()`.
+- **Measured passing distribution:** across 20 iterations `test_mcp_smoke`
+  takes about 0.03 s (range 0.01 s to 0.05 s). The 60 s timeout was a true
+  deadlock, not a slow test.
+- **Fix:** `shutdown(server->uds_listen_fd, SHUT_RDWR)` before `close()` in
+  `stop_uds()`, mirroring the existing SSE listener shutdown contract, plus
+  defensive early-stop guards in `vmaf_mcp_uds_thread_main`.
+
+### macOS Homebrew `llvm` download reliability (`build.yml`)
+
+- **Symptom:** intermittent network dropouts or CDN blips when downloading large
+  Homebrew bottles (such as `llvm`, about 500 MB) on GitHub-hosted macOS
+  runners. The audit of 40 recent `build.yml` runs found 0 failures, so the
+  baseline rate is low, but network flakiness is an established infrastructure
+  failure mode.
+- **Mitigation:** the Homebrew installation in `build.yml` and
+  `libvmaf-build-matrix.yml` runs in a 3-attempt retry loop with backoff (10 s,
+  20 s) and fallback `brew fetch --retry`. `HOMEBREW_NO_AUTO_UPDATE=1` and
+  `HOMEBREW_NO_INSTALL_CLEANUP=1` are exported to avoid costly auto-updates and
+  cleanup consuming runner time.
+
+### Other master workflow legs
+
+The last 40 and 100 master runs across all workflows showed no other flaky test
+or build failure; the only other master failure was the `release-please` token
+permissions, tracked in #1289.

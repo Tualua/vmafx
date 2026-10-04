@@ -1,12 +1,13 @@
 <!-- markdownlint-disable MD060 -->
 # Pre-push mkdocs strict-mode gate
 
-The fork runs `mkdocs build --strict` in CI (the `docs.yml` lane) on
-every push that touches `docs/` or `mkdocs.yml`. Before this hook
-landed, audit slice G found that 38 of 50 master pushes failed that
-lane for trivial breakage (broken anchors, orphan pages, missing nav
-entries). The pre-push hook catches the same errors locally before the
-push. Build duration depends on the documentation tree and installed plugins.
+A pre-push hook runs `mkdocs build --strict` locally whenever a push touches
+`docs/` or `mkdocs.yml`, so documentation breakage fails on your machine
+instead of in CI.
+
+CI runs the same build (the `docs.yml` lane) on every such push. Before this
+hook landed, audit slice G found that 38 of 50 master pushes failed that lane
+for trivial breakage: broken anchors, orphan pages, missing nav entries.
 
 See [ADR-0466](../adr/0466-mkdocs-strict-pre-push-hook.md) for the
 decision record.
@@ -28,7 +29,11 @@ pip install -r docs/requirements.txt
 
 1. **Scope check** — if the push does not touch `docs/` or
    `mkdocs.yml`, the hook exits 0 immediately (no latency on
-   non-docs pushes).
+   non-docs pushes). If the framework selects no documentation paths, the
+   check does not run. A direct script invocation also skips a confirmed
+   non-doc change before checking for MkDocs. It consumes the complete
+   changed-path list, including large diffs, and runs the build if Git
+   cannot determine that list. Documentation changes must pass the build.
 2. **Toolchain check** — once documentation is selected, missing `mkdocs`
    blocks the push with an installation hint. Install via
    `pip install -r docs/requirements.txt` in the active environment.
@@ -54,6 +59,12 @@ pip install -r docs/requirements.txt
 The targeted bypass (`SKIP=mkdocs-strict`) is preferred: it still
 runs the PR-body deliverables gate and other pre-push hooks.
 
+!!! warning
+    Bypassing is for the maintainer only. Agents never bypass hooks
+    (operational rule 6 of the
+    [agent harness](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md)
+    forbids the skip-hooks push flag and `LEFTHOOK=0`).
+
 ## Troubleshooting
 
 ### "mkdocs not found on PATH"
@@ -63,12 +74,6 @@ Install the docs toolchain:
 ```bash
 pip install -r docs/requirements.txt
 ```
-
-If the framework selects no documentation paths, this check does not run.
-A direct script invocation also skips a confirmed non-doc change before
-checking for MkDocs. It consumes the complete changed-path list, including
-large diffs, and runs the build if Git cannot determine that list.
-Documentation changes must pass the build.
 
 ### "WARNING - Doc file … contains a link … but the target"
 
@@ -95,17 +100,20 @@ governs which categories are `warn` vs. `info`.
 
 ## Wire-up details
 
-`make install-hooks` installs a regular dispatcher for the framework's
-`pre-push` stage. `.pre-commit-config.yaml` registers `mkdocs-strict` as an
-independent check selected by changed `docs/` or `mkdocs.yml` paths in
-Git's pushed-ref range. A skipped PR-body check cannot skip this build.
-The build validates the active working tree, as other local source checks
-do; CI validates the submitted commit in a clean checkout.
+Three parts make up the wiring:
 
-A direct invocation of `pre-push-mkdocs-strict.sh` selects documentation
-changes relative to `origin/master`, and runs conservatively when that
-base is unavailable. Installations predating
-[ADR-1241](../adr/1241-worktree-hook-dispatch.md) must rerun
-`make install-hooks`, particularly if an old source symlink points into a
-removed worktree. See [local hooks](pre-commit-hooks.md) for migration and
-custom-hook preservation.
+- **Hook stage.** `make install-hooks` installs a regular dispatcher for the
+  framework's `pre-push` stage. `.pre-commit-config.yaml` registers
+  `mkdocs-strict` as an independent check, so a skipped PR-body check cannot
+  skip this build.
+- **Selection.** The check is selected by changed `docs/` or `mkdocs.yml`
+  paths in Git's pushed-ref range. A direct invocation of
+  `pre-push-mkdocs-strict.sh` selects documentation changes relative to
+  `origin/master`, and runs conservatively when that base is unavailable.
+  The build validates the active working tree, as other local source checks
+  do; CI validates the submitted commit in a clean checkout.
+- **Migration.** Installations predating
+  [ADR-1241](../adr/1241-worktree-hook-dispatch.md) must rerun
+  `make install-hooks`, particularly if an old source symlink points into a
+  removed worktree. See [local hooks](pre-commit-hooks.md) for migration and
+  custom-hook preservation.

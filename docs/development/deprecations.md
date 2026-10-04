@@ -2,7 +2,16 @@
 # VMAFX Deprecations
 
 This file tracks user-visible build configurations and CI modes that have been
-deprecated or removed. Entries are ordered newest-first.
+deprecated or removed. The table is the index; entries below are ordered
+newest-first.
+
+| Date | Item | Status | Replacement |
+| --- | --- | --- | --- |
+| 2026-09-18 | 32-bit x86 CI lane (ADR-1258) | Removed | None; the fork is 64-bit only |
+| 2026-05-28 | `ansnr` / `float_ansnr` extractor (ADR-0865) | Removed | `psnr_y`, `psnr_cb`, `psnr_cr` or `psnr_hvs` |
+| 2026-05-28 | `VmafLegacyQualityRunner` (ADR-0749) | Removed (stub kept) | `VmafQualityRunner` with a current model |
+| 2026-05-28 | Legacy native build modes (ADR-0728) | Withdrawn | None; see ADR-1259 |
+| 2026-05-28 | `python/vmaf/` standalone wheel | Never existed | None |
 
 ---
 
@@ -33,7 +42,8 @@ The `ansnr` and `float_ansnr` feature extractors were removed from all backends
 (CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL, Metal). ANSNR is a legacy
 pre-VMAF metric (circa 2001) that Netflix never adopted in any production VMAF
 model. Shipped models (such as `vmaf_v0.6.1.json`) do not reference ANSNR, and
-empirical feature importance analysis (Research-0733) confirmed zero contribution
+empirical feature importance analysis (Research-0733) confirmed zero
+contribution
 to modern VMAF scoring.
 
 **Migration**: Callers requesting distortion-energy metrics should use PSNR
@@ -85,16 +95,19 @@ fragment. Of the configurations it listed:
   `Build — macOS Vulkan via MoltenVK (advisory)` went with the Vulkan backend
   ([ADR-0726](../adr/0726-drop-vulkan-backend.md)).
 - Everything else still runs, under the short names it has had since #1286.
-  Required: `Windows MinGW64`, `Ubuntu gcc+DNN`, `Ubuntu clang+DNN`,
-  `Ubuntu HIP`, `Windows MSVC+SYCL`, `Cppcheck`, `Sanitizers (address)`,
-  `Sanitizers (thread)` and `Sanitizers (undefined)`. Not required:
-  `macOS clang+DNN`, `macOS Metal`, `Ubuntu gcc static`, `Ubuntu CUDA static`,
-  `Ubuntu SYCL` and `Ubuntu SYCL+CUDA`.
+  The required Windows lanes are `Windows UCRT64` (the MinGW64 lane migrated to
+  UCRT64, ADR-1387), `Windows MSVC+CUDA` and `Windows MSVC+SYCL`; the other
+  required lanes include `Ubuntu gcc+DNN`, `Ubuntu clang+DNN`, `Ubuntu HIP`,
+  `Cppcheck`, `Sanitizers (address)`, `Sanitizers (thread)` and
+  `Sanitizers (undefined)`. Not required: `macOS clang+DNN`,
+  `macOS Metal`, `Ubuntu gcc static`, `Ubuntu CUDA static`, `Ubuntu SYCL` and
+  `Ubuntu SYCL+CUDA`.
 
 `build.yml` (Linux Intel LLVM, macOS Clang+Metal, Windows MSVC+CUDA) runs
 alongside `libvmaf-build-matrix.yml`; it did not replace it. A change that
-breaks `Windows MinGW64` blocks the merge like any other required check.
-ADR-1259 lists every lane and which checks are required.
+breaks a required lane blocks the merge. ADR-1259 and
+[CI job display names](ci-job-names.md) list every lane and which checks are
+required.
 
 ---
 

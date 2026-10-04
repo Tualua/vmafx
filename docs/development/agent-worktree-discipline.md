@@ -10,8 +10,12 @@ under `.claude/worktrees/agent-<id>/`. Two things must hold:
    *main* checkout while an agent worktree is active, because that
    pattern is overwhelmingly the agent landing in the wrong tree.
 
-This page documents both layers. They are independent, and one is not
-a substitute for the other.
+Run both layers; neither substitutes for the other:
+
+| Layer | Catches | Misses |
+| --- | --- | --- |
+| 1. Process-side discipline | Drift before any `git add`, so nothing is staged in the main checkout. Fragile alone: agents drift because their harness's shell state resets, a `cd` did not survive, or the harness silently retried in a fresh process group. | Any agent that does drift. |
+| 2. Host-side hard guard | The commit itself, whenever it comes from the main checkout while an agent worktree is active. | The window between a wrong `git add` and the hook firing: the files are already staged in the main checkout's index and can confuse the human. |
 
 The [local merge-train guide](merge-train.md) covers the matching ownership
 boundary for automation: the train refuses an existing owner's checkout and
@@ -34,15 +38,10 @@ Common consequences:
   with branch protection.
 - Two agents collide on the same files in the main tree.
 
-Five drift incidents in the 2026-05-09 session prompted the host-side
-guard described below: PR #498 (AdaptiveCpp), PR #520 (T3-15),
-PR #526 (ccache), the first attempt at the MCP runtime v2 PR, and
-the multi-corpus run. Each lost work or required cherry-pick recovery.
-
 ## Layer 1 — process-side discipline
 
-Per global memory `feedback_agents_isolated_worktree_only`: never
-spawn parallel agents in the shared tree. Use
+Never spawn parallel agents in the shared tree (see
+[ADR-0332](../adr/0332-agent-worktree-drift-hard-guard.md)). Use
 `isolation: "worktree"` on the agent task, or pre-create a worktree
 with `git worktree add` and pass that path as the agent's cwd.
 
@@ -108,8 +107,9 @@ hook, which may fetch the configured upstream remote.
 ## Layer 2 — host-side hard guard (ADR-0332)
 
 The script `scripts/ci/check-agent-worktree-drift.sh` runs as a
-pre-commit hook (wired through `.pre-commit-config.yaml` and
-installed by `make hooks-install`). It refuses any commit that:
+pre-commit hook (the `agent-worktree-drift-guard` hook in
+`.pre-commit-config.yaml`, installed by `make hooks-install`). It refuses any
+commit that:
 
 - Originates from the main checkout (`git rev-parse --show-toplevel`
   matches the repo root), AND
@@ -142,20 +142,23 @@ branch.
 
 ### Bypassing the guard
 
-The guard honours git's standard escape hatch: `git commit
---no-verify`. Use it when:
+Only a human, in a terminal outside the agent session, may bypass the guard
+with git's standard escape hatch, `git commit --no-verify`. An agent must
+never use it: operational rule 6 of [`AGENTS.md`](../../AGENTS.md) forbids
+skipping hooks, and the repository's Bash hook blocks the flag outright.
 
-- You are the human user committing your own legitimate work to the
-  main checkout while a background agent is running.
-- You are doing emergency cleanup (e.g. a `git revert` that has to
-  land on master immediately and the agent worktrees are stale but
-  not yet pruned).
-- Tooling (release-please, automated bots) commits non-interactively
-  with a known-good cwd.
+Legitimate human uses:
 
-Do **not** bypass when you are an agent and the guard fired against
-your commit. That is the exact pattern the guard exists to catch.
-`cd` to your worktree (or use `git -C "$AGENT_WT"`) and re-run.
+- You are committing your own work to the main checkout while a background
+  agent is running.
+- You are doing emergency cleanup (for example a `git revert` that has to land
+  on master immediately and the agent worktrees are stale but not yet pruned).
+- Tooling (release-please, automated bots) commits non-interactively with a
+  known-good cwd.
+
+If you are an agent and the guard fired against your commit, that is the exact
+pattern the guard exists to catch. `cd` to your worktree (or use
+`git -C "$AGENT_WT"`) and re-run.
 
 ### Installing the hook
 
@@ -163,10 +166,12 @@ your commit. That is the exact pattern the guard exists to catch.
 make hooks-install
 ```
 
-`make hooks-install` runs `pre-commit install --install-hooks`,
-which writes the `agent-worktree-drift-guard` `local` hook from
-`.pre-commit-config.yaml` into `.git/hooks/pre-commit`. Idempotent:
-re-running just refreshes the bound script.
+`make hooks-install` (an alias of `make install-hooks`) runs
+`scripts/githooks/install.py`
+([ADR-1241](../adr/1241-worktree-hook-dispatch.md)),
+which installs git-hook dispatchers that work from any worktree and run the
+`.pre-commit-config.yaml` hooks, including `agent-worktree-drift-guard`.
+It is idempotent: re-running just refreshes the dispatchers.
 
 ### Testing the guard
 
@@ -174,73 +179,81 @@ re-running just refreshes the bound script.
 bash scripts/ci/test_check_agent_worktree_drift.sh
 ```
 
-Three cases — commit-from-agent-WT (allow), main-WT-no-siblings
-(allow), main-WT-with-active-agent (refuse) — all run against
-disposable temp git repos. No build artifacts, no network.
+Four cases run against disposable temp git repos, with no build artifacts and
+no network:
+
+| Case | Verdict |
+| --- | --- |
+| Commit from the agent worktree | allow |
+| Main worktree, no sibling agent worktrees | allow |
+| Main worktree with an empty `.claude/worktrees/` | allow |
+| Main worktree with an active agent | refuse |
 
 ## Cleaning up stale agent state
 
-Use `scripts/dev/cleanup-agent-state.sh` to inventory worktrees and stashes.
-With no arguments, or with `--dry-run`, it reports without changing either.
-`REVIEW` means the checkout passes the local eligibility checks; confirm that
-its work is complete and no process will write to it before selecting it.
-`KEEP` includes the reason a checkout is protected.
+`scripts/dev/cleanup-agent-state.sh` inventories agent worktrees and stashes,
+and removes finished worktrees only when you select them. With no arguments, or
+with `--dry-run`, it reports without changing anything. `REVIEW` means the
+checkout passes the local eligibility checks; confirm that its work is complete
+and no process will write to it before selecting it. `KEEP` includes the reason
+a checkout is protected.
 
-```bash
-# Inventory only; this is also the behavior with no arguments.
-bash scripts/dev/cleanup-agent-state.sh --dry-run
+1. Inventory first (this is also the behaviour with no arguments):
 
-# After reviewing this exact checkout and stopping its writers:
-bash scripts/dev/cleanup-agent-state.sh --apply \
-  --worktree /absolute/repo/.claude/worktrees/agent-finished
-```
+    ```bash
+    bash scripts/dev/cleanup-agent-state.sh --dry-run
+    ```
 
-Repeat `--worktree` to select multiple exact registered paths. `--apply` without
-targets, conflicting modes, duplicate targets, relative paths and unknown
-arguments fail. Every target is checked before the first removal, and each is
-checked again immediately before Git removes it. If a later target changes,
-already completed removals are reported and processing stops.
+2. After reviewing this exact checkout and stopping its writers, remove it:
 
-The utility only removes an `agent-*` checkout with a recognized lock reason
-ending in `(pid N)` whose recorded process has exited. It preserves the main
-checkout, the current checkout, live or unknown owners, pending Git operations,
-tracked changes, untracked files and ignored artifacts. Detached HEADs must be
-reachable through a preserving ref. Review and archive useful evidence before
-separately retiring generated files; an ignored file is not proof of redundancy.
-Git removes eligible worktrees without `--force`. A failed removal restores
-the original lock, and branch refs are retained.
+    ```bash
+    bash scripts/dev/cleanup-agent-state.sh --apply \
+      --worktree /absolute/repo/.claude/worktrees/agent-finished
+    ```
 
-Stashes are always listed with their full object IDs and retained. A branch
-that still exists does not establish that a stash's changes were committed.
-Inspect the selected stash and preserve any unique work before a separate,
-explicitly reviewed stash retirement. Cleanup does not expire reflogs or prune
-objects. It does not classify intentional code scaffolds or ADR reservation
-stubs as disposable files.
+Repeat `--worktree` to select multiple exact registered paths. `--apply`
+without targets, conflicting modes, duplicate targets, relative paths and
+unknown arguments fail. Every target is checked before the first removal, and
+each is checked again immediately before Git removes it. If a later target
+changes, already completed removals are reported and processing stops.
 
-Keep selected worktrees idle throughout apply. PID checks and Git's normal
-removal guards do not serialize unrelated processes that start writing during
-the operation. The regression test uses disposable repositories only:
+!!! warning "Keep selected worktrees idle"
+    PID checks and Git's normal removal guards do not serialize unrelated
+    processes that start writing during the operation.
+
+### What is removed and what is kept
+
+The utility only removes an `agent-*` checkout with a recognised lock reason
+ending in `(pid N)` whose recorded process has exited. Git removes eligible
+worktrees without `--force`; a failed removal restores the original lock, and
+branch refs are retained. Everything else is preserved:
+
+| Preserved | Why |
+| --- | --- |
+| The main checkout and the current checkout | Never disposable. |
+| A checkout with a live or unknown owner | Its process may still write. |
+| A checkout with a pending Git operation | A rebase or merge is in progress. |
+| Tracked changes | Uncommitted work. |
+| Untracked files and ignored artifacts | An ignored file is not proof of redundancy; review and archive useful evidence before separately retiring generated files. |
+| A detached HEAD not reachable through a preserving ref | Its commits would be lost. |
+| Stashes | Always listed with full object IDs and retained. A branch that still exists does not establish that a stash's changes were committed; inspect the stash and preserve any unique work before a separate, reviewed retirement. |
+
+Cleanup does not expire reflogs or prune objects. It does not classify
+intentional code scaffolds or ADR reservation stubs as disposable files.
+
+The regression test uses disposable repositories only:
 
 ```bash
 bash scripts/dev/test-cleanup-agent-state.sh
 ```
 
-See [ADR-1239](../adr/1239-agent-cleanup-preserve-work.md) for the preservation
-contract and the migration from the old apply-by-default behavior.
+See [ADR-1239](../adr/1239-agent-cleanup-preserve-work.md) for the
+preservation contract and the migration from the old apply-by-default
+behaviour.
 
-## Why two layers and not just one
+## History
 
-Layer 1 alone (agent-side discipline) is fragile: agents drift
-because their harness's shell state resets, or because a `cd` did not
-survive, or because the harness silently retried in a fresh process
-group. Telling the agent "be more careful" doesn't scale.
-
-Layer 2 alone (host-side guard) leaves a window: between the agent
-issuing the wrong `git add` and the pre-commit hook firing, the
-agent has already staged files in the main checkout's index. The
-hook prevents the commit, but the staged state can still confuse
-the human. Process-side discipline avoids the staging in the first
-place.
-
-Both layers run together. The guard is the safety net that catches
-the cases the agent missed.
+Five drift incidents in the 2026-05-09 session prompted the host-side
+guard described below: PR #498 (AdaptiveCpp), PR #520 (T3-15),
+PR #526 (ccache), the first attempt at the MCP runtime v2 PR, and
+the multi-corpus run. Each lost work or required cherry-pick recovery.

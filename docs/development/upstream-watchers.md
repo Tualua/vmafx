@@ -1,28 +1,34 @@
 <!-- markdownlint-disable MD060 -->
 # Upstream watchers
 
-The fork depends on a handful of features that are not yet present
-in the upstream projects we sit on top of (FFmpeg, Netflix/vmaf,
-ONNX Runtime, …). Rather than block work on these features
-indefinitely or build a bespoke fork-side replacement, we ship
-**placeholder adapters** that register today but stay inactive
-until the upstream feature lands, paired with an **upstream watcher**
-that polls the relevant upstream tree on a weekly cron and opens a
-GitHub tracking issue the moment the feature appears.
+Four workflows poll upstream weekly and open a tracking issue when a feature the
+fork is waiting for lands. This page is the operator-facing reference: what is
+watched, how the polling works and how to add a watcher.
 
-This document is the operator-facing reference for the watcher
-pattern: what we currently watch, how the polling works, and how to
-add a new watcher.
+The fork depends on a handful of features that are not yet present in the
+upstream projects it sits on top of (FFmpeg, Netflix/vmaf, ONNX Runtime, ...).
+Rather than block work on them indefinitely or build a bespoke fork-side
+replacement, the fork ships **placeholder adapters** that register today but
+stay inactive until the upstream feature lands. Each is paired with an
+**upstream watcher** that polls the relevant upstream tree on a weekly cron and
+opens a GitHub tracking issue the moment the feature appears.
 
 ## Currently watched
 
-| Watcher | Upstream | Sentinel | Placeholder | ADR |
+| Workflow | Cadence (UTC) | Upstream signal | Placeholder or deferral | ADR |
 |---|---|---|---|---|
-| `check_ffmpeg_av1_videotoolbox.sh` | `git.ffmpeg.org/ffmpeg.git` `master` | `AV_CODEC_ID_AV1` in `libavcodec/videotoolboxenc.c` | `tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py` | [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md) |
+| `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh`) | Mondays 08:00 | `AV_CODEC_ID_AV1` in `libavcodec/videotoolboxenc.c` on `git.ffmpeg.org/ffmpeg.git` `master` | `tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py` | [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md) |
+| `upstream-ffmpeg-hip-hwdec-watcher.yml` | Sundays 06:30 | `hwcontext_hip.{c,h}` under `libavutil/`, or an `AV_HWDEVICE_TYPE_HIP` / `_ROCM` enum variant, in FFmpeg | `T-FFMPEG-HIP-FILTER-DEFERRED` row in `docs/state.md` | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
+| `upstream-netflix-645-hdr-model-watcher.yml` | Sundays 06:15 | Netflix/vmaf#645 activity, or a `vmaf_hdr_*.json` file under `Netflix/vmaf:model/` | the HDR-VMAF model port deferral | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
+| `upstream-netflix-955-watcher.yml` | Sundays 06:00 | Netflix/vmaf#1494 merging (it closes #955) | the Netflix#955 `i4_adm_cm` deferral row | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
+
+Only the first watcher has a detection script under `scripts/upstream-watcher/`;
+the other three are workflow-only (the poll is inline in the workflow, using
+`gh api`).
 
 ## How the pattern works
 
-A watcher has three moving parts:
+A script-based watcher has three moving parts:
 
 1. **Detection script** under `scripts/upstream-watcher/`. A small
    shell script that runs `git ls-remote` to grab the upstream tip,
@@ -45,21 +51,19 @@ A watcher has three moving parts:
    exact title) when one returns "feature present". The
    tracking issue carries the activation checklist.
 
-The upstream-blocked feature thus has three states a maintainer
-can observe:
+The other three watchers skip the script: each is its own workflow file whose
+`poll` job queries upstream with `gh api` and opens or updates its tracking
+issue directly.
 
-- **Inactive**: upstream has not landed the feature; the
-  placeholder adapter raises `*UnavailableError`; no tracking
-  issue is open.
-- **Detected**: the watcher has fired; a tracking issue is open
-  with `upstream-blocked` label and the activation checklist;
-  the placeholder adapter still raises `*UnavailableError` until
-  a fork sync pulls the upstream change.
-- **Active**: the fork has synced the upstream change; the
-  runtime probe inside the placeholder returns `True`; the
-  adapter starts emitting argv normally; the activation PR
-  closes the tracking issue and updates the ADR status to
-  Superseded.
+### Feature states
+
+The upstream-blocked feature has three states a maintainer can observe:
+
+| State | Meaning | Placeholder behaviour |
+|---|---|---|
+| Inactive | Upstream has not landed the feature. No tracking issue is open. | The placeholder adapter raises `*UnavailableError`. |
+| Detected | The watcher has fired. A tracking issue is open with the `upstream-blocked` label and the activation checklist. | The placeholder still raises `*UnavailableError` until a fork sync pulls the upstream change. |
+| Active | The fork has synced the upstream change. | The runtime probe inside the placeholder returns `True` and the adapter emits argv normally. The activation PR closes the tracking issue and updates the ADR status to Superseded. |
 
 ## Why polling, not a sync hook
 
@@ -89,9 +93,14 @@ the safety net.
    `set -euo pipefail` / exit-code contract (0 = found, 1 = not
    yet, 2 = infra fail).
 
-3. **Add a watcher job to `.github/workflows/upstream-watcher.yml`.**
-   One job per watcher; each opens its own tracking issue with a
-   unique title. The dedup-on-title check must be exact-match.
+3. **Wire the watcher into a workflow.** Two patterns are live:
+   add a job to `.github/workflows/upstream-watcher.yml` that runs
+   the script, or, for an upstream signal that `gh api` can read
+   directly (an issue, a pull request, a file listing), add a
+   separate workflow file as the three newer watchers do (weekly
+   cron, `workflow_dispatch`, `issues: write`). Either way each
+   watcher opens its own tracking issue with a unique title; the
+   dedup-on-title check must be exact-match.
 
 4. **Write the ADR.** New `docs/adr/NNNN-*.md` covering: what
    upstream feature, what placeholder adapter, what runtime
@@ -103,18 +112,8 @@ the safety net.
 
 ## Failure modes the watcher tolerates
 
-- Network failure during `git ls-remote` or partial clone
-  (exit 2 from the script): the workflow logs a `::warning::`
-  and continues without opening a tracking issue. A subsequent
-  weekly run will retry.
-- Sentinel false-positive (upstream adds the sentinel string in
-  a comment, doc, or an unrelated context): the tracking issue
-  opens, a maintainer triages, the script's sentinel is tightened
-  in a follow-up PR. Cost is one false-positive issue, not a
-  false-negative silent miss.
-- Sentinel false-negative (upstream lands the feature using a
-  different identifier): the activation PR notices when a
-  developer manually checks before the watcher does. The
-  tracking ADR's "Activation checklist" item that asks "verify
-  the watcher fired" exists exactly for this case — close the
-  loop by updating the sentinel in the activation PR.
+| Failure | What happens | Cost |
+|---|---|---|
+| Network failure during `git ls-remote` or partial clone (exit 2 from the script) | The workflow logs a `::warning::` and continues without opening a tracking issue. A subsequent weekly run retries. | One missed week. |
+| Sentinel false-positive (upstream adds the sentinel string in a comment, doc, or an unrelated context) | The tracking issue opens, a maintainer triages, and the script's sentinel is tightened in a follow-up PR. | One false-positive issue, not a silent miss. |
+| Sentinel false-negative (upstream lands the feature using a different identifier) | The activation PR notices when a developer checks manually before the watcher does. The tracking ADR's "Activation checklist" item that asks "verify the watcher fired" exists for this case; close the loop by updating the sentinel in the activation PR. | A delayed detection. |

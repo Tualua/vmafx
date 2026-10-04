@@ -5,29 +5,42 @@ VMAFx holds the OpenSSF Best Practices **passing** badge as
 [project 14549](https://www.bestpractices.dev/en/projects/14549). The badge is
 voluntary self-certification: an authorized maintainer answers the 67
 [passing criteria](https://www.bestpractices.dev/en/criteria/0), and the
-project record, not this page, is authoritative.
+project record, not this page, is authoritative. This page mirrors the
+submission so each answer can be checked against the repository.
 
-The public readback of `https://www.bestpractices.dev/projects/14549.json` on
-2026-09-26 shows `badge_level` `passing`, reached at
-`2026-09-26T21:06:31.870Z`, with every passing criterion answered: 63 `Met`,
-3 `N/A` and 1 `Unmet` (`version_tags`, a SUGGESTED criterion). The same
-readback puts silver at 15% and gold at 22%. Scorecard's `CII-Best-Practices`
-check scores a passing badge 5 out of 10
-([`cii_best_practices.go`](https://github.com/ossf/scorecard/blob/main/checks/evaluation/cii_best_practices.go));
-the published Scorecard result changes on the next master scan.
+!!! note "As of 2026-09-26"
+    The tables below are a mirror of the project record as read on
+    2026-09-26. The git tags `v1.0.0-rc.1` and `v1.0.0-rc.2` exist since then,
+    so the `version_tags`, `release_notes` and `release_notes_vulns` rows
+    describe the state before the first release candidate. Re-read the record
+    after a release before relying on those rows
+    ([Keeping the badge current](#keeping-the-badge-current)).
 
-This page mirrors that submission so each answer can be checked against the
-repository. The 33 criteria answered on 2026-09-08 were reviewed at the RC1
-candidate `76a7c467c3524478c25d588a31b37b2d45d96081`. The 34 answered on
-2026-09-26 were reviewed at master `52ead780c`; `crypto_keylength` also relies
-on the controller's RSA key-size check from
-[PR #1566](https://github.com/VMAFx/vmafx/pull/1566). No VMAFx release was
-published at either date, and inherited libvmaf `3.x` identifiers are not
-VMAFx support or release evidence.
+Status at that readback:
+
+- `badge_level` is `passing`, reached at `2026-09-26T21:06:31.870Z`.
+- Every passing criterion is answered: 63 `Met`, 3 `N/A` and 1 `Unmet`
+  (`version_tags`, a SUGGESTED criterion), from the public readback of
+  `https://www.bestpractices.dev/projects/14549.json`.
+- The same readback puts silver at 15% and gold at 22%.
+- Scorecard's `CII-Best-Practices` check scores a passing badge 5 out of 10
+  ([`cii_best_practices.go`](https://github.com/ossf/scorecard/blob/main/checks/evaluation/cii_best_practices.go));
+  the published Scorecard result changes on the next master scan.
+
+Provenance of the answers:
+
+| Date | Criteria answered | Reviewed at |
+| --- | --- | --- |
+| 2026-09-08 | 33 | the RC1 candidate `76a7c467c3524478c25d588a31b37b2d45d96081` |
+| 2026-09-26 | 34 | master `52ead780c`; `crypto_keylength` also relies on the controller's RSA key-size check from [PR #1566](https://github.com/VMAFx/vmafx/pull/1566) |
+
+No VMAFx release was published at either date, and inherited libvmaf `3.x`
+identifiers are not VMAFx support or release evidence.
 
 ## How to read the tables
 
-The official [achievement rules](https://www.bestpractices.dev/en/criteria_discussion#achieving-a-badge)
+The official [achievement
+rules](https://www.bestpractices.dev/en/criteria_discussion#achieving-a-badge)
 require all MUST/MUST NOT criteria, a result or justified exception for every
 SHOULD, and consideration of every SUGGESTED item. N/A is allowed only where
 specified and sometimes requires justification.
@@ -51,7 +64,7 @@ The project website is [VMAFx on GitHub Pages](https://vmafx.github.io/vmafx/).
 | [`interact`](https://www.bestpractices.dev/en/criteria/0#interact) | MUST | Met | The [published getting-started guide](https://vmafx.github.io/vmafx/getting-started/), [public contribution guide](https://github.com/VMAFx/vmafx/blob/master/CONTRIBUTING.md) and [issue tracker](https://github.com/VMAFx/vmafx/issues) explain obtaining, reporting and contributing. New direct homepage links improve discovery; their deployment is still pending. |
 | [`contribution`](https://www.bestpractices.dev/en/criteria/0#contribution) | MUST | Met | [CONTRIBUTING](../../CONTRIBUTING.md) documents branches, pull requests and review. |
 | [`contribution_requirements`](https://www.bestpractices.dev/en/criteria/0#contribution_requirements) | SHOULD | Met | [Review expectations](../../CONTRIBUTING.md#review-expectations) and [principles](../principles.md) define contribution requirements; these are policies, not passing-run receipts. |
-| [`floss_license`](https://www.bestpractices.dev/en/criteria/0#floss_license) | MUST | Met | [LICENSE](../../LICENSE) identifies BSD-2-Clause-Patent; the source is publicly available. Third-party components retain their own notices. |
+| [`floss_license`](https://www.bestpractices.dev/en/criteria/0#floss_license) | MUST | Met | [LICENSE](../../LICENSE) identifies BSD-2-Clause-Patent for the inherited Netflix code; fork-authored files carry EUPL-1.2 under per-file SPDX tags ([ADR-1250](../adr/1250-eupl-fork-relicense.md)). The source is publicly available. Third-party components retain their own notices. |
 | [`floss_license_osi`](https://www.bestpractices.dev/en/criteria/0#floss_license_osi) | SUGGESTED | Met | The root license is [OSI approved](https://opensource.org/license/bsd-2-clause-patent); no blanket claim is made for every optional external SDK. |
 | [`license_location`](https://www.bestpractices.dev/en/criteria/0#license_location) | MUST | Met | [LICENSE](../../LICENSE) is at the repository root. |
 | [`documentation_basics`](https://www.bestpractices.dev/en/criteria/0#documentation_basics) | MUST | Met | Published [installation](https://vmafx.github.io/vmafx/getting-started/), [CLI](https://vmafx.github.io/vmafx/usage/cli/), [MCP transport](https://vmafx.github.io/vmafx/mcp/http-transport/) and [AI security](https://vmafx.github.io/vmafx/ai/security/) guides cover installation, usage and relevant safety guidance. Sources: [getting started](../getting-started/index.md), [CLI](../usage/cli.md), [transport](../mcp/http-transport.md), [security](../ai/security.md). |
@@ -160,17 +173,21 @@ The project website is [VMAFx on GitHub Pages](https://vmafx.github.io/vmafx/).
 ## Enrollment and API handoff
 
 [BadgeApp API documentation](https://github.com/ossf/best-practices-badge/blob/33907f3e0f8748abbeb587af3a45ed9f24deb380/docs/api.md)
-uses `.json` URL suffixes, not the HTTP `Accept` header. Read-only queries include
+uses `.json` URL suffixes, not the HTTP `Accept` header. Read-only queries
+include
 `/projects.json?url=https%3A%2F%2Fgithub.com%2FVMAFx%2Fvmafx`,
-`/projects/ID.json` and `/projects/ID/badge.json`. The initial exact repository-URL query returned no match; the owner then
+`/projects/ID.json` and `/projects/ID/badge.json`. The initial exact
+repository-URL query returned no match; the owner then
 registered project **14549**. Its public JSON readback identifies the correct
 repository and, since 2026-09-26, the `passing` badge level. Use that record;
 recheck identity and persisted answers before changing it.
 
-The checked-in [OpenAPI document](https://github.com/ossf/best-practices-badge/blob/33907f3e0f8748abbeb587af3a45ed9f24deb380/best_practices.openapi.yaml)
+The checked-in [OpenAPI
+document](https://github.com/ossf/best-practices-badge/blob/33907f3e0f8748abbeb587af3a45ed9f24deb380/best_practices.openapi.yaml)
 describes read paths and a minimal project shape; it does not specify a complete
 write payload. The API guide documents logged-in-session creation/update routes.
-Criterion fields use `<id>_status` and `<id>_justification`; external statuses are
+Criterion fields use `<id>_status` and `<id>_justification`; external statuses
+are
 `?`, `Unmet`, `N/A` and `Met`. The official
 [proposal-file mechanism](https://github.com/ossf/best-practices-badge/blob/33907f3e0f8748abbeb587af3a45ed9f24deb380/docs/bestpractices-json.md)
 ignores unknown answers. Do not turn this worksheet into automatic affirmative

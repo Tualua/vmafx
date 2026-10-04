@@ -1,7 +1,8 @@
 <!-- markdownlint-disable MD013 -->
 # Measuring the clang-tidy lanes
 
-The whole-tree clang-tidy ratchet ([ADR-1142](../adr/1142-whole-codebase-standards.md),
+The whole-tree clang-tidy ratchet
+([ADR-1142](../adr/1142-whole-codebase-standards.md),
 [CI guide](ci.md#whole-tree-lint-ratchet-adr-1142)) compares every file with a
 committed count in `scripts/ci/tidy-baseline-<lane>.json`. A count is only
 meaningful on the toolchain it was measured with, so every lane is measured in
@@ -31,15 +32,21 @@ You need Docker and the dev image `vmaf-dev-mcp:local`
 apt.llvm.org and meson from PyPI (hash-locked, `requirements/locks/build.txt`),
 so the run needs network access; the `arm64` lane also installs the aarch64
 cross compiler and `qemu-user` from the Ubuntu archive. A lane takes about
-five minutes on eight cores; `--jobs N` (default 8) sets the cores for the build and for clang-tidy
-and caps the container at the same number.
+five minutes on eight cores. `--jobs N` (default 8) sets the cores for the
+build and for clang-tidy and caps the container at the same number.
 
-The exit code is the ratchet's: `0` the baseline matches, `2` a file is above
-its baseline, `3` a file is below it, `4` the lane did not build or a
-translation unit did not parse, `5` a usage error or a clang-tidy version the
-baseline was not measured with (below). With several lanes the highest code
-wins. Reports (`tidy-ratchet-<lane>.json`, with every diagnostic
-behind the counts) and logs (`<lane>.log`) land in
+The exit code is the ratchet's:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The baseline matches. |
+| `2` | A file is above its baseline. |
+| `3` | A file is below its baseline. |
+| `4` | The lane did not build, or a translation unit did not parse. |
+| `5` | A usage error, or a clang-tidy version the baseline was not measured with ([below](#the-clang-tidy-version)). |
+
+With several lanes the highest code wins. Reports (`tidy-ratchet-<lane>.json`,
+with every diagnostic behind the counts) and logs (`<lane>.log`) land in
 `~/.cache/vmafx-tidy-lanes/`, or in the directory given with `--out`.
 
 ## After a change to C, C++, CUDA, HIP or SYCL sources
@@ -65,12 +72,20 @@ in the checkout is written, and nothing is mounted into the container.
 A baseline records the clang-tidy it was measured with (`clang_tidy_version`,
 22.1.8 today), and the counts of two versions are not comparable. apt.llvm.org
 serves only the newest build of the 22 series, the same one the hosted job
-gets. When that build moves on, a check and a scoped write stop with exit `5`
-and name both versions; nothing is measured. Moving the baselines to the new
-version is one deliberate step: `make tidy-lane-write LANE=all`, reviewed like
-any other change of the counts, and the hosted job then measures against the
-same version. A workstation's own clang-tidy plays no part: the container
-never uses the host's tools.
+gets.
+
+When that build moves on, a check and a scoped write stop with exit `5` and
+name both versions; nothing is measured.
+
+Moving the baselines to the new version is one deliberate step, reviewed like
+any other change of the counts:
+
+```bash
+make tidy-lane-write LANE=all
+```
+
+The hosted job then measures against the same version. A workstation's own
+clang-tidy plays no part: the container never uses the host's tools.
 
 ## Why not on the host
 
@@ -91,7 +106,6 @@ not only on clang-tidy's version:
 - **Optional libraries.** With ONNX Runtime installed, the DNN sources compile
   their real bodies and two more translation units exist. The hosted runner
   has none.
-
 - **clang-tidy itself.** A workstation's package manager moves it: on
   2026-10-02 the workstation's clang-tidy went from 22.1.8 to 23.1.1, which
   reports more and which the scoped write refuses against a 22.1.8 baseline.
@@ -131,6 +145,8 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 | `sycl` | icx / icpx | `-Denable_sycl=true -Dsycl_icpx_aot_targets= -Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 through `scripts/ci/clang-tidy-sycl.sh` |
 | `arm64` | aarch64-linux-gnu-gcc / g++ 15 (cross) | `--cross-file build-aux/aarch64-linux-gnu.ini --cross-file build-aux/aarch64-linux-gnu-qemu-user.ini -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false` | clang-tidy 22, `--target=aarch64-linux-gnu --sysroot=/usr/aarch64-linux-gnu` |
 
+### Notes per lane
+
 - `-Db_lto=false` everywhere: the project default renders as GCC's `-flto=4`
   ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which clang
   rejects, so every translation unit would fail to parse.
@@ -153,7 +169,6 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
   `/opt/rocm/llvm/bin/clang-tidy` (hipcc's own LLVM) and everything else to
   clang-tidy 22. The version a baseline records is clang-tidy 22's; the
   kernel tool's version follows the ROCm image pinned in `build-config.env`.
-
 - **`arm64`** is the cross lane of
   [ADR-1283](../adr/1283-whole-tree-ratchet-arm64-lane.md): the NEON and SVE2
   sources that no x86 build compiles. It uses the in-tree cross file and a
@@ -174,14 +189,16 @@ master `513d2a6fc` the report of `scripts/dev/tidy-lane.sh cpu` and the
 (SHA-256 `ffb5ca1819a3…`, 327 translation units, 322 findings).
 
 No hosted runner has `nvcc`, `hipcc` or `icpx` with a full build, so `cuda`,
-`hip` and `sycl` are not required checks, and neither is `arm64`. Their baselines still hold: a
-change that raises a count shows up the next time the lane runs, locally or
-in the nightly run below. A lane that did not run is never reported as clean.
+`hip` and `sycl` are not required checks, and neither is `arm64`. Their
+baselines still hold: a change that raises a count shows up the next time the
+lane runs, locally or in the nightly run below. A lane that did not run is
+never reported as clean.
 
 ## Nightly run on the workstation
 
 Until a runner with the device toolchains exists, the lanes without a hosted
-job run from a timer on the workstation that has the dev image. The job measures a clean
+job run from a timer on the workstation that has the dev image. The job measures
+a clean
 clone of `master`, not a working tree:
 
 ```bash
@@ -191,10 +208,34 @@ git -C ~/.cache/vmafx-tidy-nightly/vmafx checkout --quiet --detach origin/master
     --out ~/.cache/vmafx-tidy-nightly/$(date +%F) all
 ```
 
-As a systemd user timer (`~/.config/systemd/user/vmafx-tidy-lanes.service`
-with the three commands as `ExecStart=` lines of a `Type=oneshot` unit, and a
-`vmafx-tidy-lanes.timer` with `OnCalendar=*-*-* 03:30:00`), a non-zero result
-shows in `systemctl --user status vmafx-tidy-lanes.service` and the lane logs
-name the files. An exit `2` or `3` on `master` means a change landed without
-its lane being measured; open a row in [`docs/state.md`](../state.md) and fix
-the file or tighten the baseline through `make tidy-lane-write`.
+Run it from a systemd user timer. The service is a `Type=oneshot` unit whose
+`ExecStart=` lines are the three commands above:
+
+```ini
+# ~/.config/systemd/user/vmafx-tidy-lanes.service
+[Unit]
+Description=Measure the clang-tidy lanes on master
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/git -C %h/.cache/vmafx-tidy-nightly/vmafx fetch --quiet origin master
+ExecStart=/usr/bin/git -C %h/.cache/vmafx-tidy-nightly/vmafx checkout --quiet --detach origin/master
+ExecStart=%h/.cache/vmafx-tidy-nightly/vmafx/scripts/dev/tidy-lane.sh --out %h/.cache/vmafx-tidy-nightly/nightly all
+```
+
+```ini
+# ~/.config/systemd/user/vmafx-tidy-lanes.timer
+[Timer]
+OnCalendar=*-*-* 03:30:00
+
+[Install]
+WantedBy=timers.target
+```
+
+The unit files above are illustrative: `%h` is systemd's home directory, and a
+fixed `--out` directory replaces the `$(date +%F)` of the shell form (systemd
+does not expand shell substitutions). A non-zero result shows in
+`systemctl --user status vmafx-tidy-lanes.service` and the lane logs name the
+files. An exit `2` or `3` on `master` means a change landed without its lane
+being measured; open a row in [`docs/state.md`](../state.md) and fix the file
+or tighten the baseline through `make tidy-lane-write`.

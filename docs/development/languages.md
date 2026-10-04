@@ -1,19 +1,31 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Languages used in VMAFX
 
-VMAFX is a multi-language project. This page documents the role of each language,
-the minimum toolchain versions required to build the full project, and pointers to
-language-specific setup guides.
+Use this page to find which language a part of the tree is written in, which
+toolchain version it needs and which CI workflow checks it. VMAFX is a
+multi-language project; each section below follows the same shape: where the
+language is used, the minimum version, how to install it and how to verify it.
 
-See [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702) for
+| Language | Used in | Minimum version | CI workflow |
+|---|---|---|---|
+| C / C++23 | `core/` | GCC 13 or Clang 17 | `lint-and-format.yml` |
+| Go | `cmd/`, `pkg/` | `go` directive of `go.mod` | `go-ci.yml` |
+| Rust | `bindings/rust/`, `core/src/feature/rust/` | stable | `rust-ci.yml` |
+| Python | `ai/`, `tools/`, `mcp-server/`, `python/`, `scripts/` | per package, see [Python](#python-ml-training-and-dev-scripts) | `lint-and-format.yml`, `tests-and-quality-gates.yml` |
+| GPU kernels | `core/src/feature/{cuda,sycl,hip,metal}/` | vendor SDK, see backend guides | `libvmaf-build-matrix.yml` |
+
+See [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702)
+for
 the policy constraints that govern which language is used for which role.
 
 ## C / C++23 — core library
 
 **Used in:** `core/` (metric engine, feature extractors, GPU backend runtimes)
 
-**Minimum version:** C23 (GCC ≥ 13 or Clang ≥ 17) / C++23 for new fork-added TUs.
-Netflix-inherited C files remain C99-compatible and are migrated per-TU only when
+**Minimum version:** C23 (GCC ≥ 13 or Clang ≥ 17) / C++23 for new fork-added
+TUs.
+Netflix-inherited C files remain C99-compatible and are migrated per-TU only
+when
 a PR already touches the file.
 
 **Required toolchain:**
@@ -30,7 +42,8 @@ brew install llvm
 
 ## Go — production tooling
 
-**Used in:** `cmd/` (future: `cmd/vmafx-server`, `cmd/vmafx-mcp`, `cmd/vmafx-tune`)
+**Used in:** `cmd/` (`vmafx-controller`, `vmafx-mcp`, `vmafx-node`,
+`vmafx-operator`, `vmafx-ort-runner`, `vmafx-server`, `vmafx-tune`) and `pkg/`
 
 **Required version:** the exact version declared by `go.mod` (currently Go
 1.27.1). CI reads the same file through `actions/setup-go`.
@@ -85,8 +98,8 @@ cgo); platform- or tag-exclusive files need a matching qualified invocation.
 
 ## Rust — FFI bindings + feature-extractor pilots
 
-**Used in:** `bindings/rust/vmafx-sys` (FFI bindings crate),
-`core/src/feature/rust/` (optional pilot feature extractors)
+**Used in:** `bindings/rust/vmafx-sys` and `bindings/rust/vmafx` (FFI
+bindings crates), `core/src/feature/rust/` (optional pilot feature extractors)
 
 **Minimum version:** Rust stable (≥ 1.80 recommended; latest stable preferred)
 
@@ -112,15 +125,27 @@ cargo check --all   # or: make rust-build
 cargo test --all    # or: make rust-test
 ```
 
-The Rust workspace manifest is at `Cargo.toml` in the repo root.
-Members are added by per-sweep PRs (the foundation PR adds none).
+The Rust workspace manifest is at `Cargo.toml` in the repo root. Its members
+are `bindings/rust/vmafx-sys`, `bindings/rust/vmafx` and
+`core/src/feature/rust/tad`.
 
-## Python — ML training and dev scripts
+## Python: ML training and dev scripts
 
 **Used in:** `ai/` (PyTorch + Lightning), `tools/vmaf-tune/src/vmaftune/`,
 `mcp-server/vmaf-mcp/`, `scripts/`
 
-**Minimum version:** Python 3.11 (3.12 recommended)
+**Minimum version:** each package declares its own floor in its
+`pyproject.toml`:
+
+| Package | `requires-python` |
+|---|---|
+| repository root (`pyproject.toml`, tool configuration only) | `>=3.14` |
+| `ai/` | `>=3.11,<3.15` |
+| `tools/vmaf-tune/` | `>=3.10,<3.15` |
+| `dev-llm/` | `>=3.11` |
+| `python/`, `mcp-server/vmaf-mcp/` | `>=3.10` |
+
+CI installs Python 3.14 (`PYTHON_VERSION` in `build-config.env`).
 
 **Setup:**
 
@@ -132,39 +157,35 @@ editable installs for its independent distributions. See
 [python-test-orchestrator.md](python-test-orchestrator.md) for the `nox`
 per-package virtual environments.
 
-The canonical environment is the dev container (CLAUDE.md §12 r15);
-[`dev/Containerfile`](../../dev/Containerfile) (lines 1037–1047) is the
-authoritative install list. On the host, the verified recipe is:
+The canonical environment is the dev container (hard rule 12 of
+[agent-hard-rules.md](agent-hard-rules.md)); the `python-env` stage of
+[`dev/Containerfile`](../../dev/Containerfile) is the authoritative install
+list. On the host, the verified recipe is:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install "meson==1.12.0" ninja pre-commit pytest nox
+.venv/bin/pip install "meson==1.12.1" ninja pre-commit pytest nox
 .venv/bin/pip install -r python/requirements.txt
 .venv/bin/pip install -e python
 .venv/bin/pip install -e mcp-server/vmaf-mcp
 .venv/bin/pip install -e "tools/vmaf-tune[fast]"
 .venv/bin/pip install -e dev-llm
-# optional, heavy (PyTorch): .venv/bin/pip install -e "ai[dev]"   -- see dev/Containerfile:1040-1047
+# optional, heavy (PyTorch): .venv/bin/pip install -e "ai[dev]"
 ```
 
-Pinning `meson==1.12.0` matches the container and build tree: Meson build
-directories record the absolute path of the generator binary, so mismatching
-Meson executables break `ninja` re-generation.
+Pin Meson to the version in `requirements/locks/build.in` (currently
+`meson==1.12.1`). Meson build directories record the absolute path of the
+generator binary, so mismatching Meson executables break `ninja`
+re-generation.
 
 See [dev-mcp.md](dev-mcp.md) for the full dev-container setup which pins
 all Python dependencies in a stable environment.
 
-### Recovering a destroyed venv
+## GPU compute — CUDA / SYCL / HIP / Metal
 
-If `.venv` fails with `env: 'bash': Too many levels of symbolic links` or a
-`.venv -> .venv` self-loop, a legacy tracked `.venv` symlink (fixed in PR #1280)
-clobbered the environment. Remove the broken path (`rm -rf .venv`) and rerun
-the setup recipe above to recreate a clean virtualenv.
-
-## GPU compute — CUDA / SYCL / HIP / Metal / Vulkan GLSL
-
-**Used in:** `core/src/feature/{cuda,sycl,hip}/` and `core/src/{cuda,sycl}/`
+**Used in:** `core/src/feature/{cuda,sycl,hip,metal}/` and
+`core/src/{cuda,sycl,hip,metal}/`
 
 See the backend-specific guides:
 
@@ -181,13 +202,23 @@ See the backend-specific guides:
 | C / C++23 | clang-tidy, cppcheck, credential-safe Meson test runner | `.github/workflows/lint-and-format.yml` |
 | Go | `go fix -diff ./...` + `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
 | Rust | `cargo check --all` + `cargo test --all` | `.github/workflows/rust-ci.yml` |
-| Python | ruff + mypy strict + pytest | `.github/workflows/python-ci.yml` |
+| Python | ruff (pre-commit hooks) + mypy delta gate + pytest | `.github/workflows/lint-and-format.yml` (Python Lint), `.github/workflows/tests-and-quality-gates.yml` (pytest) |
 
 ## References
 
 - [ADR-0702](../adr/0702-vmafx-phase4-language-modernization.md) — language
   modernization umbrella
-- [ADR-0686](../adr/0686-vmafx-rebrand-aggressive-modernization.md) — parent rebrand
+- [ADR-0686](../adr/0686-vmafx-rebrand-aggressive-modernization.md) — parent
+  rebrand
   umbrella
 - [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702) —
   policy constraints
+
+## History
+
+### Recovering a destroyed venv (legacy symlink bug)
+
+If `.venv` fails with `env: 'bash': Too many levels of symbolic links` or a
+`.venv -> .venv` self-loop, a legacy tracked `.venv` symlink (fixed in PR #1280)
+clobbered the environment. Remove the broken path (`rm -rf .venv`) and rerun
+the setup recipe above to recreate a clean virtualenv.

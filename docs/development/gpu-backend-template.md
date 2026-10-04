@@ -1,20 +1,43 @@
 # GPU Backend Public-API Template
 
-When adding a new GPU backend (DirectML, OpenCL, a future
-ROCm replacement, …), follow the shape the existing four backends
-(`libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_hip.h`, `libvmaf_metal.h`)
-already share. This doc is the recipe — there is **no codegen**;
-the dedup-via-pattern lives here.
+This page is the recipe for the public C header of a new GPU backend
+(DirectML, OpenCL, a future ROCm replacement, ...). Follow the shape the
+existing four backends (`libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_hip.h`,
+`libvmaf_metal.h`) already share.
 
-> **Why no codegen?** A 2026-05-02 audit measured the four headers
-> at ~20 of ~200 lines truly shared (state lifecycle). The rest is
-> backend-specific feature surface (CUDA: preallocation; SYCL: DMABuf
-> / VA-surface / D3D11; HIP: ROCm kernels; Metal: IOSurface import).
-> Codegenning 10 % of each file would add a
-> build-system Python dependency for too little return. ADR-0239
-> chose pattern-doc over codegen.
+!!! note
+    There is **no codegen**; the dedup-via-pattern lives here. A 2026-05-02
+    audit measured the four headers at about 20 of about 200 lines truly
+    shared (state lifecycle). The rest is backend-specific feature surface
+    (CUDA: preallocation; SYCL: DMABuf / VA-surface / D3D11; HIP: ROCm
+    kernels; Metal: IOSurface import). Codegenning 10 % of each file would add
+    a build-system Python dependency for too little return. ADR-0239 chose
+    pattern-doc over codegen.
 
-## Shared lifecycle (every GPU backend ships these)
+## Files a new backend adds
+
+Work through this checklist; each item is detailed below or in the
+[add-gpu-backend skill](../../.claude/skills/add-gpu-backend/SKILL.md).
+
+1. A public header `core/include/libvmaf/libvmaf_<backend>.h` with the
+   [shared lifecycle](#shared-lifecycle).
+2. Optional header surfaces, only when the backend needs them:
+   [device enumeration](#optional-device-enumeration),
+   [availability probe](#optional-build-time-availability-probe),
+   [picture preallocation](#optional-picture-preallocation-surface-cuda-and-sycl),
+   [zero-copy import](#optional-zero-copy-hwaccel-import-paths).
+3. The backend's internal files under `core/src/<backend>/`, see
+   [Internal-side companion files](#internal-side-companion-files-not-in-this-header).
+4. A Meson option, per-feature kernels under `core/src/feature/<backend>/`,
+   and a CI workflow.
+5. Documentation under `docs/backends/` in the same PR (hard rule 7 in
+   [agent-hard-rules.md](agent-hard-rules.md)).
+6. A matching `ffmpeg-patches/` update when the public ABI changes, see
+   [Doxygen and ABI stability conventions](#doxygen-and-abi-stability-conventions).
+
+## Shared lifecycle
+
+Every GPU backend ships these three entry points and the state types:
 
 ```c
 typedef struct Vmaf<Backend>State Vmaf<Backend>State;
@@ -61,10 +84,9 @@ void vmaf_<backend>_state_free(Vmaf<Backend>State **state);
 
 ## Optional: device enumeration
 
-Backends whose device set is dynamic / runtime-detected (SYCL, HIP,
-Metal) ship a `_list_devices` helper that prints one line per
-device with ordinal + name + capability. Backends without a public enumeration
-contract skip this.
+Backends whose device set is dynamic or runtime-detected (SYCL, HIP, Metal)
+ship a `_list_devices` helper that prints one line per device with ordinal,
+name and capability. Backends without a public enumeration contract skip this.
 
 ```c
 /**
@@ -77,10 +99,9 @@ int vmaf_<backend>_list_devices(void);
 
 ## Optional: build-time availability probe
 
-Backends conditionally compiled via a meson option ship an
-`_available()` query so callers can branch on backend presence
-without linking against the symbol table directly. Currently
-shipped by HIP and Metal.
+Backends conditionally compiled through a Meson option ship an `_available()`
+query, so callers can branch on backend presence without linking against the
+symbol table directly. HIP and Metal ship it today.
 
 ```c
 /**
@@ -91,13 +112,13 @@ shipped by HIP and Metal.
 int vmaf_<backend>_available(void);
 ```
 
-## Optional: picture preallocation surface (CUDA / SYCL)
+## Optional: picture preallocation surface (CUDA and SYCL)
 
-When the backend wants callers to write directly into the buffers the
-kernel will read (avoiding a host → device staging copy), expose the
-preallocation pool. The shape mirrors the SYCL surface (the cleanest
-of the two; CUDA's `HOST_PINNED` is CUDA-allocator-specific and has
-no analogue elsewhere — don't replicate it):
+When the backend wants callers to write directly into the buffers the kernel
+will read (avoiding a host-to-device staging copy), expose the preallocation
+pool. The shape mirrors the SYCL surface, the cleaner of the two. CUDA's
+`HOST_PINNED` is specific to the CUDA allocator and has no analogue
+elsewhere, so do not replicate it.
 
 ```c
 enum Vmaf<Backend>PicturePreallocationMethod {
@@ -120,66 +141,81 @@ int vmaf_<backend>_preallocate_pictures(VmafContext *vmaf,
 int vmaf_<backend>_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
 ```
 
-The implementation MUST delegate to the backend-agnostic
-`VmafGpuPicturePool` (`core/src/gpu_picture_pool.{h,cpp}`) per
-ADR-0239 — do not reimplement the round-robin / mutex / unwind
-shape. Each backend supplies the alloc / free / synchronize callbacks
+!!! note
+    The fetch entry point is named differently today: SYCL uses
+    `vmaf_sycl_picture_fetch`, CUDA uses
+    `vmaf_cuda_fetch_preallocated_picture`. New backends use the SYCL name.
 
-- a per-pool cookie carrying its state pointer.
+The implementation MUST delegate to the backend-agnostic `VmafGpuPicturePool`
+(`core/src/gpu_picture_pool.{h,cpp}`) per ADR-0239. Do not reimplement the
+round-robin / mutex / unwind shape. Each backend supplies the alloc, free and
+synchronize callbacks and a per-pool cookie carrying its state pointer.
 
 ## Optional: zero-copy hwaccel import paths
 
-Backends with a path for *adopting* externally-decoded GPU memory
-(SYCL DMABuf / VA-surface / D3D11; Metal IOSurface) ship a separate
-import surface that varies enough per backend that no pattern is
-forced — design it backend-natively. Document the lifetime model
-(who owns the source handle, who owns the imported state, when it's
-safe to free the source).
+Some backends can adopt externally decoded GPU memory: SYCL (DMABuf,
+VA-surface, D3D11) and Metal (IOSurface). Each ships a separate import
+surface that varies enough per backend that no pattern is forced; design it
+backend-natively. Document the lifetime model: who owns the source handle, who
+owns the imported state, and when it is safe to free the source.
 
-## Doxygen + ABI stability conventions
+## Doxygen and ABI stability conventions
 
-- Every public function carries a Doxygen block with `@return` listing
-  every error code path, including `-ENOSYS` for the
-  built-without-backend case.
-- Configuration structs grow **additive only**. Zero-initialised
-  structs from older callers must continue to compile + run with
-  default behaviour. This is enforced project-wide; new fields go at
-  the end of the struct, never in the middle.
-- Opaque state types (`Vmaf<Backend>State`) are forward-declared in
-  the public header; their layout lives in
-  `core/src/<backend>/<backend>_internal.h` (or equivalent
-  per-backend internal header) so kernel TUs can read the device /
-  queue / allocator handles without crossing the public surface.
-- Public ABI changes (renames, removed entry points,
-  signature shape changes) are forbidden without an ADR + a
-  matching `ffmpeg-patches/` update per CLAUDE.md §12 r14.
+- Every public function carries a Doxygen block with `@return` listing every
+  error code path, including `-ENOSYS` for the built-without-backend case.
+- Configuration structs grow **additive only**. Zero-initialised structs from
+  older callers must keep compiling and running with default behaviour. This
+  is enforced project-wide; new fields go at the end of the struct, never in
+  the middle.
+- Opaque state types (`Vmaf<Backend>State`) are forward-declared in the public
+  header. Their layout lives in a backend-internal header or source file (see
+  the table below), so kernel translation units can read the device, queue and
+  allocator handles without crossing the public surface.
+- Public ABI changes (renames, removed entry points, signature shape changes)
+  are forbidden without an ADR and a matching `ffmpeg-patches/` update (hard
+  rule 11 in [agent-hard-rules.md](agent-hard-rules.md); see also
+  [FFmpeg patch automation](ffmpeg-patch-automation.md)).
 
 ## Internal-side companion files (NOT in this header)
 
-The corresponding backend-internal files follow their own pattern:
+The backend-internal files follow their own pattern under
+`core/src/<backend>/`. Files that exist today:
 
-```text
-core/src/<backend>/
-  common.{c,h}              # state init / device enumeration / queue setup
-  picture_<backend>.{c,h}   # buffer / picture allocation
-  dispatch_strategy.{c,h}   # per-feature dispatch helpers
-  <backend>_internal.h      # opaque struct layouts for kernel TUs
-```
+| Backend | Files |
+| --- | --- |
+| CUDA | `common.{c,h}`, `picture_cuda.{c,h}`, `dispatch_strategy.{c,h}`, `kernel_template.h`, `drain_batch.{c,h}`, `cuda_helper.cuh` |
+| HIP | `common.{c,h}`, `picture_hip.{c,h}`, `dispatch_strategy.{c,h}`, `kernel_template.{c,h}`, `hip_handle.h`, `shared_frame.{c,h}`, `stubs.c` |
+| Metal | `common.{h,mm}`, `picture_metal.{h,mm}`, `picture_import.mm`, `import.h`, `dispatch_strategy.{c,h}`, `kernel_template.{h,mm}`, `state_priv.h`, `stubs.c` |
+| SYCL | `common.{cpp,h}`, `picture_sycl.{cpp,h}`, `dispatch_strategy.{cpp,h}`, `dmabuf_import.{cpp,h}`, `d3d11_import.cpp` |
 
-The `gpu_picture_pool.{cpp,h}` round-robin is **shared** — every backend
-that wants a preallocation pool delegates to it (ADR-0239).
+The roles:
 
-The feature kernel host glue — what every `<feature>_<backend>.c`
-under `core/src/feature/<backend>/` ships — has its own boilerplate
-extraction in flight as PR4 of the GPU dedup sequence (T-GPU-DEDUP-3,
-~250/500 LOC shared per file × 10+ files × 3 backends).
+- `common.*`: state init, device enumeration and queue setup. The opaque
+  state layout lives here for CUDA (`common.h`) and SYCL (`common.cpp`), in
+  `hip_handle.h` for HIP and in `state_priv.h` for Metal. There is no
+  `<backend>_internal.h`.
+- `picture_<backend>.*`: buffer and picture allocation.
+- `dispatch_strategy.*`: per-feature dispatch helpers.
+- `kernel_template.*`: per-backend scaffolding for the lifecycle every
+  feature kernel repeats (streams, events, partial-init unwind), introduced by
+  [ADR-0246](../adr/0246-gpu-kernel-template.md). CUDA, HIP and Metal have
+  one; SYCL has none.
+
+The `gpu_picture_pool.{cpp,h}` round-robin is **shared**: every backend that
+wants a preallocation pool delegates to it (ADR-0239).
+
+The feature kernel host glue, which every `<feature>_<backend>.c` under
+`core/src/feature/<backend>/` ships, can build on the backend's
+`kernel_template` (for example `integer_motion_v2_cuda.c` includes the CUDA
+one).
 
 ## See also
 
-- [ADR-0239](../adr/0239-gpu-picture-pool-dedup.md) — backend-agnostic
-  GPU picture pool (PR2 of the dedup sequence).
-- [ADR-0250](../adr/0250-tiny-ai-extractor-template.md) — tiny-AI
-  extractor template (the model for "pattern-doc + shared helpers
-  rather than codegen").
-- [`core/include/libvmaf/AGENTS.md`](../../core/include/libvmaf/AGENTS.md)
-  — the public-headers-tree invariant note that points back here.
+- [ADR-0239](../adr/0239-gpu-picture-pool-dedup.md): backend-agnostic GPU
+  picture pool (PR2 of the dedup sequence).
+- [ADR-0246](../adr/0246-gpu-kernel-template.md): per-backend kernel
+  scaffolding templates.
+- [ADR-0250](../adr/0250-tiny-ai-extractor-template.md): tiny-AI extractor
+  template (the model for "pattern-doc + shared helpers rather than codegen").
+- [`core/include/libvmaf/AGENTS.md`](../../core/include/libvmaf/AGENTS.md):
+  the public-headers-tree invariant note that points back here.

@@ -14,28 +14,27 @@ compiler; CI builds with several, and the gap is where portability bugs live.
 
 ## Why it exists
 
-On 2026-09-07 a single branch shipped three portability breaks in one
-afternoon. All three were green under local gcc:
+Each portability break below was green under local gcc and cost a full CI
+round-trip. Because only one PR is in flight at a time, that is queue time
+for every other PR too: on 2026-09-07 a single branch shipped the first three
+breaks in one afternoon and held the merge window for about three hours.
 
-| What was written | Locally | In CI |
-| --- | --- | --- |
-| `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | the i686 lane of the time could not compile it (that lane is retired: the fork is 64-bit only, ADR-1258) |
-| `__declspec(align((x)))` | gcc never compiles the MSVC branch | `Windows MSVC+CUDA` → C2059 on every use; `align()` needs a literal |
-| `__attribute__(noinline)` | gcc accepts the single paren | `Ubuntu clang`, `clang+DNN` and four Sanitizer lanes fail to compile |
-| `nullptr` in a `.c` file | gcc and clang accept it under `-std=c23` | `Windows MSVC+CUDA` → C2065 at every site; ADR-1138 keeps C TUs on `NULL` |
-| `static const double` used in a `static` aggregate initialiser | no diagnostic at all, even with `-pedantic-errors -Weverything` | `Windows MSVC+CUDA` → C2099, then cascading C2440s as the members shift |
-| `M_PI` in a new test file | glibc exposes it because meson passes `-D_GNU_SOURCE` | `Windows MinGW64` → `'M_PI' undeclared`; MinGW ignores `_GNU_SOURCE` and `-std=c23` sets `__STRICT_ANSI__` |
-| `const ulong half = ...` in a `.metal` shader | the C / CUDA / HIP twins it was ported from have no such reserved name | `macOS Clang+Metal` → `cannot combine with previous 'type-name' declaration specifier`; `half` is MSL's 16-bit float type |
+| # | What was written | Locally | In CI |
+| --- | --- | --- | --- |
+| 1 | `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | the i686 lane of the time could not compile it (that lane is retired: the fork is 64-bit only, ADR-1258) |
+| 2 | `__declspec(align((x)))` | gcc never compiles the MSVC branch | `Windows MSVC+CUDA` → C2059 on every use; `align()` needs a literal |
+| 3 | `__attribute__(noinline)` | gcc accepts the single paren | `Ubuntu clang`, `clang+DNN` and four Sanitizer lanes fail to compile |
+| 4 | `nullptr` in a `.c` file | gcc and clang accept it under `-std=c23` | `Windows MSVC+CUDA` → C2065 at every site; ADR-1138 keeps C TUs on `NULL` |
+| 5 | `static const double` used in a `static` aggregate initialiser | no diagnostic at all, even with `-pedantic-errors -Weverything` | `Windows MSVC+CUDA` → C2099, then cascading C2440s as the members shift |
+| 6 | `M_PI` in a new test file | glibc exposes it because meson passes `-D_GNU_SOURCE` | the MinGW lane (now `Windows UCRT64`) → `'M_PI' undeclared`; MinGW ignores `_GNU_SOURCE` and `-std=c23` sets `__STRICT_ANSI__` |
+| 7 | `const ulong half = ...` in a `.metal` shader | the C / CUDA / HIP twins it was ported from have no such reserved name | `macOS Clang+Metal` → `cannot combine with previous 'type-name' declaration specifier`; `half` is MSL's 16-bit float type |
 
-The last three are from the same evening: PR #1340's new test file carried the
-first two (21 errors on `Windows MSVC+CUDA`), and PR #1342's carried the third.
+Rows 5 to 7 are from the same evening. PR #1340's new test file carried
+rows 5 and 6 (21 errors on `Windows MSVC+CUDA`), and PR #1342's carried
+row 7. Row 5 arrived on the same branch as row 4.
+
 All are new files added by a PR, which is the pattern: fresh code is where
-portable-looking constructs that exactly one lane rejects get written. The
-fourth arrived on the same branch as the third.
-
-Each cost a full CI round-trip. Because only one PR is in flight at a time,
-that is queue time for every other PR too — the branch held the merge window
-for about three hours.
+portable-looking constructs that exactly one lane rejects get written.
 
 ## Stages
 
@@ -44,7 +43,7 @@ for about three hours.
 | `gcc` | Ubuntu gcc(+DNN) | the baseline build and fast tests |
 | `clang` | Ubuntu clang(+DNN) | clang-only syntax; gcc is far more permissive about attributes and extensions |
 | `msvcism` | Windows MSVC+CUDA / +SYCL | constructs MSVC rejects, checked statically so no MSVC is needed |
-| `sanitizers` | Sanitizers (address) / (undefined) | UB the plain build hides |
+| `sanitizers` | Sanitizers (address) / (undefined) | UB the plain build hides (the required `Sanitizers (thread)` context is CI-only) |
 | `tidy` | Tidy Changed | clang-tidy on the touched files, using the workflow's own exclusion list |
 | `cppcheck` | Cppcheck | cppcheck's findings |
 
@@ -70,7 +69,7 @@ stage that cries wolf is a stage people learn to ignore.
 
 ## What it does not cover
 
-`Windows MinGW64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no
+`Windows UCRT64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no
 local equivalent here. `msvcism` is a set of pattern matches plus one small
 scanner (`scripts/dev/find-nonconst-static-init.py`) over known rejection
 classes, not a compiler — `Windows MSVC+*` remains the authority. For HIP and

@@ -19,23 +19,25 @@ grouped dependency-update PRs on the configured weekday schedule.
 
 ## Merge policy during release candidates
 
-Ordinary Renovate and other version-update pull requests are **not frozen**
-during any release candidate, RC1 through RC9. Merge them when the
-repository's normal required checks, review, digest/pin policy, and
-component-specific validation pass.
-Security updates are prioritised, but they are not the only version changes
-allowed. The strict dependency-only classification in
-[ADR-1152](../adr/1152-dependency-pr-gate-exemption.md) exempts qualifying bot
-PRs from documentation-process gates only; it does not waive build, test,
-security, or review requirements.
+Ordinary Renovate and other version-update pull requests are not frozen during
+any release candidate, RC1 through RC8. Merge them when the repository's normal
+required checks, review, digest and pin policy, and component-specific
+validation pass.
 
-Major or coordinated CUDA, ROCm, oneAPI, compiler, action, and base-image
-updates retain their existing specialised smoke and lockstep checks. Candidate
-acceptance is bound to an exact commit and artifact under
-[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md), so a
-version update merged after evidence collection requires the affected checks,
-benchmarks, or model validation to be rerun. Revalidation replaces a blanket
-version freeze; it does not permit stale evidence.
+- **Not frozen.** Security updates are prioritised, but they are not the only
+  version changes allowed. The strict dependency-only classification in
+  [ADR-1152](../adr/1152-dependency-pr-gate-exemption.md) exempts qualifying
+  bot PRs from documentation-process gates only; it does not waive build, test,
+  security or review requirements.
+- **Specialised checks stay.** Major or coordinated CUDA, ROCm, oneAPI,
+  compiler, action and base-image updates retain their existing smoke and
+  lockstep checks.
+- **Revalidate after a merge.** Candidate acceptance is bound to an exact
+  commit and artifact under
+  [ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md), so a
+  version update merged after evidence collection requires the affected
+  checks, benchmarks or model validation to be rerun. Revalidation replaces a
+  blanket version freeze; it does not permit stale evidence.
 
 ## Configuration
 
@@ -49,6 +51,17 @@ App reads it on every webhook. Top-level knobs:
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
 | `minimumReleaseAge` | `3 days` |
+
+## Disable / rollback to Dependabot
+
+To switch back to Dependabot (for example when the Renovate App is unavailable):
+
+1. Uninstall the App at <https://github.com/settings/installations>.
+2. Rename `.github/dependabot.yml.disabled` → `.github/dependabot.yml`.
+
+## Maintainer notes
+
+Design notes for people who edit `renovate.json`.
 
 ### Root Python requirement
 
@@ -78,17 +91,12 @@ python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.
 
 The pre-commit hook runs the same tests locally and in CI. Every custom pattern
 must select a tracked input and exclude archived copies and backup suffixes.
-The base-image manager must cover `build-config.env` and all eight Dockerfile
+The base-image manager must cover `build-config.env` and all nine Dockerfile
 mirrors whose built-in Docker manager is disabled. Keep those two lists aligned
 when adding a consumer. These tests check selection, not whether a scheduled
 Renovate run has opened an update PR. The
 [research note](../research/renovate-file-pattern-delimiters.md) records the
 installed Renovate matcher used to reproduce the defect.
-
-## Disable / rollback to Dependabot
-
-1. Uninstall the App at `https://github.com/settings/installations`.
-2. Rename `.github/dependabot.yml.disabled` → `.github/dependabot.yml`.
 
 ## Migration from self-hosted (2026-05-10)
 

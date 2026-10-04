@@ -28,7 +28,8 @@ Everything else derives from it.
 | `vmaf-roi-score` | `vmafroiscore.defaultmodel.DEFAULT_MODEL` (mirror) |
 
 The three mirrors exist because those components deliberately do not link
-libvmaf — forcing cgo on `vmafx-tune`, `pkg/fast`, `pkg/bisect` and `pkg/corpus`,
+libvmaf — forcing cgo on `vmafx-tune`, `pkg/fast`, `pkg/bisect` and
+`pkg/corpus`,
 or a C extension on the two Python tools, purely to learn a string would make
 them unbuildable without the C library. They cannot drift: the gate below
 compares each one against the header on every `make lint` and every commit.
@@ -55,35 +56,47 @@ pre-commit hook. It fails when:
 - any component reintroduces its own hardcoded fallback model name.
 
 It is itself tested, in both directions, by
-`scripts/ci/tests/test-default-model-single-source.sh` (22 cases).
+`scripts/ci/tests/test-default-model-single-source.sh`, which has cases for
+every rule below.
 
 The gate matches enumerated *fallback spellings* rather than the bare literal,
 because almost every occurrence of `"vmaf_v0.6.1"` in the tree is a doc-comment
-or a model-name lookup table and banning those would make the gate unusable.
-The forms it knows are: assignment, a `key: value` default, `return`,
-`getattr(x, y, "...")`, `.get(..., "...")`, `or "..."`, `||  "..."`, and Go
-flag registrations (`StringVar` / `String` / `StringP`). Comments are ignored.
+or a model-name lookup table, and banning those would make the gate unusable.
+Comments are ignored. The forms it knows:
 
-There is deliberately **no** "is this a comment?" heuristic. An earlier version
-had one and it was worse than the problem it solved: loosely anchored, it
-classified `const char *model = "vmaf_v0.6.1";` as a comment — the `*` of an
-ordinary pointer declaration — and blinded the gate to the most idiomatic C
-spelling of a hardcoded default. Tightly anchored, it still swallowed
-`*dest = "..."` and `#define FALLBACK ...`, and it could never handle prose
-inside a Python docstring. Instead, every pattern requires real
-assignment / return / call syntax immediately around the literal, which prose
-does not have. There are test cases for each of those, in both directions.
+| Form | Example shape |
+| --- | --- |
+| Assignment | `model = "vmaf_v0.6.1"` |
+| `key: value` default | `model: "vmaf_v0.6.1"` |
+| `return` | `return "vmaf_v0.6.1"` |
+| Lookup with a default | `getattr(x, y, "...")`, `.get(..., "...")`, `or "..."`, `\|\| "..."` |
+| Go flag registration | `StringVar`, `String`, `StringP` |
 
-Two spellings are knowingly **not** caught, because `git grep` is line-oriented
-and neither is something a contributor writes by accident: a literal split
-across lines, and one built by concatenation (`"vmaf_v0" + ".6.1"`).
+Two spellings are knowingly not caught, because `git grep` is line-oriented and
+neither is something a contributor writes by accident: a literal split across
+lines, and one built by concatenation (`"vmaf_v0" + ".6.1"`).
 
 **If you invent a new way to spell "fall back to a literal model", add it to
-both the gate and its test.** Enumeration can miss a spelling. Adversarial
-review of the first implementation found `getattr(args, attr, "vmaf_v0.6.1")`
-shipping in `vmaftune/cli.py`, invisible to the original patterns; a second
-review found the comment-filter flaw above and three more idioms
-(a Python ternary, a C ternary, and `os.getenv`).
+both the gate and its test.** Enumeration can miss a spelling.
+
+!!! note "Why enumerated spellings and no comment heuristic"
+    There is deliberately no "is this a comment?" heuristic. An earlier
+    version had one and it was worse than the problem it solved: loosely
+    anchored, it classified `const char *model = "vmaf_v0.6.1";` as a comment
+    (the `*` of an ordinary pointer declaration) and blinded the gate to the
+    most idiomatic C spelling of a hardcoded default.
+
+Tightly anchored, that heuristic still swallowed `*dest = "..."` and
+`#define FALLBACK ...`, and it could never handle prose inside a Python
+docstring. Instead, every pattern requires real assignment, return or call
+syntax immediately around the literal, which prose does not have. There are
+test cases for each of those, in both directions.
+
+Adversarial review of the first implementation found
+`getattr(args, attr, "vmaf_v0.6.1")` shipping in `vmaftune/cli.py`,
+invisible to the original patterns; a second review found the
+comment-filter flaw above and three more idioms (a Python ternary, a C
+ternary and `os.getenv`).
 
 ### Pinning a model on purpose
 
@@ -106,8 +119,7 @@ Changing the default changes the score every user gets without `--model`. That
 is the real cost, and it is why the value moved once, deliberately, before
 1.0.0 (see [ADR-1169](../adr/1169-default-model-v1-0-16.md)).
 
-Exactly one Netflix golden test notices, and **not** in the way you would
-expect:
+Exactly one Netflix golden test notices, and not in the way you would expect:
 
 ```text
 python/test/vmafexec_test.py::VmafexecQualityRunnerTest
@@ -115,12 +127,14 @@ python/test/vmafexec_test.py::VmafexecQualityRunnerTest
 ```
 
 It fails with `KeyError('VMAFEXEC_vif_scale0_score')`, not an
-`assertAlmostEqual` mismatch. Its assertions are values for the **v0.6.1
-feature family** (`vif_scale0..3`, `motion2`), and a different model family
-does not emit those features at all. So the failure is about which features
-exist, not about a number drifting — which is what made it resolvable without
-touching a golden value: the test now names `vmaf_v0.6.1` explicitly, which
-reproduces its previous invocation byte-for-byte.
+`assertAlmostEqual` mismatch:
+
+- Its assertions are values for the v0.6.1 feature family (`vif_scale0..3`,
+  `motion2`), and a different model family does not emit those features at all.
+- So the failure is about which features exist, not about a number drifting.
+- That is what made it resolvable without touching a golden value: the test
+  now names `vmaf_v0.6.1` explicitly, which reproduces its previous invocation
+  byte for byte.
 
 If you change the default again, expect the same shape of failure, and resolve
 it the same way. **Never** edit an `assertAlmostEqual` value
@@ -135,7 +149,7 @@ Measured on the standard 576x324 golden pair:
 | Default model | VMAF (mean) |
 | --- | --- |
 | `vmaf_v0.6.1` (upstream, and this fork before ADR-1169) | 76.667831 |
-| `vmaf_v1.0.16_3d0h` (this fork now) | 82.816059 |
+| `vmaf_v1.0.16_3d0h` (this fork now) | 82.816060 |
 
 Always run the golden gate after changing the value:
 
@@ -143,7 +157,8 @@ Always run the golden gate after changing the value:
 make test-netflix-golden
 ```
 
-If your virtualenv lacks pytest, run the five files directly:
+If your virtualenv lacks pytest, run the five Netflix golden test files
+directly instead:
 
 ```bash
 PYTHONPATH=$PWD/python CUDA_VISIBLE_DEVICES= python3 -m pytest \

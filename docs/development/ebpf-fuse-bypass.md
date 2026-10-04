@@ -1,64 +1,63 @@
 # eBPF FUSE bypass for vmafx-node rclone mounts
 
-vmafx-node fetches video clips via an rclone HTTP-serve FUSE mount.  For clips
-that are already cached locally by rclone, reads that go through the FUSE daemon
-add an unnecessary round-trip that inflates p50 latency by ~37× compared to
-direct host-file reads.  The eBPF bypass removes that round-trip for warm-cache
-reads.
+!!! warning "Status: library-only prototype, not wired into vmafx-node"
+    The loader package `cmd/vmafx-node/bpf` exists and has its own tests, but
+    the `vmafx-node` binary does not import or call it (`cmd/vmafx-node/main.go`
+    says it "is not wired into this graph"). Setting `VMAFX_EBPF_BYPASS=1` on
+    the node therefore changes nothing; only the package's own tests read it.
+
+The real BPF objects are not committed either: the tree holds a compile-time
+stub, so the loader's `Start()` returns an error until `go generate` has
+produced them. This page documents the design
+([ADR-0779](../adr/0779-ebpf-fuse-bypass.md)) and the parts that exist; the
+sections marked "not wired yet" describe the intended behaviour.
+
+vmafx-node fetches video clips through an rclone HTTP-serve FUSE mount. For
+clips that rclone has already cached locally, a read through the FUSE daemon
+adds a round-trip. A prototype measurement put the p50 latency of FUSE reads at
+about 37 times that of direct host-file reads (Research-0733). The eBPF bypass
+is designed to remove that round-trip for warm-cache reads.
 
 ## How it works
 
-The bypass is a probe-only design: an eBPF tracepoint program (`rclone_bypass.bpf.c`)
-intercepts `openat`/`close` syscalls and records, in a BPF hash map, every file
-descriptor opened under the configured mount prefix (`/rclone-mount/` by default).
-The Go-side loader (`cmd/vmafx-node/bpf/bypass_loader.go`) reads that map and
-keeps an in-process cache of bypass-eligible FDs.  The actual read bypass
-is then implemented in the application: instead of `read(2)` on the FUSE-backed
-FD, the node opens the corresponding backing cache file directly.
+The bypass is a probe-only design. The eBPF program never modifies kernel
+memory and never intercepts a data path; it only observes. The four steps:
 
-The eBPF program does **not** modify any kernel memory or intercept data paths —
-it is purely observational.
+1. An eBPF tracepoint program (`rclone_bypass.bpf.c`) watches `openat` and
+   `close` and records, in a BPF hash map, every file descriptor opened under
+   the configured mount prefix (`/rclone-mount/` by default).
+2. The Go-side loader (`cmd/vmafx-node/bpf/bypass_loader.go`) reads that map
+   and keeps an in-process cache of bypass-eligible descriptors.
+3. For a cached descriptor, the application is meant to open the corresponding
+   backing cache file directly instead of calling `read(2)` on the FUSE-backed
+   descriptor. **Not wired yet:** no code under `cmd/vmafx-node/` performs this
+   step today.
+4. Anything not in the cache falls through to FUSE as before.
 
-## Enabling the bypass
+## Requirements (when wired)
 
-Set the environment variable before starting vmafx-node:
-
-```bash
-export VMAFX_EBPF_BYPASS=1
-```
-
-The feature is **off by default**.  It requires:
+The loader's own requirements, enforced by `Start()`:
 
 - Linux kernel 5.15 or newer (BPF CO-RE, ring buffer, `bpf_d_path`).
-- `CAP_BPF` (Linux 5.8+) or `CAP_SYS_ADMIN`.
+- `CAP_BPF` (Linux 5.8 and newer) or `CAP_SYS_ADMIN`.
 - `/sys/kernel/btf/vmlinux` mounted in the container.
 
-In Kubernetes, add to the pod security context:
+The feature would be off by default, switched on by the environment variable
+`VMAFX_EBPF_BYPASS=1` read by `bpf.Enabled()`. No Helm value exists for it; a
+Kubernetes deployment would need the capability or `privileged: true` added to
+the pod security context by hand.
 
-```yaml
-securityContext:
-  capabilities:
-    add: ["CAP_BPF"]
-  # or for older kernels / broader compatibility:
-  privileged: true
-env:
-  - name: VMAFX_EBPF_BYPASS
-    value: "1"
-```
+## Mount prefix
 
-## Custom mount prefix
+The loader watches `/rclone-mount/` unless told otherwise. The Go constructor
+`bpf.New(mountPrefix, log)` takes the prefix as an explicit argument. There is
+no environment variable for it: an earlier revision of this page named
+`VMAFX_EBPF_MOUNT_PREFIX`, which no code reads.
 
-By default the loader watches `/rclone-mount/`.  Override with:
+## Smoke test and benchmark
 
-```bash
-export VMAFX_EBPF_MOUNT_PREFIX=/my-custom-mount/
-```
-
-(The Go `bpf.New()` constructor accepts an explicit prefix as well.)
-
-## Smoke test / benchmark
-
-Run the latency comparison (requires a live rclone mount and `CAP_BPF`):
+The package's smoke test compares read latency with and without the bypass. It
+needs a live rclone mount and `CAP_BPF`:
 
 ```bash
 VMAFX_EBPF_BYPASS=1 \
@@ -67,7 +66,7 @@ go test -v -run TestReadLatencyComparison -timeout 120s \
   ./cmd/vmafx-node/bpf/
 ```
 
-Expected output:
+A sample of the expected output (illustrative numbers):
 
 ```text
 baseline p50 read latency (no bypass): 370ms
@@ -75,13 +74,14 @@ bypass p50 read latency:               10ms
 speedup ratio (baseline/bypass):       37.0x
 ```
 
-## Build / regenerating BPF objects
+## Build and regenerating BPF objects
 
-The BPF object is compiled from `cmd/vmafx-node/bpf/rclone_bypass.bpf.c` using
-`clang` + `bpf2go`.  A compile-time stub (`rclone_bypass_stub.go`) lets the
-package build in CI without the BPF toolchain.
+The BPF object is compiled from `cmd/vmafx-node/bpf/rclone_bypass.bpf.c` with
+`clang` and `bpf2go`. A compile-time stub (`rclone_bypass_stub.go`) lets the
+package build in CI without the BPF toolchain; it is what the tree contains
+today.
 
-To regenerate after modifying the BPF C source:
+To generate the real objects:
 
 ```bash
 # Install prerequisites (Debian/Ubuntu)
@@ -91,23 +91,25 @@ apt-get install -y clang libbpf-dev linux-headers-$(uname -r)
 go generate ./cmd/vmafx-node/bpf/
 ```
 
-Commit both the updated `.c` file and the newly generated `rcloneBypass_bpf*.go`
-/ `rcloneBypass_bpf*.o` files.
+The generated `rcloneBypass_bpf*.go` and `rcloneBypass_bpf*.o` files are not in
+the tree yet. Once the bypass is wired, commit them together with the updated
+`.c` file.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
 | Kernel version < 5.15 | `Start()` returns a clear error; bypass is skipped gracefully |
-| Missing `CAP_BPF` | Same — error logged, node continues without bypass |
+| Missing `CAP_BPF` | Same: error logged, node continues without bypass |
 | BPF verifier rejects program after kernel upgrade | `VMAFX_EBPF_BYPASS` off by default; upgrade testing required before enabling |
 | Mount prefix misconfiguration | All reads fall through to FUSE as before; no data corruption possible |
-| Container security policy blocks BPF | Documented above; requires explicit opt-in in Helm values |
+| Container security policy blocks BPF | Needs `CAP_BPF` or a privileged container; no Helm value exists yet |
 
 ## See also
 
-- [ADR-0779](../adr/0779-ebpf-fuse-bypass.md) — design rationale and alternatives.
-- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) —
-  Phase 4b platform overview.
-- [ADR-0713](../adr/0713-vmafx-node-impl.md) — vmafx-node worker binary.
-- Research-0733 — rclone FUSE overhead profiling (37× p50 measurement).
+- [ADR-0779](../adr/0779-ebpf-fuse-bypass.md): design rationale and
+  alternatives.
+- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md): Phase 4b
+  platform overview.
+- [ADR-0713](../adr/0713-vmafx-node-impl.md): vmafx-node worker binary.
+- Research-0733: rclone FUSE overhead profiling (37x p50 measurement).

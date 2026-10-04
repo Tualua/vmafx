@@ -1,9 +1,21 @@
 <!-- markdownlint-disable MD060 -->
 # GPU Scheduling in Kubernetes
 
-This guide explains how VMAFX maps GPU vendor device-plugins to Kubernetes
-resource limits, selects an active backend, and diagnoses pending pods caused
-by insufficient GPU resources.
+Use this guide to install the GPU device-plugin for your vendor, to pick the
+backend the chart selects, and to diagnose pods stuck in `Pending` for lack of
+GPU resources. It maps each GPU vendor to a Kubernetes resource limit and a
+VMAFX backend.
+
+## Prerequisites
+
+- A cluster with at least one GPU node and the vendor driver installed.
+- Node labels from [Node Feature
+  Discovery](https://kubernetes-sigs.github.io/node-feature-discovery/)
+  (NFD) for Intel nodes, and from GPU Feature Discovery (GFD, shipped with the
+  NVIDIA device plugin) if you use the `nvidia.com/gpu.present` affinity
+  example below.
+- Helm, to install the VMAFX chart (see the
+  [Kubernetes deployment guide](k8s-deployment.md)).
 
 ## How GPU device-plugins work
 
@@ -17,8 +29,17 @@ VMAFX uses one device-plugin per GPU vendor:
 | Vendor | Resource key | Backend | Plugin daemonset |
 |---|---|---|---|
 | NVIDIA | `nvidia.com/gpu` | CUDA | [k8s-device-plugin](https://github.com/NVIDIA/k8s-device-plugin) |
-| AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/RadeonOpenCompute/k8s-device-plugin) |
+| AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/ROCm/k8s-device-plugin) |
 | Intel | `gpu.intel.com/i915` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |
+
+The Intel resource key depends on the kernel driver: the plugin advertises
+`gpu.intel.com/i915` for the `i915` driver and `gpu.intel.com/xe` for the `xe`
+driver, which the newest Intel GPUs (Xe2 or newer) use. The chart requests
+only `gpu.intel.com/i915` (`deploy/helm/vmafx/templates/_helpers.tpl`), so a
+pod on a node that advertises only `gpu.intel.com/xe` stays `Pending`. See the
+plugin's
+[GPU plugin README](https://github.com/intel/intel-device-plugins-for-kubernetes/tree/main/cmd/gpu_plugin)
+for the resource names it advertises.
 
 ## Backend selection
 
@@ -26,7 +47,8 @@ Set `gpu.vendor` to the physical GPU vendor. The chart requests that vendor's
 device-plugin resource and sets `VMAFX_BACKEND` to `cuda`, `hip`, `sycl`, or
 `cpu` accordingly.
 
-The Vulkan backend was removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md).
+The Vulkan backend was removed in
+[ADR-0726](../adr/0726-drop-vulkan-backend.md).
 It is not available through any vendor setting and the VMAFX images do not ship
 it as a fallback backend.
 
@@ -36,8 +58,11 @@ it as a fallback backend.
 
 ```bash
 kubectl apply -f \
-  https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.14.5/nvidia-device-plugin.yml
+  https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.20.1/deployments/static/nvidia-device-plugin.yml
 ```
+
+`v0.20.1` was the latest release when this page was checked; pin the release
+you have validated against your driver version.
 
 Verify:
 
@@ -50,7 +75,7 @@ kubectl describe node <gpu-node> | grep -A 5 "nvidia.com/gpu"
 
 ```bash
 kubectl apply -f \
-  https://raw.githubusercontent.com/RadeonOpenCompute/k8s-device-plugin/master/k8s-ds-amdgpu-dp.yaml
+  https://raw.githubusercontent.com/ROCm/k8s-device-plugin/master/k8s-ds-amdgpu-dp.yaml
 ```
 
 Verify:
@@ -163,7 +188,9 @@ kubectl get nodes --show-labels | grep -o "gpu\.[^,=]*=[^,]*"
 ## Node affinity and tolerations
 
 GPU nodes are commonly tainted to prevent non-GPU pods from landing on them.
-A typical NVIDIA taint: `nvidia.com/gpu=present:NoSchedule`.
+A typical NVIDIA taint: `nvidia.com/gpu=present:NoSchedule`. The
+`nvidia.com/gpu.present` node label used below is set by GPU Feature
+Discovery, not by the chart.
 
 To ensure VMAFX is scheduled on GPU nodes:
 

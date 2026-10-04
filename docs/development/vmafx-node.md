@@ -2,9 +2,10 @@
 # vmafx-node: worker node image
 
 `vmafx-node` is the VMAFX worker binary and its container image. Each node
-connects to the controller, receives encoding jobs, runs `ffmpeg` for encoding,
-and reports scores back. This document covers the node's ffmpeg setup, build,
-codec matrix, and operational considerations.
+connects to the controller, receives encoding jobs, runs `ffmpeg` for
+encoding and reports scores back. This page shows how to build and check the
+image first, then covers the ffmpeg setup, codec matrix and environment
+variables.
 
 See [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) (Phase 4b
 umbrella) and [ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md) (ffmpeg
@@ -34,9 +35,14 @@ docker run --rm --entrypoint /usr/local/bin/ffmpeg \
 | Target | GPU scoring runtime | FFmpeg encoders | Use case |
 |---|---|---|---|
 | `node-cpu` | none | software only | Development, CI, low-volume workloads |
-| `node-cuda` | NVIDIA (CUDA 13.3.1) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
-| `node-rocm` | AMD (ROCm 7.2.4) | software only | GPU-accelerated VMAF scoring on AMD pools |
-| `node-sycl` | Intel (oneAPI 2025.3.1) | software only | GPU-accelerated VMAF scoring on Intel Arc / Xe pools |
+| `node-cuda` | NVIDIA (CUDA runtime from the digest-pinned `CUDA_RUNTIME` image) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
+| `node-rocm` | AMD (ROCm 10.0.0) | software only | GPU-accelerated VMAF scoring on AMD pools |
+| `node-sycl` | Intel (oneAPI runtime 2026.1) | software only | GPU-accelerated VMAF scoring on Intel Arc / Xe pools |
+
+The runtime versions and image digests come from `build-config.env`
+(`CUDA_RUNTIME`, `ROCM_VERSION`, `ONEAPI_VERSION`); `docker/Dockerfile.node`
+carries mirrored `ARG` defaults that `make base-images-sync` keeps in
+step. Edit the config, not the Dockerfile.
 
 All four variants carry **the same ffmpeg binary** (built in the shared
 `ffmpeg-builder-cpu` stage). The CUDA / ROCm / SYCL variants differ only in
@@ -67,13 +73,19 @@ behind pinning to a tag rather than a rolling release branch.
 
 ## ffmpeg-patches
 
-The node image applies the fork's full 19-patch series from `ffmpeg-patches/`
+The node image applies the fork's full 20-patch series from `ffmpeg-patches/`
 during the `ffmpeg-builder-cpu` stage. The patches:
 
-- Carry the fork's libvmaf selector/filter integrations plus `vmaf_pre` and
+- Carry the fork's libvmaf selector/filter integrations (SYCL, CUDA, HIP and
+  Metal selectors, the SYCL and Metal filters) plus `vmaf_pre` and
   `libvmaf_tune`; the node's shared FFmpeg build enables only CPU libvmaf.
 - Add the vmaf-tune `qpfile` AVOption to libx264 / libsvtav1.
 - Wire the `-pass-autotune` and `-vmaf-profile` CLI glue.
+- Read the pelorus sidedata (0017) and honour the retryable libvmaf close
+  ownership (0020).
+- Patches 0004 and 0006 are no-op compatibility shims for the removed
+  Vulkan backend (ADR-0726, ADR-0860); they stay in the series so later
+  patches apply cleanly.
 - Keep the pinned FFmpeg sources warning-clean under GCC 14 and GCC 16 without
   removing VVC or another codec and without compiler-warning suppressions.
 - Resolve annotated release tags through the shared peeled-commit checkout
@@ -132,43 +144,60 @@ clear error message.
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the ffmpeg binary. The Docker image sets this to `/usr/local/bin/ffmpeg`. |
 | `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address. |
 | `VMAFX_LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR. |
-| `VMAFX_BACKEND` | unset (cpu) | GPU backend hint passed to libvmaf scoring. Set automatically in node-cuda/rocm/sycl variants. |
+| `VMAFX_BACKEND` | `cpu` | Scoring backend label for the executor. Set automatically in node-cuda/rocm/sycl variants. |
 | `VMAFX_MODEL_DIR` | `/usr/local/share/vmafx/model` | Directory of VMAF model JSON/ONNX files. |
+| `VMAFX_VMAF_BINARY` | binary lookup | Path to the `vmaf` CLI binary. |
+| `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint` or `json`. |
+| `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar. |
+
+`VMAFX_NODE_ADDR` was removed (ADR-1119); use `VMAFX_GRPC_LISTEN`.
 
 ## Building locally
 
-```bash
-# CPU variant (no GPU SDK required)
-docker buildx build --target node-cpu \
-  -f docker/Dockerfile.node \
-  -t vmafx-node:local .
+Build time is about 10 to 15 minutes on a standard developer machine,
+dominated by the ffmpeg compile. Use `--cache-from` or the BuildKit layer
+cache to speed up later builds.
 
-# CUDA variant (references the pinned CUDA 13.3.1 runtime image)
-docker buildx build --target node-cuda \
-  -f docker/Dockerfile.node \
-  -t vmafx-node:local-cuda .
-```
+1. The CPU variant (no GPU SDK required) is the build in the
+   [Quick start](#quick-start).
 
-Build time is approximately 10–15 minutes on a standard developer machine
-(dominated by the ffmpeg compile). Use `--cache-from` or BuildKit layer cache
-to speed up subsequent builds.
+2. Build the CUDA variant (takes the CUDA runtime from the pinned
+   `CUDA_RUNTIME` image):
 
-The libvmaf build stage intentionally installs both `xxd` and `make`. `xxd`
-embeds the default models; without it Meson can complete while producing a
-library with no built-in models. GCC uses `make` to execute the configured LTO
-partitions in parallel. The stage preserves the `libvmaf.so` SONAME link chain
-and carries Meson's generated `libvmaf.pc`, whose version is the library
-interface (`3.0.0`) rather than the image/product tag. The root Go-server image
-uses the same staging contract.
+    ```bash
+    docker buildx build --target node-cuda \
+      -f docker/Dockerfile.node \
+      -t vmafx-node:local-cuda .
+    ```
 
-Every maintained FFmpeg build runs configure with `--fatal-warnings`, captures
-the compiler log, and fails if any GCC/Clang/NVCC warning diagnostic remains.
-This applies to the root CUDA image, `Dockerfile.ffmpeg`, the dev container,
-the node image, the hosted FFmpeg integration matrix, and the patch smoke
-harness. The ordinary hosted matrix applies only patch 0019, retaining its
-stock-surface compatibility purpose without compiling the known-warning source.
-A stable-tag or toolchain update must fix a new warning at its root; it must not
-weaken the scan, add a suppression, or disable the affected codec.
+## Image build internals
+
+These details matter when you change the Dockerfile.
+
+- **libvmaf stage.** It installs both `xxd` and `make`. `xxd` embeds the
+  default models; without it Meson can complete while producing a library
+  with no built-in models. GCC uses `make` to execute the configured LTO
+  partitions in parallel. The stage preserves the `libvmaf.so` SONAME link
+  chain and carries Meson's generated `libvmaf.pc`, whose version is the
+  library interface (`3.0.0`), not the image or product tag. The root
+  Go-server image uses the same staging contract.
+- **Warning scan.** Every maintained FFmpeg build runs configure with
+  `--fatal-warnings`, captures the compiler log and fails if any
+  GCC/Clang/NVCC warning diagnostic remains.
+  - Coverage: the root CUDA image, `Dockerfile.ffmpeg`, the dev container,
+    the node image, the hosted FFmpeg integration matrix and the patch
+    smoke harness.
+  - The ordinary hosted matrix applies only patch 0019, which keeps its
+    stock-surface compatibility purpose without compiling the
+    known-warning source.
+  - A stable-tag or toolchain update must fix a new warning at its root; it
+    must not weaken the scan, add a suppression or disable the affected
+    codec.
+- **Library closure.** The image build derives FFmpeg's non-glibc
+  shared-library closure from `ldd` inside the native build stage. This
+  avoids architecture-specific `/usr/lib/x86_64-linux-gnu` copies: an arm64
+  build resolves and stages its `aarch64-linux-gnu` libraries
+  automatically.
 
 ## Smoke tests
 
@@ -193,12 +222,9 @@ docker run --rm --entrypoint /usr/local/bin/vmaf \
   vmafx-node:local --version
 ```
 
-The image build derives FFmpeg's non-glibc shared-library closure from `ldd`
-inside the native build stage. This avoids architecture-specific
-`/usr/lib/x86_64-linux-gnu` copies: an arm64 build resolves and stages its
-`aarch64-linux-gnu` libraries automatically. The release workflow runs both
-the node's `--version`, `vmaf --version`, and `ffmpeg -version` in the
-published image without a success-masking fallback. Release builds inject the
+The release workflow runs the node's `--version`, `vmaf --version` and
+`ffmpeg -version` in the published image without a success-masking
+fallback. Release builds inject the
 published tag into `pkg/version.version`; `dev` identifies a non-release build.
 
 The full smoke-test sequence from the task brief (including Netflix golden
@@ -213,7 +239,8 @@ docker run --rm \
     --distorted  /data/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 \
     --pixel_format 420 --bitdepth 8
-# Expected VMAF score: ~76.668 (Netflix golden)
+# Expected pooled VMAF score with the default model: about 82.82
+# (the golden 76.66783 belongs to --model version=vmaf_v0.6.1)
 ```
 
 ## Relationship to dev container

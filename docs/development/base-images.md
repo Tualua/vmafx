@@ -18,15 +18,6 @@ make base-images-sync         # push it into every Dockerfile
 git diff                      # review, then commit both
 ```
 
-The ROCm builder and runtime source use AMD's released Ubuntu 26.04
-`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`.
-The `rocm-src` stage compiles and links a small HIP kernel after pruning the
-SDK, then runs its host-only entry point. This checks the compiler and loader
-without requiring an AMD GPU; device execution remains a separate test.
-The node runtime retains the vendor library directory structure when copying
-the HIP dependency closure into Debian 13. See the
-[26.04 verification](../research/rocm-2604-restoration-2026-09-08.md).
-
 `make base-images-sync` rewrites the `ARG` defaults in every Dockerfile from
 the config and then re-runs the check, so a clean run means the tree agrees
 with the config.
@@ -49,6 +40,8 @@ Two consequences worth knowing:
 - **CI can override any base** with `--build-arg RELEASE_RUNTIME_CC=…` without
   editing a Dockerfile — useful for testing a candidate base before pinning it.
 
+### The single-source gate
+
 The mirrored defaults are what would rot, so
 `scripts/ci/check-base-image-single-source.sh` fails the build if any of them
 drifts from the config. It runs in `make lint-sh` and as a pre-commit hook.
@@ -58,7 +51,7 @@ drifts from the config. It runs in `make lint-sh` and as a pre-commit hook.
 Pulling a library straight out of a vendor image looks harmless:
 
 ```dockerfile
-COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:… /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:<tag>@sha256:… /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 ```
 
 but that is a base-image pin — it decides which CUDA runtime the shipped image
@@ -77,13 +70,30 @@ rejects direct external `FROM` and `COPY --from` references with or without a
 digest: `alpine`, `alpine:latest` and `alpine@sha256:…` all need a centrally
 owned named stage. Instruction case, `--platform`, other `COPY` flags and
 continued instructions do not exempt a reference. Docker documents these
-forms in its [Dockerfile reference](https://docs.docker.com/reference/dockerfile/).
+forms in its [Dockerfile
+reference](https://docs.docker.com/reference/dockerfile/).
 
 Declare each shared image's global `ARG NAME=value` on one physical line
 before the first `FROM`, so the mirror checker and `--write` can maintain it.
 `FROM ${NAME}` or `FROM $NAME` must use that declared configuration key;
 an arbitrary new ARG or a fallback such as `${NAME:-alpine}` is rejected.
 Use named stages or an earlier numeric stage index for `COPY --from`.
+
+## ROCm and oneAPI bases
+
+The ROCm builder and runtime source use AMD's released Ubuntu 26.04
+`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`.
+
+- The `rocm-src` stage compiles and links a small HIP kernel after pruning the
+  SDK, then runs its host-only entry point. This checks the compiler and loader
+  without requiring an AMD GPU; device execution remains a separate test.
+- The node runtime retains the vendor library directory structure when copying
+  the HIP dependency closure into Debian 13. See the
+  [26.04 verification](../research/rocm-2604-restoration-2026-09-08.md).
+
+oneAPI moved to Debian 13 with Intel's apt packages
+([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)); see
+[Deliberate exceptions](#deliberate-exceptions).
 
 ## The two tracks
 
@@ -113,15 +123,19 @@ drift this file exists to prevent.
 
 ### CUDA: a coordinated pin, not an image tag
 
-CUDA is the one knob whose value is coordinated across configuration and Dockerfiles.
+CUDA is the one knob whose value is coordinated across configuration and
+Dockerfiles.
 Following ADR-1300 and ADR-1306, the fork dropped `Jimver/cuda-toolkit` and all
 `nvidia/cuda` base images. CUDA builders and runtimes build `FROM` digest-pinned
-Ubuntu 26.04 (`CUDA_BUILDER` and `CUDA_RUNTIME` in `build-config.env`) and install
+Ubuntu 26.04 (`CUDA_BUILDER` and `CUDA_RUNTIME` in `build-config.env`) and
+install
 the version-locked toolkit via `scripts/ci/install-cuda-toolkit.sh`
 (`--mode=builder`, `--mode=runtime`, or `--mode=full`). The two CUDA bases must
 equal `DEV_BASE` exactly, including its digest; the same owner also writes the
 narrow `docker/dev/ubuntu-26.04-cuda.Dockerfile` mirror. This decouples CUDA
 release bumps from upstream NVIDIA OCI image publication latency.
+
+#### One release, seven spellings
 
 One release is named in seven places across two files:
 
@@ -137,30 +151,52 @@ One release is named in seven places across two files:
 
 `scripts/ci/check-cuda-pin-lockstep.py` inventories all seven on every commit,
 checks the release-valued sites against `CUDA_VERSION`, requires the component
-versions to remain in its major/minor series, and fails on a CUDA release literal
+versions to remain in its major/minor series, and fails on a CUDA release
+literal
 in any spelling it does not recognise (including any reintroduced `nvidia/cuda`
-image tag), so an untracked copy cannot appear quietly. The component build numbers are not
+image tag), so an untracked copy cannot appear quietly. The component build
+numbers are not
 derivable from the marketing release: NVIDIA shipped different nvcc and cudart
 builds within 13.4. The installer therefore uses exact `package=version` apt
 operands and verifies every installed version with `dpkg-query`.
 
+#### Moving the release
+
+The Windows CI legs read the same `CUDA_VERSION`:
+`scripts/ci/install-cuda-toolkit.ps1`
+installs the toolkit from NVIDIA's redistributable manifest for that release.
+
 To move the release:
 
-```bash
-# 1. edit CUDA_VERSION in build-config.env
-make cuda-pin-sync                                     # derives CUDA_APT_PACKAGE and runtime label
-# 2. verify NVIDIA's redist manifest and ubuntu2604 Packages index, then update
-#    CUDA_APT_LOCK_RELEASE and the three exact *_VERSION values
-# 3. synchronize the Dockerfile mirrors
-make base-images-sync                                  # ensures Dockerfiles match build-config.env
-```
+1. Edit `CUDA_VERSION` in `build-config.env`, then derive `CUDA_APT_PACKAGE` and
+   the runtime label:
 
-Renovate discovers new CUDA releases from NVIDIA's official redist HTML index through
-`custom.nvidia-cuda-redist`, not from the retired `nvidia/cuda` image tags, and proposes
-bumping `CUDA_VERSION` directly. Only `redistrib_X.Y.Z.json` links are accepted. The
-index has no release timestamps, so the datasource-specific rule is timestamp-optional
-but stays manual-review and non-automerge. `make cuda-pin-sync` derives the mechanical
-spellings. Changing only `CUDA_VERSION` intentionally leaves `CUDA_APT_LOCK_RELEASE` stale,
+    ```bash
+    make cuda-pin-sync
+    ```
+
+2. Verify NVIDIA's redist manifest and the `ubuntu2604` Packages index, then
+   update `CUDA_APT_LOCK_RELEASE` and the three exact `*_VERSION` values by
+   hand.
+3. Synchronise the Dockerfile mirrors, which ensures they match
+   `build-config.env`:
+
+    ```bash
+    make base-images-sync
+    ```
+
+Renovate discovers new CUDA releases from NVIDIA's official redist HTML index
+through
+`custom.nvidia-cuda-redist`, not from the retired `nvidia/cuda` image tags, and
+proposes
+bumping `CUDA_VERSION` directly. Only `redistrib_X.Y.Z.json` links are accepted.
+The
+index has no release timestamps, so the datasource-specific rule is
+timestamp-optional
+but stays manual-review and non-automerge. `make cuda-pin-sync` derives the
+mechanical
+spellings. Changing only `CUDA_VERSION` intentionally leaves
+`CUDA_APT_LOCK_RELEASE` stale,
 so the bot PR stays red until the exact metadata review is complete. See
 [ADR-1285](../adr/1285-cuda-coordinated-pin-lockstep.md),
 [ADR-1300](../adr/1300-cuda-install-from-nvidia-apt.md), and
@@ -191,13 +227,15 @@ It is gated rather than commented because the comment did not hold: the pin sat
 at `3.10` against a `>=3.14` floor until ADR-1282. Below 3.12 mypy refuses to
 parse the PEP 695 `type` statement in numpy's bundled `__init__.pyi`, and that
 one blocking `[syntax]` error aborts the whole `ai/src/` pass before any source
-file is checked, so the mis-modelled version silently disabled the check in every
+file is checked, so the mis-modelled version silently disabled the check in
+every
 checkout that had numpy installed. Raise all three values in one commit.
 
 ### Python and ONNX Runtime ownership
 
 Scientific Python dependency floors remain in each package's `pyproject.toml`.
-For the classic `vmaf` package, `python/pyproject.toml` owns runtime dependencies;
+For the classic `vmaf` package, `python/pyproject.toml` owns runtime
+dependencies;
 `make python-deps-sync` derives `python/requirements.txt`, and the requirements
 single-source gate rejects drift. The AI and MCP manifests own their own
 runtime and optional dependencies. Build-system requirements are separate
@@ -207,13 +245,13 @@ The five scientific-stack globals originally proposed in ADR-1236 had no
 consumers or drift checks. They are deferred until that consumption is wired;
 adding a declaration alone does not move ownership out of package metadata.
 
-Native ONNX Runtime pins also represent different contracts. The main build,
-Go runner and dev container use the CPU archive; the Go smoke expectation is
-coupled to that runtime. The older DNN matrix uses the CPU archive described in
-[ADR-0120](../adr/0120-ai-enabled-ci-matrix-legs.md). Coverage uses a GPU archive
-and CUDA 12 runtime to exercise provider attachment and CPU session fallback
-without a GPU driver, as documented in
-[ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md).
+Native ONNX Runtime pins also represent different contracts:
+
+| Lane | ONNX Runtime archive | Notes |
+| --- | --- | --- |
+| Main build, Go runner, dev container | CPU archive | The Go smoke expectation is coupled to that runtime. |
+| Older DNN matrix | CPU archive | [ADR-0120](../adr/0120-ai-enabled-ci-matrix-legs.md) |
+| Coverage | GPU archive plus CUDA 12 runtime | Exercises provider attachment and CPU session fallback without a GPU driver ([ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md)). |
 
 Preserve those lane roles when consolidating pins. An upgrade must verify the
 exact archive name, runtime-library closure and relevant tests: the 1.29 GPU
@@ -266,10 +304,12 @@ or registry access. They cover external image bypasses, local exceptions,
 named stages and mirror repair. The Level Zero fixtures also execute the
 container download command with temporary command stubs and an altered config,
 so no package installation or network access is needed. The pre-commit
-regression hook runs when the guard or configuration changes; CI's all-files pre-commit run includes it.
+regression hook runs when the guard or configuration changes; CI's all-files
+pre-commit run includes it.
 
 If two Dockerfiles want the same image, they share one entry. That collapsing
-is the point: 25 `FROM` lines in this repo resolve to 13 pins.
+is the point: every base image resolves to one `build-config.env` pin, and
+`make base-images-sync` lists them.
 
 ## CI workflows read the same file
 
@@ -319,4 +359,5 @@ pins are deliberately independent.
 The Level Zero custom manager updates only `LEVEL_ZERO_VERSION` in
 `build-config.env`; its container and workflow consumers read that setting.
 ROCm uses the image manager's `ROCM_BUILDER` and `ROCM_RUNTIME` entries. The old
-ROCm manager for literal workflow versions no longer has an input and is removed.
+ROCm manager for literal workflow versions no longer has an input and is
+removed.

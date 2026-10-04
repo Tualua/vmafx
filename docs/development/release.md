@@ -1,12 +1,17 @@
 <!-- markdownlint-disable MD051 -->
 # Release process
 
-VMAFx releases through release-please and an explicit publication gate.
+A release is cut by merging a release-please PR, finalizing the changelog
+and publishing the resulting draft release. This page is the maintainer
+runbook for that flow and for the signing and verification steps that
+follow.
+
 Pushes to `master` drive a
 [release-please](https://github.com/googleapis/release-please-action)
-workflow that maintains a release PR. Merging that PR creates a draft release;
-publishing the draft creates the tag and triggers the full build, signing, and
-publication pipeline.
+workflow that maintains one release PR. Merging that PR creates a draft
+release; publishing the draft creates the tag and triggers the full build,
+signing and publication pipeline. The [automation flow](#automation-flow)
+below shows each step.
 
 ## Version scheme
 
@@ -16,17 +21,24 @@ Releases follow ordinary SemVer tags, `vX.Y.Z`:
 - `Y` changes for backward-compatible features.
 - `Z` changes for backward-compatible fixes.
 
-**The fork's first release is `v1.0.0`.** VMAFx has never released: there are
-zero GitHub releases, and every `vX.Y.Z` tag currently visible belongs to
-Netflix upstream history (none is an ancestor of `master`). The 3.2.x baseline
-that used to be in the manifest was a *source-version* alignment with Netflix's
-SONAME, not a fork release. `release-please-config.json` therefore carries a
-one-shot `release-as: "1.0.0-rc.1"` with the `rc` prerelease channel enabled,
-and `.release-please-manifest.json` starts at `0.0.0`, so the first candidate
-is a monotone `0.0.0 -> 1.0.0-rc.1` bump. The final cut switches the override
-to `1.0.0` after the candidate sequence passes.
-[ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) governs this and supersedes
-[ADR-1127](../adr/1127-single-semver-release-stream.md)'s "start at v3.2.1".
+The fork's first release is `v1.0.0`. It is preceded by release
+candidates `v1.0.0-rc.N`; `v1.0.0-rc.1` and `v1.0.0-rc.2` are published.
+Every other `vX.Y.Z` tag visible in a clone belongs to Netflix upstream
+history and is not an ancestor of `master`. The 3.2.x baseline that used
+to be in the manifest was a source-version alignment with Netflix's
+SONAME, not a fork release.
+
+release-please runs in prerelease mode (`versioning: prerelease`,
+`prerelease-type: rc`, `release-please-config.json`), and
+`.release-please-manifest.json` holds the current candidate
+(`1.0.0-rc.2`). The final cut flips `prerelease` to `false` once the
+candidate sequence passes (see
+[Cutting a release from fragments](#cutting-a-release-from-fragments)).
+[ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) governs the first
+release and supersedes
+[ADR-1127](../adr/1127-single-semver-release-stream.md)'s "start at
+v3.2.1"; [ADR-1201](../adr/1201-release-candidates-before-1-0-0.md) adds
+the candidate channel.
 
 Example progression:
 
@@ -40,13 +52,20 @@ v2.0.0  # incompatible public-surface release
 ## First-release candidate responsibilities
 
 [ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-separates the first release into ordered evidence stages.
-[ADR-1421](../adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags (it
-supersedes the candidate mapping of
-[ADR-1352](../adr/1352-rc-phase-shift-plus-one.md), which had added the
-stabilisation candidate after rc.1), and
-[ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts RC7 and
-moves the later candidates up by one, so each phase number matches its tag:
+separates the first release into ordered evidence stages. The stage-to-tag
+map has been revised twice:
+
+- [ADR-1421](../adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags
+  and supersedes the candidate mapping of
+  [ADR-1352](../adr/1352-rc-phase-shift-plus-one.md), which had added the
+  stabilisation candidate after rc.1.
+- [ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts
+  RC7 and moves the later candidates up by one, so each phase number
+  matches its tag.
+
+The user-facing version of this map is [the roadmap](../roadmap.md).
+
+### Candidate map
 
 | Candidate | Proves | Must not be used to claim |
 | --- | --- | --- |
@@ -56,9 +75,19 @@ moves the later candidates up by one, so each phase number matches its tag:
 | `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged | Performance, or production-trained model quality |
 | `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins and host code, with `libgpudispatch` extracted | Performance, or production-trained model quality |
 | `v1.0.0-rc.6` (RC6) | The checked-in GPU capability table matches the vendor toolchains (CI drift check), dispatch and kernel parameters read it, and every kernel passes the static audit for every target | Measured performance on any device |
-| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees (per-function disassembly audit, x86 and aarch64), and every dispatch level is bit-exact against scalar under emulation (Intel SDE CPU models, qemu for aarch64 NEON and SVE2 at more than one vector length) | Measured performance on any processor; reports from real Xeon or Apple Silicon machines are extra evidence, not a requirement |
+| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees, and every dispatch level is bit-exact against scalar under emulation (details below the table) | Measured performance on any processor |
 | `v1.0.0-rc.8` (RC8) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware | Completion of the real retraining programme |
 | `v1.0.0-rc.9` (RC9) | The one-shot real retrain and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+
+### RC7 evidence in detail
+
+- The instruction audit is per function, for x86 and aarch64.
+- Emulation covers Intel SDE CPU models and qemu for aarch64 NEON and
+  SVE2 at more than one vector length.
+- Reports from real Xeon or Apple Silicon machines are extra evidence, not
+  a requirement.
+
+### Rules for candidates
 
 Candidate tags are immutable. RC1 to RC9 name the planned candidate for each
 responsibility; if a stage finds a correctness defect, land the fix and rerun
@@ -68,17 +97,21 @@ evidence is accepted. Speed that RC3 gives up for exactness is recorded as a
 tuning row and recovered in RC8, never traded back for a tolerance. The final
 `v1.0.0` follows accepted RC9 evidence.
 
-Every report and acceptance record identifies the exact commit, published
-artifact or image digest, fixtures, host and device, drivers/runtimes, tool
-versions, commands, exit codes, and raw logs. A green check or benchmark from a
-different head is not evidence for the candidate being evaluated.
+Every report and acceptance record identifies:
+
+- the exact commit and the published artifact or image digest;
+- fixtures, host and device, drivers and runtimes, tool versions;
+- commands, exit codes and raw logs.
+
+A green check or benchmark from a different head is not evidence for the
+candidate being evaluated.
 
 Ordinary Renovate and version-update PRs are not frozen between candidates.
-They merge under the same required checks, review, digest/pin policy, and
+They merge under the same required checks, review, digest/pin policy and
 component-specific validation as any other change. Coordinated major SDK,
-toolchain, and base-image updates keep their specialised validation. If one
-merges after evidence was collected, rerun the checks or measurements it can
-affect against the new exact head.
+toolchain and base-image updates keep their specialised validation. If one
+merges after evidence was collected, rerun the checks or measurements it
+can affect against the new exact head.
 
 The VMAFx release stream advances independently of Netflix/vmaf. Upstream
 alignment remains recorded in sync commits and release notes, not encoded in
@@ -90,21 +123,30 @@ These are two different numbers and only the first one moves at release time.
 
 | Number | Owner | Value today | Moves when |
 | --- | --- | --- | --- |
-| **Product version** | release-please | `1.0.0-rc.1` at the first candidate; `1.0.0` at final | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
-| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:19`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **The 1.0.0 cut does not reset it.** |
+| **Product version** | release-please | `1.0.0-rc.2` (the manifest value); `1.0.0` at final | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
+| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:38`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **The 1.0.0 cut does not reset it.** |
 
-So `libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0, and
-`libvmaf.pc` advertises that same 3.x interface version rather than the product
-version. That coupling is deliberate and load-bearing: unpatched upstream
-FFmpeg's `configure` requires `libvmaf >= 2.0.0`, and the fork's own
-`ffmpeg-patches/` require `libvmaf >= 3.0.0` for the SYCL, Vulkan and DNN entry
-points. A `.pc` advertising `1.0.0` satisfies neither, which is exactly how the
-first release candidate failed the three FFmpeg lanes and `Docker Image Build`
-(`Package 'libvmaf' has version '1.0.0-rc.1', required version is '>= 2.0.0'`).
+`libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0, and
+`libvmaf.pc` advertises that same 3.x interface version rather than the
+product version. The coupling is deliberate and load-bearing:
+
+- unpatched upstream FFmpeg's `configure` requires `libvmaf >= 2.0.0`;
+- the fork's own `ffmpeg-patches/` require `libvmaf >= 3.0.0` for the SYCL
+  and DNN entry points.
+
+A `.pc` advertising `1.0.0` satisfies neither. That is how the first
+release candidate failed the three FFmpeg lanes and `Docker Image Build`:
+
+```text
+Package 'libvmaf' has version '1.0.0-rc.1', required version is '>= 2.0.0'
+```
+
 See [ADR-1235](../adr/1235-pkgconfig-advertises-abi-version.md).
 
-Do not "align" the two numbers; the comments at `core/meson.build:19` and at the
-`pkg_mod.generate()` call in `core/src/meson.build` say so at the source.
+!!! warning
+    Do not "align" the two numbers. The comments at
+    `core/meson.build:38` and at the `pkg_mod.generate()` call in
+    `core/src/meson.build` say so at the source.
 
 ### Coordinated version markers
 
@@ -122,6 +164,9 @@ aggregate, and the `ARG VMAFX_VERSION=dev` defaults in `docker/Dockerfile.*`
 carries an inline comment saying so.
 
 ## Automation flow
+
+The flow in five steps (the diagram at the top of this page shows it
+graphically):
 
 1. **release-please watches master.** On each push it inspects Conventional
    Commit headers (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …) to determine
@@ -166,18 +211,26 @@ things now prevent that:
 
 ### Release-bot identity
 
-PRs and pushes made with `secrets.GITHUB_TOKEN` do not trigger further workflow
-runs. That is a GitHub loop-breaker, not a configuration mistake, and it is why
-release PRs used to land as `action_required` with zero jobs: the sole required
-context could never report and the PR sat `BLOCKED` behind an admin bypass.
+`release-please.yml` authenticates as a GitHub App (or, as a fallback, a
+personal access token), never as `GITHUB_TOKEN`.
 
-`release-please.yml` therefore authenticates as something other than
-`GITHUB_TOKEN`. Every step in the job — both release-please invocations and both
-read-only `gh api` probes — uses the token resolved by the `Resolve the
-release-bot token` step, so the job's own `GITHUB_TOKEN` keeps the workflow
-default `contents: read` and holds no write scope at all.
+#### Why
 
-Two identities are accepted, in this order:
+PRs and pushes made with `secrets.GITHUB_TOKEN` do not trigger further
+workflow runs. That is a GitHub loop-breaker, not a configuration mistake.
+It is why release PRs used to land as `action_required` with zero jobs: the
+sole required context could never report and the PR sat `BLOCKED` behind an
+admin bypass.
+
+Every step in the job (both release-please invocations and both read-only
+`gh api` probes) uses the token resolved by the `Resolve the release-bot
+token` step. The job's own `GITHUB_TOKEN` keeps the workflow default
+`contents: read` and holds no write scope at all.
+
+#### Identity modes
+
+Two identities are accepted, in this order; the third row is the
+no-credentials state:
 
 | Mode | Credential | When it is used |
 | --- | --- | --- |
@@ -185,13 +238,14 @@ Two identities are accepted, in this order:
 | `pat` | `RELEASE_BOT_TOKEN` | Fallback when the App secrets are absent. Needs `repo` + `workflow`. |
 | `none` | — | Pipeline stays idle: warning on `push`, error on `workflow_dispatch` (ADR-1171). |
 
-**Prefer the App.** A PAT is broader-scoped and longer-lived than an App
-installation token, and it carries whatever scopes its owner granted rather than
-only the two this workflow needs (Contents, Pull requests). The PAT path exists
-because registering a GitHub App has **no API path** — it is a browser flow and
-its private key is downloadable only once, at creation — so requiring the App
-made the whole release pipeline block on a manual step. The fallback keeps the
-pipeline runnable; swap to the App when it exists and delete the PAT secret.
+!!! note
+    Prefer the App. A PAT is broader-scoped and longer-lived than an App
+    installation token, and it carries whatever scopes its owner granted
+    rather than only the two this workflow needs (Contents, Pull requests).
+    The PAT path exists because registering a GitHub App has no API path:
+    it is a browser flow and its private key is downloadable only once, at
+    creation, so requiring the App made the whole release pipeline block on
+    a manual step. Swap to the App when it exists and delete the PAT secret.
 
 The same identity, resolved the same way (App, else PAT, else a failing step that
 names the missing secrets), creates the tag and release of the macOS tester bundle
@@ -202,14 +256,23 @@ differs from master's tree in `.github/workflows/`. Only that one step uses it
 Whichever mode is active, the resolved token is masked with `::add-mask::`
 before it reaches any later step.
 
-**One-time maintainer setup.** Until this exists the workflow never falls back
-to `GITHUB_TOKEN` (that would recreate an unmergeable release PR). On every push
-to `master` the first step emits a *warning* annotation and skips every write
-step, so the run ends green and idle; on a manual `workflow_dispatch` the same
-missing credentials are an *error* and the run fails, because an operator asked
-for a release step (ADR-1171). `scripts/release/check-release-bot-secrets.sh`
-checks the two secret names locally and is part of the `/prep-release` dry run,
-so a release cannot be attempted without the identity:
+#### One-time App setup
+
+!!! warning
+    One-time maintainer setup. Until the credentials exist the workflow
+    never falls back to `GITHUB_TOKEN`, because that would recreate an
+    unmergeable release PR.
+
+Without credentials:
+
+- On every push to `master` the first step emits a warning annotation and
+  skips every write step, so the run ends green and idle.
+- On a manual `workflow_dispatch` the missing credentials are an error and
+  the run fails, because an operator asked for a release step (ADR-1171).
+
+`scripts/release/check-release-bot-secrets.sh` checks the two secret names
+locally and is part of the `/prep-release` dry run, so a release cannot be
+attempted without the identity. To set it up:
 
 1. Create a GitHub App owned by the `VMAFx` org (name it e.g.
    `vmafx-release-bot`). Repository permissions: **Contents: read & write**
@@ -220,16 +283,17 @@ so a release cannot be attempted without the identity:
    - `RELEASE_BOT_PRIVATE_KEY` — the full PEM, including the
      `-----BEGIN…`/`-----END…` lines.
 
-The installation token is minted per run and revoked when the job ends; there
-is no long-lived credential and nothing to rotate on a schedule. A personal
-access token would also work mechanically but ties the release stream to one
-human's account and expires — see ADR-1151's alternatives.
+The installation token is minted per run and revoked when the job ends;
+there is no long-lived credential and nothing to rotate on a schedule. A
+personal access token would also work mechanically but ties the release
+stream to one human's account and expires; see ADR-1151's alternatives.
 
 ### Process gates on the release PR
 
 Six process gates in `rule-enforcement.yml` are required contexts (see the
-branch-protection inventory below). Four of them encode *authoring discipline*
-and cannot be satisfied by a PR nobody writes by hand:
+[branch-protection inventory](#master-branch-protection) below). Four of
+them encode authoring discipline and cannot be satisfied by a PR nobody
+writes by hand:
 
 | Gate | Why a release PR cannot pass it unaided |
 | --- | --- |
@@ -245,13 +309,15 @@ author, so pushing a branch named `release-please--anything` does not disarm a
 required gate. The jobs still report — they report green, not absent, which
 keeps them distinguishable from a path-filter skip.
 
-The remaining two stay armed on release PRs on purpose: `Release Script
-Contract` is the gate that proves the cut ran and that the one-shot
-`release-as` / `bootstrap-sha` fields are gone, and `ADR Collision
-Guard` is diff-driven and trivially green when no ADR is added. The Release
-Script Contract job also runs
-`scripts/ci/tests/test-release-pr-exempt.sh`, so the predicate that disarms the
-other four is itself proven on every PR, release PR included.
+The remaining two stay armed on release PRs on purpose:
+
+- `Release Script Contract` proves the cut ran and that the one-shot
+  `release-as` / `bootstrap-sha` fields are gone. It also runs
+  `scripts/ci/tests/test-release-pr-exempt.sh`, so the predicate that
+  disarms the other four is itself proven on every PR, release PR
+  included.
+- `ADR Collision Guard` is diff-driven and trivially green when no ADR is
+  added.
 
 To dry-run the predicate locally:
 
@@ -270,14 +336,19 @@ Before publication, repository setup must provide two protected environments:
 - `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
 
 Each must accept selected tag refs matching `v*` and require the release
-reviewer. **GitHub auto-creates a referenced environment that does not exist,
-with an empty rule set**, so a write-bearing job naming a missing environment
-runs straight through with no approval gate — and
-`scripts/release/tests/test-publication-environment-binding.sh` only greps the
-YAML, so it cannot see that server-side drift. `supply-chain.yml`'s
-`validate-release` therefore queries both environments over the API and fails
-closed unless each carries a `required_reviewers` protection rule. That
-preflight is read-only and runs before any job holds write or OIDC scope.
+reviewer.
+
+!!! warning
+    GitHub auto-creates a referenced environment that does not exist, with
+    an empty rule set. A write-bearing job naming a missing environment
+    therefore runs straight through with no approval gate, and
+    `scripts/release/tests/test-publication-environment-binding.sh` only
+    greps the YAML, so it cannot see that server-side drift.
+
+`supply-chain.yml`'s `validate-release` queries both environments over the
+API and fails closed unless each carries a `required_reviewers` protection
+rule. That preflight is read-only and runs before any job holds write or
+OIDC scope.
 
 The two build-provenance jobs (`provenance` for the native files,
 `mcp-provenance` for the `vmaf-mcp` distributions) hold OIDC and attestation
@@ -288,16 +359,21 @@ Release ([ADR-1356](../adr/1356-release-provenance-attest.md)).
 
 ### Native Linux release layout
 
-The native files attached by `supply-chain.yml` are currently Linux ELF
-artefacts. Meson builds a three-name dynamic-library chain: `libvmaf.so`, its
+Download the CLI and the whole `libvmaf.so*` chain into one directory; the
+CLI finds its library next to itself. The native files attached by
+`supply-chain.yml` are currently Linux ELF artefacts.
+
+#### Download
+
+Meson builds a three-name dynamic-library chain: `libvmaf.so`, its
 ABI SONAME such as `libvmaf.so.3`, and its ABI real name such as
 `libvmaf.so.3.0.0`. GitHub artifact and release downloads do not preserve
 symlinks, so the workflow publishes all three names as identical regular-file
 assets. Each name is hashed, inventoried in both native SBOMs, signed, and
 listed as a subject of the native build-provenance attestation.
 
-Download the CLI with the entire library chain into one directory and restore
-the raw CLI asset's executable bit. The CLI's only RUNPATH entry is `$ORIGIN`,
+Restore the raw CLI asset's executable bit after the download. The CLI's
+only RUNPATH entry is `$ORIGIN`,
 the directory the CLI itself sits in, so it loads `libvmaf.so.3` from there
 without `LD_LIBRARY_PATH`, from any working directory, as long as the files
 stay together:
@@ -311,12 +387,16 @@ chmod +x vmaf
 readelf -d vmaf | grep RUNPATH   # Library runpath: [$ORIGIN]
 ```
 
-The `v1.0.0-rc.1` CLI predates this: it carries Meson's build-tree RUNPATH
-`$ORIGIN/../src`, which finds nothing next to the downloaded file. Run that
-release candidate as `LD_LIBRARY_PATH="$PWD" ./vmaf --version`.
+!!! note
+    The `v1.0.0-rc.1` CLI predates this: it carries Meson's build-tree
+    RUNPATH `$ORIGIN/../src`, which finds nothing next to the downloaded
+    file. Run that release candidate as
+    `LD_LIBRARY_PATH="$PWD" ./vmaf --version`.
 
-**Runtime requirements: x86-64 Linux with glibc 2.38 or newer and the
-libstdc++ of GCC 12 or newer.** The bundle is compiled on the fork's Debian 13
+#### Runtime requirements
+
+The bundle needs x86-64 Linux with glibc 2.38 or newer and the libstdc++ of
+GCC 12 or newer. It is compiled on the fork's Debian 13
 release track (the `release-build` stage of the dev container, glibc 2.41;
 [ADR-1354](../adr/1354-native-bundle-release-track.md)), the same base the
 published container images are built on. Its newest symbol versions are
@@ -329,12 +409,16 @@ published container images are built on. Its newest symbol versions are
 | Distroless `cc-debian13` (`RELEASE_RUNTIME_CC`, the base of the CLI image) | 2.41 | `verify-native-artifacts` starts the downloaded CLI in that image with no `LD_LIBRARY_PATH` |
 | Debian 13 (the `release-build` stage) | 2.41 | the release build runs the verifier inside the stage it compiled in |
 
-Newer distributions, such as Ubuntu 26.04 (glibc 2.43), load it as well. It
-does not load on Ubuntu 22.04 (glibc 2.35) or Debian 12 (glibc 2.36); both
-fail with `version 'GLIBC_2.38' not found`. On those systems use the
+Newer distributions, such as Ubuntu 26.04 (glibc 2.43), load it as well.
+It does not load on Ubuntu 22.04 (glibc 2.35) or Debian 12 (glibc 2.36);
+both fail with `version 'GLIBC_2.38' not found`. On those systems use the
 production containers or build from source. Check a host with
-`ldd --version`. The bundle is CPU-only and built without the ONNX Runtime
-tiny-AI backend, so it needs no GPU runtime or `libonnxruntime`.
+`ldd --version`.
+
+The bundle is CPU-only and built without the ONNX Runtime tiny-AI backend,
+so it needs no GPU runtime or `libonnxruntime`.
+
+#### How the layout is built
 
 `scripts/release/build-native-release-artifacts.sh` sets the CLI's RUNPATH
 `$ORIGIN` on the staged copy with `patchelf`; the build tree keeps Meson's
@@ -358,49 +442,70 @@ release artifacts to be built inside `dev/Containerfile`.
 ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner, and
 [ADR-1354](../adr/1354-native-bundle-release-track.md) puts the compile on the
 Debian 13 release track that `build-config.env` assigns to published
-artifacts:
+artifacts. In short:
 
-- **Where**: `build-artifacts` in `.github/workflows/supply-chain.yml` runs on
-  `ubuntu-latest`. It builds the `release-build` stage of the release tag's
-  own `dev/Containerfile` with
-  `scripts/ci/build-dev-container-stage.sh release-build`. That stage is the
-  digest-pinned Debian 13 base `RELEASE_BUILDER_BASE` plus Debian archive
-  packages (GCC 14, Meson, Ninja, NASM, `xxd`, `patchelf`); it downloads
-  nothing from third parties and needs no GitHub token. The build uses no
-  external layer cache and no registry. Archive packages resolve when the
-  stage is built, so a later rebuild of the same tag may use newer packages
-  from a Debian point release. The exception is patchelf, which edits the
-  published CLI: `dev/Containerfile` pins it to Debian 13's package version
+| Concern | What happens |
+| --- | --- |
+| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`, on `ubuntu-latest`. |
+| How long | An uncached stage build took under a minute and the release compile under a minute on four workstation CPUs. The job has a 60-minute limit. No workstation or self-hosted runner has to be online. |
+| Compile | `scripts/release/build-native-release-artifacts.sh` inside the image. |
+| Rehearsal | The Dev Container PR gate builds the same stage with the same script on every container-affecting PR. |
+| Verification | `verify-native-artifacts` on `ubuntu-24.04`. |
+| Recovery | A timed-out or failed build is re-run with the recovery dispatch below, which rebuilds the stage from the same tag. |
+
+#### Where
+
+`build-artifacts` builds the `release-build` stage of the release tag's own
+`dev/Containerfile` with
+`scripts/ci/build-dev-container-stage.sh release-build`. That stage is the
+digest-pinned Debian 13 base `RELEASE_BUILDER_BASE` plus Debian archive
+packages (GCC 14, Meson, Ninja, NASM, `xxd`, `patchelf`).
+
+- It downloads nothing from third parties and needs no GitHub token.
+- The build uses no external layer cache and no registry.
+- Archive packages resolve when the stage is built, so a later rebuild of
+  the same tag may use newer packages from a Debian point release.
+- The exception is patchelf, which edits the published CLI:
+  `dev/Containerfile` pins it to Debian 13's package version
   (`PATCHELF_VERSION`).
-- **How long**: an uncached stage build took under a minute and the release
-  compile under a minute on four workstation CPUs. The job has a 60-minute
-  limit. No workstation or self-hosted runner has to be online.
-- **Compile**: `scripts/release/build-native-release-artifacts.sh` runs inside
-  the image with `docker run --pull never --network none` as the runner's
-  user. It refuses to build unless the checkout is `GITHUB_SHA`, uses the
-  Meson flags `--buildtype=release -Denable_avx512=true -Denable_cuda=false
-  -Denable_sycl=false -Denable_dnn=disabled -Denable_tests=false`, stages the
-  bundle (setting the staged CLI's RUNPATH to `$ORIGIN`), stamps
-  `container-build-provenance.txt` with
-  `scripts/ci/check-container-build.sh --stamp` and runs
-  `scripts/release/verify-native-release-artifacts.sh`. The unit tests are
-  left out because Debian 13's GCC 14.2 crashed at random while link-time
-  optimising them; the release does not ship them, and other CI jobs build
-  and run them.
-- **Rehearsal**: the Dev Container PR gate builds the same stage with the
-  same script and runs the same invocation on every container-affecting pull
-  request, against a local tag named after `.release-please-manifest.json`'s
-  version, so a change that would break the release compile fails there.
-- **Verification**: `verify-native-artifacts` runs on `ubuntu-24.04`, the
-  oldest GitHub-hosted image that can load the bundle, and names that label
-  rather than `ubuntu-latest` so the check cannot drift to a newer glibc. It
-  checks the stamp with `--verify`, exercises the downloaded CLI in a clean
-  environment, and starts it in the release runtime image
-  (`RELEASE_RUNTIME_CC`, distroless `cc-debian13`) with no
-  `LD_LIBRARY_PATH`, so the RUNPATH `$ORIGIN` is proven there too. The stamp
-  is signed with Cosign and attached as a release asset.
-- **Failure recovery**: a timed-out or failed build is re-run with the
-  recovery dispatch below. It rebuilds the stage from the same tag.
+
+#### Compile
+
+The script runs with `docker run --pull never --network none` as the
+runner's user. It:
+
+1. refuses to build unless the checkout is `GITHUB_SHA`;
+2. configures Meson with `--buildtype=release -Denable_avx512=true
+   -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled
+   -Denable_tests=false`;
+3. stages the bundle, setting the staged CLI's RUNPATH to `$ORIGIN`;
+4. stamps `container-build-provenance.txt` with
+   `scripts/ci/check-container-build.sh --stamp`;
+5. runs `scripts/release/verify-native-release-artifacts.sh`.
+
+The unit tests are left out because Debian 13's GCC 14.2 crashed at random
+while link-time optimising them; the release does not ship them, and other
+CI jobs build and run them.
+
+#### Rehearsal
+
+The Dev Container PR gate runs the same invocation against a local tag
+named after `.release-please-manifest.json`'s version, so a change that
+would break the release compile fails there.
+
+#### Verification
+
+`verify-native-artifacts` runs on `ubuntu-24.04`, the oldest GitHub-hosted
+image that can load the bundle. It names that label rather than
+`ubuntu-latest` so the check cannot drift to a newer glibc. It:
+
+- checks the stamp with `--verify`;
+- exercises the downloaded CLI in a clean environment;
+- starts the CLI in the release runtime image (`RELEASE_RUNTIME_CC`,
+  distroless `cc-debian13`) with no `LD_LIBRARY_PATH`, so the RUNPATH
+  `$ORIGIN` is proven there too.
+
+The stamp is signed with Cosign and attached as a release asset.
 
 ### Release recovery dispatches
 
@@ -415,24 +520,27 @@ gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
 gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
 ```
 
-`supply-chain.yml` only runs at the tag: its release binaries and their
-signatures must come from the tag's own workflow. The two image workflows can
-also be dispatched on `master` when the tag's build recipe itself was broken;
-that run builds the tag's source with `master`'s `docker/` recipe and signs as
-`master` ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md), see
-[Recovering a release's container images](#recovering-a-releases-container-images)).
+Where each workflow may run:
+
+- `supply-chain.yml` only runs at the tag: its release binaries and their
+  signatures must come from the tag's own workflow.
+- The two image workflows can also be dispatched on `master` when the tag's
+  build recipe itself was broken. That run builds the tag's source with
+  `master`'s `docker/` recipe and signs as `master`
+  ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md); see
+  [Recovering a release's container images](#recovering-a-releases-container-images)).
+
 Each preflight verifies the coordinated versions and the published GitHub
-release before any write or OIDC job starts.
-The protected deployment environments still apply on recovery runs; approval
-authorizes the write-bearing jobs only, after the read-only preflight has
-proved the tag/ref/release identity.
+release before any write or OIDC job starts. The protected deployment
+environments still apply on recovery runs; approval authorizes the
+write-bearing jobs only, after the read-only preflight has proved the
+tag/ref/release identity.
 
 The moving `latest` container tag is resolved from the repository's newest
 published release rather than from the trigger event, so a recovery dispatch
 repoints `latest` when it is recovering the newest release and leaves it alone
-otherwise. Before ADR-1151 the guard was `github.event_name == 'release'`, which
-meant a recovery run republished the versioned tag but left `latest` pointing at
-the broken original digest.
+otherwise. (Before ADR-1151 the guard was `github.event_name == 'release'`, so
+a recovery run left `latest` pointing at the broken original digest.)
 
 ## ADR index regeneration policy
 
@@ -444,11 +552,15 @@ the broken original digest.
 (see [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) for why the
 pattern exists).
 
+### Adding a new ADR
+
 **When adding a new ADR (the common case)** — write the fragment as part of
 the same PR and append its slug to `_order.txt`. The PR template's
 ADR-index checklist row covers this. Manual append is preferred over
 `--write` because it produces a one-line diff that reviewers can verify by
 eye and avoids touching unrelated rows.
+
+### Fixing drift
 
 **When fixing drift between fragments and `README.md` (this sweep's case)**
 — run `scripts/docs/concat-adr-index.sh --check` to capture the full diff,
@@ -513,7 +625,8 @@ repo or in CI secrets.
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
   `-cuda13` / `-rocm10` / `-oneapi2026` (also tagged `-oneapi2025`) / `-server`
-  variants): cosign keyless signature plus a GitHub-native build-provenance attestation
+  variants): cosign keyless signature plus a GitHub-native build-provenance
+  attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
 - **Go service images** (`ghcr.io/vmafx/vmafx-server:<tag>`,
@@ -532,7 +645,9 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 `docker-publish-production.yml`.
 
 ```bash
-tag=v3.2.1
+# The release tag to verify. v1.0.0-rc.1 and v1.0.0-rc.2 use the
+# slsa-verifier recipe further down.
+tag=v1.0.0
 
 # Release blob. Every vmaf/libvmaf.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
@@ -561,7 +676,7 @@ gh attestation verify vmaf --repo VMAFx/vmafx \
 # provenance; pypi-attestations binds it to the expected source repository.
 pypi-attestations verify pypi \
   --repository https://github.com/VMAFx/vmafx \
-  pypi:vmaf_mcp-3.x.y-py3-none-any.whl
+  pypi:vmaf_mcp-1.0.0-py3-none-any.whl
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
@@ -621,19 +736,27 @@ CertificateIdentity found`, and so does `gh attestation verify` pinned to the
 tag with `--source-ref refs/tags/<tag>` or `--source-digest <tag commit>`. The
 GitHub build-provenance attestation records the run that built the image:
 `refs/heads/master` and the recipe commit. The built source is the tag's
-commit, which a recovery run also writes into `org.opencontainers.image.revision`.
+commit, which a recovery run also writes into
+`org.opencontainers.image.revision`.
 The v1.0.0-rc.1 images were recovered before that label was corrected, so
 theirs names the recipe commit `a919f3596` instead of the tag's `ce00cf245`.
 
+#### Post-push smoke jobs
+
 The post-push smoke jobs in both Docker workflows run the matching cosign
-verification recipe before pulling an image, with the identity of the run that
-signed it (`@${GITHUB_REF}`: the tag, or `master` for a recovery run). The
-production workflow also executes the CPU CLI and the Python 3.14 server
-entrypoints; the Go-service
-workflow starts the Go scoring server and probes `/healthz` plus `/readyz`,
-checks the operator version, and executes `vmaf --version` plus `ffmpeg -version`
-from the node image. A signature or runtime-linkage gap fails the release rather
-than silently shipping a broken image.
+verification recipe before pulling an image, with the identity of the run
+that signed it (`@${GITHUB_REF}`: the tag, or `master` for a recovery run).
+After that:
+
+- the production workflow executes the CPU CLI and the Python 3.14 server
+  entrypoints;
+- the Go-service workflow starts the Go scoring server and probes
+  `/healthz` plus `/readyz`;
+- it also checks the operator version and executes `vmaf --version` plus
+  `ffmpeg -version` from the node image.
+
+A signature or runtime-linkage gap fails the release rather than silently
+shipping a broken image.
 
 ## CHANGELOG.md fragment workflow (ADR-0221)
 
@@ -686,39 +809,65 @@ Released sections below are untouched.
 ### Cutting a release from fragments
 
 Release-please has `skip-changelog: true`; it never edits `CHANGELOG.md`.
-Once the generated release PR contains the final manifest and version-marker
-updates, run:
+The cut is two commits on the generated release PR, made after it contains
+the final manifest and version-marker updates.
 
-```bash
-scripts/release/concat-changelog-fragments.sh --write
-git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
-scripts/release/rollover-changelog-fragments.sh \
-  --version 1.0.0 --date YYYY-MM-DD
-git add CHANGELOG.md changelog.d release-please-config.json docs/changelog-archive
-git commit -m 'chore(release): cut 1.0.0 changelog'
-```
+1. Label the release PR `autorelease: cut` so release-please leaves the
+   branch alone (see
+   [Freezing the release PR while you cut it](#freezing-the-release-pr-while-you-cut-it)).
+2. Render the final notes:
 
-Replace the example version and UTC date for later releases. The rollover
-requires a clean tree, exact agreement between the root manifest and every
-coordinated marker, zero renderer drift, a unique target heading, and a
-non-empty active source set. It then removes the consumed fragments and legacy
-source, leaving their exact content in the versioned changelog section and a
-SHA-256 receipt under `changelog.d/releases/`. The removals are recoverable
-from Git history. A second identical invocation is a no-op.
+    ```bash
+    scripts/release/concat-changelog-fragments.sh --write
+    git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
+    ```
+
+3. Roll the fragments over into the versioned section. Replace the example
+   version and UTC date for other releases:
+
+    ```bash
+    scripts/release/rollover-changelog-fragments.sh \
+      --version 1.0.0 --date YYYY-MM-DD
+    git add CHANGELOG.md changelog.d release-please-config.json docs/changelog-archive
+    git commit -m 'chore(release): cut 1.0.0 changelog'
+    ```
+
+4. Push both commits, merge the release PR and publish the draft release.
+
+The rollover requires:
+
+- a clean tree;
+- exact agreement between the root manifest and every coordinated marker;
+- zero renderer drift;
+- a unique target heading;
+- a non-empty active source set.
+
+It then removes the consumed fragments and legacy source, leaving their
+exact content in the versioned changelog section and a SHA-256 receipt
+under `changelog.d/releases/`. The removals are recoverable from Git
+history. A second identical invocation is a no-op.
 
 A long body goes to `docs/changelog-archive/X.Y.Z.md` (see `--archive-over`).
 The first release's archive holds the whole fragment history and is larger than
 the 1 MB `check-added-large-files` limit, so top-level Markdown files in that
-directory are exempt from it ([ADR-1345](../adr/1345-changelog-archive-large-file-exemption.md)).
+directory are exempt from it
+([ADR-1345](../adr/1345-changelog-archive-large-file-exemption.md)).
 Nothing else in the directory is.
 
-A release candidate is cut the same way, with its full version:
-`--version 1.0.0-rc.1`. The script accepts exactly the shapes the tag-time
-verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`, and each candidate gets its own
-`## [1.0.0-rc.1] - YYYY-MM-DD` section and `changelog.d/releases/1.0.0-rc.1.json`
-receipt. The first candidate's cut also retires `release-as` and
-`bootstrap-sha`, because the verifier refuses them at every tag, candidates
+#### Cutting a release candidate
+
+A release candidate is cut the same way, with its full version, for example
+`--version 1.0.0-rc.3`. The script accepts exactly the shapes the tag-time
+verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`. Each candidate gets its own
+`## [1.0.0-rc.3] - YYYY-MM-DD` section and
+`changelog.d/releases/1.0.0-rc.3.json` receipt.
+
+The one-shot `release-as` and `bootstrap-sha` fields are no longer in
+`release-please-config.json`. The rollover still deletes them if present,
+because the tag-time verifier refuses them at every tag, candidates
 included.
+
+#### Numbering later candidates
 
 Later candidates are numbered automatically. The root package uses
 release-please's `prerelease` versioning
@@ -726,10 +875,12 @@ release-please's `prerelease` versioning
 feature or breaking change on `1.0.0-rc.1` gives `1.0.0-rc.2`, and so on. The
 release PR stays open as a proposal; merge it only when the next candidate is
 due, and check its title before cutting it. For the final release, set
-`"prerelease": false`: the same strategy then proposes `1.0.0`. With the
-earlier `versioning: default`, a fix on `1.0.0-rc.1` gave `1.0.1-rc.1`, and the
-Release Script Contract job now rejects that setting while the manifest is a
-release candidate.
+`"prerelease": false`: the same strategy then proposes `1.0.0`.
+
+!!! note
+    With the earlier `versioning: default`, a fix on `1.0.0-rc.1` gave
+    `1.0.1-rc.1`. The Release Script Contract job now rejects that setting
+    while the manifest is a release candidate.
 
 How a candidate moves through the rest of the pipeline:
 
@@ -820,15 +971,16 @@ curl -s -H "Authorization: Bearer $token" \
 
 #### Freezing the release PR while you cut it
 
-release-please **force-recreates** `release-please--branches--master--…` on every
-push to `master`: the branch always ends up with exactly one bot-authored commit.
-The two commits above are hand-added to that same branch, and the rollover
-commit is also what deletes the one-shot `release-as` / `bootstrap-sha` fields —
-so any merge to `master` after you push them silently destroys the cut.
+Label the release PR `autorelease: cut` before you push the cut commits.
 
-Apply the `autorelease: cut` label to the release PR **before** pushing the
-rollover commits. While that label is present, `release-please.yml` skips its
-PR-update invocation and the branch is left alone; it still creates the draft
+release-please force-recreates `release-please--branches--master--…` on
+every push to `master`: the branch always ends up with exactly one
+bot-authored commit. The two cut commits are hand-added to that same
+branch, so any merge to `master` after you push them silently destroys the
+cut.
+
+While the label is present, `release-please.yml` skips its PR-update
+invocation and the branch is left alone; it still creates the draft
 release once the PR merges. The procedure is:
 
 1. Hold merges to `master` (or accept that you may have to redo the cut).
@@ -871,75 +1023,86 @@ validates:
 - `CHANGELOG.md` renders correctly and references no removed files.
 - Signing credentials (OIDC) resolve in the current CI environment.
 
-Run the release-please preview from an origin-faithful clone, not directly from
-the development checkout. Local tags include tags fetched from the Netflix
-`upstream` remote; those tags do not necessarily exist in `VMAFx/vmafx` and can
-make a local preview select the wrong previous release instead of the configured
-bootstrap SHA. The preview clone must expose only the fork's advertised tags
-and the candidate `master` tree. Supply credentials through a protected file
-descriptor or token-file path so the CLI never echoes a literal token in its
-argument list.
+Run the release-please preview from an origin-faithful clone, not directly
+from the development checkout:
 
-See the [session orientation](../../CLAUDE.md#11-release) for the one-line
-summary and the `/prep-release` skill definition for the full checklist.
+- Local tags include tags fetched from the Netflix `upstream` remote. Those
+  tags do not necessarily exist in `VMAFx/vmafx` and can make a local
+  preview select the wrong previous release.
+- The preview clone must expose only the fork's advertised tags and the
+  candidate `master` tree.
+- Supply credentials through a protected file descriptor or token-file path
+  so the CLI never echoes a literal token in its argument list.
+
+See section 11 of
+[AGENTS.md](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md) for the
+one-line summary and the `/prep-release` skill definition for the full
+checklist.
 
 ## `master` branch protection
 
-`master` is protected at the GitHub API layer — the policy in
-[CLAUDE.md §12](../../CLAUDE.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md)
-is enforced at the host, not just honored by convention.
+`master` is protected at the GitHub API layer: the policy in the
+[agent hard rules](agent-hard-rules.md) and
+[CONTRIBUTING.md](../../CONTRIBUTING.md) is enforced at the host, not just
+honoured by convention. The declared rule set and its drift check are in
+[repository security](repository-security.md).
 
-- **Required status check (1):** `Required Checks Aggregator`. Branch protection
-  names exactly this one context; every other gate is enforced *through* it.
-  The aggregator's own `required` array
-  (`.github/workflows/required-aggregator.yml`) is the real inventory; do not
-  copy its count into branch-protection settings. The inventory is grouped as
-  follows:
-  - **Builds:** Ubuntu gcc+DNN, Ubuntu clang+DNN,
-    Windows MinGW64, Windows MSVC+CUDA, Windows MSVC+SYCL,
-    and Ubuntu HIP. These are `libvmaf-build-matrix.yml` lanes
-    ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)). The `build.yml`
-    Windows row is named `Windows MSVC+CUDA (full)` so that it cannot
-    stand in for the required lane.
-  - **Static analysis (10):** CodeQL ×4 (CodeQL, CodeQL (C/C++),
-    CodeQL (Python), CodeQL (Actions)), Pre-Commit, Python Lint, Semgrep,
-    Tidy Changed, Tidy Ratchet, Cppcheck.
-  - **Supply chain / docs (7):** Dependency Review, Gitleaks, Docs,
-    ShellCheck + shfmt, Scorecard PR Gate (pull requests), Scorecard Master
-    Gate (master pushes), Licence Provenance
-    ([guide](licence-provenance-check.md)).
-  - **Tests:** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
-    Sanitizers (thread), Sanitizers (undefined)), Assertion Density, Twin Drift,
-    Tiny AI, go vet + go test, `Coverage GPU`, and `SYCL Parity (Arc A380)`.
-    The last two are enforced only while their distinct
-    `GPU_COVERAGE_ENABLED` / `SYCL_ARC_RUNNER_ENABLED` variables are `true`;
-    hosted probes prevent dispatch to missing label sets (ADR-1319).
-  - **FFmpeg (1):** FFmpeg Patch Stack.
-  - **Governance (1):** Standards & Invariant Verification Gate
-    ([ADR-1249](../adr/1249-praetor-governance-adoption.md)).
-  - **Process gates (6):** Deliverables Checklist, Doc-Substance Gate,
-    docs/state.md Gate, FFmpeg-Patches Surface Sync, ADR Collision Guard,
-    Release Script Contract. These report on every non-draft PR; four of the
-    six auto-exempt the machine-generated release PR — see "Process gates on
-    the release PR" above; the other two stay armed there.
-
-  When adding, renaming, or removing a gate, update the aggregator's `required`
-  array **and this list** in the same PR — branch protection's `contexts` list
-  does not change, because it only ever names the aggregator.
-- **Linear history required** — merges are squash-or-ff-only.
+- **Required status check (1):** `Required Checks Aggregator`. Branch
+  protection names exactly this one context; every other gate is enforced
+  through it.
+- **Linear history required.** Merges are squash-or-ff-only.
 - **Force-push and deletion disabled.**
-- **Admin bypass kept on** (owner can land emergency fixes that skip required
-  checks — use sparingly; see the emergency-release section below).
-- **Not required (non-blocking signals):** Coverage gate (~40 min — built
-  with `-fprofile-update=atomic` since 2026-04-18 to survive parallel-meson
-  SIMD-counter races, see [ADR-0110](../adr/0110-coverage-gate-fprofile-update-atomic.md)),
-  GPU-advisory jobs, the other eleven `libvmaf-build-matrix.yml` lanes, the
-  three `build.yml` rows and the `sanitizers.yml` jobs
-  ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)).
+- **Admin bypass kept on.** The owner can land emergency fixes that skip
+  required checks; use sparingly (see the emergency-release section below).
 
 Management: `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection`
 with a JSON payload. The current rule set is documented in
 [ADR-0037](../adr/0037-master-branch-protection.md).
+
+### What the aggregator requires
+
+The aggregator's own `required` array
+(`.github/workflows/required-aggregator.yml`) is the real inventory, about 80
+contexts at the time of writing. Do not copy its count into branch-protection
+settings. A context missing from the array can be red while the merge button
+stays green ([ADR-1297](../adr/1297-ci-gate-every-reporting-check.md)).
+
+| Group | Contexts |
+| --- | --- |
+| Builds | Ubuntu gcc+DNN, Ubuntu clang+DNN, Windows UCRT64 (MSYS2 UCRT64), Windows MSVC+CUDA, Windows MSVC+SYCL, Ubuntu HIP, Ubuntu gcc, Ubuntu clang, Ubuntu ARM clang, Ubuntu gcc static, macOS clang, macOS clang+DNN, macOS Metal, Ubuntu CUDA, Ubuntu CUDA static, Ubuntu SYCL, Ubuntu SYCL+CUDA, Linux Intel LLVM, macOS Clang+Metal, Windows MSVC+CUDA (full), Windows ARM64 MSVC |
+| Static analysis | CodeQL, CodeQL (C/C++), CodeQL (Python), CodeQL (Actions), Pre-Commit, Python Lint, Semgrep, Semgrep OSS, Tidy Changed, Tidy Ratchet, Tidy SYCL, Cppcheck, Markdown Lint, No Conflict Markers, Go API Compatibility |
+| Supply chain and docs | Dependency Review, Gitleaks, gitleaks, Scorecard PR Gate (pull requests), Scorecard Master Gate (master pushes), Licence Provenance ([guide](licence-provenance-check.md)), Docs, Docs Site Build, Doxygen Public API, ShellCheck + shfmt |
+| Tests | Netflix CPU Golden, Coverage Gate, Coverage GPU, SYCL Parity (Arc A380), Sanitizers (address), Sanitizers (thread), Sanitizers (undefined), Sanitizers ASan+UBSan, Assertion Density, Twin Drift, Tiny AI, Tiny-Model Registry Validate, go vet + go test, MCP Smoke, RC1 Tester Report, vmafx-sys CI, cargo-deny |
+| FFmpeg | FFmpeg Patch Stack, FFmpeg Ubuntu gcc, FFmpeg macOS clang, FFmpeg SYCL |
+| Packaging and images | Docker Image Build, Dev Container Build, helm lint + template |
+| Governance and HISS | Standards & Invariant Verification Gate ([ADR-1249](../adr/1249-praetor-governance-adoption.md)), HISS Replay Evidence (Linux), HISS Replay Evidence (macOS), HISS Replay Evidence (Windows), Silent-Revert Guard |
+| Process gates | Deliverables Checklist, Doc-Substance Gate, docs/state.md Gate, FFmpeg-Patches Surface Sync, ADR Collision Guard, Release Script Contract |
+
+#### Notes on the table
+
+- The build lanes are `libvmaf-build-matrix.yml` legs and `build.yml` rows
+  ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)). The `build.yml`
+  Windows row is named `Windows MSVC+CUDA (full)` so that it cannot stand
+  in for the required `Windows MSVC+CUDA` lane.
+- `Coverage GPU` and `SYCL Parity (Arc A380)` are enforced only while their
+  distinct `GPU_COVERAGE_ENABLED` / `SYCL_ARC_RUNNER_ENABLED` variables are
+  `true`; hosted probes prevent dispatch to missing label sets (ADR-1319).
+- `Coverage Gate` (about 40 minutes) is built with
+  `-fprofile-update=atomic` to survive parallel-meson SIMD-counter races
+  ([ADR-0110](../adr/0110-coverage-gate-fprofile-update-atomic.md)).
+- The process gates report on every non-draft PR. Four of the six
+  auto-exempt the machine-generated release PR; see
+  [Process gates on the release PR](#process-gates-on-the-release-pr).
+  The other two stay armed there.
+- A `strictMustReport` list in the aggregator holds the governance and
+  always-reporting gates whose absence fails the check instead of reading
+  as a path-filter skip.
+
+!!! note
+    When adding, renaming or removing a gate, update the aggregator's
+    `required` array in the same PR and run
+    `scripts/ci/check-aggregator-names.sh`. Branch protection's `contexts`
+    list does not change, because it only ever names the aggregator.
 
 ## Emergency release (out-of-band)
 

@@ -7,19 +7,10 @@ The parser is strict: a tick that does not match the documented
 checkbox shape, or an opt-out that uses the wrong sentinel word,
 fails the gate. Each retry costs a 3–10 minute CI cycle.
 
-The pre-push hook (`scripts/git-hooks/pre-push-pr-body-lint.sh`,
-wired by `make hooks-install`) and the standalone validator
-(`scripts/ci/validate-pr-body.sh`) run the same parser locally
-before the push. The hook bounds `gh` lookup time, falls back to the
-repository's public pull-request pages when local credentials are unavailable,
-and blocks the push if neither source can establish the PR state and body.
-Like the CI gate, the hook skips the machine-generated release-please PR
-(ADR-1151): it asks `scripts/ci/release-pr-exempt.sh` whether the PR's head
-ref is `release-please--…` **and** its author is a bot, using the author that
-`gh` reports. The PR's head ref must also be the branch being pushed. A human
-PR on a `release-please--` branch is still validated, and a PR found only
-through the public-page fallback, which carries no author identity, is never
-exempted.
+To check a body before pushing, use the Quick start commands below. The
+pre-push hook (`scripts/git-hooks/pre-push-pr-body-lint.sh`, wired by
+`make hooks-install`) and the standalone validator
+(`scripts/ci/validate-pr-body.sh`) run the same parser locally.
 
 ## Quick start
 
@@ -37,6 +28,19 @@ make pr-check BODY=pr-body.md
 gh pr view <number> --json body -q .body \
   | scripts/ci/validate-pr-body.sh
 ```
+
+!!! note "Hook behaviour and exemptions"
+    The hook bounds `gh` lookup time, falls back to the repository's public
+    pull-request pages when local credentials are unavailable, and blocks the
+    push if neither source can establish the PR state and body.
+
+Like the CI gate, the hook skips the machine-generated release-please PR
+(ADR-1151). It asks `scripts/ci/release-pr-exempt.sh` whether the PR's
+head ref is `release-please--...` **and** its author is a bot, using the
+author that `gh` reports. The head ref must also be the branch being
+pushed. A human PR on a `release-please--` branch is still validated, and
+a PR found only through the public-page fallback, which carries no author
+identity, is never exempted.
 
 ## The six deliverables and their opt-out forms
 
@@ -123,17 +127,10 @@ error line:
   The parser requires the checkbox form: '- [x] **Research digest** ...'
 ```
 
-## Local run command
+## Exit codes
 
-```bash
-# After gh pr create or gh pr edit, validate the saved body:
-make pr-check PR=<number>
-
-# Against a local draft file before opening the PR:
-make pr-check BODY=.workingdir/pr-batch-0-body.md
-```
-
-Exit codes:
+The validator behind `make pr-check` and
+`scripts/ci/validate-pr-body.sh` exits with:
 
 | Code | Meaning |
 |------|---------|
@@ -143,16 +140,9 @@ Exit codes:
 
 For these two deliverables entry points, exit 2 also covers every shape where
 stdin cannot carry a body at all: a terminal, a closed `fd 0`, or `/dev/null`.
-Those are the producer's fault, not the PR author's, and the scripts say so
-rather than parsing an empty string into six missing deliverables.
-
-The other two gates that read a PR body —
-`scripts/ci/ffmpeg-patches-surface-check.sh` (ADR-0186) and
-`scripts/ci/state-md-touch-check.sh` (ADR-0165) — classify `fd 0` through the
-same helper but answer an absent body differently: they have a diff to fall
-back on, so they name what fd 0 was and then decide on the diff alone, with
-their opt-out sentinel unclaimable. None of the four may read a closed `fd 0`,
-which used to hang them outright. See
+The other two body-reading gates (`ffmpeg-patches-surface-check.sh`,
+ADR-0409, and `state-md-touch-check.sh`, ADR-0165) answer an absent body from
+the diff instead. The classification rules are in
 [pr-body-validator.md](pr-body-validator.md#where-the-body-comes-from).
 
 ## Metadata lookup failures
@@ -161,7 +151,8 @@ A locked keyring or broken `gh` authentication must not hang the push and must
 not turn validation off. After the bounded authenticated lookup, the hook reads
 the public pull-request list and page for this public repository. If both paths
 are unavailable or GitHub's page shape cannot be validated, the hook fails
-closed. Restore connectivity or credentials and retry; do not skip the hook.
+closed. Restore connectivity or credentials and retry; do not skip the hook
+(AGENTS.md operational rule 6).
 
 ## See also
 

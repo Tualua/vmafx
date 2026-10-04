@@ -1,13 +1,26 @@
 # Known upstream bugs
 
-Bugs that reproduce on `upstream/master` (Netflix/vmaf) as well as this fork's
-`master`, discovered during fork work but out of scope for the PR that found
-them. Each entry records the reproducer, the evidence it is upstream, and the
-suggested fix.
+This page tracks what the fork knows about defects in Netflix/vmaf
+(`upstream/master`): the pull requests the fork has sent upstream, defects
+verified against the fork, and the upstream commit the fork is at parity with.
+Sections carry their own as-of date, and the page is a dated log, not a list of
+currently open bugs. The heading "Upstream head the fork is at parity with"
+is the parity pin: `scripts/ci/upstream_parity_pin.py` reads it, so exactly one
+such heading must exist (see
+[licence-provenance-check.md](licence-provenance-check.md)).
 
-When a fork-local PR touches the same file, prefer to fix the bug in that PR
-and reference this entry in the commit. If the PR does not touch the file,
+Each entry records the reproducer, the evidence that it is upstream, and the
+fix. When a fork-local PR touches the same file, prefer to fix the bug in that
+PR and reference the entry in the commit. If the PR does not touch the file,
 file a follow-up ticket and link to it here.
+
+| Section | As of |
+| --- | --- |
+| [Open pull requests sent upstream](#open-pull-requests-this-fork-has-sent-upstream) | 2026-10-01 |
+| Upstream defects verified against the fork | 2026-10-01 |
+| Parity pin (upstream head the fork is at parity with) | 2026-10-02 |
+| [Reported upstream on 2026-09-19](#reported-upstream-on-2026-09-19) | 2026-09-19 |
+| Individual defects (ADM rounding, AVX-512 LTO SEGV, AIM clipping, `KBND_SYMMETRIC`) | per entry |
 
 ---
 
@@ -41,43 +54,57 @@ not-affected".
 | [#1627](https://github.com/Netflix/vmaf/pull/1627) | `speed_temporal` overruns its buffers at `speed_prescale` above 1 | Ported, fork PR #1643 (`T-SPEED-TEMPORAL-PRESCALE-UP-OVERFLOW-2026-09-30`) |
 | [#1629](https://github.com/Netflix/vmaf/pull/1629) | `cambi` walks outside frames shorter than its window | Ported, fork PR #1642 (`T-CAMBI-SHORT-FRAME-OOB-2026-09-30`) |
 
-Three of these differ from what the fork carries, which matters at the next sync:
+### Where the fork differs from these pull requests
 
-- **#1601 takes a cheaper fix than the fork's.** The fork widens the accumulator
-  to int64 (PR #1477). Upstream measured that at 3.5 to 6 % of throughput, so
-  the upstream patch starts the sum from the normalization offset instead, which
-  adds no operation and measures within noise. Both are correct. **That
-  approach is worth bringing back to the fork** as a performance change; it has
-  not been done.
-- **#1602 changed direction after review, and the fork followed.** Its first
-  revision made SIMD follow the scalar int16 wrap of the masking centre tap.
-  Its second revision (2026-09-21) removes the wrap from the scalar, x86 edge
-  and CUDA code instead, after a reviewer there called the wrap wrong. Measured
-  in the fork on 2026-10-01, the wrap is an artefact: a flat reference with
-  isolated impairments scored `integer_adm_scale0` above 1 where `float_adm`
-  gives exactly 1. The fork removed the wrap from the scalar, AVX2, AVX-512,
-  CUDA, HIP, SYCL and Metal code the same day
-  ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md)), after checking that no
-  Netflix golden assertion moves. Until upstream merges the pull request the
-  fork's integer ADM differs from upstream master on content that reaches a
-  centre coefficient of 15360, such as full-range noise; `docs/state.md` row
+Three of these differ from what the fork carries, which matters at the next
+sync.
+
+**#1601 takes a cheaper fix than the fork's.**
+
+- Fork: widens the accumulator to int64 (PR #1477). Upstream measured that at
+  3.5 to 6 % of throughput.
+- Upstream: starts the sum from the normalization offset instead, which adds
+  no operation and measures within noise.
+- Action: both are correct. That approach is worth bringing back to the fork
+  as a performance change; it has not been done.
+
+**#1602 changed direction after review, and the fork followed.**
+
+- First revision: SIMD follows the scalar int16 wrap of the masking centre tap.
+- Second revision (2026-09-21): removes the wrap from the scalar, x86 edge and
+  CUDA code instead, after a reviewer there called the wrap wrong.
+- Measured in the fork on 2026-10-01: the wrap is an artefact. A flat reference
+  with isolated impairments scored `integer_adm_scale0` above 1 where
+  `float_adm` gives exactly 1.
+- Fork: removed the wrap from the scalar, AVX2, AVX-512, CUDA, HIP, SYCL and
+  Metal code the same day ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md)),
+  after checking that no Netflix golden assertion moves.
+- Until upstream merges the pull request the fork's integer ADM differs from
+  upstream master on content that reaches a centre coefficient of 15360, such
+  as full-range noise. The `docs/state.md` row
   `T-ADM-CM-CENTRE-TAP-WRAP-ABOVE-ONE-2026-10-01` has the measured deltas.
-- **#1591 and #1588 are narrower than the fork.** The fork keeps a thread pool
-  that started at least one worker, and its `vmaf_use_feature()` consumes the
-  dictionary on a failed copy too. Keep both at a sync.
 
-Upstream PR [#1494](https://github.com/Netflix/vmaf/pull/1494) (open since April,
+**#1591 and #1588 are narrower than the fork.**
+
+- The fork keeps a thread pool that started at least one worker.
+- Its `vmaf_use_feature()` consumes the dictionary on a failed copy too.
+- Action: keep both at a sync.
+
+Upstream PR [#1494](https://github.com/Netflix/vmaf/pull/1494) (open since
+April,
 by an upstream maintainer) refactors the same ADM functions. It does not touch
 the lines above, but whichever lands first leaves the other needing a rebase.
 
 ## Upstream defects verified on `6ec23e8f2`, checked against the fork (2026-10-01)
 
-Fifteen defects were reproduced on upstream master `6ec23e8f2` while answering
+As of 2026-10-01. Fifteen defects were reproduced on upstream master `6ec23e8f2`
+while answering
 Netflix issues on 2026-10-01. Each was run against the fork's `master` with the
 reproducer from the upstream report, on this host (RTX 4090, gfx1036, Arc
 A380 under `xe`; GCC 16.2.1, Clang 22.1.8). Three reproduced and are fixed;
-twelve do not. The reproducers are kept under
-`~/.cache/vmafx-upstream-rebase/evidence/` on the host, one directory per issue.
+twelve do not. The reproducers are kept by the maintainer outside the tree, one
+directory
+per issue.
 
 | Upstream | Defect | On the fork |
 | --- | --- | --- |
@@ -197,7 +224,8 @@ output.
 
 ## `adm_decouple_s123_avx512` LTO+release SEGV — fixed in this fork
 
-**Status:** fixed in this fork (PR #69 follow-up commit), still present upstream.
+**Status:** fixed in this fork (PR #69 follow-up commit), still present
+upstream.
 
 **Symptom:** `test_pic_preallocation` aborts with
 `AddressSanitizer: SEGV on unknown address` inside
@@ -209,7 +237,7 @@ reproduce the crash.
 Reproduce with:
 
 ```bash
-meson setup build-asan-lto libvmaf \
+meson setup build-asan-lto core \
   -Denable_cuda=false -Denable_sycl=false \
   -Db_sanitize=address --buildtype=release -Db_lto=true
 ninja -C build-asan-lto test/test_pic_preallocation
@@ -240,10 +268,11 @@ alignment inference promotes the unaligned loads to the aligned
 every other 64-byte slot.
 
 **Fix applied in this fork:** annotate the stack array with
-`_Alignas(64)` at
-[`core/src/feature/x86/adm_avx512.c:1317`](../../core/src/feature/x86/adm_avx512.c#L1317).
-The unaligned load remains correct, and the LTO-promoted aligned
-form is now also correct.
+`_Alignas(64)`. The unaligned load remains correct, and the LTO-promoted
+aligned form is now also correct. The array has since left the tree: the
+`angle_flag` predicate is computed by the shared helpers in
+`core/src/feature/adm_angle_flag.h`, and `adm_avx512.c` holds no such stack
+array.
 
 **Related issue surfaced during triage:**
 `test_picture_pool_basic`, `test_picture_pool_small`, and
@@ -263,11 +292,11 @@ upstream.
 The two ADM extractors finish the AIM ratio differently:
 
 ```c
-/* libvmaf/src/feature/integer_adm.c:3006-3007 */
+/* upstream libvmaf/src/feature/integer_adm.c:3006-3007 */
 // normalize AIM score by the DLM denominator
 *score_aim = aim_num / den;
 
-/* libvmaf/src/feature/adm.c:322-323 */
+/* upstream libvmaf/src/feature/adm.c:322-323 */
 // normalize AIM score by the DLM denominator and clip values larger than 1
 *score_aim = MIN(aim_num / aim_den, 1.0f);
 ```

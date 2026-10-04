@@ -5,15 +5,34 @@ This page covers getting started with the VMAFX Rust bindings.
 
 ## Overview
 
-The repository ships a Rust workspace at the repo root (`Cargo.toml`).
-Its first member is `bindings/rust/vmafx-sys`, the low-level FFI crate.
+The repository ships a Rust workspace at the repo root (`Cargo.toml`,
+edition 2024). It has three members:
 
-| Crate | Description |
-|-------|-------------|
-| `vmafx-sys` | Auto-generated raw FFI bindings + thin safe wrappers. |
+| Crate | Path | Description |
+|-------|------|-------------|
+| `vmafx-sys` | `bindings/rust/vmafx-sys` | Auto-generated raw FFI bindings plus thin safe wrappers. |
+| `vmafx` | [`bindings/rust/vmafx`](../../bindings/rust/vmafx) | Higher-level safe API (`Context`, `Model`, `Picture`, `Score`; ADR-0929) over `vmafx-sys`. |
+| `vmafx-tad` | `core/src/feature/rust/tad` | Rust pilot of the Temporal Absolute Difference feature extractor (ADR-0707). |
 
-The higher-level `vmafx` crate lives in [`bindings/rust/vmafx`](../../bindings/rust/vmafx)
-(ADR-0929); `vmafx-sys` is the raw FFI layer beneath it.
+The crates are versioned independently (currently 0.1.0) and are not
+published to crates.io from the release pipeline (ADR-1127, ADR-1151).
+Depend on them by path.
+
+## Quick start
+
+1. Build and install libvmaf (see [libvmaf](#libvmaf) below).
+2. Provision the test clips with `scripts/test/fetch-test-yuvs.sh`.
+3. Run the scoring example:
+
+    ```bash
+    VMAFX_REPO=$(git rev-parse --show-toplevel) \
+        LD_LIBRARY_PATH=/usr/local/lib \
+        cargo run --example score
+    ```
+
+The example scores the Netflix golden pair and asserts the result; see
+[Running the smoke test](#running-the-smoke-test) for the expected
+output.
 
 ## Prerequisites
 
@@ -26,7 +45,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup component add rustfmt clippy
 ```
 
-The crate targets **Rust 2021 edition**. Any stable release from 1.65+ is sufficient.
+The workspace uses **Rust edition 2024**, which needs Rust 1.85 or newer.
+Any recent stable toolchain is sufficient.
 
 ### libvmaf
 
@@ -38,7 +58,7 @@ build time. You must have a compatible install of libvmaf before running
 
 ```bash
 # From the repo root:
-meson setup build -Denable_cuda=false -Denable_sycl=false
+meson setup build core -Denable_cuda=false -Denable_sycl=false
 ninja -C build
 sudo ninja -C build install   # installs to /usr/local by default
 sudo ldconfig                 # refresh the dynamic linker cache
@@ -57,12 +77,14 @@ If you install to a prefix other than `/usr/local`, set:
 
 ```bash
 export LIBVMAF_PREFIX=$HOME/.local
-export PKG_CONFIG_PATH=$LIBVMAF_PREFIX/lib/pkgconfig
 export LD_LIBRARY_PATH=$LIBVMAF_PREFIX/lib:$LD_LIBRARY_PATH
 ```
 
 `build.rs` reads `LIBVMAF_PREFIX` to locate both the headers (used by bindgen)
-and the shared library (used by the linker).
+and the shared library (used by the linker). `LD_LIBRARY_PATH` is for the
+dynamic loader at run time; `build.rs` does not read it. If you also use
+`pkg-config` to inspect the install, add
+`PKG_CONFIG_PATH=$LIBVMAF_PREFIX/lib/pkgconfig`.
 
 ## Using `vmafx-sys` as a dependency
 
@@ -73,12 +95,8 @@ Add to your crate's `Cargo.toml`:
 vmafx-sys = { path = "<path-to-repo>/bindings/rust/vmafx-sys" }
 ```
 
-Once the crate is published to crates.io, you will instead write:
-
-```toml
-[dependencies]
-vmafx-sys = "0.1"
-```
+The crate is not published to crates.io; depend on it by path (or by git
+URL).
 
 ## The `safe` vs `sys` API split
 
@@ -91,21 +109,22 @@ function is available. Use this layer when you need access to functionality
 not yet wrapped by the safe layer.
 
 ```rust
-use vmafx_sys::{vmaf_version, CStr};
+use std::ffi::CStr;
+use vmafx_sys::vmaf_version;
 let v = unsafe { CStr::from_ptr(vmaf_version()) };
 ```
 
 ### Safe layer (`use vmafx_sys::safe::*`)
 
-Thin RAII wrappers that:
+Thin RAII wrappers with four guarantees:
 
-- Manage object lifetimes automatically (`VmafContext` gets at most two native
-  close attempts, while `VmafModel` destroys on drop).
-- Convert C status codes into `Result`; context close accepts exact zero only,
-  preserves the first error, and permits one retry.
-- Confine `unsafe` to the actual FFI call sites only.
-- Keep contexts and close-retry tokens thread-affine (`!Send`) so teardown
-  stays on the thread that owns the native pipeline.
+- Lifetimes: `VmafContext` gets at most two native close attempts;
+  `VmafModel` destroys on drop.
+- Errors: C status codes become `Result`. Context close accepts exact zero
+  only, keeps the first error and permits one retry.
+- `unsafe`: confined to the FFI call sites.
+- Threads: contexts and close-retry tokens are `!Send`, so teardown stays
+  on the thread that owns the native pipeline.
 
 Context close is explicitly retryable: a nonzero native close result becomes a
 teardown-only token rather than discarding ownership. A failed explicit retry
@@ -148,14 +167,20 @@ VMAFX_REPO=$(git rev-parse --show-toplevel) \
 Expected output:
 
 ```text
-vmafx-sys version: 3.2.1
+vmafx-sys version: 1.0.0-rc.2
 Reference:  .../python/test/resource/yuv/src01_hrc00_576x324.yuv
 Distorted:  .../python/test/resource/yuv/src01_hrc01_576x324.yuv
 Model:      .../model/vmaf_v0.6.1.json
-Frames processed: 240
-Mean VMAF score:  76.6680
-Score assertion PASSED (expected 76.6680)
+Frames processed: 48
+Mean VMAF score:  76.6678
+Score assertion PASSED (expected 76.6690)
 ```
+
+The first line is the product version that `vmaf_version()` returns
+(`1.0.0-rc.2` at the time of writing), not the C API version that
+`pkg-config` reports. The example reads up to 240 frames and stops at the
+end of the file; the golden pair has 48. The assertion tolerance is
+5e-3 (places=3).
 
 ## Running tests
 
@@ -166,8 +191,10 @@ VMAFX_REPO=$(git rev-parse --show-toplevel) \
 ```
 
 The integration test (`tests/integration_test.rs`) scores the Netflix golden YUV
-pair and asserts the mean VMAF equals 76.668 (places=4). If the YUV files are not
-present (e.g. a CI environment without test fixtures), the test skips gracefully.
+pair and asserts the mean VMAF equals 76.669 within 5e-3 (places=3; the Python
+golden gate uses places=2 for this sequence). If the YUV files are not
+present (e.g. a CI environment without test fixtures), the test skips
+gracefully.
 
 ## Linting
 
@@ -176,7 +203,11 @@ cargo fmt -p vmafx-sys --check
 cargo clippy -p vmafx-sys --all-targets -- -D warnings
 ```
 
-These two gates run in CI on every PR touching `bindings/rust/`.
+CI (`.github/workflows/rust-ci.yml`) runs these two gates, the build,
+the tests, the golden smoke example and `cargo-deny` on every PR touching
+`bindings/rust/` or the Rust workspace. The required contexts are `vmafx-sys CI`
+and
+`cargo-deny`.
 
 ## Environment variables reference
 

@@ -43,14 +43,13 @@ acpp --version  # → AdaptiveCpp version: 25.10.0
 
 AdaptiveCpp builds against any modern LLVM (≥ 16). Upstream
 instructions live at
-<https://adaptivecpp.github.io/AdaptiveCpp/installing.html>. The
-fork's CI does not yet ship an official AdaptiveCpp lane (a future
-PR adds `.github/workflows/sycl-acpp.yml` per ADR-0407 § follow-ups).
+<https://adaptivecpp.github.io/AdaptiveCpp/installing.html>. No CI lane builds
+with AdaptiveCpp yet (see [CI implications](#ci-implications)).
 
 ### Build the fork with AdaptiveCpp
 
 ```bash
-meson setup build-acpp \
+meson setup build-acpp core \
     -Denable_cuda=false \
     -Denable_sycl=true \
     -Dsycl_compiler=acpp \
@@ -70,15 +69,18 @@ string. Common values:
 
 ## Quickstart — Intel oneAPI (default)
 
-See [`oneapi-install.md`](oneapi-install.md). The default invocation
-is unchanged:
+See [`oneapi-install.md`](oneapi-install.md). From the repository root:
 
 ```bash
-meson setup build -Denable_cuda=false -Denable_sycl=true
+meson setup build core -Denable_cuda=false -Denable_sycl=true
 ninja -C build
 ```
 
-`sycl_compiler` defaults to `icpx`; nothing else needs to change.
+`sycl_compiler` defaults to `icpx`. The default `sycl_icpx_aot_targets` list
+compiles every kernel ahead of time for 19 Intel targets and needs Intel's
+`ocloc` on `PATH`; `-Dsycl_icpx_aot_targets=` (empty) falls back to SPIR-V
+just-in-time compilation without `ocloc`
+([ADR-1360](../adr/1360-sycl-aot-compile-time-device-codegen.md)).
 
 ## Capability matrix
 
@@ -95,21 +97,35 @@ tested.
 | `sycl::local_accessor` | yes | yes | All targets. |
 | `sycl::sub_group`, `reduce_over_group` | yes | yes | CUDA / HIP / SPIR-V. |
 | `sycl::atomic_ref<int64, relaxed, device, global>` | yes | yes | int64 atomics on older AMD HIP devices may need a fallback at HIP target build time. |
-| `[[intel::reqd_sub_group_size(N)]]` | yes (verbatim) | **no — neutralised by `VMAF_SYCL_REQD_SG_SIZE(N)` macro** | AdaptiveCpp picks sub-group size per backend at JIT time. The macro reduces to a no-op under acpp; see `core/src/feature/sycl/sycl_compat.h`. |
-| `sycl::ext::oneapi::experimental::*` | yes | no | Intel-specific extensions. The fork uses **none** today. |
+| `[[sycl::reqd_sub_group_size(N)]]` through `VMAF_SYCL_REQD_SG_SIZE(N)` | yes, N is 16 or 32 | no (the macro expands to nothing) | See note 1. |
+| `sycl::ext::oneapi::experimental` (kernel properties, `grf_size`) | yes | no | See note 2. |
 | `joint_matrix` | yes | partial / target-dependent | The fork uses none. |
 | Level Zero zero-copy import (`get_native<ext_oneapi_level_zero>`) | yes | conditional — works only when targeting an Intel L0 backend under acpp | Defaults to icpx-only in practice; AdaptiveCpp on non-Intel HW falls back to host-staged copies. |
 | DMA-BUF / VAAPI surface import | yes | yes (Linux only, `--acpp-targets=generic` or L0 path) | The build plumbing wires `libva` + `libva-drm` for both toolchains. |
 | D3D11 staging-texture surface import | yes (Windows) | untested | Out of scope for AdaptiveCpp on the fork as of 2026-05-08. |
 
+Notes:
+
+1. `VMAF_SYCL_REQD_SG_SIZE(N)` in `core/src/feature/sycl/sycl_compat.h`
+   expands to `[[sycl::reqd_sub_group_size(N)]]` under icpx (the
+   `[[intel::...]]` spelling is deprecated since oneAPI 2026.0) and to nothing
+   under AdaptiveCpp, which picks the sub-group size per backend at JIT time.
+   N must be 16 or 32: the Xe2 targets of the default AOT list accept no other
+   size ([ADR-1468](../adr/1468-sycl-sub-group-sizes-every-aot-target.md)).
+2. The fork uses the experimental kernel-properties extension for the large
+   register file (`VmafSyclKernelShape` in `sycl_compat.h`,
+   [ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)) and in
+   `core/src/sycl/common.cpp`; the AdaptiveCpp build compiles those paths out.
+
 ## Numerical conformance
 
-**AdaptiveCpp output is not bit-identical to icpx, and not
-bit-identical to scalar CPU.** This is consistent with the fork's
-[golden-gate-CPU-only rule](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify):
-no GPU / SYCL backend is bit-identical to the Netflix CPU golden
-assertions, only "close enough" within `places=4`. AdaptiveCpp adds
-another non-bit-identical lane to that family.
+Under icpx, every SYCL twin declared exact returns the CPU extractor's scores
+bit for bit; the declarations are the `scripts/ci/exact_twins.d/*.sycl`
+fragments, listed in the generated
+[exact-twins table](cross-backend-exact-twins.md). AdaptiveCpp builds are not
+measured against that gate: their output is not known to be bit-identical to
+icpx or to the CPU. The Netflix golden assertions are checked on the CPU only
+([ADR-0024](../adr/0024-netflix-golden-preserved.md)).
 
 Under icpx every SYCL feature TU compiles with
 `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
@@ -123,23 +139,23 @@ AdaptiveCpp backend gives them. See
 [`core/src/sycl/AGENTS.md`](../../core/src/sycl/AGENTS.md) §
 "SYCL strict FP line load-bearing".
 
-When a future PR extends the cross-backend ULP-tolerance gate
-([`/cross-backend-diff` skill](../../.claude/skills/cross-backend-diff/))
-to cover acpp, that PR adds the per-feature ULP entries for the
-acpp CPU OpenMP backend.
+No CI lane compares AdaptiveCpp output with the CPU yet. Extending the
+cross-backend gate ([`/cross-backend-diff`
+skill](../../.claude/skills/cross-backend-diff/))
+to acpp would add its per-feature entries.
 
 ## CI implications
 
-CI runners without Intel hardware are today limited to either (a)
-self-hosted runners with Intel iGPU/Arc, or (b) Intel CPU OpenCL
-under icpx (a CPU-emulated GPU path). AdaptiveCpp's
-`--acpp-targets=omp` adds a third option: pure OpenMP CPU
-execution that runs anywhere LLVM does, including stock
-`ubuntu-latest`.
+No workflow builds with AdaptiveCpp today. Without Intel hardware, a CI runner
+can run SYCL code in two ways:
 
-A follow-up PR (`.github/workflows/sycl-acpp.yml`, sized ~50 LOC in
-ADR-0407 § follow-ups) will land that lane as a non-required
-status check before promoting it to `required-aggregator.yml`.
+1. a self-hosted runner with an Intel iGPU or Arc card;
+2. Intel's CPU OpenCL runtime under icpx, which emulates a GPU on the CPU.
+
+AdaptiveCpp's `--acpp-targets=omp` would add a third: plain OpenMP on the CPU,
+which runs anywhere LLVM does, including stock `ubuntu-latest`. ADR-0407 lists
+`.github/workflows/sycl-acpp.yml` as a follow-up: a non-required check first,
+promoted to `required-aggregator.yml` later.
 
 ## Troubleshooting
 
@@ -149,7 +165,7 @@ The configured `sycl_compiler` is not on `PATH`. Either install
 AdaptiveCpp into a system path, or pass the absolute path:
 
 ```bash
-meson setup build-acpp \
+meson setup build-acpp core \
     -Dsycl_compiler=/opt/adaptivecpp/bin/acpp \
     -Dsycl_acpp_targets=generic \
     -Denable_sycl=true
@@ -166,9 +182,8 @@ layout — the fork supports the upstream layout, not custom ones.
 
 ### Kernel runs but produces different scores than icpx
 
-Expected. See § "Numerical conformance" above. The acceptance bar
-is `places=4` against the Netflix golden CPU values, not bit-exact
-parity with icpx.
+Expected: AdaptiveCpp output is not measured against the exact-twin gate. See
+[Numerical conformance](#numerical-conformance).
 
 ## See also
 

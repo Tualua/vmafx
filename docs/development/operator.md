@@ -1,13 +1,18 @@
 # vmafx-operator
 
 The vmafx-operator is a Kubernetes Operator built with kubebuilder v4 /
-controller-runtime v0.24+ that manages the three VMAFX custom resource types:
+controller-runtime v0.24+. Use it to submit scoring jobs, register GPU compute
+nodes and start model-training runs as Kubernetes resources. It reconciles
+three VMAFX custom resource types:
 
 | CRD | Short name | Purpose |
 | --- | --- | --- |
 | `VmafxJob` | `vmjob` | One reference↔distorted video-quality scoring job |
 | `VmafxNode` | `vmnode` | A compute node with GPU capacity |
 | `VmafxModelTraining` | `vmtrain` | Online SGD-EMA sidecar model training run |
+
+The Helm chart ships a fourth CRD, `VmafxTenant` (short name `vmtenant`), that
+the operator does not reconcile; see [VmafxTenant CRD](#vmafxtenant-crd).
 
 See [ADR-0714](../adr/0714-vmafx-operator-skeleton.md) for the design decision
 and [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) for the
@@ -20,13 +25,13 @@ broader Phase 4b context.
 ### Install CRDs + operator via Helm
 
 ```bash
-# Clone and checkout the branch.
+# Clone the repository.
 git clone https://github.com/VMAFx/vmafx.git && cd vmafx
 
-# Install CRDs + operator (Stage 1 — stub reconcilers).
+# Install CRDs + operator. The image tag defaults to v<Chart.AppVersion>;
+# pass --set operator.image.tag=<release tag> to pin another release.
 helm upgrade --install vmafx deploy/helm/vmafx \
   --set operator.enabled=true \
-  --set operator.image.tag=latest \
   --namespace vmafx-system --create-namespace
 ```
 
@@ -39,8 +44,8 @@ The release image exposes a non-blocking version check that does not need
 Kubernetes credentials or start the manager:
 
 ```bash
-docker run --rm ghcr.io/vmafx/vmafx-operator:v3.2.1 --version
-# v3.2.1
+docker run --rm ghcr.io/vmafx/vmafx-operator:v1.0.0-rc.2 --version
+# v1.0.0-rc.2
 ```
 
 Release builds inject the published tag into `pkg/version.version`; an output
@@ -126,7 +131,8 @@ kubectl get vmtrain -n vmafx-system
 
 The operator runs as a single Deployment (`vmafx-operator`) with a
 controller-runtime Manager.  Three independent reconcilers watch their
-respective CRDs.
+respective CRDs.  The diagram below shows the Pod: the manager hosts the three
+reconcilers and exposes metrics on `:8080` and health probes on `:8081`.
 
 ```figure
 operator-reconcilers
@@ -169,15 +175,19 @@ the `operator.*` koanf subtree under the `VMAFX_` prefix.
 | `VMAFX_CONTROLLER_GRPC_ADDR` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller |
 | `VMAFX_CONTROLLER_HTTP_ADDR` | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller |
 
-> **Migration from the pre-fx binary** (ADR-1119): the CLI flags
-> (`--metrics-bind-address`, `--health-probe-bind-address`, `--leader-elect`,
-> `--log-level`, `--webhooks-enabled`) are removed. Three env vars were
-> renamed — `VMAFX_OPERATOR_PROBE_ADDR` → `VMAFX_OPERATOR_HEALTH_PROBE_ADDR`,
-> `VMAFX_OPERATOR_LEADER_ELECT` → `VMAFX_OPERATOR_LEADER_ELECTION`,
-> `VMAFX_OPERATOR_LOG_LEVEL` → `VMAFX_LOG_LEVEL` — and the boolean
-> `VMAFX_OPERATOR_WEBHOOKS_ENABLED` is replaced by the integer
-> `VMAFX_OPERATOR_WEBHOOK_PORT` (set a port such as `9443` to enable; `0` or
-> unset disables). Update Deployment manifests and Helm values accordingly.
+!!! warning "Migrating from the pre-fx binary (ADR-1119)"
+    The CLI flags (`--metrics-bind-address`, `--health-probe-bind-address`,
+    `--leader-elect`, `--log-level`, `--webhooks-enabled`) are removed.
+    Update Deployment manifests and Helm values to the new variables:
+
+| Old | New |
+| --- | --- |
+| `VMAFX_OPERATOR_PROBE_ADDR` | `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` |
+| `VMAFX_OPERATOR_LEADER_ELECT` | `VMAFX_OPERATOR_LEADER_ELECTION` |
+| `VMAFX_OPERATOR_LOG_LEVEL` | `VMAFX_LOG_LEVEL` |
+| `VMAFX_OPERATOR_WEBHOOKS_ENABLED` (boolean) | `VMAFX_OPERATOR_WEBHOOK_PORT` (integer) |
+
+Set a port such as `9443` to enable webhooks; `0` or unset disables them.
 
 ---
 
@@ -197,23 +207,28 @@ eval "$(make -s setup-envtest-env)"
 go test ./cmd/vmafx-operator/internal/controller/... -v
 ```
 
-The tool release and default Kubernetes generation are owned by
-`SETUP_ENVTEST_VERSION` and `ENVTEST_K8S_VERSION` in `build-config.env`.
-Make and CI share `scripts/ci/setup-envtest.sh`: it installs the exact release
-into Go's `GOBIN` (or the first `GOPATH` entry's `bin`), checks its Go build
-metadata and invokes that path directly. An unrelated or stale binary earlier
-on `PATH` cannot satisfy the version check. The selected release requires
-Go 1.26 or newer; the application keeps its own `go.mod` requirement.
+#### How the tool is pinned
 
-`make setup-envtest-env` never installs the tool and rejects a missing or
-mismatched version. Both the helper's `path` mode and env export require
-installed assets and never fetch missing control-plane binaries. Run
-`make setup-envtest` first to acquire them; set `ENVTEST_INSTALLED_ONLY=true`
-on that installation command to require an existing offline asset cache.
-A test-specific Kubernetes override remains available, for example
-`make setup-envtest ENVTEST_K8S_VERSION=1.31.0`; pass the same override to
-`setup-envtest-env`. The default remains the 1.31 series. By default, the suite
-starts an embedded control plane. See
+The tool release and default Kubernetes generation are owned by
+`SETUP_ENVTEST_VERSION` and `ENVTEST_K8S_VERSION` in `build-config.env`. Make
+and CI share `scripts/ci/setup-envtest.sh`.
+
+- The script installs the exact release into Go's `GOBIN` (or the first
+  `GOPATH` entry's `bin`), checks its Go build metadata and invokes that path
+  directly. A stale binary earlier on `PATH` cannot satisfy the version check.
+- The selected release requires Go 1.26 or newer; the application keeps its
+  own `go.mod` requirement.
+- `make setup-envtest-env` never installs the tool and rejects a missing or
+  mismatched version. It and the helper's `path` mode require installed assets
+  and never fetch missing control-plane binaries.
+- Run `make setup-envtest` first to acquire them; set
+  `ENVTEST_INSTALLED_ONLY=true` on that command to require an existing offline
+  asset cache.
+- Override the Kubernetes version for one run with, for example,
+  `make setup-envtest ENVTEST_K8S_VERSION=1.31.0`, and pass the same override
+  to `setup-envtest-env`. The default is the 1.31 series.
+
+By default the suite starts an embedded control plane. See
 [the pinning evidence](../research/2058-envtest-version-owner.md).
 
 ### Webhook unit tests
@@ -247,7 +262,8 @@ Webhooks are disabled by default.  Enable by setting a webhook port, e.g.
 Valid URI schemes include `file://`, `s3://`, `rclone://`, `gs://`, `azure://`,
 and any other `alphabet://` URI supported by rclone.
 
-**TLS prerequisite**: the webhook server requires a valid TLS certificate.  Install
+**TLS prerequisite**: the webhook server requires a valid TLS certificate.
+Install
 [cert-manager](https://cert-manager.io/) and annotate the webhook `Service` with
 `cert-manager.io/inject-ca-from` to auto-provision the certificate.
 
@@ -269,6 +285,19 @@ aggregate used by the Helm operator RBAC template.
 
 ---
 
+## VmafxTenant CRD
+
+The chart also installs `VmafxTenant` (`vmtenant`, namespaced), which holds a
+tenant's OIDC provider and RBAC policy for the multi-tenant auth gateway of
+the vmafx-controller. The operator's `ClusterRole` grants access to it
+(`deploy/helm/vmafx/templates/operator-rbac.yaml`), but the operator has no
+reconciler for it: the chart renders one `VmafxTenant` per entry of
+`auth.tenants` when `auth.enabled` is set. The CRD schema is
+`deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml`; fields, example and Helm
+values are in [server/auth.md](../server/auth.md#vmafxtenant-crd).
+
+---
+
 ## Stage roadmap
 
 | Stage | Status | Scope |
@@ -284,7 +313,9 @@ aggregate used by the Helm operator RBAC template.
 
 - [ADR-0714](../adr/0714-vmafx-operator-skeleton.md) — Stage 1 design
 - [ADR-0786](../adr/0786-vmafx-operator-stage2-reconcilers.md) — Stage 2 design
-- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) — Phase 4b platform
-- [ADR-0711](../adr/0711-vmafx-controller-impl.md) — controller (sibling service)
+- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) — Phase 4b
+  platform
+- [ADR-0711](../adr/0711-vmafx-controller-impl.md) — controller (sibling
+  service)
 - [k8s-deployment.md](k8s-deployment.md) — general k8s deployment guide
 - [gpu-scheduling.md](gpu-scheduling.md) — GPU vendor scheduling

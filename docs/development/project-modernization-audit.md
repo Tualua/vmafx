@@ -31,33 +31,16 @@ refer to one row even after the Markdown is regenerated.
 
 ## Reading Findings
 
-The audit filters historical closeout prose before ranking markers. For example,
-docstrings that say a `NotImplementedError` scaffold was replaced, Python
-`except NotImplementedError` handlers, and custom exception classes that inherit
-from `NotImplementedError` are not actionable gaps by themselves. In Python
-source, a live `raise NotImplementedError(...)` still ranks as a high-severity
-implementation finding.
+The audit drops closeout prose and documented optional-build stubs; a live
+`raise NotImplementedError(...)` or a bare `return -ENOSYS;` stays a
+high-severity finding.
 
-Documented `-ENOSYS` disabled-build contracts are filtered the same way. API
-docs, workflow comments, and DNN fallback stubs that explicitly describe
-optional-build behavior are not reported as missing implementations. A bare
-`return -ENOSYS;` outside a documented contract remains a high-severity finding.
-The same filter covers optional-backend contracts that name the compile-time
-guard (`HAVE_*`, `enable_*=false`), unavailable loader/runtime paths, or
-documented CPU fallback behavior. HIP/ROCm dual-path files are a common
-example: an `enable_hipcc=false` branch that returns `-ENOSYS` is a supported
-optional-runtime contract, while a live unguarded `return -ENOSYS;` remains a
-finding.
-
-Error-code translation helpers are also filtered when they map a native
-`NotSupported` runtime code to POSIX `-ENOSYS`. Those mappings are error
-normalisation, not missing implementations.
-
-Test-double prose is also filtered. Lines that say a unit test injects a stub,
-fake session, or fake subprocess are not implementation debt. Neither are ADR
-allocator stub-file references such as `docs/adr/NNNN-slug.md.stub`, Python
-type-stub package names, driver-stub environment diagnostics, or comments that
-pin disabled-build stub signatures to the real implementation ABI.
+| Marker | Filtered when | Still ranked high when |
+| --- | --- | --- |
+| `NotImplementedError` | The text is a docstring saying a scaffold was replaced, an `except NotImplementedError` handler, or a custom exception class inheriting from it. | A live `raise NotImplementedError(...)` in Python source. |
+| `-ENOSYS` | The line is a documented disabled-build contract: API docs, workflow comments or DNN fallback stubs describing optional-build behaviour. The same filter covers optional-backend contracts that name the compile-time guard (`HAVE_*`, `enable_*=false`), unavailable loader or runtime paths, or documented CPU fallback behaviour. | A bare `return -ENOSYS;` outside a documented contract, including a live unguarded one in a HIP/ROCm dual-path file (an `enable_hipcc=false` branch that returns `-ENOSYS` is a supported optional-runtime contract and is filtered). |
+| Error-code translation | A helper maps a native `NotSupported` runtime code to POSIX `-ENOSYS`: that is error normalisation, not a missing implementation. | Not applicable. |
+| Test doubles and stubs | Lines saying a unit test injects a stub, fake session or fake subprocess; ADR allocator stub-file references such as `docs/adr/NNNN-slug.md.stub`; Python type-stub package names; driver-stub environment diagnostics; comments pinning disabled-build stub signatures to the real ABI. | Not applicable. |
 
 `blocked=true` means the matched line contains a dependency phrase such as
 `upstream`, `manual access`, `legal`, `model weights`, or `stability window`.

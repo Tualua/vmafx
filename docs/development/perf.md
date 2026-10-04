@@ -19,7 +19,7 @@ bash scripts/perf/bench-multi-resolution.sh \
 docker run --rm --gpus all \
   -v $(git rev-parse --show-toplevel):/workspace \
   -w /workspace \
-  vmaf-dev-mcp:cuda13.3 bash -c '
+  vmaf-dev-mcp:local bash -c '
     export VMAF_BIN=/workspace/core/build/tools/vmaf
     bash scripts/perf/bench-multi-resolution.sh \
       --backends cpu,cuda \
@@ -116,32 +116,35 @@ comparable to production content).
 
 ## Comparing a PR against the baseline
 
-### Automated (CI gate — ADR-0907)
+!!! warning "The regression gate is not wired into CI yet"
+    [ADR-0907](../adr/0907-perf-regression-gate-wall-clock.md) is still
+    Proposed, and no workflow, hook or Makefile target calls
+    `scripts/perf/check-regression.py` or `bench-multi-resolution.sh` today.
+    Run the gate by hand as below. The intended CI behaviour (advisory first,
+    `tests-and-quality-gates.yml`, a 5 % wall-clock tolerance per cell) is
+    described in the [perf gate guide](perf-gate.md).
 
-CI runs `scripts/perf/check-regression.py` against the committed
-baseline on every PR (CPU-only, `tests-and-quality-gates.yml` job
-`perf-regression`). The gate fails if any
-`(resolution, backend, metric)` cell regresses by more than **5%**
-wall-clock vs the baseline. The job is `continue-on-error: true` for
-one release cycle so cross-runner variance data can inform whether
-the 5% tolerance is right before the step is promoted to a required
-check.
+Run the gate locally:
 
-Run the same gate locally:
+1. Produce a fresh run JSON:
 
-```bash
-# 1. Produce a fresh run JSON.
-./scripts/perf/bench-multi-resolution.sh \
-  --backends cpu --runs 3 \
-  --output /tmp/perf_current.json
+    ```bash
+    ./scripts/perf/bench-multi-resolution.sh \
+      --backends cpu --runs 3 \
+      --output /tmp/perf_current.json
+    ```
 
-# 2. Diff against the committed baseline (exit 1 on regression > 5%).
-python3 scripts/perf/check-regression.py \
-  --baseline testdata/perf_multi_resolution.json \
-  --current  /tmp/perf_current.json \
-  --tolerance-pct 5.0 \
-  --backend cpu
-```
+2. Diff it against the committed baseline. The script exits 1 when any
+   `(resolution, backend, metric)` cell regresses by more than the tolerance
+   (5 % here):
+
+    ```bash
+    python3 scripts/perf/check-regression.py \
+      --baseline testdata/perf_multi_resolution.json \
+      --current  /tmp/perf_current.json \
+      --tolerance-pct 5.0 \
+      --backend cpu
+    ```
 
 The gate prints a per-cell report:
 
@@ -155,13 +158,17 @@ Improvements (informational, 1):
    720p  cpu      vif :   105.0 ms ->   95.0 ms ( -9.52%)
 ```
 
-Cells with `status != "ok"` in either side (e.g. SYCL skipped because
-oneAPI is unavailable) are reported under `Skipped` and do not fail
-the gate.
+Cells with `status != "ok"` in either side (for example SYCL skipped because
+oneAPI is unavailable) are reported under `Skipped` and do not fail the gate.
+
+Include the report in the PR description under "Performance delta". If the PR
+intentionally improves performance, commit the updated
+`testdata/perf_multi_resolution.json`.
 
 ### Manual diff (legacy)
 
-Run the script before and after your change, then diff in Python:
+`check-regression.py` replaces this; it remains for a quick fps comparison of
+two run JSON files:
 
 ```python
 import json, sys
@@ -177,16 +184,18 @@ for key in sorted(new):
               f"{o['fps']:7.1f} -> {n['fps']:7.1f} fps  {delta:+.1f}%")
 ```
 
-Include the diff table in the PR description under "Performance delta".
-If the PR intentionally improves performance, commit the updated
-`testdata/perf_multi_resolution.json`.
-
 ## SYCL prerequisites
 
-SYCL cells require oneAPI to be sourced inside the execution environment.
-The script attempts to source `setvars.sh` from `$VMAF_ONEAPI_SETVARS`,
-`/opt/intel/oneapi-2025.3/setvars.sh`, and `/opt/intel/oneapi/setvars.sh`
-in that order.  If none are found, SYCL cells emit `status=skip`.
+SYCL cells require oneAPI to be sourced inside the execution environment. The
+script looks for `setvars.sh` in this order and uses the first that exists:
+
+1. `$VMAF_ONEAPI_SETVARS` (explicit override);
+2. `$ONEAPI_ROOT/setvars.sh`;
+3. `/opt/intel/oneapi/setvars.sh`;
+4. the newest `/opt/intel/oneapi-*/setvars.sh`.
+
+If none is found, SYCL cells emit `status=skip`. See
+[oneAPI install](oneapi-install.md) for installing and activating a toolkit.
 
 See also the one-off container SYCL device-access pattern in
 [`docs/rebase-notes.md`](../rebase-notes.md).
@@ -209,3 +218,12 @@ The versioned baseline lives at `testdata/perf_multi_resolution.json`.
 The `hardware.git_hash` and `timestamp` fields identify when and on what
 machine it was generated.  Regenerate intentionally via the script after any
 structural performance change; include the justification in the commit message.
+
+## Related pages
+
+- [Perf gate guide](perf-gate.md): the wall-clock regression gate, advisory
+  mode and baseline refresh.
+- [Benchmarks](../benchmarks.md): published benchmark results.
+- [Backend perf baselines](backend-perf-baselines.md): per-backend numbers.
+- [Perf claims of 2026-05-10](perf-claims-2026-05-10.md): the measured claims
+  of one audit.

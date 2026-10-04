@@ -2,7 +2,8 @@
 # Agent dispatch — workflow templates and eligibility precheck
 
 > Operational guide for briefing and dispatching Claude Code agents
-> against fork-local backlog items. Implements [ADR-0355](../adr/0355-symphony-agent-dispatch-infra.md);
+> against fork-local backlog items. Implements
+[ADR-0355](../adr/0355-symphony-agent-dispatch-infra.md);
 > see [Research-0091](../research/0091-symphony-spec-review.md) for
 > the design rationale (which Symphony shapes were adopted, which
 > were deliberately dropped).
@@ -24,7 +25,7 @@ Every recurring agent task class has a template under
 | [`_template.md`](../../.claude/workflows/_template.md) | Generic skeleton. Clone for any new task class. |
 | [`codeql-alert-sweep.md`](../../.claude/workflows/codeql-alert-sweep.md) | Bulk-fix N CodeQL alerts in a single category. |
 | [`simd-port.md`](../../.claude/workflows/simd-port.md) | Port or audit a SIMD path (AVX-512 widening, NEON sister, AVX2 audit). |
-| [`feature-extractor-port.md`](../../.claude/workflows/feature-extractor-port.md) | Port a feature extractor to a GPU backend (CUDA / SYCL / HIP / Vulkan). |
+| [`feature-extractor-port.md`](../../.claude/workflows/feature-extractor-port.md) | Port a feature extractor to a GPU backend (CUDA / SYCL / HIP; the Vulkan backend was removed, [ADR-0726](../adr/0726-drop-vulkan-backend.md)). |
 
 Each template starts with **typed YAML front matter** (Symphony
 §4.1.2 / §4.1.3 shape) that captures the dispatch contract:
@@ -66,10 +67,22 @@ touching tooling.
 
 ## 2. Eligibility precheck — `agent-eligibility-precheck.py`
 
-> **MUST RUN BEFORE EVERY DISPATCH.**
+!!! warning "Must run before every dispatch"
+    The script lives at
+    [`scripts/ci/agent-eligibility-precheck.py`](../../scripts/ci/agent-eligibility-precheck.py).
 
-The script lives at
-[`scripts/ci/agent-eligibility-precheck.py`](../../scripts/ci/agent-eligibility-precheck.py).
+It runs three checks:
+
+1. **BACKLOG row not closed.** Parses `.workingdir/BACKLOG.md` via
+   [`scripts/lib/backlog_tracker.py`](../../scripts/lib/backlog_tracker.py).
+   If the row's status is DONE, CLOSED, REMOVED, BLOCKED or DEFERRED, exit 1.
+2. **No merged PR mentions this scope.** Calls `gh pr list --search
+   "<id> in:title,body" --state merged`. Any hit means the work has likely
+   already shipped: exit 1 and list the matching PRs.
+3. **No in-flight agent on the same scope.** Scans
+   `/tmp/claude-<uid>/*/tasks/*.output` (the harness's per-task metadata) plus
+   the open-PR head-branch list for any active task that mentions the scope. If
+   found, exit 1.
 
 The gate fails closed. A missing backlog row, unreadable harness task, failed
 GitHub query, missing `gh`, or unavailable authentication produces a blocking
@@ -77,8 +90,15 @@ verdict. Use `--task-tag` for deliberately untracked work. The two `--skip-*`
 flags are explicit offline overrides; without one, an incomplete check never
 becomes an eligible dispatch.
 
-The current local backlog uses an explicit checklist schema. Every checkbox
-must carry a stable backtick ID immediately after it:
+!!! note "The backlog is private"
+    `.workingdir/BACKLOG.md` is private and gitignored, so a fresh clone has
+    no backlog. Without one, `--backlog-id` blocks dispatch; use `--task-tag`
+    for the work instead.
+
+### Backlog schema
+
+The local backlog uses an explicit checklist schema. Every checkbox must
+carry a stable backtick ID immediately after it:
 
 ```markdown
 2. [ ] `T-RC1-MASTER-GREEN` **Master green and the queue drained**
@@ -86,34 +106,26 @@ must carry a stable backtick ID immediately after it:
 1. [x] `T-RC1-RELEASE-PIPELINE` **Release pipeline correct and idle**
 ```
 
-`[x]` means `DONE`; unchecked rows default to `OPEN` and may start their title
-with `**[BLOCKED]**`, `**[DEFERRED]**`, or `**[IN_FLIGHT]**`. Wrapped,
-indented lines remain part of the item. A checkbox without a stable ID, a
-duplicate ID, an unknown explicit marker, a marker that contradicts the
-checkbox, or an existing backlog with no tracked items is a schema error and
-blocks dispatch. The parser never invents an ID from list order, title text,
-or a GitHub issue number. Retired pipe-table rows remain readable during
-migration. See [ADR-1303](../adr/1303-backlog-checklist-tracker-schema.md).
+`[x]` means `DONE`; unchecked rows default to `OPEN` and may start their
+title with `**[BLOCKED]**`, `**[DEFERRED]**` or `**[IN_FLIGHT]**`. Wrapped,
+indented lines remain part of the item.
 
-It runs three checks:
+These are schema errors that block dispatch:
 
-1. **BACKLOG row not closed.** Parses
-   `.workingdir/BACKLOG.md` via
-   [`scripts/lib/backlog_tracker.py`](../../scripts/lib/backlog_tracker.py).
-   If the row's status is DONE / CLOSED / REMOVED / BLOCKED /
-   DEFERRED, exit 1.
-2. **No merged PR mentions this scope.** Calls `gh pr list --search
-   "<id> in:title,body" --state merged`. Any hit means the work has
-   likely already shipped — exit 1 and list the matching PRs.
-3. **No in-flight agent on the same scope.** Scans
-   `/tmp/claude-<uid>/*/tasks/*.output` (the harness's per-task
-   metadata) plus the open-PR head-branch list for any active task
-   that mentions the scope. If found, exit 1.
+- a checkbox without a stable ID, or a duplicate ID;
+- an unknown explicit marker, or a marker that contradicts the checkbox;
+- an existing backlog with no tracked items.
 
-Verdicts go to **stderr** in GitHub Actions `::error` format so a
-wrapping CI script can parse them:
+The parser never invents an ID from list order, title text or a GitHub issue
+number. Retired pipe-table rows remain readable during migration. See
+[ADR-1303](../adr/1303-backlog-checklist-tracker-schema.md).
 
-```bash
+### Reading the verdict
+
+Verdicts go to stderr in GitHub Actions `::error` format so a wrapping CI
+script can parse them. A closed item fails:
+
+```console
 $ python3 scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-RELEASE-PIPELINE --skip-gh-search --skip-active-scan
 agent-eligibility-precheck: scope=T-RC1-RELEASE-PIPELINE
 ::error title=agent-eligibility: T-RC1-RELEASE-PIPELINE is DONE::BACKLOG.md row already closed (PRs: none recorded). Title: Release pipeline correct and idle
@@ -123,7 +135,9 @@ $ echo "exit=$?"
 exit=1
 ```
 
-```bash
+An open item passes:
+
+```console
 $ python3 scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-MASTER-GREEN --skip-gh-search --skip-active-scan
 agent-eligibility-precheck: scope=T-RC1-MASTER-GREEN
   backlog: T-RC1-MASTER-GREEN status=OPEN priority=None — OK
@@ -196,7 +210,11 @@ change.
 ## See also
 
 - [ADR-0355](../adr/0355-symphony-agent-dispatch-infra.md) — decision rationale.
-- [Research-0091](../research/0091-symphony-spec-review.md) — what we adopted from Symphony and what we dropped.
-- [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md) — the six-deliverable rule encoded in `required_deliverables`.
-- [`scripts/ci/AGENTS.md`](../../scripts/ci/AGENTS.md) — invariants for files in `scripts/ci/`.
-- [`scripts/lib/AGENTS.md`](../../scripts/lib/AGENTS.md) — invariants for the tracker abstraction.
+- [Research-0091](../research/0091-symphony-spec-review.md) — what we adopted
+  from Symphony and what we dropped.
+- [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md) — the six-deliverable
+  rule encoded in `required_deliverables`.
+- [`scripts/ci/AGENTS.md`](../../scripts/ci/AGENTS.md) — invariants for files in
+  `scripts/ci/`.
+- [`scripts/lib/AGENTS.md`](../../scripts/lib/AGENTS.md) — invariants for the
+  tracker abstraction.

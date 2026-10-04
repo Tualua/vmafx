@@ -45,16 +45,21 @@ pin="$(python3 scripts/ci/upstream_parity_pin.py --within upstream/master)"
 python3 scripts/dev/relicense_fork_files.py --check --upstream-ref "$pin"
 ```
 
-`pending: 0` and exit status 0 mean the tree is clean. `--list` prints the
-verdict of every candidate file instead, and `--write` applies every pending
-change. The run reads the history of each candidate (about a minute on four
-cores), which is why it is a CI job and not a commit hook. The commit-time side
-is the pair of hooks `test-relicense-fork-files` and `test-upstream-parity-pin`,
-which run the tool's unit tests and the contract below when their inputs change.
+Reading the result:
 
-The checkout needs its full history: the tool refuses a shallow clone
-(`git fetch --unshallow` fixes one), because the veto that protects an outside
-contributor's work reads every commit that touched a file.
+- `pending: 0` and exit status 0 mean the tree is clean.
+- `--list` prints the verdict of every candidate file instead.
+- `--write` applies every pending change.
+
+The run reads the history of each candidate (about a minute on four cores),
+which is why it is a CI job and not a commit hook. The commit-time side is the
+pair of hooks `test-relicense-fork-files` and `test-upstream-parity-pin`, which
+run the tool's unit tests and the contract below when their inputs change.
+
+!!! note "Full history required"
+    The checkout needs its full history: the tool refuses a shallow clone
+    (`git fetch --unshallow` fixes one), because the veto that protects an
+    outside contributor's work reads every commit that touched a file.
 
 ## The upstream commit it compares against
 
