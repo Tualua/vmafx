@@ -40,7 +40,7 @@ creates no venv.
 |---|---|---|
 | `ai` | `ai/tests/`, `ai/sidecar/tests/` | Tiny-AI training scripts and online-training sidecar. Heavy: pulls `torch`, `lightning`. |
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | MCP JSON-RPC server. |
-| `vmaf_tune` | `tools/vmaf-tune/tests/` | Encode-tuning harness. |
+| `vmaf_tune` | `tools/vmaf-tune/tests/` | Encode-tuning harness. Ten tests drive a real `vmaf` on the golden pair: set `VMAF_BIN_FOR_TESTS` to a built CLI and run `scripts/test/fetch-test-yuvs.sh`, as the CI job does. |
 | `dev_llm` | `dev-llm/tests/` | Local-LLM helper (Ollama-backed). |
 | `roi_score` | `tools/vmaf-roi-score/tests/` | Saliency-aware ROI tooling. |
 | `ensemble_kit` | `tools/ensemble-training-kit/tests/test_platform_detect.sh` | Platform and encoder detection of the ensemble training kit; a shell test, no venv. |

@@ -3636,6 +3636,7 @@
     },
     "0543": {
       "sites": {
+        ".github/workflows/tests-and-quality-gates.yml": 1,
         "core/src/libvmaf.c": 1,
         "core/tools/test/test_vmaf_feature_backend.sh": 1,
         "core/tools/vmaf.cpp": 5,
@@ -6619,7 +6620,7 @@
         ".github/workflows/rust-ci.yml": 1,
         ".github/workflows/sanitizers.yml": 4,
         ".github/workflows/security-scans.yml": 4,
-        ".github/workflows/tests-and-quality-gates.yml": 13,
+        ".github/workflows/tests-and-quality-gates.yml": 15,
         ".pre-commit-config.yaml": 1,
         "scripts/ci/plan-ci-impact.py": 1
       },
@@ -10189,13 +10190,13 @@
       "sites": {
         ".github/workflows/required-aggregator.yml": 2,
         ".github/workflows/rust-ci.yml": 1,
-        ".github/workflows/tests-and-quality-gates.yml": 7,
+        ".github/workflows/tests-and-quality-gates.yml": 11,
         ".pre-commit-config.yaml": 1,
         "Makefile": 1,
         "noxfile.py": 1,
         "requirements/locks/tooling-tests.in": 1,
         "scripts/ci/suite_registry.py": 2,
-        "scripts/ci/tests/test_hiss_replay_contract.py": 1,
+        "scripts/ci/tests/test_hiss_replay_contract.py": 2,
         "scripts/ci/tests/test_python_dependency_locks.py": 1,
         "scripts/ci/tests/test_suite_registry.py": 1
       },

@@ -41,12 +41,12 @@ registry cannot go stale.
 | Suite | Paths | Required check(s) | How it runs | Skipped in CI, and why |
 |---|---|---|---|---|
 | `core` | `core/test/`, `core/tools/test/` | `Ubuntu gcc`, `Linux Intel LLVM` | Meson tests (`scripts/ci/run_meson_test.py`); the backend-gated contract tests run in the all-backend `Linux Intel LLVM` leg | Device tests skip without a GPU |
-| `python-harness` | `python/test/` | `Coverage Gate`, `Ubuntu gcc` | `pytest python/test/` against the gcov build; `tox -c python` on C-core changes | The Coverage Gate ignores `cy_test.py` and `cambi_test.py` (no reason is recorded; tox runs both) |
+| `python-harness` | `python/test/` | `Coverage Gate`, `Ubuntu gcc` | `pytest python/test/` against the gcov build, after an editable install of `python/` that compiles the Cython extension `cy_test.py` needs (as tox does); `tox -c python` on C-core changes | — |
 | `compat` | `compat/python-vmaf/tests/` | `Python Package Tests (compat)` | `pytest compat/vmaf/tests` with `python/requirements-test-lock.txt`; the decorator file also runs on every OS in `build.yml` | — |
 | `ai` | `ai/tests/`, `ai/sidecar/tests/` | `Tiny AI` | `pytest` with `ai/requirements-dev-lock.txt`, the job's DNN build as `VMAF_BIN`, the golden YUVs and ffmpeg | One socket test needs root or user namespaces to start a peer with another UID |
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | `MCP Smoke` | `pytest` with the dev lock (which carries the `eval` extra), the MCP build as `VMAF_BIN` and the golden YUVs | — |
 | `rc1-tester` | `tools/rc1-tester/tests/` | `RC1 Tester Report` | `pytest` with the package's dev lock | — |
-| `vmaf-tune` | `tools/vmaf-tune/tests/` | `Python Package Tests (vmaf-tune)` | `pytest` with the package's dev lock | 15: a built `vmaf` (10), `VMAF_TUNE_INTEGRATION=1` with ffmpeg/x265 (2), QSV hardware (1), the BBB corpus (1), the `train` extra (1) |
+| `vmaf-tune` | `tools/vmaf-tune/tests/` | `Python Package Tests (vmaf-tune)` (its own job: it needs `MCP Smoke`) | `pytest` with the package's dev lock, MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`) as `VMAF_BIN_FOR_TESTS` and the golden YUVs; a skip for a missing binary or missing YUVs fails the job | 5: `VMAF_TUNE_INTEGRATION=1` with ffmpeg/x265 (2; opt-in, and the two-pass case fails today: `T-VMAF-TUNE-X265-TWO-PASS-CRF-2026-10-04`), QSV hardware (1), the BBB corpus (1), the `train` extra (1) |
 | `dev-llm` | `dev-llm/tests/` | `Python Package Tests (dev-llm)` | `pytest` with the dev lock, which carries the `modelcard` extra | — |
 | `vmaf-roi-score` | `tools/vmaf-roi-score/tests/` | `Python Package Tests (vmaf-roi-score)` | `pytest` with the package's dev lock | — |
 | `go` | `api/`, `cmd/`, `internal/`, `pkg/` | `go vet + go test` | `go test ./...` against the CPU + ONNX Runtime libvmaf build | Individual tests skip when a tool they drive is absent |

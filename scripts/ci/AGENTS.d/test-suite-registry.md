@@ -30,6 +30,13 @@ job and as the `suite-registry` pre-commit hook.
   because tests of the suite import or drive them. Without them the docs tests
   skip, and `test_semgrep_vendored_scope.py` and `scripts/githooks/tests` fail.
 
+- `Python Package Tests (vmaf-tune)` is its own job with `needs: [mcp-smoke]`:
+  it runs MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`, a tar that keeps the
+  executable bit and the `$ORIGIN/../src` SONAME chain) and fails on a skip for
+  a missing binary or missing golden YUVs. The aggregator's
+  `delayedStrictDependencies` must keep the `MCP Smoke` entry for it, or the
+  check reads as never reported while MCP Smoke builds.
+
 Tests: `scripts/ci/tests/test_suite_registry.py` (an unwired file, a file in two
 suites, a non-required check, stale entries, duplicate keys, failing Python
 and shell tests, a suite the runner cannot run, and the repository itself).

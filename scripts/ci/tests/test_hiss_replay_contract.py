@@ -66,6 +66,8 @@ BUG_098_STRICT_CONTEXTS = {
 BUG_098_GATE_DEPENDENCIES = {
     # ADR-1319: self-hosted checks register only after hosted admission probes.
     "Coverage GPU": ["Probe GPU Full Runner"],
+    # ADR-1528: the vmaf-tune suite takes MCP Smoke's vmaf build.
+    "Python Package Tests (vmaf-tune)": ["MCP Smoke"],
     "SYCL Parity (Arc A380)": ["Probe SYCL Runner"],
     "Linux Intel LLVM": [
         "Plan build impact",

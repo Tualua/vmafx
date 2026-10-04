@@ -339,6 +339,7 @@ jobs:
             // ADR-1319 extends the same rule to hosted hardware-admission probes.
             const delayedStrictDependencies = {
               "Coverage GPU": ["Probe GPU Full Runner"],
+              "Python Package Tests (vmaf-tune)": ["MCP Smoke"],
               "SYCL Parity (Arc A380)": ["Probe SYCL Runner"],
               "Linux Intel LLVM": [
                 "Plan build impact",
