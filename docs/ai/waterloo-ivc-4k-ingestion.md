@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD060 -->
 # Waterloo IVC 4K-VQA → MOS-corpus JSONL ingestion
 
-The fork's `nr_metric_v1` tiny no-reference VQA model is
-trained on a union of MOS-corpus shards. This page documents
-the Waterloo IVC 4K-VQA shard ingestion adapter
+This page documents how to build the Waterloo IVC 4K-VQA MOS-corpus shard
+consumed by the fork's no-reference and MOS-head trainers. It covers the
+shard ingestion adapter
 (`ai/scripts/waterloo_ivc_to_corpus_jsonl.py`, ADR-0369).
 
 ## What Waterloo IVC 4K-VQA is
@@ -117,20 +117,24 @@ round-trip verbatim.
 
 ## Cross-corpus MOS scale caveat
 
-Waterloo IVC 4K-VQA records MOS on **0–100 raw**, while
-KonViD-150k and LSVQ are on **1–5 Likert**. The adapter
-records the score verbatim on its native scale (no
-ingest-time rescaling), matching the policy of LSVQ /
-KonViD-150k. The convention is:
+Waterloo IVC 4K-VQA records MOS on **0–100 raw**, while KonViD-150k and
+LSVQ are on **1–5 Likert**. The adapter records the score verbatim on its
+native scale (no ingest-time rescaling), matching the policy of LSVQ and
+KonViD-150k.
 
-- `corpus = "waterloo-ivc-4k"` rows carry MOS on 0–100.
-- `corpus = "konvid-150k"` / `"lsvq"` rows carry MOS on
-  1–5.
+| `corpus` value | MOS scale in the shard |
+|---|---|
+| `waterloo-ivc-4k` | 0–100 |
+| `konvid-150k`, `lsvq` | 1–5 |
 
-A trainer-side per-corpus normaliser (e.g. mapping
-0–100 → 1–5 via `1 + 4·(x/100)`) is the clean fix and
-lands in a separate PR. See ADR-0369 §Consequences and
-[`docs/rebase-notes.md`](../rebase-notes.md).
+!!! warning
+    Do not concatenate shards of different scales and train on them
+    directly. Per-corpus normalisation is done by
+    `ai/scripts/aggregate_corpora.py`, which maps every corpus onto a unified
+    0–100 axis (Waterloo is the identity mapping); see
+    [multi-corpus-aggregation.md](multi-corpus-aggregation.md) for the
+    conversions. See also ADR-0369 §Consequences and
+    [`docs/rebase-notes.md`](../rebase-notes.md).
 
 ## Manifest CSV shapes
 
@@ -178,34 +182,23 @@ standard branch. Aliases:
 
 ## Operator flags
 
-```text
---waterloo-ivc-dir PATH       Working dir
-                              (default: .corpus/waterloo-ivc-4k/)
---manifest-csv PATH           Path to manifest
-                              (default: <dir>/manifest.csv)
---progress-path PATH          Resumable state file
-                              (default: <dir>/.download-progress.json)
---clips-subdir NAME           Subdir for clips (default: clips)
---clip-suffix EXT             Default file suffix (default: .yuv)
---output PATH                 Output JSONL
-                              (default: <dir>/waterloo_ivc_4k.jsonl)
---manifest-out PATH           Replay manifest JSON sidecar
-                              (default: <output>.manifest.json)
---ffprobe-bin BIN             ffprobe binary
-                              (default: $FFPROBE_BIN or ffprobe)
---curl-bin BIN                curl binary
-                              (default: $CURL_BIN or curl)
---corpus-version STR          Dataset version
-                              (default: waterloo-ivc-4k-201908)
---attrition-warn-threshold F  Advisory failure-rate floor
-                              (default: 0.10)
---download-timeout-s N        Per-clip curl --max-time
-                              (default: 120)
---max-rows N                  Row cap
-                              (default: 100; laptop-class subset)
---full                        Disable --max-rows cap; ingest whole CSV
---log-level LEVEL             DEBUG / INFO / WARNING / ERROR
-```
+| Flag | Default | Meaning |
+|---|---|---|
+| `--waterloo-ivc-dir` | `.corpus/waterloo-ivc-4k/` | Working directory |
+| `--manifest-csv` | `<dir>/manifest.csv` | Path to the manifest |
+| `--progress-path` | `<dir>/.download-progress.json` | Resumable state file |
+| `--clips-subdir` | `clips` | Subdirectory for clips |
+| `--clip-suffix` | `.yuv` | Default file suffix |
+| `--output` | `<dir>/waterloo_ivc_4k.jsonl` | Output JSONL |
+| `--manifest-out` | `<output>.manifest.json` | Replay manifest JSON sidecar |
+| `--ffprobe-bin` | `$FFPROBE_BIN` or `ffprobe` | ffprobe binary |
+| `--curl-bin` | `$CURL_BIN` or `curl` | curl binary |
+| `--corpus-version` | `waterloo-ivc-4k-201908` | Dataset version |
+| `--attrition-warn-threshold` | `0.10` | Advisory failure-rate floor |
+| `--download-timeout-s` | `120` | Per-clip `curl --max-time` seconds |
+| `--max-rows` | `100` | Row cap (laptop-class subset) |
+| `--full` | off | Disable the `--max-rows` cap; ingest the whole CSV |
+| `--log-level` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
 
 The replay manifest records the Waterloo working directory, manifest/progress
 paths, row cap, attrition counters, effective corpus version, and ADR-0661
@@ -247,8 +240,8 @@ Vision Computing Laboratory permissive academic licence:
 
 This fork ships the adapter and the schema in tree, but
 **never** the raw clips, the per-clip MOS values, or any
-derived feature cache. Only the trained
-`nr_metric_v1_*.onnx` weights ship, with the IVC
+derived feature cache. Only trained model
+weights derived from the corpus can ship, with the IVC
 attribution travelling alongside.
 
 Citation: Li, Z., Duanmu, Z., Liu, W., Wang, Z., "AVC,
@@ -258,9 +251,12 @@ State-of-the-art Video Encoders on 4K Videos," ICIAR
 
 ## Related
 
-- [ADR-0369: Waterloo IVC 4K-VQA corpus ingestion](../adr/0369-waterloo-ivc-4k-corpus-ingestion.md).
-- [Research-0091: Waterloo IVC 4K-VQA corpus feasibility](../research/0091-waterloo-ivc-4k-corpus-feasibility.md).
-- ADR-0333 (LSVQ) — same adapter shape; this Waterloo
+- [ADR-0369: Waterloo IVC 4K-VQA corpus
+  ingestion](../adr/0369-waterloo-ivc-4k-corpus-ingestion.md).
+- [Research-0091: Waterloo IVC 4K-VQA corpus
+  feasibility](../research/0091-waterloo-ivc-4k-corpus-feasibility.md).
+- [ADR-0367](../adr/0367-lsvq-corpus-ingestion.md) (LSVQ) — same adapter shape;
+  this Waterloo
   IVC adapter is a near-mirror modulo dataset specifics
   (manifest shape + MOS scale).
 - [ADR-0325 Phase 2](../adr/0325-konvid-150k-corpus-ingestion.md)

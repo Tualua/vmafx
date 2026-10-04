@@ -69,7 +69,8 @@ Default input columns:
 
 **Per-frame tables** (e.g. the Netflix refresh parquet — one row per frame per
 clip) are handled efficiently: saliency is computed once per unique source file
-and re-used for all rows that reference the same file, avoiding redundant decodes.
+and re-used for all rows that reference the same file, avoiding redundant
+decodes.
 
 Output columns:
 
@@ -143,12 +144,11 @@ is stored away from the run directory.
 }
 ```
 
-**Netflix corpus note**: The Netflix refresh parquet uses `dis_basename`
-(not `src`) as the path column, and its distorted YUVs live under
-`.corpus/netflix/dis/`. All files are 1920×1080 raw YUV regardless of the
-encode-ladder height in the filename, so `default_width: 1920` and
-`default_height: 1080` must be set. The materializer caches saliency per
-unique file, processing each of the 70 unique clips once instead of ~160 times.
+In the Netflix entry above, the refresh parquet uses `dis_basename` (not `src`)
+as the path column, and its distorted YUVs live under `.corpus/netflix/dis/`.
+The geometry rules for raw YUV files are in the Raw-YUV notes earlier on this
+page. The materializer caches saliency per unique file, so each of the 70 unique
+clips is processed once instead of about 160 times.
 
 ```bash
 PYTHONPATH=. .venv/bin/python ai/scripts/batch_materialize_saliency_features.py \
@@ -198,6 +198,12 @@ PYTHONPATH=ai/scripts:ai/src:tools/vmaf-tune/src \
   --audit-json /tmp/k150k_smoke_saliency.audit.json
 ```
 
+### CHUG
+
+No in-tree manifest exists for CHUG: `ai/batch-manifests/saliency/` holds only
+`konvid-150k.json`, `ugc.json` and `bvi-dvc.json`. The `chug_hdr` entry in the
+batch manifest example above shows the shape to copy into your own manifest.
+
 ### YouTube UGC
 
 The `full_features_ugc_refresh_20260520.parquet` uses a `source` column with
@@ -209,7 +215,8 @@ for the two unblocking options. The recommended path is to generate a
 ### BVI-DVC
 
 The `full_features_bvi_dvc_D_refresh_20260520.parquet` uses a `key` column
-with encode parameters (`DAdvertisingMassagesBangkokVidevo_480x272_25fps_10bit_420`).
+with encode parameters
+(`DAdvertisingMassagesBangkokVidevo_480x272_25fps_10bit_420`).
 Raw reference YUVs at `.corpus/bvi-dvc-raw/` are the natural saliency source.
 The manifest in `ai/batch-manifests/saliency/bvi-dvc.json` documents the
 geometry mapping and `default_width`/`default_height` values needed for the

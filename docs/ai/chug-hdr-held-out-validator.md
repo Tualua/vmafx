@@ -26,30 +26,34 @@ ADR-0325 training gate and are never lowered on a miss.
 
 ## Usage
 
+Pass explicit paths for the model and the reports:
+
 ```bash
 python ai/scripts/validate_chug_hdr_mos_head.py \
-    --onnx .workingdir/evidence/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx \
-    --out-json  .workingdir/evidence/training/validation/chug_held_out_test_YYYYMMDD.json \
-    --out-md    .workingdir/evidence/training/validation/chug_held_out_test_YYYYMMDD.md
+    --onnx runs/chug_hdr/chug_hdr_mos_head_v1_wide_seed20260521.onnx \
+    --out-json runs/chug_hdr/validation/chug_held_out_test_YYYYMMDD.json \
+    --out-md runs/chug_hdr/validation/chug_held_out_test_YYYYMMDD.md
 ```
 
-Default ONNX path is
-`.workingdir/evidence/training/models/chug_hdr_mos_head_v1_wide_seed20260521.onnx`.
-Override via `VMAF_CHUG_HDR_ONNX` environment variable.
+Defaults when a flag is omitted:
 
-Default shard directory is
-`.corpus/chug/training/fr_canonical_shards/output/`.
-Override via `--shard-dir` or pass explicit `--feature-jsonl` paths.
+- **ONNX.** `chug_hdr_mos_head_v1_wide_seed20260521.onnx` under the git-ignored
+  `.workingdir/evidence/training/models/`. Override with `--onnx` or the
+  `VMAF_CHUG_HDR_ONNX` environment variable.
+- **Shards.** `.corpus/chug/training/fr_canonical_shards/output/`. Override with
+  `--shard-dir`, or pass explicit `--feature-jsonl` paths.
+- **Reports.** The git-ignored `.workingdir/evidence/training/validation/`,
+  which holds dated `chug_held_out_test_*.json` and `.md` files.
 
 ## Arguments
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--onnx` | see above | CHUG MOS head ONNX path |
+| `--onnx` | see Usage | CHUG MOS head ONNX path |
 | `--shard-dir` | `.corpus/chug/…/output` | Dir searched for `shard_*.features.jsonl` |
 | `--feature-jsonl` | (from shard-dir) | Explicit shard path; may be repeated |
-| `--out-json` | `.workingdir/evidence/training/validation/…json` | JSON report + run-manifest |
-| `--out-md` | `.workingdir/evidence/training/validation/…md` | Markdown summary |
+| `--out-json` | dated file in the default report directory (see Usage) | JSON report + run-manifest |
+| `--out-md` | dated file in the default report directory (see Usage) | Markdown summary |
 | `--gate-plcc` | 0.85 | Override PLCC threshold (for testing) |
 | `--gate-srocc` | 0.82 | Override SROCC threshold |
 | `--gate-rmse` | 0.45 | Override RMSE threshold |

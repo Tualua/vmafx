@@ -4,20 +4,18 @@
 `vmaf_tiny_v4` is a tiny multi-layer perceptron that predicts a VMAF
 score from the same six classic libvmaf features as
 [`vmaf_tiny_v2`](vmaf_tiny_v2.md) (`adm2`, `vif_scale0..3`, `motion2`
-— the canonical-6 set used by `vmaf_v0.6.1`). It carries roughly
-3.5x the hidden capacity of v3 (`mlp_large` = 6 → 64 → 32 → 16 → 1,
-3 073 params vs v3's 769) to answer the question raised in PR #294:
-**does the next rung on the architecture ladder buy further headroom
-over v3's PLCC = 0.9986 ± 0.0015 baseline?**
+— the canonical-6 set used by `vmaf_v0.6.1`). It carries about 4x
+the parameters of v3 (`mlp_large` = 6 → 64 → 32 → 16 → 1, 3 073 params vs
+v3's 769) to answer the question raised in PR #294: does the next rung on the
+architecture ladder buy further headroom over v3's PLCC = 0.9986 ± 0.0015?
 
-> **Empirical answer: no — the ladder saturates.** v4 ships as an
-> **opt-in-only** model. Its Netflix 9-fold LOSO PLCC = 0.9987 ± 0.0015
-> is statistically indistinguishable from v3 (+0.0001 mean, identical
-> std). Production default stays `vmaf_tiny_v2`; the higher-tier
-> opt-in stays v3. Pick v4 when you want the absolute top of the
-> measured ladder and don't mind the ~3x ONNX bytes vs v3. See
-> [ADR-0390](../../adr/0390-vmaf-tiny-v4-mlp-large.md) for the
-> "ladder stops here" rationale.
+!!! note "Empirical answer: no, the ladder saturates"
+    v4 ships as an **opt-in-only** model. Its Netflix 9-fold LOSO PLCC is
+    0.9987 ± 0.0015, statistically indistinguishable from v3 (+0.0001 mean,
+    identical std). The production default stays `vmaf_tiny_v2`; the
+    higher-tier opt-in stays v3. See
+    [ADR-0390](../../adr/0390-vmaf-tiny-v4-mlp-large.md) for the "ladder stops
+    here" rationale.
 
 ## What the output means
 
@@ -36,6 +34,7 @@ classic SVM regressor and as v2 / v3. Identical interpretation table:
 | Field | Value |
 | --- | --- |
 | Model name | `vmaf_tiny_v4` |
+| SHA-256 (fp32) | `2bccd339caa08f25433120546e45f2cb435288edeeefeafc56f3668986904e8f` |
 | Location | `model/tiny/vmaf_tiny_v4.onnx` |
 | Architecture | `mlp_large` — Linear(6,64) → ReLU → Linear(64,32) → ReLU → Linear(32,16) → ReLU → Linear(16,1), 3 073 params |
 | Input | `features` — float32 `[N, 6]`, dynamic batch |
@@ -80,18 +79,32 @@ features [N, 6]
 
 ## How to invoke
 
-The CLI accepts `--tiny-model` to override the default `vmaf_tiny_v2`:
+The CLI attaches v4 with `--tiny-model <path>`, alongside the classic models:
 
 ```bash
 vmaf --reference ref.yuv --distorted dist.yuv \
      --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v4.onnx
 ```
 
-The Python binding mirrors the same flag through the
-`tiny_model` keyword; the MCP `vmaf_score` tool exposes it as the
-`tiny_model` JSON-RPC parameter (`registry-id` accepted in addition to
-the path).
+The score is added under the feature name `vmaf_tiny_model` (the sidecar has
+no `name`).
+
+!!! warning "The same run must compute the input features"
+    A tiny feature-vector model reads its input features (`adm2`,
+    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
+    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
+    request them with `--feature adm --feature vif --feature motion`.
+    A feature that is missing is read as `0.0` without a warning. With only the
+    default `vmaf_v1.0.16_3d0h` model the scores are stored under
+    option-suffixed
+    names, so the lookup misses them and the tiny model returns one constant
+    value for every frame.
+
+The MCP `vmaf_score` tool exposes the flag as the `tiny_model` argument and
+passes the string unchanged to `--tiny-model`, so it must be a path as well;
+there is no registry-id lookup.
 
 ## Training recipe (reproducible)
 
@@ -143,7 +156,8 @@ Hyperparameters (identical to v2 / v3 — only the architecture changes):
 - Epochs: 90.
 - Batch size: 256.
 - Seed: 0.
-- Standardisation: corpus-wide mean / std on the training split, baked into ONNX.
+- Standardisation: corpus-wide mean / std on the training split, baked into
+  ONNX.
 
 ## Validation results
 
@@ -175,13 +189,19 @@ Hyperparameters (identical to v2 / v3 — only the architecture changes):
 | ONNX size (bytes)  | 2 446           | 4 496           | **14 046** |
 | Params             | 257             | 769             | **3 073** |
 
-The +0.0001 mean PLCC delta v3 → v4 is well below 1 std of either model. Train-set RMSE keeps improving (v4 over-fits a bit harder thanks to the ~4x parameters), but the held-out PLCC has saturated.
+The +0.0001 mean PLCC delta v3 → v4 is well below 1 std of either model.
+Train-set RMSE keeps improving (v4 over-fits a bit harder thanks to the ~4x
+parameters), but the held-out PLCC has saturated.
 
 ## Why pick v4 (or not)
 
-- **Pick v4** if you want the absolute top of the measured ladder, are running CPU-only inference where the ~14 KB ONNX is irrelevant, and want maximum train-set fidelity.
-- **Pick v3** if you want the higher-tier model with the smallest ONNX that still beats v2 measurably (since v4's win over v3 is below noise).
-- **Pick v2** (the production default) if you want the tightest possible bundle, lowest dispatch overhead, and the cited Phase-3 baseline.
+| Model | Params | ONNX bytes | LOSO PLCC (mean) | Pick it when |
+| --- | ---: | ---: | ---: | --- |
+| `vmaf_tiny_v2` | 257 | 2 446 | 0.9978 (5-seed) | You want the tightest bundle, lowest dispatch overhead and the cited Phase-3 baseline (production default) |
+| `vmaf_tiny_v3` | 769 | 4 496 | 0.9986 (1-seed) | You want the higher-tier model with the smallest ONNX that still beats v2 measurably |
+| `vmaf_tiny_v4` | 3 073 | 14 046 | 0.9987 (1-seed) | You want the top of the measured ladder, run CPU-only inference where ~14 KB is irrelevant, and want maximum train-set fidelity |
+
+v4's win over v3 is below noise, so v3 is the usual opt-in choice.
 
 ## Quantisation (dynamic-PTQ int8 sidecar — ADR-0275)
 
@@ -218,16 +238,27 @@ python ai/scripts/measure_quant_drop.py model/tiny/vmaf_tiny_v4.onnx
 
 ## Limitations
 
-- Same canonical-6 input contract as v2 / v3 — no new features. v4's quality ceiling is the canonical-6 information bottleneck, not its arch.
-- Trained 4-corpus (NF Public + KoNViD + BVI-DVC A+B+C+D, 330 499 rows). Out-of-distribution content (HDR, 8K, screen content, animation outside the corpora) inherits the corpus's coverage limitations.
-- Single-seed LOSO; v3 also single-seed. v2 was 5-seed. A multi-seed v4 LOSO study (5+ seeds) would tighten the variance estimate but is not gating; the saturation evidence is decisive enough.
-- The architecture ladder **stops here**. Future tiny-VMAF gains require *regime change* (richer features, larger corpus, ensembles, distillation), not deeper / wider MLPs. See ADR-0390.
+- Same canonical-6 input contract as v2 / v3 — no new features. v4's quality
+  ceiling is the canonical-6 information bottleneck, not its arch.
+- Trained 4-corpus (NF Public + KoNViD + BVI-DVC A+B+C+D, 330 499 rows).
+  Out-of-distribution content (HDR, 8K, screen content, animation outside the
+  corpora) inherits the corpus's coverage limitations.
+- Single-seed LOSO; v3 also single-seed. v2 was 5-seed. A multi-seed v4 LOSO
+  study (5+ seeds) would tighten the variance estimate but is not gating; the
+  saturation evidence is decisive enough.
+- The architecture ladder **stops here**. Future tiny-VMAF gains require *regime
+  change* (richer features, larger corpus, ensembles, distillation), not deeper
+  / wider MLPs. See ADR-0390.
 
 ## Related
 
 - [`vmaf_tiny_v2`](vmaf_tiny_v2.md) — production default.
-- [`vmaf_tiny_v3`](vmaf_tiny_v3.md) — opt-in higher-tier, recommended for most opt-in uses.
-- [ADR-0389](../../adr/0389-vmaf-tiny-v3-mlp-medium.md) — v3 ship + ladder candidate.
-- [ADR-0390](../../adr/0390-vmaf-tiny-v4-mlp-large.md) — v4 ship + ladder stops here.
-- [Research-0048](../../research/0048-vmaf-tiny-v4-mlp-large-evaluation.md) — full evaluation.
+- [`vmaf_tiny_v3`](vmaf_tiny_v3.md) — opt-in higher-tier, recommended for most
+  opt-in uses.
+- [ADR-0389](../../adr/0389-vmaf-tiny-v3-mlp-medium.md) — v3 ship + ladder
+  candidate.
+- [ADR-0390](../../adr/0390-vmaf-tiny-v4-mlp-large.md) — v4 ship + ladder stops
+  here.
+- [Research-0048](../../research/0048-vmaf-tiny-v4-mlp-large-evaluation.md) —
+  full evaluation.
 - [`docs/ai/inference.md`](../inference.md) — runtime / dispatch table.

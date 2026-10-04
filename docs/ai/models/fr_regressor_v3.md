@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # FR regressor v3 — codec-aware on ENCODER_VOCAB v3 (16-slot)
 
 `fr_regressor_v3` — codec-aware FR regressor trained on
@@ -6,87 +7,96 @@
 feature vector plus an 18-D codec block (16 encoder one-hot +
 `preset_norm` + `crf_norm`) to a VMAF teacher score scalar.
 
-> **Status: Production checkpoint (gate-passed).** Mean LOSO PLCC =
-> **0.9975** across the 9 Netflix Public Dataset sources, comfortably
-> above the
-> [ADR-0302](../../adr/0302-encoder-vocab-v3-schema-expansion.md)
-> ship gate of 0.95 — the same gate
-> [ADR-0291](../../adr/0291-fr-regressor-v2-prod-ship.md) cleared on
-> v2. Ships under [ADR-0323](../../adr/0323-fr-regressor-v3-train-and-register.md);
-> registry row `fr_regressor_v3` lands with `smoke: false`.
->
-> The live `ENCODER_VOCAB_VERSION = 2` in
-> [`ai/scripts/train_fr_regressor_v2.py`](../../../ai/scripts/train_fr_regressor_v2.py)
-> **stays authoritative** for `fr_regressor_v2.onnx`. Promoting v3 to
-> "the" canonical `fr_regressor_v2.onnx` slot is a separate
-> follow-up PR — see ADR-0302 §Production-flip checklist.
+!!! note "Status: production checkpoint (gate-passed)"
+    - **Gate:** mean LOSO PLCC is **0.9975** across the 9 Netflix Public
+      Dataset sources, above the
+      [ADR-0302](../../adr/0302-encoder-vocab-v3-schema-expansion.md) ship
+      gate of 0.95 (the gate
+      [ADR-0291](../../adr/0291-fr-regressor-v2-prod-ship.md) cleared on v2).
+    - **Registry:** ships under
+      [ADR-0323](../../adr/0323-fr-regressor-v3-train-and-register.md); the
+      registry row `fr_regressor_v3` has `smoke: false`.
+    - **v2 stays authoritative for its slot:** the live
+      `ENCODER_VOCAB_VERSION = 2` in
+      [`ai/scripts/train_fr_regressor_v2.py`](../../../ai/scripts/train_fr_regressor_v2.py)
+      remains authoritative for `fr_regressor_v2.onnx`. Promoting v3 to "the"
+      canonical `fr_regressor_v2.onnx` slot is a separate follow-up PR (see
+      ADR-0302 §Production-flip checklist).
 
 ## Inputs
 
-Two named tensors, dynamic batch axis (matches the
-`vmaf_dnn_session_run` two-input contract from
+Two named tensors, dynamic batch axis (matches the `vmaf_dnn_session_run`
+two-input contract from
 [ADR-0040](../../adr/0040-dnn-session-multi-input-api.md) /
-[ADR-0022](../../adr/0022-inference-runtime-onnx.md)):
+[ADR-0022](../../adr/0022-inference-runtime-onnx.md)).
 
-- **`features`**, shape `(N, 6)` — canonical-6 libvmaf features,
-  StandardScaler-normalised at training time using the mean/std baked
-  into the sidecar JSON (`feature_mean`, `feature_std`):
+### `features`
 
-  | Index | Feature        |
-  |-------|----------------|
-  | 0     | `adm2`         |
-  | 1     | `vif_scale0`   |
-  | 2     | `vif_scale1`   |
-  | 3     | `vif_scale2`   |
-  | 4     | `vif_scale3`   |
-  | 5     | `motion2`      |
+Shape `(N, 6)`: canonical-6 libvmaf features, StandardScaler-normalised at
+training time using the mean/std baked into the sidecar JSON
+(`feature_mean`, `feature_std`):
 
-- **`codec_block`**, shape `(N, 18)` — codec block, **not**
-  normalised (already in `[0, 1]`):
+| Index | Feature        |
+|-------|----------------|
+| 0     | `adm2`         |
+| 1     | `vif_scale0`   |
+| 2     | `vif_scale1`   |
+| 3     | `vif_scale2`   |
+| 4     | `vif_scale3`   |
+| 5     | `motion2`      |
 
-  | Index | Slot                                 |
-  |-------|--------------------------------------|
-  | 0     | `encoder_onehot[libx264]`            |
-  | 1     | `encoder_onehot[libaom-av1]`         |
-  | 2     | `encoder_onehot[libx265]`            |
-  | 3     | `encoder_onehot[h264_nvenc]`         |
-  | 4     | `encoder_onehot[hevc_nvenc]`         |
-  | 5     | `encoder_onehot[av1_nvenc]`          |
-  | 6     | `encoder_onehot[h264_amf]`           |
-  | 7     | `encoder_onehot[hevc_amf]`           |
-  | 8     | `encoder_onehot[av1_amf]`            |
-  | 9     | `encoder_onehot[h264_qsv]`           |
-  | 10    | `encoder_onehot[hevc_qsv]`           |
-  | 11    | `encoder_onehot[av1_qsv]`            |
-  | 12    | `encoder_onehot[libvvenc]`           |
-  | 13    | `encoder_onehot[libsvtav1]`          |
-  | 14    | `encoder_onehot[h264_videotoolbox]`  |
-  | 15    | `encoder_onehot[hevc_videotoolbox]`  |
-  | 16    | `preset_norm`  (preset ordinal / 9)  |
-  | 17    | `crf_norm`     (cq normalised)       |
+### `codec_block`
 
-  Encoder vocabulary is closed and order-stable per
-  [ADR-0235](../../adr/0235-codec-aware-fr-regressor.md) — the index
-  of each codec is the one-hot column index baked into the trained
-  ONNX. v3 differs from v2 in three structural ways:
+Shape `(N, 18)`: codec block, **not** normalised (already in `[0, 1]`):
 
-  1. **Append-only expansion**: the 13 v2 slots are preserved at the
-     same column indices; three new slots (`libsvtav1`,
-     `h264_videotoolbox`, `hevc_videotoolbox`) are appended at indices
-     13/14/15. The v2 → v3 reordering of the runtime-flip-only slot
-     order (`libaom-av1` at 1 instead of 4, etc.) is the published
-     ADR-0291 v2 layout — that ordering was already documented in
-     `ENCODER_VOCAB_V3` since PR #401 (ADR-0302 scaffold) and matches
-     the user-facing v2 layout in the ADR-0291 model card.
-  2. **No `unknown` slot.** v2 carried a 12th `unknown` bucket as the
-     fallback for novel codecs. v3 drops it — the closed 16-slot
-     vocab covers every adapter currently registered under
-     `tools/vmaf-tune/src/vmaftune/codec_adapters/`. Encoder strings
-     outside the vocab fall back to slot 0 (`libx264`); document this
-     at call sites that bridge novel codec strings.
-  3. **Output name** is `vmaf` (was `score` in v2) — matches the
-     teacher-score column the corpus rows carry. Sidecar
-     `output_names: ["vmaf"]` records this.
+| Index | Slot                                 |
+|-------|--------------------------------------|
+| 0     | `encoder_onehot[libx264]`            |
+| 1     | `encoder_onehot[libaom-av1]`         |
+| 2     | `encoder_onehot[libx265]`            |
+| 3     | `encoder_onehot[h264_nvenc]`         |
+| 4     | `encoder_onehot[hevc_nvenc]`         |
+| 5     | `encoder_onehot[av1_nvenc]`          |
+| 6     | `encoder_onehot[h264_amf]`           |
+| 7     | `encoder_onehot[hevc_amf]`           |
+| 8     | `encoder_onehot[av1_amf]`            |
+| 9     | `encoder_onehot[h264_qsv]`           |
+| 10    | `encoder_onehot[hevc_qsv]`           |
+| 11    | `encoder_onehot[av1_qsv]`            |
+| 12    | `encoder_onehot[libvvenc]`           |
+| 13    | `encoder_onehot[libsvtav1]`          |
+| 14    | `encoder_onehot[h264_videotoolbox]`  |
+| 15    | `encoder_onehot[hevc_videotoolbox]`  |
+| 16    | `preset_norm`  (preset ordinal / 9)  |
+| 17    | `crf_norm`     (cq normalised)       |
+
+The encoder vocabulary is closed and order-stable per
+[ADR-0235](../../adr/0235-codec-aware-fr-regressor.md): the index of each
+codec is the one-hot column index baked into the trained ONNX.
+
+### Differences from v2
+
+| Aspect | `fr_regressor_v2` | `fr_regressor_v3` |
+|--------|-------------------|-------------------|
+| Codec block | `(N, 14)`: 12 encoder slots + 2 | `(N, 18)`: 16 encoder slots + 2 |
+| Slot order | `ENCODER_VOCAB` v2 (`libx264`, `libx265`, `libsvtav1`, ...) | `ENCODER_VOCAB_V3` (the 13 slots of the ADR-0291 layout, then `libsvtav1`, `h264_videotoolbox`, `hevc_videotoolbox` appended at 13, 14, 15) |
+| `unknown` slot | Yes (slot 11, fallback for novel codecs) | No: the closed 16-slot vocabulary covers every adapter registered under `tools/vmaf-tune/src/vmaftune/codec_adapters/` |
+| Output name | `score` | `vmaf` (matches the teacher-score column of the corpus rows; sidecar `output_names: ["vmaf"]`) |
+| Input name of the codec tensor | `codec` | `codec_block` |
+
+The v3 slot order follows the layout documented in ADR-0291 and kept as
+`ENCODER_VOCAB_V3` since PR #401 (ADR-0302 scaffold); it is not the column
+order of the shipped v2 sidecar (for example `libx265` is index 1 in v2 and 2
+in v3).
+
+!!! note
+    The `vmaf` CLI validates `--tiny-codec` against the loaded model's
+    sidecar `encoder_vocab`, so the v3 names (`libaom-av1`, `h264_amf`,
+    `hevc_videotoolbox`, ...) are accepted with the v3 model even though
+    the `--help` text lists the v2 names. A name not in the sidecar vocabulary
+    is rejected. Because v3 has no `unknown` slot, always pass an encoder
+    name that is in its vocabulary. The Python-side convention for callers
+    without codec metadata is slot 0 (`libx264`), see "Codec-blind fallback".
 
 ## Output
 
@@ -127,37 +137,35 @@ codec-block tensors at load time:
 
 ### NVENC-only corpus caveat
 
-The current Phase A corpus drop is **NVENC-only** (slot 3,
-`h264_nvenc`). The remaining 15 vocab slots receive **zero training
-examples** in this checkpoint. Inference behaviour at the un-trained
-slots:
+!!! warning
+    The current Phase A corpus drop is **NVENC-only** (slot 3,
+    `h264_nvenc`). The remaining 15 vocabulary slots received **zero
+    training examples** in this checkpoint.
 
-- The MLP weights for the 15 unused one-hot columns remain at their
-  Glorot initialisation; the bias path through the canonical-6 features
-  `preset_norm` + `crf_norm` is what actually carries signal for
-  inference on those codecs.
-- In practice the model will produce **degraded but not random**
-  predictions for the 15 untrained codecs — the canonical-6 features
-  alone clear ~0.99 PLCC on the v1 single-input baseline
-  ([ADR-0249](../../adr/0249-fr-regressor-v1.md)), so the
-  un-NVENC-trained codec predictions inherit that baseline behaviour
-  modulo the small one-hot column shift.
-- The
-  [ADR-0235](../../adr/0235-codec-aware-fr-regressor.md) multi-codec
-  lift floor (≥ +0.005 PLCC over v1) is **not yet measured** — the
-  current NVENC-only corpus does not exercise other codecs, so v3's
-  lift over v1 reduces to v1 vs v1 on NVENC. v3 ships as the
-  production graph regardless because it is forward-compatible with
-  the broader 16-slot ENCODER_VOCAB v3 schema and re-using v2 would
-  block multi-codec follow-up corpora; the lift floor will be enforced
-  retroactively when a future Phase A corpus drop covers ≥3 codec
-  families.
+Consequences for inference at the untrained slots:
 
-This caveat is the dominant reason the live `ENCODER_VOCAB_VERSION`
-stays at 2 in `train_fr_regressor_v2.py` — `fr_regressor_v2.onnx`
-remains the production graph for cross-codec inference; v3 is a
-parallel checkpoint that wins on NVENC-specific predictions and
-serves as the schema-flip dry-run.
+- The MLP weights for the 15 unused one-hot columns remain at their Glorot
+  initialisation. The signal for those codecs comes through the
+  canonical-6 features, `preset_norm` and `crf_norm`.
+- Predictions are **degraded but not random**: the canonical-6 features alone
+  clear ~0.99 PLCC on the v1 single-input baseline
+  ([ADR-0249](../../adr/0249-fr-regressor-v1.md)), so untrained-codec
+  predictions inherit that baseline behaviour modulo the small one-hot column
+  shift.
+- The [ADR-0235](../../adr/0235-codec-aware-fr-regressor.md) multi-codec lift
+  floor (at least +0.005 PLCC over v1) is **not yet measured**: the NVENC-only
+  corpus does not exercise other codecs, so v3's lift over v1 reduces to v1
+  vs v1 on NVENC.
+
+v3 ships as the production graph regardless: it is forward-compatible with
+the broader 16-slot schema, and re-using v2 would block multi-codec follow-up
+corpora. The lift floor will be enforced retroactively when a future Phase A
+corpus drop covers at least 3 codec families.
+
+This caveat is the dominant reason the live `ENCODER_VOCAB_VERSION` stays at
+2 in `train_fr_regressor_v2.py`: `fr_regressor_v2.onnx` remains the production
+graph for cross-codec inference, and v3 is a parallel checkpoint that wins on
+NVENC-specific predictions and serves as the schema-flip dry-run.
 
 ## Codec-blind fallback
 
@@ -253,17 +261,35 @@ vmaf \
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --model version=vmaf_v0.6.1 \
     --tiny-model model/tiny/fr_regressor_v3.onnx \
     --tiny-codec libx264 --tiny-preset medium --tiny-crf 28 \
     --json --output /tmp/fr_v3.json
 ```
 
+The score is attached under the feature name `vmaf_tiny_model` (the sidecar has
+no `name`).
+
+!!! warning "The same run must compute the input features"
+    A tiny feature-vector model reads its input features (`adm2`,
+    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
+    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
+    request them with `--feature adm --feature vif --feature motion`.
+    A feature that is missing is read as `0.0` without a warning. With only the
+    default `vmaf_v1.0.16_3d0h` model the scores are stored under
+    option-suffixed
+    names, so the lookup misses them and the tiny model returns one constant
+    value for every frame (measured on the CPU build with
+    `fr_regressor_v1`: `-0.85`).
+
 ## Known limitations
 
 - **Feature dependency**: requires the canonical-6 feature set
   (`adm2`, `vif_scale0..3`, `motion2`) extracted from 8-bit luma planes.
-- **Closed 16-slot vocabulary**: encoders outside the 16-slot vocabulary
-  fall back to slot 0 (`libx264`).
+- **Closed 16-slot vocabulary**: the model has no `unknown` slot. The
+  `vmaf` CLI rejects an encoder name that is not in the sidecar vocabulary;
+  callers that build the codec block themselves use slot 0 (`libx264`) as
+  their fallback convention.
 - **Execution providers**: validated on CPU (`CPUExecutionProvider`) and CUDA
   (`CUDAExecutionProvider`).
 

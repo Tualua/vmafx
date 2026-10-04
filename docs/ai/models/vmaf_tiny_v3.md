@@ -34,6 +34,7 @@ classic SVM regressor and as v2. Identical interpretation table:
 | Field | Value |
 | --- | --- |
 | Model name | `vmaf_tiny_v3` |
+| SHA-256 (fp32) | `57b2b7e0c62e84e3238b266e423e2008da76ec12ce957c173b2bbed11c65eb78` |
 | Location | `model/tiny/vmaf_tiny_v3.onnx` |
 | Architecture | `mlp_medium` — Linear(6, 32) → ReLU → Linear(32, 16) → ReLU → Linear(16, 1), 769 params |
 | Input | `features` — float32 `[N, 6]`, dynamic batch |
@@ -72,12 +73,16 @@ features [N, 6]
 
 ## Training data
 
-Identical to v2: `runs/full_features_4corpus.parquet` (Netflix Public
+Identical to v2: `runs/full_features_4corpus.parquet`, the union of
 
-- KoNViD-1k 5-fold + BVI-DVC A + B + C + D, 330 499 frame-rows × 22
-FULL_FEATURES + `vmaf` teacher score from `vmaf_v0.6.1`). The
-StandardScaler is fit on the 4-corpus union and baked into the
-exported ONNX as Constant nodes.
+- Netflix Public Dataset,
+- KoNViD-1k 5-fold,
+- BVI-DVC subsets A + B + C + D.
+
+The table has 330 499 frame-rows of the `FULL_FEATURES` columns of the time
+(22; the pool now has 26) plus the `vmaf` teacher score from `vmaf_v0.6.1`.
+The StandardScaler is fit on the 4-corpus union and baked into the exported
+ONNX as Constant nodes.
 
 ## Validation
 
@@ -119,13 +124,28 @@ v2 comparison model, parsed gate arguments, and report path.
 ## Usage — CLI
 
 ```bash
-# Use vmaf_tiny_v3 instead of the default v2 / classic SVM.
+# Attach vmaf_tiny_v3 alongside the classic regressor.
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v3.onnx \
      --tiny-device auto
 ```
 
-`--tiny-device auto` walks `cuda → openvino → rocm → cpu`. As with
+The tiny model is loaded alongside the classic models; its score is added under
+the feature name `vmaf_tiny_model` (the sidecar has no `name`).
+
+!!! warning "The same run must compute the input features"
+    A tiny feature-vector model reads its input features (`adm2`,
+    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
+    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
+    request them with `--feature adm --feature vif --feature motion`.
+    A feature that is missing is read as `0.0` without a warning. With only the
+    default `vmaf_v1.0.16_3d0h` model the scores are stored under
+    option-suffixed
+    names, so the lookup misses them and the tiny model returns one constant
+    value for every frame.
+
+`--tiny-device auto` walks CUDA, OpenVINO GPU, ROCm, CoreML, then CPU. As with
 v2 the model is small enough (~4 KB) that dispatch overhead
 dominates; CPU is usually the fastest path.
 
@@ -248,6 +268,8 @@ python ai/scripts/measure_quant_drop.py model/tiny/vmaf_tiny_v3.onnx
 ## See also
 
 - [`vmaf_tiny_v2` model card](vmaf_tiny_v2.md) — production default
-- [ADR-0389 — vmaf_tiny_v3 ship decision](../../adr/0389-vmaf-tiny-v3-mlp-medium.md)
-- [Research-0046 — v2-vs-v3 mlp-medium evaluation](../../research/0046-vmaf-tiny-v3-mlp-medium-evaluation.md)
+- [ADR-0389 — vmaf_tiny_v3 ship
+  decision](../../adr/0389-vmaf-tiny-v3-mlp-medium.md)
+- [Research-0046 — v2-vs-v3 mlp-medium
+  evaluation](../../research/0046-vmaf-tiny-v3-mlp-medium-evaluation.md)
 - [Phase-3 research chain](../../research/0027-phase2-feature-importance.md)

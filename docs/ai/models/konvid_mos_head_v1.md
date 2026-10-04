@@ -12,15 +12,17 @@ score. It maps 11 input features to a scalar MOS prediction in [1.0, 5.0].
 > promoted to production. The production-flip gate is documented in
 > §Production-flip gate below.
 
-- **ADR**: [ADR-0336](../../adr/0336-konvid-mos-head-v1.md) (decision record) and
-  [ADR-0325](../../adr/0325-konvid-150k-corpus-ingestion.md) (parent KonViD ingestion plan)
-- **Introduced in**: PR #491 (ADR-0325 Phase 3)
-- **ONNX file**: `model/konvid_mos_head_v1.onnx`
-- **Manifest sidecar**: `model/konvid_mos_head_v1.json`
-- **Model card (canonical source)**: `model/konvid_mos_head_v1_card.md`
-- **Opset**: 17
-- **Parameters**: 5 081
-- **Corpus**: KonViD-1k (1 200 clips) + KonViD-150k (~150 000 clips)
+| Field | Value |
+|---|---|
+| ADR | [ADR-0336](../../adr/0336-konvid-mos-head-v1.md) (decision record), [ADR-0325](../../adr/0325-konvid-150k-corpus-ingestion.md) (parent KonViD ingestion plan) |
+| Introduced in | PR #491 (ADR-0325 Phase 3) |
+| ONNX file | `model/konvid_mos_head_v1.onnx` (not under `model/tiny/`; not in the tiny-model registry) |
+| Manifest sidecar | `model/konvid_mos_head_v1.json` |
+| SHA-256 | `bea4e668e867d46b2215e3a2601b80433ef6183b2c70818184283d72df401c27` |
+| Model card (canonical source) | `model/konvid_mos_head_v1_card.md` |
+| Opset | 17 |
+| Parameters | 5 081 |
+| Corpus | KonViD-1k (1 200 clips) + KonViD-150k (~150 000 clips) |
 
 ## Why this model exists
 
@@ -82,6 +84,29 @@ Ops emitted: `LayerNormalization`, `Concat`, `Gemm`, `Relu`, `Sigmoid`,
 `Add`, `Mul`, `Squeeze` — all on the allowlist in
 `core/src/dnn/op_allowlist.c`.
 
+## Run it
+
+The head is loaded through `onnxruntime` (or, for encode tuning, through
+`Predictor.predict_mos`, see Predictor integration). It is not attached with
+`vmaf --tiny-model`. Minimal Python example with random placeholder features:
+
+```python
+import numpy as np
+import onnxruntime as ort
+
+sess = ort.InferenceSession(
+    "model/konvid_mos_head_v1.onnx", providers=["CPUExecutionProvider"]
+)
+features = np.random.rand(4, 11).astype(np.float32)  # 4 clips x 11 features
+encoder = np.ones((4, 1), dtype=np.float32)          # single "ugc-mixed" slot
+(mos,) = sess.run(["mos"], {"features": features, "encoder_onehot": encoder})
+print(mos)  # shape (4,), values in [1.0, 5.0]
+```
+
+The input layouts are in the Inputs section above. The head ships as a
+synthetic-corpus placeholder, so the outputs are not meaningful quality
+predictions.
+
 ## Training
 
 Train or retrain using `ai/scripts/train_konvid_mos_head.py`:
@@ -118,18 +143,25 @@ must contain `mos` or `mos_raw_0_100`; otherwise the trainer exits with code
 [`materialize_mos_labels.py`](../mos-label-materializer.md) to join labels,
 and reserve `--smoke` for synthetic CI/load-path checks.
 
+Both KonViD and CHUG MOS-head manifests include `run_provenance`. The block
+records the user-facing entrypoint script, CLI arguments, named input/output
+paths, and file hashes where the files exist. CHUG wrapper runs keep
+`train_chug_hdr_mos_head.py` as `entrypoint` and record the shared
+`train_konvid_mos_head.py` implementation as `shared_trainer`.
+
+For corpus acquisition instructions see
+[mos-corpora.md](../mos-corpora.md). The Phase 1 (KonViD-1k) and Phase 2
+(KonViD-150k) adapters must have produced their JSONL drops before running
+the trainer in production mode.
+
+## CHUG HDR variant
+
 CHUG HDR subjective-MOS training uses the CHUG-specific wrapper
 `ai/scripts/train_chug_hdr_mos_head.py`; do not pass CHUG shards through
 the KonViD-named flags. That wrapper defaults to its own
 `chug-hdr-wide-v1` schema and writes local-only `chug_hdr_mos_head_v1`
 manifests under `.corpus/chug/`; it does not change this committed
 11-feature KonViD model contract.
-
-Both KonViD and CHUG MOS-head manifests include `run_provenance`. The
-block records the user-facing entrypoint script, CLI arguments, named
-input/output paths, and file hashes where the files exist. CHUG wrapper
-runs keep `train_chug_hdr_mos_head.py` as `entrypoint` and record the
-shared `train_konvid_mos_head.py` implementation as `shared_trainer`.
 
 For target-panel HDR experiments, add
 `--display-profile-json <profile.json>`. When no explicit
@@ -139,11 +171,6 @@ peak luminance, black level, log contrast ratio, ambient lux,
 BT.2020/P3 coverage, OLED/QLED/LCD panel flags, local dimming, and
 dynamic tone-mapping. The generated manifest records the profile values
 and sha256 so the checkpoint can be traced back to the viewing context.
-
-For corpus acquisition instructions see
-[mos-corpora.md](../mos-corpora.md). The Phase 1 (KonViD-1k) and Phase 2
-(KonViD-150k) adapters must have produced their JSONL drops before running
-the trainer in production mode.
 
 ## Production-flip gate
 
@@ -227,10 +254,14 @@ can drop those columns and run inference with the existing 11-feature model.
 ## See also
 
 - [mos-corpora.md](../mos-corpora.md) — MOS-corpus ingestion family overview
-- [konvid-1k-ingestion.md](../konvid-1k-ingestion.md) — Phase 1 corpus acquisition
-- [konvid-150k-ingestion.md](../konvid-150k-ingestion.md) — Phase 2 corpus acquisition
+- [konvid-1k-ingestion.md](../konvid-1k-ingestion.md) — Phase 1 corpus
+  acquisition
+- [konvid-150k-ingestion.md](../konvid-150k-ingestion.md) — Phase 2 corpus
+  acquisition
 - [ADR-0336](../../adr/0336-konvid-mos-head-v1.md) — decision record
-- [ADR-0325](../../adr/0325-konvid-150k-corpus-ingestion.md) — KonViD ingestion plan and production-flip protocol
-- [ADR-0303](../../adr/0303-fr-regressor-v2-ensemble-prod-flip.md) — gate shape this model inherits
+- [ADR-0325](../../adr/0325-konvid-150k-corpus-ingestion.md) — KonViD ingestion
+  plan and production-flip protocol
+- [ADR-0303](../../adr/0303-fr-regressor-v2-ensemble-prod-flip.md) — gate shape
+  this model inherits
 - [ADR-0559](../../adr/0559-feature-coverage-audit.md) — feature coverage audit
   that identified the speed-feature gap

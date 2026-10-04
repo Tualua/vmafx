@@ -7,6 +7,14 @@ Lab. This page documents how to bring BVI-DVC into the
 `fr_regressor_v2` training corpus alongside the existing Netflix
 Public drop and what to expect from doing so.
 
+Run the three stages in order (details in sections 2 to 4):
+
+```bash
+python ai/scripts/bvi_dvc_to_full_features.py --tier D --out runs/full_features_bvi_dvc_D.parquet
+python ai/scripts/bvi_dvc_to_corpus_jsonl.py --output runs/bvi_dvc_corpus.jsonl
+python ai/scripts/merge_corpora.py --inputs runs/netflix_corpus.jsonl runs/bvi_dvc_corpus.jsonl --output runs/fr_v2_train_corpus.jsonl
+```
+
 See [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md) for the
 decision record and
 [Research-0082](../research/0082-bvi-dvc-corpus-feasibility.md) for
@@ -70,7 +78,8 @@ python ai/scripts/bvi_dvc_to_full_features.py \
 
 `--bvi-dir` and `--bvi-zip` are mutually exclusive. Omitting both falls
 back to `--bvi-zip` using the default path or the `$VMAF_BVI_DVC_ZIP`
-environment variable. See [ADR-0527](../adr/0527-bvi-dvc-pre-extracted-dir-input.md)
+environment variable. See
+[ADR-0527](../adr/0527-bvi-dvc-pre-extracted-dir-input.md)
 for the design rationale.
 
 Accepted file types in `--bvi-dir` mode:
@@ -111,32 +120,69 @@ The end-to-end ingestion is two stages:
                                            → runs/fr_v2_train_corpus.jsonl
 ```
 
-Stage (1) is the **per-frame feature parquet** consumed by the
-`vmaf_tiny_v*` and `fr_regressor_v1` trainers. It runs libvmaf with
-the current `FULL_FEATURES` pool (25 feature columns as of the SpEED
-chroma/temporal refresh) and writes one parquet row per frame.
-This stage already existed in tree; ADR-0310 added the downstream
-corpus-JSONL reshape.
-The stage also writes `runs/full_features_bvi_dvc_<tier>.manifest.json`
-by default, or a caller-selected path via `--manifest-out`. That sidecar
-records whether the run used `--bvi-zip` or `--bvi-dir`, the tier,
-cache/model/vmaf inputs, CRF/codec recipe, selected clip count, emitted
-row/column counts, feature order, extractor list, and ADR-0661
-`run_provenance`. Keep it beside the local parquet so later training
-refreshes can prove which BVI-DVC material was scored.
+Each stage is one script.
 
-Stage (2) is **new in ADR-0310**. It re-shapes the BVI-DVC encodes
-into the vmaf-tune Phase A corpus row schema
+**Stage 1: `bvi_dvc_to_full_features.py`** (per-frame feature parquet,
+consumed by the `vmaf_tiny_v*` and `fr_regressor_v1` trainers; this stage
+existed before ADR-0310):
+
+- Runs libvmaf with the current `FULL_FEATURES` pool (26 feature columns,
+  including `adm3`, as of the SpEED chroma/temporal refresh).
+- Writes one parquet row per frame to
+  `runs/full_features_bvi_dvc_<tier>.parquet`.
+- Writes `runs/full_features_bvi_dvc_<tier>.manifest.json` by default, or
+  the path given by `--manifest-out`. The sidecar records the input mode
+  (`--bvi-zip` or `--bvi-dir`), the tier, the cache, model and vmaf
+  inputs, the CRF/codec recipe, the selected clip count, the emitted
+  row and column counts, the feature order, the extractor list and the
+  ADR-0661 `run_provenance`. Keep it beside the local parquet so later
+  training refreshes can prove which BVI-DVC material was scored.
+
+**Stage 2: `bvi_dvc_to_corpus_jsonl.py`** (new in ADR-0310). It re-shapes
+the BVI-DVC encodes into the vmaf-tune Phase A corpus row schema
 ([`CORPUS_ROW_KEYS`](../../tools/vmaf-tune/src/vmaftune/__init__.py))
-that `fr_regressor_v2` consumes. One JSONL row per `(source,
-preset, CRF)` tuple, mirroring what `vmaf-tune corpus` would emit
-if it had a BVI-DVC adapter.
+that `fr_regressor_v2` consumes. It writes one JSONL row per
+`(source, preset, CRF)` tuple, mirroring what `vmaf-tune corpus` would
+emit with a BVI-DVC adapter.
 
-Stage (3) is the merge utility added by ADR-0310. It de-duplicates
-by `(src_sha256, encoder, preset, crf)` so re-runs and overlap with
-other corpora cannot inflate the training set.
+**Stage 3: `merge_corpora.py`** (added by ADR-0310). It de-duplicates by
+`(src_sha256, encoder, preset, crf)`, so re-runs and overlap with other
+corpora cannot inflate the training set.
 
-## 4. Run command
+### 3.1 Flags of the two stage scripts
+
+`bvi_dvc_to_full_features.py` (stage 1):
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--bvi-zip` | `$VMAF_BVI_DVC_ZIP` or the default archive path | BVI-DVC Part 1 archive (mutually exclusive with `--bvi-dir`) |
+| `--bvi-dir` | none | Already-extracted `.yuv` / `.mp4` / `.mkv` directory |
+| `--tier` | `D` | `A`, `B`, `C`, `D` or `all` (every tier in sorted order) |
+| `--vmaf-bin` | `core/build-cpu/tools/vmaf` | Path to the `vmaf` CLI binary |
+| `--model` | fork default model | Teacher model version string or JSON path |
+| `--out` | `runs/full_features_bvi_dvc_<tier>.parquet` | Output parquet |
+| `--manifest-out` | `<out>.manifest.json` | Run-provenance sidecar |
+| `--scratch` | `$VMAF_TINY_AI_SCRATCH` or a temp directory | Scratch space for decoded clips |
+| `--cache-dir` | `$VMAF_TINY_AI_CACHE_BVI_DVC_FULL` or `~/.cache/vmaf-tiny-ai-bvi-dvc-full` | Per-clip libvmaf JSON cache |
+| `--no-cache` | off | Ignore the cache |
+| `--crf` | `35` | CRF of the libx264 encode |
+| `--max-clips` | none | Limit the number of clips processed |
+| `--codec` | `x264` | Label written to the parquet `codec` column; the script always encodes with libx264 today |
+
+`bvi_dvc_to_corpus_jsonl.py` (stage 2):
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--cache-dir` | `~/.cache/vmaf-tiny-ai-bvi-dvc-full` | Directory of cached libvmaf JSON (one per clip) |
+| `--output` | `runs/bvi_dvc_corpus.jsonl` | Output JSONL |
+| `--encoder` | `libx264` | Value of each row's `encoder` field |
+| `--preset` | `fast` | Preset recorded in each row |
+| `--crf` | `35` | CRF recorded in each row |
+| `--pix-fmt` | `yuv420p10le` | Pixel format recorded in each row |
+| `--vmaf-model` | fork default model | Teacher model name recorded in each row |
+| `--manifest-out` | `<output>.manifest.json` | Run-provenance sidecar |
+
+## 4. Merge and train
 
 Once the parquet exists (stage 1) and the JSONL adapter has produced
 `runs/bvi_dvc_corpus.jsonl` (stage 2), merge with the Netflix shard:
@@ -165,12 +211,13 @@ python ai/scripts/train_fr_regressor_v2.py \
 
 ## 5. Expected impact on fr_regressor_v2
 
-The Netflix-only LOSO baseline (see
-[ADR-0303](../adr/0303-fr-regressor-v2-ensemble-prod-flip.md)) leaves
-9 folds × ~24 rows / fold (216 rows total). Adding BVI-DVC's tier-D
-clips (~120 sources) roughly **triples** the training corpus and
-expands the LOSO partition from 9 source-folds to 9 + N folds, where
-N is the number of BVI-DVC sources retained after dedup.
+The Netflix-only LOSO (leave-one-source-out) baseline (see
+[ADR-0303](../adr/0303-fr-regressor-v2-ensemble-prod-flip.md)) has 9
+source folds, one per Netflix Public source. Adding BVI-DVC's tier-D clips
+(about 120 sources, per
+[Research-0082](../research/0082-bvi-dvc-corpus-feasibility.md)) expands the
+partition to 9 + N folds, where N is the number of BVI-DVC sources retained
+after dedup. The training corpus grows by the same factor in sources.
 
 LOSO methodology is unchanged: each fold holds out one source, trains
 on the remainder, and reports per-fold PLCC / SROCC / RMSE against the

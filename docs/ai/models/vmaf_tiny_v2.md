@@ -29,6 +29,7 @@ classic SVM regressor.
 | Field | Value |
 | --- | --- |
 | Model name | `vmaf_tiny_v2` |
+| SHA-256 | `d7000bf5c5fd1ed39528546dd8464db44a13cb73cfed33fd8f134e5848b009a7` |
 | Location | `model/tiny/vmaf_tiny_v2.onnx` |
 | Architecture | `mlp_small` — Linear(6, 16) → ReLU → Linear(16, 8) → ReLU → Linear(8, 1), ~257 params |
 | Input | `features` — float32 `[N, 6]`, dynamic batch |
@@ -74,7 +75,8 @@ features [N, 6]
 - BVI-DVC subsets A + B + C + D (full coverage).
 
 All combined into `runs/full_features_4corpus.parquet` (330 499
-frame-rows × 22 FULL_FEATURES + `vmaf` teacher score from
+frame-rows × the `FULL_FEATURES` columns of the time (22; the pool now has 26) +
+`vmaf` teacher score from
 `vmaf_v0.6.1`). The 4-corpus union is what we fit the StandardScaler
 and the MLP on for the production export. LOSO + 5-fold are the
 validation methodology, not the deployment recipe.
@@ -104,13 +106,31 @@ ONNX, parquet, parsed gate arguments, and report path.
 ## Usage — CLI
 
 ```bash
-# Use vmaf_tiny_v2 instead of the classic SVM regressor.
+# Attach vmaf_tiny_v2 alongside the classic regressor.
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v2.onnx \
      --tiny-device auto
 ```
 
-`--tiny-device auto` walks `cuda → openvino → rocm → cpu`. The model
+`--tiny-model` loads the tiny model *alongside* the classic models rather than
+replacing the SVM: the classic score stays in the output, and the tiny model's
+score is added under the feature name `vmaf_tiny_model` (the sidecar has no
+`name`).
+
+!!! warning "The same run must compute the input features"
+    A tiny feature-vector model reads its input features (`adm2`,
+    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
+    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
+    request them with `--feature adm --feature vif --feature motion`.
+    A feature that is missing is read as `0.0` without a warning. With only the
+    default `vmaf_v1.0.16_3d0h` model the scores are stored under
+    option-suffixed
+    names, so the lookup misses them and the tiny model returns one constant
+    value for every frame (measured on the CPU build with `vmaf_tiny_v2`:
+    `-0.85`).
+
+`--tiny-device auto` walks CUDA, OpenVINO GPU, ROCm, CoreML, then CPU. The model
 is so small (<2 KB) that the dispatch overhead dominates wall-clock
 on every device; CPU is usually the fastest path.
 
@@ -182,6 +202,8 @@ stats target. Keep that block with any refreshed stats used for export.
 
 - [Phase-3 research chain](../../research/0027-phase2-feature-importance.md)
 - [Phase-3 subset sweep](../../research/0028-phase3-subset-sweep.md)
-- [Phase-3b StandardScaler results](../../research/0029-phase3b-standardscaler-results.md)
-- [Phase-3b multi-seed validation](../../research/0030-phase3b-multiseed-validation.md)
+- [Phase-3b StandardScaler
+  results](../../research/0029-phase3b-standardscaler-results.md)
+- [Phase-3b multi-seed
+  validation](../../research/0030-phase3b-multiseed-validation.md)
 - [ADR-0244 — vmaf_tiny_v2 ship decision](../../adr/0244-vmaf-tiny-v2.md)

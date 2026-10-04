@@ -15,14 +15,15 @@ and record multiple named outputs from a single attached tiny model.
 | --- | --- |
 | Model id | `smoke_multi_output_v0` |
 | Location | `model/tiny/smoke_multi_output_v0.onnx` |
-| Architecture | Identity / multi-head split — intentional CI probe |
-| Trainable parameters | 0 (Identity mapping) |
-| Input | `luma` — float32 `[1, 1, H, W]` |
-| Output | `mean_score`, `peak_score` — float32 `[1]` each |
+| Architecture | `ReduceMean` and `ReduceMax` heads over the input — intentional CI probe (generator: `scripts/gen_multi_output_smoke_onnx.py`) |
+| Trainable parameters | 0 (no weights) |
+| Training | None: a generated graph with no weights |
+| Input | `luma` — float32 `[1, 1, 4, 4]` |
+| Output | `mean_score` (mean over the input) and `peak_score` (max over the input) — float32 scalars |
 | ONNX opset | 17 |
 | License | BSD-2-Clause-Patent |
 | Registry entry | `smoke_multi_output_v0` in `model/tiny/registry.json` (`"smoke": true`) |
-| SHA-256 | `4b63ff5a9d82e21b7a2d3be16aee70c1840ea89bbf1b71d604b901fc82b8214d` |
+| SHA-256 | `e5f353d65d6766b9beac0e59ea586c419308c0e24a6316a7714b7a5e4aef30e9` |
 
 ## Purpose
 
@@ -39,8 +40,9 @@ names. `smoke_multi_output_v0` verifies:
 
 ## Output interpretation
 
-Outputs are synthetic test signals. Values reflect test fixture identities, not
-perceptual quality. PLCC / SROCC / RMSE are not applicable.
+Outputs are synthetic test signals: the mean and the maximum of the input
+tensor. Values reflect the fixture, not perceptual quality. PLCC / SROCC / RMSE
+are not applicable.
 
 ## Runnable usage example
 

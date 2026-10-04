@@ -1,15 +1,16 @@
 # `ai/scripts/` corpus-path environment variables
 
-Every corpus-ingestion / training script under `ai/scripts/` defaults to
-the maintainer's local `.corpus/<corpus>/` directory. That path is
-gitignored and only exists on the maintainer's machine, so on every
-other host (including the [`vmaf-dev-mcp` container](../development/dev-mcp.md))
-the first run fails with `FileNotFoundError`.
+Set an environment variable to point an `ai/scripts/` script at your own corpus
+directory, with no CLI edit. Every corpus-ingestion and training script under
+`ai/scripts/` defaults to a `.corpus/<corpus>/` directory inside the repository.
+That directory is gitignored and absent on a fresh checkout, so on a host
+without the corpora (including the
+[`vmaf-dev-mcp` container](../development/dev-mcp.md)) the first run fails with
+`FileNotFoundError`.
 
-Per [ADR-0547](../adr/0547-ai-script-env-vars.md) each script accepts
-an env-var override layered on top of the default. Set the env var and
-the script picks up your local layout without any CLI edit; leave it
-unset and the maintainer's defaults still apply.
+Per [ADR-0547](../adr/0547-ai-script-env-vars.md) each script accepts an env-var
+override layered on top of the default. Leave the variable unset and the
+`.corpus/` default applies.
 
 ## Overrides
 
@@ -26,6 +27,24 @@ unset and the maintainer's defaults still apply.
 | `extract_full_features.py`, `eval_loso_mlp_small.py`, `eval_loso_3arch.py`, `validate_ensemble_seeds.py`, `train_predictor_v2_realcorpus.py` | `VMAF_NETFLIX_CORPUS_DIR` | `<repo>/.corpus/netflix` |
 | `train_predictor_v2_realcorpus.py` | `VMAF_BVI_DVC_RAW_DIR` | `<repo>/.corpus/bvi-dvc-raw` |
 | `bvi_dvc_to_full_features.py` | `VMAF_BVI_DVC_ZIP` | `<repo>/.corpus/bvi-dvc-raw/BVI-DVC Part 1.zip` |
+
+## Other `ai/` environment variables
+
+| Env var | Default | Read by |
+| --- | --- | --- |
+| `VMAF_DATA_ROOT` | `~/.cache/vmaf-train` | `vmaf-train` dataset cache and manifests ([training.md](training.md#dataset-acquisition)); `fetch_konvid_1k.py` uses `$VMAF_DATA_ROOT/konvid-1k` (else `~/datasets/konvid-1k`) |
+| `VMAF_TINY_AI_CACHE` | `~/.cache/vmaf-tiny-ai` | `ai/train/` per-clip feature cache ([training.md](training.md#netflix-corpus-flow)) |
+| `VMAF_TINY_AI_CACHE_KONVID_FULL` | `~/.cache/vmaf-tiny-ai-konvid-full` | `konvid_to_full_features.py` `--cache-dir` |
+| `VMAF_TINY_AI_CACHE_BVI_DVC_FULL` | `$XDG_CACHE_HOME/vmaf-tiny-ai-bvi-dvc-full` | `bvi_dvc_to_full_features.py` `--cache-dir` |
+| `VMAF_TINY_AI_SCRATCH` | system temp directory | `extract_ugc_features.py`, `export_transnet_v2.py` scratch files; an empty value is an error |
+| `VMAF_MODEL_PATH` | unset | teacher model JSON override, step 2 of the resolution order in [training.md](training.md#teacher-model-provenance) |
+| `VMAF_BIN` | `core/build-cpu/tools/vmaf` | `run_training.sh` vmaf binary |
+| `VMAF_CORPUS_DIR` | `.corpus/netflix` | `calibrate_nr_threshold.py` corpus directory |
+| `VMAF_CHUG_HDR_ONNX` | git-ignored `.workingdir` evidence path | `validate_chug_hdr_mos_head.py` ([chug-hdr-held-out-validator.md](chug-hdr-held-out-validator.md)) |
+| `VMAFX_RUNS_DIR` | `<repo>/runs` | `train_fr_regressor_v2.py` default metrics path |
+| `VMAFX_PIPELINE_HASH` | derived from git | `aiutils.parquet_utils` pipeline-hash metadata override |
+| `VMAF_HW_TAG` | `ryzen-9950x3d+rtx4090+arc-a380` | `measure_quant_drop_per_ep.py` hardware tag ([quant-eps.md](quant-eps.md)) |
+| `VMAFX_SIDECAR_*` | see the table | online trainer, [sidecar-online-training.md](sidecar-online-training.md#configuration-reference) |
 
 ## Usage examples
 

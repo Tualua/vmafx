@@ -7,49 +7,7 @@
 > corpus extraction helper, frozen Python requirements, and shell smoke
 > tests.
 
-The *ensemble training kit* (per
-[ADR-0324](../adr/0324-ensemble-training-kit.md)) is a portable
-bundle of the Phase-A corpus producer + LOSO retrain runbook used
-to land a second-hardware verdict on the
-`fr_regressor_v2_ensemble_v1` retrain. The kit collects the
-already-in-tree pieces:
-
-- `scripts/dev/hw_encoder_corpus.py` — Phase-A producer.
-- `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` — LOSO wrapper.
-- `ai/scripts/train_fr_regressor_v2_ensemble_loso.py` — trainer.
-- `ai/scripts/validate_ensemble_seeds.py` — gate verdict emitter.
-- `ai/scripts/export_ensemble_v2_seeds.py` — per-seed ONNX exporter.
-- `tools/ensemble-training-kit/` — the portable bundle entry-point
-  (binaries + tests).
-- [`docs/ai/ensemble-v2-real-corpus-retrain-runbook.md`](ensemble-v2-real-corpus-retrain-runbook.md)
-  — the operator runbook.
-
-Status: **Accepted / shipped**. ADR-0324 was accepted during the
-2026-05-08 ADR status sweep, and the on-disk bundle exists under
-`tools/ensemble-training-kit/`. Treat this page as the overview for the
-release-facing package; the detailed operator runbook lives in
-[`tools/ensemble-training-kit/README.md`](../../tools/ensemble-training-kit/README.md).
-
-## What The Kit Packages
-
-The kit is a convenience wrapper around the real training flow. It does
-not define a new model format and does not replace the LOSO trainer.
-
-| Step | Existing entry point | Output |
-| --- | --- | --- |
-| Capture hardware corpus | `scripts/dev/hw_encoder_corpus.py` | Phase-A JSONL rows |
-| Train LOSO folds | `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` | fold metrics + checkpoints |
-| Validate seeds | `ai/scripts/validate_ensemble_seeds.py` | `PROMOTE.json` verdict |
-| Export seed ONNXs | `ai/scripts/export_ensemble_v2_seeds.py` | `fr_regressor_v2_ensemble_v1_seed*.onnx` |
-
-The LOSO seed reports, validator verdict, and fresh seed sidecars all carry
-ADR-0661 `run_provenance`. The LOSO reports record the corpus and training
-arguments that produced each fold summary. The export sidecars record the
-corpus, PROMOTE verdict, argv, per-seed ONNX/sidecar targets, and optional
-registry target, so a production seed refresh can be audited without
-reconstructing the handoff shell session.
-
-## Current Use
+## Run the kit
 
 Use the kit when handing the retrain workflow to another operator or
 when running the full loop locally:
@@ -75,6 +33,49 @@ The lower-level scripts remain available for maintainers who are
 developing the trainer itself, but operator handoff should use the kit
 so the argv order, platform detection, corpus extraction, and result
 bundle shape are all exercised together.
+
+## What the kit is
+
+The *ensemble training kit* (per
+[ADR-0324](../adr/0324-ensemble-training-kit.md)) is a portable
+bundle of the Phase-A corpus producer + LOSO retrain runbook used
+to land a second-hardware verdict on the
+`fr_regressor_v2_ensemble_v1` retrain. The kit collects the
+already-in-tree pieces:
+
+- `scripts/dev/hw_encoder_corpus.py` — Phase-A producer.
+- `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` — LOSO wrapper.
+- `ai/scripts/train_fr_regressor_v2_ensemble_loso.py` — trainer.
+- `ai/scripts/validate_ensemble_seeds.py` — gate verdict emitter.
+- `ai/scripts/export_ensemble_v2_seeds.py` — per-seed ONNX exporter.
+- `tools/ensemble-training-kit/` — the portable bundle entry-point
+  (binaries + tests).
+- [`docs/ai/ensemble-v2-real-corpus-retrain-runbook.md`](ensemble-v2-real-corpus-retrain-runbook.md)
+  — the operator runbook.
+
+The detailed operator runbook lives in
+[`tools/ensemble-training-kit/README.md`](../../tools/ensemble-training-kit/README.md);
+this page is the overview for the release-facing package. ADR-0324 was accepted
+in the 2026-05-08 ADR status sweep.
+
+## What The Kit Packages
+
+The kit is a convenience wrapper around the real training flow. It does
+not define a new model format and does not replace the LOSO trainer.
+
+| Step | Existing entry point | Output |
+| --- | --- | --- |
+| Capture hardware corpus | `scripts/dev/hw_encoder_corpus.py` | Phase-A JSONL rows |
+| Train LOSO folds | `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` | fold metrics + checkpoints |
+| Validate seeds | `ai/scripts/validate_ensemble_seeds.py` | `PROMOTE.json` verdict |
+| Export seed ONNXs | `ai/scripts/export_ensemble_v2_seeds.py` | `fr_regressor_v2_ensemble_v1_seed*.onnx` |
+
+The LOSO seed reports, validator verdict, and fresh seed sidecars all carry
+ADR-0661 `run_provenance`. The LOSO reports record the corpus and training
+arguments that produced each fold summary. The export sidecars record the
+corpus, PROMOTE verdict, argv, per-seed ONNX/sidecar targets, and optional
+registry target, so a production seed refresh can be audited without
+reconstructing the handoff shell session.
 
 ## See also
 

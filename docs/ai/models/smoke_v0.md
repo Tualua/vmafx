@@ -19,8 +19,9 @@ repository runner's `--suite=fast` gate.
 | Location | `model/tiny/smoke_v0.onnx` |
 | Architecture | Conv (1-weight kernel) + Identity — intentional CI probe |
 | Trainable parameters | **1** (1-element Conv kernel; no bias) |
-| Input | `features` — float32 `[N, …]` |
-| Output | `score` — float32 `[N]` |
+| Input | `features` — float32 `[1, 1, 4, 4]` |
+| Output | `score` — float32 `[1, 1, 4, 4]` |
+| Training | None: the single Conv weight is a synthetic constant written by `scripts/gen_smoke_onnx.py` |
 | ONNX opset | 17 |
 | License | BSD-2-Clause-Patent |
 | Registry entry | `smoke_v0` in `model/tiny/registry.json` (`"smoke": true`) |

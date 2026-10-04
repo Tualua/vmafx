@@ -16,14 +16,13 @@ and commit the resulting ONNX + model-card diff in a follow-up PR.
 
 Run Phase 2 after either:
 
-- A real corpus has been generated under `~/.corpus/netflix/`
-  (canonical-6 schema; 9 Netflix Public Dataset sources × NVENC /
-  QSV / SW codecs), `~/.corpus/konvid-150k/` (KoNViD-1k UGC,
-  when ingested), or `~/.corpus/bvi-dvc-raw/` (BVI-DVC raw
-  YUVs, when ingested). Or
-- An operator wants to validate that the shipped synthetic stubs
-  remain the right ship for a codec by running the gate against
-  whatever corpus is locally available.
+- **A real corpus exists.** Under the repository `.corpus/` directory
+  (canonical-6 schema), for example `.corpus/netflix/` (9 Netflix Public Dataset
+  sources x NVENC / QSV / SW codecs), `.corpus/konvid-150k/` (KonViD-150k UGC,
+  when ingested) or `.corpus/bvi-dvc-raw/` (BVI-DVC raw YUVs, when ingested).
+- **You want to validate the stubs.** To check that the shipped synthetic stubs
+  remain the right ship for a codec, run the gate against whatever corpus is
+  available locally.
 
 The trainer **never** auto-overwrites a stub ONNX without first
 clearing the gate; failing codecs keep the stub and the model card
@@ -34,19 +33,21 @@ gains an explicit `Status: Proposed (gate-failed: REASON)` block.
 The Phase-2 gate is the same two-part threshold as
 ADR-0303 §Decision applied per codec rather than per ensemble seed:
 
-| Sub-gate | Threshold | Failure consequence |
-|---|---|---|
-| Mean fold PLCC | `>= 0.95` | Codec marked `fail`; ONNX stub kept. |
-| Spread (`max - min` fold PLCC) | `<= 0.005` | Codec marked `fail`; ONNX stub kept. |
-| Per-fold floor | `>= 0.95` | Codec marked `fail`; ONNX stub kept. |
-| LOSO fold count | `5` | Corpora with `< 5` distinct sources -> `insufficient-sources`. |
+| Sub-gate | Threshold |
+|---|---|
+| Mean fold PLCC | `>= 0.95` |
+| Spread (`max - min` fold PLCC) | `<= 0.005` |
+| Per-fold floor | `>= 0.95` |
+| LOSO fold count | `5` (corpora with fewer than 5 distinct sources are `insufficient-sources`) |
+
+Failing any sub-gate marks the codec `fail` and keeps its stub ONNX.
 
 These constants live in
 `ai/scripts/train_predictor_v2_realcorpus.py` as
 `SHIP_GATE_MEAN_PLCC`, `SHIP_GATE_PLCC_SPREAD_MAX`,
 `SHIP_GATE_PER_FOLD_MIN`, `LOSO_FOLD_COUNT`. **Do not lower them**
-to make a codec pass — per CLAUDE.md §13 / `feedback_no_test_weakening`,
-the gate is load-bearing. If a codec genuinely requires a different
+to make a codec pass: the gate is load-bearing (ADR-0303). If a codec genuinely
+requires a different
 threshold, supersede ADR-0303 with a new ADR and update both call
 sites (predictor trainer + `scripts/ci/ensemble_prod_gate.py`)
 together.
@@ -125,15 +126,14 @@ libvvenc       FAIL                   0.8520  0.0420    320     8
   - PLCC spread 0.0420 > 0.0050 (ADR-0303 part 2)
 ```
 
-Two recovery paths:
+There are two recovery paths:
 
-1. **Ship more training data.** `libvvenc` may need additional
-   sources to clear the spread bound; add corpora under one of the
-   discovery roots and re-run.
-2. **Supersede ADR-0303.** If after exhaustive corpus expansion the
-   gate still fails for a structural reason (e.g. encoder is
-   inherently noisier than the deterministic v2 baseline), open a
-   superseding ADR. **Do NOT silently lower the threshold in code.**
+1. **Ship more training data.** `libvvenc` may need additional sources to clear
+   the spread bound. Add corpora under one of the discovery roots and re-run.
+2. **Supersede ADR-0303.** If the gate still fails for a structural reason after
+   exhaustive corpus expansion (for example the encoder is inherently noisier
+   than the deterministic v2 baseline), open a superseding ADR. Never lower the
+   threshold silently in code.
 
 The `Status: Proposed (gate-failed: REASON)` block on the model card
 makes the fail visible to anyone reading the card — there is no

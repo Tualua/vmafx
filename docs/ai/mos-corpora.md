@@ -1,27 +1,34 @@
-<!-- markdownlint-disable MD013 MD060 -->
+<!-- markdownlint-disable MD013 MD046 MD060 -->
 # MOS-corpus ingestion family
 
 The VMAFx fork trains no-reference and mixed-reference VQA models against
 human Mean Opinion Score labels. Several public video-quality corpora are
 supported. Each corpus ships its own adapter script that produces a
-**corpus JSONL** shard; the shards are then unified via
-`ai/scripts/aggregate_corpora.py` before the trainer consumes them.
+**corpus JSONL** shard. Six of the eight corpora are then unified via
+`ai/scripts/aggregate_corpora.py` before the trainer consumes them, see the
+Aggregator support column below.
 
 This page is the index for the entire family. Follow the per-corpus links
 for acquisition steps, operator flags, and schema details.
 
 ## Available corpora
 
-| Corpus | Clips | MOS scale | Size (approx.) | Adapter script | Per-corpus doc |
-|--------|------:|-----------|----------------|----------------|----------------|
-| KonViD-1k | 1 200 | 1–5 ACR Likert | ~2.3 GB | `ai/scripts/konvid_1k_to_corpus_jsonl.py` | [konvid-1k-ingestion.md](konvid-1k-ingestion.md) |
-| KonViD-150k | ~150 000 | 1–5 ACR Likert | ~120–200 GB | `ai/scripts/konvid_150k_to_corpus_jsonl.py` | [konvid-150k-ingestion.md](konvid-150k-ingestion.md) |
-| LSVQ | ~39 000 | 1–5 ACR Likert | ~500 GB (whole) | `ai/scripts/lsvq_to_corpus_jsonl.py` | [lsvq-ingestion.md](lsvq-ingestion.md) |
-| YouTube UGC | ~1 500 | 1–5 ACR Likert | ~2 TB (whole) | `ai/scripts/youtube_ugc_to_corpus_jsonl.py` | [youtube-ugc-ingestion.md](youtube-ugc-ingestion.md) |
-| Waterloo IVC 4K-VQA | 1 200 | 0–100 continuous | multi-TB (whole) | `ai/scripts/waterloo_ivc_to_corpus_jsonl.py` | [waterloo-ivc-4k-ingestion.md](waterloo-ivc-4k-ingestion.md) |
-| LIVE-VQC | 585 | 0–100 continuous | ~few GB | `ai/scripts/live_vqc_to_corpus_jsonl.py` | [live-vqc-ingestion.md](live-vqc-ingestion.md) |
-| CHUG UGC-HDR | 5 992 | 0–100 continuous, mapped to 1–5 at ingest | tens of GB | `ai/scripts/chug_to_corpus_jsonl.py` | [chug-ingestion.md](chug-ingestion.md) |
-| BVI-DVC (no-MOS FR shard) | ~120+ | n/a — no human MOS | ~84 GiB archive | `ai/scripts/bvi_dvc_to_corpus_jsonl.py` | [bvi-dvc-corpus-ingestion.md](bvi-dvc-corpus-ingestion.md) |
+| Corpus | Clips | MOS scale | Size (approx.) | Adapter script | Aggregator support | Per-corpus doc |
+|--------|------:|-----------|----------------|----------------|--------------------|----------------|
+| KonViD-1k | 1 200 | 1–5 ACR Likert | ~2.3 GB | `ai/scripts/konvid_1k_to_corpus_jsonl.py` | yes | [konvid-1k-ingestion.md](konvid-1k-ingestion.md) |
+| KonViD-150k | ~150 000 | 1–5 ACR Likert | ~120–200 GB | `ai/scripts/konvid_150k_to_corpus_jsonl.py` | yes | [konvid-150k-ingestion.md](konvid-150k-ingestion.md) |
+| LSVQ | ~39 000 | 1–5 ACR Likert | ~500 GB (whole) | `ai/scripts/lsvq_to_corpus_jsonl.py` | yes | [lsvq-ingestion.md](lsvq-ingestion.md) |
+| YouTube UGC | ~1 500 | 1–5 ACR Likert | ~2 TB (whole) | `ai/scripts/youtube_ugc_to_corpus_jsonl.py` | yes | [youtube-ugc-ingestion.md](youtube-ugc-ingestion.md) |
+| Waterloo IVC 4K-VQA | 1 200 | 0–100 continuous | multi-TB (whole) | `ai/scripts/waterloo_ivc_to_corpus_jsonl.py` | yes | [waterloo-ivc-4k-ingestion.md](waterloo-ivc-4k-ingestion.md) |
+| LIVE-VQC | 585 | 0–100 continuous | ~few GB | `ai/scripts/live_vqc_to_corpus_jsonl.py` | no | [live-vqc-ingestion.md](live-vqc-ingestion.md) |
+| CHUG UGC-HDR | 5 992 | 0–100 continuous, mapped to 1–5 at ingest | tens of GB | `ai/scripts/chug_to_corpus_jsonl.py` | no | [chug-ingestion.md](chug-ingestion.md) |
+| BVI-DVC (no-MOS FR shard) | ~120+ | n/a — no human MOS | ~84 GiB archive | `ai/scripts/bvi_dvc_to_corpus_jsonl.py` | no (FR shard, `merge_corpora.py`) | [bvi-dvc-corpus-ingestion.md](bvi-dvc-corpus-ingestion.md) |
+
+!!! warning
+    `aggregate_corpora.py` converts MOS scales only for `konvid-1k`,
+    `konvid-150k`, `lsvq`, `youtube-ugc`, `waterloo-ivc-4k` and `netflix-public`
+    (`SCALE_CONVERSIONS` in the script). LIVE-VQC and CHUG rows are dropped as
+    `dropped_unknown_corpus` until that table gains entries for them.
 
 BVI-DVC is a reference-only corpus without human MOS labels. It feeds the
 `fr_regressor_v2` encode-grid trainer via `ai/scripts/merge_corpora.py`
@@ -35,7 +42,7 @@ because `merge_corpora.py` and `aggregate_corpora.py` are sibling utilities
 |--------|---------|
 | KonViD-1k | Hosu, Hahn, Jenadeleh, Lin, Men, Szirányi, Li, Saupe. *The Konstanz natural video database (KoNViD-1k).* QoMEX 2017. <http://database.mmsp-kn.de> |
 | KonViD-150k | Götz-Hahn, Hosu, Lin, Saupe. *KonVid-150k: A Dataset for No-Reference Video Quality Assessment of Videos in-the-Wild.* IEEE Access 2021. <https://database.mmsp-kn.de/konvid-150k-vqa-database.html> |
-| LSVQ | Ying, Mandal, Ghadiyaram, Bovik. *Patch-Based No-Reference Image and Video Quality Assessment.* ICCV 2021. <https://github.com/baidut/PatchVQ> |
+| LSVQ | Ying, Mandal, Ghadiyaram, Bovik. *Patch-VQ: 'Patching Up' the Video Quality Problem.* CVPR 2021. <https://github.com/baidut/PatchVQ> |
 | YouTube UGC | Wang, Inguva, Adsumilli. *YouTube UGC Dataset for Video Compression Research.* MMSP 2019. <https://research.google/pubs/youtube-ugc-dataset-for-video-compression-research/> |
 | Waterloo IVC 4K-VQA | Li, Duanmu, Liu, Wang. *4K-VQA: A 4K Video Quality Assessment Database.* ICIAR 2019. <https://ivc.uwaterloo.ca/database/4KVQA.html> |
 | LIVE-VQC | Sinno, Bovik. *Large-Scale Study of Perceptual Video Quality.* IEEE TIP 2019. <https://live.ece.utexas.edu/research/LIVEVQC/> |
@@ -83,7 +90,8 @@ Key invariants:
 
 ### MOS-labelled corpora → unified training JSONL
 
-Use `ai/scripts/aggregate_corpora.py` (PR #518, [ADR-0340](../adr/0340-multi-corpus-aggregation.md)).
+Use `ai/scripts/aggregate_corpora.py` (PR #518,
+[ADR-0340](../adr/0340-multi-corpus-aggregation.md)).
 It normalises each shard to a common 0–100 axis, deduplicates by
 `src_sha256`, and emits a unified JSONL the v2 trainer can consume directly:
 
@@ -122,26 +130,11 @@ full scale-conversion table, dedup policy, and failure-mode reference.
 
 ### Feature tables + MOS labels → MOS-head parquet
 
-Real MOS-head training tables must already carry `mos` or `mos_raw_0_100`.
-When a refreshed feature parquet only contains extracted metrics, join the
-labels first with `ai/scripts/materialize_mos_labels.py`:
-
-```bash
-.venv/bin/python ai/scripts/materialize_mos_labels.py \
-    --features runs/full_features_konvid_refresh_20260520_with_folds.parquet \
-    --labels .corpus/konvid-150k/konvid_150k.jsonl \
-    --feature-key-column key \
-    --label-key-column src \
-    --feature-key-regex '([0-9]{6,})' \
-    --label-key-regex '([0-9]{6,})' \
-    --out runs/full_features_konvid_refresh_20260520_with_mos.parquet \
-    --audit-json runs/full_features_konvid_refresh_20260520_with_mos.audit.json
-```
-
-The materializer fails by default below 95% unique-key coverage and refuses to
-overwrite existing MOS columns unless `--overwrite` is passed. See
-[mos-label-materializer.md](mos-label-materializer.md) for the key-matching
-and audit schema.
+Real MOS-head training tables must already carry `mos` or `mos_raw_0_100`. When
+a refreshed feature parquet contains only extracted metrics, join the labels
+first with `ai/scripts/materialize_mos_labels.py`. The command, the 95%
+key-coverage default and the audit schema are in
+[mos-label-materializer.md](mos-label-materializer.md).
 
 ### Encode-grid corpora (Netflix + BVI-DVC) → FR-regressor JSONL
 
@@ -168,31 +161,11 @@ signals when those fields are not present in the cached libvmaf JSON.
 
 ## Shared ingestion infrastructure (ADR-0371)
 
-All MOS-corpus adapter scripts share a common base class defined in
-`ai/src/corpus/base.py` (`PYTHONPATH=ai/src`). The base class provides:
-
-- **`sha256_file(path)`** — SHA-256 computed in 1 MiB chunks (dedup key).
-- **`probe_geometry(clip_path, ...)`** — ffprobe wrapper; returns a dict
-  with `width`, `height`, `framerate`, `duration_s`, `pix_fmt`,
-  `encoder_upstream`, or `None` on probe failure. Injected via the
-  `runner` kwarg for unit tests.
-- **`load_progress` / `save_progress` / `mark_done` / `mark_failed` /
-  `should_attempt`** — atomic tempfile-rename progress state (JSON) so
-  multi-hour runs are safe to Ctrl-C and resume.
-- **`read_sha_index(jsonl_path)`** — builds a `set[str]` of
-  already-ingested `src_sha256` values from a partially-written JSONL
-  so re-runs skip duplicates.
-- **`download_clip(...)`** — curl-based download with configurable
-  timeout, returning `(ok, reason)`. Also injectable via `runner`.
-- **`RunStats`** — dataclass accumulating `written`,
-  `skipped_download`, `skipped_broken`, `dedups` with a computed
-  `attrition_pct`.
-- **`CorpusIngestBase`** — abstract base class. Subclass, set
-  `corpus_label`, implement
-  `iter_source_rows(clips_dir) -> Iterator[(clip_path, row_dict)]`,
-  and call `ingest.run()`.
-
-Adding a new MOS corpus:
+All MOS-corpus adapter scripts share a base class in `ai/src/corpus/base.py`
+(`PYTHONPATH=ai/src`). To add a MOS corpus, subclass `CorpusIngestBase`, set
+`corpus_label`, implement
+`iter_source_rows(clips_dir) -> Iterator[(clip_path, row_dict)]`
+and call `ingest.run()`:
 
 ```python
 # ai/scripts/my_corpus_to_corpus_jsonl.py
@@ -209,36 +182,69 @@ class MyCorpusIngest(CorpusIngestBase):
 See [ADR-0371](../adr/0371-corpus-ingest-base-class.md) and the unit tests at
 `ai/tests/test_corpus_base.py` for the full contract.
 
+??? note "Base-class API reference"
+    The base class provides:
+
+    - **`sha256_file(path)`** — SHA-256 computed in 1 MiB chunks (dedup key).
+    - **`probe_geometry(clip_path, ...)`** — ffprobe wrapper; returns a dict
+      with `width`, `height`, `framerate`, `duration_s`, `pix_fmt`,
+      `encoder_upstream`, or `None` on probe failure. Injected via the
+      `runner` kwarg for unit tests.
+    - **`load_progress` / `save_progress` / `mark_done` / `mark_failed` /
+      `should_attempt`** — atomic tempfile-rename progress state (JSON) so
+      multi-hour runs are safe to Ctrl-C and resume.
+    - **`read_sha_index(jsonl_path)`** — builds a `set[str]` of
+      already-ingested `src_sha256` values from a partially-written JSONL
+      so re-runs skip duplicates.
+    - **`download_clip(...)`** — curl-based download with configurable
+      timeout, returning `(ok, reason)`. Also injectable via `runner`.
+    - **`RunStats`** — dataclass accumulating `written`,
+      `skipped_download`, `skipped_broken`, `dedups` with a computed
+      `attrition_pct`.
+    - **`CorpusIngestBase`** — abstract base class. Subclass, set
+      `corpus_label`, implement
+      `iter_source_rows(clips_dir) -> Iterator[(clip_path, row_dict)]`,
+      and call `ingest.run()`.
+
 ## Per-corpus quick-start commands
 
 ### KonViD-1k (1 200 clips, ~2.3 GB, ~5 min)
 
-```bash
-# 1. Fetch + extract (idempotent — skips completed files).
-python ai/scripts/fetch_konvid_1k.py
-#    → ~/datasets/konvid-1k/KoNViD_1k_videos/  (default location)
-#    → ~/datasets/konvid-1k/fetch_manifest.json
+1. Fetch and extract (idempotent: skips completed files). The fetcher defaults
+   to
+   `$VMAF_DATA_ROOT/konvid-1k` or `~/datasets/konvid-1k`, while the adapter
+   reads
+   `.corpus/konvid-1k`. Pass `--root` so both agree:
 
-# 2. Convert to JSONL.
-python ai/scripts/konvid_1k_to_corpus_jsonl.py
-#    → .corpus/konvid-1k/konvid_1k.jsonl
+    ```bash
+    python ai/scripts/fetch_konvid_1k.py --root .corpus/konvid-1k
+    #    → .corpus/konvid-1k/KoNViD_1k_videos/
+    #    → .corpus/konvid-1k/fetch_manifest.json
+    ```
 
-# Smoke (5 clips only):
-python ai/scripts/konvid_1k_to_corpus_jsonl.py --max-rows 5
-```
+2. Convert to JSONL:
+
+    ```bash
+    python ai/scripts/konvid_1k_to_corpus_jsonl.py
+    #    → .corpus/konvid-1k/konvid_1k.jsonl
+    ```
+
+The adapter has no row-cap flag. For a quick check, run it against a directory
+holding a few clips with `--konvid-dir`.
 
 ### KonViD-150k (~150 000 clips, ~120–200 GB)
 
-```bash
-# Drop manifest.csv first:  https://database.mmsp-kn.de/konvid-150k-vqa-database.html
+Drop `manifest.csv` first from
+<https://database.mmsp-kn.de/konvid-150k-vqa-database.html>, then run:
 
+```bash
 python ai/scripts/konvid_150k_to_corpus_jsonl.py
 #    → .corpus/konvid-150k/konvid_150k.jsonl
 #    Resumable — safe to Ctrl-C and re-run.
-
-# Smoke (50 clips):
-python ai/scripts/konvid_150k_to_corpus_jsonl.py --max-rows 50
 ```
+
+The adapter has no row-cap flag. For a smoke run, point `--manifest-csv` at a
+short copy of the manifest (for example `head -n 51 manifest.csv`).
 
 ### LSVQ (~39 000 clips, ~500 GB whole)
 
@@ -311,37 +317,55 @@ for acquisition and operator flag details.
 ## KonViD MOS head v1
 
 After building a unified JSONL from KonViD-1k and KonViD-150k, the fork can
-train a lightweight MLP that maps libvmaf canonical-6 features plus saliency
-and TransNet shot-metadata to a scalar MOS prediction in [1, 5]. This is the
-`konvid_mos_head_v1` model (PR #491, ADR-0336):
+train
+a lightweight MLP that maps libvmaf canonical-6 features plus saliency and
+TransNet shot-metadata to a scalar MOS prediction in [1, 5]. This is the
+`konvid_mos_head_v1` model (PR #491, ADR-0336). The full model card is
+[models/konvid_mos_head_v1.md](models/konvid_mos_head_v1.md) (architecture, I/O
+contract, production-flip gate, predictor integration).
+
+### Smoke
+
+A synthetic corpus needs no real data and takes about 30 s:
 
 ```bash
-# Smoke (synthetic corpus — no real data needed, ~30 s):
 python ai/scripts/train_konvid_mos_head.py --smoke
+```
 
-# Production (real KonViD JSONL drops on disk):
+### Production
+
+Train from the real KonViD JSONL drops. The outputs are
+`model/konvid_mos_head_v1.onnx` and the manifest sidecar
+`model/konvid_mos_head_v1.json`:
+
+```bash
 python ai/scripts/train_konvid_mos_head.py \
     --konvid-1k   .corpus/konvid-1k/konvid_1k.jsonl \
     --konvid-150k .corpus/konvid-150k/konvid_150k.jsonl
-#    → model/konvid_mos_head_v1.onnx
-#    → model/konvid_mos_head_v1.json  (manifest sidecar)
+```
 
-# Production from refreshed feature parquet, after MOS materialisation:
+Or train from a refreshed feature parquet, after MOS materialisation:
+
+```bash
 python ai/scripts/train_konvid_mos_head.py \
     --konvid-1k /tmp/no-konvid-1k.jsonl \
     --konvid-150k /tmp/no-konvid-150k.jsonl \
     --feature-parquet runs/full_features_konvid_refresh_20260520_with_mos.parquet
 ```
 
-Real mode fails when the input paths yield zero MOS-labelled rows. Use
-`--smoke` for synthetic pipeline checks; use the MOS label materializer for
-real feature tables that do not yet carry `mos`.
+Real mode fails when the input paths yield zero MOS-labelled rows. Use `--smoke`
+for synthetic pipeline checks, and the MOS label materializer for real feature
+tables that do not yet carry `mos`.
 
-CHUG HDR MOS training is a separate local experiment because CHUG is HDR
-subjective-MOS data and the current Netflix VMAF teacher is SDR/8-bit.
-The CHUG wrapper defaults to the `chug-hdr-wide-v1` feature schema, which
-uses the CHUG temporal quantiles/std columns and HDR ladder metadata in
-addition to the canonical-6 feature means:
+### CHUG HDR
+
+CHUG HDR MOS training is a separate local experiment, because CHUG is HDR
+subjective-MOS data and the current Netflix VMAF teacher is SDR and 8-bit. The
+CHUG wrapper defaults to the `chug-hdr-wide-v1` feature schema: the CHUG
+temporal
+quantiles and std columns and HDR ladder metadata, in addition to the
+canonical-6
+feature means.
 
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py
@@ -350,26 +374,20 @@ python ai/scripts/train_chug_hdr_mos_head.py
 ```
 
 To train against a target HDR display instead of treating MOS as
-display-invariant, provide a display profile:
+display-invariant, provide a display profile. With that flag and no explicit
+`--feature-schema`, the wrapper uses `chug-hdr-display-v1`, a 45-column schema
+that appends normalized panel and viewing-context features to
+`chug-hdr-wide-v1`. The manifest records the normalized display profile and the
+source JSON sha256.
 
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py \
   --display-profile-json .corpus/chug/display-profile.json
 ```
 
-With that flag and no explicit `--feature-schema`, the wrapper uses
-`chug-hdr-display-v1`, a 45-column schema that appends normalized panel
-and viewing-context features to `chug-hdr-wide-v1`. The manifest records
-the normalized display profile and the source JSON sha256.
-
-For an apples-to-apples ablation against the older 11-feature baseline,
-add `--feature-schema konvid-v1`. Do not use that ablation as the
-default CHUG command; it discards CHUG-specific signal that was already
-materialised by the extractor.
-
-See [models/konvid_mos_head_v1.md](models/konvid_mos_head_v1.md) for the
-full model card (architecture, I/O contract, production-flip gate, and
-predictor integration).
+For an apples-to-apples ablation against the older 11-feature baseline, add
+`--feature-schema konvid-v1`. Do not use it as the default CHUG command: it
+discards CHUG-specific signal that the extractor already materialised.
 
 ## License and redistribution posture
 
@@ -400,8 +418,13 @@ For the full licence analysis per corpus see the respective ADR:
 
 ## Related
 
-- [multi-corpus-aggregation.md](multi-corpus-aggregation.md) — unified-scale aggregation
-- [bvi-dvc-corpus-ingestion.md](bvi-dvc-corpus-ingestion.md) — encode-grid shard (no MOS)
-- [models/konvid_mos_head_v1.md](models/konvid_mos_head_v1.md) — trained MOS-prediction model
-- [training-data.md](training-data.md) — Netflix Public corpus (FR training shard)
-- [ADR-0340](../adr/0340-multi-corpus-aggregation.md) — aggregation decision record
+- [multi-corpus-aggregation.md](multi-corpus-aggregation.md) — unified-scale
+  aggregation
+- [bvi-dvc-corpus-ingestion.md](bvi-dvc-corpus-ingestion.md) — encode-grid shard
+  (no MOS)
+- [models/konvid_mos_head_v1.md](models/konvid_mos_head_v1.md) — trained
+  MOS-prediction model
+- [training-data.md](training-data.md) — Netflix Public corpus (FR training
+  shard)
+- [ADR-0340](../adr/0340-multi-corpus-aggregation.md) — aggregation decision
+  record

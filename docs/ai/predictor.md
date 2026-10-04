@@ -1,18 +1,18 @@
 <!-- markdownlint-disable MD060 -->
 # Per-shot VMAF predictor
 
-> **Important — software and AMF predictor models are synthetic stubs.**
-> The shipped ONNX models for software encoders (`libx264`, `libx265`,
-> `libsvtav1`, `libaom-av1`, `libvvenc`) and AMF hardware encoders
-> (`h264_amf`, `hevc_amf`, `av1_amf`) are **synthetic stubs** trained on a
-> 100-row synthetic corpus (`synthetic-stub-N=100`) that re-encodes the
-> analytical fallback curve (ADR-0395). **Stub models are not authoritative
-> for production CRF picks.** Only NVENC and QSV models are trained on real
-> Phase-A corpora. At point of use, `Predictor` and `vmaf-tune` emit a warning
-> when loading a stub model. To use software/AMF predictors in production,
-> generate a real corpus via `python -m vmaftune.cli corpus` and re-train with
-> `python -m vmaftune.predictor_train`. Tracked as
-> `T-PREDICTOR-SOFTWARE-AMF-STUB-MODELS-2026-09-08` in `docs/state.md`.
+!!! warning "Software and AMF predictor models are synthetic stubs"
+    The shipped ONNX models for software encoders (`libx264`, `libx265`,
+    `libsvtav1`, `libaom-av1`, `libvvenc`) and AMF hardware encoders
+    (`h264_amf`, `hevc_amf`, `av1_amf`) are synthetic stubs trained on a
+    100-row synthetic corpus (`synthetic-stub-N=100`) that re-encodes the
+    analytical fallback curve (ADR-0395). **Stub models are not authoritative
+    for production CRF picks.** Only NVENC and QSV models are trained on real
+    Phase-A corpora. At point of use, `Predictor` and `vmaf-tune` emit a warning
+    when loading a stub model. To use software or AMF predictors in production,
+    generate a real corpus via `python -m vmaftune.cli corpus` and re-train with
+    `python -m vmaftune.predictor_train`. Tracked as
+    `T-PREDICTOR-SOFTWARE-AMF-STUB-MODELS-2026-09-08` in `docs/state.md`.
 
 The per-shot VMAF predictor turns "encode every shot, score every
 shot" into "predict every shot, encode every shot, score a sampled
@@ -82,15 +82,19 @@ so the resulting ONNX model is a smooth re-encoding of the analytical
 formula. **Stub models are not authoritative for production CRF picks.**
 Every per-codec model card flags this prominently.
 
-The Go predictor reads an optional `<model-stem>_card.md` next to the
-selected model to classify its training corpus. Registry names resolve via
-`VMAFX_MODEL_DIR` before this lookup. A card containing
-`synthetic-stub` marks a stub; `real-N=` can override the software/AMF
-filename fallback. Card symlinks must remain inside that model directory.
-If the card is missing, unreadable, or points outside it, the predictor
-uses its existing filename/codec fallback. A filename containing `stub`
-always remains a stub. Keep real-corpus cards alongside renamed models
-so their corpus classification remains available.
+The Go predictor classifies a model's training corpus by reading an optional
+`<model-stem>_card.md` next to it. The rules:
+
+1. Registry names resolve via `VMAFX_MODEL_DIR` before the card lookup.
+2. A card containing `synthetic-stub` marks the model as a stub.
+3. A card containing `real-N=` can override the software/AMF filename fallback.
+4. A filename containing `stub` always stays a stub.
+5. Card symlinks must stay inside the model directory. If the card is missing,
+   unreadable or points outside it, the predictor uses its existing
+   filename/codec fallback.
+
+Keep real-corpus cards alongside renamed models so their corpus classification
+stays available.
 
 To train real models on a real corpus:
 
@@ -172,16 +176,16 @@ The trainer also pins the runtime contract via
 
 ## 5. Signing
 
-Production-grade tiny-AI weights ship with a Sigstore-keyless OIDC
-signature attached at the release-please tag step (per the existing
-`model/tiny/*.onnx` pattern; see
-[`docs/development/release.md`](../development/release.md)). Stub
-models ship **unsigned** because their numerical content is not
-authoritative; their cards carry a `Sigstore signature: PLACEHOLDER`
-line. Real-corpus model files are still unsigned while in-tree on a
-branch; release automation attaches the Sigstore-keyless OIDC bundles
-for published tags, following the same release workflow as the
-`model/tiny/*.onnx` artefacts.
+Signing depends on the model's status:
+
+- **Production-grade weights** ship with a Sigstore-keyless OIDC signature
+  attached at the release-please tag step, following the `model/tiny/*.onnx`
+  pattern (see [`docs/development/release.md`](../development/release.md)).
+- **Stub models** ship unsigned because their numerical content is not
+  authoritative. Their cards carry a `Sigstore signature: PLACEHOLDER` line.
+- **Real-corpus model files** are unsigned while in-tree on a branch. Release
+  automation attaches the Sigstore-keyless OIDC bundles for published tags, with
+  the same release workflow as the `model/tiny/*.onnx` artefacts.
 
 ## File layout
 
@@ -225,7 +229,10 @@ pytest tools/vmaf-tune/tests/test_predictor_train.py -v
 
 ## See also
 
-- [ADR-0237 — quality-aware encode automation](../adr/0237-quality-aware-encode-automation.md)
-- [ADR-0392 — vmaf-tune Phase D per-shot tuning](../adr/0392-vmaf-tune-phase-d-per-shot.md)
-- [ADR-0395 — predictor stub-models policy](../adr/0395-predictor-stub-models-policy.md)
+- [ADR-0237 — quality-aware encode
+  automation](../adr/0237-quality-aware-encode-automation.md)
+- [ADR-0392 — vmaf-tune Phase D per-shot
+  tuning](../adr/0392-vmaf-tune-phase-d-per-shot.md)
+- [ADR-0395 — predictor stub-models
+  policy](../adr/0395-predictor-stub-models-policy.md)
 - [ADR-0042 — tiny-AI docs bar](../adr/0042-tinyai-docs-required-per-pr.md)

@@ -1,23 +1,63 @@
+<!-- markdownlint-disable MD060 -->
 # Tiny AI — inference
 
-Three consumer surfaces share one runtime: `vmaf` CLI, libvmaf C API, and
-ffmpeg filters. All three funnel through
-[`core/src/dnn/ort_backend.c`](../../core/src/dnn/ort_backend.c).
+Score a clip with a tiny ONNX model by passing it to `vmaf --tiny-model`. Three
+consumer surfaces share one runtime
+([`core/src/dnn/ort_backend.c`](../../core/src/dnn/ort_backend.c)): the `vmaf`
+CLI, the libvmaf C API and the ffmpeg filters.
+
+## Quick start
+
+A full-reference tiny model reads the canonical-6 features (`adm2`,
+`vif_scale0..3`, `motion2`) that a classic model computes. Pair it with
+`--model version=vmaf_v0.6.1` so those features are extracted.
+
+```bash
+vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+     --model version=vmaf_v0.6.1 \
+     --tiny-model model/tiny/vmaf_tiny_v2.onnx \
+     --tiny-device cpu --json -o scores.json
+```
+
+The tiny score is a normal per-frame feature. Its name is the `name` field of
+the model's sidecar JSON, or `vmaf_tiny_model` when the sidecar has no `name`
+(as for `vmaf_tiny_v2`). It appears in `frames[].metrics` and in
+`pooled_metrics`, next to the classic `vmaf` score:
+
+```json
+"pooled_metrics": {
+  "vmaf_tiny_model": { "mean": 93.72, ... },
+  "vmaf": { "mean": 94.32, ... }
+}
+```
+
+!!! warning
+    A feature-vector model scores only as well as its inputs. With the default
+    `vmaf_v1.0.16_3d0h` model alone, the canonical-6 features are not
+    extracted and `vmaf_tiny_v2` returns a constant score for every frame
+    (measured: -0.853 on every frame of the `testdata` pair). Either pass
+    `--model version=vmaf_v0.6.1` as above, or keep the default model and add
+    `--feature adm --feature vif --feature motion`. Both give a real score
+    (93.72 mean on the `testdata` pair).
+
+!!! note
+    The shipped tiny models were trained against the `vmaf_v0.6.1` teacher. The
+    one-shot retrain against `vmaf_v1.0.16_3d0h` is RC9 work, see the
+    [roadmap](../roadmap.md).
 
 ## Prerequisites
 
-- libvmaf built with `-Denable_dnn=enabled` (or `auto` with ONNX Runtime
-  discoverable via `pkg-config`).
-- ONNX Runtime ≥ 1.20 available at build time. ONNX Runtime isn't in the
-  distro setup scripts under [scripts/setup/](../../scripts/setup/) yet —
-  install the prebuilt release tarball from
-  <https://github.com/microsoft/onnxruntime/releases> or a distro package
-  if available, and make sure its `libonnxruntime.so` + headers are on
-  `PKG_CONFIG_PATH` before running `meson setup`.
-- A `.onnx` model + sidecar `.json` pair under `model/tiny/` or anywhere
-  else — the CLI flag accepts an absolute path.
+- libvmaf built with `-Denable_dnn=enabled`, or `auto` with ONNX Runtime
+  discoverable via `pkg-config` (`libonnxruntime` or `onnxruntime`).
+- ONNX Runtime available at build time. It is not in the distro setup scripts
+  under [scripts/setup/](../../scripts/setup/). Install the prebuilt release
+  tarball from <https://github.com/microsoft/onnxruntime/releases> or a distro
+  package, and put its `libonnxruntime.so` and headers on `PKG_CONFIG_PATH`
+  before `meson setup`. The build files declare no minimum version.
+- A `.onnx` model plus a sidecar `.json` pair, under `model/tiny/` or anywhere
+  else. `--tiny-model` takes a file path, not a registry id.
 
-Verify at runtime:
+Verify the build at runtime:
 
 ```bash
 vmaf --help | grep -- '--tiny-model'   # must list the flag
@@ -25,95 +65,97 @@ vmaf --tiny-model /missing.onnx 2>&1   # should print a clear error,
                                        # not "option not found"
 ```
 
-Optional deployment hardening:
+### Restrict where models load from
 
-| Environment | Default | Notes |
-| --- | --- | --- |
-| `VMAF_TINY_MODEL_DIR` | unset | Directory jail for `--tiny-model` / libvmaf tiny-model loads. When set, every ONNX path is resolved with symlinks followed and must live below this directory before the loader stats or maps the file. Missing, non-directory, sibling-prefix, and symlink-escape paths fail closed with `-EACCES`. |
-
-Example:
+Set `VMAF_TINY_MODEL_DIR` to a trusted directory for deployment hardening. When
+set, every ONNX path is resolved with symlinks followed and must live below
+that directory before the loader stats or maps the file. Missing,
+non-directory, sibling-prefix and symlink-escape paths fail closed with
+`-EACCES`.
 
 ```bash
 export VMAF_TINY_MODEL_DIR=/opt/vmaf-models
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+     --model version=vmaf_v0.6.1 \
      --tiny-model /opt/vmaf-models/vmaf_tiny_v2.onnx
 ```
 
-## Surface 1 — the `vmaf` CLI
+The jail is independent of `--tiny-model-verify`: the jail restricts where
+models may load from, verification pins which signed model bytes may load.
+
+## Surface 1: the `vmaf` CLI
+
+### Examples
+
+C1, full-reference, augmenting the classic SVM:
 
 ```bash
-# C1 — drop-in augmentation of the classic SVM. Default tiny FR model
-# is now vmaf_tiny_v2 (ADR-0244) — supersedes the prior vmaf_tiny_v1.
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-     -m version=vmaf_v0.6.1 \
+     --model version=vmaf_v0.6.1 \
      --tiny-model model/tiny/vmaf_tiny_v2.onnx \
      --tiny-device cuda
-
-# C2 — no-reference.
-vmaf -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
-     --tiny-model model/tiny/vmaf_nr_mobilenet_v1.onnx \
-     --no-reference
 ```
 
-> **Default flip (2026-04-29).** `vmaf_tiny_v2` replaces
-> `vmaf_tiny_v1` as the recommended tiny FR fusion model. Same input
-> contract (canonical-6 features), same output range (0–100 VMAF),
-> +0.005–0.018 PLCC across the Phase-3 validation chain. The v1 file
-> stays on disk as a regression baseline. See
-> [`models/vmaf_tiny_v2.md`](models/vmaf_tiny_v2.md) for the full
-> model card.
->
-> **`vmaf_tiny_v3` available alongside v2 (2026-05-02, ADR-0241).**
-> A wider/deeper variant (`mlp_medium` 6 → 32 → 16 → 1, ~769 params)
-> trained on the same 4-corpus parquet, same recipe. Netflix LOSO
-> mean PLCC 0.9986 ± 0.0015 vs v2's 0.9978 ± 0.0021 (+0.0008 mean,
-> -30 % std). v2 remains the production default; pick v3 for
-> lowest-variance estimates. See [`models/vmaf_tiny_v3.md`](models/vmaf_tiny_v3.md).
+C2, no-reference (the NR model needs `--tiny-resize` when the clip resolution
+differs from the model input, see
+[auto-resize](#auto-resize-for-image-input-models)):
 
-**Architecture ladder (2026-05-02).** The tiny VMAF fusion family
-now spans three rungs sharing the canonical-6 input contract:
+```bash
+vmaf -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+     --tiny-model model/tiny/nr_metric_v1.onnx \
+     --no-reference --tiny-resize bilinear
+```
 
-| Model | Arch | Params | ONNX | NF LOSO PLCC | Status |
+### Choose a VMAF-tiny model
+
+The tiny VMAF fusion family shares the canonical-6 input contract
+and the 0 to 100 output range. `vmaf_tiny_v2` is the recommended default
+([ADR-0244](../adr/0244-vmaf-tiny-v2.md)); the v1 files stay on disk as
+regression baselines.
+
+| Model | Arch | Params | ONNX | NF LOSO PLCC | Use |
 | --- | --- | ---: | ---: | ---: | --- |
-| [`vmaf_tiny_v2`](models/vmaf_tiny_v2.md) | mlp_small | 257 | 2.5 KB | 0.9978 ± 0.0021 | **Production default** |
-| [`vmaf_tiny_v3`](models/vmaf_tiny_v3.md) | mlp_medium | 769 | 4.5 KB | 0.9986 ± 0.0015 | Opt-in (recommended higher tier) |
-| [`vmaf_tiny_v4`](models/vmaf_tiny_v4.md) | mlp_large | 3073 | 14.0 KB | 0.9987 ± 0.0015 | Opt-in (top of measured ladder) |
+| [`vmaf_tiny_v2`](models/vmaf_tiny_v2.md) | mlp_small | 257 | 2.5 KB | 0.9978 ± 0.0021 | Default; smallest bundle |
+| [`vmaf_tiny_v3`](models/vmaf_tiny_v3.md) | mlp_medium | 769 | 4.5 KB | 0.9986 ± 0.0015 | Recommended higher tier; lowest-variance estimates |
+| [`vmaf_tiny_v4`](models/vmaf_tiny_v4.md) | mlp_large | 3073 | 14.0 KB | 0.9987 ± 0.0015 | Top of the measured ladder |
 
-v4's PLCC win over v3 is +0.0001 (below 1 std) — the ladder
-saturates on the canonical-6 + 4-corpus regime. ADR-0242 records
-"the arch ladder stops here". Pick v3 unless you specifically want
-the absolute top of the measured ladder; pick v2 for the smallest
-bundle.
+v4's PLCC gain over v3 is +0.0001, below one standard deviation, so the ladder
+saturates on the canonical-6 and 4-corpus regime (ADR-0242: the architecture
+ladder stops here). Pick v3 unless you want the top rung, and v2 for the
+smallest bundle.
 
-New flags:
+### CLI flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
-| `--tiny-model PATH` | — | ONNX model path; sidecar JSON at `${PATH%.onnx}.json`. |
-| `--tiny-device STR` | `auto` | `auto` \| `cpu` \| `cuda` \| `openvino` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `rocm`. |
+| `--tiny-model PATH` | none | ONNX model path (absolute or relative); sidecar JSON at `${PATH%.onnx}.json`. |
+| `--tiny-device STR` | `auto` | One of the 12 device strings in the [EP matrix](#execution-provider-matrix). `--dnn-ep` is an alias that selects the ORT execution provider by its ORT name. |
 | `--tiny-threads N` | `0` | CPU EP intra-op threads; 0 = ORT default. |
 | `--tiny-fp16` | off | Request fp16 I/O when the EP supports it. |
-| `--tiny-model-verify` | off | Require Sigstore-bundle verification (`cosign verify-blob`) before model load. Refuses to load on missing bundle, missing `cosign`, or non-zero exit. See [model-registry.md](model-registry.md) and [security.md](security.md). |
-| `--tiny-codec NAME` | `unknown` | Encoder name for codec-aware tiny models (e.g. `fr_regressor_v2`). Validated against the sidecar's `encoder_vocab`; unknown names hard-fail at attach time so typos are caught. Common ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) are accepted. See [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md). |
-| `--tiny-preset STR` | medium | Encoder preset (`medium` / `slow` / `p4` / `5` etc.); interpretation is encoder-specific and mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`. Unknown presets fall back to ordinal 5. |
-| `--tiny-crf N` | `0` | CRF / QP integer used during encoding; clamped to `[0, 63]` and normalised by 63 to match the trainer. |
-| `--no-reference` | off | Skip reference loading; only valid with an NR tiny model. |
+| `--tiny-model-verify` | off | Require Sigstore-bundle verification (`cosign verify-blob`) before model load. Refuses to load on a missing bundle, missing `cosign`, or non-zero exit. See [model-registry.md](model-registry.md) and [security.md](security.md). |
+| `--tiny-codec NAME` | `unknown` | Encoder name for codec-aware models (for example `fr_regressor_v2`). See [codec-aware models](#codec-aware-models). |
+| `--tiny-preset STR` | `medium` | Encoder preset (`medium`, `slow`, `p4`, `5`, ...). Encoder-specific; mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`. Unknown presets fall back to ordinal 5. |
+| `--tiny-crf N` | `0` | CRF or QP integer used during encoding; clamped to `[0, 63]` and divided by 63 to match the trainer. |
+| `--tiny-resize MODE` | `disabled` | Auto-resize for fixed-shape image models: `disabled`, `bilinear`, `nearest`, `bicubic`. |
+| `--no-reference` | off | Skip reference loading; valid only with an NR tiny model. |
 
-### Codec-aware tiny models (`fr_regressor_v2`)
+### Codec-aware models
 
-`fr_regressor_v2.onnx` carries a second `codec` input of shape `[batch,
-N_VOCAB + 2]`. The first `N_VOCAB` slots are a one-hot over the
-sidecar's `encoder_vocab` (v2: 12 entries — `libx264`, `libx265`,
-`libsvtav1`, `libvvenc`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`,
-`av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `unknown`); the last
-two are `preset_norm = preset_ordinal / 9.0` and `crf_norm = crf / 63.0`.
+`fr_regressor_v2.onnx` carries a second `codec` input of shape
+`[batch, N_VOCAB + 2]`:
 
-Without `--tiny-codec` / `--tiny-preset` / `--tiny-crf` the loader
-pre-seeds the codec block to the `unknown` baseline (ADR-0518) and the
-model receives a constant conditioning vector — every call returns the
-same score regardless of the distorted YUV's encoder. Passing the
-flags populates the block from the user-supplied parameters via the
-new `vmaf_dnn_set_codec_context()` public API (ADR-0519):
+- The first `N_VOCAB` slots are a one-hot over the sidecar's `encoder_vocab`.
+  For v2 that is 12 entries: `libx264`, `libx265`, `libsvtav1`, `libvvenc`,
+  `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`,
+  `hevc_qsv`, `av1_qsv`, `unknown`.
+- The last two slots are `preset_norm = preset_ordinal / 9.0` and
+  `crf_norm = crf / 63.0`.
+
+Without `--tiny-codec`, `--tiny-preset` and `--tiny-crf`, the loader pre-seeds
+the codec block to the `unknown` baseline (ADR-0518), so the model receives a
+constant conditioning vector and returns the same score regardless of the
+encoder. Passing the flags fills the block through the public
+`vmaf_dnn_set_codec_context()` API (ADR-0519):
 
 ```bash
 vmaf --reference src.yuv --distorted dst.yuv \
@@ -123,7 +165,14 @@ vmaf --reference src.yuv --distorted dst.yuv \
      --json --output /tmp/scores.json
 ```
 
-Unknown codec names exit non-zero before the first frame is read:
+The flags are validated at attach time:
+
+- A codec name that is not in the sidecar's `encoder_vocab` exits non-zero
+  before the first frame is read. Common ffprobe aliases (`h264`, `hevc`,
+  `av1`, `vp9`, `vvc`) are accepted. See
+  [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md).
+- A model without a codec block (`fr_regressor_v1`, `vmaf_tiny_v4`,
+  `dists_sq`) rejects the flags with a `-ENOTSUP` message.
 
 ```text
 $ vmaf … --tiny-codec UNKNOWN_ENC …
@@ -131,74 +180,51 @@ $ vmaf … --tiny-codec UNKNOWN_ENC …
 use one of the names listed by --help.
 ```
 
-Non-codec-aware models (`fr_regressor_v1`, `vmaf_tiny_v4`, `dists_sq`)
-reject the flags with a `-ENOTSUP` message — `--tiny-codec` requires a
-model whose sidecar carries an `encoder_vocab` array.
+### Multi-output models
 
-`--tiny-model` accepts an absolute or relative path. For production,
-set `VMAF_TINY_MODEL_DIR` to the trusted model directory and pass paths
-inside that directory; a model outside the jail fails before ONNX
-Runtime opens a session. The jail is independent of
-`--tiny-model-verify`: use the jail to restrict *where* models may load
-from, and verification to pin *which* signed model bytes may load.
+For attached multi-output models, each scalar ONNX output is its own feature:
 
-Output JSON gains a `tiny_model` block alongside `pooled_metrics`:
+- A single-output model keeps the sidecar `name` as the score key.
+- A multi-output model uses `<sidecar-name>_<output-name>`. `output-name` comes
+  from the sidecar `output_names[]` when present and count-matched, otherwise
+  from the ONNX graph output name.
+- Attached mode rejects non-scalar output tensors. Use
+  `vmaf_dnn_session_run()` when the caller needs vectors or images.
 
-```json
-{
-  "pooled_metrics": { "vmaf": { "mean": 91.23... } },
-  "tiny_model": {
-    "name": "vmaf_tiny_fr_v1",
-    "kind": "fr",
-    "device": "cuda",
-    "mean": 90.8...,
-    "per_frame": [...]
-  }
-}
-```
+### Auto-resize for image-input models
 
-For attached multi-output models, each scalar ONNX output is recorded as its own
-feature. A single-output model keeps the sidecar `name` as the score key.
-Multi-output models use `<sidecar-name>_<output-name>`, with `output-name`
-taken from sidecar `output_names[]` when present and count-matched, otherwise
-from the ONNX graph output name. Attached mode still rejects non-scalar output
-tensors; use `vmaf_dnn_session_run()` when the caller needs vectors or images.
+Image-input (rank-4 NCHW, where N is batch, C channels, H height, W width) tiny
+models declare a fixed input shape. The shipped `model/tiny/nr_metric_v1.onnx`
+NR scorer expects `[1, 1, 224, 224]` because it was trained on KoNViD-1k
+middle-frames downscaled to 224x224 grayscale. Most NR workflows pass the
+encoder's native resolution as `--width` and `--height`, so a dimension
+mismatch is the norm.
 
-### Auto-resize for image-input tiny models (ADR-0550)
+The per-frame dispatch can auto-resample the luma plane to the model input
+shape (ADR-0550). The default is `disabled`: a mismatch returns `-ERANGE` and
+you must choose a filter, which keeps strict mode for parity harnesses and
+avoids a silent free parameter.
 
-Image-input (rank-4 NCHW) tiny models declare a *fixed* input shape — the
-shipped `model/tiny/nr_metric_v1.onnx` NR scorer, for example, expects
-`[1, 1, 224, 224]` because it was trained on KoNViD-1k middle-frames
-downscaled to 224×224 grayscale. Most NR workflows pass the encoder's
-native resolution as `--width / --height`, so a dimension mismatch is
-the norm rather than the exception.
+| `--tiny-resize` | Filter |
+| --- | --- |
+| `disabled` | Default. Mismatch returns `-ERANGE`. |
+| `bilinear` | torchvision / OpenCV BILINEAR (half-pixel-centre). |
+| `nearest` | Nearest-neighbour, floor coordinate (debug-friendly). |
+| `bicubic` | Catmull-Rom (a = -0.5), separable. |
 
-The per-frame NCHW dispatch can **auto-resample the luma plane** to the
-model's input shape when they differ. The default behaviour is
-**`disabled`** — a dimension mismatch returns `-ERANGE` and the operator
-must explicitly choose a resize filter. This preserves the strict mode
-for parity harnesses and avoids a silent free parameter.
+!!! warning
+    `bilinear`, `nearest` and `bicubic` produce scores that differ by about 2%
+    on the same input. Treat the filter as a model hyperparameter and document
+    it alongside the model checkpoint.
 
-> **Warning:** `bilinear`, `nearest`, and `bicubic` produce scores that
-> differ by approximately **2%** on the same input. Treat filter choice
-> as a model hyperparameter and document it alongside the model
-> checkpoint.
+When the source dimensions already equal the model dimensions, the dispatch
+forwards verbatim to `vmaf_tensor_from_luma`. The matched-dimension path stays
+bit-identical to the pre-ADR-0550 code, so the Netflix golden gate is
+unaffected by the selected filter. The same selector is reachable from the C
+API as `vmaf_dnn_set_resize_mode(ctx, VMAF_DNN_RESIZE_BILINEAR | _NEAREST |
+_BICUBIC | _DISABLED)`.
 
-Filter selectors:
-
-```text
---tiny-resize disabled   # default: mismatch -> -ERANGE (strict mode)
---tiny-resize bilinear   # torchvision / OpenCV BILINEAR (half-pixel-centre)
---tiny-resize nearest    # nearest-neighbour, floor coord (debug-friendly)
---tiny-resize bicubic    # Catmull-Rom (a = -0.5), separable
-```
-
-When the source dims already equal the model dims, the dispatch
-forwards verbatim to `vmaf_tensor_from_luma` — the matched-dims path
-stays bit-identical to the pre-ADR-0550 code, so the Netflix golden
-gate is unaffected regardless of the selected filter.
-
-Smoke test (Finding 11 reproducer — requires explicit `--tiny-resize`):
+Smoke test with an explicit filter:
 
 ```bash
 vmaf --no-reference \
@@ -211,22 +237,17 @@ vmaf --no-reference \
 # ~ 3.05 (nearest), ~ 3.11 (bicubic).
 ```
 
-Without `--tiny-resize`, the default (disabled) produces 0 frames and
-"problem reading pictures" for any size-mismatched NR model:
+Without `--tiny-resize`, the default produces 0 frames and a "problem reading
+pictures" error at frame 0 for any size-mismatched NR model:
 
 ```bash
 vmaf --no-reference \
      --tiny-model model/tiny/nr_metric_v1.onnx \
      --distorted testdata/dis_576x324_48f.yuv \
      --width 576 --height 324 --pixel_format 420 --bitdepth 8
-# Expected: "problem reading pictures" at frame 0; 0 frames scored.
 ```
 
-The same selector is reachable from the C API via
-`vmaf_dnn_set_resize_mode(ctx, VMAF_DNN_RESIZE_BILINEAR | _NEAREST |
-_BICUBIC | _DISABLED)` — see Surface 2 below.
-
-## Surface 2 — the libvmaf C API
+## Surface 2: the libvmaf C API
 
 ```c
 #include <libvmaf/libvmaf.h>
@@ -246,129 +267,146 @@ VmafDnnConfig dnn_cfg = {
     .threads      = 0,
     .fp16_io      = false,
 };
-int err = vmaf_use_tiny_model(ctx, "/models/vmaf_tiny_fr_v1.onnx", &dnn_cfg);
+int err = vmaf_use_tiny_model(ctx, "/models/vmaf_tiny_v2.onnx", &dnn_cfg);
 if (err < 0) { /* handle -errno */ }
 
 /* … feed frames as usual; tiny-model scores appear in the same
      per-frame collector the built-in SVM uses. */
 ```
 
-The sidecar JSON is discovered automatically at
-`${onnx_path%.onnx}.json`. Its `kind` field (`fr` / `nr`) tells libvmaf
-whether to expect a reference.
+The sidecar JSON is discovered automatically at `${onnx_path%.onnx}.json`. Its
+`kind` field (`fr` or `nr`) tells libvmaf whether to expect a reference.
 Optional `output_names[]` entries name attached multi-output scalar scores; the
-legacy `output_name` field remains accepted for single-output metadata.
+legacy `output_name` field stays accepted for single-output metadata.
 
-### Accepted ONNX input shapes (ADR-0518, extended by ADR-0523)
+### Codec context functions
 
-The loader accepts two input ranks:
+| Function | Purpose | Notable returns |
+| --- | --- | --- |
+| `vmaf_dnn_set_codec_context(ctx, codec_name, preset, crf)` | Fill the codec block of a codec-aware model. Call before the first `vmaf_read_pictures()`; not thread-safe. NULL or `""` codec maps to `unknown`. | `0` ok; `-ENOENT` codec not in `encoder_vocab` (the `unknown` bucket is used); `-ENOTSUP` model has no codec block; `-EINVAL` no model attached; `-ENOSYS` built without DNN |
+| `vmaf_dnn_is_codec_aware(ctx)` | `1` when the attached model needs a codec context, else `0`. Safe with a NULL context. | `0` or `1` |
+
+### Accepted ONNX input shapes
+
+The loader accepts two input ranks (ADR-0518, extended by ADR-0523):
 
 | Rank | Shape | Meaning | Example checkpoint |
 | --- | --- | --- | --- |
-| 4 | `[N, 1, H, W]` | NCHW single-channel luma image — the picture's Y plane is fed through `vmaf_tensor_from_luma` each frame. Optional `(mean, std)` normalisation comes from the sidecar's `norm_mean` / `norm_std`. | `model/tiny/dists_sq.onnx`, `model/tiny/nr_metric_v1.onnx` |
-| 2 | `[N, F]` | Feature-vector model. The host materialises the `F` features (default canonical-6: `adm2`, `vif_scale0..3`, `motion2`) from libvmaf's classic feature collector at inference time. The sidecar's `feature_order` (or `features`) declares the slot-to-feature mapping; the sidecar's `feature_mean` / `feature_std` (or `input_mean` / `input_std`) apply a StandardScaler before the tensor is handed to ORT. | `model/tiny/fr_regressor_v1.onnx`, `model/tiny/fr_regressor_v2.onnx`, `model/tiny/vmaf_tiny_v4.onnx` |
+| 4 | `[N, 1, H, W]` | NCHW single-channel luma image. The picture's Y plane is fed through `vmaf_tensor_from_luma` each frame. Optional `(mean, std)` normalisation comes from the sidecar's `norm_mean` / `norm_std`. | `model/tiny/dists_sq.onnx`, `model/tiny/nr_metric_v1.onnx` |
+| 2 | `[N, F]` | Feature-vector model. The host materialises the `F` features (default canonical-6) from libvmaf's classic feature collector at inference time. The sidecar's `feature_order` (or `features`) declares the slot-to-feature mapping; `feature_mean` / `feature_std` (or `input_mean` / `input_std`) apply a StandardScaler before the tensor reaches ORT. | `model/tiny/fr_regressor_v1.onnx`, `model/tiny/fr_regressor_v2.onnx`, `model/tiny/vmaf_tiny_v4.onnx` |
 
 The batch dimension `N` may be:
 
 - the fixed value `1` (legacy single-sample exports), or
-- the symbolic ONNX `dim_param` token (`'batch'`, `'N'`, …) which ORT
-  reports back through the C API as `-1` — this is the default
-  produced by `torch.onnx.export(..., dynamic_axes=...)` and is what
-  every shipped NR checkpoint uses (ADR-0523).
+- a symbolic ONNX `dim_param` token (`'batch'`, `'N'`, ...), which ORT reports
+  through the C API as `-1`. This is the default of
+  `torch.onnx.export(..., dynamic_axes=...)` and what every shipped NR
+  checkpoint uses (ADR-0523).
 
-A *fixed* batch greater than 1 is rejected: libvmaf's per-frame
-inference loop feeds one sample per ORT Run call, so multi-sample
-batches have no consumer today. The diagnostic reads
-`tiny-model loader: <rank-4|feature-vector> model has fixed batch N;
-only batch=1 or symbolic batch (-1) is supported`.
+Anything else is rejected with a log line:
 
-For rank-4 models, the spatial dims `H` and `W` must be known positive
-values; symbolic H/W ("dynamic-resolution" exports) fails with
-`tiny-model loader: rank-4 model has dynamic / non-positive spatial
-dims (H=…, W=…); symbolic H/W is unsupported — re-export with a fixed
-input resolution`. The scratch buffer is sized once at attach time, so
-the runtime cannot accept varying resolution.
+| Condition | Diagnostic |
+| --- | --- |
+| Fixed batch greater than 1 (libvmaf feeds one sample per ORT Run call) | `tiny-model loader: <rank-4\|feature-vector> model has fixed batch N; only batch=1 or symbolic batch (-1) is supported` |
+| Rank-4 model with symbolic or non-positive H or W (the scratch buffer is sized once at attach time) | `tiny-model loader: rank-4 model has dynamic / non-positive spatial dims (H=…, W=…); symbolic H/W is unsupported — re-export with a fixed input resolution` |
+| Input rank other than 2 or 4 | `tiny-model loader: model has input rank N, expected 2 (feature vector) or 4 (NCHW image)` |
 
-Anything other than rank 2 or 4 fails loud with a human-readable log
-line: `tiny-model loader: model has input rank N, expected 2 (feature
-vector) or 4 (NCHW image)`.
+Rank-2 models may declare a second input. `fr_regressor_v2`, for instance,
+takes a 14-dim `codec` block (one-hot encoder, `preset_norm`, `crf_norm`). The
+loader discovers its width via ORT and allocates a scratch buffer pre-seeded to
+the `unknown` one-hot at the third-from-last slot. Populate it with
+`--tiny-codec`, `--tiny-preset` and `--tiny-crf` or
+`vmaf_dnn_set_codec_context()`, see
+[codec-aware models](#codec-aware-models).
 
-Rank-2 models may declare a **second** input — `fr_regressor_v2`, for
-instance, takes a 14-dim `codec` block (one-hot encoder + preset_norm +
-crf_norm). The loader discovers the second-input width via ORT and
-allocates a zero-initialised scratch buffer pre-seeded to the
-"unknown encoder" one-hot at the third-from-last slot. No public CLI /
-C API exists today to populate the codec block with the real encoder
-context; consumers needing codec-aware predictions should treat
-`fr_regressor_v2` as approximate until that surface lands.
+!!! note
+    ONNX external data is supported automatically. A model shipped as
+    `<basename>.onnx` plus a sibling `<basename>.onnx.data` (the standard
+    external-data layout) loads with no extra configuration, because ONNX
+    Runtime resolves the sibling file from the absolute model path.
+    `fr_regressor_v1` and `fr_regressor_v2` ship this way.
 
-**ONNX external data is supported automatically.** Models shipped as
-`<basename>.onnx` plus a sibling `<basename>.onnx.data` (the standard
-ONNX-protobuf-external-data layout) load with no extra configuration —
-ONNX Runtime resolves the sibling file when given the absolute model
-path. The fork's `fr_regressor_v1` and `fr_regressor_v2` ship in this
-layout.
+## Surface 3: ffmpeg filters
 
-## Surface 3 — ffmpeg filters
-
-Apply `ffmpeg-patches/*.patch` against a pinned FFmpeg SHA (see
-[`ffmpeg-patches/test/build-and-run.sh`](../../ffmpeg-patches/test/build-and-run.sh))
-then:
+Apply `ffmpeg-patches/*.patch` against the FFmpeg release named by
+`FFMPEG_TAG` in `build-config.env` (the series is listed in
+[`ffmpeg-patches/series.txt`](../../ffmpeg-patches/series.txt); the harness is
+[`ffmpeg-patches/test/build-and-run.sh`](../../ffmpeg-patches/test/build-and-run.sh)).
+Then:
 
 ```bash
 # C1 / C2 scoring through vf_libvmaf.
 ffmpeg -i dis.mp4 -i ref.mp4 \
-    -lavfi "[0:v][1:v]libvmaf=tiny_model=/models/vmaf_tiny_fr_v1.onnx:tiny_device=cuda" \
+    -lavfi "[0:v][1:v]libvmaf=tiny_model=/models/vmaf_tiny_v2.onnx:tiny_device=cuda" \
     -f null -
 
 # C3 learned pre-filter.
 ffmpeg -i in.mp4 \
-    -vf "vmaf_pre=model=/models/filter_denoise_residual_v1.onnx:device=cuda" \
+    -vf "vmaf_pre=model=/models/learned_filter_v1.onnx:device=cuda" \
     out.mp4
 ```
 
-The `vmaf_pre` filter's `device=` option accepts the same twelve device
-strings as `tiny_device=` in the `libvmaf` filter — `auto`, `cpu`, `cuda`,
-`openvino`, `openvino-npu`, `openvino-cpu`, `openvino-gpu`, `coreml`,
-`coreml-ane`, `coreml-gpu`, `coreml-cpu`, and `rocm` — all mapping to the
-corresponding `VmafDnnDevice` enum values (ADR-0482).
+| Filter | Options |
+| --- | --- |
+| `libvmaf` | `tiny_model`, `tiny_device` (default `auto`), `tiny_threads` (default 0), `tiny_fp16` (default 0) |
+| `vmaf_pre` | `model`, `device`, `threads`, `chroma` (0 or 1; default 0 = luma only) |
+
+The `vmaf_pre` `device=` option accepts the same twelve device strings as
+`tiny_device=`, all mapping to the `VmafDnnDevice` enum (ADR-0482).
 
 ## Execution-provider matrix
 
-| Backend flag | ORT EP | Notes |
+`--tiny-device` selects the ONNX Runtime execution provider (EP).
+
+| Device | ORT EP | Notes |
 | --- | --- | --- |
-| `--tiny-device cpu` | CPUExecutionProvider | Always available. |
-| `--tiny-device cuda` | CUDAExecutionProvider | Requires CUDA-enabled ORT; shares context with libvmaf-cuda. |
-| `--tiny-device openvino` | OpenVINOExecutionProvider | Covers Intel GPU / SYCL / oneAPI. Tries GPU device type first, falls back to CPU device type. Also covers the integrated Xe / Xe2 GPU on Intel AI-PC platforms (Meteor / Lunar / Arrow Lake) for free. |
-| `--tiny-device openvino-npu` | OpenVINOExecutionProvider, `device_type=NPU` | Intel AI-PC NPU only (Meteor / Lunar / Arrow Lake). No fallback inside the explicit selector; if the EP isn't compiled in or no NPU silicon is present, the open downgrades to the CPU EP via the same two-stage `vmaf_ort_open()` fallback that all explicit-EP selectors share. End-to-end NPU validation pending hardware access — see [ADR-0332](../adr/0405-openvino-npu-ep-wiring.md) and [Research-0031](../research/0031-intel-ai-pc-applicability.md). |
-| `--tiny-device openvino-cpu` | OpenVINOExecutionProvider, `device_type=CPU` | OpenVINO CPU plugin (skip the GPU.0 probe). Useful when you want OpenVINO's CPU implementation specifically — e.g. for parity testing against a measured `--tiny-device openvino-gpu` run, or as a stable fallback on hosts without Intel iGPU/NPU. |
-| `--tiny-device openvino-gpu` | OpenVINOExecutionProvider, `device_type=GPU` | OpenVINO `GPU.0` plugin. Targets the iGPU / dGPU on systems where OpenVINO's `intel_gpu` plugin is the desired backend (Arc dGPU, Xe / Xe2 iGPU). |
-| `--tiny-device coreml` | CoreMLExecutionProvider | Apple-only EP (macOS). CoreML auto-routes across the Apple Neural Engine (ANE), Metal-backed GPU, and CPU. The unscoped selector lets CoreML pick the compute unit per-op; use the explicit variants below to pin a single unit. See [ADR-0365](../adr/0365-coreml-ep-wiring.md). |
-| `--tiny-device coreml-ane` | CoreMLExecutionProvider, `MLComputeUnits=CPUAndNeuralEngine` | Highest perf-per-watt on M-series silicon (M1, M2, M3, M4). Routes to the dedicated on-die Neural Engine and falls back to CPU for ops the ANE doesn't support. Recommended Apple-silicon entry point. |
-| `--tiny-device coreml-gpu` | CoreMLExecutionProvider, `MLComputeUnits=CPUAndGPU` | Pins CoreML to Metal-backed GPU + CPU. Useful when a graph hits ANE op-coverage gaps and falls back to CPU more aggressively than expected. |
-| `--tiny-device coreml-cpu` | CoreMLExecutionProvider, `MLComputeUnits=CPUOnly` | Universal CoreML CPU path. Functionally similar to the plain CPU EP but exercises the same dispatch shape as the other coreml-* variants — useful for diff-style debugging on macOS. |
-| `--tiny-device rocm` | ROCmExecutionProvider | Requires ROCm-enabled ORT. |
-| `--tiny-device auto` | best available | Ordered try-chain depends on platform: on macOS (`__APPLE__`), CoreML (auto-route across ANE/GPU/CPU) is probed first: CoreML → CUDA → OpenVINO:GPU → ROCm → CPU, targeting Apple Silicon immediately. On other platforms: CUDA → OpenVINO:GPU → ROCm → CoreML → CPU. NPU is **not** in the AUTO chain — opt-in only via `--tiny-device openvino-npu` because of NPU power-state latency floor on small graphs. |
+| `cpu` | CPUExecutionProvider | Always available. |
+| `cuda` | CUDAExecutionProvider | Needs CUDA-enabled ORT; shares the context with libvmaf-cuda. |
+| `openvino` | OpenVINOExecutionProvider | Intel GPU / SYCL / oneAPI, including the integrated Xe / Xe2 GPU of Meteor, Lunar and Arrow Lake. Tries the GPU device type first, then CPU. |
+| `openvino-npu` | OpenVINOExecutionProvider, `device_type=NPU` | Intel AI-PC NPU only. See the warning below. |
+| `openvino-cpu` | OpenVINOExecutionProvider, `device_type=CPU` | OpenVINO CPU plugin; skips the GPU.0 probe. For parity tests against `openvino-gpu`, or as a stable fallback without Intel iGPU/NPU. |
+| `openvino-gpu` | OpenVINOExecutionProvider, `device_type=GPU` | OpenVINO `GPU.0` plugin (Arc dGPU, Xe / Xe2 iGPU). |
+| `coreml` | CoreMLExecutionProvider | macOS only. CoreML picks the compute unit per op across the Neural Engine (ANE), Metal GPU and CPU ([ADR-0365](../adr/0365-coreml-ep-wiring.md)). |
+| `coreml-ane` | CoreML, `MLComputeUnits=CPUAndNeuralEngine` | Best performance per watt on M-series. Falls back to CPU for ops the ANE lacks. Recommended Apple-silicon entry point. |
+| `coreml-gpu` | CoreML, `MLComputeUnits=CPUAndGPU` | Pins Metal GPU plus CPU; useful when ANE op gaps force CPU fallback. |
+| `coreml-cpu` | CoreML, `MLComputeUnits=CPUOnly` | CoreML CPU path; same dispatch shape as the other `coreml-*` variants, for diff-style debugging. |
+| `rocm` | ROCmExecutionProvider | Needs ROCm-enabled ORT. |
+| `auto` | best available | Ordered try-chain, see below. |
+
+!!! warning
+    `openvino-npu` has no fallback inside its own selector. If the EP is not
+    compiled in or no NPU is present, the open downgrades to the CPU EP through
+    the two-stage `vmaf_ort_open()` fallback shared by all explicit-EP
+    selectors. End-to-end NPU validation is pending hardware access, see
+    [ADR-0332](../adr/0405-openvino-npu-ep-wiring.md) and
+    [Research-0031](../research/0031-intel-ai-pc-applicability.md).
+
+### `auto` order
+
+| Platform | Try-chain |
+| --- | --- |
+| macOS (`__APPLE__`) | CoreML, CUDA, OpenVINO:GPU, ROCm, CPU |
+| Other | CUDA, OpenVINO:GPU, ROCm, CoreML, CPU |
+
+The NPU is not in the `auto` chain. It is opt-in through
+`--tiny-device openvino-npu` because of the NPU power-state latency floor on
+small graphs.
 
 ### Graceful EP fallback
 
-If the requested EP isn't compiled into the linked ORT build (for
-example, you ask for `cuda` on a CPU-only ORT), the session still
-opens — it silently degrades to the CPU EP rather than failing. This
-matches `VmafDnnConfig.device` being documented as a *hint*, not a
-requirement: a laptop and a workstation running the same binary get
-the best EP each one has.
+If the requested EP is not compiled into the linked ORT build (for example
+`cuda` on a CPU-only ORT), the session still opens and degrades to the CPU EP
+instead of failing. `VmafDnnConfig.device` is a hint, not a requirement, so a
+laptop and a workstation running the same binary get the best EP each has.
 
-The same holds one step later. An EP can register successfully yet fail
-when ONNX Runtime creates the session on it — a CUDA-enabled ONNX Runtime on
-a machine without an NVIDIA GPU is the usual case. The session is then
-recreated on the CPU EP ([ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md)).
-Both fallbacks are expected, so they are logged at `DEBUG`, not `WARNING`; a
-session that cannot be created on the CPU EP either still logs a `WARNING`
-and fails.
+The same holds one step later. An EP can register successfully yet fail when
+ONNX Runtime creates the session on it, usually a CUDA-enabled ONNX Runtime on a
+machine without an NVIDIA GPU. The session is then recreated on the CPU EP
+([ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md)). Both
+fallbacks are expected, so they log at `DEBUG`. A session that cannot be created
+on the CPU EP either still logs a `WARNING` and fails.
 
-To see which EP actually bound, call
-`vmaf_dnn_session_attached_ep()` on the session:
+To see which EP bound, call `vmaf_dnn_session_attached_ep()`:
 
 ```c
 VmafDnnSession *sess;
@@ -378,21 +416,19 @@ printf("bound EP: %s\n", vmaf_dnn_session_attached_ep(sess));
 /* One of: "CPU", "CUDA", "OpenVINO:GPU", "OpenVINO:CPU", "OpenVINO:NPU", "ROCm", "CoreML", "CoreML:ANE", "CoreML:GPU", "CoreML:CPU" */
 ```
 
-Consumers that need a hard failure on missing EP should assert on the
-returned string at the call site (for example
-`strcmp(ep, "CUDA") == 0`).
+Consumers that need a hard failure on a missing EP should assert on the
+returned string, for example `strcmp(ep, "CUDA") == 0`.
 
-### fp16 I/O (`VmafDnnConfig.fp16_io`)
+### fp16 I/O
 
-Setting `.fp16_io = true` enables a host-side fp32 ↔ fp16 round-trip
-at the I/O boundary, triggered per input/output slot when the model's
-graph declares that slot as `FLOAT16`. The public API always takes
-fp32; libvmaf performs the cast internally. When the model declares
-`FLOAT32` on a slot, `fp16_io = true` is a no-op at that slot. When
-the EP is OpenVINO, the precision hint `FP16` is additionally passed
-to the EP so intermediate compute also runs at half precision.
+`VmafDnnConfig.fp16_io = true` enables a host-side fp32 to fp16 round trip at
+the I/O boundary:
 
-Example — running a FLOAT16-typed model:
+- It triggers per input or output slot when the model's graph declares that slot
+  as `FLOAT16`. The public API always takes fp32; libvmaf casts internally.
+- On a slot the model declares `FLOAT32`, `fp16_io = true` is a no-op.
+- With the OpenVINO EP, the precision hint `FP16` is also passed to the EP, so
+  intermediate compute runs at half precision.
 
 ```c
 VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_AUTO, .fp16_io = true};
@@ -408,16 +444,16 @@ vmaf_dnn_session_run(sess, &din, 1, &dout, 1);
 
 ## Expected cross-device variance
 
-Running the same `.onnx` on two different EPs produces near-identical
-scores:
+The same `.onnx` on two different EPs produces near-identical scores:
 
-- CPU vs CUDA (FP32): within **1e-4**.
-- CPU vs CUDA (FP16 via `--tiny-fp16`): within **1e-2**.
+| Pair | Agreement |
+| --- | --- |
+| CPU vs CUDA (FP32) | within 1e-4 |
+| CPU vs CUDA (FP16 via `--tiny-fp16`) | within 1e-2 |
 
-CI exercises CPU-only. **No CI job checks tiny-AI cross-device parity today**,
-so those two bounds are workstation measurements, not gated numbers.
-
-The self-hosted-runner half of the picture is explicitly separate:
+CI exercises CPU only. No CI job checks tiny-AI cross-device parity today, so
+those two bounds are workstation measurements, not gated numbers. The
+self-hosted-runner lanes are separate and do not cover this claim:
 
 - [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) owns Arc-only
   feature parity behind `SYCL_ARC_RUNNER_ENABLED` and the `sycl-arc` label.
@@ -425,15 +461,27 @@ The self-hosted-runner half of the picture is explicitly separate:
   owns the combined CUDA + SYCL `Coverage GPU` job behind
   `GPU_COVERAGE_ENABLED` and the `gpu-full` label. A hosted live-runner probe
   prevents it from queuing on an impossible label set (ADR-1319).
-- As of 2026-09-25, the repository and organisation APIs return **zero**
-  registered runners and the repository has **zero** Actions variables. Both
-  hardware lanes are therefore disabled and neither is current hardware
-  evidence.
-- Neither lane covers this page's tiny-AI claim. Nothing runs the same ONNX
-  model on two execution providers and diffs the scores.
+- As of 2026-09-25, the repository and organisation APIs return zero registered
+  runners and the repository has zero Actions variables. Both hardware lanes
+  are therefore disabled and neither is current hardware evidence.
+- Nothing runs the same ONNX model on two execution providers and diffs the
+  scores.
 
-Until that changes, verify cross-device tiny-AI parity yourself before trusting
-a GPU score — run the same `.onnx` under `--tiny-device cpu` and your target
-device on the same pair and compare. `/cross-backend-diff` and
-`scripts/ci/cross_backend_vif_diff.py` cover the *feature* backends, not the
+Until that changes, verify cross-device parity yourself before trusting a GPU
+score: run the same `.onnx` under `--tiny-device cpu` and under your target
+device on the same pair, and compare. `/cross-backend-diff` and
+`scripts/ci/cross_backend_vif_diff.py` cover the feature backends, not the
 tiny-AI execution providers.
+
+## History
+
+- **2026-05-02, ADR-0241.** `vmaf_tiny_v3` (`mlp_medium`, 6 to 32 to 16 to 1,
+  about 769 parameters) became available alongside v2, trained on the same
+  4-corpus parquet with the same recipe. Netflix LOSO mean PLCC 0.9986 ± 0.0015
+  against v2's 0.9978 ± 0.0021 (+0.0008 mean, -30 % std). v2 remained the
+  production default.
+- **2026-04-29.** `vmaf_tiny_v2` replaced `vmaf_tiny_v1` as the recommended tiny
+  FR fusion model: same canonical-6 input contract, same 0 to 100 output
+  range, +0.005 to +0.018 PLCC across the Phase-3 validation chain. The v1 file
+  stays on disk as a regression baseline, see
+  [`models/vmaf_tiny_v2.md`](models/vmaf_tiny_v2.md).

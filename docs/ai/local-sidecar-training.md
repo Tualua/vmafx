@@ -12,7 +12,8 @@
 The fork ships a per-shot VMAF predictor
 ([`tools/vmaf-tune/src/vmaftune/predictor.py`](../../tools/vmaf-tune/src/vmaftune/predictor.py))
 trained against a fixed offline corpus (Phase-A canonical-6 +
-BVI-DVC, see [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
+BVI-DVC, see
+[ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
 and [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md)). The shipped
 predictor is deterministic and reproducible across hosts — it does
 not adapt to your specific source mix.
@@ -42,6 +43,70 @@ The sidecar adapts to:
 It does **not** replace the shipped predictor. A model upgrade
 invalidates the sidecar cleanly and starts a fresh cold-start
 correction.
+
+## Use it from the CLI
+
+The `vmaf-tune sidecar` subcommand provides the same local model for
+shell workflows:
+
+```bash
+vmaf-tune sidecar status --codec libx264 --json
+
+vmaf-tune sidecar record \
+  --codec libx264 \
+  --features-json features.json \
+  --crf 28 \
+  --observed-vmaf 94.2
+
+vmaf-tune sidecar predict \
+  --codec libx264 \
+  --features-json features.json \
+  --crf 28 \
+  --json
+```
+
+`features.json` may be a flat `ShotFeatures` object or an object with a
+`features` member. The required keys are
+`probe_bitrate_kbps`, `probe_i_frame_avg_bytes`,
+`probe_p_frame_avg_bytes`, and `probe_b_frame_avg_bytes`; omitted
+optional signals use the same zero defaults as `ShotFeatures`.
+
+For existing capture logs, write JSONL rows containing `features`,
+`crf`, and `observed_vmaf`:
+
+```bash
+vmaf-tune sidecar batch-record \
+  --codec libx264 \
+  --captures-jsonl captures.jsonl
+```
+
+All CLI paths honour `--cache-dir`, `--predictor-version`, and
+`--model`. The default predictor is the deterministic analytical
+fallback, so the sidecar commands remain usable on hosts without
+`onnxruntime`.
+
+## Use it from Python
+
+```python
+from vmaftune.predictor import Predictor, ShotFeatures
+from vmaftune.sidecar import SidecarConfig, SidecarPredictor
+
+predictor = Predictor()  # or Predictor(model_path=Path("model/predictor_libx264.onnx"))
+sidecar = SidecarPredictor.for_codec(
+    predictor,
+    codec="libx264",
+    config=SidecarConfig(),  # default cache dir under $XDG_CACHE_HOME
+)
+
+# At inference time:
+score_hat = sidecar.predict_vmaf(features, crf=28)
+
+# After the real encode + libvmaf run:
+sidecar.record_capture(features, crf=28, observed_vmaf=real_libvmaf_score)
+```
+
+`record_capture` saves to disk by default; pass `persist=False` for
+batched workflows that flush at session end via `sidecar.save()`.
 
 ## Training data
 
@@ -135,8 +200,8 @@ future PR because the fork still needs corpus-backed operating ranges.
 
 ## Signing for opt-in upload
 
-The opt-in upload of anonymised captures to a community pool — item
-4 of the user's ChatGPT-vision text — is **out of scope for this
+The opt-in upload of anonymised captures to a community pool — item 4 of the
+original proposal — is **out of scope for this
 local sidecar surface**. It is tracked as a follow-up in
 [ADR-0394](../adr/0394-local-sidecar-training.md) §Consequences and
 will require its own ADR covering:
@@ -152,70 +217,6 @@ Until then the sidecar is **strictly local**: the cache directory is
 not network-reachable from the harness, no upload code path exists,
 and the recorded host UUID is solely an anonymous handle for the
 local state.
-
-## Programmatic usage
-
-```python
-from vmaftune.predictor import Predictor, ShotFeatures
-from vmaftune.sidecar import SidecarConfig, SidecarPredictor
-
-predictor = Predictor()  # or Predictor(model_path=Path("model/predictor_libx264.onnx"))
-sidecar = SidecarPredictor.for_codec(
-    predictor,
-    codec="libx264",
-    config=SidecarConfig(),  # default cache dir under $XDG_CACHE_HOME
-)
-
-# At inference time:
-score_hat = sidecar.predict_vmaf(features, crf=28)
-
-# After the real encode + libvmaf run:
-sidecar.record_capture(features, crf=28, observed_vmaf=real_libvmaf_score)
-```
-
-`record_capture` saves to disk by default; pass `persist=False` for
-batched workflows that flush at session end via `sidecar.save()`.
-
-## CLI usage
-
-The `vmaf-tune sidecar` subcommand provides the same local model for
-shell workflows:
-
-```bash
-vmaf-tune sidecar status --codec libx264 --json
-
-vmaf-tune sidecar record \
-  --codec libx264 \
-  --features-json features.json \
-  --crf 28 \
-  --observed-vmaf 94.2
-
-vmaf-tune sidecar predict \
-  --codec libx264 \
-  --features-json features.json \
-  --crf 28 \
-  --json
-```
-
-`features.json` may be a flat `ShotFeatures` object or an object with a
-`features` member. The required keys are
-`probe_bitrate_kbps`, `probe_i_frame_avg_bytes`,
-`probe_p_frame_avg_bytes`, and `probe_b_frame_avg_bytes`; omitted
-optional signals use the same zero defaults as `ShotFeatures`.
-
-For existing capture logs, write JSONL rows containing `features`,
-`crf`, and `observed_vmaf`:
-
-```bash
-vmaf-tune sidecar batch-record \
-  --codec libx264 \
-  --captures-jsonl captures.jsonl
-```
-
-All CLI paths honour `--cache-dir`, `--predictor-version`, and
-`--model`. The default predictor is the deterministic analytical
-fallback, so the sidecar commands remain usable on hosts without
-`onnxruntime`.
 
 ## Interaction with model upgrades
 

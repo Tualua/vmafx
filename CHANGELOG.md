@@ -748,6 +748,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `vmaf_v1.0.16_3d0h`.
 
 
+- Corrected the tiny-AI pages and model cards against the code and
+  `model/tiny/registry.json`. The tiny-AI index is now an entry page with one
+  runnable `--tiny-model` command that links every tiny-AI page. Corrected:
+  `vmaf-train` has 15 subcommands, `--tiny-model` takes a path (not a registry
+  id), the per-frame output is a feature named after the sidecar, the registry
+  has 26 entries, the op allowlist 74, `--feature name=opt=val` replaces the
+  nonexistent `--feature_params`, and `fr_regressor_v2` reads a 14-element codec
+  block. Cards for feature-vector models warn that the same run must compute
+  the features they read.
+
+
 - Corrected the usage pages against the code and restructured the longest ones.
   `cli.md` documents every flag of `vmaf --help`, says the progress and pooled
   lines appear only on a terminal, that an unknown `--tiny-codec` exits non-zero

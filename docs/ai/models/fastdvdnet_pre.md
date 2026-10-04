@@ -8,17 +8,18 @@ extractor consumes a 5-frame sliding window
 sensor noise and grain before the encoder sees them produces smaller
 files at the same subjective quality.
 
-> **Status — real upstream weights (T6-7b).** Since T6-7b the shipped
-> ONNX under `model/tiny/fastdvdnet_pre.onnx` carries real
-> [m-tassano/fastdvdnet](https://github.com/m-tassano/fastdvdnet)
-> weights (Tassano, Delon, Veit 2020; MIT license) wrapped by a thin
-> luma adapter that preserves the C-side I/O contract. The previous
-> smoke-only placeholder is documented in
-> [ADR-0215](../../adr/0215-fastdvdnet-pre-filter.md); the weights swap
-> rationale and the luma adapter design are recorded in
-> [ADR-0255](../../adr/0255-fastdvdnet-pre-real-weights.md). The
-> downstream FFmpeg `vmaf_pre_temporal` filter
-> that consumes the denoised frame buffer is still tracked separately.
+!!! note "Status: real upstream weights (T6-7b)"
+    - **Weights:** the shipped `model/tiny/fastdvdnet_pre.onnx` carries real
+      [m-tassano/fastdvdnet](https://github.com/m-tassano/fastdvdnet) weights
+      (Tassano, Delon, Veit 2020; MIT license). The previous smoke-only
+      placeholder is documented in
+      [ADR-0215](../../adr/0215-fastdvdnet-pre-filter.md).
+    - **Adapter:** a thin luma adapter preserves the C-side I/O contract; the
+      weights swap rationale and the adapter design are recorded in
+      [ADR-0255](../../adr/0255-fastdvdnet-pre-real-weights.md).
+    - **Filter:** the downstream FFmpeg `vmaf_pre_temporal` filter that
+      consumes the denoised frame buffer is not shipped yet and is tracked
+      separately.
 
 ## What the output means
 
@@ -57,6 +58,30 @@ also records the upstream commit pin and weight checksum for
 reproducibility. Fresh exports add ADR-0661 `run_provenance` with the
 requested upstream directory, `model.pth`, `models.py`, parsed exporter
 arguments, ONNX output, sidecar output, and registry target.
+
+## Integration recipe
+
+Build libvmaf with DNN support, then run the extractor:
+
+```bash
+# 1. Build libvmaf with DNN support enabled.
+meson setup core/build-cpu -Denable_dnn=enabled
+ninja -C core/build-cpu
+
+# 2. Run the extractor against a clip, supplying the model path.
+core/build-cpu/tools/vmaf \
+    --reference ref.yuv --distorted dis.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+    --feature fastdvdnet_pre=model_path=model/tiny/fastdvdnet_pre.onnx
+
+# Or via env var (matches lpips_sq's pattern):
+VMAF_FASTDVDNET_PRE_MODEL_PATH=model/tiny/fastdvdnet_pre.onnx \
+    core/build-cpu/tools/vmaf --feature fastdvdnet_pre …
+```
+
+The extractor declines cleanly (non-fatal `-EINVAL`) if neither
+`model_path` nor `VMAF_FASTDVDNET_PRE_MODEL_PATH` is set, the same
+contract as the LPIPS extractor.
 
 ## Provenance and license attribution
 
@@ -141,28 +166,6 @@ five-slot ring buffer of the most recent normalised luma planes. Each
 4. Computes the L1 residual against the centre input frame and appends
    it via `vmaf_feature_collector_append`.
 
-## Integration recipe
-
-```bash
-# 1. Build libvmaf with DNN support enabled.
-meson setup core/build-cpu -Denable_dnn=enabled
-ninja -C core/build-cpu
-
-# 2. Run the extractor against a clip, supplying the model path.
-core/build-cpu/tools/vmaf \
-    --reference ref.yuv --distorted dis.yuv \
-    --width 1920 --height 1080 --pixel_format yuv420p --bitdepth 8 \
-    --feature fastdvdnet_pre=model_path=model/tiny/fastdvdnet_pre.onnx
-
-# Or via env var (matches lpips_sq's pattern):
-VMAF_FASTDVDNET_PRE_MODEL_PATH=model/tiny/fastdvdnet_pre.onnx \
-    core/build-cpu/tools/vmaf --feature fastdvdnet_pre …
-```
-
-The extractor declines cleanly (non-fatal `-EINVAL`) if neither
-`model_path` nor `VMAF_FASTDVDNET_PRE_MODEL_PATH` is set, the same
-contract as the LPIPS extractor.
-
 ## Reproducing the export
 
 ```bash
@@ -186,6 +189,19 @@ python3 ai/scripts/export_fastdvdnet_pre.py \
 The script auto-updates `model/tiny/registry.json` and writes the
 sidecar `model/tiny/fastdvdnet_pre.json`. Rerunning is idempotent
 provided the upstream checksum matches.
+
+## Training and evaluation
+
+The fork does not train this model: the weights are upstream's, repackaged
+(see Provenance). Evaluation in this repository covers numerical parity only.
+
+- **Parity:** the exported ONNX matches upstream PyTorch within
+  `max abs diff < 1e-6` on random inputs (see Op allowlist compliance).
+- **Residual ranges:** the typical `fastdvdnet_pre_l1_residual` values are in
+  the table under "What the output means".
+- **Not measured:** no denoising-quality measurement (PSNR or VMAF gain on
+  noisy clips) and no per-frame runtime cost (CPU or CUDA) has been recorded
+  for the luma adapter.
 
 ## Smoke test
 

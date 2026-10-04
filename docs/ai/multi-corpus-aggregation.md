@@ -19,7 +19,9 @@ Different subjective-VQA datasets publish their MOS on different
 scales. KonViD / LSVQ / YouTube UGC use a 1–5 ACR Likert; Waterloo
 IVC 4K-VQA uses a continuous 0–100 numerical-category scale; the
 Netflix Public drop carries `vmaf_v0.6.1` per-frame scores on the
-0–100 VMAF axis. A naive concatenation would feed the trainer three
+0–100 VMAF axis.
+
+A naive concatenation would feed the trainer three
 incompatible target distributions and the regression head would learn
 the wrong thing. The aggregator picks **0–100 (VMAF-aligned)** as the
 single canonical axis and applies a per-corpus *affine* conversion
@@ -32,7 +34,7 @@ distribution shape is preserved.
 |--------------------|------------------------------------|-----------------------------|------------------------------|
 | `konvid-1k`        | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Hosu et al., QoMEX 2017 — <http://database.mmsp-kn.de/konvid-1k-database.html> |
 | `konvid-150k`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Götz-Hahn et al., IEEE Access 2021 — <https://database.mmsp-kn.de/konvid-150k-vqa-database.html> |
-| `lsvq`             | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Ying et al., CVPR 2021 §4.1 — <https://github.com/baidut/PatchVQ> |
+| `lsvq`             | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Ying et al., CVPR 2021 (Patch-VQ) §4.1 — <https://github.com/baidut/PatchVQ> |
 | `youtube-ugc`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Wang et al., MMSP 2019 §3.2 — <https://media.withyoutube.com/> |
 | `waterloo-ivc-4k`  | 0–100 continuous (DCR-like)        | identity                    | Cheon & Lee, CVPR-W 2016 §III.B — <https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/> |
 | `netflix-public`   | VMAF 0–100 (objective proxy)       | identity                    | `core/include/libvmaf/model.h` |
@@ -43,15 +45,20 @@ under `ai/tests/test_aggregate_corpora.py` exercise it parametrically.
 
 ### What happens to questionable inputs
 
-Per the fork's [feedback_no_test_weakening](../../CLAUDE.md) rule, the
-aggregator never silently widens the training-target distribution. If
-a row's native MOS falls outside its corpus's published range (e.g.
-`6.0` on a 1–5 ACR scale), the row is **dropped** and counted under
-`dropped_bad_scale`, not clipped. If the row's `corpus` field does
-not match any entry in `SCALE_CONVERSIONS`, the row is dropped under
-`dropped_unknown_corpus`. The unified JSONL is therefore always a
-strict subset of the inputs, with provenance you can verify
-row-by-row.
+The aggregator drops rows, it never clips them, so the training-target
+distribution is never silently widened. The unified JSONL is always a strict
+subset of the inputs, with provenance you can verify row by row.
+
+| Condition | Action | Counter |
+| --- | --- | --- |
+| A row's native MOS falls outside its corpus's published range (for example `6.0` on a 1-5 ACR scale) | Dropped, not clipped | `dropped_bad_scale` |
+| The row's `corpus` field matches no entry in `SCALE_CONVERSIONS` | Dropped | `dropped_unknown_corpus` |
+
+!!! warning
+    LIVE-VQC and CHUG are not supported yet: `SCALE_CONVERSIONS` has no entry
+    for
+    them, so their rows are dropped as `dropped_unknown_corpus`. BVI-DVC has no
+    MOS and goes through `merge_corpora.py` instead.
 
 ## 3. Cross-corpus dedup
 
@@ -160,9 +167,17 @@ corpus JSONL on disk — every input is synthesised in-memory.
 
 ## 8. References
 
-- [ADR-0340: multi-corpus aggregation](../adr/0340-multi-corpus-aggregation.md) — decision record.
-- [ADR-0310: BVI-DVC corpus ingestion](../adr/0310-bvi-dvc-corpus-ingestion.md) — sibling encode-corpus merge utility (`merge_corpora.py`).
-- [ADR-0669: AI corpus JSONL provenance](../adr/0669-ai-corpus-jsonl-provenance.md) — manifest sidecars for aggregation and merge outputs.
-- [ADR-0325: KonViD-150k corpus ingestion](../adr/0325-konvid-150k-corpus-ingestion.md) — Phase 2 KonViD adapter.
-- ADR-0333 (LSVQ ingestion, in flight on PR #471).
-- ADR-0334 (YouTube UGC + Waterloo IVC ingestion, in flight on PRs #481 / #485).
+- [ADR-0340: multi-corpus aggregation](../adr/0340-multi-corpus-aggregation.md)
+  — decision record.
+- [ADR-0310: BVI-DVC corpus ingestion](../adr/0310-bvi-dvc-corpus-ingestion.md)
+  — sibling encode-corpus merge utility (`merge_corpora.py`).
+- [ADR-0669: AI corpus JSONL
+  provenance](../adr/0669-ai-corpus-jsonl-provenance.md) — manifest sidecars for
+  aggregation and merge outputs.
+- [ADR-0325: KonViD-150k corpus
+  ingestion](../adr/0325-konvid-150k-corpus-ingestion.md) — Phase 2 KonViD
+  adapter.
+- [ADR-0367: LSVQ ingestion](../adr/0367-lsvq-corpus-ingestion.md)
+- [ADR-0413: YouTube UGC ingestion](../adr/0413-youtube-ugc-corpus-ingestion.md)
+- [ADR-0369: Waterloo IVC
+  ingestion](../adr/0369-waterloo-ivc-4k-corpus-ingestion.md)

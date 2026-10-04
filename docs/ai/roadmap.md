@@ -1,317 +1,326 @@
 # Tiny-AI — roadmap
 
-Where the tiny-AI surface is going. Four capabilities already in-tree
-(see [overview.md](overview.md)); this roadmap captures the *expansion* —
-what we're adding that the current scope ([ADR-0020](../adr/0020-tinyai-four-capabilities.md)
-– [ADR-0023](../adr/0023-tinyai-user-surfaces.md)) doesn't cover.
+This page shows what is shipped, planned and deferred on the tiny-AI surface.
+The four capabilities already in-tree are described in
+[overview.md](overview.md). The roadmap covers the expansion beyond the scope of
+[ADR-0020](../adr/0020-tinyai-four-capabilities.md) to
+[ADR-0023](../adr/0023-tinyai-user-surfaces.md).
 
-> **Status.** Wave 1 locked by
-> [ADR-0107](../adr/0107-tinyai-wave1-scope-expansion.md) (supersedes
-> [ADR-0036](../adr/0036-tinyai-wave1-scope-expansion.md), original
-> 2026-04-17 popup approval). Subsequent waves are non-binding; they
-> document direction.
+!!! note
+    Wave 1 is locked by [ADR-0107](../adr/0107-tinyai-wave1-scope-expansion.md)
+    (supersedes [ADR-0036](../adr/0036-tinyai-wave1-scope-expansion.md), the
+    original 2026-04-17 popup approval). Later waves are non-binding and
+    document direction only.
 
-## 1. Where we are
+!!! note
+    The shipped models were trained against the `vmaf_v0.6.1` teacher. The
+    one-shot retrain against `vmaf_v1.0.16_3d0h` and the remaining tiny-AI
+    training are RC9 work, see the [project roadmap](../roadmap.md).
 
-Shipped and wired:
+## Status at a glance
 
-- **Training** — `ai/` (PyTorch + Lightning), `vmaf-train` CLI.
-- **Inference** — `core/src/dnn/` (ONNX Runtime C API behind a 67-op
-  allowlist, ≤ 50 MB model cap, path-hardened loader).
-- **C API** — `vmaf_use_tiny_model()`, `VmafDnnSession` open/run/close.
-- **CLI** — `vmaf --tiny-model PATH --tiny-device {auto|cpu|cuda|openvino|rocm}`.
-- **FFmpeg** — `ffmpeg-patches/0001` adds tiny-model options to
-  `vf_libvmaf`; `ffmpeg-patches/0002` adds the `vmaf_pre` learned-filter
-  filter.
+| Item | Status | ADR | Evidence |
+| --- | --- | --- | --- |
+| Training (`ai/`, `vmaf-train`) | Shipped | [ADR-0020](../adr/0020-tinyai-four-capabilities.md) | [training.md](training.md) |
+| Inference (`core/src/dnn/`, ONNX Runtime, op allowlist, 50 MB cap) | Shipped | [ADR-0023](../adr/0023-tinyai-user-surfaces.md) | [inference.md](inference.md) |
+| Model signing verification (`--tiny-model-verify`) | Shipped | ADR-0211 | [security.md](security.md) |
+| Model registry | Shipped, 26 entries | ADR-0211 | [model-registry.md](model-registry.md) |
+| FFmpeg `vf_libvmaf` tiny options, `vmaf_pre` (8/10/12-bit, optional chroma) | Shipped | ADR-0482 | `ffmpeg-patches/0001`, `ffmpeg-patches/0002` |
+| FR baselines (`fr_regressor_v1`, `vmaf_tiny_v2`) | Shipped | [ADR-0249](../adr/0249-fr-regressor-v1.md), [ADR-0244](../adr/0244-vmaf-tiny-v2.md) | [model cards](models/vmaf_tiny_v2.md) |
+| `nr_metric_v1`, `learned_filter_v1` | Shipped | [ADR-0168](../adr/0168-tinyai-konvid-baselines.md) | [nr_metric_v1](models/nr_metric_v1.md), [learned_filter_v1](models/learned_filter_v1.md) |
+| LPIPS-SqueezeNet FR extractor | Shipped | none | [lpips_sq](models/lpips_sq.md) |
+| DISTS-Sq extractor | Shipped with smoke checkpoint; production weights pending (`T7-DISTS-followup`) | none | [dists_sq](models/dists_sq.md) |
+| MobileSal scoring extractor, saliency students | Shipped; `saliency_student_v2` is the production default | [ADR-0218](../adr/0218-mobilesal-saliency-extractor.md), [ADR-0444](../adr/0444-saliency-student-v2-production-promotion.md) | [mobilesal](models/mobilesal.md) |
+| `tools/vmaf-roi` encoder ROI sidecar | Shipped | none | [vmaf-roi](../usage/vmaf-roi.md) |
+| TransNet V2 shot boundaries, `tools/vmaf-perShot` | Shipped | [ADR-0261](../adr/0261-transnet-v2-real-weights.md), [ADR-0222](../adr/0222-vmaf-per-shot-tool.md) | [transnet_v2](models/transnet_v2.md), [vmaf-perShot](../usage/vmaf-perShot.md) |
+| FastDVDnet extractor (real weights) | Shipped; FFmpeg `vmaf_pre_temporal` filter planned | [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) | [fastdvdnet_pre](models/fastdvdnet_pre.md) |
+| Allowlist `Loop` / `If` with bounded-iteration guard | Shipped | [ADR-0169](../adr/0169-onnx-allowlist-loop-if.md), [ADR-0171](../adr/0171-bounded-loop-trip-count.md) | [security.md](security.md) |
+| `vmaf-train tune` (Optuna) | Shipped | none | [training.md](training.md#hyperparameter-sweeps) |
+| FFmpeg `vmaf_post` filter | Planned, no patch number assigned | none | none |
+| `describe_worst_frames` MCP tool | Planned | none | none |
+| CLIP-IQA pseudo-labeler, KADID-10k pipeline, Ray tuning backend | Deferred | none | none |
+| GPU-parity CI for tiny-AI EPs | Not implemented; cross-EP variance is checked manually | none | [inference.md](inference.md#expected-cross-device-variance) |
+| `vmaf_tiny_v5` corpus expansion | Deferred | [ADR-0287](../adr/0287-vmaf-tiny-v5-corpus-expansion.md) | none |
 
-Shipped since the original "not shipped" list was written:
+## 1. Shipped baseline
 
-- **Checkpoints shipped.** `model/tiny/` now contains 24 registry entries
-  (fr_regressor_v1/v2, vmaf_tiny_v2/v3/v4, nr_metric_v1, learned_filter_v1,
-  lpips_sq_v1, dists_sq_placeholder_v0, mobilesal_placeholder_v0,
-  transnet_v2, fastdvdnet_pre, and smoke/ensemble variants). See
+The shipped surface:
+
+- **Training.** `ai/` (PyTorch + Lightning) and the `vmaf-train` CLI.
+- **Inference.** `core/src/dnn/`: the ONNX Runtime C API behind a 74-entry op
+  allowlist, a model cap of at most 50 MB and a path-hardened loader.
+- **C API.** `vmaf_use_tiny_model()` and `VmafDnnSession` open, run and close.
+- **CLI.** `vmaf --tiny-model PATH --tiny-device STR`. The 12 device strings are
+  listed in [inference.md](inference.md#execution-provider-matrix).
+- **FFmpeg.** `ffmpeg-patches/0001` adds the tiny-model options to `vf_libvmaf`,
+  and `ffmpeg-patches/0002` adds the `vmaf_pre` learned-filter filter.
+- **Checkpoints.** `model/tiny/` holds 26 registry entries, see
   [model-registry.md](model-registry.md).
-- **Model signing verification shipped** (ADR-0211 / T6-9). The
-  `--tiny-model-verify` flag is wired to `cosign verify-blob`; `registry.json`
-  carries SHA-256 pins and Sigstore bundle paths.
+- **Signing.** `--tiny-model-verify` is wired to `cosign verify-blob`
+  (ADR-0211 / T6-9). `registry.json` carries SHA-256 pins and Sigstore bundle
+  paths.
 
-Still outstanding:
+Still outstanding: there is no GPU-parity CI, so cross-execution-provider
+variance is verified manually.
 
-- **No GPU-parity CI.** Cross-execution-provider variance is verified
-  manually.
+## 2. Wave 1
 
-## 2. Wave 1 — what lands next
-
-All four sub-lists below were approved in the popup that produced
-[ADR-0107](../adr/0107-tinyai-wave1-scope-expansion.md) (paraphrased
-re-statement of the original [ADR-0036](../adr/0036-tinyai-wave1-scope-expansion.md)).
-Order is rough; "ship baselines" is the blocker on everything else.
+All four sub-lists below were approved in the popup behind
+[ADR-0107](../adr/0107-tinyai-wave1-scope-expansion.md) (a paraphrased
+restatement of the original
+[ADR-0036](../adr/0036-tinyai-wave1-scope-expansion.md)).
+Shipping baselines was the blocker for everything else.
 
 ### 2.1 Ship baselines
 
-| Model | Role | Status | Target / Result |
+| Model | Role | Status | Target / result |
 | --- | --- | --- | --- |
-| `fr_regressor_v1.onnx` | C1 FR | **Shipped 2026-04-29** ([ADR-0249](../adr/0249-fr-regressor-v1.md)) — local Netflix Public drop unblocked the deferral. | Mean LOSO PLCC vs `vmaf_v0.6.1` reported in `model/tiny/fr_regressor_v1.json`; ship gate is ≥ 0.95 |
-| `fr_regressor_v1.onnx` | C1 FR | **Superseded by `vmaf_tiny_v2`** — original Netflix-only fr_regressor was deferred on dataset access; the 3-corpus parquet (Netflix + KoNViD + BVI-DVC D+C) closed the gap. | Match or beat `vmaf_v0.6.1` PLCC on NFLX public |
-| `vmaf_tiny_v2.onnx` | C1 FR (canonical-6 fusion) | **Shipped 2026-04-29** ([ADR-0244](../adr/0244-vmaf-tiny-v2.md)) | Netflix LOSO PLCC 0.9978 ± 0.0021 (9 folds × 5 seeds); KoNViD 5-fold PLCC 0.9998; ~257-param `mlp_small` with bundled StandardScaler |
-| `nr_metric_v1.onnx` | C2 NR | **Shipped 2026-04-25** ([ADR-0168](../adr/0168-tinyai-konvid-baselines.md)) | KoNViD-1k val/MSE 0.382 (~RMSE 0.62 on 1–5 MOS); MobileNet-tiny ~19K params |
-| `learned_filter_v1.onnx` | C3 filter | **Shipped 2026-04-25** ([ADR-0168](../adr/0168-tinyai-konvid-baselines.md)) | KoNViD-1k self-supervised val/L1 0.019 on normalised luma; 4-block residual CNN ~19K params |
+| `fr_regressor_v1.onnx` | C1 FR | Shipped 2026-04-29 ([ADR-0249](../adr/0249-fr-regressor-v1.md)). The local Netflix Public drop unblocked the original deferral. | Mean LOSO PLCC vs `vmaf_v0.6.1` in `model/tiny/fr_regressor_v1.json`; ship gate is at least 0.95 |
+| `vmaf_tiny_v2.onnx` | C1 FR (canonical-6 fusion) | Shipped 2026-04-29 ([ADR-0244](../adr/0244-vmaf-tiny-v2.md)). The 3-corpus parquet (Netflix, KoNViD, BVI-DVC D+C) closed the gap the Netflix-only regressor had left. | Netflix LOSO PLCC 0.9978 ± 0.0021 (9 folds x 5 seeds); KoNViD 5-fold PLCC 0.9998; about 257-parameter `mlp_small` with bundled StandardScaler |
+| `nr_metric_v1.onnx` | C2 NR | Shipped 2026-04-25 ([ADR-0168](../adr/0168-tinyai-konvid-baselines.md)) | KoNViD-1k val/MSE 0.382 (RMSE about 0.62 on 1 to 5 MOS); MobileNet-tiny, about 19K parameters |
+| `learned_filter_v1.onnx` | C3 filter | Shipped 2026-04-25 ([ADR-0168](../adr/0168-tinyai-konvid-baselines.md)) | KoNViD-1k self-supervised val/L1 0.019 on normalised luma; 4-block residual CNN, about 19K parameters |
 
-The C2 + C3 first training run exercised the full pipeline end-to-end:
-`fetch_konvid_1k.py` → `vmaf-train manifest-scan` →
-`extract_konvid_frames.py` → `train_konvid.py` →
-`export_tiny_models.py` → `model/tiny/registry.json`. C1 followed on
-2026-04-29 once the Netflix Public Dataset became locally available
-(see [ADR-0249](../adr/0249-fr-regressor-v1.md)).
+The C2 and C3 first run exercised the full pipeline end to end:
+`fetch_konvid_1k.py`, `vmaf-train manifest-scan`, `extract_konvid_frames.py`,
+`train_konvid.py`, `export_tiny_models.py`, `model/tiny/registry.json`. C1
+followed on 2026-04-29 once the Netflix Public Dataset was locally available.
 
 ### 2.2 LPIPS-SqueezeNet as an FR baseline
 
-**Why.** Industry-standard perceptual FR. Complements our homegrown C1
-with an externally-validated reference point. SqueezeNet variant fits
-comfortably under the size cap (~2.5M params + ~1.25M frozen features).
-
-**Integration.** New feature extractor under `core/src/feature/` that
-calls `vmaf_dnn_session_*`. Emits `lpips_sq` per frame alongside VMAF's
-own composite features.
-
-**ONNX notes.** Stock convs + global pooling, static input shape.
-Exports cleanly at opset 17. No custom ops. Upstream reference:
-[`richzhang/PerceptualSimilarity`](https://github.com/richzhang/PerceptualSimilarity).
+- **Why.** Industry-standard perceptual FR. It complements the homegrown C1 with
+  an externally validated reference point. The SqueezeNet variant fits under the
+  size cap (about 2.5M parameters plus about 1.25M frozen features).
+- **Integration.** A feature extractor under `core/src/feature/` that calls
+  `vmaf_dnn_session_*` and emits `lpips_sq` per frame next to VMAF's composite
+  features.
+- **ONNX.** Stock convolutions and global pooling, static input shape, opset 17,
+  no custom ops. Upstream reference:
+  [`richzhang/PerceptualSimilarity`](https://github.com/richzhang/PerceptualSimilarity).
+- **Status.** Shipped.
 
 ### 2.3 DISTS-Sq as the LPIPS companion
 
-**Why.** Bristol VI-Lab's NVC audit flags DISTS as the deep-feature FR
-companion to LPIPS. The extractor surface is now shipped with a smoke
-checkpoint; production weights remain `T7-DISTS-followup`.
+- **Why.** Bristol VI-Lab's NVC audit flags DISTS as the deep-feature FR
+  companion to LPIPS.
+- **Integration.** `core/src/feature/feature_dists.c` mirrors LPIPS' two-input
+  DNN
+  session and emits `dists_sq` per frame.
+- **Status.** The extractor ships with a smoke checkpoint. Production weights
+  remain `T7-DISTS-followup`.
 
-**Integration.** `core/src/feature/feature_dists.c` mirrors LPIPS'
-two-input DNN session and emits `dists_sq` per frame.
+### 2.4 MobileSal: saliency-weighted VMAF and encoder ROI
 
-### 2.3 MobileSal → saliency-weighted VMAF *and* encoder ROI
+One saliency model (about 2.5M parameters) feeds two surfaces:
 
-**Why.** The same ~2.5M saliency model feeds two surfaces:
+1. **Scoring side.** Multiply the saliency map into the per-pixel residual
+   before
+   spatial pooling in existing feature extractors. This is the SVMAF variant
+   published in academic work but never shipped.
+2. **Encoder side.** Emit a per-CTU QP-offset map consumed by `x265 --qpfile` or
+   the SVT-AV1 ROI API. Large bitrate win at fixed subjective quality.
 
-1. **Scoring side** — multiply the saliency map into the per-pixel
-   residual before spatial pooling in existing feature extractors. This
-   is the SVMAF variant published in academic work but never shipped.
-2. **Encoder side** — emit a per-CTU QP-offset map consumed by
-   `x265 --qpfile` or the SVT-AV1 ROI API. Big bitrate win at fixed
-   subjective quality.
+Integration status:
 
-**Integration.** Two outputs from one model:
-
-- A new `mobilesal` (scoring-side, T6-2a) feature extractor inside
-  libvmaf — emits a scalar `saliency_mean` per frame today. Shipped
-  with the historical smoke checkpoint first; production use now points
-  at the fork-trained [`saliency_student_v1`](models/saliency_student_v1.md)
-  weights while `mobilesal_placeholder_v0` remains a registry smoke /
-  legacy artefact. See [`models/mobilesal.md`](models/mobilesal.md) and
+- **`mobilesal` extractor** (scoring side, T6-2a). Emits a scalar
+  `saliency_mean` per frame. It shipped with the historical smoke checkpoint
+  first. Production use now points at the fork-trained
+  [`saliency_student_v1`](models/saliency_student_v1.md) weights, and
+  `mobilesal_placeholder_v0` stays as a registry smoke and legacy artefact. See
+  [`models/mobilesal.md`](models/mobilesal.md) and
   [ADR-0218](../adr/0218-mobilesal-saliency-extractor.md).
-- A new CLI `tools/vmaf-roi` (encoder-side, T6-2b) that writes an
-  encoder-native sidecar (format matches whatever encoder we're
-  feeding). Shipped — ASCII grid for x265 (`--qpfile-style`) and
-  raw `int8_t` binary for SVT-AV1 (`--roi-map-file`); accepts 8/10/12/16-bit
-  planar YUV input and remains one-frame-per-invocation. See
-  [`docs/usage/vmaf-roi.md`](../usage/vmaf-roi.md). Wave-2
-  follow-ups: multi-frame batch mode and `--blend edge-density`.
-- The saliency evaluation side now has
-  [`eval_saliency_per_mb.py`](saliency-per-mb-eval.md), which reports
-  IoU after reducing masks to the same block grids the encoder ROI
-  paths consume. Use this before promoting a temporal or video-saliency
-  model.
+- **`tools/vmaf-roi`** (encoder side, T6-2b). Shipped. It writes an ASCII grid
+  for
+  x265 (`--qpfile-style`) and raw `int8_t` binary for SVT-AV1
+  (`--roi-map-file`), accepts 8/10/12/16-bit planar YUV and handles one frame
+  per
+  invocation. See [`docs/usage/vmaf-roi.md`](../usage/vmaf-roi.md). Wave-2
+  follow-ups are a multi-frame batch mode and `--blend edge-density`.
+- **Evaluation.** [`eval_saliency_per_mb.py`](saliency-per-mb-eval.md) reports
+  IoU
+  after reducing masks to the block grids the encoder ROI paths consume. Use it
+  before promoting a temporal or video-saliency model.
 
-**ONNX notes.** The upstream MobileSal swap is no longer the production
-path: ADR-0257 records the CC BY-NC-SA / Google-Drive / RGB-D blockers.
-The production path is the fork-trained DUTS saliency student,
-which keeps the same `input` / `saliency_map` tensor contract as the
-placeholder. **`saliency_student_v2` is the production default since
-2026-05-15** (IoU 0.7105 vs v1's 0.6558, +8.3%;
-[ADR-0444](../adr/0444-saliency-student-v2-production-promotion.md)).
-Use `model/tiny/saliency_student_v2.onnx` for new encodes.
-`saliency_student_v1` is retained for regression baselines.
+The upstream MobileSal swap is no longer the production path: ADR-0257 records
+the
+CC BY-NC-SA, Google-Drive and RGB-D blockers. The production path is the
+fork-trained DUTS saliency student, with the same `input` / `saliency_map`
+tensor
+contract as the placeholder. `saliency_student_v2` is the production default
+since
+2026-05-15 (IoU 0.7105 against v1's 0.6558, +8.3%;
+[ADR-0444](../adr/0444-saliency-student-v2-production-promotion.md)). Use
+`model/tiny/saliency_student_v2.onnx` for new encodes. `saliency_student_v1` is
+kept for regression baselines.
 
-### 2.4 Per-shot CRF predictor + TransNet V2 shot boundaries
+### 2.5 Per-shot CRF predictor and TransNet V2 shot boundaries
 
-**Why.** Content-adaptive encoding without an ML framework in the
-encoder. Smallest models in this entire roadmap (< 1M each) with
-disproportionate bitrate-at-quality savings.
+- **Why.** Content-adaptive encoding without an ML framework in the encoder.
+  These are the smallest models on this roadmap (under 1M each), with
+  disproportionate bitrate-at-quality savings.
+- **Pipeline.** (1) TransNet V2 (about 1M) produces per-frame shot-change
+  scores,
+  which become a list of shot timestamps. (2) A per-shot CRF predictor takes a
+  downsampled thumbnail plus classical features (motion energy, spatial
+  complexity) and predicts the CRF that hits the target VMAF on that shot.
+- **Integration.** The standalone CLI `tools/vmaf-perShot` writes an
+  encoder-ingestible sidecar. It does not run inside libvmaf: its output is a
+  parameter hint, not a quality score.
 
-**Two-step pipeline**:
+Status:
 
-1. **Shot boundaries** — `TransNet V2` (~1M) produces per-frame
-   shot-change scores → list of shot timestamps.
-2. **Per-shot CRF** — a small CNN/MLP takes a downsampled per-shot
-   thumbnail + classical features (motion energy, spatial complexity)
-   and predicts the CRF that hits target VMAF on that shot.
+- **Shot-boundary extractor shipped** (T6-3a, 2026-04-29, real upstream weights
+  in
+  T6-3a-followup, [ADR-0261](../adr/0261-transnet-v2-real-weights.md)). The
+  `transnet_v2` extractor uses a 100-slot ring buffer with the
+  `[1, 100, 3, 27, 48] -> [1, 100]` ONNX contract and the Soucek and Lokoc 2020
+  MIT checkpoint at `model/tiny/transnet_v2.onnx` (`smoke: false`), wrapped by
+  the
+  fork's NTCHW adapter. It emits per-frame `shot_boundary_probability` and
+  `shot_boundary` flags. See [`models/transnet_v2.md`](models/transnet_v2.md).
+- **`tools/vmaf-perShot` shipped** (T6-3b, 2026-04-29,
+  [ADR-0222](../adr/0222-vmaf-per-shot-tool.md)), see
+  [`vmaf-perShot`](../usage/vmaf-perShot.md). v1 uses a transparent linear-blend
+  predictor and a frame-difference shot detector fallback. TransNet V2 is
+  available as the libvmaf feature extractor for pipelines that consume
+  feature-collector output directly.
+- **v2 deferred.** It will swap the linear blend for a small trained MLP under
+  the
+  same CSV / JSON schema, under a separate ADR, once a labelled per-shot CRF
+  corpus exists.
 
-**Integration.** Standalone CLI (`tools/vmaf-perShot`) that writes an
-encoder-ingestible sidecar. Does **not** run inside libvmaf — its output
-is a parameter hint, not a quality score.
+## 3. FFmpeg and encoder expansion
 
-**Status.** **Shot-boundary contract shipped (T6-3a, 2026-04-29) and
-real upstream weights shipped (T6-3a-followup, ADR-0261).** The
-libvmaf-side extractor (`transnet_v2`, 100-slot ring buffer,
-`[1, 100, 3, 27, 48] -> [1, 100]` ONNX contract) now uses the real
-Soucek & Lokoc 2020 MIT checkpoint under `model/tiny/transnet_v2.onnx`
-(`smoke: false` in the registry), wrapped by the fork's NTCHW adapter.
-It emits per-frame `shot_boundary_probability` + `shot_boundary` flags.
-See [`docs/ai/models/transnet_v2.md`](models/transnet_v2.md).
-**T6-3b shipped 2026-04-29** —
-[`tools/vmaf-perShot`](../usage/vmaf-perShot.md) sidecar landed under
-[ADR-0222](../adr/0222-vmaf-per-shot-tool.md). v1 uses a transparent
-linear-blend predictor + frame-difference shot detector fallback path;
-TransNet V2 is available as the libvmaf feature extractor for pipelines
-that consume feature-collector output directly. v2
-will swap the linear blend for a small trained MLP under the same
-CSV / JSON schema (separate ADR, deferred until a labelled per-shot
-CRF corpus is in hand).
+The slots below are not filled by the current `ffmpeg-patches/` series.
 
-## 3. FFmpeg / encoder expansion
+### 3.1 `vmaf_pre`: 10-bit and chroma (shipped)
 
-Approved slots that the current `ffmpeg-patches/` don't fill:
+`ffmpeg-patches/0002` ("add vmaf_pre filter (8-bit + 10-bit + optional chroma)")
+accepts 8, 10 and 12-bit planar 4:2:0, 4:2:2 and 4:4:4 input, and filters the
+U/V
+planes when `chroma=1` (default 0, luma only). Chroma and HDR sources are where
+classical pre-filters leave the most budget on the table. Filter options are in
+[inference.md](inference.md#surface-3-ffmpeg-filters).
 
-### 3.1 `vmaf_pre` extension — 10-bit + chroma
+### 3.2 New `vmaf_post` filter (planned)
 
-**Current.** Luma-8bit only, chroma passes through untouched.
-
-**Expansion.** Accept `yuv420p10le` / `yuv422p10le` / `yuv444p10le`; run
-the learned filter on chroma planes too (either a single 3-channel
-model or three single-channel sessions). This is where the real bitrate
-wins live — HDR content and chroma-heavy sources are exactly where
-classical pre-filters leave budget on the table.
-
-**ONNX notes.** Input tensor becomes `[1, C, H, W]` with `C ∈ {1, 2, 3}`.
-Requires touching `tensor_io.c` to normalize across bit depths (the
-`luma8` helper assumes 8-bit).
-
-### 3.2 New `vmaf_post` filter (post-reconstruction NR scoring)
-
-**Why.** Today we score the source pair (reference + distorted). A post
-filter lets us score the *actually-decoded* stream in an ffmpeg pipeline,
-using the C2 NR model. Shares the backbone with the in-tree NR metric.
-
-**Integration.** New `ffmpeg-patches/0004-add-vmaf_post-filter.patch`
-with a filter mirroring `vmaf_pre`'s shape — frame-in → score-out (no
-frame-out — it's measurement-only).
+- **Why.** Today the pair (reference, distorted) is scored. A post filter would
+  score the actually decoded stream inside an ffmpeg pipeline with the C2 NR
+  model, sharing the backbone with the in-tree NR metric.
+- **Integration.** A new patch in the series, with a filter mirroring
+  `vmaf_pre`'s shape: frame in, score out, no frame out (measurement only). No
+  patch number is assigned: `0004` is the Vulkan backend selector shim, see
+  [`ffmpeg-patches/series.txt`](../../ffmpeg-patches/series.txt).
 
 ### 3.3 FastDVDnet temporal pre-filter
 
-**Why.** Published temporal denoise CNN (~2.5M, 5-frame window).
-Denoise-before-encode is a well-validated bitrate lever for noisy /
-grainy sources.
+- **Why.** A published temporal denoise CNN (about 2.5M parameters, 5-frame
+  window). Denoise-before-encode is a well-validated bitrate lever for noisy or
+  grainy sources.
+- **Cost.** The filter needs a 5-frame buffer, a bigger lift than per-frame
+  filters. Deferred if Wave 1 is too wide.
+- **Integration.** A new `vmaf_pre_temporal` filter, or a mode flag on
+  `vmaf_pre`.
+- **Status.** The extractor is shipped (T6-7, 2026-04-29, real upstream weights
+  in
+  T6-7b, [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md)). The
+  `fastdvdnet_pre` extractor uses a 5-slot ring buffer with the
+  `[1, 5, H, W] -> [1, 1, H, W]` ONNX contract and the real
+  m-tassano/FastDVDnet checkpoint under `model/tiny/fastdvdnet_pre.onnx`
+  (`smoke: false`), wrapped by the fork's luma adapter. The FFmpeg
+  `vmaf_pre_temporal` filter that consumes the denoised frame buffer remains to
+  be written. See [`models/fastdvdnet_pre.md`](models/fastdvdnet_pre.md).
 
-**Cost.** Needs a 5-frame buffer inside the filter; bigger lift than
-per-frame filters. Deferred if Wave 1 is already too wide.
+## 4. Op-allowlist expansion: bounded `Loop` and `If` (shipped)
 
-**Integration.** New `vmaf_pre_temporal` filter, or a mode flag on
-`vmaf_pre`.
+Decision: whitelist `Loop` and `If` with a bounded-iteration guard. Published
+transformer and optical-flow architectures that target ONNX export have bounded
+loops, and unbounded loops are a sandbox risk (infinite compute, adversarial
+model). The allowlist entries, the 1024 trip-count cap at export time and the
+16-node, depth-8 caps at load time are described in
+[security.md](security.md#layer-1-operator-allowlist)
+([ADR-0169](../adr/0169-onnx-allowlist-loop-if.md),
+[ADR-0171](../adr/0171-bounded-loop-trip-count.md)).
 
-**Status.** **Contract shipped (T6-7, 2026-04-29) and real upstream
-weights shipped (T6-7b, ADR-0255).** The libvmaf-side extractor
-(`fastdvdnet_pre`, 5-slot ring buffer, `[1, 5, H, W] → [1, 1, H, W]`
-ONNX contract) now uses the real m-tassano/FastDVDnet checkpoint under
-`model/tiny/fastdvdnet_pre.onnx` (`smoke: false` in the registry),
-wrapped by the fork's luma adapter. The remaining downstream work is
-the FFmpeg `vmaf_pre_temporal` filter that consumes the denoised frame
-buffer. See [`docs/ai/models/fastdvdnet_pre.md`](models/fastdvdnet_pre.md).
+The expansion unlocks:
 
-## 4. Op-allowlist expansion — bounded `Loop` / `If`
+- **MUSIQ** (about 27M): NR transformer with multi-scale attention.
+- **RAFT-Small** (about 1M): optical flow with an iterative GRU update.
+- **Small VLMs** (SmolVLM 256M family): transformer decoder.
 
-**Decision.** Whitelist `Loop` and `If` **with a bounded-iteration
-guard**: reject models whose `Loop` `trip_count` attribute is missing
-or whose inferred upper bound exceeds a configurable cap (default
-1024). Published transformer / optical-flow architectures that target
-ONNX export always have bounded loops; unbounded loops are a sandbox
-risk (infinite compute, adversarial model).
+Non-goal: `Scan`, whose more expressive iteration semantics would need a much
+larger analysis pass.
 
-**Unlocks.**
+## 5. MCP and LLM surfaces
 
-- **MUSIQ** (~27M) NR transformer — multi-scale attention.
-- **RAFT-Small** (~1M) optical flow — iterative GRU update.
-- **Small VLMs** (SmolVLM 256M family) — transformer decoder.
+### 5.1 `describe_worst_frames` MCP tool (planned)
 
-**Implementation.** Extend `core/src/dnn/op_allowlist.c`:
+When VMAF says "frame 847 is bad", the user still has to open the frame to see
+why. A local VLM closes that loop in plain English, for example "underexposed in
+the foreground; mild banding on the sky gradient". It is a debugging affordance,
+not a scoring component.
 
-1. Add `Loop` and `If` to the allowed set.
-2. During `model_loader` graph walk, if a `Loop` node is present, read
-   its `trip_count` input. If that input is a graph constant, verify
-   ≤ cap. If it's computed from inputs, reject.
-3. Log the bound at load time for operators.
+Implementation: a new method in `mcp-server/vmaf-mcp/`, taking a VMAF JSON
+output
+path and N.
 
-**Non-goal.** We are not adding `Scan`, which has more expressive
-iteration semantics and would need a much larger analysis pass.
-
-## 5. MCP + LLM surfaces
-
-### 5.1 `describe_worst_frames` MCP tool
-
-**Why.** When VMAF says "frame 847 is bad," the user still has to open
-the frame to see *why*. A local VLM closes that loop with plain English:
-*"frame is underexposed in the foreground; mild banding on the sky
-gradient."* Debugging affordance, not a scoring component.
-
-**Implementation.** New method in `mcp-server/vmaf-mcp/`. Inputs: VMAF
-JSON output path, N. Steps:
-
-1. Pick the N frames with the largest VMAF delta from the per-frame
-   scores.
-2. Extract those frames as PNGs (reusing ffmpeg).
-3. Run SmolVLM (~256M) locally with a prompt template that asks for
-   artifact types + plausible causes.
+1. Pick the N frames with the largest VMAF delta from the per-frame scores.
+2. Extract those frames as PNGs, reusing ffmpeg.
+3. Run SmolVLM (about 256M) locally with a prompt template that asks for
+   artifact
+   types and plausible causes.
 4. Return a JSON list of `{frame_index, vmaf, caption}`.
 
-**Model choice.** SmolVLM family. If the 256M variant misses, fall back
-to Moondream2 (1.8B quantized Q4 fits in 4 GB VRAM).
-
-**Sandbox.** VLM runs via ONNX Runtime under the extended allowlist
-(§4). Absolute path resolution and ≤ 50 MB cap still apply; larger
-VLMs will need the compile-time `VMAF_DNN_DEFAULT_MAX_BYTES` constant
-in [`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h)
-bumped and the library rebuilt (the historical
-`VMAF_MAX_MODEL_BYTES` env override was retired in T7-12).
+Model choice is the SmolVLM family. If the 256M variant misses, fall back to
+Moondream2 (1.8B quantized Q4, fits in 4 GB VRAM). The VLM runs through ONNX
+Runtime under the extended allowlist (section 4). Absolute path resolution and
+the 50 MB cap still apply. Larger VLMs need the compile-time
+`VMAF_DNN_DEFAULT_MAX_BYTES` constant in
+[`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h) bumped and the
+library rebuilt (the historical `VMAF_MAX_MODEL_BYTES` environment override was
+retired in T7-12).
 
 ## 6. Training-side items
 
-Not in Wave 1 but called out here so they don't get forgotten:
+Not in Wave 1, listed so they are not forgotten:
 
-- **`vmaf-train tune`** (Optuna) — already stubbed in [`training.md`](training.md).
-- **CLIP-IQA pseudo-labeler** — offline bootstrap for NR datasets.
-- **KADID-10k synthetic distortion pipeline** — classical augmentation.
-- **Hyperparameter-tuning Ray backend** — once `tune` stabilizes.
+- **CLIP-IQA pseudo-labeler.** Offline bootstrap for NR datasets.
+- **KADID-10k synthetic distortion pipeline.** Classical augmentation.
+- **Hyperparameter-tuning Ray backend.** Once `tune` stabilizes.
+
+`vmaf-train tune` (Optuna) is implemented, see
+[training.md](training.md#hyperparameter-sweeps).
 
 ## 7. Infrastructure items
 
-- **GPU-parity CI** — CPU ↔ CUDA, CPU ↔ OpenVINO cross-device variance,
-  as a required status check (≤ 1e-4 FP32, ≤ 1e-2 FP16 per
-  [`inference.md`](inference.md)).
-- **Sigstore verification** — **shipped** (ADR-0211). `--tiny-model-verify`
-  is wired to `cosign verify-blob`; production deployments should set it on.
-- **Model registry** — **shipped** (ADR-0211). `model/tiny/registry.json`
-  carries SHA-256 pins, Sigstore bundle paths, and license metadata for all
-  19 entries. See [model-registry.md](model-registry.md).
+- **GPU-parity CI** (outstanding). CPU against CUDA and CPU against OpenVINO
+  cross-device variance as a required status check (at most 1e-4 FP32 and 1e-2
+  FP16, per [`inference.md`](inference.md#expected-cross-device-variance)).
+- **Sigstore verification** (shipped, ADR-0211). `--tiny-model-verify` is wired
+  to
+  `cosign verify-blob`; production deployments should set it on.
+- **Model registry** (shipped, ADR-0211). `model/tiny/registry.json` carries
+  SHA-256 pins, Sigstore bundle paths and license metadata for all 26 entries.
+  See
+  [model-registry.md](model-registry.md).
 
-## 8. Out of scope (non-goals)
+## 8. Out of scope
 
-Not on the roadmap, for clarity:
-
-- Training **inside libvmaf**. ML framework deps stay in `ai/` / Python.
-- Adding a second inference runtime (TFLite, ggml). ONNX Runtime is the
-  one runtime.
-- Cloud-only / API-dependent models. Everything runs local.
-- Models > 50 MB. The cap is the compile-time
+- Training inside libvmaf. ML framework dependencies stay in `ai/` and Python.
+- A second inference runtime (TFLite, ggml). ONNX Runtime is the one runtime.
+- Cloud-only or API-dependent models. Everything runs locally.
+- Models larger than 50 MB. The cap is the compile-time
   `VMAF_DNN_DEFAULT_MAX_BYTES` constant; bump it in
-  [`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h)
-  and rebuild when a use case genuinely needs it (the previous
-  `VMAF_MAX_MODEL_BYTES` env-override hatch was retired in T7-12).
-- `Scan` and arbitrary control flow. See §4 non-goal.
+  [`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h) and rebuild
+  when a use case genuinely needs it.
+- `Scan` and arbitrary control flow, see section 4.
 
 ## 9. Related documents
 
-- [overview.md](overview.md) — the four existing capabilities.
-- [training.md](training.md) — `vmaf-train` CLI and dataset flow.
-- [inference.md](inference.md) — CLI / C API / ffmpeg surfaces.
-- [benchmarks.md](benchmarks.md) — PLCC/SROCC/RMSE methodology.
-- [security.md](security.md) — op allowlist and size cap (expanded by §4).
-- [ADR-0107](../adr/0107-tinyai-wave1-scope-expansion.md) — this roadmap's
+- [overview.md](overview.md): the four existing capabilities.
+- [training.md](training.md): `vmaf-train` CLI and dataset flow.
+- [inference.md](inference.md): CLI, C API and ffmpeg surfaces.
+- [benchmarks.md](benchmarks.md): PLCC/SROCC/RMSE methodology.
+- [security.md](security.md): op allowlist and size cap.
+- [ADR-0107](../adr/0107-tinyai-wave1-scope-expansion.md): this roadmap's
   authority (supersedes
   [ADR-0036](../adr/0036-tinyai-wave1-scope-expansion.md)).

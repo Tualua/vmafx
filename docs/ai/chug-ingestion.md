@@ -33,7 +33,8 @@ curl -L https://raw.githubusercontent.com/shreshthsaini/CHUG/master/chug-video.t
 PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py --chug-dir .corpus/chug
 ```
 
-The default run caps at `--max-rows 500`. Use `--full` for all 5,992
+The default run writes `.corpus/chug/chug.jsonl` and caps at
+`--max-rows 500`. Use `--full` for all 5,992
 manifest rows:
 
 ```bash
@@ -87,6 +88,11 @@ The raw value remains available for future aggregation paths that use a
 
 ## Local Baseline Training
 
+Training a CHUG HDR MOS head takes two steps: materialise feature rows from
+`chug.jsonl`, then train against them.
+
+### 1. Extract features
+
 Once `chug.jsonl` exists, materialise feature rows before training:
 
 ```bash
@@ -103,74 +109,90 @@ PYTHONPATH=ai/src python ai/scripts/chug_extract_features.py \
 ```
 
 The materialiser pairs each distorted ladder row with the matching
-`chug_content_name` reference row, decodes both clips as 10-bit 4:2:0
+`chug_content_name` reference row. It decodes both clips as 10-bit 4:2:0
 YUV, scales the distorted side to the reference geometry, runs libvmaf,
-and writes clip-level feature aggregates. The trainer-facing feature row
-contains the canonical bare feature names (`adm2`, `vif_scale0` ...
-`motion2`) as means, plus `<feature>_mean`, `<feature>_p10`,
-`<feature>_p90`, and `<feature>_std` columns. The CHUG trainer uses
-those temporal aggregates by default rather than throwing them away.
-Each row also carries ffprobe-derived HDR/display metadata for both
-input clips:
+and writes clip-level feature aggregates.
 
-- `feature_ref_*` describes the matched reference clip.
-- `feature_dis_*` describes the distorted ladder clip.
-- The suffixes are `codec_name`, `pix_fmt`, `color_transfer`,
-  `transfer_class`, `color_primaries`, `color_space`, `color_range`,
-  `max_content_nits`, and `max_average_nits`.
+`chug_extract_features.py` has its own `--max-rows` cap (default 100, unlike
+the 500 of `chug_to_corpus_jsonl.py`); `--full` processes every available
+pair. `--include-reference-identity` additionally emits ref == distorted
+identity rows for the CHUG reference clips.
 
-`transfer_class` is normalized to `pq`, `hlg`, `sdr`, or `unknown` so
-training scripts can consume a stable categorical field even when
-ffprobe reports vendor-specific transfer strings. Missing static
-metadata stays explicit as `unknown` or `null`; the materialiser does
-not infer panel capability from the clip alone.
+### 2. What each row contains
 
-The same decode pass also emits cheap luma-domain visual-signal
-primitives for both sides:
+The trainer-facing feature row contains the canonical bare feature names
+(`adm2`, `vif_scale0` ... `motion2`) as means, plus `<feature>_mean`,
+`<feature>_p10`, `<feature>_p90`, and `<feature>_std` columns. The CHUG
+trainer uses those temporal aggregates by default rather than throwing them
+away.
 
-- `feature_ref_luma_std` / `feature_dis_luma_std` — luma contrast proxy.
-- `feature_ref_sharpness_laplacian_var` / `feature_dis_sharpness_laplacian_var`
-  — Laplacian-variance sharpness proxy; lower values usually mean blur,
-  while high values may be either detail or noise.
-- `feature_ref_highfreq_abs_mean` / `feature_dis_highfreq_abs_mean` —
-  high-frequency texture/grain proxy from neighboring-pixel differences.
-- `feature_ref_noise_lap_mad` / `feature_dis_noise_lap_mad` —
-  robust high-pass residual proxy for noise/grain.
-- `feature_delta_*` — distorted-minus-reference deltas for the four
-  fields above.
+Each row also carries ffprobe-derived HDR/display metadata and cheap
+luma-domain signal primitives for both input clips:
 
-These are intentionally low-cost diagnostics, not a no-reference VQA
-model. They make the CHUG feature table aware of blur/noise/grain axes
-that libvmaf's canonical six features do not expose directly.
+| Field group | Columns | Meaning |
+|---|---|---|
+| `feature_ref_*` | `codec_name`, `pix_fmt`, `color_transfer`, `transfer_class`, `color_primaries`, `color_space`, `color_range`, `max_content_nits`, `max_average_nits` | Matched reference clip |
+| `feature_dis_*` | the same nine suffixes | Distorted ladder clip |
+| `*_luma_std` | `feature_ref_luma_std`, `feature_dis_luma_std` | Luma contrast proxy |
+| `*_sharpness_laplacian_var` | `feature_ref_sharpness_laplacian_var`, `feature_dis_sharpness_laplacian_var` | Laplacian-variance sharpness proxy; lower values usually mean blur, high values may be either detail or noise |
+| `*_highfreq_abs_mean` | `feature_ref_highfreq_abs_mean`, `feature_dis_highfreq_abs_mean` | High-frequency texture/grain proxy from neighboring-pixel differences |
+| `*_noise_lap_mad` | `feature_ref_noise_lap_mad`, `feature_dis_noise_lap_mad` | Robust high-pass residual proxy for noise/grain |
+| `feature_delta_*` | one per primitive above | Distorted minus reference |
+
+`transfer_class` is normalized to `pq`, `hlg`, `sdr`, or `unknown`, so
+training scripts can consume a stable categorical field even when ffprobe
+reports vendor-specific transfer strings. Missing static metadata stays
+explicit as `unknown` or `null`; the materialiser does not infer panel
+capability from the clip alone.
+
+The luma primitives are intentionally low-cost diagnostics, not a
+no-reference VQA model. They make the CHUG feature table aware of
+blur/noise/grain axes that libvmaf's canonical six features do not expose
+directly.
+
+### 3. Splits and HDR audit
 
 The materialiser assigns train/validation/test splits at
 `chug_content_name` granularity, not at row granularity. Every bitrate
 ladder variant for a source content therefore stays in one split, which
-prevents reference-content leakage across validation. The default policy
-is deterministic `80/10/10` BLAKE2s hashing with seed `chug-hdr-v1`; use
-`--split train`, `--split val`, or `--split test` to materialise one
-partition, and `--split-manifest` to write the local content-to-split
-map.
+prevents reference-content leakage across validation.
 
-`--audit-output` writes a local ffprobe HDR metadata audit before
-feature extraction. The audit records row counts, probe failures,
-transfer-characteristic counts (`pq`, `hlg`, `sdr`, `unknown`),
-primaries, pix-fmt distribution, split row counts, and malformed HDR
-rows where PQ/HLG is signalled without BT.2020 primaries. This is the
-first check to run before using a CHUG feature file for HDR experiments.
+- The default policy is deterministic `80/10/10` BLAKE2s hashing with
+  seed `chug-hdr-v1` (policy name `content-name-blake2s-80-10-10`).
+- `--split train`, `--split val` or `--split test` materialises one
+  partition.
+- `--split-manifest` writes the local content-to-split map.
+
+`--audit-output` writes a local ffprobe HDR metadata audit before feature
+extraction. The audit records row counts, probe failures,
+transfer-characteristic counts (`pq`, `hlg`, `sdr`, `unknown`), primaries,
+pix-fmt distribution, split row counts, and malformed HDR rows where PQ/HLG
+is signalled without BT.2020 primaries. This is the first check to run
+before using a CHUG feature file for HDR experiments.
+
 The audit is a corpus-level preflight; the per-row `feature_ref_*` and
-`feature_dis_*` fields are the model-facing copy preserved in the
-training rows.
+`feature_dis_*` fields are the model-facing copy preserved in the training
+rows.
 
 Both `--split-manifest` and `--audit-output` include the shared
 `run_provenance` block from ADR-0661. That block records the
-`chug_extract_features.py` entrypoint, argv, parsed arguments, input
-JSONL, clip/cache directories, VMAF binary, and output targets. Keep
-those local JSON files with CHUG training artifacts so a later model-card
-or held-out validation pass can prove which feature extraction command
-created the split and HDR preflight evidence.
+`chug_extract_features.py` entrypoint, argv, parsed arguments, input JSONL,
+clip/cache directories, VMAF binary, and output targets. Keep those local
+JSON files with CHUG training artifacts so a later model-card or held-out
+validation pass can prove which feature extraction command created the
+split and HDR preflight evidence.
 
-Train against the feature rows:
+### 4. Train
+
+When all canonical shards live under
+`.corpus/chug/training/fr_canonical_shards/output/`, the short form trains
+on every shard:
+
+```bash
+python ai/scripts/train_chug_hdr_mos_head.py
+```
+
+The explicit form lists each shard with its own `--feature-jsonl`:
 
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py \
@@ -188,13 +210,28 @@ python ai/scripts/train_chug_hdr_mos_head.py \
   --out-manifest .corpus/chug/chug_hdr_mos_head_v1.json
 ```
 
-When all canonical shards live under
-`.corpus/chug/training/fr_canonical_shards/output/`, the shorter form is
-equivalent:
+When feature rows carry the `split` column emitted by
+`chug_extract_features.py`, `train_chug_hdr_mos_head.py` uses that
+content-level split for validation instead of creating random k-folds. The
+exported local checkpoint is trained on the `train` partition only, leaving
+`val` / `test` rows held out for calibration and reporting.
+`--model-id chug_hdr_mos_head_v1` keeps the local manifest honest: this is a
+CHUG HDR subjective-MOS model, not the committed SDR KonViD MOS head.
 
-```bash
-python ai/scripts/train_chug_hdr_mos_head.py
-```
+The generated manifest also includes `run_provenance`. For CHUG runs,
+`entrypoint` is `ai/scripts/train_chug_hdr_mos_head.py`, `shared_trainer`
+is the shared KonViD MOS trainer, and `inputs` includes every
+`--feature-jsonl`, optional feature parquet, and optional display-profile
+JSON path with file hashes when those files exist.
+
+!!! note
+    This is a baseline unlock, not a final HDR model. The CHUG feature rows
+    carry full-reference libvmaf features and subjective HDR MOS labels.
+    They are the fork's interim HDR signal until Netflix ships an HDR VMAF
+    model; do not treat the current SDR `vmaf_v0.6.1` teacher as an HDR
+    ground truth.
+
+### 5. Feature schemas
 
 By default the wrapper trains with `--feature-schema chug-hdr-wide-v1`.
 That 34-column schema contains:
@@ -212,6 +249,8 @@ comparison:
 ```bash
 python ai/scripts/train_chug_hdr_mos_head.py --feature-schema konvid-v1
 ```
+
+### 6. Display-aware training
 
 For display-aware HDR experiments, pass a target panel profile:
 
@@ -236,38 +275,17 @@ python ai/scripts/train_chug_hdr_mos_head.py \
 ```
 
 When `--display-profile-json` is supplied and `--feature-schema` is
-omitted, the wrapper selects `chug-hdr-display-v1`. That 45-column
-schema appends normalized target-display features to
-`chug-hdr-wide-v1`: peak luminance, black level, log contrast ratio,
-ambient lux, BT.2020/P3 coverage, OLED/QLED/LCD panel flags, local
-dimming, and dynamic tone-mapping. The profile is recorded in the
-manifest under `display_profile` with a sha256 of the source JSON.
+omitted, the wrapper selects `chug-hdr-display-v1`. That 45-column schema
+appends normalized target-display features to `chug-hdr-wide-v1`: peak
+luminance, black level, log contrast ratio, ambient lux, BT.2020/P3
+coverage, OLED/QLED/LCD panel flags, local dimming, and dynamic
+tone-mapping. The profile is recorded in the manifest under
+`display_profile` with a sha256 of the source JSON.
 
-The generated manifest also includes `run_provenance`. For CHUG runs,
-`entrypoint` is `ai/scripts/train_chug_hdr_mos_head.py`, `shared_trainer`
-is the shared KonViD MOS trainer, and `inputs` includes every
-`--feature-jsonl`, optional feature parquet, and optional display-profile
-JSON path with file hashes when those files exist.
-
-If a future HDR corpus row already carries display fields, row-local
-values win and the profile only fills missing display features. That
-keeps multi-display datasets usable while still letting CHUG runs bind
-their MOS head to a target consumer panel.
-
-When feature rows carry the `split` column emitted by
-`chug_extract_features.py`, `train_chug_hdr_mos_head.py` uses that
-content-level split for validation instead of creating random k-folds.
-The exported local checkpoint is trained on the `train` partition only,
-leaving `val` / `test` rows held out for calibration and reporting.
-`--model-id chug_hdr_mos_head_v1` keeps the local manifest honest: this
-is a CHUG HDR subjective-MOS model, not the committed SDR KonViD MOS
-head.
-
-This is a baseline unlock, not a final HDR model. The CHUG feature rows
-carry full-reference libvmaf features and subjective HDR MOS labels.
-They are the fork's interim HDR signal until Netflix ships an HDR VMAF
-model; do not treat the current SDR `vmaf_v0.6.1` teacher as an HDR
-ground truth.
+If a future HDR corpus row already carries display fields, row-local values
+win and the profile only fills missing display features. That keeps
+multi-display datasets usable while still letting CHUG runs bind their MOS
+head to a target consumer panel.
 
 ## Local FULL_FEATURES Experiments
 

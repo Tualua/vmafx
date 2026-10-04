@@ -85,7 +85,9 @@ for row in adapter.run(NrInputRow.from_dict(jsonl_row)):
     write_jsonl_row(row)
 ```
 
-Output rows match the existing :data:`vmaftune.CORPUS_ROW_KEYS`
+The class default for `scratch_dir` is `.workingdir/cache/fr_from_nr` (a
+git-ignored directory); the example overrides it. Output rows match the existing
+`vmaftune.CORPUS_ROW_KEYS`
 schema (no schema bump) plus three provenance keys:
 
 | Key           | Type             | Purpose                                    |
@@ -123,11 +125,15 @@ bash ai/scripts/extract_k150k_features.sh \
     --output runs/k150k_fr_corpus.jsonl
 ```
 
-The script wraps the adapter with K150K-specific defaults
-(`crf_sweep=(18,23,28,33,38)`, `preset=medium`, scratch under
-`.workingdir/cache/k150k-scratch/`, encodes under
-`.corpus/k150k-encodes/`). Edit the script's defaults block to
-override.
+The script wraps the adapter with K150K-specific defaults. Each default has an
+environment override:
+
+| Setting | Default | Env override |
+| --- | --- | --- |
+| Preset | `medium` | `VMAFTUNE_PRESET` |
+| CRF sweep | `18,23,28,33,38` | `VMAFTUNE_CRF_SWEEP` (comma-separated) |
+| Raw-YUV scratch directory | `.workingdir/cache/k150k-scratch/` | `VMAFTUNE_SCRATCH` |
+| Re-encoded MP4 directory | `.corpus/k150k-encodes/` | `VMAFTUNE_ENCODES` |
 
 Output JSONL is gitignored; only derived training weights ship in-tree
 (same posture as the Netflix and BVI-DVC shards —

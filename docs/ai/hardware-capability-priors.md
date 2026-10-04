@@ -9,7 +9,7 @@ methodology written up in
 
 ## What the table is
 
-`ai/data/hardware_caps.csv` is a small (~7 row) table of
+`ai/data/hardware_caps.csv` is a small six-row table of
 **capability metadata** for the GPU video-encode generations the
 fork's corpus encounters today. Each row describes what one
 architecture *can* do — codecs it can emit, resolution caps per
@@ -144,7 +144,11 @@ should be re-walked or dropped.
 ## Cross-references
 
 - [ADR-0335](../adr/0335-hardware-capability-priors.md) — decision record.
-- [`docs/research/0088-hardware-capability-priors-2026-05-08.md`](../research/0088-hardware-capability-priors-2026-05-08.md) — research digest with the NO-GO finding on benchmark numbers.
-- [`ai/data/hardware_caps.csv`](../../ai/data/hardware_caps.csv) — the table itself.
-- [`ai/scripts/hardware_caps_loader.py`](../../ai/scripts/hardware_caps_loader.py) — loader + ingest helper.
-- [`ai/tests/test_hardware_caps.py`](../../ai/tests/test_hardware_caps.py) — round-trip / schema / vector tests.
+- [`docs/research/0088-hardware-capability-priors-2026-05-08.md`](../research/0088-hardware-capability-priors-2026-05-08.md)
+  — research digest with the NO-GO finding on benchmark numbers.
+- [`ai/data/hardware_caps.csv`](../../ai/data/hardware_caps.csv) — the table
+  itself.
+- [`ai/scripts/hardware_caps_loader.py`](../../ai/scripts/hardware_caps_loader.py)
+  — loader + ingest helper.
+- [`ai/tests/test_hardware_caps.py`](../../ai/tests/test_hardware_caps.py) —
+  round-trip / schema / vector tests.

@@ -35,12 +35,14 @@ reference stream.
 | Field | Value |
 | --- | --- |
 | Model id | `nr_metric_v1` |
+| SHA-256 (fp32) | `75eff676bff0f0f911fd59ac72c90240e95caff67302b37f6e35bfbeac2b680b` |
+| SHA-256 (INT8) | `e5ba2086f53c74539902883b12b01d83f06806f084b692b1d5ad325f9300cab2` |
 | Location | `model/tiny/nr_metric_v1.onnx` |
 | INT8 sidecar | `model/tiny/nr_metric_v1.int8.onnx` |
 | Architecture | MobileNet-tiny — depthwise separable Conv stack; ~19 K params |
-| Input | `input` — float32 NCHW `[1, 1, 224, 224]` grayscale luma in `[0, 1]` |
-| Output | `mos_score` — float32 `[1]` scalar MOS estimate |
-| ONNX opset | 17 |
+| Input | `frame` — float32 NCHW `[batch, 1, 224, 224]` grayscale luma in `[0, 1]` |
+| Output | `mos` — float32 `[batch]` scalar MOS estimate |
+| ONNX opset | 18 declared in the ONNX file (registry and sidecar record 17) |
 | Training corpus | KoNViD-1k (1 200 clips; CC BY 4.0; not redistributed in-tree) |
 | Val MSE | ~0.382 (RMSE ≈ 0.62 on 1–5 MOS, KoNViD-1k validation split) |
 | Quantisation | Dynamic-PTQ INT8 via `ai/scripts/ptq_dynamic.py`; `quant_accuracy_budget_plcc = 0.01` |
@@ -62,7 +64,7 @@ shell history.
 | Licence | CC BY 4.0 — clips are not redistributed in-tree |
 | Clips | 1 200 user-generated video clips, 8 s each at various resolutions |
 | MOS labels | Crowd-sourced mean opinion score (1–5 scale, Amazon Mechanical Turk) |
-| Split used | ~973 train / ~107 val / ~120 test (80/9/10 % random split, seed 42) |
+| Split used | ~973 train / ~107 val / ~120 test (about 80/9/10 %; the trainer's default is 80/10/10 with seed 42) |
 | Feature | Middle frame extracted per clip at 224×224 grayscale |
 
 **Acknowledgement.** This model was trained on KoNViD-1k. We thank the
@@ -72,23 +74,40 @@ The clips themselves are not committed to this repository.
 ## Op-allowlist conformance
 
 Every op in the graph is on
-[`core/src/dnn/op_allowlist.c`](../../../core/src/dnn/op_allowlist.c):
-`Conv`, `Relu`, `DepthwiseConv`, `GlobalAveragePool`, `Flatten`,
-`Gemm` (or equivalent `MatMul` + `Add`).
+[`core/src/dnn/op_allowlist.c`](../../../core/src/dnn/op_allowlist.c). The
+shipped fp32 graph uses `Conv` (depthwise layers are `Conv` with a group
+count), `Clip`, `Concat`, `Gemm`, `ReduceMean`, `Reshape`, `Shape` and
+`Squeeze`. There is no separate `DepthwiseConv` operator on the allowlist.
 
 ## Usage — CLI
 
 ```bash
 vmaf \
-    --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+    --no-reference \
     --tiny-model model/tiny/nr_metric_v1.onnx \
+    --tiny-resize bilinear \
     --output score.json
 ```
 
-The output JSON gains a per-frame `nr_mos_score` column. Pool to clip
-level by averaging across frames.
+Three options matter for this model:
+
+- `--no-reference` runs in no-reference mode (the model sees only the
+  distorted stream, so `--reference` can be omitted).
+- `--tiny-resize bilinear|nearest|bicubic` is required whenever the clip is not
+  224×224: the model input is fixed at 224×224, and without the option a
+  size mismatch is a hard error (`-ERANGE`, "problem reading pictures").
+  The three filters give scores that differ by about 2 %, so record the filter
+  next to any reported number.
+- `--tiny-model` takes a path to the ONNX file.
+
+The score is attached under the sidecar's `name` field when it has one,
+otherwise under the feature name `vmaf_tiny_model`. `nr_metric_v1.json` has no
+`name`, so the per-frame values appear as `vmaf_tiny_model` in the JSON
+`frames` array and in `pooled_metrics`. Pool to clip level by averaging across
+frames. On the 576×324 Netflix pair (`src01_hrc01`, 48 frames) the pooled mean
+of `vmaf_tiny_model` is about 3.37.
 
 ## Usage — C API
 
@@ -96,43 +115,58 @@ level by averaging across frames.
 #include <libvmaf/libvmaf.h>
 
 VmafDnnSession *session = NULL;
-vmaf_dnn_session_open(&session, "model/tiny/nr_metric_v1.onnx",
-                      VMAF_DNN_DEVICE_CPU);
+VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU};  /* NULL = auto */
+vmaf_dnn_session_open(&session, "model/tiny/nr_metric_v1.onnx", &cfg);
 /* run session per-frame ... */
 vmaf_dnn_session_close(session);
 ```
 
 ## Reproducing the model
 
-```bash
-# 1. fetch KoNViD-1k (~40 GB) — not redistributed in-tree
-.venv/bin/python ai/scripts/fetch_konvid_1k.py
+1. Fetch KoNViD-1k (~40 GB; not redistributed in-tree):
 
-# 2. extract middle frames + convert to corpus JSONL
-.venv/bin/python ai/scripts/konvid_1k_to_corpus_jsonl.py
+   ```bash
+   .venv/bin/python ai/scripts/fetch_konvid_1k.py
+   ```
 
-# 3. train the C2/C3 checkpoints
-.venv/bin/python ai/scripts/train_konvid.py \
-    --model both \
-    --output-c2 runs/c2_konvid \
-    --output-c3 runs/c3_konvid \
-    --epochs-c2 50 \
-    --epochs-c3 200 \
-    --seed 42
+2. Extract middle frames and convert to corpus JSONL:
 
-# 4. export the ONNX + sidecar + registry rows
-.venv/bin/python ai/scripts/export_tiny_models.py \
-    --c2-ckpt runs/c2_konvid/last.ckpt \
-    --c3-ckpt runs/c3_konvid/last.ckpt
+   ```bash
+   .venv/bin/python ai/scripts/konvid_1k_to_corpus_jsonl.py
+   ```
 
-# 5. quantise to INT8
-.venv/bin/python ai/scripts/ptq_dynamic.py \
-    --model model/tiny/nr_metric_v1.onnx \
-    --output model/tiny/nr_metric_v1.int8.onnx
+3. Train the C2/C3 checkpoints:
 
-# 6. validate against the registry
-.venv/bin/python ai/scripts/validate_model_registry.py
-```
+   ```bash
+   .venv/bin/python ai/scripts/train_konvid.py \
+       --model both \
+       --output-c2 runs/c2_konvid \
+       --output-c3 runs/c3_konvid \
+       --epochs-c2 50 \
+       --epochs-c3 200 \
+       --seed 42
+   ```
+
+4. Export the ONNX, sidecar and registry rows:
+
+   ```bash
+   .venv/bin/python ai/scripts/export_tiny_models.py \
+       --c2-ckpt runs/c2_konvid/last.ckpt \
+       --c3-ckpt runs/c3_konvid/last.ckpt
+   ```
+
+5. Quantise to INT8 (the fp32 ONNX path is a positional argument):
+
+   ```bash
+   .venv/bin/python ai/scripts/ptq_dynamic.py model/tiny/nr_metric_v1.onnx \
+       --output model/tiny/nr_metric_v1.int8.onnx
+   ```
+
+6. Validate against the registry:
+
+   ```bash
+   .venv/bin/python ai/scripts/validate_model_registry.py
+   ```
 
 ## Fast-NR calibration sidecar
 

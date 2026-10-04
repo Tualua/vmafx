@@ -9,22 +9,24 @@ of its per-pixel saliency map** as a scalar feature named
 backlog item T6-2 (T6-2a). Encoder-side ROI tooling (`tools/vmaf-roi`,
 per-CTU QP-offset sidecars) is shipped as T6-2b.
 
-> **Status — legacy smoke placeholder / not for production.**
-> `model/tiny/mobilesal.onnx` is a synthetic smoke placeholder (3→1
-> Conv+Sigmoid). It matches the MobileSal I/O contract to validate
-> pipeline wiring, but emits ~constant saliency (~0.5) and is
-> **not for production use**.
->
-> **Production saliency is not blocked on a placeholder:** production saliency
-> uses the fork-trained [`saliency_student_v2`](saliency_student_v2.md) weights
-> (production default since 2026-05-15 per
-> [ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md))
-> or [`saliency_student_v1`](saliency_student_v1.md) (ADR-0286), both of which
-> keep the same `input` / `saliency_map` tensor names and run through the exact
-> same `feature_mobilesal.c` extractor. Upstream MobileSal weights remain
-> deferred by [ADR-0257](../../adr/0257-mobilesal-real-weights-deferred.md)
-> (CC BY-NC-SA 4.0, Google-Drive-walled, RGB-D); the fork-trained students
-> provide the license-clean production path.
+!!! warning "Legacy smoke placeholder: not for production"
+    `model/tiny/mobilesal.onnx` is a synthetic smoke placeholder (3 to 1
+    channel Conv + Sigmoid). It matches the MobileSal I/O contract to validate
+    pipeline wiring, but emits an almost constant saliency (about 0.5).
+
+For production saliency use
+[`saliency_student_v2`](saliency_student_v2.md), the fork-trained default since
+2026-05-15
+([ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md)),
+or [`saliency_student_v1`](saliency_student_v1.md)
+([ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)). Both keep
+the same `input` / `saliency_map` tensor names and run through the same
+`feature_mobilesal.c` extractor.
+
+Upstream MobileSal weights remain deferred by
+[ADR-0257](../../adr/0257-mobilesal-real-weights-deferred.md) (CC BY-NC-SA 4.0,
+Google-Drive-walled, RGB-D); the fork-trained students provide the
+license-clean production path.
 
 Upstream paper: Wu, Liu, Cheng, Lu, Cheng, *"MobileSal: Extremely
 Efficient RGB-D Salient Object Detection"*, IEEE TPAMI 2021.
@@ -74,7 +76,8 @@ The placeholder ONNX is deterministic (no `doc_string`, fixed
 sha256 stays stable across re-runs of the export script.
 
 For content-dependent saliency, point the extractor at the production default
-`model/tiny/saliency_student_v2.onnx` (or `model/tiny/saliency_student_v1.onnx`).
+`model/tiny/saliency_student_v2.onnx` (or
+`model/tiny/saliency_student_v1.onnx`).
 The placeholder is retained to keep the historical ABI / I/O-contract smoke
 path available.
 
@@ -95,7 +98,7 @@ outputs:
 match whatever resolution the C side feeds. ImageNet normalisation
 (mean `[0.485, 0.456, 0.406]`, std `[0.229, 0.224, 0.225]`) is applied
 in the C side via the shared `vmaf_tensor_from_rgb_imagenet()` helper,
-identical to LPIPS's wiring (see [`lpips_sq.md`](lpips_sq.md)).
+identical to LPIPS's wiring (see [`lpips_sq_v1.md`](lpips_sq_v1.md)).
 
 ## Usage — CLI
 
@@ -104,12 +107,13 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --feature mobilesal \
-    --feature_params mobilesal:model_path=model/tiny/saliency_student_v2.onnx \
+    --feature mobilesal=model_path=model/tiny/saliency_student_v2.onnx \
     --output score.json
 ```
 
-The output JSON gains a per-frame `saliency_mean` column alongside any
+The `--feature` argument takes `name=option=value` (colon-separated for more
+options); there is no `--feature_params` option. The output JSON gains a
+per-frame `saliency_mean` column alongside any
 other features requested in the same run. Combine with `lpips` and
 `vmaf` for the full saliency-quality picture:
 
@@ -117,10 +121,8 @@ other features requested in the same run. Combine with `lpips` and
 vmaf --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --feature vmaf \
-    --feature lpips \
-    --feature_params lpips:model_path=model/tiny/lpips_sq.onnx \
-    --feature mobilesal \
-    --feature_params mobilesal:model_path=model/tiny/saliency_student_v2.onnx \
+    --feature lpips=model_path=model/tiny/lpips_sq.onnx \
+    --feature mobilesal=model_path=model/tiny/saliency_student_v2.onnx \
     --output combined.json
 ```
 
@@ -149,40 +151,34 @@ Equivalent to setting `VMAF_MOBILESAL_MODEL_PATH` before
 
 ## Known limitations
 
-- **Bit depth — 8-bit YUV only**: `mobilesal` rejects non-8-bit input at
-  `init()` time with `-ENOTSUP` and an actionable error message naming this
-  extractor as the blocker. The saliency ONNX model requires 8-bit
-  ImageNet-normalised RGB; 10-bit and 12-bit support would require retraining
-  and is not planned (see ADR-0613 §P1-3 rationale). If you pass `--bitdepth
-  10` (or `--bitdepth 12`) together with `--feature mobilesal`, the run will
-  abort before scoring with a message like:
+| Limit | Behaviour | Workaround |
+| --- | --- | --- |
+| Bit depth | 8-bit YUV only; other depths are rejected at `init()` with `-ENOTSUP` (see the message below) | Drop `--feature mobilesal` from HDR / 10-bit / 12-bit runs, or use `--bitdepth 8` when the source is 8-bit content in a 10-bit container |
+| Pixel format | `YUV420P`, `YUV422P`, `YUV444P` accepted; `YUV400P` (luma-only) rejected at `init()` because the model needs three RGB channels | Convert to a chroma-carrying format |
+| Colour space | BT.709 limited-range Y'CbCr to RGB on the C side, matching `feature_lpips.c`; BT.2020 / full range is approximate (deliberate trade-off, see the `feature_mobilesal.c` comment) | None |
+| Resolution | Bounded by the selected ONNX graph's dynamic shape; the placeholder has no useful quality floor, the fork-trained student was trained on 256x256 crops. The student checkpoints need a width and height that are multiples of 8 (a 576x324 clip fails with a `Concat` dimension mismatch; 1920x1080 and 1280x720 work) | Scale or crop to a multiple of 8 |
+| Execution provider | The extractor opens its session with the default `auto` device: CUDA, OpenVINO GPU, ROCm, CoreML, then CPU, whichever the linked ONNX Runtime provides; independent of `-Denable_cuda` and of `--tiny-device` | None needed |
+| Score interpretation | With the placeholder, `saliency_mean` is about 0.5 whatever the input; the placeholder only locks down the pipeline. With a student checkpoint the score is content-dependent | Use a student checkpoint |
 
-  ```text
-  mobilesal: bpc=10 is not supported (8-bit only). The mobilesal extractor
-  requires 8-bit YUV input because the saliency model was trained on 8-bit
-  ImageNet-RGB. Use --bitdepth 8 or omit --feature mobilesal for HDR /
-  10-bit / 12-bit content.
-  ```
+With `--bitdepth 10` or `12` together with `--feature mobilesal` the run aborts
+before scoring. The saliency model requires 8-bit ImageNet-normalised RGB; wider
+depths would require retraining and are not planned (ADR-0613 §P1-3). The
+message reads:
 
-  **Workaround**: drop `--feature mobilesal` from HDR / 10-bit / 12-bit
-  scoring runs, or score with `--bitdepth 8` if the source is actually 8-bit
-  content muxed into a 10-bit container.
-- **Pixel format**: `YUV420P`, `YUV422P`, `YUV444P` accepted;
-  `YUV400P` (luma-only) is rejected at `init()` because the model
-  requires three RGB channels.
-- **Colour space**: BT.709 limited-range Y'CbCr → RGB at the C side,
-  matching `feature_lpips.c`. BT.2020 / full-range is approximate
-  (deliberate trade-off — see `feature_mobilesal.c` comment).
-- **Resolution**: bounded by the selected ONNX graph's dynamic shape.
-  The placeholder has no useful quality floor; the fork-trained student
-  was trained on 256×256 crops.
-- **CPU vs GPU path**: served via `vmaf_dnn_session_run()` which picks
-  CPU EP by default; CUDA EP is used automatically when libvmaf is
-  built with `-Denable_cuda=true` and the graph is supported.
-- **Score interpretation**: with the placeholder, `saliency_mean` is
-  ~0.5 regardless of input — the placeholder exists to lock down the
-  pipeline, not to score quality. With `saliency_student_v1`, the score
-  is content-dependent.
+```text
+mobilesal: bpc=10 is not supported (8-bit only). The mobilesal extractor
+requires 8-bit YUV input because the saliency model was trained on 8-bit
+ImageNet-RGB. Use --bitdepth 8 or omit --feature mobilesal for HDR /
+10-bit / 12-bit content.
+```
+
+## Training and evaluation
+
+The placeholder is not trained: it is a generated Conv + Sigmoid with fixed
+weights, so no training data, quality evaluation or correlation figure exists
+for it. Trained, evaluated saliency weights are on the
+[`saliency_student_v1`](saliency_student_v1.md) and
+[`saliency_student_v2`](saliency_student_v2.md) cards.
 
 ## How the placeholder is regenerated
 
@@ -199,7 +195,7 @@ output. CI verifies the sha256 against `registry.json` before
 
 ## Related
 
-- [`lpips_sq.md`](lpips_sq.md) — sister full-reference DNN extractor;
+- [`lpips_sq_v1.md`](lpips_sq_v1.md) — sister full-reference DNN extractor;
   shares the YUV → ImageNet-RGB plumbing.
 - [`../roadmap.md`](../roadmap.md) §2.3 — Wave 1 MobileSal scope.
 - [`saliency_student_v2.md`](saliency_student_v2.md) — production default
@@ -210,15 +206,14 @@ output. CI verifies the sha256 against `registry.json` before
   notes (smoke-only placeholder, scoring-vs-encoder split, scalar-vs-map
   output).
 - [ADR-0257](../../adr/0257-mobilesal-real-weights-deferred.md) —
-  blocker decision deferring the T6-2a-followup real-weights swap.
+  first blocker (T6-2a-followup real-weights swap deferred): upstream
+  MobileSal license, distribution and RGB-D mismatch.
 - [Research-0053](../../research/0053-mobilesal-real-weights-blocker.md)
   — upstream survey, licence analysis, and alternatives walk.
-  first blocker: upstream MobileSal license + distribution +
-  RGB-D mismatch.
 - [ADR-0265](../../adr/0265-u2netp-saliency-replacement-blocked.md)
   — second blocker: U-2-Net `u2netp` distribution + op-allowlist
   mismatch.
-- [Research-0054](../../research/0055-u2netp-saliency-replacement-survey.md)
+- [Research-0055](../../research/0055-u2netp-saliency-replacement-survey.md)
   — companion survey for ADR-0265.
 - [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)
   — fork-trained production saliency-student path.

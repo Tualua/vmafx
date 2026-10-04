@@ -92,19 +92,22 @@ python ai/scripts/build_bisect_cache.py \
   --manifest-out runs/bisect-cache-manifest.json
 ```
 
-The source parquet must contain the canonical six columns (`adm2`,
-`vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`, `motion2`) and a
-target column. Without `--target-column`, the script tries `mos`,
-`dmos`, `target`, then `score`. The generated `features.parquet` always
-renames the target to `mos`, and the generated ONNX timeline is fit from
-that target before deterministic tiny perturbations are applied.
-When `--manifest-out` is supplied, the generator writes a
-`bisect-cache-manifest-v1` sidecar with the generation/check mode, target-column
-candidates, default feature list, artifact counts, and shared AI
-`run_provenance`.
+The generator reads the source parquet under three rules:
+
+- **Required columns.** The canonical six (`adm2`, `vif_scale0`, `vif_scale1`,
+  `vif_scale2`, `vif_scale3`, `motion2`) plus a target column.
+- **Target column.** Without `--target-column`, the script tries `mos`, `dmos`,
+  `target`, then `score`. The generated `features.parquet` always renames the
+  target to `mos`, and the generated ONNX timeline is fit from that target
+  before deterministic tiny perturbations are applied.
+- **Manifest sidecar.** With `--manifest-out`, the generator writes a
+  `bisect-cache-manifest-v1` file with the generation or check mode,
+  target-column candidates, default feature list, artifact counts and shared AI
+  `run_provenance`.
 
 See the [fixture README](../../ai/testdata/bisect/README.md) for the
-exact cache contract and [Research-0001](../research/0001-bisect-model-quality-cache.md)
+exact cache contract and
+[Research-0001](../research/0001-bisect-model-quality-cache.md)
 for the original swap-path investigation. The synthetic-regression case
 ("introducing a deliberately bad ONNX trips the alert") is covered by
 the unit test

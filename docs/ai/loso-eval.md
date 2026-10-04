@@ -6,9 +6,10 @@ on the Netflix corpus, using the harness in
 
 LOSO is the honest evaluation regime for a 9-source corpus: each fold
 trains on 8 sources and is scored on the held-out 9th. The single-split
-val=Tennis baseline `vmaf_tiny_v1.onnx` (and its `mlp_medium` sibling)
-remain shipped as the default tiny model, but their absolute-fit numbers
-are biased by their training distribution. LOSO answers *"how well does
+val=Tennis baseline checkpoints `vmaf_tiny_v1.onnx` and its `mlp_medium`
+sibling stay on disk as regression baselines (the recommended tiny FR model
+is `vmaf_tiny_v2`, see [inference.md](inference.md)), but their absolute-fit
+numbers are biased by their training distribution. LOSO answers *"how well does
 mlp_small actually generalize to a clip it has never seen?"* — which is
 the user-facing question.
 
@@ -32,7 +33,31 @@ The harness mirrors the per-fold accounting that MCP
 respects the LOSO split structure (each model has a different val
 clip) without forcing 9 separate `compare_models` calls.
 
-## Running it
+## 1. Produce the fold checkpoints
+
+The 9 fold ONNX files are produced by looping the existing trainer
+across each `--val-source`:
+
+```bash
+for src in BigBuckBunny BirdsInCage CrowdRun ElFuente1 ElFuente2 \
+           FoxBird OldTownCross Seeking Tennis; do
+  out=model/tiny/training_runs/loso_mlp_small/fold_${src}
+  mkdir -p "$out"
+  VMAF_TRAIN_OUT_DIR="$out" \
+    bash ai/scripts/run_training.sh \
+      --model-arch mlp_small \
+      --epochs 30 \
+      --val-source "$src"
+done
+```
+
+On a populated `~/.cache/vmaf-tiny-ai/`, each fold takes about 6 min on
+the `ryzen-4090` profile (an indicative timing, not measured by CI); total
+about 55 min. With a cold cache
+add ~30 s of libvmaf feature extraction per source-clip on first
+encounter.
+
+## 2. Run the harness
 
 ```bash
 # Default — uses .corpus/netflix as data-root, looks for fold ONNX
@@ -68,30 +93,7 @@ gitignored by design — training and eval outputs regenerate from
 the corpus and the cached features, so they don't belong in the
 tree.
 
-## Producing the fold checkpoints
-
-The 9 fold ONNX files are produced by looping the existing trainer
-across each `--val-source`:
-
-```bash
-for src in BigBuckBunny BirdsInCage CrowdRun ElFuente1 ElFuente2 \
-           FoxBird OldTownCross Seeking Tennis; do
-  out=model/tiny/training_runs/loso_mlp_small/fold_${src}
-  mkdir -p "$out"
-  VMAF_TRAIN_OUT_DIR="$out" \
-    bash ai/scripts/run_training.sh \
-      --model-arch mlp_small \
-      --epochs 30 \
-      --val-source "$src"
-done
-```
-
-On a populated `~/.cache/vmaf-tiny-ai/`, each fold takes ~6 min on
-the documented `ryzen-4090` profile; total ~55 min. With a cold cache
-add ~30 s of libvmaf feature extraction per source-clip on first
-encounter.
-
-## Reading the results
+## 3. Read the results
 
 Per-fold PLCC of 0.93 – 0.99 indicates the regressor learns a
 generalizable feature → score mapping; the mean across folds is the
@@ -113,15 +115,16 @@ numbers from this run, see
 
 ## Known issues
 
-The shipped baseline ONNX files
-(`model/tiny/vmaf_tiny_v1*.onnx`) carry an embedded
-`external_data.location` reference to their pre-rename filename
-(`mlp_small_final.onnx.data` / `mlp_medium_final.onnx.data`). The
-sibling `.data` file actually exists under the renamed name, so a
-naive `onnxruntime.InferenceSession(path)` from outside `model/tiny/`
-fails with `cannot get file size`. The harness works around this in
-[`_load_session`](../../ai/scripts/eval_loso_mlp_small.py): it loads
-the proto without external data, rewrites the location entries to
-the actual sibling filename, and attaches the bytes manually. A
-proper fix is a follow-up baseline re-export with the correct
-embedded names.
+The shipped baseline ONNX files (`model/tiny/vmaf_tiny_v1*.onnx`) fail to load
+from outside `model/tiny/` with a plain `onnxruntime.InferenceSession(path)`:
+
+- **Symptom.** `cannot get file size`.
+- **Cause.** The files carry an embedded `external_data.location` reference to
+  their pre-rename filename (`mlp_small_final.onnx.data` and
+  `mlp_medium_final.onnx.data`). The sibling `.data` file exists under the
+  renamed name.
+- **Workaround.** The harness handles it in
+  [`_load_session`](../../ai/scripts/eval_loso_mlp_small.py): it loads the proto
+  without external data, rewrites the location entries to the actual sibling
+  filename, and attaches the bytes manually.
+- **Fix.** A follow-up baseline re-export with the correct embedded names.

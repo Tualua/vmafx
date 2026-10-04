@@ -8,7 +8,8 @@ validates the JSONL conversion shape before scaling to the full ~150 k
 corpus in Phase 2.
 
 See [ADR-0325](../adr/0325-konvid-150k-corpus-ingestion.md) for the
-two-phase decision and [Research-0086](../research/0086-konvid-150k-corpus-feasibility.md)
+two-phase decision and
+[Research-0086](../research/0086-konvid-150k-corpus-feasibility.md)
 for the feasibility analysis.
 
 ## 1. Dataset overview
@@ -91,7 +92,8 @@ python ai/scripts/konvid_1k_to_corpus_jsonl.py
 Default output path is `.corpus/konvid-1k/konvid_1k.jsonl`. Override
 with `--output`. Override the input layout with `--konvid-dir`. Override
 the ffprobe binary with `--ffprobe-bin` (also picked up from
-`$FFPROBE_BIN`).
+`$FFPROBE_BIN`). `--log-level DEBUG|INFO|WARNING|ERROR` sets the logging
+verbosity (default `INFO`).
 
 The adapter writes `<output>.manifest.json` by default and accepts
 `--manifest-out PATH` when a run bundle needs a separate sidecar location.
@@ -132,14 +134,15 @@ One JSON object per line:
 }
 ```
 
-The schema is **disjoint** from the existing vmaf-tune Phase A
-`CORPUS_ROW_KEYS` row (no `vmaf_score`, `encoder`, `preset`, `crf`).
-The two corpora are merged at the trainer level in Phase 3 — not at
-the JSONL level — because their natural keys differ: vmaf-tune rows
-key on `(src_sha256, encoder, preset, crf)` (synthetic encodes of a
-known reference), while KonViD rows key on `src_sha256` alone (the
-clip *is* the artefact, and it carries a human MOS instead of an
-algorithmic VMAF score).
+!!! note
+    The schema is **disjoint** from the existing vmaf-tune Phase A
+    `CORPUS_ROW_KEYS` row (no `vmaf_score`, `encoder`, `preset`, `crf`).
+    The two corpora are merged at the trainer level in Phase 3, not at
+    the JSONL level, because their natural keys differ. vmaf-tune rows
+    key on `(src_sha256, encoder, preset, crf)` (synthetic encodes of a
+    known reference). KonViD rows key on `src_sha256` alone: the clip
+    *is* the artefact, and it carries a human MOS instead of an
+    algorithmic VMAF score.
 
 The `corpus_version` field defaults to `"konvid-1k-2017"` (the QoMEX
 release year) and is overridable via `--corpus-version` for downstream
@@ -147,15 +150,21 @@ shards (e.g. a re-rated 2019 metadata refresh).
 
 ## 6. Refusal: KonViD-150k mis-mount
 
-If the operator points the script at a `KoNViD_1k_metadata/` directory
-that actually holds the KonViD-150k attribute CSV (~150 000 rows), the
-script aborts with a hint pointing at `konvid_150k_to_corpus_jsonl.py`
-(Phase 2; not yet shipped — see ADR-0325 §Phase 2). The threshold is
-**1500 rows** — the actual KonViD-1k size is exactly 1200, so the
-gap absorbs minor index-row variations without false positives. This
-guards against silently ingesting a 100 × larger corpus through a
-1k-shaped pipeline; the geometry probe alone would take days at that
-scale and the disk impact (200+ GB) would surprise the operator.
+The script aborts when the attribute CSV is the KonViD-150k one:
+
+- **Trigger:** the operator points the script at a `KoNViD_1k_metadata/`
+  directory that actually holds the KonViD-150k attribute CSV (~150 000
+  rows).
+- **Threshold:** **1500 rows**. The actual KonViD-1k size is exactly 1200,
+  so the gap absorbs minor index-row variations without false positives.
+- **Hint:** the error points at
+  [`konvid_150k_to_corpus_jsonl.py`](konvid-150k-ingestion.md), the Phase 2
+  adapter.
+
+!!! note
+    The guard prevents silently ingesting a 100 times larger corpus through a
+    1k-shaped pipeline: the geometry probe alone would take days at that
+    scale and the disk impact (200+ GB) would surprise the operator.
 
 ## 7. Reproducibility and CI
 
@@ -165,7 +174,8 @@ chunks; same shape `vmaftune.corpus.py` already emits) so re-runs
 across machines produce identical hashes for identical clips.
 
 CI cannot retrain end-to-end (the corpus is non-redistributable). The
-adapter is exercised by [`ai/tests/test_konvid_1k.py`](../../ai/tests/test_konvid_1k.py),
+adapter is exercised by
+[`ai/tests/test_konvid_1k.py`](../../ai/tests/test_konvid_1k.py),
 which mocks ffprobe via a synthesised JSON payload and stands up a
 temporary `.corpus/konvid-1k/`-shaped tree on disk. The tests run
 in well under one second and require neither ffprobe nor the corpus.
@@ -193,10 +203,11 @@ in well under one second and require neither ffprobe nor the corpus.
 - **Phase 1.5 (optional).** Drop the same script-shape against
   YouTube-UGC (Google's 1.5k-clip MOS+VMAF set) for a cross-corpus
   sanity check.
-- **Phase 2.** Scale to KonViD-150k via
-  `ai/scripts/konvid_150k_to_corpus_jsonl.py` (not yet shipped — see
-  ADR-0325 §Phase 2). Adds resumable downloads, ~5–8 % attrition
-  tolerance, and an `"ugc-mixed"` ENCODER_VOCAB slot.
+- **Phase 2 (shipped).** Scale to KonViD-150k via
+  `ai/scripts/konvid_150k_to_corpus_jsonl.py`, documented in
+  [konvid-150k-ingestion.md](konvid-150k-ingestion.md). Adds resumable
+  downloads, ~5–8 % attrition tolerance, and an `"ugc-mixed"`
+  ENCODER_VOCAB slot.
 - **Phase 3.** Train a sibling MOS-head ONNX via the existing
   ensemble-training-kit harness (ADR-0324). Held-out fold gates
   production-flip via the ADR-0303 protocol.

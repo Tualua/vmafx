@@ -104,6 +104,9 @@ complement threshold: |Pearson r| <= 0.70
 minimum finite ratio: 0.80
 ```
 
+Defaults for the remaining flags: `--top-k` is 12 (rows shown in the target
+signal and intersection sections).
+
 Relax `--complement-threshold` when a small synthetic or highly structured
 table has near-linear columns. Tighten it when searching for truly independent
 new metrics.

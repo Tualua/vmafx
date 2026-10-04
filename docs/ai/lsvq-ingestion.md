@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD060 -->
 # LSVQ → MOS-corpus JSONL ingestion
 
-The fork's `nr_metric_v1` tiny no-reference VQA model is trained
-on a union of MOS-corpus shards. This page documents the LSVQ
-shard ingestion adapter
+This page documents how to build the LSVQ MOS-corpus shard consumed by the
+fork's no-reference and MOS-head trainers. It covers the LSVQ shard ingestion
+adapter
 (`ai/scripts/lsvq_to_corpus_jsonl.py`, ADR-0367).
 
 ## What LSVQ is
@@ -110,25 +110,23 @@ Bare-stem filenames (e.g. `0001`) are normalised to
 
 ## Operator flags
 
-```text
---lsvq-dir PATH               Working dir (default: .corpus/lsvq/)
---manifest-csv PATH           Path to split CSV (default: <dir>/manifest.csv)
---progress-path PATH          Resumable state file
-                              (default: <dir>/.download-progress.json)
---clips-subdir NAME           Subdir for clips (default: clips)
---clip-suffix EXT             Default file suffix (default: .mp4)
---output PATH                 Output JSONL (default: <dir>/lsvq.jsonl)
---manifest-out PATH           Replay manifest JSON sidecar
-                              (default: <output>.manifest.json)
---ffprobe-bin BIN             ffprobe binary (default: $FFPROBE_BIN or ffprobe)
---curl-bin BIN                curl binary (default: $CURL_BIN or curl)
---corpus-version STR          Dataset version (default: lsvq-2021)
---attrition-warn-threshold F  Advisory failure-rate floor (default: 0.10)
---download-timeout-s N        Per-clip curl --max-time (default: 120)
---max-rows N                  Row cap (default: 500; laptop-class subset)
---full                        Disable --max-rows cap; ingest whole CSV
---log-level LEVEL             DEBUG / INFO / WARNING / ERROR
-```
+| Flag | Default | Meaning |
+|---|---|---|
+| `--lsvq-dir` | `.corpus/lsvq/` | Working directory |
+| `--manifest-csv` | `<dir>/manifest.csv` | Path to the split CSV |
+| `--progress-path` | `<dir>/.download-progress.json` | Resumable state file |
+| `--clips-subdir` | `clips` | Subdirectory for clips |
+| `--clip-suffix` | `.mp4` | Default file suffix for bare-stem names |
+| `--output` | `<dir>/lsvq.jsonl` | Output JSONL |
+| `--manifest-out` | `<output>.manifest.json` | Replay manifest JSON sidecar |
+| `--ffprobe-bin` | `$FFPROBE_BIN` or `ffprobe` | ffprobe binary |
+| `--curl-bin` | `$CURL_BIN` or `curl` | curl binary |
+| `--corpus-version` | `lsvq-2021` | Dataset version |
+| `--attrition-warn-threshold` | `0.10` | Advisory failure-rate floor |
+| `--download-timeout-s` | `120` | Per-clip `curl --max-time` seconds |
+| `--max-rows` | `500` | Row cap (laptop-class subset) |
+| `--full` | off | Disable the `--max-rows` cap; ingest the whole CSV |
+| `--log-level` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
 
 The replay manifest records the LSVQ working directory, manifest/progress paths,
 row cap, attrition counters, effective corpus version, and ADR-0661
@@ -152,15 +150,17 @@ row cap, attrition counters, effective corpus version, and ADR-0661
 
 LSVQ is CC-BY-4.0. This fork ships the adapter and the schema
 in tree, but **never** the raw clips, the per-clip MOS values,
-or any derived feature cache. Only the trained
-`nr_metric_v1_*.onnx` weights ship, with CC-BY-4.0 attribution
-travelling alongside.
+or any derived feature cache. Only trained model weights
+derived from the corpus can ship, with CC-BY-4.0 attribution travelling
+alongside.
 
 ## Related
 
 - [ADR-0367: LSVQ corpus ingestion](../adr/0367-lsvq-corpus-ingestion.md).
-- [Research-0090: LSVQ corpus feasibility](../research/0090-lsvq-corpus-feasibility.md).
-- [Tiny-AI SOTA deep-dive](../research/0086-tiny-ai-sota-deep-dive-2026-05-08.md)
+- [Research-0090: LSVQ corpus
+  feasibility](../research/0090-lsvq-corpus-feasibility.md).
+- [Tiny-AI SOTA
+  deep-dive](../research/0086-tiny-ai-sota-deep-dive-2026-05-08.md)
   (LSVQ vs DOVER vs FAST-VQA leaderboard context).
 - ADR-0325 Phase 2 (KonViD-150k) — same adapter shape;
   this LSVQ adapter is a near-mirror modulo dataset specifics.

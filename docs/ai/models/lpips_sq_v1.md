@@ -1,17 +1,19 @@
 <!-- markdownlint-disable MD013 -->
-# LPIPS-SqueezeNet (full-reference perceptual distance)
+# LPIPS-SqueezeNet v1 (`lpips_sq_v1`)
 
-`vmaf_tiny_lpips_sq_v1` — a full-reference perceptual distance metric based on
+`lpips_sq_v1` (display name `vmaf_tiny_lpips_sq_v1`) — a full-reference
+perceptual distance metric based on
 the SqueezeNet variant of **LPIPS** (Learned Perceptual Image Patch
 Similarity). It scores how *perceptually* different a distorted frame looks
 from its reference, using features from a pretrained image classifier that
 humans-in-the-loop were shown to agree with far better than MSE / PSNR on
 distortions that matter for video quality (blocking, ringing, blur, banding).
 
-> LPIPS is the de-facto perceptual baseline in recent image/video-quality
-> literature. We ship SqueezeNet (not VGG or AlexNet) because it is ~70×
-> smaller (724k params, 3.2 MB) than the VGG backbone while retaining
-> competitive human correlation on the standard BAPPS benchmark.
+LPIPS is the de-facto perceptual baseline in recent image/video-quality
+literature. The fork ships SqueezeNet (not VGG or AlexNet) because it is ~70×
+smaller (724k params, 3.2 MB) than the VGG backbone while retaining
+competitive human correlation on the standard BAPPS benchmark. The family
+page is [lpips_sq.md](lpips_sq.md).
 
 ## What the output means
 
@@ -34,7 +36,8 @@ regressor (see [overview.md](../overview.md) capability C1).
 
 | Field | Value |
 | --- | --- |
-| Model name | `vmaf_tiny_lpips_sq_v1` |
+| Registry id | `lpips_sq_v1` |
+| Display name (sidecar `name`) | `vmaf_tiny_lpips_sq_v1` |
 | Location | `model/tiny/lpips_sq.onnx` |
 | Size | 3.2 MB (3 268 579 bytes) |
 | SHA-256 | `1402626680d5b69a793e647edda2c32f04e192f5cf1e7837bec8bde14187a261` |
@@ -42,7 +45,8 @@ regressor (see [overview.md](../overview.md) capability C1).
 | Upstream source | [richzhang/PerceptualSimilarity](https://github.com/richzhang/PerceptualSimilarity) v0.1 (SqueezeNet linear weights) |
 | License | BSD-2-Clause (upstream) |
 | Exporter | `ai/lpips_export.py` |
-| Registry entry | `vmaf_tiny_lpips_sq_v1` in `model/tiny/registry.json` |
+| Registry entry | `lpips_sq_v1` in `model/tiny/registry.json` |
+| Sidecar | `model/tiny/lpips_sq.json` |
 
 The ONNX is deterministic (stripped `doc_string` / `metadata_props` /
 `producer_version`) so the pinned sha256 stays stable across re-exports by
@@ -55,14 +59,14 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --feature lpips \
-    --feature_params lpips:model_path=model/tiny/lpips_sq.onnx \
+    --feature lpips=model_path=model/tiny/lpips_sq.onnx \
     --output score.json
 ```
 
-The `--feature_params` string uses the classic libvmaf option syntax:
-`<feature_name>:<option>=<value>`. The resulting JSON contains per-frame
-`lpips` values under the `frames` array.
+The `--feature` argument has the form `name=option=value`; join several
+options with a colon (`name=opt1=v1:opt2=v2`). There is no
+`--feature_params` option. The resulting JSON contains per-frame `lpips`
+values under the `frames` array.
 
 Alternatively, set the path via environment:
 
@@ -118,6 +122,16 @@ per_frame = fex.results[0].get_ordered_list_scores_key("lpips_scores")
 print("mean LPIPS:", ListStats.nonemean(per_frame))
 ```
 
+## Training and evaluation
+
+The fork does not train or fine-tune this model. The weights are the
+pretrained SqueezeNet backbone and linear calibration layers of upstream
+`richzhang/PerceptualSimilarity` v0.1 (trained by its authors on the BAPPS
+human-judgement dataset), exported to ONNX by `ai/lpips_export.py`. No
+fork-side quality evaluation (correlation against MOS, or comparison with
+VMAF and PSNR on a reference set) has been recorded; the C-side registration
+and option contract is exercised by `core/test/test_lpips.c`.
+
 ## Known limitations
 
 - **High-bit-depth input is RGB8-normalised.** The shipped checkpoint
@@ -132,10 +146,11 @@ print("mean LPIPS:", ListStats.nonemean(per_frame))
   the upstream LPIPS evaluation but may diverge subtly from Netflix's
   bilinear path. Difference is typically <0.01 LPIPS; report cross-tool
   comparisons against the same pipeline.
-- **CPU only today.** The model runs on the ONNX Runtime CPU execution
-  provider. GPU execution providers (CUDA EP / OpenVINO EP) work but are
-  not yet wired through the `libvmaf` dispatch layer — planned under the
-  Wave 1 GPU follow-up.
+- **Execution provider is chosen automatically.** The extractor opens its
+  ONNX Runtime session with the default `auto` device, which tries CUDA,
+  OpenVINO GPU, ROCm, CoreML and then CPU, whichever the linked ONNX Runtime
+  provides. `--tiny-device` selects the provider for `--tiny-model` attaches,
+  not for this extractor. The CPU path always works and is the reference.
 - **No temporal smoothing.** Each frame is scored independently. For
   sequence-level quality, pool with `mean`/`harmonic_mean` at the
   `VmafContext` level.
@@ -166,7 +181,9 @@ model — MobileSal, future MUSIQ, etc.). See
 
 ## See also
 
+- [lpips_sq.md](lpips_sq.md) — LPIPS-Sq family page
 - [overview.md](../overview.md) — where LPIPS fits in the C1–C4 capability map
 - [inference.md](../inference.md) — loading + using tiny models from libvmaf
 - [security.md](../security.md) — ONNX op-allowlist + registry sha256 pinning
-- [benchmarks.md](../benchmarks.md) — LPIPS vs. VMAF vs. PSNR on the reference test set
+- [benchmarks.md](../benchmarks.md) — PLCC/SROCC/RMSE methodology (no LPIPS
+  numbers are recorded there)

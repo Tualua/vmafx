@@ -7,14 +7,24 @@ adaptive encoding pipeline (the second half — per-shot CRF prediction —
 is **T6-3b**, a follow-up that consumes these per-frame probabilities
 through the existing feature collector).
 
-> **Status — real upstream weights (T6-3a-followup).** As of
-> [ADR-0261](../../adr/0261-transnet-v2-real-weights.md) the
-> `model/tiny/transnet_v2.onnx` checkpoint ships verbatim trained
-> weights from upstream
-> [github.com/soCzech/TransNetV2](https://github.com/soCzech/TransNetV2)
-> (Soucek & Lokoc 2020, MIT) wrapped in a thin NTCHW-input adapter.
-> The original placeholder-only design is documented in
-> [ADR-0223](../../adr/0223-transnet-v2-shot-detector.md).
+!!! note "Status: real upstream weights (T6-3a-followup)"
+    As of [ADR-0261](../../adr/0261-transnet-v2-real-weights.md) the
+    `model/tiny/transnet_v2.onnx` checkpoint ships verbatim trained weights
+    from upstream
+    [github.com/soCzech/TransNetV2](https://github.com/soCzech/TransNetV2)
+    (Soucek & Lokoc 2020, MIT) wrapped in a thin NTCHW-input adapter. The
+    original placeholder-only design is documented in
+    [ADR-0223](../../adr/0223-transnet-v2-shot-detector.md).
+
+!!! warning "Known issue: the shipped model does not open on current master"
+    On a CPU build of master, `--feature transnet_v2=model_path=...` stops
+    with `libvmaf ERROR transnet_v2: vmaf_dnn_session_open(...) failed: -34`
+    (`-ERANGE`). The session opener probes the input shape with a rank limit
+    of 4, and this model's input has rank 5 (`[1, 100, 3, 27, 48]`). The
+    exported ONNX graph also names its output `output_0`, while the
+    extractor and the sidecar bind `boundary_logits`. Both are code or
+    export defects, tracked outside this page; the sections below describe
+    the intended contract.
 
 ## What the outputs mean
 
@@ -82,7 +92,8 @@ involved); see `_replace_segmentsum` in `ai/scripts/export_transnet_v2.py`.
 
 ## Op allowlist update
 
-This PR extends `core/src/dnn/op_allowlist.c` with six new ops that
+[ADR-0261](../../adr/0261-transnet-v2-real-weights.md) extended
+`core/src/dnn/op_allowlist.c` with six ops that
 appear in the upstream TransNet V2 graph: `BitShift`, `GatherND`, `Pad`,
 `Reciprocal`, `ReduceProd`, `ScatterND`. Each is a deterministic
 standard ONNX op with bounded runtime cost (no control-flow, no host
@@ -127,7 +138,7 @@ ninja -C core/build-cpu
 # 2. Run the extractor against a clip, supplying the model path.
 core/build-cpu/tools/vmaf \
     --reference ref.yuv --distorted dis.yuv \
-    --width 1920 --height 1080 --pixel_format yuv420p --bitdepth 8 \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --feature transnet_v2=model_path=model/tiny/transnet_v2.onnx
 
 # Or via env var (matches lpips_sq / fastdvdnet_pre):
@@ -194,6 +205,13 @@ print('shape', y.shape, 'mean prob',
 "
 ```
 
+## Evaluation
+
+The only recorded check is numerical parity: the exported ONNX matches the
+upstream TF SavedModel to `< 4e-6` max-abs-diff on 3 random inputs (the exporter
+asserts `< 1e-4`). Shot-boundary quality (F1 or precision/recall on a labelled
+corpus) has not been measured in this repository, and none is hosted.
+
 ## Follow-ups
 
 - **T6-3b**: per-shot CRF predictor consuming `shot_boundary_probability`
@@ -220,4 +238,5 @@ print('shape', y.shape, 'mean prob',
 - [Roadmap §2.4](../roadmap.md) — Wave 1 schedule.
 - [ADR-0215](../../adr/0215-fastdvdnet-pre-filter.md) — sister
   placeholder-ONNX pattern (5-frame window FastDVDnet); its
-  real-weights drop is [ADR-0255](../../adr/0255-fastdvdnet-pre-real-weights.md).
+  real-weights drop is
+  [ADR-0255](../../adr/0255-fastdvdnet-pre-real-weights.md).

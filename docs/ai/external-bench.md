@@ -42,5 +42,16 @@ python3 tools/external-bench/compare.py \
   --out-json /tmp/external-bench.json
 ```
 
+| Flag | Meaning |
+| --- | --- |
+| `--competitors KEY...` | Subset of the competitor keys above; default all four. |
+| `--bvi-dvc-root PATH` | BVI-DVC corpus root (test fold expected at `<root>/test/`). |
+| `--netflix-public-root PATH` | Netflix Public Drop root (`<root>/<src>/{ref,dis}/*.yuv`). |
+| `--out-json PATH` | Write the aggregated comparison as JSON in addition to the table on stdout. |
+| `--limit N` | Truncate the corpus to the first N items, for smoke runs. |
+
+The command exits 4 and prints the expected corpus paths when no corpus is
+found. The fork ships neither corpus.
+
 See [`tools/external-bench/README.md`](../../tools/external-bench/README.md)
 for the full wrapper-only licence boundary and external install steps.

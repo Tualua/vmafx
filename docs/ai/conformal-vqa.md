@@ -9,6 +9,67 @@ class returns "predicted VMAF = 87.3", the conformal wrapper returns
 95 % is a real coverage bound on exchangeable data, not an
 informal confidence statement.
 
+## Run it
+
+`vmaf-tune predict` takes three flags for uncertainty: `--with-uncertainty`,
+`--calibration-sidecar` and `--alpha`. Without a calibration sidecar the wrapper
+degrades to a width-zero interval and `uncertainty.calibrated` in the output is
+`false`.
+
+```bash
+# Baseline — no uncertainty (existing behaviour).
+vmaf-tune predict --source ref.mkv --target-vmaf 92
+
+# With uncertainty + a split-conformal sidecar you created (see below).
+vmaf-tune predict \
+    --source ref.mkv \
+    --target-vmaf 92 \
+    --with-uncertainty \
+    --calibration-sidecar runs/predictor_libx264_calibration.json \
+    --alpha 0.05
+```
+
+Sample JSON output (one residual row, `alpha=0.05`):
+
+```json
+{
+  "verdict": "GOSPEL",
+  "uncertainty": {"enabled": true, "calibrated": true, "alpha": 0.05},
+  "residuals": [
+    {
+      "shot_start": 0,
+      "shot_end": 120,
+      "crf": 23,
+      "predicted_vmaf": 87.30,
+      "measured_vmaf": 86.95,
+      "residual": 0.35,
+      "interval": {"low": 85.21, "high": 89.39, "alpha": 0.05}
+    }
+  ]
+}
+```
+
+No calibration sidecar ships with the repository. Create one from a held-out
+(predictions, targets) sample with `calibrate_split` and
+`save_split_calibration`, then pass it to `--calibration-sidecar`. The Python
+API
+offers the same surface for callers that compose `vmaf-tune` programmatically:
+
+```python
+from vmaftune.conformal import calibrate_split, save_split_calibration
+from vmaftune.predictor import Predictor
+
+# 1. Calibrate against a held-out (predictions, targets) sample.
+cal = calibrate_split(predictions=cal_p, targets=cal_t, alpha=0.05)
+save_split_calibration(cal, "runs/predictor_libx264_calibration.json")
+
+# 2. At inference time:
+predictor = Predictor()
+point, low, high = predictor.predict_vmaf_with_uncertainty(
+    features, crf=23, codec="libx264", calibration=cal,
+)
+```
+
 ## What the wrapper does
 
 `vmaftune.conformal.ConformalPredictor(base, calibration)` takes any
@@ -54,63 +115,6 @@ distribution than the test set, the lower bound silently fails. The
 shipped `coverage_probe()` diagnostic flags the most common form of
 this drift via a `MiscalibrationWarning`.
 
-## CLI usage example
-
-The `vmaf-tune predict` subcommand gains three new flags. Without a
-calibration sidecar the wrapper degrades to a width-zero interval and
-the `uncertainty.calibrated` field in the output is `false`.
-
-```bash
-# Baseline — no uncertainty (existing behaviour).
-vmaf-tune predict --source ref.mkv --target-vmaf 92
-
-# With uncertainty + a shipped split-conformal sidecar.
-vmaf-tune predict \
-    --source ref.mkv \
-    --target-vmaf 92 \
-    --with-uncertainty \
-    --calibration-sidecar model/predictor_libx264_calibration.json \
-    --alpha 0.05
-```
-
-Sample JSON output (one residual row, `alpha=0.05`):
-
-```json
-{
-  "verdict": "GOSPEL",
-  "uncertainty": {"enabled": true, "calibrated": true, "alpha": 0.05},
-  "residuals": [
-    {
-      "shot_start": 0,
-      "shot_end": 120,
-      "crf": 23,
-      "predicted_vmaf": 87.30,
-      "measured_vmaf": 86.95,
-      "residual": 0.35,
-      "interval": {"low": 85.21, "high": 89.39, "alpha": 0.05}
-    }
-  ]
-}
-```
-
-The Python API offers the same surface for callers that compose
-`vmaf-tune` programmatically:
-
-```python
-from vmaftune.conformal import calibrate_split, save_split_calibration
-from vmaftune.predictor import Predictor
-
-# 1. Calibrate against a held-out (predictions, targets) sample.
-cal = calibrate_split(predictions=cal_p, targets=cal_t, alpha=0.05)
-save_split_calibration(cal, "predictor_libx264_calibration.json")
-
-# 2. At inference time:
-predictor = Predictor()
-point, low, high = predictor.predict_vmaf_with_uncertainty(
-    features, crf=23, codec="libx264", calibration=cal,
-)
-```
-
 ## Provenance and constraints
 
 - **Implementation**: pure Python, `tools/vmaf-tune/src/vmaftune/conformal.py`.
@@ -154,22 +158,15 @@ point, low, high = predictor.predict_vmaf_with_uncertainty(
 
 ## Theoretical background
 
-Split conformal was introduced as **inductive conformal prediction**
-in Vovk, Gammerman, Shafer (2005), *Algorithmic Learning in a Random
-World*, Springer (Chapter 2 / Proposition 2.2). The regression-specific
-treatment used here follows Lei, G'Sell, Rinaldo, Tibshirani,
-Wasserman (2018), *Distribution-Free Predictive Inference for
-Regression*, JASA 113(523), 1094-1111 (Theorem 2.2 — finite-sample
-``1 - alpha`` lower bound, ``1 - alpha + 1/(n+1)`` upper bound).
-Romano, Patterson, Candès (2019), *Conformalized Quantile Regression*,
-NeurIPS, generalises the score function to support the locally
-weighted / normalised residual variant. The CV+ form is from Barber,
-Candès, Ramdas, Tibshirani (2021), *Predictive Inference with the
-Jackknife+*, Annals of Statistics 49(1), 486-507 (Theorem 1 — the
-``1 - 2*alpha`` worst-case bound that the implementation tests pin).
+| Method | Reference | Result used here |
+| --- | --- | --- |
+| Inductive (split) conformal prediction | Vovk, Gammerman, Shafer (2005), *Algorithmic Learning in a Random World*, Springer, Chapter 2 / Proposition 2.2 | Origin of the split form. |
+| Regression-specific split conformal | Lei, G'Sell, Rinaldo, Tibshirani, Wasserman (2018), *Distribution-Free Predictive Inference for Regression*, JASA 113(523), 1094-1111 | Theorem 2.2: finite-sample `1 - alpha` lower bound and `1 - alpha + 1/(n+1)` upper bound. |
+| Locally weighted / normalised residual score | Romano, Patterson, Candès (2019), *Conformalized Quantile Regression*, NeurIPS | Generalises the score function. |
+| CV+ / jackknife+ | Barber, Candès, Ramdas, Tibshirani (2021), *Predictive Inference with the Jackknife+*, Annals of Statistics 49(1), 486-507 | Theorem 1: the `1 - 2*alpha` worst-case bound that the implementation tests pin. |
 
-The full proof of marginal validity is reproduced in the module
-docstring at `tools/vmaf-tune/src/vmaftune/conformal.py`.
+The full proof of marginal validity is reproduced in the module docstring of
+`tools/vmaf-tune/src/vmaftune/conformal.py`.
 
 ## Cross-references
 

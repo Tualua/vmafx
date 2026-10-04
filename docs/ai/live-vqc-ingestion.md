@@ -114,6 +114,7 @@ via curl (resumable, with a 120-second per-clip timeout).
 | `--live-vqc-dir` | `.corpus/live-vqc/` | Local working directory |
 | `--manifest-csv` | `<dir>/manifest.csv` | MOS manifest path |
 | `--clips-subdir` | `clips` | Sub-directory for video files |
+| `--clip-suffix` | `.mp4` | Default extension appended to bare-stem filenames |
 | `--output` | `<dir>/live_vqc.jsonl` | Output JSONL path |
 | `--manifest-out` | `<output>.manifest.json` | Replay manifest JSON sidecar |
 | `--max-rows` | `200` | Cap on rows ingested (laptop-class subset) |

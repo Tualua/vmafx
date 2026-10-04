@@ -12,7 +12,8 @@
 > [`saliency_student_v2`](models/saliency_student_v2.md), the
 > fork-trained DUTS student
 > ([ADR-0364](../adr/0364-saliency-student-v2-resize-decoder.md)).
-> See [the model card's "When to use this" section](models/u2netp_mirror_card.md#6-when-to-use-this)
+> See [the model card's "When to use this"
+section](models/u2netp_mirror_card.md#6-when-to-use-this)
 > for the cases where this mirror is the right choice instead.
 
 This page is the operator-facing complement to the model card
@@ -33,12 +34,9 @@ Release asset attached to the VMAFx/vmafx repository:
 | Asset filenames | `u2netp_mirror_v<N>.onnx` (binary)                             |
 |                 | `u2netp_mirror_v<N>.onnx.bundle` (Sigstore signature bundle)   |
 |                 | `Apache-2.0-u2netp.txt` (license text + attribution block)     |
-| In-tree path    | `model/u2netp_mirror.onnx` (gitignored; conventionally where
+| In-tree path    | `model/u2netp_mirror.onnx` (gitignored; where the operator drops the downloaded asset for the C-side loader) |
 
-                    the operator drops the downloaded asset for the C-side loader
-                    to find) |
-
-If the upstream upstream itself ever cuts a GitHub release with
+If upstream itself ever cuts a GitHub release with
 the weights as an artefact, prefer fetching from upstream
 directly — the fork's mirror exists because no such release
 exists today. See `gh api repos/xuebinqin/U-2-Net/releases`.
@@ -162,18 +160,12 @@ install -m 0644 u2netp_mirror_v1.onnx \
   /path/to/VMAFx/vmafx/model/u2netp_mirror.onnx
 ```
 
-Loading the model from C-side `feature_mobilesal.c` requires
-either:
+The C-side `feature_mobilesal.c` loads the model by one of two routes:
 
-(a) A registry follow-up PR registering `u2netp_mirror_v1` in
-`model/tiny/registry.json` as an alternative weights drop-in.
-The C-side extractor is unchanged — it loads whichever ONNX
-the registry resolves to. *(This follow-up is filed but not
-bundled with the scaffold PR.)*
-
-(b) Manual override via the existing model-resolver path —
-useful for ad-hoc evaluation without flipping the default.
-See [`docs/ai/model-registry.md`](model-registry.md).
+| Option | When | Steps |
+| --- | --- | --- |
+| (a) Registry entry | You want the mirror as an alternative weights drop-in | A follow-up PR registers `u2netp_mirror_v1` in `model/tiny/registry.json`. The C-side extractor is unchanged and loads whichever ONNX the registry resolves to. This follow-up is filed but not bundled with the scaffold PR. |
+| (b) Manual override | Ad-hoc evaluation without flipping the default | Use the existing model-resolver path. See [`docs/ai/model-registry.md`](model-registry.md). |
 
 For table-side experiments before any registry promotion, point the saliency
 materializer at the verified ONNX and record the candidate id explicitly:

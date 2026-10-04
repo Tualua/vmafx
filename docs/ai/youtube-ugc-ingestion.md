@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD060 -->
 # YouTube UGC -> MOS-corpus JSONL ingestion
 
-The fork's `nr_metric_v1` tiny no-reference VQA model is trained
-on a union of MOS-corpus shards. This page documents the
+This page documents how to build the YouTube UGC MOS-corpus shard
+consumed by the fork's no-reference and MOS-head trainers. It covers the
 YouTube UGC shard ingestion adapter
 (`ai/scripts/youtube_ugc_to_corpus_jsonl.py`, ADR-0413).
 
@@ -54,14 +54,6 @@ If the manifest CSV does not carry a URL column (the canonical
 download URL from `--bucket-prefix` (default
 `https://storage.googleapis.com/ugc-dataset/original_videos/`).
 
-The separate VP9 compressed subset helper
-`ai/scripts/fetch_youtube_ugc_subset.py` keeps its existing `--manifest`
-stem-to-files JSON for downstream consumers and writes a run sidecar at
-`<manifest>.run-manifest.json` by default. Pass `--run-manifest-out PATH` for a
-dated experiment bundle. The run sidecar records the GCS listing URL, smallest
-complete-4tuple selection policy, selected file sizes, output directory, and
-ADR-0661 `run_provenance`.
-
 ## Whole-corpus ingestion
 
 ```bash
@@ -73,6 +65,22 @@ canonical original-videos manifest. The run is resumable:
 `Ctrl-C` mid-download is safe, and re-running picks up from
 `.corpus/youtube-ugc/.download-progress.json` (atomic
 tempfile-rename writes).
+
+## Compressed VP9 subset helper
+
+A separate helper, `ai/scripts/fetch_youtube_ugc_subset.py`, downloads the
+VP9 compressed subset. It is not part of the adapter run above.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--out-dir` | required | Directory the downloaded mp4/webm files go into |
+| `--n-stems` | `30` | Pick the N smallest complete 4-tuple stems |
+| `--manifest` | required | Output JSON manifest (stem to `{orig,cbr,vod,vodlb}`); keeps its existing shape for downstream consumers |
+| `--run-manifest-out` | `<manifest>.run-manifest.json` | Run sidecar; point it into a dated experiment bundle if needed |
+
+The run sidecar records the GCS listing URL, the smallest-complete-4tuple
+selection policy, selected file sizes, output directory, and ADR-0661
+`run_provenance`.
 
 ## Output schema
 
@@ -148,31 +156,24 @@ to `Gaming_720P-25aa_orig.mp4` by appending `--clip-suffix`
 
 ## Operator flags
 
-```text
---ugc-dir PATH                Working dir (default: .corpus/youtube-ugc/)
---manifest-csv PATH           Path to manifest CSV (default: <dir>/manifest.csv)
---progress-path PATH          Resumable state file
-                              (default: <dir>/.download-progress.json)
---clips-subdir NAME           Subdir for clips (default: clips)
---clip-suffix EXT             Default file suffix (default: .mp4)
---bucket-prefix URL           Public bucket URL prefix used to synthesise
-                              download URLs when manifest lacks a `url` column
-                              (default: original_videos/ on ugc-dataset bucket)
---output PATH                 Output JSONL (default: <dir>/youtube-ugc.jsonl)
---manifest-out PATH           Replay manifest JSON sidecar
-                              (default: <output>.manifest.json)
---ffprobe-bin BIN             ffprobe binary (default: $FFPROBE_BIN or ffprobe)
---curl-bin BIN                curl binary (default: $CURL_BIN or curl)
---corpus-version STR          Dataset version (default: ugc-2019-orig;
-                              pass ugc-2020-transcoded-mean for the
-                              transcoded-mean variant)
---attrition-warn-threshold F  Advisory failure-rate floor (default: 0.10)
---download-timeout-s N        Per-clip curl --max-time (default: 300;
-                              UGC clips are large)
---max-rows N                  Row cap (default: 300; laptop-class subset)
---full                        Disable --max-rows cap; ingest whole CSV
---log-level LEVEL             DEBUG / INFO / WARNING / ERROR
-```
+| Flag | Default | Meaning |
+|---|---|---|
+| `--ugc-dir` | `.corpus/youtube-ugc/` | Working directory |
+| `--manifest-csv` | `<dir>/manifest.csv` | Path to the manifest CSV |
+| `--progress-path` | `<dir>/.download-progress.json` | Resumable state file |
+| `--clips-subdir` | `clips` | Subdirectory for clips |
+| `--clip-suffix` | `.mp4` | Default file suffix |
+| `--bucket-prefix` | `original_videos/` on the ugc-dataset bucket | Public bucket URL prefix used to synthesise download URLs when the manifest lacks a `url` column |
+| `--output` | `<dir>/youtube-ugc.jsonl` | Output JSONL |
+| `--manifest-out` | `<output>.manifest.json` | Replay manifest JSON sidecar |
+| `--ffprobe-bin` | `$FFPROBE_BIN` or `ffprobe` | ffprobe binary |
+| `--curl-bin` | `$CURL_BIN` or `curl` | curl binary |
+| `--corpus-version` | `ugc-2019-orig` | Dataset version; pass `ugc-2020-transcoded-mean` for the transcoded-mean variant |
+| `--attrition-warn-threshold` | `0.10` | Advisory failure-rate floor |
+| `--download-timeout-s` | `300` | Per-clip `curl --max-time` seconds (UGC clips are large) |
+| `--max-rows` | `300` | Row cap (laptop-class subset) |
+| `--full` | off | Disable the `--max-rows` cap; ingest the whole CSV |
+| `--log-level` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
 
 The replay manifest records the UGC working directory, manifest/progress paths,
 row cap, attrition counters, effective corpus version, and ADR-0661
@@ -196,14 +197,16 @@ row cap, attrition counters, effective corpus version, and ADR-0661
 
 YouTube UGC is Creative Commons Attribution. This fork ships
 the adapter and the schema in tree, but **never** the raw clips,
-the per-clip MOS values, or any derived feature cache. Only the
-trained `nr_metric_v1_*.onnx` weights ship, with CC-BY
+the per-clip MOS values, or any derived feature cache. Only trained
+model weights derived from the corpus can ship, with CC-BY
 attribution travelling alongside.
 
 ## Related
 
-- [ADR-0413: YouTube UGC corpus ingestion](../adr/0413-youtube-ugc-corpus-ingestion.md).
-- [Research-0091: YouTube UGC corpus feasibility](../research/0091-youtube-ugc-corpus-feasibility.md).
+- [ADR-0413: YouTube UGC corpus
+  ingestion](../adr/0413-youtube-ugc-corpus-ingestion.md).
+- [Research-0091: YouTube UGC corpus
+  feasibility](../research/0091-youtube-ugc-corpus-feasibility.md).
 - [ADR-0367](../adr/0367-lsvq-corpus-ingestion.md) (LSVQ) —
   same adapter shape; this YouTube UGC adapter is a near-mirror
   modulo dataset specifics + the synthesised-bucket-URL path.

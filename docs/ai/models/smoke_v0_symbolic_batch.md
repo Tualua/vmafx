@@ -6,7 +6,8 @@
 
 `smoke_v0_symbolic_batch` is a minimal ONNX graph (opset 17) whose input shape
 declares a symbolic batch dimension (`dim_param="batch"`, surfaced by ORT as
-`-1` or `0`). It was introduced under [ADR-0524](../../adr/0524-tiny-model-loader-symbolic-batch-dim.md)
+`-1` or `0`). It was introduced under
+[ADR-0524](../../adr/0524-tiny-model-loader-symbolic-batch-dim.md)
 to verify that `dnn_attach_api.c` and `dnn_api.c` accept symbolic batch inputs
 and fold them to batch size 1 rather than rejecting them with `-ENOTSUP`.
 
@@ -18,12 +19,13 @@ and fold them to batch size 1 rather than rejecting them with `-ENOTSUP`.
 | Location | `model/tiny/smoke_v0_symbolic_batch.onnx` |
 | Architecture | Identity mapping with dynamic batch axis |
 | Trainable parameters | 0 |
-| Input | `features` — float32 `["batch", 1, 4, 4]` |
-| Output | `score` — float32 `["batch", 1]` |
+| Training | None: an Identity graph with no weights |
+| Input | `frame` — float32 `["batch", 1, 4, 4]` |
+| Output | `score` — float32 `["batch", 1, 4, 4]` |
 | ONNX opset | 17 |
 | License | BSD-2-Clause-Patent |
 | Registry entry | `smoke_v0_symbolic_batch` in `model/tiny/registry.json` (`"smoke": true`) |
-| SHA-256 | `ae850f00f074d28fe78df589e36506d396a6ff8bf9262f27b9c92257fa53a8a3` |
+| SHA-256 | `cc1a75a7518b27cdfc9df481bb1282950cc51fe7ef6f62c5dbccb106b73cc509` |
 
 ## Purpose
 

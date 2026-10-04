@@ -6,12 +6,15 @@ five `fr_regressor_v2_ensemble_v1_seed{0..4}` members of the deep
 ensemble, including how to interpret the verdict and how to roll
 back if the registry was flipped prematurely.
 
-- **Parent design**: [ADR-0272](../adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
+- **Parent design**:
+  [ADR-0272](../adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
   (codec-aware scaffold).
-- **Gate definition**: [ADR-0303](../adr/0303-fr-regressor-v2-ensemble-prod-flip.md)
+- **Gate definition**:
+  [ADR-0303](../adr/0303-fr-regressor-v2-ensemble-prod-flip.md)
   (ensemble production-flip trainer + CI gate — `mean(PLCC) ≥ 0.95`
   AND `max(PLCC) - min(PLCC) ≤ 0.005`).
-- **Harness scope**: [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
+- **Harness scope**:
+  [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
   (this runbook's PR — wrapper script + validator + verdict files;
   registry flip is a separate follow-up PR).
 
@@ -30,10 +33,9 @@ back if the registry was flipped prematurely.
 | Wall time         | ~3–5 h Phase A (RTX 4090) **plus** 6–12 h LOSO retrain (8 GB GPU, 5 seeds × 9 folds sequential) |
 | Python deps       | `ai/pyproject.toml` editable install (`pip install -e ai/`)                                     |
 
-The YUV corpus is gitignored — it was provided locally by lawrence on
-2026-04-27 (memory-pinned in
-`feedback_netflix_training_corpus_local`). Do **not** check it in.
-The Phase A JSONL is also gitignored (it lives under `runs/`).
+The YUV corpus is gitignored. Obtain the Netflix Public Dataset locally (see
+[training-data.md](training-data.md)) and do not check it in. The Phase A JSONL
+is also gitignored (it lives under `runs/`).
 
 ---
 
@@ -41,19 +43,19 @@ The Phase A JSONL is also gitignored (it lives under `runs/`).
 
 ### 0. Generate the Phase A canonical-6 corpus
 
-The trainer (`ai/scripts/train_fr_regressor_v2_ensemble_loso.py`)
-consumes a **per-frame canonical-6 JSONL**, not raw YUVs. The
-producer is `scripts/dev/hw_encoder_corpus.py` (PR #392), which
-emits one source × one encoder × N CQs per call. Loop over the 9
-Netflix sources × {`h264_nvenc`, `h264_qsv`} × CQs ∈ {19, 25, 31,
-37}, then concatenate the per-call JSONLs into the canonical
-location (~33,840 rows total per Research-0075).
+The trainer (`ai/scripts/train_fr_regressor_v2_ensemble_loso.py`) consumes a
+per-frame canonical-6 JSONL, not raw YUVs. Three facts frame this step:
 
-The producer returns non-zero if any requested CQ fails to encode, decode,
-score, or emit canonical metric rows. It may retain successful rows from the
-same invocation for diagnosis, but callers must treat that non-zero status as
-an incomplete corpus and must not concatenate the part until the failed CQ is
-rerun successfully.
+- **Input.** 9 Netflix sources, each encoded with {`h264_nvenc`, `h264_qsv`} at
+  CQs {19, 25, 31, 37}. About 33,840 rows in total (Research-0075).
+- **Producer.** `scripts/dev/hw_encoder_corpus.py` (PR #392) emits one source,
+  one encoder and N CQs per call. Loop over the combinations and concatenate the
+  per-call JSONLs into the canonical location.
+- **Failure rule.** The producer returns non-zero if any requested CQ fails to
+  encode, decode, score or emit canonical metric rows. It may keep successful
+  rows from the same call for diagnosis, but a non-zero status means an
+  incomplete corpus. Do not concatenate that part until the failed CQ has been
+  rerun successfully.
 
 If the JSONL already exists from a previous run, skip this step
 and jump to step 1. The JSONL is gitignored and lives under
@@ -226,7 +228,8 @@ If the registry was flipped prematurely (i.e. before a passing
 
 1. **Revert the flip commit** — `git revert <flip-sha>` from `master`
    via a fresh PR. Direct push to `master` is host-blocked
-   (CLAUDE §12 r2 + ADR-0037).
+   (rule 2 of the [agent hard rules](../development/agent-hard-rules.md) and
+   ADR-0037).
 2. **Verify the registry** — `python ai/scripts/validate_model_registry.py`
    should pass; the five rows must read `"smoke": true` again.
 3. **Verify the C-side ORT loader** — re-run
@@ -256,7 +259,9 @@ If the registry was flipped prematurely (i.e. before a passing
   hyperparameters.
 - [`scripts/ci/ensemble_prod_gate.py`](../../scripts/ci/ensemble_prod_gate.py) —
   single source of truth for the threshold constants.
-- [`ai/scripts/run_ensemble_v2_real_corpus_loso.sh`](../../ai/scripts/run_ensemble_v2_real_corpus_loso.sh) —
+- [`ai/scripts/run_ensemble_v2_real_corpus_loso.sh`](../../ai/scripts/run_ensemble_v2_real_corpus_loso.sh)
+  —
   the wrapper this runbook drives.
-- [`ai/scripts/validate_ensemble_seeds.py`](../../ai/scripts/validate_ensemble_seeds.py) —
+- [`ai/scripts/validate_ensemble_seeds.py`](../../ai/scripts/validate_ensemble_seeds.py)
+  —
   the validator that emits `PROMOTE.json` / `HOLD.json`.

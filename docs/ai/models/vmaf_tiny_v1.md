@@ -23,12 +23,14 @@ LOSO baseline* referenced in
 | Location | `model/tiny/vmaf_tiny_v1.onnx` |
 | Architecture | `mlp_small` — Linear(6, 16) → ReLU → Linear(16, 8) → ReLU → Linear(8, 1) |
 | Trainable parameters | **257** |
-| Input | `features` — float32 `[N, 6]`, dynamic batch |
+| Input | `input` — float32 `[batch, 6]`, dynamic batch |
 | Feature order | `adm2, vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2` |
-| Output | `vmaf` — float32 `[N]` |
+| Output | `score` — float32 `[batch, 1]` |
+| Ops | `Gemm`, `Relu` (no scaler in the graph) |
+| Sidecar | none ships; only the ONNX and its `.data` file |
 | ONNX opset | 17 |
 | License | BSD-2-Clause-Patent |
-| Registry entry | `vmaf_tiny_v1` in `model/tiny/registry.json` |
+| Registry entry | `vmaf_tiny_v1` in `model/tiny/registry.json` (`"smoke": true`) |
 | SHA-256 | `d30201dfa8a0cb1d6d5bbe342b0f9049e40bf86e57b2e3b14cbfcade9231e7a6` |
 
 > **Note on external data.** The ONNX file uses the ONNX external-data
@@ -74,18 +76,31 @@ vmaf \
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --model version=vmaf_v0.6.1 \
     --tiny-model model/tiny/vmaf_tiny_v1.onnx \
     --json --output /tmp/vmaf_tiny_v1.json
 ```
+
+The tiny model is attached alongside the classic model and its score is added
+under the feature name `vmaf_tiny_model` (there is no sidecar `name`).
+
+!!! warning "The same run must compute the input features"
+    A tiny feature-vector model reads its input features (`adm2`,
+    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
+    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
+    request them with `--feature adm --feature vif --feature motion`.
+    A feature that is missing is read as `0.0` without a warning, and with only
+    the default `vmaf_v1.0.16_3d0h` model the tiny model returns one constant
+    value for every frame.
 
 ## Known limitations
 
 - Trained on Netflix Public Dataset only — limited generalization to
   UGC content relative to the 4-corpus v2 checkpoint.
-- StandardScaler is **not** baked into the ONNX graph (unlike v2+).
-  A separate scaler artefact is required for standalone ORT inference
-  outside the libvmaf DNN integration path; the C integration path
-  handles this transparently.
+- StandardScaler is **not** baked into the ONNX graph (unlike v2+), and no
+  sidecar carrying the scaler statistics ships. libvmaf therefore feeds the raw
+  features, so scores from `--tiny-model` are not scaler-corrected: treat v1 as
+  a fixture, not as a calibrated estimator.
 - Uses ONNX external-data format; both `vmaf_tiny_v1.onnx` and
   `vmaf_tiny_v1.onnx.data` must be co-located.
 - Superseded by `vmaf_tiny_v2` for accuracy (PLCC improvement of

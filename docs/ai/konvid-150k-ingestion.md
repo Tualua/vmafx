@@ -5,35 +5,24 @@ is a ~150 000-clip user-generated-video corpus with crowdsourced
 subjective Mean Opinion Scores. The VMAFx fork uses it as **Phase 2**
 of the ADR-0325 KonViD ingestion plan: the full-scale follow-on to the
 1 200-clip Phase 1 predecessor (see
-[`konvid-1k-ingestion.md`](konvid-1k-ingestion.md)). At ~120–200 GB of
-working-set disk and hours-to-days of download wall-clock, this path
-needs three things the Phase 1 path does not — resumable downloads,
-attrition tolerance, and an `"ugc-mixed"` encoder slot — all detailed
-below.
+[`konvid-1k-ingestion.md`](konvid-1k-ingestion.md)).
 
-## Corpus availability (status 2026-05-15)
+At ~120–200 GB of working-set disk and hours-to-days of download
+wall-clock, this path needs three things the Phase 1 path does not:
 
-The corpus is **materialized locally** at `.corpus/konvid-150k/`
-(gitignored, ~179 GB). Inventory:
+- resumable downloads (section 5);
+- attrition tolerance (section 6);
+- an `"ugc-mixed"` encoder slot (section 8).
 
-| Artefact | Size | Purpose |
-| --- | --- | --- |
-| `clips/` | ~150 GB | 307 682 extracted MP4 files |
-| `k150ka_scores.csv` | 4.9 MB | k150k-A score-drop |
-| `k150kb_scores.csv` | 59 KB | k150k-B score-drop |
-| `k150ka_votes.csv` | 94 MB | per-vote raw data (A) |
-| `k150kb_votes.csv` | 28 MB | per-vote raw data (B) |
-| `konvid_150k.jsonl` | 64 MB | corpus JSONL (Phase 2 adapter output) |
-| `manifest.csv` | 4.9 MB | corpus manifest |
-| `k150ka_extracted/` + `k150kb_extracted/` | ~8 GB | extracted-frame fixtures |
+## Status
 
-[ADR-0325](../adr/0325-konvid-150k-corpus-ingestion.md) flipped to
-`Accepted` on 2026-05-15 once availability was confirmed. Phase 3
-(real-corpus MOS head training) is the next gate; tracked under
-[ADR-0336](../adr/0336-konvid-mos-head-v1.md). `train_konvid_mos_head.py`
-is unblocked and queued behind the in-flight CHUG feature extraction's
-GPU usage; once the GPU frees up, the production-flip gate (`PLCC ≥ 0.85`
-mean, `SROCC ≥ 0.82`, `RMSE ≤ 0.45`) gets run.
+[ADR-0325](../adr/0325-konvid-150k-corpus-ingestion.md) is `Accepted`
+(2026-05-15). Phase 3 (real-corpus MOS head training) is the next gate,
+tracked under [ADR-0336](../adr/0336-konvid-mos-head-v1.md). The shipped
+head is still a synthetic-corpus placeholder (see
+[konvid_mos_head_v1](models/konvid_mos_head_v1.md)); the production-flip gate
+(`PLCC >= 0.85` mean, `SROCC >= 0.82`, `RMSE <= 0.45`) is run when a
+real-corpus training pass completes.
 
 See [ADR-0325](../adr/0325-konvid-150k-corpus-ingestion.md) for the
 two-phase decision and
@@ -140,17 +129,24 @@ layout under `.corpus/konvid-150k/`:
 python ai/scripts/konvid_150k_to_corpus_jsonl.py
 ```
 
-Default output path is `.corpus/konvid-150k/konvid_150k.jsonl`.
-Override with `--output`. The adapter writes `<output>.manifest.json` by
-default; pass `--manifest-out PATH` when the replay sidecar should live in
-a dated experiment bundle. Override the input root with `--konvid-dir`.
-Passing `--manifest-csv` is strict: if that explicit file is missing,
-the script fails instead of falling back to split CSV discovery. This
-catches typoed manifest paths. Override the curl / ffprobe binaries
-with `--curl-bin` / `--ffprobe-bin` (also picked up from `$CURL_BIN` /
-`$FFPROBE_BIN`). Override the resumable-state path with
-`--progress-path`. The replay manifest records those source paths, row
-caps, attrition counters, and ADR-0661 `run_provenance`.
+The default output is `.corpus/konvid-150k/konvid_150k.jsonl`. The adapter
+writes `<output>.manifest.json` next to it. The replay manifest records the
+source paths, row caps, attrition counters and ADR-0661 `run_provenance`.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--konvid-dir` | `.corpus/konvid-150k/` | Input root |
+| `--manifest-csv` | `<konvid-dir>/manifest.csv` | Manifest CSV; strict: an explicit file that is missing fails the run instead of falling back to split CSV discovery (catches typoed paths) |
+| `--clips-subdir` | `clips` | Subdirectory for downloaded clips |
+| `--output` | `.corpus/konvid-150k/konvid_150k.jsonl` | Output JSONL |
+| `--manifest-out` | `<output>.manifest.json` | Replay sidecar; point it into a dated experiment bundle if needed |
+| `--progress-path` | `<konvid-dir>/.download-progress.json` | Resumable-state file |
+| `--curl-bin` | `$CURL_BIN` or `curl` | curl binary |
+| `--ffprobe-bin` | `$FFPROBE_BIN` or `ffprobe` | ffprobe binary |
+| `--download-timeout-s` | `120` | Per-clip `curl --max-time` seconds |
+| `--attrition-warn-threshold` | `0.10` | Download-failure fraction that triggers a WARNING |
+| `--corpus-version` | `konvid-150k-2019` | Dataset version string |
+| `--log-level` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
 
 The summary line lands on stderr on completion:
 
@@ -186,11 +182,12 @@ States and their re-run semantics:
 | `done`    | no      | Re-download (file went missing)      |
 | `failed`  | n/a     | **Skip; do not retry**               |
 
-The `failed` state is non-retriable on purpose — repeatedly hammering
-a 404 / takedown wastes bandwidth and slows convergence. To force a
-retry of every previously-failed clip, delete `.download-progress.json`
-before re-running. To selectively retry, hand-edit the JSON and remove
-the failed entries.
+!!! warning
+    The `failed` state is non-retriable on purpose: repeatedly hammering
+    a 404 / takedown wastes bandwidth and slows convergence. To force a
+    retry of every previously-failed clip, delete `.download-progress.json`
+    before re-running. To selectively retry, hand-edit the JSON and remove
+    the failed entries.
 
 ## 6. Attrition handling (~5–8 % expected)
 
@@ -248,11 +245,12 @@ year, overridable via `--corpus-version`). Phase 1 and Phase 2 JSONLs
 can be concatenated and consumed by a single trainer; the `corpus`
 column carries the shard identity for downstream analysis.
 
-The schema is **disjoint** from the existing vmaf-tune Phase A
-`CORPUS_ROW_KEYS` row (no `vmaf_score`, `encoder`, `preset`, `crf`).
-The two corpora are merged at the trainer level in Phase 3 — not at
-the JSONL level — because their natural keys differ. See the Phase 1
-docs page for the full rationale.
+!!! note
+    The schema is **disjoint** from the existing vmaf-tune Phase A
+    `CORPUS_ROW_KEYS` row (no `vmaf_score`, `encoder`, `preset`, `crf`).
+    The two corpora are merged at the trainer level in Phase 3, not at
+    the JSONL level, because their natural keys differ. See the Phase 1
+    docs page for the full rationale.
 
 ## 8. Encoder vocabulary preparation
 
@@ -293,33 +291,41 @@ under one second and require neither curl, ffprobe, nor the corpus.
 
 ## 11. Operational notes
 
-- **Resume is silent and lossless.** A `Ctrl-C` mid-download is safe:
-  the in-flight `*.part` file is deleted on next-run start, the
-  progress JSON was last flushed at most 50 clips ago, and the JSONL
-  uses `src_sha256`-keyed dedup so a re-run cannot double-emit.
-- **Atomic state file.** `.download-progress.json` is written via
-  tempfile + `os.replace` — the operator never observes a half-written
-  state file even on `kill -9`.
-- **Failed-clip retry policy.** A `failed` entry stays `failed` until
-  the operator deletes it (or the entire JSON). Rationale: most
-  `failed` reasons are content takedowns that will never resolve.
-- **CSV column-name aliases.** The manifest CSV has shipped under
-  varying spellings (`MOS` vs `mos`, `SD` vs `mos_std`, `n` vs
-  `num_ratings`, `file_name` vs `video_name`, `url` vs `download_url`).
-  The adapter accepts every spelling that has shipped to date; if a
-  new release adds an alias, edit `_CSV_*_KEYS` at the top of the
-  script.
-- **Split score-drop aliases.** `k150ka_scores.csv` commonly carries
-  `video_name,video_score`; `k150kb_scores.csv` commonly carries
-  `video_name,mos,video_score`. Both are accepted. Split rows have no
-  URL, per-row standard deviation, or rating count in the score CSVs.
-  The internal download field is empty, and the emitted JSONL records
-  `mos_std_dev = 0.0` and `n_ratings = 0`.
-- **License posture.** Per ADR-0325 §License, neither the clips, the
-  per-clip MOS values, nor the JSONL itself ship in the repo. Only the
-  ingestion script, this docs page, and the schema definition are
-  in-tree. Trained model weights derived from the corpus are
-  redistributable; per-clip data is not.
+### Resume
+
+A `Ctrl-C` mid-download is safe and lossless. The in-flight `*.part` file
+is deleted on next-run start, the progress JSON was last flushed at most 50
+clips ago, and the JSONL uses `src_sha256`-keyed dedup so a re-run cannot
+double-emit.
+
+### State file
+
+`.download-progress.json` is written via tempfile + `os.replace`, so the
+operator never observes a half-written state file even on `kill -9`.
+
+A `failed` entry stays `failed` until the operator deletes it (or the entire
+JSON). Rationale: most `failed` reasons are content takedowns that will never
+resolve.
+
+### CSV column aliases
+
+The manifest CSV has shipped under varying spellings (`MOS` vs `mos`, `SD`
+vs `mos_std`, `n` vs `num_ratings`, `file_name` vs `video_name`, `url` vs
+`download_url`). The adapter accepts every spelling that has shipped to date;
+if a new release adds an alias, edit `_CSV_*_KEYS` at the top of the script.
+
+`k150ka_scores.csv` commonly carries `video_name,video_score`;
+`k150kb_scores.csv` commonly carries `video_name,mos,video_score`. Both are
+accepted. Split rows have no URL, per-row standard deviation, or rating count
+in the score CSVs. The internal download field is empty, and the emitted JSONL
+records `mos_std_dev = 0.0` and `n_ratings = 0`.
+
+### Licence
+
+Per ADR-0325 §License, neither the clips, the per-clip MOS values, nor the
+JSONL itself ship in the repo. Only the ingestion script, this docs page, and
+the schema definition are in-tree. Trained model weights derived from the
+corpus are redistributable; per-clip data is not.
 
 ## 12. Next phase
 

@@ -4,16 +4,18 @@
 exercises the bilinear-resize-then-conv decoder pattern admitted by
 [ADR-0258](../../adr/0258-onnx-allowlist-resize.md). It ships as a
 parallel artefact alongside [`saliency_student_v1`](saliency_student_v1.md)
-under `model/tiny/`. v1 remains the production weights for the C-side
-`mobilesal` extractor; v2 is staged for a future production-flip PR
-after empirical validation in real ROI encodes.
+under `model/tiny/`. v2 is the production default weights for the C-side
+`mobilesal` extractor since 2026-05-15
+([ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md)); v1
+is the superseded baseline.
 
 > **Status — Production (default 2026-05-15).** Promoted to production
 > default for the `mobilesal` extractor; supersedes `saliency_student_v1`
 > (IoU 0.7105 vs 0.6558, +8.3%). See
 > [ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md),
 > [ADR-0364](../../adr/0364-saliency-student-v2-resize-decoder.md),
-> and [Research-0089](../../research/0089-saliency-student-v2-resize-decoder.md).
+> and
+[Research-0089](../../research/0089-saliency-student-v2-resize-decoder.md).
 
 ## What changed vs v1
 
@@ -95,10 +97,12 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --feature mobilesal \
-    --feature_params mobilesal:model_path=model/tiny/saliency_student_v2.onnx \
+    --feature mobilesal=model_path=model/tiny/saliency_student_v2.onnx \
     --output score.json
 ```
+
+The `--feature` argument has the form `name=option=value` (colon-separated for
+several options); there is no `--feature_params` option.
 
 Equivalently, set the model path via env var:
 
@@ -166,13 +170,19 @@ regression baselines and backwards compatibility.
 
 Inherited from v1:
 
-- 8-bit YUV only (10-bit gated on the LPIPS loader path).
+- 8-bit YUV only (wider depths would need retraining and are not planned,
+  ADR-0613).
 - BT.709 limited-range Y'CbCr → RGB at the C side.
 - ~124 K parameters is well below upstream u2netp (~4.7 M).
 - 5 % held-out validation only; external evaluation is a follow-up.
 
 Specific to v2:
 
+- **Frame size must be a multiple of 8**: the U-Net has three pooling stages,
+  so a width or height that is not divisible by 8 fails at run time with an
+  ONNX Runtime `Concat` dimension mismatch (for example a 576x324 clip, since
+  324 / 8 is not an integer; 1920x1080 and 1280x720 work). Scale or crop the
+  input first.
 - The "Resize + 3×3 Conv" pattern adds ~10 K parameters vs v1
   (3×3 vs 2×2 kernel). Inference latency at 256×256 is within
   measurement noise of v1 on RTX 4090 / Intel Xeon.
@@ -185,11 +195,10 @@ Specific to v2:
 
 ## Related
 
-- [`saliency_student_v1.md`](saliency_student_v1.md) — production
-  weights for the `mobilesal` extractor; v2 is the architectural
-  successor.
+- [`saliency_student_v1.md`](saliency_student_v1.md) — superseded baseline
+  (ADR-0286); v2 is its architectural successor and the production default.
 - [`mobilesal.md`](mobilesal.md) — the C-side extractor wiring;
-  unchanged by this PR.
+  unchanged by the v2 weights.
 - [ADR-0258](../../adr/0258-onnx-allowlist-resize.md) — admits
   `Resize` to the allowlist.
 - [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)

@@ -46,18 +46,23 @@ exceeds its budget — useful for ad-hoc CI. The default mode is
 
 ## Running it
 
-```bash
-# CUDA EP needs the bundled CUDA-12 ABI .so files on LD_LIBRARY_PATH;
-# our system has CUDA 13 installed but ORT-GPU 1.25 wheels expect 12.
-SP="$VIRTUAL_ENV/lib/python3.14/site-packages/nvidia"
-export LD_LIBRARY_PATH="$SP/cublas/lib:$SP/cudnn/lib:$SP/cuda_nvrtc/lib:$SP/cuda_runtime/lib:$SP/cufft/lib:$SP/curand/lib:$SP/cusolver/lib:$SP/cusparse/lib:$SP/cuda_cupti/lib:$SP/nvtx/lib:$SP/nvjitlink/lib"
+1. CUDA EP needs the bundled CUDA-12 ABI `.so` files on `LD_LIBRARY_PATH`. The
+   test system has CUDA 13 installed, but the ORT-GPU 1.25 wheels expect 12:
 
-python ai/scripts/measure_quant_drop_per_ep.py \
-    --eps cpu cuda openvino \
-    --extra-fp32 vmaf_tiny_v1.onnx vmaf_tiny_v1_medium.onnx \
-    --openvino-device GPU.0 \
-    --out runs/quant-eps-$(date +%Y-%m-%d)
-```
+    ```bash
+    SP="$VIRTUAL_ENV/lib/python3.14/site-packages/nvidia"
+    export LD_LIBRARY_PATH="$SP/cublas/lib:$SP/cudnn/lib:$SP/cuda_nvrtc/lib:$SP/cuda_runtime/lib:$SP/cufft/lib:$SP/curand/lib:$SP/cusolver/lib:$SP/cusparse/lib:$SP/cuda_cupti/lib:$SP/nvtx/lib:$SP/nvjitlink/lib"
+    ```
+
+2. Run the harness:
+
+    ```bash
+    python ai/scripts/measure_quant_drop_per_ep.py \
+        --eps cpu cuda openvino \
+        --extra-fp32 vmaf_tiny_v1.onnx vmaf_tiny_v1_medium.onnx \
+        --openvino-device GPU.0 \
+        --out runs/quant-eps-$(date +%Y-%m-%d)
+    ```
 
 Outputs `results.json` (machine-readable) and `results.md` (the
 human-readable table that goes into the research digest). The JSON
@@ -70,13 +75,18 @@ when refreshing the GPU-EP findings section.
 
 ## Headline findings (2026-04-28)
 
-CPU EP and CUDA EP agree to 6 decimal places on every shipped tiny
-model; the OpenVINO CPU plugin agrees to ~10⁻⁴ PLCC drop. The
-Intel Arc A380 (`GPU.0` through OpenVINO 2026.1) is currently
-**int8-broken** — `Conv`-based int8 graphs fail to compile, MLP
-int8 graphs compile but emit `inf`/`NaN`. The fp32 path is healthy
-on Arc, so the runtime can fall back to fp32 (or the OpenVINO CPU
-plugin) for a reliable inference there.
+These numbers were measured on 2026-04-28 and are not CI-gated (see the
+`T-TINY-AI-CROSS-DEVICE-PARITY-UNGATED-2026-09-25` row in `docs/state.md`).
+
+- CPU EP and CUDA EP agree to 6 decimal places on every shipped tiny model.
+- The OpenVINO CPU plugin agrees to about 10^-4 PLCC drop.
+
+!!! warning
+    The Intel Arc A380 (`GPU.0` through OpenVINO 2026.1) is int8-broken:
+    `Conv`-based int8 graphs fail to compile, and MLP int8 graphs compile but
+    emit `inf` or `NaN`. The fp32 path is healthy on Arc, so the runtime can
+    fall
+    back to fp32 (or the OpenVINO CPU plugin) for reliable inference there.
 
 See the full table + failure-mode breakdown in
 [`docs/research/0006-tinyai-ptq-accuracy-targets.md`](../research/0006-tinyai-ptq-accuracy-targets.md)

@@ -1,11 +1,14 @@
 <!-- markdownlint-disable MD060 -->
 # Tiny-model registry — schema and verification
 
-The registry at [`model/tiny/registry.json`](../../model/tiny/registry.json)
-is the **trust root** for libvmaf's tiny-AI surface. Every ONNX model
-shipped under `model/tiny/` is indexed here with a SHA-256 pin, license
-metadata, and a Sigstore bundle path. T6-9 / [ADR-0211](../adr/0211-model-registry-sigstore.md)
+The registry at [`model/tiny/registry.json`](../../model/tiny/registry.json) is
+the trust root of libvmaf's tiny-AI surface. Every ONNX model shipped under
+`model/tiny/` is indexed there with a SHA-256 pin, license metadata and a
+Sigstore bundle path. T6-9 / [ADR-0211](../adr/0211-model-registry-sigstore.md)
 formalised the schema and wired `--tiny-model-verify` to `cosign verify-blob`.
+
+The registry holds 26 entries. Thirteen are CI smoke fixtures with
+`smoke: true`, see [CI-only smoke fixtures](#ci-only-smoke-fixtures).
 
 ## Registry shape
 
@@ -15,7 +18,7 @@ formalised the schema and wired `--tiny-model-verify` to `cosign verify-blob`.
   "schema_version": 1,
   "models": [
     {
-      "id": "learned_filter_v1",          // kebab-case; --tiny-model=<id>
+      "id": "learned_filter_v1",          // stable id; a label, not a --tiny-model value
       "kind": "filter",                    // fr | nr | filter
       "onnx": "learned_filter_v1.onnx",
       "opset": 17,
@@ -33,38 +36,58 @@ formalised the schema and wired `--tiny-model-verify` to `cosign verify-blob`.
 }
 ```
 
-The full JSON Schema is at
-[`model/tiny/registry.schema.json`](../../model/tiny/registry.schema.json).
-Fields documented inline; key invariants:
+!!! note
+    `--tiny-model` takes a file path. The registry `id` is a stable name used by
+    the validator, docs and tooling. The CLI does not resolve it to a file.
 
-- `sha256` is **lowercase hex, 64 chars**. Mismatch against the on-disk
-  ONNX bytes is a hard error.
-- `int8_sha256` is required iff `quant_mode != "fp32"`.
-- `sigstore_bundle` is a path relative to `model/tiny/` and must end in
-  `.sigstore.json`. The bundle file itself is generated at release time
-  by [`.github/workflows/supply-chain.yml`](../../.github/workflows/supply-chain.yml);
-  pre-release the path is declared but the file may be absent. The
-  runtime verifier (`--tiny-model-verify`) treats absence as a fail-closed
-  signal.
-- `license` is an SPDX identifier when possible; for fork-trained models
-  this is `BSD-2-Clause-Patent` (matches libvmaf). Upstream-derived
-  models carry the upstream license verbatim (e.g. LPIPS-Sq is `BSD-2-Clause`).
+The full JSON Schema is
+[`model/tiny/registry.schema.json`](../../model/tiny/registry.schema.json). The
+schema rejects unknown properties (`additionalProperties: false`).
 
-## Validating the registry
+### Fields
 
-The Python validator at
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Stable identifier, `^[a-z0-9][a-z0-9_-]*$`, at most 64 characters. |
+| `kind` | yes | `fr`, `nr` or `filter`. |
+| `onnx` | yes | ONNX path relative to `model/tiny/`. |
+| `sha256` | yes | Lowercase hex, 64 characters, of the exact ONNX bytes. A mismatch against the on-disk file is a hard error. |
+| `opset` | non-smoke | ONNX opset, 7 to 21; mirrors the sidecar `onnx_opset`. |
+| `smoke` | no | `true` for CI load-path probes, which are not quality models. |
+| `quant_mode` | no | `fp32` (default), `dynamic`, `static` or `qat`. Any other value than `fp32` makes the runtime load `<onnx>.int8.onnx`; see [quantization.md](quantization.md). |
+| `int8_sha256` | iff `quant_mode != "fp32"` | SHA-256 of the `.int8.onnx` file; checked before the runtime redirects to it. |
+| `quant_calibration_set` | `static` only | Calibration tensor blob, relative to the repo root. |
+| `quant_accuracy_budget_plcc` | no | Maximum PLCC drop versus fp32; the CI `ai-quant-accuracy` job fails a quantised model beyond it. Default 0.01. |
+| `license` | schema version 1 | SPDX identifier. Fork-trained models use `BSD-2-Clause-Patent`, matching libvmaf. Upstream-derived models keep the upstream license verbatim (LPIPS-Sq is `BSD-2-Clause`). |
+| `license_url` | no | URL of the license text. |
+| `sigstore_bundle` | no | Path relative to `model/tiny/`, ending in `.sigstore.json`. |
+| `description` | no | One-line summary, distinct from `notes`. |
+| `notes` | no | Free-text provenance and training recipe, at most 512 characters. |
+
+The Sigstore bundle file is generated at release time by
+[`.github/workflows/supply-chain.yml`](../../.github/workflows/supply-chain.yml).
+Before a release the path is declared but the file may be absent. The runtime
+verifier (`--tiny-model-verify`) treats an absent bundle as fail-closed.
+
+!!! note
+    `scripts/ai/fetch-tiny-blobs.sh` reads an optional per-entry `release_url`
+    to fetch release-hosted blobs. The schema does not define that field yet and
+    no entry carries it, see [tiny-blob-storage.md](tiny-blob-storage.md).
+
+## Validate the registry
+
 [`ai/scripts/validate_model_registry.py`](../../ai/scripts/validate_model_registry.py)
-runs both the JSON Schema check and the cross-file consistency check
-(every ONNX exists, every sha256 matches, every non-smoke entry has a
-sidecar). It is a CI gate; run it locally before pushing:
+runs the JSON Schema check and the cross-file consistency check: every ONNX
+exists, every `sha256` matches, every non-smoke entry has a sidecar. It is a CI
+gate; run it before pushing:
 
 ```bash
 python3 ai/scripts/validate_model_registry.py \
     --out-json runs/tiny_model_registry_validation.json
-# → OK: 5 registry entries valid against registry.schema.json
+# → OK: 26 registry entries valid against registry.schema.json
 ```
 
-Pass a different registry / schema explicitly when working off-tree:
+To validate an off-tree registry, pass it and its schema explicitly:
 
 ```bash
 python3 ai/scripts/validate_model_registry.py /path/to/other-registry.json \
@@ -72,17 +95,18 @@ python3 ai/scripts/validate_model_registry.py /path/to/other-registry.json \
     --out-json runs/offtree_registry_validation.json
 ```
 
-The validator falls back to a structural check when `jsonschema` is not
-installed, so distros without `python-jsonschema` still get the
-required-field invariants. Install `jsonschema` for full Draft 2020-12
-coverage.
+Without `jsonschema` installed the validator falls back to a structural check,
+so distros without `python-jsonschema` still get the required-field invariants.
+Install `jsonschema` for full Draft 2020-12 coverage.
 
-The optional `--out-json` report records the pass/fail verdict, model count,
-errors, registry/schema paths, and ADR-0661 `run_provenance`. Use it for
-release evidence and for debugging registry failures without relying on CI log
-scrollback.
+The optional `--out-json` report records the verdict, model count, errors,
+registry and schema paths, and the ADR-0661 `run_provenance` block. Use it for
+release evidence and for debugging failures without CI log scrollback.
 
-## Runtime verification — `--tiny-model-verify`
+## Verify a model at runtime
+
+`--tiny-model-verify` makes the loader check the model's Sigstore bundle before
+it opens the file:
 
 ```bash
 vmaf -r ref.y4m -d dis.y4m \
@@ -90,95 +114,91 @@ vmaf -r ref.y4m -d dis.y4m \
      --tiny-model-verify
 ```
 
-When the flag is set the loader:
+The loader runs these steps:
 
-1. Looks up the model's basename in `model/tiny/registry.json`
-   (alongside the `.onnx`, by default).
-2. Reads the entry's `sigstore_bundle` path.
-3. Spawns
-   `cosign verify-blob --bundle=<path> --certificate-identity-regexp …
-   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-   <onnx>` via `posix_spawnp(3p)` (no shell — explicit argv array).
-4. Refuses to load on any non-zero exit, missing `cosign`, missing
-   bundle, or missing registry entry.
+1. Look up the model's basename in `model/tiny/registry.json` (alongside the
+   `.onnx` by default).
+2. Read the entry's `sigstore_bundle` path.
+3. Spawn `cosign verify-blob --bundle=<path> --certificate-identity-regexp …
+   --certificate-oidc-issuer https://token.actions.githubusercontent.com <onnx>`
+   with `posix_spawnp(3p)` and an explicit argv array, no shell.
+4. Refuse to load on a non-zero exit, a missing `cosign`, a missing bundle or a
+   missing registry entry.
 
-The flag is **off by default** for dev-friendliness. Production
-deployments should set it on. `cosign` must be on `$PATH`; install
-prebuilt binaries from the [Sigstore release page](https://github.com/sigstore/cosign/releases).
+The flag is off by default for dev-friendliness; production deployments should
+set it. `cosign` must be on `$PATH`; install a prebuilt binary from the
+[Sigstore release page](https://github.com/sigstore/cosign/releases). The C entry
+point is `vmaf_dnn_verify_signature(onnx_path, registry_path)` in
+[`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h); both arguments
+are NULL-tolerant in the documented way.
 
-The C entry point is `vmaf_dnn_verify_signature(onnx_path, registry_path)`
-in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h);
-both arguments are NULL-tolerant in the documented way.
-
-## Directory jail — `VMAF_TINY_MODEL_DIR`
+### Directory jail
 
 The registry pins model identity. The optional `VMAF_TINY_MODEL_DIR`
-environment variable constrains model location. Set it to the trusted
-model directory on production hosts:
+environment variable constrains model location. Set it on production hosts:
 
 ```bash
 export VMAF_TINY_MODEL_DIR=/opt/vmaf-models
 vmaf --tiny-model /opt/vmaf-models/vmaf_tiny_v2.onnx --tiny-model-verify ...
 ```
 
-At load time libvmaf canonicalises both the jail and the requested ONNX
-path. The model must resolve below the jail directory; sibling-prefix
-escapes, symlink escapes, missing jail directories, and jail values that
-point at files fail closed with `-EACCES`. The jail does not replace
-registry verification or the operator allowlist: run all three layers
-together for production deployments.
+At load time libvmaf canonicalises the jail and the requested ONNX path. The
+model must resolve below the jail. Sibling-prefix escapes, symlink escapes,
+missing jail directories, and jail values that point at files fail closed with
+`-EACCES`. The jail does not replace registry verification or the operator
+allowlist: run all three layers together in production
+(see [security.md](security.md)).
 
-## What the registry is *not*
+## What the registry is not
 
-- **Not** the inference contract — per-model input/output names,
-  normalisation, and expected ranges live in the sidecar JSON next to
-  the ONNX (`<basename>.json`). The registry stays small and easy to
-  audit; the sidecar carries the runtime knobs. Attached multi-output
-  models may use sidecar `output_names[]` to provide stable scalar-score
-  suffixes for report keys.
-- **Not** the operator-allowlist source of truth — that's
-  `core/src/dnn/op_allowlist.c`. The registry pins identity; the
-  allowlist constrains content.
-- **Not** a path allowlist — use `VMAF_TINY_MODEL_DIR` when deployments
-  need to reject model paths outside a caller-trusted directory.
+- Not the inference contract. Per-model input and output names, normalisation
+  and expected ranges live in the sidecar JSON next to the ONNX
+  (`<basename>.json`). The registry stays small and easy to audit. Attached
+  multi-output models may use sidecar `output_names[]` for stable scalar-score
+  suffixes in report keys.
+- Not the operator-allowlist source of truth. That is
+  `core/src/dnn/op_allowlist.c`. The registry pins identity; the allowlist
+  constrains content.
+- Not a path allowlist. Use `VMAF_TINY_MODEL_DIR` to reject model paths outside
+  a trusted directory.
 
-## Adding a new model
+## Add a model
 
-1. Drop the `.onnx` and matching `<basename>.json` sidecar under `model/tiny/`.
-2. Compute the sha256: `sha256sum model/tiny/<name>.onnx`.
-3. Add an entry to `registry.json` — see existing entries as templates;
-   the schema enforces required fields.
-4. Bundle generation happens at release time; pre-release the
-   `sigstore_bundle` path may point at a not-yet-existing file.
-5. Run `python3 ai/scripts/validate_model_registry.py` and fix any reported issues.
+1. Drop the `.onnx` and the matching `<basename>.json` sidecar under
+   `model/tiny/`.
+2. Compute the digest: `sha256sum model/tiny/<name>.onnx`.
+3. Add an entry to `registry.json`. Use existing entries as templates; the
+   schema enforces required fields.
+4. Leave bundle generation to the release. Before a release the
+   `sigstore_bundle` path may point at a file that does not exist yet.
+5. Run `python3 ai/scripts/validate_model_registry.py` and fix what it reports.
 
-The `/add-model <path>` skill scaffolds steps 1–4 for you.
+The `/add-model <path>` skill scaffolds steps 1 to 4.
 
-## CI-only smoke fixtures (`smoke: true`)
+## CI-only smoke fixtures
 
-Several registry entries exist solely to exercise the loader / validator
-pipeline in CI and are **not user-facing surfaces**. They are exempt from
-the ADR-0042 five-point model-card requirement; no `docs/ai/models/` card
-is expected or needed for them.
+Thirteen registry entries (`smoke: true`) exist to exercise the loader and
+validator in CI. They are not user-facing surfaces, are exempt from the
+ADR-0042 five-point model-card requirement, and are excluded from doc-coverage
+checks. Do not set them to `smoke: false` without a model card and the full
+ADR-0042 bar.
 
 | Registry id | Notes |
 |---|---|
-| `smoke_v0` | Minimal ONNX graph used by `test_model_loader.c` smoke test. |
-| `smoke_fp16_v0` | Same graph, fp16 weights — exercises the fp16 loader path. |
-| `smoke_multi_output_v0` | Multi-output fixture (mean_score + peak_score) used by `test_vmaf_use_tiny_model.c` — exercises the attached multi-output DNN path. |
-| `smoke_v0_symbolic_batch` | Symbolic-batch fixture (dynamic first dim) used by `test_vmaf_use_tiny_model.c` — exercises the batch-agnostic load path. |
-| `dists_sq_placeholder_v0` | Superseded placeholder; replaced by `dists_sq` (real weights). The non-placeholder card lives at `docs/ai/models/dists_sq.md`. |
-| `mobilesal_placeholder_v0` | Placeholder until the full U-2-Net weights clear compliance (ADR-0257). Non-placeholder card: `docs/ai/models/mobilesal.md`. |
+| `smoke_v0` | Minimal ONNX graph used by the `test_model_loader.c` smoke test. |
+| `smoke_fp16_v0` | Same graph with fp16 weights; exercises the fp16 loader path. |
+| `smoke_multi_output_v0` | Multi-output fixture (`mean_score` and `peak_score`) used by `test_vmaf_use_tiny_model.c`; exercises the attached multi-output path. |
+| `smoke_v0_symbolic_batch` | Symbolic-batch fixture (dynamic first dim) used by `test_vmaf_use_tiny_model.c`; exercises the batch-agnostic load path. |
+| `dists_sq_placeholder_v0` | Superseded placeholder; replaced by `dists_sq` (real weights). Card: [dists_sq](models/dists_sq.md). |
+| `mobilesal_placeholder_v0` | Placeholder until the full U-2-Net weights clear compliance (ADR-0257). Card: [mobilesal](models/mobilesal.md). |
 | `vmaf_tiny_v1` | Superseded by `vmaf_tiny_v2`; kept for loader back-compat tests. |
 | `vmaf_tiny_v1_medium` | Superseded by `vmaf_tiny_v2`; kept for loader back-compat tests. |
+| `fr_regressor_v2_ensemble_v1_seed0` to `_seed4` (five entries) | Smoke placeholders for the ensemble members; the production weights are LOSO-validated and described in each seed sidecar. See [fr_regressor_v2 probabilistic](models/fr_regressor_v2_probabilistic.md). |
 
-These ids are excluded from doc-coverage checks. Do not promote them to
-`smoke: false` without first shipping a model card and the full ADR-0042 bar.
-
-## `lpips_sq_v1` — name vs card mismatch
+## `lpips_sq_v1` and its cards
 
 The registry entry `lpips_sq_v1` (`smoke: false`) points to `lpips_sq.onnx`.
-Its model card is at `docs/ai/models/lpips_sq.md` (without the `_v1` suffix).
-The card covers the same model; the naming divergence is a tracked cosmetic
-gap (scaffold-audit ADR-0621 P3-5). Until the card is renamed, treat
-`lpips_sq.md` as the authoritative card for `lpips_sq_v1`.
+Two model-card pages describe the same model:
+[lpips_sq](models/lpips_sq.md) and [lpips_sq_v1](models/lpips_sq_v1.md). The
+registry id and the file name differ by the `_v1` suffix; this is a tracked
+cosmetic gap (scaffold-audit ADR-0621 P3-5).

@@ -19,8 +19,9 @@ through unchanged.
 | Location | `model/tiny/smoke_fp16_v0.onnx` |
 | Architecture | Identity (fp16 I/O) — intentional CI fp16 cast probe |
 | Trainable parameters | **0** (no initializer tensors) |
-| Input | fp16 tensor (cast from float32 by the DNN loader) |
-| Output | fp16 tensor (cast back to float32 by the DNN loader) |
+| Input | `x` — `[1, 1, 2, 2]` (cast from float32 to fp16 by libvmaf on the host) |
+| Output | `y` — `[1, 1, 2, 2]` (cast back to float32 by libvmaf) |
+| Training | None: an Identity graph with no weights |
 | ONNX opset | 17 |
 | License | BSD-2-Clause-Patent |
 | Registry entry | `smoke_fp16_v0` in `model/tiny/registry.json` (`"smoke": true`) |

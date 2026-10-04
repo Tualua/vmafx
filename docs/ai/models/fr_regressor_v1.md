@@ -5,7 +5,10 @@
 tiny MLP that maps libvmaf's classical 6-feature vector
 (`adm2`, `vif_scale0..3`, `motion2`) to a per-frame VMAF score. It is the
 neural-network sibling of the production `vmaf_v0.6.1` SVR — same input,
-same target — packaged as a 67-op-allowlisted ONNX so it can run inside
+same target — packaged as an ONNX that uses only operators on libvmaf's op
+allowlist
+([`core/src/dnn/op_allowlist.c`](https://github.com/VMAFx/vmafx/blob/master/core/src/dnn/op_allowlist.c)),
+so it can run inside
 `libvmaf`'s tiny-AI inference path on every supported execution provider
 (CPU / CUDA / OpenVINO / ROCm).
 
@@ -39,6 +42,7 @@ that threshold.
 | Field | Value |
 | --- | --- |
 | Model name | `fr_regressor_v1` |
+| SHA-256 | `b57dee2509290d77c7980f8f23aa1380f64937c485d1b1d1e5f78c13a3a54c63` |
 | Location | `model/tiny/fr_regressor_v1.onnx` |
 | Sidecar | `model/tiny/fr_regressor_v1.json` |
 | Architecture | `FRRegressor` (2-layer GELU MLP, hidden=64, dropout=0.1) |
@@ -86,17 +90,20 @@ ADR-0249 PLCC gate.
 
 ## Provenance
 
-The training corpus (`.corpus/netflix/`) is the Netflix Public
-Dataset, distributed by Netflix under a license that forbids
-redistribution. The shipped ONNX is a derivative: parameters were
-fitted to per-frame `vmaf_v0.6.1` teacher scores computed locally on
-that corpus. The fork ships the resulting ONNX (~few KB of
-parameters) under BSD-2-Clause-Patent on the basis that the
-parameter values are a derived statistical summary, not a redistribution
-of the YUV bitstreams or the (separately access-gated) DMOS sidecar
-CSV. If your jurisdiction reads "derivative work" more broadly, treat
-the checkpoint as Netflix-license-encumbered and rebuild from your
-own copy of the dataset.
+**What it was trained on.** The training corpus (`.corpus/netflix/`) is the
+Netflix Public Dataset, distributed by Netflix under a license that forbids
+redistribution. The shipped ONNX is a derivative: parameters were fitted to
+per-frame `vmaf_v0.6.1` teacher scores computed locally on that corpus.
+
+**Why BSD-2-Clause-Patent applies.** The fork ships the resulting ONNX (a
+few KB of parameters) under BSD-2-Clause-Patent on the basis that the
+parameter values are a derived statistical summary, not a redistribution of
+the YUV bitstreams or of the (separately access-gated) DMOS sidecar CSV.
+
+!!! warning
+    If your jurisdiction reads "derivative work" more broadly, treat the
+    checkpoint as Netflix-license-encumbered and rebuild it from your own
+    copy of the dataset.
 
 ## Usage — CLI
 
@@ -105,13 +112,32 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --tiny-model fr_regressor_v1 \
+    --model version=vmaf_v0.6.1 \
+    --tiny-model model/tiny/fr_regressor_v1.onnx \
     --tiny-device auto \
     --output score.json
 ```
 
+!!! warning "The same run must compute the input features"
+    A tiny feature-vector model reads its input features (`adm2`,
+    `vif_scale0..3`, `motion2`) from the scores libvmaf computes in the same
+    run, so keep `--model version=vmaf_v0.6.1` (it computes exactly these) or
+    request them with `--feature adm --feature vif --feature motion`.
+    A feature that is missing is read as `0.0` without a warning. With only the
+    default `vmaf_v1.0.16_3d0h` model the scores are stored under
+    option-suffixed
+    names, so the lookup misses them and the tiny model returns one constant
+    value for every frame (measured on the CPU build with
+    `fr_regressor_v1`: `-0.85`).
+
+`--tiny-model` takes a path to the ONNX file; there is no registry-id lookup.
+The score is attached under the sidecar's `name` field when it has one,
+otherwise under the feature name `vmaf_tiny_model`; `fr_regressor_v1.json`
+has no `name`, so look for `vmaf_tiny_model` in the output.
+
 `--tiny-device auto` resolves to the best available execution provider
-(CUDA → OpenVINO → CPU). The CPU path is a hard requirement — every
+(order: CUDA, OpenVINO GPU, ROCm, CoreML, then CPU). The CPU path is a hard
+requirement — every
 shipped tiny model must run there as the variance-anchor (see
 [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)).
 
@@ -198,4 +224,5 @@ same ONNX bytes (modulo torch / onnx producer-string drift).
 - [ADR-0168](../../adr/0168-tinyai-konvid-baselines.md) — C2 + C3
   baselines (sibling).
 - [ADR-0249](../../adr/0249-fr-regressor-v1.md) — this model's decision record.
-- [ADR-0647](../../adr/0647-ai-fr-regressor-v1-refresh-20260520.md) — 2026-05-20 refresh.
+- [ADR-0647](../../adr/0647-ai-fr-regressor-v1-refresh-20260520.md) — 2026-05-20
+  refresh.

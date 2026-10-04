@@ -9,12 +9,14 @@ weights it loads.
 
 > **Status — Superseded 2026-05-15.** `saliency_student_v2` is now the
 > production default for the `mobilesal` extractor (IoU 0.7105 vs 0.6558,
-> +8.3%; [ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md)).
+> +8.3%;
+[ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md)).
 > `saliency_student_v1` is retained in the registry for regression
 > baselines and backwards compatibility. Supersedes `mobilesal_placeholder_v0`
 > (which remains with `smoke: true` for legacy reasons). See
 > [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)
-> and [Research-0054](../../research/0062-saliency-student-from-scratch-on-duts.md).
+> and
+[Research-0062](../../research/0062-saliency-student-from-scratch-on-duts.md).
 
 ## What the output means
 
@@ -50,7 +52,7 @@ foreground-vs-background distortion affects subjective quality.
 | Output | `saliency_map` — float32 NCHW `[1, 1, H, W]` per-pixel saliency in [0, 1] |
 | ONNX opset | 17 |
 | Training corpus | DUTS-TR (Wang et al. 2017) — 10 553 RGB images + binary saliency masks; *not* redistributed in-tree |
-| Held-out validation IoU | recorded in `build_artifacts/saliency_student_v1_train.json` (`best_val_iou`); ship gate is ≥ 0.5 |
+| Held-out validation IoU | **0.6558** (registry notes; per-epoch trace in `build_artifacts/saliency_student_v1_train.json`, `best_val_iou`); ship gate is ≥ 0.5 |
 | License | BSD-2-Clause-Patent (the trained weights are wholly fork-owned; DUTS images are training input only and not bundled) |
 | Exporter | `ai/scripts/train_saliency_student.py` |
 
@@ -108,9 +110,9 @@ wiring.
 ## Op-allowlist
 
 Every op in the graph is on `core/src/dnn/op_allowlist.c`:
-`Conv`, `BatchNormalization` (folded into `Conv` at export by
-constant folding), `Relu`, `MaxPool`, `ConvTranspose`, `Concat`,
-`Sigmoid`. `Resize` is *not* used — the decoder upsamples with
+`Conv` (BatchNormalization is folded into it at export by constant
+folding), `Relu`, `MaxPool`, `ConvTranspose`, `Concat`, `Sigmoid`. `Resize` is
+*not* used — the decoder upsamples with
 `ConvTranspose` (stride 2) so the graph loads clean against vanilla
 origin/master with no allowlist patch in this PR.
 
@@ -121,10 +123,12 @@ vmaf \
     --reference ref.yuv \
     --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --feature mobilesal \
-    --feature_params mobilesal:model_path=model/tiny/saliency_student_v1.onnx \
+    --feature mobilesal=model_path=model/tiny/saliency_student_v1.onnx \
     --output score.json
 ```
+
+The `--feature` argument has the form `name=option=value` (colon-separated for
+several options); there is no `--feature_params` option.
 
 The output JSON gains a per-frame `saliency_mean` column alongside any
 other features requested in the same run.
@@ -187,8 +191,8 @@ and report paths.
 Inherited from the C-side extractor (see
 [`mobilesal.md`](mobilesal.md)):
 
-- **Bit depth**: 8-bit YUV only. 10-bit support is gated on the same
-  loader path landing for LPIPS.
+- **Bit depth**: 8-bit YUV only. Wider depths would need retraining and are
+  not planned (ADR-0613).
 - **Pixel format**: `YUV420P`, `YUV422P`, `YUV444P` accepted;
   `YUV400P` rejected.
 - **Colour space**: BT.709 limited-range Y'CbCr → RGB at the C side.
@@ -196,6 +200,11 @@ Inherited from the C-side extractor (see
 
 Specific to `saliency_student_v1`:
 
+- **Frame size must be a multiple of 8**: the U-Net has three pooling stages,
+  so a width or height that is not divisible by 8 fails at run time with an
+  ONNX Runtime `Concat` dimension mismatch (for example a 576x324 clip, since
+  324 / 8 is not an integer; 1920x1080 and 1280x720 work). Scale or crop the
+  input first.
 - **Capacity**: ~113 K parameters is well below upstream u2netp
   (~4.7 M). Absolute IoU on external test sets (DUTS-TE, ECSSD) is
   expected to be below SOTA. v1 is a useful baseline, not a
@@ -203,8 +212,9 @@ Specific to `saliency_student_v1`:
 - **Training corpus diversity**: DUTS-TR is the de-facto standard
   single-dataset SOD corpus but skews toward natural-photo content.
   Synthetic / animated / heavily-graphic content may saturate the
-  saliency map. Multi-dataset training is a future
-  `saliency_student_v2` follow-up.
+  saliency map. Multi-dataset training has not been done;
+  [`saliency_student_v2`](saliency_student_v2.md) changed only the decoder
+  upsampler, not the training data.
 - **In-loop validation only**: v1 reports validation IoU on a 5 %
   hold-out of DUTS-TR. External evaluation against DUTS-TE / ECSSD is
   a follow-up.
@@ -220,7 +230,7 @@ Specific to `saliency_student_v1`:
   the upstream-MobileSal deferral that this PR partly unblocks.
 - [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)
   — the decision record for this model.
-- [Research-0054](../../research/0062-saliency-student-from-scratch-on-duts.md)
+- [Research-0062](../../research/0062-saliency-student-from-scratch-on-duts.md)
   — dataset, architecture, and recipe digest.
 - [ADR-0042](../../adr/0042-tinyai-docs-required-per-pr.md) —
   tiny-AI doc-substance rule this card satisfies.

@@ -26,7 +26,7 @@ contract, licence-compliance receipt.
 | Fork release tag | `u2netp-mirror-v1` (ADR-0412 scheme) |
 | Fork artefact path | `model/u2netp_mirror.onnx` (gitignored; release asset) |
 | Fork artefact sha256 | Filled at binary upload; recorded in `model/u2netp_mirror.manifest.json` |
-| Sigstore bundle URL | Filled at binary upload; emitted by the `u2netp-mirror-attach` workflow step |
+| Sigstore bundle URL | Filled at binary upload; to be emitted by the planned release workflow (no `u2netp` workflow exists under `.github/` yet) |
 
 ## 2. Training recipe
 
@@ -77,7 +77,8 @@ against the fork's wire-format scanner.
   `feature_mobilesal.c` contract — drop-in for the existing `mobilesal`
   extractor with no C changes.
 - **Pre-processing**: tile luma into RGB (`Y → [Y, Y, Y]`), same as
-  the existing `LumaAdapter` pattern from PR #326.
+  the `LumaAdapter` pattern described on the
+  [`fastdvdnet_pre`](fastdvdnet_pre.md#luma-adapter-design) card.
 - **Post-processing**: per-frame mean of `saliency_map` for
   `saliency_mean` (unchanged from existing C extractor logic).
 
@@ -124,10 +125,10 @@ In every case, run both models against your own validation set before
 committing — the absolute scores differ (the upstream model has ~40x
 more parameters; expect mIoU and saliency distribution differences).
 
-## Known limitations
+## 7. Known limitations
 
-- **Heavyweight checkpoint**: ~4.7 M parameters compared to ~500 K for
-  `saliency_student_v2`.
+- **Heavyweight checkpoint**: ~4.7 M parameters compared to ~124 K
+  (123 721) for `saliency_student_v2`.
 - **License**: upstream weights are licensed under Apache-2.0 rather than
   BSD-2-Clause-Patent.
 - **Fixed input layout**: input tensor is `[1, 3, H, W]` float32 (requires
@@ -135,34 +136,45 @@ more parameters; expect mIoU and saliency distribution differences).
 - **Not committed to git**: generated via export script as a release asset,
   not tracked in repository git history.
 
-## 7. Operator workflow
+## 8. Operator workflow
 
 The operator-facing fetch and verification recipe lives at
 [`docs/ai/u2netp-mirror.md`](../u2netp-mirror.md). Short version:
 
-```bash
-.venv/bin/python ai/scripts/export_u2netp_mirror.py \
-  --upstream-dir /path/to/U-2-Net \
-  --checkpoint /path/to/u2netp.pth \
-  --output model/u2netp_mirror.onnx \
-  --manifest-out model/u2netp_mirror.manifest.json
+1. Export the ONNX and its manifest from an audited local U-2-Net checkout:
 
-gh release download <tag> --repo VMAFx/vmafx \
-  --pattern 'u2netp_mirror_v*.onnx' \
-  --pattern 'u2netp_mirror_v*.onnx.bundle' \
-  --pattern 'Apache-2.0-u2netp.txt'
+   ```bash
+   .venv/bin/python ai/scripts/export_u2netp_mirror.py \
+     --upstream-dir /path/to/U-2-Net \
+     --checkpoint /path/to/u2netp.pth \
+     --output model/u2netp_mirror.onnx \
+     --manifest-out model/u2netp_mirror.manifest.json
+   ```
 
-cosign verify-blob \
-  --bundle u2netp_mirror_v1.onnx.bundle \
-  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  u2netp_mirror_v1.onnx
-```
+2. Or download the signed release assets instead of exporting:
 
-The verify-blob step is mandatory before the binary is loaded by any
-production pipeline.
+   ```bash
+   gh release download <tag> --repo VMAFx/vmafx \
+     --pattern 'u2netp_mirror_v*.onnx' \
+     --pattern 'u2netp_mirror_v*.onnx.bundle' \
+     --pattern 'Apache-2.0-u2netp.txt'
+   ```
 
-## 8. Release / promotion follow-ups
+3. Verify the Sigstore bundle:
+
+   ```bash
+   cosign verify-blob \
+     --bundle u2netp_mirror_v1.onnx.bundle \
+     --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
+     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+     u2netp_mirror_v1.onnx
+   ```
+
+!!! warning
+    The verify-blob step is mandatory before the binary is loaded by any
+    production pipeline.
+
+## 9. Release / promotion follow-ups
 
 The exporter (`ai/scripts/export_u2netp_mirror.py`) produces the local
 ONNX and manifest, but release and runtime promotion are still separate
@@ -184,8 +196,10 @@ steps:
   implementation.
 - [ADR-0265](../../adr/0265-u2netp-saliency-replacement-blocked.md)
   — the blocker decision this scaffold partially unblocks.
-- [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)
-  — the recommended primary path (`saliency_student_v1`).
+- [ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md)
+  — the recommended primary path (`saliency_student_v2`, the production
+  default); [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)
+  is its v1 predecessor.
 - [ADR-0258](../../adr/0258-onnx-allowlist-resize.md) — `Resize`
   allowlist addition that resolves ADR-0265 axis-2 blocker.
 - [Research-0086](../../research/0086-u2netp-fork-mirror-license-compliance.md)

@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # FR regressor v2 — codec-aware (superseded design card)
 
+!!! warning "Superseded by `fr_regressor_v2`: no ONNX shipped"
+    This ADR-0235-era card describes a design that never shipped. No
+    `model/tiny/fr_regressor_v2_codec_aware.onnx` exists and the registry has
+    no entry for it. The registry-backed production checkpoint is
+    [`fr_regressor_v2`](fr_regressor_v2.md) (`smoke: false`, canonical-6
+    features plus a 14-D codec block), and the wider 16-slot vocabulary
+    successor is [`fr_regressor_v3`](fr_regressor_v3.md). The vmaf-tune
+    Phase-A corpus path became the production route instead of the
+    canonical-9 / `FULL_FEATURES` graph described here.
+
 `vmaf_tiny_fr_regressor_v2_codec_aware` — a codec-conditioned successor
 to the v1 FR MOS regressor (`fr_regressor_v1.onnx`). Maps a libvmaf
 `FULL_FEATURES` vector **plus a one-hot codec id** to a single MOS
@@ -8,15 +18,6 @@ scalar, lifting cross-codec PLCC/SROCC by 1–3 points per the
 literature cited in
 [ADR-0235](../../adr/0235-codec-aware-fr-regressor.md) and
 [Research-0040](../../research/0040-codec-aware-fr-conditioning.md).
-
-> **Status: superseded by [`fr_regressor_v2`](fr_regressor_v2.md).**
-> This ADR-0235-era card described a canonical-9 / `FULL_FEATURES`
-> codec-aware graph before the vmaf-tune Phase-A corpus path became the
-> production route. No separate
-> `model/tiny/fr_regressor_v2_codec_aware.onnx` is shipped. The
-> registry-backed production checkpoint is `fr_regressor_v2.onnx`
-> (`smoke: false`), and the wider 16-slot vocabulary successor is
-> [`fr_regressor_v3`](fr_regressor_v3.md).
 
 ## What the output means
 
@@ -43,7 +44,10 @@ Aliases at parquet-ingest time: `h264` → `x264`, `hevc` → `x265`,
 `av1` → `libsvtav1`, `vp9` → `libvpx-vp9`, `vvc` / `h266` →
 `libvvenc`. Anything else collapses to `unknown`.
 
-The vocabulary is versioned via `CODEC_VOCAB_VERSION = 1`. Adding a
+The vocabulary is versioned via `CODEC_VOCAB_VERSION = 1`
+(`ai/src/vmaf_train/codec.py`). The shipped models use the separate, wider
+`ENCODER_VOCAB` of `ai/scripts/train_fr_regressor_v2.py` (12 slots, version 2).
+Adding a
 codec is a schema bump that requires retraining; the model-card
 sidecar pins the vocabulary version against which the ONNX was
 trained.
@@ -112,13 +116,15 @@ python ai/scripts/konvid_to_full_features.py \
 
 ## Known limitations of this superseded design
 
-- **22-feature `FULL_FEATURES` set only.** Re-running with a
-  different feature pool requires a fresh export.
+- **Fixed `FULL_FEATURES` width.** This design pinned a 22-column feature
+  vector; the live `FULL_FEATURES` pool (`ai/data/feature_extractor.py`) has
+  since grown to 26 entries. Re-running with a different feature pool
+  requires a fresh export.
 - **Codec one-hot, not embedding.** New codecs can't be added at
   inference time without retraining (see ADR-0235's alternatives
   table for why we chose one-hot over `nn.Embedding`).
 - **Not the shipped v2 graph.** The shipped `fr_regressor_v2.onnx`
-  uses canonical-6 features plus an 8-D codec block documented in
+  uses canonical-6 features plus a 14-D codec block documented in
   [`fr_regressor_v2.md`](fr_regressor_v2.md), not this card's
   `FULL_FEATURES` + `codec_onehot` shape.
 - **Single-frame regression.** No temporal pooling inside the
@@ -128,7 +134,8 @@ python ai/scripts/konvid_to_full_features.py \
 ## See also
 
 - [ADR-0235](../../adr/0235-codec-aware-fr-regressor.md) — design decision.
-- [Research-0040](../../research/0040-codec-aware-fr-conditioning.md) — empirical context.
+- [Research-0040](../../research/0040-codec-aware-fr-conditioning.md) —
+  empirical context.
 - `ai/src/vmaf_train/codec.py` — vocabulary + one-hot helpers.
 - `ai/src/vmaf_train/models/fr_regressor.py` — codec-aware model surface.
 - [overview.md](../overview.md) — C1 capability map.
