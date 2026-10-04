@@ -121,15 +121,25 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertIn("stages: [pre-commit, pre-push]", hook)
         self.assertIn("required-aggregator", hook)
         self.assertIn("scorecard_gate", hook)
-        self.assertIn("test_scorecard_*.py", (WORKFLOWS / "scorecard-policy.yml").read_text())
+        # A test runs once in CI (ADR-1568): Tooling Tests runs these files.
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        tooling = suite_members(ROOT, "tooling")
+        for name in ("test_scorecard_gate.py", "test_scorecard_workflow.py"):
+            self.assertIn(f"scripts/ci/tests/{name}", tooling)
 
     def test_repository_protection_controls_are_mandatory_and_separate(self) -> None:
         publisher, gate = (WORKFLOWS / "scorecard.yml").read_text().split("\n  gate:", 1)
         pr = (WORKFLOWS / "scorecard-policy.yml").read_text()
-        command = "python3 -B scripts/dev/tests/test_repository_security.py -v"
-        self.assertIn(command, pr)
-        self.assertIn(command, gate)
-        self.assertLess(pr.index(command), pr.index("scorecard_gate.py snapshot"))
+        # The policy's tests run once in CI, in Tooling Tests (ADR-1568), on
+        # every pull request and push, not inside either Scorecard job.
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        self.assertIn(
+            "scripts/dev/tests/test_repository_security.py", suite_members(ROOT, "tooling")
+        )
+        self.assertNotIn("test_repository_security.py", pr)
+        self.assertNotIn("test_repository_security.py", gate)
         self.assertNotIn("check_repository_security.py", publisher)
         live = gate.split("- name: Verify live repository protection", 1)[1].split(
             "- name: Preserve gate receipt", 1

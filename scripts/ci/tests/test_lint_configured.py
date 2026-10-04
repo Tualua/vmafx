@@ -388,7 +388,14 @@ class ConfiguredLintTests(unittest.TestCase):
     def test_ci_runs_real_model_controls_and_retains_diagnostic_categories(self) -> None:
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         job = workflow.split("\n  cppcheck:\n", 1)[1].split("\n  python-lint:", 1)[0]
-        self.assertIn("-p test_cppcheck_posix_model.py", job)
+        # The model controls run once in CI, in Tooling Tests, which installs
+        # the same distribution cppcheck (ADR-1568).
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        self.assertIn(
+            "scripts/ci/tests/test_cppcheck_posix_model.py", suite_members(ROOT, "tooling")
+        )
+        self.assertNotIn("test_cppcheck_posix_model.py", job)
         self.assertIn("scripts/ci/write_cppcheck_posix_model.py", job)
         self.assertIn("--library=build/cppcheck-posix-vmafx.cfg", job)
         self.assertNotIn("--library=posix", job)

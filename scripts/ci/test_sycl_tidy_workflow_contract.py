@@ -300,10 +300,13 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
         hooks_text = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
         validate_sycl_pre_commit_hook(hooks_text)
 
-    def test_rule_enforcement_workflow_runs_contract(self) -> None:
-        workflow_text = (WORKFLOWS_DIR / "rule-enforcement.yml").read_text(encoding="utf-8")
+    def test_contract_runs_in_the_tooling_suite(self) -> None:
+        # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
+        sys.path.insert(0, str(REPO_ROOT))
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
         contract_rel_path = Path(__file__).resolve().relative_to(REPO_ROOT).as_posix()
-        self.assertIn(f"python3 {contract_rel_path}", workflow_text)
+        self.assertIn(contract_rel_path, suite_members(REPO_ROOT, "tooling"))
 
     def test_failed_sycl_tidy_blocks_aggregator(self) -> None:
         failures = run_required_aggregator(SYCL_CHECK_NAME, "failure")

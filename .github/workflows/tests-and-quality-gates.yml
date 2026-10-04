@@ -104,14 +104,6 @@ jobs:
             -Denable_float=true -Denable_avx512=true --buildtype=release
           meson compile -C build
 
-      - name: Run SYCL score harness regressions
-        if: steps.impact.outputs.golden_harness == 'true'
-        run: |
-          python3 -m pytest \
-            testdata/test_run_sycl_scores.py \
-            testdata/test_sycl_4k_repeat_determinism.py \
-            -v --tb=short
-
       - name: Restore Netflix vmaf_resource fixtures
         id: fixtures
         # Restore-only; the save is split out below and gated on success().
@@ -555,12 +547,16 @@ jobs:
           python-version: "3.14.8"
       - name: Every test file belongs to a suite that a required check runs
         run: python scripts/ci/suite_registry.py check
-      - name: Install the tooling test lock
+      - name: Install the tooling test lock and cppcheck
         # package-build first: the docs half of the lock has sdists that build
         # without isolation (the Docs job installs the docs lock the same way).
+        # test_cppcheck_posix_model.py drives the distribution's cppcheck, the
+        # one the Cppcheck job installs.
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cppcheck
           python -m pip install --require-hashes -r requirements/locks/package-build.txt
           python -m pip install --no-build-isolation --require-hashes \
             -r requirements/locks/tooling-tests.txt
@@ -719,11 +715,19 @@ jobs:
         if: steps.impact.outputs.python == 'true'
         env:
           VMAF_BIN_FOR_TESTS: ${{ runner.temp }}/vmaf-cli/tools/vmaf
-        # A test that skips because it cannot reach the binary or the golden
-        # YUVs fails the job: those are this job's inputs, not optional.
+        # The registry names the files (ADR-1568): a file another suite owns
+        # runs in that suite's job, not here. A test that skips because it
+        # cannot reach the binary or the golden YUVs fails the job: those are
+        # this job's inputs, not optional.
         run: |
           set -o pipefail
-          python -m pytest tools/vmaf-tune/tests -rs | tee "${RUNNER_TEMP}/vmaf-tune-pytest.log"
+          python scripts/ci/suite_registry.py list vmaf-tune > "${RUNNER_TEMP}/vmaf-tune-files.txt"
+          mapfile -t files < "${RUNNER_TEMP}/vmaf-tune-files.txt"
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::the registry lists no vmaf-tune test files" >&2
+            exit 1
+          fi
+          python -m pytest "${files[@]}" -rs | tee "${RUNNER_TEMP}/vmaf-tune-pytest.log"
           if grep -E '^SKIPPED .*(no vmaf binary reachable|Netflix golden YUV fixtures not available)' \
               "${RUNNER_TEMP}/vmaf-tune-pytest.log"; then
             echo "::error::vmaf-tune tests skipped for a missing vmaf binary or golden YUVs" >&2

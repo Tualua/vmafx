@@ -71,15 +71,20 @@ jobs:
             pre-commit-${{ runner.os }}-py3.14-
       - name: Install pre-commit
         run: python -m pip install --require-hashes -r requirements/locks/pre-commit.txt
-      - name: Verify installed hook lifecycle and stage dispatch
-        run: python3 scripts/githooks/tests/test_install.py
-      - name: Verify hook installs leave the commit's git environment alone
-        run: python3 scripts/githooks/tests/test_install_hooks_env.py
+      - name: Name the hooks that only run tooling tests
+        # Tooling Tests runs those tests on every pull request and push; a test
+        # runs once in CI (ADR-1568). The hooks stay active at commit time.
+        id: test-hooks
+        run: |
+          ids="$(python scripts/ci/suite_registry.py precommit-skip)"
+          echo "ids=${ids}" >> "${GITHUB_OUTPUT}"
       - name: Run pre-commit on all files
         # The independent FFmpeg Patch Stack job owns network replay and
         # ADR-1140 routing; --all-files here would replay on docs-only PRs.
+        # It also runs `make ffmpeg-input-contract` on every pull request,
+        # so the hook of that name is skipped here as well (ADR-1568).
         env:
-          SKIP: ffmpeg-patches-apply-check
+          SKIP: ffmpeg-patches-apply-check,ffmpeg-input-contract,${{ steps.test-hooks.outputs.ids }}
         run: pre-commit run --show-diff-on-failure --color=always --all-files
       - name: Verify REUSE 3.3 compliance
         run: make lint-reuse
@@ -404,13 +409,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Self-test the ratchet tooling
-        # Runs on every PR, not only C ones: the tooling itself lives under
-        # scripts/ci/, and the GPU lanes run it only on workstations.
-        run: |
-          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_ratchet.py'
-          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_gen_gpu_compile_commands.py'
-          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_lane_container.py'
       - name: Plan CI impact (ADR-1140)
         id: impact
         env:
@@ -719,9 +717,6 @@ jobs:
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet --require-hashes \
             -r requirements/locks/build.txt
-      - name: Verify cppcheck model, depth and real defect controls
-        if: steps.impact.outputs.c_core == 'true'
-        run: python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
       - name: Generate compile_commands
         if: steps.impact.outputs.c_core == 'true'
         run: |
@@ -836,8 +831,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"
-      - name: Verify documentation generator contracts
-        run: python3 scripts/docs/tests/test_generators.py
       - name: Check generated documentation freshness
         run: make docs-fragments-check
       - name: Install MkDocs Material
@@ -852,11 +845,9 @@ jobs:
       - name: Build docs (strict — fail on any warning)
         run: mkdocs build --strict
       - name: Check the search index covers user pages only (ADR-1512)
-        # The fixture build runs here, where the docs lock is installed;
-        # then the built site's index is read.
-        run: |
-          python3 -B scripts/docs/tests/test_search_scope.py
-          python3 scripts/docs/check_search_scope.py build-docs/site
+        # Reads the built site's index; the checker's own tests run in
+        # Tooling Tests (ADR-1568).
+        run: python3 scripts/docs/check_search_scope.py build-docs/site
 
   check-conflict-markers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -953,11 +944,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"
-      - name: Run the tool's and the pin reader's tests
-        run: |
-          python3 -B -m unittest \
-            scripts/dev/tests/test_relicense_fork_files.py \
-            scripts/ci/tests/test_upstream_parity_pin.py
       - name: Fetch Netflix/vmaf with its full history
         run: git fetch --no-tags --quiet https://github.com/Netflix/vmaf.git master
       - name: Resolve the recorded upstream head

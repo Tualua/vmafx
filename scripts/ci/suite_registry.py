@@ -21,6 +21,14 @@ commands use it:
 ``list SUITE``
     Prints the test files of one suite, one per line.
 
+``precommit-skip``
+    Prints the ids of the local pre-commit hooks that only run tests of the
+    tooling suite, comma-separated. The CI Pre-Commit job skips them because
+    Tooling Tests runs those tests; they stay active at commit time.
+
+A test runs once in CI (ADR-1568): ``check`` also fails when a workflow runs a
+test of the tooling suite outside the job that owns it.
+
 Exit status: 0 success, 1 a finding or a failed test, 2 a usage or I/O error.
 """
 
@@ -49,6 +57,8 @@ AGGREGATOR = Path(".github/workflows/required-aggregator.yml")
 GIT_TIMEOUT_SECONDS = 60.0
 SHELL_TEST_TIMEOUT_SECONDS = 600.0
 PER_TEST_TIMEOUT_SECONDS = 300
+TOOLING_SUITE = "tooling"
+PRECOMMIT_CONFIG = Path(".pre-commit-config.yaml")
 
 
 class RegistryError(Exception):
@@ -164,8 +174,19 @@ def required_checks(root: Path) -> set[str]:
     return set(re.findall(r"'([^']+)'", body))
 
 
+def _match_length(suite: Suite, path: str) -> int:
+    return max((len(p) for p in suite.paths if _under(path, p)), default=0)
+
+
 def _owners(registry: Registry, path: str) -> list[str]:
-    return [s.name for s in registry.suites if any(_under(path, p) for p in s.paths)]
+    """The suites whose most specific matching path claims the file.
+
+    A file path or a deeper directory wins over a shorter prefix, so a suite can
+    take single files out of a directory another suite owns.
+    """
+    lengths = {suite.name: _match_length(suite, path) for suite in registry.suites}
+    best = max(lengths.values(), default=0)
+    return [name for name, length in lengths.items() if best and length == best]
 
 
 def file_findings(registry: Registry, files: Iterable[str]) -> list[str]:
@@ -212,9 +233,56 @@ def suite_files(registry: Registry, files: Iterable[str], name: str) -> list[str
         path
         for path in files
         if is_test_file(registry, path)
-        and any(_under(path, p) for p in suite.paths)
         and not any(_under(path, e) for e in registry.not_tests)
+        and _owners(registry, path) == [name]
     )
+
+
+_PATH_TOKEN = re.compile(r"[\w./-]+\.(?:py|sh)\b")
+_MODULE_TOKEN = re.compile(r"\b[A-Za-z_]\w*(?:\.\w+)+\b")
+_DISCOVER = re.compile(r"discover\s+(?:\\\s*)?-s\s+(\S+)\s+(?:\\\s*)?-p\s+'?([^'\s]+)'?")
+
+
+def referenced_files(command: str, tracked: set[str]) -> set[str]:
+    """Tracked files a command names: paths, `python -m` modules, unittest discover patterns."""
+    refs = set(_PATH_TOKEN.findall(command)) & tracked
+    modules = {path[:-3].replace("/", "."): path for path in tracked if path.endswith(".py")}
+    refs |= {modules[token] for token in _MODULE_TOKEN.findall(command) if token in modules}
+    for match in _DISCOVER.finditer(command):
+        directory, pattern = match.group(1).rstrip("/"), match.group(2)
+        refs |= {
+            path
+            for path in tracked
+            if path.rpartition("/")[0] == directory
+            and fnmatch.fnmatchcase(path.rpartition("/")[2], pattern)
+        }
+    return refs
+
+
+def _code_lines(text: str) -> str:
+    """A workflow without its comments and step names, which only describe."""
+    return "\n".join(
+        line
+        for line in text.splitlines()
+        if not line.lstrip().startswith(("#", "- name:", "name:"))
+    )
+
+
+def duplicate_run_findings(root: Path, registry: Registry, files: Sequence[str]) -> list[str]:
+    """Workflow commands that run a tooling test, which Tooling Tests already runs."""
+    if all(suite.name != TOOLING_SUITE for suite in registry.suites):
+        return []
+    tooling = set(suite_files(registry, files, TOOLING_SUITE))
+    tracked = set(files)
+    findings = []
+    for workflow in sorted((root / ".github" / "workflows").glob("*.yml")):
+        text = _code_lines(workflow.read_text(encoding="utf-8"))
+        for path in sorted(referenced_files(text, tracked) & tooling):
+            findings.append(
+                f"{workflow.name}: runs {path}, which Tooling Tests runs; a test runs once "
+                f"in CI (ADR-1568), so remove it there"
+            )
+    return findings
 
 
 def command_check(root: Path) -> int:
@@ -222,6 +290,7 @@ def command_check(root: Path) -> int:
     files = tracked_files(root)
     findings = file_findings(registry, files)
     findings += suite_findings(registry, files, required_checks(root))
+    findings += duplicate_run_findings(root, registry, files)
     for finding in findings:
         print(f"suite-registry: {finding}", file=sys.stderr)
     if findings:
@@ -306,11 +375,49 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     run.add_argument("suite")
     listing = commands.add_parser("list", help="print the test files of one suite")
     listing.add_argument("suite")
+    commands.add_parser(
+        "precommit-skip", help="ids of the local pre-commit hooks that only run tooling tests"
+    )
     return parser.parse_args(argv)
 
 
+def precommit_test_hooks(root: Path) -> list[str]:
+    """Local pre-commit hooks whose entry runs only tests of the tooling suite."""
+    # Only the CI Pre-Commit job, which has PyYAML, needs this.
+    import yaml  # type: ignore[import-untyped]  # noqa: PLC0415
+
+    try:
+        config = yaml.safe_load((root / PRECOMMIT_CONFIG).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise RegistryError(f"cannot read {PRECOMMIT_CONFIG}: {exc}") from exc
+    registry = load_registry(root)
+    files = tracked_files(root)
+    tooling = set(suite_files(registry, files, TOOLING_SUITE))
+    tracked = set(files)
+    hooks = [
+        hook
+        for repo in config.get("repos", [])
+        if repo.get("repo") == "local"
+        for hook in repo.get("hooks", [])
+    ]
+    return [
+        hook["id"]
+        for hook in hooks
+        if (refs := referenced_files(str(hook.get("entry", "")), tracked)) and refs <= tooling
+    ]
+
+
+def suite_members(root: Path, name: str) -> list[str]:
+    """The test files of one suite in the repository at root.
+
+    Contract tests use it to assert the job that runs them: a test of the
+    tooling suite is run by Tooling Tests and by no other step (ADR-1568).
+    """
+    return suite_files(load_registry(root), tracked_files(root), name)
+
+
 def command_list(root: Path, name: str) -> int:
-    for path in suite_files(load_registry(root), tracked_files(root), name):
+    for path in suite_members(root, name):
         print(path)
     return 0
 
@@ -322,6 +429,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_check(args.root)
         if args.command == "list":
             return command_list(args.root, args.suite)
+        if args.command == "precommit-skip":
+            print(",".join(precommit_test_hooks(args.root)))
+            return 0
         return command_run(args.root, args.suite)
     except RegistryError as exc:
         print(f"suite-registry: error: {exc}", file=sys.stderr)

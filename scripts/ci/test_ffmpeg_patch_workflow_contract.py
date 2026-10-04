@@ -146,15 +146,22 @@ class FFmpegWorkflowContract(unittest.TestCase):
         for source in (integration, smoke, node, dev):
             self.assertNotRegex(source, r"git clone[^\n]+(?:FFMPEG|AMF)")
 
-    def test_contracts_run_before_impact_or_upstream_network(self) -> None:
-        command = "python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v"
+    def test_contracts_run_once_in_the_tooling_suite(self) -> None:
+        # A test runs once in CI (ADR-1568): Tooling Tests runs the patch
+        # automation tests on every pull request and push, before any of this
+        # workflow's runs can use the scripts they cover.
+        sys.path.insert(0, str(ROOT))
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        tooling = suite_members(ROOT, "tooling")
+        for name in (
+            "test_ffmpeg_patch_stack",
+            "test_ffmpeg_patch_smoke_safety",
+            "test_ffmpeg_patch_workflow_contract",
+        ):
+            self.assertIn(f"scripts/ci/{name}.py", tooling)
         for job in (self.check, self.refresh):
-            with self.subTest(job=job.splitlines()[0]):
-                contracts = _step(job, "Test patch automation contracts")
-                self.assertIn(command, contracts)
-                self.assertNotIn("        if:", contracts)
-                self.assertLess(job.index(command), job.index("ffmpeg_patch_stack.py"))
-        self.assertLess(self.check.index(command), self.check.index("plan-ci-impact.py"))
+            self.assertNotIn("test_ffmpeg_patch", job)
 
     def test_pr_and_dispatch_check_only_the_configured_release(self) -> None:
         replay = _step(self.check, "Check configured FFmpeg release")

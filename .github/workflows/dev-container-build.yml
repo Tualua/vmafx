@@ -91,8 +91,6 @@ jobs:
       - name: Verify optional GitHub build-secret contract
         run: |
           python3 scripts/ci/check-dev-container-build-secret.py
-          python3 -m unittest discover -s scripts/ci/tests \
-            -p test_dev_container_build_secret.py
           env -u GITHUB_TOKEN docker compose \
             --project-directory "$PWD" \
             -f dev/docker-compose.yml \
@@ -113,15 +111,12 @@ jobs:
             -f dev/docker-compose.yml \
             build --check dev-mcp
 
-      # ADR-1102 container-only publishing. Two cheap assertions run before the
-      # expensive Docker build so a broken gate fails in seconds:
-      #   1. the gate's own unit suite, and
-      #   2. the gate must REJECT this runner, which is a host. If it ever
-      #      accepted a bare runner it would wave a host-built release binary
-      #      through, which is exactly the failure the policy exists to stop.
-      - name: Container-build gate — unit suite
-        run: bash scripts/ci/tests/test-check-container-build.sh
-
+      # ADR-1102 container-only publishing. A cheap assertion runs before the
+      # expensive Docker build so a broken gate fails in seconds: the gate must
+      # REJECT this runner, which is a host. If it ever accepted a bare runner
+      # it would wave a host-built release binary through, which is exactly the
+      # failure the policy exists to stop. The gate's unit suite and the
+      # build-secret contract test run in Tooling Tests (ADR-1568).
       - name: Container-build gate — must reject the host runner
         run: |
           if bash scripts/ci/check-container-build.sh; then
@@ -232,8 +227,10 @@ jobs:
       - name: Cleanup image
         if: always()
         run: |
-          docker rmi vmaf-dev-mcp-gate:${{ github.sha }} || true
-          docker rmi "vmafx-release-build:${GITHUB_SHA}" || true
+          # Cleanup only: an image a failed build never produced is not an error.
+          for image in "vmaf-dev-mcp-gate:${GITHUB_SHA}" "vmafx-release-build:${GITHUB_SHA}"; do
+            docker rmi "${image}" || echo "::notice::${image} was not built"
+          done
 
   dev-container-build:
     needs: [impact, dev-container-build-work]

@@ -1,6 +1,7 @@
 ---
 paths:
   - scripts/ci/suite_registry.py
+  - .pre-commit-config.yaml
   - scripts/ci/tests/test_suite_registry.py
   - .github/test-suites.json
   - requirements/locks/tooling-tests.in
@@ -33,9 +34,20 @@ job and as the `suite-registry` pre-commit hook.
 - `Python Package Tests (vmaf-tune)` is its own job with `needs: [mcp-smoke]`:
   it runs MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`, a tar that keeps the
   executable bit and the `$ORIGIN/../src` SONAME chain) and fails on a skip for
-  a missing binary or missing golden YUVs. The aggregator's
+  a missing binary or missing golden YUVs. It runs the files
+  `suite_registry.py list vmaf-tune` prints, never the directory, so a file
+  another suite owns does not run twice. The aggregator's
   `delayedStrictDependencies` must keep the `MCP Smoke` entry for it, or the
   check reads as never reported while MCP Smoke builds.
+
+- A test runs once in CI (ADR-1568). Do not add a workflow step that runs a
+  file of the tooling suite: `check` refuses it. A test that needs a tool only
+  one job installs gets its own suite naming that job; the most specific
+  registry path owns a file (`helm-chart`, `ffmpeg-patches`). A contract test
+  asserts `suite_members(ROOT, "tooling")`, not a workflow step.
+- The CI Pre-Commit job skips `precommit-skip`'s hooks (entries that run only
+  tooling tests) plus `ffmpeg-input-contract`, which FFmpeg Patch Stack runs.
+  A hook whose entry also runs a check keeps running there.
 
 Tests: `scripts/ci/tests/test_suite_registry.py` (an unwired file, a file in two
 suites, a non-required check, stale entries, duplicate keys, failing Python

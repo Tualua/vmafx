@@ -157,10 +157,16 @@ class Workflow(unittest.TestCase):
             with self.subTest(array=array):
                 self.assertIn(f"'{JOB_NAME}'", match.group(1) if match else "")
 
-    def test_the_job_runs_the_tests_of_what_it_relies_on(self) -> None:
+    def test_the_tests_of_what_the_job_relies_on_run_in_the_tooling_suite(self) -> None:
+        # A test runs once in CI (ADR-1568): Tooling Tests runs both files on
+        # every pull request and push; the job runs the check itself.
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        tooling = suite_members(ROOT, "tooling")
+        self.assertIn("scripts/dev/tests/test_relicense_fork_files.py", tooling)
+        self.assertIn("scripts/ci/tests/test_upstream_parity_pin.py", tooling)
         job = self.job()
-        self.assertIn("scripts/dev/tests/test_relicense_fork_files.py", job)
-        self.assertIn("scripts/ci/tests/test_upstream_parity_pin.py", job)
+        self.assertNotIn("scripts/dev/tests/test_relicense_fork_files.py", job)
 
 
 if __name__ == "__main__":

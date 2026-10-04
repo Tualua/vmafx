@@ -3,6 +3,7 @@
   "comment": "Every tracked test file belongs to exactly one suite, and every suite names the required checks that run it (ADR-1528). scripts/ci/suite_registry.py check enforces both; scripts/ci/suite_registry.py run tooling runs the tooling suite. docs/development/test-suites.md describes each suite.",
   "name_patterns": [
     "test_*.py",
+    "test-*.py",
     "*_test.py",
     "test_*.sh",
     "test-*.sh",
@@ -57,7 +58,7 @@
       "name": "vmaf-tune",
       "paths": ["tools/vmaf-tune/tests/"],
       "checks": ["Python Package Tests (vmaf-tune)"],
-      "runs": "pytest tools/vmaf-tune/tests with tools/vmaf-tune/requirements-dev-lock.txt"
+      "runs": "pytest over this suite's files (suite_registry.py list vmaf-tune) with tools/vmaf-tune/requirements-dev-lock.txt"
     },
     {
       "name": "dev-llm",
@@ -84,10 +85,25 @@
       "runs": "cargo test --workspace --all-features against the installed CPU libvmaf"
     },
     {
+      "name": "helm-chart",
+      "paths": [
+        "scripts/ci/tests/test_check_helm_selector_isolation.py",
+        "scripts/ci/tests/test_helm_controller_auth.py",
+        "scripts/ci/tests/test_helm_node_contract.py"
+      ],
+      "checks": ["helm lint + template"],
+      "runs": "unittest in the helm lint + template job, which installs the pinned, checksum-verified helm these tests render the chart with; the most specific path wins over the tooling suite's scripts/ (ADR-1568)"
+    },
+    {
+      "name": "ffmpeg-patches",
+      "paths": ["ffmpeg-patches/test/"],
+      "checks": ["FFmpeg Patch Stack"],
+      "runs": "make ffmpeg-input-contract in the FFmpeg Patch Stack job, which ffmpeg-patches/test/check_input_contract.py requires of that job (ADR-1240)"
+    },
+    {
       "name": "tooling",
       "paths": [
         "dev/scripts/",
-        "ffmpeg-patches/test/",
         "scripts/",
         "testdata/",
         "tools/ensemble-training-kit/tests/",

@@ -34,9 +34,6 @@ jobs:
       - name: Enforce FFmpeg input contract
         run: make ffmpeg-input-contract
 
-      - name: Test patch automation contracts
-        run: python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v
-
       - name: Plan CI impact (ADR-1140)
         id: impact
         env:
@@ -86,9 +83,6 @@ jobs:
 
       - name: Enforce FFmpeg input contract
         run: make ffmpeg-input-contract
-
-      - name: Test patch automation contracts
-        run: python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v
 
       - name: Refresh to the latest stable release
         id: refresh

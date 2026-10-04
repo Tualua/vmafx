@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -82,8 +83,12 @@ class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
         rules = (WORKFLOWS / "rule-enforcement.yml").read_text(encoding="utf-8")
         hooks = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-        command = "python3 scripts/ci/test_fail_closed_ci.py"
-        self.assertIn(command, rules)
+        # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
+        sys.path.insert(0, str(ROOT))
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        self.assertIn("scripts/ci/test_fail_closed_ci.py", suite_members(ROOT, "tooling"))
+        self.assertNotIn("test_fail_closed_ci.py", rules)
         self.assertIn("id: fail-closed-ci-contract", hooks)
         self.assertRegex(hooks, r"entry: python3(?: -B)? scripts/ci/test_fail_closed_ci\.py")
         hook = hooks.split("      - id: fail-closed-ci-contract\n", maxsplit=1)[1].split(

@@ -41,10 +41,10 @@ default server Deployment on CPU, keeps operator out of
 component-qualified scoring Service, performs real `/v1/score`; never
 replace it with health-only or reconciler behavior that production code does
 not implement. Keep workflow and `docs/k8s/integration-tests.md` aligned.
-Dependency-free `scripts/ci/test_e2e_runtime_contract.py` runs both in
-E2E image-build job and always-on `deep-dive-checklist` job in
-`rule-enforcement.yml`; never move it solely behind E2E schedule/label
-gate. Cluster job writes `VMAFX_E2E_KUBECONFIG` and `KUBECONFIG` to
+Dependency-free `scripts/ci/test_e2e_runtime_contract.py` runs once, in
+always-on Tooling Tests (tooling suite, ADR-1568); never move it solely
+behind E2E schedule/label gate or back into a workflow step. Cluster job
+writes `VMAFX_E2E_KUBECONFIG` and `KUBECONFIG` to
 same new file below `RUNNER_TEMP`; every Kubernetes step must first prove
 exact `kind-${KIND_CLUSTER_NAME}` context and loopback API server. Teardown
 must fail visibly if that identity guard cannot prove exact named cluster.

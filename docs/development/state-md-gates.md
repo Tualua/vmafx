@@ -119,10 +119,11 @@ Every resolved file must pass the row gate.
 python3 scripts/dev/test-resolve-state-md-conflict.py -v
 ```
 
-CI runs it in the `state.md row hygiene (ADR-0165)` step of the
-`Release Script Contract` job in
-[`.github/workflows/rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml),
-next to the gate's own self-test.
+CI runs it, and the gate's own self-test, in the required `Tooling Tests`
+job, which runs every test of the tooling suite once
+([test suites](test-suites.md), ADR-1568). The `Release Script Contract` job
+of [`.github/workflows/rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml)
+runs the gate on the live `docs/state.md`.
 
 ## Row hygiene
 

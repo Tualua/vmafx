@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T15:50:14Z",
+  "generated_at": "2026-10-04T17:37:36Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "667b2d3e8404c9b18827e0ab66edd9861bc83fa4",
-  "total_infractions": 391,
+  "commit_sha": "48d9ea42b79848bedc7728293693334e2ea92b31",
+  "total_infractions": 377,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -127,22 +127,6 @@
     },
     {
       "rule_id": "HISS-07",
-      "file_path": ".github/workflows/dev-container-build.yml",
-      "line_number": 235,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:a827f0150162",
-      "fingerprint": ".github/workflows/dev-container-build.yml:HISS-07:text:a827f0150162#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/dev-container-build.yml",
-      "line_number": 236,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:58799e130654",
-      "fingerprint": ".github/workflows/dev-container-build.yml:HISS-07:text:58799e130654#1"
-    },
-    {
-      "rule_id": "HISS-07",
       "file_path": ".github/workflows/docker-image.yml",
       "line_number": 96,
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
@@ -156,94 +140,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:90891aa10dd2",
       "fingerprint": ".github/workflows/docker-image.yml:HISS-07:text:90891aa10dd2#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 245,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:dd98cd6ad7ab",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-02:text:dd98cd6ad7ab#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 258,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:dd98cd6ad7ab",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-02:text:dd98cd6ad7ab#2"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 271,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:dd98cd6ad7ab",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-02:text:dd98cd6ad7ab#3"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 287,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:dd98cd6ad7ab",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-02:text:dd98cd6ad7ab#4"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 357,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:2220abaec257",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:2220abaec257#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 359,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:5d567088b1af",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:5d567088b1af#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 361,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:247d0ad04e5c",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:247d0ad04e5c#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 363,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:3b5977ded4a9",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:3b5977ded4a9#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 366,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:e41981ae5641",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:e41981ae5641#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 372,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:85bd87b6bae6",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:85bd87b6bae6#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/e2e-k8s.yml",
-      "line_number": 374,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c05a010bc5bc",
-      "fingerprint": ".github/workflows/e2e-k8s.yml:HISS-07:text:c05a010bc5bc#1"
     },
     {
       "rule_id": "HISS-07",
@@ -260,14 +156,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:0f34b4adc0f0",
       "fingerprint": ".github/workflows/pr-type-label.yml:HISS-07:text:0f34b4adc0f0#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/security-scans.yml",
-      "line_number": 270,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:bbb8ef6a5a6c",
-      "fingerprint": ".github/workflows/security-scans.yml:HISS-02:text:bbb8ef6a5a6c#1"
     },
     {
       "rule_id": "HISS-04",

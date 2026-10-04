@@ -154,7 +154,10 @@ class GeneratorTests(unittest.TestCase):
         docs = lint.split("  docs-lint:\n", 1)[1].split("  check-conflict-markers:\n", 1)[0]
         self.assertIn("# required-aggregator", docs)
         self.assertIn("run: make docs-fragments-check", docs)
-        self.assertIn("run: python3 scripts/docs/tests/test_generators.py", docs)
+        # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        self.assertIn("scripts/docs/tests/test_generators.py", suite_members(ROOT, "tooling"))
         pages = (ROOT / ".github/workflows/docs.yml").read_text()
         self.assertIn("docs: ${{ steps.impact.outputs.docs }}", pages)
         self.assertIn(

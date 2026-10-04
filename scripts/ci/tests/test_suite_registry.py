@@ -199,6 +199,56 @@ class SuiteRegistryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("no suite named 'nope'", result.stderr)
 
+    # --- one run per test (ADR-1568) ------------------------------------------
+
+    def tooling_manifest(self) -> dict[str, object]:
+        data = manifest()
+        data["suites"] = [  # one file of tools/ leaves for a suite of its own
+            {"name": "unit", "paths": ["pkg/", "crate/"], "checks": ["Unit"]},
+            {"name": "tooling", "paths": ["tools/"], "checks": ["Tools"]},
+            {"name": "pinned", "paths": ["tools/test_ok.py"], "checks": ["Unit"]},
+        ]
+        return data
+
+    def test_most_specific_path_owns_the_file(self) -> None:
+        self.build(PASSING_FILES, self.tooling_manifest())
+        self.assertEqual(self.registry("check").returncode, 0)
+        self.assertEqual(self.registry("list", "tooling").stdout.split(), ["tools/test-ok.sh"])
+        self.assertEqual(self.registry("list", "pinned").stdout.split(), ["tools/test_ok.py"])
+
+    def test_workflow_running_a_tooling_test_fails(self) -> None:
+        workflow = "jobs:\n  x:\n    steps:\n      - run: bash tools/test-ok.sh\n"
+        self.build({**PASSING_FILES, ".github/workflows/x.yml": workflow}, self.tooling_manifest())
+        self.assert_finding(
+            self.registry("check"), "x.yml: runs tools/test-ok.sh, which Tooling Tests"
+        )
+
+    def test_workflow_mentioning_a_tooling_test_in_a_comment_passes(self) -> None:
+        workflow = "jobs:\n  x:\n    steps:\n      # tools/test-ok.sh runs in Tooling Tests\n"
+        self.build({**PASSING_FILES, ".github/workflows/x.yml": workflow}, self.tooling_manifest())
+        self.assertEqual(self.registry("check").returncode, 0)
+
+    def test_workflow_running_a_test_of_another_suite_passes(self) -> None:
+        workflow = "jobs:\n  x:\n    steps:\n      - run: python3 tools/test_ok.py\n"
+        self.build({**PASSING_FILES, ".github/workflows/x.yml": workflow}, self.tooling_manifest())
+        self.assertEqual(self.registry("check").returncode, 0)
+
+    def test_precommit_skip_names_only_hooks_that_run_tooling_tests_alone(self) -> None:
+        config = (
+            "repos:\n"
+            "  - repo: local\n"
+            "    hooks:\n"
+            "      - {id: tooling-only, entry: bash tools/test-ok.sh}\n"
+            "      - {id: check, entry: python3 tools/helper.py}\n"
+            "      - {id: mixed, entry: bash -c 'bash tools/test-ok.sh && python3 tools/helper.py'}\n"
+            "      - {id: other-suite, entry: python3 tools/test_ok.py}\n"
+            "      - {id: make-target, entry: make lint}\n"
+        )
+        self.build({**PASSING_FILES, ".pre-commit-config.yaml": config}, self.tooling_manifest())
+        result = self.registry("precommit-skip")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "tooling-only")
+
 
 class RepositoryRegistryTests(unittest.TestCase):
     def test_the_repository_is_fully_wired(self) -> None:

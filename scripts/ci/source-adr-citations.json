@@ -5817,7 +5817,6 @@
         ".github/workflows/docker-image.yml": 1,
         ".github/workflows/docker-publish-tester.yml": 1,
         ".github/workflows/macos-tester-bundle.yml": 1,
-        ".github/workflows/rule-enforcement.yml": 2,
         ".github/workflows/supply-chain.yml": 4,
         ".github/workflows/windows-tester-bundle.yml": 1,
         "dev/Containerfile": 3,
@@ -6698,7 +6697,7 @@
         ".github/workflows/docker-publish-production.yml": 1,
         ".github/workflows/release-please.yml": 5,
         ".github/workflows/required-aggregator.yml": 2,
-        ".github/workflows/rule-enforcement.yml": 13,
+        ".github/workflows/rule-enforcement.yml": 12,
         ".github/workflows/supply-chain.yml": 1,
         ".pre-commit-config.yaml": 1,
         "bindings/rust/vmafx-sys/Cargo.toml": 1,
@@ -6852,7 +6851,6 @@
     "1177": {
       "sites": {
         ".github/workflows/required-aggregator.yml": 2,
-        ".github/workflows/rule-enforcement.yml": 2,
         ".github/workflows/sycl-parity.yml": 1,
         "dev/Containerfile.runner": 1,
         "dev/docker-compose.runner.yml": 1,
@@ -6972,7 +6970,6 @@
     },
     "1195": {
       "sites": {
-        ".github/workflows/rule-enforcement.yml": 1,
         "dev/Containerfile": 1,
         "dev/docker-compose.yml": 1,
         "dev/scripts/container-build.sh": 1,
@@ -7523,7 +7520,6 @@
     "1274": {
       "sites": {
         ".github/workflows/required-aggregator.yml": 2,
-        ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/standards-gate.yml": 1,
         "scripts/ci/tests/test_hiss_replay_contract.py": 2
       },
@@ -7764,7 +7760,6 @@
     "1319": {
       "sites": {
         ".github/workflows/required-aggregator.yml": 3,
-        ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
         "scripts/ci/check-runner-available.sh": 1,
@@ -10298,6 +10293,28 @@
         "cmd/vmafx-node/e2e_cancel_test.go": 1
       },
       "target": "1567-job-cancel-reaches-node.md"
+    },
+    "1568": {
+      "sites": {
+        ".github/workflows/dev-container-build.yml": 1,
+        ".github/workflows/lint-and-format.yml": 3,
+        ".github/workflows/rule-enforcement.yml": 2,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
+        "scripts/ci/suite_registry.py": 3,
+        "scripts/ci/test_e2e_runtime_contract.py": 1,
+        "scripts/ci/test_fail_closed_ci.py": 1,
+        "scripts/ci/test_ffmpeg_patch_workflow_contract.py": 1,
+        "scripts/ci/test_sycl_tidy_workflow_contract.py": 1,
+        "scripts/ci/tests/test-dedupe-gate.sh": 1,
+        "scripts/ci/tests/test_lint_configured.py": 1,
+        "scripts/ci/tests/test_research_digest_ids.py": 1,
+        "scripts/ci/tests/test_scorecard_workflow.py": 2,
+        "scripts/ci/tests/test_suite_registry.py": 1,
+        "scripts/ci/tests/test_upstream_parity_pin.py": 1,
+        "scripts/docs/tests/test_generators.py": 1,
+        "scripts/githooks/tests/test_install.py": 1
+      },
+      "target": "1568-tests-run-once-in-ci.md"
     },
     "1569": {
       "sites": {

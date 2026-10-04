@@ -40,9 +40,11 @@ if [[ "$lefthook_count" -ne 2 ]]; then
   report_failure "expected clone scan in pre-commit and pre-push, found $lefthook_count"
 fi
 
-grep -Fq 'run: bash scripts/ci/tests/test-dedupe-gate.sh' \
-  "$repo_root/.github/workflows/rule-enforcement.yml" ||
-  report_failure "contract test is not wired into required rule enforcement"
+# A test runs once in CI (ADR-1568): the required Tooling Tests job runs this
+# file because the registry puts it in the tooling suite.
+python3 "$repo_root/scripts/ci/suite_registry.py" --root "$repo_root" list tooling |
+  grep -Fqx 'scripts/ci/tests/test-dedupe-gate.sh' ||
+  report_failure "contract test is not in the tooling suite that Tooling Tests runs"
 grep -Fq 'id: dedupe-gate-contract' "$repo_root/.pre-commit-config.yaml" ||
   report_failure "contract test is not wired into local hooks"
 

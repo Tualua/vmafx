@@ -408,6 +408,15 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.assertIn("refusing initial baseline debt growth", output)
         self.assertFalse(self.baseline.exists())
 
+    def test_this_file_runs_in_the_tooling_suite(self) -> None:
+        # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
+        sys.path.insert(0, str(ROOT))
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        self.assertIn(
+            "scripts/ci/tests/test_research_digest_ids.py", suite_members(ROOT, "tooling")
+        )
+
     def test_live_repository_contract_and_wiring(self) -> None:
         errors = CHECKER.audit_repository(
             ROOT,
@@ -422,7 +431,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.assertIn(command, precommit)
         self.assertIn(test_command, precommit)
         self.assertIn(command, workflow)
-        self.assertIn(test_command, workflow)
+        self.assertNotIn(test_command, workflow)
         self.assertIn(
             "VMAFX_RESEARCH_BASE_REF: ${{ github.event.pull_request.base.sha }}", workflow
         )

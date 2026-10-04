@@ -81,10 +81,6 @@ jobs:
           name: scorecard-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: ${{ runner.temp }}/scorecard-master
           digest-mismatch: error
-      - name: Test report and repository policy controls
-        run: |
-          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_scorecard_*.py' -v
-          python3 -B scripts/dev/tests/test_repository_security.py -v
       - name: Enforce exact-head full repository policy
         env:
           EXPECTED_SHA: ${{ github.sha }}

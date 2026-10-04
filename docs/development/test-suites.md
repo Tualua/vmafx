@@ -21,6 +21,13 @@ in any suite ([ADR-1528](../adr/1528-test-suite-registry.md)).
   as well.
 - **A file whose name looks like a test but is not one** (a driver script, a
   dataset module) goes under `not_tests`, with a reason.
+- **Do not add a CI step that runs a tooling test.** A test runs once in CI
+  ([ADR-1568](../adr/1568-tests-run-once-in-ci.md)): Tooling Tests runs every
+  file of the tooling suite, and `suite_registry.py check` fails when another
+  workflow runs one again. A test that needs a tool only one job installs
+  (the pinned helm, for example) gets its own suite naming that job; the most
+  specific path in the registry wins, so a single file can leave the tooling
+  suite.
 
 Check the registry locally. The pre-commit hook `suite-registry` runs the same
 command:
@@ -30,7 +37,7 @@ python3 scripts/ci/suite_registry.py check
 python3 scripts/ci/suite_registry.py list tooling   # the files of one suite
 ```
 
-A test file is any tracked file named `test_*.py`, `*_test.py`, `test_*.sh`,
+A test file is any tracked file named `test_*.py`, `test-*.py`, `*_test.py`, `test_*.sh`,
 `test-*.sh`, `*_test.sh`, `*_test.go`, `*_test.rs`, `test_*.c`, `test_*.cpp` or
 `test_*.cu`, or any `.rs` file in a `tests/` directory. The check also fails
 when a suite path or `not_tests` entry no longer matches any file, so the
@@ -46,12 +53,14 @@ registry cannot go stale.
 | `ai` | `ai/tests/`, `ai/sidecar/tests/` | `Tiny AI` | `pytest` with `ai/requirements-dev-lock.txt`, the job's DNN build as `VMAF_BIN`, the golden YUVs and ffmpeg | One socket test needs root or user namespaces to start a peer with another UID |
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | `MCP Smoke` | `pytest` with the dev lock (which carries the `eval` extra), the MCP build as `VMAF_BIN` and the golden YUVs | — |
 | `rc1-tester` | `tools/rc1-tester/tests/` | `RC1 Tester Report` | `pytest` with the package's dev lock | — |
-| `vmaf-tune` | `tools/vmaf-tune/tests/` | `Python Package Tests (vmaf-tune)` (its own job: it needs `MCP Smoke`) | `pytest` with the package's dev lock, MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`) as `VMAF_BIN_FOR_TESTS` and the golden YUVs; a skip for a missing binary or missing YUVs fails the job | 5: `VMAF_TUNE_INTEGRATION=1` with ffmpeg/x265 (2; opt-in, and the two-pass case fails today: `T-VMAF-TUNE-X265-TWO-PASS-CRF-2026-10-04`), QSV hardware (1), the BBB corpus (1), the `train` extra (1) |
+| `vmaf-tune` | `tools/vmaf-tune/tests/` | `Python Package Tests (vmaf-tune)` (its own job: it needs `MCP Smoke`) | `pytest` with the package's dev lock, MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`) as `VMAF_BIN_FOR_TESTS` and the golden YUVs; a skip for a missing binary or missing YUVs fails the job | 5: `VMAF_TUNE_INTEGRATION=1` with ffmpeg/x265 (2; opt-in; the two-pass case fails until `T-VMAFTUNE-X265-TWO-PASS-CRF-2026-10-04` closes, PR #2020, ADR-1565), QSV hardware (1), the BBB corpus (1), the `train` extra (1) |
 | `dev-llm` | `dev-llm/tests/` | `Python Package Tests (dev-llm)` | `pytest` with the dev lock, which carries the `modelcard` extra | — |
 | `vmaf-roi-score` | `tools/vmaf-roi-score/tests/` | `Python Package Tests (vmaf-roi-score)` | `pytest` with the package's dev lock | — |
 | `go` | `api/`, `cmd/`, `internal/`, `pkg/` | `go vet + go test` | `go test ./...` against the CPU + ONNX Runtime libvmaf build | Individual tests skip when a tool they drive is absent |
 | `rust` | `bindings/rust/` | `vmafx-sys CI` | `cargo test --workspace --all-features`, which also runs the inline tests of `core/src/feature/rust/tad` | — |
-| `tooling` | `scripts/`, `dev/scripts/`, `ffmpeg-patches/test/`, `testdata/`, `tools/ensemble-training-kit/tests/`, `tools/external-bench/tests/` | `Tooling Tests` | `suite_registry.py run tooling`: one pytest run over the Python files, then each shell file with `bash`, using `requirements/locks/tooling-tests.txt` (pytest, PyYAML, reuse, semgrep, pre-commit and the docs stack) | Three live-build cases of `test_device_target_header_dependencies.py` (the `core` suite runs them under Meson with a build); two 4K cases of `testdata/test_sycl_4k_repeat_determinism.py` (the 4K fixtures are local-only) |
+| `helm-chart` | `scripts/ci/tests/test_check_helm_selector_isolation.py`, `test_helm_controller_auth.py`, `test_helm_node_contract.py` | `helm lint + template` | `unittest` in the helm job, which installs the pinned, checksum-verified helm these tests render the chart with; the helm impact selector covers the three files | — |
+| `ffmpeg-patches` | `ffmpeg-patches/test/` | `FFmpeg Patch Stack` | `make ffmpeg-input-contract`, which `check_input_contract.py` requires of that job | — |
+| `tooling` | `scripts/`, `dev/scripts/`, `testdata/`, `tools/ensemble-training-kit/tests/`, `tools/external-bench/tests/` | `Tooling Tests` | `suite_registry.py run tooling`: one pytest run over the Python files, then each shell file with `bash`, using `requirements/locks/tooling-tests.txt` (pytest, PyYAML, reuse, semgrep, pre-commit, mypy and the docs stack) and the distribution's cppcheck | Three live-build cases of `test_device_target_header_dependencies.py` (the `core` suite runs them under Meson with a build); two 4K cases of `testdata/test_sycl_4k_repeat_determinism.py` (the 4K fixtures are local-only) |
 
 Each pytest call in these jobs passes `-rs`, so the job log names every
 skipped test and its reason.
@@ -80,3 +89,14 @@ The tooling suite's shell tests expect `git`, `bash`, `cc`, `readelf`,
 `patchelf`, `node` and `timeout` on `PATH`, as the hosted Ubuntu runner has.
 Docker is optional: the container-source test runs its Docker-backed cases
 only when `docker info` succeeds.
+
+## Pre-commit hooks that run tests
+
+Fifty local pre-commit hooks run a test of the tooling suite when a file they
+watch changes. They stay active at commit time, where they give the fastest
+feedback. The CI `Pre-Commit` job skips them, because Tooling Tests runs the
+same files on every pull request and push:
+`python scripts/ci/suite_registry.py precommit-skip` names the hooks whose
+entry runs only tooling tests, and the job passes that list in `SKIP`. A hook
+that runs anything else as well (a check of the live tree, a test of another
+suite) keeps running in CI.

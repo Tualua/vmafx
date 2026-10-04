@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
@@ -469,12 +470,15 @@ class E2ERuntimeContractTest(unittest.TestCase):
         )
         self.assertIn('-f "${REPO_ROOT}/deploy/helm/vmafx/crds/"', kind_script)
 
-    def test_contract_runs_in_always_on_rules_workflow(self) -> None:
-        rules = RULES_WORKFLOW.read_text(encoding="utf-8")
-        invocation = "python3 scripts/ci/test_e2e_runtime_contract.py"
+    def test_contract_runs_in_the_tooling_suite(self) -> None:
+        # A test runs once in CI (ADR-1568): the always-on Tooling Tests job runs
+        # this file because the registry puts it in the tooling suite.
+        sys.path.insert(0, str(REPO_ROOT))
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
 
-        self.assertIn(invocation, rules)
-        self.assertIn(invocation, self.workflow)
+        self.assertIn(
+            "scripts/ci/test_e2e_runtime_contract.py", suite_members(REPO_ROOT, "tooling")
+        )
 
     def test_tools_are_runner_local_and_results_need_no_write_token(self) -> None:
         for tool in ("kind", "kubectl", "kuttl"):

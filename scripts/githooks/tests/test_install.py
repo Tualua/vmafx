@@ -95,7 +95,12 @@ class HookInstallTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         precommit_job = workflow.split("  pre-commit:\n", 1)[1].split("  clang-tidy:\n", 1)[0]
         self.assertIn("# required-aggregator", precommit_job)
-        self.assertIn("run: python3 scripts/githooks/tests/test_install.py", precommit_job)
+        # A test runs once in CI (ADR-1568): Tooling Tests runs this file; the
+        # Pre-Commit job skips the hooks that only run tooling tests.
+        from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
+
+        self.assertIn("scripts/githooks/tests/test_install.py", suite_members(ROOT, "tooling"))
+        self.assertIn("suite_registry.py precommit-skip", precommit_job)
         lefthook = (ROOT / "lefthook.yml").read_text()
         self.assertIn("scripts/githooks/state-sync.sh", lefthook)
 
