@@ -1,10 +1,10 @@
 # MCP backend discovery and the default allowlist
 
-This page documents the two MCP-server defaults that the
+This page explains how `list_backends` discovers which GPU runtimes the
+local `vmaf` binary supports, and which filesystem paths the MCP servers
+accept by default for input YUVs. Both defaults were fixed by the
 [ADR-0511](../adr/0511-mcp-backend-probe-allowlist-and-ladder-backend.md)
-cluster fixed: how `list_backends` discovers which GPU runtimes the
-local `vmaf` binary supports, and which filesystem paths the server
-accepts by default for input YUVs.
+cluster.
 
 ## How `list_backends` discovers compiled-in backends
 
@@ -22,28 +22,33 @@ boolean values:
 }
 ```
 
-`cpu` is always `true` — it has no driver dependency. Every GPU
-backend is `true` iff the local `vmaf` binary advertises a
-corresponding `--no_<backend>` disable flag in its `--help` output.
+The rule: `cpu` is always `true`, because it has no driver dependency.
+Every GPU backend is `true` if and only if the local `vmaf` binary lists a
+corresponding `--no_<backend>` disable flag in its `--help` output. If the
+`vmaf` binary is missing, `cpu` stays `true` and every GPU flag is `false`;
+no error is raised.
+
+Both servers implement this probe: the Python server in `_probe_backends()`
+and the Go server (`cmd/vmafx-mcp`) in `probeBackends()`, with the same
+`--help` rule and the same per-binary caching.
 
 ### Why `--help`, not `--version`
 
-Historically the probe grepped the output of `vmaf --version` for the
-substrings `"cuda"`, `"sycl"`, ... The fork's `vmaf`
-banner does not list compiled-in GPU backends there, so on hosts
-where the kernel + driver + binary all supported (e.g.) CUDA — and
-`vmaf --backend cuda` produced valid scores — `list_backends`
-incorrectly returned `cuda=false`. The
-[`vmaf-dev-mcp`](../development/dev-mcp.md) container surfaced this:
-`docker exec vmaf-dev-mcp vmaf --backend cuda -r src01_hrc00.yuv ...`
-produced a working 76.667 score while the MCP layer claimed CUDA was
-unavailable. Any downstream MCP client that orchestrates a cross-
-backend run picked the wrong arm and silently never ran CUDA.
+The `--no_<backend>` flags are a stable contract: they are added at the
+same time as backend support, so flag presence is both sufficient and
+necessary for "compiled in". ADR-0509 locks the probe to that table.
 
-The `--help` table is a stable contract: argparse-side
-`--no_<backend>` flags are added at the same time as backend support,
-so flag presence is sufficient and necessary for compile-in. ADR-0509
-locks the probe to that table.
+!!! note "History (2026-05)"
+    The probe used to grep the output of `vmaf --version` for the substrings
+    `"cuda"`, `"sycl"`, and so on. The fork's `vmaf` banner does not list
+    compiled-in GPU backends, so on a host where the kernel, driver and binary
+    all supported CUDA, `list_backends` returned `cuda=false`.
+
+The [`vmaf-dev-mcp`](../development/dev-mcp.md) container surfaced this:
+`docker exec vmaf-dev-mcp vmaf --backend cuda -r src01_hrc00.yuv ...` produced
+a working 76.667 score while the MCP layer claimed CUDA was unavailable. A
+client that orchestrates a cross-backend run picked the wrong arm and never ran
+CUDA.
 
 ### Probe caching
 
@@ -68,19 +73,12 @@ Every MCP tool that accepts a filesystem path (`vmaf_score`,
 `Path.resolve()` and rejects anything that does not live under one of
 these roots:
 
-1. `<repo_root>/testdata` — fork-added YUV fixtures and benchmark
-   harnesses.
-2. `<repo_root>/python/test/resource` — Netflix golden fixture tree
-   (includes the `yuv/`, `model/`, and `feature/` sub-directories).
-3. `<repo_root>/model` — shipped VMAF model JSON / PKL / ONNX files.
-4. `/workspace/python/test/resource` — the absolute container path
-   for the Netflix golden fixture tree. The
-   [`vmaf-dev-mcp`](../development/dev-mcp.md) container bind-mounts
-   the repo root at `/workspace/`, so the golden YUVs live at
-   `/workspace/python/test/resource/yuv/` inside the container. The
-   entry is intentionally additive — the host-relative
-   `<repo_root>/python/test/resource` still works for non-container
-   invocations (e.g. `make test`).
+| Root | Why it is allowed |
+| --- | --- |
+| `<repo_root>/testdata` | Fork-added YUV fixtures and benchmark harnesses. |
+| `<repo_root>/python/test/resource` | Netflix golden fixture tree (includes `yuv/`, `model/` and `feature/`). The Python server also lists `python/test/resource/yuv` separately; it is a subset, so behaviour is the same. |
+| `<repo_root>/model` | Shipped VMAF model JSON / PKL / ONNX files. |
+| `/workspace/python/test/resource` | Absolute container path for the Netflix golden fixtures. The [`vmaf-dev-mcp`](../development/dev-mcp.md) container bind-mounts the repo root at `/workspace/`, so the golden YUVs live at `/workspace/python/test/resource/yuv/` there. Additive: the host-relative root still works for non-container runs (for example `make test`). |
 
 Rejection error:
 

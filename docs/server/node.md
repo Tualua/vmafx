@@ -7,8 +7,9 @@ executes score requests against `libvmaf`.
 
 ## Quick start (local)
 
+Start a node; it listens on `:50052` by default.
+
 ```bash
-# Start a node (listens on :50052 by default).
 export VMAFX_LOG_LEVEL=debug
 ./vmafx-node
 ```
@@ -24,16 +25,26 @@ directly to a node. See
 [ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md).
 
 | RPC | Shape | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `Score` | unary | File-path reference/distorted pair → pooled VMAF + features. |
 | `ScoreStream` | bidirectional stream | In-memory per-frame scoring (ADR-0933). One `StreamConfig`, then `FramePair` messages, then EOF; the node returns one `FrameScore` per frame plus a terminal `AggregateScore`. See [grpc-streaming.md](../architecture/grpc-streaming.md). |
 | `Health` | unary | Liveness; answers even when no scorer is configured. |
 
 The scoring engine is the shared cgo `pkg/libvmaf`. The node resolves models
-from `VMAFX_MODEL_DIR`; if no `vmaf` binary / model dir is available the node
-still serves `Health` and returns `codes.FailedPrecondition` from the scoring
-RPCs. The controller-pull worker loop (`PullWork → Execute → ReportResult`,
-ADR-0713) is a separate _client_ role and is orthogonal to this served surface.
+from `VMAFX_MODEL_DIR`.
+
+- If no `vmaf` binary or model dir is available, the node still serves
+  `Health` and returns `codes.FailedPrecondition` from the scoring RPCs.
+- The controller-pull worker loop (`PullWork → Execute → ReportResult`,
+  ADR-0713) is a separate _client_ role, orthogonal to this served surface.
+
+!!! warning "Controller connection"
+    The node binary constructs the job executor but contains no controller
+    client: nothing in `cmd/vmafx-node` calls `RegisterNode`, `Heartbeat`,
+    `PullWork` or `ReportResult`, and no variable configures a controller
+    address for it. The Helm chart sets `VMAFX_CONTROLLER_ADDR` on the node
+    pod, but the binary does not read it. Until the pull loop lands, jobs
+    reach a node only through direct `VmafxScoring` calls on its gRPC port.
 
 Example:
 
@@ -45,7 +56,7 @@ grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
 ## Configuration (12-factor env vars)
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address for the node's worker service. |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
 | `VMAFX_VMAF_BINARY` | automatic lookup | Path to the `vmaf` CLI binary used for scoring. |
@@ -55,7 +66,8 @@ grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
 | `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
 | `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
 
-See also the [full environment variable reference](../usage/env-vars.md) for the complete table.
+See also the [full environment variable reference](../usage/env-vars.md) for the
+complete table.
 
 ## Backend selection
 
@@ -103,11 +115,17 @@ helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 ## Container images
 
 | Docker target | Published tag | Runtime |
-|---|---|---|
+| --- | --- | --- |
 | `node-cpu` | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13 |
-| `node-cuda` | not yet published | Debian 13 + CUDA 13.3.1 libraries |
-| `node-rocm` | not yet published | Debian 13 + ROCm 7.2.4 libraries |
-| `node-sycl` | not yet published | Debian 13 + oneAPI 2025.3.1 libraries |
+| `node-cuda` | not yet published | Debian 13 runtime + CUDA libraries copied from the pinned CUDA image |
+| `node-rocm` | not yet published | Debian 13 runtime + ROCm libraries copied from the pinned ROCm image |
+| `node-sycl` | not yet published | Debian 13 runtime + oneAPI runtime libraries |
+
+The pinned toolkit versions live in `build-config.env` (`CUDA_VERSION`,
+`ROCM_VERSION`, `ONEAPI_VERSION`) and are consumed by
+`docker/Dockerfile.node`; read them there rather than from this page. The
+current release track uses CUDA 13.4.2 and ROCm 10.0.0 libraries, which are
+copied out of Ubuntu 26.04 based images, and oneAPI 2026.1.
 
 The release workflow currently publishes only `node-cpu`. All targets use the
 same native-architecture FFmpeg dependency collector, so arm64 stages resolve

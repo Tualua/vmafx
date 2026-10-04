@@ -1,14 +1,38 @@
 <!-- markdownlint-disable MD013 MD024 MD026 MD060 -->
 # MCP tool reference
 
-Per-tool request / response schemas and error semantics for
-[`vmaf-mcp`](index.md). Source of truth: the `list_tools()` handler in
+Per-tool request / response schemas and error semantics for the MCP
+servers ([overview](index.md)). The Go server `vmafx-mcp` serves all 24
+tools; the Python server `vmaf-mcp` serves the first 19 in the table below.
+Source of truth: the tool registrations in
+[cmd/vmafx-mcp/tools.go](../../cmd/vmafx-mcp/tools.go) and the `list_tools()`
+handler in
 [mcp-server/vmaf-mcp/src/vmaf_mcp/server.py](../../mcp-server/vmaf-mcp/src/vmaf_mcp/server.py).
 
 Every tool returns a single `TextContent` message whose body is a JSON
 document. On error the body has shape `{"error": "<string>"}`, so clients
 can `json.loads()` unconditionally and branch on the presence of
 `error`.
+
+## Tool summary
+
+| Tool | Arguments | Servers | Execution |
+| --- | --- | --- | --- |
+| [`vmaf_score`](#vmaf_score) | `ref`, `dis`, `width`, `height`, `pixfmt`, `bitdepth`, optional `model`, `backend`, `subsample`, `precision`, scoring extras | Python, Go | CLI subprocess; Go: optional cgo |
+| [`list_models`](#list_models) | none | Python, Go | filesystem |
+| [`list_backends`](#list_backends) | none | Python, Go | `vmaf --help` probe |
+| [`run_benchmark`](#run_benchmark) | none | Python, Go | `bench_all.sh` |
+| [`eval_model_on_split`](#eval_model_on_split) | `model`, `features`, `split`, `input_name` | Python, Go | native |
+| [`compare_models`](#compare_models) | `models`, `features`, `split` | Python, Go | native |
+| [`describe_worst_frames`](#describe_worst_frames) | `ref`, `dis`, `width`, `height`, `pixfmt`, `bitdepth`, optional `n` | Python, Go | CLI + VLM |
+| [`probe_backend`](#probe_backend) | `backend` | Python, Go | CLI probe |
+| [`vmaf_version`](#vmaf_version) | none | Python, Go | `vmaf --version` |
+| [`vmaf_score_encoded`](#vmaf_score_encoded) | `reference_encoded`, `distorted_encoded`, optional `model`, `backend`, `subsample`, `precision` | Python, Go | `ffmpeg` + CLI |
+| [`list_extractors`](#list_extractors) | none | Python, Go | `vmaf` probe |
+| [`describe_model`](#describe_model) | `name` | Python, Go | CLI; Go: optional cgo |
+| [`run_compare`](#run_compare), [`run_ladder`](#run_ladder), [`run_tune_per_shot`](#run_tune_per_shot) | see each tool | Python, Go | `vmaf-tune` |
+| [`vmaf_per_shot`](#vmaf_per_shot), [`vmaf_roi`](#vmaf_roi), [`vmaf_bench`](#vmaf_bench), [`vmaf_vpl`](#vmaf_vpl) | see each tool | Python, Go | sidecar binaries |
+| [`submit_job`](#submit_job), [`get_job`](#get_job), [`cancel_job`](#cancel_job), [`list_jobs`](#list_jobs), [`vmaf_score_remote`](#vmaf_score_remote) | see each tool | Go only | gRPC |
 
 ## `vmaf_score`
 
@@ -17,7 +41,7 @@ Score one `(ref, dis)` YUV pair and return the full VMAF JSON report.
 ### Input schema
 
 | Field       | Type                                   | Required | Default                 | Notes                                          |
-|-------------|----------------------------------------|----------|-------------------------|------------------------------------------------|
+| --- | --- | --- | --- | --- |
 | `ref`       | string (path)                          | yes      | —                       | Reference YUV; must be under an allowed root   |
 | `dis`       | string (path)                          | yes      | —                       | Distorted YUV; same allowlist                  |
 | `width`     | integer `≥ 1`                          | yes      | —                       | Frame width in pixels                          |
@@ -107,7 +131,7 @@ Response body (abridged):
 
 ```json
 {
-  "version": "3.2.1",
+  "version": "1.0.0-rc.2",
   "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
   "frames": [ { "frameNum": 0, "metrics": { "vmaf": 78.8263, "...": "..." } } ]
 }
@@ -115,9 +139,11 @@ Response body (abridged):
 
 ### Errors
 
-- Path not under an allowlisted root → `{"error": "path ... not under an allowlisted root; set VMAF_MCP_ALLOW to extend."}`.
+- Path not under an allowlisted root →
+  `{"error": "path ... not under an allowlisted root; set VMAF_MCP_ALLOW to extend."}`.
 - Path does not exist → `{"error": "<abs-path>"}` from `FileNotFoundError`.
-- vmaf binary missing → `{"error": "vmaf binary not found at ...; Build first: meson compile -C build."}`.
+- vmaf binary missing →
+  `{"error": "vmaf binary not found at ...; Build first: meson compile -C build."}`.
 - Non-zero vmaf exit → `{"error": "vmaf exited <code>: <stderr>"}`.
 - Caller-requested backend not advertised by the local binary →
   `{"error": "backend 'cuda' requested but the local vmaf binary
@@ -141,7 +167,7 @@ This is the fork's ONNX tiny-model surface (previously unreachable over
 MCP).
 
 | Field               | Type / values                                                                                                              | CLI flag              | Notes                                                                                              |
-|---------------------|----------------------------------------------------------------------------------------------------------------------------|-----------------------|----------------------------------------------------------------------------------------------------|
+| --- | --- | --- | --- |
 | `tiny_model`        | string (path)                                                                                                              | `--tiny-model`        | Load a tiny ONNX model alongside the classic models.                                               |
 | `tiny_device`       | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--tiny-device` (= `--dnn-ep`) | ONNX Runtime execution provider. Default `auto`.                                       |
 | `dnn_ep`            | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--dnn-ep` (= `--tiny-device`) | Alias for `tiny_device` matching the `--dnn-ep` CLI flag.                                          |
@@ -176,7 +202,7 @@ valid YUV of matching geometry (it is not consumed by the scorer). For
 #### Feature selection and CTC presets
 
 | Field      | Type / values                                            | CLI flag      | Notes                                                                                          |
-|------------|----------------------------------------------------------|---------------|------------------------------------------------------------------------------------------------|
+| --- | --- | --- | --- |
 | `feature`  | array of strings                                         | `--feature`   | Each entry becomes a repeated `--feature` flag. Use the libvmaf `name[=key=val:...]` grammar.   |
 | `aom_ctc`  | `v1.0 \| v2.0 \| v3.0 \| v4.0 \| v5.0 \| v6.0 \| v7.0`    | `--aom_ctc`   | AOM Common Test Conditions preset.                                                             |
 | `nflx_ctc` | `v1.0`                                                    | `--nflx_ctc`  | Netflix Common Test Conditions preset.                                                         |
@@ -190,7 +216,7 @@ you want).
 #### Frame-range and worker controls
 
 | Field             | Type          | CLI flag            | Notes                                                  |
-|-------------------|---------------|---------------------|--------------------------------------------------------|
+| --- | --- | --- | --- |
 | `threads`         | integer `≥ 1` | `--threads`         | Worker threads (capped to hardware cores by the CLI).  |
 | `frame_cnt`       | integer `≥ 1` | `--frame_cnt`       | Maximum number of frames to process.                   |
 | `frame_skip_ref`  | integer `≥ 0` | `--frame_skip_ref`  | Skip the first N reference frames.                     |
@@ -203,7 +229,7 @@ Control hardware device selection and hardware capability masks on
 heterogeneous systems (#1240).
 
 | Field          | Type          | CLI flag         | Notes                                                        |
-|----------------|---------------|------------------|--------------------------------------------------------------|
+| --- | --- | --- | --- |
 | `cpumask`      | integer `≥ 0` | `--cpumask`      | Bitmask restricting permitted CPU SIMD instruction sets.     |
 | `gpumask`      | integer `≥ 0` | `--gpumask`      | Bitmask restricting permitted GPU operations.                |
 | `sycl_device`  | integer `≥ 0` | `--sycl_device`  | Select SYCL GPU device by index.                             |
@@ -215,7 +241,7 @@ heterogeneous systems (#1240).
 Select the serialization format emitted by the underlying `vmaf` engine (#1240).
 
 | Field        | Type / values                       | CLI flag                           | Notes                                                              |
-|--------------|-------------------------------------|------------------------------------|--------------------------------------------------------------------|
+| --- | --- | --- | --- |
 | `output_fmt` | `json \| xml \| csv \| sub`         | `--json \| --xml \| --csv \| --sub`| Output format. Default `json`. Non-JSON formats return a structured text payload (`{"format": ..., "output": ...}`). |
 
 ## `list_models`
@@ -279,8 +305,9 @@ verify that a backend can actually run a score.
 
 ### Errors
 
-- If the vmaf binary is missing, every flag is `false` — no error is
-  raised. Call `list_backends` before other tools to test whether the
+- If the vmaf binary is missing, `cpu` stays `true` and every GPU flag is
+  `false` — no error is raised. Call `list_backends` before other tools to test
+  whether the
   build is usable.
 
 ## run_benchmark
@@ -289,29 +316,37 @@ Run the full multi-fixture benchmark suite (`testdata/bench_all.sh`) against all
 available compiled-in backends (CPU, CUDA, SYCL, HIP, Metal — Vulkan removed in
 ADR-0726) on three canonical YUV fixture pairs built into the harness:
 
-1. **576×324, 48 frames, 8-bit** — the Netflix golden pair `src01_hrc00 / src01_hrc01`
+1. **576×324, 48 frames, 8-bit** — the Netflix golden pair
+   `src01_hrc00 / src01_hrc01`
 2. **1920×1080, 5 frames, 8-bit** — the 5-frame 1080p pair
 3. **3840×2160, 200 frames, 8-bit** — the 4K BBB excerpt (`testdata/bbb/`)
 
-For each fixture the harness scores all compiled-in backends, prints per-backend VMAF means
+For each fixture the harness scores all compiled-in backends, prints per-backend
+VMAF means
 and wall times, and prints a comparison table showing max per-frame diff between
-CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detail.
+CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more
+detail.
 
-> **This tool does not accept per-call `ref`/`dis` arguments.** Per-pair scoring is
-> the job of `vmaf_score`. `bench_all.sh` is a fixed-fixture harness. (ADR-0517)
->
-> **Protocol note**: `run_benchmark` runs the full 4K test which takes 30–60 seconds
-> on a modern GPU. Real MCP clients hold the connection open. The heredoc test pattern
-> (`docker exec -i ... vmaf-mcp << EOF ... EOF`) causes the server to shut down on
-> stdin EOF before the benchmark completes. Use a persistent pipe (`sleep 120 |`)
-> when testing from the command line. ADR-0517 preserves the tracked diagnosis
-> and repair rationale for the original benchmark failure.
->
-> **Error contract**: `run_benchmark` raises `RuntimeError("benchmark failed — no
-> output line containing pooled score / Pearson correlation")` on partial / silent
-> pipe failures (ADR-0638). A second legacy implementation that swallowed the
-> failure and returned a partial dict was removed in PR #517 (Layer-5); MCP clients
-> should now branch on `isError=True` per the [MCP error contract](../../docs/mcp/index.md).
+!!! warning "No per-call arguments"
+    This tool does not accept per-call `ref`/`dis` arguments. Per-pair
+    scoring is the job of `vmaf_score`; `bench_all.sh` is a fixed-fixture
+    harness (ADR-0517).
+
+!!! note "Protocol note"
+    `run_benchmark` runs the full 4K test, which takes 30–60 seconds on a
+    modern GPU. Real MCP clients hold the connection open. The heredoc test
+    pattern (`docker exec -i ... vmaf-mcp << EOF ... EOF`) makes the server
+    shut down on stdin EOF before the benchmark completes. Use a persistent
+    pipe (`sleep 120 |`) when testing from the command line. ADR-0517
+    preserves the diagnosis and repair rationale for the original failure.
+
+!!! note "Error contract"
+    `run_benchmark` raises `RuntimeError("benchmark failed — no output line
+    containing pooled score / Pearson correlation")` on partial or silent
+    pipe failures (ADR-0638). A second legacy implementation that swallowed
+    the failure and returned a partial dict was removed in PR #517
+    (Layer-5). MCP clients should branch on `isError=True`; see
+    [Cross-tool error conventions](#cross-tool-error-conventions).
 
 ### Input schema
 
@@ -331,8 +366,10 @@ Takes no arguments.
 }
 ```
 
-The `stdout` field contains the full human-readable benchmark output. Per-backend JSON
-result files are written to `/tmp/vmaf-bench-<pid>/` (or to `VMAF_BENCH_OUTDIR` if set).
+The `stdout` field contains the full human-readable benchmark output.
+Per-backend JSON
+result files are written to `/tmp/vmaf-bench-<pid>/` (or to `VMAF_BENCH_OUTDIR`
+if set).
 
 ### Errors
 
@@ -342,7 +379,7 @@ result files are written to `/tmp/vmaf-bench-<pid>/` (or to `VMAF_BENCH_OUTDIR` 
 - Non-zero exit + empty stdout + empty stderr → `error` key is added with a
   root-cause shortlist and a `bash -x` re-run hint. Common causes: missing vmaf
   binary or missing fixture YUVs under `testdata/bbb/`.
-- Unavailable backends (Vulkan without ICD, HIP scaffold-only) produce a `SKIP`
+- Unavailable backends (for example HIP scaffold-only) produce a `SKIP`
   line in stdout and do not abort the harness.
 
 ## `eval_model_on_split`
@@ -352,7 +389,8 @@ filter to a deterministic `train` / `val` / `test` split (keyed by the
 `key` column via SHA-256 bucketing — same scheme as `vmaf_train`), and
 report correlations against the `mos` target.
 
-**Python server** (`vmaf-mcp`) requires the optional `eval` extra:
+**Python server** (`vmaf-mcp`) requires the optional `eval` extra, which pulls
+in `numpy`, `pandas`, `scipy`, and `onnxruntime`:
 
 ```bash
 pip install -e 'mcp-server/vmaf-mcp[eval]'
@@ -386,12 +424,10 @@ scipy returns `NaN` and Python emits a bare `NaN`, which is not valid
 JSON. The Go server instead fails with an explicit
 `correlation undefined: input has zero variance` error.
 
-which pulls in `numpy`, `pandas`, `scipy`, and `onnxruntime`.
-
 ### Input schema
 
 | Field        | Type                                                         | Required | Default      |
-|--------------|--------------------------------------------------------------|----------|--------------|
+| --- | --- | --- | --- |
 | `model`      | string (path to `.onnx`)                                     | yes      | —            |
 | `features`   | string (path to `.parquet`)                                  | yes      | —            |
 | `split`      | `"train" \| "val" \| "test" \| "all"`                        | no       | `"test"`     |
@@ -428,12 +464,18 @@ of columns found.
 
 ### Errors
 
-- Bad split name → `{"error": "split must be one of ('train', 'val', 'test', 'all'); got 'foo'"}`.
-- Missing `mos` column → `{"error": "<path> has no 'mos' column — can't score correlations"}`.
-- Missing all feature columns → `{"error": "... has none of the expected feature columns ..."}`.
-- Fewer than 2 samples in the chosen split → `{"error": "split 'test' has N samples — need ≥2 to compute correlations"}`.
-- Model output shape ≠ target shape → `{"error": "model output shape ... does not match target shape ..."}`.
-- `eval` extra not installed → `{"error": "eval_model_on_split requires the 'eval' extra: pip install 'vmaf-mcp[eval]'"}`.
+- Bad split name →
+  `{"error": "split must be one of ('train', 'val', 'test', 'all'); got 'foo'"}`.
+- Missing `mos` column →
+  `{"error": "<path> has no 'mos' column — can't score correlations"}`.
+- Missing all feature columns →
+  `{"error": "... has none of the expected feature columns ..."}`.
+- Fewer than 2 samples in the chosen split →
+  `{"error": "split 'test' has N samples — need ≥2 to compute correlations"}`.
+- Model output shape ≠ target shape →
+  `{"error": "model output shape ... does not match target shape ..."}`.
+- `eval` extra not installed →
+  `{"error": "eval_model_on_split requires the 'eval' extra: pip install 'vmaf-mcp[eval]'"}`.
 
 ## `compare_models`
 
@@ -444,7 +486,7 @@ of aborting the whole call — so the agent can surface partial results.
 ### Input schema
 
 | Field        | Type                                                         | Required | Default      |
-|--------------|--------------------------------------------------------------|----------|--------------|
+| --- | --- | --- | --- |
 | `models`     | array of string (paths to `.onnx`), `minItems: 1`            | yes      | —            |
 | `features`   | string (path to `.parquet`)                                  | yes      | —            |
 | `split`      | `"train" \| "val" \| "test" \| "all"`                        | no       | `"test"`     |
@@ -470,7 +512,8 @@ a string.
 
 ### Errors
 
-- Empty or non-list `models` → `{"error": "'models' must be a non-empty list of paths"}`.
+- Empty or non-list `models` →
+  `{"error": "'models' must be a non-empty list of paths"}`.
 - Individual model failures show up under the `errors` array, not as a
   top-level error.
 
@@ -487,7 +530,7 @@ wants narrative context for low-quality regions. Added in
 ### Input schema
 
 | Field      | Type                                                | Required | Default                  |
-|------------|-----------------------------------------------------|----------|--------------------------|
+| --- | --- | --- | --- |
 | `ref`      | string (path to reference YUV)                      | yes      | —                        |
 | `dis`      | string (path to distorted YUV)                      | yes      | —                        |
 | `width`    | integer                                             | yes      | —                        |
@@ -539,12 +582,14 @@ during the lifetime of the process.
 
 ### Errors
 
-- `ffmpeg` not on PATH → `{"error": "ffmpeg not on PATH; install ffmpeg to use describe_worst_frames"}`.
+- `ffmpeg` not on PATH →
+  `{"error": "ffmpeg not on PATH; install ffmpeg to use describe_worst_frames"}`.
 - `ffmpeg` older than 5.1 → the Python server fails the call with
   `ffmpeg frame-extract failed: ... Unrecognized option 'fps_mode'`; the Go
   server (`vmafx-mcp`) returns the frame with an empty `png` and
   `(frame extraction failed: ...)` as its `description`.
-- Unsupported `pixfmt`/`bitdepth` combo → `{"error": "unsupported pixfmt/bitdepth combo: ..."}`.
+- Unsupported `pixfmt`/`bitdepth` combo →
+  `{"error": "unsupported pixfmt/bitdepth combo: ..."}`.
 - VMAF subprocess failure → bubbles up the underlying `vmaf_score` error.
 - VLM inference exception per-frame → the frame's `description`
   carries the exception string; other frames still proceed.
@@ -563,7 +608,7 @@ misreported as `runtime_healthy: true`. A null or non-finite score now sets
 ### Input schema
 
 | Field     | Type                                                          | Required | Notes                        |
-|-----------|---------------------------------------------------------------|----------|------------------------------|
+| --- | --- | --- | --- |
 | `backend` | `"cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | yes      | Backend to health-check      |
 
 ### Response body
@@ -611,7 +656,7 @@ confirming which fork build is running before scoring. Added in
 ```json
 {
   "binary_path": "/usr/local/bin/vmaf",
-  "version":     "3.2.1",
+  "version":     "1.0.0-rc.2",
   "build_flags": {
     "cpu":    true,
     "cuda":   true,
@@ -650,7 +695,7 @@ Requires `ffmpeg` and `ffprobe` on `PATH`.
 ### Input schema
 
 | Field                | Type                                                            | Required | Default                  | Notes                                          |
-|----------------------|-----------------------------------------------------------------|----------|--------------------------|------------------------------------------------|
+| --- | --- | --- | --- | --- |
 | `reference_encoded`  | string (path)                                                   | yes      | —                        | Reference encoded video; must be under an allowlisted root |
 | `distorted_encoded`  | string (path)                                                   | yes      | —                        | Distorted encoded video; same allowlist        |
 | `model`              | string                                                          | no       | `"version=vmaf_v0.6.1"`  | Any `--model` grammar from the CLI             |
@@ -682,7 +727,7 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ```json
 {
-  "version": "3.2.1",
+  "version": "1.0.0-rc.2",
   "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
   "frames": [ "..." ],
   "backend_requested": "auto",
@@ -703,40 +748,12 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ---
 
-## Cross-tool error conventions
-
-**ADR-0634 (isError spec-correctness):** From ADR-0634 onward, all tool
-handler exceptions are propagated as raises rather than being caught and
-returned as `TextContent({"error": ...})`. This allows the `mcp` library's
-outer handler (`_make_error_result`) to set `isError=True` on the
-`CallToolResult`, so conformant MCP clients (which branch on `result.isError`)
-correctly treat tool errors as errors. The previous pattern left `isError`
-implicitly `False`, causing clients to misclassify errors as successes.
-
-| Situation                             | MCP-level behavior                                       |
-|---------------------------------------|----------------------------------------------------------|
-| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`            |
-| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`            |
-| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`     |
-| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
-| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
-| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
-
-## Related
-
-- [MCP server overview](index.md) — install, security model, env vars.
-- [CLI reference](../usage/cli.md) — the CLI that `vmaf_score` wraps.
-- [`vmaf_bench`](../usage/bench.md) — what `run_benchmark` drives.
-- [Tiny-AI inference](../ai/inference.md) — what
-  `eval_model_on_split` / `compare_models` are scoring.
-- [ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-
 ## `list_extractors`
 
 Enumerate all `VmafFeatureExtractor` implementations found in the local
 `core/src/feature/` C source tree.  No binary required — the server
-parses the C source directly.  Added in [ADR-0638](../adr/0638-mcp-p1-vmaftune-extractors-models-progress.md).
+parses the C source directly. Added in
+[ADR-0638](../adr/0638-mcp-p1-vmaftune-extractors-models-progress.md).
 
 ### Input schema — no arguments.
 
@@ -767,7 +784,7 @@ not incorrectly trimmed to `vmaf_v0.6` as Python's `Path.stem` would do.
 ### Input schema
 
 | Field  | Type   | Required | Notes |
-|--------|--------|----------|-------|
+| --- | --- | --- | --- |
 | `name` | string | yes      | Model stem (`vmaf_v0.6.1`), full filename (`vmaf_v0.6.1.json`), or repo-relative path. |
 
 ### Response body
@@ -788,7 +805,8 @@ not incorrectly trimmed to `vmaf_v0.6` as Python's `Path.stem` would do.
 
 ### Errors
 
-- Unknown name → `{"error": "model 'foo' not found; run list_models to see available models."}`.
+- Unknown name →
+  `{"error": "model 'foo' not found; run list_models to see available models."}`.
 - Ambiguous name (two models with the same stem in different subdirs) →
   `{"error": "model name '...' is ambiguous; matched: [...]. Pass an explicit path instead."}`.
 
@@ -802,7 +820,7 @@ notifications when `params._meta.progressToken` is set.  ADR-0638.
 ### Input schema
 
 | Field          | Type    | Required | Default                              | Notes |
-|----------------|---------|----------|--------------------------------------|-------|
+| --- | --- | --- | --- | --- |
 | `src`          | string  | yes      | —                                    | Source video (any FFmpeg-readable format or raw YUV). |
 | `target_vmaf`  | number  | no       | —                                    | Single VMAF target (legacy single-target schema). |
 | `target_vmafs` | string  | no       | `"94,96,97,98"`                      | Comma-separated VMAF targets (multi-target schema). |
@@ -820,7 +838,8 @@ Shape is the v1 (single-target) or v2 (multi-target) schema from ADR-0513.
 
 ### Errors
 
-- vmaf-tune binary missing → `{"error": "vmaf-tune binary not found at ...; Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."}`.
+- vmaf-tune binary missing →
+  `{"error": "vmaf-tune binary not found at ...; Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."}`.
 - Non-zero exit → `{"error": "vmaf-tune compare exited <rc>: <stderr>"}`.
 
 ## `run_ladder`
@@ -832,7 +851,7 @@ notifications.  ADR-0638.
 ### Input schema
 
 | Field            | Type    | Required | Default        | Notes |
-|------------------|---------|----------|----------------|-------|
+| --- | --- | --- | --- | --- |
 | `src`            | string  | yes      | —              | Source video path. |
 | `resolutions`    | string  | yes      | —              | Comma-separated `WxH` list, e.g. `"1920x1080,1280x720,854x480"`. |
 | `target_vmafs`   | string  | yes      | —              | Comma-separated VMAF targets, e.g. `"95,90,85"`. |
@@ -848,7 +867,8 @@ notifications.  ADR-0638.
 { "manifest": { "rungs": [ ... ] }, "format": "json" }
 ```
 
-For `format="hls"` or `"dash"`, `manifest` is a raw string (the M3U8 / MPD text).
+For `format="hls"` or `"dash"`, `manifest` is a raw string (the M3U8 / MPD
+text).
 
 ### Errors — same pattern as `run_compare`.
 
@@ -861,7 +881,7 @@ notifications.  ADR-0638.
 ### Input schema
 
 | Field              | Type    | Required | Default     | Notes |
-|--------------------|---------|----------|-------------|-------|
+| --- | --- | --- | --- | --- |
 | `src`              | string  | yes      | —           | Source video path. |
 | `target_vmaf`      | number  | no       | `92.0`      | Target VMAF score. |
 | `encoder`          | string  | no       | `"libx264"` | Codec adapter. |
@@ -874,9 +894,33 @@ notifications.  ADR-0638.
 ### Response body
 
 Returns the parsed JSON output of `vmaf-tune tune-per-shot --format json`
-(list of per-shot recommendations) or the raw shell/CSV string for other formats.
+(list of per-shot recommendations) or the raw shell/CSV string for other
+formats.
 
 ### Errors — same pattern as `run_compare`.
+
+---
+
+## Cross-tool error conventions
+
+Since [ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md):
+
+- All tool handler exceptions are raised, not caught and returned as
+  `TextContent({"error": ...})`.
+- The `mcp` library's outer handler (`_make_error_result`) therefore sets
+  `isError=True` on the `CallToolResult`, and conformant clients (which
+  branch on `result.isError`) treat tool errors as errors.
+- Before ADR-0634 `isError` stayed implicitly `False`, so clients
+  misclassified errors as successes.
+
+| Situation                             | MCP-level behavior                                       |
+| --- | --- |
+| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`            |
+| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`            |
+| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`     |
+| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
+| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
+| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
 
 ## Sidecar-binary tools
 
@@ -893,7 +937,8 @@ enforces, so an out-of-range value fails with a readable MCP error instead of a
 Each tool resolves its binary in this order, and the first hit wins:
 
 1. the tool's own environment override,
-2. a **sibling of the resolved `vmaf` binary** — so `VMAF_BIN` resolves the whole
+2. a **sibling of the resolved `vmaf` binary** — so `VMAF_BIN` resolves the
+   whole
    family, which is what the `vmaf-dev-mcp` container relies on after
    `make install`,
 3. `/usr/local/bin/<name>`,
@@ -901,7 +946,7 @@ Each tool resolves its binary in this order, and the first hit wins:
 5. `<repo>/build/tools/<name>`.
 
 | Tool | Binary | Environment override |
-|---|---|---|
+| --- | --- | --- |
 | `vmaf_per_shot` | `vmaf-perShot` | `VMAF_PER_SHOT_BIN` |
 | `vmaf_roi` | `vmaf_roi` | `VMAF_ROI_BIN` |
 | `vmaf_bench` | `vmaf_bench` | `VMAF_BENCH_BIN` |
@@ -919,7 +964,7 @@ per-shot CRF plan targeting a VMAF score. ADR-0222.
 ### Input schema
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `reference` | string (path) | yes | — | Raw planar YUV; must be under an allowed root. |
 | `width` | integer `16..65535` | yes | — | Frame width. |
 | `height` | integer `16..65535` | yes | — | Frame height. |
@@ -967,7 +1012,7 @@ file and emit an encoder ROI sidecar.
 ### Input schema
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `reference` | string (path) | yes | — | Raw planar YUV, under an allowed root. |
 | `width` | integer `1..16384` | yes | — | Frame width. |
 | `height` | integer `1..16384` | yes | — | Frame height. |
@@ -1020,7 +1065,7 @@ arguments (ADR-0513 / ADR-0517). `vmaf_bench` is the per-feature timing tool.
 ### Input schema
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `frames` | integer `2..48` | no | — | `--frames`; the C default is 10 and 48 is `MAX_TEST_FRAMES`. Out-of-range values are rejected rather than silently clamped as the C parser does. |
 | `resolution` | `"576x324" \| "640x480" \| "1280x720" \| "1920x1080" \| "3840x2160"` | no | — | `--resolution`. Omit to test all five. |
 | `bpc` | `8 \| 10 \| 12 \| 16` | no | — | `--bpc`; C default 8. |
@@ -1045,7 +1090,8 @@ true|false` and `"mode": "validate"`.
 
 ### Errors
 
-In **benchmark** mode a non-zero exit is a tool error. In **validate** mode it is
+In **benchmark** mode a non-zero exit is a tool error. In **validate** mode it
+is
 not: `vmaf_bench --validate` exits 1 to report that the GPU/CPU comparison found
 deltas, which is a result rather than a failure, so the call succeeds with
 `validation_failed=true`. Argument validation errors and a missing binary are
@@ -1063,7 +1109,7 @@ it never silently falls back to another path.
 ### Input schema
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `ref` | string (path) | yes | — | Reference encoded video, under an allowed root. |
 | `dis` | string (path) | yes | — | Distorted encoded video. |
 | `model` | string | no | `"vmaf_v0.6.1"` | `--model`. A **bare model name**; a value containing `/`, `\`, a space or a tab is rejected. The default mirrors the sidecar's own. |
@@ -1102,11 +1148,12 @@ for the topology.
 
 ### Configuration
 
-Connection targets are **environment-only** — a tool argument naming a host would
+Connection targets are **environment-only** — a tool argument naming a host
+would
 turn the MCP server into an SSRF pivot.
 
 | Variable | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_CONTROLLER_ADDR` | `localhost:9090` | `vmafx-controller` gRPC address. |
 | `VMAFX_SERVER_ADDR` | `localhost:9090` | `vmafx-server` gRPC address (used by `vmaf_score_remote`). |
 | `VMAFX_CONTROLLER_TOKEN` | — | Optional bearer token; sent as `authorization: Bearer <token>` on every controller RPC. Omit it against a controller started with `VMAFX_AUTH_DISABLED=true`. |
@@ -1128,7 +1175,7 @@ component, and must contain no NUL / CR / LF.
 Enqueue a scoring job and return its ID.
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `reference` | string (absolute worker-side path) | yes | — | |
 | `distorted` | string (absolute worker-side path) | yes | — | |
 | `model` | string | no | — | Omit to let the controller apply its own default. |
@@ -1173,7 +1220,7 @@ Request cancellation of a PENDING or RUNNING job (`job_id`, required). Returns
 List the controller's current job snapshot.
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `status_filter` | array of status strings | no | — | Any of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`; case-insensitive. Omit for all jobs. |
 | `limit` | integer `1..500` | no | `100` | Maximum jobs returned. |
 
@@ -1193,7 +1240,7 @@ Score a pair on a remote `vmafx-server` over the unary `VmafxScoring.Score` RPC.
 Nothing is read locally.
 
 | Field | Type | Required | Default | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `reference` | string (absolute server-side path) | yes | — | |
 | `distorted` | string (absolute server-side path) | yes | — | |
 | `model` | string | no | — | Omit to let the server apply its own default. |
@@ -1226,12 +1273,24 @@ All four `run_*` tools — `run_benchmark`, `run_compare`, `run_ladder`, and
 The server sends two progress events per tool call:
 
 | Event      | `progress` | `total` | `message` |
-|------------|-----------|---------|-----------|
+| --- | --- | --- | --- |
 | Start      | `0.0`     | `1.0`   | `"starting vmaf-tune compare"` (tool-specific) |
 | Completion | `1.0`     | `1.0`   | `"vmaf-tune compare done"` |
 
-No finer-grained progress is available because the tools delegate to a subprocess.
+No finer-grained progress is available because the tools delegate to a
+subprocess.
 Clients without a token receive no progress events (per MCP spec — the server
 must not send unsolicited progress).
 
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
+
+## Related
+
+- [MCP server overview](index.md) — install, security model, env vars.
+- [CLI reference](../usage/cli.md) — the CLI that `vmaf_score` wraps.
+- [`vmaf_bench`](../usage/bench.md) — what `run_benchmark` drives.
+- [Tiny-AI inference](../ai/inference.md) — what
+  `eval_model_on_split` / `compare_models` are scoring.
+- [ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md) — P0
+  fixes.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).

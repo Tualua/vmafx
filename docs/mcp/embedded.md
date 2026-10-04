@@ -1,67 +1,70 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Embedded MCP server (in-process, inside libvmaf)
 
-> **Status: T5-2d v3 runtime landed (2026-05-09).**
-> `vmaf_mcp_init` / `vmaf_mcp_start_stdio` / `vmaf_mcp_start_uds` /
-> `vmaf_mcp_start_sse` / `vmaf_mcp_stop` / `vmaf_mcp_close` are all
-> wired and respond to JSON-RPC 2.0 requests (`tools/list`,
-> `tools/call`, `resources/list`, `initialize`). Tools shipped:
-> `list_features` (real) and `compute_vmaf` (real — pooled mean
-> VMAF over a YUV420p 8/10/12/16-bit pair via `vmaf_model_load` +
-> `vmaf_read_pictures` + `vmaf_score_pooled`). UDS transport
-> listens on a mode-0700 socket file. SSE transport listens on
-> 127.0.0.1 only and serves a minimal HTTP/1.1 surface (no
-> mongoose — see [ADR-0332](../adr/0402-mcp-runtime-v2.md) §
-> "Status update 2026-05-09 (v3 SSE)" for the license-driven
-> decision to roll our own ~500 LOC HTTP+SSE in plain POSIX
-> sockets). The standalone Python MCP server under
-> [`mcp-server/vmaf-mcp/`](../../mcp-server/vmaf-mcp/) remains a
-> supported alternative for batch CLI-style workflows.
+The embedded MCP server runs inside the host process that loaded
+`libvmaf.so` (typically `vmaf`, `ffmpeg`'s `libvmaf` filter, or a Python
+harness) and answers JSON-RPC 2.0 requests over stdio, a Unix domain socket
+or loopback SSE. It serves two tools today: `list_features` and
+`compute_vmaf`. It is off by default; build with `-Denable_mcp=true`.
 
-The embedded MCP server runs **inside the host process** that
-loaded `libvmaf.so` — typically `vmaf` (the CLI), `ffmpeg`'s
-`libvmaf` filter, or a Python harness. Unlike the standalone
-Python server (which wraps the `vmaf` CLI), the embedded server
-exposes JSON-RPC tools that can introspect and steer a *running*
-measurement: query per-feature scores mid-stream, request a model
-hot-swap at the next frame boundary, observe queue pressure, etc.
+!!! note "Status: v3 runtime"
+    The v3 runtime landed on 2026-05-09 (T5-2d). `vmaf_mcp_init`,
+    `vmaf_mcp_start_stdio`, `vmaf_mcp_start_uds`, `vmaf_mcp_start_sse`,
+    `vmaf_mcp_stop` and `vmaf_mcp_close` are wired and answer `tools/list`,
+    `tools/call`, `resources/list` and `initialize`. See the
+    [status table](#status-table) for each component.
 
-See [ADR-0128](../adr/0128-embedded-mcp-in-libvmaf.md) for the
-governance decision and [Research-0005](../research/0005-embedded-mcp-transport.md)
-for the design rationale.
+Unlike the standalone Python server, which wraps the `vmaf` CLI, the
+embedded server lives in the measurement process. The design goal is tools
+that introspect and steer a running measurement (per-feature scores
+mid-stream, model hot-swap at a frame boundary, queue pressure). v3 ships
+only the read-only and out-of-band tools; the steering tools wait for the
+v4 SPSC bridge described under [What lands next](#what-lands-next-v4-roadmap).
 
-## Two MCP surfaces in this fork — which one to use
+See [ADR-0128](../adr/0128-embedded-mcp-in-libvmaf.md) for the governance
+decision and [Research-0005](../research/0005-embedded-mcp-transport.md) for
+the design rationale.
+
+## Which MCP surface to use
 
 | Workflow | Surface | Notes |
-|---|---|---|
-| "Score a video, hand the result to my agent." | **External Python MCP server** (`mcp-server/vmaf-mcp/`) | Recommended default. Spawns `vmaf` as a child process. See [`docs/mcp/index.md`](index.md). |
+| --- | --- | --- |
+| "Score a video, hand the result to my agent." | **External MCP server** (Go `cmd/vmafx-mcp` or Python `mcp-server/vmaf-mcp/`) | Recommended default. Spawns `vmaf` as a child process. See [`docs/mcp/index.md`](index.md). |
 | "Score from inside an embedding process, or prepare an in-process control plane for a running measurement." | **Embedded MCP server** (this doc) | Runs in-process. Stdio, UDS, and loopback SSE are live; `list_features` and `compute_vmaf` are implemented. Mutating mid-stream tools wait on the v4 SPSC bridge. |
 
 The two are additive — running both at the same time is fine.
 
 ## Build
 
-```bash
-# Default fork build does NOT include the embedded MCP surface.
-meson setup build -Denable_cuda=false -Denable_sycl=false
-ninja -C build
+The default build omits the embedded server. To opt in:
 
-# Opt in to the embedded runtime:
-meson setup build -Denable_mcp=true \
-                  -Denable_mcp_sse=enabled \
-                  -Denable_mcp_uds=true \
-                  -Denable_mcp_stdio=true
-ninja -C build
-python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
-  -C build  # includes test_mcp_smoke
-```
+1. Configure with the umbrella flag and the transports you want.
+
+    ```bash
+    meson setup build core -Denable_mcp=true \
+                           -Denable_mcp_sse=enabled \
+                           -Denable_mcp_uds=true \
+                           -Denable_mcp_stdio=true
+    ```
+
+2. Build.
+
+    ```bash
+    ninja -C build
+    ```
+
+3. Run the tests; the suite includes `test_mcp_smoke`.
+
+    ```bash
+    python3 scripts/ci/run_meson_test.py -- -C build
+    ```
 
 | Flag | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `-Denable_mcp` | `false` | Umbrella — compiles `core/src/mcp/` + installs `libvmaf_mcp.h` + builds `test_mcp_smoke`. |
 | `-Denable_mcp_sse` | `auto` (compiled in unless explicitly disabled) | Compile in the Server-Sent-Events / loopback HTTP transport. Requires `enable_mcp=true`. Implemented in plain POSIX sockets — no third-party HTTP library is vendored. |
 | `-Denable_mcp_uds` | `false` | Compile in the Unix domain socket transport. POSIX-only; non-POSIX hosts return `-ENODEV` at runtime. Requires `enable_mcp=true`. |
-| `-Denable_mcp_stdio` | `false` | Compile in the stdio (LSP-framed JSON-RPC on a caller-supplied fd pair) transport. Requires `enable_mcp=true`. |
+| `-Denable_mcp_stdio` | `false` | Compile in the stdio (newline-delimited JSON-RPC on a caller-supplied fd pair; LSP `Content-Length:` framing is a v4 item) transport. Requires `enable_mcp=true`. |
 
 The umbrella flag is independent of the per-transport sub-flags.
 A library built with `-Denable_mcp=true -Denable_mcp_sse=true`
@@ -84,7 +87,7 @@ int rc = vmaf_mcp_init(&server, ctx, &cfg);
 if (rc < 0) {
     /* -ENOSYS means libvmaf was built without -Denable_mcp=true. */
     fprintf(stderr, "MCP unavailable: %d\n", rc);
-    /* Fall back to the external Python server, or proceed without. */
+    /* Fall back to the external MCP server, or proceed without. */
 }
 
 /* Each transport spawns a dedicated MCP pthread on the server. */
@@ -118,31 +121,36 @@ The full API is documented in
 - **Bind:** `127.0.0.1` only by construction — the SSE listener
   binds via `INADDR_LOOPBACK`, never to `INADDR_ANY`. Non-loopback
   exposure would require a separate ADR.
-- **Wire:** HTTP/1.1 over loopback TCP, two endpoints on the same
-  socket. `GET /mcp/sse` (default path; configurable via
-  `VmafMcpSseConfig.path`) returns
-  `Content-Type: text/event-stream` and emits SSE frames per
-  WHATWG SSE §9.2 (accessed 2026-05-09:
-  <https://html.spec.whatwg.org/multipage/server-sent-events.html>),
-  starting with an `event: ready\ndata: {…}\n\n` handshake frame.
-  `POST /mcp/sse` accepts a JSON-RPC request body and replies
-  inline with the dispatcher's response. SSE-stream broadcast
-  (POST routes the reply onto a subscribed GET stream) is reserved
-  for v4.
+- **Wire:** HTTP/1.1 over loopback TCP, two endpoints on the same socket.
+- **`GET /mcp/sse`** (default path; configurable via `VmafMcpSseConfig.path`)
+  returns `Content-Type: text/event-stream` and emits SSE frames, starting
+  with an `event: ready\ndata: {…}\n\n` handshake frame.
+- **`POST /mcp/sse`** accepts a JSON-RPC request body and replies inline with
+  the dispatcher's response. SSE-stream broadcast (the POST reply routed onto
+  a subscribed GET stream) is reserved for v4.
+- **Framing reference:** WHATWG SSE section 9.2
+  (<https://html.spec.whatwg.org/multipage/server-sent-events.html>).
 - **Auth:** none (loopback-only). v3 explicitly does not implement
   CORS, Bearer tokens, or per-session keys; the embedded surface
   is a same-host trust boundary.
-- **Smoke test:** spawn the server on an ephemeral port, then
-  `curl --max-time 3 -s -N http://127.0.0.1:<port>/mcp/sse` shows
-  the event-stream framing; `curl -X POST -H 'Content-Type:
-  application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-  http://127.0.0.1:<port>/mcp/sse` returns a JSON-RPC `tools/list`
-  response. The C smoke test in
+- **Smoke test:** the C test
   [`core/test/test_mcp_smoke.c::test_sse_event_stream`](../../core/test/test_mcp_smoke.c)
-  performs the same round-trip without a `curl` subprocess
-  dependency.
+  performs both round-trips below without a `curl` subprocess. By hand,
+  spawn the server on an ephemeral port and run the two commands below.
 - **Use case:** Claude Desktop, Cursor, and other agents speaking
   the canonical MCP remote transport.
+
+To check the event-stream framing and a JSON-RPC round-trip by hand:
+
+```bash
+curl --max-time 3 -s -N http://127.0.0.1:<port>/mcp/sse
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  http://127.0.0.1:<port>/mcp/sse
+```
+
+The first command shows the `text/event-stream` framing; the second
+returns a JSON-RPC `tools/list` response.
 
 #### Browser usage
 
@@ -163,15 +171,6 @@ fetch("http://127.0.0.1:7411/mcp/sse", {
   body: JSON.stringify({jsonrpc: "2.0", id: 1, method: "tools/list"}),
 }).then(r => r.json()).then(console.log);
 ```
-
-#### Listener-shutdown invariant
-
-On Linux, plain `close()` of a listening socket (whether AF_INET
-or AF_UNIX) from one thread does NOT unblock `accept()` on another
-thread (verified empirically; see also `accept(2)`). Both the SSE
-and UDS stop paths therefore call `shutdown(listen_fd, SHUT_RDWR)`
-before `close()` so the worker thread observes accept returning
-`-1` (with `errno == EINVAL`) and exits cleanly before `pthread_join()`.
 
 ### UDS (Unix domain socket — fork extension)
 
@@ -195,48 +194,27 @@ before `close()` so the worker thread observes accept returning
 - **Use case:** child-process spawned by an agent that already
   sets up an inheritable fd pair.
 
-## Threading + Power-of-10 invariants (per ADR-0128 + Research-0005)
-
-- One **MCP pthread** per active transport. The thread owns the
-  socket, owns JSON parsing, owns all per-request allocation. It
-  does **not** touch measurement state directly.
-- v3 tools execute on the transport thread and do not mutate the
-  host measurement state. `compute_vmaf` creates a short-lived
-  private `VmafContext` for the requested YUV pair instead of
-  borrowing the host's active scorer.
-- The SPSC ring-buffer bridge described by ADR-0128 is still v4
-  work. `VmafMcpConfig.queue_depth` and `max_drain_per_frame`
-  remain validated API fields so hosts can keep one configuration
-  shape across v3 and v4, but v3 does not yet drain envelopes on
-  frame boundaries.
-- Tools that need measurement-thread mutation, such as
-  `vmaf.request_model_swap`, must wait for that SPSC bridge. Until
-  then the embedded surface is read-only plus out-of-band scoring.
-
-These invariants are documented in the public header
-([`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h)).
-
 ## Status table
 
 | Component | Status | PR / ADR |
-|---|---|---|
+| --- | --- | --- |
 | Public header `libvmaf_mcp.h` | Landed | T5-2 / [ADR-0209](../adr/0209-mcp-embedded-scaffold.md) |
 | TU `core/src/mcp/mcp.c` | Landed (v1 runtime; init / start_stdio / stop / close wired) | T5-2b / ADR-0209 § Status update 2026-05-08 |
 | Vendored cJSON v1.7.18 (MIT) under `core/src/mcp/3rdparty/cJSON/` | Landed | T5-2b |
 | JSON-RPC dispatcher (`tools/list`, `tools/call`, `resources/list`, `initialize`) | Landed | T5-2b |
 | Build flags + per-transport sub-flags | Landed (default off) | T5-2 |
-| Smoke + protocol test (15 sub-tests, real round-trip) | Landed | T5-2b |
+| Smoke + protocol test (`core/test/test_mcp_smoke.c`, real round-trip) | Landed | T5-2b |
 | stdio transport body | Landed (line-delimited JSON-RPC; LSP `Content-Length:` framing remains a v4 roadmap item) | T5-2b |
-| UDS transport body | Landed (line-delimited JSON-RPC; mode-0700 socket file) | T5-2c / [ADR-0332](../adr/0402-mcp-runtime-v2.md) |
-| SSE transport body | Landed (loopback HTTP/1.1 + `text/event-stream`; no third-party HTTP library — see ADR-0332 § "v3 SSE" for the license-driven mongoose pivot) | T5-2d / [ADR-0332](../adr/0402-mcp-runtime-v2.md) § "Status update 2026-05-09 (v3 SSE)" |
+| UDS transport body | Landed (line-delimited JSON-RPC; mode-0700 socket file) | T5-2c / [ADR-0402](../adr/0402-mcp-runtime-v2.md) |
+| SSE transport body | Landed (loopback HTTP/1.1 + `text/event-stream`; no third-party HTTP library — see ADR-0402 § "v3 SSE" for the license-driven mongoose pivot) | T5-2d / [ADR-0402](../adr/0402-mcp-runtime-v2.md) § "Status update 2026-05-09 (v3 SSE)" |
 | Tool: `list_features` (read-only) | Landed | T5-2b |
-| Tool: `compute_vmaf` (real libvmaf scoring binding, YUV420p 8/10/12/16-bit) | Landed | T5-2c + high-bit-depth follow-up |
+| Tool: `compute_vmaf` (real libvmaf scoring binding: pooled mean VMAF over a YUV420p 8/10/12/16-bit pair via `vmaf_model_load` + `vmaf_read_pictures` + `vmaf_score_pooled`) | Landed | T5-2c + high-bit-depth follow-up |
 | Tool: `vmaf.request_model_swap` (mutating, separate ADR) | Future | post-v3 |
 | `enable_mcp` default flip from `false` → `auto` | Future | post all transports stable |
 
 ## What lands next (v4 roadmap)
 
-T5-2d v3 (this PR) shipped the SSE transport. The remaining work:
+v3 (T5-2d) shipped the SSE transport. The remaining work:
 
 - **SSE-stream broadcast.** v3 emits POST replies inline on the
   POST socket; v4 will fan replies out on subscribed `GET
@@ -277,17 +255,57 @@ Tool call:
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_features","arguments":{}}}
 ```
 
-Tool response (MCP `content` envelope wrapping the tool's JSON):
+Tool response (MCP `content` envelope wrapping the tool's JSON). `count` is
+the number of listed extractors that are compiled into this libvmaf, so it
+varies by build:
 
 ```json
-{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"features\":[\"float_adm\",\"float_vif\",…],\"count\":15}"}],"isError":false}}
+{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"features\":[\"float_adm\",\"float_vif\",…],\"count\":<n>}"}],"isError":false}}
 ```
+
+## Maintainer notes
+
+These invariants matter to people changing `core/src/mcp/`, not to users of
+the server. "SPSC" is a single-producer, single-consumer ring buffer;
+"Power-of-10" is the NASA/JPL coding rule set the project follows
+([principles](../principles.md)).
+
+### Listener-shutdown invariant
+
+On Linux, plain `close()` of a listening socket (whether AF_INET
+or AF_UNIX) from one thread does NOT unblock `accept()` on another
+thread (verified empirically; see also `accept(2)`). Both the SSE
+and UDS stop paths therefore call `shutdown(listen_fd, SHUT_RDWR)`
+before `close()` so the worker thread observes accept returning
+`-1` (with `errno == EINVAL`) and exits cleanly before `pthread_join()`.
+
+### Threading and Power-of-10 invariants
+
+- One **MCP pthread** per active transport. The thread owns the
+  socket, owns JSON parsing, owns all per-request allocation. It
+  does **not** touch measurement state directly.
+- v3 tools execute on the transport thread and do not mutate the
+  host measurement state. `compute_vmaf` creates a short-lived
+  private `VmafContext` for the requested YUV pair instead of
+  borrowing the host's active scorer.
+- The SPSC ring-buffer bridge described by ADR-0128 is still v4
+  work. `VmafMcpConfig.queue_depth` and `max_drain_per_frame`
+  remain validated API fields so hosts can keep one configuration
+  shape across v3 and v4, but v3 does not yet drain envelopes on
+  frame boundaries.
+- Tools that need measurement-thread mutation, such as
+  `vmaf.request_model_swap`, must wait for that SPSC bridge. Until
+  then the embedded surface is read-only plus out-of-band scoring.
+
+These invariants are documented in the public header
+([`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h)).
 
 ## See also
 
-- [`docs/mcp/index.md`](index.md) — overview of both MCP surfaces.
+- [`docs/mcp/index.md`](index.md) — overview of the MCP surfaces.
 - [`docs/mcp/tools.md`](tools.md) — tool-surface reference for
   the existing standalone Python MCP server.
 - [ADR-0128](../adr/0128-embedded-mcp-in-libvmaf.md) — governance.
 - [Research-0005](../research/0005-embedded-mcp-transport.md) — design.
-- [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) — API reference.
+- [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h)
+  — API reference.

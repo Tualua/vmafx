@@ -1,38 +1,53 @@
 <!-- markdownlint-disable MD013 -->
 # Frequently Asked Questions
 
-> This FAQ covers both the upstream [Netflix/vmaf](https://github.com/Netflix/vmaf)
-> Q&A and fork-specific entries for the SYCL / CUDA / HIP backends, SIMD paths,
-> and the tiny-AI model surface. Upstream issue numbers (e.g. `Netflix/vmaf#20`)
-> are kept for historical context — the issues themselves are long-resolved.
+Short answers to common questions about scoring, inputs, training and the
+fork's GPU backends. The page covers both the upstream
+[Netflix/vmaf](https://github.com/Netflix/vmaf) Q&A and fork-specific entries
+for the CUDA / SYCL / HIP / Metal backends, SIMD paths and the tiny-AI model
+surface. Upstream issue numbers (for example `Netflix/vmaf#20`) are kept for
+historical context; the issues themselves are long resolved.
 
 ## Scoring & models
 
 ### Q: When computing VMAF on low-resolution videos (480-pixel height, for example), why do the scores look so high, even when there are visible artifacts?
 
-A: VMAF embeds an implicit assumption about viewing distance and display size.
+A: Short answer: VMAF assumes a fixed viewing distance and display size, and a
+native-480 pair is judged as if it were viewed from far away, which hides
+artifacts and inflates the score.
+
+#### Why it happens
 
 Any perceptual quality model has to account for viewing distance and display
 size (or their ratio). The same distorted video, viewed close-up, contains more
 visible artifacts and so has lower perceptual quality.
 
-The default VMAF model (`model/vmaf_float_v0.6.1.pkl`) is trained to predict
-the quality of videos displayed on a 1080p HDTV in a living-room environment.
+The classic VMAF model (`model/vmaf_float_v0.6.1.pkl`, also shipped as
+`model/vmaf_v0.6.1.json`) is trained to predict the quality of videos displayed
+on a 1080p HDTV in a living-room environment. The fork's default CLI model,
+`vmaf_v1.0.16_3d0h`, is the same 1080p, 3H operating point (see
+[the v1 model page](../models/v1.md)).
+
 All subjective data was collected with distorted videos rescaled to 1080 and
-displayed from a viewing distance of three times the screen height (3H) — an
+displayed from a viewing distance of three times the screen height (3H), an
 angular resolution of 60 pixels per degree. The implicit assumption is: *a
 1080 video displayed from 3H away*.
 
+#### The arithmetic for a 480 pair
+
 When VMAF is calculated on a 480-resolution pair, it is as if the 480 video is
 *cropped* from a 1080 video. If the 480 video has height H', then
-H' = 480/1080 · H ≈ 0.44 · H. VMAF is then effectively modelling viewing
-distance of 3H = 6.75 · H'. In other words, running VMAF on a native-480 pair
-predicts the perceptual quality of viewing from 6.75× the screen height —
-which hides a lot of artifacts and inflates the score.
+H' = 480/1080 · H ≈ 0.44 · H. VMAF then effectively models a viewing distance of
+3H = 6.75 · H'.
 
-One implication: **do not compare the absolute VMAF score of a 1080 video with
-the score of a 480 video obtained at its native resolution** — it is apples vs
-oranges.
+In other words, running VMAF on a native-480 pair predicts the perceptual
+quality of viewing from 6.75× the screen height, which hides a lot of
+artifacts and inflates the score.
+
+#### What to do
+
+**Do not compare the absolute VMAF score of a 1080 video with the score of a
+480 video obtained at its native resolution.** It is apples vs oranges.
 
 To predict quality at 3× height for a 480 pair:
 
@@ -44,7 +59,7 @@ To predict quality at 3× height for a 480 pair:
 
 ### Q: Will VMAF work on 4K videos?
 
-A: The default model (`model/vmaf_v0.6.1.json`) was trained on videos encoded
+A: The classic model (`model/vmaf_v0.6.1.json`) was trained on videos encoded
 at resolutions up to 1080p. It is still useful for 4K if you only need a
 *relative* score (A vs B ordering), but absolute predictions are not
 guaranteed.
@@ -64,15 +79,20 @@ closed-form identity at the fit-polynomial output stage.
 
 ### Q: How is the VMAF package versioned?
 
-A: The VMAF number in the `VERSION` file tracks the default model consumed by
-`VmafQualityRunner`. Whenever the default model changes in a way that alters
-the numerical output, the number is bumped. For `libvmaf` (the C library) and
-for everything else, version numbers follow the package version in
-`libvmaf.pc`.
+A: Three version numbers matter, and the fork has no `VERSION` file:
 
-> **VMAFx note:** the fork uses one independent ordinary SemVer stream,
-> `vX.Y.Z`; upstream alignment is recorded in sync history rather than the tag. See the
-> [release guide](../development/release.md).
+- **The fork release** is one independent SemVer stream, `vX.Y.Z`, defined by
+  `VMAFX_VERSION` in `build-config.env`. Upstream alignment is recorded in
+  sync history rather than the tag. See the
+  [release guide](../development/release.md).
+- **The default model** is named by `VMAF_DEFAULT_MODEL_VERSION` in
+  `core/include/libvmaf/model.h` (`vmaf_v1.0.16_3d0h`). It changes only through
+  the process in [default model](../development/default-model.md).
+- **`libvmaf` (the C library)** carries its own version in `libvmaf.pc`.
+
+The upstream rule, kept for context: Netflix's `VERSION` file tracked the
+default model consumed by `VmafQualityRunner` and was bumped whenever the
+default model changed the numerical output.
 
 ### Q: Why is the aggregate VMAF score sometimes biased toward "easy" content? (upstream `Netflix/vmaf#20`)
 
@@ -91,7 +111,8 @@ eight methods — `mean`, `harmonic_mean`, `median`, `min`, `max`, `perc5`,
   `vmaf_score_pooled` / `vmaf_feature_score_pooled` — the order-statistic
   methods were added in [ADR-1188](../adr/1188-percentile-pooling-methods.md)
   and use the same linear-interpolation rule as the harness, so both surfaces
-  report the same number. See [the C API reference](../api/index.md#vmafpoolingmethod).
+  report the same number. See [the C API
+  reference](../api/index.md#vmafpoolingmethod).
 - **FFmpeg**: the `pool` option on the `libvmaf*` filters (see
   [FFmpeg usage](../usage/ffmpeg.md)).
 
@@ -180,28 +201,36 @@ tiny-AI models (ONNX-based quality predictors), see
 
 ### Q: Does the fork support GPU acceleration?
 
-A: Yes. The fork adds CUDA and SYCL backends on top of upstream (HIP is
-planned; see [backends/index.md](../backends/index.md)). Enable the
-backends at build time:
+A: Yes. The fork adds CUDA, SYCL, HIP and Metal backends on top of upstream
+(see [backends/index.md](../backends/index.md)). Build with the backends you
+want, from the repository root:
 
 ```bash
-cd libvmaf
-meson setup build -Denable_cuda=true -Denable_sycl=true
+meson setup build core -Denable_cuda=true -Denable_sycl=true
 ninja -C build
 ```
 
 See [backends/](../backends/index.md) for per-backend notes and
 [development/build-flags.md](../development/build-flags.md) for every
-`meson_options.txt` option. When the binary is built with a GPU
-backend it is **auto-selected at runtime** — there is no `--cuda` or
-`--sycl` selector flag. Opt out via `--no_cuda` / `--no_sycl`, or pin
-a specific SYCL device with `--sycl_device N`. The CPU path with
-AVX2 / AVX-512 / NEON SIMD is the universal fallback.
+`meson_options.txt` option.
+
+At run time, a binary built with GPU backends picks one automatically. To
+control the choice:
+
+- **Pin one backend**: `--backend cuda|sycl|hip|metal|cpu` (default `auto`).
+  A backend that is not compiled in fails with an error instead of falling
+  back silently.
+- **Opt out of one backend**: `--no_cuda`, `--no_sycl`, `--no_hip`,
+  `--no_metal`.
+- **Pick a device**: `--sycl_device N`, `--hip_device N`, `--metal_device N`.
+
+The CPU path with AVX2 / AVX-512 / NEON SIMD is the universal fallback.
 
 ### Q: How do I get bit-exact round-trippable VMAF output?
 
 A: Pass `--precision=max` to the fork-added flag on the `vmaf` CLI. The
-default format string is `%.6f` (Netflix-compatible per
+default format string is `%.6f` (alias `--precision=legacy`, Netflix-compatible
+per
 [ADR-0119](../adr/0119-cli-precision-default-revert.md));
 `--precision=max` (alias `full`) selects `%.17g` for IEEE-754
 round-trip lossless output. `--precision=N` (1..17) overrides with
@@ -234,21 +263,28 @@ path jail documented in [docs/ai/security.md](../ai/security.md).
 
 ### Q: Does the fork preserve Netflix's golden-data numerical contract?
 
-A: Yes, on the CPU path. The three canonical Netflix reference test
-pairs (src01/hrc00–hrc01, checkerboard 1-pixel shift, checkerboard
-10-pixel shift) run in CI as a required status check and the CPU
-scalar + fixed-point path must match upstream exactly.
+A: Yes, on the CPU path. The three canonical Netflix reference test pairs
+(src01/hrc00–hrc01, checkerboard 1-pixel shift, checkerboard 10-pixel shift)
+run in CI as a required status check, and the CPU scalar + fixed-point path
+must match upstream exactly.
 
-The **GPU backends (CUDA, SYCL) are not bit-exact** with the CPU path —
-they never were, not even upstream. Different reduction orders,
-parallel-prefix scans, and FMA contractions on GPUs introduce small
-ULP-level deltas. The same is true at a smaller scale for the SIMD
-paths (AVX2 / AVX-512 / NEON). Agreement between CPU and
-CUDA/SYCL/SIMD is typically ~6 decimals on the pooled VMAF — enough
-that the default (`%.6f`, alias `--precision=legacy`) hides the delta,
-but `--precision=max` (`%.17g`) exposes it.
+What the GPU and SIMD paths guarantee is different:
 
-GPU / SIMD paths are regression-tested by fork-added snapshot JSONs
+| Path | Exact against the CPU extractor? | Tested by |
+| --- | --- | --- |
+| CPU scalar + fixed-point | Reference: matches upstream | Netflix golden gate (required CI check) |
+| GPU twins listed as exact twins | Yes, bit for bit, at `--precision max` | Cross-backend parity gate with tolerance 0 |
+| Other GPU twins | No: agreement within a measured tolerance | Cross-backend parity gate with the tolerance in `scripts/ci/cross_backend_calibration.py` |
+| SIMD paths (AVX2 / AVX-512 / NEON) | Held to the scalar result: bit-identical, or a measured tolerance recorded in an ADR (the [roadmap](../roadmap.md) tracks the remaining gaps) | Per-feature SIMD tests |
+
+Each exact twin is one file in `scripts/ci/exact_twins.d/<feature>.<backend>`;
+the generated table of every exact twin, with its evidence, is
+[exact GPU twins](../development/cross-backend-exact-twins.md). A twin that is
+not listed there differs from the CPU by small ULP-level deltas (different
+reduction orders and FMA contraction), typically below the six decimals of
+the default `%.6f` output; `--precision=max` (`%.17g`) exposes them.
+
+GPU and SIMD paths are also regression-tested by fork-added snapshot JSONs
 under `testdata/` (per-backend, ULP tolerance, regenerated via
 `/regen-snapshots`), not by the Netflix goldens. See
 [engineering principles §3.1](../principles.md#31-netflix-golden-data-gate)

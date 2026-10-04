@@ -1,24 +1,23 @@
 # MCP Server Release Channel
 
-The fork ships **three** MCP server flavours:
+This page explains how each MCP server flavour is released and what to check
+before tagging. Governing decisions:
+[ADR-0166](../adr/0166-mcp-server-release-channel.md)
+(the Python release channel) and [ADR-1229](../adr/1229-mcp-go-runtime.md)
+(the Go binary is the MCP server; the Python package is deprecated).
 
-1. The standalone Python server under `mcp-server/vmaf-mcp/`
-   ([`docs/mcp/tools.md`](tools.md)).
-2. The standalone Go binary `vmafx-mcp` under `cmd/vmafx-mcp/` —
-   same 15 tools, byte-for-byte schema parity with the Python server.
-   ([`docs/mcp/index.md#go-implementation-vmafx-mcp`](index.md#go-implementation-vmafx-mcp)).
-3. The embedded server inside `libvmaf` itself, exposed via the
-   `libvmaf_mcp.h` C surface
-   ([`docs/mcp/embedded.md`](embedded.md)).
+## Flavours at a glance
 
-[ADR-0166](../adr/0166-mcp-server-release-channel.md) governs the
-standalone Python server release channel. The `vmaf-mcp`
-distribution is published to PyPI from the same release flow as the
-libvmaf fork, uses the coordinated VMAFx `vX.Y.Z` version line, and
-is signed through the same keyless Sigstore/OIDC pipeline.
+| Flavour | Install | Versioning | Tools |
+| --- | --- | --- | --- |
+| Standalone Python server, `mcp-server/vmaf-mcp/` ([tools](tools.md)) | `pip install vmaf-mcp` | Coordinated VMAFx `vX.Y.Z` line; published to PyPI and signed with keyless Sigstore/OIDC | 19 |
+| Standalone Go binary `vmafx-mcp`, `cmd/vmafx-mcp/` ([overview](index.md#go-implementation-vmafx-mcp)) | Installed at `/usr/local/bin/vmafx-mcp` in the container images, or `go build -o vmafx-mcp ./cmd/vmafx-mcp` | Built from the repository; not published as a separate artefact | 24 (the 19 Python tools plus 5 control-plane tools) |
+| Embedded server inside `libvmaf`, `libvmaf_mcp.h` ([embedded](embedded.md)) | Build libvmaf with `-Denable_mcp=true` | Rides with libvmaf; compatibility follows the libvmaf SOVERSION | 2 |
 
-Operators should install the standalone server from PyPI when an
-agent needs a child-process tool surface:
+## Python package
+
+The `vmaf-mcp` distribution is published to PyPI from the same release flow
+as the libvmaf fork. For an agent that needs a child-process tool surface:
 
 ```bash
 pip install vmaf-mcp
@@ -31,71 +30,96 @@ cd mcp-server/vmaf-mcp
 pip install -e .
 ```
 
-The Python server requires MCP SDK 2.1.1 or newer and Pydantic 2.13.5 or
-newer. Its SDK integration uses the 2.x low-level `on_list_tools` and
-`on_call_tool` handlers. This is an implementation compatibility boundary;
-the advertised MCP tools, their JSON schemas, and the JSON-RPC transport
-remain unchanged for clients.
+Requirements and settings:
 
-Set `VMAF_BIN=/abs/path/to/vmaf` when the built CLI is not at the
-repo-default `build/tools/vmaf`, and set `VMAF_MCP_ALLOW` to any
-additional corpus roots the server is allowed to read.
+- MCP SDK 2.3.0 or newer and Pydantic 2.13.5 or newer;
+  `mcp-server/vmaf-mcp/pyproject.toml`
+  is the authority for the current floors.
+- The SDK integration uses the 2.x low-level `on_list_tools` and
+  `on_call_tool` handlers. This is an implementation compatibility boundary;
+  the advertised MCP tools, their JSON schemas and the JSON-RPC transport
+  stay unchanged for clients.
+- Set `VMAF_BIN=/abs/path/to/vmaf` when the built CLI is not in one of the
+  default locations, and set `VMAF_MCP_ALLOW` to any additional corpus roots
+  the server may read.
 
-Embedded-MCP users do not install `vmaf-mcp`; they build libvmaf
-with `-Denable_mcp=true` and the needed transport flags, then call
-the `libvmaf_mcp.h` C API from the host process. The embedded server
-is not a separate package. Its ABI and version ride with libvmaf
-itself: the public symbols live in `libvmaf_mcp.h`, the
-implementation is compiled by `-Denable_mcp=true`, and compatibility
-follows the libvmaf SOVERSION. That keeps client expectations simple:
-a libvmaf build advertises the embedded transports it actually
-compiled via `vmaf_mcp_transport_available()`, while the Python
-package advertises the standalone CLI-wrapping tool surface.
+!!! warning "Console script name"
+    The wheel installs two console scripts, `vmaf-mcp` and `vmafx-mcp`,
+    both pointing at the Python server (`mcp-server/vmaf-mcp/pyproject.toml`).
+    The `vmafx-mcp` script has the same name as the Go binary. If both are
+    on `PATH`, check which one runs first (`command -v vmafx-mcp`) before
+    relying on the 24-tool surface.
+
+## Embedded server
+
+Embedded-MCP users do not install `vmaf-mcp`. They build libvmaf with
+`-Denable_mcp=true` and the needed transport flags, then call the
+`libvmaf_mcp.h` C API from the host process.
+
+The embedded server is not a separate package. Its public symbols live in
+`libvmaf_mcp.h`, the implementation is compiled by `-Denable_mcp=true`, and
+compatibility follows the libvmaf SOVERSION. A libvmaf build advertises the
+embedded transports it compiled via `vmaf_mcp_transport_available()`, while
+the Python package advertises the standalone CLI-wrapping tool surface.
 
 ## Release Checklist
 
 For a libvmaf release:
 
-- Build with the intended MCP flags and run `test_mcp_smoke`.
-- Confirm `vmaf_mcp_available()` and
-  `vmaf_mcp_transport_available()` match the release configuration.
-- Keep embedded MCP behavior documented in
-  [`embedded.md`](embedded.md), not in the Python package README.
+1. Build with the intended MCP flags and run `test_mcp_smoke`.
+2. Confirm `vmaf_mcp_available()` and `vmaf_mcp_transport_available()` match
+   the release configuration.
+3. Keep embedded MCP behavior documented in [`embedded.md`](embedded.md), not
+   in the Python package README.
 
 For a `vmaf-mcp` Python package release:
 
-- Build from `mcp-server/vmaf-mcp/`.
-- Keep the tool schemas in [`tools.md`](tools.md) aligned with
-  `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`.
-- Publish and sign through the same release workflow used for the
-  rest of the fork.
+1. Build from `mcp-server/vmaf-mcp/`.
+2. Keep the tool schemas in [`tools.md`](tools.md) aligned with
+   `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`.
+3. Publish and sign through the same release workflow used for the rest of
+   the fork.
 
-The Pending Trusted Publisher for the first PyPI publication was configured on
-2026-08-31. Its binding uses these exact current repository identities:
+For the `vmafx-mcp` Go binary release:
+
+1. Build from `cmd/vmafx-mcp/` with `go build -o vmafx-mcp ./cmd/vmafx-mcp`.
+2. Run `go test ./cmd/vmafx-mcp/`. `TestToolListMatchesPython` and
+   `TestToolSchemasMatchPython` confirm schema parity with the Python server
+   without external dependencies; `TestVmafScoreTool` and
+   `TestGoVsPythonOutputParity` additionally need the Netflix golden YUVs and
+   the `vmaf` binary.
+3. Confirm the tool count is 24 (the 19 Python tools plus 5 control-plane
+   tools) before tagging.
+
+!!! note
+    The repository has no goreleaser configuration or workflow step that
+    publishes a standalone `vmafx-mcp` binary. Per ADR-1229 the container
+    images carry it at `/usr/local/bin/vmafx-mcp`; the shared release flow is
+    in [`docs/development/release.md`](../development/release.md).
+
+## PyPI Trusted Publisher
+
+The Trusted Publisher binding of the `vmaf-mcp` project uses these exact
+current repository identities:
 
 | PyPI field   | Value              |
-|--------------|--------------------|
+| ------------ | ------------------ |
 | Project name | `vmaf-mcp`         |
 | GitHub owner | `VMAFx`            |
 | Repository   | `vmafx`            |
 | Workflow     | `supply-chain.yml` |
 | Environment  | `pypi-publish`     |
 
-PyPI returns 404 for the project until that first trusted publication
-completes. Before publishing the GitHub draft, confirm the pending row still
-matches this table. Do not reuse the historical `lusoris/vmaf` identity from
+Before publishing the GitHub draft, confirm the PyPI binding still matches
+this table. Do not reuse the historical `lusoris/vmaf` identity from
 ADR-0166; the repository was transferred and renamed after that accepted
 decision.
 
-For the `vmafx-mcp` Go binary release:
+### History
 
-- Build from `cmd/vmafx-mcp/` with `go build -o vmafx-mcp ./cmd/vmafx-mcp`.
-- Run `TestVmafScoreTool` and `TestGoVsPythonOutputParity` to confirm
-  byte-for-byte schema parity with the Python server.
-- Confirm tool count is 15 (matching the Python surface) before tagging.
-- Binary artifact is published via the same goreleaser step as the rest
-  of the Go toolchain; see
-  [`docs/development/release.md`](../development/release.md).
+The Pending Trusted Publisher for the first PyPI publication was configured
+on 2026-08-31. As of 2026-10-03 PyPI lists `vmaf-mcp` releases `1.0.0rc1`
+and `1.0.0rc2`.
 
 ## See also
 

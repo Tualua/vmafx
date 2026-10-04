@@ -1,29 +1,50 @@
 <!-- markdownlint-disable MD036 MD060 -->
-# vmafx-mcp HTTP transport
+# MCP HTTP transport
+
+The Python `vmaf-mcp` server can run in HTTP server mode with
+`--transport http`. This mode exposes a REST API for Kubernetes
+liveness/readiness probes, Prometheus scraping and direct curl-based
+scoring. The Go `vmafx-mcp` server has its own HTTP mode with a different
+surface; the table below shows the difference.
 
 > **Added in**: VMAFX Phase 3A (ADR-0701)
 > **Default transport**: stdio (unchanged for IDE/MCP-client compatibility)
 
-The `vmaf-mcp` / `vmafx-mcp` server can run in HTTP server mode by passing
-`--transport http`. This mode exposes a REST API suitable for Kubernetes
-liveness/readiness probes, Prometheus scraping, and direct curl-based scoring.
+## Python versus Go
+
+| | Python `vmaf-mcp` | Go `vmafx-mcp` |
+| --- | --- | --- |
+| Enable HTTP | `--transport http` (flag), listen port from `--port` or `VMAFX_PORT` (default `8080`) | `VMAFX_MCP_TRANSPORT=http`, listen address from `VMAFX_MCP_HTTP_ADDR` (default `:3000`); no CLI flags |
+| Protocol served | REST routes `/healthz`, `/readyz`, `/metrics`, `/v1/score` | MCP streamable-HTTP protocol at the listen address; no REST routes |
+| Authentication, bind host | `VMAFX_MCP_HTTP_TOKEN`, `VMAFX_MCP_HTTP_NO_AUTH`, `VMAFX_MCP_HTTP_BIND` | the same three variables |
+| TLS | `VMAFX_MCP_HTTP_TLS_CERT`, `VMAFX_MCP_HTTP_TLS_KEY` | not read by the Go server |
+| Body cap | 4 MiB | 4 MiB |
+
+The rest of this page documents the Python REST mode, except the
+[Security](#security-adr-0967) section, which applies to both. For the Go
+server see [the Go section of the MCP
+overview](index.md#go-implementation-vmafx-mcp).
 
 ---
 
 ## Quick start
 
-```bash
-# Install with HTTP extras
-pip install 'vmaf-mcp[http]'
+1. Install with the HTTP extras.
 
-# Start the server on port 8080 with bearer authentication
-VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
-  vmaf-mcp --transport http --port 8080
+    ```bash
+    pip install 'vmaf-mcp[http]'
+    ```
 
-# Or via environment variable
-VMAFX_PORT=8080 VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
-  vmaf-mcp --transport http
-```
+2. Start the server on port 8080 with bearer authentication.
+
+    ```bash
+    VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
+      vmaf-mcp --transport http --port 8080
+    ```
+
+!!! note
+    `--port` can be replaced by the environment variable `VMAFX_PORT=8080`;
+    the flag wins when both are set.
 
 ### Python embedding
 
@@ -41,21 +62,25 @@ The injected runtime owns path validation, request construction, score
 execution, and strict JSON serialization. It implements these four methods:
 
 | Method | Contract |
-|---|---|
+| --- | --- |
 | `vmaf_binary() -> pathlib.Path` | Return the executable path used by `/readyz`; the transport checks that it exists and is a file. |
-| `build_request(**fields) -> object` | Validate the ten documented score fields and return the request object consumed by `run_score`. Raise `TypeError`, `ValueError`, or `FileNotFoundError` for invalid client input; the transport maps those exceptions to HTTP 400 without exposing their text. |
+| `build_request(**fields) -> object` | Validate the nine documented score fields and return the request object consumed by `run_score`. Raise `TypeError`, `ValueError`, or `FileNotFoundError` for invalid client input; the transport maps those exceptions to HTTP 400 without exposing their text. |
 | `async run_score(request) -> dict[str, object]` | Execute one request and return the JSON-compatible score payload. Other exceptions are logged and mapped to HTTP 500. |
 | `dumps_strict(data) -> str` | Return RFC 8259 JSON for the response payload, rejecting or normalising non-finite numbers rather than emitting bare `NaN` or `Infinity`. |
 
-`run_http_server` resolves the object before allocating an event loop or
-binding a socket and keeps it bound to that server's aiohttp application for
-the server lifetime. It does not install the object into process-global state,
-so multiple embedded servers may use different runtimes concurrently; each
-runtime remains responsible for concurrency among requests handled by its own
-server. If direct startup has neither an injected runtime nor the canonical
-server runtime, it raises before exposing a healthy-but-unready HTTP process.
-Importing `vmaf_mcp.server` does not replace a runtime an embedding application
-installed first. See [ADR-1304](../adr/1304-mcp-http-runtime-isolation.md).
+How `run_http_server` treats the runtime
+([ADR-1304](../adr/1304-mcp-http-runtime-isolation.md)):
+
+- It resolves the object before allocating an event loop or binding a socket,
+  and keeps it bound to that server's aiohttp application for the server
+  lifetime.
+- It does not install the object into process-global state, so several
+  embedded servers may use different runtimes at once; each runtime stays
+  responsible for concurrency among the requests its own server handles.
+- If direct startup has neither an injected runtime nor the canonical server
+  runtime, it raises instead of exposing a healthy-but-unready HTTP process.
+- Importing `vmaf_mcp.server` does not replace a runtime an embedding
+  application installed first.
 
 ---
 
@@ -78,7 +103,8 @@ authentication middleware. Suitable for an authenticated Kubernetes
 ### `GET /readyz` — Readiness probe
 
 Returns `200 OK` once the configured vmaf binary is reachable on the filesystem.
-Returns `503 Service Unavailable` if the binary is absent. Suitable for Kubernetes
+Returns `503 Service Unavailable` if the binary is absent. Suitable for
+Kubernetes
 `readinessProbe`.
 
 The check is a lightweight `stat` call — no subprocess is spawned.
@@ -99,13 +125,14 @@ The check is a lightweight `stat` call — no subprocess is spawned.
 
 ### `GET /metrics` — Prometheus metrics
 
-Returns metrics in [Prometheus exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/).
+Returns metrics in [Prometheus exposition
+format](https://prometheus.io/docs/instrumenting/exposition_formats/).
 Suitable for `prometheusRule` scraping.
 
 **Exposed metrics**
 
 | Metric | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `vmaf_scoring_requests_total{endpoint, status}` | Counter | Total scoring requests, labelled by endpoint and HTTP status |
 | `vmaf_scoring_errors_total` | Counter | Total scoring requests that resulted in a 500-level error |
 | `vmaf_scoring_duration_seconds` | Histogram | Scoring request latencies (buckets: 0.1s … 300s) |
@@ -120,7 +147,7 @@ over the `vmaf_score` MCP tool.
 **Request body (JSON)**
 
 | Field | Type | Required | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `reference` | string | yes | Absolute path to the reference YUV file |
 | `distorted` | string | yes | Absolute path to the distorted YUV file |
 | `width` | integer | yes | Frame width in pixels |
@@ -128,7 +155,7 @@ over the `vmaf_score` MCP tool.
 | `pixfmt` | string | yes | Pixel format: `"420"`, `"422"`, or `"444"` |
 | `bitdepth` | integer | yes | Bit depth: `8` \| `10` \| `12` \| `16` |
 | `model` | string | no | Model specifier (default: `"version=vmaf_v0.6.1"`) |
-| `backend` | string | no | Backend: `"cpu"`, `"cuda"`, `"sycl"`, or `"auto"` (default: `"auto"`) |
+| `backend` | string | no | Backend: `"cpu"`, `"cuda"`, `"sycl"`, `"hip"`, `"metal"`, or `"auto"` (default: `"auto"`) |
 | `precision` | string | no | Output precision: `"legacy"` (`%.6f`, the C-CLI default per ADR-0119) or `"max"` (lossless `%.17g`). Default: `"legacy"` |
 
 **Example request**
@@ -163,21 +190,25 @@ The vmaf JSON payload plus a `request_id` field:
 **Error responses**
 
 | Status | Condition |
-|---|---|
+| --- | --- |
 | `400` | Missing required fields, invalid JSON body (including non-object JSON values such as `null`, arrays, or integers), or path outside allowlisted roots |
 | `401` | Missing or invalid `Authorization: Bearer` token (when auth is enabled) |
 | `413` | Request body exceeds 4 MiB (enforced by both `Content-Length` pre-flight and `client_max_size` for chunked bodies) |
 | `500` | Scoring subprocess failed |
 
+The HTTP body takes only the nine fields above; `subsample` and the other
+extended `vmaf_score` arguments are available over stdio only.
+
 ---
 
 ## Environment variable reference
 
-CLI flags take precedence over environment variables; environment variables take
-precedence over compiled-in defaults.
+These variables apply to the Python server. CLI flags take precedence over
+environment variables; environment variables take precedence over compiled-in
+defaults.
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_PORT` | `8080` | HTTP listen port (overridden by `--port`) |
 | `VMAFX_LOG_LEVEL` | `INFO` | Python log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `VMAFX_VMAF_BINARY` | *(auto-detected)* | Explicit path to the `vmaf` binary; falls through to `VMAF_BIN` |
@@ -190,10 +221,11 @@ both the Python (`vmaf-mcp`) and the Go (`vmafx-mcp`) servers, so a single
 deployment config secures either implementation:
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_MCP_HTTP_TOKEN` | *(none)* | Bearer token. When set (and `NO_AUTH` is unset), every request must carry `Authorization: Bearer <token>`, matched in constant time. |
 | `VMAFX_MCP_HTTP_NO_AUTH` | *(unset)* | Set to `1` to disable authentication entirely (explicit operator opt-out). |
 | `VMAFX_MCP_HTTP_BIND` | `127.0.0.1` | Bind host. Loopback-only by default; set to `0.0.0.0` to listen on all interfaces. |
+| `VMAFX_MCP_HTTP_TLS_CERT`, `VMAFX_MCP_HTTP_TLS_KEY` | *(none)* | Certificate and key paths for serving HTTPS (Python server only). |
 
 When neither `VMAFX_MCP_HTTP_TOKEN` nor `VMAFX_MCP_HTTP_NO_AUTH=1` is set, the
 server **rejects every request with 401** — a missing token means auth was not
@@ -210,7 +242,7 @@ HTTP mode replaces the root logger's handlers with a single-line JSON formatter.
 Each log line is a JSON object with the following fields:
 
 | Field | Example | Description |
-|---|---|---|
+| --- | --- | --- |
 | `timestamp` | `"2026-05-28T12:34:56.789Z"` | ISO-8601 with millisecond precision |
 | `level` | `"INFO"` | Python log level |
 | `message` | `"POST /v1/score done in 420ms"` | Human-readable message |
@@ -232,7 +264,8 @@ On receiving `SIGTERM` or `SIGINT`, the server:
 
 The cleanup runs within the event loop's `finally` block; there is no separate
 hard timeout enforced at the transport layer beyond the `asyncio` task
-cancellation semantics. Kubernetes pods should set `terminationGracePeriodSeconds`
+cancellation semantics. Kubernetes pods should set
+`terminationGracePeriodSeconds`
 to at least 30 seconds to allow long-running scoring requests to complete.
 
 ---
@@ -244,7 +277,7 @@ HTTP mode requires the `[http]` extra, which is not installed by default:
 ```bash
 pip install 'vmaf-mcp[http]'
 # or install the base package and HTTP dependencies explicitly:
-pip install vmaf-mcp 'aiohttp>=3.14.3' 'prometheus-client>=0.20'
+pip install vmaf-mcp 'aiohttp>=3.14.3' 'prometheus-client>=0.26.0'
 ```
 
 `aiohttp>=3.14.3` is a security floor: 3.14.3 is the first release that
@@ -268,11 +301,14 @@ sets `VMAFX_MCP_HTTP_BIND=0.0.0.0`; standalone Python installs retain the safer
 For a full Kubernetes deployment, see:
 
 - [deploy/helm/vmafx/](../../deploy/helm/vmafx/) — Helm chart (ADR-0699)
-- [dev/Containerfile](../../dev/Containerfile) — production Dockerfile (ADR-0698)
+- [docker/Dockerfile.production](../../docker/Dockerfile.production) —
+  production Dockerfile (ADR-0698); its `server` target runs
+  `vmaf-mcp --transport http`
 
-The Helm chart sets `VMAFX_PORT`, configures liveness and readiness probes
-against `/healthz` and `/readyz`, and wires a `ServiceMonitor` for Prometheus
-scraping of `/metrics`.
+The Helm chart configures liveness and readiness probes against `/healthz`
+and `/readyz` (`livenessProbe` / `readinessProbe` in
+`deploy/helm/vmafx/values.yaml`) and ships a `ServiceMonitor` for Prometheus
+scraping. The chart does not set `VMAFX_PORT`.
 
 ---
 
@@ -280,6 +316,7 @@ scraping of `/metrics`.
 
 - [ADR-0701](../adr/0701-vmafx-cloud-native-redesign.md) — design decisions for
   this transport.
-- [MCP tools reference](tools.md) — full list of MCP JSON-RPC tools available over
+- [MCP tools reference](tools.md) — full list of MCP JSON-RPC tools available
+  over
   the default stdio transport.
 - [MCP backends](backends.md) — backend selection for scoring.

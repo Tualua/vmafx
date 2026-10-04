@@ -3,10 +3,15 @@
 > ADR: [ADR-0794](../adr/0794-controller-multi-tenant-auth-gateway.md)
 
 The vmafx-controller supports multi-tenant deployments through a built-in
-JWT auth gateway. Every gRPC and HTTP request (except liveness/readiness
-probes) must carry a valid RS256 bearer token from a configured OIDC
-provider. Requests are scoped to the tenant identified by the token, and
-access to operations is governed by embedded role claims.
+JWT auth gateway. You configure it with `VMAFX_*` environment variables (the
+controller has no CLI flags beyond `--version`, since ADR-1119) and send a
+bearer token on every request.
+
+Every gRPC and HTTP request, except the liveness, readiness and metrics
+endpoints, must carry a valid RS256 bearer token from a configured OIDC
+provider. Requests are scoped to the tenant identified by the token. Roles
+embedded in the token gate only the HTTP `POST /v1/score` endpoint today; see
+[Roles and RBAC](#roles-and-rbac) for what is and is not enforced.
 
 ## Table of contents
 
@@ -21,7 +26,7 @@ access to operations is governed by embedded role claims.
 - [Helm configuration](#helm-configuration)
 - [VmafxTenant CRD](#vmafxtenant-crd)
 - [Disabling auth](#disabling-auth)
-- [CLI flags and environment variables](#cli-flags-and-environment-variables)
+- [Environment variables](#environment-variables)
 - [Key rotation](#key-rotation)
 - [Threat model summary](#threat-model-summary)
 
@@ -29,29 +34,34 @@ access to operations is governed by embedded role claims.
 
 ## Quick start
 
-```bash
-# Start the controller with auth enabled (Auth0 example):
-vmafx-controller \
-  --jwks-endpoint  https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json \
-  --auth-issuer    https://YOUR_DOMAIN.auth0.com/ \
-  --auth-audience  https://vmafx.example.com/api
-```
+1. Start the controller with auth enabled (Auth0 example).
 
-Call the API with a bearer token:
+    ```bash
+    VMAFX_JWKS_ENDPOINT=https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json \
+    VMAFX_AUTH_ISSUER=https://YOUR_DOMAIN.auth0.com/ \
+    VMAFX_AUTH_AUDIENCE=https://vmafx.example.com/api \
+      vmafx-controller
+    ```
 
-```bash
-TOKEN=$(curl -s -X POST \
-  https://YOUR_DOMAIN.auth0.com/oauth/token \
-  -d grant_type=client_credentials \
-  -d client_id=YOUR_CLIENT_ID \
-  -d client_secret=YOUR_CLIENT_SECRET \
-  -d audience=https://vmafx.example.com/api \
-  | jq -r .access_token)
+2. Fetch a token from the identity provider.
 
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/v1/score \
-  -d '{"reference":"/data/ref.yuv","distorted":"/data/dist.yuv"}'
-```
+    ```bash
+    TOKEN=$(curl -s -X POST \
+      https://YOUR_DOMAIN.auth0.com/oauth/token \
+      -d grant_type=client_credentials \
+      -d client_id=YOUR_CLIENT_ID \
+      -d client_secret=YOUR_CLIENT_SECRET \
+      -d audience=https://vmafx.example.com/api \
+      | jq -r .access_token)
+    ```
+
+3. Call the API with the bearer token.
+
+    ```bash
+    curl -H "Authorization: Bearer $TOKEN" \
+      http://localhost:8080/v1/score \
+      -d '{"reference":"/data/ref.yuv","distorted":"/data/dist.yuv"}'
+    ```
 
 ---
 
@@ -61,14 +71,14 @@ The controller extracts the following claims from the JWT payload:
 
 | Claim | Required | Default field | Description |
 | --- | --- | --- | --- |
-| `iss` | Yes | — | Must match `--auth-issuer`. |
+| `iss` | Yes | — | Must match `VMAFX_AUTH_ISSUER`. |
 | `exp` | Yes | — | Token expiry; checked on every request. |
-| `aud` | No | — | Checked if `--auth-audience` is set. |
+| `aud` | No | — | Checked if `VMAFX_AUTH_AUDIENCE` is set. |
 | `sub` | No | — | Subject (logged for audit). |
-| `tid` | Yes* | `--auth-tenant-claim` | Tenant identifier. |
-| `vmafx_roles` | No | `--auth-roles-claim` | List of role strings. |
+| `tid` | Yes* | `VMAFX_AUTH_TENANT_CLAIM` | Tenant identifier. |
+| `vmafx_roles` | No | `VMAFX_AUTH_ROLES_CLAIM` | List of role strings. |
 
-*`tid` is required unless `--auth-disabled` is set.
+*`tid` is required unless `VMAFX_AUTH_DISABLED=true` is set.
 
 Example payload:
 
@@ -88,21 +98,25 @@ Example payload:
 ## OIDC provider configuration
 
 The controller only needs the IdP's JWKS endpoint and issuer URL. It does
-not perform OIDC discovery automatically — provide the endpoint directly.
+not perform OIDC discovery automatically; provide the endpoint directly.
 
-Signing keys must be RSA keys of at least 2048 bits with an odd public
-exponent (normally 65537). The controller skips a JWKS key below 2048 bits and
-logs `jwks: skipping RSA key below the minimum size` with its `kid`; tokens
-signed with that key are rejected with `401`, while other keys in the same
-JWKS keep working. A key with a malformed exponent makes the JWKS refresh fail.
+Rules for the signing keys in the JWKS:
+
+- Keys must be RSA keys of at least 2048 bits with an odd public exponent
+  (normally 65537).
+- A key below 2048 bits is skipped and logged as
+  `jwks: skipping RSA key below the minimum size` with its `kid`. Tokens
+  signed with that key are rejected with `401`; other keys in the same JWKS
+  keep working.
+- A key with a malformed exponent makes the JWKS refresh fail.
 
 ### Auth0
 
 ```bash
---jwks-endpoint  https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
---auth-issuer    https://YOUR_DOMAIN.auth0.com/
---auth-audience  https://vmafx.example.com/api
---auth-tenant-claim org_id       # Auth0 organisation ID claim
+VMAFX_JWKS_ENDPOINT=https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+VMAFX_AUTH_ISSUER=https://YOUR_DOMAIN.auth0.com/
+VMAFX_AUTH_AUDIENCE=https://vmafx.example.com/api
+VMAFX_AUTH_TENANT_CLAIM=org_id       # Auth0 organisation ID claim
 ```
 
 In Auth0, add the `org_id` claim to your token and create a custom
@@ -111,19 +125,19 @@ In Auth0, add the `org_id` claim to your token and create a custom
 ### Keycloak
 
 ```bash
---jwks-endpoint  https://keycloak.example.com/realms/vmafx/protocol/openid-connect/certs
---auth-issuer    https://keycloak.example.com/realms/vmafx
---auth-audience  vmafx-api
---auth-tenant-claim tid          # add as a custom mapper in Keycloak
---auth-roles-claim vmafx_roles   # add as a custom mapper in Keycloak
+VMAFX_JWKS_ENDPOINT=https://keycloak.example.com/realms/vmafx/protocol/openid-connect/certs
+VMAFX_AUTH_ISSUER=https://keycloak.example.com/realms/vmafx
+VMAFX_AUTH_AUDIENCE=vmafx-api
+VMAFX_AUTH_TENANT_CLAIM=tid          # add as a custom mapper in Keycloak
+VMAFX_AUTH_ROLES_CLAIM=vmafx_roles   # add as a custom mapper in Keycloak
 ```
 
 ### Dex
 
 ```bash
---jwks-endpoint  https://dex.example.com/keys
---auth-issuer    https://dex.example.com
---auth-tenant-claim tid
+VMAFX_JWKS_ENDPOINT=https://dex.example.com/keys
+VMAFX_AUTH_ISSUER=https://dex.example.com
+VMAFX_AUTH_TENANT_CLAIM=tid
 ```
 
 ---
@@ -132,15 +146,28 @@ In Auth0, add the `org_id` claim to your token and create a custom
 
 Three roles are recognised. Include one or more in the `vmafx_roles` claim:
 
-| Role | Permitted operations |
+| Role | Intended operations |
 | --- | --- |
 | `vmafx:reader` | `GetJob`, `StreamJobs`, health endpoints |
 | `vmafx:writer` | All of reader + `SubmitJob`, `CancelJob`, `POST /v1/score` |
 | `vmafx:admin` | All of writer + `RegisterNode`, `Heartbeat`, `PullWork`, `ReportResult` |
 
-If the token carries no `vmafx_roles` claim (or the claim is empty) the
-request is rejected with `403 Forbidden` for any operation that requires a
-role.
+### What is enforced today
+
+Roles gate only one endpoint: HTTP `POST /v1/score` requires `vmafx:writer`
+or `vmafx:admin`. A token with no `vmafx_roles` claim, or an empty one, is
+rejected with `403 Forbidden` there.
+
+The gRPC API authenticates the token and records the tenant, but it does not
+check roles. Any valid token can call every RPC, including `RegisterNode`,
+`Heartbeat`, `PullWork` and `ReportResult`. What gRPC enforces is tenant
+ownership of `GetJob` and `CancelJob` (see [Tenant
+isolation](#tenant-isolation)).
+
+!!! warning "Known gaps"
+    Treat the role table above as the intended model, not as a guarantee, until
+    the gRPC role checks land. A gRPC client with any valid token can also
+    register as a node and pull work.
 
 ---
 
@@ -152,7 +179,14 @@ token at submission time. The controller enforces:
 - `GetJob` / `CancelJob` — returns `PERMISSION_DENIED` if the caller's
   `tenant_id` does not match the job's stored tenant.
 - `SubmitJob` — stamps the new job with the caller's `tenant_id`.
-- `StreamJobs` — Phase 4b.2 will add tenant-scoped filtering.
+
+`StreamJobs` is not scoped: it streams a snapshot of all jobs matching the
+optional status filter, regardless of tenant. Tenant-scoped filtering is
+planned for Phase 4b.2.
+
+!!! warning "Known gap"
+    `StreamJobs` lets any authenticated caller read the jobs of every
+    tenant.
 
 Tenant IDs are opaque strings; the controller does not interpret them beyond
 equality comparison.
@@ -181,7 +215,9 @@ auth:
         allowedRoles: [vmafx:reader, vmafx:writer]
 ```
 
-The `auth.tenants` list creates `VmafxTenant` CRs in the same namespace.
+The `auth.tenants` list creates `VmafxTenant` CRs in the same namespace. The
+other `auth.*` values become the `VMAFX_*` environment variables of the
+[environment table](#environment-variables).
 
 ---
 
@@ -211,6 +247,14 @@ spec:
 `kubectl apply` VmafxTenant CRs directly for operator-managed multi-tenant
 clusters. The CRD is installed by the Helm chart's `crds/` directory.
 
+!!! note "Which configuration wins"
+    The Helm `auth.tenants` list and a hand-written `VmafxTenant` are two ways
+    to create the same resource. The controller itself reads only the global
+    `VMAFX_*` variables. No binary in this repository reads `VmafxTenant`
+    resources yet (the operator has no reconciler for them), so per-tenant
+    `oidc` and `rbac` settings, including `allowedRoles`, are stored but not
+    applied.
+
 ---
 
 ## Disabling auth
@@ -218,8 +262,6 @@ clusters. The CRD is installed by the Helm chart's `crds/` directory.
 For internal deployments or integration-test pipelines:
 
 ```bash
-vmafx-controller --auth-disabled
-# or
 VMAFX_AUTH_DISABLED=true vmafx-controller
 ```
 
@@ -228,16 +270,22 @@ When disabled, all requests are processed as tenant `dev` with role
 
 ---
 
-## CLI flags and environment variables
+## Environment variables
 
-| Flag | Env var | Default | Description |
-| --- | --- | --- | --- |
-| `--auth-disabled` | `VMAFX_AUTH_DISABLED` | `false` | Bypass all auth checks. |
-| `--jwks-endpoint` | `VMAFX_JWKS_ENDPOINT` | — | JWKS endpoint URL. |
-| `--auth-issuer` | `VMAFX_AUTH_ISSUER` | — | Expected `iss` claim value. |
-| `--auth-audience` | `VMAFX_AUTH_AUDIENCE` | — | Expected `aud` claim value. |
-| `--auth-tenant-claim` | `VMAFX_AUTH_TENANT_CLAIM` | `tid` | Tenant claim field name. |
-| `--auth-roles-claim` | `VMAFX_AUTH_ROLES_CLAIM` | `vmafx_roles` | Roles claim field name. |
+The controller has no CLI flags beyond `--version`; all configuration is
+environment-only (ADR-1119).
+
+| Env var | Default | Description |
+| --- | --- | --- |
+| `VMAFX_AUTH_DISABLED` | `false` | Bypass all auth checks. |
+| `VMAFX_JWKS_ENDPOINT` | — | JWKS endpoint URL. |
+| `VMAFX_AUTH_ISSUER` | — | Expected `iss` claim value. |
+| `VMAFX_AUTH_AUDIENCE` | — | Expected `aud` claim value. |
+| `VMAFX_AUTH_TENANT_CLAIM` | `tid` | Tenant claim field name. |
+| `VMAFX_AUTH_ROLES_CLAIM` | `vmafx_roles` | Roles claim field name. |
+
+The listen addresses and the other controller settings are in
+[controller.md](controller.md#configuration).
 
 ---
 
@@ -259,7 +307,7 @@ refreshes successfully.
 | --- | --- |
 | Algorithm confusion (`alg=none`, `alg=HS256`) | Only RS256 is accepted; any other `alg` header is rejected before key lookup. |
 | Token replay | `exp` checked on every request. |
-| Cross-tenant data access | `tenant_id` ownership enforced on every read/write/cancel. |
+| Cross-tenant data access | `tenant_id` ownership enforced on `GetJob`, `CancelJob` and `SubmitJob`. `StreamJobs` is not tenant-scoped. |
 | JWKS endpoint spoofing | Endpoint configured by operator via trusted Helm/env values. |
-| Privilege escalation | `allowedRoles` whitelist in VmafxTenant strips unexpected roles. |
+| Privilege escalation | Not mitigated by the `allowedRoles` whitelist of VmafxTenant yet: no component applies it. HTTP `POST /v1/score` requires a writer or admin role; gRPC does not check roles. |
 | Revocation | Use short-lived tokens (≤1 hour); revocation list support is a follow-up. |

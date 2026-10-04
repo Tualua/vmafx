@@ -1,34 +1,48 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # vmafx-server gRPC service
 
-`vmafx-server` is a single Go binary that exposes VMAF scoring over both gRPC and HTTP/JSON.
-This page covers the gRPC interface; see [http-transport.md](../mcp/http-transport.md) for the
-HTTP endpoints (`/healthz`, `/readyz`, `/metrics`, `/v1/score`).
+`vmafx-server` is a single Go binary that exposes VMAF scoring over both gRPC
+(default `:9090`) and HTTP/JSON (default `:8080`). This page covers the gRPC
+interface; see [rest.md](rest.md) for the HTTP endpoints (`/v1/score`,
+`/healthz`, `/readyz`, `/metrics`, ...).
 
 ## Quick start
 
-```bash
-# Local dev (requires core/build-cpu to exist). Configuration is via the VMAFX_
-# environment variables only — the pre-fx CLI flags were removed in ADR-1119.
-VMAFX_VMAF_BINARY=core/build-cpu/tools/vmaf \
-VMAFX_MODEL_DIR=model/ \
-VMAFX_HTTP_ADDR=:8080 \
-VMAFX_GRPC_LISTEN=:9090 \
-go run ./cmd/vmafx-server
+1. Run the server locally. It needs a `vmaf` binary, for example from
+   `core/build-cpu`. Configuration is by `VMAFX_` environment variables only;
+   the pre-fx CLI flags were removed in ADR-1119.
 
-# Published release image (multi-architecture amd64/arm64)
-docker run --rm \
-    -p 8080:8080 -p 9090:9090 \
-    ghcr.io/vmafx/vmafx-server:v3.2.1
+    ```bash
+    VMAFX_VMAF_BINARY=core/build-cpu/tools/vmaf \
+    VMAFX_MODEL_DIR=model/ \
+    VMAFX_HTTP_ADDR=:8080 \
+    VMAFX_GRPC_LISTEN=:9090 \
+    go run ./cmd/vmafx-server
+    ```
 
-# Verify the release version without starting listeners
-docker run --rm ghcr.io/vmafx/vmafx-server:v3.2.1 --version
+2. Or run the published release image (multi-architecture amd64/arm64). Use
+   a release tag such as `v1.0.0-rc.2` or `latest`.
 
-# Local image build; inject the version explicitly when testing release behavior
-docker build -f Dockerfile.go-server \
-    --build-arg VMAFX_VERSION=dev \
-    -t vmafx-server:dev .
-```
+    ```bash
+    docker run --rm \
+        -p 8080:8080 -p 9090:9090 \
+        ghcr.io/vmafx/vmafx-server:v1.0.0-rc.2
+    ```
+
+3. Verify the release version without starting listeners.
+
+    ```bash
+    docker run --rm ghcr.io/vmafx/vmafx-server:v1.0.0-rc.2 --version
+    ```
+
+4. To test a local build, build the image and inject the version explicitly
+   when you test release behaviour.
+
+    ```bash
+    docker build -f Dockerfile.go-server \
+        --build-arg VMAFX_VERSION=dev \
+        -t vmafx-server:dev .
+    ```
 
 ## Proto definition
 
@@ -86,12 +100,16 @@ Expected response (Netflix golden pair):
 ## Streaming: `ScoreStream`
 
 `ScoreStream` is a bidirectional RPC for per-frame scoring of in-memory raw
-frames (no file round-trip). The client sends one `StreamConfig` (width, height,
-pixel format, optional model), then a sequence of `FramePair` messages
-(`frame_index` strictly increasing from 0; `raw_reference` / `raw_distorted` are
-planar Y-U-V bytes), then half-closes. The server flushes the engine and streams
-back one `FrameScore` per frame followed by a terminal `AggregateScore` (pooled
-VMAF, per-feature pool, frame count, elapsed wall time).
+frames, with no file round-trip. The message flow:
+
+1. The client sends one `StreamConfig` (width, height, pixel format, optional
+   model).
+2. The client sends a sequence of `FramePair` messages: `frame_index` strictly
+   increasing from 0, `raw_reference` / `raw_distorted` as planar Y-U-V bytes.
+3. The client half-closes.
+4. The server flushes the engine and streams back one `FrameScore` per frame,
+   then a terminal `AggregateScore` (pooled VMAF, per-feature pool, frame
+   count, elapsed wall time).
 
 Supported pixel formats: YUV 4:2:0 / 4:2:2 / 4:4:4 in 8-bit and 10-bit-LE. Each
 `FramePair` payload must be exactly the configured frame size in bytes;
@@ -104,17 +122,18 @@ table, the `pkg/score` client wrapper, and a worked client loop.
 ## Configuration
 
 The server runs on the [golusoris](https://github.com/golusoris/golusoris) fx
-framework (ADR-1119). Configuration is read by golusoris' koanf layer from
-12-factor environment variables under the `VMAFX_` prefix; `_` in the env name
-maps to the `.` config-key separator (so `VMAFX_HTTP_ADDR` sets `http.addr`).
-The framework owns the listen sockets, so the HTTP and gRPC settings take **full
-listen addresses** (`:8080`), not bare port numbers. Runtime configuration is
-environment-only. The sole process switch is `--version`, which prints the
-build-time version and exits without constructing the fx application or binding
-listeners.
+framework (ADR-1119). Runtime configuration is environment-only: golusoris'
+koanf layer reads 12-factor variables under the `VMAFX_` prefix, and `_` in the
+env name maps to the `.` config-key separator (so `VMAFX_HTTP_ADDR` sets
+`http.addr`).
+
+- The framework owns the listen sockets, so the HTTP and gRPC settings take
+  **full listen addresses** (`:8080`), not bare port numbers.
+- The sole process switch is `--version`. It prints the build-time version and
+  exits without constructing the fx application or binding listeners.
 
 | Env var | Config key | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `VMAFX_HTTP_ADDR` | `http.addr` | `:8080` | HTTP listen address |
 | `VMAFX_GRPC_LISTEN` | `grpc.listen` | `:9090` | gRPC listen address |
 | `VMAFX_LOG_LEVEL` | `log.level` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
@@ -122,19 +141,21 @@ listeners.
 | `VMAFX_MODEL_DIR` | `model.dir` | _(none)_ | Directory containing VMAF `.json` model files |
 | `VMAFX_MAX_CONCURRENT_SCORES` | `max.concurrent.scores` | _(NumCPU)_ | Cap on simultaneous `Score` calls |
 
-> **Config-key note.** The golusoris env transform strips the `VMAFX_` prefix,
-> lowercases, and turns **every** `_` into the `.` delimiter — so
-> `VMAFX_MODEL_DIR` lands under `model.dir` (not `vmaf.model_dir`) and
-> `VMAFX_MAX_CONCURRENT_SCORES` under `max.concurrent.scores`. Set the
-> environment variables shown in the first column; the second column is the
-> resulting koanf key.
->
-> **Breaking change (ADR-1119).** The pre-fx server used `VMAFX_PORT` /
-> `VMAFX_GRPC_PORT` (bare port numbers) plus `--port` / `--grpc-port` CLI flags.
-> These are gone. Use `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN` with full listen
-> addresses (`:8080`). The gRPC default moved from the historical `:50051` to
-> golusoris' native `:9090`; set `VMAFX_GRPC_LISTEN=:50051` explicitly while
-> migrating existing clients.
+!!! note "Config-key note"
+    The golusoris env transform strips the `VMAFX_` prefix, lowercases, and
+    turns **every** `_` into the `.` delimiter. `VMAFX_MODEL_DIR` therefore
+    lands under `model.dir` (not `vmaf.model_dir`) and
+    `VMAFX_MAX_CONCURRENT_SCORES` under `max.concurrent.scores`. Set the
+    environment variables shown in the first column; the second column is the
+    resulting koanf key.
+
+!!! warning "Breaking change (ADR-1119)"
+    The pre-fx server used `VMAFX_PORT` / `VMAFX_GRPC_PORT` (bare port
+    numbers) plus `--port` / `--grpc-port` CLI flags. These are gone. Use
+    `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN` with full listen addresses
+    (`:8080`). The gRPC default moved from the historical `:50051` to
+    golusoris' native `:9090`; set `VMAFX_GRPC_LISTEN=:50051` explicitly while
+    migrating existing clients.
 
 ## Prometheus metrics
 
@@ -142,7 +163,7 @@ The `/metrics` endpoint exposes the following counters and histograms
 in Prometheus exposition format, plus Go runtime and process metrics.
 
 | Metric | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `vmafx_server_score_requests_total` | Counter | Total Score requests (HTTP + gRPC) |
 | `vmafx_server_score_errors_total` | Counter | Score requests that returned an error |
 | `vmafx_server_score_duration_seconds` | Histogram | End-to-end scoring latency |
@@ -151,7 +172,9 @@ in Prometheus exposition format, plus Go runtime and process metrics.
 
 ## Logging
 
-All log lines are emitted as single-line JSON objects on stdout. Example:
+The log format follows `VMAFX_LOG_FORMAT` (`auto`, `tint` or `json`; default
+`auto`). With the `json` handler each line is a single-line JSON object, for
+example:
 
 ```json
 {"time":"2026-05-28T12:00:00.000Z","level":"INFO","msg":"grpc Score completed","score":"76.6683","duration_s":0.823}
@@ -167,15 +190,20 @@ The server listens for `SIGTERM` and `SIGINT`. On receipt it:
 
 ## Relationship to the Python HTTP server (ADR-0701)
 
-The Python `vmaf-mcp --transport http` server (PR #1583, ADR-0701) remains the default
-transport for MCP/stdio IDE integrations and is **not removed by this PR**. The Go server
-is an additive Phase-4 deliverable targeting k8s deployments where startup time and gRPC
-are material. The Python layer will be retired in a separate Stage-3 cleanup PR after the
-Go server confirms production parity.
+The Python `vmaf-mcp --transport http` server (PR #1583, ADR-0701) remains the
+default transport for MCP/stdio IDE integrations and is not removed by the Go
+server. The Go server is an additive Phase-4 deliverable targeting Kubernetes
+deployments where startup time and gRPC are material. See
+[MCP HTTP transport](../mcp/http-transport.md) for the Python server.
 
 ## Further reading
 
-- [ADR-0703](../adr/0703-vmafx-server-go-grpc.md) — decision record for this service.
-- [ADR-0701](../adr/0701-vmafx-cloud-native-redesign.md) — Python HTTP transport foundation.
-- [HTTP transport docs](../mcp/http-transport.md) — `/healthz`, `/readyz`, `/metrics`, `/v1/score`.
-- [k8s deployment guide](../development/k8s-deployment.md) — Helm chart configuration.
+- [ADR-0703](../adr/0703-vmafx-server-go-grpc.md) — decision record for this
+  service.
+- [ADR-0701](../adr/0701-vmafx-cloud-native-redesign.md) — Python HTTP transport
+  foundation.
+- [REST adapter](rest.md) — `/healthz`, `/readyz`, `/metrics`, `/v1/score`.
+- [Python MCP HTTP transport](../mcp/http-transport.md) — the separate Python
+  REST mode.
+- [k8s deployment guide](../development/k8s-deployment.md) — Helm chart
+  configuration.
