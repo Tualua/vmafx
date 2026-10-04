@@ -14,7 +14,8 @@
 # memory: project_copyright_lusoris_only). Upstream Netflix files are
 # exempted (separate cleanup ticket).
 #
-# Exit 0 on pass, 1 on any fork-added function ≥MIN_LINES lines with zero asserts.
+# Exit 0 on pass, 1 on any fork-added function ≥MIN_LINES lines with zero asserts,
+# 2 when the source listing itself fails.
 
 set -euo pipefail
 
@@ -29,9 +30,19 @@ MIN_LINES="${MIN_LINES:-20}"
 # today; Pelorus uses explicit `return PEL_ERR_*` validation instead of
 # assert(). The shared exact-path filter keeps an unmanifested pelorus_*.cpp in
 # local lint scope. Fix mirror findings upstream in Pelorus and re-sync.
+#
+# The listing is taken in a command substitution, not inside the process
+# substitution below, so a failing `git ls-files` or mirror filter fails the
+# gate. Inside `<(...)` its exit status was lost and the gate reported "no
+# fork-added files" and passed.
+if ! CANDIDATES="$(git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' |
+  python3 scripts/ci/pelorus_mirror.py filter)"; then
+  echo "assertion-density: error: listing the fork's C sources failed" \
+    "(git ls-files or scripts/ci/pelorus_mirror.py filter)" >&2
+  exit 2
+fi
 mapfile -t FILES < <(
-  git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
-    2>/dev/null | python3 scripts/ci/pelorus_mirror.py filter | while read -r f; do
+  printf '%s\n' "$CANDIDATES" | while read -r f; do
     [ -f "$f" ] || continue
     if head -n 20 "$f" 2>/dev/null | grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"; then
       echo "$f"

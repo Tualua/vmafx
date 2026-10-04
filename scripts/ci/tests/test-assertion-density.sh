@@ -3,6 +3,8 @@
 # Covers D.1 fix: rebrand-proof copyright grep accepting both
 #   "Lusoris and Claude (Anthropic)" (legacy) and
 #   "Copyright YYYY Lusoris" (current, post-2026-05-27 rebrand).
+# Each fixture repo carries the real scripts/ci/pelorus_mirror.py filter the
+# gate pipes its source list through; a broken filter must fail the gate.
 #
 # Usage: bash scripts/ci/tests/test-assertion-density.sh
 #
@@ -30,65 +32,63 @@ fail=0
 # Helper: run assertion-density.sh against a fake git repo containing
 # the specified files, then check stdout for a substring.
 #
-# run_test <desc> <expect_match|expect_skip> <file>...
-#   expect_match: the script must NOT exit 0 with "skipping" (it found files)
-#   expect_skip:  the script must exit 0 with "skipping" in stdout
-#                 (no matching files found)
-run_test() {
-  local desc="$1"
-  local mode="$2" # "match" or "skip"
-  shift 2
-  local files=("$@")
-
-  # Build a throwaway git repo containing all the fixture files.
-  local repo
-  repo="$(mktemp -d -p "$TMPDIR_TESTS")"
+# run_test <desc> <match|skip|error> <file>...
+#   match: the script exits 0 or 1 without "skipping" (it found files)
+#   skip:  the script exits 0 with "skipping" in stdout (no matching files)
+#   error: the script exits 2 (its source listing failed); FILTER=broken
+#          puts a mirror filter that exits 3 into the fixture repo
+# make_repo <dir> <file>... — a committed fixture repo holding the files under
+# core/src/feature/ (the gate globs 'core/src/**/*.c', which needs one
+# subdirectory level under core/src/) and the gate's mirror filter;
+# FILTER=broken replaces the filter with one that exits 3.
+make_repo() {
+  local repo="$1" relpath i=0
+  shift
   git -C "$repo" init -q
   git -C "$repo" config user.email "test@example.com"
   git -C "$repo" config user.name "Test"
-
-  # Place files under core/src/feature/ so they match the glob in
-  # assertion-density.sh (the script uses 'core/src/**/*.c', which requires
-  # at least one subdirectory level under core/src/).
-  mkdir -p "$repo/core/src/feature"
-  local relpath
-  local i=0
-  for src_path in "${files[@]}"; do
+  mkdir -p "$repo/core/src/feature" "$repo/scripts/ci"
+  for src_path in "$@"; do
     relpath="core/src/feature/fixture_${i}.c"
     cp "$src_path" "$repo/$relpath"
     git -C "$repo" add "$relpath"
     i=$((i + 1))
   done
   git -C "$repo" commit -q -m "init"
+  cp "$SCRIPT_DIR/../pelorus_mirror.py" "$SCRIPT_DIR/../pelorus-mirror-paths.txt" "$repo/scripts/ci/"
+  if [[ "${FILTER:-real}" == broken ]]; then
+    printf '%s\n' 'import sys' 'sys.exit(3)' >"$repo/scripts/ci/pelorus_mirror.py"
+  fi
+}
 
-  # Run the script from inside the fake repo.
-  local output
-  output="$(cd "$repo" && bash "$DENSITY_SCRIPT" 2>&1)" || true
-
+# verdict <mode> <rc> <output> — succeeds when the gate behaved as <mode> says.
+verdict() {
+  local mode="$1" rc="$2" output="$3" skipped=0
+  if echo "$output" | grep -q "skipping"; then skipped=1; fi
   case "$mode" in
-    skip)
-      if echo "$output" | grep -q "skipping"; then
-        printf 'PASS: %s — correctly skipped (no matching copyright)\n' "$desc"
-        pass=$((pass + 1))
-      else
-        printf 'FAIL: %s — expected "skipping" but got:\n%s\n' "$desc" "$output" >&2
-        fail=$((fail + 1))
-      fi
-      ;;
-    match)
-      if echo "$output" | grep -q "skipping"; then
-        printf 'FAIL: %s — script skipped but should have matched files:\n%s\n' "$desc" "$output" >&2
-        fail=$((fail + 1))
-      else
-        printf 'PASS: %s — correctly matched files, output:\n  %s\n' "$desc" "$(echo "$output" | head -3 | tr '\n' '|')"
-        pass=$((pass + 1))
-      fi
-      ;;
+    error) [[ "$rc" -eq 2 && "$skipped" -eq 0 ]] ;;
+    skip) [[ "$rc" -eq 0 && "$skipped" -eq 1 ]] ;;
+    match) [[ "$rc" -le 1 && "$skipped" -eq 0 ]] ;;
     *)
       printf 'ERROR: unknown mode %s\n' "$mode" >&2
       exit 1
       ;;
   esac
+}
+
+run_test() {
+  local desc="$1" mode="$2" repo output rc=0
+  shift 2
+  repo="$(mktemp -d -p "$TMPDIR_TESTS")"
+  make_repo "$repo" "$@"
+  output="$(cd "$repo" && bash "$DENSITY_SCRIPT" 2>&1)" || rc=$?
+  if verdict "$mode" "$rc" "$output"; then
+    printf 'PASS: %s (%s, rc=%d): %s\n' "$desc" "$mode" "$rc" "$(echo "$output" | head -3 | tr '\n' '|')"
+    pass=$((pass + 1))
+  else
+    printf 'FAIL: %s — expected %s, got rc=%d:\n%s\n' "$desc" "$mode" "$rc" "$output" >&2
+    fail=$((fail + 1))
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -168,6 +168,9 @@ run_test "mixed legacy + new headers both matched" match "$legacy_header_file" "
 # T6: mix of Lusoris + Netflix — only Lusoris files picked up (Netflix excluded).
 # A repo with only Lusoris + Netflix: the script finds the Lusoris file and runs.
 run_test "Lusoris + Netflix mix — Lusoris file found" match "$new_header_file" "$netflix_header_file"
+
+# T7: a mirror filter that fails must fail the gate, not read as "no files".
+FILTER=broken run_test "a failing mirror filter fails the gate" error "$new_header_file"
 
 # ---------------------------------------------------------------------------
 # Summary

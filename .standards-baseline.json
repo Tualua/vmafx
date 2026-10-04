@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T04:23:10Z",
+  "generated_at": "2026-10-04T04:31:05Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "857ba5f3f7f0c64c2a515fe0edeabf25caad8e15",
-  "total_infractions": 443,
+  "commit_sha": "439db2a3d1b45980466cd426d27ae3c6a039b18a",
+  "total_infractions": 442,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -2745,14 +2745,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:c1022b8ca0a1",
       "fingerprint": "scripts/ci/test-validate-pr-body.sh:HISS-07:text:c1022b8ca0a1#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-assertion-density.sh",
-      "line_number": 66,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "fn:run_test",
-      "fingerprint": "scripts/ci/tests/test-assertion-density.sh:HISS-07:fn:run_test#1"
     },
     {
       "rule_id": "HISS-07",
