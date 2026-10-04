@@ -1,0 +1,1 @@
+| [ADR-1569](1569-operator-controller-auth.md) | The operator's `GetJob` polls present TLS and a bearer token to the controller; the token file is read on every call (the refresh path) and an expired JWT is never sent; the credential code moves to `pkg/controllerclient`, shared with the node | Accepted | go, operator, controller, node, auth, security, phase4b, fork-local |

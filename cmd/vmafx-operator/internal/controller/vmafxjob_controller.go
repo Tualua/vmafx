@@ -16,7 +16,10 @@
 //   - Terminal phases (Succeeded / Failed) are not requeued.
 //
 // The gRPC target is resolved from the env var VMAFX_CONTROLLER_GRPC_ADDR
-// (default "vmafx-controller.<namespace>.svc.cluster.local:9090").
+// (default "vmafx-controller.<namespace>.svc.cluster.local:9090"). GetJob
+// carries ControllerCredentials (pkg/controllerclient, ADR-1569): TLS when
+// configured and the bearer token, read from its file on every call, so a
+// controller with auth on answers it and a rotated token applies at once.
 //
 // ADR-0786: vmafx-operator Stage 2 — reconciler loops + webhook + per-controller RBAC.
 // ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
@@ -41,6 +44,7 @@ import (
 
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/pkg/controllerclient"
 )
 
 const (
@@ -54,6 +58,10 @@ const (
 type VmafxJobReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// ControllerCredentials are the TLS and bearer-token settings GetJob
+	// presents to the controller (ADR-1569); the zero value dials plaintext
+	// without a token, as against a controller with auth disabled.
+	ControllerCredentials controllerclient.Credentials
 	// ControllerAddr overrides VMAFX_CONTROLLER_GRPC_ADDR when set (useful in tests).
 	ControllerAddr string
 }
@@ -155,11 +163,16 @@ func (r *VmafxJobReconciler) getRemoteJob(
 	// while the connection resolves in the background) so the outgoing GetJob
 	// carries the otelgrpc client handler and therefore a W3C traceparent —
 	// the operator→controller hop joins the same trace as the controller's
-	// server span (ADR-0782, ADR-1095, ADR-1119). Transport credentials are the
-	// factory's insecure default, as before. The per-call overhead from
-	// creating a new connection each Reconcile is accepted; a shared cached
-	// conn is out-of-scope for this PR (r5-scheduler-timer, ADR-1017).
-	conn, err := grpcmod.NewConnFactory().Dial(dialCtx, addr)
+	// server span (ADR-0782, ADR-1095, ADR-1119). ControllerCredentials replace
+	// the factory's plaintext default with TLS when configured and add the
+	// bearer token (ADR-1569). The per-call overhead from creating a new
+	// connection each Reconcile is accepted; a shared cached conn is
+	// out-of-scope (r5-scheduler-timer, ADR-1017).
+	opts, err := r.ControllerCredentials.DialOptions()
+	if err != nil {
+		return nil, fmt.Errorf("controller credentials: %w", err)
+	}
+	conn, err := grpcmod.NewConnFactory().Dial(dialCtx, addr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", addr, err)
 	}

@@ -98,7 +98,11 @@ vendors runs one node process per backend.
 bearer token that carries a tenant claim and the role the controller requires
 for the Node API (`vmafx:admin`). Put it in a file and set
 `VMAFX_CONTROLLER_TOKEN_FILE`; the node reads the file on every call, so a
-rotated Kubernetes projected token or Secret applies without a restart.
+rotated Kubernetes projected token or Secret applies without a restart. A JWT
+whose `exp` has passed is not sent: the call fails with `controller token file
+<path> holds a token that expired at <time>; whatever writes it did not
+refresh it`. The operator reads the same variables (`pkg/controllerclient`,
+[ADR-1569](../adr/1569-operator-controller-auth.md)).
 `VMAFX_CONTROLLER_TOKEN` takes the token inline instead (not both). Set
 `VMAFX_CONTROLLER_TLS=true` when the controller serves TLS
 (`VMAFX_GRPC_TLS`); `VMAFX_CONTROLLER_CA_FILE` and

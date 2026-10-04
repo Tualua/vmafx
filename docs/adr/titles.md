@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1237), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1238), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4959,3 +4959,7 @@ Every ADR, one heading each (1237), so the site search finds an ADR by its title
 ## ADR-1560: A Python package declares the licences of every file its sdist and wheel carry, its compiled extension included
 
 [1560-python-package-licence-union](1560-python-package-licence-union.md)
+
+## ADR-1569: the operator presents a bearer token to the controller from a file it reads on every call, through credentials shared with the node
+
+[1569-operator-controller-auth](1569-operator-controller-auth.md)

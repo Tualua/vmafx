@@ -46,10 +46,38 @@ switch and exits before the Kubernetes manager starts.
 | `VMAFX_OPERATOR_WEBHOOK_HOST` | _(all interfaces)_ | Admission-webhook bind host. |
 | `VMAFX_CONTROLLER_GRPC_ADDR` | `vmafx-controller.<namespace>.svc.cluster.local:9090` | gRPC address of the controller, used by the `VmafxJob` reconciler. |
 | `VMAFX_CONTROLLER_HTTP_ADDR` | `http://vmafx-controller.<namespace>.svc.cluster.local:8080` | HTTP address of the controller, used by the `VmafxNode` health probe. |
+| `VMAFX_CONTROLLER_TOKEN_FILE` | _(none)_ | File holding the bearer token `GetJob` sends; read again on every call. |
+| `VMAFX_CONTROLLER_TOKEN` | _(none)_ | Bearer token given inline (not together with `VMAFX_CONTROLLER_TOKEN_FILE`). |
+| `VMAFX_CONTROLLER_TLS` | `false` | `true` dials the controller with TLS (system roots unless a CA file is set). |
+| `VMAFX_CONTROLLER_CA_FILE` | _(none)_ | PEM bundle that verifies the controller certificate (needs `VMAFX_CONTROLLER_TLS=true`). |
+| `VMAFX_CONTROLLER_SERVER_NAME` | _(none)_ | TLS server name override (needs `VMAFX_CONTROLLER_TLS=true`). |
 | `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, or `error`. |
 
 See the [full environment variable reference](../usage/env-vars.md) for the
 complete cross-surface table.
+
+## Authenticating to the controller
+
+With auth on, the controller refuses a `GetJob` without a token, and the
+`VmafxJob` reconciler then logs `Failed to poll controller for job status`
+on every pass and never moves the phase. Give the operator a token
+([ADR-1569](../adr/1569-operator-controller-auth.md)):
+
+- The token is a JWT the controller accepts ([Auth gateway](auth.md)): its
+  tenant claim names the tenant whose jobs the `VmafxJob` resources track
+  (`GetJob` reads only the caller's tenant), and its roles include
+  `vmafx:reader`.
+- Put it in a file and set `VMAFX_CONTROLLER_TOKEN_FILE`. The operator reads
+  the file on every `GetJob`, so a token that something rewrites (a Secret
+  the kubelet updates, a sidecar that renews it from the identity provider)
+  applies without a restart. A JWT whose `exp` has passed is not sent; the
+  poll fails with `controller token file <path> holds a token that expired at
+  <time>; whatever writes it did not refresh it`.
+- With `VMAFX_CONTROLLER_TLS=true` the token never travels over plaintext.
+
+The variables are the ones `vmafx-node` reads for its own controller client
+(`pkg/controllerclient`), and the operator refuses to start on a combination
+it cannot honour (a token file and an inline token, a CA file without TLS).
 
 ## Health probes
 

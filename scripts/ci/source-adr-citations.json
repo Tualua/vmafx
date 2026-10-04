@@ -10141,7 +10141,8 @@
         ".github/workflows/helm-chart.yml": 1,
         "cmd/vmafx-controller/grpc_server.go": 1,
         "cmd/vmafx-controller/grpc_tenant_test.go": 1,
-        "cmd/vmafx-controller/queue/queue.go": 1
+        "cmd/vmafx-controller/queue/queue.go": 1,
+        "pkg/controllerclient/credentials.go": 1
       },
       "target": "1524-vmafx-node-controller-client.md"
     },
@@ -10232,6 +10233,18 @@
         "core/test/dnn/test_vmaf_use_tiny_model.c": 2
       },
       "target": "1558-codec-block-encoding-from-sidecar.md"
+    },
+    "1569": {
+      "sites": {
+        "cmd/vmafx-node/controller_config.go": 1,
+        "cmd/vmafx-operator/internal/controller/vmafxjob_auth_test.go": 1,
+        "cmd/vmafx-operator/internal/controller/vmafxjob_controller.go": 3,
+        "cmd/vmafx-operator/main.go": 2,
+        "cmd/vmafx-operator/main_test.go": 1,
+        "pkg/controllerclient/credentials.go": 1,
+        "pkg/controllerclient/credentials_test.go": 1
+      },
+      "target": "1569-operator-controller-auth.md"
     }
   },
   "retired": {

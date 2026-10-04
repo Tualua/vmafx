@@ -27,6 +27,7 @@ import (
 	grpcmod "github.com/golusoris/golusoris/grpc"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/pkg/controllerclient"
 )
 
 func scoringJob(id string) *controllerv1.Job {
@@ -209,8 +210,8 @@ func TestControllerClient_SendsBearerTokenFromFile(t *testing.T) {
 	t.Parallel()
 	f := newFakeController()
 	cfg := testControllerConfig(serveFake(t, f))
-	cfg.TokenFile = filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(cfg.TokenFile, []byte("first\n"), 0o600); err != nil {
+	cfg.Creds.TokenFile = filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(cfg.Creds.TokenFile, []byte("first\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := dialController(grpcmod.NewConnFactory(), cfg)
@@ -224,7 +225,7 @@ func TestControllerClient_SendsBearerTokenFromFile(t *testing.T) {
 	if _, err := rpc.RegisterNode(ctx, &controllerv1.RegisterNodeRequest{Name: "n"}); err != nil {
 		t.Fatalf("RegisterNode: %v", err)
 	}
-	if err := os.WriteFile(cfg.TokenFile, []byte("second"), 0o600); err != nil {
+	if err := os.WriteFile(cfg.Creds.TokenFile, []byte("second"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := rpc.RegisterNode(ctx, &controllerv1.RegisterNodeRequest{Name: "n"}); err != nil {
@@ -241,8 +242,8 @@ func TestControllerClient_EmptyTokenFileFailsTheCall(t *testing.T) {
 	t.Parallel()
 	f := newFakeController()
 	cfg := testControllerConfig(serveFake(t, f))
-	cfg.TokenFile = filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(cfg.TokenFile, []byte("  \n"), 0o600); err != nil {
+	cfg.Creds.TokenFile = filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(cfg.Creds.TokenFile, []byte("  \n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := dialController(grpcmod.NewConnFactory(), cfg)
@@ -267,7 +268,7 @@ func TestControllerClient_TLSTokenRefusedOverPlaintext(t *testing.T) {
 	t.Parallel()
 	f := newFakeController()
 	addr := serveFake(t, f)
-	creds := &bearerCredentials{token: "secret", requireTLS: true}
+	creds := controllerclient.Credentials{Token: "secret", TLS: true}.Bearer()
 	conn, err := googlegrpc.NewClient(addr,
 		googlegrpc.WithTransportCredentials(insecure.NewCredentials()), googlegrpc.WithPerRPCCredentials(creds))
 	if err != nil {

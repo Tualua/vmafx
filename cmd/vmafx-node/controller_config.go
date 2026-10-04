@@ -20,6 +20,9 @@
 //	VMAFX_NODE_ID                       -> node.id                       Name announced in RegisterNode (default: host name).
 //	VMAFX_NODE_SLOTS                    -> node.slots                    Concurrent jobs this node runs (default 1, at most 64).
 //
+// The TLS and token keys are read by pkg/controllerclient, which the operator
+// uses too (ADR-1569); its CompoundKeys join this file's in nodeEnvOptions.
+//
 // Every value is validated when the node starts: a malformed duration, a slot
 // count out of range, an unreadable CA file or both token sources at once is
 // a startup error, never a silently substituted default.
@@ -27,8 +30,6 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
@@ -36,7 +37,7 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/credentials"
+	"github.com/VMAFx/vmafx/pkg/controllerclient"
 )
 
 const (
@@ -49,25 +50,18 @@ const (
 	maxNodeSlots             = 64
 )
 
-// controllerConfigKeys lists the underscore-bearing leaf keys of this file.
-// nodeEnvOptions appends them to its CompoundKeys.
-var controllerConfigKeys = []string{
-	"controller.ca_file",
-	"controller.server_name",
-	"controller.token_file",
+// controllerConfigKeys lists the underscore-bearing leaf keys of this file and
+// of pkg/controllerclient. nodeEnvOptions appends them to its CompoundKeys.
+var controllerConfigKeys = append([]string{
 	"controller.rpc_timeout",
 	"controller.heartbeat_interval",
 	"controller.poll_interval",
-}
+}, controllerclient.CompoundKeys...)
 
 // controllerConfig is the validated configuration of the controller client.
 type controllerConfig struct {
 	Addr              string
-	TLS               bool
-	CAFile            string
-	ServerName        string
-	TokenFile         string
-	Token             string
+	Creds             controllerclient.Credentials
 	RPCTimeout        time.Duration
 	HeartbeatInterval time.Duration
 	PollInterval      time.Duration
@@ -87,16 +81,12 @@ func (c controllerConfig) Enabled() bool { return c.Addr != "" }
 // loadControllerConfig reads and validates the controller-client keys.
 func loadControllerConfig(cfg configGetter) (controllerConfig, error) {
 	out := controllerConfig{
-		Addr:       strings.TrimSpace(cfg.Get("controller.addr")),
-		CAFile:     strings.TrimSpace(cfg.Get("controller.ca_file")),
-		ServerName: strings.TrimSpace(cfg.Get("controller.server_name")),
-		TokenFile:  strings.TrimSpace(cfg.Get("controller.token_file")),
-		Token:      strings.TrimSpace(cfg.Get("controller.token")),
-		NodeName:   strings.TrimSpace(cfg.Get("node.id")),
+		Addr:     strings.TrimSpace(cfg.Get("controller.addr")),
+		NodeName: strings.TrimSpace(cfg.Get("node.id")),
 	}
 	var errs []error
 	var err error
-	if out.TLS, err = parseBoolKey(cfg, "controller.tls"); err != nil {
+	if out.Creds, err = controllerclient.Load(cfg); err != nil {
 		errs = append(errs, err)
 	}
 	if out.RPCTimeout, err = parseDurationKey(cfg, "controller.rpc_timeout", defaultControllerRPCTimeout); err != nil {
@@ -111,23 +101,10 @@ func loadControllerConfig(cfg configGetter) (controllerConfig, error) {
 	if out.Slots, err = parseSlots(cfg); err != nil {
 		errs = append(errs, err)
 	}
-	errs = append(errs, out.validateCredentials()...)
 	if len(errs) > 0 {
 		return controllerConfig{}, fmt.Errorf("controller client config: %w", errors.Join(errs...))
 	}
 	return out.withNodeName()
-}
-
-// validateCredentials checks the combinations that cannot be honoured.
-func (c controllerConfig) validateCredentials() []error {
-	var errs []error
-	if c.Token != "" && c.TokenFile != "" {
-		errs = append(errs, errors.New("set controller.token or controller.token_file, not both"))
-	}
-	if !c.TLS && (c.CAFile != "" || c.ServerName != "") {
-		errs = append(errs, errors.New("controller.ca_file and controller.server_name need controller.tls=true"))
-	}
-	return errs
 }
 
 // withNodeName fills NodeName from the host name when it was not configured.
@@ -141,19 +118,6 @@ func (c controllerConfig) withNodeName() (controllerConfig, error) {
 	}
 	c.NodeName = host
 	return c, nil
-}
-
-// parseBoolKey parses an optional boolean key; empty means false.
-func parseBoolKey(cfg configGetter, key string) (bool, error) {
-	raw := strings.TrimSpace(cfg.Get(key))
-	if raw == "" {
-		return false, nil
-	}
-	v, err := strconv.ParseBool(raw)
-	if err != nil {
-		return false, fmt.Errorf("%s=%q is not a boolean", key, raw)
-	}
-	return v, nil
 }
 
 // parseDurationKey parses an optional positive duration key.
@@ -183,25 +147,4 @@ func parseSlots(cfg configGetter) (int, error) {
 		return 0, fmt.Errorf("node.slots=%q must be an integer from 1 to %d", raw, maxNodeSlots)
 	}
 	return n, nil
-}
-
-// transportCredentials returns the TLS credentials for the dial, or nil for a
-// plaintext connection.
-func (c controllerConfig) transportCredentials() (credentials.TransportCredentials, error) {
-	if !c.TLS {
-		return nil, nil
-	}
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13, ServerName: c.ServerName}
-	if c.CAFile != "" {
-		pem, err := os.ReadFile(c.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("read controller CA file: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("controller CA file %s holds no PEM certificate", c.CAFile)
-		}
-		tlsCfg.RootCAs = pool
-	}
-	return credentials.NewTLS(tlsCfg), nil
 }

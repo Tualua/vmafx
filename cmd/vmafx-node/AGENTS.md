@@ -144,6 +144,8 @@ ADR-1539), fail closed.
     RUNNING. Controller-key underscore leaves live in `controllerConfigKeys`
     (CompoundKeys); `env_test.go` pins the set. E2E guard:
     `TestEndToEndControllerNodeJob` (real controller binary + real vmaf).
+    TLS + bearer = `pkg/controllerclient` (`controllerConfig.Creds`, shared
+    with the operator, ADR-1569); no node-local copy.
 
 14. **Storage wiring** (`executor_inputs.go`, `storage_config.go`,
     ADR-1526): `provideExecutor` builds the executor with

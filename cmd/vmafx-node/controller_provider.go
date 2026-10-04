@@ -111,18 +111,11 @@ func nodeCapability(backend string, slots int) (*controllerv1.NodeCapability, er
 // dialController opens the controller connection through the golusoris
 // ConnFactory (OTel client handler, cmd/AGENTS.md invariant 3). TLS replaces
 // the factory's plaintext default when configured; the bearer token rides as
-// per-RPC credentials.
+// per-RPC credentials (pkg/controllerclient, shared with the operator).
 func dialController(cf *grpcmod.ConnFactory, cc controllerConfig) (*googlegrpc.ClientConn, error) {
-	var opts []googlegrpc.DialOption
-	creds, err := cc.transportCredentials()
+	opts, err := cc.Creds.DialOptions()
 	if err != nil {
 		return nil, err
-	}
-	if creds != nil {
-		opts = append(opts, googlegrpc.WithTransportCredentials(creds))
-	}
-	if bearer := newBearerCredentials(cc); bearer != nil {
-		opts = append(opts, googlegrpc.WithPerRPCCredentials(bearer))
 	}
 	// grpc.NewClient behind Dial connects lazily; the deadline bounds the call
 	// itself, each RPC carries its own (controller.rpc_timeout).

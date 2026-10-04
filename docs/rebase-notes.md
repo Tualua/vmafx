@@ -60502,3 +60502,14 @@ upstream parity guard's allowlist.
 - `ai/scripts/gen_calibration.py` and `ai/scripts/quantize_int8.py` are removed, with the
   `.standards-baseline.json` row of the first; `vmaf-train quantize-int8` is the entry point. A sync
   must not restore them. No score, public API or FFmpeg patch impact.
+
+## Controller client credentials shared by node and operator (ADR-1569)
+
+- `pkg/controllerclient` owns the TLS and bearer-token code of every
+  controller client: `cmd/vmafx-node/controller_auth.go` and the node's
+  `transportCredentials` are gone, `controllerConfig.Creds` holds a
+  `controllerclient.Credentials`, and the operator's
+  `VmafxJobReconciler.ControllerCredentials` feeds `ConnFactory.Dial`. Both
+  binaries append `controllerclient.CompoundKeys` to their config options. A
+  sync that touches either binary's dial must keep going through the package;
+  no score, public C API or FFmpeg patch impact.

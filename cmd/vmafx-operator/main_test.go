@@ -24,6 +24,7 @@ import (
 
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 	"github.com/VMAFx/vmafx/internal/oteltest"
+	"github.com/VMAFx/vmafx/pkg/controllerclient"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
@@ -74,6 +75,9 @@ func TestEnvOptionsContract(t *testing.T) {
 		"operator.graceful_shutdown":  true,
 		"operator.webhook_port":       true,
 		"operator.webhook_host":       true,
+		"controller.ca_file":          true,
+		"controller.server_name":      true,
+		"controller.token_file":       true,
 	}
 	got := make(map[string]bool, len(opts.CompoundKeys))
 	for _, k := range opts.CompoundKeys {
@@ -128,6 +132,36 @@ func TestEnvOptionsBindOperatorKeys(t *testing.T) {
 	// transform — registerWebhooks gates on opts.WebhookPort directly.
 	if opts.WebhookPort != 9443 {
 		t.Errorf("opts.WebhookPort = %d, want %d", opts.WebhookPort, 9443)
+	}
+}
+
+// TestEnvBindsControllerCredentials: the VMAFX_CONTROLLER_* credential
+// variables reach the credentials GetJob presents (ADR-1569), and a
+// combination that cannot be honoured stops the operator.
+func TestEnvBindsControllerCredentials(t *testing.T) {
+	t.Setenv("VMAFX_CONTROLLER_TLS", "true")
+	t.Setenv("VMAFX_CONTROLLER_CA_FILE", "/etc/vmafx/ca.pem")
+	t.Setenv("VMAFX_CONTROLLER_SERVER_NAME", "vmafx-controller")
+	t.Setenv("VMAFX_CONTROLLER_TOKEN_FILE", "/var/run/secrets/vmafx/controller-token/token")
+	cfg, err := config.New(operatorEnvOptions())
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	creds, err := provideControllerCredentials(cfg)
+	want := controllerclient.Credentials{
+		TLS: true, CAFile: "/etc/vmafx/ca.pem", ServerName: "vmafx-controller",
+		TokenFile: "/var/run/secrets/vmafx/controller-token/token",
+	}
+	if err != nil || creds != want {
+		t.Fatalf("credentials = %+v, %v; want %+v", creds, err, want)
+	}
+	t.Setenv("VMAFX_CONTROLLER_TOKEN", "inline")
+	cfg, err = config.New(operatorEnvOptions())
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	if _, err := provideControllerCredentials(cfg); err == nil {
+		t.Fatal("a token file and an inline token were both accepted")
 	}
 }
 

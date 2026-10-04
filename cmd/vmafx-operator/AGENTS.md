@@ -117,6 +117,17 @@
     default and `vmafx-operator` / `pkg/version` identity); controller-runtime
     reconcile loops carry no span of their own.
 
+16. **GetJob carries controller credentials** (`main.go`
+    `provideControllerCredentials`, `VmafxJobReconciler.ControllerCredentials`,
+    ADR-1569): `controllerclient.Load` reads `controller.tls/ca_file/
+    server_name/token_file/token` (CompoundKeys from
+    `controllerclient.CompoundKeys`); bad combination = startup error.
+    `DialOptions()` passed to `ConnFactory.Dial` (TLS replaces plaintext,
+    bearer per RPC, file re-read every call, expired JWT never sent). One
+    implementation with the node (HISS-19): never copy bearer/TLS code into
+    the operator. Guards: `vmafxjob_auth_test.go`,
+    `TestEnvBindsControllerCredentials`, `pkg/controllerclient` tests.
+
 ## Test requirements
 
 ### Controller envtest (requires kubebuilder-envtest binaries)

@@ -260,7 +260,7 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_BACKEND` | `backend` | string | `cpu` | Backend the node runs (`cpu`, `cuda`, `hip`, `sycl`, `metal`); advertised to the controller and passed to the vmaf CLI as `--backend` for controller jobs. |
 | `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
 | `VMAFX_CONTROLLER_ADDR` | `controller.addr` | `host:port` | _(unset)_ | Controller gRPC address; set, the node registers and pulls jobs ([ADR-1524](../adr/1524-vmafx-node-controller-client.md)). |
-| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | `controller.token_file` / `controller.token` | path / string | _(unset)_ | Bearer token for the controller, from a file read on every call or inline (not both). |
+| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | `controller.token_file` / `controller.token` | path / string | _(unset)_ | Bearer token for the controller, from a file read on every call or inline (not both); an expired JWT is not sent. |
 | `VMAFX_CONTROLLER_TLS`, `VMAFX_CONTROLLER_CA_FILE`, `VMAFX_CONTROLLER_SERVER_NAME` | `controller.tls`, `controller.ca_file`, `controller.server_name` | bool, path, string | `false`, system roots, from the address | TLS to the controller; the CA file and server name need TLS. |
 | `VMAFX_CONTROLLER_RPC_TIMEOUT`, `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL`, `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.rpc_timeout`, `controller.heartbeat_interval`, `controller.poll_interval` | duration | `10s`, `10s`, `2s` | Per-call deadline, heartbeat period, wait after an empty `PullWork`. |
 | `VMAFX_NODE_ID` | `node.id` | string | host name | Node name sent to `RegisterNode`. |
@@ -291,6 +291,8 @@ graph.
 | `VMAFX_LOG_LEVEL` | string | `info` | Shared log level: `debug`, `info`, `warn` or `error`. |
 | `VMAFX_CONTROLLER_GRPC_ADDR` | `host:port` | `vmafx-controller.<ns>.svc.cluster.local:9090` | Controller gRPC address used by job reconciliation. |
 | `VMAFX_CONTROLLER_HTTP_ADDR` | URL | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | Controller HTTP address used by health reconciliation. |
+| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | path / string | _(unset)_ | Bearer token job reconciliation sends to the controller, from a file read on every call or inline (not both); an expired JWT is not sent. |
+| `VMAFX_CONTROLLER_TLS` / `VMAFX_CONTROLLER_CA_FILE` / `VMAFX_CONTROLLER_SERVER_NAME` | `true`/`false` / path / host | `false` / _(unset)_ | TLS to the controller; the CA file and server name need TLS. Same keys as the node's. |
 
 ### OpenTelemetry identity (all Go services)
 

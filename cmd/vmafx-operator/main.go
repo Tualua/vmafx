@@ -31,6 +31,14 @@
 //	VMAFX_LOG_LEVEL                     slog level: debug|info|warn|error (golusoris log module).
 //	VMAFX_CONTROLLER_GRPC_ADDR          gRPC address of the vmafx-controller service.
 //	VMAFX_CONTROLLER_HTTP_ADDR          HTTP address of the vmafx-controller service (for /healthz).
+//	VMAFX_CONTROLLER_TOKEN_FILE         Bearer token for the controller, re-read on every GetJob (ADR-1569).
+//	VMAFX_CONTROLLER_TOKEN              Bearer token given inline (not with _TOKEN_FILE).
+//	VMAFX_CONTROLLER_TLS                "true" dials the controller with TLS.
+//	VMAFX_CONTROLLER_CA_FILE            PEM bundle that verifies the controller certificate.
+//	VMAFX_CONTROLLER_SERVER_NAME        TLS server name override.
+//
+// The five controller credential keys are pkg/controllerclient's, the same the
+// node reads; a malformed combination stops the operator at startup.
 //
 // Migration note: VMAFX_OPERATOR_PROBE_ADDR → VMAFX_OPERATOR_HEALTH_PROBE_ADDR,
 // VMAFX_OPERATOR_LEADER_ELECT → VMAFX_OPERATOR_LEADER_ELECTION, and the boolean
@@ -57,6 +65,7 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-operator/internal/controller"
 	"github.com/VMAFx/vmafx/cmd/vmafx-operator/internal/webhook"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/pkg/controllerclient"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
@@ -83,7 +92,7 @@ func operatorEnvOptions() config.Options {
 	return config.Options{
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
-		CompoundKeys: []string{
+		CompoundKeys: append([]string{
 			"operator.metrics_addr",
 			"operator.health_probe_addr",
 			"operator.leader_election",
@@ -91,7 +100,7 @@ func operatorEnvOptions() config.Options {
 			"operator.graceful_shutdown",
 			"operator.webhook_port",
 			"operator.webhook_host",
-		},
+		}, controllerclient.CompoundKeys...),
 	}
 }
 
@@ -107,13 +116,25 @@ func withOperatorDefaults(o operator.Options) operator.Options {
 	return o
 }
 
+// provideControllerCredentials reads the credentials the VmafxJob reconciler
+// presents to the controller (ADR-1569). A malformed combination is a startup
+// error, never a silent plaintext, token-less dial.
+func provideControllerCredentials(cfg *config.Config) (controllerclient.Credentials, error) {
+	creds, err := controllerclient.Load(cfg)
+	if err != nil {
+		return controllerclient.Credentials{}, fmt.Errorf("controller credentials: %w", err)
+	}
+	return creds, nil
+}
+
 // registerReconcilers wires every Stage 2 reconciler against the manager. Only
 // the Setup mechanism changed in the fx migration; the Reconcile logic is
 // untouched (ADR-1119). The embedded client.Client field name is "Client".
-func registerReconcilers(mgr manager.Manager) error {
+func registerReconcilers(mgr manager.Manager, creds controllerclient.Credentials) error {
 	if err := (&controller.VmafxJobReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		ControllerCredentials: creds,
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -168,6 +189,7 @@ func options() []fx.Option {
 		operator.ProvideScheme(vmafxv1.AddToScheme),
 		fx.Decorate(withOperatorDefaults),
 		bootstrap.FxLogger(),
+		fx.Provide(provideControllerCredentials),
 		fx.Invoke(registerReconcilers),
 		fx.Invoke(registerWebhooks),
 	}

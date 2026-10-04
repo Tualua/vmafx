@@ -22,6 +22,8 @@ import (
 
 	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
+
+	"github.com/VMAFx/vmafx/pkg/controllerclient"
 )
 
 // TestNodeEnvOptionsContract pins the VMAFX_ prefix, delimiter, and the exact
@@ -120,8 +122,10 @@ func TestNodeEnvOptionsBindControllerKeys(t *testing.T) {
 		t.Fatalf("loadControllerConfig: %v", err)
 	}
 	want := controllerConfig{
-		Addr: "ctrl:9090", TLS: true, CAFile: "/etc/vmafx/ca.pem", ServerName: "ctrl.example",
-		TokenFile: "/var/run/token", RPCTimeout: 3 * time.Second, HeartbeatInterval: 4 * time.Second,
+		Addr: "ctrl:9090", Creds: controllerclient.Credentials{
+			TLS: true, CAFile: "/etc/vmafx/ca.pem", ServerName: "ctrl.example", TokenFile: "/var/run/token",
+		},
+		RPCTimeout: 3 * time.Second, HeartbeatInterval: 4 * time.Second,
 		PollInterval: 5 * time.Second, NodeName: "pod-7", Slots: 2,
 	}
 	if got != want {

@@ -1236,3 +1236,4 @@
 1558-codec-block-encoding-from-sidecar
 1546-tiny-model-metadata-against-graphs
 1560-python-package-licence-union
+1569-operator-controller-auth

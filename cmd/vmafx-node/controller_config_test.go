@@ -10,7 +10,6 @@ package main
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +29,7 @@ func TestLoadControllerConfig_Defaults(t *testing.T) {
 		t.Fatalf("loadControllerConfig: %v", err)
 	}
 	if !cfg.Enabled() || cfg.Slots != 1 || cfg.RPCTimeout != 10*time.Second ||
-		cfg.HeartbeatInterval != 10*time.Second || cfg.PollInterval != 2*time.Second || cfg.TLS {
+		cfg.HeartbeatInterval != 10*time.Second || cfg.PollInterval != 2*time.Second || cfg.Creds.TLS {
 		t.Fatalf("defaults = %+v", cfg)
 	}
 }
@@ -96,28 +95,6 @@ func TestLoadControllerConfig_RefusesInvalid(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("config %v: err=%v, want it to mention %q", cfg, err, want)
 		}
-	}
-}
-
-// TestTransportCredentials covers plaintext, a valid CA and broken CA files.
-func TestTransportCredentials(t *testing.T) {
-	t.Parallel()
-	if creds, err := (controllerConfig{}).transportCredentials(); creds != nil || err != nil {
-		t.Fatalf("plaintext: creds=%v err=%v, want nil, nil", creds, err)
-	}
-	if creds, err := (controllerConfig{TLS: true}).transportCredentials(); creds == nil || err != nil {
-		t.Fatalf("system roots: creds=%v err=%v", creds, err)
-	}
-	missing := controllerConfig{TLS: true, CAFile: filepath.Join(t.TempDir(), "absent.pem")}
-	if _, err := missing.transportCredentials(); err == nil {
-		t.Fatal("a missing CA file was accepted")
-	}
-	garbage := filepath.Join(t.TempDir(), "garbage.pem")
-	if err := os.WriteFile(garbage, []byte("not a certificate"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := (controllerConfig{TLS: true, CAFile: garbage}).transportCredentials(); err == nil {
-		t.Fatal("a CA file without a PEM certificate was accepted")
 	}
 }
 

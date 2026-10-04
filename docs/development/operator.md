@@ -175,6 +175,8 @@ the `operator.*` koanf subtree under the `VMAFX_` prefix.
 | `VMAFX_LOG_LEVEL` | `info` | Log verbosity (golusoris log module: `debug\|info\|warn\|error`) |
 | `VMAFX_CONTROLLER_GRPC_ADDR` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller |
 | `VMAFX_CONTROLLER_HTTP_ADDR` | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller |
+| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | _(none)_ | Bearer token `GetJob` sends; the file is re-read on every call ([server guide](../server/operator.md#authenticating-to-the-controller)) |
+| `VMAFX_CONTROLLER_TLS` / `_CA_FILE` / `_SERVER_NAME` | `false` / _(none)_ | TLS to the controller (`pkg/controllerclient`, shared with `vmafx-node`) |
 
 !!! warning "Migrating from the pre-fx binary (ADR-1119)"
     The CLI flags (`--metrics-bind-address`, `--health-probe-bind-address`,

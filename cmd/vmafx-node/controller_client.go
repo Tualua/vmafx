@@ -96,8 +96,8 @@ func (c *controllerClient) start() {
 		}
 		c.log.Info("controller client started",
 			"controller", c.cfg.Addr, "node", c.cfg.NodeName, "slots", c.cfg.Slots,
-			"backends", c.capability.GetBackends(), "tls", c.cfg.TLS,
-			"bearer_token", c.cfg.Token != "" || c.cfg.TokenFile != "")
+			"backends", c.capability.GetBackends(), "tls", c.cfg.Creds.TLS,
+			"bearer_token", c.cfg.Creds.HasToken())
 	})
 }
 
