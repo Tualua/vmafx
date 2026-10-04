@@ -35,16 +35,8 @@ from `VMAFX_MODEL_DIR`.
 
 - If no `vmaf` binary or model dir is available, the node still serves
   `Health` and returns `codes.FailedPrecondition` from the scoring RPCs.
-- The controller-pull worker loop (`PullWork → Execute → ReportResult`,
-  ADR-0713) is a separate _client_ role, orthogonal to this served surface.
-
-!!! warning "Controller connection"
-    The node binary constructs the job executor but contains no controller
-    client: nothing in `cmd/vmafx-node` calls `RegisterNode`, `Heartbeat`,
-    `PullWork` or `ReportResult`, and no variable configures a controller
-    address for it. The Helm chart sets `VMAFX_CONTROLLER_ADDR` on the node
-    pod, but the binary does not read it. Until the pull loop lands, jobs
-    reach a node only through direct `VmafxScoring` calls on its gRPC port.
+- The controller-pull worker loop (`PullWork → Execute → ReportResult`) is a
+  separate _client_ role, described in the next section.
 
 Example:
 
@@ -52,6 +44,77 @@ Example:
 grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
 # {"ok": true, "message": "ok"}
 ```
+
+## Pulling jobs from the controller
+
+Set `VMAFX_CONTROLLER_ADDR` to the controller's gRPC address and the node
+takes jobs from the controller's queue as well as serving direct calls
+([ADR-1524](../adr/1524-vmafx-node-controller-client.md)):
+
+```bash
+export VMAFX_CONTROLLER_ADDR=vmafx-controller:9090   # the controller's gRPC port
+export VMAFX_BACKEND=cpu                              # the backend this node runs
+./vmafx-node
+# INFO controller client started controller=vmafx-controller:9090 node=<host> slots=1 backends=[cpu] ...
+# INFO registered with controller node_id=... attempt=1
+```
+
+Without `VMAFX_CONTROLLER_ADDR` the node logs `controller client disabled`
+and serves direct `VmafxScoring` calls only.
+
+What the node does with the address:
+
+1. **Register.** `RegisterNode` announces the node name (`VMAFX_NODE_ID`,
+   default the host name), the backend it runs and its slot count. If the
+   controller is unreachable or refuses, the node retries with jittered
+   exponential backoff (0.5 s growing to 30 s) until it answers.
+2. **Heartbeat.** Every `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` (10 s) the node
+   reports how many jobs it runs. When the controller answers that it no
+   longer knows the session, refuses a call with `PermissionDenied`, or no
+   heartbeat has been accepted for 60 s (the controller evicts a node after
+   60 s of silence), the node registers again.
+3. **Pull.** Each of the `VMAFX_NODE_SLOTS` slots calls `PullWork`. An empty
+   answer waits about one `VMAFX_CONTROLLER_POLL_INTERVAL` (2 s, jittered);
+   a failed call backs off up to 30 s.
+4. **Score.** The job runs through the vmaf CLI with `--backend` set to the
+   job's backend, or the node's `VMAFX_BACKEND` when the job names none. The
+   CLI then runs that backend or fails; it does not pick another one.
+5. **Report.** `ReportResult` carries the pooled score and features, or the
+   error. A failed report is retried up to 8 times; a request the controller
+   rejects as malformed is not retried. A NaN or infinite value is reported
+   as a failure that names it, because the controller cannot store it.
+
+Every call has its own deadline, `VMAFX_CONTROLLER_RPC_TIMEOUT` (10 s).
+
+**Backends.** The node advertises exactly one backend, its `VMAFX_BACKEND`:
+`cpu`, `cuda`, `hip`, `sycl` or `metal`. The scheduler gives it jobs that
+name that backend or none. `auto` cannot be advertised; with the controller
+client enabled the node refuses to start on it. A host with GPUs of two
+vendors runs one node process per backend.
+
+**Authentication.** When the controller verifies tokens, give the node a
+bearer token that carries a tenant claim and the role the controller requires
+for the Node API (`vmafx:admin`). Put it in a file and set
+`VMAFX_CONTROLLER_TOKEN_FILE`; the node reads the file on every call, so a
+rotated Kubernetes projected token or Secret applies without a restart.
+`VMAFX_CONTROLLER_TOKEN` takes the token inline instead (not both). Set
+`VMAFX_CONTROLLER_TLS=true` when the controller serves TLS
+(`VMAFX_GRPC_TLS`); `VMAFX_CONTROLLER_CA_FILE` and
+`VMAFX_CONTROLLER_SERVER_NAME` adjust the verification. With TLS on, gRPC
+never sends the token over a plaintext connection.
+
+**Startup refusals.** The node does not start when the client is enabled
+and there is no `vmaf` binary (a node that cannot score must not take jobs),
+when `VMAFX_BACKEND` cannot be advertised, or when a controller setting is
+malformed: an unparseable duration, a slot count outside 1 to 64, both token
+sources, a CA file without TLS, or a CA file that holds no certificate. The
+error names the setting.
+
+**Shutdown.** On `SIGTERM` the node stops pulling, lets a running job finish
+until the stop deadline, then cancels it and reports it as failed with
+`node shutting down, job interrupted`. The controller does not tell a node
+that a job was cancelled: the node finishes it and the controller ignores the
+late report.
 
 ## Configuration (12-factor env vars)
 
@@ -61,8 +124,19 @@ grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
 | `VMAFX_VMAF_BINARY` | automatic lookup | Path to the `vmaf` CLI binary used for scoring. |
 | `VMAFX_MODEL_DIR` | binary default | Directory containing VMAF model files. The node image sets `/usr/local/share/vmafx/model`. |
-| `VMAFX_BACKEND` | `cpu` | Scoring backend label, such as `cpu`, `cuda`, `hip`, or `sycl`. |
+| `VMAFX_BACKEND` | `cpu` | Backend the node runs: `cpu`, `cuda`, `hip`, `sycl` or `metal`. Controller jobs pass it to the vmaf CLI as `--backend`. |
 | `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Online-training sidecar Unix socket. |
+| `VMAFX_CONTROLLER_ADDR` | _(unset)_ | Controller gRPC address; set, the node pulls jobs from the controller. |
+| `VMAFX_CONTROLLER_TOKEN_FILE` | _(unset)_ | File holding the bearer token, read on every call. |
+| `VMAFX_CONTROLLER_TOKEN` | _(unset)_ | Bearer token given inline. |
+| `VMAFX_CONTROLLER_TLS` | `false` | Dial the controller with TLS. |
+| `VMAFX_CONTROLLER_CA_FILE` | system roots | PEM bundle that verifies the controller certificate (needs TLS). |
+| `VMAFX_CONTROLLER_SERVER_NAME` | from the address | TLS server name override (needs TLS). |
+| `VMAFX_CONTROLLER_RPC_TIMEOUT` | `10s` | Deadline of every controller call. |
+| `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` | `10s` | Heartbeat period. |
+| `VMAFX_CONTROLLER_POLL_INTERVAL` | `2s` | Wait after an empty `PullWork`. |
+| `VMAFX_NODE_ID` | host name | Node name sent to `RegisterNode`. The Helm chart sets the pod name. |
+| `VMAFX_NODE_SLOTS` | `1` | Jobs the node runs at once (1 to 64). |
 | `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
 | `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
 
@@ -88,13 +162,18 @@ health check.
 ## Kubernetes deployment
 
 The Helm chart (`deploy/helm/vmafx/`) ships a node worker pool Deployment gated
-on `.Values.node.enabled`.  Enable it alongside the controller:
+on `.Values.node.enabled`. The chart does not deploy the controller; point the
+nodes at one with `node.controllerAddr` (its gRPC port). Left empty, the
+nodes serve direct scoring only. With `networkPolicy.enabled`, the chart also
+opens egress from the nodes to `networkPolicy.allow.nodeToController.port`
+(9090) on the pods `nodeToController.podSelector` selects.
 
 ```yaml
 # values.yaml
 node:
   enabled: true
   replicaCount: 3
+  controllerAddr: vmafx-controller.vmafx.svc:9090
   nodeSelector:
     nvidia.com/gpu.present: "true"
   tolerations:
@@ -111,6 +190,10 @@ gpu:
 ```bash
 helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 ```
+
+For a controller that verifies tokens, mount the token Secret with
+`node.volumes` / `node.volumeMounts` and set `VMAFX_CONTROLLER_TOKEN_FILE`
+through `env`.
 
 ## Container images
 
@@ -150,8 +233,10 @@ docker build -f docker/Dockerfile.node \
 On `SIGTERM` the node:
 
 1. Gracefully stops the gRPC server and drains in-flight scoring RPCs.
-2. Stops and joins the online-feedback sidecar drainer.
-3. Closes the scorer after the gRPC drain completes.
+2. Drains the controller client (when enabled): no new jobs, running jobs
+   until the stop deadline, then reports of the jobs it had to cancel.
+3. Stops and joins the online-feedback sidecar drainer.
+4. Closes the scorer.
 
 ## Development
 

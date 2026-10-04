@@ -365,13 +365,14 @@ Calico GlobalNetworkPolicy) or do not install a NetworkPolicy controller —
 in the latter case the chart's NetworkPolicies render but are inert.
 
 Opt in with `--set networkPolicy.enabled=true`.  The chart then emits a
-default-deny baseline plus six narrow allow-rules:
+default-deny baseline plus seven narrow allow-rules:
 
 | Policy                          | Direction | Peer                                            | Ports               | Purpose                                              |
 |---------------------------------|-----------|-------------------------------------------------|---------------------|------------------------------------------------------|
 | `default-deny`                  | both      | _(no allow)_                                    | _(all)_             | Safety net — drops everything that is not explicitly allowed. Emitted per workload component (root / operator / node) so a new component without an allow-rule remains isolated. |
 | `allow-http-ingress`            | ingress   | every pod in the release namespace              | `service.targetPort`| Scoring server reachable from any in-namespace client. |
 | `allow-controller-to-node`      | ingress   | controller pods (selector match)                | `50051` (configurable) | gRPC dispatch from controller to `vmafx-node` workers. |
+| `allow-node-to-controller`      | egress    | pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `9090` (configurable) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered only when `node.controllerAddr` is set. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
 | `allow-node-metrics-ingress`    | ingress   | any in-namespace pod (or a narrower `fromPodSelector`) | `9090` | Prometheus scraping of the vmafx-node metrics endpoint. Tighten `networkPolicy.allow.nodeMetrics.fromPodSelector` to `{app.kubernetes.io/name: prometheus}` in production. |

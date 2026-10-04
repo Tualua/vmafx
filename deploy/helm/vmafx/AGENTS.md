@@ -131,3 +131,13 @@ scheduling docs on rebase.
 - [ADR-1129](../../../docs/adr/1129-release-container-runtime-alignment.md) — release image/runtime alignment
 - [ADR-0726](../../../docs/adr/0726-drop-vulkan-backend.md) — Vulkan backend removal
 - [ADR-1353](../../../docs/adr/1353-helm-server-component-selector.md) — server workload component selector, rc.1 upgrade path
+
+## Invariants (ADR-1524)
+
+- `node.controllerAddr` has NO default: `VMAFX_CONTROLLER_ADDR` rendered only
+  when set (chart deploys no controller; old default pointed at a missing
+  Service on the controller HTTP port). Empty = standalone node.
+- `allow-node-to-controller` egress policy rendered only with
+  `node.controllerAddr`; port = controller gRPC (9090). Schema entry
+  `networkPolicy.allow.nodeToController` keeps `additionalProperties: false`.
+- Guard: `scripts/ci/tests/test_helm_node_contract.py` (helm-chart workflow).

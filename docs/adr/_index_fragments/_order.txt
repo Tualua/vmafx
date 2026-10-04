@@ -1218,3 +1218,4 @@
 1514-go-and-node-image-licensing
 1515-windows-tester-zip
 1516-windows-cuda-tester-zip
+1524-vmafx-node-controller-client

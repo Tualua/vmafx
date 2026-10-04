@@ -137,7 +137,7 @@ func (e *Executor) executeScoring(ctx context.Context, job *controllerv1.Job) Ex
 	spanCtx, outerSpan := observability.StartSpan(ctx, observability.SpanScoring,
 		observability.AttrJobID.String(job.GetId()),
 		observability.AttrModel.String(sp.GetModel()),
-		observability.AttrBackend.String(e.backend),
+		observability.AttrBackend.String(jobBackend(sp, e.backend)),
 	)
 	var outerErr error
 	defer observability.EndSpan(outerSpan, &outerErr)
@@ -147,7 +147,7 @@ func (e *Executor) executeScoring(ctx context.Context, job *controllerv1.Job) Ex
 		slog.String("ref", sp.GetReference()),
 		slog.String("dis", sp.GetDistorted()),
 		slog.String("model", sp.GetModel()),
-		slog.String("backend", e.backend),
+		slog.String("backend", jobBackend(sp, e.backend)),
 	)
 
 	// Inner span: per-frame feature extraction inside libvmaf.
@@ -160,7 +160,11 @@ func (e *Executor) executeScoring(ctx context.Context, job *controllerv1.Job) Ex
 	// Pass the executor context so a controller-driven job cancellation
 	// (or worker shutdown) tears down the vmaf subprocess via
 	// exec.CommandContext.  Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-	score, features, err := e.scorer.Score(extractCtx, sp.GetReference(), sp.GetDistorted(), sp.GetModel())
+	// The backend is passed to the CLI as --backend, so a job runs on the
+	// backend the node advertised to the scheduler or fails; the CLI never
+	// substitutes another one silently.
+	score, features, err := e.scorer.ScoreOnBackend(extractCtx,
+		sp.GetReference(), sp.GetDistorted(), sp.GetModel(), jobBackend(sp, e.backend))
 	if err != nil {
 		outerErr = err
 		extractErr = err
@@ -172,6 +176,15 @@ func (e *Executor) executeScoring(ctx context.Context, job *controllerv1.Job) Ex
 		slog.Float64("score", score),
 	)
 	return ExecuteResult{Score: score, Features: features}
+}
+
+// jobBackend is the backend a scoring job runs on: the one the job names (the
+// scheduler only hands it to a node that advertised it), else the node's own.
+func jobBackend(sp *controllerv1.ScoringParams, nodeBackend string) string {
+	if b := sp.GetBackend(); b != "" {
+		return b
+	}
+	return nodeBackend
 }
 
 // executeAI runs the AI inference pipeline for the given job.

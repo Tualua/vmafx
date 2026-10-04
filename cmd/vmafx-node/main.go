@@ -31,6 +31,8 @@
 //	VMAFX_MODEL_DIR       -> model.dir        Directory containing VMAF .json model files.
 //	VMAFX_BACKEND         -> backend          Scoring backend label for the executor (default "cpu").
 //	VMAFX_SIDECAR_SOCKET  -> sidecar.socket   Online-training sidecar Unix socket (default /tmp/vmafx-sidecar.sock).
+//	VMAFX_CONTROLLER_*, VMAFX_NODE_ID, VMAFX_NODE_SLOTS
+//	                      -> controller.* / node.*  Controller client (controller_config.go).
 //
 // NOTE on the env-var contract change (ADR-1119): the pre-fx node used
 // VMAFX_NODE_ADDR (a bare listen address). golusoris' grpc.Module reads the
@@ -38,6 +40,10 @@
 // golusoris' grpc.Module supplies grpc.listen; withNodeGRPCDefault preserves
 // the node's historical :50052 when no file or environment override exists.
 // Operators must migrate VMAFX_NODE_ADDR -> VMAFX_GRPC_LISTEN.
+//
+// With VMAFX_CONTROLLER_ADDR set the node also runs the controller client
+// (controller_client.go): it registers with the controller, heartbeats, pulls
+// jobs, scores them through the Executor and reports the results (ADR-0713).
 //
 // The eBPF rclone-bypass loader (cmd/vmafx-node/bpf) is unrelated to golusoris
 // and remains a privileged, opt-in side path; it is not wired into this graph.
@@ -104,12 +110,12 @@ func nodeEnvOptions(watch bool) config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     watch,
-		CompoundKeys: []string{
+		CompoundKeys: append([]string{
 			"grpc.cert_file",
 			"grpc.key_file",
 			"grpc.max_recv_size",
 			"grpc.max_send_size",
-		},
+		}, controllerConfigKeys...),
 	}
 }
 
@@ -162,6 +168,7 @@ func nodeDomainOptions() fx.Option {
 		provideScorer,           // (fx.Lifecycle, *config.Config, *slog.Logger) -> *libvmaf.Scorer (nil-tolerant)
 		provideExecutor,         // (*libvmaf.Scorer, *config.Config, *slog.Logger) -> *Executor
 		provideFeedbackClient,   // (fx.Lifecycle, *config.Config, *slog.Logger) -> *FeedbackClient (drainer OnStart, Close+awaited OnStop)
+		provideControllerClient, // (controllerClientParams) -> *controllerClient (nil without VMAFX_CONTROLLER_ADDR; start OnStart, drain OnStop)
 		provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry
 		newScoringHandler,       // (*libvmaf.Scorer, *probe.Inventory, *slog.Logger) -> *scoringHandler
 	)
@@ -195,7 +202,13 @@ func nodeLifecycleOptions() fx.Option {
 		// OnStop hooks between the scorer's and the gRPC server's, so fx's
 		// reverse-order stop fires: gRPC GracefulStop → FeedbackClient drainer stop
 		// → scorer Close (R-node). See TestStopOrderNode in app_test.go.
-		fx.Invoke(func(_ *FeedbackClient, _ *Executor) {}),
+		//
+		// The controller client is realised last of the three (it consumes the
+		// Executor), so its drain runs right after gRPC GracefulStop and before the
+		// FeedbackClient and the scorer stop: jobs it is running finish and are
+		// reported while the executor still exists. See
+		// TestStopOrderNodeWithController in controller_client_test.go.
+		fx.Invoke(func(_ *FeedbackClient, _ *Executor, _ *controllerClient) {}),
 
 		// Register the VmafxScoring service on the golusoris gRPC server. The arg
 		// order (scorer-bearing handler first, then the server) also keeps the

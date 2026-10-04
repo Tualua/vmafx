@@ -306,6 +306,16 @@ networkPolicy:
     controllerToNode:
       enabled: true
       nodePort: 50051
+    # node → controller (the nodes' controller client: RegisterNode,
+    # Heartbeat, PullWork, ReportResult). Rendered only when
+    # node.controllerAddr is set. port is the controller's gRPC port;
+    # podSelector / namespaceSelector pick the controller pods (empty
+    # podSelector = every pod in the release namespace).
+    nodeToController:
+      enabled: true
+      port: 9090
+      podSelector: {}
+      namespaceSelector: {}
     # node → object store (rclone egress to S3/GCS/Azure/etc.)
     nodeEgressObjectStore:
       enabled: true
@@ -464,8 +474,14 @@ node:
     repository: ghcr.io/vmafx/vmafx-node
     tag: ""          # Defaults to v<Chart.AppVersion> when empty.
 
-  # controllerAddr overrides the VMAFX_CONTROLLER_ADDR env var.
-  # Defaults to the in-cluster controller Service at <release>-controller:8080.
+  # controllerAddr is the gRPC address (host:port) of the vmafx-controller the
+  # nodes register with and pull jobs from; it becomes VMAFX_CONTROLLER_ADDR.
+  # This chart does not deploy the controller, so there is no default: empty
+  # leaves the variable unset and the nodes serve direct VmafxScoring calls
+  # only. Use the controller's gRPC port (VMAFX_GRPC_LISTEN, default 9090),
+  # not its HTTP port. Token, TLS and polling settings are the
+  # VMAFX_CONTROLLER_* variables (docs/server/node.md), set through `env` and
+  # a Secret mounted with node.volumes / node.volumeMounts.
   controllerAddr: ""
 
   # metricsPort is the Prometheus scrape port exposed by vmafx-node.

@@ -10,7 +10,9 @@ channel), and
 (ScoreStream).
 
 Node serves single gRPC service: `VmafxScoring` (`Score`, `ScoreStream`,
-`Health`); node = **gRPC-only** (no HTTP server). eBPF rclone-bypass loader
+`Health`); node = **gRPC-only** (no HTTP server). With `VMAFX_CONTROLLER_ADDR`
+set, node also = controller client (`controller_*.go`, ADR-1524): register,
+heartbeat, pull, execute, report. eBPF rclone-bypass loader
 under `bpf/` = privileged, opt-in side path unrelated to golusoris, NOT wired
 into fx graph.
 
@@ -124,3 +126,21 @@ into fx graph.
     `vmafx.onnx.inference`) from `executor.go` via `observability.StartSpan`.
     `app_test.go::TestOTelWiredThroughBootstrap` locks no-op default and
     `vmafx-node` / `pkg/version` identity.
+
+13. **Controller client contract** (`controller_*.go`, ADR-1524):
+    `provideControllerClient` returns nil without `controller.addr` (logged,
+    node standalone); returns error (startup refused) when addr set and
+    scorer nil, `VMAFX_BACKEND` not in `backendVendors` (no `auto`), or
+    `loadControllerConfig` rejects a key. Never turn these into a silent
+    default. Lifecycle invoke `fx.Invoke(func(_ *FeedbackClient, _ *Executor,
+    _ *controllerClient) {})` stays ahead of gRPC registration: stop order
+    gRPC GracefulStop -> client drain -> feedback stop -> scorer Close
+    (`TestStopOrderNodeWithController`). Client dials via golusoris
+    `*grpcmod.ConnFactory` (otelgrpc, cmd invariant 3); every RPC own
+    `context.WithTimeout(rpc_timeout)` (HISS-02). Node advertises ONE backend
+    and `executeScoring` passes `jobBackend()` to `Scorer.ScoreOnBackend` as
+    `--backend`; do not drop the flag or advertise backends the CLI does not
+    run. Interrupted job at stop deadline -> reported failed, never left
+    RUNNING. Controller-key underscore leaves live in `controllerConfigKeys`
+    (CompoundKeys); `env_test.go` pins the set. E2E guard:
+    `TestEndToEndControllerNodeJob` (real controller binary + real vmaf).

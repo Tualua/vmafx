@@ -93,8 +93,12 @@ spec:
               containerPort: {{ .Values.node.metricsPort | default 9090 }}
               protocol: TCP
           env:
+            {{- with .Values.node.controllerAddr }}
+            # The node's controller client registers here and pulls jobs; unset
+            # (no node.controllerAddr) the node serves direct scoring only.
             - name: VMAFX_CONTROLLER_ADDR
-              value: {{ include "vmafx.controllerAddr" . | quote }}
+              value: {{ . | quote }}
+            {{- end }}
             # The binary defaults grpc.listen to :50052 for standalone use.
             # Pin it explicitly to deploy's configurable grpcPort so the
             # ClusterIP Service and tcpSocket probes always follow chart values.

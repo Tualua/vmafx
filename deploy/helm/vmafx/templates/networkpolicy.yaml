@@ -141,6 +141,40 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: node -> controller (the nodes' controller client dials the
+# controller's gRPC port).  Rendered only when node.controllerAddr is set.
+# ----------------------------------------------------------------------------
+{{- if and .Values.node.enabled .Values.node.controllerAddr .Values.networkPolicy.allow.nodeToController.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-node-to-controller
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            {{- toYaml .Values.networkPolicy.allow.nodeToController.podSelector | nindent 12 }}
+          {{- with .Values.networkPolicy.allow.nodeToController.namespaceSelector }}
+          namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.allow.nodeToController.port }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: node -> object store (rclone egress).  Rendered as a single
 # egress policy with the CIDR/port matrix from values.yaml.  Defaults to
 # 0.0.0.0/0 minus RFC1918 — tighten to your bucket VPC CIDR in production.

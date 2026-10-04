@@ -4295,10 +4295,14 @@
     "0713": {
       "sites": {
         ".github/workflows/e2e-k8s.yml": 1,
+        "cmd/vmafx-node/backoff.go": 1,
+        "cmd/vmafx-node/controller_client.go": 1,
+        "cmd/vmafx-node/controller_config.go": 1,
+        "cmd/vmafx-node/controller_provider.go": 1,
         "cmd/vmafx-node/executor.go": 1,
         "cmd/vmafx-node/executor_extra_test.go": 1,
         "cmd/vmafx-node/executor_test.go": 1,
-        "cmd/vmafx-node/main.go": 1,
+        "cmd/vmafx-node/main.go": 2,
         "cmd/vmafx-node/main_test.go": 1,
         "cmd/vmafx-node/scoring_handler.go": 2,
         "cmd/vmafx-ort-runner/main.go": 1,
@@ -5903,6 +5907,7 @@
         "cmd/vmafx-mcp/otel_test.go": 1,
         "cmd/vmafx-node/app_scorestream_test.go": 1,
         "cmd/vmafx-node/app_test.go": 3,
+        "cmd/vmafx-node/controller_provider.go": 1,
         "cmd/vmafx-node/main.go": 4,
         "cmd/vmafx-node/main_test.go": 2,
         "cmd/vmafx-node/online_feedback.go": 1,
@@ -9974,6 +9979,12 @@
         "tools/rc1-tester/tests/test_windows_bundle.py": 1
       },
       "target": "1516-windows-cuda-tester-zip.md"
+    },
+    "1524": {
+      "sites": {
+        ".github/workflows/helm-chart.yml": 1
+      },
+      "target": "1524-vmafx-node-controller-client.md"
     }
   },
   "retired": {

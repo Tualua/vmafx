@@ -133,28 +133,22 @@ grpcurl -plaintext \
 Used by `vmafx-node` worker processes to pull and report work (the node RPCs in
 the table above).
 
-Node lifecycle (the design; see the note below for the current `vmafx-node`
-binary):
+Node lifecycle (`vmafx-node` implements it when `VMAFX_CONTROLLER_ADDR` is
+set; see [node.md](node.md#pulling-jobs-from-the-controller)):
 
 1. On startup, the node calls `RegisterNode` with its capability (GPU vendor,
    available backends, concurrency slots).  The controller returns a `node_id`
    and a `session_token`.
 2. The node calls `Heartbeat` every ~10 s with the `node_id` and
    `session_token`.
-   A node that misses heartbeats for 60 s is evicted; its in-flight jobs return
-   to
-   `PENDING`.
+   A node that misses heartbeats for 60 s is evicted. Its running jobs stay
+   `RUNNING`: the reaper removes the node, not its jobs. A node that comes
+   back registers again and reports them under the new session.
 3. When the node has capacity, it calls `PullWork`.  The controller assigns the
    oldest `PENDING` job whose `backend` requirement matches the node's
    capabilities.
 4. After the job completes (or fails), the node calls `ReportResult` with
    `final=true`.
-
-!!! note "Current node behaviour"
-    The controller serves the node API, but the `vmafx-node` binary in this
-    repository does not yet call it: it contains no controller client loop
-    (see [node.md](node.md#grpc-service-the-node-serves)). Until it does, no
-    in-repo component registers nodes or pulls work.
 
 ### Job lifecycle
 

@@ -253,8 +253,14 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | `ffmpeg` binary used by the startup encoder probe. The node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
 | `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | `vmaf` CLI binary behind the unary `Score` RPC. |
 | `VMAFX_MODEL_DIR` | `model.dir` | path | _(binary default)_ | Directory of VMAF `.json` model files. |
-| `VMAFX_BACKEND` | `backend` | string | `cpu` | Scoring backend label attached to executor spans and results. |
+| `VMAFX_BACKEND` | `backend` | string | `cpu` | Backend the node runs (`cpu`, `cuda`, `hip`, `sycl`, `metal`); advertised to the controller and passed to the vmaf CLI as `--backend` for controller jobs. |
 | `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
+| `VMAFX_CONTROLLER_ADDR` | `controller.addr` | `host:port` | _(unset)_ | Controller gRPC address; set, the node registers and pulls jobs ([ADR-1524](../adr/1524-vmafx-node-controller-client.md)). |
+| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | `controller.token_file` / `controller.token` | path / string | _(unset)_ | Bearer token for the controller, from a file read on every call or inline (not both). |
+| `VMAFX_CONTROLLER_TLS`, `VMAFX_CONTROLLER_CA_FILE`, `VMAFX_CONTROLLER_SERVER_NAME` | `controller.tls`, `controller.ca_file`, `controller.server_name` | bool, path, string | `false`, system roots, from the address | TLS to the controller; the CA file and server name need TLS. |
+| `VMAFX_CONTROLLER_RPC_TIMEOUT`, `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL`, `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.rpc_timeout`, `controller.heartbeat_interval`, `controller.poll_interval` | duration | `10s`, `10s`, `2s` | Per-call deadline, heartbeat period, wait after an empty `PullWork`. |
+| `VMAFX_NODE_ID` | `node.id` | string | host name | Node name sent to `RegisterNode`. |
+| `VMAFX_NODE_SLOTS` | `node.slots` | integer | `1` | Controller jobs run at once (1 to 64). |
 | `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level. |
 | `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | `auto` (tint on a TTY, else JSON), `tint` or `json`. |
 

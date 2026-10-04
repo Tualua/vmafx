@@ -169,19 +169,6 @@ node package. Override via .Values.node.image.repository / .Values.node.image.ta
 {{- end }}
 
 {{/*
-Resolve the vmafx-controller address for the node's VMAFX_CONTROLLER_ADDR env var.
-Defaults to the in-cluster controller Service DNS name on port 8080.
-Override via .Values.node.controllerAddr.
-*/}}
-{{- define "vmafx.controllerAddr" -}}
-{{- if .Values.node.controllerAddr -}}
-{{ .Values.node.controllerAddr }}
-{{- else -}}
-{{ include "vmafx.fullname" . }}-controller:8080
-{{- end }}
-{{- end }}
-
-{{/*
 Shared pod-spec fragments used by Deployment, Job, and StatefulSet.
 Extracted here to avoid triplicating the container spec.
 */}}

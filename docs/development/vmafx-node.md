@@ -1,11 +1,12 @@
 <!-- markdownlint-disable MD060 -->
 # vmafx-node: worker node image
 
-`vmafx-node` is the VMAFX worker binary and its container image. Each node
-connects to the controller, receives encoding jobs, runs `ffmpeg` for
-encoding and reports scores back. This page shows how to build and check the
-image first, then covers the ffmpeg setup, codec matrix and environment
-variables.
+`vmafx-node` is the VMAFX worker binary and its container image. A node
+pointed at a controller (`VMAFX_CONTROLLER_ADDR`) pulls scoring jobs from its
+queue, scores them and reports the scores back; every node also serves direct
+`VmafxScoring` calls. The image carries `ffmpeg` for the encoder probe.
+This page shows how to build and check the image first, then covers the
+ffmpeg setup, codec matrix and environment variables.
 
 See [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) (Phase 4b
 umbrella) and [ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md) (ffmpeg
@@ -144,11 +145,12 @@ clear error message.
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the ffmpeg binary. The Docker image sets this to `/usr/local/bin/ffmpeg`. |
 | `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address. |
 | `VMAFX_LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR. |
-| `VMAFX_BACKEND` | `cpu` | Scoring backend label for the executor. Set automatically in node-cuda/rocm/sycl variants. |
+| `VMAFX_BACKEND` | `cpu` | Backend the node runs and advertises to the controller. Set automatically in node-cuda/rocm/sycl variants. |
 | `VMAFX_MODEL_DIR` | `/usr/local/share/vmafx/model` | Directory of VMAF model JSON/ONNX files. |
 | `VMAFX_VMAF_BINARY` | binary lookup | Path to the `vmaf` CLI binary. |
 | `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint` or `json`. |
 | `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar. |
+| `VMAFX_CONTROLLER_ADDR` | _(unset)_ | Controller gRPC address. Set, the node registers with the controller and pulls jobs; the other `VMAFX_CONTROLLER_*` and `VMAFX_NODE_*` settings are in [the node guide](../server/node.md#pulling-jobs-from-the-controller). |
 
 `VMAFX_NODE_ADDR` was removed (ADR-1119); use `VMAFX_GRPC_LISTEN`.
 

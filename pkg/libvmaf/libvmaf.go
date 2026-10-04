@@ -112,6 +112,16 @@ func New(binaryPath, modelDir string) (*Scorer, error) {
 // raises ErrInvalidArgument from downstream callers that require a real
 // cancellation signal (see T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31).
 func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64, map[string]float64, error) {
+	return s.ScoreOnBackend(ctx, ref, dis, modelName, "")
+}
+
+// ScoreOnBackend is Score with an explicit vmaf CLI backend. A non-empty
+// backend ("cpu", "cuda", "sycl", "hip", "metal", "auto") is passed as
+// `--backend <name>`, which makes the CLI run that backend exclusively and
+// fail when the binary or host cannot; an empty backend leaves the CLI's own
+// selection in place, as Score does. The node's controller client uses it so
+// a job scheduled for a backend runs on that backend or fails.
+func (s *Scorer) ScoreOnBackend(ctx context.Context, ref, dis, modelName, backend string) (float64, map[string]float64, error) {
 	if ctx == nil {
 		// Defensive: callers should pass a real context, but nil ctx would
 		// otherwise panic inside exec.CommandContext.
@@ -154,25 +164,29 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 		defer cancel()
 	}
 
-	if err := s.runScoreBinary(runCtx, scoreArgv(ref, dis, modelPath, tmpOut.Name())); err != nil {
+	if err := s.runScoreBinary(runCtx, scoreArgv(ref, dis, modelPath, tmpOut.Name(), backend)); err != nil {
 		return 0, nil, err
 	}
 	return parseOutput(tmpOut.Name())
 }
 
 // scoreArgv builds the vmaf CLI argument vector for one (ref, dis) pair,
-// writing JSON output to outPath.
+// writing JSON output to outPath. A non-empty backend adds `--backend`.
 //
 // ADR-1190: the CLI splits option strings on ":" and "=", so a model path
 // containing either has to be escaped or it is truncated/rejected.
-func scoreArgv(ref, dis, modelPath, outPath string) []string {
-	return []string{
+func scoreArgv(ref, dis, modelPath, outPath, backend string) []string {
+	argv := []string{
 		"-r", ref,
 		"-d", dis,
 		"-m", "path=" + cliopt.EscapeValue(modelPath),
 		"-o", outPath,
 		"--json",
 	}
+	if backend != "" {
+		argv = append(argv, "--backend", backend)
+	}
+	return argv
 }
 
 // runScoreBinary runs the vmaf CLI once and maps its failure modes onto Go

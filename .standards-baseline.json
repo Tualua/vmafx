@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T04:03:47Z",
+  "generated_at": "2026-10-04T04:23:10Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "e0f2b3fb8582231ba1fddb009229da120c92e61c",
-  "total_infractions": 444,
+  "commit_sha": "857ba5f3f7f0c64c2a515fe0edeabf25caad8e15",
+  "total_infractions": 443,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -260,14 +260,6 @@
       "message": "curl without --max-time waits on the network without a deadline",
       "anchor": "text:0abe8ab11908",
       "fingerprint": ".github/workflows/go-ci.yml:HISS-02:text:0abe8ab11908#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/helm-chart.yml",
-      "line_number": 67,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:dd98cd6ad7ab",
-      "fingerprint": ".github/workflows/helm-chart.yml:HISS-02:text:dd98cd6ad7ab#1"
     },
     {
       "rule_id": "HISS-07",

@@ -85,7 +85,7 @@ as done when its code or artefact exists on `master`.
 | Phase | Description | Input dependency | State |
 | --- | --- | --- | --- |
 | 4b.1 | `vmafx-server` → `vmafx-controller` (job queue, node registry, scheduler) | Phase 4a vmafx-server PR merged | Done (`cmd/vmafx-controller`) |
-| 4b.2 | `vmafx-node` Go binary (libvmaf cgo, ffmpeg, Go ONNX Runtime) | vmafx-sys Rust bindings (Phase 4a) | Done (`cmd/vmafx-node`, ADR-0713) |
+| 4b.2 | `vmafx-node` Go binary (libvmaf cgo, ffmpeg, Go ONNX Runtime) | vmafx-sys Rust bindings (Phase 4a) | Done (`cmd/vmafx-node`, ADR-0713); controller pull loop per [ADR-1524](../adr/1524-vmafx-node-controller-client.md) |
 | 4b.3 | `vmafx-operator` kubebuilder skeleton + CRDs | Phase 4b.1 | Done (`cmd/vmafx-operator`) |
 | 4b.4 | ffmpeg latest + `ffmpeg-patches/` bundled in node image | Phase 4b.2 | Done (`docker/Dockerfile.node`, ADR-0717) |
 | 4b.5 | rclone integration (node distroless layer + mount lifecycle) | Phase 4b.2 | Done (rclone stage in `docker/Dockerfile.node`) |

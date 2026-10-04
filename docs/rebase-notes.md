@@ -27,6 +27,22 @@ search:
   resolver (`vmaftune.codec_strings`); there is no default codec string.
 - AMF `extra_params()` returns `()`; `pkg/codecadapter/testdata/python_adapters.json`
   records an empty AMF `extra`.
+## `vmafx-node` pulls jobs from the controller (ADR-1524, 2026-10-04)
+
+`feat/node-controller-client`. Go node, `pkg/libvmaf` and Helm chart; no C
+source change, no upstream file touched.
+
+- `cmd/vmafx-node/controller_*.go` and `backoff.go` are new; `main.go` adds
+  `provideControllerClient` and the `*controllerClient` argument of the
+  lifecycle invoke (stop order: gRPC, client, feedback, scorer). Keep the
+  argument when the invoke is edited (`cmd/vmafx-node/AGENTS.md` invariant 13).
+- `pkg/libvmaf.Scorer.ScoreOnBackend` adds `--backend`; `Score` delegates with
+  an empty backend and is unchanged for its callers.
+- `deploy/helm/vmafx`: the `vmafx.controllerAddr` helper is gone;
+  `node.yaml` renders `VMAFX_CONTROLLER_ADDR` only from `node.controllerAddr`;
+  `networkpolicy.yaml` gains `allow-node-to-controller`. A rebase that brings
+  the helper back reintroduces a default pointing at a Service the chart does
+  not deploy.
 
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 

@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
@@ -45,6 +46,13 @@ func TestNodeEnvOptionsContract(t *testing.T) {
 		"grpc.key_file":      true,
 		"grpc.max_recv_size": true,
 		"grpc.max_send_size": true,
+		// Controller client keys (controller_config.go).
+		"controller.ca_file":            true,
+		"controller.server_name":        true,
+		"controller.token_file":         true,
+		"controller.rpc_timeout":        true,
+		"controller.heartbeat_interval": true,
+		"controller.poll_interval":      true,
 	}
 	got := make(map[string]bool, len(opts.CompoundKeys))
 	for _, k := range opts.CompoundKeys {
@@ -78,6 +86,42 @@ func TestNodeEnvOptionsBindGrpcKeys(t *testing.T) {
 	}
 	if got := cfg.String("grpc.key_file"); got != "/etc/tls/tls.key" {
 		t.Errorf("grpc.key_file = %q, want /etc/tls/tls.key", got)
+	}
+}
+
+// TestNodeEnvOptionsBindControllerKeys: the VMAFX_CONTROLLER_* and VMAFX_NODE_*
+// env vars reach the keys loadControllerConfig reads.
+func TestNodeEnvOptionsBindControllerKeys(t *testing.T) {
+	env := map[string]string{
+		"VMAFX_CONTROLLER_ADDR":               "ctrl:9090",
+		"VMAFX_CONTROLLER_TLS":                "true",
+		"VMAFX_CONTROLLER_CA_FILE":            "/etc/vmafx/ca.pem",
+		"VMAFX_CONTROLLER_SERVER_NAME":        "ctrl.example",
+		"VMAFX_CONTROLLER_TOKEN_FILE":         "/var/run/token",
+		"VMAFX_CONTROLLER_RPC_TIMEOUT":        "3s",
+		"VMAFX_CONTROLLER_HEARTBEAT_INTERVAL": "4s",
+		"VMAFX_CONTROLLER_POLL_INTERVAL":      "5s",
+		"VMAFX_NODE_ID":                       "pod-7",
+		"VMAFX_NODE_SLOTS":                    "2",
+	}
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+	raw, err := config.New(nodeEnvOptions(false))
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	got, err := loadControllerConfig(raw)
+	if err != nil {
+		t.Fatalf("loadControllerConfig: %v", err)
+	}
+	want := controllerConfig{
+		Addr: "ctrl:9090", TLS: true, CAFile: "/etc/vmafx/ca.pem", ServerName: "ctrl.example",
+		TokenFile: "/var/run/token", RPCTimeout: 3 * time.Second, HeartbeatInterval: 4 * time.Second,
+		PollInterval: 5 * time.Second, NodeName: "pod-7", Slots: 2,
+	}
+	if got != want {
+		t.Fatalf("controller config = %+v, want %+v", got, want)
 	}
 }
 
