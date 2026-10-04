@@ -51,7 +51,7 @@ next to it ([ADR-1513](adr/1513-production-artifact-licensing.md),
 | `ghcr.io/vmafx/vmafx-operator:<tag>`, `vmafx-server:<tag>` | `/usr/local/share/vmafx/licenses/` (Go modules under `go/`) | `<image>:<tag>-source` |
 | `ghcr.io/vmafx/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/` | `ghcr.io/vmafx/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
 | Tester images and bundles | `/opt/vmafx/licenses/`, `licenses/` in a bundle | `<image>-source` |
-| `vmaf-mcp` on PyPI | the wheel's `licenses/` directory (EUPL-1.2) | the sdist |
+| `vmaf-mcp` on PyPI | the `licenses/` directory of the wheel's and the sdist's metadata (EUPL-1.2, BSD-2-Clause-Patent) | the sdist |
 | GitHub release files (`libvmaf.so*`, `vmaf`) | `THIRD_PARTY_NOTICES.txt` and `licenses.tar.gz` next to them on the release | the release's source archives |
 | `models.tar.gz` (release) | `licenses/` inside the archive | the release's source archives |
 
@@ -90,6 +90,40 @@ The GPU images carry only the vendor files `vmaf` loads
   lists as redistributable, provided for use with the VMAFx programs in the
   image (the Intel EULA forbids reverse engineering them), and the Intel GPU
   compute runtime.
+
+## Python packages
+
+Each Python package declares, as its PEP 639 `License-Expression`, every licence
+its files carry, and ships each text in `LICENSES/` (installed under the
+package's `.dist-info/licenses/`)
+([ADR-1560](adr/1560-python-package-licence-union.md)). The files counted are
+those in the package's sdist and wheel; for the `vmaf` harness that includes
+every repository file its compiled ADM extension is built from.
+
+| Package | Directory | `License-Expression` |
+| --- | --- | --- |
+| `vmaf` (Python harness) | `python/` | `BSD-2-Clause-Patent AND BSD-2-Clause AND BSD-3-Clause-Clear AND EUPL-1.2` |
+| `vmaf-mcp` | `mcp-server/vmaf-mcp/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+| `vmaf-tune` | `tools/vmaf-tune/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+| `vmaf-train` | `ai/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+| `vmaf-dev-llm` | `dev-llm/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+| `vmaf-roi-score` | `tools/vmaf-roi-score/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+| `vmaf-ensemble-training-kit` | `tools/ensemble-training-kit/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+
+The expression describes the whole distribution, not each file: a module's own
+header still says which licence applies to it. To read what an installed
+package declares:
+
+```bash
+python3 -c "from importlib.metadata import metadata; print(metadata('vmaf-mcp')['License-Expression'])"
+```
+
+`python/test/setup_metadata_test.py` recomputes each union from the files and
+fails when a package's metadata or texts disagree with them:
+
+```bash
+python3 -m pytest python/test/setup_metadata_test.py -k licence
+```
 
 The releases up to 1.0.0-rc.2 predate these rules
 ([Research-2140](research/2140-production-artifact-licence-audit.md)).

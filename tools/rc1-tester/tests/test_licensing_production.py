@@ -21,7 +21,6 @@ lic = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lic)
 
 REPO = Path(__file__).resolve().parents[3]
-TAG = "SPDX-" + "License-Identifier:"
 
 
 def write(path: Path, text: str) -> Path:
@@ -204,28 +203,6 @@ def test_the_image_licence_label_is_the_compiled_licence_set(dockerfile: str, ki
     labels = re.findall(r'org\.opencontainers\.image\.licenses="([^"]*)"',
                         (REPO / dockerfile).read_text())  # fmt: skip
     assert labels and set(labels) == expected
-
-
-@pytest.mark.parametrize(("project", "sources"), [
-    ("mcp-server/vmaf-mcp", "src"),
-    ("tools/vmaf-tune", "src"),
-])  # fmt: skip
-def test_a_python_package_declares_the_licences_of_its_files(project: str, sources: str) -> None:
-    """The wheel metadata names every licence its files carry, and the wheel
-    ships each text (PEP 639 license-files), byte for byte the repository's."""
-    pyproject = (REPO / project / "pyproject.toml").read_text()
-    declared = re.search(r'^license = "([^"]+)"$', pyproject, re.MULTILINE).group(1)
-    found = set()
-    for path in sorted((REPO / project / sources).rglob("*.py")):
-        match = re.search(re.escape(TAG) + r"\s*(\S+)", path.read_text(encoding="utf-8"))
-        assert match, f"{path} has no SPDX header"
-        found |= lic.spdx_ids(match.group(1))
-    assert lic.spdx_ids(declared) == found
-    assert 'license-files = ["LICENSES/*"]' in pyproject
-    spdx_texts = lic.load_manifest()["spdx_texts"]
-    for identifier in found:
-        shipped = REPO / project / "LICENSES" / f"{identifier}.txt"
-        assert shipped.read_bytes() == (REPO / spdx_texts[identifier]).read_bytes()
 
 
 def test_the_production_records_name_every_text_they_fetch() -> None:

@@ -7,6 +7,24 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Python package licence metadata follows the shipped files (ADR-1560, 2026-10-04)
+
+`fix/package-licence-metadata-test`. Packaging metadata and tests only.
+
+- `python/test/setup_metadata_test.py`: `test_every_python_package_declares_the_licences_of_the_files_it_ships`
+  replaces `test_all_python_packages_use_pep639_license_expression`;
+  `tools/rc1-tester/tests/test_licensing_production.py` loses
+  `test_a_python_package_declares_the_licences_of_its_files`. A sync that
+  brings either old test back reintroduces the duplicate or the failing
+  hard-coded `BSD-2-Clause-Patent`.
+- `python/pyproject.toml` (Netflix-derived): an upstream sync keeps the fork's
+  `license` expression and `license-files = ["LICENSES/*"]`; upstream's
+  `BSD-2-Clause-Patent` understates the compiled extension. `python/LICENSES/`
+  is fork-added.
+- A new file under another licence in a package, or a new header the `vmaf`
+  extension includes, fails the test until that package's expression and
+  `LICENSES/` gain the identifier.
+
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 
 `fix/controller-requeue-evicted-node-jobs`. Go controller only.

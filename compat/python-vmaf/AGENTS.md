@@ -138,6 +138,14 @@ python/vmaf/
   `tempfile.mkstemp`. 0 Semgrep findings in SARIF, resolving alerts 947–949. Tests in
   `compat/vmaf/tests/test_decorator_extended.py` (26 tests) guard key length (64 hex),
   golden vectors, concurrency, Windows lock dispatch, cold invalidation.
+- **`python/pyproject.toml` declares the licences the `vmaf` wheel carries ([ADR-1560](../../docs/adr/1560-python-package-licence-union.md)).**
+  `BSD-2-Clause-Patent AND BSD-2-Clause AND BSD-3-Clause-Clear AND EUPL-1.2`
+  with `license-files = ["LICENSES/*"]` (`python/LICENSES/`), not upstream's
+  `BSD-2-Clause-Patent`: modules of this tree carry BSD-2-Clause and
+  BSD-3-Clause-Clear, and the ADM extension includes EUPL-1.2 headers. A new
+  file under another licence here, or a new header `adm_dwt2_cy.pyx` pulls in,
+  fails `python/test/setup_metadata_test.py` until the expression and the texts
+  gain it.
 
 ## Governing ADRs
 
