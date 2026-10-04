@@ -8,6 +8,10 @@ with, per GPU, its name, PCI vendor and device ID, GPU IP version and family,
 execution-unit layout, sub-group sizes and driver version. It reads no UUID,
 serial number or PCI address: the UUID fields of the structures are never copied.
 
+The loader is the system's `libze_loader.so.1` (Linux image) or `ze_loader.dll`; the
+Windows SYCL zip (ADR-1566) passes the path of the loader it ships in
+VMAFX_ZE_LOADER, the copy its programs load.
+
 The structure layouts are those of `level_zero/ze_api.h` (Level Zero 1.x). The
 IP version is `(major << 22) | (minor << 14) | revision`, the form `ocloc ids`
 prints as `major.minor.revision`; the families below follow `ocloc ids` of
@@ -18,10 +22,12 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import sys
 from typing import Any
 
-LOADER = "libze_loader.so.1"
+LOADER = "ze_loader.dll" if sys.platform == "win32" else "libze_loader.so.1"
+LOADER_ENV = "VMAFX_ZE_LOADER"
 ZE_INIT_FLAG_GPU_ONLY = 1
 STYPE_DRIVER_PROPERTIES = 0x1
 STYPE_DEVICE_PROPERTIES = 0x3
@@ -201,7 +207,7 @@ def probe(loader: str = LOADER) -> dict[str, Any]:
 
 
 def main() -> int:
-    print(json.dumps(probe(), sort_keys=True))
+    print(json.dumps(probe(os.environ.get(LOADER_ENV) or LOADER), sort_keys=True))
     return 0
 
 

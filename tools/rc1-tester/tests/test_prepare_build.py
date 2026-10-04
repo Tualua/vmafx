@@ -285,6 +285,38 @@ def test_intel_runtime_refuses_files_credist_does_not_list(tmp_path: Path) -> No
         pb.stage_vendor_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img2")
 
 
+def test_credist_reads_windows_entries_under_bin_with_either_separator(tmp_path: Path) -> None:
+    credist = tmp_path / "credist.txt"
+    credist.write_text("<installdir>\\bin\\sycl8.dll\r\n<installdir>/bin/ur_loader.dll\n"
+                       "<installdir>/lib/libsycl.so.9\n<installdir>\\bin\\sycl8d.dll.pdb\n")  # fmt: skip
+    assert pb.credist_names(credist, "bin") == {"sycl8.dll", "ur_loader.dll", "sycl8d.dll.pdb"}
+    assert pb.credist_names(credist) == {"libsycl.so.9"}
+
+
+def test_a_component_with_dests_lands_beside_every_program(tmp_path: Path) -> None:
+    oneapi = tmp_path / "oneapi"
+    bin_dir = oneapi / "compiler" / "latest" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "sycl8.dll").write_bytes(b"MZ sycl")
+    docs = oneapi / "compiler" / "latest" / "share" / "doc"
+    docs.mkdir(parents=True)
+    (docs / "credist.txt").write_text("<installdir>\\bin\\sycl8.dll\n")
+    (docs / "LICENSE.rtf").write_text("EULA")
+    spec = {"credist": "compiler/latest/share/doc/credist.txt", "credist_dir": "bin",
+            "components": [{"id": "dpcpp", "dir": "compiler/latest/bin", "credist": True,
+                            "dests": ["build/tools", "tests"], "names": ["sycl8.dll"],
+                            "licences": ["compiler/latest/share/doc/LICENSE.rtf"]}]}  # fmt: skip
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    pb.stage_vendor_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img")
+    for dest in ("build/tools", "tests"):
+        assert (tmp_path / "img" / dest / "sycl8.dll").read_bytes() == b"MZ sycl"
+    assert not (tmp_path / "img" / "lib").exists()
+    spec["credist_dir"] = "lib"  # the Linux reading finds no Windows DLL in the list
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    with pytest.raises(pb.BuildError, match="not in credist.txt"):
+        pb.stage_vendor_runtime(tmp_path / "spec.json", oneapi, tmp_path / "img2")
+
+
 def test_shipped_sycl_runtime_list_names_only_libraries() -> None:
     spec = json.loads((_PATH.parent / "sycl-runtime.json").read_text())
     names = [n for c in spec["components"] for n in c["names"]]

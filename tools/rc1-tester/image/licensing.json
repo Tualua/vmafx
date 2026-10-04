@@ -1140,6 +1140,310 @@
     }
    ]
   },
+  "windows-sycl-zip": {
+   "title": "the VMAFx Windows SYCL tester zip",
+   "licence_root": "licenses",
+   "source_offer": "no copyleft object code is in this zip; VMAFx's own source is the commit above, and the Level Zero loader's is https://github.com/oneapi-src/level-zero at tag v1.34.0.",
+   "python": {
+    "version": "3.13.16"
+   },
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: vmaf.exe (libvmaf with the SYCL backend linked in) and the unit and SYCL device test programs, built with Intel's icx-cl",
+     "paths": [
+      "build/tools/vmaf.exe",
+      "tests/*.exe"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "The SYCL kernels are device images inside vmaf.exe and the test programs: ahead-of-time code for the Intel GPU targets of the build's sycl_icpx_aot_targets list and portable SPIR-V, compiled from the repository's sources."
+     ]
+    },
+    {
+     "id": "microsoft-linked-runtime",
+     "kind": "fixed",
+     "name": "Microsoft C and C++ runtime code linked into the programs: the start-up code of the /MD import libraries in vmaf.exe and the test programs, and the static runtime (/MT) of ze_loader.dll",
+     "licence": "LicenseRef-Microsoft-Visual-Studio (the runtime libraries of Visual Studio 2026 and the Universal CRT of the Windows SDK); the C++ standard library is Apache-2.0 WITH LLVM-exception",
+     "copyright": [
+      "Copyright (c) Microsoft Corporation"
+     ],
+     "source": "binary only, except the C++ standard library (https://github.com/microsoft/STL); linked in by the toolsets of the hosted runner's Visual Studio 2026 and Windows SDK",
+     "texts": [
+      {
+       "fetched": "visual-studio-2026-license-terms.txt",
+       "name": "visual-studio-2026-license-terms.txt",
+       "label": "Microsoft Software License Terms of Visual Studio Enterprise 2026, Visual Studio Professional 2026 and Trial Edition, Last Updated October 1, 2025 (the edition of the hosted runner); its DISTRIBUTABLE CODE section sets the terms on which this Microsoft code ships"
+      }
+     ],
+     "notes": [
+      "vmaf.exe and the test programs link the C and C++ runtime as DLLs (/MD, which -fsycl requires) and carry only the start-up code of its import libraries; ze_loader.dll links it statically (/MT, the Level Zero loader's default build).",
+      "The licence terms of Visual Studio Enterprise 2026 and Professional 2026 (Last Updated: October 1, 2025; the text is texts/visual-studio-2026-license-terms.txt) let a licensee distribute Microsoft's Distributable Code in applications it develops, if the application adds significant primary functionality, if distributors and end users agree to terms that protect that code at least as much as those terms, and if Microsoft's trademarks are not used to name the application or to suggest that Microsoft endorses it. VMAFx applies those conditions to this code, which it ships as part of its programs.",
+      "That code is Microsoft's and is not covered by EUPL-1.2 or any other licence of VMAFx. It is provided to you as part of these programs only, and you may pass it on only as part of them and on these terms. You may not modify, reverse engineer, decompile or disassemble it, except where applicable law permits despite this limitation. Microsoft provides it as is and disclaims every warranty; Microsoft is not liable for damages arising from its use.",
+      "The C++ standard library is open source under Apache-2.0 WITH LLVM-exception (https://github.com/microsoft/STL); the exception waives the notice conditions for its object code embedded in a program. Microsoft's names identify the component only."
+     ]
+    },
+    {
+     "from": "windows-zip",
+     "id": "microsoft-vc-runtime"
+    },
+    {
+     "id": "microsoft-vc-runtime-programs",
+     "kind": "fixed",
+     "name": "Microsoft Visual C++ runtime DLLs the programs and Intel's runtime import (vcruntime140*.dll, msvcp140*.dll, concrt140.dll, beside every program)",
+     "paths": [
+      "build/tools/vcruntime140*.dll",
+      "build/tools/msvcp140*.dll",
+      "build/tools/concrt140.dll",
+      "tests/vcruntime140*.dll",
+      "tests/msvcp140*.dll",
+      "tests/concrt140.dll"
+     ],
+     "licence": "LicenseRef-Microsoft-Visual-Studio-Distributable-Code (Visual C++ Runtime Files of the Visual Studio 2026 Distributable Code list)",
+     "copyright": [
+      "Copyright (c) Microsoft Corporation"
+     ],
+     "source": "binary only; copied unmodified from VC\\Redist\\MSVC\\<version>\\x64\\Microsoft.VC14x.CRT of the hosted runner's Visual Studio 2026 (files and SHA-256 under program_files in image\\msvc-redist.json); never from debug_nonredist",
+     "texts": [
+      {
+       "fetched": "visual-studio-2026-license-terms.txt",
+       "name": "visual-studio-2026-license-terms.txt",
+       "label": "Microsoft Software License Terms of Visual Studio Enterprise 2026, Visual Studio Professional 2026 and Trial Edition, Last Updated October 1, 2025 (the edition of the hosted runner); its DISTRIBUTABLE CODE section sets the terms on which this Microsoft code ships"
+      }
+     ],
+     "notes": [
+      "These files are Microsoft Distributable Code: the Distributable List those terms name (https://aka.ms/vs/18/redistribution, the Visual Studio 2026 distributable code list, ms.date 2025-11-11, read 2026-10-04) lets a licensee copy the files of VC\\Redist unmodified with a program. They lie beside vmaf.exe and the test programs, whose /MD build needs them, so that no older copy elsewhere on the PC is loaded instead.",
+      "The licence terms of Visual Studio Enterprise 2026 and Professional 2026 (Last Updated: October 1, 2025; the text is texts/visual-studio-2026-license-terms.txt) let a licensee distribute Microsoft's Distributable Code in applications it develops, if the application adds significant primary functionality, if distributors and end users agree to terms that protect that code at least as much as those terms, and if Microsoft's trademarks are not used to name the application or to suggest that Microsoft endorses it.",
+      "They are provided to you for use with the programs of this zip only, not on their own, and you may pass them on only unmodified, as part of this zip and on these terms. You may not modify, reverse engineer, decompile or disassemble them, except where applicable law permits despite this limitation. Microsoft provides them as is and disclaims every warranty; Microsoft is not liable for damages arising from their use.",
+      "They are Microsoft's and are not covered by EUPL-1.2 or any other licence of VMAFx; Microsoft's names identify the component only. Windows 10 and later carry the Universal CRT these DLLs use; the zip ships none of it."
+     ]
+    },
+    {
+     "id": "intel-oneapi-dpcpp-runtime",
+     "kind": "fixed",
+     "name": "Intel oneAPI DPC++/C++ Compiler 2025.3 runtime for Windows: sycl8, the Unified Runtime loader, its Windows proxy loader and its Level Zero adapters, and the compiler's math and support libraries the programs import",
+     "paths": [
+      "build/tools/sycl8.dll",
+      "build/tools/ur_win_proxy_loader.dll",
+      "build/tools/ur_loader.dll",
+      "build/tools/ur_adapter_level_zero.dll",
+      "build/tools/ur_adapter_level_zero_v2.dll",
+      "build/tools/libmmd.dll",
+      "build/tools/svml_dispmd.dll",
+      "build/tools/libircmd.dll",
+      "build/tools/libirngmd.dll",
+      "tests/sycl8.dll",
+      "tests/ur_win_proxy_loader.dll",
+      "tests/ur_loader.dll",
+      "tests/ur_adapter_level_zero.dll",
+      "tests/ur_adapter_level_zero_v2.dll",
+      "tests/libmmd.dll",
+      "tests/svml_dispmd.dll",
+      "tests/libircmd.dll",
+      "tests/libirngmd.dll"
+     ],
+     "licence": "LicenseRef-Intel-EULA-Developer-Tools (the Redistributables of the compiler's credist.txt)",
+     "copyright": [
+      "Copyright (C) Intel Corporation"
+     ],
+     "source": "binary only; copied unmodified from the oneAPI Base Toolkit 2025.3.0.372 for Windows installed on the hosted runner, every file listed in its credist.txt (tools/rc1-tester/image/sycl-runtime-windows.json); a listed DLL nothing imports is left out (image/gpu-runtime.json)",
+     "texts": [
+      {
+       "artifact": "licenses/intel/intel-oneapi-dpcpp-runtime/LICENSE.rtf",
+       "label": "Intel End User License Agreement for Developer Tools (Version August 2024)"
+      },
+      {
+       "artifact": "licenses/intel/intel-oneapi-dpcpp-runtime/third-party-programs.txt",
+       "label": "third-party programs of the compiler"
+      },
+      {
+       "artifact": "licenses/intel/intel-oneapi-dpcpp-runtime/credist.txt",
+       "label": "the compiler's list of Redistributables"
+      }
+     ],
+     "notes": [
+      "These files are provided to you in executable code only, as part of this zip, for use with the VMAFx programs in it.",
+      "You may not reverse engineer, decompile or disassemble them (Intel EULA for Developer Tools, section 2.1.D(2)).",
+      "Intel and its suppliers provide them as is; the disclaimers and the limitation of liability of sections 6 and 7 of that agreement apply to you as they apply to the distributor (section 7.3).",
+      "Nothing in this zip is certified or guaranteed by Intel; Intel's names identify the components only."
+     ]
+    },
+    {
+     "id": "intel-oneapi-umf",
+     "kind": "fixed",
+     "name": "Intel oneAPI Unified Memory Framework 1.0.2 for Windows (umf.dll)",
+     "paths": [
+      "build/tools/umf.dll",
+      "tests/umf.dll"
+     ],
+     "licence": "Apache-2.0 WITH LLVM-exception",
+     "copyright": [
+      "Copyright (C) Intel Corporation"
+     ],
+     "source": "https://github.com/oneapi-src/unified-memory-framework (release 1.0.2); binary copied unmodified from the oneAPI Base Toolkit 2025.3.0.372 for Windows",
+     "texts": [
+      {
+       "artifact": "licenses/intel/intel-oneapi-umf/LICENSE.TXT",
+       "label": "UMF licence"
+      },
+      {
+       "artifact": "licenses/intel/intel-oneapi-umf/third-party-programs.txt",
+       "label": "UMF third-party programs"
+      }
+     ]
+    },
+    {
+     "id": "intel-oneapi-tcm-hwloc",
+     "kind": "fixed",
+     "name": "Portable Hardware Locality (libhwloc-15.dll) as built by Intel in oneAPI Thread Composability Manager 1.4.1 for Windows",
+     "paths": [
+      "build/tools/libhwloc-15.dll",
+      "tests/libhwloc-15.dll"
+     ],
+     "licence": "BSD-3-Clause (hwloc), binary under the Intel Simplified Software License (TCM)",
+     "copyright": [
+      "Copyright (c) 2004-2006 The Trustees of Indiana University and Indiana University Research and Technology Corporation",
+      "Copyright (c) 2009-2016 Inria",
+      "Copyright (C) Intel Corporation"
+     ],
+     "source": "https://github.com/open-mpi/hwloc (2.x); binary copied unmodified from the oneAPI Base Toolkit 2025.3.0.372 for Windows",
+     "texts": [
+      {
+       "artifact": "licenses/intel/intel-oneapi-tcm-hwloc/license.txt",
+       "label": "Intel Simplified Software License of TCM"
+      },
+      {
+       "artifact": "licenses/intel/intel-oneapi-tcm-hwloc/third-party-programs.txt",
+       "label": "TCM third-party programs (hwloc's BSD-3-Clause notice)"
+      }
+     ]
+    },
+    {
+     "id": "level-zero-loader",
+     "kind": "fixed",
+     "name": "oneAPI Level Zero loader 1.34.0 (ze_loader.dll), built on the hosted runner from its source",
+     "paths": [
+      "build/tools/ze_loader.dll",
+      "tests/ze_loader.dll"
+     ],
+     "licence": "MIT",
+     "copyright": [
+      "Copyright (C) Intel Corporation"
+     ],
+     "source": "https://github.com/oneapi-src/level-zero/releases/tag/v1.34.0 (LEVEL_ZERO_VERSION of build-config.env), built with CMake and MSVC in its default configuration (the loader alone; the validation layer, which holds the third-party graph code, is not shipped)",
+     "texts": [
+      {
+       "fetched": "level-zero-1.34.0-LICENSE.txt",
+       "name": "level-zero-1.34.0-LICENSE.txt",
+       "label": "oneAPI Level Zero loader 1.34.0 LICENSE"
+      }
+     ],
+     "notes": [
+      "libvmaf imports the loader, so vmaf.exe starts only with it; on a PC with an Intel graphics driver it finds the driver's Level Zero GPU driver, on one without it finds no GPU."
+     ]
+    },
+    {
+     "from": "windows-zip",
+     "id": "netflix-test-videos"
+    },
+    {
+     "from": "windows-zip",
+     "id": "brisque-live-model"
+    },
+    {
+     "id": "vmafx-files",
+     "kind": "repo",
+     "name": "VMAFx report program, parity gate, row map, scratch ratchet list and launcher (source files from the repository)",
+     "map": [
+      {
+       "artifact": "tester/src/",
+       "repo": "tools/rc1-tester/src/"
+      },
+      {
+       "artifact": "tester/vmaf-tester-report",
+       "repo": "tools/rc1-tester/vmaf-tester-report"
+      },
+      {
+       "artifact": "tester/gate/",
+       "repo": ""
+      },
+      {
+       "artifact": "image/fixtures.json",
+       "repo": "tools/rc1-tester/image/fixtures.json"
+      },
+      {
+       "artifact": "run.cmd",
+       "repo": "tools/rc1-tester/image/windows/run.cmd"
+      },
+      {
+       "artifact": "README.txt",
+       "repo": "tools/rc1-tester/image/windows/README.txt"
+      },
+      {
+       "artifact": "image/sycl-rows.json",
+       "repo": "tools/rc1-tester/image/sycl-rows.json"
+      },
+      {
+       "artifact": "image/scratch_ratchet.txt",
+       "repo": "core/src/sycl/scratch_ratchet.txt"
+      }
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above"
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "Scores, build information, test manifests, twin bounds, the runtime versions, the runtime DLLs' origin and the licence check receipt written by this zip's build",
+     "paths": [
+      "reference/**",
+      "image/build-info.json",
+      "image/unit-tests.json",
+      "image/gpu-tests.json",
+      "image/gpu-twins.json",
+      "image/package-arch.txt",
+      "image/msvc-redist.json",
+      "licence-check.json",
+      "image/gpu-runtime.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "from": "windows-zip",
+     "id": "cpython"
+    },
+    {
+     "from": "windows-zip",
+     "id": "python-packages"
+    },
+    {
+     "from": "windows-zip",
+     "id": "notices"
+    }
+   ]
+  },
   "sycl-image": {
    "title": "the VMAFx Intel GPU tester image",
    "licence_root": "opt/vmafx/licenses",

@@ -43,6 +43,7 @@ PACKAGES = {
     "hip": ("AMD GPU image", "e-amd-gpu-image-linux"),
     "windows": ("Windows zip", "f-native-windows-zip-x64-or-arm64"),
     "windows-cuda": ("Windows CUDA zip", "with-an-nvidia-gpu-the-cuda-zip"),
+    "windows-sycl": ("Windows SYCL zip", "with-an-intel-gpu-the-sycl-zip"),
 }
 GPU_BACKENDS = ("cuda", "hip", "sycl")
 
@@ -188,7 +189,7 @@ def needs_problems(needs: dict[str, Any]) -> list[str]:
     for backend in GPU_BACKENDS:
         wanted = json.loads((IMAGE_DIR / f"{backend}-rows.json").read_text(encoding="utf-8"))
         mapped = {f for row in wanted["rows"] for f in row.get("families", [])}
-        # A row bound to one platform (the Windows CUDA zip's) covers no family: every
+        # A row bound to one platform (a Windows GPU zip's) covers no family: every
         # family still needs its own row.
         listed = {
             f

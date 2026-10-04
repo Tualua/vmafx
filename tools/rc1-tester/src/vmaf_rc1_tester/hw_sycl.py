@@ -8,7 +8,11 @@ How the image reaches an Intel GPU, recorded as facts and as one `path`:
   process can open; the kernel driver (`i915` or `xe`) is read from sysfs;
 - `wsl`: WSL2's paravirtualised GPU, `/dev/dxg`, with the host driver's
   `/usr/lib/wsl/lib/libdxcore.so` mounted (the compute runtime opens that path);
-- `none`: neither, with the reason and the `docker run` option that is missing.
+- `windows`: the Windows SYCL zip (ADR-1566), whose Level Zero loader
+  (`tests/ze_loader.dll`, built from LEVEL_ZERO_VERSION) finds the Intel graphics
+  driver's Level Zero GPU driver;
+- `none`: neither, with the reason and the `docker run` option that is missing
+  (on Windows: the zip's loader is missing).
 
 The devices are the Level Zero GPUs (hw_l0probe.py, its own bounded process), in
 the order `ONEAPI_DEVICE_SELECTOR=level_zero:<n>` selects; every run of a device
@@ -36,6 +40,10 @@ DXG = Path("/dev/dxg")
 DRI = Path("/dev/dri")
 SYSFS_DRM = Path("/sys/class/drm")
 DPKG_STATUS = Path("/var/lib/dpkg/status")
+WINDOWS_LOADER = "tests/ze_loader.dll"  # relative to the zip root; its programs load it too
+SYSTEM32 = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32"
+DRIVER_HINT = ("install or update the Intel graphics driver for Arc, Iris Xe or UHD Graphics, "
+               "which provides the Level Zero GPU driver")  # fmt: skip
 PROBE_TIMEOUT_SECONDS = 120.0
 # The packages whose versions say which runtime ran: SYCL runtime, Level Zero
 # loader, compute runtime, IGC, gmmlib.
@@ -121,6 +129,38 @@ def missing_access_reason(facts: Mapping[str, Any]) -> str:
             "--device /dev/dxg -v /usr/lib/wsl:/usr/lib/wsl:ro (WSL2)")  # fmt: skip
 
 
+def windows_access_facts(root: Path, system32: Path = SYSTEM32) -> dict[str, Any]:
+    """The Windows zip reaches an Intel GPU through its own Level Zero loader, which
+    finds the graphics driver's Level Zero driver; System32's loader (installed by the
+    driver) is recorded, not used."""
+    present = (root / WINDOWS_LOADER).is_file()
+    return {"loader": WINDOWS_LOADER, "loader_present": present,
+            "system32_ze_loader_present": (system32 / "ze_loader.dll").is_file(),
+            "path": "windows" if present else "none"}  # fmt: skip
+
+
+def windows_reason(facts: Mapping[str, Any], probe: Mapping[str, Any]) -> str:
+    """Why the Windows zip reaches no Intel GPU."""
+    if not facts["loader_present"]:
+        return f"the zip's Level Zero loader {WINDOWS_LOADER} is missing: unpack the whole zip"
+    status, error = probe.get("status"), probe.get("error", "")
+    if status in ("no_loader", "error"):
+        return f"the zip's Level Zero loader did not run ({status}: {error})"
+    return f"Level Zero finds no Intel GPU ({status}{': ' + error if error else ''}): {DRIVER_HINT}"
+
+
+def recorded_runtime(root: Path) -> dict[str, str]:
+    """image/gpu-runtime.json of the Windows zip: the oneAPI and Level Zero loader
+    versions its build used (no package database on Windows)."""
+    try:
+        document = json.loads((root / "image" / "gpu-runtime.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return (
+        {str(k): str(v) for k, v in sorted(document.items())} if isinstance(document, dict) else {}
+    )
+
+
 def runtime_versions(status_file: Path = DPKG_STATUS) -> dict[str, str]:
     """Installed versions of the runtime packages, from the dpkg database."""
     try:
@@ -136,10 +176,14 @@ def runtime_versions(status_file: Path = DPKG_STATUS) -> dict[str, str]:
     return dict(sorted(found.items()))
 
 
-def probe_devices(runner: Runner) -> dict[str, Any]:
-    """The Level Zero probe in its own process; `error` when it does not finish."""
+def probe_devices(runner: Runner, loader: Path | None = None) -> dict[str, Any]:
+    """The Level Zero probe in its own process; `error` when it does not finish.
+    `loader` is the Level Zero loader to open (the Windows zip's own), else the
+    system's."""
     src = str(Path(__file__).resolve().parents[1])
     env = {**os.environ, "PYTHONPATH": src}
+    if loader is not None:
+        env["VMAFX_ZE_LOADER"] = str(loader)
     try:
         result = runner(
             [sys.executable, "-B", "-m", "vmaf_rc1_tester.hw_l0probe"], environment=env,
@@ -151,9 +195,26 @@ def probe_devices(runner: Runner) -> dict[str, Any]:
     return document if isinstance(document, dict) else {"status": "error", "devices": []}
 
 
+def discover_windows(root: Path, runner: Runner) -> dict[str, Any]:
+    """The Windows zip: its own loader, its recorded runtime versions."""
+    facts = windows_access_facts(root)
+    probe = probe_devices(runner, root / WINDOWS_LOADER) if facts["loader_present"] else {}
+    facts["level_zero"] = {k: v for k, v in probe.items() if k != "devices"}
+    devices = [{"index": d["index"], "facts": d} for d in probe.get("devices", [])]
+    found: dict[str, Any] = {"access": facts, "runtime": recorded_runtime(root), "devices": devices}
+    if not devices:
+        found["reason"] = windows_reason(facts, probe)
+    return found
+
+
+def windows_host() -> bool:
+    return os.name == "nt"
+
+
 def discover(root: Path, runner: Runner) -> dict[str, Any]:
     """Access facts, runtime versions and the Level Zero GPUs of this host."""
-    del root  # the SYCL backend finds its devices without the image's files
+    if windows_host():
+        return discover_windows(root, runner)
     facts = access_facts()
     probe = probe_devices(runner)
     facts["level_zero"] = {k: v for k, v in probe.items() if k != "devices"}

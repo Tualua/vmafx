@@ -240,6 +240,35 @@ the same text), copied by the build after it finds "Last updated: January 26, 20
 comments. The import check also proves that no program imports an NVIDIA DLL: the
 driver's `nvcuda.dll` is opened at run time by the loader libvmaf compiles in.
 
+The SYCL zip (ADR-1566) is the artifact `windows-sycl-zip`, and the one Windows zip
+built with `/MD`: Intel's `icx-cl -fsycl` refuses `/MT`. Its programs therefore import
+the C and C++ runtime, and everything they load lies in their own directory
+(`build/tools/` and `tests/`), the one directory Windows searches before System32:
+
+- the Visual C++ runtime DLLs they and Intel's DLLs import, copied from the
+  redistributable folder (`copy_program_runtime()`, `program_files` of
+  `image/msvc-redist.json`; component `microsoft-vc-runtime-programs`);
+- Intel's SYCL runtime from `tools/rc1-tester/image/sycl-runtime-windows.json`
+  (`prepare_build.py intel-runtime` with `dests`; its compiler files must be in the
+  installed `credist.txt`, whose Windows entries read `<installdir>/bin/<name>`, so the
+  spec sets `credist_dir`). The spec lists candidates: the build drops every listed DLL
+  nothing imports and the SYCL runtime does not load by name (`LOADED_AT_RUN_TIME`:
+  the Unified Runtime loader and its Level Zero adapters), and records the dropped
+  names in `image/gpu-runtime.json`;
+- `ze_loader.dll`, built by the workflow from `LEVEL_ZERO_VERSION` (component
+  `level-zero-loader`, MIT): libvmaf imports it, so without it no program starts, and
+  the report's probe opens the same copy (`VMAFX_ZE_LOADER`).
+
+`check-windows-bundle-imports.py --runtime md` holds that layout: every import beside
+a program resolves to Windows or to a file in the same directory, and every DLL there is
+imported or named by `--loaded-at-run-time`. The scratch audit reads its ratchet list
+from `VMAF_SYCL_SCRATCH_RATCHET_FILE`, which the build writes into the audit's
+`image/gpu-tests.json` entry (`{root}/image/scratch_ratchet.txt`): the path compiled
+into the test names the runner's checkout. The oneAPI installer is pinned by URL, size
+and SHA-256 in `build-config.env` (`ONEAPI_WINDOWS_VERSION`, `INTEL_BASEKIT_WINDOWS_*`,
+which the workflow reads); only its DPC++/C++ component is installed, and its required
+packages bring the runtime, UMF and TCM.
+
 ## What the hosted macOS runner cannot show
 
 The hosted runner is a virtual machine. The workflow runs the bundle's report there and
@@ -258,7 +287,9 @@ are also the first runs of the MSVC build's x86 SIMD unit tests: a failure there
 finding in the MSVC build (record it as a state row), not a fault of the zip. What only
 a tester's machine shows: the AVX-512 paths on a processor that has them, Windows on
 Arm hardware other than the runner's, SmartScreen and Smart App Control on a consumer
-installation, and an x64 zip refused on Arm.
+installation, an x64 zip refused on Arm, and every GPU run: the CUDA zip reports
+`no_device` naming `nvcuda.dll`, the SYCL zip `no_device` naming Level Zero (its own
+loader runs and finds no Intel GPU).
 
 ## Report intake
 
@@ -284,8 +315,9 @@ tracked files other than a commit trailer the person asked for.
 | Windows runtime DLLs | the runner image's Visual Studio | nothing to pin: the build copies the redistributable folder's files and records their SHA-256; a toolset without one of the interpreter's `vcruntime140*.dll` fails the build with the name |
 | Licence record | `tools/rc1-tester/image/licensing.json` | change with the package contents; the build fails until it matches |
 | Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
-| Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt`, `unit-tests-windows.txt` (the Windows CUDA zip adds `cuda-tests.txt`) | a name absent from a build is skipped; fewer than ten found fails the build |
+| Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt`, `unit-tests-windows.txt` (the Windows CUDA zip adds `cuda-tests.txt`, the SYCL zip `sycl-tests.txt`) | a name absent from a build is skipped; fewer than ten found fails the build |
 | Intel GPU runtime | `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`, `ONEAPI_*` in `build-config.env`; `tools/rc1-tester/image/sycl-runtime.json`; `fetched_texts` and the `intel-gpu-stack` component of `licensing.json` | a moved compute runtime or loader version fails the build until the licence text of the new version is recorded in `fetched_texts` (URL and SHA-256) and named by the component; a runtime file must stay in the compiler's `credist.txt` |
+| Windows SYCL zip | `ONEAPI_WINDOWS_VERSION` and `INTEL_BASEKIT_WINDOWS_URL`, `_SIZE`, `_SHA256` in `build-config.env` (the release of the `Windows MSVC+SYCL` lane, which spells the URL inline); `tools/rc1-tester/image/sycl-runtime-windows.json`; the `windows-sycl-zip` record of `licensing.json` | a new installer brings new versioned names (`sycl8.dll`, `umf`, `tcm`): measure its size and SHA-256 (`curl ... \| sha256sum`), read its `credist.txt`, and update the spec and the record's names and versions together; a moved `LEVEL_ZERO_VERSION` needs its licence text in `fetched_texts` |
 | Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_gpu_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
 | CUDA toolkit | `CUDA_VERSION` and the `CUDA_APT_*` versions in `build-config.env` (NVIDIA's `debian13` repository, `scripts/ci/install-cuda-toolkit.sh`; the Windows CUDA zip's `install-cuda-toolkit.ps1`); `NV_CODEC_HEADERS_COMMIT` in `docker/Dockerfile.tester` (the Windows workflow reads it from there) | a new CUDA version brings a new EULA: the Linux build and `CUDA_EULA_MARKERS` of `scripts/ci/build-windows-tester-bundle.py` check the EULA's "Last updated" date, so update both checks, the two `nvidia-cuda-device-code` components and ADR-1509's citation together after reading the new Attachment A |
 | NVIDIA GPU state rows | `tools/rc1-tester/image/cuda-rows.json` | the same contract test; every CUDA family has a row, and each row holds every gate feature |

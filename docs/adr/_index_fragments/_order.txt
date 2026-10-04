@@ -1243,3 +1243,4 @@
 1562-vmaf-tune-lowest-passing-bitrate-pick
 1561-integer-vif-sv-sq-defined
 1567-job-cancel-reaches-node
+1566-windows-sycl-tester-zip

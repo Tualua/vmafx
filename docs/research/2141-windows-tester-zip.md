@@ -157,6 +157,47 @@ Xeon Phi parts). The processor's name, vendor and family come from
   kernel of the MSVC build on a GPU. The hosted run shows the build, the licence gate
   and `no_device`.
 
+## The SYCL zip (ADR-1566)
+
+Read on 2026-10-04 from the oneAPI Base Toolkit 2025.3.0.372 offline installer for
+Windows, the pinned release of the `Windows MSVC+SYCL` lane (2,691,346,600 bytes,
+SHA-256 `f4dde6e5ea732b1624f0a50df546401712bccdf45766c9a23b0865f95863f541`, downloaded
+into memory, not installed). The installer is a stub with an appended zip; each
+component is a `cupPayload.cup` (zip, LZMA) with a `manifest.json` naming its required
+packages.
+
+- `intel.oneapi.win.cpp-dpcpp-common` (the component the lane installs) requires
+  `compilers-common` and `cpp-base-pro-common-runtime`, which require
+  `compilers-common-runtime`, which requires `umf` (1.0.2), which requires `tcm`
+  (1.4.1). The install of that one component therefore brings every runtime file the
+  zip ships.
+- Files under `_installdir/`: `compiler/2025.3/bin/` holds `sycl8.dll`,
+  `ur_win_proxy_loader.dll`, `ur_loader.dll`, `ur_adapter_level_zero.dll`,
+  `ur_adapter_level_zero_v2.dll`, `libmmd.dll`, `svml_dispmd.dll`, `libircmd.dll`,
+  `libirngmd.dll`; `umf/1.0/bin/umf.dll`; `tcm/1.4/bin/libhwloc-15.dll`. The
+  installer's post-install script creates the `latest` link of each
+  (`New-Item -ItemType SymbolicLink -Path latest`).
+- `compiler/2025.3/share/doc/compiler/credist.txt` lists the Windows redistributables
+  as `<installdir>/bin/<name>` (all of the DLLs above, `umf.dll` and
+  `libhwloc-15.dll` included); its header names the Intel End User License Agreement
+  for Developer Tools. `licensing/c/LICENSE.rtf` is that agreement, "Version August
+  2024", as on Linux; `third-party-programs.txt` sits beside it.
+- Imports, read with the zip's own PE parser from the Windows wheels of the same
+  release line (2025.3.1 on PyPI): `sycl8.dll` imports `libmmd.dll`,
+  `ur_win_proxy_loader.dll` and the Visual C++ runtime; both Level Zero adapters
+  import `umf.dll`, `libmmd.dll` and the runtime, and load `ze_loader.dll` by name;
+  `umf.dll` imports `libhwloc-15.dll`. Nothing imports `ur_loader.dll` or the adapters:
+  the SYCL runtime loads them by name, which is why the import check accepts exactly
+  those names as loaded at run time.
+- The Level Zero loader v1.34.0 builds with MSVC's static runtime by default
+  (`MSVC_BUILD_L0_DYNAMIC_VCRUNTIME` off); its only third-party code (`third_party/xla`,
+  Apache-2.0) goes into the validation layer, which the zip does not ship.
+
+`test_sycl_kernel_scratch` with `VMAF_SYCL_SCRATCH_RATCHET_FILE`, run on the project's
+Arc A380 (Linux, oneAPI 2026.0, a JIT-only build): unset, set to a copy of the list and
+set empty, it audits 131 kernels and passes; set to a missing file it fails with
+"cannot open core/src/sycl/scratch_ratchet.txt".
+
 ## The first hosted run (run 37170921097, 2026-10-04)
 
 A `publish: false` dispatch on master `010140154` (the merge of the zip's pull request):

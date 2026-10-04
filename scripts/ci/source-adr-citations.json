@@ -3134,7 +3134,8 @@
         "core/src/dnn/model_loader.c": 4,
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
-        "core/src/mcp/compute_vmaf.c": 2
+        "core/src/mcp/compute_vmaf.c": 2,
+        "core/test/test_sycl_kernel_scratch.c": 1
       },
       "target": "0488-gpu-dispatch-env-shared-snapshot.md"
     },
@@ -9944,7 +9945,7 @@
         ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
         ".github/workflows/supply-chain.yml": 1,
-        ".github/workflows/windows-tester-bundle.yml": 7,
+        ".github/workflows/windows-tester-bundle.yml": 8,
         "Dockerfile.go-server": 3,
         "REUSE.toml": 2,
         "docker/Dockerfile.node": 4,
@@ -9954,8 +9955,8 @@
         "docker/Dockerfile.tester": 13,
         "python/test/setup_metadata_test.py": 1,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
-        "scripts/ci/build-windows-tester-bundle.py": 7,
-        "scripts/ci/check-windows-bundle-imports.py": 1,
+        "scripts/ci/build-windows-tester-bundle.py": 8,
+        "scripts/ci/check-windows-bundle-imports.py": 2,
         "scripts/ci/install-rocm-from-image.sh": 1,
         "scripts/release/build-native-release-artifacts.sh": 1,
         "tools/rc1-tester/image/licensing.py": 4,
@@ -10270,6 +10271,19 @@
         "core/test/test_sycl_vif_exact_gain_contract.py": 1
       },
       "target": "1561-integer-vif-sv-sq-defined.md"
+    },
+    "1566": {
+      "sites": {
+        ".github/workflows/windows-tester-bundle.yml": 4,
+        "core/test/test_sycl_kernel_scratch.c": 1,
+        "scripts/ci/build-windows-tester-bundle.py": 2,
+        "scripts/ci/check-windows-bundle-imports.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_l0probe.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_sycl.py": 1,
+        "tools/rc1-tester/tests/test_licensing.py": 1,
+        "tools/rc1-tester/tests/test_windows_bundle.py": 1
+      },
+      "target": "1566-windows-sycl-tester-zip.md"
     },
     "1567": {
       "sites": {

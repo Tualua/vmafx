@@ -333,6 +333,16 @@
   [the tester guide](docs/usage/tester-image.md#with-an-nvidia-gpu-the-cuda-zip).
 
 
+- **A Windows SYCL tester zip measures every SYCL twin on a tester's Intel GPU**
+  (ADR-1566). `windows-tester-bundle.yml` builds a fourth zip,
+  `vmafx-tester-windows-x64-sycl-<version>.zip`, with Intel's `icx-cl`. It carries the
+  SYCL device tests, the parity gate, the scratch audit and the SYCL row map, and runs
+  them on every Intel GPU of the PC through its own Level Zero loader. `-fsycl`
+  requires the dynamic C runtime, so the Visual C++ runtime DLLs, Intel's
+  `credist.txt`-listed SYCL runtime and the loader lie beside every program. The
+  Windows SYCL build has never run on a GPU (`T-SYCL-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`).
+
+
 - **Windows tester zips for x64 and Arm64** (ADR-1515,
   `T-TESTER-WINDOWS-NATIVE-EVIDENCE-2026-10-04`). A tester unpacks
   `vmafx-tester-windows-<x64|arm64>-<version>.zip` and runs `run.cmd` from

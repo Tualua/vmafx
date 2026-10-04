@@ -1,5 +1,5 @@
-VMAFx tester zip for Windows (x64, arm64, or x64-cuda for a PC with an NVIDIA GPU;
-the name of the zip says which)
+VMAFx tester zip for Windows (x64, arm64, x64-cuda for a PC with an NVIDIA GPU, or
+x64-sycl for a PC with an Intel GPU; the name of the zip says which)
 
 Run:        .\run.cmd          (PowerShell)    or    run.cmd    (Command Prompt)
             from this folder; it writes report.json next to it (a few minutes)
@@ -11,10 +11,15 @@ What is in here
   runtime\               a Python 3.13 interpreter (python-build-standalone, pinned by
                          SHA-256) with the Microsoft Visual C++ runtime DLL it needs
   tester\                the report program: plain Python source, tools/rc1-tester/ in
-                         the repository (the x64-cuda zip adds the parity gate, tester\gate\)
+                         the repository (the GPU zips add the parity gate, tester\gate\)
   build\tools\vmaf.exe   the VMAFx command line tool, libvmaf and the C runtime linked in
                          (in the x64-cuda zip with the CUDA backend; it uses your NVIDIA
-                         driver's nvcuda.dll, and the zip ships no NVIDIA file)
+                         driver's nvcuda.dll, and the zip ships no NVIDIA file; in the
+                         x64-sycl zip with the SYCL backend, built with Intel's icx-cl,
+                         and the C runtime as DLLs)
+  build\tools\*.dll,     x64-sycl zip only: the Visual C++ runtime DLLs, Intel's SYCL
+  tests\*.dll            runtime and the Level Zero loader, next to the programs that
+                         load them
   tests\                 unit test programs run by the report
   python\test\resource\  Netflix test videos (checked against pinned SHA-256 values)
   reference\             scores recorded by this build on the hosted runner

@@ -4,15 +4,21 @@
 """Check what every program of the Windows tester zip loads (ADR-1515).
 
     check-windows-bundle-imports.py <bundle-dir> --machine x64|arm64
+        [--runtime mt|md] [--loaded-at-run-time NAME[,NAME...]]
 
 Reads the import and delay-import tables of every `.exe`, `.dll` and `.pyd` under the
 unpacked bundle (no tool needed: the PE headers are parsed here) and fails when
 
 - a file is not a PE image of the bundle's architecture;
-- a VMAFx program (`build/`, `tests/`) imports a C or C++ runtime DLL (`vcruntime*`,
-  `msvcp*`, `ucrtbase`, `api-ms-win-crt-*`, ...): the zip links the runtime statically
-  (`/MT`, ADR-1503 rule 7) and ships none for them, or any DLL that is not part of
-  Windows;
+- with `--runtime mt` (the CPU and CUDA zips): a VMAFx program (`build/`, `tests/`)
+  imports a C or C++ runtime DLL (`vcruntime*`, `msvcp*`, `ucrtbase`,
+  `api-ms-win-crt-*`, ...): the zip links the runtime statically (`/MT`, ADR-1503
+  rule 7) and ships none for them, or any DLL that is not part of Windows;
+- with `--runtime md` (the SYCL zip, ADR-1566: `-fsycl` requires `/MD`): a file under
+  `build/` or `tests/` imports a DLL that is neither part of Windows (the Universal CRT
+  included) nor present in its own directory, the one directory Windows searches
+  before System32; or a DLL there is imported by nothing in its directory and is not
+  one of the `--loaded-at-run-time` names (ADR-1503 rule 1: ship only what runs);
 - the interpreter (`runtime/`) imports a DLL that is neither part of Windows (the
   Universal CRT included) nor present in `runtime/`.
 
@@ -52,6 +58,8 @@ SYSTEM_DLLS = frozenset(
     }
 )  # fmt: skip
 SYSTEM_PREFIXES = ("api-ms-win-", "ext-ms-win-")
+# The Universal CRT is part of Windows 10 and later; a /MD program imports it directly.
+UNIVERSAL_CRT = "ucrtbase.dll"
 
 
 Sections = list[tuple[int, int, int]]  # (virtual address, size, file offset)
@@ -156,12 +164,25 @@ def is_runtime(name: str) -> bool:
     return name.startswith(RUNTIME_PREFIXES)
 
 
+def md_problems(rel: str, names: list[str], beside: set[str]) -> list[str]:
+    """Findings for a file of a /MD bundle: every DLL it imports is part of Windows or
+    lies in its own directory."""
+    return [
+        f"{rel}: imports {name}, neither part of Windows nor in its directory"
+        for name in names
+        if not (is_system(name) or name == UNIVERSAL_CRT or name in beside)
+    ]
+
+
 def problems_of(rel: str, machine: int, names: list[str], context: dict[str, Any]) -> list[str]:
     """Findings for one PE file of the bundle."""
     found = []
     if machine != context["machine"]:
         found.append(f"{rel}: machine {machine:#06x}, expected {context['machine']:#06x}")
     interpreter = rel.startswith("runtime/")
+    if not interpreter and context["runtime"] == "md":
+        directory = rel.rsplit("/", 1)[0]
+        return found + md_problems(rel, names, context["by_directory"].get(directory, set()))
     for name in names:
         if not interpreter and is_runtime(name):
             found.append(f"{rel}: imports the runtime DLL {name} (the zip links /MT)")
@@ -172,12 +193,36 @@ def problems_of(rel: str, machine: int, names: list[str], context: dict[str, Any
     return found
 
 
-def check(bundle: Path, machine: str) -> list[str]:
+def unused_dlls(imported: dict[str, set[str]], files: list[str], loaded: set[str]) -> list[str]:
+    """DLLs under build/ or tests/ that nothing in their directory imports and that are
+    not loaded at run time by name (the SYCL runtime's loader and adapters)."""
+    found = []
+    for rel in files:
+        directory, name = rel.rsplit("/", 1)
+        lower = name.lower()
+        if lower.endswith(".dll") and lower not in imported.get(directory, set()) | loaded:
+            found.append(
+                f"{rel}: no file in its directory imports it, and it is not loaded at run time"
+            )
+    return found
+
+
+def check(
+    bundle: Path, machine: str, runtime: str = "mt", loaded: tuple[str, ...] = ()
+) -> list[str]:
     files = sorted(p for p in bundle.rglob("*") if p.is_file() and p.suffix.lower() in SUFFIXES)
     shipped = {p.name.lower() for p in files if p.relative_to(bundle).parts[0] == "runtime"}
-    context = {"machine": MACHINES[machine], "shipped": shipped}
+    by_directory: dict[str, set[str]] = {}
+    for path in files:
+        rel = path.relative_to(bundle).as_posix()
+        if "/" in rel:
+            by_directory.setdefault(rel.rsplit("/", 1)[0], set()).add(path.name.lower())
+    context = {"machine": MACHINES[machine], "shipped": shipped, "runtime": runtime,
+               "by_directory": by_directory}  # fmt: skip
     problems: list[str] = []
     programs = 0
+    imported: dict[str, set[str]] = {}
+    beside: list[str] = []
     for path in files:
         rel = path.relative_to(bundle).as_posix()
         try:
@@ -185,8 +230,14 @@ def check(bundle: Path, machine: str) -> list[str]:
         except (PeError, struct.error) as error:
             problems.append(f"{rel}: not a readable PE image ({error})")
             continue
-        programs += rel.startswith(("build/", "tests/"))
+        vmafx = rel.startswith(("build/", "tests/"))
+        programs += vmafx and rel.lower().endswith(".exe")
+        if vmafx:
+            imported.setdefault(rel.rsplit("/", 1)[0], set()).update(names)
+            beside.append(rel)
         problems += problems_of(rel, found_machine, names, context)
+    if runtime == "md":
+        problems += unused_dlls(imported, beside, {name.lower() for name in loaded})
     if programs == 0:
         problems.append("no VMAFx program under build/ or tests/")
     return problems
@@ -196,11 +247,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bundle", type=Path)
     parser.add_argument("--machine", required=True, choices=sorted(MACHINES))
+    parser.add_argument("--runtime", default="mt", choices=("md", "mt"))
+    parser.add_argument("--loaded-at-run-time", default="", metavar="NAMES")
     args = parser.parse_args(argv)
     if not args.bundle.is_dir():
         print(f"check-windows-bundle-imports: {args.bundle} is not a directory", file=sys.stderr)
         return 2
-    problems = check(args.bundle, args.machine)
+    loaded = tuple(name for name in args.loaded_at_run_time.split(",") if name)
+    problems = check(args.bundle, args.machine, args.runtime, loaded)
     for problem in problems:
         print(f"check-windows-bundle-imports: {problem}", file=sys.stderr)
     if problems:

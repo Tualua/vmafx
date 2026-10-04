@@ -16,7 +16,12 @@
  * note asking for its line to be removed. The test also checks that the
  * ratchet file and vmaf_sycl_scratch_extractors() name the same extractors,
  * and that the self-test's private-array probe really uses private memory.
- * Without a GPU it skips (exit 77). */
+ * Without a GPU it skips (exit 77).
+ *
+ * The ratchet list is read from the path meson bakes in, unless the environment
+ * names another file in VMAF_SYCL_SCRATCH_RATCHET_FILE: a test program copied
+ * off the build machine (the Windows SYCL tester zip, ADR-1566) carries the list
+ * next to it, and the baked path names nothing on the tester's PC. */
 
 #include <errno.h>
 #include <stdio.h>
@@ -27,6 +32,7 @@
 
 #if HAVE_SYCL
 
+#include "gpu_dispatch_env.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "sycl/common.h"
 #include "sycl/scratch_check.h"
@@ -106,7 +112,13 @@ static int parse_line(const char *line, struct RatchetEntry *e)
 
 static char *load_ratchet(void)
 {
-    FILE *f = fopen(VMAF_SYCL_SCRATCH_RATCHET, "r");
+    /* VMAF_SYCL_SCRATCH_RATCHET_FILE when set and not empty, else the path of the
+     * source tree this program was built from; read through the once-only
+     * environment snapshot (ADR-0488) rather than a getenv of this thread. */
+    const char *const override = vmaf_gpu_dispatch_env_get("VMAF_SYCL_SCRATCH_RATCHET_FILE");
+    const char *const path =
+        (override != NULL && override[0] != '\0') ? override : VMAF_SYCL_SCRATCH_RATCHET;
+    FILE *f = fopen(path, "r");
     mu_assert("cannot open core/src/sycl/scratch_ratchet.txt", f != NULL);
     char line[MAX_LINE];
     int bad = 0;

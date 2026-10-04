@@ -74,6 +74,14 @@ class StatusTests(unittest.TestCase):
             GEN._status(row("NVIDIA GPU under native Windows"), linux), "no report yet"
         )
 
+    def test_a_windows_sycl_report_counts_for_the_windows_intel_row(self) -> None:
+        windows = gpu_report("xe-lp", backend="sycl")
+        windows["host"] = {**windows["host"], "platform": "windows"}
+        self.assertIn("1 reported", GEN._status(row("Intel GPU under native Windows"), [windows]))
+        self.assertIn("1 reported", GEN._status(row("Intel Xe-LP and Xe-LPG"), [windows]))
+        linux = [gpu_report("xe-lp", backend="sycl")]
+        self.assertEqual(GEN._status(row("Intel GPU under native Windows"), linux), "no report yet")
+
     def test_gpu_report_counts_for_its_family_and_a_fail_wins(self) -> None:
         reports = [gpu_report("hopper"), gpu_report("hopper", rows="fail")]
         self.assertIn("2 reported, worst fail", GEN._status(row("Hopper"), reports))

@@ -249,6 +249,50 @@ def test_an_empty_bundle_is_not_clean(tmp_path: Path) -> None:
     assert imports_check.check(tmp_path, "arm64") == ["no VMAFx program under build/ or tests/"]
 
 
+def sycl_bundle(root: Path) -> None:
+    """A /MD bundle shaped like the SYCL zip: the runtime DLLs beside each program."""
+    for directory, program in (("build/tools", "vmaf.exe"), ("tests", "test_sycl_psnr.exe")):
+        write_pe(root, f"{directory}/{program}",
+                 make_pe(0x8664, ["sycl8.dll", "ze_loader.dll", "VCRUNTIME140.dll", "MSVCP140.dll",
+                                  "api-ms-win-crt-runtime-l1-1-0.dll", "KERNEL32.dll"]))  # fmt: skip
+        write_pe(root, f"{directory}/sycl8.dll",
+                 make_pe(0x8664, ["ur_win_proxy_loader.dll", "vcruntime140.dll"]))  # fmt: skip
+        write_pe(root, f"{directory}/ur_win_proxy_loader.dll", make_pe(0x8664, ["ucrtbase.dll"]))
+        write_pe(root, f"{directory}/ur_loader.dll", make_pe(0x8664, ["msvcp140.dll"]))
+        write_pe(root, f"{directory}/ze_loader.dll", make_pe(0x8664, ["kernel32.dll"]))
+        write_pe(root, f"{directory}/vcruntime140.dll", make_pe(0x8664, ["kernel32.dll"]))
+        write_pe(root, f"{directory}/msvcp140.dll", make_pe(0x8664, ["vcruntime140.dll"]))
+
+
+def test_a_md_bundle_passes_with_its_runtime_beside_each_program(tmp_path: Path) -> None:
+    sycl_bundle(tmp_path)
+    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",)) == []
+    assert imports_check.main([str(tmp_path), "--machine", "x64", "--runtime", "md",
+                               "--loaded-at-run-time", "ur_loader.dll"]) == 0  # fmt: skip
+    # The same tree is refused by the /MT check of the CPU and CUDA zips.
+    assert any("imports the runtime DLL" in p for p in imports_check.check(tmp_path, "x64"))
+
+
+def test_a_md_bundle_refuses_a_missing_or_unused_dll(tmp_path: Path) -> None:
+    sycl_bundle(tmp_path)
+    (tmp_path / "tests/msvcp140.dll").unlink()
+    write_pe(tmp_path, "tests/opencl_adapter.dll", make_pe(0x8664, ["kernel32.dll"]))
+    problems = imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",))
+    assert (
+        "tests/test_sycl_psnr.exe: imports msvcp140.dll, neither part of Windows nor in its directory"
+        in problems
+    )
+    assert any(
+        p.startswith("tests/opencl_adapter.dll: no file in its directory imports it")
+        for p in problems
+    )
+    # ur_loader.dll is loaded by name at run time; without the allowance it is unused.
+    assert any(
+        p.startswith("build/tools/ur_loader.dll: no file")
+        for p in imports_check.check(tmp_path, "x64", "md")
+    )
+
+
 # ---- build script steps --------------------------------------------------------------------
 
 
@@ -361,8 +405,8 @@ def test_the_cuda_zip_builds_the_cuda_backend_on_x64_only(monkeypatch) -> None:
     assert builder.gpu_kit({"VMAFX_ARCH": "x64"}) == "cuda"
     with pytest.raises(builder.BuildError, match="x64 only"):
         builder.gpu_kit({"VMAFX_ARCH": "arm64"})
-    monkeypatch.setenv("VMAFX_GPU", "sycl")
-    with pytest.raises(builder.BuildError, match="empty or cuda"):
+    monkeypatch.setenv("VMAFX_GPU", "hip")
+    with pytest.raises(builder.BuildError, match="empty, cuda or sycl"):
         builder.gpu_kit({"VMAFX_ARCH": "x64"})
 
 
@@ -424,3 +468,113 @@ def test_the_log_shows_the_output_of_a_failed_unit_test(tmp_path: Path, capsys) 
     out = capsys.readouterr().out
     assert "a wavelet kernel differs" in out and "test_b exit status: 1" in out
     assert "test_a" not in out
+
+
+# ---- the SYCL zip (ADR-1566) ------------------------------------------------------------
+
+
+def test_the_sycl_zip_builds_with_icx_cl_and_the_dynamic_runtime_on_x64_only(monkeypatch) -> None:
+    options = builder.meson_options("sycl")
+    assert "-Denable_sycl=true" in options and "-Db_vscrt=md" in options
+    assert "-Db_vscrt=mt" not in options and "-Denable_sycl=false" not in options
+    assert builder.build_environment("sycl")["CC"] == "icx-cl"
+    assert (
+        "CC" not in builder.build_environment("") or builder.build_environment("")["CC"] != "icx-cl"
+    )
+    assert builder.KITS["sycl"] == ("windows-sycl-zip", "-sycl")
+    monkeypatch.setenv("VMAFX_GPU", "sycl")
+    assert builder.gpu_kit({"VMAFX_ARCH": "x64"}) == "sycl"
+    with pytest.raises(builder.BuildError, match="SYCL zip is built for x64 only"):
+        builder.gpu_kit({"VMAFX_ARCH": "arm64"})
+    assert builder.import_check_arguments("windows-sycl-zip")[:2] == ["--runtime", "md"]
+    assert builder.import_check_arguments("windows-cuda-zip") == ["--runtime", "mt"]
+
+
+def test_the_scratch_audit_reads_the_ratchet_list_the_zip_carries(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(_REPO)
+    image = tmp_path / "image"
+    image.mkdir()
+    tests = [{"name": "test_sycl_psnr_parity", "cmd": "tests/test_sycl_psnr_parity.exe"},
+             {"name": "test_sycl_kernel_scratch", "cmd": "tests/test_sycl_kernel_scratch.exe"}]  # fmt: skip
+    (image / "gpu-tests.json").write_text(json.dumps({"tests": tests, "left_out": []}))
+    builder.point_scratch_audit_at_bundle(tmp_path)
+    entries = {t["name"]: t for t in json.loads((image / "gpu-tests.json").read_text())["tests"]}
+    assert entries["test_sycl_kernel_scratch"]["env"] == {
+        "VMAF_SYCL_SCRATCH_RATCHET_FILE": "{root}/image/scratch_ratchet.txt"
+    }
+    assert "env" not in entries["test_sycl_psnr_parity"]
+    assert (image / "scratch_ratchet.txt").read_bytes() == (
+        _REPO / builder.SCRATCH_RATCHET
+    ).read_bytes()
+    (image / "gpu-tests.json").write_text(json.dumps({"tests": tests[:1], "left_out": []}))
+    with pytest.raises(builder.BuildError, match="0 times, not once"):
+        builder.point_scratch_audit_at_bundle(tmp_path)
+
+
+def test_the_level_zero_loader_lies_beside_every_program(tmp_path: Path) -> None:
+    prefix, bundle = tmp_path / "lz", tmp_path / "bundle"
+    for directory in builder.PROGRAM_DIRS:
+        (bundle / directory).mkdir(parents=True)
+    with pytest.raises(builder.BuildError, match="build the Level Zero loader first"):
+        builder.stage_level_zero_loader(bundle, prefix)
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/ze_loader.dll").write_bytes(make_pe(0x8664, ["kernel32.dll"]))
+    builder.stage_level_zero_loader(bundle, prefix)
+    assert all((bundle / d / "ze_loader.dll").is_file() for d in builder.PROGRAM_DIRS)
+
+
+def test_the_programs_runtime_closure_comes_from_the_redistributable_folder(tmp_path: Path) -> None:
+    crt, bundle = tmp_path / "crt", tmp_path / "bundle"
+    crt.mkdir()
+    write_pe(crt, "vcruntime140.dll", make_pe(0x8664, ["kernel32.dll"]))
+    write_pe(crt, "vcruntime140_1.dll", make_pe(0x8664, ["vcruntime140.dll"]))
+    write_pe(crt, "msvcp140.dll", make_pe(0x8664, ["vcruntime140.dll", "vcruntime140_1.dll"]))
+    write_pe(crt, "concrt140.dll", make_pe(0x8664, ["kernel32.dll"]))
+    for directory in builder.PROGRAM_DIRS:
+        write_pe(bundle, f"{directory}/prog.exe", make_pe(0x8664, ["sycl8.dll", "kernel32.dll"]))
+        write_pe(bundle, f"{directory}/sycl8.dll", make_pe(0x8664, ["MSVCP140.dll"]))
+    copied = builder.copy_program_runtime(bundle, crt)
+    names = sorted({entry["file"] for entry in copied})
+    assert names == [f"{d}/{n}" for d in builder.PROGRAM_DIRS
+                     for n in ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")]  # fmt: skip
+    assert not (bundle / "tests/concrt140.dll").exists()  # nothing imports it
+    write_pe(bundle, "tests/extra.dll", make_pe(0x8664, ["vccorlib140.dll"]))
+    with pytest.raises(builder.BuildError, match="vccorlib140.dll is imported beside the programs"):
+        builder.copy_program_runtime(bundle, crt)
+
+
+def test_unimported_intel_dlls_are_dropped_until_nothing_changes(tmp_path: Path) -> None:
+    for directory in builder.PROGRAM_DIRS:
+        write_pe(tmp_path, f"{directory}/prog.exe", make_pe(0x8664, ["sycl8.dll", "libmmd.dll"]))
+        write_pe(tmp_path, f"{directory}/sycl8.dll", make_pe(0x8664, ["ur_win_proxy_loader.dll"]))
+        write_pe(
+            tmp_path, f"{directory}/ur_win_proxy_loader.dll", make_pe(0x8664, ["kernel32.dll"])
+        )
+        write_pe(tmp_path, f"{directory}/libmmd.dll", make_pe(0x8664, ["kernel32.dll"]))
+        write_pe(tmp_path, f"{directory}/ur_loader.dll", make_pe(0x8664, ["umf.dll"]))
+        write_pe(tmp_path, f"{directory}/umf.dll", make_pe(0x8664, ["libhwloc-15.dll"]))
+        write_pe(tmp_path, f"{directory}/libhwloc-15.dll", make_pe(0x8664, ["kernel32.dll"]))
+        # libirngmd imports libircmd: dropping the first orphans the second.
+        write_pe(tmp_path, f"{directory}/libirngmd.dll", make_pe(0x8664, ["libircmd.dll"]))
+        write_pe(tmp_path, f"{directory}/libircmd.dll", make_pe(0x8664, ["kernel32.dll"]))
+    names = {"sycl8.dll", "ur_win_proxy_loader.dll", "libmmd.dll", "ur_loader.dll", "umf.dll",
+             "libhwloc-15.dll", "libirngmd.dll", "libircmd.dll"}  # fmt: skip
+    assert builder.drop_unimported_vendor_dlls(tmp_path, names) == ["libirngmd.dll", "libircmd.dll"]
+    left = sorted(p.name for p in (tmp_path / "tests").iterdir())
+    assert left == ["libhwloc-15.dll", "libmmd.dll", "prog.exe", "sycl8.dll", "umf.dll",
+                    "ur_loader.dll", "ur_win_proxy_loader.dll"]  # fmt: skip
+    assert builder.drop_unimported_vendor_dlls(tmp_path, names) == []
+
+
+def test_the_shipped_windows_sycl_runtime_list_names_redistributable_dlls() -> None:
+    spec = json.loads((_REPO / builder.SYCL_RUNTIME).read_text())
+    assert spec["credist_dir"] == "bin"
+    names = {n for c in spec["components"] for n in c["names"]}
+    assert all(n.endswith(".dll") and "*" not in n for n in names)
+    assert {"sycl8.dll", "ur_loader.dll", "umf.dll", "libhwloc-15.dll"} <= names
+    # Debug builds, OpenCL and the JIT are not what the AOT programs load.
+    assert not {"sycl8d.dll", "ur_adapter_opencl.dll", "sycl-jit.dll", "OpenCL.dll"} & names
+    assert set(builder.LOADED_AT_RUN_TIME) <= names
+    assert all(c["dests"] == list(builder.PROGRAM_DIRS) for c in spec["components"])

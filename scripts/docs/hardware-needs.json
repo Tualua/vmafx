@@ -1,5 +1,5 @@
 {
-  "comment": "Hardware families the project wants tester reports from (docs/usage/hardware-we-need.md, rendered by scripts/docs/generate-hardware-reports.py). package: macos, container, sycl, cuda, hip, windows, windows-cuda. state: ids of docs/state.md rows the family closes. owner: the project host that covers the family, or null. match: how a report under docs/hardware-reports/ counts for the family (platform, machine, flags_all, flags_none, cpu_model_re for host; gpu_backend and gpu_families for a GPU device, with platform to count only one platform's reports). The generator refuses a GPU family of the row maps in tools/rc1-tester/image/ that no row here lists, and a state id that is not in docs/state.md.",
+  "comment": "Hardware families the project wants tester reports from (docs/usage/hardware-we-need.md, rendered by scripts/docs/generate-hardware-reports.py). package: macos, container, sycl, cuda, hip, windows, windows-cuda, windows-sycl. state: ids of docs/state.md rows the family closes. owner: the project host that covers the family, or null. match: how a report under docs/hardware-reports/ counts for the family (platform, machine, flags_all, flags_none, cpu_model_re for host; gpu_backend and gpu_families for a GPU device, with platform to count only one platform's reports). The generator refuses a GPU family of the row maps in tools/rc1-tester/image/ that no row here lists, and a state id that is not in docs/state.md.",
   "rows": [
     {
       "family": "Apple M-series, native (M1 to M4 Macs)",
@@ -148,6 +148,13 @@
       "state": ["T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02"],
       "owner": "Arc A380",
       "match": {"gpu_backend": "sycl", "gpu_families": ["xe-hpg"]}
+    },
+    {
+      "family": "Intel GPU under native Windows (Arc A- and B-series, Iris Xe, UHD 7xx, Arc graphics of Core Ultra)",
+      "package": "windows-sycl",
+      "state": ["T-SYCL-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04"],
+      "owner": null,
+      "match": {"platform": "windows", "gpu_backend": "sycl", "gpu_families": ["xe-lp", "xe-lpg", "xe-hpg", "xe2"]}
     }
   ]
 }

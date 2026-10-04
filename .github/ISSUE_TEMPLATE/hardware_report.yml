@@ -1,5 +1,5 @@
 name: Hardware report
-description: Send the JSON report of a tester package (macOS bundle, container image, Windows zip, or the Intel, NVIDIA or AMD GPU image).
+description: Send the JSON report of a tester package (macOS bundle, container image, a Windows zip, or the Intel, NVIDIA or AMD GPU image).
 title: "[hardware report] "
 labels: ["hardware-report"]
 body:
@@ -29,7 +29,7 @@ body:
         - Intel GPU image (tester-sycl)
         - NVIDIA GPU image (tester-cuda)
         - AMD GPU image (tester-hip)
-        - Windows zip (native, x64 or Arm64)
+        - Windows zip (native: x64, Arm64, or the x64 CUDA or SYCL zip)
         - Other / built from source
     validations:
       required: true

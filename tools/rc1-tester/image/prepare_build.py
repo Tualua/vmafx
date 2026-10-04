@@ -316,12 +316,15 @@ def write_twins(image_root: Path, backend: str) -> None:
     out.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
 
 
-def credist_names(path: Path) -> set[str]:
-    """File names the compiler's credist.txt lists under <installdir>/lib."""
+def credist_names(path: Path, directory: str = "lib") -> set[str]:
+    """File names the compiler's credist.txt lists under <installdir>/<directory>
+    (`lib` on Linux, `bin` for the Windows DLLs); either path separator."""
+    prefix = f"<installdir>/{directory}/"
     names = set()
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.startswith("<installdir>/lib/"):
-            names.add(line.removeprefix("<installdir>/lib/").strip())
+        entry = line.strip().replace("\\", "/")
+        if entry.startswith(prefix):
+            names.add(entry.removeprefix(prefix))
     return names
 
 
@@ -351,15 +354,22 @@ def component_files(oneapi: Path, component: dict, redistributable: set[str]) ->
 
 def stage_vendor_runtime(spec_path: Path, vendor_root: Path, image_root: Path) -> None:
     """Copy the runtime files and licence texts a runtime spec names (sycl-runtime.json,
-    hip-runtime.json), byte for byte. A component's files go to its `dest` under the
-    image root (default lib/intel), its texts to <licence_dir>/<id> (default
-    licenses/intel); compiler files must be in the spec's `credist` list when it has one."""
+    sycl-runtime-windows.json, hip-runtime.json), byte for byte. A component's files go
+    to its `dest` under the image root (default lib/intel), or to every directory of
+    its `dests` (the Windows zip puts DLLs beside each program); its texts go to
+    <licence_dir>/<id> (default licenses/intel). Compiler files must be in the spec's
+    `credist` list when it has one, read under its `credist_dir` (default lib)."""
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    redistributable = credist_names(vendor_root / spec["credist"]) if spec.get("credist") else set()
+    redistributable = (
+        credist_names(vendor_root / spec["credist"], spec.get("credist_dir", "lib"))
+        if spec.get("credist")
+        else set()
+    )
     for component in spec["components"]:
-        dest = image_root / component.get("dest", "lib/intel")
+        dests = component.get("dests") or [component.get("dest", "lib/intel")]
         for path in component_files(vendor_root, component, redistributable):
-            copy_unmodified(path, dest / path.name)
+            for dest in dests:
+                copy_unmodified(path, image_root / dest / path.name)
         texts = image_root / spec.get("licence_dir", "licenses/intel") / component["id"]
         for text in component["licences"]:
             texts.mkdir(parents=True, exist_ok=True)

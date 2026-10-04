@@ -689,8 +689,11 @@ def test_the_windows_build_checks_before_it_packs() -> None:
     assert body.index('licensing("notices", "--artifact", kind') < body.index("run_own_report(")
     assert body.index("check-windows-bundle-imports.py") < body.index("pack(bundle")
     assert body.index('licensing("check", "--artifact", kind') < body.index("pack(bundle")
-    kinds = text.split("def build_all(", 1)[1]
-    assert '"windows-cuda-zip" if gpu else "windows-zip"' in kinds
+    assert "kind, suffix = KITS[gpu]" in text.split("def build_all(", 1)[1]
+    kits = text.split("KITS = {", 1)[1].split("}", 1)[0]
+    artifacts = lic.load_manifest()["artifacts"]
+    for kind in ("windows-zip", "windows-cuda-zip", "windows-sycl-zip"):
+        assert f'"{kind}"' in kits and kind in artifacts, kind
 
 
 @pytest.mark.parametrize(("workflow", "needle"), [
@@ -702,6 +705,7 @@ def test_the_windows_build_checks_before_it_packs() -> None:
     ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_arm64 }}"),
     ("windows-tester-bundle.yml", "PBS_ARM64_FULL_SHA256:"),
     ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_x64_cuda }}"),
+    ("windows-tester-bundle.yml", "sbom-path: ${{ steps.assets.outputs.sbom_x64_sycl }}"),
 ])  # fmt: skip
 def test_both_workflows_attest_an_sbom(workflow: str, needle: str) -> None:
     assert needle in (REPO / ".github/workflows" / workflow).read_text()
@@ -772,6 +776,56 @@ def test_the_windows_cuda_zip_record_passes_and_refuses_an_nvidia_library(tmp_pa
     problems = lic.run_check(args, data)
     assert "no recorded licence: tests/cudart64_13.dll" in problems
     assert "licence text /licenses/nvidia/CUDA-EULA.txt is missing" in problems
+
+
+def windows_sycl_tree(tmp: Path) -> argparse.Namespace:
+    """The Windows zip's tree with what the SYCL zip adds (ADR-1566): the runtime DLLs,
+    Intel's runtime and the Level Zero loader beside each program, and their texts."""
+    args = windows_tree(tmp)
+    args.artifact = "windows-sycl-zip"
+    root = Path(args.root)
+    for directory in ("build/tools", "tests"):
+        for name in ("sycl8.dll", "ur_loader.dll", "ur_adapter_level_zero.dll", "libmmd.dll",
+                     "umf.dll", "libhwloc-15.dll", "ze_loader.dll", "vcruntime140.dll",
+                     "msvcp140.dll"):  # fmt: skip
+            write(root / directory / name, "MZ")
+    for rel in ("tests/test_sycl_psnr_parity.exe", "image/gpu-tests.json", "image/gpu-twins.json",
+                "image/gpu-runtime.json"):  # fmt: skip
+        write(root / rel, "x")
+    write(
+        root / "image/sycl-rows.json", (REPO / "tools/rc1-tester/image/sycl-rows.json").read_bytes()
+    )
+    write(
+        root / "image/scratch_ratchet.txt",
+        (REPO / "core/src/sycl/scratch_ratchet.txt").read_bytes(),
+    )
+    write(root / "tester/gate/scripts/ci/cross_backend_parity_gate.py",
+          (REPO / "scripts/ci/cross_backend_parity_gate.py").read_bytes())  # fmt: skip
+    for component, texts in (("intel-oneapi-dpcpp-runtime", ("LICENSE.rtf", "third-party-programs.txt", "credist.txt")),
+                             ("intel-oneapi-umf", ("LICENSE.TXT", "third-party-programs.txt")),
+                             ("intel-oneapi-tcm-hwloc", ("license.txt", "third-party-programs.txt"))):  # fmt: skip
+        for text in texts:
+            write(root / "licenses/intel" / component / text, "Intel text\n")
+    write(Path(args.texts) / "level-zero-1.34.0-LICENSE.txt", "MIT License\n")
+    return args
+
+
+def test_the_windows_sycl_zip_record_passes_and_refuses_planted_defects(tmp_path: Path) -> None:
+    args = windows_sycl_tree(tmp_path)
+    data = lic.load_manifest()
+    assert notices_then_check(args, data) == []
+    root = Path(args.root)
+    notices = (root / "licenses/THIRD_PARTY_NOTICES.txt").read_text()
+    for component in ("intel-oneapi-dpcpp-runtime", "level-zero-loader", "microsoft-vc-runtime-programs",
+                      "microsoft-linked-runtime"):  # fmt: skip
+        assert f"[component {component}]" in notices, component
+    write(root / "tests/ur_adapter_opencl.dll", "an adapter the zip must not carry")
+    write(root / "build/tools/sycl-jit.dll", "x")
+    (root / "licenses/intel/intel-oneapi-dpcpp-runtime/LICENSE.rtf").unlink()
+    problems = lic.run_check(args, data)
+    assert "no recorded licence: tests/ur_adapter_opencl.dll" in problems
+    assert "no recorded licence: build/tools/sycl-jit.dll" in problems
+    assert any("intel-oneapi-dpcpp-runtime/LICENSE.rtf is missing" in p for p in problems), problems
 
 
 def test_the_windows_zip_record_passes_a_recorded_tree(tmp_path: Path) -> None:

@@ -1,0 +1,64 @@
+{
+ "comment": "The Intel SYCL runtime files the Windows SYCL tester zip ships (ADR-1566), copied unmodified from the oneAPI installation of its hosted build (prepare_build.py intel-runtime) beside every program (build/tools, tests: Windows searches a program's own directory before System32), and the licence texts that go with them. Compiler files must be listed in its credist.txt, whose Windows entries read <installdir>/bin/<name> (the Redistributables of the Intel End User License Agreement for Developer Tools); UMF and hwloc from TCM carry their own texts, as in sycl-runtime.json. The build drops every listed DLL that no file beside the programs imports and that the SYCL runtime does not load by name (scripts/ci/build-windows-tester-bundle.py LOADED_AT_RUN_TIME), so the list holds the candidates, not a promise. Paths are relative to ONEAPI_ROOT, whose */latest links the installer creates; read from the 2025.3.0.372 offline installer's packages on 2026-10-04.",
+ "credist": "compiler/latest/share/doc/compiler/credist.txt",
+ "credist_dir": "bin",
+ "components": [
+  {
+   "id": "intel-oneapi-dpcpp-runtime",
+   "dir": "compiler/latest/bin",
+   "credist": true,
+   "dests": [
+    "build/tools",
+    "tests"
+   ],
+   "names": [
+    "sycl8.dll",
+    "ur_win_proxy_loader.dll",
+    "ur_loader.dll",
+    "ur_adapter_level_zero.dll",
+    "ur_adapter_level_zero_v2.dll",
+    "libmmd.dll",
+    "svml_dispmd.dll",
+    "libircmd.dll",
+    "libirngmd.dll"
+   ],
+   "licences": [
+    "compiler/latest/share/doc/compiler/licensing/c/LICENSE.rtf",
+    "compiler/latest/share/doc/compiler/licensing/c/third-party-programs.txt",
+    "compiler/latest/share/doc/compiler/credist.txt"
+   ]
+  },
+  {
+   "id": "intel-oneapi-umf",
+   "dir": "umf/latest/bin",
+   "credist": false,
+   "dests": [
+    "build/tools",
+    "tests"
+   ],
+   "names": [
+    "umf.dll"
+   ],
+   "licences": [
+    "umf/latest/share/doc/umf/LICENSE.TXT",
+    "umf/latest/share/doc/umf/licensing/third-party-programs.txt"
+   ]
+  },
+  {
+   "id": "intel-oneapi-tcm-hwloc",
+   "dir": "tcm/latest/bin",
+   "credist": false,
+   "dests": [
+    "build/tools",
+    "tests"
+   ],
+   "names": [
+    "libhwloc-15.dll"
+   ],
+   "licences": [
+    "tcm/latest/share/doc/tcm/licensing/license.txt",
+    "tcm/latest/share/doc/tcm/licensing/third-party-programs.txt"
+   ]
+  }
+ ]
+}

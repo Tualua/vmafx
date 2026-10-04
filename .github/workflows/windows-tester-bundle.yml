@@ -9,12 +9,15 @@
 #     evidence for the commit it was built from, not a product release (ADR-1515).
 #     `publish: false` (default) builds and verifies only; `publish: true`
 #     additionally attests, signs and creates a prerelease `tester-windows-<date>-<sha>`
-#     with the three zips as assets (x64, arm64, and the x64 CUDA zip of ADR-1516). That release is a tester package, not a product
+#     with the four zips as assets (x64, arm64, the x64 CUDA zip of ADR-1516 and the x64
+#     SYCL zip of ADR-1566). That release is a tester package, not a product
 #     release: release-please only follows `v*` tags.
 #
 # Each zip is built natively on a hosted runner of its architecture (windows-2025,
 # windows-11-vs2026-arm) with MSVC, links the C runtime statically (/MT) and fails to
-# build when a file has no recorded licence (ADR-1503). The hosted runner runs the
+# build when a file has no recorded licence (ADR-1503). The SYCL zip is built with
+# Intel's icx-cl, whose -fsycl requires the dynamic runtime (/MD): its runtime DLLs,
+# Intel's SYCL runtime and the Level Zero loader lie beside every program. The hosted runner runs the
 # zip's own report through run.cmd; the report is validated against the schema and an
 # SPDX SBOM of each unpacked zip is attested and published next to it.
 #
@@ -32,6 +35,8 @@ on:
       - tools/rc1-tester/image/windows/**
       - tools/rc1-tester/image/unit-tests-windows.txt
       - tools/rc1-tester/image/cuda-tests.txt
+      - tools/rc1-tester/image/sycl-tests.txt
+      - tools/rc1-tester/image/sycl-runtime-windows.json
   workflow_dispatch:
     inputs:
       ref:
@@ -67,6 +72,10 @@ env:
   PBS_ARM64_FULL_SHA256: d88129f3600d12887a9fee50847d71eac7127b9be20785fa759e4459b9c1bee8
   # Netflix/vmaf_resource commit the fixtures are fetched from.
   VMAF_RESOURCE_COMMIT: c0ab6adbd7e41bb354f14686ed08500530622bc3
+  # The SYCL zip's compiler (ADR-1566): only the DPC++/C++ component of the oneAPI
+  # installer build-config.env pins (ONEAPI_WINDOWS_VERSION, INTEL_BASEKIT_WINDOWS_*);
+  # its required packages bring the runtime, UMF 1.0.2 and TCM 1.4.1.
+  BASEKIT_WINDOWS_COMPONENTS: intel.oneapi.win.cpp-dpcpp-common
   TAG: ${{ github.event.inputs.tag }}
   REF: ${{ github.event.inputs.ref }}
 
@@ -171,6 +180,13 @@ jobs:
             arch: x64
             gpu: cuda
             runner: windows-2025
+          # The SYCL zip (ADR-1566): icx-cl, /MD, the SYCL backend and its device
+          # tests; the runner has no Intel GPU, so its report says no_device and the
+          # device measurements happen on the tester's PC.
+          - name: x64-sycl
+            arch: x64
+            gpu: sycl
+            runner: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -217,6 +233,61 @@ jobs:
           "nv-codec-headers $commit"
       # A ccache.exe on PATH makes meson wrap the compiler at configure time
       # (the same step as the MSVC lanes of libvmaf-build-matrix.yml).
+      - name: Install Intel oneAPI (pinned offline installer)
+        if: matrix.gpu == 'sycl'
+        shell: pwsh
+        run: |
+          $pins = @{}
+          foreach ($name in 'ONEAPI_WINDOWS_VERSION', 'INTEL_BASEKIT_WINDOWS_URL', 'INTEL_BASEKIT_WINDOWS_SIZE', 'INTEL_BASEKIT_WINDOWS_SHA256') {
+            $line = Select-String -Path build-config.env -Pattern "^$name=`"([^`"]+)`"$" | Select-Object -First 1
+            if (-not $line) { throw "no $name in build-config.env" }
+            $pins[$name] = $line.Matches[0].Groups[1].Value
+          }
+          $exe = Join-Path $env:RUNNER_TEMP 'oneapi-basekit.exe'
+          curl.exe --fail --location --retry 5 --retry-delay 5 --output $exe --url $pins['INTEL_BASEKIT_WINDOWS_URL']
+          if ($LASTEXITCODE -ne 0) { throw "download failed ($LASTEXITCODE)" }
+          $size = (Get-Item $exe).Length
+          if ($size -ne [int64]$pins['INTEL_BASEKIT_WINDOWS_SIZE']) { throw "installer is $size bytes, not $($pins['INTEL_BASEKIT_WINDOWS_SIZE'])" }
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          if ($hash -ne $pins['INTEL_BASEKIT_WINDOWS_SHA256']) { throw "installer SHA-256 $hash is not the pinned $($pins['INTEL_BASEKIT_WINDOWS_SHA256'])" }
+          $extracted = Join-Path $env:RUNNER_TEMP 'oneapi-extracted'
+          Start-Process -FilePath $exe -ArgumentList @('-s', '-x', '-f', $extracted) -Wait -NoNewWindow
+          Remove-Item $exe
+          $boot = Join-Path $extracted 'bootstrapper.exe'
+          $p = Start-Process -FilePath $boot -Wait -PassThru -NoNewWindow -ArgumentList @(
+            '-s', '--action', 'install', "--components=$env:BASEKIT_WINDOWS_COMPONENTS", '--eula=accept',
+            '-p=NEED_VS2017_INTEGRATION=0', '-p=NEED_VS2019_INTEGRATION=0', '-p=NEED_VS2022_INTEGRATION=0',
+            "--log-dir=$env:RUNNER_TEMP")
+          Remove-Item -Recurse -Force $extracted
+          if ($p.ExitCode -ne 0) { throw "the oneAPI installer exited $($p.ExitCode)" }
+          $setvars = 'C:\Program Files (x86)\Intel\oneAPI\setvars.bat'
+          if (-not (Test-Path $setvars)) { throw "$setvars is missing after the install" }
+          "VMAFX_ONEAPI_VERSION=$($pins['ONEAPI_WINDOWS_VERSION'])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "oneAPI $($pins['ONEAPI_WINDOWS_VERSION']) installed"
+      # The loader libvmaf links (find_library('ze_loader')) and the zip ships beside
+      # every program, from LEVEL_ZERO_VERSION of build-config.env, MSVC's default
+      # static runtime; the oneAPI installer carries no ze_loader.lib.
+      - name: Build the Level Zero loader (pinned release)
+        if: matrix.gpu == 'sycl'
+        shell: pwsh
+        run: |
+          $line = Select-String -Path build-config.env -Pattern '^LEVEL_ZERO_VERSION="([0-9.]+)"$' | Select-Object -First 1
+          if (-not $line) { throw 'no LEVEL_ZERO_VERSION in build-config.env' }
+          $version = $line.Matches[0].Groups[1].Value
+          $src = Join-Path $env:RUNNER_TEMP 'level-zero-src'
+          $prefix = Join-Path $env:RUNNER_TEMP 'level-zero-prefix'
+          git clone -q --depth=1 --branch "v$version" https://github.com/oneapi-src/level-zero $src
+          if ($LASTEXITCODE -ne 0) { throw "cannot fetch level-zero v$version" }
+          cmake -S $src -B "$src\build" "-DCMAKE_INSTALL_PREFIX=$prefix" -DCMAKE_BUILD_TYPE=Release
+          if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }
+          cmake --build "$src\build" --config Release --target install
+          if ($LASTEXITCODE -ne 0) { throw 'cmake build failed' }
+          if (-not (Test-Path "$prefix\bin\ze_loader.dll")) { throw 'no ze_loader.dll was installed' }
+          "INCLUDE=$prefix\include;$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LIB=$prefix\lib;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VMAFX_LEVEL_ZERO_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LEVEL_ZERO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Level Zero loader $version"
       - name: Disable ccache wrap
         shell: pwsh
         run: |
@@ -239,6 +310,7 @@ jobs:
           if (-not $env:VCToolsRedistDir) { throw 'VCToolsRedistDir is not set (vcvarsall)' }
           "VCToolsRedistDir $env:VCToolsRedistDir"
       - name: Build the zip
+        if: matrix.gpu != 'sycl'
         shell: pwsh
         env:
           VMAFX_ARCH: ${{ matrix.arch }}
@@ -257,6 +329,26 @@ jobs:
           }
           python scripts/ci/build-windows-tester-bundle.py "$env:RUNNER_TEMP\out"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # The SYCL zip builds inside oneAPI's environment (icx-cl, ocloc for the AOT
+      # targets, ONEAPI_ROOT), as the `Windows MSVC+SYCL` lane does.
+      - name: Build the SYCL zip
+        if: matrix.gpu == 'sycl'
+        shell: cmd
+        env:
+          VMAFX_ARCH: ${{ matrix.arch }}
+          VMAFX_GPU: sycl
+          VMAFX_SOURCE_COMMIT: ${{ needs.validate.outputs.source-sha }}
+          VMAFX_SOURCE_REF: ${{ needs.validate.outputs.describe }}
+          VMAFX_RECIPE_COMMIT: ${{ github.sha }}
+          VMAFX_IMAGE_TAG: ${{ needs.validate.outputs.describe }}
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" || exit /b 1
+          where icx-cl || exit /b 1
+          set "PBS_URL=%PBS_X64_URL%"
+          set "PBS_SHA256=%PBS_X64_SHA256%"
+          set "PBS_FULL_URL=%PBS_X64_FULL_URL%"
+          set "PBS_FULL_SHA256=%PBS_X64_FULL_SHA256%"
+          python scripts\ci\build-windows-tester-bundle.py "%RUNNER_TEMP%\out" || exit /b 1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: windows-tester-bundle-${{ matrix.name }}
@@ -282,7 +374,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [x64, arm64, x64-cuda]
+        name: [x64, arm64, x64-cuda, x64-sycl]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -330,6 +422,12 @@ jobs:
         if: matrix.name == 'x64-cuda'
         run: |
           jq -e '.gpu.backend == "cuda" and .gpu.status == "no_device" and (.gpu.reason | test("nvcuda.dll"))' \
+            bundle/report.json
+      # The SYCL zip's own Level Zero loader runs and finds no Intel GPU (ADR-1566).
+      - name: The SYCL zip reports no device on the hosted runner
+        if: matrix.name == 'x64-sycl'
+        run: |
+          jq -e '.gpu.backend == "sycl" and .gpu.status == "no_device" and .gpu.access.path == "windows" and (.gpu.reason | test("Level Zero finds no Intel GPU"))' \
             bundle/report.json
       - name: Summarise what the hosted runner could exercise
         env:
@@ -379,7 +477,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           mkdir assets
-          for name in x64 arm64 x64-cuda; do
+          for name in x64 arm64 x64-cuda x64-sycl; do
             zips=(bundle/"windows-tester-bundle-$name"/*.zip)
             sboms=(bundle/"windows-tester-sbom-$name"/*.spdx.json)
             if [[ "${#zips[@]}" -ne 1 || "${#sboms[@]}" -ne 1 ]]; then
@@ -412,6 +510,11 @@ jobs:
         with:
           subject-path: ${{ steps.assets.outputs.zip_x64_cuda }}
           sbom-path: ${{ steps.assets.outputs.sbom_x64_cuda }}
+      - name: Attest the x64 SYCL SBOM (ADR-1503)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: ${{ steps.assets.outputs.zip_x64_sycl }}
+          sbom-path: ${{ steps.assets.outputs.sbom_x64_sycl }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: "v3.1.3"
@@ -472,8 +575,9 @@ jobs:
           export GH_TOKEN
           echo "creating $RELEASE_TAG as: $identity" | tee -a "$GITHUB_STEP_SUMMARY"
           {
-            echo "Tester zips for Windows on x64 and on Arm64, and the x64 zip with the CUDA"
-            echo "backend for NVIDIA GPUs. **Not a product release.**"
+            echo "Tester zips for Windows on x64 and on Arm64, the x64 zip with the CUDA"
+            echo "backend for NVIDIA GPUs and the x64 zip with the SYCL backend for Intel GPUs."
+            echo "**Not a product release.**"
             echo
             echo "Built from \`$DESCRIBE\` ($SOURCE_SHA) by the hosted Windows runners,"
             echo "workflow run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."

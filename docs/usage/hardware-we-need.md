@@ -50,6 +50,7 @@ machine still repeats the measurement on different silicon and is welcome.
 | Intel Xe-LP and Xe-LPG (UHD 7xx, Iris Xe, Arc graphics of Core Ultra) | [Intel GPU image](tester-image.md#c-intel-gpu-image-linux-or-windows-with-wsl2) | [`T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02`](../state.md) | no report yet |
 | Intel Xe2 (Arc B-series, Lunar Lake) | [Intel GPU image](tester-image.md#c-intel-gpu-image-linux-or-windows-with-wsl2) | [`T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02`](../state.md) | covered by Arc B580 and Arc Pro B60 (home cluster) |
 | Intel Xe-HPG (Arc A-series) | [Intel GPU image](tester-image.md#c-intel-gpu-image-linux-or-windows-with-wsl2) | [`T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02`](../state.md) | covered by Arc A380 |
+| Intel GPU under native Windows (Arc A- and B-series, Iris Xe, UHD 7xx, Arc graphics of Core Ultra) | [Windows SYCL zip](tester-image.md#with-an-intel-gpu-the-sycl-zip) | [`T-SYCL-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`](../state.md) | no report yet |
 
 <!-- hardware-needs:end -->
 

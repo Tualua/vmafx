@@ -23,14 +23,26 @@ Optional, for the CUDA zip (ADR-1516; x64 only):
                           LICENSE is the CUDA EULA the notices carry)
   VMAFX_NV_CODEC_HEADERS  the nv-codec-headers checkout the build includes (its two
                           headers' notices travel with the zip)
+Optional, for the SYCL zip (ADR-1566; x64 only; run inside oneAPI's setvars):
+  VMAFX_GPU=sycl          build the SYCL backend with icx-cl and its device tests; -fsycl
+                          requires the dynamic runtime (/MD), so the VC++ runtime DLLs,
+                          Intel's SYCL runtime and the Level Zero loader lie beside every
+                          program
+  ONEAPI_ROOT             the oneAPI installation (setvars sets it); the runtime files of
+                          tools/rc1-tester/image/sycl-runtime-windows.json come from it
+  VMAFX_ONEAPI_VERSION    the installed oneAPI release, recorded in image/gpu-runtime.json
+  VMAFX_LEVEL_ZERO_PREFIX the install prefix of the Level Zero loader built from
+                          LEVEL_ZERO_VERSION (bin/ze_loader.dll ships)
+  LEVEL_ZERO_VERSION      that loader's release, recorded in image/gpu-runtime.json
 
-Result in <output-dir>: vmafx-tester-windows-<arch>[-cuda]-<tag>.zip, its .sha256,
+Result in <output-dir>: vmafx-tester-windows-<arch>[-cuda|-sycl]-<tag>.zip, its .sha256,
 report.json (the zip's own report run on this runner) and bundle-files.txt. The zip
 carries licenses/ (THIRD_PARTY_NOTICES.txt and every licence text) and is not packed
-when a file has no recorded licence (ADR-1503). The C and C++ runtime is linked
-statically (/MT); the only Microsoft DLLs in the zip are the interpreter's
+when a file has no recorded licence (ADR-1503). The CPU and CUDA zips link the C and
+C++ runtime statically (/MT); their only Microsoft DLLs are the interpreter's
 vcruntime140*.dll, replaced by the unmodified copies of this runner's Visual Studio
-redistributable folder.
+redistributable folder. The SYCL zip copies the runtime DLLs its programs import from
+that same folder.
 """
 
 from __future__ import annotations
@@ -60,6 +72,17 @@ ARCHES = {"x64": "AMD64", "arm64": "ARM64"}  # VMAFX_ARCH -> PROCESSOR_ARCHITECT
 IMAGE_DIR = Path("tools/rc1-tester/image")
 UNIT_TESTS = IMAGE_DIR / "unit-tests-windows.txt"
 CUDA_TESTS = IMAGE_DIR / "cuda-tests.txt"
+SYCL_TESTS = IMAGE_DIR / "sycl-tests.txt"
+SYCL_RUNTIME = IMAGE_DIR / "sycl-runtime-windows.json"
+# The SYCL zip's programs and the DLLs they load lie in these directories (Windows
+# searches a program's own directory before System32, ADR-1566).
+PROGRAM_DIRS = ("build/tools", "tests")
+# DLLs the SYCL runtime loads by name at run time, not through an import table.
+LOADED_AT_RUN_TIME = ("ur_loader.dll", "ur_adapter_level_zero.dll", "ur_adapter_level_zero_v2.dll")
+# The C and C++ runtime DLLs of the redistributable folder a /MD program imports.
+MD_RUNTIME_PREFIXES = ("vcruntime140", "msvcp140", "concrt140", "vccorlib140")
+SCRATCH_TEST = "test_sycl_kernel_scratch"
+SCRATCH_RATCHET = Path("core/src/sycl/scratch_ratchet.txt")
 # The CUDA EULA the toolkit's redistributable archives carry as LICENSE (each archive
 # holds the same text); the build checks it is the text ADR-1509 read.
 CUDA_EULA_MARKERS = ("Last updated: January 26, 2026", "libdevice.10.bc")
@@ -74,6 +97,12 @@ MESON_OPTIONS = (
     "-Denable_dnn=disabled",
 )  # fmt: skip
 CUDA_OPTIONS = ("-Denable_cuda=true", "-Denable_nvcc=true")
+# icx-cl with -fsycl links the dynamic runtime (Intel's guide: "-fsycl sets option /MD
+# ... You cannot specify option /MT"); c++latest as in the Windows MSVC+SYCL CI leg.
+SYCL_OPTIONS = ("-Denable_sycl=true", "-Db_vscrt=md", "-Dcpp_std=c++latest")
+# Per GPU kit: (licence artifact of the zip, suffix of its name).
+KITS = {"": ("windows-zip", ""), "cuda": ("windows-cuda-zip", "-cuda"),
+        "sycl": ("windows-sycl-zip", "-sycl")}  # fmt: skip
 # The interpreter keeps the standard library the report uses; these go (as in the macOS
 # bundle: headers, import libraries, pip, tests, IDLE, Tcl/Tk and the zlib1.dll only
 # Tcl links, the test extension modules, the GUI launcher).
@@ -167,23 +196,35 @@ def compiler_line(build: Path) -> str:
 
 
 def meson_options(gpu: str) -> list[str]:
-    """The configure options: the CPU build, or the CUDA build of the CUDA zip."""
+    """The configure options: the CPU build, the CUDA build of the CUDA zip, or the SYCL
+    build of the SYCL zip (dynamic runtime)."""
     options = list(MESON_OPTIONS)
     if gpu == "cuda":
         options = [o for o in options if o != "-Denable_cuda=false"] + list(CUDA_OPTIONS)
+    if gpu == "sycl":
+        drop = ("-Denable_sycl=false", "-Db_vscrt=mt")
+        options = [o for o in options if o not in drop] + list(SYCL_OPTIONS)
     return options
 
 
-def configure_and_build(build: Path, gpu: str) -> None:
-    step(f"configure and build (MSVC, static libvmaf, static C runtime /MT, GPU: {gpu or 'none'})")
+def build_environment(gpu: str) -> dict[str, str]:
+    """MSVC's cl, or icx-cl for the SYCL build (as the Windows MSVC+SYCL CI leg)."""
     env = {**os.environ, "CFLAGS": "/experimental:c11atomics",
            "CXXFLAGS": "/experimental:c11atomics"}  # fmt: skip
-    run(["meson", "setup", str(build), "core", *meson_options(gpu)], env=env)
-    lists = [UNIT_TESTS, CUDA_TESTS] if gpu == "cuda" else [UNIT_TESTS]
+    if gpu == "sycl":
+        env.update({"CC": "icx-cl", "CXX": "icx-cl"})
+    return env
+
+
+def configure_and_build(build: Path, gpu: str) -> None:
+    runtime = "dynamic C runtime /MD, icx-cl" if gpu == "sycl" else "static C runtime /MT, MSVC"
+    step(f"configure and build (static libvmaf, {runtime}, GPU: {gpu or 'none'})")
+    run(["meson", "setup", str(build), "core", *meson_options(gpu)], env=build_environment(gpu))
+    lists = [UNIT_TESTS, {"cuda": CUDA_TESTS, "sycl": SYCL_TESTS}[gpu]] if gpu else [UNIT_TESTS]
     targets = set()
     for tests in lists:
         targets |= set(prepare_build("select", str(build), str(tests), capture=True).split())
-    run(["ninja", "-C", str(build), "tools/vmaf.exe", *sorted(targets)])
+    run(["ninja", "-C", str(build), "tools/vmaf.exe", *sorted(targets)], env=build_environment(gpu))
 
 
 def stage(build: Path, bundle: Path, env: dict[str, str]) -> None:
@@ -246,6 +287,81 @@ def stage_cuda(build: Path, bundle: Path) -> None:
     shutil.copy2(IMAGE_DIR / "cuda-rows.json", bundle / "image" / "cuda-rows.json")
     copy_cuda_eula(bundle, Path(os.environ["CUDA_PATH"]))
     write_nv_codec_notices(bundle, Path(os.environ["VMAFX_NV_CODEC_HEADERS"]))
+
+
+def point_scratch_audit_at_bundle(bundle: Path) -> None:
+    """test_sycl_kernel_scratch reads the ratchet list from the source path its build
+    baked in, which names nothing on a tester's PC: the zip carries the list and its
+    manifest entry names it in VMAF_SYCL_SCRATCH_RATCHET_FILE."""
+    shutil.copy2(SCRATCH_RATCHET, bundle / "image" / "scratch_ratchet.txt")
+    manifest = bundle / "image" / "gpu-tests.json"
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    entries = [test for test in document["tests"] if test["name"] == SCRATCH_TEST]
+    if len(entries) != 1:
+        raise BuildError(f"{manifest} lists {SCRATCH_TEST} {len(entries)} times, not once")
+    entries[0].setdefault("env", {})[
+        "VMAF_SYCL_SCRATCH_RATCHET_FILE"
+    ] = "{root}/image/scratch_ratchet.txt"
+    manifest.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
+
+
+def stage_level_zero_loader(bundle: Path, prefix: Path) -> None:
+    """The Level Zero loader built from LEVEL_ZERO_VERSION, beside every program: libvmaf
+    imports it, so no program starts without it, and the report's probe opens the same
+    copy (on a PC without an Intel driver it loads and finds no GPU)."""
+    loader = prefix / "bin" / "ze_loader.dll"
+    if not loader.is_file():
+        raise BuildError(f"{loader} is missing: build the Level Zero loader first")
+    for directory in PROGRAM_DIRS:
+        shutil.copy2(loader, bundle / directory / loader.name)
+
+
+def vendor_dll_names() -> set[str]:
+    """Every DLL name the SYCL runtime spec lists (lower case)."""
+    spec = json.loads(SYCL_RUNTIME.read_text(encoding="utf-8"))
+    return {name.lower() for component in spec["components"] for name in component["names"]}
+
+
+def drop_unimported_vendor_dlls(bundle: Path, names: set[str]) -> list[str]:
+    """Remove the listed Intel DLLs that no file beside the programs imports and that
+    the SYCL runtime does not load by name (ADR-1503 rule 1: ship only what runs). One
+    removal can orphan another, so it repeats until nothing changes."""
+    read = pe_imports()
+    dropped: list[str] = []
+    for _ in range(len(names) + 1):
+        imported: set[str] = set(LOADED_AT_RUN_TIME)
+        present: set[str] = set()
+        for directory in PROGRAM_DIRS:
+            for path in sorted((bundle / directory).iterdir()):
+                if path.is_file() and path.suffix.lower() in PE_SUFFIXES:
+                    imported |= set(read(path.read_bytes())[1])
+                    present.add(path.name.lower())
+        unused = sorted((names & present) - imported)
+        if not unused:
+            return dropped
+        for name in unused:
+            for directory in PROGRAM_DIRS:
+                remove(bundle / directory / name)
+            dropped.append(name)
+    raise BuildError("dropping unimported Intel DLLs did not settle")
+
+
+def stage_sycl(build: Path, bundle: Path) -> None:
+    """The SYCL zip's device tests, parity gate, twin bounds, row map, Intel runtime and
+    Level Zero loader (the Windows counterpart of docker/Dockerfile.tester's sycl-build)."""
+    step("stage the SYCL device tests, the parity gate, Intel's runtime and the loader")
+    prepare_build("stage", str(build), str(SYCL_TESTS), str(bundle), "gpu-tests.json")
+    prepare_build("gate", ".", str(bundle))
+    prepare_build("twins", str(bundle), "sycl")
+    shutil.copy2(IMAGE_DIR / "sycl-rows.json", bundle / "image" / "sycl-rows.json")
+    point_scratch_audit_at_bundle(bundle)
+    prepare_build("intel-runtime", str(SYCL_RUNTIME), os.environ["ONEAPI_ROOT"], str(bundle))
+    stage_level_zero_loader(bundle, Path(os.environ["VMAFX_LEVEL_ZERO_PREFIX"]))
+    dropped = drop_unimported_vendor_dlls(bundle, vendor_dll_names())
+    versions = {"oneapi": os.environ["VMAFX_ONEAPI_VERSION"],
+                "level_zero_loader": os.environ["LEVEL_ZERO_VERSION"],
+                "intel_dlls_not_imported": ", ".join(dropped) or "none"}  # fmt: skip
+    (bundle / "image" / "gpu-runtime.json").write_text(json.dumps(versions, indent=1) + "\n")
 
 
 def fetch_fixtures(bundle: Path, out: Path, commit: str) -> None:
@@ -334,6 +450,41 @@ def replace_vc_runtime(runtime: Path, crt: Path) -> list[dict[str, str]]:
     return copied
 
 
+def program_runtime_imports(bundle: Path) -> set[str]:
+    """The VC++ runtime DLLs the files beside the SYCL zip's programs import."""
+    read = pe_imports()
+    names: set[str] = set()
+    for directory in PROGRAM_DIRS:
+        for path in sorted((bundle / directory).iterdir()):
+            if path.is_file() and path.suffix.lower() in PE_SUFFIXES:
+                names |= {
+                    n for n in read(path.read_bytes())[1] if n.startswith(MD_RUNTIME_PREFIXES)
+                }
+    return names
+
+
+def copy_program_runtime(bundle: Path, crt: Path) -> list[dict[str, str]]:
+    """Copy the runtime DLLs the SYCL zip's programs and Intel's DLLs import (and those
+    they import in turn) from the redistributable folder beside every program."""
+    copied: list[dict[str, str]] = []
+    done: set[str] = set()
+    for _ in range(len(MD_RUNTIME_PREFIXES) * 8):  # the closure is a few files deep
+        wanted = sorted(program_runtime_imports(bundle) - done)
+        if not wanted:
+            return copied
+        for name in wanted:
+            source = crt / name
+            if not source.is_file():
+                raise BuildError(f"{name} is imported beside the programs but is not in {crt}")
+            for directory in PROGRAM_DIRS:
+                target = bundle / directory / name
+                shutil.copyfile(source, target)
+                copied.append({"file": target.relative_to(bundle).as_posix(),
+                               "source": str(source), "sha256": sha256(target)})  # fmt: skip
+            done.add(name)
+    raise BuildError("the runtime DLL closure did not settle")
+
+
 def install_interpreter(bundle: Path, out: Path, env: dict[str, str]) -> Path:
     step("interpreter (python-build-standalone, SHA-256 checked)")
     archive = download(env["PBS_URL"], out / "pbs.tar.gz", env["PBS_SHA256"])
@@ -348,8 +499,10 @@ def install_interpreter(bundle: Path, out: Path, env: dict[str, str]) -> Path:
     dropped = drop_unimported_runtime(runtime)
     # VCToolsRedistDir of vcvarsall; Windows environment names ignore case.
     crt = redist_crt_dir(Path(os.environ["VCTOOLSREDISTDIR"]), env["VMAFX_ARCH"])
-    record = {"redist_dir": str(crt), "files": replace_vc_runtime(runtime, crt),
-              "dropped_unimported": dropped}  # fmt: skip
+    record: dict[str, Any] = {"redist_dir": str(crt), "files": replace_vc_runtime(runtime, crt),
+                              "dropped_unimported": dropped}  # fmt: skip
+    if os.environ.get("VMAFX_GPU") == "sycl":
+        record["program_files"] = copy_program_runtime(bundle, crt)
     (bundle / "image" / "msvc-redist.json").write_text(json.dumps(record, indent=1) + "\n")
     return runtime / "python.exe"
 
@@ -404,6 +557,9 @@ def info_environment(build: Path, env: dict[str, str], gpu: str) -> dict[str, st
     keys = ("VMAFX_SOURCE_COMMIT", "VMAFX_SOURCE_REF", "VMAFX_RECIPE_COMMIT", "VMAFX_IMAGE_TAG")
     runner = f"{os.environ.get('IMAGEOS', 'windows')}-{os.environ.get('IMAGEVERSION', 'runner')}"
     libc = "MSVC runtime and Universal CRT, linked statically (/MT)"
+    if gpu == "sycl":
+        libc = ("MSVC runtime DLLs beside the programs (/MD, which -fsycl requires) and the "
+                "Universal CRT of Windows")  # fmt: skip
     return {
         **os.environ,
         **{key: env[key] for key in keys},
@@ -499,12 +655,12 @@ def check_host(arch: str) -> None:
 
 
 def gpu_kit(env: dict[str, str]) -> str:
-    """`cuda` for the CUDA zip (x64 only), "" for the CPU zip."""
+    """`cuda` or `sycl` for a GPU zip (x64 only), "" for the CPU zip."""
     gpu = os.environ.get("VMAFX_GPU", "")
-    if gpu not in ("", "cuda"):
-        raise BuildError(f"VMAFX_GPU must be empty or cuda, not {gpu!r}")
-    if gpu == "cuda" and env["VMAFX_ARCH"] != "x64":
-        raise BuildError("the CUDA zip is built for x64 only")
+    if gpu not in KITS:
+        raise BuildError(f"VMAFX_GPU must be empty, cuda or sycl, not {gpu!r}")
+    if gpu and env["VMAFX_ARCH"] != "x64":
+        raise BuildError(f"the {gpu.upper()} zip is built for x64 only")
     return gpu
 
 
@@ -514,8 +670,17 @@ def assemble(bundle: Path, build: Path, out: Path, env: dict[str, str], gpu: str
     stage(build, bundle, env)
     if gpu == "cuda":
         stage_cuda(build, bundle)
+    if gpu == "sycl":
+        stage_sycl(build, bundle)
     fetch_fixtures(bundle, out, env["VMAF_RESOURCE_COMMIT"])
     return install_interpreter(bundle, out, env)
+
+
+def import_check_arguments(kind: str) -> list[str]:
+    """The SYCL zip's programs load the runtime DLLs beside them (/MD); the others none."""
+    if kind == "windows-sycl-zip":
+        return ["--runtime", "md", "--loaded-at-run-time", ",".join(LOADED_AT_RUN_TIME)]
+    return ["--runtime", "mt"]
 
 
 def seal(bundle: Path, out: Path, kind: str, scan: Path, version: str, tag: str) -> None:
@@ -524,9 +689,9 @@ def seal(bundle: Path, out: Path, kind: str, scan: Path, version: str, tag: str)
     licensing("notices", "--artifact", kind, "--root", str(bundle), "--repo", ".",
               "--build-scan", str(scan), "--texts", str(out / "licence-texts"),
               "--source-commit", os.environ["VMAFX_SOURCE_COMMIT"], "--tag", tag)  # fmt: skip
-    step("every program loads Windows DLLs or the bundle's own (no runtime DLL for VMAFx)")
+    step("every program loads Windows DLLs or the bundle's own")
     run([sys.executable, "scripts/ci/check-windows-bundle-imports.py", str(bundle),
-         "--machine", os.environ["VMAFX_ARCH"]])  # fmt: skip
+         "--machine", os.environ["VMAFX_ARCH"], *import_check_arguments(kind)])  # fmt: skip
     run_own_report(bundle, out)
     step("every file of the zip has a recorded licence (ADR-1503)")
     licensing("check", "--artifact", kind, "--root", str(bundle), "--repo", ".",
@@ -538,8 +703,8 @@ def seal(bundle: Path, out: Path, kind: str, scan: Path, version: str, tag: str)
 def build_all(out: Path, env: dict[str, str]) -> None:
     check_host(env["VMAFX_ARCH"])
     gpu, tag = gpu_kit(env), env["VMAFX_IMAGE_TAG"]
-    kind = "windows-cuda-zip" if gpu else "windows-zip"
-    name = f"{env['VMAFX_ARCH']}-cuda" if gpu else env["VMAFX_ARCH"]
+    kind, suffix = KITS[gpu]
+    name = f"{env['VMAFX_ARCH']}{suffix}"
     bundle = out / f"vmafx-tester-windows-{name}-{tag}"
     build, texts = Path("build-tester-windows").resolve(), out / "licence-texts"
     python = assemble(bundle, build, out, env, gpu)

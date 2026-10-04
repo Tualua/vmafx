@@ -60651,3 +60651,18 @@ upstream parity guard's allowlist.
   `queue.CancelledAmong`; the node's `runJob` uses a per-job
   `context.WithCancelCause`. Keep the tenant in the SQL `WHERE` and the
   64-entry bound. No score, public C API or FFmpeg patch impact.
+## Windows SYCL tester zip (ADR-1566)
+
+- `scripts/ci/build-windows-tester-bundle.py` builds the SYCL zip with `icx-cl` and
+  `-Db_vscrt=md` (`SYCL_OPTIONS`, `KITS`) and stages everything a program loads beside
+  it (`PROGRAM_DIRS`): the Visual C++ runtime closure (`copy_program_runtime()`),
+  Intel's runtime from `tools/rc1-tester/image/sycl-runtime-windows.json` pruned to
+  what is imported or loaded by name (`LOADED_AT_RUN_TIME`), and the Level Zero loader.
+  `scripts/ci/check-windows-bundle-imports.py --runtime md` holds the layout; the CPU
+  and CUDA zips keep `--runtime mt`.
+- `tools/rc1-tester/image/prepare_build.py` reads `credist_dir` (Windows entries are
+  `<installdir>/bin/<name>`) and a component's `dests`; `hw_sycl.py` on Windows opens
+  the zip's own loader through `VMAFX_ZE_LOADER` (`hw_l0probe.py`).
+- `core/test/test_sycl_kernel_scratch.c` reads `VMAF_SYCL_SCRATCH_RATCHET_FILE` before
+  its compiled path; an upstream or fork change to the test keeps that override, which
+  the zip's manifest sets. No score, public API or FFmpeg patch impact.

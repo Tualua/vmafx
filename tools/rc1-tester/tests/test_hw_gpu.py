@@ -170,6 +170,61 @@ def test_scratch_audit_pass_fail_skip_and_garbage() -> None:
     assert hw_sycl.parse_scratch_audit("audited 0 kernels: 0 use scratch memory, 0 listed in the ratchet")["row_result"] == "fail"  # fmt: skip
 
 
+def test_the_probe_opens_the_loader_named_in_its_environment(monkeypatch, capsys) -> None:
+    opened = []
+    monkeypatch.setattr(
+        hw_l0probe, "probe", lambda loader: opened.append(loader) or {"devices": []}
+    )
+    monkeypatch.setenv("VMAFX_ZE_LOADER", r"C:\zip\tests\ze_loader.dll")
+    assert hw_l0probe.main() == 0
+    monkeypatch.delenv("VMAFX_ZE_LOADER")
+    assert hw_l0probe.main() == 0
+    assert opened == [r"C:\zip\tests\ze_loader.dll", hw_l0probe.LOADER]
+    capsys.readouterr()
+
+
+def test_windows_zip_reaches_the_gpu_through_its_own_loader(tmp_path: Path) -> None:
+    system32 = tmp_path / "System32"
+    system32.mkdir()
+    facts = hw_sycl.windows_access_facts(tmp_path, system32)
+    assert facts == {"loader": "tests/ze_loader.dll", "loader_present": False,
+                     "system32_ze_loader_present": False, "path": "none"}  # fmt: skip
+    assert "unpack the whole zip" in hw_sycl.windows_reason(facts, {})
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/ze_loader.dll").write_bytes(b"MZ")
+    (system32 / "ze_loader.dll").write_bytes(b"MZ")
+    facts = hw_sycl.windows_access_facts(tmp_path, system32)
+    assert facts["path"] == "windows" and facts["system32_ze_loader_present"]
+    no_gpu = hw_sycl.windows_reason(facts, {"status": "no_device"})
+    assert no_gpu.startswith("Level Zero finds no Intel GPU (no_device): install or update")
+    broken = hw_sycl.windows_reason(facts, {"status": "no_loader", "error": "error 193"})
+    assert broken == "the zip's Level Zero loader did not run (no_loader: error 193)"
+
+
+def test_windows_discovery_passes_the_zip_loader_and_reads_the_recorded_runtime(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/ze_loader.dll").write_bytes(b"MZ")
+    (tmp_path / "image").mkdir()
+    (tmp_path / "image/gpu-runtime.json").write_text(
+        '{"oneapi": "2025.3.0.372", "level_zero_loader": "1.34.0"}'
+    )
+    seen = []
+
+    def fake_runner(argv, *, environment, timeout_seconds, max_output_bytes):
+        seen.append(environment.get("VMAFX_ZE_LOADER"))
+        return CommandResult(0, '{"status": "no_device", "devices": []}', "")
+
+    monkeypatch.setattr(hw_sycl, "windows_host", lambda: True)
+    found = hw_sycl.discover(tmp_path, fake_runner)
+    assert seen == [str(tmp_path / "tests/ze_loader.dll")]
+    assert found["runtime"] == {"level_zero_loader": "1.34.0", "oneapi": "2025.3.0.372"}
+    assert found["access"]["path"] == "windows" and found["devices"] == []
+    assert "Level Zero finds no Intel GPU" in found["reason"]
+    assert hw_sycl.recorded_runtime(tmp_path / "absent") == {}
+
+
 def test_device_env_pins_level_zero_ordinal() -> None:
     assert hw_sycl.device_env({"index": 1}) == {"ONEAPI_DEVICE_SELECTOR": "level_zero:1"}
 

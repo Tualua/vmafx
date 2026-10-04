@@ -521,9 +521,9 @@ reach the network when run with the commands above.
 ## F. Native Windows zip (x64 or Arm64)
 
 You need Windows 10 (version 2004 or later) or Windows 11, PowerShell or the Command
-Prompt, and about 1 GB of free disk space. You install nothing: the zip carries the
-VMAFx programs and the Python interpreter that runs the report, and the programs need no
-Visual C++ runtime on your machine.
+Prompt, and about 1 GB of free disk space (up to 3 GB for the CUDA or SYCL zip). You
+install nothing: the zip carries the VMAFx programs and the Python interpreter that runs
+the report, and the programs need no Visual C++ runtime on your machine.
 
 There is one zip per processor type. Take `x64` for an Intel or AMD processor and
 `arm64` for Windows on Arm (Snapdragon X and other Arm laptops). If you are not sure,
@@ -580,7 +580,8 @@ number or UUID.
 | Reference equivalence | the same scores against scores the same build recorded on GitHub's runner | yes | yes, without the x86_64 cross-check |
 | Unit tests | the SIMD and dispatch tests, and the tests of what only a Windows build has: the Windows thread and option-parsing shims, UTF-8 file names, temporary files, locales | about 57 | those that exist for Arm64 |
 | CUDA twins | every CUDA twin against the CPU, the parity gate, the CUDA device tests | the CUDA zip only | no |
-| Not run | SYCL and HIP twins, Metal, the Python golden gate, ONNX Runtime, SVE2 | | |
+| SYCL twins | every SYCL twin against the CPU, the parity gate, the SYCL device tests and the scratch-memory audit | the SYCL zip only | no |
+| Not run | HIP twins, Metal, the Python golden gate, ONNX Runtime, SVE2 | | |
 
 The programs are built with Microsoft's compiler (MSVC), the build most Windows users
 of VMAFx make. No tester has run that build on his own machine before, and nobody has
@@ -611,6 +612,36 @@ none. A GPU below the RTX 30 series (compute capability below 8.0) is listed in 
 report with the reason and not run. Without the driver the report says
 `gpu (cuda): no_device` and names `nvcuda.dll`; that is not a failure.
 
+### With an Intel GPU: the SYCL zip
+
+If your PC has an Intel GPU (an Arc A- or B-series card, or the Iris Xe, UHD or Arc
+graphics of an 11th-generation Core processor or newer), take the fourth zip,
+`vmafx-tester-windows-x64-sycl-<VERSION>.zip`, instead of the x64 one: replace `<ARCH>`
+with `x64-sycl` in the five steps above. You need Intel's graphics driver, which Windows
+Update or Intel's Driver & Support Assistant installs; the zip reaches the GPU through
+the driver's Level Zero driver with its own Level Zero loader (`ze_loader.dll`).
+
+This zip is built with Intel's compiler (`icx-cl`) rather than Microsoft's, because only
+Intel's compiler builds the SYCL backend, and it uses the C runtime as DLLs: the zip
+carries them, Intel's SYCL runtime and the loader next to `vmaf.exe` and next to the
+test programs, so nothing on your PC is used instead. Its CPU checks therefore measure
+Intel's build of the CPU code, not MSVC's.
+
+On top of everything the x64 zip runs, the SYCL zip, on every Intel GPU it finds (at
+most four), one after the other:
+
+- runs every CPU feature extractor on the four test videos with `--backend sycl` at
+  full precision and compares each value with the CPU's;
+- runs the project's parity gate for every SYCL twin on every fixture;
+- runs the SYCL device tests of the build and the audit that no kernel uses scratch
+  memory;
+- says which open state rows your GPU's measurements close
+  ([Intel GPU state rows](#intel-gpu-state-rows)).
+
+No one has run the Windows SYCL build on a GPU before: GitHub's build machines have
+none, and the project's Intel GPUs run Linux. Without an Intel GPU or its driver the
+report says `gpu (sycl): no_device` and names Level Zero; that is not a failure.
+
 ### What is in the zip
 
 Sizes are approximate; the exact file list with sizes is `bundle-files.txt` in the
@@ -623,6 +654,7 @@ workflow run that built it.
 | `tester\` | the report program, plain Python (`tools/rc1-tester/` in the repository) |
 | `build\tools\vmaf.exe` | the VMAFx command line tool; libvmaf and the C runtime are linked in |
 | `tests\` | unit test programs, each with libvmaf linked in (most of the zip's size); in the CUDA zip each carries the CUDA kernels, stored compressed (2.6 MB instead of 11 MB, [ADR-1590](../adr/1590-device-code-compression.md)) |
+| `build\tools\*.dll`, `tests\*.dll` | SYCL zip only: the Microsoft Visual C++ runtime DLLs, Intel's SYCL runtime (`sycl8.dll`, the Unified Runtime loader and its Level Zero adapters, the compiler's math libraries, `umf.dll`, `libhwloc-15.dll`) and the Level Zero loader, next to the programs that load them |
 | `python\test\resource\` | Netflix test videos, each checked against a pinned SHA-256 (about 57 MB) |
 | `reference\`, `image\` | scores recorded by the build, manifests |
 | `licenses\` | `THIRD_PARTY_NOTICES.txt` and the licence texts of everything above |
@@ -766,6 +798,15 @@ workflow refuses to build a package with a file whose licence is not recorded
   Toolkit End User License Agreement (`licenses\nvidia\CUDA-EULA.txt`) and the notices
   of the nv-codec-headers loader (`licenses\nv-codec-headers\`), as in the NVIDIA GPU
   image.
+- **Windows SYCL zip only**: its programs use the C runtime as DLLs (`/MD`, which
+  Intel's SYCL compiler requires), so the zip carries the Microsoft Visual C++ runtime
+  DLLs they import next to them, under the same Visual Studio terms. Intel's SYCL
+  runtime files are Redistributables of the Intel End User License Agreement for
+  Developer Tools, listed in the compiler's `credist.txt`; that agreement, its
+  third-party notices and the list are in `licenses\intel\intel-oneapi-dpcpp-runtime\`.
+  UMF (Apache-2.0 WITH LLVM-exception) and hwloc (BSD-3-Clause, built by Intel) carry
+  their own texts, and the Level Zero loader, built from its source on GitHub's machine,
+  is MIT-licensed. None of it is copyleft.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
   publishing workflow: the `.spdx.json` release asset for the macOS bundle and each
   Windows zip, an attestation on each platform manifest of the container, and an
