@@ -5,13 +5,15 @@ The vmafx-operator is the Kubernetes operator binary that reconciles the
 (CRDs). It is published as a signed, SBOM-attested OCI image on every release tag.
 
 ADR reference: [ADR-0815](../adr/0815-operator-node-distroless-dockerfiles.md),
-[ADR-0714](../adr/0714-vmafx-operator-skeleton.md), and ADR-1129.
+[ADR-0714](../adr/0714-vmafx-operator-skeleton.md), and
+[ADR-1129](../adr/1129-release-container-runtime-alignment.md). Operator
+development and CRD details are in [the operator guide](../development/operator.md).
 
 ## Image coordinates
 
 | Registry | Image | Default tag | Platforms |
 | --- | --- | --- | --- |
-| `ghcr.io` | `vmafx/vmafx-operator` | `latest` | `linux/amd64`, `linux/arm64` |
+| `ghcr.io` | `vmafx/vmafx-operator` | release tag; `latest` only on the newest release | `linux/amd64`, `linux/arm64` |
 
 Pull by digest for production deployments:
 
@@ -23,7 +25,7 @@ Verify the Sigstore signature:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp="https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml" \
+  --certificate-identity-regexp="^https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   ghcr.io/vmafx/vmafx-operator@sha256:<digest>
 ```
@@ -66,7 +68,7 @@ docker run --rm \
   -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081 \
   -e VMAFX_OPERATOR_LEADER_ELECTION=false \
   -e VMAFX_LOG_LEVEL=info \
-  ghcr.io/vmafx/vmafx-operator:v1.0.0-rc.1
+  ghcr.io/vmafx/vmafx-operator:<tag>
 ```
 
 In-cluster the operator reads kubeconfig from the service-account token
@@ -81,10 +83,15 @@ uid 65532 (`nonroot`) by default.
 | `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus `/metrics` endpoint bind address |
 | `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | `/healthz` + `/readyz` bind address |
 | `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election for HA deployments |
+| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `vmafx-operator.vmafx.dev` | Lease name used when leader election is on |
+| `VMAFX_OPERATOR_WEBHOOK_PORT` | `0` | Admission-webhook port; `0` disables the webhooks |
+| `VMAFX_OPERATOR_WEBHOOK_HOST` | all interfaces | Admission-webhook bind host |
 | `VMAFX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 
 `--version` is the only process CLI switch; runtime configuration is supplied
-through the environment variables above.
+through the environment variables above. The table follows the header comment
+of `cmd/vmafx-operator/main.go`; the Helm chart sets the leader-election and
+log-level variables from `operator.leaderElect` and `operator.logLevel`.
 
 ## Exposed ports
 
@@ -98,15 +105,18 @@ through the environment variables above.
 The workflow `.github/workflows/docker-publish-operator-node.yml` fires when a
 GitHub release is published and on `workflow_dispatch`. It:
 
-1. Builds `ghcr.io/vmafx/vmafx-operator` for `linux/amd64` + `linux/arm64`
-   using BuildKit native cross-compilation (CGO_ENABLED=0 pure-Go binary; no QEMU
-   needed).
+1. Builds `ghcr.io/vmafx/vmafx-operator` for `linux/amd64` and `linux/arm64`
+   in one job per architecture (`CGO_ENABLED=0` pure-Go binary), then merges
+   the platform images into one multi-arch index.
 2. Signs the pushed digest via `cosign sign --yes` (Sigstore keyless OIDC).
 3. Generates a CycloneDX SBOM with `syft` and attaches it as a `cosign attest`
    predicate.
 4. Uploads the SBOM JSON as a workflow artifact (90-day retention).
 5. Attests GitHub-native build provenance for the pushed digest.
-6. Verifies the signature, then asserts the image's `--version` output matches
+6. Attests an SPDX SBOM per platform image and merges the corresponding
+   source images into `<tag>-source` (`.github/actions/image-licence-artifacts`,
+   ADR-1513).
+7. Verifies the signature, then asserts the image's `--version` output matches
    the published tag before the aggregator gate passes.
 
 Manual recovery must run at the existing published tag and pass the same tag
@@ -119,13 +129,15 @@ gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
 
 ## Upgrade
 
-Update the image tag (or digest) in the Helm `values.yaml`:
+Update the image tag (or digest) in the Helm `values.yaml`. An empty tag
+defaults to `v<Chart.AppVersion>` (`deploy/helm/vmafx/values.yaml`):
 
 ```yaml
 operator:
+  enabled: true
   image:
     repository: ghcr.io/vmafx/vmafx-operator
-    tag: "v3.2.1"
+    tag: "vX.Y.Z"
 ```
 
 Then run `helm upgrade vmafx ./deploy/helm/vmafx -n vmafx-system`.

@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Zed Migration Plan — VMAFx/vmafx fork (2026-05-19)
 
+!!! note "Snapshot, 2026-05-19"
+    Dated record, not maintained. Plan was executed (ADR-0608) and later re-audited for Zed 1.18; current guidance is [IDE setup](ide-setup.md) and `.zed/`. Zed claims below are stale.
+
 Migration plan from VSCode to Zed for this repository.
 **Every Zed-feature claim below cites a WebFetched URL and retrieval date.**
 No training-data assertions are made.

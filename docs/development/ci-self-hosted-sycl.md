@@ -14,10 +14,7 @@ evidence. ADR-1177 gave Arc parity a dedicated capability. ADR-1319 removes
 the obsolete duplicate, making this workflow the sole hardware
 `float_ssim`-parity owner.
 
-**Current state (2026-09-25):** repository and organisation APIs return zero
-registered runners, `SYCL_ARC_RUNNER_ENABLED` is absent, and the documented
-user service/environment/state paths are absent on the workstation. The lane
-therefore skips safely; no current master run proves this hardware contract.
+**State of the lane:** it is off until the repository variable `SYCL_ARC_RUNNER_ENABLED` is `true` (section 2). With the variable unset the check skips and no hardware evidence is produced; check `gh api repos/VMAFx/vmafx/actions/runners` before citing a master run as hardware parity evidence.
 
 ---
 
@@ -63,7 +60,7 @@ reused across jobs on the same host — `down -v` wipes it.
 
 ## 2. CI wiring
 
-- `runner-available` (hosted, `ubuntu-26.04`) runs
+- `runner-available` (check name `Probe SYCL Runner`, hosted, `ubuntu-26.04`) runs
   [`scripts/ci/check-runner-available.sh`](../../scripts/ci/check-runner-available.sh)
   and gates the self-hosted job through `needs:`. It requires an online runner
   carrying the complete `self-hosted,linux,x64,sycl-arc` label set, not just
@@ -71,14 +68,14 @@ reused across jobs on the same host — `down -v` wipes it.
 - `SYCL Parity (Arc A380)` (self-hosted) checks that only the Arc is
   visible (`sycl-ls`), builds `-Denable_sycl=true -Denable_cuda=false
   -Denable_float=true`, runs `python3 scripts/ci/run_meson_test.py -- -C core/build --suite sycl`
-  (23 tests), then `scripts/ci/cross_backend_parity_gate.py --backends cpu
+  then `scripts/ci/cross_backend_parity_gate.py --backends cpu
   sycl --features float_ssim --gpu-id sycl:0x8086:0x56a5` against the
   [ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md) table
   (`scripts/ci/gpu_ulp_calibration.yaml`, `sycl:0x8086:0x56a*`) and uploads
   `sycl_parity.json` / `sycl_parity.md`. Since
   [ADR-1451](../adr/1451-sycl-exact-twins-declared.md) `float_ssim` is an
   exact twin on SYCL: the gate compares this cell with tolerance 0 and does
-  not read the table's 5e-4 for it.
+  not read the table's tolerance for it.
 - [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml)
   lists `SYCL Parity (Arc A380)` as required.
 
@@ -188,7 +185,7 @@ manages the lifecycle:
 
 #### Option A: systemd --user service (recommended)
 
-Install the provided user unit [`dev/systemd/vmafx-sycl-arc-runner.service`](../../dev/systemd/vmafx-sycl-arc-runner.service):
+Install the provided user unit [`dev/systemd/vmafx-sycl-arc-runner.service`](../../dev/systemd/vmafx-sycl-arc-runner.service). Its `ExecStart=` line names the supervisor under `%h/dev/vmaf/`; edit the copy so it points at your checkout of `dev/scripts/runner-supervisor.sh`.
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -347,12 +344,12 @@ docker compose -f dev/docker-compose.runner.yml down -v            # also drops 
 | `scripts/ci/tests/test-runner-available.sh` | unit suite for complete-label, online/offline and API-failure behavior |
 | `scripts/ci/test_self_hosted_runner_workflow_contract.py` | executable workflow/aggregator ownership and lane-switch contract |
 | `scripts/ci/tests/test-runner-supervisor.sh` | unit suite for `runner-supervisor.sh` with stubbed `gh` and `docker` |
-| `.github/workflows/sycl-parity.yml` | the two jobs |
+| `.github/workflows/sycl-parity.yml` | the two jobs (`Probe SYCL Runner`, `SYCL Parity (Arc A380)`) |
 | `.github/actionlint.yaml` | declares the `sycl-arc` / `gpu-full` labels for actionlint |
 
 ## 6. Invariants
 
-See `scripts/ci/AGENTS.md` § "Self-hosted SYCL Arc runner invariants
-(ADR-1177)": fork heads never reach the label, the device list is Arc-only,
+See [`scripts/ci/AGENTS.d/self-hosted-runners.md`](../../scripts/ci/AGENTS.d/self-hosted-runners.md)
+§ "Self-hosted SYCL Arc runner invariants (ADR-1177)": fork heads never reach the label, the device list is Arc-only,
 the probe never treats an API error as "unregistered", and the aggregator
 never accepts a skip while the lane is enabled.

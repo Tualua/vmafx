@@ -53,7 +53,7 @@ That last row is the load-bearing one. See
 | `checkerboard_10px` | `checkerboard_1920_1080_10_3_0_0.yuv` vs `..._10_0.yuv` | 1920×1080, 8-bit | 3 |
 | `bbb_4k_200f` | `testdata/bbb/{ref,dis}_3840x2160_200f.yuv` | 3840×2160, 8-bit | 200 |
 
-The first three are the Netflix golden-gate pairs (CLAUDE.md §8) and are
+The first three are the Netflix golden-gate pairs ([`AGENTS.md` §8](../../AGENTS.md)) and are
 already present in a full checkout. **They are gitignored**
 (`.gitignore`: `python/test/resource/yuv/`), so a fresh `git worktree` does
 *not* contain them — link or copy the directory from your main checkout before
@@ -111,12 +111,16 @@ python3 testdata/bench_backends.py \
     --runs 3 --json-out /tmp/baselines.json
 ```
 
-Useful flags: `--list`-style auditing via `--dry-run` (prints the exact
-`vmaf` command lines without touching hardware), `--fixture <tag>` and
-`--model <name>` to narrow a run, `--runs N` to trade wall time for tighter
+Useful flags: `--dry-run` (prints the exact `vmaf` command lines without
+touching hardware), `--fixture <tag>` and `--model <name>` to narrow a run, `--runs N` to trade wall time for tighter
 spread.
 
 ## Reading the output
+
+Example row, copied from the refreshed baselines in
+[`docs/benchmarks.md`](../benchmarks.md) (2026-09-06, host `ryzen-4090-arc`,
+commit `cd52f2670`, the command above with `v0.6.1` on `src01_576x324`). It
+was not re-measured for this page:
 
 ```text
     cpu    ...   613.71 fps  median 0.078s  spread 3.5%  pool 76.667831  keys=15  load=6.6
@@ -138,7 +142,9 @@ difference.
 
 Expected, and not a bug, whenever the frame count is small or the resolution is
 low: the fixed per-run cost (context creation, module load, host↔device copies)
-is not amortised. The fork's own numbers show CPU winning at 576×324 and at
+is not amortised. The fork's own numbers in `docs/benchmarks.md` (refreshed 2026-09-06 on
+`ryzen-4090-arc`; the CUDA rows there were measured with a local flush patch
+and are not reproducible from `master`) show CPU winning at 576×324 and at
 1080p×3f, and CUDA winning decisively at 4K×200f. If a GPU row loses at 4K with
 a few hundred frames, that *is* worth investigating — start with
 `/profile-hotpath`.

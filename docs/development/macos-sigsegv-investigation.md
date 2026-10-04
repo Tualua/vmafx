@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD013 -->
 # macOS CI Build Failure Investigation
 
+!!! note "Snapshot, 2026-06-04"
+    Dated record, not maintained. Resolved by PR #654; tracker row closed in [`state.md`](../state.md).
+
 **Tracker:** T-MACOS-SIGSEGV-UNRESOLVED-2026-05-19
 **Status:** RESOLVED — 2026-06-04
 **Resolved by:** PR #654 / commit `695d29626`

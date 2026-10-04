@@ -51,7 +51,7 @@ downward-API attributes, is in the operator guide.
 | Span | Binary | Description |
 | --- | --- | --- |
 | `vmafx.job.submit` | controller | `SubmitJob` gRPC handler — covers queue persistence. |
-| `vmafx.encoder.dispatch` | node | Encoder selection and ffmpeg invocation. |
+| `vmafx.encoder.dispatch` | _(none)_ | Name defined (`SpanEncoderDispatch`) but no binary starts it yet. |
 | `vmafx.frame.extraction` | node | Inner span inside `vmafx.scoring` — libvmaf per-frame feature extraction. |
 | `vmafx.scoring` | node | Full end-to-end scoring pipeline for one job. |
 | `vmafx.onnx.inference` | node, `pkg/ai` (tune) | ONNX Runtime inference: in-process on the node; around the `vmafx-ort-runner` subprocess in `pkg/ai`. |
@@ -62,7 +62,8 @@ downward-API attributes, is in the operator guide.
 
 All `vmafx.*` spans carry only the bounded attributes `vmafx.job_id`,
 `vmafx.model`, `vmafx.backend`, `vmafx.node_id`, `vmafx.mcp.tool`,
-`vmafx.tune.command`.
+`vmafx.tune.command`. `pkg/observability/otel_instruments.go` also defines
+`vmafx.gpu_vendor` and `vmafx.status`, which no span sets today.
 
 ## Metrics
 
@@ -80,8 +81,8 @@ These instruments are defined and unit-tested but no binary registers
 them yet (`InitOTelMetrics` has no production caller); the Prometheus
 `/metrics` endpoint remains the production metrics path, extended with
 `vmafx_controller_jobs_submitted_total`, `vmafx_controller_jobs_completed_total`,
-`vmafx_controller_jobs_failed_total`, `vmafx_controller_jobs_queued`, and
-`vmafx_controller_nodes_active`.
+`vmafx_controller_jobs_failed_total`, `vmafx_controller_jobs_pending`,
+`vmafx_controller_jobs_running`, and `vmafx_controller_nodes_live`.
 
 ## Grafana dashboard
 
@@ -95,9 +96,9 @@ All span attributes and metric labels are bounded-cardinality:
 
 - `vmafx.job_id` — present on spans only (not metrics).
 - `vmafx.model` — at most ~10 VMAF model variants.
-- `vmafx.backend` — at most 6 values (`cpu`, `cuda`, `sycl`, `hip`, `vulkan`, `metal`).
+- `vmafx.backend` — at most 5 values (`cpu`, `cuda`, `sycl`, `hip`, `metal`).
 - `vmafx.gpu_vendor` — at most 4 values (`nvidia`, `amd`, `intel`, `cpu`).
-- `vmafx.mcp.tool` — the registered tool list (~15 values).
-- `vmafx.tune.command` — the subcommand tree (~20 values).
+- `vmafx.mcp.tool` — the registered MCP tool list.
+- `vmafx.tune.command` — the `vmafx-tune` subcommand tree.
 
 No per-file or per-clip attributes are added to metrics.

@@ -1,5 +1,8 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # Upstream-backlog re-audit — 2026-04-29 (T7-4)
+
+!!! note "Snapshot, 2026-04-29"
+    Dated record, not maintained. Later upstream coverage lives in the sync reports and [`state.md`](state.md); next re-audit date on this page has passed.
 
 > Quarterly upstream-backlog re-audit per
 > the retired private backlog row T7-4.

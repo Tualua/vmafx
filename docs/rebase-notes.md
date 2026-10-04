@@ -60572,3 +60572,11 @@ upstream parity guard's allowlist.
   object with `go generate ./cmd/vmafx-node/bpf/` after any change to the C
   file; `TestEmbeddedObjectLicence` checks the string. No score, public API or
   FFmpeg patch impact.
+## Orphan documentation pages audited
+
+- The pages that were outside `mkdocs.yml` are in the navigation (Development, Server, Architecture,
+  Choose a backend) or under Records. `docs/api/vulkan-image-import.md` and
+  `docs/superpowers/plans/2026-09-20-pelorus-interop-sync.md` are deleted; archived changelog text
+  that links the first is left as written. On a conflict in a corrected page, keep the verified
+  statement (each names the workflow, script or file it was checked against). No score, public API
+  or FFmpeg patch impact.

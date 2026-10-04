@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD013 MD036 MD060 -->
 # Backlog audit — untracked follow-up items (2026-04-28)
 
+!!! note "Snapshot, 2026-04-28"
+    Dated record, not maintained. Item tracking moved to [`state.md`](state.md) and GitHub issues; this list is not maintained.
+
 > Audit of in-tree follow-up mentions (TODO / FIXME / "deferred" /
 > "scaffold only" / "v2" / etc.) cross-referenced against the
 > canonical backlog tracking surfaces:

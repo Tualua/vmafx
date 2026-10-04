@@ -1,4 +1,4 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # gRPC streaming (`ScoreStream`)
 
 Status: **Accepted / implemented** (ADR-0933). Phase 1 shipped the schema +
@@ -165,19 +165,20 @@ func main() {
 ```bash
 # From a fresh clone, with a CPU libvmaf build at core/build-cpu:
 meson setup core/build-cpu core -Denable_cuda=false -Denable_sycl=false
-ninja -C core/build-cpu src/libvmaf.so.3.0.0
-
+ninja -C core/build-cpu
+export CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm"
+export LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src
 # End-to-end streaming scoring against the 48-frame golden pair:
 CGO_ENABLED=1 go test ./pkg/libvmaf/ -run StreamScorer            # engine
 CGO_ENABLED=1 go test ./cmd/vmafx-server/ -run ScoreStream        # server RPC
-CGO_ENABLED=1 go test ./cmd/vmafx-node/server/ -run ScoreStream   # node RPC
+CGO_ENABLED=1 go test ./cmd/vmafx-node/ -run ScoreStream          # node RPC
 ```
 
 The end-to-end tests push the real 576×324 / 48-frame YUV fixtures over an
 in-process gRPC stream and assert the server returns one `FrameScore` per frame
 plus a terminal `AggregateScore` whose pooled VMAF matches `ScoreDirect`.
-Validation-only cases (zero dimensions, non-config first message, frame-size
-mismatch, unloadable model) assert the corresponding `codes.InvalidArgument` /
+Validation-only cases (zero dimensions, unspecified pixel format, non-config
+first message, frame-size mismatch, unloadable model) assert the corresponding `codes.InvalidArgument` /
 `codes.NotFound` without needing the fixtures.
 
 ## References

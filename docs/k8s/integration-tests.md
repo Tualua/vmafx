@@ -15,17 +15,17 @@ for the executable-scope correction.
 
 ## Prerequisites
 
-| Tool | Minimum version | Install |
+| Tool | Version CI pins | Install |
 | --- | --- | --- |
-| Docker | 24.x | <https://docs.docker.com/engine/install/> |
-| kind | 0.23 | `go install sigs.k8s.io/kind@v0.23.0` |
-| kubectl | 1.30 | <https://kubernetes.io/docs/tasks/tools/> |
-| Helm | 3.14 | <https://helm.sh/docs/intro/install/> |
-| kuttl | 0.20 | `go install github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.20.0` |
-| curl | 8.x | Distribution package |
-| Python | 3.11 | Distribution package |
+| Docker | any recent release | <https://docs.docker.com/engine/install/> |
+| kind | v0.33.0 | <https://kind.sigs.k8s.io/docs/user/quick-start/#installation> |
+| kubectl | v1.37.0 | <https://kubernetes.io/docs/tasks/tools/> |
+| Helm | v4.2.4 | <https://helm.sh/docs/intro/install/> |
+| kuttl | v0.26.0 | <https://kuttl.dev/docs/cli.html> |
+| curl, python3 | distribution package | used by `test/e2e/score-smoke.sh` and `test/e2e/fixtures/gen-tiny-yuv.sh` |
 
-The CI workflow installs its pinned tool versions automatically.
+The pins live in the `env` block of `.github/workflows/e2e-k8s.yml`. Earlier
+versions may work locally; CI is the reference.
 
 ## Running locally
 

@@ -178,6 +178,7 @@ nav:
   - Choose a backend:
       - backends/index.md
       - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md
+      - x86 integer SSIM (AVX2): backends/x86/integer-ssim-avx2.md
       - ARM NEON / SVE2: backends/arm/overview.md
       - CUDA:
           - Overview: backends/cuda/overview.md
@@ -394,12 +395,18 @@ nav:
       - Auth gateway: server/auth.md
       - Operator: server/operator.md
       - REST API: server/rest.md
+      - Operator image and publishing: backends/operator.md
+      - Observability (OpenTelemetry): observability/otel.md
+      - Kubernetes integration tests: k8s/integration-tests.md
   - Architecture:
       - architecture/index.md
       - C4 context: architecture/c4-context.md
       - C4 container: architecture/c4-container.md
       - Workspace layout: architecture/workspace.md
       - Phase 4b distributed platform: architecture/phase4b-distributed-platform.md
+      - gRPC score streaming: architecture/grpc-streaming.md
+      - MCP direct libvmaf path (CGO): architecture/mcp-cgo-direct-migration.md
+      - VmafPicture v2 migration: architecture/vmaf-picture-v2-migration.md
   - Development:
       - Engineering principles: principles.md
       - Build flags: development/build-flags.md
@@ -456,6 +463,23 @@ nav:
       - Rust guide: development/rust.md
       - GPU scheduling: development/gpu-scheduling.md
       - Performance benchmarking: development/perf.md
+      - Merge train: development/merge-train.md
+      - Silent-revert gate: development/silent-revert-gate.md
+      - Coverage gate: development/coverage-gate.md
+      - Perf gate: development/perf-gate.md
+      - Pre-commit hooks: development/pre-commit-hooks.md
+      - CI job names: development/ci-job-names.md
+      - Self-hosted SYCL runner (Arc): development/ci-self-hosted-sycl.md
+      - Publishing artifacts: development/publishing.md
+      - AGENTS.md index and topic pages: development/agents-index.md
+      - cargo-deny: development/cargo-deny.md
+      - Thread pool: development/thread-pool.md
+      - Fedora development image: development/fedora-development-image.md
+      - C++23 extractor pattern: development/cpp23-extractor-pattern.md
+      - Python test orchestrator: development/python-test-orchestrator.md
+      - Python process execution: development/python-process-execution.md
+      - Observability (Go services): development/observability.md
+      - Backend perf baselines: development/backend-perf-baselines.md
       - Netflix benchmark baselines: development/netflix-benchmark-baselines.md
       - Deprecations: development/deprecations.md
       - vmafx-node: development/vmafx-node.md
@@ -479,6 +503,17 @@ nav:
   - Records:
       - Bug state tracker: state.md
       - Rebase notes: rebase-notes.md
+      - Backlog audit (2026-04-28): backlog-audit-2026-04-28.md
+      - Upstream backlog audit (2026-04-29): upstream-backlog-audit-2026-04-29.md
+      - Coverage gap analysis (2026-05-02): development/coverage-gap-analysis-2026-05-02.md
+      - CPU score drift bisect (2026-05-02): development/cpu-score-drift-bisect-2026-05-02.md
+      - CUDA profile (2026-05-03): development/cuda-profile-2026-05-03.md
+      - Post-merge profile (2026-05-03): development/post-merge-profile-2026-05-03.md
+      - macOS SIGSEGV investigation: development/macos-sigsegv-investigation.md
+      - Zed migration plan (2026-05-19): development/zed-migration-plan-2026-05-19.md
+      - Zed migration refresh (2026-05-22): development/zed-migration-plan-2026-05-22.md
+      - Netflix-grade encoding pipeline roadmap (2026-05-19): development/netflix-grade-encoding-pipeline-roadmap-2026-05-19.md
+      - Vulkan backend (removed): backends/vulkan/overview.md
       - Scorecard and CodeQL audit (2026-09-04): security/scorecard-alerts-2026-09-04.md
       - Upstream sync reports:
           - 2026-05-02: sync-upstream/2026-05-02-sync-report.md

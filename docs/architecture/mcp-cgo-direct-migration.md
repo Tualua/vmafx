@@ -1,33 +1,36 @@
 <!-- markdownlint-disable MD060 -->
 # MCP server: subprocess → direct cgo migration plan
 
-Status: Phase 1 (Proposed)
-Owner: lusoris
+Status: Phase 1 implemented (opt-in); Phases 2 to 4 not started
 Tracked by: [ADR-0931](../adr/0931-mcp-cgo-direct-replace-subprocess.md)
-Last updated: 2026-05-31
 
-## What changed
+## What it is
+
+Set `VMAFX_MCP_DIRECT=1` to make the Go MCP server score in process through
+libvmaf instead of forking the `vmaf` CLI. Operators who run `vmafx-mcp` and
+want lower per-call overhead need this page; everyone else can ignore it.
+The sections below cover the opt-in, the fall-back rules and the rollback.
 
 The Go MCP server (`cmd/vmafx-mcp/`) historically delegated every scoring or
 introspection call to the `vmaf` CLI binary via `exec.Command(...)` and
-parsed its JSON stdout. Phase 1 of ADR-0931 introduces a **direct cgo
-scoring path** in `pkg/libvmaf/` (`ScoreDirect`, `ValidateModel`) and wires
-the two simplest tool handlers (`vmaf_score`, `describe_model`) to take that
-path when `VMAFX_MCP_DIRECT=1` is set in the environment. The subprocess
-path remains the default and is **not removed in this PR**.
+parsed its JSON stdout. Phase 1 of ADR-0931 introduced a **direct cgo
+scoring path** in `pkg/libvmaf/direct.go` (`ScoreDirect`, `ValidateModel`) and
+wired the two simplest tool handlers (`vmaf_score`, `describe_model`) to take
+that path when `VMAFX_MCP_DIRECT=1` is set in the environment. The subprocess
+path remains the default.
 
 The migration is intentionally staged:
 
 | Phase | Scope | Default | Status |
 |---|---|---|---|
-| **1** | `vmaf_score` + `describe_model`, CPU + SVM only | subprocess | This PR |
-| 2 | `vmaf_score_encoded`, `probe_backend`, `run_benchmark`; GPU backend support; per-feature pooled scores | subprocess | Planned |
+| **1** | `vmaf_score` + `describe_model`, CPU + SVM only | subprocess | Implemented |
+| 2 | `vmaf_score_encoded`, `probe_backend`, `run_benchmark`; GPU backend support; per-feature pooled scores | subprocess | Planned (not started) |
 | 3 | Default-flip `VMAFX_MCP_DIRECT=1` after parity sweep; ONNX/DNN cgo bridge | direct | Planned |
 | 4 | Remove subprocess path + `pkg/libvmaf::FindBinary` heuristic | direct | Planned |
 
 ## How the opt-in works
 
-The dispatcher in `cmd/vmafx-mcp/impl_direct.go::directPathEnabled` reads
+`directPathEnabled()` in `cmd/vmafx-mcp/impl_direct.go` reads
 `VMAFX_MCP_DIRECT` per call. Only the exact string `"1"` enables the direct
 path; any other value (including unset and `"true"`) leaves the subprocess
 path in effect.
@@ -54,20 +57,22 @@ these cases:
 
 | Trigger | Reason |
 |---|---|
+| Any extended scoring flag is set (`scoreExtras.isZero()` is false in `impl.go`) | The direct path serves plain full-reference scores only (ADR-1117) |
 | `backend` arg is not `auto` or `cpu` | Phase 1 is CPU only |
 | Model file extension is `.onnx` | DNN cgo bridge lands in Phase 3 |
 | `resolveModelArgToPath` cannot find the model on disk | `vmaf.c` has its own version-table resolver; defer to it |
 
 The fall-back is silent (no marker) and the response payload is identical to
-the always-subprocess path. The opt-in is therefore **safe to leave on**
-even when calling tools the direct path does not yet support.
+the always-subprocess path, so the opt-in is safe to leave on. With the flag
+set, `describe_model` returns its normal payload and, for `.json` models, adds
+a `libvmaf_validated` field (`describeModelDirect()` in `impl_direct.go`).
 
 ## Response shape
 
 The direct path emits the same JSON the subprocess path emits, with one
 addition: `backend_used` reads `"cpu (direct cgo)"` instead of `"cpu"` so
 clients can confirm which path executed. The `frame_count` field is also
-populated (the subprocess path only emits per-frame entries under `frames`).
+populated; `frames` stays empty on the direct path.
 
 ```json
 {
@@ -93,11 +98,10 @@ programmatically:
 | `-ENOMEM` | `libvmaf.ErrOutOfMemory` | — |
 | `-ENOENT` | `libvmaf.ErrModelNotFound` | `os.ErrNotExist` |
 | `-EIO` | `libvmaf.ErrPictureRead` | — |
-| other `< 0` | `fmt.Errorf("libvmaf %s returned %d", call, rc)` | — |
+| other `< 0` | `fmt.Errorf("libvmaf: %s returned %d (%s)", call, rc, errno)` | — |
 
 The mapping is defined in `pkg/libvmaf/errors.go` and tested in
-`pkg/libvmaf/errors_test.go`. The Phase 1 contract is frozen by ADR-0931;
-extensions need an ADR amendment.
+`pkg/libvmaf/errors_test.go`.
 
 Direct scoring also treats teardown as fallible. It closes the context before
 destroying the registered model and makes one immediate close retry. A
@@ -125,16 +129,6 @@ CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm" \
 Expected output: `--- PASS: TestHandleVmafScore_RoutesToDirect`, with the
 `libvmaf: VMAFX_MCP_DIRECT=1` marker on stderr and a payload whose
 `backend_used` contains `"direct cgo"` and whose `frame_count == 48`.
-
-## Latency note (informal)
-
-Sampled on a single workstation (i9-13900K, Linux 7.0.10) against the
-576x324 / 48-frame `testdata` fixture, the direct path is **roughly an
-order of magnitude faster per call** than the subprocess path. The
-subprocess path takes ~250 ms (fork/exec + vmaf binary cold start + model
-load + JSON write/read). The direct path takes ~25 ms (no fork; ~10 ms is
-the scoring itself, the rest is model load). The numbers are illustrative
-only — Phase 3 will land formal benchmarks gated by CI.
 
 ## Rollback
 

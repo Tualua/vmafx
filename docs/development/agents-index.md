@@ -6,8 +6,8 @@ one is split: the `AGENTS.md` is a short index, and the rules live in one page
 per topic under `AGENTS.d/` next to it. An agent reads the index, matches the
 paths it is about to touch against the table in it, and reads only the pages
 that match. [ADR-1454](../adr/1454-agents-index-and-topic-pages.md) records the
-decision and the measurements; `scripts/ci/` is the first directory in this
-shape.
+decision and the measurements; `scripts/ci/` was the first directory in this
+shape; `find . -name AGENTS.d` lists every directory that has one today.
 
 A directory whose `AGENTS.md` has no `AGENTS.d/` next to it is still a single
 hand-written file and is edited as before.

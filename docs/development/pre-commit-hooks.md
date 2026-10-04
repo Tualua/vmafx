@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Local Git hooks
 
 Run `make install-hooks` from the checkout or linked worktree you use.
@@ -14,6 +15,10 @@ The installer writes regular dispatcher files to Git's effective hooks
 directory, including a configured `core.hooksPath`. Each invocation finds
 its current worktree with Git. Removing the worktree used for installation
 therefore cannot break hooks in the surviving checkout.
+
+## Who owns which hook
+
+Since [ADR-1249](../adr/1249-praetor-governance-adoption.md), [`lefthook.yml`](../../lefthook.yml) owns the `pre-commit` and `pre-push` hooks and the `post-commit` state sync. Its `framework-hooks` commands delegate both stages to the pre-commit framework, so every check in `.pre-commit-config.yaml` still runs; lefthook adds the praetor governance commands (context, audit, HISS evidence). The dispatchers that `make install-hooks` writes (ADR-1241) keep `commit-msg` and `pre-rebase`. ADR-1249 records that `make install-hooks` refuses to run once lefthook owns `pre-commit` and `pre-push`, because it treats them as custom hooks; check that ADR for the current state before relying on the installer in a checkout that already has lefthook hooks. The sections below describe the installer and the framework checks, which apply to both setups.
 
 ## Installed checks
 
@@ -85,7 +90,7 @@ scripts/githooks/state-sync.sh
 ## Python push scope
 
 The `mypy-local` hook implements the touched-file rule in
-[`AGENTS.md` §12.10](../../AGENTS.md): every added, copied, modified,
+[agent hard rule 10](agent-hard-rules.md): every added, copied, modified,
 renamed or type-changed `*.py` path under `ai/` and `scripts/` in
 `git diff origin/master...HEAD` is checked. Deleted paths are omitted.
 The strict settings in `pyproject.toml` still apply. Fetch `origin/master`

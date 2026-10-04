@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD013 MD018 MD060 -->
 # Post-merge CPU Profile — 2026-05-03
 
+!!! note "Snapshot, 2026-05-03"
+    Dated record, not maintained. Summary: [research 0053](../research/0053-post-merge-cpu-profile-2026-05-03.md). Figures predate later SIMD and CPU-capability work.
+
 **Date:** 2026-05-03
 **Branch / Commit:** `chore/profile-hotpath-2026-05-03` @ `981659a3`
 (master tip after lusoris/vmaf#310 through lusoris/vmaf#321: CUDA drain-batch

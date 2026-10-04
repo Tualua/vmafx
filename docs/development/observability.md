@@ -107,7 +107,8 @@ helm upgrade --install vmafx ./deploy/helm/vmafx \
 so deploy the collector (sidecar or DaemonSet) yourself and point `env`
 at it as above. The golusoris resource detector also reads the
 downward-API variables `POD_NAME`, `POD_NAMESPACE`, `POD_IP`, `NODE_NAME`
-and `SERVICE_ACCOUNT` (which the chart sets) and turns them into
+and `SERVICE_ACCOUNT` (the chart does not set them; add them through your
+own manifests) and turns them into
 `k8s.pod.name`, `k8s.namespace.name`, `k8s.pod.ip`, `k8s.node.name` and
 `k8s.service_account.name` resource attributes.
 

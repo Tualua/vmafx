@@ -1,5 +1,8 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # Coverage Gap Analysis — 2026-05-02 Baseline
+
+!!! note "Snapshot, 2026-05-02"
+    Dated record, not maintained. Current coverage floors are enforced by `scripts/ci/coverage-check.sh` (ADR-0922); figures here are not current.
 
 **Date:** 2026-05-02
 **Branch / Commit:** `master` @ `bb9d772ec620d197a9166a092b8afce3517ea78d`

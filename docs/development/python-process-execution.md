@@ -2,7 +2,7 @@
 # Python process execution
 
 The classic VMAF Python harness runs independent assets in separate processes.
-Its process boundary has three guarantees:
+Its process boundary has four guarantees:
 
 1. `parallel_map()` accepts local functions and returns values in input order.
 2. Executor entries with the same `str(asset)` key never run concurrently,

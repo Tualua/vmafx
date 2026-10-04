@@ -2,10 +2,12 @@
 # cargo-deny — Rust supply-chain policy
 
 The fork enforces a supply-chain policy on the Rust workspace
-(`bindings/rust/vmafx-sys`, `core/src/feature/rust/tad`, future Rust
-pilots) via [`cargo-deny`](https://embarkstudios.github.io/cargo-deny/).
+(`bindings/rust/vmafx-sys`, `bindings/rust/vmafx`,
+`core/src/feature/rust/tad`, future Rust pilots) via [`cargo-deny`](https://embarkstudios.github.io/cargo-deny/).
 The policy lives in `deny.toml` at the workspace root and runs on
-every PR that touches Rust files via the `cargo-deny` job in
+every PR that touches Rust files via the `cargo-deny` gate job (it
+aggregates the `cargo-deny work` job, which runs `cargo deny check
+--all-features`) in
 [`.github/workflows/rust-ci.yml`](../../.github/workflows/rust-ci.yml).
 See [ADR-0917](../adr/0917-cargo-deny-supply-chain-policy.md) for the
 decision rationale and alternatives considered.
@@ -14,9 +16,9 @@ decision rationale and alternatives considered.
 
 | Check | Behaviour | Failure mode |
 |---|---|---|
-| `licenses` | Allowlist of permissive SPDX identifiers (`Apache-2.0`, `BSD-3-Clause`, `ISC`, `MIT`, `Unicode-3.0`, `Unlicense`, plus `Apache-2.0 WITH LLVM-exception`). Per-crate exceptions: `cbindgen` (MPL-2.0, build-time only). Private (`publish = false`) workspace crates are skipped. | Fails the gate. |
+| `licenses` | Allowlist of permissive SPDX identifiers (`Apache-2.0`, `BSD-2-Clause-Patent`, `BSD-3-Clause`, `ISC`, `MIT`, `Unicode-3.0`, `Unlicense`, plus `Apache-2.0 WITH LLVM-exception`). Per-crate exceptions: `cbindgen` (MPL-2.0, build-time only). Private (`publish = false`) workspace crates are skipped. | Fails the gate. |
 | `bans` | Denies `openssl-sys` and `native-tls` (rustls preferred). Denies wildcard (`*`) version requirements. Surfaces duplicate-version transitives as warnings. | `deny` entries fail the gate; duplicates are warn-only. |
-| `advisories` | Pulls the RustSec advisory DB. Schema v2: vulnerabilities and unsound findings fail. Yanked and unmaintained crates warn-only. | Vulnerability findings fail the gate. |
+| `advisories` | Pulls the RustSec advisory DB. Schema v2: vulnerabilities fail. Yanked crates warn; unmaintained advisories apply to workspace crates only. | Vulnerability findings fail the gate. |
 | `sources` | Only `crates.io` allowed. Unknown registries and unknown git sources are denied. | Fails the gate. |
 
 ## Running locally
@@ -41,10 +43,8 @@ Expected output on a clean tree:
 advisories ok, bans ok, licenses ok, sources ok
 ```
 
-with up to three duplicate-version warnings (warn-only):
-`linux-raw-sys`, `rustix`, `windows-sys` — all transitive through
-`bindgen`/`cbindgen`. These are tracked under ADR-0917 and do not
-gate the merge.
+Duplicate-version findings (`multiple-versions = "warn"` in `deny.toml`) are
+warnings and do not gate the merge.
 
 ## Adding a dependency that trips the gate
 
@@ -68,7 +68,7 @@ The three most common cases:
 
 ## Notes on the workspace's own licenses
 
-- `vmafx-sys` and `vmafx-tad` both inherit the workspace
+- `vmafx-sys`, `vmafx` and `vmafx-tad` inherit the workspace
   `license = "BSD-2-Clause-Patent"` — a valid SPDX identifier that
   cargo-deny's parser recognises and that `deny.toml` allows
   (ADR-1036), so they pass the license check directly.

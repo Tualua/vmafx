@@ -107,7 +107,7 @@ not pinned and will diverge over time.
 ## CI integration
 
 There is no `release.yml` and no `cross-backend.yml`. The publishing pipeline
-is four workflows plus one job:
+is four workflows:
 
 | Workflow / job | Trigger | Produces | Builds in a container? |
 |---|---|---|---|
@@ -115,7 +115,6 @@ is four workflows plus one job:
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
 | `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the Debian 13 `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
-| `cross-backend` job in `.github/workflows/tests-and-quality-gates.yml` | Disabled (`if: false`, awaits self-hosted GPU runner) | backend-parity report (a gate, not an artifact) | **No** — `ubuntu-latest` host toolchain |
 
 Consequences:
 
@@ -208,7 +207,7 @@ the release pipeline, not malicious evasion.
 
 | Job / Script | What it asserts |
 |---|---|
-| `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it; the release rehearsal then runs the whole release build in `release-build` and verifies its stamp |
+| `Dev Container Build` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it; the release rehearsal then runs the whole release build in `release-build` and verifies its stamp |
 | `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed), including that `build-deps` and `release-build` write identical markers and that `release-build` roots at `RELEASE_BUILDER_BASE` |
 | `build-artifacts` in `supply-chain.yml` | runs `--assert`, then stamps `artifacts/` with `--stamp`, both inside the `release-build` stage it builds from the release tag (ADR-1346, ADR-1354) |
 | `verify-native-artifacts` in `supply-chain.yml` | verifies downloaded `artifacts/` with `scripts/ci/check-container-build.sh --verify`, which rejects a missing, empty, malformed or symlinked stamp; then runs the bundle on `ubuntu-24.04` and on the release runtime image |
@@ -264,7 +263,7 @@ executables: two of three full builds on a workstation failed, once with
 `corrupted size vs. prev_size` inside `lto1`. The release ships only
 `libvmaf.so*` and `vmaf`, other CI jobs build and run the tests, and the
 `docker/` release images already configure `-Denable_tests=false` on the same
-base. None of 22 builds without the tests failed.
+base.
 
 **What is pinned and what is not.** The base image is pinned by digest through
 `build-config.env`, and `patchelf` is pinned to Debian 13's package version
@@ -329,7 +328,7 @@ bash scripts/ci/tests/test-check-container-build.sh
 - [ADR-1346](../adr/1346-hosted-slim-container-release-build.md) — native release build on a hosted runner inside a `dev/Containerfile` stage
 - [ADR-1178](../adr/1178-dev-container-image-publish.md) — dev container publication and the former self-hosted release build (superseded by ADR-1346)
 - [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) — policy decision and rationale
-- [ADR-0496](../adr/0496-prefer-dev-mcp-container-rule.md) — default-to-container project rule (CLAUDE.md §15)
+- [ADR-0496](../adr/0496-prefer-dev-mcp-container-rule.md) — default-to-container project rule (now agent hard rule 12 in [agent-hard-rules.md](agent-hard-rules.md))
 - [ADR-0451](../adr/0451-local-dev-mcp-container.md) — initial dev-MCP container decision
 - [docs/development/dev-mcp.md](dev-mcp.md) — container operator guide
 - [docs/development/docker-production.md](docker-production.md) — production image reference

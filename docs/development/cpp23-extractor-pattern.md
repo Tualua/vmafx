@@ -91,14 +91,19 @@ epic #1241 (see `core/AGENTS.md`, invariant 7).
 Remove the `.c` entry from `libvmaf_sources` and add a comment pointing to
 the new lib. Add `foo_cpp23_lib.extract_all_objects(recursive: true)` to the
 `objects:` list of the final `library()` target (alongside
-`metadata_handler_cpp20_lib` and `fex_ctx_vector_cpp23_lib`).
+`metadata_handler_cpp20_lib` and `log_cpp23_lib`).
+
+The isolated library is the pattern most conversions use. The simpler
+alternative is to list `src_dir + 'foo.cpp'` directly in `libvmaf_sources`,
+which is what `fex_ctx_vector.cpp` and `thread_locale.cpp` do.
 
 ### 5. Update `core/test/meson.build`
 
 Any test executable that directly compiles `../src/foo.c` must be updated to
 `../src/foo.cpp`. Meson handles mixed C/C++ `executable()` targets
 transparently — `metadata_handler.cpp` and `fex_ctx_vector.cpp` are both
-already compiled this way in `test_feature_extractor`.
+already compiled this way in `test_feature_extractor`
+(`core/test/meson.build`).
 
 ### 6. Exception policy
 

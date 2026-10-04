@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD013 -->
 # CPU score drift — bisect triage (2026-05-02)
 
+!!! note "Snapshot, 2026-05-02"
+    Dated record, not maintained. Conclusion (inherited upstream motion edge-mirror fix, snapshots regenerated) is recorded in the closed row of [`state.md`](../state.md).
+
 **Status:** investigation only, no fix.
 **Severity:** sub-golden-tolerance (places=2 = 0.005, drift = 1.07e-3). Not a CI blocker.
 **Author:** bisect run via `/bisect-regression`, 2026-05-02.

@@ -1,5 +1,8 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # Netflix-Grade Encoding Pipeline Roadmap — 2026-05-19
+
+!!! note "Snapshot, 2026-05-19"
+    Dated record, not maintained. Planning record; per-item decisions live in ADR-0613 to ADR-0618. Effort estimates are not maintained.
 
 Planning-only document. No implementation decisions are final until the user
 selects an item and the corresponding ADR is accepted.

@@ -6,6 +6,9 @@
 
 # CUDA Profile — 2026-05-03 (Post-Sprint Rerun)
 
+!!! note "Snapshot, 2026-05-03"
+    Dated record, not maintained. Measurements predate later CUDA twin work (ADR-1379 onward); re-profile before citing.
+
 **Status**: Post-merge measurement for PR #312 (drain_batch) and PR #320
 (psnr_hvs async + pinned).
 **Build**: `9847348f` (`release`, `-g -fno-omit-frame-pointer`, CUDA 13.2, RTX 4090,
