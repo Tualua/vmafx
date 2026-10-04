@@ -78,8 +78,8 @@ Two device-side controls reduce the remaining deviation:
   `integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02`.
 - `aim_score` and `adm3_score` come from the device
   ([ADR-1362](../../adr/1362-sycl-integer-adm-aim-device-pass.md)), and the twin
-  accepts `adm_skip_aim`. The HIP twin still has no AIM pass
-  (`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05`).
+  accepts `adm_skip_aim`. The HIP twin has one too since
+  [ADR-1525](../../adr/1525-adm-hip-aim-device-pass.md).
 - Every ADM output equals the CPU's, except with a non-integer
   `adm_enhn_gain_limit`; the shipped models use 1.0 or 100.
 - `float_adm_sycl` keeps the CPU's division and takes its CSF weights, region

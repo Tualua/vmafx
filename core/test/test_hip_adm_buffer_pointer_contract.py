@@ -20,8 +20,13 @@ LAUNCHERS = {
     "adm_csf_device_hip": "s->func_adm_csf_kernel_1_4",
     "i4_adm_csf_device_hip": "s->func_i4_adm_csf_kernel_1_4",
     "i4_adm_cm_device_hip": "s->func_i4_adm_cm_line_kernel",
-    "adm_cm_device_hip": "s->func_adm_cm_line_kernel_8",
+    # The scale-0 DLM and AIM launches share one launcher (ADR-1525), which
+    # takes the kernel handle as a parameter.
+    "adm_cm_s0_launch_kernel": "hipModuleLaunchKernel(",
+    "i4_adm_cm_aim_device_hip": "s->func_i4_adm_cm_aim_line_kernel",
 }
+# Launch arrays whose first element is the device buffer: one per launcher.
+BUFFER_ARGUMENT_LAUNCHES = len(LAUNCHERS)
 
 
 def _strip_comments(source: str) -> str:
@@ -191,7 +196,12 @@ def _validate_kernel_signatures(sources: dict[str, str], failures: list[str]) ->
         if re.fullmatch(pointer_pattern, first_parameter) is None:
             failures.append(f"{macro_name}: first argument is not the device buffer pointer")
 
-    for kernel in ("i4_adm_cm_line_kernel", "adm_cm_line_kernel_8"):
+    for kernel in (
+        "i4_adm_cm_line_kernel",
+        "adm_cm_line_kernel_8",
+        "adm_cm_aim_line_kernel_4",
+        "i4_adm_cm_aim_line_kernel",
+    ):
         first_parameter = _first_parameter(_function(sources["cm"], kernel), kernel)
         if re.fullmatch(pointer_pattern, first_parameter) is None:
             failures.append(f"{kernel}: first argument is not the device buffer pointer")
@@ -380,7 +390,7 @@ class HipAdmBufferPointerContractTest(unittest.TestCase):
             r"void\s*\*\s*args\s*\[\s*\]\s*=\s*\{\s*"
             r"\(\s*void\s*\*\s*\)\s*&\s*s\s*->\s*buf_dev\s*,",
             "void *args[] = { (void*) &s->buf_dev,",
-            count=4,
+            count=BUFFER_ARGUMENT_LAUNCHES,
         )
         sources["host"] = _sub_exact(
             sources["host"],

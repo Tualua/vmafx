@@ -17,6 +17,14 @@ these things are the CPU's own and not a copy of them:
   ``i4_adm_cm_result()`` / ``adm_csf_den_result()`` /
   ``i4_adm_csf_den_result()``, including the seeds ``adm_skip_scale0`` leaves.
 
+The AIM contrast measure (ADR-1525) follows the same rules: its kernels take
+every rounding shift from the CPU's ``adm_cm_ctx_init()`` /
+``i4_adm_cm_ctx_init()`` (no device logarithm), its scales are concluded by
+``adm_cm_result()`` / ``i4_adm_cm_result()`` with noise weight 0 as
+integer_adm.c's measure_aim pass, its accumulators share the frame's clear,
+and the twin claims ``aim`` / ``adm3`` and carries the HIP flag only because
+of that.
+
 It also pins that a frame clears the result accumulators after its upload and
 ahead of its kernels: queued ahead of the upload, the clear is lost in the
 first context of a process that needs larger planes than the contexts before
@@ -38,6 +46,7 @@ FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 
 HOST = "hip/integer_adm_hip.c"
 DEN_KERNEL = "hip/integer_adm/adm_csf_den.hip"
+CM_KERNEL = "hip/integer_adm/adm_cm.hip"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 CPU_HEADER_INCLUDE = '#include "integer_adm_kernels.h"'
@@ -48,8 +57,10 @@ LOCAL_COPY = re.compile(
     re.M,
 )
 CPU_RESULTS = (
-    "adm_cm_result(&c, &bd, accum, s->adm_noise_weight, s->adm_p_norm)",
-    "i4_adm_cm_result(&c, &bd, accum, s->adm_noise_weight, s->adm_p_norm)",
+    # The noise weight is the option's for the DLM measure and 0 for the AIM
+    # measure (ADR-1525), as integer_adm.c passes them.
+    "adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
+    "i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
     "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
     "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
 )
@@ -91,7 +102,10 @@ def _calls(flat: str, call: str) -> int:
 
 
 def _sources() -> dict[str, str]:
-    return {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in (HOST, DEN_KERNEL)}
+    return {
+        name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
+        for name in (HOST, DEN_KERNEL, CM_KERNEL)
+    }
 
 
 def _host_failures(sources: dict[str, str]) -> list[str]:
@@ -156,8 +170,62 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+AIM_CONCLUSION = "(int)scale, 0.0);"
+AIM_CONTEXTS = (
+    "adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist",
+    "i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist",
+)
+# The scale-0 context feeds the result and the shared DLM / AIM launch; the
+# scales 1-3 context the result and the AIM launch.
+AIM_CONTEXT_USES = 2
+AIM_RESULT_SLOTS = "#define RES_BUFFER_SIZE (RES_SLOTS_PER_TERM * 3)"
+AIM_KERNELS = ("adm_cm_aim_line_kernel_body", "i4_adm_cm_aim_line_kernel")
+AIM_CLAIMS = ('"VMAF_integer_feature_aim_score"', '"VMAF_integer_feature_adm3_score"')
+HIP_FLAG = ".flags = VMAF_FEATURE_EXTRACTOR_HIP,"
+PROVIDED = "static const char *provided_features[] = {"
+
+
+def _aim_body(code: str, name: str) -> str:
+    """From the definition of ``name`` to the next top-level closing brace."""
+    start = code.find(name + "(")
+    if start < 0:
+        return ""
+    end = code.find("\n}\n", start)
+    return code[start:end] if end > 0 else code[start:]
+
+
+def _aim_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    code = _code(sources[HOST])
+    flat = _flat(sources[HOST])
+    if _calls(flat, AIM_CONCLUSION) != 1:
+        failures.append(f"{HOST}: the AIM scales are no longer concluded with noise weight 0")
+    for call in AIM_CONTEXTS:
+        if _calls(flat, call) < AIM_CONTEXT_USES:
+            failures.append(
+                f"{HOST}: {call.split('(')[0]}() no longer gives the AIM launch its shifts"
+            )
+    if AIM_RESULT_SLOTS not in code:
+        failures.append(f"{HOST}: the AIM accumulators are no longer part of the frame's results")
+    start = code.find(PROVIDED)
+    provided = code[start : code.find("};", start)] if start >= 0 else ""
+    claims = all(claim in provided for claim in AIM_CLAIMS)
+    if claims != (HIP_FLAG in code):
+        failures.append(f"{HOST}: the HIP flag and the aim / adm3 claim must go together")
+    if not claims:
+        failures.append(f"{HOST}: aim / adm3 are no longer claimed")
+    cm = _code(sources[CM_KERNEL])
+    for kernel in AIM_KERNELS:
+        body = _aim_body(cm, kernel)
+        if not body:
+            failures.append(f"{CM_KERNEL}: {kernel} is missing")
+        elif DEVICE_LOG2.search(body):
+            failures.append(f"{CM_KERNEL}: {kernel} derives a rounding shift on the device")
+    return failures
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
-    return _host_failures(sources) + _kernel_failures(sources)
+    return _host_failures(sources) + _kernel_failures(sources) + _aim_failures(sources)
 
 
 class AdmHipExactContract(unittest.TestCase):
@@ -266,6 +334,42 @@ class AdmHipExactContract(unittest.TestCase):
         without = sources[HOST].replace(clear.group(0), "hipError_t hip_err = hipSuccess;", 1)
         sources[HOST] = without.replace(upload, clear.group(0) + "\n    " + upload, 1)
         self.assert_detected(sources, "no longer after the upload")
+
+    def test_aim_noise_floor_is_detected(self) -> None:
+        sources = _sources()
+        self.assertIn(AIM_CONCLUSION, sources[HOST])
+        sources[HOST] = sources[HOST].replace(
+            AIM_CONCLUSION, "(int)scale, s->adm_noise_weight);", 1
+        )
+        self.assert_detected(sources, "noise weight 0")
+
+    def test_aim_device_shift_is_detected(self) -> None:
+        sources = _sources()
+        anchor = "const int band = (int)blockIdx.z;\n    const int i = start_row"
+        self.assertIn(anchor, sources[CM_KERNEL])
+        sources[CM_KERNEL] = sources[CM_KERNEL].replace(
+            anchor, "shifts.shift_cub = (uint32_t)ceilf(log2f((float)w));\n    " + anchor, 1
+        )
+        self.assert_detected(sources, "i4_adm_cm_aim_line_kernel derives a rounding shift")
+
+    def test_aim_outside_the_frame_results_is_detected(self) -> None:
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace(
+            AIM_RESULT_SLOTS, "#define RES_BUFFER_SIZE (RES_SLOTS_PER_TERM * 2)", 1
+        )
+        self.assert_detected(sources, "no longer part of the frame's results")
+
+    def test_flag_without_aim_is_detected(self) -> None:
+        # A twin that routes the default model's ADM to itself must emit all of it.
+        sources = _sources()
+        start = sources[HOST].find(PROVIDED)
+        self.assertGreaterEqual(start, 0)
+        head, tail = sources[HOST][:start], sources[HOST][start:]
+        for claim in AIM_CLAIMS:
+            self.assertIn(claim + ",", tail)
+            tail = tail.replace(claim + ",", "", 1)
+        sources[HOST] = head + tail
+        self.assert_detected(sources, "must go together")
 
 
 if __name__ == "__main__":

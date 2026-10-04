@@ -70,18 +70,17 @@ COMMON_KEYS = tuple(
     )
 )
 
-#: Emitted only where the twin has an AIM contrast-measure device pass.
-#: CUDA (ADR-0746) and SYCL (ADR-1362) have one; HIP does not, and correctly
-#: leaves both features out of ``provided_features[]`` so the ADR-0530 name
-#: lookup routes them to the CPU twin instead of fabricating a score. Tracked
-#: as T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md.
+#: The AIM contrast measure's outputs. Every twin listed below computes them
+#: on its device: CUDA (ADR-0746), SYCL (ADR-1362) and HIP (ADR-1525). A twin
+#: without that pass must leave both out of ``provided_features[]`` instead of
+#: fabricating them, and does not belong in BACKENDS.
 AIM_KEYS = tuple(base + NAME_SUFFIX for base in ("integer_aim", "integer_adm3"))
 
-#: (extractor name, CLI backend flags, does this twin emit aim/adm3?)
+#: (backend, extractor name, CLI backend flags)
 BACKENDS = (
-    ("cuda", "adm_cuda", ["--backend", "cuda"], True),
-    ("sycl", "adm_sycl", ["--backend", "sycl"], True),
-    ("hip", "adm_hip", ["--backend", "hip"], False),
+    ("cuda", "adm_cuda", ["--backend", "cuda"]),
+    ("sycl", "adm_sycl", ["--backend", "sycl"]),
+    ("hip", "adm_hip", ["--backend", "hip"]),
 )
 
 #: ADR-0214 cross-backend gate: places=4.
@@ -150,13 +149,12 @@ class GpuDefaultModelAdmKeyTest(unittest.TestCase):
             )
 
     def test_gpu_twins_match_the_cpu_reference_under_the_models_adm_options(self):
-        for name, fex, flags, emits_aim in BACKENDS:
+        for name, fex, flags in BACKENDS:
             with self.subTest(backend=name):
                 gpu = _run(f"{fex}={ADM_OPTS}", flags)
                 if gpu is None:
                     self.skipTest(f"{name} backend unavailable on this machine")
-                expected = COMMON_KEYS + (AIM_KEYS if emits_aim else ())
-                for key in expected:
+                for key in COMMON_KEYS + AIM_KEYS:
                     self.assertIn(
                         key,
                         gpu,
@@ -170,26 +168,6 @@ class GpuDefaultModelAdmKeyTest(unittest.TestCase):
                         TOLERANCE,
                         f"{fex} {key}: cpu={self.cpu[key]!r} gpu={gpu[key]!r} "
                         f"delta={delta:.3e} exceeds the places=4 gate",
-                    )
-
-    def test_twins_without_an_aim_pass_do_not_fabricate_one(self):
-        # A twin with no AIM device pass must leave aim/adm3 out of
-        # provided_features[] so the CPU twin answers instead. Emitting them
-        # from a hard-coded stand-in would look correct here and feed the model
-        # a fabricated score.
-        for name, fex, flags, emits_aim in BACKENDS:
-            if emits_aim:
-                continue
-            with self.subTest(backend=name):
-                gpu = _run(f"{fex}={ADM_OPTS}", flags)
-                if gpu is None:
-                    self.skipTest(f"{name} backend unavailable on this machine")
-                for key in AIM_KEYS:
-                    self.assertNotIn(
-                        key,
-                        gpu,
-                        f"{fex} emitted {key!r} but has no AIM contrast-measure "
-                        "device pass; the value cannot be real",
                     )
 
 

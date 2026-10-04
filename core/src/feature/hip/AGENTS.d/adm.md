@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/hip/integer_adm_hip.c
   - core/src/feature/hip/integer_adm_hip.h
+  - core/src/feature/hip/integer_adm/adm_cm.hip
   - core/src/feature/hip/integer_adm/adm_csf.hip
   - core/src/feature/hip/integer_adm/adm_dwt2.hip
 invariant: Integer ADM maintains exact CPU parity, staging buffer rules, int64 vertical sums, and single reflection clamping.
@@ -51,12 +52,32 @@ reads a device copy of the scale-0 luma plane per side (ADR-1211,
 PR #1370), since ADR-1408 the context's shared frame
 (`adm_hip_stage_luma()`); rows are packed, so the kernel stride is `w`. The
 ADR-1154 deferral is over: do not re-add `should_fail` to the HIP ADM
-tests for it. `.flags` is still `0`, so model-driven dispatch under
-`--backend hip` keeps the CPU `adm`; the twin runs when named
-(`--feature adm_hip`). It has no AIM pass: `adm3_score` / `aim_score`
-stay out of `provided_features[]`
-(T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05). Float ADM
-(`float_adm_hip.c`) has its own staging.
+tests for it. Float ADM (`float_adm_hip.c`) has its own staging.
+
+## AIM pass and dispatch (ADR-1525)
+
+- AIM kernels: `adm_cm_aim_line_kernel_4` (scale 0) and
+  `i4_adm_cm_aim_line_kernel` (scales 1-3) in `adm_cm.hip`, the CUDA
+  ADR-0746 kernels ported. Signal csf(a); threshold the 3x3 |csf(r)| / 30,
+  centre |csf(r)| / 15, recomputed from the bands. A change to
+  `adm_cm_ctx_init()` / `i4_adm_cm_ctx_init()` with `measure_aim` or to
+  `adm_csf_cols()` / `i4_adm_csf_cols()` in `integer_adm_kernels.h` changes
+  these kernels in the same PR.
+- Every AIM shift comes from the CPU's context on the host
+  (`adm_cm_s0_launch()`, `i4_adm_cm_aim_device_hip()`), the scale-0 DLM
+  launch included; no AIM kernel derives a shift with `log2f`
+  (`test_hip_adm_exact_contract`).
+- AIM accumulators = third block of the result buffer
+  (`RES_BUFFER_SIZE = RES_SLOTS_PER_TERM * 3`), cleared and read back with
+  the frame. Host concludes each AIM scale with `adm_cm_result()` /
+  `i4_adm_cm_result()` at noise weight 0, skips scale 0 under
+  `adm_skip_scale0`, reports 0 under `adm_skip_aim`.
+- `.flags = VMAF_FEATURE_EXTRACTOR_HIP` and the `aim` / `adm3` claim go
+  together; never flag a twin that cannot emit every feature the default
+  model reads from it.
+- Every signed right shift of `adm_cm.hip` goes through `adm_asr()` (sign
+  fill on unsigned bits); a bare `>>` on a signed value is a
+  `bugprone-signed-bitwise` finding and the file is at 0.
 
 ## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
 
@@ -67,8 +88,8 @@ stay out of `provided_features[]`
   Never bare `1u << (x - 1)`.
 - Scale-0 CM kernel (`adm_cm_line_kernel_body`): `x + 1` -> `min(.., w - 1)`,
   `y + 1` -> `min(.., h - 1)`; `x - 1`, `y - 1` -> `abs()` (ADR-1210 rule).
-- HIP twin emits no `adm3_score` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05).
-  Shared CUDA/HIP tests skip `adm3` under `HAVE_HIP`.
+- HIP twin emits `adm3_score` / `aim_score` since ADR-1525; shared CUDA/HIP
+  tests request `adm3` in both arms.
 - HIP ADM tests run without `should_fail` since ADR-1211 staging; all pass on
   gfx1036. Do not re-add `should_fail` to hide a failure.
 

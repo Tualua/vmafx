@@ -12,7 +12,7 @@ no longer holds, what replaced it. The current behaviour is on the
 
 A twin named with `--feature` runs on the thread that calls
 `vmaf_read_pictures()`, with or without `--threads`. Until this date
-`adm_hip` and `float_vif_hip`, the two twins `--backend hip` does not select
+`adm_hip` and `float_vif_hip`, then the two twins `--backend hip` did not select
 for their CPU names, failed with `problem flushing context` whenever
 `--threads` was given, because the worker pool tried to run them.
 

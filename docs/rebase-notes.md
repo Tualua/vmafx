@@ -249,6 +249,24 @@ no tiny-model path, so a sync does not touch these hunks.
   `"unknown"` by name (`codec_block_slot()`); do not restore the last-slot
   default.
 - `core/tools/vmaf.cpp`: `apply_tiny_codec()` requires `--tiny-crf`.
+## `adm_hip` computes AIM on the device and is dispatched (ADR-1525, 2026-10-04)
+
+`fix/adm-hip-aim-dispatch`. Fork-local HIP twin; the CPU `integer_adm.c` is
+unchanged.
+
+- `core/src/feature/hip/integer_adm/adm_cm.hip` gains
+  `adm_cm_aim_line_kernel_4` and `i4_adm_cm_aim_line_kernel` (ports of the
+  CUDA ADR-0746 kernels) and shared helpers (`i4_decouple()` /
+  `s0_decouple()`, `i4_csf()` / `s0_csf()`, `cm_cube()`, `adm_asr()`); the DLM
+  kernels use the same helpers with unchanged values.
+- `integer_adm_hip.c`: `RES_BUFFER_SIZE` 24 to 36 (DLM, denominator, AIM),
+  `adm_skip_aim`, the scale-0 launch shares `adm_cm_s0_launch()` (shifts from
+  the CPU's `adm_cm_ctx_init()`), `aim` / `adm3` claimed and
+  `.flags = VMAF_FEATURE_EXTRACTOR_HIP`. `AdmBufferHip` gains `adm_aim_cm[4]`
+  and `integer_adm_hip.h` the `AdmCmShiftsHip` kernel argument.
+- An upstream change to the CPU CM (`adm_cm_ctx_init()` /
+  `i4_adm_cm_ctx_init()` with `measure_aim`, `adm_csf_cols()`) changes these
+  kernels in the same PR; `test_hip_adm_exact` holds every output to `==`.
 
 ## Release files carry their notices (ADR-1513, 2026-10-04)
 

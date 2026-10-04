@@ -67,8 +67,10 @@
 /* Constants                                                            */
 /* ------------------------------------------------------------------ */
 
-/* 4 scales x 3 bands, CM accumulators then CSF-denominator accumulators. */
-#define RES_BUFFER_SIZE ((size_t)4 * 3 * 2)
+/* 4 scales x 3 bands per accumulator, in this order: the DLM contrast
+ * measure, the CSF denominator and the AIM contrast measure (ADR-1525). */
+#define RES_SLOTS_PER_TERM ((size_t)4 * 3)
+#define RES_BUFFER_SIZE (RES_SLOTS_PER_TERM * 3)
 
 /* ------------------------------------------------------------------ */
 /* Internal state                                                       */
@@ -87,6 +89,7 @@ typedef struct AdmStateHip {
     double adm_noise_weight;
     double adm_min_val;   /* ADR-0487: minimum score floor (mirrors CPU + CUDA option). */
     bool adm_skip_scale0; /* host-side suppression: scale-0 excluded from score when set */
+    bool adm_skip_aim;    /* no AIM kernels and an AIM numerator of 0, as the CPU (ADR-1525) */
     double adm_dlm_weight;
     double adm_p_norm;
     float rfactor[12];
@@ -121,6 +124,10 @@ typedef struct AdmStateHip {
     hipFunction_t func_adm_cm_reduce_line_kernel_4;
     hipFunction_t func_adm_cm_line_kernel_8;
     hipFunction_t func_i4_adm_cm_line_kernel;
+
+    /* AIM CM kernel handles (ADR-1525) */
+    hipFunction_t func_adm_cm_aim_line_kernel_4;
+    hipFunction_t func_i4_adm_cm_aim_line_kernel;
 
     /* ADR-0759: device copy of `buf`. The two CSF and the two CM compute
      * kernels take `const AdmBufferHip *` and read their band pointers from
@@ -209,7 +216,7 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
  * initialisers only take addresses inside the buffer they are given, so an
  * empty one stands in for the host planes this twin does not have. */
 static float adm_hip_cm_scale_result(const AdmStateHip *s, const int64_t accum[3], int w, int h,
-                                     int scale)
+                                     int scale, double noise_weight)
 {
     AdmBuffer no_planes;
     memset(&no_planes, 0, sizeof(no_planes));
@@ -219,13 +226,13 @@ static float adm_hip_cm_scale_result(const AdmStateHip *s, const int64_t accum[3
         adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist,
                         s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
                         s->adm_csf_diag_scale, false);
-        return adm_cm_result(&c, &bd, accum, s->adm_noise_weight, s->adm_p_norm);
+        return adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
     }
     I4AdmCmCtx c;
     i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist,
                        s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
                        s->adm_csf_diag_scale, false);
-    return i4_adm_cm_result(&c, &bd, accum, s->adm_noise_weight, s->adm_p_norm);
+    return i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
 }
 
 /* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
@@ -260,7 +267,7 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
                                  double *num, double *den)
 {
     const int64_t *adm_cm = (const int64_t *)s->buf.results_host;
-    const uint64_t *adm_csf = &((const uint64_t *)s->buf.results_host)[RES_BUFFER_SIZE / 2];
+    const uint64_t *adm_csf = &((const uint64_t *)s->buf.results_host)[RES_SLOTS_PER_TERM];
 
     *num = 0;
     *den = 0;
@@ -276,7 +283,8 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
         float num_scale = 0.0f;
         float den_scale = (float)1e-10;
         if (scale != 0u || !s->adm_skip_scale0) {
-            num_scale = adm_hip_cm_scale_result(s, &adm_cm[band0], (int)w, (int)h, (int)scale);
+            num_scale = adm_hip_cm_scale_result(s, &adm_cm[band0], (int)w, (int)h, (int)scale,
+                                                s->adm_noise_weight);
             den_scale =
                 adm_hip_csf_den_scale_result(s, &adm_csf[band0], (int)w, (int)h, (int)scale);
         }
@@ -289,66 +297,116 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
     }
 }
 
-/* AIM / adm3 are intentionally absent: this twin has no second CM pass with
- * decouple_a / decouple_r swapped. Omitting both names routes them to CPU via
- * ADR-0530; fabricating them here would be wrong. See
- * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05. */
-static int write_scores(const write_score_parameters_adm_hip *params)
+/* AIM numerator over the scales that count, from the full-frame size `w` x
+ * `h` (integer_adm.c::integer_compute_adm): each scale concluded with noise
+ * weight 0, as the CPU's measure_aim pass, and scale 0 left out under
+ * adm_skip_scale0, whose CPU pass returns before the AIM pass. */
+static double adm_hip_aim_num(const AdmStateHip *s, unsigned w, unsigned h)
 {
-    const AdmStateHip *s = params->s;
-    double scores[8];
+    const int64_t *adm_aim_cm = &((const int64_t *)s->buf.results_host)[RES_SLOTS_PER_TERM * 2u];
+
+    double aim_num = 0.0;
+    for (unsigned scale = 0; scale < 4; ++scale) {
+        w = (w + 1) / 2;
+        h = (h + 1) / 2;
+        if (scale == 0u && s->adm_skip_scale0)
+            continue;
+        aim_num += adm_hip_cm_scale_result(s, &adm_aim_cm[(size_t)scale * 3u], (int)w, (int)h,
+                                           (int)scale, 0.0);
+    }
+    return aim_num;
+}
+
+/* The frame's DLM and AIM ratios and their blend, adm3 (ADR-1525). */
+typedef struct AdmHipFrameScores {
+    double scores[8]; /* per scale: [2 * s] numerator, [2 * s + 1] denominator */
     double num;
     double den;
-
-    adm_hip_scale_scores(s, params->w, params->h, scores, &num, &den);
-
-    /* CPU parity (integer_adm.c::integer_compute_adm): the precision floor
-     * scales with the FULL-FRAME area, not the scale-3 area the per-scale
-     * loop ends on. */
-    const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
-    int err = vmaf_adm_floor_pair_named("integer_adm_hip", params->index, num, den, numden_limit,
-                                        &num, &den);
-    if (err)
-        return err;
-
-    /* ADR-0487 clamps adm3 only: the CPU reference emits
-     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
-     * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    const double aggregate_pair[2] = {num, den};
-    double score = 0.0;
-    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
-    if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "integer_adm_hip: undefined or non-finite aggregate at frame %u "
-                 "(num=%g den=%g)\n",
-                 params->index, num, den);
-        return err;
-    }
-
+    double adm2;
+    double aim;
+    double adm3;
     double scale_scores[4];
-    err = vmaf_adm_scale_ratios_named("integer_adm_hip", params->index, scores, 4u, scale_scores);
-    if (err)
-        return err;
-    VmafNamedScore values[16] = {
-        {"VMAF_integer_feature_adm2_score", score}, {"integer_adm_scale0", scale_scores[0]},
-        {"integer_adm_scale1", scale_scores[1]},    {"integer_adm_scale2", scale_scores[2]},
-        {"integer_adm_scale3", scale_scores[3]},
+} AdmHipFrameScores;
+
+static int emit_adm_scores(const write_score_parameters_adm_hip *params, const AdmHipFrameScores *f)
+{
+    const AdmStateHip *s = params->s;
+    VmafNamedScore values[18] = {
+        {"VMAF_integer_feature_adm2_score", f->adm2}, {"VMAF_integer_feature_aim_score", f->aim},
+        {"VMAF_integer_feature_adm3_score", f->adm3}, {"integer_adm_scale0", f->scale_scores[0]},
+        {"integer_adm_scale1", f->scale_scores[1]},   {"integer_adm_scale2", f->scale_scores[2]},
+        {"integer_adm_scale3", f->scale_scores[3]},
     };
-    size_t value_count = 5u;
+    size_t value_count = 7u;
     if (s->debug) {
         static const char *const debug_names[8] = {
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
             "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
             "integer_adm_num_scale3", "integer_adm_den_scale3",
         };
-        values[value_count++] = (VmafNamedScore){"integer_adm", score};
-        values[value_count++] = (VmafNamedScore){"integer_adm_num", num};
-        values[value_count++] = (VmafNamedScore){"integer_adm_den", den};
+        values[value_count++] = (VmafNamedScore){"integer_adm", f->adm2};
+        values[value_count++] = (VmafNamedScore){"integer_adm_num", f->num};
+        values[value_count++] = (VmafNamedScore){"integer_adm_den", f->den};
         for (size_t i = 0u; i < 8u; ++i)
-            values[value_count++] = (VmafNamedScore){debug_names[i], scores[i]};
+            values[value_count++] = (VmafNamedScore){debug_names[i], f->scores[i]};
     }
     return vmaf_feature_emit_finite_scores(params->feature_collector, s->feature_name_dict,
                                            "integer_adm_hip", values, value_count, params->index);
+}
+
+/* The DLM and AIM ratios of the frame, as integer_adm.c::adm_result_finalise()
+ * forms them: the numerator and denominator floored first, the AIM numerator
+ * over the floored denominator. */
+static int adm_hip_frame_ratios(const write_score_parameters_adm_hip *params, AdmHipFrameScores *f)
+{
+    const AdmStateHip *s = params->s;
+    adm_hip_scale_scores(s, params->w, params->h, f->scores, &f->num, &f->den);
+
+    /* CPU parity (integer_adm.c::integer_compute_adm): the precision floor
+     * scales with the FULL-FRAME area, not the scale-3 area the per-scale
+     * loop ends on. */
+    const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
+    int err = vmaf_adm_floor_pair_named("integer_adm_hip", params->index, f->num, f->den,
+                                        numden_limit, &f->num, &f->den);
+    if (err)
+        return err;
+
+    const double aim_num = s->adm_skip_aim ? 0.0 : adm_hip_aim_num(s, params->w, params->h);
+    const double aggregate_pairs[4] = {f->num, f->den, aim_num, f->den};
+    double ratios[2];
+    err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, ratios);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_hip: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g aim_num=%g)\n",
+                 params->index, f->num, f->den, aim_num);
+        return err;
+    }
+    f->adm2 = ratios[0];
+    f->aim = ratios[1];
+    return 0;
+}
+
+static int write_scores(const write_score_parameters_adm_hip *params)
+{
+    const AdmStateHip *s = params->s;
+    AdmHipFrameScores f;
+    int err = adm_hip_frame_ratios(params, &f);
+    if (err)
+        return err;
+
+    /* ADR-0487 clamps adm3 only: the CPU reference emits
+     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
+     * applies MAX(..., adm_min_val) to the adm3 expression alone). */
+    err = vmaf_adm3_score_named("integer_adm_hip", params->index, f.adm2, f.aim, 0,
+                                s->adm_dlm_weight, s->adm_min_val, &f.adm3);
+    if (err)
+        return err;
+    err =
+        vmaf_adm_scale_ratios_named("integer_adm_hip", params->index, f.scores, 4u, f.scale_scores);
+    if (err)
+        return err;
+    return emit_adm_scores(params, &f);
 }
 
 #endif /* HAVE_HIPCC */
@@ -388,13 +446,8 @@ static const VmafOption options_hip[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        /* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
-         * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
-         * twin does not emit (see write_scores). Dropping it from the table
-         * would make this twin emit `integer_adm2_...` where the CPU twin emits
-         * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
-         * lookup would miss. Same posture as the CPU reference, where
-         * adm_dlm_weight likewise has no arithmetic effect on adm2. */
+        /* Blends DLM and AIM into VMAF_integer_feature_adm3_score; no effect
+         * on adm2, as in the CPU reference. */
         .name = "adm_dlm_weight",
         .alias = "dlmw",
         .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
@@ -460,6 +513,13 @@ static const VmafOption options_hip[] = {
         .min = 0.0,
         .max = 1500.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_skip_aim",
+        .help = "skip the calculation of AIM",
+        .offset = offsetof(AdmStateHip, adm_skip_aim),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
     },
     {
         .name = "adm_skip_scale0",
@@ -707,6 +767,9 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, i
  * region and band (ADM_CSF_DEN_THREADS in adm_csf_den.hip). */
 #define ADM_HIP_CSF_DEN_THREADS 128u
 
+/* Threads of the scales 1-3 AIM kernel (aim_i4_threads in adm_cm.hip). */
+#define ADM_HIP_AIM_I4_THREADS 128u
+
 static int adm_csf_den_s123_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, int w, int h,
                                        int src_stride, hipStream_t c_stream)
 {
@@ -845,75 +908,153 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
     return 0;
 }
 
-/* Scale-0 cube and square shifts per band for a band `w` samples wide. */
-static void adm_cm_warp_shift(int w, WarpShiftHip *ws)
-{
-    const int fixed_shift[3] = {4, 4, 3};
-    const int32_t shift_xsq[3] = {29, 29, 30};
-    const int32_t add_shift_xsq[3] = {268435456, 268435456, 536870912};
+/* What the scale-0 DLM and AIM kernels share: the CM region of a w x h band
+ * and the rounding shifts of the CPU's adm_cm_ctx_init(), so the cube and
+ * the row fold use integer_adm.c's own values (ADR-1525). */
+typedef struct AdmCmS0LaunchHip {
+    int top;
+    int bottom;
+    int left;
+    int right;
+    int start_row;
+    int end_row;
+    int start_col;
+    int end_col;
+    int buffer_stride;
+    int buffer_h;
+    WarpShiftHip ws;
+    uint32_t shift_inner_accum;
+    uint32_t add_shift_inner_accum;
+} AdmCmS0LaunchHip;
 
+static AdmCmS0LaunchHip adm_cm_s0_launch(const AdmStateHip *s, int w, int h)
+{
+    AdmCmS0LaunchHip l;
+    l.left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
+    l.top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
+    l.right = w - l.left;
+    l.bottom = h - l.top;
+    l.start_col = (l.left > 0) ? l.left : 0;
+    l.end_col = (l.right < w) ? l.right : w;
+    l.start_row = (l.top > 0) ? l.top : 0;
+    l.end_row = (l.bottom < h) ? l.bottom : h;
+    l.buffer_stride = l.end_col - l.start_col;
+    l.buffer_h = l.end_row - l.start_row;
+
+    AdmBuffer no_planes;
+    memset(&no_planes, 0, sizeof(no_planes));
+    AdmCmCtx c;
+    adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist, s->adm_ref_display_height,
+                    s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale, false);
     for (int band = 0; band < 3; ++band) {
-        ws->shift_cub[band] = (uint32_t)ceilf(log2f((float)w));
-        ws->shift_cub[band] -= (uint32_t)fixed_shift[band];
-        ws->shift_sq[band] = (uint32_t)shift_xsq[band];
-        ws->add_shift_sq[band] = (uint32_t)add_shift_xsq[band];
-        ws->add_shift_cub[band] = adm_half_shift(ws->shift_cub[band]);
+        l.ws.shift_cub[band] = c.band[band].shift_cub;
+        l.ws.add_shift_cub[band] = c.band[band].add_shift_cub;
+        l.ws.shift_sq[band] = (uint32_t)c.band[band].shift_sq;
+        l.ws.add_shift_sq[band] = (uint32_t)c.band[band].add_shift_sq;
     }
+    l.shift_inner_accum = c.shift_inner_accum;
+    l.add_shift_inner_accum = c.add_shift_inner_accum;
+    return l;
 }
 
-static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
-                             int csf_a_stride, AdmFixedParametersHip *p, hipStream_t c_stream)
+/* One scale-0 CM launch, DLM (`aim` false) or AIM: the two kernels take the
+ * same arguments and launch shape, `rows_per_thread` rows per thread. */
+static int adm_cm_s0_launch_kernel(AdmStateHip *s, AdmBufferHip *buf, hipFunction_t kernel,
+                                   int rows_per_thread, int64_t *accum, int w, int h,
+                                   int src_stride, int csf_a_stride, AdmFixedParametersHip *p,
+                                   hipStream_t c_stream)
 {
     int scale = 0;
-    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int right = w - left;
-    int bottom = h - top;
-
-    int start_col = (left > 0) ? left : 0;
-    int end_col = (right < w) ? right : w;
-    int start_row = (top > 0) ? top : 0;
-    int end_row = (bottom < h) ? bottom : h;
-
-    int buffer_stride = end_col - start_col;
-    int buffer_h = end_row - start_row;
-
-    WarpShiftHip ws;
-    adm_cm_warp_shift(w, &ws);
-
-    uint32_t shift_inner_accum = (uint32_t)ceilf(log2f((float)h));
-    uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
-
-    /* fused CM + reduce kernel */
-    const int rows_per_thread = 8;
+    AdmCmS0LaunchHip l = adm_cm_s0_launch(s, w, h);
     const int BLOCKX = 32;
     const int BLOCKY = 4;
     void *args[] = {(void *)&s->buf_dev,
                     &h,
                     &w,
-                    &top,
-                    &bottom,
-                    &left,
-                    &right,
-                    &start_row,
-                    &end_row,
-                    &start_col,
-                    &end_col,
+                    &l.top,
+                    &l.bottom,
+                    &l.left,
+                    &l.right,
+                    &l.start_row,
+                    &l.end_row,
+                    &l.start_col,
+                    &l.end_col,
                     &src_stride,
                     &csf_a_stride,
-                    &buffer_h,
-                    &buffer_stride,
+                    &l.buffer_h,
+                    &l.buffer_stride,
                     (void *)&buf->tmp_accum,
                     p,
                     &scale,
-                    (void *)&buf->adm_cm[scale],
-                    &ws,
-                    &shift_inner_accum,
-                    &add_shift_inner_accum};
+                    (void *)&accum,
+                    &l.ws,
+                    &l.shift_inner_accum,
+                    &l.add_shift_inner_accum};
     const hipError_t rc = hipModuleLaunchKernel(
-        s->func_adm_cm_line_kernel_8, 1, (uint32_t)DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread),
-        3, (uint32_t)BLOCKX, (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
+        kernel, 1, (uint32_t)DIV_ROUND_UP(l.buffer_h, BLOCKY * rows_per_thread), 3,
+        (uint32_t)BLOCKX, (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
     return hip_rc(rc);
+}
+
+/* Scale-0 DLM contrast measure: the fused CM + reduce kernel. */
+static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
+                             int csf_a_stride, AdmFixedParametersHip *p, hipStream_t c_stream)
+{
+    return adm_cm_s0_launch_kernel(s, buf, s->func_adm_cm_line_kernel_8, 8, buf->adm_cm[0], w, h,
+                                   src_stride, csf_a_stride, p, c_stream);
+}
+
+/* Scale-0 AIM contrast measure (ADR-1525). */
+static int adm_cm_aim_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
+                                 int csf_a_stride, AdmFixedParametersHip *p, hipStream_t c_stream)
+{
+    return adm_cm_s0_launch_kernel(s, buf, s->func_adm_cm_aim_line_kernel_4, 4, buf->adm_aim_cm[0],
+                                   w, h, src_stride, csf_a_stride, p, c_stream);
+}
+
+/* The scales 1-3 AIM contrast measure (ADR-1525): one block per row of the
+ * region of i4_adm_cm_device_hip(), the shifts from the CPU's
+ * i4_adm_cm_ctx_init(). */
+static int i4_adm_cm_aim_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
+                                    int scale, AdmFixedParametersHip *p, hipStream_t c_stream)
+{
+    I4AdmCmRegionHip r = i4_adm_cm_region_hip(w, h);
+    if (r.buffer_h <= 0)
+        return 0;
+
+    AdmBuffer no_planes;
+    memset(&no_planes, 0, sizeof(no_planes));
+    I4AdmCmCtx c;
+    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist,
+                       s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
+                       s->adm_csf_diag_scale, false);
+    AdmCmShiftsHip shifts = {
+        .add_shift_sq = c.band.add_shift_sq,
+        .shift_sq = (uint32_t)c.band.shift_sq,
+        .add_shift_cub = c.band.add_shift_cub,
+        .shift_cub = c.band.shift_cub,
+        .add_shift_inner_accum = c.add_shift_inner_accum,
+        .shift_inner_accum = c.shift_inner_accum,
+    };
+
+    void *args[] = {(void *)&s->buf_dev,
+                    &h,
+                    &w,
+                    &r.top,
+                    &r.bottom,
+                    &r.left,
+                    &r.right,
+                    &r.start_row,
+                    &r.end_row,
+                    &r.start_col,
+                    &r.end_col,
+                    &src_stride,
+                    &scale,
+                    &shifts,
+                    (void *)&buf->adm_aim_cm[scale],
+                    p};
+    return hip_rc(hipModuleLaunchKernel(s->func_i4_adm_cm_aim_line_kernel, 1, (uint32_t)r.buffer_h,
+                                        3, ADM_HIP_AIM_I4_THREADS, 1, 1, 0, c_stream, args, NULL));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1030,7 +1171,10 @@ static int adm_hip_scale0(AdmStateHip *s, AdmBufferHip *buf, const VmafPicture *
     err = adm_csf_device_hip(s, buf, *w, *h, buf_stride, p, s->str);
     if (err)
         return err;
-    return adm_cm_device_hip(s, buf, *w, *h, buf_stride, buf_stride, p, s->str);
+    err = adm_cm_device_hip(s, buf, *w, *h, buf_stride, buf_stride, p, s->str);
+    if (err || s->adm_skip_aim)
+        return err;
+    return adm_cm_aim_device_hip(s, buf, *w, *h, buf_stride, buf_stride, p, s->str);
 }
 
 /* Scales 1-3: int32 DWT of the previous scale's approximation band, then CSF
@@ -1058,7 +1202,10 @@ static int adm_hip_scale123(AdmStateHip *s, AdmBufferHip *buf, int scale, int *w
     err = i4_adm_csf_device_hip(s, buf, scale, *w, *h, buf_stride, p, s->str);
     if (err)
         return err;
-    return i4_adm_cm_device_hip(s, buf, *w, *h, buf_stride, buf_stride, scale, p, s->str);
+    err = i4_adm_cm_device_hip(s, buf, *w, *h, buf_stride, buf_stride, scale, p, s->str);
+    if (err || s->adm_skip_aim)
+        return err;
+    return i4_adm_cm_aim_device_hip(s, buf, *w, *h, buf_stride, scale, p, s->str);
 }
 
 static int integer_compute_adm_hip(AdmStateHip *s, VmafHipSharedFrame *frame, VmafPicture *ref_pic,
@@ -1224,6 +1371,8 @@ static int adm_hip_get_functions(AdmStateHip *s)
         {s->adm_cm_module, &s->func_adm_cm_reduce_line_kernel_4, "adm_cm_reduce_line_kernel_4"},
         {s->adm_cm_module, &s->func_adm_cm_line_kernel_8, "adm_cm_line_kernel_8"},
         {s->adm_cm_module, &s->func_i4_adm_cm_line_kernel, "i4_adm_cm_line_kernel"},
+        {s->adm_cm_module, &s->func_adm_cm_aim_line_kernel_4, "adm_cm_aim_line_kernel_4"},
+        {s->adm_cm_module, &s->func_i4_adm_cm_aim_line_kernel, "i4_adm_cm_aim_line_kernel"},
     };
     for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
         const hipError_t hip_err =
@@ -1346,7 +1495,9 @@ static void adm_hip_slice_bands(AdmStateHip *s, unsigned h)
     s->buf.i4_csf_f.band_d = (int32_t *)(top + 2u * buf_sz_one);
 }
 
-/* Slice result accumulator */
+/* Slice the result accumulator: DLM CM, CSF denominator, AIM CM
+ * (RES_SLOTS_PER_TERM slots each, the order adm_hip_scale_scores() and
+ * adm_hip_aim_num() read them in). */
 static void adm_hip_slice_results(AdmStateHip *s)
 {
     const size_t cm_stride = 3u * sizeof(int64_t);
@@ -1358,6 +1509,10 @@ static void adm_hip_slice_results(AdmStateHip *s)
     res += 4u * cm_stride;
     for (int i = 0; i < 4; ++i) {
         s->buf.adm_csf_den[i] = (uint64_t *)(res + (size_t)i * csf_stride);
+    }
+    res += 4u * csf_stride;
+    for (int i = 0; i < 4; ++i) {
+        s->buf.adm_aim_cm[i] = (int64_t *)(res + (size_t)i * cm_stride);
     }
 }
 
@@ -1575,6 +1730,8 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
+                                          "VMAF_integer_feature_aim_score",
+                                          "VMAF_integer_feature_adm3_score",
                                           "integer_adm_scale0",
                                           "integer_adm_scale1",
                                           "integer_adm_scale2",
@@ -1610,14 +1767,9 @@ VmafFeatureExtractor vmaf_fex_integer_adm_hip = {
     .options = options_hip,
     .priv_size = sizeof(AdmStateHip),
     .provided_features = provided_features,
-    /*
-     * VMAF_FEATURE_EXTRACTOR_HIP flag bit is reserved (mirrors the
-     * pattern used by the CUDA twin which uses VMAF_FEATURE_EXTRACTOR_CUDA).
-     * The runtime PR (T7-10b) wires in the buffer-type plumbing and flips
-     * this flag on. Until then, callers receive -ENOSYS from init() on
-     * non-ROCm builds.
-     */
-    .flags = 0,
+    /* ADR-1525: every output, aim and adm3 included, is the CPU's, so
+     * `--backend hip` and a model's ADM features select this twin. */
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 1,

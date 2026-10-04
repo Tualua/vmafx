@@ -13,7 +13,8 @@
  * rounding shifts and its float conclusion from the CPU's own routines
  * (integer_adm_kernels.h) and rounds the denominator once per row as the CPU
  * does. This test asserts equality, not a tolerance, on every output of every
- * case, the per-scale numerators and denominators of `debug=true` included.
+ * case, the per-scale numerators and denominators of `debug=true` included,
+ * and since ADR-1525 the AIM measure's aim and adm3.
  *
  * Before ADR-1423 the denominator kernels rounded every thread's partial sum
  * of a row on its own and derived their shifts from an fp32 logarithm, while
@@ -48,7 +49,7 @@
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 
-#define MAX_KEYS 16u
+#define MAX_KEYS 24u
 /* Frames per run: the second one shows that a frame starts from cleared
  * accumulators. */
 #define NUM_FRAMES 2u
@@ -256,12 +257,13 @@ static VmafFeatureDictionary *opts_from(const char *const pairs[][2], size_t cou
     return d;
 }
 
-/* The five scores `adm_hip` provides (it has no AIM pass, so no aim / adm3)
- * plus, with `debug=true`, the frame ratio and the sums it is formed from.
- * `suffix` is the feature-name suffix of the option set. */
+/* The seven scores `adm_hip` provides, aim and adm3 from its AIM pass
+ * (ADR-1525) included, plus, with `debug=true`, the frame ratio and the sums
+ * it is formed from. `suffix` is the feature-name suffix of the option set. */
 #define ADM_SCORE_KEYS(suffix)                                                                     \
-    "integer_adm2" suffix, "integer_adm_scale0" suffix, "integer_adm_scale1" suffix,               \
-        "integer_adm_scale2" suffix, "integer_adm_scale3" suffix
+    "integer_adm2" suffix, "integer_aim" suffix, "integer_adm3" suffix,                            \
+        "integer_adm_scale0" suffix, "integer_adm_scale1" suffix, "integer_adm_scale2" suffix,     \
+        "integer_adm_scale3" suffix
 #define ADM_DEBUG_KEYS(suffix)                                                                     \
     "integer_adm" suffix, "integer_adm_num" suffix, "integer_adm_den" suffix,                      \
         "integer_adm_num_scale0" suffix, "integer_adm_den_scale0" suffix,                          \
@@ -277,6 +279,8 @@ static VmafFeatureDictionary *debug_opts(void)
 
 static const char *const DEBUG_KEYS[] = {
     "VMAF_integer_feature_adm2_score",
+    "VMAF_integer_feature_aim_score",
+    "VMAF_integer_feature_adm3_score",
     "integer_adm_scale0",
     "integer_adm_scale1",
     "integer_adm_scale2",
@@ -320,6 +324,14 @@ static VmafFeatureDictionary *skip_scale0_opts(void)
 
 static const char *const SKIP_SCALE0_KEYS[] = {ADM_SCORE_KEYS("_ssz"), ADM_DEBUG_KEYS("_ssz")};
 #define NUM_SKIP_SCALE0_KEYS (sizeof(SKIP_SCALE0_KEYS) / sizeof(SKIP_SCALE0_KEYS[0]))
+
+/* adm_skip_aim: no AIM numerator, so aim = 0 and adm3 blends the DLM ratio
+ * with 0. Not a feature parameter: the keys keep their names. */
+static VmafFeatureDictionary *skip_aim_opts(void)
+{
+    static const char *const pairs[][2] = {{"adm_skip_aim", "true"}, {"debug", "true"}};
+    return opts_from(pairs, 2u);
+}
 
 /* Default options, every output including the per-scale sums. */
 static char *test_adm_default_exact(void)
@@ -402,6 +414,15 @@ static char *test_adm_barten_mode_exact(void)
     return NULL;
 }
 
+static char *test_adm_skip_aim_exact(void)
+{
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    mu_assert("adm_hip differs from the CPU extractor with adm_skip_aim",
+              exact_mismatches("adm skip aim", &fx, skip_aim_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) ==
+                  0u);
+    return NULL;
+}
+
 static char *test_adm_skip_scale0_exact(void)
 {
     const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
@@ -427,6 +448,7 @@ static char *run_exact_option_cases(void)
     mu_run_test(test_adm_model_options_exact);
     mu_run_test(test_adm_barten_mode_exact);
     mu_run_test(test_adm_skip_scale0_exact);
+    mu_run_test(test_adm_skip_aim_exact);
     return NULL;
 }
 

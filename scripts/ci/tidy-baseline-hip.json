@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 426,
+  "tus": 455,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -189,6 +189,7 @@
     "core/src/thread_locale.cpp",
     "core/src/thread_pool.c",
     "core/src/x86/cpu.c",
+    "core/test/barten_csf_cxx.cpp",
     "core/test/dnn/test_dnn_session_api.c",
     "core/test/dnn/test_ep_fp16.c",
     "core/test/dnn/test_model_loader.c",
@@ -223,6 +224,7 @@
     "core/test/test_ciede.c",
     "core/test/test_ciede_device_math.c",
     "core/test/test_ciede_simd_parity.c",
+    "core/test/test_ciede_upstream_products.c",
     "core/test/test_cjson.c",
     "core/test/test_cli_parse.c",
     "core/test/test_cli_parse_long_only_args.c",
@@ -246,14 +248,18 @@
     "core/test/test_fex_ctx_vector_public.cpp",
     "core/test/test_fex_pool_growth.c",
     "core/test/test_float_adm_coverage.c",
+    "core/test/test_float_adm_csf_upstream.c",
     "core/test/test_float_adm_device_math.c",
     "core/test/test_float_adm_x86.c",
+    "core/test/test_float_bits.c",
     "core/test/test_float_moment_coverage.c",
+    "core/test/test_float_moment_sum.c",
     "core/test/test_float_motion_coverage.c",
     "core/test/test_float_motion_sad.c",
     "core/test/test_float_ms_ssim_coverage.c",
     "core/test/test_float_ms_ssim_min_dim.c",
     "core/test/test_float_psnr_coverage.c",
+    "core/test/test_float_psnr_rows.c",
     "core/test/test_float_ssim_coverage.c",
     "core/test/test_float_vif_coverage.c",
     "core/test/test_float_vif_device_math.c",
@@ -292,6 +298,7 @@
     "core/test/test_hip_fp_arith_probe.c",
     "core/test/test_hip_fp_arith_probe.hip",
     "core/test/test_hip_motion3_parity.c",
+    "core/test/test_hip_motion_five_frame_window.c",
     "core/test/test_hip_motion_parity.c",
     "core/test/test_hip_motion_tiny_frames.c",
     "core/test/test_hip_motion_v2_parity.c",
@@ -319,6 +326,7 @@
     "core/test/test_integer_adm_cm_threshold.c",
     "core/test/test_integer_adm_dwt16_range.c",
     "core/test/test_integer_adm_min_dim.c",
+    "core/test/test_integer_adm_quant_step.c",
     "core/test/test_integer_adm_simd.c",
     "core/test/test_integer_adm_simd_noise.c",
     "core/test/test_integer_adm_tiny_frames.c",
@@ -333,11 +341,30 @@
     "core/test/test_iqa_convolve.c",
     "core/test/test_iqa_convolve_coverage.c",
     "core/test/test_iqa_helpers.c",
+    "core/test/test_iqa_ssim_sub_window.c",
     "core/test/test_locale_handling.c",
     "core/test/test_log.c",
     "core/test/test_lpips.c",
     "core/test/test_luminance_tools.cpp",
+    "core/test/test_metal_float_adm_parity.c",
+    "core/test/test_metal_float_moment_parity.c",
+    "core/test/test_metal_float_motion_parity.c",
+    "core/test/test_metal_float_ms_ssim_parity.c",
+    "core/test/test_metal_float_psnr_parity.c",
+    "core/test/test_metal_float_ssim_parity.c",
+    "core/test/test_metal_float_vif_parity.c",
+    "core/test/test_metal_integer_adm_parity.c",
+    "core/test/test_metal_integer_cambi_parity.c",
+    "core/test/test_metal_integer_ciede_parity.c",
+    "core/test/test_metal_integer_motion_parity.c",
+    "core/test/test_metal_integer_psnr_hvs_parity.c",
+    "core/test/test_metal_integer_psnr_parity.c",
+    "core/test/test_metal_integer_ssim_parity.c",
+    "core/test/test_metal_integer_vif_parity.c",
+    "core/test/test_metal_motion_v2_parity.c",
     "core/test/test_metal_ms_ssim_option_semantics.c",
+    "core/test/test_metal_ssimulacra2_parity.c",
+    "core/test/test_metal_twin_option_parity.c",
     "core/test/test_mkdirp.c",
     "core/test/test_mobilesal.c",
     "core/test/test_model.c",
@@ -349,6 +376,7 @@
     "core/test/test_moment_simd.c",
     "core/test/test_motion_avx512_parity.c",
     "core/test/test_motion_convolution_oob.c",
+    "core/test/test_motion_five_frame_window.c",
     "core/test/test_motion_min_dim.c",
     "core/test/test_motion_v2_simd.c",
     "core/test/test_ms_ssim_decimate.c",
@@ -392,6 +420,7 @@
     "core/test/test_speed_qa.c",
     "core/test/test_speed_simd.c",
     "core/test/test_speed_singular_tally.c",
+    "core/test/test_speed_upstream_form.c",
     "core/test/test_spinner.cpp",
     "core/test/test_ssim_coverage.c",
     "core/test/test_ssim_x86_simd.c",
@@ -434,7 +463,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 503,
+  "total_warnings": 487,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -458,11 +487,9 @@
     "core/src/feature/hip/float_ssim/ssim_decimate.h": 1,
     "core/src/feature/hip/float_ssim/ssim_score.hip": 4,
     "core/src/feature/hip/float_vif/float_vif_score.hip": 21,
-    "core/src/feature/hip/integer_adm/adm_cm.hip": 12,
     "core/src/feature/hip/integer_adm/adm_csf.hip": 4,
     "core/src/feature/hip/integer_adm/adm_csf_den.hip": 5,
     "core/src/feature/hip/integer_adm/adm_dwt2.hip": 14,
-    "core/src/feature/hip/integer_adm_hip.h": 4,
     "core/src/feature/hip/integer_cambi/cambi_hip_device.h": 13,
     "core/src/feature/hip/integer_cambi/cambi_score.hip": 8,
     "core/src/feature/hip/integer_ciede/ciede_score.hip": 7,
@@ -498,22 +525,5 @@
     "core/test/test_hip_float_adm_math_probe.hip": 2,
     "core/test/test_sycl_fp_arith_contract.c": 1
   },
-  "nolint_uncited": {},
-  "scoped_updates": [
-    {
-      "sources": [
-        "core/src/feature/hip/float_psnr/float_psnr_score.hip"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/feature/hip/float_psnr/float_psnr_score.hip": {
-          "warnings": [
-            8,
-            7
-          ]
-        }
-      },
-      "previous_baseline_sha256": "6b303f1bac3988622a7abda634533c7acb1b11018c255f9b3ab39b1bf0693a4e"
-    }
-  ]
+  "nolint_uncited": {}
 }

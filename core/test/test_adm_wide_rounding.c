@@ -62,10 +62,8 @@
 
 static const char *const ADM_FEATURES[] = {
     "VMAF_integer_feature_adm2_score",
-#if !defined(HAVE_HIP)
-    /* The HIP twin does not emit adm3_score (docs/metrics/features.md). */
+    /* Every twin of both arms emits adm3, HIP since ADR-1525. */
     "VMAF_integer_feature_adm3_score",
-#endif
     "integer_adm_scale0",
     "integer_adm_scale1",
     "integer_adm_scale2",

@@ -134,14 +134,14 @@ The JSON output names the extractor that ran for each feature under
 
 [CLI reference](../../usage/cli.md) | [backend selection](../index.md)
 
-Twins that carry no HIP flag run only when you name them, so these two
-need the `_hip` name:
+A twin that carries no HIP flag runs only when you name it. One is left,
+`float_vif_hip` (unless the build sets `enable_float_vif_hip_autodispatch`),
+so it needs the `_hip` name:
 
 ```bash
 vmaf --reference ref.yuv --distorted dist.yuv \
      --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
-     --backend hip --feature adm_hip=adm_skip_scale0=true \
-     --feature float_vif_hip --no_prediction --json --output out.json
+     --backend hip --feature float_vif_hip --no_prediction --json --output out.json
 ```
 
 A twin named this way runs on the thread that calls `vmaf_read_pictures()`,
@@ -184,7 +184,7 @@ flag, so `--backend hip` does not pick it for the CPU name.
 | `cambi_hip` | `cambi` | yes | `cambi` | PR #996, [ADR-1378](../../adr/1378-hip-cambi-device-resident.md) |
 | `ssimulacra2_hip` | `ssimulacra2` | yes | `ssimulacra2` | PR #1000 |
 | `vif_hip` | `vif` | yes | `vif_scale0..3` | PR #1001 |
-| `adm_hip` | `adm` | named only | `integer_adm2`, `integer_adm_scale0..3` (not `adm3` or `aim`) | PR #1007 |
+| `adm_hip` | `adm` | yes | `integer_adm2`, `integer_aim`, `integer_adm3`, `integer_adm_scale0..3` | PR #1007, [ADR-1423](../../adr/1423-hip-adm-cpu-row-rounding.md), [ADR-1525](../../adr/1525-adm-hip-aim-device-pass.md) |
 | `integer_ms_ssim_hip` | `float_ms_ssim` | yes | `float_ms_ssim` (and `_cb`, `_cr`, L, C, S) | PR #1013 |
 | `integer_ssim_hip` | `ssim` | yes | `ssim` | PR #999, [ADR-0564](../../adr/0564-integer-ssim-gpu-real-kernels.md) |
 | `speed_chroma_hip` | `speed_chroma` | yes | SpEED chroma features | [ADR-0567](../../adr/0567-speed-chroma-temporal-real-gpu.md), [ADR-0852](../../adr/0852-hip-speed-extractor-wiring.md), [ADR-1384](../../adr/1384-hip-speed-device-resident.md) |
@@ -224,7 +224,7 @@ twins were exact), before the twin took the CPU's arithmetic.
 | `psnr` | `psnr_hip` | 534 of 534 | 0 | 0 | yes (ADR-1437) |
 | `float_ms_ssim` (also `enable_lcs`) | `integer_ms_ssim_hip` | 178 of 178 (2848 of 2848) | 0 | 0 | yes (ADR-1437) |
 | `cambi` | `cambi_hip` | 178 of 178 | 0 | 0 | yes (ADR-1437) |
-| `adm` | `adm_hip` | 890 of 890 | 0 | 0 | yes ([ADR-1423](../../adr/1423-hip-adm-cpu-row-rounding.md)) |
+| `adm` (also `debug=true`) | `adm_hip` | 890 of 890 (4141 of 4141 with `aim` and `adm3`) | 0 | 0 | yes ([ADR-1423](../../adr/1423-hip-adm-cpu-row-rounding.md), [ADR-1525](../../adr/1525-adm-hip-aim-device-pass.md)) |
 | `float_motion` | `float_motion_hip` | 534 of 534 | 0 | 0 | yes ([ADR-1419](../../adr/1419-hip-float-motion-cpu-float-sum.md)) |
 | `psnr_hvs` | `psnr_hvs_hip` | 680 of 680 (8 to 12 bits) | 0 | 0 | yes ([ADR-1401](../../adr/1401-psnr-hvs-sycl-hip-exact-twins.md)) |
 | `vif` | `vif_hip` | 712 of 712 | 0 | 5.4e-7 | yes ([ADR-1435](../../adr/1435-hip-vif-cpu-log2-table.md)) |
@@ -260,14 +260,13 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
 Open items only; the ledger row ids are in
 [`docs/state.md`](../../state.md).
 
-- **ADM of the default model runs on the CPU.** `adm_hip` has no AIM
-  contrast-measure device pass, so it cannot emit `aim` or `adm3`, which the
-  default model `vmaf_v1.0.16_3d0h` reads. Both names route to the CPU
-  `integer_adm` extractor, with the correct value and key, while the rest of
-  the model runs on the device
-  (`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05`, RC8).
-  `float_adm_hip`
-  emits `aim` and `adm3`.
+- **`adm_hip` is slower than the CPU on an integrated GPU.** On the gfx1036
+  of the measuring host (2 compute units) the twin takes about 220 ms per
+  3840x2160 frame, the CPU `adm` extractor 15 ms with 16 threads; the AIM
+  pass recomputes csf(r) at all nine taps of every threshold, as the CUDA
+  twin does, and is two thirds of that. The default model under
+  `--backend hip` goes from 65 to 273 ms per 3840x2160 frame because its ADM
+  now runs on that device (`T-HIP-ADM-AIM-INLINE-COST-2026-10-04`, RC8).
 - **No zero-copy import.** Frames arrive as host pictures and the extractors
   upload them; there is no `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` pool or
   `hipImportExternalMemory` path (T7-10c). See

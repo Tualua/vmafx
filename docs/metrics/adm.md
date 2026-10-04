@@ -56,8 +56,7 @@ the fixed-point one has no upper bound.
 
 | Path | Extractors that emit both | Notes |
 | --- | --- | --- |
-| Fixed-point `adm` | CPU `adm`, `adm_cuda` (ADR-0746), `adm_sycl` (ADR-1362, bit-identical to the CPU), `integer_adm_metal` | Each twin has a dedicated AIM contrast-measure device pass. |
-| Fixed-point `adm`, HIP | none: `adm_hip` | It leaves both features out of `provided_features[]`. A request for either resolves to the CPU extractor through the ADR-0530 name-based fallback, which returns the correct value under the correct feature-name key (`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in [state](../state.md)). |
+| Fixed-point `adm` | CPU `adm`, `adm_cuda` (ADR-0746), `adm_sycl` (ADR-1362, bit-identical to the CPU), `adm_hip` ([ADR-1525](../adr/1525-adm-hip-aim-device-pass.md), bit-identical to the CPU), `integer_adm_metal` | Each twin has a dedicated AIM contrast-measure device pass. |
 | `float_adm` | CPU `float_adm`, `float_adm_cuda` (ADR-0574), `float_adm_sycl` ([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md)), `float_adm_hip`, `float_adm_metal` | `float_adm_sycl` returns the CPU's values for both. |
 
 ## Options

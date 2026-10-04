@@ -19,7 +19,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `integer_adm_hip.c`, `integer_adm_hip.h` | [adm-buffer-pointer](AGENTS.d/adm-buffer-pointer.md) | AdmBufferHip must be passed by pointer across HIP ADM helpers. |
-| `integer_adm_hip.c`, `integer_adm_hip.h`, `integer_adm/adm_csf.hip`, `integer_adm/adm_dwt2.hip` | [adm](AGENTS.d/adm.md) | Integer ADM maintains exact CPU parity, staging buffer rules, int64 vertical sums, and single reflection clamping. |
+| `integer_adm_hip.c`, `integer_adm_hip.h`, `integer_adm/adm_cm.hip`, `integer_adm/adm_csf.hip`, `integer_adm/adm_dwt2.hip` | [adm](AGENTS.d/adm.md) | Integer ADM maintains exact CPU parity, staging buffer rules, int64 vertical sums, and single reflection clamping. |
 | `/core/src/meson.build`, `/core/meson.build` | [build-wiring-extractor](AGENTS.d/build-wiring-extractor.md) | Wire new HIP extractors into Meson source lists and library declarations cleanly. |
 | `integer_cambi_hip.c`, `integer_cambi_hip.h`, `integer_cambi/cambi_score.hip` | [cambi](AGENTS.d/cambi.md) | CAMBI uses the shared TVI helper, CPU border rules, and device-resident single-wait execution. |
 | `ciede_hip.c`, `ciede_hip.h`, `integer_ciede/ciede_score.hip` | [ciede](AGENTS.d/ciede.md) | ciede_hip performs CPU arithmetic in fp32 pairs with libm residual handling. |

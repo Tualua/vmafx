@@ -48,6 +48,16 @@
  *       (The CUDA upstream perf branch fuses the two; the HIP host TU
  *       hasn't been migrated yet so we keep both kernels alive here.)
  *
+ *    4. The AIM contrast measure (ADR-1525, the CUDA twin's ADR-0746
+ *       kernels): `adm_cm_aim_line_kernel_4` (scale 0) and
+ *       `i4_adm_cm_aim_line_kernel` (scales 1-3). AIM swaps the roles of
+ *       the CM: the signal is the CSF of the additive part a = t - r, the
+ *       threshold the 3x3 neighbourhood of |csf(r)| / 30 with the centre
+ *       |csf(r)| / 15, and there is no noise floor. Both recompute csf(r)
+ *       from the DWT bands instead of reading a buffer, and fold every row
+ *       once, with the rounding shifts of the CPU's context, so the
+ *       accumulators are integer_adm.c's bit for bit.
+ *
  *  Linkage: the three kernels are `extern "C"` because the host TU resolves
  *  them by name from the embedded HSACO (`hipModuleGetFunction`, ADR-0372).
  *  Their parameter lists mirror the host launch-argument arrays one for one,
@@ -120,14 +130,38 @@ template <typename T> __device__ __forceinline__ T select_theta(int theta, T h, 
     return d;
 }
 
-__device__ __forceinline__ int32_t inline_i4_csf_a(const hip_i4_adm_dwt_band_t *ref,
-                                                   const hip_i4_adm_dwt_band_t *dis, int idx,
-                                                   int theta, const uint32_t *rfactor,
-                                                   double adm_enhn_gain_limit)
+/* v >> n for a signed v, rounding toward minus infinity as the CPU's integer
+ * ADM does (an arithmetic shift), written on the unsigned bits so the sign
+ * fill is explicit: the vacated high bits take the sign. 0 <= n < 64. Every
+ * signed right shift of this file goes through it. */
+__device__ __forceinline__ int64_t adm_asr(int64_t v, uint32_t n)
 {
-    const uint32_t shift_dst = 28;
-    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
+    const uint64_t bits = (uint64_t)v >> n;
+    const uint64_t fill = (v < 0) ? ~(~0ULL >> n) : 0ULL;
+    return (int64_t)(bits | fill);
+}
 
+/* The rounded cube of one masked contrast sample x >= 0: x_sq =
+ * (x * x + add_sq) >> shift_sq, then (x_sq * x + add_cub) >> shift_cub
+ * (integer_adm_kernels.h adm_cm_accum_round() / i4_adm_cm_accum_round()). */
+__device__ __forceinline__ int64_t cm_cube(int32_t x, int64_t add_sq, uint32_t shift_sq,
+                                           int64_t add_cub, uint32_t shift_cub)
+{
+    const int32_t x_sq = (int32_t)adm_asr(((int64_t)x * x) + add_sq, shift_sq);
+    return adm_asr(((int64_t)x_sq * x) + add_cub, shift_cub);
+}
+
+/* The restored part r of one sample and orientation, and the distorted
+ * sample t it was restored from; a = t - r is the additive part. */
+template <typename T> struct Decoupled {
+    T r;
+    T t;
+};
+
+__device__ __forceinline__ Decoupled<int32_t> i4_decouple(const hip_i4_adm_dwt_band_t *ref,
+                                                          const hip_i4_adm_dwt_band_t *dis, int idx,
+                                                          int theta, double adm_enhn_gain_limit)
+{
     const int32_t oh = ref->band_h[idx];
     const int32_t ov = ref->band_v[idx];
     const int32_t od = ref->band_d[idx];
@@ -136,28 +170,68 @@ __device__ __forceinline__ int32_t inline_i4_csf_a(const hip_i4_adm_dwt_band_t *
     const int32_t td = dis->band_d[idx];
 
     const int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-    const int32_t r_val =
-        decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    return {decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit),
+            select_theta<int32_t>(theta, th, tv, td)};
+}
 
-    const int32_t t_val = select_theta<int32_t>(theta, th, tv, td);
+__device__ __forceinline__ Decoupled<int16_t> s0_decouple(const hip_adm_dwt_band_t *ref,
+                                                          const hip_adm_dwt_band_t *dis, int idx,
+                                                          int theta, double adm_enhn_gain_limit)
+{
+    const int16_t oh = ref->band_h[idx];
+    const int16_t ov = ref->band_v[idx];
+    const int16_t od = ref->band_d[idx];
+    const int16_t th = dis->band_h[idx];
+    const int16_t tv = dis->band_v[idx];
+    const int16_t td = dis->band_d[idx];
 
-    const int32_t a_val = t_val - r_val;
-    return (int32_t)(((rfactor[theta] * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
+    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
+    return {decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit),
+            select_theta<int16_t>(theta, th, tv, td)};
+}
+
+/* CSF weight of a scale 1-3 sample: rfactor * v in Q28, rounded. */
+__device__ __forceinline__ int32_t i4_csf(uint32_t rfactor, int32_t v)
+{
+    const uint32_t shift_dst = 28;
+    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
+    return (int32_t)adm_asr((rfactor * int64_t(v)) + add_bef_shift_dst, shift_dst);
+}
+
+/* CSF weight of a scale-0 sample of orientation `theta` (matches the CUDA
+ * twin's per-band scale-0 shifts and integer_adm_kernels.h adm_csf_cols()). */
+__device__ __forceinline__ int16_t s0_csf(const uint32_t *i_rfactor, int theta, int16_t v)
+{
+    const uint8_t i_shifts_cm[4] = {0, 15, 15, 17};
+    const uint16_t i_shiftsadd_cm[4] = {0, 16384, 16384, 65535};
+    const int band = theta + 1;
+    const int32_t dst_val = i_rfactor[theta] * (uint32_t)v;
+    return (int16_t)adm_asr((int64_t)dst_val + i_shiftsadd_cm[band], i_shifts_cm[band]);
+}
+
+/* csf(a) and csf(r) of one sample, and r itself. */
+__device__ __forceinline__ int32_t inline_i4_csf_a(const hip_i4_adm_dwt_band_t *ref,
+                                                   const hip_i4_adm_dwt_band_t *dis, int idx,
+                                                   int theta, const uint32_t *rfactor,
+                                                   double adm_enhn_gain_limit)
+{
+    const Decoupled<int32_t> d = i4_decouple(ref, dis, idx, theta, adm_enhn_gain_limit);
+    return i4_csf(rfactor[theta], d.t - d.r);
+}
+
+__device__ __forceinline__ int32_t inline_i4_csf_r(const hip_i4_adm_dwt_band_t *ref,
+                                                   const hip_i4_adm_dwt_band_t *dis, int idx,
+                                                   int theta, const uint32_t *rfactor,
+                                                   double adm_enhn_gain_limit)
+{
+    return i4_csf(rfactor[theta], i4_decouple(ref, dis, idx, theta, adm_enhn_gain_limit).r);
 }
 
 __device__ __forceinline__ int32_t inline_i4_decouple_r(const hip_i4_adm_dwt_band_t *ref,
                                                         const hip_i4_adm_dwt_band_t *dis, int idx,
                                                         int band_idx, double adm_enhn_gain_limit)
 {
-    const int32_t oh = ref->band_h[idx];
-    const int32_t ov = ref->band_v[idx];
-    const int32_t od = ref->band_d[idx];
-    const int32_t th = dis->band_h[idx];
-    const int32_t tv = dis->band_v[idx];
-    const int32_t td = dis->band_d[idx];
-
-    const int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-    return decouple_r_s123(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
+    return i4_decouple(ref, dis, idx, band_idx, adm_enhn_gain_limit).r;
 }
 
 __device__ __forceinline__ int16_t inline_s0_csf_a(const hip_adm_dwt_band_t *ref,
@@ -165,42 +239,23 @@ __device__ __forceinline__ int16_t inline_s0_csf_a(const hip_adm_dwt_band_t *ref
                                                    int theta, const uint32_t *i_rfactor,
                                                    double adm_enhn_gain_limit)
 {
-    /* Match CUDA twin's per-band scale-0 shifts. */
-    const uint8_t i_shifts_cm[4] = {0, 15, 15, 17};
-    const uint16_t i_shiftsadd_cm[4] = {0, 16384, 16384, 65535};
+    const Decoupled<int16_t> d = s0_decouple(ref, dis, idx, theta, adm_enhn_gain_limit);
+    return s0_csf(i_rfactor, theta, (int16_t)(d.t - d.r));
+}
 
-    const int16_t oh = ref->band_h[idx];
-    const int16_t ov = ref->band_v[idx];
-    const int16_t od = ref->band_d[idx];
-    const int16_t th = dis->band_h[idx];
-    const int16_t tv = dis->band_v[idx];
-    const int16_t td = dis->band_d[idx];
-
-    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-    const int16_t r_val =
-        decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
-
-    const int16_t t_val = select_theta<int16_t>(theta, th, tv, td);
-
-    const int16_t a_val = t_val - r_val;
-    const int band = theta + 1;
-    const int32_t dst_val = i_rfactor[theta] * (uint32_t)a_val;
-    return (int16_t)((dst_val + i_shiftsadd_cm[band]) >> i_shifts_cm[band]);
+__device__ __forceinline__ int16_t inline_s0_csf_r(const hip_adm_dwt_band_t *ref,
+                                                   const hip_adm_dwt_band_t *dis, int idx,
+                                                   int theta, const uint32_t *i_rfactor,
+                                                   double adm_enhn_gain_limit)
+{
+    return s0_csf(i_rfactor, theta, s0_decouple(ref, dis, idx, theta, adm_enhn_gain_limit).r);
 }
 
 __device__ __forceinline__ int16_t inline_s0_decouple_r(const hip_adm_dwt_band_t *ref,
                                                         const hip_adm_dwt_band_t *dis, int idx,
                                                         int band_idx, double adm_enhn_gain_limit)
 {
-    const int16_t oh = ref->band_h[idx];
-    const int16_t ov = ref->band_v[idx];
-    const int16_t od = ref->band_d[idx];
-    const int16_t th = dis->band_h[idx];
-    const int16_t tv = dis->band_v[idx];
-    const int16_t td = dis->band_d[idx];
-
-    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-    return decouple_r_s0(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
+    return s0_decouple(ref, dis, idx, band_idx, adm_enhn_gain_limit).r;
 }
 
 /* ----------------------------------------------------------------------
@@ -225,6 +280,16 @@ __device__ __forceinline__ CmNeighbours i4_cm_neighbours(int idx, int len, int l
     return n;
 }
 
+/* coeff * |v| in the 2^32 fixed point of the scale 1-3 CM threshold. 1u << 31
+ * wraps to INT32_MIN exactly as in the CPU reference (ADR-0155); the golden
+ * scores encode that rounding. */
+__device__ __forceinline__ int32_t i4_cm_weight(uint32_t coeff, int32_t v)
+{
+    const uint32_t shift_flt = 32;
+    const int32_t add_bef_shift_flt = (int32_t)(1u << (shift_flt - 1));
+    return (int32_t)adm_asr(((int64_t)coeff * abs(v)) + add_bef_shift_flt, shift_flt);
+}
+
 /* Sum of the 3x3 CSF-filtered neighbourhood over the three orientations,
  * with the centre sample replaced by the CSF-weighted residual / 15. */
 __device__ __forceinline__ int32_t i4_cm_threshold(const hip_i4_adm_dwt_band_t *ref,
@@ -234,11 +299,6 @@ __device__ __forceinline__ int32_t i4_cm_threshold(const hip_i4_adm_dwt_band_t *
                                                    int src_stride, const uint32_t *rfactor,
                                                    double adm_enhn_gain_limit)
 {
-    /* 1u << 31 wraps to INT32_MIN here exactly as in the CPU reference
-     * (ADR-0155); the golden scores encode that rounding. */
-    const uint32_t shift_flt = 32;
-    const int32_t add_bef_shift_flt = (int32_t)(1u << (shift_flt - 1));
-
     int32_t thr = 0;
     for (int theta = 0; theta < 3; ++theta) {
         int32_t sum = 0;
@@ -254,8 +314,7 @@ __device__ __forceinline__ int32_t i4_cm_threshold(const hip_i4_adm_dwt_band_t *
         sum += flt_top[cols.after];
 
         sum += flt_mid[cols.before];
-        sum +=
-            (int32_t)((((int64_t)I4_ONE_BY_15 * abs(csf_a_val)) + add_bef_shift_flt) >> shift_flt);
+        sum += i4_cm_weight(I4_ONE_BY_15, csf_a_val);
         sum += flt_mid[cols.after];
 
         sum += flt_bot[cols.before];
@@ -267,6 +326,14 @@ __device__ __forceinline__ int32_t i4_cm_threshold(const hip_i4_adm_dwt_band_t *
     return thr;
 }
 
+/* |x| minus the threshold (already in x's Q format, shift_sub 0), floored at
+ * zero: i4_adm_cm_accum_round()'s excess. */
+__device__ __forceinline__ int32_t i4_cm_excess(int32_t x, int32_t thr)
+{
+    const int32_t v = abs(x) - thr;
+    return v < 0 ? 0 : v;
+}
+
 /* Masked contrast of one sample: |rfactor * decouple_r| minus the threshold,
  * floored at zero. */
 __device__ __forceinline__ int32_t i4_cm_masked(const hip_i4_adm_dwt_band_t *ref,
@@ -274,26 +341,26 @@ __device__ __forceinline__ int32_t i4_cm_masked(const hip_i4_adm_dwt_band_t *ref
                                                 int band_idx, uint32_t rfactor_band, int32_t thr,
                                                 double adm_enhn_gain_limit)
 {
-    const uint32_t shift_dst = 28;
-    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
-    const int32_t shift_sub_local = 0;
-
     const int32_t r_val = inline_i4_decouple_r(ref, dis, idx, band_idx, adm_enhn_gain_limit);
-    int32_t x = (int32_t)((((int64_t)r_val * rfactor_band) + add_bef_shift_dst) >> shift_dst);
-    x = abs(x) - (thr >> shift_sub_local);
-    return x < 0 ? 0 : x;
+    return i4_cm_excess(i4_csf(rfactor_band, r_val), thr);
 }
 
 /* ----------------------------------------------------------------------
  * s0 (scale 0) CM helpers — see adm_cm_line_kernel_8 below.
  * -------------------------------------------------------------------- */
 
+/* The scale-0 centre tap: |v| / 15 in Q12 (adm_cm_thresh()). */
+__device__ __forceinline__ int32_t s0_cm_centre(int16_t v)
+{
+    return (int32_t)adm_asr(((int64_t)ONE_BY_15 * abs((int32_t)v)) + 2048, 12u);
+}
+
 /* Fold one filtered row into the threshold of every output row it borders.
  * The centre tap stays int32: it reaches 69904, and narrowing it to int16
  * would wrap it negative (ADR-1402, adm_cm_thresh() on the CPU). */
 template <int rows_per_thread>
 __device__ __forceinline__ void s0_cm_add_row(int32_t (&thr)[rows_per_thread], int row,
-                                              const int16_t (&flt_row)[3], int16_t csf_a_val)
+                                              const int16_t (&flt_row)[3], int32_t centre)
 {
 #pragma unroll
     for (int thread_item = 0; thread_item < rows_per_thread; ++thread_item) {
@@ -303,7 +370,7 @@ __device__ __forceinline__ void s0_cm_add_row(int32_t (&thr)[rows_per_thread], i
             if (thread_row != 1) {
                 thr[thread_item] += flt_row[1];
             } else {
-                thr[thread_item] += ((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12;
+                thr[thread_item] += centre;
             }
         }
     }
@@ -332,9 +399,26 @@ s0_cm_threshold(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis,
                                                       i_rfactor, adm_enhn_gain_limit);
             const int16_t *flt_ptr = flt_angles[theta] + (ptrdiff_t)(pos_y * src_stride);
             const int16_t flt_row[3] = {flt_ptr[pos_x[0]], flt_ptr[pos_x[1]], flt_ptr[pos_x[2]]};
-            s0_cm_add_row<rows_per_thread>(thr, row, flt_row, csf_a_val);
+            s0_cm_add_row<rows_per_thread>(thr, row, flt_row, s0_cm_centre(csf_a_val));
         }
     }
+}
+
+/* The host-computed shifts of scale-0 band `band` (matches CUDA twin). */
+__device__ __forceinline__ S0CmShifts s0_cm_shifts(const WarpShift &ws, int band)
+{
+    return {
+        (int32_t)ws.add_shift_cub[band], (int32_t)ws.shift_cub[band],
+        (int32_t)ws.add_shift_sq[band],  (int32_t)ws.shift_sq[band],
+        cm_shift_sub_const[band],
+    };
+}
+
+/* The rounded cube of one masked scale-0 sample (adm_cm_accum_round()). */
+__device__ __forceinline__ int64_t s0_cm_cube(int32_t x, const S0CmShifts &sh)
+{
+    return cm_cube(x, sh.add_shift_sq, (uint32_t)sh.shift_sq, sh.add_shift_cub,
+                   (uint32_t)sh.shift_cub);
 }
 
 /* Masked contrast cubed and accumulated per output row. */
@@ -353,9 +437,7 @@ s0_cm_accumulate(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis,
         }
         const int32_t accum_thread = adm_cm_excess_s0(int32_t(i_rfactor[blockIdx.z] * sb), thr[row],
                                                       (uint32_t)sh.shift_sub_block);
-        const int32_t x_sq =
-            (int32_t)((((int64_t)accum_thread * accum_thread) + sh.add_shift_sq) >> sh.shift_sq);
-        accum_row[row] += (((int64_t)x_sq * accum_thread) + sh.add_shift_cub) >> sh.shift_cub;
+        accum_row[row] += s0_cm_cube(accum_thread, sh);
     }
 }
 
@@ -370,7 +452,7 @@ s0_cm_block_reduce(const int64_t (&accum_row)[rows_per_thread], int y, int end_r
     for (int row = 0; row < rows_per_thread; ++row) {
         s_row[threadIdx.y][threadIdx.x] = accum_row[row];
         __syncthreads();
-        for (int s = 16; s > 0; s >>= 1) {
+        for (int s = 16; s > 0; s /= 2) {
             if (threadIdx.x < s) {
                 s_row[threadIdx.y][threadIdx.x] += s_row[threadIdx.y][threadIdx.x + s];
             }
@@ -412,12 +494,7 @@ adm_cm_line_kernel_body(const AdmBufferHip *__restrict__ buf_ptr, int h, int w, 
 
     const int band2 = blockIdx.z;
 
-    /* Load WarpShift fields into locals (matches CUDA twin). */
-    const S0CmShifts sh = {
-        (int32_t)ws.add_shift_cub[band2], (int32_t)ws.shift_cub[band2],
-        (int32_t)ws.add_shift_sq[band2],  (int32_t)ws.shift_sq[band2],
-        cm_shift_sub_const[blockIdx.z],
-    };
+    const S0CmShifts sh = s0_cm_shifts(ws, band2);
 
     int64_t accum_row[rows_per_thread] = {0};
 
@@ -470,14 +547,13 @@ adm_cm_reduce_line_kernel_body(int h, int w, int scale, int buffer_h, int buffer
     int64_t temp_value = 0;
     for (int col = (int)threadIdx.x; col < buffer_stride; col += (int)blockDim.x) {
         const int32_t x = buffer[b_off + col];
-        const int32_t x_sq = (int32_t)((((int64_t)x * x) + add_shift_sq) >> shift_sq);
-        temp_value += (((int64_t)x_sq * x) + add_shift_cub) >> shift_cub;
+        temp_value += cm_cube(x, add_shift_sq, (uint32_t)shift_sq, add_shift_cub, shift_cub);
     }
 
     __shared__ int64_t s_row[256];
     s_row[threadIdx.x] = temp_value;
     __syncthreads();
-    for (int s = (int)blockDim.x / 2; s > 0; s >>= 1) {
+    for (int s = (int)blockDim.x / 2; s > 0; s /= 2) {
         if ((int)threadIdx.x < s) {
             s_row[threadIdx.x] += s_row[threadIdx.x + s];
         }
@@ -491,6 +567,161 @@ adm_cm_reduce_line_kernel_body(int h, int w, int scale, int buffer_h, int buffer
             adm_cm_round_row_total(s_row[0], add_shift_inner_accum, shift_inner_accum);
         atomicAdd((uint64_cu *)&accum[band], (uint64_cu)shifted);
     }
+}
+
+/* ======================================================================
+ * AIM CM helpers (ADR-1525) -- the CUDA twin's ADR-0746 kernels, with the
+ * same reductions as the DLM kernels above. integer_adm.c's measure_aim
+ * pass: the CSF of decouple_r becomes the threshold band, |csf(r)| / 30 its
+ * filtered neighbours and |csf(r)| / 15 its centre, and the signal is the
+ * CSF of decouple_a. No noise floor (the host concludes with weight 0).
+ * ==================================================================== */
+
+/* (1/30) * 2^17 and (1/30) * 2^32: ADM_FIX_ONE_BY_30 and
+ * I4_ADM_FIX_ONE_BY_30 of integer_adm_kernels.h, the neighbour weights of
+ * the AIM threshold. I4_ONE_BY_15 (integer_adm.h) is twice the second. */
+constexpr int32_t aim_fix_one_by_30 = 4369;
+constexpr uint32_t aim_i4_fix_one_by_30 = 143165577u;
+
+/* Threads of the scale 1-3 AIM kernel: one block covers one row of a band. */
+constexpr int aim_i4_threads = 128;
+
+/* AIM threshold of scale 1-3 sample (i, j): per orientation the 3x3
+ * neighbourhood of |csf(r)| / 30 with the centre |csf(r)| / 15, csf(r)
+ * recomputed from the bands at each of the nine positions. */
+__device__ __forceinline__ int32_t i4_aim_threshold(const hip_i4_adm_dwt_band_t *ref,
+                                                    const hip_i4_adm_dwt_band_t *dis,
+                                                    const int (&row_offset)[3], CmNeighbours cols,
+                                                    int j, const uint32_t *rfactor, double egl)
+{
+    const int col[3] = {cols.before, j, cols.after};
+    int32_t thr = 0;
+    for (int theta = 0; theta < 3; ++theta) {
+        int32_t sum = 0;
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                const int32_t csf_r =
+                    inline_i4_csf_r(ref, dis, row_offset[r] + col[c], theta, rfactor, egl);
+                const bool centre = (r == 1) && (c == 1);
+                sum += i4_cm_weight(centre ? I4_ONE_BY_15 : aim_i4_fix_one_by_30, csf_r);
+            }
+        }
+        thr += sum;
+    }
+    return thr;
+}
+
+/* The rounded cube of one masked scale 1-3 sample (i4_adm_cm_accum_round()). */
+__device__ __forceinline__ int64_t i4_cm_cube(int32_t x, const AdmCmShiftsHip &sh)
+{
+    return cm_cube(x, sh.add_shift_sq, (uint32_t)sh.shift_sq, sh.add_shift_cub,
+                   (uint32_t)sh.shift_cub);
+}
+
+/* Sum `v` over the aim_i4_threads threads of the block and add the row's
+ * rounded total to `band_accum` (adm_cm_fold()). Every thread of the block
+ * calls it: it synchronises the block. */
+__device__ __forceinline__ void i4_aim_flush_row(int64_t v, bool row_in_range, int64_t *band_accum,
+                                                 const AdmCmShiftsHip &sh)
+{
+    __shared__ int64_t s_row[aim_i4_threads];
+    s_row[threadIdx.x] = v;
+    __syncthreads();
+    for (int stride = aim_i4_threads / 2; stride > 0; stride /= 2) {
+        if ((int)threadIdx.x < stride) {
+            s_row[threadIdx.x] += s_row[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0 && row_in_range) {
+        const int64_t row_total = s_row[0];
+        const int64_t shifted =
+            adm_cm_round_row_total(row_total, sh.add_shift_inner_accum, sh.shift_inner_accum);
+        atomicAdd((uint64_cu *)band_accum, (uint64_cu)shifted);
+    }
+}
+
+/* AIM signal of scale-0 sample `idx` in band `band`: the CSF product of
+ * decouple_a, i_rfactor * a (adm_cm_accum_px() with measure_aim). */
+__device__ __forceinline__ int32_t s0_aim_signal(const hip_adm_dwt_band_t *ref,
+                                                 const hip_adm_dwt_band_t *dis, int idx, int band,
+                                                 const uint32_t *i_rfactor, double egl)
+{
+    const Decoupled<int16_t> d = s0_decouple(ref, dis, idx, band, egl);
+    const int16_t a_val = (int16_t)(d.t - d.r);
+    return int32_t(i_rfactor[band] * (uint32_t)a_val);
+}
+
+/* |csf(r)| / 30 in Q12, narrowed to int16 as adm_csf_cols() stores it. */
+__device__ __forceinline__ int16_t s0_aim_neighbour(int16_t csf_r)
+{
+    return (int16_t)adm_asr(((int64_t)aim_fix_one_by_30 * abs((int32_t)csf_r)) + 2048, 12u);
+}
+
+/* AIM thresholds of the `rows_per_thread` scale-0 outputs from row `y` in
+ * column pos_x[1]: per orientation the 3x3 csf(r) neighbourhood. */
+template <int rows_per_thread>
+__device__ __forceinline__ void
+s0_aim_threshold(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis,
+                 const uint32_t *i_rfactor, double egl, int y, int h, const int (&pos_x)[3],
+                 int src_stride, int32_t (&thr)[rows_per_thread])
+{
+    const int total_rows = (3 + rows_per_thread - 1);
+
+#pragma unroll
+    for (int theta = 0; theta < 3; ++theta) {
+#pragma unroll
+        for (int row = 0; row < total_rows; ++row) {
+            const int pos_y = min(abs(y - 1 + row), h - 1);
+            const int offset = pos_y * src_stride;
+            const int16_t csf_r0 =
+                inline_s0_csf_r(ref, dis, offset + pos_x[0], theta, i_rfactor, egl);
+            const int16_t csf_r1 =
+                inline_s0_csf_r(ref, dis, offset + pos_x[1], theta, i_rfactor, egl);
+            const int16_t csf_r2 =
+                inline_s0_csf_r(ref, dis, offset + pos_x[2], theta, i_rfactor, egl);
+            const int16_t flt_row[3] = {s0_aim_neighbour(csf_r0), s0_aim_neighbour(csf_r1),
+                                        s0_aim_neighbour(csf_r2)};
+            s0_cm_add_row<rows_per_thread>(thr, row, flt_row, s0_cm_centre(csf_r1));
+        }
+    }
+}
+
+/* AIM scale 0: adm_cm_line_kernel_body() with the signal and threshold of
+ * the measure_aim pass. */
+template <int rows_per_thread>
+__device__ __forceinline__ void
+adm_cm_aim_line_kernel_body(const AdmBufferHip *__restrict__ buf_ptr, int h, int w, int start_row,
+                            int end_row, int start_col, int end_col, int src_stride,
+                            const AdmFixedParametersHip &params, int64_t *accum_global,
+                            const WarpShift &ws, uint32_t shift_inner_accum,
+                            uint32_t add_shift_inner_accum)
+{
+    const hip_adm_dwt_band_t *ref = &buf_ptr->ref_dwt2;
+    const hip_adm_dwt_band_t *dis = &buf_ptr->dis_dwt2;
+    const double egl = params.adm_enhn_gain_limit;
+    const int y = start_row + (int)((blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread);
+    const int band = (int)blockIdx.z;
+    const S0CmShifts sh = s0_cm_shifts(ws, band);
+
+    int64_t accum_row[rows_per_thread] = {0};
+    for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
+        /* ADR-1210's asymmetric edge rule, as in the DLM kernel. */
+        const int pos_x[3] = {abs(x - 1), x, min(x + 1, w - 1)};
+        int32_t thr[rows_per_thread] = {0};
+        s0_aim_threshold<rows_per_thread>(ref, dis, params.i_rfactor, egl, y, h, pos_x, src_stride,
+                                          thr);
+        for (int row = 0; row < rows_per_thread; ++row) {
+            const int32_t signal = ((y + row) < end_row) ?
+                                       s0_aim_signal(ref, dis, (y + row) * src_stride + x, band,
+                                                     params.i_rfactor, egl) :
+                                       0;
+            accum_row[row] +=
+                s0_cm_cube(adm_cm_excess_s0(signal, thr[row], (uint32_t)sh.shift_sub_block), sh);
+        }
+    }
+    s0_cm_block_reduce<rows_per_thread>(accum_row, y, end_row, &accum_global[band],
+                                        shift_inner_accum, add_shift_inner_accum);
 }
 
 } // namespace
@@ -562,6 +793,56 @@ __global__ void adm_cm_reduce_line_kernel_4(int h, int w, int scale, int buffer_
                                             int64_t *accum)
 {
     adm_cm_reduce_line_kernel_body<4>(h, w, scale, buffer_h, buffer_stride, buffer, accum);
+}
+
+/* ----------------------------------------------------------------------
+ * AIM kernels (ADR-1525). Same launch shapes and argument layout as the
+ * CUDA twin's adm_cm_aim_line_kernel_N / i4_adm_cm_aim_line_kernel_fused,
+ * with the device-resident AdmBufferHip of ADR-0759 and, for scales 1-3,
+ * the rounding shifts of the CPU's i4_adm_cm_ctx_init() as an argument.
+ * -------------------------------------------------------------------- */
+__global__ void
+adm_cm_aim_line_kernel_4(const AdmBufferHip *__restrict__ buf_ptr, int h, int w, int /* top */,
+                         int /* bottom */, int /* left */, int /* right */, int start_row,
+                         int end_row, int start_col, int end_col, int src_stride,
+                         int /* csf_a_stride */, int /* buffer_h */, int /* buffer_stride */,
+                         int32_t * /* accum_per_block */, AdmFixedParametersHip params,
+                         int /* scale */, int64_t *accum_global, WarpShift ws,
+                         const uint32_t shift_inner_accum, const uint32_t add_shift_inner_accum)
+{
+    adm_cm_aim_line_kernel_body<4>(buf_ptr, h, w, start_row, end_row, start_col, end_col,
+                                   src_stride, params, accum_global, ws, shift_inner_accum,
+                                   add_shift_inner_accum);
+}
+
+/* One block per row i = start_row + blockIdx.y of band blockIdx.z, the row's
+ * columns strided over aim_i4_threads threads. */
+__global__ void i4_adm_cm_aim_line_kernel(const AdmBufferHip *__restrict__ buf_ptr, int h, int w,
+                                          int top, int bottom, int left, int right, int start_row,
+                                          int end_row, int start_col, int end_col, int src_stride,
+                                          int scale, AdmCmShiftsHip shifts, int64_t *accum_global,
+                                          AdmFixedParametersHip params)
+{
+    const hip_i4_adm_dwt_band_t *ref = &buf_ptr->i4_ref_dwt2;
+    const hip_i4_adm_dwt_band_t *dis = &buf_ptr->i4_dis_dwt2;
+    const uint32_t *rfactor = &params.i_rfactor[(ptrdiff_t)(scale * 3)];
+    const double egl = params.adm_enhn_gain_limit;
+    const int band = (int)blockIdx.z;
+    const int i = start_row + (int)blockIdx.y;
+
+    int64_t thread_accum = 0;
+    if (i < end_row) {
+        const CmNeighbours rows = i4_cm_neighbours(i, h, top, bottom);
+        const int row_offset[3] = {rows.before * src_stride, i * src_stride,
+                                   rows.after * src_stride};
+        for (int j = start_col + (int)threadIdx.x; j < end_col; j += aim_i4_threads) {
+            const CmNeighbours cols = i4_cm_neighbours(j, w, left, right);
+            const int32_t thr = i4_aim_threshold(ref, dis, row_offset, cols, j, rfactor, egl);
+            const int32_t signal = inline_i4_csf_a(ref, dis, row_offset[1] + j, band, rfactor, egl);
+            thread_accum += i4_cm_cube(i4_cm_excess(signal, thr), shifts);
+        }
+    }
+    i4_aim_flush_row(thread_accum, i < end_row, &accum_global[band], shifts);
 }
 
 } /* extern "C" */

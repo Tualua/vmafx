@@ -18,6 +18,10 @@
 #include "integer_adm.h"
 #include "common.h"
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C (integer_adm_hip.c)
+ * and HIP C++ translation units; C cannot spell `using` in place of `typedef
+ * struct`. ADR-0141. */
+
 /* --------------------------------------------------------------------- */
 /* DWT band structs — mirror the CUDA twins in integer_adm_cuda.h         */
 /* --------------------------------------------------------------------- */
@@ -70,6 +74,21 @@ typedef struct AdmFixedParametersHip {
 } AdmFixedParametersHip;
 
 /* --------------------------------------------------------------------- */
+/* Rounding shifts of a scale 1-3 contrast-masking reduction              */
+/* --------------------------------------------------------------------- */
+/* The cube of one sample and the fold of a row, taken from the CPU's
+ * i4_adm_cm_ctx_init() on the host and passed to the AIM kernel by value
+ * (ADR-1525), so no shift is derived from a device logarithm. */
+typedef struct AdmCmShiftsHip {
+    int32_t add_shift_sq;
+    uint32_t shift_sq;
+    uint32_t add_shift_cub;
+    uint32_t shift_cub;
+    uint32_t add_shift_inner_accum;
+    uint32_t shift_inner_accum;
+} AdmCmShiftsHip;
+
+/* --------------------------------------------------------------------- */
 /* Device-side buffer bundle (device pointers, managed by init/close)     */
 /* --------------------------------------------------------------------- */
 typedef struct AdmBufferHip {
@@ -84,9 +103,11 @@ typedef struct AdmBufferHip {
     hip_i4_adm_dwt_band_t i4_dis_dwt2;
     hip_i4_adm_dwt_band_t i4_csf_f;
 
-    /* Per-scale accumulator arrays */
+    /* Per-scale accumulator arrays: the DLM contrast measure, the CSF
+     * denominator and the AIM contrast measure (ADR-1525). */
     int64_t *adm_cm[4];
     uint64_t *adm_csf_den[4];
+    int64_t *adm_aim_cm[4];
 
     /* Pinned host readback buffer (sizeof(int64_t) * RES_BUFFER_SIZE) */
     void *results_host;
@@ -99,6 +120,8 @@ typedef struct AdmBufferHip {
     void *tmp_accum_h; /* CM row accumulator */
     void *tmp_res;     /* packed CM + CSF-den output accumulator */
 } AdmBufferHip;
+
+/* NOLINTEND(modernize-use-using) */
 
 /* --------------------------------------------------------------------- */
 /* HSACO blobs — embedded by xxd -i during the meson hipcc pipeline       */

@@ -384,9 +384,11 @@ on one.
 
 ## adm_hip
 
-`adm_hip` (`integer_adm_hip.c`) is the twin of the CPU `adm` extractor. It
-carries no HIP flag, so `--backend hip` does not pick it for `adm`: name it
-with `--feature adm_hip`. Its options mirror the CPU table entry for entry.
+`adm_hip` (`integer_adm_hip.c`) is the twin of the CPU `adm` extractor.
+`--backend hip` picks it for `adm` and for a model's ADM features
+([ADR-1525](../../adr/1525-adm-hip-aim-device-pass.md)); `--feature adm_hip`
+names it directly. Its options mirror the CPU table entry for entry,
+`adm_skip_aim` included.
 
 ### The default model's ADM
 
@@ -398,15 +400,22 @@ The default model `vmaf_v1.0.16_3d0h` requests
 
 `adm_hip` honours `adm_csf_mode` (all four CSF models) and
 `adm_p_norm`, and its `VmafOption` table is an entry-for-entry mirror of the
-CPU table, so the `adm2` and `integer_adm_scale*` keys it emits are identical
-to the CPU twin's for any options dict.
+CPU table, so every key it emits, `integer_adm3` and `integer_aim` included,
+is identical to the CPU twin's for any options dict.
 
-**`adm3_score` / `aim_score` are not emitted by this twin**, for the same
-reason as the SYCL twin: no AIM device pass (the CUDA twin's ADR-0746
-kernels). Both features are left out of `provided_features[]` so the ADR-0530
-name-based fallback routes them to the CPU `integer_adm` twin. Tracked as
-`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
-[`state.md`](../../state.md).
+The AIM contrast measure runs on the device
+([ADR-1525](../../adr/1525-adm-hip-aim-device-pass.md)): the kernels
+`adm_cm_aim_line_kernel_4` (scale 0) and `i4_adm_cm_aim_line_kernel`
+(scales 1 to 3) in `integer_adm/adm_cm.hip` are the HIP port of the CUDA
+twin's ADR-0746 kernels. AIM swaps the roles of the DLM measure: the signal is
+the CSF of the additive part a = t - r, the threshold the 3x3 neighbourhood of
+|csf(r)| / 30 with the centre |csf(r)| / 15, recomputed from the wavelet bands
+at every tap. Every rounding shift comes from the CPU's
+`adm_cm_ctx_init()` / `i4_adm_cm_ctx_init()`, every row is folded once, and
+the host concludes each scale with the CPU's `adm_cm_result()` /
+`i4_adm_cm_result()` at noise weight 0 before it forms `aim` and blends
+`adm3` with the CPU's own routines. `adm_skip_aim=true` launches no AIM
+kernel and reports `aim` 0, as the CPU does.
 
 Two CPU-parity corrections landed with the option work: `adm_min_val` no
 longer clamps `adm2` (the CPU floors the adm3 expression only), and the
@@ -451,9 +460,20 @@ that scores several clips through the library did.
 The options keep their meaning: `adm_csf_mode` 1 to 3, the default model's
 option set, `adm_enhn_gain_limit`, `adm_skip_scale0`, `adm_norm_view_dist` /
 `adm_ref_display_height` and `adm_noise_weight` / `adm_p_norm` are identical
-to the CPU on the same fixtures. A frame takes 19.1 ms at 1920x1080 and about
-80 ms at 3840x2160 on the gfx1036, as before (77.4 and 80.4 in seven
+to the CPU on the same fixtures. A frame took 19.1 ms at 1920x1080 and about
+80 ms at 3840x2160 on the gfx1036 before the AIM pass (77.4 and 80.4 in seven
 interleaved runs whose samples overlap).
+
+With the AIM pass (ADR-1525), measured at `--precision max` against
+`--backend cpu` on the gfx1036: 4141 of 4141 values identical, `aim` and
+`adm3` included (the Netflix pair at 8, 10, 12 and 16 bits with `debug=true`
+and with the default model's options, both 1080p checkerboard pairs, 50 and
+200 frames of BBB 3840x2160), and the default model's VMAF under
+`--backend hip` equals `--backend cpu` on every frame of the Netflix pair, the
+checkerboards and 50 frames of BBB 3840x2160. The cost on this 2-unit iGPU
+(3840x2160, median of three, `adm` features only): 73 ms per frame with
+`adm_skip_aim=true`, 218 ms with AIM, against 14.5 ms for the CPU extractor
+with 16 threads (`T-HIP-ADM-AIM-INLINE-COST-2026-10-04`).
 
 ```bash
 python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_adm_exact test_hip_adm_exact_contract

@@ -490,6 +490,7 @@
         "core/src/feature/feature_characteristics.h": 1,
         "core/src/feature/feature_extractor.h": 1,
         "core/src/feature/float_vif.c": 1,
+        "core/src/feature/hip/integer_adm_hip.h": 1,
         "core/src/feature/integer_adm.c": 5,
         "core/src/feature/integer_motion.c": 2,
         "core/src/feature/integer_ssim.c": 2,
@@ -3495,7 +3496,7 @@
         "core/src/feature/hip/float_moment_hip.c": 1,
         "core/src/feature/hip/float_psnr_hip.c": 1,
         "core/src/feature/hip/float_ssim_hip.c": 1,
-        "core/src/feature/hip/integer_adm_hip.c": 3,
+        "core/src/feature/hip/integer_adm_hip.c": 2,
         "core/src/feature/hip/integer_motion_hip.c": 4,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 1,
         "core/src/feature/hip/integer_vif_hip.c": 1,
@@ -3504,13 +3505,11 @@
         "core/src/libvmaf.c": 3,
         "core/src/picture.h": 1,
         "core/test/test_feature_extractor.c": 1,
-        "core/test/test_hip_adm_parity.c": 1,
         "core/test/test_hip_smoke.c": 7,
         "core/test/test_sycl_adm_parity.c": 1,
         "pkg/bisect/bisect.go": 1,
         "pkg/report/report.go": 1,
         "pkg/report/report_test.go": 1,
-        "python/test/gpu_default_model_test.py": 1,
         "tools/vmaf-tune/src/vmaftune/bisect.py": 4,
         "tools/vmaf-tune/tests/test_bisect.py": 1,
         "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py": 2,
@@ -4553,7 +4552,7 @@
         "core/src/feature/cuda/integer_adm/adm_cm.cu": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 9,
         "core/src/feature/cuda/integer_adm_cuda.h": 1,
-        "core/test/test_hip_adm_parity.c": 1,
+        "core/src/feature/hip/integer_adm/adm_cm.hip": 2,
         "python/test/gpu_default_model_test.py": 1
       },
       "target": "0746-cuda-integer-adm3-aim-parity.md"
@@ -4596,7 +4595,7 @@
     "0759": {
       "sites": {
         ".github/workflows/rule-enforcement.yml": 1,
-        "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
+        "core/src/feature/hip/integer_adm/adm_cm.hip": 2,
         "core/src/feature/hip/integer_adm/adm_csf.hip": 1,
         "core/src/feature/hip/integer_adm_hip.c": 2,
         "core/src/feature/hip/integer_cambi/cambi_hip_device.h": 1,
@@ -7074,7 +7073,7 @@
     "1210": {
       "sites": {
         "core/src/feature/cuda/integer_adm/adm_cm.cu": 2,
-        "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
+        "core/src/feature/hip/integer_adm/adm_cm.hip": 2,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1
       },
       "target": "1210-sycl-integer-adm-cm-near-edge-mirror.md"
@@ -10133,6 +10132,24 @@
         "cmd/vmafx-controller/queue/queue.go": 1
       },
       "target": "1524-vmafx-node-controller-client.md"
+    },
+    "1525": {
+      "sites": {
+        "core/src/feature/hip/integer_adm/adm_cm.hip": 3,
+        "core/src/feature/hip/integer_adm_hip.c": 8,
+        "core/src/feature/hip/integer_adm_hip.h": 2,
+        "core/src/hip/dispatch_strategy.c": 1,
+        "core/test/test_adm_small_border.c": 1,
+        "core/test/test_adm_wide_rounding.c": 1,
+        "core/test/test_gpu_adm_tiny_frames.c": 2,
+        "core/test/test_hip_adm_buffer_pointer_contract.py": 1,
+        "core/test/test_hip_adm_exact.c": 2,
+        "core/test/test_hip_adm_exact_contract.py": 2,
+        "core/test/test_hip_adm_parity.c": 2,
+        "python/test/gpu_default_model_test.py": 1,
+        "scripts/ci/exact_twins.d/adm.hip": 1
+      },
+      "target": "1525-adm-hip-aim-device-pass.md"
     },
     "1526": {
       "sites": {

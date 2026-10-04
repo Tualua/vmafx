@@ -1232,3 +1232,4 @@
 1547-helm-gpu-resource-name
 1528-test-suite-registry
 1520-tiny-model-feature-inputs-at-flush
+1525-adm-hip-aim-device-pass

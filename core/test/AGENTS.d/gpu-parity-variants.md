@@ -50,15 +50,15 @@ workstation.
 
 `test_adm_small_border.c` and `test_adm_wide_rounding.c` build twice:
 `-DHAVE_CUDA=1` and `-DHAVE_HIP=1`. Feature list must hold only names
-arm's twin provides. HIP `integer_adm` twin has no AIM pass, so
-`VMAF_integer_feature_adm3_score` / `_aim_score` stay out of its
-`provided_features[]` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05);
-asking for them returns `-EINVAL` from `vmaf_feature_score_at_index()`
-before any parity check runs. Guard such names with
-`#if !defined(HAVE_HIP)`. Print failing name: bare "failed" cost
-session to diagnose. `test_gpu_adm_tiny_frames.c` scores aim / adm3 only in
-its SYCL arm (`NUM_KEYS` 7 under `HAVE_SYCL`, bit-exact per ADR-1362);
-CUDA arm keeps five keys until someone runs it on CUDA device with seven.
+arm's twin provides; a missing name returns `-EINVAL` from
+`vmaf_feature_score_at_index()` before any parity check runs. Since
+ADR-1525 the HIP `integer_adm` twin has its AIM pass and both arms emit
+`VMAF_integer_feature_adm3_score`: no `#if !defined(HAVE_HIP)` guard is
+left, do not bring one back. Print failing name: bare "failed" cost
+session to diagnose. `test_gpu_adm_tiny_frames.c` scores aim / adm3 in its
+SYCL and HIP arms (`ARM_SCORES_AIM`, `NUM_KEYS` 7, bit-exact per ADR-1362 /
+ADR-1525); CUDA arm keeps five keys until someone runs it on CUDA device
+with seven.
 
 `should_fail : true` in `meson.build` needs reason that is true today.
 Meson counts unexpected pass as failure, so stale marker breaks

@@ -345,10 +345,8 @@ static char *check_adm_option_match(const VmafOption *a, const VmafOption *gpu_o
  *
  * Host-side only: no HIP device or HSACO blob is needed, so this runs (and
  * catches table drift) on every machine, unlike the device parity test above.
- *
- * `adm_skip_aim` is exempt: it is not a feature param, it only drives the AIM
- * contrast-measure pass, and this twin has none — see
- * test_integer_adm_hip_does_not_claim_aim. */
+ * `adm_skip_aim` is included: the twin has the AIM pass it controls
+ * (ADR-1525). */
 static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
 {
     VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
@@ -359,37 +357,69 @@ static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
     mu_assert("adm_hip must declare options", gpu->options != NULL);
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
-        const VmafOption *a = &cpu->options[i];
-        if (!strcmp(a->name, "adm_skip_aim")) {
-            continue;
-        }
-        mu_assert_msg(check_adm_option_match(a, gpu->options));
+        mu_assert_msg(check_adm_option_match(&cpu->options[i], gpu->options));
     }
     return NULL;
 }
 
-/* Never fabricate a feature to make a name resolve: this twin has no AIM
- * device pass (the CUDA twin's ADR-0746 kernels), so aim_score / adm3_score
- * must stay out of provided_features[] and fall back to the CPU twin through
- * the ADR-0530 name lookup. */
-static char *test_integer_adm_hip_does_not_claim_aim(void)
+static int provides(const VmafFeatureExtractor *fex, const char *feature)
+{
+    for (unsigned i = 0; fex->provided_features[i]; i++) {
+        if (!strcmp(fex->provided_features[i], feature)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The AIM pass runs on the device (ADR-1525), so the twin claims aim and
+ * adm3: a model that asks for adm3 under --backend hip resolves to adm_hip
+ * instead of falling back to the CPU extractor. Host-side only. */
+static char *test_integer_adm_hip_claims_aim(void)
 {
     VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_hip");
     mu_assert("adm_hip extractor must be registered", gpu != NULL);
     mu_assert("adm_hip must declare provided_features", gpu->provided_features != NULL);
-    for (unsigned i = 0; gpu->provided_features[i]; i++) {
-        mu_assert("adm_hip must not claim VMAF_integer_feature_aim_score",
-                  strcmp(gpu->provided_features[i], "VMAF_integer_feature_aim_score") != 0);
-        mu_assert("adm_hip must not claim VMAF_integer_feature_adm3_score",
-                  strcmp(gpu->provided_features[i], "VMAF_integer_feature_adm3_score") != 0);
+    mu_assert("adm_hip must claim VMAF_integer_feature_aim_score",
+              provides(gpu, "VMAF_integer_feature_aim_score"));
+    mu_assert("adm_hip must claim VMAF_integer_feature_adm3_score",
+              provides(gpu, "VMAF_integer_feature_adm3_score"));
+    return NULL;
+}
+
+/* `--backend hip` and an imported HIP state select twins by the HIP flag. Without
+ * it adm_hip ran only when named, and the default model's ADM features fell back
+ * to the CPU extractor (documentation-audit defect 16). */
+static char *test_integer_adm_hip_is_dispatched(void)
+{
+    static const char *const features[] = {
+        "VMAF_integer_feature_adm2_score",
+        "VMAF_integer_feature_aim_score",
+        "VMAF_integer_feature_adm3_score",
+    };
+    for (size_t i = 0; i < sizeof(features) / sizeof(features[0]); i++) {
+        const VmafFeatureExtractor *fex =
+            vmaf_get_feature_extractor_by_feature_name(features[i], VMAF_FEATURE_EXTRACTOR_HIP);
+        mu_assert("a HIP lookup of an ADM feature must find a twin", fex != NULL);
+        if (strcmp(fex->name, "adm_hip") != 0) {
+            (void)fprintf(stderr, "\n%s resolves to %s under the HIP flag\n", features[i],
+                          fex->name);
+        }
+        mu_assert("a HIP lookup of an ADM feature must select adm_hip",
+                  strcmp(fex->name, "adm_hip") == 0);
     }
+    const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
+    const VmafFeatureExtractor *twin =
+        vmaf_get_feature_extractor_twin(cpu, VMAF_FEATURE_EXTRACTOR_HIP);
+    mu_assert("the HIP twin of adm must be adm_hip", twin && !strcmp(twin->name, "adm_hip"));
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_integer_adm_hip_option_table_mirrors_cpu);
-    mu_run_test(test_integer_adm_hip_does_not_claim_aim);
+    mu_run_test(test_integer_adm_hip_claims_aim);
+    mu_run_test(test_integer_adm_hip_is_dispatched);
     mu_run_test(test_integer_adm_cpu_hip_parity);
     return NULL;
 }
