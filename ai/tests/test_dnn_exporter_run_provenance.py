@@ -47,7 +47,9 @@ def test_export_tiny_models_sidecar_records_run_provenance(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     onnx_path = tmp_path / "nr_metric_v1.onnx"
-    onnx_path.write_bytes(b"onnx")
+    # The sidecar records the opset the file imports (ADR-1546), so it must be
+    # a real graph; the tracked smoke model is the smallest one.
+    onnx_path.write_bytes((REPO_ROOT / "model" / "tiny" / "smoke_v0.onnx").read_bytes())
     monkeypatch.setattr(tiny_export, "TINY_DIR", tmp_path)
     provenance = _provenance("ai/scripts/export_tiny_models.py")
 
@@ -62,6 +64,7 @@ def test_export_tiny_models_sidecar_records_run_provenance(
     payload = _read(sidecar)
     assert payload["id"] == "nr_metric_v1"
     assert payload["sha256"] == tiny_export.sha256(onnx_path)
+    assert payload["opset"] == tiny_export.read_signature(onnx_path).default_opset
     assert payload["run_provenance"] == provenance
 
 

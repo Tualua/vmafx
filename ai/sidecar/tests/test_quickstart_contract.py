@@ -31,17 +31,44 @@ class TestQuickstartDocumentationContract:
         doc = self._doc_path()
         assert doc.is_file(), f"Documentation missing at {doc}"
 
+    @staticmethod
+    def _bash_blocks(section: str) -> list[str]:
+        """Return the dedented body of every ```bash fence in ``section``.
+
+        Fences may be indented (a numbered list item), so the fence's own
+        indent is stripped from each body line.
+        """
+        blocks: list[str] = []
+        for match in re.finditer(
+            r"^([ \t]*)```bash\n(.*?)\n\1```", section, re.DOTALL | re.MULTILINE
+        ):
+            indent = match.group(1)
+            lines = match.group(2).split("\n")
+            blocks.append("\n".join(ln.removeprefix(indent) for ln in lines))
+        return blocks
+
+    @classmethod
+    def _sections(cls, doc_text: str) -> list[str]:
+        """Split the page at its level-2 headings (the heading text is not pinned)."""
+        return re.split(r"^## ", doc_text, flags=re.MULTILINE)[1:]
+
+    @classmethod
+    def _launch_section(cls, doc_text: str) -> str:
+        """The one section that starts the server; found by content, not by title."""
+        found = [
+            sec
+            for sec in cls._sections(doc_text)
+            if any("ai.sidecar.online_trainer" in b for b in cls._bash_blocks(sec))
+        ]
+        assert len(found) == 1, "exactly one section must carry the standalone launch procedure"
+        return found[0]
+
     def test_quickstart_configures_writable_checkpoint_and_cleanup(self) -> None:
         doc_text = self._doc_path().read_text(encoding="utf-8")
 
-        # Find the bash block under 'Deployment status'
-        deployment_match = re.search(
-            r"## Deployment status.*?(```bash\n.*?\n```)",
-            doc_text,
-            re.DOTALL,
-        )
-        assert deployment_match is not None, "Deployment status quickstart code block missing"
-        snippet = deployment_match.group(1)
+        # The launch procedure may span several fenced blocks (one per step).
+        section = self._launch_section(doc_text)
+        snippet = "\n".join(self._bash_blocks(section))
 
         # Must allocate private runtime dir
         assert 'runtime_dir="$(mktemp -d)"' in snippet
@@ -64,13 +91,27 @@ class TestQuickstartDocumentationContract:
 
     def test_no_standalone_snippet_omits_checkpoint_dir(self) -> None:
         doc_text = self._doc_path().read_text(encoding="utf-8")
-        # Ensure no bash snippet runs online_trainer without VMAFX_SIDECAR_CHECKPOINT_DIR
-        for block in re.findall(r"```bash\n(.*?)\n```", doc_text, re.DOTALL):
-            if "ai.sidecar.online_trainer" in block:
-                assert (
-                    "VMAFX_SIDECAR_CHECKPOINT_DIR=" in block
-                ), "Standalone invocation snippet lacks VMAFX_SIDECAR_CHECKPOINT_DIR override"
-                assert "trap " in block, "Standalone invocation snippet lacks cleanup trap"
+        launches = 0
+        # A launch command is safe only if its own section (the procedure it
+        # belongs to) also sets the checkpoint directory and the cleanup trap.
+        for section in self._sections(doc_text):
+            blocks = self._bash_blocks(section)
+            if not any("ai.sidecar.online_trainer" in b for b in blocks):
+                continue
+            launches += 1
+            joined = "\n".join(blocks)
+            assert (
+                "VMAFX_SIDECAR_CHECKPOINT_DIR=" in joined
+            ), "Standalone invocation snippet lacks VMAFX_SIDECAR_CHECKPOINT_DIR override"
+            assert "trap " in joined, "Standalone invocation snippet lacks cleanup trap"
+        assert launches >= 1, "no standalone launch snippet found; the check would be vacuous"
+
+    def test_contract_rejects_launch_without_checkpoint_dir(self) -> None:
+        # Negative case: the section scanner must flag a launch that omits the override.
+        bad = "## Run\n\n    ```bash\n    python -m ai.sidecar.online_trainer\n    ```\n"
+        blocks = self._bash_blocks(self._sections(bad)[0])
+        assert blocks == ["python -m ai.sidecar.online_trainer"]
+        assert "VMAFX_SIDECAR_CHECKPOINT_DIR=" not in "\n".join(blocks)
 
 
 class TestCheckpointDirectoryContract:

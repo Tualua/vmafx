@@ -32,6 +32,15 @@ search:
   and `build-coverage/coverage.json`; `scripts/ci/coverage-check.sh` exits 2 on a
   non-gcovr input. A sync that restores lcov fails `test_make_coverage_target.py`.
   The CI job's recipe (`tests-and-quality-gates.yml`) is unchanged.
+## Two stale tiny-AI tests (2026-10-04)
+
+`fix/ai-suite-master-red`. Tests only.
+
+- `ai/tests/test_dnn_exporter_run_provenance.py` writes a real ONNX graph (the
+  sidecar records its opset) and `ai/sidecar/tests/test_quickstart_contract.py`
+  finds the launch section by content. A sync keeps both; the contract must not
+  go back to pinning a heading. The third failure on master
+  (`test_validation_report_provenance.py`) is fixed by #2045.
 
 ## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
 
