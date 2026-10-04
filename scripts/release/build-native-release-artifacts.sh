@@ -17,10 +17,13 @@
 #   3. assert patchelf is available, before anything is compiled
 #   4. CPU-only optimized Meson build into build/
 #   5. stage artifacts/: the libvmaf SONAME chain as regular files, the vmaf
-#      CLI with its RUNPATH rewritten to $ORIGIN, models.tar.gz, and the
+#      CLI with its RUNPATH rewritten to $ORIGIN, models.tar.gz (with its own
+#      licenses/ directory, checked by licensing.py, ADR-1513), and the
 #      optional u2netp mirror (ADR-0325)
 #   6. stamp artifacts/container-build-provenance.txt
-#   7. verify the bundle with verify-native-release-artifacts.sh
+#   7. write and check the bundle's notices (licensing.py, artifact kind
+#      release-native): THIRD_PARTY_NOTICES.txt and licenses.tar.gz
+#   8. verify the bundle with verify-native-release-artifacts.sh
 #
 # Usage (from the repository root):
 #   bash scripts/release/build-native-release-artifacts.sh VERSION
@@ -121,11 +124,47 @@ stage_cli() {
   patchelf --set-rpath '$ORIGIN' artifacts/vmaf
 }
 
+LICENSING=tools/rc1-tester/image/licensing.py
+LICENCE_WORK=build/release-licences
+
+# The notices of one staged tree (ADR-1503 rule 4, ADR-1513): written by
+# licensing.py from tools/rc1-tester/image/licensing.json, then checked; the
+# check fails on a file no component records or a missing licence text.
+write_and_check_notices() {
+  local kind="$1" root="$2" scan="$3"
+  python3 "$LICENSING" notices --artifact "$kind" --root "$root" --repo . \
+    --build-scan "$scan" --texts "$LICENCE_WORK/no-fetched-texts" \
+    --source-commit "$(git rev-parse HEAD)" --tag "v${RELEASE_VERSION}"
+  python3 "$LICENSING" check --artifact "$kind" --root "$root" --repo . \
+    --build-scan "$scan" --python-version none
+}
+
+# models.tar.gz holds model/ and the notices of the models in it (licenses/).
 stage_models() {
-  local archive_epoch
+  local archive_epoch stage="$LICENCE_WORK/models"
   archive_epoch="$(git show -s --format=%ct HEAD)"
+  mkdir -p "$stage" "$LICENCE_WORK/no-fetched-texts"
+  cp -a model "$stage/model"
+  printf '{"schema_version": 1, "licences": [], "files": [], "system_inputs": 0}\n' \
+    >"$LICENCE_WORK/no-compiled-sources.json"
+  write_and_check_notices release-models "$stage" "$LICENCE_WORK/no-compiled-sources.json"
   tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
-    --numeric-owner -cf - model/ | gzip -n >artifacts/models.tar.gz
+    --numeric-owner -C "$stage" -cf - model licenses | gzip -n >artifacts/models.tar.gz
+}
+
+# THIRD_PARTY_NOTICES.txt and licenses.tar.gz for the release files: the
+# licences of every file the build compiled (ninja -t deps and SPDX headers),
+# checked against a copy of the staged artifacts.
+stage_licences() {
+  local archive_epoch stage="$LICENCE_WORK/release"
+  archive_epoch="$(git show -s --format=%ct HEAD)"
+  python3 "$LICENSING" scan-build --build build --repo . --out "$LICENCE_WORK/vmafx-sources.json"
+  mkdir -p "$stage"
+  cp -a artifacts/. "$stage/"
+  write_and_check_notices release-native "$stage" "$LICENCE_WORK/vmafx-sources.json"
+  cp "$stage/licenses/THIRD_PARTY_NOTICES.txt" artifacts/THIRD_PARTY_NOTICES.txt
+  tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
+    --numeric-owner -C "$stage" -cf - licenses | gzip -n >artifacts/licenses.tar.gz
 }
 
 # u2netp_mirror: fork-local mirror of the upstream `xuebinqin/U-2-Net` u2netp
@@ -157,6 +196,7 @@ main() {
     return 64
   fi
   local version="$1"
+  RELEASE_VERSION="$version"
 
   bash scripts/ci/check-container-build.sh --assert
   require_checkout_is_github_sha
@@ -168,6 +208,7 @@ main() {
   stage_models
   stage_u2netp_mirror
   bash scripts/ci/check-container-build.sh --stamp artifacts
+  stage_licences
   bash scripts/release/verify-native-release-artifacts.sh artifacts "$version"
 }
 

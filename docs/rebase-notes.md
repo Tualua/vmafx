@@ -7,6 +7,19 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Release files carry their notices (ADR-1513, 2026-10-04)
+
+`fix/prod-licensing-release-assets`. Release tooling only; no libvmaf change.
+
+- `scripts/release/build-native-release-artifacts.sh` writes and checks the
+  notices of `models.tar.gz` (which now also holds `licenses/`) and of the
+  release files (`THIRD_PARTY_NOTICES.txt`, `licenses.tar.gz`) with
+  `licensing.py` (kinds `release-models`, `release-native`), after the provenance
+  stamp and before the verify step. The script runs offline in the
+  `release-build` stage: the two kinds use only texts from the repository.
+- `supply-chain.yml`: `attach-to-release` requires the two notices files;
+  `provenance` and `mcp-provenance` attest the SPDX SBOMs with `actions/attest`.
+
 ## Model attribution in REUSE.toml (ADR-1513, 2026-10-04)
 
 `fix/prod-licensing-model-attribution`. `REUSE.toml` and model documentation;

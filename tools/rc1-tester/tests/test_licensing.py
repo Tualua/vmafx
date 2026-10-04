@@ -578,13 +578,15 @@ def test_every_artifact_records_its_interpreter_and_core_components() -> None:
     data = lic.load_manifest()
     for kind, record in data["artifacts"].items():
         kinds = {c["kind"] for c in record["components"]}
-        assert {"build", "notices"} <= kinds, kind
+        assert "notices" in kinds, kind
+        # every artifact that ships compiled VMAFx files records them from the build
+        assert "build" in kinds or kind == "release-models", kind
         # every artifact that ships repository files (models, report code) maps them
-        assert "repo" in kinds or kind == "production-operator-image", kind
+        assert "repo" in kinds or kind in {"production-operator-image", "release-native"}, kind
         if "python" in record:  # a python.org interpreter with its packages
             assert record["python"]["version"] in data["cpython_license_rst"], kind
             assert "python-dist" in kinds, kind
-        else:  # a distribution's interpreter, recorded by its package
+        elif not kind.startswith("release-"):  # an image: its distribution's packages
             assert "dpkg" in kinds, kind
 
 

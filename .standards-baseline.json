@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T01:33:55Z",
+  "generated_at": "2026-10-04T01:49:27Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "45fb1b55ee28f9f1098d4d6e0c58f1628282e9bd",
-  "total_infractions": 460,
+  "commit_sha": "fef36d8ef609910e48ad79ebc4a5b8c3cad93c92",
+  "total_infractions": 458,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -300,22 +300,6 @@
       "message": "curl without --max-time waits on the network without a deadline",
       "anchor": "text:bbb8ef6a5a6c",
       "fingerprint": ".github/workflows/security-scans.yml:HISS-02:text:bbb8ef6a5a6c#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/supply-chain.yml",
-      "line_number": 733,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:094afc0dc2e2",
-      "fingerprint": ".github/workflows/supply-chain.yml:HISS-02:text:094afc0dc2e2#1"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": ".github/workflows/supply-chain.yml",
-      "line_number": 827,
-      "message": "curl without --max-time waits on the network without a deadline",
-      "anchor": "text:4fd5b42b4fa9",
-      "fingerprint": ".github/workflows/supply-chain.yml:HISS-02:text:4fd5b42b4fa9#1"
     },
     {
       "rule_id": "HISS-02",

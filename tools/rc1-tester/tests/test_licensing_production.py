@@ -266,3 +266,21 @@ def test_model_annotations_match_the_registry() -> None:
         assert copyrights, rel
     for rel in ("model/predictor_libx264.onnx", "model/konvid_mos_head_v1.onnx"):
         assert lic.file_licence(REPO / rel, rel, reuse)[1] == ["Copyright 2026 Lusoris"], rel
+
+
+def test_the_release_files_carry_checked_notices() -> None:
+    """The native release bundle writes and checks the notices of models.tar.gz
+    and of the release files, and the release attaches them and attests SBOMs."""
+    script = (REPO / "scripts/release/build-native-release-artifacts.sh").read_text()
+    assert "write_and_check_notices release-models" in script
+    assert "write_and_check_notices release-native" in script
+    main = script.split("\nmain() {", 1)[1]
+    assert main.index("stage_licences") < main.index("verify-native-release-artifacts.sh")
+    assert main.index("--stamp artifacts") < main.index("stage_licences")  # the stamp is recorded
+    workflow = (REPO / ".github/workflows/supply-chain.yml").read_text()
+    for asset in ("THIRD_PARTY_NOTICES.txt", "licenses.tar.gz"):
+        assert f"dist/release-artifacts/{asset}" in workflow
+    for sbom in ("vmafx.spdx.json", "vmaf-mcp.spdx.json"):
+        assert f"sbom-path: sbom/{sbom}" in workflow
+    records = lic.load_manifest()["artifacts"]
+    assert {"release-native", "release-models"} <= records.keys()

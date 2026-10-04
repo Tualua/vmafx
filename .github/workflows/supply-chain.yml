@@ -498,7 +498,7 @@ jobs:
   # this OIDC + attestation writer sits behind release-publish like `sign`.
   provenance:
     name: Attest libvmaf provenance
-    needs: [validate-release, build-artifacts, verify-native-artifacts]
+    needs: [validate-release, build-artifacts, verify-native-artifacts, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-publish
@@ -528,6 +528,15 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-checksums: ${{ steps.subjects.outputs.checksums }}
+      # ADR-1503 rule 6 / ADR-1513: the SPDX SBOM of the release files,
+      # attested on the same subjects (the SBOM is also a release asset).
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: sbom, path: sbom/ }
+      - name: Attest the SPDX SBOM on the release files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-checksums: ${{ steps.subjects.outputs.checksums }}
+          sbom-path: sbom/vmafx.spdx.json
       # The consumer recipe in docs/development/release.md, run against every
       # subject before the bundle can reach the release.
       - name: Verify the bundle with the consumer recipe, then stage it
@@ -648,7 +657,7 @@ jobs:
   # bundle name. PyPI keeps its PEP 740 attestations (mcp-publish-pypi).
   mcp-provenance:
     name: Attest vmaf-mcp provenance
-    needs: [validate-release, mcp-build]
+    needs: [validate-release, mcp-build, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-publish
@@ -675,6 +684,14 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-checksums: ${{ steps.subjects.outputs.checksums }}
+      # ADR-1513: the SPDX SBOM of the wheel and sdist, attested on them.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: sbom, path: sbom/ }
+      - name: Attest the SPDX SBOM on the wheel and sdist
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-checksums: ${{ steps.subjects.outputs.checksums }}
+          sbom-path: sbom/vmaf-mcp.spdx.json
       - name: Verify the bundle with the consumer recipe, then stage it
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
@@ -730,7 +747,7 @@ jobs:
           fi
           local_files=("${wheels[0]}" "${sdists[0]}")
           response="$RUNNER_TEMP/pypi-release.json"
-          http_code="$(curl --retry 3 --silent --show-error \
+          http_code="$(curl --retry 3 --max-time 60 --silent --show-error \
             --output "$response" --write-out '%{http_code}' \
             "https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json")"
           publish=false
@@ -824,7 +841,7 @@ jobs:
           response="$RUNNER_TEMP/pypi-release-after.json"
           http_code=000
           for attempt in {1..12}; do
-            http_code="$(curl --retry 3 --silent --show-error --output "$response" \
+            http_code="$(curl --retry 3 --max-time 60 --silent --show-error --output "$response" \
               --write-out '%{http_code}' \
               "https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json")"
             if [[ "$http_code" == "200" &&
@@ -890,6 +907,8 @@ jobs:
             dist/release-artifacts/vmaf
             dist/release-artifacts/models.tar.gz
             dist/release-artifacts/container-build-provenance.txt
+            dist/release-artifacts/THIRD_PARTY_NOTICES.txt
+            dist/release-artifacts/licenses.tar.gz
             dist/sbom/vmafx.spdx.json
             dist/sbom/vmafx.cdx.json
             dist/sbom/vmaf-mcp.spdx.json

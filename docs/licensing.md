@@ -51,6 +51,8 @@ next to it ([ADR-1513](adr/1513-production-artifact-licensing.md),
 | `ghcr.io/vmafx/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/` | `ghcr.io/vmafx/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
 | Tester images and bundles | `/opt/vmafx/licenses/`, `licenses/` in a bundle | `<image>-source` |
 | `vmaf-mcp` on PyPI | the wheel's `licenses/` directory (EUPL-1.2) | the sdist |
+| GitHub release files (`libvmaf.so*`, `vmaf`) | `THIRD_PARTY_NOTICES.txt` and `licenses.tar.gz` next to them on the release | the release's source archives |
+| `models.tar.gz` (release) | `licenses/` inside the archive | the release's source archives |
 
 `THIRD_PARTY_NOTICES.txt` in that directory names every component, its licence,
 copyright lines and source; `texts/` holds the licence texts. The CPU image has
@@ -73,6 +75,6 @@ and is distributed under the GNU GPL version 3 or later; the Go programs list
 every module they link with its licence in the `[go]` section of the notices
 ([ADR-1514](adr/1514-go-and-node-image-licensing.md)).
 
-The GPU images and the files attached to a GitHub release gain the same
-treatment in the changes that follow ADR-1513; the releases up to 1.0.0-rc.2
-lack it ([Research-2140](research/2140-production-artifact-licence-audit.md)).
+The GPU images gain the same treatment in the change that follows; the
+releases up to 1.0.0-rc.2 lack it
+([Research-2140](research/2140-production-artifact-licence-audit.md)).

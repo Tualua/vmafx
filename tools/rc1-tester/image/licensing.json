@@ -2616,6 +2616,151 @@
      ]
     }
    ]
+  },
+  "release-models": {
+   "title": "the VMAFx models archive (models.tar.gz)",
+   "licence_root": "licenses",
+   "source_offer": "no copyleft object code is in these files; VMAFx's own source is the commit above and the source archives GitHub attaches to the same release.",
+   "components": [
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "model/other_models/brisque_live.model",
+      "model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-models",
+     "kind": "repo",
+     "name": "VMAFx models (files from the repository's model/ directory)",
+     "map": [
+      {
+       "artifact": "model/",
+       "repo": "model/"
+      }
+     ],
+     "licences": [
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above (model/)"
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "licenses/**"
+     ]
+    }
+   ]
+  },
+  "release-native": {
+   "title": "the VMAFx native release files (libvmaf, vmaf)",
+   "licence_root": "licenses",
+   "source_offer": "no copyleft object code is in these files; VMAFx's own source is the commit above and the source archives GitHub attaches to the same release.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: the vmaf command and libvmaf",
+     "paths": [
+      "vmaf",
+      "libvmaf.so*"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "EUPL-1.2 covers the VMAFx files only; every other component keeps its own terms."
+     ]
+    },
+    {
+     "id": "models-archive",
+     "kind": "fixed",
+     "name": "models.tar.gz",
+     "paths": [
+      "models.tar.gz"
+     ],
+     "licence": "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND MIT AND LicenseRef-LIVE-BRISQUE",
+     "notes": [
+      "The archive carries its own licenses/ directory: THIRD_PARTY_NOTICES.txt and the licence texts of the models it holds."
+     ]
+    },
+    {
+     "id": "u2netp-mirror",
+     "kind": "fixed",
+     "name": "u2netp checkpoint mirror (ADR-0325), when a release carries it",
+     "paths": [
+      "u2netp_mirror.onnx",
+      "u2netp_mirror.pth",
+      "LicenseRef-Apache-2.0-u2netp.txt"
+     ],
+     "licence": "LicenseRef-Apache-2.0-u2netp",
+     "copyright": [
+      "Copyright 2020 Xuebin Qin and the U^2-Net authors"
+     ],
+     "source": "https://github.com/xuebinqin/U-2-Net",
+     "texts": [
+      {
+       "repo": "LICENSES/LicenseRef-Apache-2.0-u2netp.txt",
+       "name": "LicenseRef-Apache-2.0-u2netp.txt",
+       "label": "Apache-2.0 terms of the u2netp mirror (ADR-0325)"
+      }
+     ]
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "The container build provenance stamp",
+     "paths": [
+      "container-build-provenance.txt"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory and the release's copies of it",
+     "paths": [
+      "licenses/**",
+      "THIRD_PARTY_NOTICES.txt",
+      "licenses.tar.gz"
+     ]
+    }
+   ]
   }
  },
  "fetched_texts": {

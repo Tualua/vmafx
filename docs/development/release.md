@@ -610,18 +610,31 @@ repo or in CI secrets.
 ### What is signed
 
 - **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`,
-  `container-build-provenance.txt`, optional `u2netp_mirror.{onnx,pth}`):
+  `container-build-provenance.txt`, `THIRD_PARTY_NOTICES.txt`,
+  `licenses.tar.gz`, optional `u2netp_mirror.{onnx,pth}`):
   cosign sign-blob bundles attached to the GitHub Release, plus one GitHub
   build-provenance attestation (`actions/attest-build-provenance`) that lists
   every file as a subject. The attestation is an in-toto statement with the
   [SLSA v1 build-provenance](https://slsa.dev/spec/v1.0/provenance) predicate,
   signed through Sigstore; it is stored with the repository's attestations and
   attached as `vmafx-build-provenance.sigstore.json`. SPDX + CycloneDX SBOM
-  attached. See [ADR-1356](../adr/1356-release-provenance-attest.md).
+  attached; the SPDX SBOM is also attested on the same subjects with
+  `actions/attest` (`gh attestation verify <file> --repo VMAFx/vmafx
+  --predicate-type https://spdx.dev/Document/v2.3`). See
+  [ADR-1356](../adr/1356-release-provenance-attest.md).
+- **Licences of the release blobs** ([ADR-1513](../adr/1513-production-artifact-licensing.md)):
+  `build-native-release-artifacts.sh` writes `THIRD_PARTY_NOTICES.txt` (every
+  component, licence and copyright line of `libvmaf` and `vmaf`, computed from
+  the SPDX headers of the files the build compiled) and `licenses.tar.gz` (the
+  same file with every licence text), and `models.tar.gz` carries its own
+  `licenses/` directory for the models. Both are written and checked by
+  `tools/rc1-tester/image/licensing.py` (artifact kinds `release-native`,
+  `release-models`); the build fails on a file without a recorded licence.
 - **`vmaf-mcp` Python package** (wheel + sdist): cosign sign-blob bundles, a
   GitHub build-provenance attestation attached as
-  `vmaf-mcp-provenance.sigstore.json`, and PEP 740 attestations stored
-  alongside the PyPI artefact (Trusted Publishing, no token). See
+  `vmaf-mcp-provenance.sigstore.json`, an SPDX SBOM attestation on the wheel
+  and sdist, and PEP 740 attestations stored alongside the PyPI artefact
+  (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
   `-cuda13` / `-rocm10` / `-oneapi2026` (also tagged `-oneapi2025`) / `-server`
