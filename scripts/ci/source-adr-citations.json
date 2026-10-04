@@ -2450,7 +2450,7 @@
         ".github/workflows/upstream-watcher.yml": 2,
         "core/src/feature/integer_adm.h": 1,
         "pkg/codecadapter/av1_videotoolbox_probe.go": 1,
-        "pkg/codecadapter/codecadapter.go": 3,
+        "pkg/codecadapter/codecadapter.go": 2,
         "pkg/codecadapter/codecadapter_test.go": 1,
         "pkg/codecadapter/golden_python_test.go": 1,
         "pkg/codecadapter/python_metadata_parity_test.go": 1,

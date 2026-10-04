@@ -60725,3 +60725,12 @@ upstream parity guard's allowlist.
   `torch.onnx.export(..., dynamo=False)` call. `_ensure_ai_src_importable()` is
   the single place that adds `ai/src` to `sys.path`. No score, public API or
   FFmpeg patch impact. Guard: `tools/vmaf-tune/tests/test_predictor_train.py`.
+
+## pkg/codecadapter: one definition per codec
+
+- `softwareAdapters()`, `acceleratedAdapters()` and `additionalAdapters()` in
+  `pkg/codecadapter/codecadapter.go` call the named constructors
+  (`libx265Adapter()` and the rest); a sync or a Python-parity update edits the
+  constructor and never adds an `Adapter` literal to a list. Guard:
+  `pkg/codecadapter/one_definition_test.go`. No score, public API or FFmpeg
+  patch impact.

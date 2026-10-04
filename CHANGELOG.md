@@ -2547,6 +2547,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   negligible (~15–20s) overhead, and is enforced in the required checks aggregator.
 
 
+- **`pkg/codecadapter` defines each codec once.** Eight codecs (libx264, libx265,
+  libaom-av1, libvvenc, libsvtav1, libvpx-vp9, prores_videotoolbox,
+  av1_videotoolbox) were written twice, a constructor nothing called and the
+  literal in the registry list. The lists call the constructors; no argv, range
+  or probe value changes. `TestEveryCodecIsDefinedOnce` keeps it that way.
+
+
 - **The controller evicts silent nodes after startup and returns their
   running jobs to the queue.** The node registry's reaper stopped about 15 s
   after startup, because it was tied to the fx start context, which fx lets

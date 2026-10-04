@@ -365,34 +365,7 @@ func registerAdapters(adapters []*Adapter) {
 }
 
 func softwareAdapters() []*Adapter {
-	return []*Adapter{
-		{
-			Name: "libx264", Encoder: "libx264", QualityKnob: "crf",
-			QualityRange: [2]int{0, 51}, QualityDefault: 23, InvertQuality: true,
-			Presets: swPresets, AdapterVersion: "2",
-			ProbePreset: "ultrafast", ProbeQuality: 28,
-			SupportsQPFile: true, SupportsEncoderStats: true, SupportsTwoPass: true,
-			qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
-			presetStyle: PresetFlagValue, presetFlag: "-preset",
-		},
-		{
-			Name: "libx265", Encoder: "libx265", QualityKnob: "crf",
-			QualityRange: [2]int{15, 40}, QualityDefault: 28, InvertQuality: true,
-			Presets: x265Presets, ProbePreset: "ultrafast", ProbeQuality: 28,
-			SupportsEncoderStats: true, SupportsTwoPass: true,
-			twoPassStyle: TwoPassX265Params,
-			qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
-			presetStyle: PresetFlagValue, presetFlag: "-preset",
-		},
-		{
-			Name: "libaom-av1", Encoder: "libaom-av1", QualityKnob: "crf",
-			QualityRange: [2]int{0, 63}, QualityDefault: 35, InvertQuality: true,
-			Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 35,
-			SupportsQPFile: true, SupportsTwoPass: true,
-			qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
-			presetStyle: PresetFlagValue, presetFlag: "-cpu-used", presetMap: aomCPUUsedMap,
-		},
-	}
+	return []*Adapter{libx264Adapter(), libx265Adapter(), libaomAV1Adapter()}
 }
 
 func acceleratedAdapters() []*Adapter {
@@ -401,54 +374,13 @@ func acceleratedAdapters() []*Adapter {
 		amf("h264_amf"), amf("hevc_amf"), amf("av1_amf"),
 		qsvAdapter("h264_qsv"), qsvAdapter("hevc_qsv"), qsvAdapter("av1_qsv"),
 		videotoolbox("h264_videotoolbox"), videotoolbox("hevc_videotoolbox"),
-		{
-			Name: "prores_videotoolbox", Encoder: "prores_videotoolbox", AdapterVersion: "1",
-			QualityKnob: "profile:v", QualityRange: [2]int{0, 5}, QualityDefault: 3,
-			InvertQuality: false, Presets: swPresets,
-			ProbePreset: "ultrafast", ProbeQuality: 0,
-			qualityStyle: StyleProResProfile, proresProfiles: proresProfileNames,
-			presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
-		},
-		{
-			Name: "av1_videotoolbox", Encoder: "av1_videotoolbox", AdapterVersion: "0-placeholder", QualityKnob: "q:v",
-			QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
-			Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
-			qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
-			presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
-			unavailable: "av1_videotoolbox awaiting upstream FFmpeg encoder support — see ADR-0339",
-			availableFn: av1VideoToolboxAvailable,
-		},
+		proResVideoToolboxAdapter(),
+		av1VideoToolboxAdapter(),
 	}
 }
 
 func additionalAdapters() []*Adapter {
-	return []*Adapter{
-		{
-			Name: "libvvenc", Encoder: "libvvenc", AdapterVersion: "2", QualityKnob: "qp",
-			QualityRange: [2]int{17, 50}, QualityDefault: 32, InvertQuality: true,
-			Presets: aomPresets, ProbePreset: "faster", ProbeQuality: 32,
-			SupportsTwoPass: true,
-			qualityStyle:    StyleSingleFlag, qualityFlag: "-qp",
-			presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: vvencPresetMap,
-		},
-		{
-			Name: "libsvtav1", Encoder: "libsvtav1", QualityKnob: "crf",
-			QualityRange: [2]int{20, 50}, QualityDefault: 35, InvertQuality: true,
-			Presets: svtPresets, ProbePreset: "veryfast", ProbeQuality: 35,
-			qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
-			presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: svtPresetMap,
-		},
-		{
-			Name: "libvpx-vp9", Encoder: "libvpx-vp9", AdapterVersion: "1", QualityKnob: "crf",
-			QualityRange: [2]int{0, 63}, QualityDefault: 32, InvertQuality: true,
-			Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 32,
-			SupportsTwoPass: true,
-			qualityStyle:    StyleSingleFlag, qualityFlag: "-crf",
-			presetStyle: PresetVPXDeadline, presetMap: vpxCPUUsedMap,
-			qualityTail: []string{"-b:v", "0"},
-			extraParams: []string{"-row-mt", "1"},
-		},
-	}
+	return []*Adapter{libvvencAdapter(), libsvtAV1Adapter(), libvpxVP9Adapter()}
 }
 
 // Get returns the adapter registered under name.
