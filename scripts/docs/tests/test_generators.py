@@ -15,15 +15,24 @@ from scripts.lib.safe_subprocess import CommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
-NAV = """site_name: fixture
-nav:
-  - ADRs:
-      # >>> ADR-NAV-GENERATED
-      stale: adr/missing.md
-      # <<< ADR-NAV-GENERATED
-extra:
-  preserved: true
-"""
+ADR_NAV = [
+    "- Overview: adr/README.md",
+    "- Template: adr/0000-template.md",
+    "- By tag: adr/by-tag/index.md",
+]
+
+
+def adr_nav_entries(mkdocs_text: str) -> list[str]:
+    """The entries under the top-level `ADRs` navigation item, comments dropped."""
+    lines = mkdocs_text.splitlines()
+    start = lines.index("  - ADRs:") + 1
+    entries = []
+    for line in lines[start:]:
+        if line.startswith("  - ") or not line.startswith("    "):
+            break
+        if not line.strip().startswith("#"):
+            entries.append(line.strip())
+    return entries
 
 
 class GeneratorTests(unittest.TestCase):
@@ -34,15 +43,12 @@ class GeneratorTests(unittest.TestCase):
         (self.root / "scripts/docs").mkdir(parents=True)
         for script in (
             "generate-adr-by-tag.sh",
-            "generate-adr-nav.sh",
             "concat-adr-index.sh",
             "check-adr-index.py",
         ):
             shutil.copyfile(ROOT / "scripts/docs" / script, self.root / "scripts/docs" / script)
         self.adr = self.root / "docs/adr"
         self.adr.mkdir(parents=True)
-        self.nav = self.root / "mkdocs.yml"
-        self.nav.write_text(NAV)
         (self.adr / "0000-template.md").write_text("# ADR-0000: Template\nTags: ignore\n")
         (self.adr / "0001-example.md").write_text(
             "# ADR-0001: _MSC_VER and <NAME> | `^## `\n"
@@ -75,7 +81,6 @@ class GeneratorTests(unittest.TestCase):
 
     def refresh(self) -> None:
         self.run_generator("generate-adr-by-tag.sh", "--write")
-        self.run_generator("generate-adr-nav.sh", "--write")
 
     def test_roundtrip_title_rendering_dedup_and_readonly_checks(self) -> None:
         self.refresh()
@@ -83,7 +88,6 @@ class GeneratorTests(unittest.TestCase):
         self.refresh()
         self.assertEqual(self.snapshot(), baseline)
         self.run_generator("generate-adr-by-tag.sh", "--check")
-        self.run_generator("generate-adr-nav.sh", "--check")
         self.assertEqual(self.snapshot(), baseline)
         tags = self.adr / "by-tag"
         self.assertEqual(
@@ -93,8 +97,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("1 ADR(s)", ci)
         self.assertIn(r"\_MSC\_VER and &lt;NAME&gt; \| `^## `", ci)
         self.assertIn("markdownlint-disable MD013 MD038 MD060", ci)
-        self.assertIn("adr/by-tag/c++.md", self.nav.read_text())
-        self.assertTrue(self.nav.read_text().endswith("extra:\n  preserved: true\n"))
+        self.assertIn("c++.md", (tags / "index.md").read_text())
 
     def test_missing_stale_changed_outputs_fail_without_writing(self) -> None:
         self.refresh()
@@ -110,14 +113,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.refresh()
         self.assertFalse((tags / "obsolete.md").exists())
-        self.nav.write_text(self.nav.read_text().replace("adr/0100-second.md", "adr/absent.md"))
-        before = self.snapshot()
-        self.assertNotEqual(
-            self.run_generator("generate-adr-nav.sh", "--check", check=False).returncode, 0
-        )
-        self.assertEqual(self.snapshot(), before)
 
-    def test_unsafe_tag_and_invalid_sentinel_do_not_replace_outputs(self) -> None:
+    def test_unsafe_tag_does_not_replace_outputs(self) -> None:
         self.refresh()
         for tag in ("../outside", "ci/escape", "index"):
             with self.subTest(tag=tag):
@@ -128,20 +125,19 @@ class GeneratorTests(unittest.TestCase):
                     0,
                 )
                 self.assertEqual(self.snapshot(), before)
-        (self.adr / "0002-unsafe.md").unlink()
-        for content in (
-            NAV.replace("# <<< ADR-NAV-GENERATED", "# removed"),
-            NAV + "# >>> ADR-NAV-GENERATED\n",
-            NAV.replace("# >>> ADR-NAV-GENERATED", "# temp")
-            .replace("# <<< ADR-NAV-GENERATED", "# >>> ADR-NAV-GENERATED")
-            .replace("# temp", "# <<< ADR-NAV-GENERATED"),
-        ):
-            self.nav.write_text(content)
-            for mode in ("--check", "--write"):
-                self.assertNotEqual(
-                    self.run_generator("generate-adr-nav.sh", mode, check=False).returncode, 0
-                )
-                self.assertEqual(self.nav.read_text(), content)
+
+    def test_adr_navigation_is_collapsed(self) -> None:
+        """ADR-1510: three static ADR entries, no generated block, no generator."""
+        text = (ROOT / "mkdocs.yml").read_text()
+        self.assertEqual(adr_nav_entries(text), ADR_NAV)
+        self.assertNotIn("ADR-NAV-GENERATED", text)
+        self.assertFalse((ROOT / "scripts/docs/generate-adr-nav.sh").exists())
+        planted = text.replace(
+            "      - By tag: adr/by-tag/index.md\n",
+            "      - By tag: adr/by-tag/index.md\n      - ADR-0001: adr/0001-example.md\n",
+        )
+        self.assertNotEqual(planted, text)
+        self.assertNotEqual(adr_nav_entries(planted), ADR_NAV)
 
     def test_make_order_required_docs_and_deploy_contract(self) -> None:
         makefile = (ROOT / "Makefile").read_text()
@@ -151,7 +147,6 @@ class GeneratorTests(unittest.TestCase):
                 "concat-changelog-fragments",
                 "concat-adr-index",
                 "generate-adr-by-tag",
-                "generate-adr-nav",
             ]
             positions = [target.index(f"{script}.sh --{mode}") for script in scripts]
             self.assertEqual(positions, sorted(positions))

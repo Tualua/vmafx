@@ -666,6 +666,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [CUDA backend](docs/backends/cuda/overview.md#vif_cuda-returns-the-cpus-scores-bit-for-bit-2026-10-02)).
 
 
+- **The documentation sidebar no longer lists every ADR.** The `ADRs` entry
+  now holds the ADR index, the template and the tag index; individual ADRs and
+  tag pages are reached from those pages, from links and from search
+  ([ADR-1510](docs/adr/1510-adr-nav-collapse-behind-index.md)). Every page
+  stays on the site, and each page is far smaller because the navigation it
+  carries shrank: see
+  [Documentation site design](docs/development/docs-site-design.md#navigation).
+  `scripts/docs/generate-adr-nav.sh` is retired, so a new ADR no longer edits
+  `mkdocs.yml`.
+
+
 - Rewrote the newcomer path of the documentation. The home page leads with
   five steps (get VMAFx, score a first pair, choose a backend, use the CLI, API
   or FFmpeg filter, reference). Getting started offers the published container

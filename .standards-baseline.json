@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-03T23:35:06Z",
+  "generated_at": "2026-10-03T23:59:56Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "8c74ff124d578642baed8116a345c6230f4453e5",
-  "total_infractions": 473,
+  "commit_sha": "8d8f5d78511dd61726f3f93e3085365d8529e2bc",
+  "total_infractions": 472,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3086,15 +3086,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:7eade1ba037a",
       "fingerprint": "scripts/docs/generate-adr-by-tag.sh:HISS-07:text:7eade1ba037a#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/docs/generate-adr-nav.sh",
-      "line_number": 36,
-      "symbol": "render",
-      "message": "Function 'render' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:render",
-      "fingerprint": "scripts/docs/generate-adr-nav.sh:HISS-04:fn:render#1"
     },
     {
       "rule_id": "HISS-07",

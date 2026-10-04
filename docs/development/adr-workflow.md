@@ -30,19 +30,23 @@ make docs-fragments-check
 git add docs/adr/${N}-my-topic-slug.md \
   docs/adr/_index_fragments/${N}-my-topic-slug.md \
   docs/adr/_index_fragments/_order.txt docs/adr/README.md \
-  docs/adr/by-tag/ mkdocs.yml CHANGELOG.md
+  docs/adr/by-tag/ CHANGELOG.md
 git commit -m "docs(adr): ADR-${N} my topic slug"
 ```
 
 ## Generated metadata
 
-Edit ADR files and index fragments as the sources. The README index,
-by-tag pages, and the sentinel-bounded ADR navigation block are rendered
-outputs. Never correct those generated files by hand.
+Edit ADR files and index fragments as the sources. The README index and
+the by-tag pages are rendered outputs. Never correct those generated files
+by hand.
+
+The site's sidebar lists only the ADR index, the template and the tag index
+([ADR-1510](../adr/1510-adr-nav-collapse-behind-index.md)), so a new ADR does
+not touch `mkdocs.yml`: readers find it through the index, its tag pages and
+search.
 
 `make docs-fragments-write` regenerates the changelog, the ADR index,
-then tag pages, then navigation. This order matters because navigation
-reads the generated tag file set. `make docs-fragments-check` is read-only
+then the tag pages. `make docs-fragments-check` is read-only
 and fails on missing, changed, or obsolete generated files. It also checks
 that every ADR has one correctly named fragment, fragment ADR links resolve,
 and the order manifest has no duplicate or missing-fragment entries.

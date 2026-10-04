@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The ADR navigation is collapsed behind the indexes (ADR-1510, 2026-10-04)
+
+`docs/site-adr-nav`. Documentation, its generator and tests; no source change.
+
+- `mkdocs.yml`'s `ADRs` entry is three static lines (`adr/README.md`,
+  `adr/0000-template.md`, `adr/by-tag/index.md`). The `ADR-NAV-GENERATED`
+  block and `scripts/docs/generate-adr-nav.sh` are gone, with their two lines
+  in the `Makefile`'s `docs-fragments-check` and `docs-fragments-write`. A
+  branch from before this change that regenerates the block, or an upstream
+  sync that touches `mkdocs.yml` around it, takes this side and drops the
+  block; never re-add the generator.
+- `scripts/docs/tests/test_generators.py::test_adr_navigation_is_collapsed`
+  fails when an ADR page or the block comes back into the navigation.
+- ADR branches no longer touch `mkdocs.yml`; a conflict there on an ADR branch
+  is a leftover of the old generator and resolves to this side.
+
 ## Documentation diagrams are figure specs (ADR-1508, 2026-10-04)
 
 `docs/site-diagrams`. Documentation and site configuration only.

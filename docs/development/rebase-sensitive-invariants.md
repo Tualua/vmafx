@@ -48,6 +48,13 @@ linked AGENTS.md before resolving conflicts.
   returns on a page that has a figure. See
   [Documentation site design](docs-site-design.md#diagrams).
 
+- **ADR navigation collapsed ([ADR-1510](../adr/1510-adr-nav-collapse-behind-index.md))**:
+  the `ADRs` entry of `mkdocs.yml` lists the ADR index, the template and the
+  tag index only; no `ADR-NAV-GENERATED` block and no
+  `scripts/docs/generate-adr-nav.sh`. `test_adr_navigation_is_collapsed` in
+  `scripts/docs/tests/test_generators.py` guards it. See
+  [scripts/AGENTS.md](../../scripts/AGENTS.md).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,

@@ -202,6 +202,31 @@ Material no longer loads the Mermaid script from a CDN.
 `exclude_docs`) and writes its `exclude_docs` patterns without `**`, which the
 `sources` check does not parse.
 
+## Navigation
+
+The sidebar lists the topic pages and, under `ADRs`, three entries: the ADR
+index, the template and the tag index
+([ADR-1510](../adr/1510-adr-nav-collapse-behind-index.md)). Individual ADRs
+and tag pages are reached through those two indexes, links and search; every
+one is still built. Material renders the whole navigation into every page,
+so taking the ADR and tag links out of it shrank every page: the sidebar of
+`usage/cli/` went from 2,134 links (1,843 into `adr/`) to 294 (3). Measured on
+strict builds of this tree before and after the change:
+
+| | Before | After |
+| --- | ---: | ---: |
+| HTML pages built | 2,923 | 2,923 (the same paths) |
+| Files in the site | 3,041 | 3,041 (the same paths) |
+| Median page, bytes | 374,442 | 70,520 |
+| All HTML pages | 1,116 MB | 223 MB |
+| Landing page, bytes (gzipped) | 378,259 (48,144) | 76,402 (13,722) |
+| `usage/cli/`, bytes (gzipped) | 470,715 (68,330) | 157,818 (33,729) |
+| `mkdocs build --strict` | 274 s | 72 s |
+
+A new ADR therefore needs no `mkdocs.yml` edit.
+`scripts/docs/tests/test_generators.py` holds the three entries
+(`test_adr_navigation_is_collapsed`).
+
 ## Fonts
 
 The site serves Inter 4.1 for text and JetBrains Mono 2.304 for code, both
