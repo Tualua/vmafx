@@ -8,11 +8,13 @@
 # All canonical build artifacts (release binaries, published images) must be
 # produced inside the canonical dev container rather than on the bare runner host.
 # This workflow publishes ghcr.io/vmafx/vmafx-dev-mcp on every change to
-# dev/Containerfile or dev/scripts/** for transparency and contributor
-# convenience. It is not on the release path: supply-chain.yml builds the
-# small Debian 13 `release-build` stage from the release tag itself
-# (ADR-1346, ADR-1354) and never pulls this image. This is the one workflow build of dev/Containerfile that
-# does not go through scripts/ci/build-dev-container-stage.sh, because it
+# dev/Containerfile or dev/scripts/** for the organisation's own use. The
+# package must stay private (ADR-1564): the stage holds toolkit files that may
+# not be redistributed, so the job refuses to push into a package that is not.
+# It is not on the release path: supply-chain.yml builds the small Debian 13
+# `release-build` stage from the release tag itself (ADR-1346, ADR-1354) and
+# never pulls this image. This is the one workflow build of dev/Containerfile
+# that does not go through scripts/ci/build-dev-container-stage.sh, because it
 # pushes to a registry; check-dev-container-build-secret.py checks its secret.
 #
 # Produces:
@@ -63,6 +65,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+
+      # ADR-1564: this stage holds the full CUDA toolkit, Intel's oneAPI Base
+      # Kit and the ROCm payload, whose licences allow internal use but not
+      # redistribution. Push only into a private package, and fail closed when
+      # the visibility cannot be read, before anything is built.
+      - name: Refuse to push unless the package is private
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1

@@ -206,6 +206,16 @@ functions (`_extract_sample`, `_verify_encode`, `_fast_production_result`).
   `test_sycl_vif_exact_gain_contract.py` now expects the call in
   `vif_accumulate_pixel()` and in `test_sycl_integer_vif_math.c`'s
   `reference_terms()`. No score, public API or FFmpeg patch impact.
+## Dev image pushed only into a private package (ADR-1564, 2026-10-04)
+
+`fix/dev-image-private-guard`. CI only.
+
+- `.github/workflows/dev-container-publish.yml` gains the step "Refuse to
+  push unless the package is private" right after checkout; it runs
+  `scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp`. A rebase
+  that edits the job keeps the step first, without `if:` or
+  `continue-on-error`, and keeps every pushed tag in that package
+  (`scripts/ci/tests/test_require_private_ghcr_package.py`).
 
 ## The controller keeps evicting nodes and requeues their jobs (2026-10-04)
 

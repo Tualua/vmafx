@@ -1250,3 +1250,4 @@
 1568-tests-run-once-in-ci
 1591-package-compression
 1594-zstd-images-zopfli-zips
+1564-dev-image-private-guard

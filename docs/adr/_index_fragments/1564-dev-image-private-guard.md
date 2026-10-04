@@ -1,0 +1,1 @@
+| [ADR-1564](1564-dev-image-private-guard.md) | `dev-container-publish.yml` checks that `ghcr.io/vmafx/vmafx-dev-mcp` is private before it builds or pushes, and fails closed on any other answer: the image holds CUDA, oneAPI and ROCm toolkit files that may be used internally but not redistributed | Accepted | license, compliance, ci, docker, supply-chain, fork-local |

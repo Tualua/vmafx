@@ -111,7 +111,7 @@ is four workflows:
 
 | Workflow / job | Trigger | Produces | Builds in a container? |
 |---|---|---|---|
-| `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage. Published for transparency; releases do not pull it |
+| `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage into a private package; the job refuses to push unless GHCR reports the package private ([ADR-1564](../adr/1564-dev-image-private-guard.md)); releases do not pull it |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
 | `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the Debian 13 `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
@@ -334,9 +334,22 @@ docker run --rm --pull never --network none --user "$(id -u):$(id -g)" \
 bash scripts/ci/check-container-build.sh --verify artifacts
 ```
 
-`.github/workflows/dev-container-publish.yml` still publishes
-`ghcr.io/vmafx/vmafx-dev-mcp` (the `libvmaf-build` stage) for transparency and
-contributor convenience. No release job pulls it.
+`.github/workflows/dev-container-publish.yml` still pushes
+`ghcr.io/vmafx/vmafx-dev-mcp` (the `libvmaf-build` stage) for the
+organisation's own use. No release job pulls it. The package must stay
+private: the stage holds the full CUDA toolkit, Intel's oneAPI Base Kit and
+the ROCm payload, which their licences allow to be used internally but not
+redistributed. Before it builds, the job runs
+`scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp`, which reads
+the package's visibility from the GitHub API and fails the job unless it is
+`private`, including when the visibility cannot be read
+([ADR-1564](../adr/1564-dev-image-private-guard.md)). Do not make the package
+public or give anyone outside the organisation access to it. To check it
+yourself:
+
+```bash
+GH_TOKEN=$(gh auth token) bash scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp
+```
 
 Run the unit suite locally with:
 
