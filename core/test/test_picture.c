@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 #include "picture.h"
 #include "libvmaf/picture.h"
 #include "ref.h"
@@ -267,17 +268,6 @@ static char *test_picture_unref_null_error_paths()
     return NULL;
 }
 
-/* Grouped so neither runner trips the readability-function-size branch budget:
- * every mu_run_test expands to a branch (ADR-1142). */
-static char *run_chroma_ceiling_tests(void)
-{
-    mu_run_test(test_picture_chroma_ceiling_420_odd);
-    mu_run_test(test_picture_chroma_ceiling_420_even);
-    mu_run_test(test_picture_chroma_ceiling_422);
-    mu_run_test(test_picture_chroma_ceiling_444);
-    return NULL;
-}
-
 /* vmaf_picture_alloc's documented layout (core/include/libvmaf/picture.h): each
  * plane's stride is its width rounded up to 64 samples (bytes for 8-bit, twice
  * that above 8 bits) and the buffer is zero-filled. The header once said "32-byte
@@ -317,24 +307,25 @@ static char *test_picture_buffer_is_zero_filled(void)
     return NULL;
 }
 
-static char *run_layout_tests(void)
-{
-    mu_run_test(test_picture_stride_is_64_samples);
-    mu_run_test(test_picture_buffer_is_zero_filled);
-    return NULL;
-}
-
+/* A table, not a sequence of mu_run_test(): every mu_run_test expands to two
+ * branches and readability-function-size allows 15 (mu_table.h, ADR-1142). */
 char *run_tests()
 {
-    mu_run_test(test_picture_alloc_ref_and_unref);
-    mu_run_test(test_picture_data_alignment);
-    mu_run_test(run_chroma_ceiling_tests);
-    mu_run_test(run_layout_tests);
-    mu_run_test(test_picture_alloc_rejects_overflow_dimensions);
-    mu_run_test(test_picture_alloc_yuv400p_luma_only);
-    mu_run_test(test_picture_ref_null_error_paths);
-    mu_run_test(test_picture_unref_null_error_paths);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_picture_alloc_ref_and_unref),
+        MU_TEST(test_picture_data_alignment),
+        MU_TEST(test_picture_chroma_ceiling_420_odd),
+        MU_TEST(test_picture_chroma_ceiling_420_even),
+        MU_TEST(test_picture_chroma_ceiling_422),
+        MU_TEST(test_picture_chroma_ceiling_444),
+        MU_TEST(test_picture_stride_is_64_samples),
+        MU_TEST(test_picture_buffer_is_zero_filled),
+        MU_TEST(test_picture_alloc_rejects_overflow_dimensions),
+        MU_TEST(test_picture_alloc_yuv400p_luma_only),
+        MU_TEST(test_picture_ref_null_error_paths),
+        MU_TEST(test_picture_unref_null_error_paths),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
