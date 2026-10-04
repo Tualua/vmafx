@@ -66,10 +66,32 @@ class RegistryError(Exception):
 
 
 @dataclass(frozen=True)
+class Install:
+    """How to build the Python environment a suite runs in (read by run_affected_suites.py).
+
+    ``locks`` install in order with ``--require-hashes``; ``editable`` directories
+    install with ``--no-deps``. ``venv_of`` names another suite whose environment
+    this suite runs in (a suite CI runs in the torch venv of ``ai``).
+    """
+
+    python: str
+    locks: tuple[str, ...] = ()
+    editable: tuple[str, ...] = ()
+    venv_of: str | None = None
+
+
+@dataclass(frozen=True)
 class Suite:
     name: str
     paths: tuple[str, ...]
     checks: tuple[str, ...]
+    source_paths: tuple[str, ...] = ()
+    install: Install | None = None
+    not_local: str | None = None
+    pytest_timeout: int | None = None
+    pytest_timeout_method: str = "signal"
+    fail_on_skip: str | None = None
+    pytest_rewrite: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +116,71 @@ def _strings(value: Any, label: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _install(value: Any, label: str) -> Install:
+    if not isinstance(value, dict) or not isinstance(value.get("python"), str):
+        raise RegistryError(f"{label} must be an object with a string python version")
+    venv_of = value.get("venv_of")
+    if venv_of is not None:
+        if not isinstance(venv_of, str) or "locks" in value or "editable" in value:
+            raise RegistryError(f"{label}: venv_of is a suite name and excludes locks/editable")
+        return Install(python=value["python"], venv_of=venv_of)
+    editable = value.get("editable", [])
+    if editable:
+        _strings(editable, f"{label}.editable")
+    return Install(
+        python=value["python"],
+        locks=_strings(value.get("locks"), f"{label}.locks"),
+        editable=tuple(editable),
+    )
+
+
+PYTEST_REWRITE_PARTS = 2
+
+
+def _pytest_fields(pytest_cfg: Any, label: str) -> dict[str, Any]:
+    """The `pytest` object of a suite: per-test timeout and method, and a path rewrite."""
+    if not isinstance(pytest_cfg, dict):
+        raise RegistryError(f"{label}.pytest must be an object")
+    fields: dict[str, Any] = {}
+    if "timeout" in pytest_cfg:
+        timeout = pytest_cfg["timeout"]
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+            raise RegistryError(f"{label}.pytest.timeout must be a positive integer")
+        fields["pytest_timeout"] = timeout
+    if "rewrite" in pytest_cfg:
+        rewrite = _strings(pytest_cfg["rewrite"], f"{label}.pytest.rewrite")
+        if len(rewrite) != PYTEST_REWRITE_PARTS:
+            raise RegistryError(f"{label}.pytest.rewrite must be [from-prefix, to-prefix]")
+        fields["pytest_rewrite"] = (rewrite[0], rewrite[1])
+    if "method" in pytest_cfg:
+        fields["pytest_timeout_method"] = str(pytest_cfg["method"])
+    return fields
+
+
+def _suite_run_fields(entry: dict[str, Any], label: str) -> dict[str, Any]:
+    """The fields run_affected_suites.py reads: how a suite installs and runs locally."""
+    has_install, has_reason = "install" in entry, "not_local" in entry
+    if has_install == has_reason:
+        raise RegistryError(f"{label}: give exactly one of install and not_local (a reason)")
+    fields: dict[str, Any] = {}
+    if has_install:
+        fields["install"] = _install(entry["install"], f"{label}.install")
+    elif not isinstance(entry["not_local"], str) or not entry["not_local"]:
+        raise RegistryError(f"{label}.not_local must be a non-empty reason string")
+    else:
+        fields["not_local"] = entry["not_local"]
+    if "source_paths" in entry:
+        fields["source_paths"] = _strings(entry["source_paths"], f"{label}.source_paths")
+    fields.update(_pytest_fields(entry.get("pytest", {}), label))
+    if "fail_on_skip" in entry:
+        try:
+            re.compile(str(entry["fail_on_skip"]))
+        except re.error as exc:
+            raise RegistryError(f"{label}.fail_on_skip is not a regex: {exc}") from exc
+        fields["fail_on_skip"] = str(entry["fail_on_skip"])
+    return fields
+
+
 def _suite(entry: Any, index: int) -> Suite:
     if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
         raise RegistryError(f"suites[{index}] must be an object with a string name")
@@ -102,6 +189,7 @@ def _suite(entry: Any, index: int) -> Suite:
         name=entry["name"],
         paths=_strings(entry.get("paths"), f"{label}.paths"),
         checks=_strings(entry.get("checks"), f"{label}.checks"),
+        **_suite_run_fields(entry, label),
     )
 
 
@@ -152,6 +240,11 @@ def tracked_files(root: Path) -> list[str]:
 
 def _under(path: str, prefix: str) -> bool:
     return path == prefix or (prefix.endswith("/") and path.startswith(prefix))
+
+
+def path_under(path: str, prefix: str) -> bool:
+    """Whether path is prefix itself or, for a directory prefix ending in `/`, inside it."""
+    return _under(path, prefix)
 
 
 def is_test_file(registry: Registry, path: str) -> bool:
@@ -207,9 +300,25 @@ def file_findings(registry: Registry, files: Iterable[str]) -> list[str]:
     return findings
 
 
+def _install_findings(registry: Registry, files: Sequence[str]) -> list[str]:
+    """Install specs and source paths that name nothing tracked, or a suite that is not there."""
+    findings = []
+    names = {suite.name for suite in registry.suites}
+    for suite in registry.suites:
+        install = suite.install
+        if install is not None and install.venv_of is not None and install.venv_of not in names:
+            findings.append(f"suite {suite.name}: venv_of names no suite: {install.venv_of!r}")
+        listed = list(suite.source_paths)
+        listed += [] if install is None else [*install.locks, *(e + "/" for e in install.editable)]
+        for path in listed:
+            if not any(_under(f, path) for f in files):
+                findings.append(f"suite {suite.name}: {path!r} matches no tracked file")
+    return findings
+
+
 def suite_findings(registry: Registry, files: Sequence[str], required: set[str]) -> list[str]:
     """Suite paths that hold no test file; checks the aggregator does not require."""
-    findings = []
+    findings = _install_findings(registry, files)
     tests = [f for f in files if is_test_file(registry, f)]
     for suite in registry.suites:
         for prefix in suite.paths:
@@ -319,7 +428,7 @@ def _run_pytest(root: Path, files: Sequence[str]) -> bool:
     return status == 0
 
 
-def _run_shell_test(root: Path, bash: str, path: str) -> bool:
+def run_shell_test(root: Path, bash: str, path: str) -> bool:
     try:
         result = run_command(
             [bash, path],
@@ -354,7 +463,7 @@ def command_run(root: Path, name: str) -> int:
     if bash is None:
         raise RegistryError("bash is not on PATH")
     failed = [] if _run_pytest(root, python_files) else ["pytest"]
-    failed += [path for path in shell_files if not _run_shell_test(root, bash, path)]
+    failed += [path for path in shell_files if not run_shell_test(root, bash, path)]
     print(f"suite-registry: {name}: {len(python_files)} Python and {len(shell_files)} shell files")
     if failed:
         print(f"suite-registry: {name}: failed: {', '.join(failed)}", file=sys.stderr)

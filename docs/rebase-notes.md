@@ -60951,3 +60951,12 @@ install step, the variable and the widened skip pattern together. The research
 digest `docs/research/1178-dev-container-image-publish.md` no longer calls the
 dev image published "for transparency" (ADR-1564: the package stays private).
 No score, public API or FFmpeg patch impact.
+## Affected-suite runner (`run_affected_suites.py`)
+
+- `.github/test-suites.json` carries the local-run fields `source_paths`,
+  `install`, `pytest` and `fail_on_skip` (or a `not_local` reason) per suite;
+  `scripts/ci/suite_registry.py` parses and checks them, and
+  `scripts/ci/run_affected_suites.py` reads them. A sync that adds a suite adds
+  the fields in the same change; a lock rename changes the suite's `install`.
+  The CI jobs do not read `install` yet. No score, public C API or FFmpeg patch
+  impact.

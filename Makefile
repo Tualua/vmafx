@@ -55,7 +55,7 @@ GOLDEN_ARM64_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden-arm64-$(GOLDEN_ARM64_CC)
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
     go-build go-test go-fix go-fix-check go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
-    build-golden build-golden-arm64
+    build-golden build-golden-arm64 test-affected
 
 default: build
 
@@ -515,6 +515,13 @@ test-netflix-golden: build-golden
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
 	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    $(GOLDEN_PYTEST_ARGS)
+
+# The test suites a change affects, in cached hash-locked venvs (docs/development/test-suites.md).
+#   make test-affected BASE=origin/master HEAD=HEAD [VMAF_BIN=build/tools/vmaf]
+test-affected:
+	@test -n "$(BASE)" -a -n "$(HEAD)" || { echo "usage: make test-affected BASE=<sha> HEAD=<sha>"; exit 2; }
+	python3 scripts/ci/run_affected_suites.py --base "$(BASE)" --head "$(HEAD)" \
+	    $(if $(VMAF_BIN),--vmaf-bin "$(VMAF_BIN)")
 
 # The same assertions against an aarch64 build on an x86 host (ADR-1461).
 # The harness executes $(GOLDEN_ARM64_BUILD_DIR)/tools/vmaf like a native

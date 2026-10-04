@@ -43,8 +43,8 @@ def manifest(**overrides: object) -> dict[str, object]:
         "name_patterns": ["test_*.py", "test-*.sh", "*_test.go"],
         "path_patterns": ["*/tests/*.rs"],
         "suites": [
-            {"name": "unit", "paths": ["pkg/", "crate/"], "checks": ["Unit"]},
-            {"name": "tools", "paths": ["tools/"], "checks": ["Tools"]},
+            {"name": "unit", "paths": ["pkg/", "crate/"], "checks": ["Unit"], "not_local": "go"},
+            {"name": "tools", "paths": ["tools/"], "checks": ["Tools"], "not_local": "tools"},
         ],
         "not_tests": [{"path": "tools/test-driver.sh", "reason": "a driver, not a test"}],
     }
@@ -108,6 +108,30 @@ class SuiteRegistryTests(unittest.TestCase):
     def assert_finding(self, result: subprocess.CompletedProcess[str], text: str) -> None:
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(text, result.stderr)
+
+    # --- local-run fields (run_affected_suites.py) -----------------------------
+
+    def test_suite_without_install_or_reason_is_a_usage_error(self) -> None:
+        data = manifest()
+        del data["suites"][0]["not_local"]  # type: ignore[index]
+        self.build(PASSING_FILES, data)
+        result = self.registry("check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("exactly one of install and not_local", result.stderr)
+
+    def test_install_naming_an_untracked_lock_fails(self) -> None:
+        data = manifest()
+        data["suites"][1].pop("not_local")  # type: ignore[index]
+        data["suites"][1]["install"] = {"python": "3.14", "locks": ["tools/gone.txt"]}  # type: ignore[index]
+        self.build(PASSING_FILES, data)
+        self.assert_finding(self.registry("check"), "'tools/gone.txt' matches no tracked file")
+
+    def test_venv_of_naming_no_suite_fails(self) -> None:
+        data = manifest()
+        data["suites"][1].pop("not_local")  # type: ignore[index]
+        data["suites"][1]["install"] = {"python": "3.14", "venv_of": "nope"}  # type: ignore[index]
+        self.build(PASSING_FILES, data)
+        self.assert_finding(self.registry("check"), "venv_of names no suite: 'nope'")
 
     # --- check ---------------------------------------------------------------
 
@@ -204,9 +228,9 @@ class SuiteRegistryTests(unittest.TestCase):
     def tooling_manifest(self) -> dict[str, object]:
         data = manifest()
         data["suites"] = [  # one file of tools/ leaves for a suite of its own
-            {"name": "unit", "paths": ["pkg/", "crate/"], "checks": ["Unit"]},
-            {"name": "tooling", "paths": ["tools/"], "checks": ["Tools"]},
-            {"name": "pinned", "paths": ["tools/test_ok.py"], "checks": ["Unit"]},
+            {"name": "unit", "paths": ["pkg/", "crate/"], "checks": ["Unit"], "not_local": "go"},
+            {"name": "tooling", "paths": ["tools/"], "checks": ["Tools"], "not_local": "t"},
+            {"name": "pinned", "paths": ["tools/test_ok.py"], "checks": ["Unit"], "not_local": "p"},
         ]
         return data
 

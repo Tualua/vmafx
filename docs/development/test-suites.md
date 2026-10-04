@@ -91,6 +91,59 @@ The tooling suite's shell tests expect `git`, `bash`, `cc`, `readelf`,
 Docker is optional: the container-source test runs its Docker-backed cases
 only when `docker info` succeeds.
 
+## Run the affected suites locally
+
+`scripts/ci/run_affected_suites.py` runs the Python suites a change touches, the
+way CI does, before a change lands. Use it after a rebase or before a push, and
+as the merge train's Python gate.
+
+```bash
+make test-affected BASE=origin/master HEAD=HEAD VMAF_BIN=build/tools/vmaf
+python3 scripts/ci/run_affected_suites.py --base <sha> --head <sha> --vmaf-bin build/tools/vmaf
+python3 scripts/ci/run_affected_suites.py --files ai/src/vmaf_train/x.py --list   # what would run
+```
+
+A suite is affected when a changed file is one of its test files, sits under its
+`paths` or `source_paths`, or is a lock file or editable package of its install
+spec. A documentation-only change affects nothing and the command exits 0. The
+mapping is the registry's own, so a new suite or test directory needs no change
+here.
+
+For each affected suite the runner builds a virtual environment once in
+`~/.cache/vmafx-suite-venvs/<suite>-<hash of its lock files>`
+(`VMAFX_SUITE_VENVS` or `--venv-root` moves it), installs the registry's locks
+with `--require-hashes` and, with `uv`, byte-compiles the packages as pip does.
+A changed lock gives a new directory, so the next run rebuilds; delete the old
+ones by hand when disk matters (`ai` holds torch and is several GB). The
+editable packages are re-pointed at the checkout on every run, so one cache
+serves every worktree, and a per-venv file lock serialises two runs that share
+it. `vmaf-tune-train` runs in the venv of `ai` (`venv_of`), as in CI. The tests
+run with `pytest -p no:cacheprovider -rs` and the per-test timeout CI uses,
+under a 900 s cap per suite (`--time-cap`).
+
+Measured on a loaded 32-core workstation with a warm `uv` wheel cache: a venv
+builds in 1 to 7 s (the first build with an empty wheel cache downloads the
+locked wheels, which is several GB for `ai`); `ai` runs in about 50 to 80 s,
+`vmaf-tune` in 20 s, `mcp` in 9 s, and `tooling`, which runs every script test,
+in 5 to 8 minutes, so a change under `scripts/` is the slow case.
+
+A suite fails on a failed test, on a time-cap overrun and on a skip whose reason
+is a missing dependency (`could not import`, `No module named`, `not installed`)
+or a missing input the suite declares in `fail_on_skip`: the `vmaf` binary and
+the Netflix golden YUVs for `ai`, `mcp` and `vmaf-tune`, any skip for
+`vmaf-tune-train`. Pass the binary the train built with `--vmaf-bin` (or
+`VMAF_BIN`); the YUVs are `python/test/resource/yuv`. Suites that need a build or
+a toolchain (`core`, `python-harness`, `go`, `rust`, `helm-chart`,
+`ffmpeg-patches`) carry a `not_local` reason; the runner prints `NOT RUN` for
+them and `--strict` turns that into a failure. One line per suite reports
+passed, failed and skipped counts and the duration.
+
+The registry fields it reads are `source_paths`, `install` (`python`, `locks`,
+`editable` or `venv_of`), `pytest` (`timeout`, `method`, `rewrite`) and
+`fail_on_skip`; every suite has an `install` or a `not_local` reason, which
+`suite_registry.py check` enforces. The CI jobs still spell their installs in
+the workflow; a follow-up makes them read `install` too.
+
 ## Pre-commit hooks that run tests
 
 Fifty local pre-commit hooks run a test of the tooling suite when a file they
