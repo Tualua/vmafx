@@ -345,7 +345,10 @@ uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stri
  *
  * Operates on the luma plane (data[0]) only.  Both pictures must have the
  * same dimensions and bit-depth.  Processes 32 uint16 samples per SIMD
- * iteration using _mm512_abs_epi16 + widening accumulation.
+ * iteration: |a - b| = max(a, b) - min(a, b) in unsigned 16-bit lanes, then
+ * widening accumulation. A signed 16-bit difference wraps for 16-bit samples
+ * that differ by more than 32767 (65535 - 0 gave 1);
+ * T-SIMD-SAD-AVX512-INT16-DIFFERENCE-2026-10-05.
  * ----------------------------------------------------------------------- */
 void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad_out)
 {
@@ -370,9 +373,8 @@ void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad_out)
         for (; j + 32 <= w; j += 32) {
             __m512i va = _mm512_loadu_si512((const __m512i *)(row_a + j));
             __m512i vb = _mm512_loadu_si512((const __m512i *)(row_b + j));
-            /* Signed subtract, then abs -> |a[k]-b[k]| per int16 lane */
-            __m512i diff = _mm512_sub_epi16(va, vb);
-            __m512i abs_diff = _mm512_abs_epi16(diff);
+            /* |a[k]-b[k]| per uint16 lane, exact for every 16-bit sample */
+            __m512i abs_diff = _mm512_sub_epi16(_mm512_max_epu16(va, vb), _mm512_min_epu16(va, vb));
             /* Widen uint16 -> uint32 in two halves and accumulate */
             acc = _mm512_add_epi32(acc, _mm512_cvtepu16_epi32(_mm512_castsi512_si256(abs_diff)));
             acc = _mm512_add_epi32(acc,

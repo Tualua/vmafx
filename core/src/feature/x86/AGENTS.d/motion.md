@@ -23,3 +23,11 @@ A change to the arithmetic goes into the helper that holds the statement, on
 both files, and `core/test/test_motion_v2_simd.c` /
 `core/test/test_motion_avx512_parity.c` compare the result with the scalar
 reference. Keep every function at or under 60 lines (ADR-1142).
+
+## `sad_avx512` takes the difference in unsigned lanes
+
+`sad_avx512()` forms `|a - b|` as `max_epu16(a, b) - min_epu16(a, b)`. A
+signed 16-bit subtraction followed by `abs_epi16` wraps for 16-bit samples
+that differ by more than 32767 (65535 against 0 gave 1). The 16-bit cases of
+`test_sad_avx512_*` in `core/test/test_motion_avx512_parity.c` fail on that
+form (T-SIMD-SAD-AVX512-INT16-DIFFERENCE-2026-10-05).
