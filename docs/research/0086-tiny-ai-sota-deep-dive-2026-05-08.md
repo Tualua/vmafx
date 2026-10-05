@@ -20,7 +20,8 @@
   `fr_regressor_v2_ensemble` (codec-aware, ensemble-of-5, ~5–20 K params)
   occupies the *same niche* as **Synamedia/Quortex pVMAF** (PLCC 0.985 /
   SROCC 0.988 sequence-level, shallow MLP, encoder-loop features) and
-  **MainConcept VMAF-E** (±2 VMAF, 10× faster, neural net, in-encode-loop) —
+  a **proprietary neural VMAF estimator** from a commercial encoder vendor
+  (±2 VMAF claimed, 10× faster, in-encode-loop; unverified) —
   three known industry analogues, all 2024–2025, none open-source under
   permissive licences. We are competitive; we are *not* uniquely SOTA on raw
   accuracy, and we have no published external benchmark that lets us claim a
@@ -47,8 +48,9 @@
   one-hot** — the field generally trains *one* model per codec rather than
   conditioning, which is empirically a wash but architecturally more
   reusable.
-- **Biggest single threat to our differentiation:** **MainConcept vScore /
-  VMAF-E** (Sept 2025) and **Synamedia x264-pVMAF** (Nov 2024 OSS, GPL-2.0)
+- **Biggest single threat to our differentiation:** **a commercial encoder
+  vendor's proprietary neural VMAF estimator** (Sept 2025) and
+  **Synamedia x264-pVMAF** (Nov 2024 OSS, GPL-2.0)
   ship to the same audience. Once a GPL-2.0 reference exists, our BSD/permissive
   stack is the only durable moat — pVMAF can't be linked into proprietary
   pipelines that ours can.
@@ -80,9 +82,10 @@
   released as **GPL-2.0 OSS** at <https://github.com/quortex/x264-pVMAF>
   (Nov 2024); 35× faster than VMAF, frame-level SROCC 0.991, FHD-only,
   inference C-code, **no training code, no weights detail published**.
-- **MainConcept VMAF-E (vScore suite)** — neural net, ±2 VMAF accuracy,
-  up to 10× faster than VMAF, integrated into Codec SDK 16.0
-  (Sept 2025), in-coding-order so true real-time. Closed source.
+- **Proprietary neural VMAF estimator (commercial encoder vendor)** — neural net,
+  ±2 VMAF accuracy claimed, up to 10× faster than VMAF, integrated into the
+  vendor's codec SDK (Sept 2025), in-coding-order so true real-time. Closed
+  source; claims unverified.
 - **Huawei PyTorch VMAF re-implementation** (Sept 2023, arXiv
   2310.15578) — full-pipeline reproduction (VIF, ADM, motion + SVR-RBF)
   with discrepancy ≲ 10⁻² VMAF units, purpose-built for *gradient-based
@@ -92,7 +95,7 @@
   2023, doi 10.1016/j.eswa.2023.120469) — DNN regressor that predicts
   CRF for a target VMAF from per-segment features; targets VP9; reports
   ~1 VMAF MAE on the test split.
-- **Constant Target Quality (MainConcept blog 2023)** — same family,
+- **Vendor constant-quality rate-control feature (2023 blog)** — same family,
   proprietary.
 - **Direct VMAF-distillation papers**: explicit search for `"VMAF
   distillation"` returned **no published paper** beyond preprocessing-
@@ -114,7 +117,7 @@ roughly:
 | --- | --- | --- | --- | --- | --- |
 | pVMAF (Synamedia) | not published | QPs + pre-analysis + PSNR | 0.985 (seq) | proprietary | proprietary blog |
 | x264-pVMAF (Quortex OSS) | not published | encoder + lightweight pixel | not published seq, SROCC 0.991 frame | proprietary | GPL-2.0 |
-| VMAF-E (MainConcept) | not published | not published | "±2 VMAF" → ≈ 0.97 [UNVERIFIED] | proprietary | proprietary |
+| Proprietary neural VMAF estimator (commercial encoder vendor) | not published | not published | "±2 VMAF" → ≈ 0.97 [UNVERIFIED] | proprietary | proprietary |
 | **fr_regressor_v2_ensemble (lusoris)** | **~5–20 K × 5** | **6 canonical libvmaf + 18-D codec** | **≥ 0.95 LOSO mean (gate)** | **NF Drop 9×70 + BVI-DVC** | **BSD-3-Clause-Plus-Patent** |
 
 **Gap / opportunity:**
@@ -213,8 +216,8 @@ In our defence:
 - **Per-codec** is the dominant pattern. Synamedia/Quortex publishes
   separate proprietary models for H.264/AVC and H.265/HEVC; the
   open-source x264-pVMAF is *only* x264 (FHD progressive 4:2:0 medium
-  preset, no `--tune`). MainConcept VMAF-E does not document codec
-  conditioning. Per-title-CRF DNN (Ren et al. 2023) trains for a
+  preset, no `--tune`). The proprietary neural VMAF estimator does not
+  document codec conditioning. Per-title-CRF DNN (Ren et al. 2023) trains for a
   single codec at a time.
 - **Codec embedding / one-hot conditioning** as a deliberate
   architectural choice is **not standard** in published VQA work.
@@ -268,8 +271,8 @@ neither helps nor hurts within measurement noise.
   corpus, 6 resolutions × 16 CRFs, ~20 % bitrate savings vs fixed
   ladder, mean BD-VMAF gain 4.3–4.5. *No reference encoding required
   at inference.*
-- **ab-av1, av1an, NETINT capped CRF, MainConcept Constant Target
-  Quality** — production tooling, all use full VMAF in a binary
+- **ab-av1, av1an, hardware-vendor capped CRF, commercial constant-quality
+  rate control** — production tooling, all use full VMAF in a binary
   search rather than predicting CRF directly.
 - **rav1e per-frame quality / x265 per-frame VBV / SVT-AV1 adaptive
   temporal filtering** — *encoder-internal* quality knobs, distinct
@@ -485,7 +488,7 @@ Our stack ships **all five disciplines** simultaneously:
 
 This is **ahead of every public open-source VQA project** I could find.
 DOVER ships PyTorch checkpoints, no ONNX, no signing. FAST-VQA same.
-Q-Align same. The **commercial counterparts (pVMAF, VMAF-E)
+Q-Align same. The **commercial counterparts (pVMAF, the proprietary neural estimator)
 presumably have signing/quant pipelines internally but do not publish
 them**.
 
@@ -695,12 +698,10 @@ unless noted.
    <https://github.com/quortex/x264-pVMAF> — GPL-2.0; inference-only;
    no training code; SIMD-optimised C; 3 214 commits at WebFetch.
    WebFetch 2026-05-08.
-4. MainConcept. *VMAF-E*. Product page.
-   <https://www.mainconcept.com/vmaf-e> — neural-net VMAF
-   approximator; ±2 VMAF; 10× faster than VMAF; in-coding-order
-   integration. WebSearch 2026-05-08.
-5. MainConcept. *vScore and VMAF-E (IBC 2025)*. Press release
-   (Sept 2025). <https://www.mainconcept.com/ibc2025-vscore-vmafe>.
+4. Commercial encoder vendor. Product page for a proprietary neural-net
+   VMAF approximator; ±2 VMAF and 10× faster than VMAF claimed;
+   in-coding-order integration. Unverified. WebSearch 2026-05-08.
+5. Same vendor. Trade-show press release (Sept 2025); same claims.
 6. Anastasia Antsiferova et al. *Hacking VMAF and VMAF NEG*.
    Semantic Scholar paper id 71c676b4ec1465ed6a52684c1cf5ffea7a717c45.
    <https://www.semanticscholar.org/paper/71c676b4ec1465ed6a52684c1cf5ffea7a717c45>.

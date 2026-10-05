@@ -73,7 +73,7 @@ analogues are documented at the time of writing:
   during a 1080p medium-preset H.264 encode. The companion
   open-source release `x264-pVMAF` [3] is GPL-2.0 licensed; weights,
   training code and evaluation splits are not published.
-- **MainConcept VMAF-E (vScore suite)** [4, 5] — claimed `\pm 2`
+- **A proprietary neural VMAF estimator** from a commercial encoder vendor [4, 5] — claimed `\pm 2`
   VMAF accuracy at up to `10\times` the speed of full VMAF;
   closed-source.
 - **Huawei PyTorch VMAF re-implementation** [6] — a full-pipeline
@@ -204,7 +204,7 @@ final bullet].
 ### 2.4 Comparison to single-metric baselines
 
 Industry write-ups quote a single PLCC number (e.g. pVMAF's `0.985`
-sequence-level [1]; MainConcept VMAF-E's `\pm 2` VMAF translated to
+sequence-level [1]; the proprietary neural estimator's `\pm 2` VMAF translated to
 `\approx 0.97` PLCC [4]) without specifying the conditions under
 which the model is promoted. The published academic VQA literature
 reports best-of-validation weights at a fixed step count
@@ -445,7 +445,7 @@ both are available under BSD-3-Clause-Plus-Patent.
 ### 5.1 Limitations
 
 - **Hardware-specific performance claims**: we report no wall-clock
-  performance comparison against pVMAF, MainConcept VMAF-E, or any
+  performance comparison against pVMAF, the proprietary neural estimator, or any
   closed-source VQA predictor. The fork's predictors are tiny
   (~5 KB ONNX per ensemble seed; five seeds = `\approx 25` KB
   total) and run on the host CPU through onnxruntime; we have not
@@ -560,12 +560,10 @@ re-confirmed for this draft.
 [3] Quortex. *x264-pVMAF*. GitHub repository, GPL-2.0.
     <https://github.com/quortex/x264-pVMAF>. Accessed 2026-05-09.
 
-[4] MainConcept. *VMAF-E*. Product page.
-    <https://www.mainconcept.com/vmaf-e>. Accessed 2026-05-09.
+[4] Commercial encoder vendor. Product page for a proprietary neural
+    VMAF estimator (claims unverified). Accessed 2026-05-09.
 
-[5] MainConcept. *vScore and VMAF-E (IBC 2025)*. Press release
-    (Sept 2025). <https://www.mainconcept.com/ibc2025-vscore-vmafe>.
-    Accessed 2026-05-09.
+[5] Same vendor. Trade-show press release (Sept 2025). Accessed 2026-05-09.
 
 [6] Cloud BU, Huawei Technologies. *VMAF Re-implementation on
     PyTorch: Some Experimental Results* (Sept 2023, latest revision

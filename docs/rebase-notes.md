@@ -27,6 +27,9 @@ search:
   (ADR-0865), so its upstream rows have no assertion to edit; the source part of
   `5c7770080` (`chroma_correction_parameter`, `postprocess_feature_from_another`)
   already landed with #2136.
+## Research digests describe third-party products generically (2026-10-05)
+
+No rebase impact: docs only.
 
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 
