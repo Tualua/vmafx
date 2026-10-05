@@ -354,25 +354,27 @@ jobs:
             echo "Dedicated kind context is unavailable; skipping Kubernetes diagnostics." >&2
             exit 0
           fi
-          # Best effort: a resource the run never created is reported as
-          # unavailable, and the next dump still runs.
-          dump() {
+          # Each diagnostic runs on its own: a failure is reported and the
+          # next one still runs (no `|| true`, which would hide it).
+          diag() {
             local title="$1"
             shift
             echo "=== ${title} ==="
-            "$@" 2>/dev/null || echo "(unavailable: $*)"
+            if ! "$@"; then
+              echo "::warning::diagnostic '${title}' failed: $*"
+            fi
           }
-          dump "VmafxJob status" kubectl get vmafxjobs -A -o wide
-          dump "VmafxNode status" kubectl get vmafxnodes -A -o wide
-          dump "VmafxModelTraining status" kubectl get vmafxmodeltrainings -A -o wide
-          dump "Pod list" kubectl get pods -A -o wide
-          dump "Operator logs" kubectl logs -n vmafx-e2e-test deployment/vmafx-operator --tail=200
+          diag "VmafxJob status" kubectl get vmafxjobs -A -o wide
+          diag "VmafxNode status" kubectl get vmafxnodes -A -o wide
+          diag "VmafxModelTraining status" kubectl get vmafxmodeltrainings -A -o wide
+          diag "Pod list" kubectl get pods -A -o wide
+          diag "Operator logs" kubectl logs -n vmafx-e2e-test deployment/vmafx-operator --tail=200
           # Select the server Pods by the chart Service's labels so every
           # server Pod's log is printed; `deployment/vmafx` picks one Pod.
-          dump "Server logs" kubectl logs -n vmafx-e2e-test \
+          diag "Server logs" kubectl logs -n vmafx-e2e-test \
             -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server \
             --all-containers --prefix --tail=200
-          dump "Events (all namespaces)" kubectl get events -A --sort-by=.lastTimestamp
+          diag "Events (all namespaces)" kubectl get events -A --sort-by=.lastTimestamp
 
       - name: Upload kuttl XML results
         if: always()
