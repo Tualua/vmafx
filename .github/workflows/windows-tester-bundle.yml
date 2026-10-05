@@ -4,8 +4,9 @@
 #   - every pull request (ADR-1687): job `impact` runs scripts/ci/plan-ci-impact.py
 #     and the build runs only when selector `windows_tester_zip` of
 #     .github/ci-impact.json is set, that is when the diff touches the zip's own
-#     inputs (the path list this workflow's triggers carried before ADR-1687) or the
-#     planner falls back to a full run. Then the x64 zip only is built, run and
+#     inputs (the path list this workflow's triggers carried before ADR-1687); the
+#     selector is `own_paths_only`, so a full-mode fallback alone does not set it
+#     (ADR-1700). Then the x64 zip only is built, run and
 #     verified, uploaded as a workflow artifact; nothing is published. The arm64,
 #     x64 CUDA and x64 SYCL zips stay with the push run: three more Windows builds of
 #     up to 150 minutes each are too much runner time per pull request, and the x64

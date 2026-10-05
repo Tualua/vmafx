@@ -65,12 +65,15 @@ and the build runs only when its selector in
 | `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the oneAPI ocloc, CUDA and ROCm install scripts, `build-config.env`, `dev/scripts/fetch-intel-neo.py`, `python/requirements-test-lock.txt`, `REUSE.toml`, `LICENSES/`, `docs/hardware-reports/report.schema.json`, the workflow |
 | `windows_tester_zip` | `scripts/ci/build-windows-tester-bundle.py`, `scripts/ci/check-windows-bundle-imports.py`, `requirements/locks/windows-tester-zip.txt`, `tools/rc1-tester/image/windows/`, the unit, CUDA and SYCL test lists and `sycl-runtime-windows.json` under `tools/rc1-tester/image/`, the workflow |
 
-These are the path lists the two workflows' triggers carried before ADR-1687.
-The planner also sets every selector when it cannot bound the change (`mode=full`):
-a change under `scripts/ci/`, to a workflow that hosts a required context, to
-`.standards-baseline.json`, `Makefile` and the other CI-authority files, a
-delete or rename, or an unknown top-level path. The plan job's log names the
-mode and the reason. To see what your branch gets:
+These are the path lists the two workflows' triggers carried before ADR-1687,
+and only these select a build. Both selectors are `own_paths_only`
+([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)): when the
+planner cannot bound a change (`mode=full`: a change under `scripts/ci/`, to a
+workflow that hosts a required context, to `.standards-baseline.json` or
+`Makefile`, a delete or rename, an unknown top-level path) it sets every other
+selector, but these two only when one of the changed paths is their own. A
+dispatch and the nightly schedule have no diff, so they always build. The plan
+job's log names the mode and the reason. To see what your branch gets:
 
 ```bash
 python3 scripts/ci/plan-ci-impact.py --event pull_request \
@@ -82,7 +85,25 @@ work and a selected run only when every pull-request job of the chain passed:
 the image gate waits for `Build and test`, which needs the reference scores and
 the source validation; the zip gate waits for `Verify the zip and write its SBOM`,
 which fails when its build left no zip. On a push to `master` the same gates
-cover every leg the push run builds (both image architectures, all four zips).
+cover every leg the push run builds (both image architectures, all four zips),
+and the master aggregator waits for them.
+
+## The nightly tester image build
+
+`docker-publish-tester.yml` also runs every night at 00:29 UTC on the head of
+`master` ([ADR-1701](../adr/1701-nightly-tester-image-build.md)): the amd64 image is built, run with the documented command and its
+report validated. Nothing is pushed, signed or attested, and no GPU image is
+built. The image copies `core/`, `model/`, `python/` and `compat/`, which are not
+pull-request inputs of the tester build; this run builds a change there within a
+day. It ends, at its job timeouts, before `nightly.yml` and the weekly Release Dry
+Run start.
+
+A red nightly is a failed run of `Publish Tester Image` with the event
+`schedule` on `master` (Actions tab, filter `event:schedule`). GitHub mails it to
+whoever last changed the cron line of the workflow, and `praetorctl audit` lists
+the workflow as failing on `master`. Reproduce it on the head of `master` with
+`docker build --file docker/Dockerfile.tester .` and the documented
+`docker run` line of [the tester image guide](../usage/tester-image.md).
 
 ## Reproducing a failure locally
 

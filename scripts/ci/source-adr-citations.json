@@ -10817,7 +10817,7 @@
     },
     "1595": {
       "sites": {
-        ".github/workflows/docker-publish-tester.yml": 3,
+        ".github/workflows/docker-publish-tester.yml": 4,
         ".github/workflows/macos-tester-bundle.yml": 1,
         ".github/workflows/release-dry-run.yml": 1,
         ".github/workflows/required-aggregator.yml": 2,
@@ -10879,6 +10879,23 @@
         "scripts/ci/tests/test_required_release_legs.py": 3
       },
       "target": "1687-required-release-dry-run-legs.md"
+    },
+    "1700": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 1,
+        ".github/workflows/windows-tester-bundle.yml": 1,
+        "scripts/ci/plan-ci-impact.py": 2,
+        "scripts/ci/tests/test_ci_impact.py": 2,
+        "scripts/ci/tests/test_required_release_legs.py": 1
+      },
+      "target": "1700-tester-selectors-own-paths-only.md"
+    },
+    "1701": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 4,
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 2
+      },
+      "target": "1701-nightly-tester-image-build.md"
     }
   },
   "retired": {

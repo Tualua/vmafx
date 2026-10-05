@@ -4,8 +4,8 @@
 #   - every pull request (ADR-1687): job `impact` runs scripts/ci/plan-ci-impact.py
 #     and the build runs only when selector `tester_image` of .github/ci-impact.json
 #     is set, that is when the diff touches the tester image inputs (the path list
-#     this workflow's triggers carried before ADR-1687) or the planner falls back to
-#     a full run. Then the amd64 image only is built, run through the documented
+#     this workflow's triggers carried before ADR-1687); the selector is
+#     `own_paths_only`, so a full-mode fallback alone does not set it (ADR-1700). Then the amd64 image only is built, run through the documented
 #     `docker run` line and its report validated; nothing is pushed. The arm64 image
 #     and the three GPU images are left to the push run below because their runners
 #     (a native arm64 host, two hours of GPU-toolkit builds) cost too much per pull
@@ -13,6 +13,13 @@
 #     meantime (ADR-1595)
 #   - every push to master, routed the same way: build, run the documented
 #     `docker run` line and validate the report; nothing is pushed
+#   - nightly schedule, 00:29 UTC (ADR-1701): master's head, the amd64 image only,
+#     built, run and its report validated; nothing is pushed, signed or attested and
+#     no GPU image is built. The pull-request selector keeps the ADR-1595 inputs, but
+#     the image also copies core/, model/, python/ and compat/; this run builds a
+#     change there within a day of its merge. A failed run is a failed `schedule`
+#     run of this workflow on master: GitHub mails the user who last changed the
+#     cron line, and `praetorctl audit` lists the workflow as failing on master.
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
 #     `master`) or `tag` (an existing published tag): the same, then publish; the
 #     source is that commit with this ref's build recipe (ADR-1347)
@@ -50,6 +57,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [master]
+  # Nightly build and test of master (ADR-1701). Ends, at the job timeouts, before
+  # nightly.yml (03:17) and the weekly Release Dry Run (Wednesday 03:41) start.
+  schedule:
+    - cron: "29 0 * * *"
   workflow_dispatch:
     inputs:
       ref:
@@ -63,9 +74,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-publish-tester-${{ github.event.pull_request.number || github.event.inputs.ref || github.event.inputs.tag || github.sha }}
+  group: docker-publish-tester-${{ github.event_name == 'schedule' && 'nightly' || github.event.pull_request.number || github.event.inputs.ref || github.event.inputs.tag || github.sha }}
   # A newer push to a pull request replaces its older verify run; a master push or a
-  # dispatch (which can publish) is never cancelled.
+  # dispatch (which can publish) is never cancelled. The nightly run has a group of
+  # its own, so it never waits on, or holds up, a push or a publish run.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -189,9 +201,9 @@ jobs:
             exit 1
           fi
           # The platforms the build job covers: both on a push or a dispatch, amd64 only
-          # on a pull request (ADR-1595).
+          # on a pull request (ADR-1595) and on the nightly schedule (ADR-1701).
           matrix='{"include":[{"arch":"amd64","platform":"linux/amd64","runner":"ubuntu-latest"},{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-26.04-arm"}]}'
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == schedule ]]; then
             matrix="$(jq -c '{include: [.include[] | select(.arch == "amd64")]}' <<<"$matrix")"
           fi
           {
@@ -643,8 +655,9 @@ jobs:
     needs: validate
     # Not on a pull request: three toolkit images are up to six hours of runner time
     # (ADR-1595). The push to master that merges the change runs them, and the
-    # Dockerfile stage contract test checks the stages meanwhile.
-    if: github.event_name != 'pull_request'
+    # Dockerfile stage contract test checks the stages meanwhile. Not on the nightly
+    # schedule either (ADR-1701): it builds the amd64 CPU image only.
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:

@@ -1264,3 +1264,5 @@
 1687-required-release-dry-run-legs
 1686-scorecard-superseded-master-runs
 1679-metal-iosurface-biplanar-import
+1700-tester-selectors-own-paths-only
+1701-nightly-tester-image-build

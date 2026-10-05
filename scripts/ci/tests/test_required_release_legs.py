@@ -348,12 +348,25 @@ class Routing(unittest.TestCase):
         self.assertTrue(plan["tester_image"])  # tools/rc1-tester/** feeds the image too
         self.assertTrue(plan["windows_tester_zip"])
 
-    def test_workflow_edit_is_a_full_plan(self) -> None:
-        for workflow in ("docker-publish-tester.yml", "windows-tester-bundle.yml"):
+    def test_workflow_edit_is_a_full_plan_that_runs_only_its_own_build(self) -> None:
+        for workflow, own in (
+            ("docker-publish-tester.yml", "tester_image"),
+            ("windows-tester-bundle.yml", "windows_tester_zip"),
+        ):
             with self.subTest(workflow=workflow):
                 plan = _plan_for([f".github/workflows/{workflow}"])
                 self.assertTrue(plan["__full__"])
-                self.assertTrue(plan["tester_image"] and plan["windows_tester_zip"])
+                self.assertTrue(plan[own])
+                other = ({"tester_image", "windows_tester_zip"} - {own}).pop()
+                self.assertFalse(plan[other])
+
+    def test_ci_script_change_is_a_full_plan_without_tester_builds(self) -> None:
+        # ADR-1700: own_paths_only; the fallback alone never selects them.
+        plan = _plan_for(["scripts/ci/check-aggregator-names.sh"])
+        self.assertTrue(plan["__full__"])
+        self.assertFalse(plan["tester_image"])
+        self.assertFalse(plan["windows_tester_zip"])
+        self.assertTrue(plan["c_core"])
 
 
 class WorkChains(unittest.TestCase):

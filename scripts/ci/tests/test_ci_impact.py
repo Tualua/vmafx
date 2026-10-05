@@ -9,6 +9,7 @@ No third-party dependencies (the CI runners have only the stdlib).
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import os
@@ -131,6 +132,10 @@ def _load_planner() -> ModuleType:
 
 
 planner = _load_planner()
+
+
+# ADR-1700: the selectors that the full-mode fallback does not set by itself.
+OWN_PATHS_ONLY = {"tester_image", "windows_tester_zip"}
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -276,7 +281,9 @@ class RoutingContract(unittest.TestCase):
             with self.subTest(path=path):
                 plan = _plan_for([path])
                 self.assertEqual(plan.mode, "full")
-                self.assertTrue(all(plan.selectors.values()))
+                for name, selected in plan.selectors.items():
+                    if name not in OWN_PATHS_ONLY:
+                        self.assertTrue(selected, name)
 
     def test_model_json_change_runs_goldens(self) -> None:
         plan = _plan_for(["model/vmaf_v0.6.1.json"])
@@ -314,7 +321,10 @@ class RoutingContract(unittest.TestCase):
         plan = _plan_for([".github/workflows/lint-and-format.yml"])
         self.assertEqual(plan.mode, "full")
         self.assertTrue(plan.reason.startswith("global-ci-input:"))
-        self.assertTrue(all(plan.selectors.values()))
+        self.assertTrue(
+            all(on for name, on in plan.selectors.items() if name not in OWN_PATHS_ONLY)
+        )
+        self.assertFalse(any(plan.selectors[name] for name in OWN_PATHS_ONLY))
 
     def test_go_workflow_change_forces_full(self) -> None:
         plan = _plan_for([".github/workflows/go-ci.yml"])
@@ -515,6 +525,103 @@ class GitIntegration(unittest.TestCase):
         kv = self._run(tmp, "workflow_dispatch", head, head)
         self.assertEqual(kv["mode"], "full")
         self.assertTrue(kv["reason"].startswith("event-not-routed:"))
+
+
+class OwnPathsOnlyContract(unittest.TestCase):
+    """ADR-1700: `own_paths_only` selectors follow their own paths in full mode."""
+
+    @staticmethod
+    def _plan(config: dict[str, object], changes: tuple[object, ...] | None) -> ImpactPlan:
+        fallback = None if changes is not None else "event-not-routed:schedule"
+        return cast(ImpactPlan, planner.build_plan(config, changes, fallback, "b" * 40, "h" * 40))
+
+    @staticmethod
+    def _changes(*records: tuple[str, tuple[str, ...]]) -> tuple[object, ...]:
+        return tuple(planner.Change(status=status, paths=paths) for status, paths in records)
+
+    def test_the_exception_is_declared_for_exactly_the_two_tester_selectors(self) -> None:
+        selectors = planner.load_config(CONFIG)["selectors"]
+        declared = {name for name, sel in selectors.items() if sel.get("own_paths_only")}
+        self.assertEqual(declared, OWN_PATHS_ONLY)
+
+    def test_ci_authority_change_alone_selects_neither_tester_build(self) -> None:
+        plan = _plan_for(["scripts/ci/plan-ci-impact.py", ".standards-baseline.json"])
+        self.assertEqual(plan.mode, "full")
+        self.assertTrue(plan.reason.startswith("global-ci-input:"))
+        for name, selected in plan.selectors.items():
+            self.assertEqual(selected, name not in OWN_PATHS_ONLY, name)
+
+    def test_a_full_plan_still_selects_a_tester_build_on_its_own_paths(self) -> None:
+        cases = {
+            ".github/workflows/docker-publish-tester.yml": {"tester_image"},
+            ".github/workflows/windows-tester-bundle.yml": {"windows_tester_zip"},
+            "scripts/ci/install-cuda-toolkit.sh": {"tester_image"},
+            "scripts/ci/build-windows-tester-bundle.py": {"windows_tester_zip"},
+        }
+        for path, selected in cases.items():
+            with self.subTest(path=path):
+                plan = _plan_for([path, "Makefile"])
+                self.assertEqual(plan.mode, "full")
+                self.assertEqual({n for n in OWN_PATHS_ONLY if plan.selectors[n]}, selected)
+
+    def test_other_fallbacks_with_known_paths_follow_own_paths(self) -> None:
+        config = planner.load_config(CONFIG)
+        deleted = self._plan(config, self._changes(("D", ("docker/Dockerfile.tester",))))
+        renamed = self._plan(
+            config, self._changes(("R100", ("tools/rc1-tester/README.md", "docs/x.md")))
+        )
+        unknown = self._plan(config, self._changes(("A", ("new-root/x",))))
+        empty = self._plan(config, ())
+        for plan, expected in ((deleted, True), (renamed, True), (unknown, False), (empty, False)):
+            with self.subTest(reason=plan.reason):
+                self.assertEqual(plan.mode, "full")
+                self.assertEqual(plan.selectors["tester_image"], expected)
+                self.assertFalse(plan.selectors["windows_tester_zip"])
+                self.assertTrue(plan.selectors["c_core"])
+
+    def test_unknown_change_set_keeps_the_tester_builds_on(self) -> None:
+        # A dispatch (publish) or the nightly schedule has no diff to read.
+        plan = self._plan(planner.load_config(CONFIG), None)
+        self.assertEqual(plan.mode, "full")
+        self.assertTrue(all(plan.selectors.values()))
+
+    def test_planted_mutation_without_the_property_runs_the_tester_builds(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        for name in OWN_PATHS_ONLY:
+            del config["selectors"][name]["own_paths_only"]
+        plan = cast(
+            ImpactPlan,
+            planner.build_plan(
+                config,
+                self._changes(("M", ("scripts/ci/plan-ci-impact.py",))),
+                None,
+                "b" * 40,
+                "h" * 40,
+            ),
+        )
+        self.assertTrue(all(plan.selectors[name] for name in OWN_PATHS_ONLY))
+
+    def test_config_refuses_a_wide_or_malformed_exception(self) -> None:
+        base = json.loads(CONFIG.read_text(encoding="utf-8"))
+        mutations = {
+            "inherits": {"own_paths_only": True, "patterns": ["a"], "inherits": ["c_core"]},
+            "no patterns": {"own_paths_only": True, "patterns": []},
+            "not a boolean": {"own_paths_only": "yes", "patterns": ["a"]},
+        }
+        for label, selector in mutations.items():
+            with self.subTest(mutation=label), tempfile.TemporaryDirectory() as tmp:
+                config = copy.deepcopy(base)
+                config["selectors"]["tester_image"] = selector
+                path = Path(tmp) / "ci-impact.json"
+                path.write_text(json.dumps(config), encoding="utf-8")
+                with self.assertRaises(planner.PlanError):
+                    planner.load_config(path)
+
+    def test_config_refuses_an_inheritance_cycle(self) -> None:
+        selectors = {"a": {"inherits": ["b"]}, "b": {"inherits": ["a"]}, "c": {"patterns": ["x"]}}
+        with self.assertRaises(planner.PlanError):
+            planner.inheritance_order(selectors)
+        self.assertEqual(planner.inheritance_order({"a": {"inherits": ["c"]}, "c": {}}), ["c", "a"])
 
 
 class WorkflowContract(unittest.TestCase):

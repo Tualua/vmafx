@@ -337,6 +337,7 @@
       ]
     },
     "tester_image": {
+      "own_paths_only": true,
       "patterns": [
         "docker/Dockerfile.tester",
         "tools/rc1-tester/*",
@@ -355,6 +356,7 @@
       ]
     },
     "windows_tester_zip": {
+      "own_paths_only": true,
       "patterns": [
         ".github/workflows/windows-tester-bundle.yml",
         "scripts/ci/build-windows-tester-bundle.py",

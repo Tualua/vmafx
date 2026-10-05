@@ -180,8 +180,8 @@ the selectors declared in `.github/ci-impact.json`. There are 19 selectors:
 | `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
 | `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
 | `helm` | `deploy/helm/` | Helm chart |
-| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
-| `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/` | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/`; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `rust` | `bindings/`, `Cargo.*`, `core/src/feature/rust/` | Rust CI (path-filtered, not required) |
 | `shell` | `*.sh` | Not required, still path-filtered |
 | `container` | `Dockerfile*`, `dev/`, `docker/`, `deploy/`, `.devcontainer/` | Not required, still path-filtered |
@@ -199,6 +199,15 @@ selector true (the behaviour before ADR-1140):
   workflows hosting required contexts, `.pre-commit-config.yaml`, `Makefile`,
   `.clang-tidy` and the like);
 - a missing merge-base, a non-linear push or an over-large diff.
+
+One declared exception ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)):
+a selector with `"own_paths_only": true` is not set by the fallback itself. When
+the changed paths are known, it is true only if one of them matches its own
+patterns; when they are not (a dispatch, a schedule, a diff that could not be
+read), it stays true. Only `tester_image` and `windows_tester_zip` carry it, it
+needs patterns and no `inherits`, and `test_ci_impact.py` fails on any other use.
+A change under `scripts/ci/` alone therefore runs every other gate and neither
+tester build.
 
 Run it locally:
 
@@ -240,6 +249,12 @@ must report `success`; a missing or skipped one fails the aggregator.
 
 An unselected tester run passes in about a minute. Which inputs select them and
 how to reproduce a failure: [verifying the release and tester workflows](release-workflow-verification.md).
+
+On a push to `master` the two tester gates need the whole push run of their
+chain, so when the push touches their inputs the master aggregator waits for both
+image architectures and all four Windows zips, and a red push leg turns it red.
+That is intended (ADR-1687, confirmed in ADR-1700): a broken tester package on
+`master` is visible in the same place as every other red check.
 
 ### Go checks
 

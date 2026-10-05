@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T08:52:29Z",
+  "generated_at": "2026-10-05T09:54:31Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "60ec9bc275831de60e605f974a80d54e04776d6d",
-  "total_infractions": 365,
+  "commit_sha": "20d6aa4c7538662f391b072ebe8f9a2e4d589248",
+  "total_infractions": 364,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -2164,15 +2164,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:1f6277d435cb",
       "fingerprint": "scripts/ci/install-intel-oneapi.sh:HISS-07:text:1f6277d435cb#1"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "scripts/ci/plan-ci-impact.py",
-      "line_number": 281,
-      "symbol": "_selector_value",
-      "message": "Direct recursion in _selector_value; the call graph must form an acyclic DAG",
-      "anchor": "fn:_selector_value",
-      "fingerprint": "scripts/ci/plan-ci-impact.py:HISS-01:fn:_selector_value#1"
     },
     {
       "rule_id": "HISS-07",

@@ -9,6 +9,13 @@ do real work only when its surface is impacted. Anything the planner cannot
 prove safe collapses to ``mode=full`` — every selector true — which is exactly
 today's behaviour. See ADR-1140.
 
+One declared exception (ADR-1700): a selector with ``"own_paths_only": true``
+in the config is never set by the fallback itself. When the changed paths are
+known (a CI-authority file, a delete or rename, an unknown path, an empty diff)
+it is true only if one of them matches its own patterns; when they are not (an
+event that is not routed, such as a dispatch or a schedule, or a diff that could
+not be read) it stays true.
+
 Outputs (to ``--github-output``, one ``name=value`` per line):
   mode               full | impact
   reason             why (mapped-additive-diff, unknown-path:<p>, ...)
@@ -138,14 +145,48 @@ def load_config(path: Path) -> dict[str, Any]:
     if not isinstance(selectors, dict) or not selectors:
         raise PlanError("selectors must be a non-empty object")
     for name, selector in selectors.items():
-        if not isinstance(selector, dict):
-            raise PlanError(f"selectors.{name} must be an object")
-        _string_list(selector.get("patterns", []), f"selectors.{name}.patterns")
-        inherits = _string_list(selector.get("inherits", []), f"selectors.{name}.inherits")
-        unknown = set(inherits) - set(selectors)
-        if unknown:
-            raise PlanError(f"selectors.{name}.inherits names unknown selectors: {sorted(unknown)}")
+        _check_selector(name, selector, selectors)
+    inheritance_order(selectors)
     return config
+
+
+def _check_selector(name: str, selector: Any, selectors: dict[str, Any]) -> None:
+    if not isinstance(selector, dict):
+        raise PlanError(f"selectors.{name} must be an object")
+    patterns = _string_list(selector.get("patterns", []), f"selectors.{name}.patterns")
+    inherits = _string_list(selector.get("inherits", []), f"selectors.{name}.inherits")
+    unknown = set(inherits) - set(selectors)
+    if unknown:
+        raise PlanError(f"selectors.{name}.inherits names unknown selectors: {sorted(unknown)}")
+    own_paths_only = selector.get("own_paths_only", False)
+    if not isinstance(own_paths_only, bool):
+        raise PlanError(f"selectors.{name}.own_paths_only must be a boolean")
+    # The exception stays narrow: a selector that opts out of the fallback is its
+    # own path list and nothing else.
+    if own_paths_only and (inherits or not patterns):
+        raise PlanError(f"selectors.{name}: own_paths_only needs patterns and no inherits")
+
+
+def inheritance_order(selectors: dict[str, Any]) -> list[str]:
+    """Selector names with every inherited selector before its heirs (Kahn's algorithm).
+
+    Raises PlanError on an inheritance cycle. Each round places at least one
+    selector or stops, so the loop runs at most once per selector.
+    """
+    pending = {name: set(selector.get("inherits", [])) for name, selector in selectors.items()}
+    order: list[str] = []
+    for _round in range(len(selectors)):
+        ready = sorted(name for name, parents in pending.items() if not parents)
+        if not ready:
+            break
+        order.extend(ready)
+        for name in ready:
+            del pending[name]
+        for parents in pending.values():
+            parents.difference_update(ready)
+    if pending:
+        raise PlanError(f"selector inheritance cycle through {sorted(pending)[0]}")
+    return order
 
 
 # ------------------------------------------------------------------------- git diff
@@ -262,38 +303,38 @@ def _is_known(path: str, config: dict[str, Any]) -> bool:
     return any(path.startswith(prefix) for prefix in config["known_prefixes"])
 
 
-def _selector_value(
-    name: str,
-    paths: tuple[str, ...],
-    selectors: dict[str, Any],
-    memo: dict[str, bool],
-    visiting: set[str],
-) -> bool:
-    if name in memo:
-        return memo[name]
-    if name in visiting:
-        raise PlanError(f"selector inheritance cycle through {name}")
-    visiting.add(name)
-    selector = selectors[name]
-    selected = any(_matches(path, tuple(selector.get("patterns", []))) for path in paths)
-    if not selected:
-        selected = any(
-            _selector_value(parent, paths, selectors, memo, visiting)
-            for parent in selector.get("inherits", [])
-        )
-    visiting.remove(name)
-    memo[name] = selected
-    return selected
+def impact_selectors(paths: tuple[str, ...], selectors: dict[str, Any]) -> dict[str, bool]:
+    """A selector is true when a path matches its patterns or a selector it inherits is."""
+    resolved: dict[str, bool] = {}
+    for name in inheritance_order(selectors):
+        selector = selectors[name]
+        own = any(_matches(path, tuple(selector.get("patterns", []))) for path in paths)
+        resolved[name] = own or any(resolved[parent] for parent in selector.get("inherits", []))
+    return resolved
 
 
-def full_plan(reason: str, base_sha: str, head_sha: str, config: dict[str, Any]) -> Plan:
+def full_plan(
+    reason: str,
+    base_sha: str,
+    head_sha: str,
+    config: dict[str, Any],
+    paths: tuple[str, ...] | None = None,
+) -> Plan:
+    """Every selector true; an ``own_paths_only`` selector follows its own patterns
+    when the changed ``paths`` are known (ADR-1700)."""
+    selectors = {}
+    for name, selector in config["selectors"].items():
+        if paths is not None and selector.get("own_paths_only", False):
+            selectors[name] = any(_matches(path, tuple(selector["patterns"])) for path in paths)
+        else:
+            selectors[name] = True
     return Plan(
         mode="full",
         reason=reason,
         base_sha=base_sha,
         head_sha=head_sha,
         changed_paths=(),
-        selectors=dict.fromkeys(config["selectors"], True),
+        selectors=selectors,
     )
 
 
@@ -308,28 +349,24 @@ def build_plan(
         return full_plan(
             fallback_reason or "change-enumeration-unavailable", base_sha, head_sha, config
         )
+    paths = tuple(sorted({path for change in changes for path in change.paths}))
     if not changes:
-        return full_plan("empty-diff", base_sha, head_sha, config)
+        return full_plan("empty-diff", base_sha, head_sha, config, paths)
     # Only additions and in-place modifications are provably scoped. A delete,
     # rename, copy, type change or mode change can silently widen the blast
     # radius (a header that vanished, a script renamed out of a glob), so those
-    # run everything.
+    # run everything. Both paths of a rename or copy are in `paths`.
     unsafe = next((change for change in changes if change.code not in {"A", "M"}), None)
     if unsafe is not None:
-        return full_plan(f"non-additive-change:{unsafe.status}", base_sha, head_sha, config)
-    paths = tuple(sorted({path for change in changes for path in change.paths}))
+        return full_plan(f"non-additive-change:{unsafe.status}", base_sha, head_sha, config, paths)
     unknown = next((path for path in paths if not _is_known(path, config)), None)
     if unknown is not None:
-        return full_plan(f"unknown-path:{unknown}", base_sha, head_sha, config)
+        return full_plan(f"unknown-path:{unknown}", base_sha, head_sha, config, paths)
     full_patterns = tuple(config["full_patterns"])
     global_path = next((path for path in paths if _matches(path, full_patterns)), None)
     if global_path is not None:
-        return full_plan(f"global-ci-input:{global_path}", base_sha, head_sha, config)
-    memo: dict[str, bool] = {}
-    selectors = {
-        name: _selector_value(name, paths, config["selectors"], memo, set())
-        for name in config["selectors"]
-    }
+        return full_plan(f"global-ci-input:{global_path}", base_sha, head_sha, config, paths)
+    selectors = impact_selectors(paths, config["selectors"])
     return Plan(
         mode="impact",
         reason="mapped-additive-diff",

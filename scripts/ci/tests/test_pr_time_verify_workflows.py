@@ -124,6 +124,16 @@ def run_validate(name: str, event: str, ref: str) -> tuple[int, dict[str, str], 
         return done.returncode, dict(ln.split("=", 1) for ln in lines if "=" in ln), done.stderr
 
 
+# Text in a step that pushes, signs or attests something (ADR-1701 nightly contract).
+PUBLISHING_MARKERS = ("login-action", "push=true", "push: true", "cosign", "attest", "sbom")
+
+
+def cron_minutes(cron: str) -> int:
+    """Minute of the day a `M H * * *`-shaped cron line starts at."""
+    minute, hour = cron.split()[:2]
+    return int(hour) * 60 + int(minute)
+
+
 def legs(matrix_json: str, key: str) -> list[str]:
     return sorted(leg[key] for leg in json.loads(matrix_json)["include"])
 
@@ -177,6 +187,45 @@ class TesterImage(unittest.TestCase):
             "github.event_name == 'pull_request'", wf["concurrency"]["cancel-in-progress"]
         )
         self.assertIn("pull_request.number", wf["concurrency"]["group"])
+
+    def test_nightly_schedule_builds_amd64_from_master_and_never_publishes(self) -> None:
+        # ADR-1701: the nightly build and test of master's head.
+        wf = load(self.NAME)
+        schedule = triggers(wf)["schedule"]
+        self.assertEqual(len(schedule), 1)
+        self.assertEqual(schedule[0]["cron"].split()[2:], ["*", "*", "*"])  # every night
+        self.assertIn("'schedule'", wf["concurrency"]["group"])  # a group of its own
+        rc, out, err = run_validate(self.NAME, "schedule", "refs/heads/master")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(out["publish"], "false")
+        self.assertEqual(legs(out["matrix"], "arch"), ["amd64"])
+
+    def test_no_job_a_scheduled_run_reaches_pushes_signs_or_attests(self) -> None:
+        jobs = load(self.NAME)["jobs"]
+        self.assertIn("github.event_name != 'schedule'", jobs["build-gpu"]["if"])
+        reached = {
+            name: job
+            for name, job in jobs.items()
+            if "publish == 'true'" not in str(job.get("if", ""))
+            and "!= 'schedule'" not in str(job.get("if", ""))
+        }
+        self.assertEqual(set(reached), {"impact", "validate", "refs-x86", "build", "tester-image"})
+        for name, job in reached.items():
+            for step in job.get("steps", []):
+                text = json.dumps(step)
+                if any(marker in text for marker in PUBLISHING_MARKERS):
+                    with self.subTest(job=name, step=step.get("name", step.get("uses"))):
+                        self.assertIn("publish == 'true'", str(step.get("if", "")))
+
+    def test_nightly_ends_before_the_nightly_jobs_and_the_release_dry_run(self) -> None:
+        jobs = load(self.NAME)["jobs"]
+        start = cron_minutes(triggers(load(self.NAME))["schedule"][0]["cron"])
+        chain = ("impact", "validate", "refs-x86", "build", "tester-image")
+        latest_end = start + sum(int(jobs[name]["timeout-minutes"]) for name in chain)
+        for other in ("nightly.yml", "release-dry-run.yml"):
+            with self.subTest(workflow=other):
+                cron = triggers(load(other))["schedule"][0]["cron"]
+                self.assertLess(latest_end, cron_minutes(cron), cron)
 
 
 class WindowsBundle(unittest.TestCase):

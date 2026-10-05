@@ -7,6 +7,26 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
+
+`ci/tester-legs-own-paths-and-nightly`. The impact planner, its map, one workflow
+and their tests; no library change.
+
+- `scripts/ci/plan-ci-impact.py` honours the selector property `own_paths_only`
+  in `full_plan()` (true only on a known changed path of its own; true when the
+  change list is unknown) and resolves selector inheritance with
+  `inheritance_order()` and `impact_selectors()` instead of the recursive
+  `_selector_value()`. A sync must not bring the recursion back or move the
+  exception from `.github/ci-impact.json` into code.
+- `.github/ci-impact.json` declares `"own_paths_only": true` on `tester_image`
+  and `windows_tester_zip` and nowhere else; `test_ci_impact.py`
+  (`OwnPathsOnlyContract`) fails on a third.
+- `docker-publish-tester.yml` runs nightly (`schedule`, 00:29 UTC, amd64, no
+  publish, no GPU images, concurrency group `nightly`); `build-gpu` excludes the
+  schedule event and `validate` narrows the matrix on it. Keep the slot ahead of
+  `nightly.yml` and the weekly Release Dry Run (`test_pr_time_verify_workflows.py`
+  checks the timeouts against both).
+
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 
 `docs/adr-post-1-0-embedding-milestone`. no rebase impact: docs only.

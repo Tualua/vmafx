@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1265), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1267), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5071,3 +5071,11 @@ Every ADR, one heading each (1265), so the site search finds an ADR by its title
 ## ADR-1687: Require the pull-request release legs through the aggregator
 
 [1687-required-release-dry-run-legs](1687-required-release-dry-run-legs.md)
+
+## ADR-1700: The tester selectors follow their own paths, not the full-mode fallback
+
+[1700-tester-selectors-own-paths-only](1700-tester-selectors-own-paths-only.md)
+
+## ADR-1701: Build and test the tester image every night on master
+
+[1701-nightly-tester-image-build](1701-nightly-tester-image-build.md)

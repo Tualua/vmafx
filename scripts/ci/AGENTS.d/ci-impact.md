@@ -3,7 +3,7 @@ paths:
   - scripts/ci/plan-ci-impact.py
   - .github/ci-impact.json
   - scripts/ci/tests/test_ci_impact.py
-invariant: The planner fails closed to `mode=full`; required contexts use planner -> work -> gate, never trigger `paths:` filters.
+invariant: Planner fails closed to `mode=full` except declared `own_paths_only`; required contexts use planner, work, gate.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CI impact planner (ADR-1140)
@@ -34,3 +34,13 @@ invariant: The planner fails closed to `mode=full`; required contexts use planne
   (ADR-1687).** Change them together with the inputs those workflows build;
   `tests/test_required_release_legs.py` pins the lists. Both workflows are
   planner consumers and therefore in `full_patterns`.
+- **`own_paths_only` is the one exception to fail-closed (ADR-1700).** A selector
+  declaring it is true in a full plan only when a known changed path matches its
+  own patterns; with no change list (dispatch, schedule, unreadable diff) it stays
+  true, which is what keeps a publish dispatch building. `load_config()` refuses
+  it on a selector with `inherits` or no patterns, and `test_ci_impact.py`
+  (`OwnPathsOnlyContract`) fails when a third selector declares it or when the
+  property stops working. Do not widen it by adding code paths; declare it.
+- **Inheritance is resolved without recursion (HISS-01).** `inheritance_order()`
+  sorts the selectors topologically (and raises on a cycle) and
+  `impact_selectors()` resolves them in that order in one pass.
