@@ -300,6 +300,10 @@ from = ["libjxl"]  # "scalar C port of the libjxl reference implementation"
 from = ["netflix-float-ssim", "iqa"]  # iqa_decimate() with ssim.c's low-pass kernel; no integer_ssim.c code
 [ports."core/src/feature/metal/float_ms_ssim_option_semantics.h"]
 from = ["netflix-ms-ssim"]  # float_ms_ssim.c's plane, minimum-size and max_db rules; no IQA arithmetic
+[ports."core/src/feature/metal/metal_float_motion_math.h"]
+from = ["netflix-float-motion"]  # float_motion.c's blur, row SAD and scale-1 mean; the name does not start with "float_motion"
+[ports."core/src/feature/metal/metal_float_psnr_math.h"]
+from = ["netflix-float-psnr"]  # float_psnr.c's per-sample `diff * diff` term; the name does not start with "float_psnr"
 [ports."core/src/feature/sycl/sycl_integer_ssim_math.h"]
 from = ["xiph-integer-ssim"]  # integer_ssim.c::ssim_reduce_row_range()'s per-pixel term only
 [ports."core/src/feature/sycl/sycl_ssim_terms.h"]
@@ -368,6 +372,8 @@ from = ["netflix-speed"]  # transcribes update_entropy() and get_speed_score() o
 "core/src/feature/hip/float_adm/float_adm_hip_math.h" = "five macros and an include of float_adm_gpu_common.h, which carries the notice; no ADM arithmetic"
 "core/src/feature/hip/integer_ciede/ciede_hip_math.h" = "names the HIP primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
 "core/src/feature/sycl/sycl_ciede_math.h" = "names the SYCL primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
+"core/src/feature/metal/metal_float_moment_sum.h" = "a Metal-address-space copy of the fork-authored float_moment_sum.h and ordered_sum.h (both EUPL-1.2); no moment.c code"
+"core/src/feature/metal/metal_integer_vif_math.h" = "a periodic fold of the border index; integer_vif.c reflects each tap with its own pad_top_and_bottom code, none of which is reproduced"
 "core/src/feature/metal/metal_ciede_math.h" = "names the Metal primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
 "core/src/feature/compat_builtin.h" = "'upstream-verbatim' describes the call sites, not this shim"
 "core/src/feature/pu21.c" = "mirrors float_ssim.c's allocate-once discipline, not its code"

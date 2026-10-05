@@ -435,14 +435,21 @@ def run_suite(
     started = time.monotonic()
     if options.python_exe:
         python, venv_note = options.python_exe, "python override"
-        result, details = _run_in(root, suite, python, files, options, env)
+        suite_env = dict(env)
+        suite_env["PATH"] = f"{Path(python).parent}{os.pathsep}{env.get('PATH', '')}"
+        result, details = _run_in(root, suite, python, files, options, suite_env)
     else:
         cache = Path(options.venv_root)
         lock = VenvLock(cache / f"{owner.name}.lock", options.install_cap)
         with lock:
             venv, built = ensure_venv(root, owner, cache, options.install_cap)
             venv_note = "venv cached" if built is None else f"venv built in {built:.0f}s"
-            result, details = _run_in(root, suite, str(venv_python(venv)), files, options, env)
+            suite_env = dict(env)
+            suite_env["VIRTUAL_ENV"] = str(venv)
+            suite_env["PATH"] = f"{venv / 'bin'}{os.pathsep}{env.get('PATH', '')}"
+            result, details = _run_in(
+                root, suite, str(venv_python(venv)), files, options, suite_env
+            )
     result.seconds = time.monotonic() - started
     result.venv = venv_note
     result.notes = details

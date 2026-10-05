@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  *
  *  The per-sample term of float_psnr_metal, valid as Metal Shading Language
  *  (float_psnr.metal) and as host C, where test_metal_float_psnr_math holds it

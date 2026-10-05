@@ -7,6 +7,21 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Metal helper-header licences and tester signature suffix (2026-10-05)
+
+`fix/master-red-lint-scorecard-2026-10-05`. Data, two workflow lines and one test.
+
+- `scripts/dev/relicense_provenance.toml` gains two `[ports]` entries (`metal_float_motion_math.h`,
+  `metal_float_psnr_math.h`) and two `[not_ports]` entries (`metal_float_moment_sum.h`,
+  `metal_integer_vif_math.h`); five Metal headers carry the dual tag. A sync keeps the entries
+  and the headers' `Netflix` notice lines.
+- `macos-tester-bundle.yml` and `windows-tester-bundle.yml` sign to `"$f.sigstore.json"`; a sync must
+  not bring back `.bundle` (Scorecard counts `.sigstore.json`, not `.bundle`);
+  `scripts/ci/tests/test_tester_signature_extension.py` guards it.
+- `scripts/ci/run_affected_suites.py` prepends the suite venv's `bin/` directory to `PATH` and sets
+  `VIRTUAL_ENV` so subshells and hook tests execute inside the isolated suite environment;
+  `scripts/githooks/tests/test_install.py` prioritises `sys.executable` on `self.env["PATH"]`.
+
 ## Python lock declarations and the cosign verifier contract (2026-10-04)
 
 `fix/master-red-locks-cosign`. Three declarations and one test.

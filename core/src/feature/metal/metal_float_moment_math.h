@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  *
  *  The second-moment term of float_moment_metal for a 10-, 12- or 16-bit
  *  sample, valid as Metal Shading Language (float_moment.metal) and as host C,

@@ -108,8 +108,8 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 # GitHub build provenance (needs the GitHub CLI, `gh`):
 gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx
 
-# Sigstore keyless signature (needs `cosign`; the .bundle file is next to the archive):
-cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.xz.bundle \
+# Sigstore keyless signature (needs `cosign`; the .sigstore.json file is next to the archive):
+cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.xz.sigstore.json \
   --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   vmafx-tester-macos-arm64-<VERSION>.tar.xz
@@ -702,8 +702,8 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 # GitHub build provenance (needs the GitHub CLI, gh):
 gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx
 
-# Sigstore keyless signature (needs cosign; the .bundle file is next to the zip):
-cosign verify-blob --bundle vmafx-tester-windows-<ARCH>-<VERSION>.zip.bundle `
+# Sigstore keyless signature (needs cosign; the .sigstore.json file is next to the zip):
+cosign verify-blob --bundle vmafx-tester-windows-<ARCH>-<VERSION>.zip.sigstore.json `
   --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
   --certificate-oidc-issuer https://token.actions.githubusercontent.com `
   vmafx-tester-windows-<ARCH>-<VERSION>.zip

@@ -543,7 +543,7 @@ jobs:
       - name: Sign the zips (keyless OIDC via Sigstore)
         run: |
           for f in assets/*.zip; do
-            cosign sign-blob --yes --bundle "$f.bundle" "$f"
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
           done
       # Creating the tag of a commit that is behind master (and so may differ in
       # .github/workflows/) is refused for the job token, which cannot hold the

@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2020 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  *
  *  The decouple of integer_adm_metal (the restored sample r of one band
  *  sample), valid as Metal Shading Language (integer_adm.metal) and as host

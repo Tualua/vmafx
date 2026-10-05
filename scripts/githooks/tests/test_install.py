@@ -124,7 +124,7 @@ class HookInstallTests(unittest.TestCase):
             GIT_CONFIG_GLOBAL=os.devnull,
             PRE_COMMIT_HOME=str(self.base / "cache"),
             HOOK_TEST_LOG=str(self.log),
-            PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+            PATH=f"{self.bin}{os.pathsep}{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}",
         )
         self.env.pop("SKIP", None)
         self.env.pop("VMAFX_NATIVE_HOOKS", None)
