@@ -365,6 +365,17 @@
   `docs/development/upstream-parity.md`.
 
 
+- **`Containerfile.vmafx`: a SYCL + FFmpeg test image with a build-time
+  golden gate.** It builds libvmaf (SYCL), FFmpeg at the tag
+  `ffmpeg-patches/series.txt` targets with every patch (including the
+  `libvmaf_sycl` filter), and runs the Netflix CPU golden tests while it
+  builds; a failing golden test fails the build. The Intel GPU stack comes
+  from `build-config.env`. `scripts/test/run-all-tests.sh` runs the GPU suites
+  against the built image and `scripts/test/reference_report.py` prints CPU
+  and SYCL scores next to the Netflix reference values
+  ([ADR-1715](docs/adr/1715-vmafx-sycl-ffmpeg-container.md)).
+
+
 - **A Windows CUDA tester zip measures every CUDA twin on a tester's Windows PC**
   (ADR-1516, `T-CUDA-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`).
   `vmafx-tester-windows-x64-cuda-<version>.zip` is the Windows tester zip with
@@ -1701,7 +1712,7 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   with SYCL enabled the test executables link as C++. CPU scores are those of
   a GCC build, and the single-threaded CPU path is 5-11 % faster than an icx
   build at 1080p (`vmaf_v0.6.1`, `vmaf_float_v0.6.1`, `cambi`)
-  ([ADR-1593](docs/adr/1593-hybrid-gcc-cpu-icpx-sycl.md)).
+  ([ADR-1714](docs/adr/1714-hybrid-gcc-cpu-icpx-sycl.md)).
 
 
 - **SpEED filters only the samples it keeps on non-x86 targets (port of
@@ -5172,12 +5183,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   CPU's per-frame scores. The filter no longer prints `VMAF score: 0.000000`
   after a failed pooled score. The SYCL history and HIP upload pages no longer
   call the default model luma-only.
+
+
 - **Golden tests no longer fail on a dropped connection while downloading
   test videos.** `vmaf.config` fetches missing test resources from
   github.com/Netflix/vmaf_resource; a timed-out or reset connection used to
   fail the test. Transient network errors are now retried (4 attempts, 2, 4
   and 8 s apart); HTTP errors such as 404 still fail at once
-  ([ADR-1594](docs/adr/1594-vmafx-sycl-ffmpeg-container.md)).
+  ([ADR-1715](docs/adr/1715-vmafx-sycl-ffmpeg-container.md)).
 
 
 - **The tester image and the macOS tester bundle carry the licences of what

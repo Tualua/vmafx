@@ -1257,6 +1257,7 @@
         "scripts/ci/cross_backend_parity_gate.py": 2,
         "scripts/ci/gpu_ulp_calibration.yaml": 2,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
+        "scripts/test/reference_report.py": 5,
         "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py": 1,
         "tools/rc1-tester/src/vmaf_rc1_tester/validate.py": 2,
         "tools/rc1-tester/tests/test_bundle.py": 1
@@ -3609,6 +3610,7 @@
     },
     "0541": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "dev/Containerfile": 10,
         "dev/docker-compose.runner.yml": 1,
         "dev/docker-compose.yml": 6,
@@ -4155,6 +4157,7 @@
     "0700": {
       "sites": {
         ".github/workflows/go-ci.yml": 1,
+        "Containerfile.vmafx": 1,
         "Makefile": 1,
         "cmd/vmafx-mcp/impl.go": 1,
         "compat/python-vmaf/config.py": 1,
@@ -8156,6 +8159,7 @@
         ".github/workflows/lint-and-format.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
+        "Containerfile.vmafx": 1,
         "core/meson_options.txt": 1,
         "core/src/check_device_compression.py": 1,
         "core/src/meson.build": 8,
@@ -8291,6 +8295,7 @@
     "1368": {
       "sites": {
         ".github/workflows/docker-publish-production.yml": 2,
+        "Containerfile.vmafx": 1,
         "dev/scripts/fetch-intel-neo.py": 1,
         "docker/Dockerfile.node": 1,
         "docker/Dockerfile.production-gpu": 6,
@@ -9626,6 +9631,7 @@
     },
     "1461": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "Makefile": 2,
         "build-aux/aarch64-linux-gnu-clang.ini": 1,
         "core/src/feature/integer_vif_sv_sq.h": 1,
@@ -9635,7 +9641,8 @@
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
         "core/test/meson.build": 6,
-        "core/test/test_strict_fp_compiler_args.py": 4,
+        "core/test/test_strict_fp_compiler_args.py": 5,
+        "dev/Containerfile": 1,
         "scripts/ci/clang-tidy-sycl.sh": 1,
         "scripts/ci/golden-arm64-preflight.sh": 1,
         "scripts/ci/setup-golden-build.sh": 1,
@@ -9727,6 +9734,7 @@
     },
     "1468": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 1,
@@ -10008,11 +10016,13 @@
     "1495": {
       "sites": {
         ".github/workflows/libvmaf-build-matrix.yml": 1,
+        "Containerfile.vmafx": 1,
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
         "core/test/test_icx_system_libm.py": 3,
         "core/test/test_meson_secret_env_sanitization.py": 1,
-        "core/test/test_strict_fp_compiler_args.py": 2
+        "core/test/test_strict_fp_compiler_args.py": 2,
+        "dev/Containerfile": 1
       },
       "target": "1495-icx-system-libm.md"
     },
@@ -10929,6 +10939,23 @@
         "scripts/ci/tests/test_pr_time_verify_workflows.py": 2
       },
       "target": "1701-nightly-tester-image-build.md"
+    },
+    "1714": {
+      "sites": {
+        "Containerfile.vmafx": 2,
+        "core/src/meson.build": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_strict_fp_compiler_args.py": 6,
+        "dev/Containerfile": 2
+      },
+      "target": "1714-hybrid-gcc-cpu-icpx-sycl.md"
+    },
+    "1715": {
+      "sites": {
+        "Containerfile.vmafx": 2,
+        "scripts/test/run-all-tests.sh": 1
+      },
+      "target": "1715-vmafx-sycl-ffmpeg-container.md"
     }
   },
   "retired": {
