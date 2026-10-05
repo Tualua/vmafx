@@ -18,6 +18,7 @@ file a follow-up ticket and link to it here.
 | --- | --- |
 | [Open pull requests sent upstream](#open-pull-requests-this-fork-has-sent-upstream) | 2026-10-01 |
 | Upstream defects verified against the fork | 2026-10-01 |
+| [Upstream GPU defects checked against the fork](#upstream-gpu-defects-checked-against-the-fork-2026-10-05) | 2026-10-05 |
 | Parity pin (upstream head the fork is at parity with) | 2026-10-02 |
 | [Reported upstream on 2026-09-19](#reported-upstream-on-2026-09-19) | 2026-09-19 |
 | Individual defects (ADM rounding, AVX-512 LTO SEGV, AIM clipping, `KBND_SYMMETRIC`) | per entry |
@@ -134,6 +135,21 @@ with typed casts. `integer_vif.c` compiles with GCC 16.2.1 and with Clang
 22.1.8 under `-Werror=incompatible-pointer-types`. That makes seven upstream
 commits since the September port that the fork does not need, up to
 `8e7a1ac4e`; `docs/state.md` ("Confirmed not-affected") lists the first six.
+
+## Upstream GPU defects checked against the fork (2026-10-05)
+
+As of 2026-10-05, on fork master `cf4e474be`. Two upstream reports about the
+GPU twins that the section above does not list. The fork has neither defect.
+It had the three defects of #1564 and fixed them before this check. Each row
+names the test that holds the fix.
+
+| Upstream | Defect | On the fork |
+| --- | --- | --- |
+| [#1566](https://github.com/Netflix/vmaf/issues/1566), fixed upstream by [#1552](https://github.com/Netflix/vmaf/pull/1552) (merged 2026-07-31) | The CUDA motion kernel for samples above 8 bits advanced a 16-bit element pointer by the picture's byte stride. It read row `2 * y` for row `y` and, for the lower half of the picture, memory past the plane. Every motion score above 8 bits was wrong, and with it the VMAF score | **Not affected.** Both CUDA motion twins run one SAD kernel that reads a row through a byte pointer and casts the row: `load_sample()` in `core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu` ([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md)). At `--precision max` it returns the CPU's bits in `test_cuda_exact_twins` (8 and 10 bits) and `test_cuda_motion_tiny_frames` (tiny and odd frames, 16 bits). It also does so in every `motion` and `motion_v2` cell of the depth and layout matrix of PR #2172 (8, 10, 12 and 16 bits, 4:2:0, 4:2:2 and 4:4:4, odd width), on CUDA, SYCL and HIP. With the upstream form planted in `load_sample()`, every cell above 8 bits fails, and compute-sanitizer memcheck reports 26993 invalid global reads on one 16-bit run (0 without the plant). The static check of PR #2177 refuses that form in every CUDA, HIP, SYCL and Metal source |
+| [#1564](https://github.com/Netflix/vmaf/issues/1564) bug 1 | The CUDA integer ADM masking kernel took the wrong border rows and columns at a band edge. It mirrored where the CPU mirrors on one side and replicates on the other, and read one csf row past the region the csf pass wrote. Frames smaller than about 150 pixels scored differently from the CPU | **Was affected, fixed.** Rows and columns are clamped to the CPU's pattern: `s0_cm_row()` is `min(abs(pos), h - 1)`, the columns are `{abs(x - 1), x, min(x + 1, w - 1)}`, and scales 1 to 3 clamp the same way (`core/src/feature/cuda/integer_adm/adm_cm.cu`; `docs/state.md` row `T-UPSTREAM-1564-ADM-CM-GPU-BORDER-AND-ROUNDING-2026-09-03`). Tests: `test_gpu_adm_tiny_frames` (17 to 64 pixels), `test_cuda_adm_small_border` |
+| [#1564](https://github.com/Netflix/vmaf/issues/1564) bug 2 | The CUDA masking and denominator reductions applied the CPU's per-row rounding shift to each warp's partial sum. Rounding does not distribute over addition, so a row wider than one warp drifted, and a near-zero sum could double | **Was affected, fixed** ([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)). Each row is summed whole and rounded once: `adm_cm_round_row_total()` and `adm_csf_den_round_row_total()` (`core/src/feature/adm_cm_accumulator.h`). Tests: `test_adm_cm_row_rounding`, `test_adm_cm_row_rounding_contract.py`, `test_cuda_adm_wide_rounding`, and `test_cuda_adm_parity` (`==` against the CPU) |
+| [#1564](https://github.com/Netflix/vmaf/issues/1564) bug 3 | The x86 vector loop of the integer ADM DWT computed the mirrored last output column with taps that are not mirrored, when half the width was 1 more than a multiple of the vector length. It also loaded a few elements past the row | **Was affected, fixed** in fork commit `0ed57f9f1` (PR #1339). The vector loop stops at `half_w >= 2 ? half_w - 1 - ((half_w - 2) % N) : 1`, so the last column always goes through the scalar tail. That applies in every AVX2 and AVX-512 DWT kernel (`core/src/feature/x86/adm_avx2.c`, `adm_avx512.c`). Test: `test_adm_dwt2_x86` (the guard pattern at the production stride) |
+| [#1564](https://github.com/Netflix/vmaf/issues/1564) follow-ups | The report's further findings: a neighbour clamp at 17 to 28 pixels, the one-degree angle test on exact integers against float, and a denominator shift taken from a device logarithm | **Fixed.** The angle test is `adm_angle_flag.h` (`test_adm_angle_flag`). The denominator shift comes from the host and no logarithm is left in `adm_csf_den.cu`. One device logarithm remains: the masking kernel's cube shifts, `__float2uint_ru(__log2f(w))` in `adm_cm.cu`, which equals the CPU's for 1 to 131071 (`core/src/feature/cuda/AGENTS.d/adm.md`) |
 
 <!-- The Licence Provenance check reads the heading below
      (scripts/ci/upstream_parity_pin.py, licence-provenance-check.md), and

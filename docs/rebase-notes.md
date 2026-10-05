@@ -10,6 +10,9 @@ search:
 ## v1-model test fixtures named by file (2026-10-05)
 
 No rebase impact: wording and fixture labels of a fork-only test.
+## Known upstream GPU defects recorded (2026-10-05)
+
+No rebase impact: docs only.
 ## Whole-model no-fallback test for the v1 models (2026-10-05)
 
 `test/rc3-v1-models-no-fallback` (issue #2144). Fork-only files:

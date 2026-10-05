@@ -1549,6 +1549,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [build flags](docs/development/build-flags.md#floating-point-contraction-is-off-everywhere).
 
 
+- **The known-upstream-bugs page lists the upstream GPU defects checked on
+  2026-10-05.** The CUDA motion kernel that advanced a 16-bit pointer by the
+  byte stride (upstream #1566, fixed upstream by #1552) does not affect the
+  fork. The three integer ADM defects of upstream #1564 were fixed in the fork
+  earlier. Each row names the fork's code and the test that holds it. See
+  [known upstream bugs](docs/development/known-upstream-bugs.md#upstream-gpu-defects-checked-against-the-fork-2026-10-05).
+
+
 - **Metal kernels compile without fast math or FP contraction**
   (ADR-1498): every `.metal` file takes `-fno-fast-math -ffp-contract=off`,
   so fp32 `+ - * /`, `sqrt` and `fma` are correctly rounded and no `a * b + c`
