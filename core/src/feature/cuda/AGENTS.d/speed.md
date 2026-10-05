@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/cuda/speed_cuda_pipeline.c
   - core/src/feature/cuda/speed_cuda_pipeline.h
+  - core/src/feature/cuda/speed/speed_score.cu
 invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail for entropy and score.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -91,3 +92,10 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail
   rule), `test_cuda_cambi_parity{,_large}`,
   `test_cuda_speed_{chroma,temporal,singular}_parity`, smoke tests (all
   exit 77 without device).
+- Covariance divisor = exact element count `sub_w * sub_h` as fp32 pair
+  (`count_ff()`) into the pair-divisor `ff_div_to_float()`. Never
+  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) an odd count
+  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0` the
+  division = old one-float form bit for bit. Means divisor stays fp32
+  (speed.c rounds it too). Guards: `test_speed_cov_count_division` (HIP
+  header on host), `test_speed_cov_count_contract.py` (CUDA, HIP, SYCL).

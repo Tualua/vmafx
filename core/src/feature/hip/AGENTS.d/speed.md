@@ -3,6 +3,7 @@ paths:
   - core/src/feature/hip/speed_hip_pipeline.c
   - core/src/feature/hip/speed_hip_pipeline.h
   - core/src/feature/hip/speed/speed_pipeline.hip
+  - core/src/feature/hip/speed/speed_hip_device.h
 invariant: SpEED singular-covariance contract and device-resident CPU fp32 arithmetic flags must hold.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -76,3 +77,10 @@ uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
   tail vs CPU extractor, `==`, no device),
   `test_hip_device_resident_contract.py`, `test_hip_speed_*_parity` on
   device.
+- Covariance divisor = exact element count `sub_w * sub_h` as fp32 pair
+  (`speed_hd_count_ff()`) into the pair-divisor `speed_hd_ff_div_to_float()`. Never
+  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) an odd count
+  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0` the
+  division = old one-float form bit for bit. Means divisor stays fp32
+  (speed.c rounds it too). Guards: `test_speed_cov_count_division` (HIP
+  header on host), `test_speed_cov_count_contract.py` (CUDA, HIP, SYCL).

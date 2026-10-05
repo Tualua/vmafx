@@ -192,12 +192,26 @@ static inline SPEED_HD SpeedHdFf speed_hd_ff_add(SpeedHdFf a, SpeedHdFf b)
     return speed_hd_quick_two_sum(first.hi, low.lo + first.lo);
 }
 
-/* (hi + lo) / divisor, rounded once to fp32. */
-static inline SPEED_HD float speed_hd_ff_div_to_float(SpeedHdFf value, float divisor)
+/* An element count as an exact fp32 pair: hi is the count rounded to fp32,
+ * lo the rest. lo is 0 up to 2^24 and exact above it (below 2^48). */
+static inline SPEED_HD SpeedHdFf speed_hd_count_ff(uint32_t count)
 {
-    const float quotient = value.hi / divisor;
-    const float remainder = speed_hd_fma(-quotient, divisor, value.hi);
-    const float correction = (remainder + value.lo) / divisor;
+    const float hi = (float)count;
+    return speed_hd_ff(hi, (float)((int64_t)count - (int64_t)hi));
+}
+
+/* (hi + lo) / (divisor.hi + divisor.lo), rounded to fp32. speed.c divides its
+ * accumulated sum by the exact size_t count; a count above 2^24 has no fp32 value,
+ * so its rest enters the remainder. With divisor.lo == 0 this is the one-float
+ * division bit for bit. */
+static inline SPEED_HD float speed_hd_ff_div_to_float(SpeedHdFf value, SpeedHdFf divisor)
+{
+    const float quotient = value.hi / divisor.hi;
+    float remainder = speed_hd_fma(-quotient, divisor.hi, value.hi) + value.lo;
+    if (divisor.lo != 0.0f) {
+        remainder = remainder - (quotient * divisor.lo);
+    }
+    const float correction = remainder / divisor.hi;
     return quotient + correction;
 }
 
@@ -621,8 +635,8 @@ static inline SPEED_HD SpeedHdFf speed_hd_covariance_partial(const SpeedHipParam
 static inline SPEED_HD void speed_hd_covariance_store(const SpeedHipParams *p, uint32_t ch,
                                                       uint32_t x, uint32_t y, SpeedHdFf sum)
 {
-    const float count = (float)(p->geometry.sub_w * p->geometry.sub_h);
-    const float value = speed_hd_ff_div_to_float(sum, count);
+    const float value =
+        speed_hd_ff_div_to_float(sum, speed_hd_count_ff(p->geometry.sub_w * p->geometry.sub_h));
     float *matrix = p->cov + (size_t)ch * SPEED_HIP_MATRIX;
     matrix[x * SPEED_HIP_N + y] = value;
     matrix[y * SPEED_HIP_N + x] = value;

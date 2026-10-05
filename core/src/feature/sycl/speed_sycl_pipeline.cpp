@@ -75,6 +75,7 @@ constexpr float kEpsLo = 0x1.6bdb1ap-49f;                 /* EIGENVALUE_EPS - kE
 
 /* Correctly rounded division / square root and exact fp32 pairs, shared with
  * the ssimulacra2 twin (sycl_exact_fp.h, ADR-1363). */
+using vmaf_sycl_exact::count_ff;
 using vmaf_sycl_exact::div_rn;
 using vmaf_sycl_exact::Ff;
 using vmaf_sycl_exact::ff_add;
@@ -805,8 +806,8 @@ inline void covariance_group(sycl::nd_item<1> it, const CovArgs &a, float *hi, f
         sycl::group_barrier(it.get_group());
     }
     if (lid == 0u) {
-        const auto count = static_cast<float>(a.sub_w * a.sub_h);
-        const float value = ff_div_to_float({.hi = hi[0], .lo = lo[0]}, count);
+        const float value =
+            ff_div_to_float({.hi = hi[0], .lo = lo[0]}, count_ff(a.sub_w * a.sub_h));
         float *matrix = a.cov + static_cast<size_t>(ch) * kMatrix;
         matrix[x * kN + y] = value;
         matrix[y * kN + x] = value;

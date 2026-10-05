@@ -6912,6 +6912,25 @@ test('test_psnr_hvs_gpu_scan_contract',
     timeout : 30,
 )
 
+# The device SpEED twins divide each covariance sum by the exact element count,
+# not by the count rounded to fp32 (wrong above 2^24 elements, beyond 16K with
+# speed_prescale above 2). The HIP device header is compiled for the host, as
+# the kernel build compiles it (no contraction); the contract test holds the
+# CUDA, HIP and SYCL sources to the same division. Both device-free.
+test_speed_cov_count_division = executable('test_speed_cov_count_division',
+    ['test.c', 'test_speed_cov_count_division.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : cc.get_supported_arguments(['-ffp-contract=off']),
+    dependencies : [math_lib],
+)
+test('test_speed_cov_count_division', test_speed_cov_count_division, suite : ['fast'])
+test('test_speed_cov_count_contract',
+    import('python').find_installation(),
+    args : files('test_speed_cov_count_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # The score clamp is shared the same way, and is the one place a non-finite
 # score could be published as speed_*_max_val instead of failing the frame.
 test_speed_clamp_score = executable('test_speed_clamp_score',

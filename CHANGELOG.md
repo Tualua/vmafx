@@ -4924,6 +4924,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   tracks.
 
 
+- **The CUDA, HIP and SYCL `speed_chroma` / `speed_temporal` twins divide each
+  covariance sum by the exact element count.** They divided by the count
+  rounded to fp32, which differs from the count above 2^24 elements per
+  submatrix (a picture wider than 16K with `speed_prescale` above 2) and moved
+  the covariance away from the CPU extractor's. Scores of every picture up to
+  16K are unchanged.
+
+
 - **`scripts/dev/speed_gpu_parity.py` accepts a relative `--vmaf` path.** The
   script refused every relative path, including its own default
   `build/tools/vmaf`, with `allowlisted executable must be bare or absolute`

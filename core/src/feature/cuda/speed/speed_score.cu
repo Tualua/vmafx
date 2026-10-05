@@ -153,12 +153,31 @@ static __device__ __forceinline__ Ff ff_add(Ff a, Ff b)
     return quick_two_sum(first.hi, rn_add(low.lo, first.lo));
 }
 
-/* (hi + lo) / divisor, rounded once to fp32. */
-static __device__ __forceinline__ float ff_div_to_float(Ff value, float divisor)
+namespace
 {
-    const float quotient = rn_div(value.hi, divisor);
-    const float remainder = exact_fma(-quotient, divisor, value.hi);
-    const float correction = rn_div(rn_add(remainder, value.lo), divisor);
+/* An element count as an exact fp32 pair: hi is the count rounded to fp32,
+ * lo the rest. lo is 0 up to 2^24 and exact above it (below 2^48). */
+__device__ __forceinline__ Ff count_ff(uint32_t count)
+{
+    Ff pair;
+    pair.hi = static_cast<float>(count);
+    pair.lo = static_cast<float>(static_cast<int64_t>(count) - static_cast<int64_t>(pair.hi));
+    return pair;
+}
+} // namespace
+
+/* (hi + lo) / (divisor.hi + divisor.lo), rounded to fp32. speed.c divides its
+ * accumulated sum by the exact size_t count; a count above 2^24 has no fp32 value,
+ * so its rest enters the remainder. With divisor.lo == 0 this is the one-float
+ * division bit for bit. */
+static __device__ __forceinline__ float ff_div_to_float(Ff value, Ff divisor)
+{
+    const float quotient = rn_div(value.hi, divisor.hi);
+    float remainder = rn_add(exact_fma(-quotient, divisor.hi, value.hi), value.lo);
+    if (divisor.lo != 0.0f) {
+        remainder = rn_sub(remainder, rn_mul(quotient, divisor.lo));
+    }
+    const float correction = rn_div(remainder, divisor.hi);
     return rn_add(quotient, correction);
 }
 
@@ -1216,8 +1235,7 @@ __global__ void __launch_bounds__(SPEED_CUDA_COV_MAX_THREADS)
         __syncthreads();
     }
     if (lid == 0u) {
-        const auto count = static_cast<float>(g.sub_w * g.sub_h);
-        const float value = ff_div_to_float(Ff{s_hi[0], s_lo[0]}, count);
+        const float value = ff_div_to_float(Ff{s_hi[0], s_lo[0]}, count_ff(g.sub_w * g.sub_h));
         float *matrix = reinterpret_cast<float *>(a.cov) + static_cast<size_t>(ch) * kMatrix;
         matrix[x * kN + y] = value;
         matrix[y * kN + x] = value;

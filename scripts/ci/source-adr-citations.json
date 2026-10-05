@@ -6575,6 +6575,7 @@
         "core/test/test_speed.c": 1,
         "core/test/test_speed_chroma.c": 1,
         "core/test/test_speed_clamp_score.c": 1,
+        "core/test/test_speed_cov_count_division.c": 1,
         "core/test/test_speed_filter.c": 1,
         "core/test/test_speed_frame_buffers.c": 1,
         "core/test/test_speed_lanczos4_weights.c": 1,

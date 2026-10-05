@@ -53,7 +53,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | `/core/src/feature/feature_extractor.cpp`, `integer_adm_hip.c` | [registration-coverage](AGENTS.d/registration-coverage.md) | Every new HIP feature extractor must be registered in feature_extractor.cpp under HAVE_HIP. |
 | `integer_adm_hip.c`, `ciede_hip.c` | [scaffold-posture](AGENTS.d/scaffold-posture.md) | Scaffolding posture returns -ENOSYS and performs no uninitialized operations. |
 | `integer_adm_hip.c`, `integer_cambi_hip.c` | [scalar-vs-tiled-baseline](AGENTS.d/scalar-vs-tiled-baseline.md) | Scalar-per-thread implementation is the correctness baseline prior to templated tiled optimization. |
-| `speed_hip_pipeline.c`, `speed_hip_pipeline.h`, `speed/speed_pipeline.hip` | [speed](AGENTS.d/speed.md) | SpEED singular-covariance contract and device-resident CPU fp32 arithmetic flags must hold. |
+| `speed_hip_pipeline.c`, `speed_hip_pipeline.h`, `speed/speed_pipeline.hip`, `speed/speed_hip_device.h` | [speed](AGENTS.d/speed.md) | SpEED singular-covariance contract and device-resident CPU fp32 arithmetic flags must hold. |
 | `ssimulacra2_hip.c`, `ssimulacra2_hip.h`, `ssimulacra2/ssimulacra2_device.hip` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_hip produces bit-exact CPU results. |
 | `integer_adm_hip.c`, `integer_ssim_hip.c` | [static-const-device-upload](AGENTS.d/static-const-device-upload.md) | Static const lookup tables must be uploaded to device memory before kernel launch. |
 | `/core/meson.build`, `/core/src/meson.build` | [strict-fp](AGENTS.d/strict-fp.md) | Every HIP kernel builds with strict IEEE-754 floating-point argument flags. |

@@ -66,3 +66,11 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
 > `speed_sycl_pipeline.cpp` and `speed_sycl_host.cpp`. Their parity tests
 > are live gates; the twins match the CPU bit for bit (see
 > `docs/metrics/speed_qa.md`).
+
+- Covariance divisor = exact element count `sub_w * sub_h` as fp32 pair
+  (`count_ff()`, `sycl_exact_fp.h`) into the pair-divisor `ff_div_to_float()`. Never
+  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) an odd count
+  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0` the
+  division = old one-float form bit for bit. Means divisor stays fp32
+  (speed.c rounds it too). Guards: `test_speed_cov_count_division` (HIP
+  header on host), `test_speed_cov_count_contract.py` (CUDA, HIP, SYCL).
