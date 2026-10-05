@@ -1,0 +1,206 @@
+{
+ "recorded": "2026-10-05",
+ "origin": "VMAFx/vmafx",
+ "upstream": "https://github.com/Netflix/vmaf",
+ "removed": [
+  {
+   "name": "v1.0.2",
+   "object": "2c06ddf5fd8903d631a1275e5fb2169bcbbc7212",
+   "commit": "2c06ddf5fd8903d631a1275e5fb2169bcbbc7212",
+   "netflix_object": "2c06ddf5fd8903d631a1275e5fb2169bcbbc7212",
+   "annotated": false
+  },
+  {
+   "name": "v1.1.6",
+   "object": "d13611cd859ba267ca0e6f36cb19e55483fc04b2",
+   "commit": "d13611cd859ba267ca0e6f36cb19e55483fc04b2",
+   "netflix_object": "d13611cd859ba267ca0e6f36cb19e55483fc04b2",
+   "annotated": false
+  },
+  {
+   "name": "v1.2.0",
+   "object": "6657d1753c5774427d0a584f1265d54d9dc0b7ff",
+   "commit": "6657d1753c5774427d0a584f1265d54d9dc0b7ff",
+   "netflix_object": "6657d1753c5774427d0a584f1265d54d9dc0b7ff",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.1",
+   "object": "49c2efb1f750c30fe5fd338a0a19f9973d7dc255",
+   "commit": "49c2efb1f750c30fe5fd338a0a19f9973d7dc255",
+   "netflix_object": "49c2efb1f750c30fe5fd338a0a19f9973d7dc255",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.4",
+   "object": "f1225dc5366c4bd0ed2a315e4a21c88e42a4fc1e",
+   "commit": "f1225dc5366c4bd0ed2a315e4a21c88e42a4fc1e",
+   "netflix_object": "f1225dc5366c4bd0ed2a315e4a21c88e42a4fc1e",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.5",
+   "object": "a6957a081a4bdb6643662f3172edbaa22394919b",
+   "commit": "a6957a081a4bdb6643662f3172edbaa22394919b",
+   "netflix_object": "a6957a081a4bdb6643662f3172edbaa22394919b",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.6rc",
+   "object": "3b517cd18d4fd6544fcd52e0fa70d5ef8a0a0a02",
+   "commit": "3b517cd18d4fd6544fcd52e0fa70d5ef8a0a0a02",
+   "netflix_object": "3b517cd18d4fd6544fcd52e0fa70d5ef8a0a0a02",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.7",
+   "object": "9605229b4515064eca25526a149f7a704d2c3eeb",
+   "commit": "9605229b4515064eca25526a149f7a704d2c3eeb",
+   "netflix_object": "9605229b4515064eca25526a149f7a704d2c3eeb",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.7rc",
+   "object": "1b0f6efb832b0575ca1a852aa3cb29330f43ae97",
+   "commit": "1b0f6efb832b0575ca1a852aa3cb29330f43ae97",
+   "netflix_object": "1b0f6efb832b0575ca1a852aa3cb29330f43ae97",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.9",
+   "object": "1b1d75db6bf44b62e9755121559c951c03199b2c",
+   "commit": "1b1d75db6bf44b62e9755121559c951c03199b2c",
+   "netflix_object": "1b1d75db6bf44b62e9755121559c951c03199b2c",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.12",
+   "object": "a1cb186ff5930bf02406fa01f52e2f7e30b823df",
+   "commit": "a1cb186ff5930bf02406fa01f52e2f7e30b823df",
+   "netflix_object": "a1cb186ff5930bf02406fa01f52e2f7e30b823df",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.13",
+   "object": "fbb9d3ecda8cc2bd80ecbdd63f877825216045be",
+   "commit": "fbb9d3ecda8cc2bd80ecbdd63f877825216045be",
+   "netflix_object": "fbb9d3ecda8cc2bd80ecbdd63f877825216045be",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.14",
+   "object": "fcf8c9e695b16f9f3b43af9a4a0c3fb792fc071a",
+   "commit": "fcf8c9e695b16f9f3b43af9a4a0c3fb792fc071a",
+   "netflix_object": "fcf8c9e695b16f9f3b43af9a4a0c3fb792fc071a",
+   "annotated": false
+  },
+  {
+   "name": "v1.3.15",
+   "object": "e434247f8bf8f5ec36ba87062656583c073394fd",
+   "commit": "e434247f8bf8f5ec36ba87062656583c073394fd",
+   "netflix_object": "e434247f8bf8f5ec36ba87062656583c073394fd",
+   "annotated": false
+  },
+  {
+   "name": "v1.5.1",
+   "object": "35c6044d8483a3ab9528f1cc81f75738efe4f4c0",
+   "commit": "35c6044d8483a3ab9528f1cc81f75738efe4f4c0",
+   "netflix_object": "35c6044d8483a3ab9528f1cc81f75738efe4f4c0",
+   "annotated": false
+  },
+  {
+   "name": "v1.5.2",
+   "object": "19e02b9315d8f30366a70b2cc24f022ad6f64bae",
+   "commit": "19e02b9315d8f30366a70b2cc24f022ad6f64bae",
+   "netflix_object": "19e02b9315d8f30366a70b2cc24f022ad6f64bae",
+   "annotated": false
+  },
+  {
+   "name": "v1.5.3",
+   "object": "47950a6a74b3aa8c483caf3f1cdbfeda7d176086",
+   "commit": "47950a6a74b3aa8c483caf3f1cdbfeda7d176086",
+   "netflix_object": "47950a6a74b3aa8c483caf3f1cdbfeda7d176086",
+   "annotated": false
+  },
+  {
+   "name": "v2.0.0",
+   "object": "9db0c56ce6d4019456a84828f9ed8d8d9da0ff09",
+   "commit": "9db0c56ce6d4019456a84828f9ed8d8d9da0ff09",
+   "netflix_object": "9db0c56ce6d4019456a84828f9ed8d8d9da0ff09",
+   "annotated": false
+  },
+  {
+   "name": "v2.1.0",
+   "object": "2e1b24d8344c8e8dbb770699ac5beae8b11463d4",
+   "commit": "2e1b24d8344c8e8dbb770699ac5beae8b11463d4",
+   "netflix_object": "2e1b24d8344c8e8dbb770699ac5beae8b11463d4",
+   "annotated": false
+  },
+  {
+   "name": "v2.1.1",
+   "object": "8ba4a4b84beb40f97fa01d902e45dde69b18b517",
+   "commit": "8ba4a4b84beb40f97fa01d902e45dde69b18b517",
+   "netflix_object": "8ba4a4b84beb40f97fa01d902e45dde69b18b517",
+   "annotated": false
+  },
+  {
+   "name": "v2.2.0",
+   "object": "0511e05320d67238cf514104566b9d3f969963b7",
+   "commit": "0511e05320d67238cf514104566b9d3f969963b7",
+   "netflix_object": "0511e05320d67238cf514104566b9d3f969963b7",
+   "annotated": false
+  },
+  {
+   "name": "v2.2.1",
+   "object": "9451ff498402e8f0a912161e5f8dea4de6b54ae2",
+   "commit": "9451ff498402e8f0a912161e5f8dea4de6b54ae2",
+   "netflix_object": "9451ff498402e8f0a912161e5f8dea4de6b54ae2",
+   "annotated": false
+  },
+  {
+   "name": "v2.3.0",
+   "object": "5c1c9bfaad599796921b59873e9c3ed74a29c6ff",
+   "commit": "5c1c9bfaad599796921b59873e9c3ed74a29c6ff",
+   "netflix_object": "5c1c9bfaad599796921b59873e9c3ed74a29c6ff",
+   "annotated": false
+  },
+  {
+   "name": "v2.3.1",
+   "object": "f2661673a078718ddfc1ddb6042048c1b1284946",
+   "commit": "f2661673a078718ddfc1ddb6042048c1b1284946",
+   "netflix_object": "f2661673a078718ddfc1ddb6042048c1b1284946",
+   "annotated": false
+  },
+  {
+   "name": "v3.0.0",
+   "object": "17a67b238ce0539bdeafdc95961abac64fa16ea8",
+   "commit": "17a67b238ce0539bdeafdc95961abac64fa16ea8",
+   "netflix_object": "17a67b238ce0539bdeafdc95961abac64fa16ea8",
+   "annotated": false
+  },
+  {
+   "name": "v3.0.0-rc",
+   "object": "9ae6f905ead677e11156550df99e17e222d014f5",
+   "commit": "9ae6f905ead677e11156550df99e17e222d014f5",
+   "netflix_object": "9ae6f905ead677e11156550df99e17e222d014f5",
+   "annotated": false
+  }
+ ],
+ "upstream_only": [
+  {
+   "name": "v3.1.0",
+   "object": "6375a4be62fd2673bba2c356b26867d8af01a685",
+   "commit": "6375a4be62fd2673bba2c356b26867d8af01a685"
+  },
+  {
+   "name": "v3.2.0",
+   "object": "3f9e02af258a5c0e30124fc585a3c3af90126dee",
+   "commit": "3f9e02af258a5c0e30124fc585a3c3af90126dee"
+  },
+  {
+   "name": "v3.2.1",
+   "object": "f85a853692a8c730d0270cd733c8bb30b5b93b7c",
+   "commit": "f85a853692a8c730d0270cd733c8bb30b5b93b7c"
+  }
+ ]
+}

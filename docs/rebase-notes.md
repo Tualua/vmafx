@@ -99,6 +99,19 @@ v1 news line.
   `_find_guiding_and_guided()` for HISS-04, returning Python floats; the
   ResPow guard catches `Exception` where Netflix has a bare `except:`.
   Netflix's assertion changes of `5c7770080` are not ported (golden stop).
+## Inherited Netflix tags are deleted (ADR-1805, 2026-10-05)
+
+`chore/rc3-netflix-tags`. Repository refs and one hook; no library change.
+
+- VMAFx/vmafx carries none of Netflix's tags: the 26 inherited ones were
+  deleted and recorded in `scripts/release/inherited-upstream-tags.json`
+  and `docs/development/inherited-tags.md`. An upstream sync never pushes a
+  Netflix tag and never fetches them into a clone: keep
+  `git config remote.upstream.tagOpt --no-tags`, and never `git push --tags`
+  from a clone that fetched `upstream` with tags (it would restore them).
+- `lefthook.yml` `pre-push` runs `scripts/git-hooks/check-push-tags.py`
+  (`tag-guard`); a rebase of `lefthook.yml` keeps the command with
+  `use_stdin: true`. Its contract is `scripts/release/tests/test_inherited_tags.py`.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

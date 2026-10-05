@@ -241,6 +241,13 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: inherited-tags-contract
+        name: Inherited Netflix tag deletion script and push guard (ADR-1805)
+        entry: python3 -B -m unittest scripts/release/tests/test_inherited_tags.py
+        language: system
+        files: '^(scripts/release/(delete-inherited-upstream-tags\.py|inherited-upstream-tags\.json|tests/test_inherited_tags\.py)|scripts/git-hooks/check-push-tags\.py|lefthook\.yml)$'
+        pass_filenames: false
+
       - id: merge-train-guard-contract
         name: Merge-train ownership and validation regressions
         entry: python3 -m unittest discover -s scripts/dev/tests -p test_*merge_train_guard.py

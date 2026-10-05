@@ -29,6 +29,14 @@ regardless of content). Skill must detect topology before merge attempt.
 
 1. **Pre-flight: topology detection.**
 
+   Fetch `upstream` without tags: Netflix's tags are not tags of this
+   repository (ADR-1805), and `git push --tags` from a clone that holds them
+   would restore them. Once per clone:
+
+   ```bash
+   git config remote.upstream.tagOpt --no-tags
+   ```
+
    ```bash
    git fetch upstream
    mb=$(git merge-base master upstream/master 2>/dev/null) || true

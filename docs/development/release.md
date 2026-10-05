@@ -23,8 +23,11 @@ Releases follow ordinary SemVer tags, `vX.Y.Z`:
 
 The fork's first release is `v1.0.0`. It is preceded by release
 candidates `v1.0.0-rc.N`; `v1.0.0-rc.1` and `v1.0.0-rc.2` are published.
-Every other `vX.Y.Z` tag visible in a clone belongs to Netflix upstream
-history and is not an ancestor of `master`. The 3.2.x baseline that used
+Netflix's tags (`v1.0.2` to `v3.2.1`) are not tags of this repository: the 26
+that had been copied into it were deleted on 2026-10-05 ([the record](inherited-tags.md),
+[ADR-1805](../adr/1805-delete-inherited-netflix-tags.md)). A `vX.Y.Z` tag you
+see in a clone that is not a fork release came from `git fetch upstream` with
+tags. The 3.2.x baseline that used
 to be in the manifest was a source-version alignment with Netflix's
 SONAME, not a fork release.
 
@@ -1143,6 +1146,51 @@ The upstream Netflix release process (manual version bump, manual CHANGELOG
 editing, draft-a-release on GitHub) is documented at
 [Netflix/vmaf — release.md](https://github.com/Netflix/vmaf/blob/master/resource/doc/release.md).
 It does not apply to this fork.
+
+Do not fetch Netflix's tags into a clone of this repository. After adding the
+remote, set
+
+```bash
+git remote add upstream https://github.com/Netflix/vmaf.git
+git config remote.upstream.tagOpt --no-tags
+```
+
+so `git fetch upstream` brings branches only. A tag fetched by mistake is
+removed locally with `git tag -d <name>`; the lefthook `pre-push` guard
+(`scripts/git-hooks/check-push-tags.py`) refuses to push a Netflix tag or a tag
+name outside the fork's patterns, and release-please, tester workflows and
+`archive/*` tags keep working.
+
+## Go consumers and the inherited tags
+
+Until 2026-10-05 the repository carried Netflix's tags, and
+`go get github.com/VMAFx/vmafx@latest` resolved to Netflix's
+`v3.0.0+incompatible`. Measured with Go 1.27.1 (the experiments are summarised in
+[ADR-1805](../adr/1805-delete-inherited-netflix-tags.md)):
+
+- The Go command reads retractions only from the `go.mod` of the highest
+  version, and Netflix's `v1.5.3` (no `go.mod`) outranked every fork `v1.0.x`,
+  so a `retract` could not take effect.
+- After the deletion `GOPROXY=direct go list -m -versions github.com/VMAFx/vmafx`
+  prints `v1.0.0-rc.1 v1.0.0-rc.2` and `go list -m github.com/VMAFx/vmafx@latest`
+  prints `v1.0.0-rc.2`; no Netflix version is listed.
+- `proxy.golang.org` keeps what it has cached: it still answered
+  `@latest = v3.0.0+incompatible` and listed the Netflix versions on 2026-10-05,
+  and it offers no purge. Its `@v/<version>.zip` stays served for every cached
+  version by explicit request.
+
+Until the proxy's `@latest` shows a fork version, pin an explicit version:
+
+```bash
+go get github.com/VMAFx/vmafx@v1.0.0-rc.2
+go install github.com/VMAFx/vmafx/cmd/<tool>@v1.0.0-rc.2
+```
+
+or bypass the proxy cache: `GOPROXY=direct go list -m -versions github.com/VMAFx/vmafx`.
+After `v1.0.0` exists, `go list -m -retracted -versions github.com/VMAFx/vmafx`
+shows retracted releases too; keep the `retract` directive for the release
+candidates in every later `go.mod`, because only the latest version's `go.mod`
+is read.
 
 ## Release notes and the changelog archive (ADR-1233)
 

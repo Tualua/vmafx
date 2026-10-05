@@ -10930,6 +10930,16 @@
         "scripts/ci/tests/test_pr_time_verify_workflows.py": 2
       },
       "target": "1701-nightly-tester-image-build.md"
+    },
+    "1805": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "lefthook.yml": 1,
+        "scripts/git-hooks/check-push-tags.py": 1,
+        "scripts/release/delete-inherited-upstream-tags.py": 1,
+        "scripts/release/tests/test_inherited_tags.py": 1
+      },
+      "target": "1805-delete-inherited-netflix-tags.md"
     }
   },
   "retired": {

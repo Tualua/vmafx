@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1268), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1269), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5083,3 +5083,7 @@ Every ADR, one heading each (1268), so the site search finds an ADR by its title
 ## ADR-1701: Build and test the tester image every night on master
 
 [1701-nightly-tester-image-build](1701-nightly-tester-image-build.md)
+
+## ADR-1805: Delete the Netflix release tags inherited by VMAFx/vmafx
+
+[1805-delete-inherited-netflix-tags](1805-delete-inherited-netflix-tags.md)

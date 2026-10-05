@@ -870,6 +870,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [CUDA backend](docs/backends/cuda/overview.md#vif_cuda-returns-the-cpus-scores-bit-for-bit-2026-10-02)).
 
 
+- Deleted the 26 Netflix release tags that VMAFx/vmafx had inherited (`v1.0.2`
+  to `v1.5.3`, `v2.0.0` to `v2.3.1`, `v3.0.0`, `v1.3.6rc`, `v1.3.7rc`,
+  `v3.0.0-rc`), each recorded first in
+  `scripts/release/inherited-upstream-tags.json`. `go list -m -versions
+  github.com/VMAFx/vmafx` on the repository now lists the fork's versions only;
+  `proxy.golang.org` keeps its cache, so pin a version (`go get
+  github.com/VMAFx/vmafx@v1.0.0-rc.2`) until its `@latest` shows one. New
+  `scripts/release/delete-inherited-upstream-tags.py` (dry run by default) and
+  a `pre-push` guard that refuses a Netflix tag or a tag name outside the fork's
+  patterns; fetch `upstream` with `--no-tags` (ADR-1805).
+
+
 - **The dev container is pushed only into a private package.**
   `dev-container-publish.yml` reads the visibility of
   `ghcr.io/vmafx/vmafx-dev-mcp` before it builds and refuses to push unless

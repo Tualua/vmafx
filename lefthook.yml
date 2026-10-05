@@ -60,6 +60,12 @@ post-commit:
 pre-push:
   parallel: false
   commands:
+    tag-guard:
+      # ADR-1805: refuse a pushed tag that Netflix/vmaf defines (offline list in
+      # scripts/release/inherited-upstream-tags.json) or a tag name outside the
+      # fork's patterns. Reads the push-ref protocol on stdin; branch pushes pass.
+      use_stdin: true
+      run: python3 -B scripts/git-hooks/check-push-tags.py
     framework-hooks:
       # ADR-1241 wires the framework's pre-push stage (the MkDocs strict build,
       # the PR-body deliverables check, the push-range mypy scope). Lefthook owns
