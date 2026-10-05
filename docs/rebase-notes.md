@@ -40,6 +40,13 @@ library change.
   `image.files_match_build`. A sync must not bring back `report["verdict"]` for CPU
   rows, and must not copy the passing statuses into the generator: they have one
   definition, in the tester. `CpuRowVerdictTests` fails on the old form.
+## Port of Netflix/vmaf `ac9467ff4`: VMAF v1 tech blog link (2026-10-05)
+
+`port/ac9467ff4-v1-techblog-url`. Docs only. Upstream replaced the "tech blog
+XXX" placeholder in `README.md` and `resource/doc/models_v1.md`; the fork's
+counterpart is `docs/models/v1.md`, which had dropped the placeholder
+sentence. The link is in its introduction now; the fork's `README.md` has no
+v1 news line.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 
