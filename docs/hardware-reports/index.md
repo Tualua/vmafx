@@ -10,4 +10,7 @@ the project's own hosts, one file per report. Each row links the file. The
 `scripts/ci/check-hardware-reports.py` validates each file. A report with
 verdict `fail` is welcome: it is a finding.
 
-No reports have been submitted yet.
+| Date | CPU | Arch | Dispatch flags | GPU | Verdict | Source commit | Report |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-05 | 12th Gen Intel(R) Core(TM) i9-12900K | x86_64 | sse2, ssse3, sse4.1, avx2 | Intel(R) Graphics [0xe20b] (xe2), Intel(R) Graphics [0x4680] (xe-lp) | fail | `854bf047e458` | [2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-sycl.json](2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-sycl.json) |
+| 2026-10-05 | 12th Gen Intel(R) Core(TM) i9-12900K | x86_64 | sse2, ssse3, sse4.1, avx2 | - | pass | `2889f963a955` | [2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-windows.json](2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-windows.json) |
