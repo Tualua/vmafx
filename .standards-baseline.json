@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-04T17:54:11Z",
+  "generated_at": "2026-10-05T07:26:37Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "5d81bfb47a5029e0d7d4adf168817ee5f24ca02e",
-  "total_infractions": 367,
+  "commit_sha": "7786e9db4d4ea351508c9a41335f6ca2009335e2",
+  "total_infractions": 366,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -2726,14 +2726,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:ea0e23bcc6da",
       "fingerprint": "scripts/release/rollover-changelog-fragments.sh:HISS-07:text:ea0e23bcc6da#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/release/tests/test-concat-changelog-fragments.sh",
-      "line_number": 55,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:60c3d23174ef",
-      "fingerprint": "scripts/release/tests/test-concat-changelog-fragments.sh:HISS-07:text:60c3d23174ef#1"
     },
     {
       "rule_id": "HISS-07",

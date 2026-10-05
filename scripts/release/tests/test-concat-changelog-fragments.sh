@@ -52,7 +52,10 @@ fi
 # ---------------------------------------------------------------------------
 # The fix removes the post-mv manual cleanup; only the trap should remain.
 # We check there is exactly ONE rm invocation mentioning tmp_body — the trap.
-rm_count=$(grep -c 'rm -f.*tmp_body' "$CONCAT_SCRIPT" || true)
+rm_count=0
+if grep -q 'rm -f.*tmp_body' "$CONCAT_SCRIPT"; then
+  rm_count=$(grep -c 'rm -f.*tmp_body' "$CONCAT_SCRIPT")
+fi
 if [[ "$rm_count" -eq 1 ]]; then
   check "only one rm -f tmp_body reference (trap only, no duplicate)" pass
 else
@@ -67,7 +70,13 @@ fi
 # The script must exit non-zero AND leave no tmp_body/tmp_out in /tmp.
 
 TMPDIR_D2="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_D2"' EXIT
+TMPDIR_HAPPY=""
+TMPDIR_UNKNOWN=""
+
+cleanup() {
+  rm -rf "${TMPDIR_D2:-}" "${TMPDIR_HAPPY:-}" "${TMPDIR_UNKNOWN:-}"
+}
+trap cleanup EXIT
 
 # Build a minimal fake repo structure the script expects.
 mkdir -p "$TMPDIR_D2/changelog.d/fixed"
@@ -91,9 +100,10 @@ cat >"$TMPDIR_D2/changelog.d/fixed/test-frag.md" <<'EOF'
 - test fragment entry
 EOF
 
-# Record how many tmp files matching mktemp patterns exist before the run.
-# We use a pattern that covers the default mktemp prefix on Linux.
-before_count=$(find /tmp -maxdepth 1 -name 'tmp.*' -newer "$TMPDIR_D2" 2>/dev/null | wc -l)
+# Isolate tempfile allocation to a scratch directory so parallel CI / agent
+# processes allocating in global /tmp cannot race with this leak assertion.
+scratch_tmp="$TMPDIR_D2/scratch_tmp"
+mkdir -p "$scratch_tmp"
 
 # Shadow awk with a failing stub so the pipeline inside --write aborts.
 fake_awk_dir="$(mktemp -d -p "$TMPDIR_D2")"
@@ -106,12 +116,12 @@ chmod +x "$fake_awk_dir/awk"
 
 # Run the script with the faked awk; expect non-zero exit.
 exit_code=0
-PATH="$fake_awk_dir:$PATH" \
+TMPDIR="$scratch_tmp" PATH="$fake_awk_dir:$PATH" \
   bash "$CONCAT_SCRIPT" --write \
   2>/dev/null || exit_code=$?
 
-# After the script exits (any code), count new tmp files.
-after_count=$(find /tmp -maxdepth 1 -name 'tmp.*' -newer "$TMPDIR_D2" 2>/dev/null | wc -l)
+# After the script exits (any code), count new tmp files in the isolated dir.
+after_count=$(find "$scratch_tmp" -maxdepth 1 -name 'tmp.*' 2>/dev/null | wc -l)
 
 if [[ "$exit_code" -ne 0 ]]; then
   check "script exits non-zero when awk fails" pass
@@ -119,11 +129,10 @@ else
   check "script exits non-zero when awk fails (exit code was 0)" fail
 fi
 
-if [[ "$after_count" -le "$before_count" ]]; then
+if [[ "$after_count" -eq 0 ]]; then
   check "no new tmp files leaked after awk failure" pass
 else
-  leaked=$((after_count - before_count))
-  check "no new tmp files leaked after awk failure (found $leaked new files)" fail
+  check "no new tmp files leaked after awk failure (found $after_count new files)" fail
 fi
 
 # ---------------------------------------------------------------------------
@@ -131,7 +140,6 @@ fi
 # ---------------------------------------------------------------------------
 # Restore PATH (remove fake awk dir) and do a real --write run.
 TMPDIR_HAPPY="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_HAPPY"' EXIT
 
 mkdir -p "$TMPDIR_HAPPY/changelog.d/fixed"
 cat >"$TMPDIR_HAPPY/CHANGELOG.md" <<'EOF'
@@ -179,7 +187,6 @@ fi
 # output against CHANGELOG.md and both sides agreed the entry did not exist.
 # ---------------------------------------------------------------------------
 TMPDIR_UNKNOWN="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_HAPPY" "$TMPDIR_UNKNOWN"' EXIT
 
 mkdir -p "$TMPDIR_UNKNOWN/changelog.d/added" "$TMPDIR_UNKNOWN/changelog.d/docs"
 printf -- '- a real entry\n' >"$TMPDIR_UNKNOWN/changelog.d/added/ok.md"
