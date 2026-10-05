@@ -11,8 +11,10 @@ Each file's `SPDX-License-Identifier` header decides which one applies to it
   (BSD-3-Clause), Xiph and dav1d (BSD-2-Clause), x264's assembly macros (ISC),
   the CIEDE2000 maths (MIT), libsvm and libjxl (BSD-3-Clause).
 
-Because `libvmaf` links fork code and Netflix code into one library, a modified
-`libvmaf` you distribute has to come with its source under the EUPL-1.2.
+Because `libvmaf` links fork code and Netflix code into one library, a copy of
+`libvmaf` you distribute, modified or not, has to come with its source or a
+pointer to it, and a modified one is distributed under the EUPL-1.2. The
+[next section](#embedding-vmafx-in-another-product) goes through the cases.
 
 The licence texts are in the repository:
 [`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE) (BSD-2-Clause-Patent)
@@ -20,6 +22,67 @@ and [`LICENSES/`](https://github.com/VMAFx/vmafx/tree/master/LICENSES) (every
 other licence a file names). Files without a header of their own, such as model
 data, are covered by
 [`REUSE.toml`](https://github.com/VMAFx/vmafx/blob/master/REUSE.toml).
+
+## Embedding VMAFx in another product
+
+!!! note "Not legal advice"
+    This section repeats what the two licence texts say and how the European
+    Commission reads the EUPL. It is not legal advice. For a decision about
+    your product, ask a lawyer.
+
+The licences stay as they are; there is no dual or commercial licence
+([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md)). Each public
+header carries its own SPDX tag. `libvmaf.h`, `model.h`,
+`picture.h`, `feature.h`, `macros.h` and `libvmaf_cuda.h` are Netflix's
+(BSD-2-Clause-Patent). `libvmaf_sycl.h`, `libvmaf_hip.h`, `libvmaf_metal.h`,
+`picture_v2.h`, `dnn.h`, `perceptual_weight.h`, `vmaf_assert.h` and
+`libvmaf_mcp.h` are the fork's (EUPL-1.2). The library behind them contains
+both, so an embedder meets both licences:
+
+| What you do | Netflix files (BSD-2-Clause-Patent) | Fork files (EUPL-1.2) |
+| --- | --- | --- |
+| Distribute `libvmaf` or the `vmaf` binary, modified or not, inside your product | Reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials you ship ([`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE), condition 2) | Keep every notice and include a copy of the licence (Article 5, "Attribution right"). Provide the source, or name a repository where it is "easily and freely available", for as long as you distribute (Article 5, "Provision of Source Code") |
+| Link your program against `libvmaf`, statically or dynamically | No condition on your program | The licence leaves what counts as a derivative work to the copyright law of the country in Article 15 (Article 1, "Derivative Works"). The Commission's reading: static and dynamic linking create no condition on the other program. There is no case law on it |
+| Change `libvmaf` and distribute the result | As above | Distribute the changed library under the EUPL-1.2. If you combine it with a work under a licence in the EUPL's appendix (GPL, LGPL, MPL and others), you may use that licence instead. Mark the changed work as modified, with the date, and provide its source (Article 5) |
+| Run it on a server and let others use it over a network | No condition | "Distribution or Communication" includes "providing access to its essential functionalities" (Article 1), so the source obligation applies to that service too |
+| Patents | Each contributor grants a patent licence for its contributions (the licence's patent paragraph) | The licensor grants use of its patents "to the extent necessary to make use of the rights granted" (Article 2) |
+
+Three more points:
+
+- Using an unmodified library still obliges you to point to the source. The
+  copyleft and modification duties begin only when you change the library.
+- The project publishes `THIRD_PARTY_NOTICES.txt` and `licenses.tar.gz` next
+  to the release files, and the release's source archives. Those are the
+  notices, licence texts and source of that build, ready to pass on (see
+  [What the published packages carry](#what-the-published-packages-carry)).
+- A GPU build also needs the vendor's runtime (CUDA driver, Level Zero and the
+  oneAPI SYCL runtime, ROCm), each under its vendor's own terms.
+
+Sources (fetched 2026-10-05):
+
+- EUPL-1.2, official English text:
+  [interoperable-europe.ec.europa.eu, `EUPL-1.2 EN.txt`](https://interoperable-europe.ec.europa.eu/sites/default/files/custom-page/attachment/2020-03/EUPL-1.2%20EN.txt).
+  The repository copy, [`LICENSES/EUPL-1.2.txt`](https://github.com/VMAFx/vmafx/blob/master/LICENSES/EUPL-1.2.txt),
+  has the same words and differs only in dashes and spacing. Article 5,
+  "Provision of Source Code": "When distributing or communicating copies of
+  the Work, the Licensee will provide a machine-readable copy of the Source
+  Code or indicate a repository where this Source will be easily and freely
+  available for as long as the Licensee continues to distribute or communicate
+  the Work."
+- The Commission's EUPL FAQ,
+  [interoperable-europe.ec.europa.eu/collection/eupl/faqs](https://interoperable-europe.ec.europa.eu/collection/eupl/faqs):
+  "The EUPL is not viral: according to the provision of European Law
+  (Directive EC 2009/24 recitals 10 & 15), static and dynamic linking can be
+  implemented with other programs without barriers or conditions."
+- The Commission's compatibility matrix,
+  [interoperable-europe.ec.europa.eu/collection/eupl/matrix-eupl-compatible-open-source-licences](https://interoperable-europe.ec.europa.eu/collection/eupl/matrix-eupl-compatible-open-source-licences):
+  "Since European case law is generally missing, the matrix suggests
+  reasonable guidance without providing a guarantee that this suggestion will
+  always be followed by a judge".
+- BSD-2-Clause-Patent, SPDX text:
+  [github.com/spdx/license-list-data](https://github.com/spdx/license-list-data/blob/main/text/BSD-2-Clause-Patent.txt),
+  the same conditions and patent grant as the repository's
+  [`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE).
 
 ## Models
 

@@ -523,11 +523,15 @@ vmaf_metal_state_free(&state)        only after close returned 0
 
 ## Licensing of the GPU headers (ADR-1250)
 
-`libvmaf_sycl.h`, `libvmaf_cuda.h`, `libvmaf_hip.h` and `libvmaf_metal.h` are
 <!-- REUSE-IgnoreStart -->
-fork-authored and carry `SPDX-License-Identifier: EUPL-1.2`. Linking against
+`libvmaf_cuda.h` is Netflix's and carries `SPDX-License-Identifier:
+BSD-2-Clause-Patent`. `libvmaf_sycl.h`, `libvmaf_hip.h` and `libvmaf_metal.h`
+are fork-authored and carry `SPDX-License-Identifier: EUPL-1.2`.
 <!-- REUSE-IgnoreEnd -->
-them is use of the library, not modification: the reciprocity applies when you
-redistribute a **modified** libvmaf. See
+The European Commission reads linking against an EUPL work as creating no
+condition on the linking program. Distributing `libvmaf` itself, modified or
+not, still obliges you to provide its source or point to a repository that has
+it (EUPL-1.2, Article 5). A **modified** libvmaf is distributed under the
+EUPL-1.2. See [Embedding VMAFx in another product](../licensing.md#embedding-vmafx-in-another-product),
 [ADR-1250](../adr/1250-eupl-fork-relicense.md) and the
 [README](../../README.md#upstream-and-license).

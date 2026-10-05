@@ -2,7 +2,7 @@
 
 # ADR-1199: Order caller-written CUDA pictures once per frame, at the dispatch point
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-05 below)
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, correctness, api, testing
@@ -87,3 +87,17 @@ precisely the data those kernels were about to read.
   `drained` shortcut was one of the rejected suspects. Note the in-tree code comments cite
   it as "ADR-0242"; that number belongs to the tiny-AI training corpus, so the citation in
   `drain_batch.c` and `integer_adm_cuda.c` is stale.
+
+## Status update 2026-10-05: Accepted
+
+The decision shipped in #1346 (`09d5385c1`, 2026-09-06) while this record
+still said Proposed. Checked on `origin/master` `8e60965f0`:
+
+- `cuda_order_pictures_against_producer()` in `core/src/libvmaf.c` pushes the
+  CUDA context, calls `cuCtxSynchronize()` and pops it;
+- `read_pictures_dispatch_extractors()` calls it once per frame pair, before
+  the CUDA extractors are dispatched;
+- the reproduction script `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh`
+  named in the consequences is in the tree.
+
+The body above is unchanged.

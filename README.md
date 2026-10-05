@@ -154,11 +154,14 @@ per file as an `SPDX-License-Identifier`
 - **Fork-authored code** is licensed under [EUPL-1.2](LICENSES/EUPL-1.2.txt), a
   reciprocal licence.
 
-**What that means in practice**: because the shipped `libvmaf` links both
-together, redistributing a modified library obliges you to offer its source under
-EUPL-1.2. If you need permissive terms, use
+**What that means in practice**: the shipped `libvmaf` links both together.
+Distributing it, modified or not, obliges you to provide its source or point to
+a repository that has it (EUPL-1.2, Article 5). A modified library is
+distributed under EUPL-1.2. If you need permissive terms, use
 [Netflix/vmaf](https://github.com/Netflix/vmaf) upstream, which is unaffected.
-The per-file tags are authoritative; this paragraph is a summary.
+The per-file tags are authoritative; this paragraph is a summary, not legal
+advice. [Embedding VMAFx in another product](docs/licensing.md#embedding-vmafx-in-another-product)
+goes through linking, modification and network use.
 
 ## Standards & Governance
 

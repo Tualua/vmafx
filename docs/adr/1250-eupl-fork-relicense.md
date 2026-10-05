@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1250: Fork-authored code moves to EUPL-1.2; code that carries someone else's work does not
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-05 below)
 - **Date**: 2026-09-17
 - **Deciders**: lusoris
 - **Tags**: license, compliance, process, docs, breaking-change
@@ -143,3 +143,24 @@ licences all require the notice to travel with the code, and it had not been.
 - [ADR-1255](1255-spdx-residual-identifier-correction.md) — the identifier repair this decision applies to every file that stays.
 - Source: user direction, 2026-09-15 — Netflix code keeps the current upstream licence and fork-added code moves to EUPL, chosen with the combined-work consequence stated.
 - Source: user direction, 2026-09-16 — Q: how should files that port or copy someone else's code be treated? A: "All ports and twins stay", chosen after the measurement showed the rule reaches about 225 files rather than the 30–45 first estimated.
+
+## Status update 2026-10-05: Accepted
+
+The decision was applied while this record still said Proposed. Checked on
+`origin/master` `8e60965f0`:
+
+- #1457 (`9d55e10c7`, 2026-09-18) moved the fork-authored files to EUPL-1.2
+  with `scripts/dev/relicense_fork_files.py` and
+  `scripts/dev/relicense_provenance.toml`, and restored the inherited notices.
+  #1739 (`ae5e22d09`) made SPDX headers mandatory and backfilled the remaining
+  clean files;
+- the tree carries 2,269 files tagged `EUPL-1.2` and 738 tagged
+  `BSD-2-Clause-Patent` (`git grep -l` on the SPDX line);
+- the required check `Licence Provenance`
+  ([ADR-1474](1474-relicense-helper-headers-and-ci-check.md),
+  `.github/workflows/lint-and-format.yml`) holds every file's header to its
+  provenance;
+- [`docs/licensing.md`](../licensing.md), the README and `CONTRIBUTING.md`
+  describe the per-file rule.
+
+The body above is unchanged.
