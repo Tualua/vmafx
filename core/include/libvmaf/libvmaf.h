@@ -290,10 +290,13 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  *
  * @param vmaf  The VMAF context allocated with `vmaf_init()`.
  *
- * @param model Opaque model context. Ownership is not transferred. After a
- *              successful registration the model is borrowed by @p vmaf and
- *              must remain alive until `vmaf_close(vmaf)` returns exactly 0,
- *              including across nonzero close results retained for retry.
+ * @param model Opaque model context. The context takes its own reference to
+ *              the model, so the caller keeps its reference and may call
+ *              `vmaf_model_destroy()` right after a successful registration,
+ *              before or after `vmaf_close()`; the model is freed when the
+ *              last reference is dropped. A registration that fails takes no
+ *              reference. Before ADR-1755 the model was only borrowed
+ *              and had to stay alive until `vmaf_close(vmaf)` returned 0.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
@@ -312,12 +315,11 @@ VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model
  *
  * @param vmaf             The VMAF context allocated with `vmaf_init()`.
  *
- * @param model_collection Opaque model collection context. Ownership is not
- *                          transferred. After a successful registration the
- *                          collection is borrowed by @p vmaf and must remain
- *                          alive until `vmaf_close(vmaf)` returns exactly 0,
- *                          including across nonzero close results retained for
- *                          retry.
+ * @param model_collection Opaque model collection context. The context takes
+ *                          its own reference to every model of the collection,
+ *                          as `vmaf_use_features_from_model()` does, so the
+ *                          collection may be destroyed right after a
+ *                          successful registration.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
@@ -654,8 +656,9 @@ VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *
  *             Any nonzero return retains all ownership that could not be
  *             released; the context is then teardown-only and the caller must
  *             retry `vmaf_close()` rather than call another libvmaf operation.
- *             Imported backend states and model dependencies must remain alive
- *             until close succeeds. Set the pointer to NULL only on success:
+ *             Imported backend states must remain alive until close succeeds;
+ *             registered models need not (the context owns a reference to each).
+ *             Set the pointer to NULL only on success:
  *
  *             @code
  *               int err = vmaf_close(ctx);

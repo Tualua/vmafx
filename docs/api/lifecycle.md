@@ -37,9 +37,12 @@ Every function below shares these rules unless its row says otherwise:
   vmaf_close()   retry on nonzero; on exact 0, vmaf_model_destroy()
 ```
 
-Models and imported backend states are borrowed by the context. Keep them
-alive through every nonzero `vmaf_close()` result; destroy or free them only
-after it returns exactly 0.
+The context owns a reference to every model registered with
+`vmaf_use_features_from_model()` (or a model collection): destroy your own
+model, or the collection, whenever you like after the call succeeds. This holds
+across nonzero `vmaf_close()` results too. Imported backend states are still
+borrowed: keep them alive through every nonzero `vmaf_close()` result and free
+them only after it returns exactly 0.
 
 ## Configuration: `VmafConfiguration`
 

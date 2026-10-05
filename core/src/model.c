@@ -295,52 +295,6 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
     return err;
 }
 
-void vmaf_model_destroy(VmafModel *model)
-{
-    if (!model)
-        return;
-    free(model->path);
-    free(model->name);
-    svm_free_and_destroy_model(&(model->svm));
-    /* Walk the full feature_cap, not min(feature_cap, n_features).
-     *
-     * feature_cap IS the allocated element count, so this cannot read past the
-     * buffer — it preserves the overflow safety the previous min() was written
-     * for, while also freeing slots n_features does not cover.
-     *
-     * That gap was a real leak. n_features is only incremented by
-     * parse_feature_names, but ensure_feature_capacity() is also called by
-     * parse_feature_opts_dicts / parse_slopes / parse_intercepts, and
-     * parse_feature_opts_dicts stores an owned VmafDictionary in the slot. A
-     * model carrying `feature_opts_dicts` with no (or fewer) `feature_names`
-     * therefore left dictionaries above n_features that nothing could free —
-     * a 16-byte-per-entry leak found by the fuzz_json_model LeakSanitizer lane.
-     * Inflating n_features instead would be wrong: it is the semantic count of
-     * model features and feeds prediction, not a memory-management counter.
-     *
-     * Walking the tail is safe because ensure_feature_capacity() memsets every
-     * newly grown slot to zero, so an untouched slot holds NULL and both
-     * free(NULL) and vmaf_dictionary_free(&NULL) are no-ops. */
-    for (unsigned i = 0; i < model->feature_cap; i++) {
-        free(model->feature[i].name);
-        vmaf_dictionary_free(&model->feature[i].opts_dict);
-    }
-    free(model->feature);
-    free(model->score_transform.knots.list);
-    free(model->predict_nodes);
-    if (model->predict_feature_names) {
-        for (unsigned i = 0; i < model->n_features; i++) {
-            free(model->predict_feature_names[i]);
-        }
-        free((void *)model->predict_feature_names);
-    }
-    free((void *)model->predict_feature_vectors);
-    /* Round-5 race fix (finding #3): destroy the predict-cache mutex that was
-     * initialized in vmaf_read_json_model(). */
-    pthread_mutex_destroy(&model->predict_cache_lock);
-    free(model);
-}
-
 unsigned vmaf_model_feature_count(const VmafModel *model)
 {
     return model ? model->n_features : 0;

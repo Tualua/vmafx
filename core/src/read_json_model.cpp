@@ -23,6 +23,7 @@
 #include "model.h"
 #include "pdjson.h"
 #include "read_json_model.h"
+#include "ref.h"
 #include "svm.h"
 #include "thread_locale.h"
 
@@ -642,8 +643,12 @@ int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_stream *s
         return -ENOMEM;
     *m = VmafModel{};
 
-    m->name = vmaf_model_generate_name(cfg);
-    const int err = m->name ? model_parse_c_locale(s, m, cfg) : -ENOMEM;
+    /* ADR-1755: the loader's caller is the first owner. */
+    int err = vmaf_ref_init(&m->owners);
+    if (!err) {
+        m->name = vmaf_model_generate_name(cfg);
+        err = m->name ? model_parse_c_locale(s, m, cfg) : -ENOMEM;
+    }
 
     if (err) {
         /* Leak-free teardown on parse failure. `vmaf_model_destroy`

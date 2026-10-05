@@ -297,6 +297,16 @@
       "paths": [
         "core/src/feature/sycl/sycl_exact_fp.h"
       ]
+    },
+    {
+      "adr": "ADR-1755",
+      "kind": "reverse-hunk",
+      "undoes": "f0c4ef36c2eefcf172a865fa49c47e73d1081c59",
+      "paths": [
+        "core/src/model.c"
+      ],
+      "evidence": "(?:initialized in vmaf_read_json_model\\(\\)\\. \\*/|Round-5 race fix \\(finding #3\\): destroy the predict-cache mutex|pthread_mutex_destroy\\(&model->predict_cache_lock\\);)",
+      "reason": "ADR-1755 moves vmaf_model_destroy() unchanged, with the predict-cache mutex teardown the cited commit added, from core/src/model.c to core/src/model_lifetime.c so every binary that links the feature collector resolves it. The three lines are in the new file; nothing is dropped."
     }
   ]
 }

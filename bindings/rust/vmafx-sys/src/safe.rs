@@ -70,6 +70,22 @@ const fn check(rc: i32) -> Result<(), VmafxError> {
 // VmafContext
 // ---------------------------------------------------------------------------
 
+/// Close `inner` for a drop: one attempt plus one bounded retry. Returns `true` when the
+/// context is still allocated afterwards, i.e. it leaks.
+fn drop_close_with(
+    inner: *mut RawVmafContext,
+    mut close: impl FnMut(*mut RawVmafContext) -> i32,
+) -> bool {
+    close(inner) != 0 && close(inner) != 0
+}
+
+/// A context whose teardown failed twice is leaked, not freed and not aborted on: libvmaf owns
+/// every model it mounted (ADR-1755), so the leaked context holds no pointer into memory
+/// Rust may free. The one line goes to stderr because a destructor has no caller to tell.
+fn report_leaked_context() {
+    eprintln!("vmafx: libvmaf context teardown failed twice; the context is leaked");
+}
+
 /// RAII wrapper around a `*mut VmafContext`.
 ///
 /// The lifetime parameter binds every registered [`VmafModel`] to the
@@ -105,7 +121,7 @@ impl VmafContextCloseError<'_> {
     ///
     /// # Errors
     /// Returns itself with the original close error if the sole retry leaves
-    /// teardown pending. Dropping that persistent-failure token aborts without
+    /// teardown pending. Dropping that persistent-failure token leaks the context without
     /// issuing another close attempt.
     pub fn retry(self) -> Result<(), Self> {
         self.retry_with(|inner| {
@@ -128,7 +144,9 @@ impl VmafContextCloseError<'_> {
         }
     }
 
-    fn drop_requires_abort_with(&mut self, close: impl FnOnce(*mut RawVmafContext) -> i32) -> bool {
+    /// Make the one close attempt a drop is allowed and say whether the context stays
+    /// allocated (leaked) afterwards.
+    fn drop_leaves_context_with(&mut self, close: impl FnOnce(*mut RawVmafContext) -> i32) -> bool {
         if self.inner.is_null() {
             return false;
         }
@@ -160,10 +178,11 @@ impl Drop for VmafContextCloseError<'_> {
     fn drop(&mut self) {
         // SAFETY: the retry token is the sole owner. Drop consumes the single
         // permitted retry only when the caller has not already attempted it.
-        // Persistent failure aborts before the registered-model borrow ends.
-        let must_abort = self.drop_requires_abort_with(|inner| unsafe { vmaf_close(inner) });
-        if must_abort {
-            std::process::abort();
+        // A persistent failure leaks the context: libvmaf owns every model it
+        // mounted (ADR-1755), so nothing in it points into Rust-owned memory.
+        let leaked = self.drop_leaves_context_with(|inner| unsafe { vmaf_close(inner) });
+        if leaked {
+            report_leaked_context();
         }
     }
 }
@@ -328,16 +347,12 @@ impl Drop for VmafContext<'_> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             // SAFETY: we are the sole owner; no further access occurs after
-            // drop.  Give a transient failure one bounded retry.  Persistent
-            // failure must abort so registered-model borrows cannot end while
-            // libvmaf retains their raw pointers.
-            let first_rc = unsafe { vmaf_close(self.inner) };
-            if first_rc != 0 {
-                // SAFETY: the failed first close retained the pointer, and
-                // `self` remains its sole owner for this bounded retry.
-                if unsafe { vmaf_close(self.inner) } != 0 {
-                    std::process::abort();
-                }
+            // drop.  Give a transient failure one bounded retry.  A persistent
+            // failure leaks the context: libvmaf owns every model it mounted
+            // (ADR-1755), so nothing in it points into Rust-owned memory.
+            let leaked = drop_close_with(self.inner, |inner| unsafe { vmaf_close(inner) });
+            if leaked {
+                report_leaked_context();
             }
             self.inner = ptr::null_mut();
         }
@@ -487,7 +502,7 @@ mod close_tests {
     }
 
     #[test]
-    fn drop_after_failed_retry_aborts_without_calling_close_again() {
+    fn drop_after_failed_retry_leaks_without_calling_close_again() {
         let expected = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
         let calls = Cell::new(0_u32);
         let mut pending = VmafContextCloseError {
@@ -497,15 +512,57 @@ mod close_tests {
             _models: PhantomData,
         };
 
-        let must_abort = pending.drop_requires_abort_with(|_| {
+        let leaked = pending.drop_leaves_context_with(|_| {
             calls.set(calls.get() + 1);
             0
         });
         let retained_pointer = pending.inner;
         pending.inner = ptr::null_mut();
 
-        assert!(must_abort);
+        assert!(leaked);
         assert_eq!(calls.get(), 0);
         assert_eq!(retained_pointer, expected);
+    }
+
+    #[test]
+    fn persistent_close_failure_in_drop_leaks_after_one_retry() {
+        let inner = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
+        let calls = Cell::new(0_u32);
+
+        let leaked = drop_close_with(inner, |_| {
+            calls.set(calls.get() + 1);
+            -5
+        });
+
+        assert!(leaked, "a persistent failure must leak, not abort");
+        assert_eq!(calls.get(), 2, "one attempt plus one bounded retry");
+    }
+
+    #[test]
+    fn transient_close_failure_in_drop_is_retried_and_not_leaked() {
+        let inner = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
+        let calls = Cell::new(0_u32);
+
+        let leaked = drop_close_with(inner, |_| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 { -5 } else { 0 }
+        });
+
+        assert!(!leaked);
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn clean_close_in_drop_is_attempted_once() {
+        let inner = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
+        let calls = Cell::new(0_u32);
+
+        let leaked = drop_close_with(inner, |_| {
+            calls.set(calls.get() + 1);
+            0
+        });
+
+        assert!(!leaked);
+        assert_eq!(calls.get(), 1);
     }
 }

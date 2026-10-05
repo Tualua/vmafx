@@ -377,6 +377,14 @@ int feature_collector_mount_model_unlocked(VmafFeatureCollector *feature_collect
     if (!m)
         return -ENOMEM;
 
+    /* ADR-1755: the collector owns what it mounts, so the caller may destroy
+     * its model at once and a failed vmaf_close() cannot leave this pointer
+     * dangling. Dropped again by the unmount below. */
+    const int ref_err = vmaf_model_ref(model);
+    if (ref_err) {
+        free(m);
+        return ref_err;
+    }
     m->model = model;
     m->next = nullptr;
 
@@ -410,7 +418,9 @@ int feature_collector_unmount_model_unlocked(VmafFeatureCollector *feature_colle
             } else {
                 feature_collector->models = head->next;
             }
+            VmafModel *const owned = head->model;
             free(head);
+            vmaf_model_destroy(owned); /* ADR-1755: drop the collector's owner */
             return 0;
         }
         prev = head;

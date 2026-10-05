@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T12:38:38Z",
+  "generated_at": "2026-10-05T17:23:41Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "6e9fd2ef806b0b1c5ce924d8c1f95fe6f11ea6a2",
-  "total_infractions": 21,
+  "commit_sha": "188eff03bda7c1dc55e02cfecb82c543229c53db",
+  "total_infractions": 17,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -39,43 +39,11 @@
     },
     {
       "rule_id": "HISS-07",
-      "file_path": "bindings/rust/vmafx/src/context.rs",
-      "line_number": 275,
-      "message": "process::abort ends the process from library code; return an error to fn main instead",
-      "anchor": "fn:drop",
-      "fingerprint": "bindings/rust/vmafx/src/context.rs:HISS-07:fn:drop#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "bindings/rust/vmafx/src/context.rs",
-      "line_number": 461,
-      "message": "process::abort ends the process from library code; return an error to fn main instead",
-      "anchor": "fn:drop",
-      "fingerprint": "bindings/rust/vmafx/src/context.rs:HISS-07:fn:drop#2"
-    },
-    {
-      "rule_id": "HISS-07",
       "file_path": "bindings/rust/vmafx-sys/examples/score.rs",
       "line_number": 183,
       "message": "process::exit ends the process from library code; return an error to fn main instead",
       "anchor": "fn:score_inputs",
       "fingerprint": "bindings/rust/vmafx-sys/examples/score.rs:HISS-07:fn:score_inputs#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "bindings/rust/vmafx-sys/src/safe.rs",
-      "line_number": 166,
-      "message": "process::abort ends the process from library code; return an error to fn main instead",
-      "anchor": "fn:drop",
-      "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:HISS-07:fn:drop#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "bindings/rust/vmafx-sys/src/safe.rs",
-      "line_number": 339,
-      "message": "process::abort ends the process from library code; return an error to fn main instead",
-      "anchor": "fn:drop",
-      "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:HISS-07:fn:drop#2"
     },
     {
       "rule_id": "HISS-04",

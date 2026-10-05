@@ -37,12 +37,12 @@ ctx.close().expect("vmaf_close failed");
 `VmafContext::close` consumes the active wrapper. Exactly zero invalidates the
 context; any other status returns a `VmafContextCloseError` that exposes only
 the initial error and one `retry()`. The context and retry token carry the
-registered model lifetime, so safe Rust cannot destroy a model while libvmaf
-still references it. Dropping an active context makes an initial close attempt
-plus at most one retry. Dropping a close-retry token consumes that retry only
-if it has not happened; after a failed explicit retry, drop aborts without a
-third close call rather than ending the registered-model borrow while libvmaf
-retains the pointer.
+registered model lifetime (kept for source compatibility; libvmaf owns its own
+reference to every registered model, ADR-1755). Dropping an active context makes
+an initial close attempt plus at most one retry. Dropping a close-retry token
+consumes that retry only if it has not happened; after a failed explicit retry,
+drop leaks the context without a third close call and prints one line to
+stderr. Drop never aborts the process.
 
 ## Building
 

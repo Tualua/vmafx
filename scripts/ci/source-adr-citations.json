@@ -4445,6 +4445,7 @@
       "sites": {
         "core/src/fex_ctx_vector.cpp": 1,
         "core/test/meson.build": 2,
+        "core/test/test_collector_owns_mounted_model.c": 2,
         "core/test/test_fex_ctx_vector.cpp": 4,
         "core/test/test_model_collection_growth.c": 2,
         "core/test/test_registration_partial_copy.cpp": 2
@@ -6244,6 +6245,7 @@
         "core/src/metal/iosurface_layout.h": 1,
         "core/src/metal/stubs.c": 1,
         "core/src/model.c": 1,
+        "core/src/model_lifetime.c": 1,
         "core/src/opt.h": 3,
         "core/src/pdjson.c": 1,
         "core/src/pdjson.h": 3,
@@ -6318,6 +6320,7 @@
         "core/test/test_cjson.c": 1,
         "core/test/test_cli_parse.c": 28,
         "core/test/test_cli_parse_long_only_args.c": 1,
+        "core/test/test_collector_owns_mounted_model.c": 1,
         "core/test/test_colorspace.c": 1,
         "core/test/test_compat_clz.c": 1,
         "core/test/test_context.c": 1,
@@ -10979,6 +10982,21 @@
         "scripts/ci/tests/test_pr_time_verify_workflows.py": 2
       },
       "target": "1701-nightly-tester-image-build.md"
+    },
+    "1755": {
+      "sites": {
+        "bindings/rust/vmafx-sys/src/safe.rs": 3,
+        "bindings/rust/vmafx/src/context.rs": 3,
+        "core/include/libvmaf/libvmaf.h": 1,
+        "core/src/feature/feature_collector.cpp": 2,
+        "core/src/model.h": 2,
+        "core/src/model_lifetime.c": 2,
+        "core/src/read_json_model.c": 1,
+        "core/src/read_json_model.cpp": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_collector_owns_mounted_model.c": 2
+      },
+      "target": "1755-collector-owns-mounted-model.md"
     },
     "1761": {
       "sites": {

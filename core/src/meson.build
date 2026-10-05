@@ -2720,7 +2720,7 @@ read_json_model_cpp23_lib = static_library(
 # graphs in whole-build CodeQL extraction and needlessly repeats the TU.
 predict_c_lib = static_library(
     'predict_c',
-    src_dir + 'predict.c',
+    [src_dir + 'predict.c', src_dir + 'model_lifetime.c'],
     include_directories : [vmaf_base_include, libvmaf_include],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [pthread_dependency],

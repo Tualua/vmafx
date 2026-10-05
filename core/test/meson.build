@@ -1282,6 +1282,24 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
     test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
 endif
 
+# ADR-1755: a context owns the models it registers. Frees the caller's model
+# right after registration, then drives the collector's prediction path, once
+# clean and once after a vmaf_close() that fails at the thread-pool stage
+# (`-Wl,--wrap=vmaf_thread_pool_destroy`, same constraints as
+# test_registration_partial_copy). Run under -Db_sanitize=address,undefined.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_collector_owns_mounted_model = executable('test_collector_owns_mounted_model',
+        ['test.c', 'test_collector_owns_mounted_model.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        link_args : ['-Wl,--wrap=vmaf_thread_pool_destroy'],
+        c_args : [vmaf_cflags_common],
+        dependencies : [math_lib, pthread_dependency, thread_lib],
+    )
+    test('test_collector_owns_mounted_model', test_collector_owns_mounted_model, suite : ['fast'])
+endif
+
 # T-MODEL-COLLECTION-GROWTH-FAILURE-UNTESTED-2026-10-01: a failed growth of the
 # model array must leave the collection intact (the fix of Netflix/vmaf PR
 # #1590, which the fork already carries). `-Wl,--wrap=realloc` fails one chosen

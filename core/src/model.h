@@ -116,6 +116,11 @@ struct VmafModel {
      * predict_ensure_caches().  Initialized in vmaf_read_json_model(),
      * destroyed in vmaf_model_destroy(). */
     pthread_mutex_t predict_cache_lock;
+    /* ADR-1755: owner count shared by the caller and every feature collector the
+     * model is mounted on. NULL only on a model nothing loaded (it then has the
+     * one owner, the caller). vmaf_model_destroy() drops one owner and frees the
+     * model with the last. */
+    struct VmafRef *owners;
 };
 
 struct VmafModelCollection {
@@ -126,6 +131,10 @@ struct VmafModelCollection {
 };
 
 char *vmaf_model_generate_name(VmafModelConfig *cfg);
+
+/* Take one more owner of `model` (ADR-1755). Pair with vmaf_model_destroy().
+ * Returns 0, or -EINVAL for a NULL model or one that carries no owner count. */
+int vmaf_model_ref(VmafModel *model);
 
 int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafModel *model);
 

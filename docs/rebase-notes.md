@@ -61758,3 +61758,14 @@ No score, public API or FFmpeg patch impact.
   (`pre-commit run clang-format-hip-metal --files <file>`). The 18 files formatted here changed
   line breaks only, so a conflict in one of them is resolved by taking the incoming side and
   re-running the formatter. No score, public API or FFmpeg patch impact.
+- **Collector owns mounted models (`refactor/hiss-zero-native-rust`, ADR-1755)**:
+  `VmafModel` gained `struct VmafRef *owners` (`core/src/model.h`);
+  `vmaf_model_ref()` and `vmaf_model_destroy()` now live in
+  `core/src/model_lifetime.c`, compiled into the `predict_c` archive, and
+  `core/src/read_json_model.{c,cpp}` create the owner count.
+  `vmaf_feature_collector_mount_model()` takes an owner and the unmount path drops
+  it (`core/src/feature/feature_collector.cpp`). An upstream sync that touches
+  `vmaf_model_destroy()` in `model.c`, the loaders or the mount / unmount helpers
+  keeps all four together; a model must never be freed with a plain `free()`.
+  The Rust `Drop` impls leak instead of aborting. No score or FFmpeg patch
+  impact; the public header only gains documentation.

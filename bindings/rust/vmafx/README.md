@@ -63,8 +63,9 @@ fn main() -> vmafx::Result<()> {
   makes an initial close attempt plus at most one retry. A close-retry token
   preserves the initial error; dropping it consumes the retry only if the
   caller has not already done so. After a failed explicit retry, dropping the
-  token aborts without a third close call rather than ending the
-  registered-model borrow while libvmaf still retains model pointers.
+  token leaks the native context without a third close call and prints one
+  line to stderr; `Drop` never aborts. libvmaf owns its own reference to every
+  registered model (ADR-1755), so the leaked context points into no Rust memory.
 - `Context::close` consumes the active context. Zero from `vmaf_close`
   invalidates it; any other status returns `ContextCloseError`, which retains
   the model lifetime and exposes only the initial error plus one `retry()`.
