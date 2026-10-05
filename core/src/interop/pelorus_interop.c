@@ -17,7 +17,7 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@5f5614b0229d3461d5ef269bc75e9dd76497a6f1 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -46,6 +46,12 @@
  * `base + offset`, so passing a misaligned blob is well-defined rather than UB
  * on strict-alignment targets and under -fsanitize=alignment (issue #44).
  */
+
+/* NOLINTBEGIN(modernize-use-nullptr): this C translation unit is built as C23
+ * by vmafx, where clang-tidy also proposes the `nullptr` keyword, but MSVC's C
+ * mode has no `nullptr` (C2065); the Windows builds compile it with cl.exe.
+ * The NULL macro stays. Same decision as vmafx ADR-1138
+ * (docs/adr/1138-c-translation-units-keep-null.md in VMAFx/vmafx). */
 
 #include "libvmaf/pelorus/interop.h"
 
@@ -432,3 +438,5 @@ pel_result pel_qp_report_from_blocks(const PelorusQpReportInput *in, uint16_t gr
     /* qp_cell_offset is filled by the caller after it picks the blob layout. */
     return PEL_OK;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

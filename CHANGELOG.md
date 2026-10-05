@@ -1657,6 +1657,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   image.
 
 
+- **The vendored Pelorus interop sources are re-vendored at the pelorus commit that clears their clang-tidy findings.** `scripts/sync-pelorus-interop.sh` pins `5f5614b0229d` (VMAFx/pelorus #78): the conformance test's long checks are split into helpers, blob headers are patched through `memcpy`, and each translation unit carries one cited `modernize-use-nullptr` block. No behaviour or ABI change (ABI 1.3).
+
+
 - **Restore `adm_sum_cube_s_p3`, `adm_csf_den_scale_s_p3`, and `adm_cm_s_p3` fast-path
   functions in `adm_tools.c` (ADR-0463 / BUG-048 B3).**
   The specialized `adm_p_norm == 3.0` fast-paths eliminate all per-pixel `powf()`

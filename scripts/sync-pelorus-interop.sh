@@ -44,7 +44,7 @@ set -euo pipefail
 # reviewed interop ABI addition or a parser correctness/security fix, even when
 # ABI major/minor stay unchanged. Keep this in lock step with every vendored
 # banner and docs/api/pelorus-interop.md.
-PELORUS_VENDOR_SHA="42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f"
+PELORUS_VENDOR_SHA="5f5614b0229d3461d5ef269bc75e9dd76497a6f1"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 mirror_policy="$repo_root/scripts/ci/pelorus_mirror.py"

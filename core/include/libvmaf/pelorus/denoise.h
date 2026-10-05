@@ -17,7 +17,7 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@5f5614b0229d3461d5ef269bc75e9dd76497a6f1 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.

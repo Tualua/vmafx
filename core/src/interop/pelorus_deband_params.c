@@ -17,7 +17,7 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@5f5614b0229d3461d5ef269bc75e9dd76497a6f1 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -32,6 +32,12 @@
  * Defaults are the dark-scene pre-encode preset from
  * docs/research/0101-smart-deband.md §11.
  */
+
+/* NOLINTBEGIN(modernize-use-nullptr): this C translation unit is built as C23
+ * by vmafx, where clang-tidy also proposes the `nullptr` keyword, but MSVC's C
+ * mode has no `nullptr` (C2065); the Windows builds compile it with cl.exe.
+ * The NULL macro stays. Same decision as vmafx ADR-1138
+ * (docs/adr/1138-c-translation-units-keep-null.md in VMAFx/vmafx). */
 
 #include "libvmaf/pelorus/deband.h"
 
@@ -121,3 +127,5 @@ pel_result pel_deband_params_validate(const PelorusDebandParams *p, const char *
     }
     return PEL_OK;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

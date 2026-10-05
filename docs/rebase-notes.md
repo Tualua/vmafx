@@ -62006,3 +62006,8 @@ No score, public API or FFmpeg patch impact.
 - New test `core/test/test_model_collection_score_repeat.c` and its block in
   `core/test/meson.build`. No score or golden impact: a first prediction is
   unchanged and a repeat returns its stored values.
+## Pelorus re-vendor at the tidy-clean commit (RC3 exit, 2026-10-05)
+
+`rc3-revendor-pelorus-2`. `PELORUS_VENDOR_SHA` moves to `5f5614b0229d` (VMAFx/pelorus #78). The ten
+vendored files are rendered by `scripts/sync-pelorus-interop.sh --update`, never edited by hand; a rebase
+that conflicts in them takes either side and re-runs the script, then the drift check.
