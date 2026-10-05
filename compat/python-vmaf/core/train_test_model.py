@@ -92,7 +92,10 @@ class RegressorMixin(object):
                 stats[name] = ResolvingPowerPerfMetric(ys_label_raw, ys_label_pred).evaluate(
                     enable_mapping=enable_mapping
                 )["score"]
-            except (TypeError, AssertionError):
+            # Netflix/vmaf 5c7770080 broadened this to any failure of the
+            # metric (a bare except there); Exception keeps KeyboardInterrupt
+            # and SystemExit out of it.
+            except Exception:  # noqa: BLE001
                 stats[name] = float("nan")
 
     @classmethod
@@ -752,6 +755,17 @@ class TrainTestModel(TypeVersionEnabled):
     def model(self, value):
         self.model_dict["model"] = value
 
+    @property
+    def chroma_correction_parameter(self):
+        return self.model_dict["chroma_correction_parameter"]
+
+    @chroma_correction_parameter.setter
+    def chroma_correction_parameter(self, value):
+        assert (
+            isinstance(value, float) and 0.0 < value < 200.0
+        ), "chroma_correction_parameter needs to be a float between 0 and 200"
+        self.model_dict["chroma_correction_parameter"] = value
+
     def to_file(self, filename, **more):
         self._assert_trained()
         param_dict = self.param_dict
@@ -975,10 +989,72 @@ class TrainTestModel(TypeVersionEnabled):
         feature_names = self.feature_names
         for name in feature_names:
             assert name in xs
+        ccp = self.model_dict.get("chroma_correction_parameter")
+        if ccp is not None:
+            xs = self.postprocess_feature_from_another(
+                xs, feature_names, ccp, 0.0, "adm3", "speed_chroma"
+            )
         xs_2d = self._to_tabular_xs(feature_names, xs)
         # normalize xs
         xs_2d = self.normalize_xs(xs_2d)
         return xs_2d
+
+    @staticmethod
+    def _find_guiding_and_guided(xs, feature_names, guiding_feature, guided_feature):
+        """The guiding feature's scores and the guided feature's name and scores.
+
+        Each substring must name at most one feature; the first feature whose
+        name contains ``guiding_feature`` is the guiding one, as in Netflix's
+        loop.
+        """
+        guided_feature_name = ""
+        guiding_scores = []
+        guided_scores = []
+        for name in feature_names:
+            if guiding_feature in name:
+                assert (
+                    len(guiding_scores) == 0
+                ), f"substring '{guiding_feature}' corresponds to more than one feature"
+                guiding_scores = np.array(xs[name])
+            elif guided_feature in name:
+                assert (
+                    len(guided_scores) == 0
+                ), f"substring '{guided_feature}' corresponds to more than one feature"
+                guided_feature_name = name
+                guided_scores = np.array(xs[name])
+        return guiding_scores, guided_feature_name, guided_scores
+
+    @staticmethod
+    def postprocess_feature_from_another(
+        xs, feature_names, guiding_parameter, corrected_value, guiding_feature, guided_feature
+    ):
+        """
+        Post-process the scores from the guided feature using the guiding feature. When guided feature scores are
+        equal to the corrected value, exchange them for the guiding feature scores modified by the guiding parameter
+        (Netflix/vmaf 5c7770080; the C predictor's chroma_from_luma correction does the same).
+        >>> xs = {'guiding': [0.5, 0.5], 'guided': [0.0, 0.1]}
+        >>> feature_names = ['guiding', 'guided']
+        >>> TrainTestModel.postprocess_feature_from_another(xs, feature_names, 120.0, 0.0, 'guiding', 'guided')
+        {'guiding': [0.5, 0.5], 'guided': [60.0, 0.1]}
+        >>> try:
+        ...     TrainTestModel.postprocess_feature_from_another(xs, feature_names, 120.0, 0.0, 'guid', 'guided')
+        ... except AssertionError as e:
+        ...     print(str(e).splitlines()[0])
+        substring 'guid' corresponds to more than one feature
+        """
+        guiding_scores, guided_feature_name, guided_scores = (
+            TrainTestModel._find_guiding_and_guided(
+                xs, feature_names, guiding_feature, guided_feature
+            )
+        )
+        if len(guiding_scores) > 0 and guided_feature_name != "":
+            corrected = guided_scores == corrected_value
+            guided_scores[corrected] = (
+                -guiding_parameter * guiding_scores[corrected]
+            ) + guiding_parameter
+            # Python floats, so the list reads the same under NumPy 1 and 2.
+            xs[guided_feature_name] = [float(score) for score in guided_scores]
+        return xs
 
     def predict(self, xs):
         xs_2d = self._preproc_predict(xs)

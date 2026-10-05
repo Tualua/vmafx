@@ -65,6 +65,40 @@ v1 news line.
   `core/src/predict.h`), a pass-through. On an upstream change to that
   function's parameters, change the test entry with it; do not bring back
   `#include "predict.c"`.
+## Port of Netflix/vmaf `d327ed67b`, `3dee96664`, `560c4e491`, `5c7770080` (Python harness) and the CAMBI tests of `095bb1818` / `83b4f1306` (2026-10-05)
+
+`port/upstream-python-harness-2026-05`. Python harness only; no score of the
+`vmaf` executable moves.
+
+- `compat/python-vmaf/core/feature_extractor.py` and `quality_runner.py`:
+  Netflix's multi-nickname discovery (`d327ed67b`). It replaces the fork's
+  "shortest key wins" wildcard in `VmafexecFeatureExtractorMixin` and the
+  "first key wins" wildcard of `FeatureDiscoveryMixin`. Fork deviations: the
+  frame-count check is `assert_same_frame_count()` (count of the first
+  non-empty nickname, where Netflix's loop leaves it unset when feature 0 is
+  absent), `atom_features=None` falls back to `cls.ATOM_FEATURES`, and the
+  result loop is `_collect_feature_result()` (HISS-04).
+- `compat/python-vmaf/core/cambi_feature_extractor.py`: the fork's
+  `cambi_encbd` atom feature of `CambiFullReferenceFeatureExtractor` existed
+  only to dodge the shortest-key rule; Netflix's `cambi` is back, and
+  `python/test/cambi_test.py` is Netflix's file at `0497a0f29` (SPDX line,
+  `black`; 14 tests the fork lacked, the 4 Netflix had renamed in `095bb1818`
+  gone, every value of the common tests identical). On master that file fails
+  2 of 29 on the `Cambi_FR_feature_cambi_score` key.
+- `VMAF_FLOAT_FEATURE_OPTION_TARGETS` / `VMAF_INTEGER_FEATURE_OPTION_TARGETS`:
+  the nine options of `3dee96664` the tables lacked (float: `vif_prescale`,
+  `vif_prescale_method`, `adm_bypass_cm`, `adm_adm3_apply_hm`, `adm_p_norm`,
+  `adm_skip_aim_scale`, `motion_add_scale1`, `motion_add_uv`; integer:
+  `adm_skip_aim`). The fork's own `motion_five_frame_window` and
+  `motion_moving_average` stay.
+- `compat/python-vmaf/core/asset.py`: `ORDERED_FILTER_LIST` is Netflix's order
+  with `select` (`560c4e491`); the fork had put `fps` and `format` before
+  `gblur`.
+- `compat/python-vmaf/core/train_test_model.py`: `chroma_correction_parameter`
+  and `postprocess_feature_from_another()` (`5c7770080`), split into
+  `_find_guiding_and_guided()` for HISS-04, returning Python floats; the
+  ResPow guard catches `Exception` where Netflix has a bare `except:`.
+  Netflix's assertion changes of `5c7770080` are not ported (golden stop).
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

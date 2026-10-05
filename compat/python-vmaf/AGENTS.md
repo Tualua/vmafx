@@ -37,6 +37,22 @@ python/vmaf/
 
 ## Rebase invariants
 
+- **Feature discovery is Netflix's multi-nickname form (d327ed67b).**
+  `VmafexecFeatureExtractorMixin` and `FeatureDiscoveryMixin` keep one
+  `defaultdict(list)` per atom feature (nickname -> scores) and a nickname
+  list; a wildcard collects every emitted key it owns, the owner being the
+  longest atom feature that prefixes the nickname. Never bring back the fork's
+  former "shortest key wins" single-nickname form, nor
+  `CambiFullReferenceFeatureExtractor`'s `cambi_encbd` atom feature it needed:
+  `python/test/cambi_test.py` (Netflix's file) asserts the `cambi` keys.
+  `assert_same_frame_count()` takes the count from the first non-empty
+  nickname (Netflix's loop leaves it unset when feature 0 is absent).
+- **`Asset.ORDERED_FILTER_LIST` is Netflix's order** (crop, pad, gblur, eq,
+  lutyuv, yadif, format, fps, select; 560c4e491). It orders the FFmpeg chain
+  and the asset string, so a reorder changes workfiles and cached results.
+- **`TrainTestModel.postprocess_feature_from_another()` returns Python floats**
+  (`[float(v) ...]`, Netflix: `list(ndarray)`), for the NumPy 2 doctest rule
+  below; the ResPow guard catches `Exception`, not Netflix's bare `except:`.
 - **`PyPsnrFeatureExtractor` primary; `PypsnrFeatureExtractor` `@deprecated` alias.**
   Hierarchy: `PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor)`
   (TYPE `"PyPsnr_feature"`), `PypsnrFeatureExtractor(PyPsnrFeatureExtractor)`

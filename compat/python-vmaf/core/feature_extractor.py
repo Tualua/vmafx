@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 from abc import ABCMeta, abstractmethod
+from collections import defaultdict
 
 import defusedxml.ElementTree as ElementTree
 
@@ -32,6 +33,8 @@ VMAF_FLOAT_FEATURE_OPTION_TARGETS = {
     "vif_scale1_min_val": "float_vif",
     "vif_scale2_min_val": "float_vif",
     "vif_scale3_min_val": "float_vif",
+    "vif_prescale": "float_vif",
+    "vif_prescale_method": "float_vif",
     "adm_csf_mode": "float_adm",
     "adm_enhn_gain_limit": "float_adm",
     "adm_norm_view_dist": "float_adm",
@@ -50,6 +53,10 @@ VMAF_FLOAT_FEATURE_OPTION_TARGETS = {
     "adm_f2s1": "float_adm",
     "adm_f2s2": "float_adm",
     "adm_f2s3": "float_adm",
+    "adm_bypass_cm": "float_adm",
+    "adm_adm3_apply_hm": "float_adm",
+    "adm_p_norm": "float_adm",
+    "adm_skip_aim_scale": "float_adm",
     "motion_force_zero": "float_motion",
     "motion_fps_weight": "float_motion",
     "motion_blend_factor": "float_motion",
@@ -58,6 +65,8 @@ VMAF_FLOAT_FEATURE_OPTION_TARGETS = {
     "motion_filter_size": "float_motion",
     "motion_five_frame_window": "float_motion",
     "motion_moving_average": "float_motion",
+    "motion_add_scale1": "float_motion",
+    "motion_add_uv": "float_motion",
 }
 
 VMAF_INTEGER_FEATURE_OPTION_TARGETS = {
@@ -73,6 +82,7 @@ VMAF_INTEGER_FEATURE_OPTION_TARGETS = {
     "adm_skip_scale0": "adm",
     "adm_min_val": "adm",
     "adm_noise_weight": "adm",
+    "adm_skip_aim": "adm",
     "motion_force_zero": "motion",
     "motion_fps_weight": "motion",
     "motion_blend_factor": "motion",
@@ -193,6 +203,19 @@ class FeatureExtractor(Executor):
         return feature_result
 
 
+def assert_same_frame_count(feature_scores):
+    """Every discovered nickname carries one score per frame.
+
+    ``feature_scores`` holds one nickname -> scores dict per feature. Netflix's
+    loop takes the count from the first nickname of the first feature; the
+    count here is the first non-empty one, so an absent first feature cannot
+    leave it unset.
+    """
+    counts = [len(scores) for per_feature in feature_scores for scores in per_feature.values()]
+    if counts:
+        assert all(count == counts[0] for count in counts)
+
+
 class VmafexecFeatureExtractorMixin(object):
 
     @override(FeatureExtractor)
@@ -207,7 +230,10 @@ class VmafexecFeatureExtractorMixin(object):
         tree = ElementTree.parse(log_file_path)
         root = tree.getroot()
 
-        feature_scores = [[] for _ in self.ATOM_FEATURES]
+        # One dict per atom feature, nickname -> per-frame scores: a wildcard
+        # feature collects every emitted key it owns, so one atom feature can
+        # yield several result keys (Netflix/vmaf d327ed67b).
+        feature_scores = [defaultdict(list) for _ in self.ATOM_FEATURES]
         feature_nicknames = [None for _ in self.ATOM_FEATURES]
 
         for frame in root.findall("frames/frame"):
@@ -225,21 +251,28 @@ class VmafexecFeatureExtractorMixin(object):
                 # checked here since _discover_feature_wildcard mutates
                 # feature_scores/feature_nicknames as a side effect.
                 self._discover_feature_wildcard(
-                    frame, i_feature, feature, feature_scores, feature_nicknames
+                    frame,
+                    i_feature,
+                    feature,
+                    feature_scores,
+                    feature_nicknames,
+                    atom_features=self.ATOM_FEATURES,
                 )
 
-        for i_feature, feature in enumerate(self.ATOM_FEATURES):
-            if len(feature_scores[i_feature]) != 0:
-                assert len(feature_scores[i_feature]) == len(feature_scores[0])
+        assert_same_frame_count(feature_scores)
+        return self._collect_feature_result(feature_scores, feature_nicknames)
 
+    def _collect_feature_result(self, feature_scores, feature_nicknames):
+        """Map every discovered nickname onto its result key."""
         feature_result = {}
-        for i_feature, feature in enumerate(self.ATOM_FEATURES):
-            if len(feature_scores[i_feature]) != 0:
-                assert feature_nicknames[i_feature] is not None
-                feature_result[self.get_scores_key(feature_nicknames[i_feature])] = feature_scores[
-                    i_feature
+        for i_feature, _ in enumerate(self.ATOM_FEATURES):
+            if len(feature_scores[i_feature]) == 0:
+                continue
+            assert feature_nicknames[i_feature] is not None
+            for feature_nickname in feature_nicknames[i_feature]:
+                feature_result[self.get_scores_key(feature_nickname)] = feature_scores[i_feature][
+                    feature_nickname
                 ]
-
         return feature_result
 
     @classmethod
@@ -248,41 +281,47 @@ class VmafexecFeatureExtractorMixin(object):
         feature_found = False
         for feature_fullname in frame.attrib:
             if cls.ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT[feature] == feature_fullname:
-                feature_scores[i_feature].append(float(frame.attrib[feature_fullname]))
+                feature_scores[i_feature][feature].append(float(frame.attrib[feature_fullname]))
                 if feature_nicknames[i_feature] is None:
-                    feature_nicknames[i_feature] = feature
+                    feature_nicknames[i_feature] = [feature]
                 else:
-                    assert feature_nicknames[i_feature] == feature
+                    assert feature_nicknames[i_feature] == [feature]
                 feature_found = True
                 break
         return feature_found
 
     @classmethod
     def _discover_feature_wildcard(
-        cls, frame, i_feature, feature, feature_scores, feature_nicknames
+        cls, frame, i_feature, feature, feature_scores, feature_nicknames, atom_features=None
     ):
+        """Collect every emitted key ``<vmafexec key>_<suffix>`` this feature owns.
+
+        A key belongs to the atom feature that is the longest prefix of its
+        nickname, so ``integer_vif_scale0_ssclz`` goes to ``vif_scale0``, not to
+        ``vif``, whatever the XML attribute order (Netflix/vmaf d327ed67b).
+        """
         assert hasattr(cls, "ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT")
+        if atom_features is None:
+            atom_features = cls.ATOM_FEATURES
         feature_prefix = cls.ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT[feature] + "_"
         feature_found = False
-        # Collect all candidate full-names, then pick the shortest one.  XML
-        # attribute order is insertion-order (CPython ≥ 3.7), which puts sub-feature
-        # keys (e.g. ``integer_vif_scale0_ssclz``) before the base-feature key
-        # (``integer_vif_ssclz``) when option suffixes are present.  Taking the
-        # shortest match ensures we pick the base-feature key rather than a
-        # sub-feature key that also starts with the same prefix.
-        best_fullname = None
         for feature_fullname in frame.attrib:
-            if feature_fullname.startswith(feature_prefix):
-                if best_fullname is None or len(feature_fullname) < len(best_fullname):
-                    best_fullname = feature_fullname
-        if best_fullname is not None:
-            feature_scores[i_feature].append(float(frame.attrib[best_fullname]))
-            feature_suffix = best_fullname[len(feature_prefix) :]
+            if not feature_fullname.startswith(feature_prefix):
+                continue
+            feature_suffix = feature_fullname[len(feature_prefix) :]
             feature_nickname = feature + "_" + feature_suffix
+            feature_origin = max(
+                (atom for atom in atom_features if feature_nickname.startswith(atom)), key=len
+            )
             if feature_nicknames[i_feature] is None:
-                feature_nicknames[i_feature] = feature_nickname
-            else:
-                assert feature_nicknames[i_feature] == feature_nickname
+                feature_nicknames[i_feature] = []
+            if feature_nickname != feature_origin + "_" + feature_suffix:
+                continue
+            if feature_nickname not in feature_nicknames[i_feature]:
+                feature_nicknames[i_feature].append(feature_nickname)
+            feature_scores[i_feature][feature_nickname].append(
+                float(frame.attrib[feature_fullname])
+            )
             feature_found = True
         return feature_found
 
