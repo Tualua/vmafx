@@ -6483,6 +6483,7 @@
         "core/test/test_libvmaf_cuda_only_no_host.c": 1,
         "core/test/test_locale_handling.c": 1,
         "core/test/test_log.c": 1,
+        "core/test/test_log_level_threads.c": 1,
         "core/test/test_lpips.c": 1,
         "core/test/test_mcp_compute_vmaf_allowlist.c": 1,
         "core/test/test_mcp_coverage.c": 1,

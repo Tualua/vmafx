@@ -1126,6 +1126,18 @@ test_log = executable('test_log',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
+# T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06: contexts created on two threads
+# while a third logs. Proves the shared process log level race-free under TSan
+# (the nightly / master TSan jobs run the fast suite); without TSan it checks
+# that concurrent creation, logging and closing complete.
+test_log_level_threads = executable('test_log_level_threads',
+    ['test.c', 'test_log_level_threads.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_log_level_threads', test_log_level_threads, suite : ['fast'])
+
 # Public API coverage test: vmaf_score_at_index, vmaf_model_collection_load,
 # vmaf_write_output.  Uses the full libvmaf link (no .c include-tricks) so that
 # the public VMAF_EXPORT entry points are exercised through the shared library

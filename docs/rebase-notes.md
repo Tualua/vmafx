@@ -62017,3 +62017,15 @@ that conflicts in them takes either side and re-runs the script, then the drift 
   in `build-config.env` with its Renovate manager. A finding that is not called needs a
   statement in `security/vex/go.openvex.json`; a "not present" justification covers module-level
   findings only. No upstream file is involved; no score, public API or FFmpeg patch impact.
+## The process log level is atomic
+
+`fix/log-level-atomic` (T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06).
+
+- `core/src/log.cpp` keeps `vmaf_log_level` and `istty` as `std::atomic<int>`:
+  `vmaf_set_log_level()` stores them relaxed, `vmaf_log()` loads them relaxed
+  (the tty flag once per line, into `tty`). An upstream change to the logger
+  keeps the atomics; upstream's plain globals race as soon as two threads
+  create contexts or one logs while another creates one. `core/src/log.c` is
+  not built (ADR-0708) and is unchanged.
+- New test `core/test/test_log_level_threads.c` and its block in
+  `core/test/meson.build`. No score, output or golden impact.
