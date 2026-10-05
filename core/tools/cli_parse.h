@@ -143,6 +143,8 @@ typedef struct {
     bool vmafx_mode;
     /* ADR-0696: true when --netflix-compat passed to restore legacy defaults. */
     bool netflix_compat;
+    /* ADR-1874: --list-backends; print the backend report instead of scoring. */
+    bool list_backends;
 } CLISettings;
 /* NOLINTEND(modernize-use-using) */
 

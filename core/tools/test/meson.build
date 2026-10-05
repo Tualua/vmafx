@@ -36,6 +36,21 @@ foreach gpu_backend : ['cuda', 'sycl']
     endif
 endforeach
 
+# ADR-1874 — `vmaf --list-backends` reports this build's backends in a fixed
+# order with `compiled` equal to the configuration below; every build runs it.
+test_vmaf_list_backends = find_program('test_vmaf_list_backends.sh')
+test('test_vmaf_list_backends', test_vmaf_list_backends,
+     args : [
+         'cuda=' + get_option('enable_cuda').to_string(),
+         'sycl=' + get_option('enable_sycl').to_string(),
+         'hip=' + get_option('enable_hip').to_string(),
+         'metal=' + is_metal_enabled.to_string(),
+     ],
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     timeout : 120)
+
 # ADR-1359 — `--feature <cpu-name>` under an explicit device `--backend` runs
 # the backend's twin or falls back to the CPU with a warning, and the JSON
 # receipt reports what ran. The `cpu` registration checks that cpu, auto and

@@ -390,6 +390,37 @@ runtime dispatch rules and which features have GPU or SIMD twins.
 | `--gpumask <mask>` | GPU enabled | Not a per-op mask; see [`--gpumask`](#the-gpumask-flag). |
 | `--threads <N>` | `0` (serial) | Worker thread count; see [Threads](#threads). |
 
+### Which backends this binary can use
+
+`vmaf --list-backends` prints, as one JSON document on stdout, every backend
+the CLI knows (`cpu`, `cuda`, `sycl`, `hip`, `metal`, in that order) and exits
+0. It needs no input files and ignores the other options.
+
+```json
+{
+  "backends": [
+    {"name": "cpu", "compiled": true, "usable": true},
+    {"name": "cuda", "compiled": true, "usable": false, "init_status": -19},
+    {"name": "sycl", "compiled": false, "usable": false},
+    {"name": "hip", "compiled": false, "usable": false},
+    {"name": "metal", "compiled": false, "usable": false}
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `compiled` | The backend is built into this binary. The `--help` text lists every backend name on every build, so it does not answer this. |
+| `usable` | The backend's state initialises on its default device (index 0) on this host: the same call a run with `--backend <name>` makes. Always `true` for `cpu`, never for a backend that is not compiled. |
+| `init_status` | Present when a compiled backend did not initialise: the negative errno its initialiser returned (for example `-19`, `-ENODEV`, when no device is found). |
+
+Each compiled GPU backend is initialised once and released, which can take up
+to about a second per backend. The library may log why an initialisation
+failed on stderr; stdout carries only the JSON. `vmaf-tune --score-backend`
+and `vmafx-tune --score-backend` read this report
+([score backends](vmaf-tune-score-backend.md),
+[ADR-1874](../adr/1874-vmaf-list-backends.md)).
+
 ### The gpumask flag
 
 Despite the `$bitmask` placeholder in the usage string, `--gpumask` is not a
@@ -699,6 +730,7 @@ certificate identity). See
 | `--quiet` | `-q` | Disable the FPS meter when run in a TTY. |
 | `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
 | `--netflix-compat` | | Restore Netflix-upstream legacy defaults: CPU backend, `%.6f` precision and the `vmaf_v0.6.1` default model. Underscore alias `--netflix_compat`. See [vmafx-cli.md](vmafx-cli.md). |
+| `--list-backends` | | Print the backends this binary was built with and which of them initialise here, as JSON on stdout, and exit 0; see [Which backends this binary can use](#which-backends-this-binary-can-use). |
 | `--version` | `-v` | Print the `libvmaf` version and git SHA to stderr and exit 0. |
 
 CUDA-initialization, luminance, SpEED and VIF diagnostics are complete,
@@ -765,7 +797,7 @@ On Linux and macOS the emitted bytes are unchanged. Reported upstream as
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Success, or `--help` / `--version` invocation. |
+| 0 | Success, or `--help` / `--version` / `--list-backends` invocation. |
 | 1 | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting. |
 | 100 | Explicit `--backend <name>` requested but the backend is not compiled in or failed to initialise (ADR-0498, ADR-0543). |
 | 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |

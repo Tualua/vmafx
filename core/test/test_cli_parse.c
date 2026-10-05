@@ -209,6 +209,22 @@ static char *test_backend_cuda_engages_cuda()
     return NULL;
 }
 
+/* ADR-1874: `--list-backends` needs no inputs. cli_parse() must return with
+ * the flag set instead of exiting on the missing reference and distorted
+ * paths, so vmaf.cpp can print the report. */
+static char *test_list_backends_needs_no_inputs()
+{
+    char *argv[2] = {"vmaf", "--list-backends"};
+    int argc = 2;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --list-backends must set list_backends", settings.list_backends);
+    mu_assert("cli_parse: --list-backends must not need a reference", !settings.path_ref);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
 static char *test_backend_cpu()
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "cpu"};
@@ -453,6 +469,7 @@ static char *run_backend_selection_tests(void)
     /* test_backend_vulkan removed — ADR-0726 */
     mu_run_test(test_backend_hip);
     mu_run_test(test_backend_metal);
+    mu_run_test(test_list_backends_needs_no_inputs);
     return NULL;
 }
 

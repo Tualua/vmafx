@@ -333,8 +333,7 @@
       "sites": {
         "pkg/corpus/score.go": 1,
         "pkg/scorecli/scorecli.go": 1,
-        "tools/vmaf-tune/src/vmaftune/score_backend.py": 1,
-        "tools/vmaf-tune/tests/test_score_backend.py": 1
+        "tools/vmaf-tune/src/vmaftune/score_backend.py": 1
       },
       "target": "0127-vulkan-compute-backend.md"
     },
@@ -4488,7 +4487,7 @@
         "tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py": 6,
         "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 1,
         "tools/vmaf-tune/tests/test_ladder_score_backend_0511.py": 4,
-        "tools/vmaf-tune/tests/test_score_backend.py": 4
+        "tools/vmaf-tune/tests/test_score_backend.py": 3
       },
       "target": "0726-drop-vulkan-backend.md"
     },
@@ -11111,6 +11110,25 @@
         "core/test/test_integer_vif_cpu_cuda_parity.c": 3
       },
       "target": "1836-cuda-vif-enable-chroma-names.md"
+    },
+    "1874": {
+      "sites": {
+        "core/test/test_cli_parse.c": 1,
+        "core/tools/cli_backends.cpp": 1,
+        "core/tools/cli_backends.h": 1,
+        "core/tools/cli_parse.cpp": 2,
+        "core/tools/cli_parse.h": 1,
+        "core/tools/test/meson.build": 1,
+        "core/tools/test/test_vmaf_list_backends.sh": 1,
+        "pkg/corpus/backend.go": 1,
+        "pkg/corpus/backend_test.go": 1,
+        "pkg/scorebackend/scorebackend.go": 3,
+        "pkg/scorebackend/scorebackend_test.go": 1,
+        "tools/vmaf-tune/src/vmaftune/score_backend.py": 3,
+        "tools/vmaf-tune/tests/test_score_backend.py": 1,
+        "tools/vmaf-tune/tests/test_score_backend_coverage_push.py": 1
+      },
+      "target": "1874-vmaf-list-backends.md"
     }
   },
   "retired": {

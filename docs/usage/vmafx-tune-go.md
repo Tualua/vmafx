@@ -290,7 +290,7 @@ The two predicates are mutually exclusive.
 | `--keep-encodes` | off | Keep the encoded artefacts instead of deleting them after scoring. |
 | `--no-source-hash` | off | Skip the source SHA-256 (faster on very large sources). |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version, or a `path=...` string. |
-| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. |
+| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. |
 | `--ffmpeg-bin` / `--vmaf-bin` | `ffmpeg` / `vmaf` | Binary paths. |
 
 ### recommend search flags
@@ -553,7 +553,7 @@ vmafx-tune-go fast --smoke --target-vmaf 90
 | `--proxy-tolerance` | `1.5` | Max absolute proxy/verify VMAF gap before the result is flagged out-of-distribution. |
 | `--sample-chunk-seconds` | `5.0` | Probe-encode slice length per trial. Shorter is faster, longer gives more stable features. |
 | `--smoke` | `false` | Deterministic synthetic CRF→VMAF curve. No ffmpeg, no ONNX, no GPU verify. |
-| `--score-backend` | `auto` | libvmaf backend for the verify pass: `auto`, `cpu`, `cuda`, `sycl`, `hip`. `auto` walks cuda → sycl → hip → cpu; an explicit value is honoured strictly and errors rather than downgrading. |
+| `--score-backend` | `auto` | libvmaf backend for the verify pass: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. `auto` walks cuda → sycl → hip → metal → cpu over the backends `vmaf --list-backends` reports usable; an explicit value is honoured strictly and errors rather than downgrading. |
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
 | `--vmaf-bin` | `vmaf` | Path to the libvmaf CLI binary. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | vmaf model version string. |
@@ -834,7 +834,7 @@ canonical-6 columns (`adm2`, `vif_scale0..3`, `motion2`) populated.
 |------|---------|-------------|
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version string. |
 | `--neg` | off | Use the VMAF NEG (No Enhancement Gain) variant. Use for codec A-vs-B comparisons; not for production monitoring (see [vmaf-neg.md](../metrics/vmaf-neg.md)). With the default model it selects `vmaf_v0.6.1neg`, because no NEG counterpart exists for `vmaf_v1.0.16_*`. |
-| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. `auto` picks the fastest available (cuda > sycl > hip > cpu); a specific name is honoured strictly and errors out when unavailable. |
+| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. `auto` picks the first of cuda > sycl > hip > metal > cpu that `vmaf --list-backends` reports usable; a specific name is honoured strictly and errors out when unavailable. See [score backends](vmaf-tune-score-backend.md). |
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
 | `--vmaf-bin` | `vmaf` | Path to the vmaf binary. |
 | `--ffprobe-bin` | `ffprobe` | Path to the ffprobe binary (used for HDR detection). |
@@ -1127,7 +1127,7 @@ Tuning:
 | `--max-iterations` | `8` | Maximum encode+score rounds per shot. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | Model passed to the `vmaf` binary. |
 | `--neg` | off | Route the model to its NEG variant. There is no NEG counterpart to any `vmaf_v1.0.16_*` model, so `--neg` also selects the v0.6.1 generation (`vmaf_v0.6.1neg`). See [vmaf-neg.md](../metrics/vmaf-neg.md). |
-| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. An explicit backend that the host cannot provide fails fast rather than silently downgrading. |
+| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. An explicit backend that `vmaf --list-backends` does not report usable fails fast rather than silently downgrading. |
 | `--vmaf-bin` / `--ffmpeg-bin` | `vmaf` / `ffmpeg` | Binary paths. |
 | `--workdir` | `$VMAFTUNE_WORKDIR` or OS temp | Scratch space for encode and decode artefacts (ADR-0598). Raw YUV decodes are large; point this at a volume with room. |
 | `--max-concurrent-decodes` | `1` | Concurrent reference-YUV decodes (ADR-0577). `1` is safest on space-constrained volumes. |

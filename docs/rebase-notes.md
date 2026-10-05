@@ -13,6 +13,13 @@ No rebase impact: both MCP servers are fork-only. Keep `mcp-server/vmaf-mcp/tool
 generated (`python3 -m vmaf_mcp.tool_contract --write`); on a conflict in it, take either side and
 regenerate. `cmd/vmafx-mcp/tool_contract_test.go` replaces the hand-copied lists that used to be in
 `server_test.go`; do not bring them back.
+## `vmaf --list-backends` and the score-backend selectors (2026-10-05)
+
+Fork-only: `core/tools/cli_backends.cpp` is new and `cli_parse.cpp` / `vmaf.cpp` / `cli_parse.h` gain the
+`--list-backends` option (`ARG_LIST_BACKENDS`, `CLISettings.list_backends`, the early return after the getopt
+loop, the branch in `vmaf_cli_main()`). On an upstream sync that touches these files keep all four; upstream
+has no such option. See `core/tools/AGENTS.d/list-backends.md`.
+
 ## v1-model test fixtures named by file (2026-10-05)
 
 No rebase impact: wording and fixture labels of a fork-only test.

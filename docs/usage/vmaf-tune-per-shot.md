@@ -80,7 +80,7 @@ geometry for a raw source, or a failed bisect on a shot.
 | `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | VMAF model for the per-shot scorer. |
 | `--neg` | off | Use the VMAF NEG model variant. |
 | `--fast-nr` | off | NR early-elimination in each per-shot bisect, see [`vmaf-tune-fast-nr.md`](vmaf-tune-fast-nr.md). |
-| `--score-backend NAME` | `auto` | `auto`, `cpu`, `cuda`, `sycl` or `hip`. See [score backends](vmaf-tune-score-backend.md). |
+| `--score-backend NAME` | `auto` | `auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal`. See [score backends](vmaf-tune-score-backend.md). |
 | `--predicate-module SPEC` | none | `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`. Bypasses the real bisect. |
 | `--workdir PATH` | none | Parent of the per-run scratch directory. Overrides `VMAFTUNE_WORKDIR`. See [`vmaf-tune-compare.md`](vmaf-tune-compare.md#workdir-and-decode-concurrency). |
 | `--max-concurrent-decodes N` | `1` | Cap on simultaneous reference-YUV decodes across the per-shot bisect threads. |

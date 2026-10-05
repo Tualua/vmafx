@@ -421,6 +421,13 @@
   `docs/development/upstream-parity.md`.
 
 
+- **`vmaf --list-backends` reports which scoring backends the binary can use.**
+  It prints, as JSON, every backend the CLI knows (cpu, cuda, sycl, hip,
+  metal), whether it is compiled in, and whether its state initialises on this
+  host, then exits without reading any input. See
+  [the CLI reference](docs/usage/cli.md#which-backends-this-binary-can-use).
+
+
 - **A Windows CUDA tester zip measures every CUDA twin on a tester's Windows PC**
   (ADR-1516, `T-CUDA-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`).
   `vmafx-tester-windows-x64-cuda-<version>.zip` is the Windows tester zip with
@@ -4727,6 +4734,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   map over the frame's own area
   ([ADR-1540](docs/adr/1540-saliency-pad-to-multiple-of-8.md)). Frames that
   already are multiples of 8 score exactly as before.
+
+
+- **`vmaf-tune` and `vmafx-tune` no longer pick a GPU backend that their
+  `vmaf` cannot run.** `--score-backend auto` used to trust the `--help` text,
+  which names every backend on every build, plus vendor tools such as
+  `nvidia-smi`: a CPU-only `vmaf` on a GPU host was sent `--backend cuda` and
+  refused the run. Both tools now read `vmaf --list-backends`, accept `metal`,
+  and try `cuda`, `sycl`, `hip`, `metal`, then `cpu`. The Python module and
+  the Go package share one table of selection cases.
 
 
 - **A Scorecard master run whose master moved on during the scan ends

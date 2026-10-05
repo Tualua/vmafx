@@ -55,6 +55,7 @@
 #include <unistd.h>
 #endif
 
+#include "cli_backends.h"
 #include "cli_feature_backend.h"
 #include "cli_parse.h"
 #include "compat/path_utf8.h"
@@ -2453,6 +2454,11 @@ namespace
     CliRunState state = {};
     cli_parse(argc, argv, &state.c);
     CliRunGuard guard(&state);
+    if (state.c.list_backends) {
+        const int list_err = cli_list_backends(stdout);
+        const int list_cleanup_err = guard.close();
+        return (list_err || list_cleanup_err) ? EXIT_FAILURE : EXIT_SUCCESS;
+    }
     const int run_err = run_cli(&state, isatty(fileno(stderr)));
     const int cleanup_err = guard.close();
     return run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS);

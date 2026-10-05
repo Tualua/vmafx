@@ -95,6 +95,8 @@ enum : std::uint16_t {
     ARG_TINY_RESIZE,
     /* ADR-0696 — restore Netflix-upstream legacy defaults. */
     ARG_NETFLIX_COMPAT,
+    /* ADR-1874 — report the compiled and usable scoring backends. */
+    ARG_LIST_BACKENDS,
 };
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
@@ -202,6 +204,7 @@ const struct option long_opts[] = {
     {.name = "netflix-compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
+    {.name = "list-backends", .has_arg = 0, .flag = nullptr, .val = ARG_LIST_BACKENDS},
     {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
     {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
 };
@@ -313,6 +316,8 @@ void print_usage_options_part2(FILE *const out)
         " --no_prediction/-n:          no prediction, extract features only\n"
         " --netflix-compat:             restore Netflix-upstream legacy defaults (CPU backend,\n"
         "                                  %%.6f precision, v0.6.1 default model)\n"
+        " --list-backends:             print the scoring backends this binary was built with\n"
+        "                               and which of them initialise here, as JSON, and exit\n"
         " --version/-v:                print version and exit\n");
 }
 
@@ -1447,6 +1452,9 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
     case ARG_NETFLIX_COMPAT:
         handle_misc_flag(o, app, settings);
         break;
+    case ARG_LIST_BACKENDS:
+        settings->list_backends = true;
+        break;
     default:
         break;
     }
@@ -1482,6 +1490,9 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     while ((o = getopt_long(argc, argv, short_opts, long_opts, nullptr)) >= 0) {
         process_single_cli_opt(o, optarg, argv[0], settings);
     }
+    /* ADR-1874: the report needs no inputs; vmaf.cpp prints it and exits. */
+    if (settings->list_backends)
+        return;
 
     if (settings->vmafx_mode) {
         /* ADR-0690: apply modernized defaults (precision=max) unless explicit --precision given */
