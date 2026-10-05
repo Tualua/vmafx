@@ -179,12 +179,15 @@ lint-go:
 	@echo "--- gosec (exclude-generated) ---"
 	@gosec -exclude-generated -quiet ./...
 
-# GitHub Actions workflow lint (actionlint). Validates all 35 workflow
-# files under .github/workflows/ against .github/actionlint.yaml.
+# GitHub Actions lint. actionlint validates every workflow under
+# .github/workflows/ against .github/actionlint.yaml; actionlint cannot read a
+# composite action, so scripts/ci/check_composite_actions.py checks those.
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
 	@actionlint
+	@echo "--- composite actions (.github/actions): structure + shellcheck ---"
+	@python3 scripts/ci/check_composite_actions.py
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
 # docs/adr/README.md are in sync with fragments, ADR tag pages match sources,

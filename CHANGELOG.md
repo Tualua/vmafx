@@ -735,6 +735,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   and clang, x86-64 and aarch64), and no score moves.
 
 
+- Composite actions under `.github/actions/` are now checked in pre-commit, CI and
+  `make lint-actions`: the GitHub action schema (`check-github-actions`) and, through
+  `scripts/ci/check_composite_actions.py`, their structure and shellcheck of every
+  `run:` block. actionlint reads workflows only
+  (`docs/development/pre-commit-hooks.md`, "Composite actions").
+
+
 - **Six more CUDA twins are held to the CPU's bits by the parity gate.**
   `motion_cuda` (also with `debug=true`), `motion_v2_cuda`, `psnr_cuda`,
   `float_ssim_cuda` and `float_ms_ssim_cuda` (with and without `enable_lcs`)

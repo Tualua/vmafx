@@ -61492,3 +61492,11 @@ No score, public API or FFmpeg patch impact.
   `core/test/test_pelorus_interop.c` takes master's side and re-runs
   `scripts/sync-pelorus-interop.sh --update`; never merge a hunk by hand. No score,
   public API or FFmpeg patch impact.
+
+## Composite actions are linted by a script of their own
+
+- `scripts/ci/check_composite_actions.py` keeps the shellcheck ignore list of
+  actionlint v1.7.12's `rule_shellcheck.go`; when the actionlint pin in
+  `.pre-commit-config.yaml` moves, compare the list. A new composite action under
+  `.github/actions/` is picked up without a config edit. No score, public API or
+  FFmpeg patch impact.

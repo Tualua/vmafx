@@ -175,10 +175,33 @@ The pre-commit hook runs on staged workflow files:
 pre-commit run actionlint --all-files
 ```
 
-To validate workflows across the repository without pre-commit, run:
+To validate workflows and composite actions across the repository without
+pre-commit, run:
 
 ```bash
 make lint-actions
+```
+
+### Composite actions
+
+actionlint reads workflow files only; given an `action.yml` it fails with
+`"jobs" section is missing`. The composite actions under `.github/actions/*/`
+get their own two checks, run by the same pre-commit job in CI:
+
+| Hook | Reads | Checks |
+| --- | --- | --- |
+| `check-github-actions` ([check-jsonschema](https://github.com/python-jsonschema/check-jsonschema) `0.38.2`) | `.github/actions/*/action.yml` | The GitHub action manifest schema |
+| `check-composite-actions` (`scripts/ci/check_composite_actions.py`) | every manifest under `.github/actions/` | `runs.using: composite`, a `description` on every input, one of `run` or `uses` per step, a `shell` on every `run` step; every `bash` and `sh` `run:` block goes through shellcheck with each `${{ ... }}` replaced by a placeholder and the same ignore list actionlint uses for a workflow block (`SC1091`, `SC2194`, `SC2050`, `SC2153`, `SC2154`, `SC2157`, `SC2043`) |
+
+A step in another shell (`pwsh`, `cmd`, `python`) is printed as skipped with the
+reason `no checker for this shell`; the repository has none today.
+`test-check-composite-actions` keeps positive, negative and boundary cases for the
+script (an unquoted variable, a missing `shell`, a missing input description, a
+non-composite action, an unreadable manifest and an empty `.github/actions/`
+each fail). Run the script alone with:
+
+```bash
+python3 scripts/ci/check_composite_actions.py
 ```
 
 ## Existing hooks and migration

@@ -180,6 +180,15 @@ repos:
     hooks:
       - id: actionlint
 
+  # Composite actions under .github/actions/ are not workflows: actionlint rejects
+  # them ("jobs section is missing"). The GitHub action schema is checked here, the
+  # structure and the shellcheck of every `run:` block by check_composite_actions.py
+  # below (hook `check-composite-actions`).
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.2
+    hooks:
+      - id: check-github-actions
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
@@ -570,6 +579,20 @@ repos:
         # labels them (ADR-1351).
         exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$|^tools/figures/|^\.config/agent/hooks/block_evasion\.py$'
         types_or: [c, c++, cuda, go, python]
+
+      - id: check-composite-actions
+        name: Composite actions keep their structure and shellcheck-clean run blocks
+        entry: python3 scripts/ci/check_composite_actions.py
+        language: system
+        files: '^(\.github/actions/|scripts/ci/check_composite_actions\.py$)'
+        pass_filenames: false
+
+      - id: test-check-composite-actions
+        name: Composite-action check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_composite_actions.py
+        language: system
+        files: '^(scripts/ci/(check_composite_actions\.py|tests/test_check_composite_actions\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
 
       - id: test-check-copyright
         name: Copyright and SPDX header check keeps positive, negative and boundary cases
