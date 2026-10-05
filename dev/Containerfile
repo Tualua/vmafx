@@ -131,7 +131,9 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+# No org.opencontainers.image.licenses here: this stage holds distribution
+# packages and SDK tools only, no VMAFx file. libvmaf-build, the published
+# target, states the licences of the VMAFx files it copies (ADR-1699).
 
 # Container-only publishing marker (ADR-1102, docs/development/publishing.md).
 # `scripts/ci/check-container-build.sh` reads this file to tell a container
@@ -282,7 +284,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 LABEL org.opencontainers.image.title="vmafx-release-build"
 LABEL org.opencontainers.image.description="Debian 13 release-track compiler for the VMAFx native Linux bundle"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+# No org.opencontainers.image.licenses: this stage holds Debian's compiler
+# packages only; the source it compiles is mounted at run time (ADR-1699).
 
 # The same container marker build-deps writes (ADR-1102). The gate accepts one
 # identity for every stage of this file, and the unit suite requires both
@@ -594,6 +597,12 @@ FROM gpu-sdks AS libvmaf-build
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 WORKDIR /build/vmaf
+
+# The licences of the VMAFx files this stage copies and builds (the union of
+# their SPDX headers, else REUSE.toml; ADR-1513 decision 6, ADR-1699), which
+# dev-mcp inherits. FFmpeg (configured with --enable-nonfree) and the vendor
+# SDKs keep their own terms; that is why the image stays private (ADR-1564).
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-3-Clause-Clear AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND LGPL-2.1-or-later AND GPL-2.0-or-later"
 
 # Copy only the build-needed subtrees — NOT the full repo root.
 #

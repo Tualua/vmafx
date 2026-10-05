@@ -143,24 +143,24 @@ VMAFx builds on [Netflix/vmaf](https://github.com/Netflix/vmaf).
 See [upstream releases](https://github.com/Netflix/vmaf/releases) for Netflix's
 release history.
 
-The repository carries two sets of terms, separated by provenance and recorded
-per file as an `SPDX-License-Identifier`
-([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)):
+Each file's `SPDX-License-Identifier` header says which licence applies to it
+([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). The files at the repository
+root hold the texts ([ADR-1699](docs/adr/1699-root-licence-files-eupl.md)):
 
-- **Code inherited, ported or translated from Netflix/vmaf or another project**
-  keeps the terms it already carries — [BSD-2-Clause-Patent](LICENSE) for
-  Netflix's code, and its own licence for the libjxl, Xiph and IQA code the fork
-  builds on. Those files carry the original copyright notice.
-- **Fork-authored code** is licensed under [EUPL-1.2](LICENSES/EUPL-1.2.txt), a
-  reciprocal licence.
+| Code | Licence | Text |
+| --- | --- | --- |
+| Written by the fork | EUPL-1.2, a reciprocal licence | [`LICENSE`](LICENSE) |
+| Inherited, ported or translated from Netflix/vmaf | BSD-2-Clause-Patent, with Netflix's copyright notice | [`NOTICE`](NOTICE) |
+| Carried from libjxl, Xiph, IQA and other projects | that project's licence, with its notice in the file | [`LICENSES/`](LICENSES/) |
 
 **What that means in practice**: the shipped `libvmaf` links both together.
 Distributing it, modified or not, obliges you to provide its source or point to
 a repository that has it (EUPL-1.2, Article 5). A modified library is
 distributed under EUPL-1.2. If you need permissive terms, use
 [Netflix/vmaf](https://github.com/Netflix/vmaf) upstream, which is unaffected.
-The per-file tags are authoritative; this paragraph is a summary, not legal
-advice. [Embedding VMAFx in another product](docs/licensing.md#embedding-vmafx-in-another-product)
+The per-file tags are authoritative; this section is a summary, not legal
+advice. [Licensing](docs/licensing.md) lists what each published package
+carries, and [Embedding VMAFx in another product](docs/licensing.md#embedding-vmafx-in-another-product)
 goes through linking, modification and network use.
 
 ## Standards & Governance

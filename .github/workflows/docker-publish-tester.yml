@@ -233,7 +233,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
           git checkout FETCH_HEAD -- docker/Dockerfile.tester tools/rc1-tester \
             scripts/ci docs/hardware-reports python/requirements-test-lock.txt \
-            REUSE.toml LICENSES LICENSE model/other_models/NOTICE-brisque
+            REUSE.toml LICENSES NOTICE model/other_models/NOTICE-brisque
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
       - name: Export the x86_64 scalar scores
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
@@ -280,7 +280,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
           git checkout FETCH_HEAD -- docker/Dockerfile.tester tools/rc1-tester \
             scripts/ci docs/hardware-reports python/requirements-test-lock.txt \
-            REUSE.toml LICENSES LICENSE model/other_models/NOTICE-brisque
+            REUSE.toml LICENSES NOTICE model/other_models/NOTICE-brisque
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: tester-xref
@@ -692,7 +692,8 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
           git checkout FETCH_HEAD -- docker/Dockerfile.tester tools/rc1-tester \
-            scripts/ci docs/hardware-reports python/requirements-test-lock.txt
+            scripts/ci docs/hardware-reports python/requirements-test-lock.txt \
+            NOTICE
       # The GPU SDK build stages need more disk than a hosted runner leaves free.
       - name: Free runner disk
         run: |

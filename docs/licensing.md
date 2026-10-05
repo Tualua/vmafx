@@ -16,11 +16,19 @@ Because `libvmaf` links fork code and Netflix code into one library, a copy of
 pointer to it, and a modified one is distributed under the EUPL-1.2. The
 [next section](#embedding-vmafx-in-another-product) goes through the cases.
 
-The licence texts are in the repository:
-[`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE) (BSD-2-Clause-Patent)
-and [`LICENSES/`](https://github.com/VMAFx/vmafx/tree/master/LICENSES) (every
-other licence a file names). Files without a header of their own, such as model
-data, are covered by
+The licence texts are in the repository
+([ADR-1699](adr/1699-root-licence-files-eupl.md)):
+
+| File | What it holds |
+| --- | --- |
+| [`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE) | the EUPL-1.2, the licence of the files the fork wrote (the same bytes as `LICENSES/EUPL-1.2.txt`) |
+| [`NOTICE`](https://github.com/VMAFx/vmafx/blob/master/NOTICE) | Netflix's BSD-2-Clause-Patent text with its copyright notice, for the files inherited from Netflix |
+| [`LICENSES/`](https://github.com/VMAFx/vmafx/tree/master/LICENSES) | every licence a file names |
+
+No other file at the root is a licence file. `NOTICE` carries Netflix's text
+under a name licence detectors do not read as a licence file, so `LICENSE` is
+the only root licence file they find; each file's own header still decides.
+Files without a header of their own, such as model data, are covered by
 [`REUSE.toml`](https://github.com/VMAFx/vmafx/blob/master/REUSE.toml).
 
 ## Embedding VMAFx in another product
@@ -41,7 +49,7 @@ both, so an embedder meets both licences:
 
 | What you do | Netflix files (BSD-2-Clause-Patent) | Fork files (EUPL-1.2) |
 | --- | --- | --- |
-| Distribute `libvmaf` or the `vmaf` binary, modified or not, inside your product | Reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials you ship ([`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE), condition 2) | Keep every notice and include a copy of the licence (Article 5, "Attribution right"). Provide the source, or name a repository where it is "easily and freely available", for as long as you distribute (Article 5, "Provision of Source Code") |
+| Distribute `libvmaf` or the `vmaf` binary, modified or not, inside your product | Reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials you ship ([`NOTICE`](https://github.com/VMAFx/vmafx/blob/master/NOTICE), condition 2) | Keep every notice and include a copy of the licence (Article 5, "Attribution right"). Provide the source, or name a repository where it is "easily and freely available", for as long as you distribute (Article 5, "Provision of Source Code") |
 | Link your program against `libvmaf`, statically or dynamically | No condition on your program | The licence leaves what counts as a derivative work to the copyright law of the country in Article 15 (Article 1, "Derivative Works"). The Commission's reading: static and dynamic linking create no condition on the other program. There is no case law on it |
 | Change `libvmaf` and distribute the result | As above | Distribute the changed library under the EUPL-1.2. If you combine it with a work under a licence in the EUPL's appendix (GPL, LGPL, MPL and others), you may use that licence instead. Mark the changed work as modified, with the date, and provide its source (Article 5) |
 | Run it on a server and let others use it over a network | No condition | "Distribution or Communication" includes "providing access to its essential functionalities" (Article 1), so the source obligation applies to that service too |
@@ -82,7 +90,7 @@ Sources (fetched 2026-10-05):
 - BSD-2-Clause-Patent, SPDX text:
   [github.com/spdx/license-list-data](https://github.com/spdx/license-list-data/blob/main/text/BSD-2-Clause-Patent.txt),
   the same conditions and patent grant as the repository's
-  [`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE).
+  [`NOTICE`](https://github.com/VMAFx/vmafx/blob/master/NOTICE).
 
 ## Models
 
@@ -172,6 +180,7 @@ every repository file its compiled ADM extension is built from.
 | `vmaf-dev-llm` | `dev-llm/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
 | `vmaf-roi-score` | `tools/vmaf-roi-score/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
 | `vmaf-ensemble-training-kit` | `tools/ensemble-training-kit/` | `EUPL-1.2 AND BSD-2-Clause-Patent` |
+| `vmafx-rc1-tester` (not published) | `tools/rc1-tester/` | `EUPL-1.2 AND MIT` (its sdist carries two MIT third-party notices) |
 
 The expression describes the whole distribution, not each file: a module's own
 header still says which licence applies to it. To read what an installed
@@ -187,6 +196,53 @@ fails when a package's metadata or texts disagree with them:
 ```bash
 python3 -m pytest python/test/setup_metadata_test.py -k licence
 ```
+
+## Rust crates and the Helm chart
+
+The other package manifests follow the same rule: the licence field names the
+licences of exactly the files the package ships
+([ADR-1699](adr/1699-root-licence-files-eupl.md)).
+
+| Package | Manifest | Field | Value |
+| --- | --- | --- | --- |
+| `vmafx-sys` crate | `bindings/rust/vmafx-sys/Cargo.toml` (inherits the workspace's) | `license` | `EUPL-1.2` |
+| `vmafx` crate | `bindings/rust/vmafx/Cargo.toml` | `license` | `EUPL-1.2` |
+| `vmafx-tad` crate (not published) | `core/src/feature/rust/tad/Cargo.toml` | `license` | `EUPL-1.2 AND BSD-2-Clause-Patent` (it ships the root `README.md`, BSD-2-Clause-Patent in `REUSE.toml`) |
+| Helm chart `vmafx` | `deploy/helm/vmafx/Chart.yaml` | `artifacthub.io/license` | `EUPL-1.2` |
+| Its Prometheus Pushgateway subchart | `charts/prometheus-pushgateway-*.tgz` | its own `Chart.yaml` | `Apache-2.0` |
+
+A crate's files are what `cargo package --list` puts into it; a chart's are its
+own files, and each subchart in `charts/` is a chart of its own. No crate has
+been published to crates.io and the chart is not published.
+
+## Checking the licence metadata
+
+`scripts/ci/check_licence_metadata.py` checks the root licence files and every
+package manifest (`pyproject.toml`, `Cargo.toml`, `Chart.yaml`,
+`package.json`) against the files, using only the Python standard library. The
+required `Licence Provenance` check and a pre-commit hook run it:
+
+```bash
+python3 scripts/ci/check_licence_metadata.py
+```
+
+It prints one line per problem and exits 1, for example:
+
+```text
+LICENSE-MIT: a second root licence file (allowed: LICENSE; Netflix's text is NOTICE)
+bindings/rust/vmafx/Cargo.toml: license = 'BSD-2-Clause-Patent', but its files carry EUPL-1.2
+```
+
+At the root it refuses every file name licensee scores as a licence file except
+`LICENSE` (for example `LICENSE-MIT`, `COPYING`, `LICENSE-BSD-2-Clause-Patent`),
+a `LICENSE` that is not the EUPL-1.2 text, a missing `NOTICE` and a `NOTICE`
+without Netflix's copyright line.
+
+Fix the manifest to the expression it names; when the files are what is wrong,
+fix their headers or `REUSE.toml` instead. It exits 2 when a package selects its
+files in a way it does not model (`include` or `exclude` in a crate,
+`.helmignore`, a `files` list in `package.json`, a hatchling sdist selection):
+model the selection in the script rather than guessing.
 
 ## Releases 1.0.0-rc.1 and 1.0.0-rc.2
 
@@ -240,3 +296,34 @@ The licence section of each release page lists the withdrawn images, the
 yanked PyPI release, and every kept image with its digest and its source image.
 The registry also lost 34 untagged images built from `master` after the release
 candidates; no tag referred to them.
+
+### The stale `LICENSE-MIT` in their source trees
+
+The trees of `v1.0.0-rc.1` and `v1.0.0-rc.2` held a root file `LICENSE-MIT`
+("MIT License", "Copyright (c) 2026 Lusoris"). It was a leftover of an earlier
+plan to dual-license fork code under BSD-3-Clause-Plus-Patent or MIT
+([ADR-0686](adr/0686-vmafx-rebrand-aggressive-modernization.md)), which
+[ADR-1250](adr/1250-eupl-fork-relicense.md) replaced before the first release
+candidate. ADR-1250 governs: fork-authored code is EUPL-1.2, Netflix's code is
+BSD-2-Clause-Patent, and the SPDX header of each file is authoritative. The file
+was removed on 2026-10-05 ([ADR-1699](adr/1699-root-licence-files-eupl.md)).
+
+Copies of it remain where those trees were published
+([Research-2143](research/2143-root-licence-files-and-package-manifests.md)):
+
+- GitHub's source archives of `v1.0.0-rc.1`, `v1.0.0-rc.2` and the other tags
+  made between 2026-05-28 and 2026-10-05. The tags stay.
+- The Go module proxy's zips of `github.com/VMAFx/vmafx@v1.0.0-rc.1` and
+  `@v1.0.0-rc.2`. The root `go.mod` retracts both versions:
+
+  ```text
+  retract [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
+  ```
+
+  The go command reads retractions from the `go.mod` of a module's latest
+  version. For this module path that is `v3.0.0+incompatible`, a tag inherited
+  from Netflix with no `go.mod`, so `go list -m -versions github.com/VMAFx/vmafx`
+  keeps listing both candidates and shows no retraction (measured 2026-10-05).
+
+No published container image, release file, tester bundle or Python package
+contained the file.

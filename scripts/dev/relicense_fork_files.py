@@ -119,7 +119,9 @@ LICENCE_LIKE = re.compile(r"^(?:LicenseRef-|[A-Z0-9][A-Za-z0-9.+-]*$)")
 OPERATORS = frozenset({"OR", "AND", "WITH"})
 PY_LICENSE_ATTR = re.compile(r"""^(?P<head>__license__\s*=\s*)(?P<q>["'])[^"'\n]*(?P=q)""", re.M)
 
-NO_SIGNAL_NAMES = frozenset({"__init__.py", "conftest.py", "meson.build"})
+# `pyproject.toml`: every Python package has one; upstream's python/pyproject.toml
+# says nothing about where a fork package's manifest came from (ADR-1699).
+NO_SIGNAL_NAMES = frozenset({"__init__.py", "conftest.py", "meson.build", "pyproject.toml"})
 UPSTREAM_REMAP = (("core/", "libvmaf/"),)
 
 EXCLUDED_PREFIXES = (
@@ -140,6 +142,11 @@ EXCLUDED_PREFIXES = (
     # check-copyright hook leaves them alone for the same reason (ADR-1351).
     "tools/figures/",
     ".config/agent/hooks/block_evasion.py",
+    # praetor's Codex projections of `.agents/agents/*.md`, written by the engine
+    # (`praetorctl compile-context`, ADR-1249) and regenerated from their source;
+    # a header added here would not survive the next compile. REUSE.toml's
+    # default covers them (ADR-1699).
+    ".codex/agents/",
 )
 EXCLUDED_SUFFIXES = (".md",)
 EXCLUDED_NAMES = frozenset({"LICENSE", "COPYING"})
@@ -170,7 +177,8 @@ BLOCK_EXT = frozenset(
     }
 )
 SLASH_EXT = frozenset({".go", ".rs", ".proto"})
-HASH_EXT = frozenset({".py", ".sh", ".bash"})
+# `.toml`: package manifests and tool configuration carry a header too (ADR-1699).
+HASH_EXT = frozenset({".py", ".sh", ".bash", ".toml"})
 HASH_NAMES = frozenset({"meson.build"})
 
 PROSE_START = re.compile(

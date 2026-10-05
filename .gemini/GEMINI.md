@@ -125,7 +125,7 @@ Audience: any coding agent (Cursor, Copilot, Aider, Continue, Cody, Codeium, etc
 - Fork of [Netflix/vmaf](https://github.com/Netflix/vmaf): perceptual video quality assessment.
 - Additions over upstream: SYCL / CUDA / HIP GPU backends (runtime-selected); AVX2/AVX-512/NEON SIMD; tiny-AI surface (ONNX Runtime; `ai/`, `core/src/dnn/`); MCP server (`mcp-server/vmaf-mcp/`).
 - `--precision` CLI flag: default `%.6f` Netflix-compat; `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless. ADR-0119 supersedes ADR-0006.
-- License: per-file `SPDX-License-Identifier` authoritative ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited code keeps its terms: BSD-2-Clause-Patent, upstream license preserved ([LICENSE](LICENSE)). Fork-authored code: EUPL-1.2 ([LICENSES/EUPL-1.2.txt](LICENSES/EUPL-1.2.txt)).
+- License: per-file `SPDX-License-Identifier` authoritative ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited code keeps its terms: BSD-2-Clause-Patent, upstream license preserved ([NOTICE](NOTICE)). Fork-authored code: EUPL-1.2 ([LICENSE](LICENSE)). Root licence files fixed ([ADR-1699](docs/adr/1699-root-licence-files-eupl.md)): no other root licence file.
 - Default branch: `master`. Upstream tracked as remote `upstream`.
 
 ## 2. Build

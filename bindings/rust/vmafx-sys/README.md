@@ -118,4 +118,5 @@ A higher-level `vmafx` crate (in progress) will be built on top of this one.
 
 ## License
 
-BSD-3-Clause — see [LICENSE](../../../LICENSE).
+EUPL-1.2, the licence every file of this crate carries — see [LICENSE](../../../LICENSE)
+and [Licensing](../../../docs/licensing.md).

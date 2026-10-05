@@ -97,7 +97,7 @@ def update_registry(path: Path, sha256_hex: str) -> None:
         "id": MODEL_ID,
         "kind": "fr",
         "license": "BSD-2-Clause-Patent",
-        "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
+        "license_url": "https://github.com/VMAFx/vmafx/blob/master/NOTICE",
         "notes": (
             "DISTS-Sq smoke placeholder. Synthetic mean-squared tensor distance "
             "over two ImageNet-normalised RGB NCHW inputs; not a production "

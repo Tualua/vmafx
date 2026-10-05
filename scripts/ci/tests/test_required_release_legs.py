@@ -318,13 +318,26 @@ def _dry_run_groups(paths: list[str]) -> dict[str, str]:
     return dict(line.split("=", 1) for line in result.stdout.split())
 
 
+# Inputs the tester builds gained after ADR-1687: NOTICE holds the
+# BSD-2-Clause-Patent text the image's licence stages bind-mount (ADR-1699).
+ADDED_TRIGGER_PATHS = {"tester_image": {"NOTICE"}, "windows_tester_zip": set()}
+
+
 class Routing(unittest.TestCase):
     def test_selectors_are_the_former_trigger_path_filters(self) -> None:
         selectors = json.loads(CONFIG.read_text(encoding="utf-8"))["selectors"]
         for name, expected in FORMER_TRIGGER_PATHS.items():
             with self.subTest(selector=name):
-                self.assertEqual(set(selectors[name]["patterns"]), expected)
+                self.assertEqual(
+                    set(selectors[name]["patterns"]), expected | ADDED_TRIGGER_PATHS[name]
+                )
                 self.assertNotIn("inherits", selectors[name])
+
+    def test_a_notice_change_runs_the_tester_image(self) -> None:
+        """The image reads NOTICE for its BSD-2-Clause-Patent text (ADR-1699)."""
+        plan = _plan_for(["NOTICE"])
+        self.assertTrue(plan["tester_image"])
+        self.assertFalse(plan["windows_tester_zip"])
 
     def test_docs_only_change_runs_no_tester_build_and_reports_the_dry_run(self) -> None:
         paths = ["docs/development/ci.md", "changelog.d/changed/x.md"]

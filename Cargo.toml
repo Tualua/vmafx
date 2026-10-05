@@ -17,10 +17,13 @@ resolver = "2"
 # Shared crate metadata. Per-crate manifests opt in via
 # `repository.workspace = true` (etc.) so URL drift across the workspace
 # is impossible — touch this block once, every member inherits.
+# `license` is the licence of the files a crate ships (ADR-1250, ADR-1699):
+# scripts/ci/check_licence_metadata.py holds every member that inherits it to
+# its files, and a member whose files carry more declares its own.
 [workspace.package]
 authors = ["Lusoris <lusoris@pm.me>"]
 edition = "2024"
-license = "BSD-2-Clause-Patent"
+license = "EUPL-1.2"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"
 documentation = "https://vmafx.github.io/vmafx/"

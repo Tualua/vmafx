@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 version = 1
 
 [[annotations]]
@@ -20,6 +23,15 @@ path = [
 ]
 precedence = "override"
 SPDX-FileCopyrightText = ["2020 Netflix, Inc.", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+# NOTICE is Netflix/vmaf's root LICENSE, moved unchanged (ADR-1699): the
+# BSD-2-Clause-Patent text and Netflix's copyright notice. REUSE does not exempt a
+# file of this name as a licence text, so it is annotated with its own terms.
+[[annotations]]
+path = ["NOTICE"]
+precedence = "override"
+SPDX-FileCopyrightText = "2020 Netflix, Inc."
 SPDX-License-Identifier = "BSD-2-Clause-Patent"
 
 # FFmpeg patch files are derivative source contributions.  Patches 0001-0018
@@ -450,3 +462,15 @@ SPDX-FileCopyrightText = [
     "the authors of the packages listed in THIRD-PARTY-LICENSES.txt",
 ]
 SPDX-License-Identifier = "BSD-3-Clause AND ISC AND MIT AND Unlicense AND 0BSD"
+
+# The Helm chart's Prometheus Pushgateway dependency (deploy/helm/vmafx/Chart.lock):
+# the prometheus-community chart archive as `helm dependency build` fetches it.
+# Its own Chart.yaml declares Apache-2.0, the licence of the
+# prometheus-community/helm-charts repository, and the archive carries no other
+# notice. scripts/ci/check_licence_metadata.py holds this record to that
+# declaration (ADR-1699).
+[[annotations]]
+path = ["deploy/helm/vmafx/charts/prometheus-pushgateway-*.tgz"]
+precedence = "override"
+SPDX-FileCopyrightText = "the prometheus-community/helm-charts contributors"
+SPDX-License-Identifier = "Apache-2.0"

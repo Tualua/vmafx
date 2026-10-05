@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0686: VMAFX Rebrand and Aggressive Modernization — Umbrella ADR
 
-- **Status**: Proposed
+- **Status**: Proposed (partially superseded by [ADR-1699](1699-root-licence-files-eupl.md) for the root `LICENSE-MIT` file)
 - **Date**: 2026-05-27
 - **Deciders**: Lusoris
 - **Tags**: rebrand, fork-policy, modernization, license, vmafx, build, ci, cli, docs

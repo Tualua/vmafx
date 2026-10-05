@@ -4112,6 +4112,12 @@
       },
       "target": "0683-cjson-banned-function-remediation.md"
     },
+    "0686": {
+      "sites": {
+        "scripts/ci/tests/test_check_licence_metadata.py": 2
+      },
+      "target": "0686-vmafx-rebrand-aggressive-modernization.md"
+    },
     "0690": {
       "sites": {
         "core/test/test_cli_parse.c": 7,
@@ -5595,7 +5601,7 @@
     },
     "1036": {
       "sites": {
-        "deny.toml": 2
+        "deny.toml": 1
       },
       "target": "1036-licensing-spdx-svm-copyright.md"
     },
@@ -6027,6 +6033,7 @@
         "core/src/feature/rust/tad/Cargo.toml": 1,
         "deploy/helm/vmafx/Chart.yaml": 1,
         "pyproject.toml": 1,
+        "scripts/ci/check_licence_metadata.py": 1,
         "scripts/release/tests/test-release-please-draft-gate.sh": 2
       },
       "target": "1127-single-semver-release-stream.md"
@@ -7455,23 +7462,28 @@
       "sites": {
         ".github/workflows/required-aggregator.yml": 1,
         ".github/workflows/standards-gate.yml": 2,
-        "lefthook.yml": 3
+        "lefthook.yml": 3,
+        "scripts/dev/relicense_fork_files.py": 1
       },
       "target": "1249-praetor-governance-adoption.md"
     },
     "1250": {
       "sites": {
         ".config/lint-exceptions.d/spdx.toml": 1,
-        ".github/workflows/lint-and-format.yml": 2,
+        ".github/workflows/lint-and-format.yml": 3,
         ".github/workflows/required-aggregator.yml": 1,
-        ".pre-commit-config.yaml": 3,
+        ".pre-commit-config.yaml": 4,
+        "Cargo.toml": 1,
         "REUSE.toml": 3,
         "cmd/vmafx-node/bpf/add_spdx_header.sh": 1,
         "cmd/vmafx-node/bpf/gen.go": 1,
         "core/src/mcp/meson.build": 1,
+        "deny.toml": 1,
+        "deploy/helm/vmafx/Chart.yaml": 1,
         "docker/Dockerfile.production": 1,
         "python/test/setup_metadata_test.py": 2,
         "scripts/ci/check-copyright.sh": 7,
+        "scripts/ci/check_licence_metadata.py": 8,
         "scripts/ci/tests/test_check_copyright.py": 7,
         "scripts/ci/tests/test_spdx_tag_matches_notice.py": 1,
         "scripts/dev/relicense_fork_files.py": 1,
@@ -10364,6 +10376,7 @@
         ".github/workflows/supply-chain.yml": 2,
         "Dockerfile.go-server": 2,
         "REUSE.toml": 2,
+        "dev/Containerfile": 1,
         "docker/Dockerfile.controller": 3,
         "docker/Dockerfile.node": 5,
         "docker/Dockerfile.operator": 2,
@@ -10616,6 +10629,14 @@
       },
       "target": "1559-ebpf-kernel-licence-string.md"
     },
+    "1560": {
+      "sites": {
+        "python/test/setup_metadata_test.py": 2,
+        "scripts/ci/check_licence_metadata.py": 1,
+        "tools/rc1-tester/pyproject.toml": 1
+      },
+      "target": "1560-python-package-licence-union.md"
+    },
     "1561": {
       "sites": {
         "core/src/feature/arm64/vif_neon.c": 1,
@@ -10651,6 +10672,7 @@
     "1564": {
       "sites": {
         ".github/workflows/dev-container-publish.yml": 2,
+        "dev/Containerfile": 1,
         "scripts/ci/require-private-ghcr-package.sh": 1,
         "scripts/ci/tests/test_require_private_ghcr_package.py": 1
       },
@@ -10700,7 +10722,7 @@
     "1568": {
       "sites": {
         ".github/workflows/dev-container-build.yml": 1,
-        ".github/workflows/lint-and-format.yml": 3,
+        ".github/workflows/lint-and-format.yml": 4,
         ".github/workflows/rule-enforcement.yml": 2,
         ".github/workflows/tests-and-quality-gates.yml": 2,
         "scripts/ci/suite_registry.py": 3,
@@ -10943,7 +10965,7 @@
         "scripts/ci/tests/test_ci_impact.py": 2,
         "scripts/ci/tests/test_hiss_replay_contract.py": 2,
         "scripts/ci/tests/test_pr_time_verify_workflows.py": 2,
-        "scripts/ci/tests/test_required_release_legs.py": 3
+        "scripts/ci/tests/test_required_release_legs.py": 4
       },
       "target": "1687-required-release-dry-run-legs.md"
     },
@@ -10965,6 +10987,28 @@
         "core/test/test_sycl_zero_copy_model_gate.c": 2
       },
       "target": "1688-sycl-zero-copy-luma-only-admission.md"
+    },
+    "1699": {
+      "sites": {
+        ".github/workflows/lint-and-format.yml": 3,
+        ".pre-commit-config.yaml": 2,
+        "Cargo.toml": 1,
+        "REUSE.toml": 2,
+        "core/src/feature/rust/tad/Cargo.toml": 1,
+        "deny.toml": 1,
+        "deploy/helm/vmafx/Chart.yaml": 1,
+        "dev/Containerfile": 3,
+        "python/test/setup_metadata_test.py": 2,
+        "scripts/ci/check_licence_metadata.py": 5,
+        "scripts/ci/tests/test_check_licence_metadata.py": 3,
+        "scripts/ci/tests/test_required_release_legs.py": 2,
+        "scripts/ci/tests/test_reuse_compliance.py": 2,
+        "scripts/dev/relicense_fork_files.py": 3,
+        "scripts/dev/relicense_provenance.toml": 1,
+        "scripts/dev/tests/test_relicense_fork_files.py": 1,
+        "tools/rc1-tester/pyproject.toml": 1
+      },
+      "target": "1699-root-licence-files-eupl.md"
     },
     "1700": {
       "sites": {

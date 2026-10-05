@@ -366,6 +366,23 @@ repos:
         files: '^scripts/dev/(relicense_fork_files\.py|relicense_provenance\.toml|tests/test_relicense_fork_files\.py)$'
         pass_filenames: false
 
+      - id: check-licence-metadata
+        name: Root licence files and package licence fields agree with the files (ADR-1250, ADR-1699)
+        # Standard library only and about two seconds, so it runs on every
+        # commit: a new file can change the licences a package ships. In CI the
+        # Licence Provenance job runs it; the pre-commit job skips this id.
+        entry: python3 -B scripts/ci/check_licence_metadata.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: test-check-licence-metadata
+        name: Licence-metadata gate refuses its planted defects (ADR-1699)
+        entry: python3 -B scripts/ci/tests/test_check_licence_metadata.py
+        language: system
+        files: '^(scripts/ci/(check_licence_metadata\.py|tests/test_check_licence_metadata\.py)|tools/rc1-tester/image/licensing\.(py|json)|LICENSE[^/]*|LICENSES/.*)$'
+        pass_filenames: false
+
       - id: test-upstream-parity-pin
         name: Recorded upstream head parses and the Licence Provenance job reads it (ADR-1474)
         entry: python3 -B scripts/ci/tests/test_upstream_parity_pin.py

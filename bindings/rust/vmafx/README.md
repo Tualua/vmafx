@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # vmafx — safe Rust bindings to libvmaf
 
-[![License](https://img.shields.io/badge/license-BSD--3--Clause--Plus--Patent-blue.svg)](../../../LICENSE)
+[![License](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](../../../LICENSE)
 
 Safe, idiomatic Rust API over the raw FFI exposed by [`vmafx-sys`](../vmafx-sys).
 

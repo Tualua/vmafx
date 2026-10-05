@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 [project]
 name = "vmaf-ensemble-training-kit"
 version = "0.1.0"

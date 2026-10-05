@@ -28,7 +28,9 @@ maintainers:
   - name: Lusoris
     url: https://github.com/lusoris
 annotations:
-  artifacthub.io/license: BSD-2-Clause-Patent
+  # The licence of the chart's own files (ADR-1250, ADR-1699); the subchart in
+  # charts/ declares its own. scripts/ci/check_licence_metadata.py checks both.
+  artifacthub.io/license: EUPL-1.2
 
 dependencies:
   # Optional Prometheus Pushgateway — needed when Jobs push metrics to

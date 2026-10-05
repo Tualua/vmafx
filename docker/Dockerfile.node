@@ -489,7 +489,7 @@ ARG VMAFX_SOURCE_COMMIT=unknown
 ARG VMAFX_IMAGE_TAG=unknown
 RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
@@ -511,7 +511,7 @@ FROM ${RELEASE_PYTHON_BASE} AS node-licence-check
 RUN --mount=type=bind,from=node-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \

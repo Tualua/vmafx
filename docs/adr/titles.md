@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1279), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1280), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5075,6 +5075,10 @@ Every ADR, one heading each (1279), so the site search finds an ADR by its title
 ## ADR-1688: The SYCL zero-copy path admits only extractors that compute from the shared luma, and names every other one
 
 [1688-sycl-zero-copy-luma-only-admission](1688-sycl-zero-copy-luma-only-admission.md)
+
+## ADR-1699: The root licence files state ADR-1250's terms, and every package manifest declares the licences of the files it ships
+
+[1699-root-licence-files-eupl](1699-root-licence-files-eupl.md)
 
 ## ADR-1700: The tester selectors follow their own paths, not the full-mode fallback
 

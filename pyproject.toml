@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Centralizes Python linter/formatter config for the fork-added Python tooling
 # (ai/, scripts/) and the existing python/ tree. Upstream-authored python/
 # tests are formatted but not lint-failed (see [tool.ruff.lint.per-file-ignores]).

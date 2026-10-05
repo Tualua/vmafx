@@ -185,6 +185,7 @@ class Candidates(unittest.TestCase):
             "tools/figures/mkdocs_hook.py",
             "tools/figures/dist/player.js",
             ".config/agent/hooks/block_evasion.py",
+            ".codex/agents/c-reviewer.toml",
         ):
             with self.subTest(path=path):
                 self.assertFalse(REL.is_candidate_path(path))
@@ -195,9 +196,31 @@ class Candidates(unittest.TestCase):
             "core/src/feature/hip/integer_adm_hip.c",
             ".config/agent/hooks/other_hook.py",
             "tools/vmaf-tune/src/vmaftune/cli.py",
+            ".codex/config.toml",
+            "core/src/feature/rust/tad/Cargo.toml",
         ):
             with self.subTest(path=path):
                 self.assertTrue(REL.is_candidate_path(path))
+
+    def test_a_toml_file_takes_a_hash_comment_header(self) -> None:
+        """ADR-1699: manifests and tool configuration are classified, not skipped."""
+        self.assertEqual(REL.comment_style("core/src/feature/rust/tad/Cargo.toml"), "hash")
+        out = rewrite('[package]\nname = "x"\n', "Cargo.toml")
+        self.assertEqual(
+            out, f'# Copyright {YEAR} Lusoris\n# {TAG} EUPL-1.2\n\n[package]\nname = "x"\n'
+        )
+
+    def test_a_package_manifest_name_carries_no_provenance(self) -> None:
+        """Upstream's python/pyproject.toml does not veto a fork package's manifest."""
+        up = REL.Upstream(
+            frozenset({"python/pyproject.toml"}), frozenset({"pyproject.toml"}), frozenset()
+        )
+        prov = REL.load_provenance(REL.PROVENANCE, ROOT.parent)
+        text = '[project]\nname = "fork-tool"\n'
+        self.assertIsNone(REL.static_verdict("tools/fork-tool/pyproject.toml", text, up, prov))
+        self.assertEqual(
+            REL.static_verdict("python/pyproject.toml", text, up, prov), "upstream-path"
+        )
 
 
 class HeaderInsertion(unittest.TestCase):

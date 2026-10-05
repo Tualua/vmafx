@@ -360,6 +360,7 @@ from = ["netflix-speed"]  # transcribes update_entropy() and get_speed_score() o
 "ai/scripts/validate_vmaf_tiny_v3.py" = "mirrors the fork's own validate_vmaf_tiny_v2.py"
 "ai/scripts/validate_vmaf_tiny_v4.py" = "mirrors the fork's own validate_vmaf_tiny_v3.py"
 "ai/train/train_combined.py" = "mirrors a training methodology"
+"bindings/rust/vmafx-sys/Cargo.toml" = "a Cargo manifest; 'libvmaf.h' names the header bindgen reads (ADR-1699)"
 "core/src/dnn/dnn_ctx.h" = "'translation unit' names a C concept"
 "core/src/feature/common/convolution_avx512.c" = "widens the upstream AVX2 convolution it already credits"
 "core/src/feature/niqe_model.h" = "fork-trained model data; the Netflix line it cites keeps it on its terms"

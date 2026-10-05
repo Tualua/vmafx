@@ -82,6 +82,18 @@ backend within it.
 
 ## Build, test and CI
 
+- **Root licence files ([ADR-1699](../adr/1699-root-licence-files-eupl.md))**:
+  the root holds `LICENSE` (the EUPL-1.2, byte for byte `LICENSES/EUPL-1.2.txt`)
+  and `NOTICE` (Netflix's `LICENSE`, unchanged). An
+  upstream sync that changes Netflix's `LICENSE` applies it to
+  `NOTICE`; no sync brings back `LICENSE-MIT` or another
+  root licence file. Package licence fields name the licences of the files the
+  package ships, and fork `.toml` files carry an EUPL-1.2 header. The root
+  `go.mod` keeps its `retract [v1.0.0-rc.1, v1.0.0-rc.2]`.
+  `scripts/ci/check_licence_metadata.py` (required
+  `Licence Provenance` job and a pre-commit hook) refuses each breach. See
+  [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,

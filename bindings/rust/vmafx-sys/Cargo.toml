@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 [package]
 name = "vmafx-sys"
 # Crate version - independently versioned on purpose (ADR-1127, reaffirmed by

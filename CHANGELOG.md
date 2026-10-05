@@ -4594,6 +4594,24 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [ADR-1474](docs/adr/1474-relicense-helper-headers-and-ci-check.md)).
 
 
+- **The repository root states the fork's licence, and every package declares
+  the licences of the files it ships.** `LICENSE` is now the EUPL-1.2, the
+  licence of the files the fork wrote; Netflix's BSD-2-Clause-Patent text and
+  copyright notice moved unchanged to `NOTICE`, a name licence detectors do not
+  read as a licence file, so `LICENSE` is the only root licence file (licensee
+  9.18.0 reports the project as EUPL-1.2; on master it found an MIT licence). The `vmafx-sys` and `vmafx` crates declare `EUPL-1.2`
+  instead of `BSD-2-Clause-Patent`, the Helm chart's `artifacthub.io/license` is
+  `EUPL-1.2`, the vendored Prometheus Pushgateway subchart is recorded as
+  Apache-2.0, `vmafx-rc1-tester` declares `EUPL-1.2 AND MIT`, and the fork's
+  `.toml` manifests and configuration files carry an SPDX header (two
+  `pyproject.toml` files moved from `BSD-2-Clause-Patent` to `EUPL-1.2`), and the
+  dev image's licence label names the licences of the VMAFx files it copies.
+  `scripts/ci/check_licence_metadata.py` holds the root files and every manifest
+  to the files in the required `Licence Provenance` check and on every commit.
+  Published artifacts keep carrying the same licence texts
+  ([licensing](docs/licensing.md), ADR-1699).
+
+
 - The repository no longer carries `.github/rulesets/main.json`, praetor's
   template that declared two approvals, code-owner review and signed commits
   while the live ruleset on `master` enforces one approval and neither of the
@@ -4777,6 +4795,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   options, the fuzz README and the CI comments are corrected
   ([CLI](docs/usage/cli.md), [pictures](docs/api/pictures.md), [env vars](docs/usage/env-vars.md)).
   FFmpeg patch impact: none.
+
+
+- **`LICENSE-MIT` in 1.0.0-rc.1 and 1.0.0-rc.2 was stale.** The trees of both
+  release candidates held a root `LICENSE-MIT` ("Copyright (c) 2026 Lusoris"),
+  a leftover of ADR-0686's plan to dual-license fork code under
+  BSD-3-Clause-Plus-Patent or MIT, which ADR-1250 replaced before the first
+  candidate. ADR-1250 governs: fork-authored code is EUPL-1.2, Netflix's code is
+  BSD-2-Clause-Patent, and each file's SPDX header is authoritative. The file is
+  removed, the root `go.mod` retracts `v1.0.0-rc.1` and `v1.0.0-rc.2`, and the
+  tags stay. Copies remain in GitHub's source archives of the tags made between
+  2026-05-28 and 2026-10-05 and in the Go module proxy's zips of both versions;
+  no published image, release file, tester bundle or Python package contained
+  it ([licensing](docs/licensing.md#the-stale-license-mit-in-their-source-trees),
+  ADR-1699).
 
 
 - `scripts/ci/check-state-md-rows.sh` works with the `mawk` of Debian 12. That

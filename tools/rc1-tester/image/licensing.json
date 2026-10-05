@@ -3,7 +3,7 @@
  "schema_version": 1,
  "spdx_texts": {
   "BSD-2-Clause": "LICENSES/BSD-2-Clause.txt",
-  "BSD-2-Clause-Patent": "LICENSE",
+  "BSD-2-Clause-Patent": "NOTICE",
   "BSD-3-Clause": "LICENSES/BSD-3-Clause.txt",
   "BSD-3-Clause-Clear": "LICENSES/BSD-3-Clause-Clear.txt",
   "EUPL-1.2": "LICENSES/EUPL-1.2.txt",
@@ -267,9 +267,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -558,9 +558,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -785,9 +785,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -1003,9 +1003,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -1491,9 +1491,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -1837,9 +1837,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -2089,9 +2089,9 @@
      "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
      "texts": [
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "netflix-vmaf_resource-LICENSE.txt",
-       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's NOTICE"
       }
      ]
     },
@@ -3867,7 +3867,7 @@
        "label": "the licence of the vmaf-tune files (EUPL-1.2)"
       },
       {
-       "repo": "LICENSE",
+       "repo": "NOTICE",
        "name": "BSD-2-Clause-Patent.txt",
        "dist": "vmaf-tune",
        "label": "vmaftune/executor.py (BSD-2-Clause-Patent)"

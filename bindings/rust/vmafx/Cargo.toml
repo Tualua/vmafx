@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 [package]
 name = "vmafx"
 # Crate version - independently versioned on purpose (ADR-1127, reaffirmed by
@@ -7,7 +10,7 @@ name = "vmafx"
 version = "0.1.0"
 edition.workspace = true
 description = "Safe, idiomatic Rust bindings to libvmaf (VMAFX fork) — Phase 1 scaffold (ADR-0929)"
-license = "BSD-2-Clause-Patent"
+license = "EUPL-1.2"
 authors = ["Lusoris <lusoris@pm.me>"]
 repository = "https://github.com/VMAFx/vmafx"
 keywords = ["video", "vmaf", "quality", "ffmpeg", "ffi"]

@@ -36,6 +36,14 @@ Do not pick a tag by hand and do not remove a notice. `[ports]`, `[not_ports]`
 and the family rules are reviewed data; a new entry is part of the pull
 request's diff, with the reason in it.
 
+`.toml` files are candidates like the other types the tool can comment (since
+[ADR-1699](../adr/1699-root-licence-files-eupl.md)): a new fork manifest or
+configuration file without a header shows up as `relicense <path>`, and
+`--write` gives it the two-line `#` header (the `Copyright <year> Lusoris`
+line and the EUPL-1.2 tag) the tool writes into Python files. The name
+`pyproject.toml` carries no provenance signal, so upstream's
+`python/pyproject.toml` does not veto a fork package's manifest.
+
 ## Running it locally
 
 ```bash
@@ -101,6 +109,8 @@ and in `strictMustReport`, so a run in which it never reported fails too.
 ## What the tool does not manage
 
 - `scripts/ci/exact_twins.d/` (data fragments whose suffix names a backend).
+- `.codex/agents/*.toml` (praetor's Codex projections of `.agents/agents/`,
+  written by the engine; [ADR-1699](../adr/1699-root-licence-files-eupl.md)).
 - `tools/figures/` and `.config/agent/hooks/block_evasion.py` (byte-locked
   files of the governance engine).
 - Verbatim mirrors of another repository (`[mirrors]`, the Pelorus files).

@@ -95,6 +95,8 @@ class ReuseComplianceTests(unittest.TestCase):
         cases = {
             # Root and renamed Netflix/vmaf descendants remain BSD.
             "README.md": ({"BSD-2-Clause-Patent"}, {"Netflix, Inc.", "Lusoris"}),
+            # Netflix's root LICENSE, moved to NOTICE (ADR-1699).
+            "NOTICE": ({"BSD-2-Clause-Patent"}, {"Netflix, Inc."}),
             "docs/usage/python.md": (
                 {"BSD-2-Clause-Patent"},
                 {"Netflix, Inc. and VMAF contributors", "Lusoris"},
@@ -129,6 +131,11 @@ class ReuseComplianceTests(unittest.TestCase):
             "ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch": (
                 {"LGPL-2.1-or-later AND GPL-2.0-or-later"},
                 {"the FFmpeg developers", "Lusoris"},
+            ),
+            # A vendored Helm dependency keeps its upstream chart's licence (ADR-1699).
+            "deploy/helm/vmafx/charts/prometheus-pushgateway-3.9.0.tgz": (
+                {"Apache-2.0"},
+                {"the prometheus-community/helm-charts contributors"},
             ),
         }
         for path, (licenses, holders) in cases.items():

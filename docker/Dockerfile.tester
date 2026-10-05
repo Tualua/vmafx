@@ -157,7 +157,7 @@ ARG VMAFX_SOURCE_COMMIT=unknown
 ARG VMAFX_IMAGE_TAG=unknown
 RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=vmaf-build,source=/licence-inputs,target=/licence-inputs \
@@ -332,7 +332,7 @@ ARG VMAFX_SOURCE_COMMIT=unknown
 ARG VMAFX_IMAGE_TAG=unknown
 RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=sycl-build,source=/licence-inputs,target=/licence-inputs \
@@ -374,7 +374,7 @@ FROM ${RELEASE_PYTHON_BASE} AS sycl-licence-check
 RUN --mount=type=bind,from=sycl-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=sycl-build,source=/licence-inputs,target=/licence-inputs \
@@ -572,7 +572,7 @@ ARG VMAFX_SOURCE_COMMIT=unknown
 ARG VMAFX_IMAGE_TAG=unknown
 RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=cuda-build,source=/licence-inputs,target=/licence-inputs \
@@ -610,7 +610,7 @@ FROM ${RELEASE_PYTHON_BASE} AS cuda-licence-check
 RUN --mount=type=bind,from=cuda-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=cuda-build,source=/licence-inputs,target=/licence-inputs \
@@ -788,7 +788,7 @@ ARG VMAFX_SOURCE_COMMIT=unknown
 ARG VMAFX_IMAGE_TAG=unknown
 RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=hip-build,source=/licence-inputs,target=/licence-inputs \
@@ -825,7 +825,7 @@ FROM ${RELEASE_PYTHON_BASE} AS hip-licence-check
 RUN --mount=type=bind,from=hip-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=hip-build,source=/licence-inputs,target=/licence-inputs \
@@ -887,7 +887,7 @@ FROM ${RELEASE_PYTHON_BASE} AS licence-check
 RUN --mount=type=bind,from=assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
-    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=vmaf-build,source=/licence-inputs,target=/licence-inputs \

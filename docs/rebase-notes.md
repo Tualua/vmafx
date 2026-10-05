@@ -524,6 +524,41 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
 - `core/test/test_mcp_*.c`, `core/src/mcp/{mcp,dispatcher}.c` and three fuzz
   harnesses carry `NOLINTBEGIN(modernize-use-nullptr)` blocks citing ADR-1138
   (C builds without `nullptr` on MSVC); an upstream-style sync must keep them.
+## Root licence files follow ADR-1250; package licence fields match their files (ADR-1699, 2026-10-05)
+
+`fix/root-licence-files-eupl`. Root files, manifests, `go.mod`, licence record, the provenance tool, one CI step and one hook; no C library change.
+
+- The root holds `LICENSE` (the EUPL-1.2, byte for byte `LICENSES/EUPL-1.2.txt`)
+  and `NOTICE` (Netflix's `LICENSE`, moved unchanged; `REUSE.toml` annotates
+  it). An upstream sync that touches Netflix's `LICENSE` lands the change in
+  `NOTICE` and keeps the fork's `LICENSE`; it never brings back
+  `LICENSE-MIT`, a `LICENSE-BSD-2-Clause-Patent` or any other root file name
+  licensee reads as a licence file. `scripts/ci/check_licence_metadata.py`
+  refuses each.
+- The root `go.mod` carries `retract [v1.0.0-rc.1, v1.0.0-rc.2]`; a `go mod`
+  rewrite or a sync of `go.mod` keeps it.
+- `tools/rc1-tester/image/licensing.json` takes the BSD-2-Clause-Patent text
+  (`spdx_texts` and every Netflix/vmaf_resource `repo` text) from
+  `NOTICE`; every Dockerfile licence stage bind-mounts that
+  file (not `LICENSE`), `docker-publish-tester.yml` checks it out from the
+  recipe ref, also in the GPU job, and the `tester_image` selector of
+  `.github/ci-impact.json` lists it.
+- Licence fields: workspace `Cargo.toml` and `bindings/rust/vmafx/Cargo.toml`
+  `EUPL-1.2`; `core/src/feature/rust/tad/Cargo.toml` its own
+  `EUPL-1.2 AND BSD-2-Clause-Patent`; Helm `artifacthub.io/license: EUPL-1.2`;
+  `tools/rc1-tester` `EUPL-1.2 AND MIT` with `LICENSES/`; `deny.toml` allows
+  `EUPL-1.2`. `REUSE.toml` records `deploy/helm/vmafx/charts/prometheus-pushgateway-*.tgz`
+  as Apache-2.0 (new `LICENSES/Apache-2.0.txt`). A Renovate bump of the
+  subchart keeps that pattern matching.
+- The Python package model moved from `python/test/setup_metadata_test.py` into
+  the gate module, which the test imports; change it there.
+- `scripts/dev/relicense_fork_files.py` classifies `.toml` and treats
+  `pyproject.toml` as a name without provenance signal; `.codex/agents/` is
+  excluded. Every fork `.toml` file carries an EUPL-1.2 header; a new one without
+  it fails `Licence Provenance` (`--write` adds it). Ten lock headers were
+  restamped for the `pyproject.toml` header lines.
+- `dev/Containerfile`: the licences label sits on `libvmaf-build` (derived from
+  the files it copies); `build-deps` and `release-build` carry none.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 
