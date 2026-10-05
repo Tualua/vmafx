@@ -410,6 +410,18 @@
     },
     {
       "customType": "regex",
+      "description": "govulncheck release of the Go vulnerability gate, owned by build-config.env and run by scripts/ci/govulncheck-gate.py.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)GOVULNCHECK_VERSION=\"(?<currentValue>v[0-9.]+)\""
+      ],
+      "datasourceTemplate": "go",
+      "depNameTemplate": "golang.org/x/vuln"
+    },
+    {
+      "customType": "regex",
       "description": "Intel compute-runtime (NEO) release shared by the dev container GPU runtime and the ocloc every SYCL build host installs. build-config.env owns the version; consumers source it directly. Tracks github.com/intel/compute-runtime releases. See ADR-0605, ADR-1360.",
       "managerFilePatterns": [
         "/^build-config\\.env$/"

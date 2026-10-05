@@ -62011,3 +62011,9 @@ No score, public API or FFmpeg patch impact.
 `rc3-revendor-pelorus-2`. `PELORUS_VENDOR_SHA` moves to `5f5614b0229d` (VMAFx/pelorus #78). The ten
 vendored files are rendered by `scripts/sync-pelorus-interop.sh --update`, never edited by hand; a rebase
 that conflicts in them takes either side and re-runs the script, then the drift check.
+## govulncheck gate and the Go OpenVEX document (ADR-1899)
+
+- `scripts/ci/govulncheck-gate.py` runs in `go-ci.yml` after `go vet`; `GOVULNCHECK_VERSION` lives
+  in `build-config.env` with its Renovate manager. A finding that is not called needs a
+  statement in `security/vex/go.openvex.json`; a "not present" justification covers module-level
+  findings only. No upstream file is involved; no score, public API or FFmpeg patch impact.

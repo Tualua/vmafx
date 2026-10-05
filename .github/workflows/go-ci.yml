@@ -144,6 +144,13 @@ jobs:
         if: steps.impact.outputs.go_checks == 'true'
         run: go vet ./...
 
+      # Symbol-level vulnerability scan (GOVULNCHECK_VERSION of build-config.env).
+      # Fails on a called vulnerable symbol, or on an uncalled advisory without
+      # a not_affected statement in security/vex/go.openvex.json.
+      - name: govulncheck (symbol level, OpenVEX)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: python3 scripts/ci/govulncheck-gate.py
+
       # The runner is what pkg/ai.Registry.Infer execs; putting it on PATH
       # lets pkg/ai's TestInfer_RealRunner drive the real subprocess path
       # instead of skipping. Built once here, reused by the smoke below.

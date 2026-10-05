@@ -139,7 +139,7 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
-.PHONY: lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
+.PHONY: govulncheck lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
 	tidy-ratchet-build tidy-lane tidy-lane-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
 	python-locks-check python-locks-write \
@@ -174,6 +174,12 @@ python-locks-write:
 # Go security scan (gosec). Skips generated files by default; surfaces every
 # G* finding outside the gen/ tree. Source of truth for the gate added by
 # the gosec-findings-fix sweep — keep the touched-file rule honest.
+# Symbol-level Go vulnerability scan with the OpenVEX statements of
+# security/vex/go.openvex.json (docs/development/dependency-advisories.md).
+# Needs network access; nothing is linked, so no libvmaf build.
+govulncheck:
+	python3 scripts/ci/govulncheck-gate.py
+
 lint-go:
 	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
 	@echo "--- gosec (exclude-generated) ---"

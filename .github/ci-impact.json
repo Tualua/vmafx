@@ -222,6 +222,8 @@
     "go": {
       "patterns": [
         "mcp-server/vmaf-mcp/tool-contract.json",
+        "scripts/ci/govulncheck-gate.py",
+        "security/vex/go.openvex.json",
         "cmd/*",
         "cmd/**",
         "pkg/*",

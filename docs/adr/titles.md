@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1287), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1288), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5159,3 +5159,7 @@ Every ADR, one heading each (1287), so the site search finds an ADR by its title
 ## ADR-1886: torch only where training runs
 
 [1886-torch-training-environments-only](1886-torch-training-environments-only.md)
+
+## ADR-1899: govulncheck at symbol level, OpenVEX for what is not called
+
+[1899-govulncheck-symbol-gate-openvex](1899-govulncheck-symbol-gate-openvex.md)

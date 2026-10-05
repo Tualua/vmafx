@@ -9,7 +9,8 @@ triaged. Vulnerabilities in VMAFx's own code are reported through
 - **Python:** the dependency dashboard (issue #941, Renovate) lists OSV
   advisories against a declared dependency. It lists one entry per package that
   declares the dependency.
-- **Go:** module advisories from the Go vulnerability database.
+- **Go:** the Go vulnerability database, through the govulncheck gate below,
+  in the `Go CI` workflow and `make govulncheck`.
 
 ## Triage, in order
 
@@ -40,7 +41,33 @@ starts to call an affected function.
 
 | Document | Dependency | Advisories | Products | Status |
 | --- | --- | --- | --- | --- |
+| `security/vex/go.openvex.json` | golang.org/x/crypto v0.57.0 | GO-2026-5932 (the deprecated `openpgp` packages; no fixed version) | vmafx Go module | `not_affected`, `vulnerable_code_not_present`: no vmafx binary compiles an `openpgp` package |
 | `security/vex/torch.openvex.json` | torch 2.14.1 | PYSEC-2025-189, -190, -192 to -197, -210 (no fixed release in OSV) | vmaf-train (`ai/`), vmaf-ensemble-training-kit | `not_affected`: no profiler, RNN, TorchScript loading or eager-quantized modules in the training code; `torch.jit.script` and the CUDA allocator never receive adversary input |
+
+## The Go gate
+
+`scripts/ci/govulncheck-gate.py`
+([ADR-1899](../adr/1899-govulncheck-symbol-gate-openvex.md)) runs govulncheck
+(`GOVULNCHECK_VERSION` in `build-config.env`) at symbol level and judges each
+advisory by its most specific finding:
+
+| Finding | Gate |
+| --- | --- |
+| vmafx calls a vulnerable symbol | fails: update the module or stop calling it |
+| a package of the advisory is imported, nothing calls it | fails unless `go.openvex.json` has a `not_affected` statement whose justification says why the code cannot be reached (`vulnerable_code_not_in_execute_path`, `vulnerable_code_cannot_be_controlled_by_adversary`, `inline_mitigations_already_exist`) |
+| only the module is required | fails unless `go.openvex.json` has any `not_affected` statement |
+| govulncheck did not complete | exit 2, never a pass |
+
+Run it with `make govulncheck`. It needs network access (the govulncheck
+module and the vulnerability database) and a C compiler for cgo's type
+information, but no libvmaf build: nothing is linked.
+
+A module that calls `golang.org/x/text/language.ParseAcceptLanguage` at
+`golang.org/x/text` v0.3.7 fails it with
+`GO-2022-1059: vmafx calls golang.org/x/text/language.ParseAcceptLanguage`
+(govulncheck v1.8.0, 2026-10-05). Without `go.openvex.json` the repository
+fails it with `GO-2026-5932: module golang.org/x/crypto has no not_affected
+statement`.
 
 ## Checking a change locally
 
