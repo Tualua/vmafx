@@ -1695,16 +1695,13 @@ extern "C" void vmaf_sycl_print_timing(VmafSyclState *state)
     double const avg_gpu = state->sum_gpu_ms / state->timing_frames;
     double const avg_total = avg_cpu + avg_gpu;
     double const fps = avg_total > 0 ? 1000.0 / avg_total : 0;
-    if (fprintf(stderr,
-                "[vmaf-sycl] timing: %" PRIu64 " frames, avg cpu=%.2fms gpu=%.2fms "
-                "total=%.2fms (%.1f fps), gpu%%=%.0f%%\n",
-                state->timing_frames, avg_cpu, avg_gpu, avg_total, fps,
-                100.0 * avg_gpu / avg_total) < 0) {
-        // Ignore stderr write failures for summary timing output
-    }
-    if (fflush(stderr) != 0) {
-        // Ignore fflush error on stderr
-    }
+    /* Through vmaf_log at INFO, so the summary follows the caller's log level:
+     * FFmpeg's libvmaf_sycl maps -loglevel to VmafConfiguration.log_level, and
+     * a raw fprintf(stderr) printed it even at -loglevel error. */
+    vmaf_log(VMAF_LOG_LEVEL_INFO,
+             "[vmaf-sycl] timing: %" PRIu64 " frames, avg cpu=%.2fms gpu=%.2fms "
+             "total=%.2fms (%.1f fps), gpu%%=%.0f%%\n",
+             state->timing_frames, avg_cpu, avg_gpu, avg_total, fps, 100.0 * avg_gpu / avg_total);
 
     // Print per-kernel profiling if enabled
     if (state->profiling_enabled) {
