@@ -6665,7 +6665,7 @@
         "core/tools/vmaf_vpl.c": 1,
         "core/tools/y4m_input.c": 1,
         "core/tools/yuv_input.c": 1,
-        "ffmpeg-patches/test/fault_inject_sycl_import.c": 1,
+        "ffmpeg-patches/test/fault_inject_libvmaf.c": 1,
         "scripts/ci/tests/test_tidy_ratchet.py": 2,
         "scripts/ci/tidy-ratchet.py": 1,
         "scripts/dev/preflight.sh": 3,
@@ -11059,6 +11059,14 @@
         "core/test/test_sycl_filter_import_contract.py": 2
       },
       "target": "1761-sycl-filter-import-retry-then-fail.md"
+    },
+    "1768": {
+      "sites": {
+        "core/test/meson.build": 1,
+        "core/test/test_ffmpeg_libvmaf_stop_contract.py": 2,
+        "ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh": 1
+      },
+      "target": "1768-ffmpeg-libvmaf-no-score-after-error.md"
     },
     "1794": {
       "sites": {

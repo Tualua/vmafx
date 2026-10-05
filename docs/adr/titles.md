@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1284), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1285), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5099,6 +5099,10 @@ Every ADR, one heading each (1284), so the site search finds an ADR by its title
 ## ADR-1762: Every translation unit is read by a clang-tidy lane or excepted by name
 
 [1762-tidy-every-translation-unit-read](1762-tidy-every-translation-unit-read.md)
+
+## ADR-1768: The FFmpeg libvmaf and libvmaf\_cuda filters print no pooled score after a mid-run error
+
+[1768-ffmpeg-libvmaf-no-score-after-error](1768-ffmpeg-libvmaf-no-score-after-error.md)
 
 ## ADR-1794: Bilinear column tables without a width limit
 

@@ -519,6 +519,23 @@ a contract test and `test_cambi`.
   feature-name dictionary before `cambi_metal_resolve_dimensions()`. Never move
   it after any write to an option slot; the contract's `_name_order_failures`
   checks every Metal twin.
+## libvmaf and libvmaf_cuda print no score after an error (ADR-1768, 2026-10-05)
+
+`fix/ffmpeg-libvmaf-no-score-after-error`. New FFmpeg patch `0021`, test helpers under
+`ffmpeg-patches/test/`.
+
+- `0021` deliberately diverges from upstream FFmpeg's `vf_libvmaf.c`; keep it on every series
+  refresh and do not drop it when upstream moves the surrounding lines. `stop_on_frame()`
+  logs the frame and the error once, sets `stopped` (declared by `0005`) and frees the
+  frame; `do_vmaf()` and `do_vmaf_cuda()` call it on every failed copy and read, and
+  `frame_cnt` advances only after a successful read. The shared `uninit()` prints no pooled
+  score after a stop or a failed flush, and no score line for a failed model. If upstream
+  rewrites these functions, carry the rule into the new code; do not take upstream's side.
+- `ffmpeg-patches/test/fault_inject_sycl_import.c` became `fault_inject_libvmaf.c` (it now
+  also injects `vmaf_read_pictures()` failures); both checks source `filter_check_lib.sh`.
+- `core/test/test_ffmpeg_libvmaf_stop_contract.py` reads the series;
+  `ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh` is the device run.
+
 ## libvmaf_sycl import retry, per-input VA display (ADR-1761, 2026-10-05)
 
 `fix/ffmpeg-sycl-import-retry`. FFmpeg patch `0005` and a device test under `ffmpeg-patches/test/`.
@@ -533,7 +550,7 @@ a contract test and `test_cambi`.
   `frame_cnt` only after a read succeeded; `uninit_metal()` prints no pooled score when it
   is set. A refresh keeps both; the other later patches moved by offsets only.
 - `core/test/test_sycl_filter_import_contract.py` reads the patch;
-  `ffmpeg-patches/test/check-sycl-import-retry.sh` with `fault_inject_sycl_import.c`
+  `ffmpeg-patches/test/check-sycl-import-retry.sh` with `fault_inject_libvmaf.c`
   (LD_PRELOAD) is the device run.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)

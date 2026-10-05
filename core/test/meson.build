@@ -2490,6 +2490,17 @@ test('test_sycl_filter_import_contract',
     timeout : 30,
 )
 
+# ADR-1768: after a mid-run error the FFmpeg libvmaf and libvmaf_cuda filters
+# log the frame and the error once and print no pooled score (patch 0021, a
+# deliberate divergence from upstream FFmpeg). Device-free: reads the series;
+# the device run is ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh.
+test('test_ffmpeg_libvmaf_stop_contract',
+    import('python').find_installation(),
+    args : files('test_ffmpeg_libvmaf_stop_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Host tests and source contracts of the Metal ports (ADR-1498). Each group
 # of ports adds its blocks directly below its own marker line.
 

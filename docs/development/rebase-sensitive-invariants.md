@@ -433,6 +433,14 @@ backend within it.
   stop. `core/test/test_sycl_filter_import_contract.py` and
   `core/test/test_metal_iosurface_filter_contract.py` guard it without a device,
   `ffmpeg-patches/test/check-sycl-import-retry.sh` on one.
+- **`libvmaf` and `libvmaf_cuda` print no pooled score after an error ([ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md))**:
+  FFmpeg patch `0021` is a deliberate divergence from upstream's `vf_libvmaf.c`.
+  `stop_on_frame()` logs the frame and the error once and sets `stopped`. `do_vmaf()` and
+  `do_vmaf_cuda()` call it on every failed copy and read, and `frame_cnt` advances only
+  after a successful read. The shared `uninit()` prints no score after a stop, a failed
+  flush or a failed model. A series refresh keeps the patch; when upstream rewrites these
+  functions, the rule moves into the new code. `core/test/test_ffmpeg_libvmaf_stop_contract.py`
+  guards it without a device, `ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh` on one.
 - **SYCL zero-copy admission ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md))**:
   `vmaf_read_pictures_sycl()` in `core/src/libvmaf.c` refuses, before counting a frame,
   every registered extractor whose `reads_shared_luma_only()` hook is absent or false for

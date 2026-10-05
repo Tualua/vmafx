@@ -105,6 +105,14 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   keeping its borrowed `CUcontext` alive through retries. The Vulkan hunks
   remain compatibility-only context for the removed backend, as described in
   `series.txt`; they do not restore a Vulkan runtime.
+- **`0021-libvmaf-print-no-pooled-score-after-a-mid-run-error.patch`** —
+  after a failed picture copy or `vmaf_read_pictures()`, the `libvmaf` and
+  `libvmaf_cuda` filters log the frame and the error once, free the frame and
+  stop; the shared `uninit()` prints no pooled score and writes no report,
+  and also prints none after a failed flush or for a model whose pooled score
+  failed. Upstream FFmpeg pools the frames read before the error. The
+  divergence is deliberate: keep it on every refresh
+  ([ADR-1768](../docs/adr/1768-ffmpeg-libvmaf-no-score-after-error.md)).
 
 Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
 gracefully when libvmaf was built without the relevant feature
@@ -213,11 +221,26 @@ docker exec -e VA_DEVICE=/dev/dri/renderD129 vmaf-dev-mcp \
 
 Runs `libvmaf_sycl` on QSV-decoded clips with failures injected into
 `vmaf_sycl_import_va_surface()` through `LD_PRELOAD`
-(`test/fault_inject_sycl_import.c`): a transient failure recovers with every
+(`test/fault_inject_libvmaf.c`): a transient failure recovers with every
 frame scored, a persistent one stops the run naming the frame and prints no
 score. It also checks two VA devices and an odd-height software input against
 the CPU filter. It needs an FFmpeg with the series that links `libvmaf.so`
 dynamically (set `FFMPEG`), and exits 77 without one or without a QSV device.
+
+### No pooled score after a mid-run error (CPU; CUDA where available)
+
+```bash
+docker exec vmaf-dev-mcp \
+  bash /workspace/ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh
+```
+
+Runs the `libvmaf` filter on software-decoded clips, and `libvmaf_cuda` on
+CUDA-decoded ones when the filter and a CUDA device are present, with the 5th
+`vmaf_read_pictures()` call failing (`test/fault_inject_libvmaf.c` through
+`LD_PRELOAD`). Each must exit non-zero, log one error naming frame 4 and the
+error, and print no `VMAF score` line and write no report. A failed flush must
+print no score either. Without `libvmaf_cuda` or a CUDA device those cases are
+reported as skipped. Both checks source `test/filter_check_lib.sh`.
 
 ## How to regenerate
 

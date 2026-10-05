@@ -195,7 +195,9 @@ These options exist on every vmaf filter (`libvmaf`, `libvmaf_sycl`,
 | `gpumask` | integer bitmask | `0` (all enabled) | Disable GPU dispatch: `1` disables CUDA (patch `0014`). |
 
 The filter publishes the final pooled score to FFmpeg's log as
-`VMAF score: <mean>`; the structured log at `log_path` is authoritative.
+`VMAF score: <mean>`; the structured log at `log_path` is authoritative. After
+an error it publishes neither; see
+[When a frame cannot be scored](#when-a-frame-cannot-be-scored).
 
 ### Pooling
 
@@ -219,6 +221,38 @@ falls back to `mean`, as upstream does.
 (see [ADR-0119](../adr/0119-cli-precision-default-revert.md) and
 [precision.md](precision.md)). The `VMAF score: <mean>` line in FFmpeg's own
 log is formatted by the filter and is not affected.
+
+### When a frame cannot be scored
+
+If the filter cannot copy a frame or hand it to libvmaf, it stops. The log
+shows one error naming the frame and the error, and FFmpeg exits non-zero:
+
+```text
+[Parsed_libvmaf_0] libvmaf: vmaf_read_pictures of frame 4 failed (Input/output error); the filter stops
+[Parsed_libvmaf_0] libvmaf: no pooled score: the filter stopped on the error above
+```
+
+The filter then prints no `VMAF score:` line and writes no `log_path` report.
+Upstream FFmpeg pools the frames read before the error and prints their score.
+This fork does not (patch `0021`,
+[ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md)): that score
+covers fewer frames than were decoded, and when the pooling itself fails
+upstream prints a meaningless value.
+
+Two related cases behave the same way:
+
+- **The end-of-stream flush fails.** The filter logs
+  `flushing libvmaf after frame <n> failed (<error>); no pooled score` and
+  prints no score and no report. The flush runs while the filter graph is torn
+  down, when the filter can no longer change FFmpeg's exit status, so this run
+  can exit 0. Check for the score line or the report file, not only the exit
+  status.
+- **One model's pooled score fails.** That model gets no `VMAF score:` line,
+  and no report is written.
+
+`libvmaf_cuda` follows the same rules. `libvmaf_sycl` and `libvmaf_metal` stop
+the same way
+([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md)).
 
 ### Feature option syntax
 
@@ -340,7 +374,11 @@ memory. It is not zero-copy: the filter copies each decoded frame device to devi
 libvmaf's own picture pool ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md);
 importing the decoder's frame without that copy is post-1.0 work). It needs
 libvmaf built with `-Denable_cuda=true` and FFmpeg configured with
-`--enable-libvmaf-cuda` (patch `0010`).
+`--enable-libvmaf-cuda` (patch `0010`). Its frames must be `yuv420p` or
+`yuv444p16` on the device, not the `nv12` that NVDEC outputs, so convert with
+`scale_cuda=format=yuv420p` first. A frame it cannot copy or read stops it
+with no pooled score, as for `libvmaf`
+([When a frame cannot be scored](#when-a-frame-cannot-be-scored)).
 
 ### `libvmaf_metal`
 

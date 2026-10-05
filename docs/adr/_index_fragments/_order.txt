@@ -1283,3 +1283,4 @@
 1868-candidate-map-2026-10-05
 1874-vmaf-list-backends
 1880-format-envelope-device-targets
+1768-ffmpeg-libvmaf-no-score-after-error
