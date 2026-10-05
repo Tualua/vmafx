@@ -187,6 +187,12 @@ feature or backend, and a missing or empty directory. The
 [generated table of exact twins](cross-backend-exact-twins.md) is rendered from
 the same files by `make docs-fragments-write`.
 
+A listed CUDA, SYCL or HIP twin also needs a recorded row on the
+[depth and layout matrix](exact-twin-matrix.md): every twin at 8, 10, 12 and 16
+bits and in 4:2:0, 4:2:2 and 4:4:4, `==` against the CPU on generated fixtures.
+`scripts/ci/exact_twin_matrix.py --record` writes the row, and
+`test_exact_twin_matrix_contract` fails while a listed twin has none.
+
 A cell whose two sides are the CPU extractor or a listed twin is compared with
 tolerance `0`, at every frame size and ahead of any calibration row, and both
 sides run with `--precision max` so that a last-bit difference is not rounded

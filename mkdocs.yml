@@ -426,6 +426,7 @@ nav:
       - CI runners: development/ci-runners.md
       - Cross-backend gate: development/cross-backend-gate.md
       - Exact GPU twins (generated): development/cross-backend-exact-twins.md
+      - Exact twins by depth and layout: development/exact-twin-matrix.md
       - RC3 home GPU retest: development/rc3-home-gpu-retest.md
       - Fuzzing: development/fuzzing.md
       - IDE setup: development/ide-setup.md

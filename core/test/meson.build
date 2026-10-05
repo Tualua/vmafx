@@ -186,6 +186,43 @@ test('test_parity_gate_covers_registered_twins',
     timeout : 30,
 )
 
+# Every twin declared exact in scripts/ci/exact_twins.d/ at 8, 10, 12 and 16
+# bits and in 4:2:0, 4:2:2 and 4:4:4, `==` against the CPU on generated
+# 357x353 fixtures (scripts/ci/exact_twin_matrix.py). The contract test holds,
+# without a device, that docs/development/exact-twin-matrix.md records a full,
+# passing row for every exact CUDA, SYCL and HIP twin, and the fixtures and the
+# comparison. One device test per backend this build enables; each skips (77)
+# without its device.
+test('test_exact_twin_matrix_contract',
+    import('python').find_installation(),
+    args : files('test_exact_twin_matrix_contract.py'),
+    suite : ['fast'],
+    timeout : 60,
+)
+if get_option('enable_tools')
+    exact_matrix_backends = []
+    if get_option('enable_cuda')
+        exact_matrix_backends += ['cuda']
+    endif
+    if get_option('enable_sycl')
+        exact_matrix_backends += ['sycl']
+    endif
+    if get_option('enable_hip') and get_option('enable_hipcc')
+        exact_matrix_backends += ['hip']
+    endif
+    foreach matrix_backend : exact_matrix_backends
+        test('test_' + matrix_backend + '_exact_twin_matrix',
+            import('python').find_installation(),
+            args : [files('../../scripts/ci/exact_twin_matrix.py'),
+                    '--vmaf-binary', vmaf.full_path(), '--backends', matrix_backend],
+            depends : [vmaf],
+            suite : ['slow', 'gpu', matrix_backend],
+            is_parallel : false,
+            timeout : 1800,
+        )
+    endforeach
+endif
+
 # ADR-1496: the macOS tester bundle measures every open Metal row with exact
 # tests: tools/rc1-tester/image/metal-rows.json against docs/state.md, the
 # Metal parity tests, the bundle's unit list and the gate. Device-free.

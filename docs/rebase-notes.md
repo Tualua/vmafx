@@ -18,6 +18,21 @@ search:
   `test_<backend>_v1_models_no_fallback` fails with the extractor named.
 - The test's known fallback is `float_adm=adm_csf_mode=1`. It moves to another
   default-only option when a twin implements `adm_csf_mode`.
+## Exact-twin depth and layout matrix (2026-10-05)
+
+`test/rc3-exact-twin-matrix`. Fork-only files: `scripts/ci/exact_twin_matrix.py`,
+`core/test/test_exact_twin_matrix_contract.py`, their blocks in
+`core/test/meson.build`, `docs/development/exact-twin-matrix.md`, a note in
+`scripts/ci/AGENTS.d/parity-exact-twins.md`.
+
+- A new fragment in `scripts/ci/exact_twins.d/` for CUDA, SYCL or HIP needs a
+  recorded matrix row in the same PR (`exact_twin_matrix.py --record`), or
+  `test_exact_twin_matrix_contract` fails.
+- `docs/development/exact-twin-matrix.md` is measurement output: on a conflict
+  in a backend's block, take either side and re-record that backend on its
+  device.
+- The fixture bytes are pinned in the contract test; a change to the generator
+  re-pins them and re-records every backend.
 ## Port of Netflix/vmaf golden-assertion updates `5c7770080`, `005988ead`, `4679db83c`, `d93495f5c`, `e3827e4dd` (2026-10-05)
 
 `port/upstream-golden-updates-2026-05`, [ADR-1828](adr/1828-port-netflix-golden-updates.md).
