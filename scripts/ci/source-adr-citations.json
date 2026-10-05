@@ -6610,6 +6610,7 @@
         "core/test/test_validate_pic_params_bpc.c": 1,
         "core/test/test_version.c": 1,
         "core/test/test_video_input_odd_dims.c": 1,
+        "core/test/test_vif_bilinear.c": 1,
         "core/test/test_vif_lifecycle.c": 1,
         "core/test/test_vif_neon.c": 1,
         "core/test/test_vif_simd.c": 1,
@@ -10932,6 +10933,12 @@
         "scripts/ci/tests/test_pr_time_verify_workflows.py": 2
       },
       "target": "1701-nightly-tester-image-build.md"
+    },
+    "1794": {
+      "sites": {
+        "core/src/feature/vif_tools.c": 1
+      },
+      "target": "1794-bilinear-column-tables-no-width-limit.md"
     },
     "1805": {
       "sites": {

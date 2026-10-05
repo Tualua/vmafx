@@ -1835,6 +1835,30 @@ test_speed_filter = executable('test_speed_filter',
 # UBSan on a hosted runner (Sanitizers (undefined), 2026-10-02).
 test('test_speed_filter', test_speed_filter, suite : ['fast'], timeout : 180)
 
+# Netflix/vmaf 78e11b52c: bilinear scaling with a column table, both the
+# chunked vif_scale_frame_s(vif_scale_bilinear, ...) and SpEED's precomputed
+# path, against the per-pixel scaler they replace, bit for bit. Device-free;
+# same link recipe as test_speed_filter and, like it, not gated on
+# enable_float (vif_tools.c is in every build, see test_speed above).
+test_vif_bilinear = executable('test_vif_bilinear',
+    ['test.c', 'test_vif_bilinear.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_vif_bilinear', test_vif_bilinear, suite : ['fast'])
+
 # ADR-1477: SpEED evaluates Netflix's statements. speed.c's create_givens(),
 # update_entropy() and get_speed_score() (through the test entries of
 # speed_internal.h) against Netflix's statements evaluated with the host's own

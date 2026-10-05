@@ -1268,3 +1268,4 @@
 1701-nightly-tester-image-build
 1688-sycl-zero-copy-luma-only-admission
 1805-delete-inherited-netflix-tags
+1794-bilinear-column-tables-no-width-limit

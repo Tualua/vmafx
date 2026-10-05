@@ -84,6 +84,20 @@ int vif_get_scaling_method(char *scaling_method_str, enum vif_scaling_method *sc
 void vif_scale_frame_s(enum vif_scaling_method scale_method, const float *src, float *dst,
                        int src_w, int src_h, int src_stride, int dst_w, int dst_h, int dst_stride);
 
+/* Bilinear scaling with a column table computed once (Netflix/vmaf
+ * 78e11b52c). The table depends only on src_w / dst_w, so a caller that
+ * scales many frames at one size (a feature extractor with a fixed prescale)
+ * fills x1a, x2a and dxa (dst_w entries each) once with
+ * vif_scale_frame_bilinear_precompute_columns_s() and passes them to
+ * vif_scale_frame_bilinear_precomputed_s(), which returns the bits of
+ * vif_scale_frame_s(vif_scale_bilinear, ...). */
+void vif_scale_frame_bilinear_precompute_columns_s(int src_w, int dst_w, int *x1a, int *x2a,
+                                                   float *dxa);
+
+void vif_scale_frame_bilinear_precomputed_s(const float *src, float *dst, int src_w, int src_h,
+                                            int src_stride, int dst_w, int dst_h, int dst_stride,
+                                            const int *x1a, const int *x2a, const float *dxa);
+
 /* Taps of the lanczos4 prescale kernel along one axis: offsets -4 .. 4. */
 #define VIF_LANCZOS4_TAPS 9
 

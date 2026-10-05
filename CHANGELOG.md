@@ -1704,6 +1704,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [ADR-1390](docs/adr/1390-hip-ssimulacra2-device-resident.md).
 
 
+- **SpEED and `float_vif` with a bilinear prescale compute the column table
+  once (port of Netflix/vmaf `78e11b52c`).** The source columns and weights
+  of bilinear scaling depend only on the output column, so `speed_chroma` and
+  `speed_temporal` compute them once per extractor instance and `float_vif`
+  once per frame instead of once per pixel. Scores are bit-identical. With
+  `speed_prescale_method=bilinear` (the `vmaf_v1.0.16_3d0h_2160` and
+  `vmaf_v1.0.16_5d0h` models) `speed_chroma` alone took 4.8 ms per 3840x2160
+  frame instead of 11.2 (one thread, median of three). Unlike upstream, which
+  keeps the table on the stack and refuses bilinear outputs wider than 7680,
+  the fork has no width limit.
+
+
 - **SpEED filters only the samples it keeps on non-x86 targets (port of
   Netflix/vmaf `76ea5f03`, [Netflix/vmaf#1653](https://github.com/Netflix/vmaf/pull/1653)).**
   `speed_chroma` and `speed_temporal` blur each plane with a Gaussian

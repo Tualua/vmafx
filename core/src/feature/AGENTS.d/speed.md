@@ -181,3 +181,12 @@ SpEED built + registered whatever `enable_float` says (Netflix/vmaf
 move them back under the float gate. SpEED tests in `core/test/meson.build`
 carry no `enable_float` gate; `test_speed` fails in a `-Denable_float=false`
 build when the extractors drop out.
+
+Bilinear prescale column table (Netflix/vmaf 78e11b52c): `speed_init()` fills
+`SpeedBuffers.bilinear_x1a` / `_x2a` / `_dxa` once when the prescale is
+bilinear and resamples; `speed_prescale_frame()` uses it through
+`vif_scale_frame_bilinear_precomputed_s()`. Same bits as
+`vif_scale_frame_s(vif_scale_bilinear, ...)`, which `speed_internal.c` keeps
+calling (`test_vif_bilinear` holds both to the per-pixel scaler). No width
+limit: `vif_tools.c` walks columns in chunks of 1024; never import upstream's
+`VIF_BILINEAR_MAX_WIDTH` stack table, assert or init refusals.

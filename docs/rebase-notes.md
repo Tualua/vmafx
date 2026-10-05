@@ -164,6 +164,32 @@ fork then had no VIF runtime helpers; it has had them since ADR-0416. Test-only.
 - Upstream gates both on `enable_float`; the fork does not, because
   `vif_tools.c` and `speed.c` are in every build since 6046b1926. On a
   sync, do not bring the gate back.
+## Port of Netflix/vmaf `78e11b52c`: bilinear prescale column tables (2026-10-05)
+
+`port/78e11b52c-speed-bilinear-columns`. Bit-identical; a speed-up only.
+
+- `core/src/feature/vif_tools.c`: the per-pixel `bilinear_interpolation()` is
+  gone. `vif_bilinear_columns()` / `vif_bilinear_rows()` compute the same
+  values in the same order (`xx` formed in double and rounded to float, `dx`
+  from the mirrored floor, the four-term sum in the per-pixel order);
+  upstream's public pair `vif_scale_frame_bilinear_precompute_columns_s()` /
+  `vif_scale_frame_bilinear_precomputed_s()` is in `vif_tools.h`.
+- Deviation from upstream, kept deliberately: upstream's generic path keeps
+  one table of `VIF_BILINEAR_MAX_WIDTH` (7680) entries on the stack, asserts
+  on wider outputs and refuses them at init in `float_vif` and `float_motion`.
+  The fork walks the columns in chunks of 1024 (`VIF_BILINEAR_COLUMN_CHUNK`),
+  so no caller has a width limit and neither init check exists here; the
+  fork's `float_motion` scale-1 path has its own scaler in `motion.c`. On a
+  sync, do not bring the macro, the assert or the init checks back.
+- `core/src/feature/speed.c`: `SpeedBuffers` carries the instance's table
+  (`bilinear_x1a` / `_x2a` / `_dxa`, filled by
+  `speed_alloc_bilinear_columns()` when the prescale is bilinear and
+  resamples, freed by `speed_free_bilinear_columns()`);
+  `filter_and_downscale()` takes the buffers and its prescale step is
+  `speed_prescale_frame()`. `speed_internal.c`'s mirror keeps calling
+  `vif_scale_frame_s()`, which returns the same bits.
+- `core/test/test_vif_bilinear.c` holds both paths to the per-pixel scaler
+  (copied into the test) with `memcmp`.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 
