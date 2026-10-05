@@ -95,4 +95,20 @@ in five patches); patching fftools (out of the series' scope). On this branch
 
 ## Validation on this branch
 
-VALIDATION_TABLE
+Arc A380 (i915, iHD), `localhost/vmafx:build-ocloc` (icpx 2026.1.1),
+`scripts/test/sycl-dev-container.sh` with a fresh cache (icx C, SPIR-V JIT),
+FFmpeg n9.0.2 with the series, on `52e265fc0` with the hybrid-toolchain branch
+underneath, 2026-10-05:
+
+| Check | Result |
+| --- | --- |
+| `--suite sycl` | 69 OK, 0 fail |
+| `--suite fast` | 397 OK, 0 fail, 1 skipped (`test_sycl_ordered_sum` passes under `meson test`'s `MALLOC_PERTURB_`; it fails on master) |
+| `zerocopy-e2e.sh --stage 1 --repeat 3 --depths 8` | `pass=50 fail=0 nonexact=0`: 18 stage-1 cases equal host upload in 3 of 3 runs, 32 stage-2/3 cases refused naming the extractor, host upload equal to the CPU everywhere (`ciede` 0 within its 1e-9 bound) |
+| same, `--depths 10` | `pass=50 fail=0 nonexact=0` |
+| `make sycl-zerocopy-contract` | routing check passes, comparator 26 of 26 |
+| Patch series on `n9.0.2` | 20 of 20 apply with `git am --3way`; FFmpeg builds with `--enable-libvmaf-sycl` |
+| `feature=name=psnr` on QSV input | `feature 'psnr' -> psnr_sycl`, refused at the first frame naming `psnr_sycl`, exit non-zero |
+| `feature=name=niqe` on QSV / software input | configuration error `cannot run on zero-copy input: no SYCL twin` / warning and CPU fallback |
+| `[vmaf-sycl] timing` line | absent at `-loglevel error`, present at `-loglevel info` and in the CLI |
+| `trim=end_frame=20` on both QSV inputs | 20 frames scored |
