@@ -753,6 +753,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the release guide](docs/development/release.md).
 
 
+- **The first-release candidates now cover large and unusual inputs and
+  device-targeted scoring ([ADR-1880](docs/adr/1880-format-envelope-device-targets.md)).**
+  RC3 adds an integer-overflow audit of every extractor and twin at 8K and 16K
+  with 16-bit samples and 8K exactness cells; the RC6 and RC7 capability
+  tables declare, per backend and device, the supported resolutions (up to
+  16K), bit depths, chroma layouts and odd or portrait sizes, each row backed
+  by a test; RC8 measures throughput per resolution; RC5 adds device profiles
+  (phone, tablet, laptop, TV, VR per eye) that score one decode for several
+  displays. See [the roadmap](docs/roadmap.md).
+
+
 - **`ciede2000` no longer depends on the compiler or on the C library's `powf`
   for its squares; scores of GCC-built binaries move by up to 2e-11.**
   `ciede.c` squared a `float` with `powf(x, 2)`. GCC calls the C library
