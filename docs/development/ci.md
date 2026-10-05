@@ -66,6 +66,8 @@ required and which ADR owns it, see
 | [`docs.yml`](../../.github/workflows/docs.yml) | Docs build. |
 | [`doxygen-public-api.yml`](../../.github/workflows/doxygen-public-api.yml) | Doxygen build of the public C API; required since ADR-1297. |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build. |
+| [`release-dry-run.yml`](../../.github/workflows/release-dry-run.yml) | Builds the release images and the `vmaf-mcp` distribution and SBOM without publishing (ADR-1595); required context `Release Dry Run` on pull requests ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)). |
+| [`windows-tester-bundle.yml`](../../.github/workflows/windows-tester-bundle.yml) | The Windows tester zips: the x64 zip on a pull request, all four on a push, published on dispatch; required context `Windows Tester Zip` (ADR-1687). |
 | [`dev-container-build.yml`](../../.github/workflows/dev-container-build.yml) | PR-time build gate for `dev/Containerfile` (ADR-0819). |
 | [`helm-chart.yml`](../../.github/workflows/helm-chart.yml) | `helm lint` of the chart. |
 | [`rust-ci.yml`](../../.github/workflows/rust-ci.yml) | Rust crates: `cargo fmt` and `clippy` on `vmafx-sys`, `cargo test --workspace`, the golden smoke example and `cargo-deny`; the planner may skip the work, the gates `vmafx-sys CI` and `cargo-deny` are required. |
@@ -90,7 +92,7 @@ required and which ADR owns it, see
 | [`docker-publish-production.yml`](../../.github/workflows/docker-publish-production.yml) | Builds, pushes, signs and SBOMs the production image on release publication. |
 | [`docker-publish-operator-node.yml`](../../.github/workflows/docker-publish-operator-node.yml) | The same for the VMAFX Go service images. |
 | [`published-rc-licence-companions.yml`](../../.github/workflows/published-rc-licence-companions.yml) | Manual: notices, `<tag>-source` companions and SBOMs for the images and release files published for 1.0.0-rc.1 and rc.2 ([ADR-1578](../adr/1578-published-rc-licence-companions.md)). |
-| [`docker-publish-tester.yml`](../../.github/workflows/docker-publish-tester.yml) | Builds, tests, signs and attests the tester image. |
+| [`docker-publish-tester.yml`](../../.github/workflows/docker-publish-tester.yml) | Builds, tests, signs and attests the tester image; its pull-request run (the amd64 image) is the required context `Tester Image` (ADR-1687). |
 | [`macos-tester-bundle.yml`](../../.github/workflows/macos-tester-bundle.yml) | Builds, tests, attests and publishes the macOS arm64 tester bundle. |
 | [`upstream-watcher.yml`](../../.github/workflows/upstream-watcher.yml) | Polls FFmpeg master for upstream-blocked features ([upstream watchers](upstream-watchers.md)). |
 | [`upstream-ffmpeg-hip-hwdec-watcher.yml`](../../.github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml) | Weekly watch for an FFmpeg ROCm/HIP hwdec context type (ADR-0448). |
@@ -160,7 +162,7 @@ python3 scripts/ci/plan-ci-impact.py --event pull_request \
 
 The planner diffs the event's exact revisions (the merge-base of head and base
 for a PR, the exact `before..head` for a push) and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`. There are 17 selectors:
+the selectors declared in `.github/ci-impact.json`. There are 19 selectors:
 
 | Selector | Owns | Gates |
 | --- | --- | --- |
@@ -178,6 +180,8 @@ the selectors declared in `.github/ci-impact.json`. There are 17 selectors:
 | `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
 | `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
 | `helm` | `deploy/helm/` | Helm chart |
+| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/` | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `rust` | `bindings/`, `Cargo.*`, `core/src/feature/rust/` | Rust CI (path-filtered, not required) |
 | `shell` | `*.sh` | Not required, still path-filtered |
 | `container` | `Dockerfile*`, `dev/`, `docker/`, `deploy/`, `.devcontainer/` | Not required, still path-filtered |
@@ -221,6 +225,21 @@ It runs on every PR and master push. Draft PRs fail immediately; ready PRs poll
 for the named sibling check runs to reach a terminal state and accept
 `success`, `skipped` or `neutral` per check. Results predating the current run
 are excluded, so skipped draft-era checks cannot mask ready validation.
+
+### Release legs
+
+Three contexts gate what the release and tester workflows build on a pull
+request ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)). All three
+must report `success`; a missing or skipped one fails the aggregator.
+
+| Context | Workflow | Does work when | Required on |
+| --- | --- | --- | --- |
+| `Tester Image` | `docker-publish-tester.yml` | the planner selects `tester_image` | pull requests and master pushes |
+| `Windows Tester Zip` | `windows-tester-bundle.yml` | the planner selects `windows_tester_zip` | pull requests and master pushes |
+| `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; the aggregator list `pullRequestOnly` drops it from other runs) |
+
+An unselected tester run passes in about a minute. Which inputs select them and
+how to reproduce a failure: [verifying the release and tester workflows](release-workflow-verification.md).
 
 ### Go checks
 

@@ -56,11 +56,13 @@ means re-pointing every badge.
 
 Branch protection targets a single context: `Required Checks Aggregator` in
 [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml).
-The aggregator's `required` array holds 81 check names. It declares both
-Scorecard event gates, then removes the non-applicable one so each run
-evaluates 80 names, with only `Scorecard PR Gate` or `Scorecard Master Gate`
-among them. A name that no run reported is accepted unless it is in a
-must-report list of the aggregator (ADR-0313, ADR-1297).
+The aggregator's `required` array holds 89 check names. It declares both
+Scorecard event gates, then removes the non-applicable one, so a pull-request
+run evaluates 88 names, with only `Scorecard PR Gate` among the two. A run on a
+push also removes `Release Dry Run` (list `pullRequestOnly`, ADR-1687: its
+workflow has no push trigger) and evaluates 87. A name that no run reported is
+accepted unless it is in a must-report list of the aggregator (ADR-0313,
+ADR-1297).
 
 A required name must be reported by exactly one job, because the aggregator
 keeps one check run per name, so two jobs sharing a name can mask each other's
@@ -189,4 +191,11 @@ column mirrors that array.
 | `docker-publish-production.yml` | `All production images published` | `Images published` | 16 | No |
 | `upstream-watcher.yml` | `FFmpeg av1_videotoolbox encoder` | `FFmpeg av1_videotoolbox` | 23 | No |
 | `dev-container-build.yml` | `Dev Container Build + Smoke Test` | `Dev Container Build` | 19 | Yes |
+| `docker-publish-tester.yml` | new in ADR-1687 | `Tester Image` | 12 | Yes |
+| `docker-publish-tester.yml` | `Validate source` (renamed in ADR-1687) | `Validate tester image source` | 28 | No |
+| `docker-publish-tester.yml` | new in ADR-1687 | `Plan tester image impact` | 24 | No |
+| `windows-tester-bundle.yml` | new in ADR-1687 | `Windows Tester Zip` | 18 | Yes |
+| `windows-tester-bundle.yml` | `Validate source` (renamed in ADR-1687) | `Validate Windows zip source` | 27 | No |
+| `windows-tester-bundle.yml` | new in ADR-1687 | `Plan Windows zip impact` | 23 | No |
+| `release-dry-run.yml` | new in ADR-1687 | `Release Dry Run` | 15 | Yes |
 | `required-aggregator.yml` | `Required Checks Aggregator` | `Required Checks Aggregator` | 26 | Status |

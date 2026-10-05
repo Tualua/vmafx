@@ -1,13 +1,17 @@
 # windows-tester-bundle -- build, test, attest and publish the Windows tester zips.
 #
 # Triggers:
-#   - pull request that touches the zip's own inputs (same path list as the push): the
-#     x64 zip only, built, run and verified, uploaded as a workflow artifact; nothing is
-#     published. The arm64, x64 CUDA and x64 SYCL zips stay with the push run: three more Windows
-#     builds of up to 150 minutes each are too much runner time per pull request, and
-#     the x64 zip exercises every script and the licence gate they share (ADR-1595)
-#   - push to master that touches the zip's own inputs: build and verify both zips
-#     (x64, arm64) and upload them as workflow artifacts; nothing is published
+#   - every pull request (ADR-1687): job `impact` runs scripts/ci/plan-ci-impact.py
+#     and the build runs only when selector `windows_tester_zip` of
+#     .github/ci-impact.json is set, that is when the diff touches the zip's own
+#     inputs (the path list this workflow's triggers carried before ADR-1687) or the
+#     planner falls back to a full run. Then the x64 zip only is built, run and
+#     verified, uploaded as a workflow artifact; nothing is published. The arm64,
+#     x64 CUDA and x64 SYCL zips stay with the push run: three more Windows builds of
+#     up to 150 minutes each are too much runner time per pull request, and the x64
+#     zip exercises every script and the licence gate they share (ADR-1595)
+#   - every push to master, routed the same way: build and verify every zip and
+#     upload them as workflow artifacts; nothing is published
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
 #     `master`) or `tag` (an existing published release tag). The zips are built from
 #     that commit's source with this ref's build recipe (ADR-1347 pattern). A zip is
@@ -31,31 +35,14 @@
 name: Publish Windows Tester Bundle
 
 on:
+  # No paths filter: `Windows Tester Zip` is a required context (ADR-1687), so the
+  # workflow starts on every pull request and master push and routes in-job
+  # (ADR-1140). The inputs are selector `windows_tester_zip` of .github/ci-impact.json.
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - .github/workflows/windows-tester-bundle.yml
-      - scripts/ci/build-windows-tester-bundle.py
-      - requirements/locks/windows-tester-zip.txt
-      - scripts/ci/check-windows-bundle-imports.py
-      - tools/rc1-tester/image/windows/**
-      - tools/rc1-tester/image/unit-tests-windows.txt
-      - tools/rc1-tester/image/cuda-tests.txt
-      - tools/rc1-tester/image/sycl-tests.txt
-      - tools/rc1-tester/image/sycl-runtime-windows.json
   push:
     branches: [master]
-    paths:
-      - .github/workflows/windows-tester-bundle.yml
-      - scripts/ci/build-windows-tester-bundle.py
-      - requirements/locks/windows-tester-zip.txt
-      - scripts/ci/check-windows-bundle-imports.py
-      - tools/rc1-tester/image/windows/**
-      - tools/rc1-tester/image/unit-tests-windows.txt
-      - tools/rc1-tester/image/cuda-tests.txt
-      - tools/rc1-tester/image/sycl-tests.txt
-      - tools/rc1-tester/image/sycl-runtime-windows.json
   workflow_dispatch:
     inputs:
       ref:
@@ -101,9 +88,38 @@ env:
   REF: ${{ github.event.inputs.ref }}
 
 jobs:
+  impact:
+    name: Plan Windows zip impact
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      selected: ${{ steps.impact.outputs.windows_tester_zip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # A dispatch is not a routed event: the planner returns mode=full and the
+      # selector is true, so a publish run always builds.
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
   validate:
-    name: Validate source
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Named apart from the `Validate source` jobs of the tester image and macOS
+    # bundle workflows: the aggregator waits on this name while the gate is not yet
+    # registered, and it keeps only the newest check run per name.
+    name: Validate Windows zip source
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -486,6 +502,37 @@ jobs:
           path: sbom/*.spdx.json
           if-no-files-found: error
           retention-days: 14
+
+  # The required context (ADR-1687). `verify` runs only after `validate` passed and
+  # downloads the zip that the last step of `build` uploads, so a leg whose build
+  # failed has no artifact and its verify leg fails; `verify` is skipped when the
+  # planner selected nothing. Only a selected run whose every verify leg passed, or
+  # an unselected run, passes. The publish job never runs on a pull request and is
+  # not part of it.
+  windows-tester-zip:
+    needs: [impact, verify]
+    if: always()
+    # required-aggregator
+    name: Windows Tester Zip
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require selected Windows zip work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.verify.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid Windows zip gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
 
   publish:
     name: Attest and publish the tester zips

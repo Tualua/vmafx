@@ -34,10 +34,14 @@ const github = {rest: {
   actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}})},
   checks: {listForRef: async () => ({data: {check_runs: checks}})},
 }};
+const eventName = input.event || 'pull_request';
 const context = {
-  eventName: 'pull_request',
+  eventName,
+  sha: 'abc',
   repo: {owner: 'test', repo: 'test'},
-  payload: {pull_request: {head: {ref: 'fix/example', sha: 'abc'}}},
+  payload: eventName === 'pull_request'
+    ? {pull_request: {head: {ref: 'fix/example', sha: 'abc'}}}
+    : {},
 };
 const core = {info: () => {}, setFailed: message => failures.push(message)};
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
@@ -66,7 +70,11 @@ def _required_names(script: str) -> list[str]:
     required_block = re.search(r"const required = \[(.*?)\];", script, re.DOTALL)
     if required_block is None:
         raise AssertionError("required aggregator must declare its check list")
-    return re.findall(r"'([^']+)'", required_block.group(1))
+    # Whole-line comments go first, as in scripts/ci/check-aggregator-names.sh: an
+    # apostrophe in one ("praetor's") otherwise pairs with the next name's quote and
+    # every name after it is lost (ADR-1687).
+    body = re.sub(r"(?m)^\s*//.*$", "", required_block.group(1))
+    return re.findall(r"'([^']+)'", body)
 
 
 def run_required_aggregator(
@@ -74,8 +82,12 @@ def run_required_aggregator(
     conclusion: str | None,
     *,
     env: Mapping[str, str] | None = None,
+    event: str = "pull_request",
 ) -> list[str]:
-    """Run the real Actions JavaScript with one selected check result or absence."""
+    """Run the real Actions JavaScript with one selected check result or absence.
+
+    ``event`` is the triggering event the script sees (``pull_request`` or ``push``).
+    """
     workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
     script = _embedded_script(workflow_text)
     names = _required_names(script)
@@ -97,7 +109,9 @@ def run_required_aggregator(
     result = run_command(
         [node, "-e", _NODE_DRIVER],
         allowed_executables=(node,),
-        input_data=json.dumps({"script": script, "checks": checks, "env": dict(env or {})}),
+        input_data=json.dumps(
+            {"script": script, "checks": checks, "env": dict(env or {}), "event": event}
+        ),
         text=True,
         capture_output=True,
         check=True,

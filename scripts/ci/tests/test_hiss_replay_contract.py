@@ -104,6 +104,38 @@ BUG_098_GATE_DEPENDENCIES = {
     "cargo-deny": ["Plan Rust impact", "cargo-deny work"],
     "helm lint + template": ["Plan Helm impact", "helm lint + template work"],
     "Doxygen Public API": ["Plan Doxygen impact", "Doxygen Public API work"],
+    # ADR-1687: the release-leg gates register only after their work chain.
+    "Tester Image": [
+        "Plan tester image impact",
+        "Validate tester image source",
+        "x86_64 reference scores",
+        "Build and test (amd64)",
+        "Build and test (arm64)",
+    ],
+    "Windows Tester Zip": [
+        "Plan Windows zip impact",
+        "Validate Windows zip source",
+        "Build and test the zip (Windows x64)",
+        "Build and test the zip (Windows arm64)",
+        "Build and test the zip (Windows x64-cuda)",
+        "Build and test the zip (Windows x64-sycl)",
+        "Verify the zip and write its SBOM (Windows x64)",
+        "Verify the zip and write its SBOM (Windows arm64)",
+        "Verify the zip and write its SBOM (Windows x64-cuda)",
+        "Verify the zip and write its SBOM (Windows x64-sycl)",
+    ],
+    "Release Dry Run": [
+        "Plan release dry run",
+        "Image dry run (CPU CLI)",
+        "Image dry run (MCP server)",
+        "Image dry run (operator)",
+        "Image dry run (vmafx-server)",
+        "Image dry run (vmafx-node)",
+        "GPU image dry run (CUDA 13)",
+        "GPU image dry run (ROCm 10)",
+        "GPU image dry run (oneAPI 2026)",
+        "vmaf-mcp dist and SBOM dry run",
+    ],
 }
 
 ADR_1342_STRICT_CONTEXTS = {"RC1 Tester Report"}
@@ -121,6 +153,11 @@ ADR_1528_STRICT_CONTEXTS = {
     "Python Package Tests (vmaf-roi-score)",
     "Python Package Tests (vmaf-tune)",
 }
+
+# ADR-1687 — the pull-request legs of the tester image, Windows zip and release
+# workflows. `Release Dry Run` has no push trigger; the aggregator drops it from a
+# run that is not a pull request (scripts/ci/tests/test_required_release_legs.py).
+ADR_1687_STRICT_CONTEXTS = {"Tester Image", "Windows Tester Zip", "Release Dry Run"}
 
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
@@ -272,7 +309,8 @@ class HissReplayContractTests(unittest.TestCase):
             | BUG_098_STRICT_CONTEXTS
             | ADR_1342_STRICT_CONTEXTS
             | ADR_1474_STRICT_CONTEXTS
-            | ADR_1528_STRICT_CONTEXTS,
+            | ADR_1528_STRICT_CONTEXTS
+            | ADR_1687_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

@@ -1,14 +1,18 @@
 # docker-publish-tester -- build, test, push, sign and attest the VMAFx tester image.
 #
 # Triggers:
-#   - pull request that touches the tester image inputs (same path list as the push):
-#     the amd64 image only, built, run through the documented `docker run` line and
-#     its report validated; nothing is pushed. The arm64 image and the three GPU
-#     images are left to the push run below because their runners (a native arm64
-#     host, two hours of GPU-toolkit builds) cost too much per pull request; the
-#     Dockerfile stage contract tests cover the GPU stages in the meantime (ADR-1595)
-#   - push to master that touches the tester image inputs: build, run the
-#     documented `docker run` line and validate the report; nothing is pushed
+#   - every pull request (ADR-1687): job `impact` runs scripts/ci/plan-ci-impact.py
+#     and the build runs only when selector `tester_image` of .github/ci-impact.json
+#     is set, that is when the diff touches the tester image inputs (the path list
+#     this workflow's triggers carried before ADR-1687) or the planner falls back to
+#     a full run. Then the amd64 image only is built, run through the documented
+#     `docker run` line and its report validated; nothing is pushed. The arm64 image
+#     and the three GPU images are left to the push run below because their runners
+#     (a native arm64 host, two hours of GPU-toolkit builds) cost too much per pull
+#     request; the Dockerfile stage contract tests cover the GPU stages in the
+#     meantime (ADR-1595)
+#   - every push to master, routed the same way: build, run the documented
+#     `docker run` line and validate the report; nothing is pushed
 #   - workflow_dispatch on master with exactly one of `ref` (a master commit SHA, or
 #     `master`) or `tag` (an existing published tag): the same, then publish; the
 #     source is that commit with this ref's build recipe (ADR-1347)
@@ -38,37 +42,14 @@
 name: Publish Tester Image
 
 on:
+  # No paths filter: `Tester Image` is a required context (ADR-1687), so the
+  # workflow starts on every pull request and master push and routes in-job
+  # (ADR-1140). The inputs are selector `tester_image` of .github/ci-impact.json.
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - docker/Dockerfile.tester
-      - tools/rc1-tester/**
-      - scripts/ci/install-intel-ocloc.sh
-      - scripts/ci/install-cuda-toolkit.sh
-      - scripts/ci/install-rocm-from-image.sh
-      - build-config.env
-      - dev/scripts/fetch-intel-neo.py
-      - python/requirements-test-lock.txt
-      - REUSE.toml
-      - LICENSES/**
-      - docs/hardware-reports/report.schema.json
-      - .github/workflows/docker-publish-tester.yml
   push:
     branches: [master]
-    paths:
-      - docker/Dockerfile.tester
-      - tools/rc1-tester/**
-      - scripts/ci/install-intel-ocloc.sh
-      - scripts/ci/install-cuda-toolkit.sh
-      - scripts/ci/install-rocm-from-image.sh
-      - build-config.env
-      - dev/scripts/fetch-intel-neo.py
-      - python/requirements-test-lock.txt
-      - REUSE.toml
-      - LICENSES/**
-      - docs/hardware-reports/report.schema.json
-      - .github/workflows/docker-publish-tester.yml
   workflow_dispatch:
     inputs:
       ref:
@@ -101,9 +82,38 @@ env:
   IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
 
 jobs:
+  impact:
+    name: Plan tester image impact
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      selected: ${{ steps.impact.outputs.tester_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # A dispatch is not a routed event: the planner returns mode=full and the
+      # selector is true, so a publish run always builds.
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
   validate:
-    name: Validate source
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Named apart from the `Validate source` jobs of the Windows and macOS bundle
+    # workflows: the aggregator waits on this name while the gate is not yet
+    # registered, and it keeps only the newest check run per name.
+    name: Validate tester image source
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -419,6 +429,36 @@ jobs:
           path: ${{ runner.temp }}/source-digests/*
           if-no-files-found: error
           retention-days: 1
+
+  # The required context (ADR-1687). `build` needs `validate` and `refs-x86`, so it
+  # is skipped when either fails or when the planner selected nothing: only a
+  # selected run whose build (every matrix leg) passed, or an unselected run, passes.
+  # The GPU images and the publish jobs never run on a pull request and are not
+  # part of it.
+  tester-image:
+    needs: [impact, build]
+    if: always()
+    # required-aggregator
+    name: Tester Image
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require selected tester image work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.build.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid tester image gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
 
   publish:
     name: Publish tester image

@@ -10,6 +10,28 @@ search:
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 
 `docs/adr-post-1-0-embedding-milestone`. no rebase impact: docs only.
+## The pull-request release legs are required contexts (ADR-1687, 2026-10-05)
+
+`ci/require-release-dry-run-legs`. CI workflows, the impact map and their tests;
+no library change.
+
+- `docker-publish-tester.yml` and `windows-tester-bundle.yml` have no trigger
+  `paths:` any more: job `impact` runs `scripts/ci/plan-ci-impact.py`, `validate`
+  needs it, and the gates `Tester Image` (needs `build`) and `Windows Tester Zip`
+  (needs `verify`) own the required contexts. A sync or rebase must not restore the
+  trigger filters (`test_ci_impact.py` refuses them) or point a gate at an earlier
+  job. Their `validate` jobs are named `Validate tester image source` and
+  `Validate Windows zip source`, apart from the macOS bundle's `Validate source`.
+- `.github/ci-impact.json` selectors `tester_image` and `windows_tester_zip` are
+  the former path lists; both workflows are in `full_patterns`. A new input of
+  either build goes into its selector and into `FORMER_TRIGGER_PATHS` of
+  `scripts/ci/tests/test_required_release_legs.py` together.
+- `release-dry-run.yml` gains job `gate` (`Release Dry Run`). In
+  `required-aggregator.yml` the three names sit in `required`, `strictMustReport`
+  and `delayedStrictDependencies`, and `Release Dry Run` in `pullRequestOnly`; a
+  conflict in any of those arrays keeps both sides' names.
+- `scripts/ci/required_aggregator_harness.py` strips comment lines before it reads
+  the `required` names and takes an `event` argument; keep both.
 
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 

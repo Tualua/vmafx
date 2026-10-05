@@ -128,13 +128,26 @@ def legs(matrix_json: str, key: str) -> list[str]:
     return sorted(leg[key] for leg in json.loads(matrix_json)["include"])
 
 
+def assert_routed_in_job(case: unittest.TestCase, name: str, selector: str) -> None:
+    """ADR-1687: the workflow always starts and the impact planner routes the build."""
+    wf = load(name)
+    on = triggers(wf)
+    case.assertEqual(on["pull_request"]["branches"], ["master"])
+    case.assertEqual(on["push"]["branches"], ["master"])
+    for event in ("pull_request", "push"):
+        case.assertNotIn("paths", on[event])
+    case.assertEqual(
+        wf["jobs"]["impact"]["outputs"]["selected"], f"${{{{ steps.impact.outputs.{selector} }}}}"
+    )
+    case.assertEqual(wf["jobs"]["validate"]["needs"], "impact")
+    case.assertIn("needs.impact.outputs.selected == 'true'", wf["jobs"]["validate"]["if"])
+
+
 class TesterImage(unittest.TestCase):
     NAME = "docker-publish-tester.yml"
 
-    def test_pull_request_trigger_has_the_push_paths(self) -> None:
-        on = triggers(load(self.NAME))
-        self.assertEqual(on["pull_request"]["branches"], ["master"])
-        self.assertEqual(on["pull_request"]["paths"], on["push"]["paths"])
+    def test_every_pull_request_starts_and_the_planner_routes_the_build(self) -> None:
+        assert_routed_in_job(self, self.NAME, "tester_image")
 
     def test_pull_request_builds_amd64_only_and_never_publishes(self) -> None:
         rc, out, err = run_validate(self.NAME, "pull_request", "refs/pull/7/merge")
@@ -169,9 +182,8 @@ class TesterImage(unittest.TestCase):
 class WindowsBundle(unittest.TestCase):
     NAME = "windows-tester-bundle.yml"
 
-    def test_pull_request_trigger_has_the_push_paths(self) -> None:
-        on = triggers(load(self.NAME))
-        self.assertEqual(on["pull_request"]["paths"], on["push"]["paths"])
+    def test_every_pull_request_starts_and_the_planner_routes_the_build(self) -> None:
+        assert_routed_in_job(self, self.NAME, "windows_tester_zip")
 
     def test_pull_request_builds_the_x64_zip_only_and_never_publishes(self) -> None:
         rc, out, err = run_validate(self.NAME, "pull_request", "refs/pull/7/merge")
@@ -279,12 +291,17 @@ class ReleaseDryRun(unittest.TestCase):
                 if "uses" in step:
                     self.assertRegex(step["uses"], SHA_PIN)
 
-    def test_every_job_but_the_plan_is_routed_by_it(self) -> None:
+    def test_every_job_but_the_plan_and_the_gate_is_routed_by_it(self) -> None:
         for name, job in self.wf["jobs"].items():
-            if name == "plan":
+            if name in {"plan", "gate"}:
                 continue
             self.assertEqual(job["needs"], "plan", name)
             self.assertRegex(job["if"], r"needs\.plan\.outputs\.\w+ == 'true'", name)
+        # ADR-1687: the required context waits for every routed job.
+        gate = self.wf["jobs"]["gate"]
+        self.assertEqual(gate["name"], "Release Dry Run")
+        self.assertEqual(gate["if"], "always()")
+        self.assertEqual(set(gate["needs"]), set(self.wf["jobs"]) - {"gate"})
 
     def test_the_images_it_builds_are_the_images_the_release_builds(self) -> None:
         release = release_build_targets()

@@ -7,12 +7,16 @@ images, the operator / server / node images and the supply-chain run. A change
 to their inputs was first built by the merge or the release itself. Each of them
 now has a pull-request or scheduled verify that builds and runs the same
 targets without publishing. The choice per workflow is recorded in
-[ADR-1595](../adr/1595-pr-time-verify-push-only-workflows.md).
+[ADR-1595](../adr/1595-pr-time-verify-push-only-workflows.md). Three of those
+pull-request runs block a merge: `Tester Image`, `Windows Tester Zip` and
+`Release Dry Run` are required contexts of the Required Checks Aggregator
+([ADR-1687](../adr/1687-required-release-dry-run-legs.md)).
 
 ## When you need this page
 
-A pull request shows a red `Publish Tester Image`, `Publish Windows Tester Bundle`
-or `Release Dry Run` check, or you change a Dockerfile, a toolkit pin
+A pull request shows a red `Tester Image`, `Windows Tester Zip` or
+`Release Dry Run` check (or a red job of the workflows `Publish Tester Image`,
+`Publish Windows Tester Bundle` and `Release Dry Run`), or you change a Dockerfile, a toolkit pin
 (`build-config.env`), the licence inputs (`tools/rc1-tester/image/`) or the
 `vmaf-mcp` package and want to know which build will exercise it.
 
@@ -20,8 +24,8 @@ or `Release Dry Run` check, or you change a Dockerfile, a toolkit pin
 
 | Workflow | Pull request | Weekly | Left to the merge or the release |
 | --- | --- | --- | --- |
-| `docker-publish-tester.yml` | `Build and test (amd64)` and the x86_64 reference scores, when the push path list matches | none | arm64 image; Intel, NVIDIA and AMD GPU images; publishing |
-| `windows-tester-bundle.yml` | the x64 zip: build, run, verify, SBOM, when the push path list matches | none | arm64, x64 CUDA and x64 SYCL zips; publishing |
+| `docker-publish-tester.yml` | `Build and test (amd64)` and the x86_64 reference scores, when the planner selects `tester_image`; required context `Tester Image` | none | arm64 image; Intel, NVIDIA and AMD GPU images; publishing |
+| `windows-tester-bundle.yml` | the x64 zip: build, run, verify, SBOM, when the planner selects `windows_tester_zip`; required context `Windows Tester Zip` | none | arm64, x64 CUDA and x64 SYCL zips; publishing |
 | `macos-tester-bundle.yml` | none (macOS minutes cost ten times a Linux minute) | Monday 04:23 UTC: build and verify master's head | publishing |
 | `docker-publish-production.yml` | `Release Dry Run`: the CPU CLI image and the MCP server image (linux/amd64, `--version`, a score with the built-in model); the CUDA 13, ROCm 10 and oneAPI 2026 images built, not run | Wednesday 03:41 UTC: all of it | arm64; HTTP startup; signing; attestation; publishing |
 | `docker-publish-operator-node.yml` | `Release Dry Run`: the operator, vmafx-server and vmafx-node images (linux/amd64, `--version` equals the stamped tag, a score, the node's ffmpeg and rclone) | Wednesday 03:41 UTC: all of it | arm64; HTTP startup; the multi-arch manifest; signing; publishing |
@@ -44,8 +48,41 @@ holds the lists:
 | mcp | `mcp-server/vmaf-mcp/`, `requirements/locks/package-build.txt`, `scripts/release/verify-mcp-sbom.sh`, `scripts/release/pep440-version.sh`, `supply-chain.yml`, the dry run itself |
 
 A group that is off is not exercised by that pull request; the step summary of
-the plan job says so. The `docker-publish-tester.yml` and `windows-tester-bundle.yml` runs
-use a `paths:` filter of their own (the list of their `push` trigger).
+the plan job says so. The gate job `Release Dry Run` reports on every pull
+request: it passes when the plan succeeded and every group is either selected
+and green or unselected and skipped.
+
+## When the tester image and the Windows zip build
+
+Both workflows start on every pull request and every push to `master`. Their
+first job (`Plan tester image impact`, `Plan Windows zip impact`) runs the CI
+impact planner, [`scripts/ci/plan-ci-impact.py`](../../scripts/ci/plan-ci-impact.py),
+and the build runs only when its selector in
+[`.github/ci-impact.json`](../../.github/ci-impact.json) is true:
+
+| Selector | Inputs |
+| --- | --- |
+| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the oneAPI ocloc, CUDA and ROCm install scripts, `build-config.env`, `dev/scripts/fetch-intel-neo.py`, `python/requirements-test-lock.txt`, `REUSE.toml`, `LICENSES/`, `docs/hardware-reports/report.schema.json`, the workflow |
+| `windows_tester_zip` | `scripts/ci/build-windows-tester-bundle.py`, `scripts/ci/check-windows-bundle-imports.py`, `requirements/locks/windows-tester-zip.txt`, `tools/rc1-tester/image/windows/`, the unit, CUDA and SYCL test lists and `sycl-runtime-windows.json` under `tools/rc1-tester/image/`, the workflow |
+
+These are the path lists the two workflows' triggers carried before ADR-1687.
+The planner also sets every selector when it cannot bound the change (`mode=full`):
+a change under `scripts/ci/`, to a workflow that hosts a required context, to
+`.standards-baseline.json`, `Makefile` and the other CI-authority files, a
+delete or rename, or an unknown top-level path. The plan job's log names the
+mode and the reason. To see what your branch gets:
+
+```bash
+python3 scripts/ci/plan-ci-impact.py --event pull_request \
+  --base "$(git merge-base origin/master HEAD)" --head HEAD --print
+```
+
+The gate (`Tester Image`, `Windows Tester Zip`) passes an unselected run without
+work and a selected run only when every pull-request job of the chain passed:
+the image gate waits for `Build and test`, which needs the reference scores and
+the source validation; the zip gate waits for `Verify the zip and write its SBOM`,
+which fails when its build left no zip. On a push to `master` the same gates
+cover every leg the push run builds (both image architectures, all four zips).
 
 ## Reproducing a failure locally
 

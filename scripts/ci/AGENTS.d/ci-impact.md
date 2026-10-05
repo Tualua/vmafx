@@ -29,3 +29,8 @@ invariant: The planner fails closed to `mode=full`; required contexts use planne
   mapped planner/work proxy is active and briefly after it completes. Preserve
   the complete `delayedStrictDependencies` map and paginated check-run fetch;
   `test_hiss_replay_contract.py` executes both failure modes.
+- **Selectors `tester_image` and `windows_tester_zip` are the former trigger
+  path lists of `docker-publish-tester.yml` and `windows-tester-bundle.yml`
+  (ADR-1687).** Change them together with the inputs those workflows build;
+  `tests/test_required_release_legs.py` pins the lists. Both workflows are
+  planner consumers and therefore in `full_patterns`.

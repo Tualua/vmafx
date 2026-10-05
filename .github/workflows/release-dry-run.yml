@@ -16,6 +16,11 @@
 #   - schedule (weekly) and workflow_dispatch: every job, so a base-image or archive
 #     drift that no pull request touches is found within a week.
 #
+# Job `gate` reports the required context `Release Dry Run` on every pull request
+# (ADR-1687): it passes when the plan succeeded and every group the plan selected
+# passed, and an unselected group was skipped. The workflow has no push trigger, so
+# the aggregator requires the context on a pull request only.
+#
 # What stays release-only: signing, build provenance, SBOM attestation, the PyPI
 # publication, the multi-arch manifest, and the HTTP startup smoke of the server
 # images. The native Linux artifacts (job `build-artifacts` of supply-chain.yml) are
@@ -283,3 +288,41 @@ jobs:
         env:
           VMAFX_VERSION: ${{ steps.version.outputs.semver }}
         run: bash scripts/release/verify-mcp-sbom.sh "$VMAFX_VERSION" sbom mcp-dist
+
+  # The required context (ADR-1687). Each group must be selected and pass, or be
+  # unselected and skipped; a failed or skipped plan fails the gate.
+  gate:
+    needs: [plan, images, gpu, mcp]
+    if: always()
+    # required-aggregator
+    name: Release Dry Run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require every selected dry run
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          IMAGES_SELECTED: ${{ needs.plan.outputs.images }}
+          IMAGES_RESULT: ${{ needs.images.result }}
+          GPU_SELECTED: ${{ needs.plan.outputs.gpu }}
+          GPU_RESULT: ${{ needs.gpu.result }}
+          MCP_SELECTED: ${{ needs.plan.outputs.mcp }}
+          MCP_RESULT: ${{ needs.mcp.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::the dry-run plan did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          fail=0
+          for group in IMAGES GPU MCP; do
+            selected_var="${group}_SELECTED"
+            result_var="${group}_RESULT"
+            state="${!selected_var}:${!result_var}"
+            case "$state" in
+              true:success|false:skipped) echo "$group: $state" ;;
+              *) echo "::error::invalid $group dry-run state selected:result=$state"; fail=1 ;;
+            esac
+          done
+          exit "$fail"

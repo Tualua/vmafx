@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1262), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1263), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5059,3 +5059,7 @@ Every ADR, one heading each (1262), so the site search finds an ADR by its title
 ## ADR-1685: A post-1.0 embedding milestone: zero-copy device-frame import with fences, asynchronous window scores, and an unchanged licence
 
 [1685-post-1-0-embedding-zero-copy-milestone](1685-post-1-0-embedding-zero-copy-milestone.md)
+
+## ADR-1687: Require the pull-request release legs through the aggregator
+
+[1687-required-release-dry-run-legs](1687-required-release-dry-run-legs.md)

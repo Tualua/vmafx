@@ -1261,3 +1261,4 @@
 1622-bpf-object-generated-at-build-time
 1601-vif-den-log-sum-unsigned
 1685-post-1-0-embedding-zero-copy-milestone
+1687-required-release-dry-run-legs

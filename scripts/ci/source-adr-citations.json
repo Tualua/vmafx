@@ -6607,6 +6607,7 @@
         ".github/workflows/build.yml": 1,
         ".github/workflows/dev-container-build.yml": 1,
         ".github/workflows/docker-image.yml": 1,
+        ".github/workflows/docker-publish-tester.yml": 2,
         ".github/workflows/docs.yml": 3,
         ".github/workflows/doxygen-public-api.yml": 1,
         ".github/workflows/ffmpeg-integration.yml": 1,
@@ -6620,9 +6621,11 @@
         ".github/workflows/sanitizers.yml": 4,
         ".github/workflows/security-scans.yml": 4,
         ".github/workflows/tests-and-quality-gates.yml": 15,
+        ".github/workflows/windows-tester-bundle.yml": 2,
         ".pre-commit-config.yaml": 1,
         "scripts/ci/plan-ci-impact.py": 1,
-        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1,
+        "scripts/ci/tests/test_required_release_legs.py": 1
       },
       "target": "1140-ci-impact-planner.md"
     },
@@ -10783,9 +10786,11 @@
         ".github/workflows/docker-publish-tester.yml": 3,
         ".github/workflows/macos-tester-bundle.yml": 1,
         ".github/workflows/release-dry-run.yml": 1,
+        ".github/workflows/required-aggregator.yml": 2,
         ".github/workflows/windows-tester-bundle.yml": 2,
         "scripts/ci/release-dry-run-plan.sh": 1,
-        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1,
+        "scripts/ci/tests/test_required_release_legs.py": 1
       },
       "target": "1595-pr-time-verify-push-only-workflows.md"
     },
@@ -10805,6 +10810,20 @@
         "scripts/dev/tests/test_gen_node_bpf.py": 1
       },
       "target": "1622-bpf-object-generated-at-build-time.md"
+    },
+    "1687": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 4,
+        ".github/workflows/release-dry-run.yml": 2,
+        ".github/workflows/required-aggregator.yml": 3,
+        ".github/workflows/windows-tester-bundle.yml": 4,
+        "scripts/ci/required_aggregator_harness.py": 1,
+        "scripts/ci/tests/test_ci_impact.py": 2,
+        "scripts/ci/tests/test_hiss_replay_contract.py": 2,
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 2,
+        "scripts/ci/tests/test_required_release_legs.py": 3
+      },
+      "target": "1687-required-release-dry-run-legs.md"
     }
   },
   "retired": {

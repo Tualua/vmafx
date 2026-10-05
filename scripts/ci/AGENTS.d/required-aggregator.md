@@ -4,6 +4,7 @@ paths:
   - scripts/ci/tests/test-check-aggregator-names.sh
   - scripts/ci/required_aggregator_harness.py
   - scripts/ci/test_go_workflow_contract.py
+  - scripts/ci/tests/test_required_release_legs.py
 invariant: `required` list = `# required-aggregator` markers; one reporter per required name; contract suites share one harness.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -27,3 +28,20 @@ invariant: `required` list = `# required-aggregator` markers; one reporter per r
 | --- | --- | --- |
 | `required_aggregator_harness.py` | Shared by `test_go_workflow_contract.py` and `test_sycl_tidy_workflow_contract.py` | Owns the one Node.js driver for executing the embedded aggregator against synthetic check results. Keep both contract suites on this harness so polling-time simulation and result decoding cannot drift. |
 | `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Uses the shared aggregator harness for Go pass/fail outcomes; guards ready-event coverage and step-level `go_checks` routing; pins the early, non-mutating `go fix -diff ./...` gate and matching Make targets. Keep it before authoring exemptions (ADRs 1238 and 1338). |
+
+## Release legs (ADR-1687)
+
+- `Tester Image`, `Windows Tester Zip` and `Release Dry Run` sit in `required`,
+  `strictMustReport` and `delayedStrictDependencies` together; each gate needs the
+  last pull-request job of its chain (`build`, `verify`, the dry-run plan plus
+  its three groups). `Release Dry Run` is also in `pullRequestOnly`, which drops
+  it from a non-pull-request run because `release-dry-run.yml` has no push trigger.
+  A dependency name the aggregator waits on must stay unique across workflows:
+  that is why the two tester `validate` jobs are not called `Validate source`.
+  `tests/test_required_release_legs.py` plants each removal and executes the
+  aggregator for a pull request and a push.
+- `required_aggregator_harness.py` strips whole-line `//` comments from the
+  `required` block before it reads the names, as `check-aggregator-names.sh`
+  does. Without that, an apostrophe in a comment silently drops every later name
+  from the synthetic check list, and a test of such a name passes or fails for
+  the wrong reason. The `event` argument selects `pull_request` or `push`.

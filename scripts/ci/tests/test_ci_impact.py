@@ -52,6 +52,13 @@ REQUIRED_CONSUMER_CONTRACTS = {
         ("docker-work",),
         (("docker", "Docker Image Build", "docker-work"),),
     ),
+    # ADR-1687: the gate needs the last pull-request job of the chain; `build`
+    # needs `validate` and `refs-x86`, so it is skipped when either fails.
+    "docker-publish-tester.yml": (
+        "tester_image",
+        ("validate",),
+        (("tester-image", "Tester Image", "build"),),
+    ),
     "doxygen-public-api.yml": (
         "doxygen",
         ("doxygen-work",),
@@ -78,6 +85,13 @@ REQUIRED_CONSUMER_CONTRACTS = {
             ("vmafx-sys-gate", "vmafx-sys CI", "rust-vmafx-sys-work"),
             ("cargo-deny-gate", "cargo-deny", "cargo-deny-work"),
         ),
+    ),
+    # ADR-1687: `verify` runs after `validate` passed and downloads what the last
+    # step of `build` uploads, so a failed build leg fails its verify leg.
+    "windows-tester-bundle.yml": (
+        "windows_tester_zip",
+        ("validate",),
+        (("windows-tester-zip", "Windows Tester Zip", "verify"),),
     ),
 }
 
@@ -173,12 +187,14 @@ class ConfigContract(unittest.TestCase):
             ".github/workflows/build.yml",
             ".github/workflows/dev-container-build.yml",
             ".github/workflows/docker-image.yml",
+            ".github/workflows/docker-publish-tester.yml",
             ".github/workflows/doxygen-public-api.yml",
             ".github/workflows/ffmpeg-integration.yml",
             ".github/workflows/helm-chart.yml",
             ".github/workflows/required-aggregator.yml",
             ".github/workflows/rust-ci.yml",
             ".github/workflows/scorecard-policy.yml",
+            ".github/workflows/windows-tester-bundle.yml",
             ".pre-commit-config.yaml",
             ".gosec.json",
             ".helix/languages.toml",
@@ -234,6 +250,9 @@ class RoutingContract(unittest.TestCase):
             "dev/Containerfile": {"dev_container"},
             "core/doc/Doxyfile.public-api": {"doxygen"},
             "deploy/helm/vmafx/Chart.yaml": {"helm"},
+            "docker/Dockerfile.tester": {"tester_image"},
+            "tools/rc1-tester/image/windows/run.cmd": {"tester_image", "windows_tester_zip"},
+            "requirements/locks/windows-tester-zip.txt": {"windows_tester_zip"},
         }
         for path, selected in cases.items():
             with self.subTest(path=path):
@@ -251,6 +270,8 @@ class RoutingContract(unittest.TestCase):
             ".github/workflows/ffmpeg-integration.yml",
             ".github/workflows/helm-chart.yml",
             ".github/workflows/rust-ci.yml",
+            ".github/workflows/docker-publish-tester.yml",
+            ".github/workflows/windows-tester-bundle.yml",
         ):
             with self.subTest(path=path):
                 plan = _plan_for([path])
