@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1274), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1275), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5095,6 +5095,10 @@ Every ADR, one heading each (1274), so the site search finds an ADR by its title
 ## ADR-1805: Delete the Netflix release tags inherited by VMAFx/vmafx
 
 [1805-delete-inherited-netflix-tags](1805-delete-inherited-netflix-tags.md)
+
+## ADR-1806: Run Metal kernel files on the host through a Metal Shading Language shim in tests
+
+[1806-metal-kernels-host-replay](1806-metal-kernels-host-replay.md)
 
 ## ADR-1828: Netflix's own golden-assertion updates are ported verbatim from upstream
 

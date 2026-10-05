@@ -116,6 +116,31 @@ Fork-local tester code only; no upstream file.
   bring back a private `VMAF_PIX_FMT_YUV400P` comparison:
   `core/test/test_ssimulacra2_pixel_format_contract.py` fails on either.
 - Netflix golden data unaffected: no score changes for 4:2:0, 4:2:2 or 4:4:4.
+## `integer_adm_metal`: shared uniforms, host logic in C, host replay (2026-10-05)
+
+`fix/metal-integer-adm-twin-defects` (T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05,
+[ADR-1806](adr/1806-metal-kernels-host-replay.md)). Fork-only files; no
+upstream counterpart.
+
+- `core/src/feature/metal/metal_integer_adm_uniforms.h` defines `IadmDims`,
+  `IadmCsf` and the reduction slot address `vmaf_mtl_iadm_accum_word()` once
+  for `integer_adm.metal` and the host. Keep the structs out of the `.metal`
+  and `.mm` on a conflict; a field added on one side goes into the header.
+- `core/src/feature/metal/integer_adm_metal_host.c` holds every host step
+  that does not touch the Metal API (geometry, buffer sizes, the stage plan,
+  uniforms from the CPU's contexts, scores from the CPU's `adm_cm_result()` /
+  `adm_csf_den_result()`); `integer_adm_metal.mm` only allocates, binds,
+  encodes and emits. A change to the CPU's integer ADM contexts or result
+  functions reaches the twin through that file.
+- `core/src/metal/meson.build` lists the host file in `metal_sources`;
+  `core/test/meson.build` compiles it into
+  `test_metal_integer_adm_host_replay` (not on Windows).
+- `integer_adm.metal`: scale 1 runs `integer_adm_dwt_vert_s1` (int16 parent);
+  the unused `integer_adm_csf_r_s0` / `_s123` kernels are gone. No identifier
+  named `kernel` or `half` in a header the kernels or the host shim include.
+- `core/test/metal_msl_host_shim.h` and `core/test/metal_msl_host/metal_stdlib`
+  let a test compile an unmodified `.metal` file on the host.
+- Netflix golden data unaffected (Metal only, and no CPU code changed).
 
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 

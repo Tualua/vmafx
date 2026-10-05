@@ -331,7 +331,7 @@ row stays open.
 | --- | --- | --- |
 | `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences: integer sums of the CPU's `float` terms per row segment, rows added in the CPU's order, so frames past 2^53 units match too. | `test_metal_float_psnr_math` |
 | `float_moment_metal` | Exact at 16 bits full range (the CPU's `float` squares), and past 2^53 units of the sum (16-bit frames above about 2 megapixels) it forms the CPU's rounded sum with five more kernels; a device whose pipelines cannot run 256 threads per threadgroup fails at init. | `test_metal_float_moment_math`, `test_metal_float_moment_sum` |
-| `integer_adm_metal` | Integer decouple reciprocal and gain limit as the CPU computes them. | `test_metal_integer_adm_math` |
+| `integer_adm_metal` | Integer decouple reciprocal and gain limit as the CPU computes them. Since the first tester report (issue #2118, every exact case off): the reduction slots are read where the kernels write them, scale 1 reads the 16-bit band of scale 0, the scales-1-3 masking and denominator terms round as the CPU, `adm_skip_scale0` leaves scale 0 without an AIM numerator, and every score is concluded by the CPU's own routines. | `test_metal_integer_adm_math`, `test_metal_integer_adm_host_replay` |
 | `integer_motion_metal` | Differences frames before the blur, as the CPU; emits `motion_sad_score` and `motion3`; CPU option table (`motion_add_uv` is gone); `motion2` / `motion3` from the CPU's window code. | `test_metal_integer_motion_math` |
 | `integer_motion_v2_metal` | Same window code; `motion_fps_weight` and `motion_max_val` applied per frame, as the CPU. | `test_metal_motion_v2_exact_contract.py` |
 | `integer_psnr_metal` | Exact 64-bit error sum (the old 32-bit halves lost carries above 2^32); `apsnr` and chroma per pixel format. | `test_metal_integer_psnr_exact_contract.py` |
@@ -345,6 +345,17 @@ row stays open.
 | `float_ssim_metal` | The CPU's window terms with no forced 1 (an identical flat frame gives a finite `enable_db` score, as the CPU), added in raster order. | `test_metal_float_ssim_math` |
 | `float_ms_ssim_metal` | The CPU's decimation and window terms, added in raster order per plane and scale, combined as the CPU combines them. | `test_metal_float_ms_ssim_math` |
 | `integer_psnr_hvs_metal` | Every masked coefficient error of every block is stored and added on the host into one running `float` in the CPU's order, with the CPU's masking table (formed in `double` on the host, since Metal has no `double`); before, each block was summed on the device and the table was an fp32 product, so most frames differed in the last digits. | `test_metal_psnr_hvs_math` |
+
+A header test holds the arithmetic, not the rest of a kernel file or the host
+code around it. [ADR-1806](../../adr/1806-metal-kernels-host-replay.md) adds
+a host replay for that part: a test compiles an unmodified `.metal` file on
+Linux or macOS through `core/test/metal_msl_host_shim.h`, runs every dispatch
+of the twin with one thread per threadgroup on buffers sized by the twin's own
+host code, and compares the scores with the CPU extractor with `==`. The first
+user is `test_metal_integer_adm_host_replay`; it fails on each of the six
+defects the first `integer_adm_metal` report showed. It does not see barrier
+or race defects, or anything the Metal compiler does differently, so the
+device run still closes a twin's row. It is not built on Windows.
 
 Options that a twin accepts are now its CPU extractor's, with the same names,
 defaults and ranges, so a feature string that works with `--backend cpu` works

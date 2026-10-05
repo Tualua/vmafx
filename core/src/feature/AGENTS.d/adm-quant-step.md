@@ -3,9 +3,10 @@ paths:
   - core/src/feature/integer_adm_kernels.h
   - core/src/feature/sycl/integer_adm_sycl.cpp
   - core/src/feature/metal/integer_adm_metal.mm
+  - core/src/feature/metal/integer_adm_metal_host.c
   - core/test/test_integer_adm_quant_step.c
   - core/test/test_integer_adm_quant_step_contract.py
-invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstream; three copies change together.
+invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstream; CPU and SYCL copies change together.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM quantisation step (ADR-1475)
@@ -22,18 +23,20 @@ invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstre
   same operation as upstream's implicit promotion (same object code, checked
   with `objdump`); the query reports only implicit widenings. `// codeql[...]`
   comments do not suppress in this repository's setup. Never cast an operand.
-- **Three copies, one edit.** CPU header (CUDA + HIP hosts include),
-  `sycl/integer_adm_sycl.cpp::dwt_quant_step()`,
-  `metal/integer_adm_metal.mm::iadm_dwt_quant_step()`. Twin copies: exponent
-  in named `float`, then `pow(10.0, (double)exponent)`. Twins exact
-  (`scripts/ci/exact_twins.d/adm.*`): copy left behind = red cell.
+- **Two copies, one edit.** CPU header (CUDA + HIP hosts include),
+  `sycl/integer_adm_sycl.cpp::dwt_quant_step()`. SYCL copy: exponent in named
+  `float`, then `pow(10.0, (double)exponent)`. Twins exact
+  (`scripts/ci/exact_twins.d/adm.*`): copy left behind = red cell. Metal has
+  no copy since T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05:
+  `metal/integer_adm_metal_host.c` takes `adm_csf_factors()` through the CPU
+  contexts; never bring a local step back.
 - **Guards.** `test_integer_adm_quant_step`: values == float-product form on
   5 geometries x 4 scales x 2 bands; double-product form differs (test keeps
   teeth); on glibc == bits of Netflix `cea2b4d8` build.
-  `test_integer_adm_quant_step_contract.py`: reads three copies, planted
-  cast per copy.
-- **Upstream changes formula or `dwt_7_9_YCbCr_threshold`:** port into all
-  three copies, regenerate bit table of C test from upstream build,
+  `test_integer_adm_quant_step_contract.py`: reads both copies, planted
+  cast per copy, planted Metal copy refused.
+- **Upstream changes formula or `dwt_7_9_YCbCr_threshold`:** port into both
+  copies, regenerate bit table of C test from upstream build,
   regenerate `testdata/scores_cpu_*.json`.
 - **icx build:** step = GCC bits. Per-frame `powf()` in `adm_num_scale()` =
   Intel `libimf`, rounds rare arguments unlike glibc (1 of 240 measured

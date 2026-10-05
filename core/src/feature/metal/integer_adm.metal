@@ -7,16 +7,17 @@
  *
  *  Metal compute kernels for the integer_adm feature extractor (feature
  *  "adm", the VMAF-default ADM path). Integer / fixed-point twin of
- *  core/src/feature/metal/float_adm.metal — it mirrors that proven kernel's
- *  six pipeline stages, 1D per-(band,row) reduction, and 9-slot accumulator
- *  layout verbatim, and swaps the float arithmetic for the bit-exact
+ *  core/src/feature/metal/float_adm.metal — it mirrors that kernel's
+ *  pipeline stages, 1D per-(band,row) reduction, and 9-slot accumulator
+ *  layout, and swaps the float arithmetic for the bit-exact
  *  fixed-point arithmetic of the CPU reference
  *  core/src/feature/integer_adm.c and the CUDA twin
  *  core/src/feature/cuda/integer_adm/ (adm_dwt2 / adm_decouple_inline /
  *  adm_csf / adm_csf_den / adm_cm .cu).
  *
- *  Six kernel functions, dispatched in order by integer_adm_metal.mm once
- *  per scale (4 scales total). The integer pipeline has two distinct data
+ *  Up to five dispatches per scale (4 scales total), in the order
+ *  integer_adm_metal_host.c::iadm_metal_stages() lists them; the .mm encodes
+ *  them. The integer pipeline has two distinct data
  *  representations:
  *    - scale 0   : int16 DWT bands, scale-0 decouple/CSF/CM fixed-point math
  *                  (decouple_r_s0 / adm_csf_kernel / adm_cm_line_kernel).
@@ -29,13 +30,15 @@
  *        u8/u16 source (the only bpc-specific stage); emits int32 lo/hi
  *        sub-rows. The vertical accumulators use the int32 filter taps
  *        {15826,27411,7345,-4240} (lo) / {-4240,-7345,27411,-15826} (hi).
- *        At scales >0 the host swaps to the i4 vert/hori variants below.
+ *        At scales >0 the host swaps to the i4 vert/hori variants below:
+ *        integer_adm_dwt_vert_s1 at scale 1 (int16 parent),
+ *        integer_adm_dwt_vert_s123 at scales 2 and 3 (int32 parent).
  *
  *    Stage 1 — integer_adm_dwt_hori
  *        Fixed-point DWT horizontal pass — reads the lo/hi sub-rows, emits
  *        4 sub-bands (a=LL, h=HL, v=LH, d=HH) into int16 (scale 0) or int32
  *        (scales 1-3) band buffers, with the per-scale (add_shift, shift)
- *        rounding from the CUDA host dispatcher.
+ *        rounding of the CPU (i4_dwt2_round() at scales 1-3).
  *
  *    Stage 2 — integer_adm_decouple_csf
  *        Inline fixed-point decouple (anomaly) + CSF; writes csf_a (i_rfactor *
@@ -48,21 +51,24 @@
  *        across active columns into the int64 cube accumulator. Writes
  *        accum slots [0..5] as lo/hi uint pairs.
  *
- *    Stage 2b — integer_adm_csf_r
- *        CSF on decouple_r → csf_a_aim + csf_f_aim for the AIM pass.
- *
  *    Stage 3b — integer_adm_aim_cm
  *        AIM CM numerator (noise_weight=0): signal = i_rfactor * a_val,
  *        threshold = csf_r 3x3 neighbourhood. Writes accum slots [6..8].
  *
- *  accum_out layout per (band,row) threadgroup (IADM_ACCUM_SLOTS = 9), each
- *  slot stored as a lo/hi pair of uint32 (no 64-bit MSL atomics):
+ *  accum_out layout per (band,row) threadgroup: VMAF_MTL_IADM_ACCUM_SLOTS
+ *  slots, each a lo/hi pair of uint32 (no 64-bit MSL atomics), addressed by
+ *  vmaf_mtl_iadm_accum_word() of metal_integer_adm_uniforms.h, which the host
+ *  reads with too:
  *    [0..2] csf_den per band (adm2 denominator, uint64 cube sum)
  *    [3..5] cm_num per band  (adm2 CM numerator, int64 cube sum)
  *    [6..8] aim_cm per band  (AIM CM numerator, int64 cube sum)
- *  Host reduces these to int64 / uint64 and applies the per-scale
- *  conclude_adm_cm / conclude_adm_csf_den float recovery (cube-root pooling),
- *  byte-for-byte with integer_adm_cuda.c.
+ *  The host (integer_adm_metal_host.c) adds the rows and concludes each scale
+ *  with the CPU's adm_cm_result() / adm_csf_den_result() and their i4_ forms.
+ *
+ *  Scale 1 reads the int16 band a of scale 0 (integer_adm_dwt_vert_s1, the
+ *  CPU's i16_to_i32()); scales 2 and 3 read the int32 band a of the scale
+ *  before (integer_adm_dwt_vert_s123). T-METAL-INTEGER-ADM-TWIN-DEFECTS-
+ *  2026-10-05.
  *
  *  Numeric design notes:
  *   - No 64-bit atomics in MSL (Apple GPU); each (band,row) threadgroup owns
@@ -81,9 +87,10 @@ using namespace metal;
 
 /* The decouple (reciprocal, Q15 ratio, gain limit): ADR-1498, ADR-1413. */
 #include "metal_integer_adm_math.h"
+/* IadmDims, IadmCsf and the reduction layout, shared with the host. */
+#include "metal_integer_adm_uniforms.h"
 
 #define IADM_NUM_BANDS 3
-#define IADM_ACCUM_SLOTS 9
 
 /* 9/7 biorthogonal DWT taps in fixed point (Q-scaled), identical to the
  * CUDA host's AdmFixedParametersCuda.dwt2_db2_coeffs_{lo,hi}. */
@@ -102,72 +109,8 @@ constant ulong IADM_AF_D = 5110ul;
  * >>32 (shift_flt), and FIX_ONE_BY_30 = I4_ONE_BY_15/2 for neighbours. */
 constant uint IADM_S0_FIX_ONE_BY_30 = 4369u;      /* (1/30)*2^17, >>12 */
 constant uint IADM_S0_ONE_BY_15 = 8738u;          /* (1/15)*2^17, >>12 */
-constant uint IADM_I4_FIX_ONE_BY_30 = 143165577u; /* (1/30)*2^32, >>32 */
-constant ulong IADM_I4_ONE_BY_15 = 286331153ul;   /* (1/15)*2^32, >>32 */
-
-/* Geometry uniform shared by every stage (mirrors IadmDimsHost in the .mm). */
-struct IadmDims {
-    int scale;
-    int cur_w;
-    int cur_h;
-    int half_w;
-    int half_h;
-    int buf_stride;
-    int parent_w;
-    int parent_h;
-    int parent_half_h;
-    int parent_buf_stride;
-    uint bpc;
-    uint _pad0;
-};
-
-/* CSF / CM stage uniform: active region + per-band i_rfactor + shifts. */
-struct IadmCsf {
-    int active_left;
-    int active_top;
-    int active_right;
-    int active_bottom;
-    /* i_rfactor[3] for this scale (Q21/Q23 at scale 0, Q32 at scales 1-3). */
-    uint i_rfactor_h;
-    uint i_rfactor_v;
-    uint i_rfactor_d;
-    /* adm_enhn_gain_limit as adm_gain_limit_split() returns it (significand
-     * halves and binary point), for adm_gain_limit_product(). */
-    uint gain_m_hi;
-    uint gain_m_lo;
-    int gain_frac_bits;
-    /* DWT scale-0 raw normalisation: v_shift / v_add_shift / h_shift /
-     * h_add_shift packed for the stage-0/1 kernels. */
-    int v_shift;
-    int v_add_shift;
-    int h_shift;
-    int h_add_shift;
-    /* s123 vert/hori shifts (used at scales 1-3). */
-    int s123_vert_add;
-    int s123_vert_shift;
-    int s123_hori_add;
-    int s123_hori_shift;
-    /* csf_den per-band square pre-shift (s123 only). */
-    int den_shift_sq;
-    int den_add_shift_sq;
-    /* csf_den inner-accum shift (per (band,row), matches the device atomicAdd
-     * shift in adm_csf_den_*_line_kernel). scale 0: shift_accum; scales 1-3:
-     * cube shift then row shift folded — see host fill in the .mm. */
-    int den_shift_accum;
-    int den_add_shift_accum;
-    int den_shift_cub;     /* s123 only: per-row cube shift. */
-    int den_add_shift_cub; /* s123 only. */
-    /* CM cube-accumulation shifts (per band, computed host-side to match
-     * integer_adm_cuda.c WarpShift + conclude_adm_cm). */
-    int cm_shift_sq[3];
-    int cm_add_shift_sq[3];
-    int cm_shift_cub[3];
-    int cm_add_shift_cub[3];
-    int cm_shift_sub[3]; /* scale 0: {10,10,12}; scales 1-3: {0,0,0}. */
-    int cm_shift_inner;
-    int cm_add_shift_inner;
-    uint _pad0;
-};
+constant long IADM_I4_FIX_ONE_BY_30 = 143165577l; /* (1/30)*2^32, >>32 */
+constant long IADM_I4_ONE_BY_15 = 286331153l;     /* (1/15)*2^32, >>32 */
 
 /* Mirror form matches the CUDA calculate_indices() over-range reflection used
  * throughout the integer DWT (negative indices are handled by the n==0
@@ -480,17 +423,16 @@ kernel void integer_adm_dwt_vert_16bpc(const device ushort *ref_raw [[buffer(0)]
 }
 
 /* ------------------------------------------------------------------ */
-/*  Stage 0' — DWT vertical pass (scales 1-3, int32 parent LL band).   */
-/*  Reads parent band_a; emits int32 lo/hi sub-rows. The s123 vertical  */
-/*  rounding (add_shift, shift) is supplied per scale via IadmCsf.       */
+/*  Stage 0' — DWT vertical pass (scales 1-3) over the parent's band a. */
+/*  The parent of scale 1 is the int16 band of scale 0, read widened as  */
+/*  the CPU's i16_to_i32() does; the parent of scales 2 and 3 is int32.  */
+/*  The s123 vertical rounding (add_shift, shift) is i4_dwt2_round()'s.  */
 /* ------------------------------------------------------------------ */
-kernel void integer_adm_dwt_vert_s123(const device int *parent_ref_band [[buffer(6)]],
-                                      const device int *parent_dis_band [[buffer(7)]],
-                                      device int *dwt_tmp_ref [[buffer(2)]],
-                                      device int *dwt_tmp_dis [[buffer(3)]],
-                                      constant IadmDims &d [[buffer(4)]],
-                                      constant IadmCsf &c [[buffer(5)]],
-                                      uint3 gid [[thread_position_in_grid]])
+static void iadm_dwt_vert_s123_impl(const device int *parent32_ref, const device int *parent32_dis,
+                                    const device short *parent16_ref,
+                                    const device short *parent16_dis, device int *dwt_tmp_ref,
+                                    device int *dwt_tmp_dis, constant IadmDims &d,
+                                    constant IadmCsf &c, uint3 gid, bool parent16)
 {
     const int gx = (int)gid.x;
     const int gy = (int)gid.y;
@@ -511,12 +453,15 @@ kernel void integer_adm_dwt_vert_s123(const device int *parent_ref_band [[buffer
     idx.w = iadm_mirror_hi(idx.w, d.cur_h);
 
     /* Parent band_a is stored at band 0 in the parent band buffer. */
-    const device int *band = (plane_is_dis == 0) ? parent_ref_band : parent_dis_band;
+    const device int *band32 = (plane_is_dis == 0) ? parent32_ref : parent32_dis;
+    const device short *band16 = (plane_is_dis == 0) ? parent16_ref : parent16_dis;
     const int pstride = d.parent_buf_stride;
     int yy[4] = {idx.x, idx.y, idx.z, idx.w};
-    long accum_lo = 0, accum_hi = 0;
+    long accum_lo = 0;
+    long accum_hi = 0;
     for (int k = 0; k < 4; ++k) {
-        int v = band[yy[k] * pstride + gx];
+        const int at = yy[k] * pstride + gx;
+        const int v = parent16 ? (int)band16[at] : band32[at];
         accum_lo += (long)IADM_LO[k] * v;
         accum_hi += (long)IADM_HI[k] * v;
     }
@@ -525,6 +470,32 @@ kernel void integer_adm_dwt_vert_s123(const device int *parent_ref_band [[buffer
     device int *dst = (plane_is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
     dst[gy * out_stride + gx] = (int)((accum_lo + c.s123_vert_add) >> c.s123_vert_shift);
     dst[gy * out_stride + d.cur_w + gx] = (int)((accum_hi + c.s123_vert_add) >> c.s123_vert_shift);
+}
+
+/* Scale 1: the parent is the int16 band of scale 0. */
+kernel void integer_adm_dwt_vert_s1(const device short *parent_ref_band [[buffer(6)]],
+                                    const device short *parent_dis_band [[buffer(7)]],
+                                    device int *dwt_tmp_ref [[buffer(2)]],
+                                    device int *dwt_tmp_dis [[buffer(3)]],
+                                    constant IadmDims &d [[buffer(4)]],
+                                    constant IadmCsf &c [[buffer(5)]],
+                                    uint3 gid [[thread_position_in_grid]])
+{
+    iadm_dwt_vert_s123_impl((const device int *)0, (const device int *)0, parent_ref_band,
+                            parent_dis_band, dwt_tmp_ref, dwt_tmp_dis, d, c, gid, true);
+}
+
+/* Scales 2 and 3: the parent is the int32 band of the scale before. */
+kernel void integer_adm_dwt_vert_s123(const device int *parent_ref_band [[buffer(6)]],
+                                      const device int *parent_dis_band [[buffer(7)]],
+                                      device int *dwt_tmp_ref [[buffer(2)]],
+                                      device int *dwt_tmp_dis [[buffer(3)]],
+                                      constant IadmDims &d [[buffer(4)]],
+                                      constant IadmCsf &c [[buffer(5)]],
+                                      uint3 gid [[thread_position_in_grid]])
+{
+    iadm_dwt_vert_s123_impl(parent_ref_band, parent_dis_band, (const device short *)0,
+                            (const device short *)0, dwt_tmp_ref, dwt_tmp_dis, d, c, gid, false);
 }
 
 /* ------------------------------------------------------------------ */
@@ -665,9 +636,6 @@ static inline int iadm_i4_band_vals(const device int *ref, const device int *dis
                                     int buf_stride, int half_h, int theta, bool use_r,
                                     constant IadmCsf &c, thread int *out_a)
 {
-    const uint shift_dst = 28u;
-    const int add_bef_shift_dst = (int)(1u << (shift_dst - 1u));
-
     int oh = iadm_read32(ref, 1, y, x, buf_stride, half_h);
     int ov = iadm_read32(ref, 2, y, x, buf_stride, half_h);
     int od = iadm_read32(ref, 3, y, x, buf_stride, half_h);
@@ -682,18 +650,18 @@ static inline int iadm_i4_band_vals(const device int *ref, const device int *dis
 
     uint irf = (theta == 0) ? c.i_rfactor_h : (theta == 1) ? c.i_rfactor_v : c.i_rfactor_d;
     int src = use_r ? r_val : (t_val - r_val);
-    int csf = (int)(((irf * (long)src) + add_bef_shift_dst) >> shift_dst);
+    int csf = vmaf_mtl_iadm_i4_csf(irf, src, c.i4_add_shift_dst, c.i4_shift_dst);
     *out_a = (t_val - r_val);
     return csf;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Stage 2 / 2b — Decouple + CSF: writes csf_a + csf_f (or AIM r).     */
+/*  Stage 2 — Decouple + CSF: writes csf_a + csf_f.                     */
 /*  Scale 0 (int16) variant.                                           */
 /* ------------------------------------------------------------------ */
 static void iadm_decouple_csf_s0(const device short *ref_band, const device short *dis_band,
                                  device short *csf_a, device short *csf_f, constant IadmDims &d,
-                                 constant IadmCsf &c, uint2 gid, bool use_r)
+                                 constant IadmCsf &c, uint2 gid)
 {
     const int gx = (int)gid.x;
     const int gy = (int)gid.y;
@@ -702,7 +670,7 @@ static void iadm_decouple_csf_s0(const device short *ref_band, const device shor
     }
     for (int b = 0; b < IADM_NUM_BANDS; ++b) {
         int a_dummy;
-        int csf = iadm_s0_band_vals(ref_band, dis_band, gy, gx, d.buf_stride, d.half_h, b, use_r, c,
+        int csf = iadm_s0_band_vals(ref_band, dis_band, gy, gx, d.buf_stride, d.half_h, b, false, c,
                                     &a_dummy);
         iadm_write16(csf_a, b, gy, gx, d.buf_stride, d.half_h, csf);
         int flt = (int)(((IADM_S0_FIX_ONE_BY_30 * (uint)abs(csf)) + 2048u) >> 12);
@@ -718,37 +686,26 @@ kernel void integer_adm_decouple_csf_s0(const device short *ref_band [[buffer(0)
                                         constant IadmCsf &c [[buffer(5)]],
                                         uint2 gid [[thread_position_in_grid]])
 {
-    iadm_decouple_csf_s0(ref_band, dis_band, csf_a, csf_f, d, c, gid, false);
-}
-
-kernel void
-integer_adm_csf_r_s0(const device short *ref_band [[buffer(0)]],
-                     const device short *dis_band [[buffer(1)]], device short *csf_a [[buffer(2)]],
-                     device short *csf_f [[buffer(3)]], constant IadmDims &d [[buffer(4)]],
-                     constant IadmCsf &c [[buffer(5)]], uint2 gid [[thread_position_in_grid]])
-{
-    iadm_decouple_csf_s0(ref_band, dis_band, csf_a, csf_f, d, c, gid, true);
+    iadm_decouple_csf_s0(ref_band, dis_band, csf_a, csf_f, d, c, gid);
 }
 
 /* Scales 1-3 (int32) decouple + CSF. csf_f uses FIX_ONE_BY_30 >> 32. */
 static void iadm_decouple_csf_s123(const device int *ref_band, const device int *dis_band,
                                    device int *csf_a, device int *csf_f, constant IadmDims &d,
-                                   constant IadmCsf &c, uint2 gid, bool use_r)
+                                   constant IadmCsf &c, uint2 gid)
 {
     const int gx = (int)gid.x;
     const int gy = (int)gid.y;
     if (gx >= d.half_w || gy >= d.half_h) {
         return;
     }
-    const uint shift_flt = 32u;
-    const long add_bef_shift_flt = (long)(1u << (shift_flt - 1u));
     for (int b = 0; b < IADM_NUM_BANDS; ++b) {
         int a_dummy;
-        int csf = iadm_i4_band_vals(ref_band, dis_band, gy, gx, d.buf_stride, d.half_h, b, use_r, c,
+        int csf = iadm_i4_band_vals(ref_band, dis_band, gy, gx, d.buf_stride, d.half_h, b, false, c,
                                     &a_dummy);
         iadm_write32(csf_a, b, gy, gx, d.buf_stride, d.half_h, csf);
-        int flt =
-            (int)((((long)IADM_I4_FIX_ONE_BY_30 * abs(csf)) + add_bef_shift_flt) >> shift_flt);
+        int flt = vmaf_mtl_iadm_i4_masking_term(IADM_I4_FIX_ONE_BY_30, csf, c.i4_add_shift_flt,
+                                                c.i4_shift_flt);
         iadm_write32(csf_f, b, gy, gx, d.buf_stride, d.half_h, flt);
     }
 }
@@ -761,17 +718,7 @@ kernel void integer_adm_decouple_csf_s123(const device int *ref_band [[buffer(0)
                                           constant IadmCsf &c [[buffer(5)]],
                                           uint2 gid [[thread_position_in_grid]])
 {
-    iadm_decouple_csf_s123(ref_band, dis_band, csf_a, csf_f, d, c, gid, false);
-}
-
-kernel void integer_adm_csf_r_s123(const device int *ref_band [[buffer(0)]],
-                                   const device int *dis_band [[buffer(1)]],
-                                   device int *csf_a [[buffer(2)]], device int *csf_f [[buffer(3)]],
-                                   constant IadmDims &d [[buffer(4)]],
-                                   constant IadmCsf &c [[buffer(5)]],
-                                   uint2 gid [[thread_position_in_grid]])
-{
-    iadm_decouple_csf_s123(ref_band, dis_band, csf_a, csf_f, d, c, gid, true);
+    iadm_decouple_csf_s123(ref_band, dis_band, csf_a, csf_f, d, c, gid);
 }
 
 /* ------------------------------------------------------------------ */
@@ -779,7 +726,7 @@ kernel void integer_adm_csf_r_s123(const device int *ref_band [[buffer(0)]],
 /*  pairs (no 64-bit MSL atomics). threadgroup fan-in via 2x uint arrays. */
 /* ------------------------------------------------------------------ */
 static inline ulong iadm_tg_reduce_u64(ulong v, threadgroup atomic_uint *scratch_lo,
-                                       threadgroup atomic_uint *scratch_hi, uint lid, uint tg_size)
+                                       threadgroup atomic_uint *scratch_hi, uint lid)
 {
     /* Simple shared-memory tree reduction using two uint atomics per slot;
      * MSL has no 64-bit atomics so we split the running sum. Because each
@@ -836,6 +783,14 @@ static inline int adm_cm_excess_s0(int x, int thr, int shift)
 static inline ulong adm_cm_round_row_total(ulong row_total, ulong rounding, uint shift)
 {
     return (row_total + rounding) >> shift;
+}
+
+/* One 64-bit sum into slot `slot` of threadgroup `wg`, through the layout the
+ * host reads with (vmaf_mtl_iadm_accum_word()). */
+static inline void iadm_store_slot(device uint *accum_out, uint wg, uint slot, ulong v)
+{
+    accum_out[vmaf_mtl_iadm_accum_word(wg, slot, 0u)] = (uint)(v & 0xFFFFFFFFul);
+    accum_out[vmaf_mtl_iadm_accum_word(wg, slot, 1u)] = (uint)(v >> 32);
 }
 
 /* ------------------------------------------------------------------ */
@@ -929,21 +884,17 @@ static void iadm_csf_cm_s0(const device short *ref_band, const device short *dis
         local_cm += iadm_cm_cube((long)x, shift_sq, add_shift_sq, shift_cub, add_shift_cub);
     }
 
-    ulong total_csf = iadm_tg_reduce_u64(local_csf, s_csf_lo, s_csf_hi, lid, tg_size);
+    ulong total_csf = iadm_tg_reduce_u64(local_csf, s_csf_lo, s_csf_hi, lid);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    ulong total_cm = iadm_tg_reduce_u64(local_cm, s_cm_lo, s_cm_hi, lid, tg_size);
+    ulong total_cm = iadm_tg_reduce_u64(local_cm, s_cm_lo, s_cm_hi, lid);
 
     if (lid == 0) {
         /* inner-accum shift applied per (band,row) to match accum_global. */
         ulong cm_out =
             adm_cm_round_row_total(total_cm, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
         ulong csf_out = (total_csf + (ulong)c.den_add_shift_accum) >> (uint)c.den_shift_accum;
-        const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
-        const uint base = slot * 2u;
-        accum_out[(base + band_idx) * 2u + 0u] = (uint)(csf_out & 0xFFFFFFFFul);
-        accum_out[(base + band_idx) * 2u + 1u] = (uint)(csf_out >> 32);
-        accum_out[(base + 3u + band_idx) * 2u + 0u] = (uint)(cm_out & 0xFFFFFFFFul);
-        accum_out[(base + 3u + band_idx) * 2u + 1u] = (uint)(cm_out >> 32);
+        iadm_store_slot(accum_out, wg_id, VMAF_MTL_IADM_SLOT_DEN + band_idx, csf_out);
+        iadm_store_slot(accum_out, wg_id, VMAF_MTL_IADM_SLOT_CM + band_idx, cm_out);
     }
 }
 
@@ -988,14 +939,9 @@ static void iadm_csf_cm_s123(const device int *ref_band, const device int *dis_b
     const int w = d.half_w;
     const int h = d.half_h;
 
-    uint irf = (band_idx == 0u) ? c.i_rfactor_h : (band_idx == 1u) ? c.i_rfactor_v : c.i_rfactor_d;
-
-    const uint den_shift_sq = (uint)c.den_shift_sq;
+    /* i4_cube_term(): I4AdmDenCtx's rounding, 2^shift_sq at the square. */
+    const uint den_shift_sq = c.den_shift_sq;
     const ulong den_add_shift_sq = (ulong)c.den_add_shift_sq;
-    const uint shift_dst = 28u;
-    const long add_bef_shift_dst = (long)(1u << (shift_dst - 1u));
-    const uint shift_flt = 32u;
-    const long add_bef_shift_flt = (long)(1u << (shift_flt - 1u));
 
     const int cm_shift_sq = c.cm_shift_sq[band_idx];
     const long cm_add_shift_sq = (long)c.cm_add_shift_sq[band_idx];
@@ -1018,21 +964,16 @@ static void iadm_csf_cm_s123(const device int *ref_band, const device int *dis_b
         int thr = 0;
         for (int theta = 0; theta < IADM_NUM_BANDS; ++theta) {
             int a_center;
-            (void)iadm_i4_band_vals(ref_band, dis_band, row, col, d.buf_stride, d.half_h, theta,
-                                    false, c, &a_center);
-            uint irf_t = (theta == 0) ? c.i_rfactor_h :
-                         (theta == 1) ? c.i_rfactor_v :
-                                        c.i_rfactor_d;
-            int csf_a_center = (int)(((irf_t * (long)a_center) + add_bef_shift_dst) >> shift_dst);
+            const int csf_a_center = iadm_i4_band_vals(ref_band, dis_band, row, col, d.buf_stride,
+                                                       d.half_h, theta, false, c, &a_center);
             int sum = 0;
             for (int dy = -1; dy <= 1; ++dy) {
                 int ry = iadm_clampx(row + dy, h);
                 for (int dx = -1; dx <= 1; ++dx) {
                     int rx = iadm_clampx(col + dx, w);
                     if (dx == 0 && dy == 0) {
-                        sum += (int)((((long)IADM_I4_ONE_BY_15 * abs(csf_a_center)) +
-                                      add_bef_shift_flt) >>
-                                     shift_flt);
+                        sum += vmaf_mtl_iadm_i4_masking_term(IADM_I4_ONE_BY_15, csf_a_center,
+                                                             c.i4_add_shift_flt, c.i4_shift_flt);
                     } else {
                         sum += iadm_read32(csf_f, theta, ry, rx, d.buf_stride, d.half_h);
                     }
@@ -1054,20 +995,16 @@ static void iadm_csf_cm_s123(const device int *ref_band, const device int *dis_b
             iadm_cm_cube((long)x, cm_shift_sq, cm_add_shift_sq, cm_shift_cub, cm_add_shift_cub);
     }
 
-    ulong total_csf = iadm_tg_reduce_u64(local_csf, s_csf_lo, s_csf_hi, lid, tg_size);
+    ulong total_csf = iadm_tg_reduce_u64(local_csf, s_csf_lo, s_csf_hi, lid);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    ulong total_cm = iadm_tg_reduce_u64(local_cm, s_cm_lo, s_cm_hi, lid, tg_size);
+    ulong total_cm = iadm_tg_reduce_u64(local_cm, s_cm_lo, s_cm_hi, lid);
 
     if (lid == 0) {
         ulong cm_out =
             adm_cm_round_row_total(total_cm, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
         ulong csf_out = (total_csf + (ulong)c.den_add_shift_accum) >> (uint)c.den_shift_accum;
-        const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
-        const uint base = slot * 2u;
-        accum_out[(base + band_idx) * 2u + 0u] = (uint)(csf_out & 0xFFFFFFFFul);
-        accum_out[(base + band_idx) * 2u + 1u] = (uint)(csf_out >> 32);
-        accum_out[(base + 3u + band_idx) * 2u + 0u] = (uint)(cm_out & 0xFFFFFFFFul);
-        accum_out[(base + 3u + band_idx) * 2u + 1u] = (uint)(cm_out >> 32);
+        iadm_store_slot(accum_out, wg_id, VMAF_MTL_IADM_SLOT_DEN + band_idx, csf_out);
+        iadm_store_slot(accum_out, wg_id, VMAF_MTL_IADM_SLOT_CM + band_idx, cm_out);
     }
 }
 
@@ -1171,14 +1108,11 @@ static void iadm_aim_cm_s0(const device short *ref_band, const device short *dis
         local_aim += iadm_cm_cube((long)x, shift_sq, add_shift_sq, shift_cub, add_shift_cub);
     }
 
-    ulong total = iadm_tg_reduce_u64(local_aim, s_lo, s_hi, lid, tg_size);
+    ulong total = iadm_tg_reduce_u64(local_aim, s_lo, s_hi, lid);
     if (lid == 0) {
         ulong out =
             adm_cm_round_row_total(total, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
-        const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
-        const uint base = slot * 2u;
-        accum_out[(base + 6u + band_idx) * 2u + 0u] = (uint)(out & 0xFFFFFFFFul);
-        accum_out[(base + 6u + band_idx) * 2u + 1u] = (uint)(out >> 32);
+        iadm_store_slot(accum_out, wg_id, VMAF_MTL_IADM_SLOT_AIM + band_idx, out);
     }
 }
 
@@ -1218,8 +1152,6 @@ static void iadm_aim_cm_s123(const device int *ref_band, const device int *dis_b
     const int w = d.half_w;
     const int h = d.half_h;
 
-    const uint shift_flt = 32u;
-    const long add_bef_shift_flt = (long)(1u << (shift_flt - 1u));
     const int shift_sq = c.cm_shift_sq[band_idx];
     const long add_shift_sq = (long)c.cm_add_shift_sq[band_idx];
     const int shift_cub = c.cm_shift_cub[band_idx];
@@ -1239,14 +1171,10 @@ static void iadm_aim_cm_s123(const device int *ref_band, const device int *dis_b
                     int a_dummy;
                     int csf_r = iadm_i4_band_vals(ref_band, dis_band, ry, rx, d.buf_stride,
                                                   d.half_h, theta, true, c, &a_dummy);
-                    if (dx == 0 && dy == 0) {
-                        sum += (int)((((long)IADM_I4_ONE_BY_15 * abs(csf_r)) + add_bef_shift_flt) >>
-                                     shift_flt);
-                    } else {
-                        sum += (int)((((long)IADM_I4_FIX_ONE_BY_30 * abs(csf_r)) +
-                                      add_bef_shift_flt) >>
-                                     shift_flt);
-                    }
+                    const long coeff =
+                        (dx == 0 && dy == 0) ? IADM_I4_ONE_BY_15 : IADM_I4_FIX_ONE_BY_30;
+                    sum += vmaf_mtl_iadm_i4_masking_term(coeff, csf_r, c.i4_add_shift_flt,
+                                                         c.i4_shift_flt);
                 }
             }
             thr += sum;
@@ -1262,14 +1190,11 @@ static void iadm_aim_cm_s123(const device int *ref_band, const device int *dis_b
         local_aim += iadm_cm_cube((long)x, shift_sq, add_shift_sq, shift_cub, add_shift_cub);
     }
 
-    ulong total = iadm_tg_reduce_u64(local_aim, s_lo, s_hi, lid, tg_size);
+    ulong total = iadm_tg_reduce_u64(local_aim, s_lo, s_hi, lid);
     if (lid == 0) {
         ulong out =
             adm_cm_round_row_total(total, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
-        const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
-        const uint base = slot * 2u;
-        accum_out[(base + 6u + band_idx) * 2u + 0u] = (uint)(out & 0xFFFFFFFFul);
-        accum_out[(base + 6u + band_idx) * 2u + 1u] = (uint)(out >> 32);
+        iadm_store_slot(accum_out, wg_id, VMAF_MTL_IADM_SLOT_AIM + band_idx, out);
     }
 }
 

@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin integer_adm_metal's decouple to the CPU's integer arithmetic (ADR-1498, ADR-1413).
+"""Pin integer_adm_metal to the CPU's integer arithmetic and layout (ADR-1498, ADR-1806).
 
-The CPU's decouple (``adm_decouple_band()`` / ``adm_decouple_band_s123()`` in
-``integer_adm_kernels.h``) takes the reciprocal 2^30 / o from ``div_lookup``,
-an integer division, and stores ``MIN(rst * gain, t)`` / ``MAX(rst * gain, t)``,
-the double product of the restored sample and ``adm_enhn_gain_limit``
-truncated toward zero. ``integer_adm_metal`` took the reciprocal in fp32 at
-scale 0 and multiplied by the limit in binary32
+The decouple (ADR-1498, ADR-1413): the CPU's ``adm_decouple_band()`` /
+``adm_decouple_band_s123()`` (``integer_adm_kernels.h``) take the reciprocal
+2^30 / o from ``div_lookup`` and store the double product of the restored
+sample and ``adm_enhn_gain_limit`` truncated toward zero; the kernel calls
+``vmaf_mtl_iadm_decouple_s0()`` / ``_s123()`` of ``metal_integer_adm_math.h``
 (T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01).
 
-The kernel now calls ``vmaf_mtl_iadm_decouple_s0()`` / ``_s123()`` of
-``metal_integer_adm_math.h``: the integer reciprocal, and
-``adm_gain_limit_product()`` of the shared ``adm_gain_limit.h`` (the SYCL
-twin's integer form), on the limit the host splits with
-``adm_gain_limit_split()`` and passes as three fields of the CSF uniform, whose
-layout the kernel and the host must share.
+The six defects of T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05, each a class
+this test refuses:
 
-Device-free: reads the sources only. ``test_metal_integer_adm_math`` holds the
-decouple against the CPU on the host; ``test_metal_integer_adm_parity`` compares
-the scores on an Apple device.
+1. the reduction slots: the kernels write and the host reads them through
+   ``vmaf_mtl_iadm_accum_word()`` of ``metal_integer_adm_uniforms.h`` only
+   (the kernels wrote them twice as far apart as the host read them);
+2. the scale-1 parent: scale 1 runs ``integer_adm_dwt_vert_s1``, which reads
+   the int16 band of scale 0 (the CPU's ``i16_to_i32()``), never the int32
+   kernel;
+3. the scales-1-3 masking terms take the CPU's rounding term INT32_MIN
+   (``i4_adm_round_terms()``, Netflix#955) from ``I4AdmCmCtx``, never +2^31;
+4. the scales-1-3 denominator rounds its squares with ``I4AdmDenCtx``'s
+   2^shift_sq, never 2^(shift_sq - 1);
+5. under ``adm_skip_scale0`` scale 0 has no numerator, no AIM and only the DWT;
+6. every score is concluded by the CPU's ``adm_cm_result()`` /
+   ``adm_csf_den_result()`` with the double noise weight, never a float copy.
+
+Device-free: reads the sources only. ``test_metal_integer_adm_host_replay``
+runs the kernels on the host, ``test_metal_integer_adm_math`` the header, and
+``test_metal_integer_adm_parity`` compares the scores on an Apple device.
 """
 
 from __future__ import annotations
@@ -33,14 +42,16 @@ ROOT = Path(__file__).resolve().parents[2]
 FEATURE = ROOT / "core" / "src" / "feature"
 
 MATH = "metal/metal_integer_adm_math.h"
+UNIFORMS = "metal/metal_integer_adm_uniforms.h"
 KERNEL = "metal/integer_adm.metal"
-HOST = "metal/integer_adm_metal.mm"
+HOST = "metal/integer_adm_metal_host.c"
+HOST_H = "metal/integer_adm_metal_host.h"
+MM = "metal/integer_adm_metal.mm"
 SHARED = "adm_gain_limit.h"
 REFERENCE = "integer_adm_kernels.h"
 TABLE = "integer_adm.h"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
-METAL_TYPES = {"int": "int32_t", "uint": "uint32_t", "float": "float"}
 
 MATH_PIECES = {
     "vmaf_mtl_i32 vmaf_mtl_iadm_recip(vmaf_mtl_i32 o)": ("return 1073741824 / o;",),
@@ -55,22 +66,68 @@ MATH_PIECES = {
     "vmaf_mtl_i32 vmaf_mtl_iadm_decouple_s123(": (
         "const vmaf_mtl_i32 rst = (vmaf_mtl_i32)(((k * o) + 16384) >> 15);",
     ),
+    "vmaf_mtl_i32 vmaf_mtl_iadm_i4_csf(": (
+        "return (vmaf_mtl_i32)((((vmaf_mtl_i64)rfactor * v) + add) >> shift);",
+    ),
+    "vmaf_mtl_i32 vmaf_mtl_iadm_i4_masking_term(": (
+        "return (vmaf_mtl_i32)(((coeff * magnitude) + add) >> shift);",
+    ),
 }
 KERNEL_CALLS = {
     "vmaf_mtl_iadm_decouple_s0(o_val, t_val, af, iadm_gain(c))": 3,
     "vmaf_mtl_iadm_decouple_s123(o_val, t_val, af, iadm_gain(c))": 1,
+    "vmaf_mtl_iadm_i4_csf(irf, src, c.i4_add_shift_dst, c.i4_shift_dst)": 1,
+    "c.i4_add_shift_flt, c.i4_shift_flt)": 3,
+    "accum_out[vmaf_mtl_iadm_accum_word(wg, slot, 0u)]": 1,
+    "accum_out[vmaf_mtl_iadm_accum_word(wg, slot, 1u)]": 1,
 }
-HOST_PIECES = (
-    '#include "../adm_gain_limit.h"',
-    "const struct AdmGainLimit gain = adm_gain_limit_split(s->adm_enhn_gain_limit);",
-    "c.gain_m_hi = gain.m_hi;",
-    "c.gain_m_lo = gain.m_lo;",
-    "c.gain_frac_bits = gain.frac_bits;",
+S1_KERNEL = (
+    "kernel void integer_adm_dwt_vert_s1(const device short *parent_ref_band [[buffer(6)]], "
+    "const device short *parent_dis_band [[buffer(7)]],"
 )
+HOST_PIECES = {
+    "gain": (
+        '#include "../adm_gain_limit.h"',
+        "const struct AdmGainLimit gain = adm_gain_limit_split(o->adm_enhn_gain_limit);",
+        "c->gain_m_hi = gain.m_hi;",
+        "c->gain_m_lo = gain.m_lo;",
+        "c->gain_frac_bits = gain.frac_bits;",
+    ),
+    "slots": (
+        "return (size_t)vmaf_mtl_iadm_accum_word(g->wg_count[scale], 0u, 0u) * sizeof(uint32_t);",
+        "return ((uint64_t)accum[vmaf_mtl_iadm_accum_word(wg, slot, 1u)] << 32) | "
+        "(uint64_t)accum[vmaf_mtl_iadm_accum_word(wg, slot, 0u)];",
+    ),
+    "parent": (
+        "return scale == 1 ? IADM_METAL_DWT_VERT_S1 : IADM_METAL_DWT_VERT_S123;",
+        "(scale == 0 ? sizeof(int16_t) : sizeof(int32_t));",
+        '"integer_adm_dwt_vert_s1"',
+    ),
+    "rounding": (
+        "i4_adm_cm_ctx_init(&cm, &no_planes, w, h, 0, 0, scale,",
+        "c->i4_add_shift_flt = cm.add_bef_shift_flt;",
+        "c->i4_shift_flt = cm.shift_flt;",
+        "c->i4_add_shift_dst = cm.add_bef_shift_dst;",
+    ),
+    "denominator": (
+        "i4_adm_csf_den_ctx_init(&den, scale, w, h,",
+        "c->den_add_shift_sq = den.add_shift_sq;",
+        "c->den_shift_sq = den.shift_sq;",
+    ),
+    "conclusion": (
+        "return adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);",
+        "return i4_adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);",
+        "return adm_csf_den_result(&c, accum, o->adm_noise_weight);",
+        "return i4_adm_csf_den_result(&c, accum, o->adm_noise_weight);",
+        "out[0] = iadm_cm_result(o, scale, w, h, t.cm, o->adm_noise_weight);",
+    ),
+}
 REFERENCE_LINES = (
     "const int32_t tmp_k = (o == 0) ? 32768 : (((int64_t)lut[o + 32768] * t) + 16384) >> 15;",
     "rst = ADM_KERNEL_MIN((rst * gain), t);",
     "rst = ADM_KERNEL_MAX((rst * gain), t);",
+    "add_bef_shift_flt[idx] = (int32_t)(1u << (i4_shift_flt[idx] - 1));",
+    "const uint32_t add_shift_sq[3] = {1u << shift_sq[0], 1u << shift_sq[1], 1u << shift_sq[2]};",
 )
 TABLE_LINE = "const int32_t recip = (int32_t)(div_Q_factor / i);"
 
@@ -81,7 +138,7 @@ def _flat(source: str) -> str:
 
 
 def _sources() -> dict[str, str]:
-    names = (MATH, KERNEL, HOST, SHARED, REFERENCE, TABLE)
+    names = (MATH, UNIFORMS, KERNEL, HOST, HOST_H, MM, SHARED, REFERENCE, TABLE)
     return {name: (FEATURE / name).read_text(encoding="utf-8") for name in names}
 
 
@@ -101,24 +158,13 @@ def _function_body(code: str, signature: str) -> str:
     return ""
 
 
-def _struct_fields(code: str, opener: str, closer: str) -> list[tuple[str, str]]:
-    """(type, name) of each member between `opener` and `closer`, Metal types mapped."""
-    start = code.find(opener)
-    end = code.find(closer, start)
-    if start < 0 or end < 0:
-        return []
-    body = code[code.index("{", start) + 1 : end]
-    fields = re.findall(r"\b(\w+) (\w+(?:\[\d+\])?);", body)
-    return [(METAL_TYPES.get(kind, kind), name) for kind, name in fields]
-
-
 def _math_failures(math: str) -> list[str]:
     code = _flat(math)
     failures: list[str] = []
     for signature, pieces in MATH_PIECES.items():
         body = _function_body(code, signature)
         if not body or any(piece not in body for piece in pieces):
-            failures.append(f"{MATH}: `{signature}` is not the CPU's integer decouple")
+            failures.append(f"{MATH}: `{signature}` is not the CPU's integer arithmetic")
     recip = _function_body(code, "vmaf_mtl_i32 vmaf_mtl_iadm_recip(vmaf_mtl_i32 o)")
     if "float" in recip or "(float)rst" in code:
         failures.append(f"{MATH}: the reciprocal or the gain product is formed in fp32")
@@ -130,26 +176,75 @@ def _math_failures(math: str) -> list[str]:
 def _kernel_failures(kernel: str) -> list[str]:
     code = _flat(kernel)
     failures: list[str] = []
-    if '#include "metal_integer_adm_math.h"' not in code:
-        failures.append(f"{KERNEL}: the kernel does not include the decouple header")
+    for header in ("metal_integer_adm_math.h", "metal_integer_adm_uniforms.h"):
+        if f'#include "{header}"' not in code:
+            failures.append(f"{KERNEL}: the kernel does not include {header}")
     if any(code.count(call) != count for call, count in KERNEL_CALLS.items()):
-        failures.append(f"{KERNEL}: a decouple site does not call the header")
+        failures.append(f"{KERNEL}: a decouple, CSF, masking or slot site does not call the header")
     if re.search(r"IADM_DIV_Q_FACTOR|\begl\b|float gain_limit|iadm_decouple_r_s", code):
         failures.append(f"{KERNEL}: the fp32 reciprocal or the binary32 gain limit is back")
+    if re.search(r"accum_out\[(?!vmaf_mtl_iadm_accum_word\()", code) or "IADM_ACCUM_SLOTS" in code:
+        failures.append(
+            f"{KERNEL}: a reduction slot is addressed outside vmaf_mtl_iadm_accum_word()"
+        )
+    if S1_KERNEL not in code:
+        failures.append(f"{KERNEL}: scale 1 has no kernel that reads the int16 band of scale 0")
+    if re.search(r"add_bef_shift_flt|shift_flt - 1u|1u << 31|2147483648", code):
+        failures.append(f"{KERNEL}: a scales-1-3 rounding term is the kernel's own, not INT32_MIN")
+    if re.search(r"struct IadmCsf \{|struct IadmDims \{", code):
+        failures.append(f"{KERNEL}: the kernel defines its own uniforms")
     return failures
 
 
-def _host_failures(host: str, kernel: str) -> list[str]:
+def _host_failures(host: str, header: str) -> list[str]:
     code = _flat(host)
+    failures = [
+        f"{HOST}: the {group} terms are not the shared layout or the CPU's"
+        for group, pieces in HOST_PIECES.items()
+        if any(piece not in code for piece in pieces)
+    ]
+    if re.search(r"<<\s*\(\s*(?:den\.)?(?:den_)?shift_sq\s*-\s*1", code):
+        failures.append(f"{HOST}: the denominator square is rounded with 2^(shift - 1)")
+    if re.search(r"\(\s*float\s*\)\s*(?:o->|s->)?adm_noise_weight|float noise_weight", code):
+        failures.append(f"{HOST}: the noise weight is narrowed to float")
+    if '#include "metal_integer_adm_uniforms.h"' not in _flat(header):
+        failures.append(f"{HOST_H}: the host does not take the uniforms of the kernels")
+    failures += _skip_scale0_failures(code)
+    return failures
+
+
+def _skip_scale0_failures(code: str) -> list[str]:
     failures: list[str] = []
-    if any(piece not in code for piece in HOST_PIECES):
-        failures.append(f"{HOST}: the host does not split the gain limit for the kernels")
-    if "(float)s->adm_enhn_gain_limit" in code:
-        failures.append(f"{HOST}: the host narrows the gain limit to float")
-    metal = _struct_fields(_flat(kernel), "struct IadmCsf {", "};")
-    mm = _struct_fields(code, "typedef struct IadmCsfHost {", "} IadmCsfHost;")
-    if not metal or metal != mm:
-        failures.append(f"{HOST}: IadmCsfHost and the kernel's IadmCsf differ")
+    scores = _function_body(code, "static void iadm_scale_scores(")
+    skip = scores.find("if (scale == 0 && o->adm_skip_scale0) {")
+    aim = scores.find("t.aim")
+    if skip < 0 or aim < 0 or "return;" not in scores[skip:aim]:
+        failures.append(
+            f"{HOST}: adm_skip_scale0 does not leave scale 0 without a numerator or AIM"
+        )
+    stages = _function_body(code, "unsigned iadm_metal_stages(")
+    skip = stages.find("if (s0 && o->adm_skip_scale0) {")
+    decouple = stages.find("IADM_METAL_DECOUPLE_CSF_S0")
+    if skip < 0 or decouple < 0 or "return n;" not in stages[skip:decouple]:
+        failures.append(f"{HOST}: adm_skip_scale0 runs more than the DWT at scale 0")
+    return failures
+
+
+def _mm_failures(mm: str) -> list[str]:
+    code = _flat(mm)
+    failures: list[str] = []
+    if '#include "integer_adm_metal_host.h"' not in code:
+        failures.append(f"{MM}: the dispatch does not use integer_adm_metal_host.c")
+    if re.search(r"IadmCsfHost|IadmDimsHost|IADM_ACCUM_SLOTS|\bpowf\(|\bconclude_adm_", code):
+        failures.append(f"{MM}: the dispatch keeps its own uniforms, slots or score formulas")
+    for piece in (
+        "iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);",
+        "iadm_metal_stages(&o, &s->geom, scale, stages);",
+        "iadm_metal_scores(&o, &s->geom, accum, index, &r);",
+        "bind_buffer(enc, s->ref_band[scale - 1], 6);",
+    ):
+        if piece not in code:
+            failures.append(f"{MM}: `{piece}` is missing")
     return failures
 
 
@@ -181,7 +276,8 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
         _math_failures(sources[MATH])
         + _kernel_failures(sources[KERNEL])
-        + _host_failures(sources[HOST], sources[KERNEL])
+        + _host_failures(sources[HOST], sources[HOST_H])
+        + _mm_failures(sources[MM])
         + _shared_failures(sources[SHARED])
         + _reference_failures(sources[REFERENCE], sources[TABLE])
     )
@@ -215,7 +311,7 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
             "    const vmaf_mtl_i64 gained = adm_gain_limit_product(rst, g);",
             "    const vmaf_mtl_i64 gained = (vmaf_mtl_i64)((float)rst * egl);",
         )
-        self._assert_detected(failures, "is not the CPU's integer decouple")
+        self._assert_detected(failures, "is not the CPU's integer arithmetic")
         self._assert_detected(failures, "formed in fp32")
 
     def test_float_restored_sample_is_detected(self) -> None:
@@ -238,15 +334,103 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
     def test_float_limit_on_the_host_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    const struct AdmGainLimit gain = adm_gain_limit_split(s->adm_enhn_gain_limit);",
-            "    const float gain_limit = (float)s->adm_enhn_gain_limit;",
+            "const struct AdmGainLimit gain = adm_gain_limit_split(o->adm_enhn_gain_limit);",
+            "const float gain_limit = (float)o->adm_enhn_gain_limit;",
         )
-        self._assert_detected(failures, "does not split the gain limit")
-        self._assert_detected(failures, "narrows the gain limit to float")
+        self._assert_detected(failures, "the gain terms")
 
-    def test_uniform_layout_drift_is_detected(self) -> None:
-        failures = self._edited(HOST, "    int32_t gain_frac_bits;\n", "")
-        self._assert_detected(failures, "IadmCsfHost and the kernel's IadmCsf differ")
+    def test_doubled_slot_stride_is_detected(self) -> None:
+        # Defect 1: the kernels' former slot addressing.
+        failures = self._edited(
+            KERNEL,
+            "accum_out[vmaf_mtl_iadm_accum_word(wg, slot, 0u)]",
+            "accum_out[(wg * 18u + slot) * 2u]",
+        )
+        self._assert_detected(failures, "outside vmaf_mtl_iadm_accum_word()")
+
+    def test_host_slot_table_is_detected(self) -> None:
+        failures = self._edited(
+            HOST,
+            "(uint64_t)accum[vmaf_mtl_iadm_accum_word(wg, slot, 0u)];",
+            "(uint64_t)accum[(wg * 9u + slot) * 2u];",
+        )
+        self._assert_detected(failures, "the slots terms")
+
+    def test_int32_view_of_scale0_band_is_detected(self) -> None:
+        # Defect 2: scale 1 through the int32 kernel.
+        failures = self._edited(
+            HOST,
+            "return scale == 1 ? IADM_METAL_DWT_VERT_S1 : IADM_METAL_DWT_VERT_S123;",
+            "return IADM_METAL_DWT_VERT_S123;",
+        )
+        self._assert_detected(failures, "the parent terms")
+
+    def test_int32_scale1_kernel_is_detected(self) -> None:
+        failures = self._edited(
+            KERNEL,
+            "kernel void integer_adm_dwt_vert_s1(const device short *parent_ref_band",
+            "kernel void integer_adm_dwt_vert_s1(const device int *parent_ref_band",
+        )
+        self._assert_detected(failures, "reads the int16 band of scale 0")
+
+    def test_positive_masking_rounding_is_detected(self) -> None:
+        # Defect 3: the kernels' former +2^31.
+        failures = self._edited(
+            KERNEL,
+            "        int flt = vmaf_mtl_iadm_i4_masking_term(IADM_I4_FIX_ONE_BY_30, csf, "
+            "c.i4_add_shift_flt,\n",
+            "        const long add_bef_shift_flt = (long)(1u << 31);\n"
+            "        int flt = vmaf_mtl_iadm_i4_masking_term(IADM_I4_FIX_ONE_BY_30, csf, "
+            "add_bef_shift_flt,\n",
+        )
+        self._assert_detected(failures, "not INT32_MIN")
+        self._assert_detected(failures, "does not call the header")
+
+    def test_host_rounding_not_from_cpu_is_detected(self) -> None:
+        failures = self._edited(
+            HOST,
+            "c->i4_add_shift_flt = cm.add_bef_shift_flt;",
+            "c->i4_add_shift_flt = INT32_MAX;",
+        )
+        self._assert_detected(failures, "the rounding terms")
+
+    def test_half_denominator_rounding_is_detected(self) -> None:
+        # Defect 4.
+        failures = self._edited(
+            HOST,
+            "c->den_add_shift_sq = den.add_shift_sq;",
+            "c->den_add_shift_sq = 1u << (den.shift_sq - 1u);",
+        )
+        self._assert_detected(failures, "the denominator terms")
+        self._assert_detected(failures, "2^(shift - 1)")
+
+    def test_scale0_aim_under_skip_is_detected(self) -> None:
+        # Defect 5.
+        failures = self._edited(
+            HOST,
+            "        out[1] = 1e-10f; /* the CPU's den = 1e-10, no numerator, no AIM */\n"
+            "        return;\n",
+            "        out[1] = 1e-10f; /* the CPU's den = 1e-10, no numerator, no AIM */\n",
+        )
+        self._assert_detected(failures, "without a numerator or AIM")
+
+    def test_float_noise_weight_is_detected(self) -> None:
+        # Defect 6.
+        failures = self._edited(
+            HOST,
+            "out[0] = iadm_cm_result(o, scale, w, h, t.cm, o->adm_noise_weight);",
+            "out[0] = iadm_cm_result(o, scale, w, h, t.cm, (float)o->adm_noise_weight);",
+        )
+        self._assert_detected(failures, "narrowed to float")
+
+    def test_score_formula_copy_in_dispatch_is_detected(self) -> None:
+        failures = self._edited(
+            MM,
+            "static int emit_scores(",
+            "static float conclude_adm_cm(void) { return powf(2.0f, 3.0f); }\n"
+            "static int emit_scores(",
+        )
+        self._assert_detected(failures, "own uniforms, slots or score formulas")
 
     def test_unguarded_split_is_detected(self) -> None:
         failures = self._edited(
@@ -261,6 +445,14 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
             REFERENCE,
             "        rst = ADM_KERNEL_MIN((rst * gain), t);",
             "        rst = ADM_KERNEL_MIN((int32_t)(rst * (float)gain), t);",
+        )
+        self._assert_detected(failures, "the twin mirrors it")
+
+    def test_changed_reference_rounding_is_detected(self) -> None:
+        failures = self._edited(
+            REFERENCE,
+            "        add_bef_shift_flt[idx] = (int32_t)(1u << (i4_shift_flt[idx] - 1));",
+            "        add_bef_shift_flt[idx] = (int32_t)(1u << (i4_shift_flt[idx] - 2));",
         )
         self._assert_detected(failures, "the twin mirrors it")
 

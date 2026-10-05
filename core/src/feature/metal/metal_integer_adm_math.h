@@ -27,6 +27,10 @@
  *      MSL behind __METAL_VERSION__ and needs UINT64_C, defined below.
  *  The restored sample at scales 1-3 is the int64 expression narrowed to
  *  int32, as on the CPU; the kernel converted it to float.
+ *
+ *  The CSF weighting and the masking terms of scales 1-3 are here too, with
+ *  the CPU's rounding terms as parameters (T-METAL-INTEGER-ADM-TWIN-DEFECTS-
+ *  2026-10-05: the kernel added +2^31 where the CPU adds INT32_MIN).
  */
 
 #ifndef VMAF_FEATURE_METAL_METAL_INTEGER_ADM_MATH_H_
@@ -47,6 +51,7 @@ VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_iadm_recip(vmaf_mtl_i32 o)
 
 /* The CPU's get_best15_from32(): the top 15 bits of `temp` (>= 2^15), rounded,
  * and how far they were shifted down. */
+// NOLINTNEXTLINE(modernize-use-using): C and MSL share this header, ADR-1498
 typedef struct VmafMtlAdmBest15 {
     vmaf_mtl_u32 value;
     vmaf_mtl_i32 shift;
@@ -127,6 +132,27 @@ VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_iadm_decouple_s123(vmaf_mtl_i32 o, vmaf_mtl_
     const vmaf_mtl_i64 k = vmaf_mtl_iadm_k_s123(o, t);
     const vmaf_mtl_i32 rst = (vmaf_mtl_i32)(((k * o) + 16384) >> 15);
     return angle_flag ? vmaf_mtl_iadm_gain_limit(rst, k, o, t, g) : rst;
+}
+
+/* i4_adm_csf_cols() and i4_adm_cm_scale() (scales 1-3): a band sample times
+ * its CSF weight, plus the rounding term `add`, shifted down by `shift`. The
+ * host passes I4AdmCmCtx's add_bef_shift_dst and shift_dst. */
+VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_iadm_i4_csf(vmaf_mtl_u32 rfactor, vmaf_mtl_i32 v,
+                                                vmaf_mtl_i32 add, vmaf_mtl_u32 shift)
+{
+    return (vmaf_mtl_i32)((((vmaf_mtl_i64)rfactor * v) + add) >> shift);
+}
+
+/* The 1/30 neighbour term of i4_adm_csf_cols() and the 1/15 centre tap of
+ * i4_adm_cm_thresh() (scales 1-3): coeff * |v|, plus the rounding term `add`,
+ * shifted down by `shift`. The host passes I4AdmCmCtx's add_bef_shift_flt and
+ * shift_flt: the term is INT32_MIN, so the CPU subtracts 2^31 before the
+ * shift by 32 (i4_adm_round_terms(), Netflix#955, ADR-0155). */
+VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_iadm_i4_masking_term(vmaf_mtl_i64 coeff, vmaf_mtl_i32 v,
+                                                         vmaf_mtl_i32 add, vmaf_mtl_u32 shift)
+{
+    const vmaf_mtl_i64 magnitude = (v < 0) ? -(vmaf_mtl_i64)v : (vmaf_mtl_i64)v;
+    return (vmaf_mtl_i32)(((coeff * magnitude) + add) >> shift);
 }
 
 #endif /* VMAF_FEATURE_METAL_METAL_INTEGER_ADM_MATH_H_ */

@@ -95,6 +95,9 @@ metal_objcpp_lib = static_library(
 # dispatch files (T8-1d–T8-1j / ADR-0421) in metal_objcpp_lib above.
 metal_sources += files(
     'dispatch_strategy.c',
+    # integer_adm_metal's host logic without the Metal API (ADR-1806): plain C,
+    # shared with core/test/test_metal_integer_adm_host_replay.
+    '../feature/metal/integer_adm_metal_host.c',
 )
 
 # The Obj-C++ static lib's objects fold into the same feature

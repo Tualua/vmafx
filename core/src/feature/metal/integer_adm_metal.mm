@@ -6,35 +6,22 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  integer_adm feature extractor on the Metal backend (feature "adm" — the
- *  VMAF-default ADM path). Integer (fixed-point) twin of float_adm_metal.mm:
- *  it mirrors that proven kernel's six-stage DWT -> CSF -> decouple -> CM
- *  pipeline, lifecycle, buffer-reuse posture, dispatch scaffolding, and
- *  per-(band,row) 1D reduction verbatim, and swaps the float arithmetic for
- *  the bit-exact fixed-point arithmetic of the CPU reference
- *  core/src/feature/integer_adm.c and the CUDA twin
- *  core/src/feature/cuda/integer_adm/ + integer_adm_cuda.c.
+ *  VMAF-default ADM path): the Metal API side. Each scale runs the DWT,
+ *  decouple + CSF and the two masking reductions of integer_adm.metal; the
+ *  host waits once per frame and concludes the reductions.
  *
- *  The integer path differs from the float twin in three substantive ways
- *  (everything else is structural parity with float_adm_metal.mm):
- *    1. Scale 0 operates on int16 DWT bands; scales 1-3 operate on int32
- *       ("i4") bands. The .mm therefore allocates int16 band buffers for
- *       scale 0 and int32 band buffers for scales 1-3, and dispatches the
- *       scale-specific MSL kernel variants.
- *    2. The CSF rfactor is the FIXED-POINT i_rfactor (Q21/Q23 at scale 0,
- *       Q32 at scales 1-3) computed exactly as integer_adm_cuda.c, with the
- *       hard-coded {36453,36453,49417} fast path at default view distance.
- *    3. The host reduction is conclude_adm_cm / conclude_adm_csf_den
- *       (per-scale power-of-2 final_shift recovery of the int64 cube
- *       accumulators), byte-for-byte with integer_adm_cuda.c — NOT the
- *       float cube-root pooling.
+ *  Everything that does not touch the Metal API is integer_adm_metal_host.c
+ *  (plain C, shared with the host replay of the kernels,
+ *  core/test/test_metal_integer_adm_host_replay.c, ADR-1806): the geometry
+ *  and buffer sizes, the kernels each scale runs and their grids, the
+ *  uniforms (the CPU's own shifts and rounding terms, from integer_adm.c's
+ *  contexts) and the scores (the CPU's adm_cm_result() / adm_csf_den_result()
+ *  and the checks of integer_adm.c's extract()). This file allocates the
+ *  buffers, binds them and encodes the dispatches
+ *  (T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05).
  *
  *  provided_features[] mirrors the CPU integer_adm.c list EXACTLY (same
  *  names, same order) — the parity test and any model JSON depend on it.
- *  Feature names use the VMAF_integer_feature_* / integer_adm_* prefixes.
- *
- *  Parity: places=4 (1e-4) vs the CPU `adm` (ADR-0214 cross-backend gate;
- *  the same bound the CUDA integer twin holds). CSF modes 0..3 share the
- *  CPU's factor selection and fixed-point normalisation contract.
  *
  *  Metallib resolution: embedded __TEXT,__metallib blob, same pattern as
  *  every other Metal feature extractor.
@@ -42,6 +29,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -54,6 +42,9 @@
  * when that header is pulled into an extern "C" block — ADR-fix macOS-Metal). */
 #include "feature_extractor.h"
 
+/* Declares its own C linkage; its standard headers are included above. */
+#include "integer_adm_metal_host.h"
+
 extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
@@ -63,10 +54,7 @@ extern "C" {
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
 #include "../adm_csf_fixed_point.h"
-#include "../adm_gain_limit.h"
 #include "../adm_options.h"
-#include "../adm_score.h"
-#include "../barten_csf_tools.h"
 #include "../nonfinite_score.h"
 }
 
@@ -75,139 +63,25 @@ extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$
 extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
 }
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define IADM_NUM_SCALES 4
-#define IADM_NUM_BANDS  3
-#define IADM_BX         16
-#define IADM_BY         16
-#define IADM_BORDER_FACTOR 0.1
-#define IADM_ACCUM_SLOTS   9
-
-/* Geometry uniform mirroring `IadmDims` in integer_adm.metal. */
-typedef struct IadmDimsHost {
-    int32_t scale;
-    int32_t cur_w;
-    int32_t cur_h;
-    int32_t half_w;
-    int32_t half_h;
-    int32_t buf_stride;
-    int32_t parent_w;
-    int32_t parent_h;
-    int32_t parent_half_h;
-    int32_t parent_buf_stride;
-    uint32_t bpc;
-    uint32_t _pad0;
-} IadmDimsHost;
-
-/* CSF / CM uniform mirroring `IadmCsf` in integer_adm.metal. */
-typedef struct IadmCsfHost {
-    int32_t active_left;
-    int32_t active_top;
-    int32_t active_right;
-    int32_t active_bottom;
-    uint32_t i_rfactor_h;
-    uint32_t i_rfactor_v;
-    uint32_t i_rfactor_d;
-    /* adm_enhn_gain_limit as adm_gain_limit_split() returns it: the kernels
-     * form the CPU's truncated double product with adm_gain_limit_product()
-     * (ADR-1413, ADR-1498). */
-    uint32_t gain_m_hi;
-    uint32_t gain_m_lo;
-    int32_t gain_frac_bits;
-    int32_t v_shift;
-    int32_t v_add_shift;
-    int32_t h_shift;
-    int32_t h_add_shift;
-    int32_t s123_vert_add;
-    int32_t s123_vert_shift;
-    int32_t s123_hori_add;
-    int32_t s123_hori_shift;
-    int32_t den_shift_sq;
-    int32_t den_add_shift_sq;
-    int32_t den_shift_accum;
-    int32_t den_add_shift_accum;
-    int32_t den_shift_cub;
-    int32_t den_add_shift_cub;
-    int32_t cm_shift_sq[3];
-    int32_t cm_add_shift_sq[3];
-    int32_t cm_shift_cub[3];
-    int32_t cm_add_shift_cub[3];
-    int32_t cm_shift_sub[3];
-    int32_t cm_shift_inner;
-    int32_t cm_add_shift_inner;
-    uint32_t _pad0;
-} IadmCsfHost;
-
-/* Watson-97 dwt model + amplitude tables — bit-for-bit replica of the CPU
- * dwt_7_9_YCbCr_threshold / dwt_7_9_basis_function_amplitudes used for the
- * integer i_rfactor computation (integer_adm.h / integer_adm_cuda.c). */
-typedef struct IadmDwtModel {
-    float a;
-    float k;
-    float f0;
-    float g[4];
-} IadmDwtModel;
-
-static const IadmDwtModel iadm_dwt_threshold[3] = {
-    {0.495f, 0.466f, 0.401f, {1.501f, 1.0f, 0.534f, 1.0f}},
-    {1.633f, 0.353f, 0.209f, {1.520f, 1.0f, 0.502f, 1.0f}},
-    {0.944f, 0.521f, 0.404f, {1.868f, 1.0f, 0.516f, 1.0f}},
-};
-static const float iadm_dwt_basis_amp[6][4] = {
-    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
-    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
-    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f},
-};
-
 typedef struct IntegerAdmStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
 
-    /* Pipeline states. */
-    void *pso_dwt_vert_8;
-    void *pso_dwt_vert_16;
-    void *pso_dwt_vert_s123;
-    void *pso_dwt_hori_s0;
-    void *pso_dwt_hori_s123;
-    void *pso_decouple_csf_s0;
-    void *pso_decouple_csf_s123;
-    void *pso_csf_r_s0;
-    void *pso_csf_r_s123;
-    void *pso_csf_cm_s0;
-    void *pso_csf_cm_s123;
-    void *pso_aim_cm_s0;
-    void *pso_aim_cm_s123;
+    /* Pipeline states, indexed by IadmMetalKernel. */
+    void *pso[IADM_METAL_KERNEL_COUNT];
 
-    /* Reused device buffers. */
+    /* Reused device buffers, sized by iadm_metal_buffer_bytes(). */
     void *src_ref;
     void *src_dis;
     void *dwt_tmp_ref;
     void *dwt_tmp_dis;
-    void *ref_band[IADM_NUM_SCALES]; /* int16 at scale 0, int32 at scales 1-3 */
-    void *dis_band[IADM_NUM_SCALES];
+    void *ref_band[IADM_METAL_NUM_SCALES]; /* int16 at scale 0, int32 at scales 1-3 */
+    void *dis_band[IADM_METAL_NUM_SCALES];
     void *csf_a;
     void *csf_f;
-    void *csf_a_aim;
-    void *csf_f_aim;
-    void *accum[IADM_NUM_SCALES]; /* uint lo/hi pairs, 9 slots * 2 per (band,row) */
+    void *accum[IADM_METAL_NUM_SCALES]; /* reduction slots, vmaf_mtl_iadm_accum_word() */
 
-    unsigned width;
-    unsigned height;
-    unsigned bpc;
-    unsigned buf_stride;
-
-    unsigned scale_w[IADM_NUM_SCALES];
-    unsigned scale_h[IADM_NUM_SCALES];
-    unsigned scale_half_w[IADM_NUM_SCALES];
-    unsigned scale_half_h[IADM_NUM_SCALES];
-    unsigned wg_count[IADM_NUM_SCALES];
-
-    uint32_t i_rfactor[IADM_NUM_SCALES * 3];
-    uint32_t csf_normalization_shift[IADM_NUM_SCALES];
-    float rfactor[IADM_NUM_SCALES * 3];
+    IadmMetalGeometry geom;
 
     /* Options — same defaults as integer_adm.c. */
     bool debug;
@@ -341,86 +215,24 @@ static const VmafOption options[] = {
     {0},
 };
 
-/* dwt_quant_step — bit-for-bit replica of integer_adm.c / integer_adm_cuda.c
- * (uses the per-scale iadm_dwt_threshold model, not the global Watson). */
-static float iadm_dwt_quant_step(const IadmDwtModel *params, int lambda, int theta,
-                                 double view_dist, int display_h)
+/* The options as integer_adm_metal_host.c reads them. */
+static IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
 {
-    const float r = (float)(view_dist * (double)display_h * M_PI / 180.0);
-    const float temp = (float)log10(pow(2.0, (double)(lambda + 1)) * (double)params->f0 *
-                                    (double)params->g[theta] / (double)r);
-    /* The CPU's expression (integer_adm_kernels.h, upstream's): the exponent
-     * k * temp * temp is a float product, promoted only for pow(). ADR-1475. */
-    const float exponent = params->k * temp * temp;
-    const float Q = (float)(2.0 * (double)params->a * pow(10.0, (double)exponent) /
-                            (double)iadm_dwt_basis_amp[lambda][theta]);
-    return Q;
-}
-
-static void compute_per_scale_dims(IntegerAdmStateMetal *s)
-{
-    unsigned cw = s->width;
-    unsigned ch = s->height;
-    for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-        const unsigned hw = (cw + 1u) / 2u;
-        const unsigned hh = (ch + 1u) / 2u;
-        s->scale_w[scale] = cw;
-        s->scale_h[scale] = ch;
-        s->scale_half_w[scale] = hw;
-        s->scale_half_h[scale] = hh;
-        cw = hw;
-        ch = hh;
-    }
-    s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
-}
-
-static void iadm_csf_factors(const IntegerAdmStateMetal *s, int scale, float factors[3])
-{
-    if (s->adm_csf_mode == 1) {
-        factors[0] = barten_csf(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                                DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale);
-        factors[2] = barten_csf(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                                DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_diag_scale);
-    } else if (s->adm_csf_mode == 2) {
-        factors[0] = barten_watson_blend_csf(scale, 0, s->adm_norm_view_dist,
-                                             s->adm_ref_display_height);
-        factors[2] = barten_watson_blend_csf(scale, 1, s->adm_norm_view_dist,
-                                             s->adm_ref_display_height);
-    } else if (s->adm_csf_mode == 3) {
-        factors[0] = barten_watson_blend_csf_mae(scale, 0, s->adm_norm_view_dist,
-                                                 s->adm_ref_display_height);
-        factors[2] = barten_watson_blend_csf_mae(scale, 1, s->adm_norm_view_dist,
-                                                 s->adm_ref_display_height);
-    } else {
-        const float q1 = iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 1,
-                                             s->adm_norm_view_dist, s->adm_ref_display_height);
-        const float q2 = iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 2,
-                                             s->adm_norm_view_dist, s->adm_ref_display_height);
-        factors[0] = 1.0f / q1;
-        factors[2] = 1.0f / q2;
-    }
-    factors[1] = factors[0];
-}
-
-/* Compute the per-scale fixed-point i_rfactor[12] with the same shared
- * exponent as the CPU, CUDA, HIP, and SYCL twins. */
-static int compute_i_rfactor(IntegerAdmStateMetal *s)
-{
-    for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-        const size_t band0 = (size_t)scale * 3u;
-        iadm_csf_factors(s, scale, &s->rfactor[band0]);
-        double fixed[3];
-        const int err = adm_csf_fixed_scale(
-            scale, &s->rfactor[band0], s->adm_norm_view_dist, s->adm_ref_display_height,
-            s->adm_csf_mode, fixed, &s->csf_normalization_shift[scale]);
-        if (err != 0) {
-            return err;
-        }
-        s->i_rfactor[band0] = (uint32_t)fixed[0];
-        s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
-        s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
-    }
-    return 0;
+    IadmMetalOptions o;
+    memset(&o, 0, sizeof(o));
+    o.adm_enhn_gain_limit = s->adm_enhn_gain_limit;
+    o.adm_norm_view_dist = s->adm_norm_view_dist;
+    o.adm_csf_scale = s->adm_csf_scale;
+    o.adm_csf_diag_scale = s->adm_csf_diag_scale;
+    o.adm_noise_weight = s->adm_noise_weight;
+    o.adm_min_val = s->adm_min_val;
+    o.adm_dlm_weight = s->adm_dlm_weight;
+    o.adm_p_norm = s->adm_p_norm;
+    o.adm_ref_display_height = s->adm_ref_display_height;
+    o.adm_csf_mode = s->adm_csf_mode;
+    o.adm_skip_aim = s->adm_skip_aim;
+    o.adm_skip_scale0 = s->adm_skip_scale0;
+    return o;
 }
 
 static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
@@ -438,73 +250,98 @@ static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
     if (lib == nil) { return -ENODEV; }
 
-    struct {
-        void **slot;
-        const char *name;
-    } fns[] = {
-        {&s->pso_dwt_vert_8, "integer_adm_dwt_vert_8bpc"},
-        {&s->pso_dwt_vert_16, "integer_adm_dwt_vert_16bpc"},
-        {&s->pso_dwt_vert_s123, "integer_adm_dwt_vert_s123"},
-        {&s->pso_dwt_hori_s0, "integer_adm_dwt_hori_s0"},
-        {&s->pso_dwt_hori_s123, "integer_adm_dwt_hori_s123"},
-        {&s->pso_decouple_csf_s0, "integer_adm_decouple_csf_s0"},
-        {&s->pso_decouple_csf_s123, "integer_adm_decouple_csf_s123"},
-        {&s->pso_csf_r_s0, "integer_adm_csf_r_s0"},
-        {&s->pso_csf_r_s123, "integer_adm_csf_r_s123"},
-        {&s->pso_csf_cm_s0, "integer_adm_csf_cm_s0"},
-        {&s->pso_csf_cm_s123, "integer_adm_csf_cm_s123"},
-        {&s->pso_aim_cm_s0, "integer_adm_aim_cm_s0"},
-        {&s->pso_aim_cm_s123, "integer_adm_aim_cm_s123"},
-    };
-    for (size_t i = 0; i < sizeof(fns) / sizeof(fns[0]); ++i) {
-        id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:fns[i].name]];
+    for (int k = 0; k < IADM_METAL_KERNEL_COUNT; ++k) {
+        const char *name = iadm_metal_kernel_name((IadmMetalKernel)k);
+        id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:name]];
         if (fn == nil) { return -ENODEV; }
         id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn error:&err];
         if (pso == nil) { return -ENODEV; }
-        *(fns[i].slot) = (__bridge_retained void *)pso;
+        s->pso[k] = (__bridge_retained void *)pso;
     }
     return 0;
 }
 
 static void release_psos(IntegerAdmStateMetal *s)
 {
-    void **psos[] = {&s->pso_dwt_vert_8,       &s->pso_dwt_vert_16,      &s->pso_dwt_vert_s123,
-                     &s->pso_dwt_hori_s0,      &s->pso_dwt_hori_s123,    &s->pso_decouple_csf_s0,
-                     &s->pso_decouple_csf_s123, &s->pso_csf_r_s0,        &s->pso_csf_r_s123,
-                     &s->pso_csf_cm_s0,        &s->pso_csf_cm_s123,      &s->pso_aim_cm_s0,
-                     &s->pso_aim_cm_s123};
-    for (size_t i = 0; i < sizeof(psos) / sizeof(psos[0]); ++i) {
-        if (*psos[i]) {
-            (void)(__bridge_transfer id<MTLComputePipelineState>)(*psos[i]);
-            *psos[i] = NULL;
+    for (int k = 0; k < IADM_METAL_KERNEL_COUNT; ++k) {
+        if (s->pso[k]) {
+            (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso[k];
+            s->pso[k] = NULL;
         }
+    }
+}
+
+static void release_buffer(void **slot)
+{
+    if (*slot) {
+        (void)(__bridge_transfer id<MTLBuffer>)(*slot);
+        *slot = NULL;
     }
 }
 
 static void release_buffers(IntegerAdmStateMetal *s)
 {
-    for (int i = 0; i < IADM_NUM_SCALES; ++i) {
-        if (s->ref_band[i]) {
-            (void)(__bridge_transfer id<MTLBuffer>)s->ref_band[i];
-            s->ref_band[i] = NULL;
-        }
-        if (s->dis_band[i]) {
-            (void)(__bridge_transfer id<MTLBuffer>)s->dis_band[i];
-            s->dis_band[i] = NULL;
-        }
-        if (s->accum[i]) {
-            (void)(__bridge_transfer id<MTLBuffer>)s->accum[i];
-            s->accum[i] = NULL;
-        }
+    for (int i = 0; i < IADM_METAL_NUM_SCALES; ++i) {
+        release_buffer(&s->ref_band[i]);
+        release_buffer(&s->dis_band[i]);
+        release_buffer(&s->accum[i]);
     }
-    void **single[] = {&s->src_ref, &s->src_dis,    &s->dwt_tmp_ref, &s->dwt_tmp_dis,
-                       &s->csf_a,   &s->csf_f,       &s->csf_a_aim,   &s->csf_f_aim};
-    for (size_t i = 0; i < sizeof(single) / sizeof(single[0]); ++i) {
-        if (*single[i]) {
-            (void)(__bridge_transfer id<MTLBuffer>)(*single[i]);
-            *single[i] = NULL;
-        }
+    release_buffer(&s->src_ref);
+    release_buffer(&s->src_dis);
+    release_buffer(&s->dwt_tmp_ref);
+    release_buffer(&s->dwt_tmp_dis);
+    release_buffer(&s->csf_a);
+    release_buffer(&s->csf_f);
+}
+
+static int new_buffer(id<MTLDevice> device, size_t bytes, void **slot)
+{
+    id<MTLBuffer> b = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+    if (b == nil) { return -ENOMEM; }
+    *slot = (__bridge_retained void *)b;
+    return 0;
+}
+
+/* Every device buffer at the size integer_adm_metal_host.c gives it. */
+static int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
+{
+    const IadmMetalGeometry *g = &s->geom;
+    const size_t source = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_SOURCE, 0);
+    const size_t dwt = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_DWT_TMP, 0);
+    const size_t csf = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_CSF, 0);
+    int err = new_buffer(device, source, &s->src_ref);
+    if (err == 0) { err = new_buffer(device, source, &s->src_dis); }
+    if (err == 0) { err = new_buffer(device, dwt, &s->dwt_tmp_ref); }
+    if (err == 0) { err = new_buffer(device, dwt, &s->dwt_tmp_dis); }
+    if (err == 0) { err = new_buffer(device, csf, &s->csf_a); }
+    if (err == 0) { err = new_buffer(device, csf, &s->csf_f); }
+    for (int scale = 0; scale < IADM_METAL_NUM_SCALES && err == 0; ++scale) {
+        const size_t band = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_BAND, scale);
+        const size_t accum = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_ACCUM, scale);
+        err = new_buffer(device, band, &s->ref_band[scale]);
+        if (err == 0) { err = new_buffer(device, band, &s->dis_band[scale]); }
+        if (err == 0) { err = new_buffer(device, accum, &s->accum[scale]); }
     }
+    return err;
+}
+
+static int init_device_state(IntegerAdmStateMetal *s)
+{
+    void *dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == NULL) { return -ENODEV; }
+    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    int err = alloc_buffers(s, device);
+    if (err == 0) { err = build_pipelines(s, device); }
+    return err;
+}
+
+static void teardown_device_state(IntegerAdmStateMetal *s)
+{
+    release_psos(s);
+    release_buffers(s);
+    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+    vmaf_metal_context_destroy(s->ctx);
+    s->ctx = NULL;
 }
 
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -513,115 +350,30 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     (void)pix_fmt;
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
 
-    const int size_err = adm_frame_size_check("integer_adm_metal", w, h);
-    if (size_err != 0) { return size_err; }
-
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    compute_per_scale_dims(s);
-    const int csf_err = compute_i_rfactor(s);
-    if (csf_err != 0) { return csf_err; }
-
-    int err = vmaf_metal_context_new(&s->ctx, 0);
+    int err = adm_frame_size_check("integer_adm_metal", w, h);
     if (err != 0) { return err; }
+    /* The CPU's CSF configuration check (adm_csf_check_scale() per scale),
+     * before any device work. */
+    const IadmMetalOptions o = iadm_options(s);
+    err = iadm_metal_check_options(&o);
+    if (err != 0) { return err; }
+    iadm_metal_geometry(&s->geom, w, h, bpc);
 
+    err = vmaf_metal_context_new(&s->ctx, 0);
+    if (err != 0) { return err; }
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
-
-    {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_lc; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-
-        const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-        const size_t raw_bytes = (size_t)w * h * bpp;
-        id<MTLBuffer> sr = [device newBufferWithLength:raw_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> sd = [device newBufferWithLength:raw_bytes
-                                               options:MTLResourceStorageModeShared];
-        if (sr == nil || sd == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->src_ref = (__bridge_retained void *)sr;
-        s->src_dis = (__bridge_retained void *)sd;
-
-        /* dwt_tmp holds int32 lo/hi sub-rows: cur_w*2 ints per half-row. */
-        const size_t dwt_bytes =
-            (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(int32_t);
-        id<MTLBuffer> dr = [device newBufferWithLength:dwt_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> dd = [device newBufferWithLength:dwt_bytes
-                                               options:MTLResourceStorageModeShared];
-        if (dr == nil || dd == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->dwt_tmp_ref = (__bridge_retained void *)dr;
-        s->dwt_tmp_dis = (__bridge_retained void *)dd;
-
-        /* Band buffers: int16 (2 bytes) at scale 0, int32 (4 bytes) at scales
-         * 1-3. Each holds 4 bands (a,h,v,d). */
-        for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-            const size_t elem = (scale == 0) ? sizeof(int16_t) : sizeof(int32_t);
-            const size_t band_bytes =
-                (size_t)4u * s->buf_stride * s->scale_half_h[scale] * elem;
-            id<MTLBuffer> br = [device newBufferWithLength:band_bytes
-                                                   options:MTLResourceStorageModeShared];
-            id<MTLBuffer> bd = [device newBufferWithLength:band_bytes
-                                                   options:MTLResourceStorageModeShared];
-            if (br == nil || bd == nil) { err = -ENOMEM; goto fail_bufs; }
-            s->ref_band[scale] = (__bridge_retained void *)br;
-            s->dis_band[scale] = (__bridge_retained void *)bd;
-        }
-
-        /* csf scratch: sized to int32 (worst case, scales 1-3) at scale-0
-         * geometry (3 bands). */
-        const size_t csf_bytes =
-            (size_t)IADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(int32_t);
-        id<MTLBuffer> ca = [device newBufferWithLength:csf_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> cf = [device newBufferWithLength:csf_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> caa = [device newBufferWithLength:csf_bytes
-                                                options:MTLResourceStorageModeShared];
-        id<MTLBuffer> cfa = [device newBufferWithLength:csf_bytes
-                                                options:MTLResourceStorageModeShared];
-        if (ca == nil || cf == nil || caa == nil || cfa == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->csf_a = (__bridge_retained void *)ca;
-        s->csf_f = (__bridge_retained void *)cf;
-        s->csf_a_aim = (__bridge_retained void *)caa;
-        s->csf_f_aim = (__bridge_retained void *)cfa;
-
-        /* accum: 9 slots * 2 uint (lo/hi) per (band,row) threadgroup. */
-        for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-            const int hh = (int)s->scale_half_h[scale];
-            int top = (int)((double)hh * IADM_BORDER_FACTOR - 0.5);
-            if (top < 0) { top = 0; }
-            const int bottom = hh - top;
-            const unsigned num_rows = (bottom > top) ? (unsigned)(bottom - top) : 1u;
-            s->wg_count[scale] = 3u * num_rows;
-            const size_t accum_bytes =
-                (size_t)s->wg_count[scale] * IADM_ACCUM_SLOTS * 2u * sizeof(uint32_t);
-            id<MTLBuffer> ac = [device newBufferWithLength:accum_bytes
-                                                   options:MTLResourceStorageModeShared];
-            if (ac == nil) { err = -ENOMEM; goto fail_bufs; }
-            s->accum[scale] = (__bridge_retained void *)ac;
-        }
-
-        err = build_pipelines(s, device);
+    if (err != 0) {
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = NULL;
+        return err;
     }
-    if (err != 0) { goto fail_pso; }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
-    return 0;
-
-fail_pso:
-    release_psos(s);
-fail_bufs:
-    release_buffers(s);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    err = init_device_state(s);
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+    }
+    if (err != 0) { teardown_device_state(s); }
     return err;
 }
 
@@ -636,27 +388,86 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
     }
 }
 
-/* Per-scale (add_shift, shift) for the s123 vertical / horizontal DWT —
- * matches adm_dwt2_s123_combined_device's per-scale kernel selection. */
-static void s123_dwt_shifts(int scale, int *vert_add, int *vert_shift, int *hori_add,
-                            int *hori_shift)
+static void bind_buffer(id<MTLComputeCommandEncoder> enc, void *buffer, NSUInteger index)
 {
-    /* vert: scale 1 -> (0,0); scales 2,3 -> (32768,16). */
-    if (scale == 1) {
-        *vert_add = 0;
-        *vert_shift = 0;
-    } else {
-        *vert_add = 32768;
-        *vert_shift = 16;
+    [enc setBuffer:(__bridge id<MTLBuffer>)buffer offset:0 atIndex:index];
+}
+
+/* The buffers of `entry` at the indices integer_adm.metal declares. */
+static void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> enc,
+                               IadmMetalKernel entry, int scale)
+{
+    switch (entry) {
+    case IADM_METAL_DWT_VERT_8BPC:
+    case IADM_METAL_DWT_VERT_16BPC:
+        bind_buffer(enc, s->src_ref, 0);
+        bind_buffer(enc, s->src_dis, 1);
+        bind_buffer(enc, s->dwt_tmp_ref, 2);
+        bind_buffer(enc, s->dwt_tmp_dis, 3);
+        break;
+    case IADM_METAL_DWT_VERT_S1:
+    case IADM_METAL_DWT_VERT_S123:
+        bind_buffer(enc, s->ref_band[scale - 1], 6);
+        bind_buffer(enc, s->dis_band[scale - 1], 7);
+        bind_buffer(enc, s->dwt_tmp_ref, 2);
+        bind_buffer(enc, s->dwt_tmp_dis, 3);
+        break;
+    case IADM_METAL_DWT_HORI_S0:
+    case IADM_METAL_DWT_HORI_S123:
+        bind_buffer(enc, s->dwt_tmp_ref, 0);
+        bind_buffer(enc, s->dwt_tmp_dis, 1);
+        bind_buffer(enc, s->ref_band[scale], 2);
+        bind_buffer(enc, s->dis_band[scale], 3);
+        break;
+    case IADM_METAL_DECOUPLE_CSF_S0:
+    case IADM_METAL_DECOUPLE_CSF_S123:
+        bind_buffer(enc, s->ref_band[scale], 0);
+        bind_buffer(enc, s->dis_band[scale], 1);
+        bind_buffer(enc, s->csf_a, 2);
+        bind_buffer(enc, s->csf_f, 3);
+        break;
+    case IADM_METAL_CSF_CM_S0:
+    case IADM_METAL_CSF_CM_S123:
+        bind_buffer(enc, s->ref_band[scale], 0);
+        bind_buffer(enc, s->dis_band[scale], 1);
+        bind_buffer(enc, s->csf_f, 3);
+        bind_buffer(enc, s->accum[scale], 8);
+        break;
+    case IADM_METAL_AIM_CM_S0:
+    case IADM_METAL_AIM_CM_S123:
+        bind_buffer(enc, s->ref_band[scale], 0);
+        bind_buffer(enc, s->dis_band[scale], 1);
+        bind_buffer(enc, s->accum[scale], 8);
+        break;
+    default:
+        break;
     }
-    /* hori: scale 1 -> (16384,15); scale 2 -> (32768,16); scale 3 -> (16384,15). */
-    if (scale == 2) {
-        *hori_add = 32768;
-        *hori_shift = 16;
-    } else {
-        *hori_add = 16384;
-        *hori_shift = 15;
+}
+
+static void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
+                         const IadmMetalStage *stage, int scale, const IadmDims *d,
+                         const IadmCsf *c)
+{
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso[stage->entry]];
+    bind_stage_buffers(s, enc, stage->entry, scale);
+    [enc setBytes:d length:sizeof(*d) atIndex:4];
+    [enc setBytes:c length:sizeof(*c) atIndex:5];
+    [enc dispatchThreadgroups:MTLSizeMake(stage->groups[0], stage->groups[1], stage->groups[2])
+        threadsPerThreadgroup:MTLSizeMake(stage->threads[0], stage->threads[1],
+                                          stage->threads[2])];
+    [enc endEncoding];
+}
+
+/* Zero the reduction slots (a skipped stage must contribute 0). */
+static void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
+{
+    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+    for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
+        const size_t bytes = iadm_metal_buffer_bytes(&s->geom, IADM_METAL_BUF_ACCUM, scale);
+        [blit fillBuffer:(__bridge id<MTLBuffer>)s->accum[scale] range:NSMakeRange(0, bytes) value:0];
     }
+    [blit endEncoding];
 }
 
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -672,262 +483,23 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
     if (dh == NULL || qh == NULL) { return -ENODEV; }
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
 
-    id<MTLBuffer> src_ref = (__bridge id<MTLBuffer>)s->src_ref;
-    id<MTLBuffer> src_dis = (__bridge id<MTLBuffer>)s->src_dis;
-    fill_raw_plane(ref_pic, src_ref, s->width, s->height, s->bpc);
-    fill_raw_plane(dist_pic, src_dis, s->width, s->height, s->bpc);
-
-    id<MTLBuffer> dwt_ref = (__bridge id<MTLBuffer>)s->dwt_tmp_ref;
-    id<MTLBuffer> dwt_dis = (__bridge id<MTLBuffer>)s->dwt_tmp_dis;
-    id<MTLBuffer> csf_a = (__bridge id<MTLBuffer>)s->csf_a;
-    id<MTLBuffer> csf_f = (__bridge id<MTLBuffer>)s->csf_f;
-
-    id<MTLComputePipelineState> pso_dv8 = (__bridge id<MTLComputePipelineState>)s->pso_dwt_vert_8;
-    id<MTLComputePipelineState> pso_dv16 = (__bridge id<MTLComputePipelineState>)s->pso_dwt_vert_16;
-    id<MTLComputePipelineState> pso_dvs123 =
-        (__bridge id<MTLComputePipelineState>)s->pso_dwt_vert_s123;
-    id<MTLComputePipelineState> pso_dh_s0 = (__bridge id<MTLComputePipelineState>)s->pso_dwt_hori_s0;
-    id<MTLComputePipelineState> pso_dh_s123 =
-        (__bridge id<MTLComputePipelineState>)s->pso_dwt_hori_s123;
+    fill_raw_plane(ref_pic, (__bridge id<MTLBuffer>)s->src_ref, s->geom.w, s->geom.h, s->geom.bpc);
+    fill_raw_plane(dist_pic, (__bridge id<MTLBuffer>)s->src_dis, s->geom.w, s->geom.h,
+                   s->geom.bpc);
 
     id<MTLCommandBuffer> cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
+    zero_accumulators(s, cmd);
 
-    /* Zero the accumulators (skipped-scale AIM slots must contribute 0). */
-    {
-        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-        for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-            id<MTLBuffer> ac = (__bridge id<MTLBuffer>)s->accum[scale];
-            [blit fillBuffer:ac
-                       range:NSMakeRange(0, (size_t)s->wg_count[scale] * IADM_ACCUM_SLOTS * 2u *
-                                                sizeof(uint32_t))
-                       value:0];
-        }
-        [blit endEncoding];
-    }
-
-    const struct AdmGainLimit gain = adm_gain_limit_split(s->adm_enhn_gain_limit);
-    const int inp_bits = (s->bpc <= 8u) ? 8 : (int)s->bpc;
-
-    for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-        const bool is_s0 = (scale == 0);
-        const int cur_w = (int)s->scale_w[scale];
-        const int cur_h = (int)s->scale_h[scale];
-        const int half_w = (int)s->scale_half_w[scale];
-        const int half_h = (int)s->scale_half_h[scale];
-
-        IadmDimsHost d;
-        memset(&d, 0, sizeof(d));
-        d.scale = scale;
-        d.cur_w = cur_w;
-        d.cur_h = cur_h;
-        d.half_w = half_w;
-        d.half_h = half_h;
-        d.buf_stride = (int)s->buf_stride;
-        d.parent_w = (scale > 0) ? (int)s->scale_w[scale] : 0;
-        d.parent_h = (scale > 0) ? (int)s->scale_h[scale] : 0;
-        d.parent_half_h = (scale > 0) ? (int)s->scale_half_h[scale - 1] : 0;
-        d.parent_buf_stride = (int)s->buf_stride;
-        d.bpc = s->bpc;
-
-        /* CM active region: w*BORDER-0.5, mirror to interior (CUDA convention). */
-        int top = (int)((double)half_h * IADM_BORDER_FACTOR - 0.5);
-        int left = (int)((double)half_w * IADM_BORDER_FACTOR - 0.5);
-        if (top < 0) { top = 0; }
-        if (left < 0) { left = 0; }
-        const int bottom = half_h - top;
-        const int right = half_w - left;
-        const int active_h = bottom - top;
-
-        /* den_shift_sq for s123 csf_den: scale1->31, scale2->30, scale3->31. */
-        int den_shift_sq = 30;
-        if (scale == 1 || scale == 3) { den_shift_sq = 31; }
-
-        int s123_vert_add = 0, s123_vert_shift = 0, s123_hori_add = 0, s123_hori_shift = 0;
-        s123_dwt_shifts(scale, &s123_vert_add, &s123_vert_shift, &s123_hori_add, &s123_hori_shift);
-
-        IadmCsfHost c;
-        memset(&c, 0, sizeof(c));
-        c.active_left = left;
-        c.active_top = top;
-        c.active_right = right;
-        c.active_bottom = bottom;
-        c.i_rfactor_h = s->i_rfactor[scale * 3 + 0];
-        c.i_rfactor_v = s->i_rfactor[scale * 3 + 1];
-        c.i_rfactor_d = s->i_rfactor[scale * 3 + 2];
-        c.gain_m_hi = gain.m_hi;
-        c.gain_m_lo = gain.m_lo;
-        c.gain_frac_bits = gain.frac_bits;
-        c.v_shift = inp_bits;
-        c.v_add_shift = 1 << (inp_bits - 1);
-        c.h_shift = 16;
-        c.h_add_shift = 32768;
-        c.s123_vert_add = s123_vert_add;
-        c.s123_vert_shift = s123_vert_shift;
-        c.s123_hori_add = s123_hori_add;
-        c.s123_hori_shift = s123_hori_shift;
-        c.den_shift_sq = den_shift_sq;
-        c.den_add_shift_sq = (den_shift_sq > 0) ? (1 << (den_shift_sq - 1)) : 0;
-
-        /* CM / CSF cube-accumulation shift tables — replicate the CUDA
-         * WarpShift / adm_csf_den shift derivation exactly. Uses w=half_w,
-         * h=half_h and the BORDER active region (bottom-top)*(right-left). */
-        const int hw = half_w;
-        const int hh = half_h;
-        const int area = (bottom - top) * (right - left);
-        const int log2_w = (int)ceil(log2((double)hw));
-        const int log2_h = (int)ceil(log2((double)hh));
-
-        /* CM: scale 0 uses shift_sq {29,29,30}, cube = log2_w - {4,4,3}.
-         * Scales 1-3 use shift_sq 30, cube = log2_w. shift_sub: s0 {10,10,12},
-         * s123 {0,0,0}. inner-accum = log2_h. */
-        const int fixed_shift[3] = {4, 4, 3};
-        const int shift_xsq[3] = {29, 29, 30};
-        const int add_shift_xsq[3] = {268435456, 268435456, 536870912};
-        const int s0_shift_sub[3] = {10, 10, 12};
-        for (int b = 0; b < 3; ++b) {
-            if (is_s0) {
-                c.cm_shift_sq[b] = shift_xsq[b];
-                c.cm_add_shift_sq[b] = add_shift_xsq[b];
-                c.cm_shift_cub[b] = log2_w - fixed_shift[b];
-                c.cm_shift_sub[b] = s0_shift_sub[b];
-            } else {
-                c.cm_shift_sq[b] = 30;
-                c.cm_add_shift_sq[b] = 1 << 29;
-                c.cm_shift_cub[b] = log2_w;
-                c.cm_shift_sub[b] = 0;
-            }
-            c.cm_add_shift_cub[b] =
-                (c.cm_shift_cub[b] > 0) ? (1 << (c.cm_shift_cub[b] - 1)) : 0;
-        }
-        c.cm_shift_inner = log2_h;
-        c.cm_add_shift_inner = (log2_h > 0) ? (1 << (log2_h - 1)) : 0;
-
-        /* CSF denominator inner-accum / cube shifts. Scale 0: shift_accum =
-         * max(0, ceil(log2(area) - 20)); no cube shift. Scales 1-3: cube
-         * shift = ceil(log2(right-left)), row shift = ceil(log2(bottom-top)). */
-        if (is_s0) {
-            int sa = (int)ceil(log2((double)area) - 20.0);
-            if (sa < 0) { sa = 0; }
-            c.den_shift_accum = sa;
-            c.den_add_shift_accum = (sa > 0) ? (1 << (sa - 1)) : 0;
-            c.den_shift_cub = 0;
-            c.den_add_shift_cub = 0;
-        } else {
-            const int den_cub = (int)ceil(log2((double)(right - left)));
-            const int den_row = (int)ceil(log2((double)(bottom - top)));
-            c.den_shift_cub = den_cub;
-            c.den_add_shift_cub = (den_cub > 0) ? (1 << (den_cub - 1)) : 0;
-            c.den_shift_accum = den_row;
-            c.den_add_shift_accum = (den_row > 0) ? (1 << (den_row - 1)) : 0;
-        }
-
-        id<MTLBuffer> ref_band = (__bridge id<MTLBuffer>)s->ref_band[scale];
-        id<MTLBuffer> dis_band = (__bridge id<MTLBuffer>)s->dis_band[scale];
-        id<MTLBuffer> parent_ref =
-            (scale > 0) ? (__bridge id<MTLBuffer>)s->ref_band[scale - 1] : ref_band;
-        id<MTLBuffer> parent_dis =
-            (scale > 0) ? (__bridge id<MTLBuffer>)s->dis_band[scale - 1] : dis_band;
-        id<MTLBuffer> accum = (__bridge id<MTLBuffer>)s->accum[scale];
-
-        const MTLSize tg = MTLSizeMake(IADM_BX, IADM_BY, 1);
-
-        /* Stage 0 — DWT vertical (z=2 ref/dis). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            if (is_s0) {
-                [enc setComputePipelineState:(s->bpc <= 8u ? pso_dv8 : pso_dv16)];
-                [enc setBuffer:src_ref offset:0 atIndex:0];
-                [enc setBuffer:src_dis offset:0 atIndex:1];
-            } else {
-                [enc setComputePipelineState:pso_dvs123];
-                [enc setBuffer:parent_ref offset:0 atIndex:6];
-                [enc setBuffer:parent_dis offset:0 atIndex:7];
-            }
-            [enc setBuffer:dwt_ref offset:0 atIndex:2];
-            [enc setBuffer:dwt_dis offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            MTLSize grid = MTLSizeMake(((unsigned)cur_w + IADM_BX - 1u) / IADM_BX,
-                                       ((unsigned)half_h + IADM_BY - 1u) / IADM_BY, 2);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 1 — DWT horizontal (z=2 ref/dis). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:(is_s0 ? pso_dh_s0 : pso_dh_s123)];
-            [enc setBuffer:dwt_ref offset:0 atIndex:0];
-            [enc setBuffer:dwt_dis offset:0 atIndex:1];
-            [enc setBuffer:ref_band offset:0 atIndex:2];
-            [enc setBuffer:dis_band offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            MTLSize grid = MTLSizeMake(((unsigned)half_w + IADM_BX - 1u) / IADM_BX,
-                                       ((unsigned)half_h + IADM_BY - 1u) / IADM_BY, 2);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 2 — Decouple + CSF (decouple_a -> csf_a, csf_f). */
-        {
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:(is_s0
-                                              ? (__bridge id<MTLComputePipelineState>)s->pso_decouple_csf_s0
-                                              : (__bridge id<MTLComputePipelineState>)s->pso_decouple_csf_s123)];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBuffer:csf_a offset:0 atIndex:2];
-            [enc setBuffer:csf_f offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            MTLSize grid = MTLSizeMake(((unsigned)half_w + IADM_BX - 1u) / IADM_BX,
-                                       ((unsigned)half_h + IADM_BY - 1u) / IADM_BY, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
-            [enc endEncoding];
-        }
-
-        /* Stage 3 — CSF denom + DLM CM fused. 1D dispatch of 3*num_rows TGs. */
-        {
-            const unsigned num_rows = (unsigned)(active_h > 0 ? active_h : 1);
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:(is_s0
-                                              ? (__bridge id<MTLComputePipelineState>)s->pso_csf_cm_s0
-                                              : (__bridge id<MTLComputePipelineState>)s->pso_csf_cm_s123)];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBuffer:csf_f offset:0 atIndex:3];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            [enc setBuffer:accum offset:0 atIndex:8];
-            MTLSize grid = MTLSizeMake(3u * num_rows, 1, 1);
-            MTLSize tg1d = MTLSizeMake(IADM_BX * IADM_BY, 1, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg1d];
-            [enc endEncoding];
-        }
-
-        if (!s->adm_skip_aim) {
-            /* Stage 3b — AIM CM numerator. The AIM threshold csf_r is
-             * recomputed inline per-neighbour inside the CM kernel (matching
-             * the CUDA AIM kernels), so no separate csf_r scratch stage is
-             * needed; the csf_a_aim / csf_f_aim buffers are unused on the
-             * integer path and kept only for buffer-layout parity with the
-             * float twin. */
-            const unsigned num_rows = (unsigned)(active_h > 0 ? active_h : 1);
-            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:(is_s0
-                                              ? (__bridge id<MTLComputePipelineState>)s->pso_aim_cm_s0
-                                              : (__bridge id<MTLComputePipelineState>)s->pso_aim_cm_s123)];
-            [enc setBuffer:ref_band offset:0 atIndex:0];
-            [enc setBuffer:dis_band offset:0 atIndex:1];
-            [enc setBytes:&d length:sizeof(d) atIndex:4];
-            [enc setBytes:&c length:sizeof(c) atIndex:5];
-            [enc setBuffer:accum offset:0 atIndex:8];
-            MTLSize grid = MTLSizeMake(3u * num_rows, 1, 1);
-            MTLSize tg1d = MTLSizeMake(IADM_BX * IADM_BY, 1, 1);
-            [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg1d];
-            [enc endEncoding];
+    const IadmMetalOptions o = iadm_options(s);
+    for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
+        IadmDims d;
+        IadmCsf c;
+        iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);
+        IadmMetalStage stages[IADM_METAL_MAX_STAGES];
+        const unsigned count = iadm_metal_stages(&o, &s->geom, scale, stages);
+        for (unsigned i = 0; i < count; ++i) {
+            encode_stage(s, cmd, &stages[i], scale, &d, &c);
         }
     }
 
@@ -936,198 +508,17 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
     return 0;
 }
 
-/* Host reductions — byte-for-byte with integer_adm_cuda.c conclude_adm_cm /
- * conclude_adm_csf_den. accum holds per-(band,row) int64 cube sums (lo/hi
- * uint pairs), summed here across rows into int64 / uint64 totals first. */
-static void read_band_row_totals(IntegerAdmStateMetal *s, int scale, int64_t csf_tot[3],
-                                 int64_t cm_tot[3], int64_t aim_tot[3])
+static int emit_scores(IntegerAdmStateMetal *s, VmafFeatureCollector *fc, const IadmMetalScores *r,
+                       unsigned index)
 {
-    for (int b = 0; b < 3; ++b) {
-        csf_tot[b] = 0;
-        cm_tot[b] = 0;
-        aim_tot[b] = 0;
-    }
-    const uint32_t *slots = (const uint32_t *)[(__bridge id<MTLBuffer>)s->accum[scale] contents];
-    const unsigned wg_count = s->wg_count[scale];
-    for (unsigned wg = 0u; wg < wg_count; ++wg) {
-        const uint32_t *p = slots + (size_t)wg * IADM_ACCUM_SLOTS * 2u;
-        for (int b = 0; b < 3; ++b) {
-            const uint64_t csf = ((uint64_t)p[(b)*2 + 1] << 32) | (uint64_t)p[(b)*2 + 0];
-            const uint64_t cm = ((uint64_t)p[(3 + b) * 2 + 1] << 32) | (uint64_t)p[(3 + b) * 2 + 0];
-            const uint64_t aim = ((uint64_t)p[(6 + b) * 2 + 1] << 32) | (uint64_t)p[(6 + b) * 2 + 0];
-            csf_tot[b] += (int64_t)csf;
-            cm_tot[b] += (int64_t)cm;
-            aim_tot[b] += (int64_t)aim;
-        }
-    }
-}
-
-static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale,
-                             uint32_t normalization_shift, float noise_weight, double p_norm)
-{
-    int left = (int)((double)w * IADM_BORDER_FACTOR - 0.5);
-    int top = (int)((double)h * IADM_BORDER_FACTOR - 0.5);
-    int right = w - left;
-    int bottom = h - top;
-    const uint32_t shift_inner_accum = (uint32_t)ceil(log2((double)h));
-
-    const uint32_t shift_xcub[3] = {(uint32_t)ceil(log2((double)w) - 4),
-                                    (uint32_t)ceil(log2((double)w) - 4),
-                                    (uint32_t)ceil(log2((double)w) - 3)};
-    const int constant_offset[3] = {52, 52, 57};
-    const int restored_bits = 3 * (int)normalization_shift;
-
-    uint32_t shift_cub = (uint32_t)ceil(log2((double)w));
-    float final_shift[3] = {
-        powf(2.0f, (float)(45 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
-        powf(2.0f, (float)(39 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
-        powf(2.0f, (float)(36 - restored_bits - (int)shift_cub - (int)shift_inner_accum))};
-    /* The CPU parameterises the NUMERATOR p-norm by adm_p_norm
-     * (integer_adm.c::adm_num_scale takes p_norm_exp = 1/adm_p_norm) and leaves
-     * only the DENOMINATOR at a hardcoded cube root
-     * (adm_den_scale_finalise). This twin hardcoded both, so `adm_p_norm` was
-     * accepted, range-checked and folded into the ADR-1183 feature-name key
-     * while the arithmetic stayed at p = 3 -- a score filed as
-     * `integer_adm2_apn_2` that is not adm2 at p = 2. Same class as ADR-1220
-     * on the float-ADM twins; conclude_adm_csf_den below keeps its literal
-     * because the CPU denominator does too. */
-    const float p_norm_exp = 1.0f / (float)p_norm;
-    float powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, p_norm_exp);
-
-    float result = 0.0f;
-    for (int i = 0; i < 3; ++i) {
-        float f_accum;
-        if (scale == 0) {
-            f_accum = (float)((double)accum[i] /
-                              pow(2.0, (double)(constant_offset[i] - restored_bits -
-                                                (int)shift_xcub[i] - (int)shift_inner_accum)));
-        } else {
-            f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
-        }
-        result += powf(f_accum, p_norm_exp) + powf_add;
-    }
-    return result;
-}
-
-static float conclude_adm_csf_den(const int64_t accum[3], int h, int w, int scale,
-                                  const float rfactor[3], float noise_weight)
-{
-    const int left = (int)((double)w * IADM_BORDER_FACTOR - 0.5);
-    const int top = (int)((double)h * IADM_BORDER_FACTOR - 0.5);
-    const int right = w - left;
-    const int bottom = h - top;
-    const uint32_t accum_convert_float[4] = {18, 32, 27, 23};
-
-    int32_t shift_accum;
-    double shift_csf;
-    if (scale == 0) {
-        shift_accum = (int32_t)ceil(log2((double)((bottom - top) * (right - left))) - 20);
-        shift_accum = shift_accum > 0 ? shift_accum : 0;
-        shift_csf = pow(2.0, (double)((int)accum_convert_float[scale] - shift_accum));
-    } else {
-        shift_accum = (int32_t)ceil(log2((double)(bottom - top)));
-        const uint32_t shift_cub = (uint32_t)ceil(log2((double)(right - left)));
-        shift_csf = pow(2.0, (double)((int)accum_convert_float[scale] - shift_accum - (int)shift_cub));
-    }
-    const float powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
-
-    float result = 0.0f;
-    for (int i = 0; i < 3; ++i) {
-        const double csf = ((double)accum[i] / shift_csf) * pow((double)rfactor[i], 3.0);
-        result += powf((float)csf, 1.0f / 3.0f) + powf_add;
-    }
-    return result;
-}
-
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
-{
-    IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
-
-    double scores[8];
-    double num = 0.0;
-    double den = 0.0;
-    double aim_num = 0.0;
-
-    for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-        const int hw = (int)s->scale_half_w[scale];
-        const int hh = (int)s->scale_half_h[scale];
-
-        int64_t csf_tot[3], cm_tot[3], aim_tot[3];
-        read_band_row_totals(s, scale, csf_tot, cm_tot, aim_tot);
-
-        float num_scale = 0.0f;
-        float den_scale = 0.0f;
-        float aim_num_scale = 0.0f;
-
-        if (scale == 0 && s->adm_skip_scale0) {
-            num_scale = 0.0f;
-            den_scale = 1e-10f;
-        } else {
-            num_scale = conclude_adm_cm(cm_tot, hh, hw, scale,
-                                        s->csf_normalization_shift[scale],
-                                        (float)s->adm_noise_weight, s->adm_p_norm);
-            den_scale = conclude_adm_csf_den(csf_tot, hh, hw, scale,
-                                             &s->rfactor[(size_t)scale * 3u],
-                                             (float)s->adm_noise_weight);
-        }
-
-        if (!s->adm_skip_aim) {
-            aim_num_scale = conclude_adm_cm(aim_tot, hh, hw, scale,
-                                            s->csf_normalization_shift[scale], 0.0f,
-                                            s->adm_p_norm);
-        }
-
-        num += num_scale;
-        den += den_scale;
-        aim_num += aim_num_scale;
-        scores[2 * scale + 0] = num_scale;
-        scores[2 * scale + 1] = den_scale;
-    }
-
-    const int w0 = (int)s->scale_w[0];
-    const int h0 = (int)s->scale_h[0];
-    const double numden_limit = 1e-10 * (double)(w0 * h0) / (1920.0 * 1080.0);
-    int err = vmaf_adm_floor_pair_named("integer_adm_metal", index, num, den, numden_limit, &num,
-                                        &den);
-    if (err)
-        return err;
-
-    const double aggregate_pairs[4] = {num, den, aim_num, den};
-    double aggregate_ratios[2];
-    err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
-    if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "integer_adm_metal: undefined or non-finite aggregate at frame %u "
-                 "(num=%g den=%g aim_num=%g)\n",
-                 index, num, den, aim_num);
-        return err;
-    }
-    const double score = aggregate_ratios[0];
-    const double score_aim = aggregate_ratios[1];
-    const double score_num = num;
-    const double score_den = den;
-
-    double score_adm3 = 0.0;
-    err = vmaf_adm3_score_named("integer_adm_metal", index, score, score_aim, 0,
-                                s->adm_dlm_weight, s->adm_min_val, &score_adm3);
-    if (err)
-        return err;
-    double scale_scores[IADM_NUM_SCALES];
-    err = vmaf_adm_scale_ratios_named("integer_adm_metal", index, scores, IADM_NUM_SCALES,
-                                      scale_scores);
-    if (err)
-        return err;
-
     VmafNamedScore values[18] = {
-        {"VMAF_integer_feature_adm2_score", score},
-        {"VMAF_integer_feature_aim_score", score_aim},
-        {"VMAF_integer_feature_adm3_score", score_adm3},
-        {"integer_adm_scale0", scale_scores[0]},
-        {"integer_adm_scale1", scale_scores[1]},
-        {"integer_adm_scale2", scale_scores[2]},
-        {"integer_adm_scale3", scale_scores[3]},
+        {"VMAF_integer_feature_adm2_score", r->score},
+        {"VMAF_integer_feature_aim_score", r->score_aim},
+        {"VMAF_integer_feature_adm3_score", r->score_adm3},
+        {"integer_adm_scale0", r->scale_scores[0]},
+        {"integer_adm_scale1", r->scale_scores[1]},
+        {"integer_adm_scale2", r->scale_scores[2]},
+        {"integer_adm_scale3", r->scale_scores[3]},
     };
     size_t value_count = 7u;
     if (s->debug) {
@@ -1135,14 +526,29 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
             "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
             "integer_adm_num_scale3", "integer_adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{"integer_adm", score};
-        values[value_count++] = VmafNamedScore{"integer_adm_num", score_num};
-        values[value_count++] = VmafNamedScore{"integer_adm_den", score_den};
+        values[value_count++] = VmafNamedScore{"integer_adm", r->score};
+        values[value_count++] = VmafNamedScore{"integer_adm_num", r->score_num};
+        values[value_count++] = VmafNamedScore{"integer_adm_den", r->score_den};
         for (size_t i = 0u; i < 8u; ++i)
-            values[value_count++] = VmafNamedScore{debug_names[i], scores[i]};
+            values[value_count++] = VmafNamedScore{debug_names[i], r->scores[i]};
     }
     return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "integer_adm_metal", values,
                                            value_count, index);
+}
+
+static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+{
+    IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
+
+    const uint32_t *accum[IADM_METAL_NUM_SCALES];
+    for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
+        accum[scale] = (const uint32_t *)[(__bridge id<MTLBuffer>)s->accum[scale] contents];
+    }
+    const IadmMetalOptions o = iadm_options(s);
+    IadmMetalScores r;
+    const int err = iadm_metal_scores(&o, &s->geom, accum, index, &r);
+    if (err) { return err; }
+    return emit_scores(s, fc, &r, index);
 }
 
 static int close_fex_metal(VmafFeatureExtractor *fex)
@@ -1206,7 +612,7 @@ VmafFeatureExtractor vmaf_fex_integer_adm_metal = {
     .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
     .chars = {
-        .n_dispatches_per_frame = 6 * IADM_NUM_SCALES,
+        .n_dispatches_per_frame = 6 * IADM_METAL_NUM_SCALES,
         .is_reduction_only      = false,
         .min_useful_frame_area  = 1280U * 720U,
         .dispatch_hint          = VMAF_FEATURE_DISPATCH_AUTO,

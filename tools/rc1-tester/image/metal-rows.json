@@ -891,6 +891,85 @@
    ]
   },
   {
+   "id": "T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05",
+   "closes_when": "integer_adm_metal equals the CPU on every exact case of test_metal_integer_adm_parity and the adm cell of the parity gate is exact on all four fixtures",
+   "cases": [
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_metal_registered"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_default_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_10bit_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_odd_frame_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_2160p_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_sparse_detail_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_shift_boundary_area_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_model_options_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_barten_mode_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_skip_scale0_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_tiny_frame_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_full_range_noise_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_bright_16bit_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_isolated_patch_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_gain_limit_1_2_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_gain_limit_1_5_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_rejects_below_min_dim"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    }
+   ]
+  },
+  {
    "id": "T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01",
    "closes_when": "integer_adm_metal matches the scalar CPU at adm_enhn_gain_limit 1.2 and 1.5",
    "cases": [

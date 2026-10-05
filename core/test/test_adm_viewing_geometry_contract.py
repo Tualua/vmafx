@@ -68,8 +68,8 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
                     function_body(source, "adm_csf_config_check"),
                 )
 
-        metal = (FEATURE_ROOT / "metal/integer_adm_metal.mm").read_text(encoding="utf-8")
-        self.assertIn("adm_csf_fixed_scale(", function_body(metal, "compute_i_rfactor"))
+        metal = (FEATURE_ROOT / "metal/integer_adm_metal_host.c").read_text(encoding="utf-8")
+        self.assertIn("adm_csf_check_scale(", function_body(metal, "iadm_metal_check_options"))
 
     def test_checks_precede_cpu_compute_or_gpu_normalization_and_device_work(self) -> None:
         contracts = (
@@ -95,7 +95,7 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
             (
                 "metal/integer_adm_metal.mm",
                 "init_fex_metal",
-                "compute_i_rfactor(",
+                "iadm_metal_check_options(",
                 ("vmaf_metal_context_new(",),
             ),
         )

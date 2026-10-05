@@ -2555,6 +2555,32 @@ test('test_metal_integer_adm_exact_contract',
     timeout : 30,
 )
 
+# T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05 / ADR-1806: integer_adm_metal on
+# the host. The unmodified integer_adm.metal compiles through the Metal Shading
+# Language host shim (metal_msl_host/metal_stdlib -> metal_msl_host_shim.h) and
+# runs the dispatches integer_adm_metal_host.c plans, on buffers of the sizes
+# and element types it gives, one thread per threadgroup; the twin's own host
+# code concludes the scores, which must equal the CPU extractor's (`==`).
+# The host file is compiled in here: a Metal build also has it in libvmaf, and
+# the archive member is then never pulled. LP64 only (Metal's long is 64
+# bits), so not on Windows.
+if host_machine.system() != 'windows'
+test_metal_integer_adm_host_replay = executable('test_metal_integer_adm_host_replay',
+    ['test.c', 'test_metal_integer_adm_host_replay.c',
+     'metal_integer_adm_host_replay_kernels.cpp',
+     '../src/feature/metal/integer_adm_metal_host.c'],
+    include_directories : [include_directories('metal_msl_host'), libvmaf_inc, test_inc,
+                           include_directories('../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+    c_args : ['-DVMAF_REPLAY_YUV_DIR="' + (meson.project_source_root() / '..' / 'python' /
+                                           'test' / 'resource' / 'yuv') + '"'],
+)
+test('test_metal_integer_adm_host_replay', test_metal_integer_adm_host_replay,
+    suite : ['fast'],
+    timeout : 300)
+endif
+
 # T-METAL-MOTION-BLUR-THEN-DIFF-2026-09-29 and
 # T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02: integer_motion_metal's
 # diff-first arithmetic (core/src/feature/metal/metal_integer_motion_math.h)

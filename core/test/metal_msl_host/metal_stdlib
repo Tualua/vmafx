@@ -1,0 +1,7 @@
+// Copyright 2026 Lusoris
+// SPDX-License-Identifier: EUPL-1.2
+//
+// `#include <metal_stdlib>` of a .metal kernel file compiled by a host test:
+// the Metal Shading Language host shim (ADR-1806). Only tests put this
+// directory on their include path.
+#include "../metal_msl_host_shim.h"

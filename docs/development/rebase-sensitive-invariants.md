@@ -1103,12 +1103,13 @@ backend within it.
   `integer_adm.c` does; with a `(double)` on an operand (the form #552
   introduced) every integer ADM score and `vmaf_v0.6.1` leave Netflix's
   values by up to 1.8e-5. A sync takes upstream's side of the statement and
-  keeps the suppression comment above it. The SYCL and Metal twins hold their
-  own copy (`sycl/integer_adm_sycl.cpp`, `metal/integer_adm_metal.mm`) and
-  change with it. `core/test/test_integer_adm_quant_step.c` (values, with
-  the bits of a Netflix build) and
-  `core/test/test_integer_adm_quant_step_contract.py` (the three copies)
-  guard it; the Netflix golden gate would not notice.
+  keeps the suppression comment above it. The SYCL twin holds its own copy
+  (`sycl/integer_adm_sycl.cpp`) and changes with it; the Metal twin takes the
+  CPU's `adm_csf_factors()` in `metal/integer_adm_metal_host.c` and holds no
+  copy. `core/test/test_integer_adm_quant_step.c` (values, with the bits of a
+  Netflix build) and `core/test/test_integer_adm_quant_step_contract.py` (both
+  copies, and no Metal copy) guard it; the Netflix golden gate would not
+  notice.
 
 - **Integer ADM scale-0 masking centre tap ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md))**:
   the fork keeps the 1/15 centre tap of the masking threshold in int32 and

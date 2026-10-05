@@ -288,8 +288,8 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
 - **integer ADM**: decouple = `metal_integer_adm_math.h`: reciprocal = CPU
   integer `2^30 / o` (never fp32 quotient), gain limit =
   `adm_gain_limit_product()` of shared `adm_gain_limit.h` (Metal guard keeps
-  other `-E` byte-identical; keep line count), `IadmCsf` / `IadmCsfHost`
-  gain fields identical.
+  other `-E` byte-identical; keep line count). Uniforms, slots, host logic:
+  see `integer_adm_metal`: host logic section below.
 - **integer motion**: diff first (`metal_integer_motion_math.h`), raw ring 2
   (3 with five-frame window) slots, `collect()` = CPU SAD score first in
   `provided_features`, table = `integer_motion.c`'s. No `motion_add_uv`, no
@@ -479,14 +479,37 @@ Metal float-ADM change as unverified until someone runs
   registrations, close callback retention, debug gating, and dictionary-resolved
   flush idempotency at AST level. See [Research-2113](../../../../docs/research/2113-metal-float-motion-lifecycle-flush.md).
 
-## `integer_adm_metal.mm`: quantisation step (ADR-1475)
+## `integer_adm_metal`: host logic, slots, scale-1 parent (ADR-1806)
 
-- `iadm_dwt_quant_step()` = copy of CPU `dwt_quant_step()`
-  (`core/src/feature/integer_adm_kernels.h`, upstream statement). Exponent
-  `params->k * temp * temp` in named `float`, then `pow(10.0, (double)exponent)`.
-  No `(double)` on product operand. CPU statement changes -> this copy, same
-  PR. Device-free guard: `core/test/test_integer_adm_quant_step_contract.py`.
-  Not run on device since edit (no Apple hardware on lanes).
+T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05: M4 Pro report (#2118) = every
+exact case off. Six defects, each now one definition:
+
+- **Uniforms + slots = `metal_integer_adm_uniforms.h`** (MSL + C). `IadmDims`,
+  `IadmCsf` defined once; kernel and host include it. Reduction slot address
+  only via `vmaf_mtl_iadm_accum_word()` (kernel wrote stride 36, host read 18:
+  band d lost, out-of-bounds writes). No second struct copy in `.mm`/`.metal`.
+- **Host logic = `integer_adm_metal_host.c`** (plain C, no Metal API): geometry,
+  buffer sizes, stage plan (`iadm_metal_stages()`), uniforms, scores. `.mm` =
+  alloc, bind, encode, emit only. Uniform shifts/rounding copied from CPU
+  contexts (`adm_cm_ctx_init()`, `i4_adm_cm_ctx_init()`,
+  `adm_csf_den_ctx_init()`, `i4_adm_csf_den_ctx_init()`, `i4_dwt2_round()`);
+  scores = `adm_cm_result()` / `adm_csf_den_result()` + `i4_` forms, double
+  noise weight. No local table, no local quant step, no local `powf`.
+- **Scale 1 reads int16** (`integer_adm_dwt_vert_s1`, CPU `i16_to_i32()`);
+  scales 2-3 int32 (`integer_adm_dwt_vert_s123`). Never bind the int16 band to
+  an int kernel.
+- **Scales 1-3 masking terms** = `vmaf_mtl_iadm_i4_masking_term()` with
+  `I4AdmCmCtx::add_bef_shift_flt` = INT32_MIN (Netflix#955, ADR-0155), never
+  +2^31. Denominator square add = `I4AdmDenCtx::add_shift_sq` = 2^shift_sq.
+- **`adm_skip_scale0`**: scale 0 = DWT only, num 0, den 1e-10f, AIM 0.
+- **`kernel` is a macro in the host shim**: no host-header identifier named
+  `kernel` (stage field = `entry`); no MSL type names (`half`) in headers the
+  kernels include (`test_metal_shader_build_contract`).
+- Guards: `test_metal_integer_adm_host_replay` (unmodified `.metal` through
+  `core/test/metal_msl_host_shim.h`, `==` vs CPU, guard bands),
+  `test_metal_integer_adm_math`, `test_metal_integer_adm_exact_contract.py`.
+  Device: `test_metal_integer_adm_parity`. Replay limits: one thread per
+  threadgroup (no barrier/race coverage), not the Metal compiler.
 
 ## `float_adm_metal.mm`: CSF weights from the CPU (ADR-1489, ADR-1498)
 
