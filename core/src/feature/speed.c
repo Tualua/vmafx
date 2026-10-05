@@ -1306,6 +1306,14 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
         return -EINVAL;
     }
+    if (!vif_plane_fits_int_index(ALIGN_CEIL(dim->alloc_width * sizeof(float)) / sizeof(float),
+                                  dim->alloc_height)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "SpEED: the prescaled plane (%zux%zu) has more samples than the int index "
+                 "of vif_tools allows; lower speed_prescale\n",
+                 dim->alloc_width, dim->alloc_height);
+        return -EINVAL;
+    }
 
     dim->num_blocks_horizontal = dim->truncated_width / dim->block_size;
     dim->num_blocks_vertical = dim->truncated_height / dim->block_size;

@@ -5498,6 +5498,27 @@ test_float_vif_min_dim = executable('test_float_vif_min_dim',
 )
 test('test_float_vif_min_dim', test_float_vif_min_dim, suite : ['fast'])
 
+# float_vif and SpEED refuse a prescaled plane past the int index of
+# vif_tools.c (T-PRESCALED-PLANE-INT-INDEX-2026-10-05); no plane is allocated.
+test_prescaled_plane_int_index = executable('test_prescaled_plane_int_index',
+    ['test.c', 'test_prescaled_plane_int_index.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_prescaled_plane_int_index', test_prescaled_plane_int_index, suite : ['fast'])
+
 # Coverage round 4 — float extractor CPU-path gap-fill.
 # All float_* extractors previously had tests only in GPU-gated CUDA/SYCL
 # parity suites, meaning CPU coverage was 0% in non-GPU CI. These tests

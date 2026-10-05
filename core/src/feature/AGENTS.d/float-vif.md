@@ -50,3 +50,14 @@ invariant: float_vif lint decomposition, run-time Gaussian filter construction, 
 largest `((filter_width_s / 2) + 1) << s` over four-scale ladder, 16 at
 default kernelscale — not from scale-0 filter alone. Do not replace it with
 constant.
+
+## Prescaled planes stay inside the int index of `vif_tools.c` (T-PRESCALED-PLANE-INT-INDEX-2026-10-05)
+
+`vif_tools.c` indexes a plane as `y * stride + x` in `int`. `init()` refuses a
+prescaled plane whose rows times stride (in samples) pass INT_MAX, through
+`vif_plane_fits_int_index()` in `vif_tools.h`, before it allocates anything
+(`init_scaled_plane()` holds the scaled-size checks).
+`speed.c` and `speed_internal.c` call the same helper. Widening the index
+instead would touch every function of the file; the plane such a prescale
+needs is at least 8.6 GB per float buffer. `core/test/test_prescaled_plane_int_index.c`
+holds the limit (16K accepted at prescale 4, the cap refused above 1.414).

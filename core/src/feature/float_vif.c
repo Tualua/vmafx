@@ -276,6 +276,33 @@ static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
     return 0;
 }
 
+/* The prescaled plane compute_vif() works on: its size, which must clear the
+ * four-scale ladder minimum, and its strides; the plane must also fit the int
+ * index of vif_tools.c (T-PRESCALED-PLANE-INT-INDEX-2026-10-05). */
+static int init_scaled_plane(VifState *s, unsigned w, unsigned h, int vif_min_dim)
+{
+    s->scaled_w = (size_t)lround(w * s->vif_prescale);
+    s->scaled_h = (size_t)lround(h * s->vif_prescale);
+
+    if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif requires scaled width >= %d and height >= %d for the "
+                 "four-scale ladder (got %zux%zu)\n",
+                 vif_min_dim, vif_min_dim, s->scaled_w, s->scaled_h);
+        return -EINVAL;
+    }
+    s->float_stride = ALIGN_CEIL(w * sizeof(float));
+    s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
+    if (!vif_plane_fits_int_index(s->scaled_float_stride / sizeof(float), s->scaled_h)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif: the prescaled plane (%zux%zu) has more samples than the "
+                 "int index of vif_tools allows; lower vif_prescale\n",
+                 s->scaled_w, s->scaled_h);
+        return -EINVAL;
+    }
+    return 0;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -314,18 +341,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    s->scaled_w = (size_t)lround(w * s->vif_prescale);
-    s->scaled_h = (size_t)lround(h * s->vif_prescale);
-
-    if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "float_vif requires scaled width >= %d and height >= %d for the "
-                 "four-scale ladder (got %zux%zu)\n",
-                 vif_min_dim, vif_min_dim, s->scaled_w, s->scaled_h);
-        return -EINVAL;
+    const int plane_err = init_scaled_plane(s, w, h, vif_min_dim);
+    if (plane_err) {
+        return plane_err;
     }
-    s->float_stride = ALIGN_CEIL(w * sizeof(float));
-    s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
 
     const int alloc_err = alloc_buffers(fex, s, h);
     if (alloc_err) {

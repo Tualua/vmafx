@@ -7,6 +7,16 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `float_vif` and SpEED refuse a prescaled plane past the `int` index (2026-10-05)
+
+`fix/prescaled-plane-int-index-limit`. The fork adds `vif_plane_fits_int_index()` to the
+upstream-mirror `core/src/feature/vif_tools.h` and calls it in `float_vif.c::init_scaled_plane()`
+(the scaled-size checks moved out of `init()` with it, to keep `init()` under 60 lines), in `speed.c::speed_init_dimensions()` (after the too-small check) and in
+`speed_internal.c::speed_internal_init_dimensions()`. Upstream Netflix/vmaf has no such check and
+indexes `vif_tools.c` with `int`, so a sync keeps the three calls and the helper; if upstream ever
+widens the indices of `vif_tools.c` to a 64-bit type, the check can go. `core/test/test_prescaled_plane_int_index.c`
+fails without it. See `core/src/feature/AGENTS.d/float-vif.md`.
+
 ## Integer ADM: scale-0 contrast-masking rows summed unsigned; GPU gain product bounded before narrowing (2026-10-05)
 
 `fix/adm-cm-row-total-unsigned`. Upstream Netflix/vmaf sums every contrast-masking row of

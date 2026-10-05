@@ -6557,6 +6557,7 @@
         "core/test/test_pixel_format_edge_coverage.c": 1,
         "core/test/test_pool_percentile.c": 1,
         "core/test/test_predict.c": 1,
+        "core/test/test_prescaled_plane_int_index.c": 1,
         "core/test/test_propagate_metadata.c": 1,
         "core/test/test_psnr.c": 1,
         "core/test/test_psnr_hvs_avx2.c": 1,

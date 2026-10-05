@@ -92,6 +92,14 @@ int speed_internal_init_dimensions(SpeedInternalDimensions *dim, int w, int h, d
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
         return -EINVAL;
     }
+    if (!vif_plane_fits_int_index(speed_internal_float_stride(dim->alloc_width) / sizeof(float),
+                                  dim->alloc_height)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "SpEED: the prescaled plane (%zux%zu) has more samples than the int index "
+                 "of vif_tools allows; lower speed_prescale\n",
+                 dim->alloc_width, dim->alloc_height);
+        return -EINVAL;
+    }
     return 0;
 }
 

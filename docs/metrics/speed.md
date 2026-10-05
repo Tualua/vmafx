@@ -65,6 +65,18 @@ finite fails the frame (see
 
 The tables are from the `VmafOption` arrays of `core/src/feature/speed.c`.
 
+`speed_prescale` has one more limit: the upscaled plane must have at most
+INT_MAX (2,147,483,647) samples, because the resampling and filter functions
+of `core/src/feature/vif_tools.c` index it with `int`. 16K (15360x8640) stays
+inside at every accepted prescale, up to 4.0 (2,123,366,400 samples); at the
+32768x32768 picture cap the limit is a prescale of about 1.414. A larger plane
+fails `init()` on every backend (the CPU and the SpEED device twins share the
+geometry of `speed_internal_init_dimensions()`):
+
+```text
+libvmaf ERROR SpEED: the prescaled plane (49152x49152) has more samples than the int index of vif_tools allows; lower speed_prescale
+```
+
 ## Agreement with Netflix's scores {#the-scores-are-netflixs}
 
 `speed_chroma` and `speed_temporal` return the values Netflix/vmaf returns for

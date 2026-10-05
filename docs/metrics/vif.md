@@ -116,6 +116,22 @@ four-scale ladder (got 12x12)
 - The integer pyramid has the same bound: every scale reflects its filter taps
   once, which stays inside the plane only from 16 pixels in each dimension up.
 
+### Largest prescaled plane
+
+`float_vif` hands the prescaled plane to the functions of
+`core/src/feature/vif_tools.c`, which index it with `int`, so the plane must
+have at most INT_MAX (2,147,483,647) samples, counted with its row stride.
+16K (15360x8640) stays inside at every accepted `vif_prescale`, up to 4.0
+(2,123,366,400 samples); at the 32768x32768 picture cap the limit is a
+prescale of about 1.414. A larger plane fails `init()` with `-EINVAL`:
+
+```text
+libvmaf ERROR float_vif: the prescaled plane (65536x65536) has more samples than the int index of vif_tools allows; lower vif_prescale
+```
+
+`core/test/test_prescaled_plane_int_index.c` checks the limit without
+allocating a plane of that size.
+
 ### Minimum frame size on the integer GPU twins
 
 For the integer GPU twins:
