@@ -62,6 +62,15 @@ double vmaf_psnr_hvs_combined_score(const double *plane_scores, unsigned n_plane
 /* convert_score_db(score, 1.0) of the CPU extractor. */
 double vmaf_psnr_hvs_score_db(double score);
 
+/*
+ * One entry of calc_psnrhvs()'s masking table for the CSF value `csf`:
+ * `(csf * 0.3885746225901003) * (csf * 0.3885746225901003)`, a double product
+ * stored as float. For a twin whose kernel language has no double (Metal), the
+ * host forms the table with it and hands it to the kernel; the fp32 product
+ * `csf * 0.3885746225901003f` squared rounds 98 of the 192 entries differently.
+ */
+float vmaf_psnr_hvs_mask_value(float csf);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin the bit-exact psnr_hvs twin design (ADR-1397, ADR-1401).
+"""Pin the bit-exact psnr_hvs twin design (ADR-1397, ADR-1401, ADR-1498).
 
 ``calc_psnrhvs()`` adds every masked coefficient error of a plane into one
 running ``float``, so a twin returns the CPU's bits only if it produces the
@@ -9,9 +9,9 @@ same terms and they are added in the same order and type. Device-free: reads
 the sources only. Every planted regression below is a construct a twin had
 before it was made exact, so the contract fails on the old design and passes
 on the new one. The device tests (``test_cuda_psnr_hvs_parity``,
-``test_sycl_psnr_hvs_parity``, ``test_hip_psnr_hvs_parity``) check the
-resulting scores; this contract keeps the design from eroding on hosts
-without the device.
+``test_sycl_psnr_hvs_parity``, ``test_hip_psnr_hvs_parity``,
+``test_metal_integer_psnr_hvs_parity``) check the resulting scores; this
+contract keeps the design from eroding on hosts without the device.
 
 The masking threshold is upstream's statement, ``sqrt(s_mask * s_gvar) / 32.f``
 (Netflix/vmaf ``libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317``): a
@@ -23,6 +23,14 @@ product, the correctly rounded fp32 root, which is the same value (rounding a
 square root to 53 bits and then to 24 equals rounding it to 24). The contract
 pins all of them, and fails on the double product the fork carried between
 PR #552 and ADR-1488.
+
+The Metal twin (ADR-1498) has no double either: its arithmetic is
+``metal/metal_psnr_hvs_math.h`` (the root is Metal's ``sqrt``, correctly
+rounded under the kernels' ``-fno-fast-math``), ``integer_psnr_hvs.metal``
+stores every term, and the host forms the masking table with the shared
+``vmaf_psnr_hvs_mask_value()``. Before the port it took the masking table as
+an fp32 product and summed each block into a float partial; the planted
+regressions below include both.
 """
 
 from __future__ import annotations
@@ -35,6 +43,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 MESON_BUILD = ROOT / "core" / "src" / "meson.build"
+# The Metal kernels' build file, under its own key in the sources.
+METAL_MESON = "metal/meson.build"
+METAL_MESON_BUILD = ROOT / "core" / "src" / "metal" / "meson.build"
 
 HELPER = "psnr_hvs_score.c"
 EXACT_FP = "sycl/sycl_exact_fp.h"
@@ -107,6 +118,22 @@ class Twin:
     # The meson line that keeps the kernel uncontracted, and that line broken.
     build_flags: str
     broken_build_flags: str
+    # The statement in `kernel` that forms the stored term.
+    term: str = STORE_TERM
+    # The file that forms the masking table in double ("" = `kernel`).
+    mask_file: str = ""
+    # A host call that forms the masking table ("" = none: the kernel does).
+    mask_call: str = ""
+    # A kernel file besides `kernel` ("" = none), and its statement storing
+    # every term.
+    device: str = ""
+    device_store: str = ""
+    # The source key of the build file holding `build_flags`.
+    meson: str = "meson.build"
+
+    @property
+    def mask_source(self) -> str:
+        return self.mask_file or self.kernel
 
 
 CUDA = Twin(
@@ -167,7 +194,33 @@ SYCL = Twin(
     broken_build_flags="sycl_feature_tail_args = ['-std=c++20'] + sycl_pic_arg + ['-fpermissive']",
 )
 
-TWINS = (CUDA, HIP, SYCL)
+# The arithmetic is a header on metal_portable.h, valid as MSL and as host C
+# (ADR-1498); the .metal file composes it and stores every term; the host
+# forms the masking table, which needs a double.
+METAL = Twin(
+    name="metal",
+    host="metal/integer_psnr_hvs_metal.mm",
+    kernel="metal/metal_psnr_hvs_math.h",
+    product="const float product = energy * ratio;",
+    wide_product="const VmafMtlPair product = vmaf_mtl_two_product(energy, ratio);",
+    threshold="return VMAF_MTL_SQRT(product) / 32.f;",
+    float_threshold="return metal::fast::sqrt(product) / 32.f;",
+    float_root=r"\b(?:metal::)?(?:fast|native)::sqrt\s*\(|\brsqrt\s*\(",
+    error="(float)(diff < 0 ? -diff : diff)",
+    float_error="VMAF_MTL_FABS((float)ref - (float)dist)",
+    readback="(size_t)s->num_blocks[p] * VMAF_PSNR_HVS_TERMS_PER_BLOCK * sizeof(float)",
+    partial_readback="(size_t)s->num_blocks[p] * sizeof(float)",
+    build_flags="metal_shader_strict_fp_args = ['-fno-fast-math', '-ffp-contract=off']",
+    broken_build_flags="metal_shader_strict_fp_args = ['-fno-fast-math']",
+    term="return (error * csf) * (error * csf);",
+    mask_file=HELPER,
+    mask_call="vmaf_psnr_hvs_mask_value(",
+    device="metal/integer_psnr_hvs.metal",
+    device_store="terms[(ulong)slot * VMAF_MTL_HVS_TERMS + lid] = valid_block ? term : 0.f;",
+    meson=METAL_MESON,
+)
+
+TWINS = (CUDA, HIP, SYCL, METAL)
 
 
 def _code(source: str) -> str:
@@ -178,9 +231,10 @@ def _code(source: str) -> str:
 def _sources() -> dict[str, str]:
     names = {HELPER, EXACT_FP, SCALAR, AVX2, NEON}
     for twin in TWINS:
-        names.update((twin.host, twin.kernel))
+        names.update(name for name in (twin.host, twin.kernel, twin.device) if name)
     sources = {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in names}
     sources["meson.build"] = MESON_BUILD.read_text(encoding="utf-8")
+    sources[METAL_MESON] = METAL_MESON_BUILD.read_text(encoding="utf-8")
     return sources
 
 
@@ -216,13 +270,37 @@ def _reference_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
-def _kernel_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
+def _mask_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
+    """The masking table: a double product stored as float, never an fp32 one."""
     failures: list[str] = []
+    for name in dict.fromkeys((twin.kernel, twin.device, twin.mask_source)):
+        if name and f"{MASK_SCALE}f" in _code(sources[name]):
+            failures.append(f"{name}: masking table scaled in float; the CPU scales in double")
+    if MASK_DOUBLE not in _code(sources[twin.mask_source]):
+        failures.append(f"{twin.mask_source}: masking table no longer taken from a double product")
+    if twin.mask_call and twin.mask_call not in _code(sources[twin.host]):
+        failures.append(
+            f"{twin.host}: the masking table no longer comes from {twin.mask_call.rstrip('(')}()"
+        )
+    return failures
+
+
+def _device_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
+    """The kernel file of a twin whose arithmetic lives in a header."""
+    if not twin.device:
+        return []
+    code = _code(sources[twin.device])
+    failures: list[str] = []
+    if twin.device_store not in " ".join(code.split()):
+        failures.append(f"{twin.device}: the kernel no longer stores every term")
+    if OWN_FLOAT_SUM.search(code):
+        failures.append(f"{twin.device}: a float sum of terms next to the shared helper's")
+    return failures
+
+
+def _kernel_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
+    failures: list[str] = _mask_failures(twin, sources) + _device_failures(twin, sources)
     code = _code(sources[twin.kernel])
-    if f"{MASK_SCALE}f" in code:
-        failures.append(f"{twin.kernel}: masking table scaled in float; the CPU scales in double")
-    if MASK_DOUBLE not in code:
-        failures.append(f"{twin.kernel}: masking table no longer taken from a double product")
     if re.search(twin.float_root, code):
         failures.append(f"{twin.kernel}: float square root in the masking threshold")
     if twin.product not in code:
@@ -231,7 +309,7 @@ def _kernel_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
         failures.append(f"{twin.kernel}: masking threshold no longer the CPU's product and root")
     if twin.error not in code:
         failures.append(f"{twin.kernel}: coefficient error no longer an integer difference")
-    if STORE_TERM not in code:
+    if twin.term not in code:
         failures.append(f"{twin.kernel}: the kernel no longer stores every term")
     if OWN_FLOAT_SUM.search(code):
         failures.append(f"{twin.kernel}: a float sum of terms next to the shared helper's")
@@ -252,6 +330,7 @@ def _kernel_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
             )
         )
         or (twin.name == "sycl" and twin.build_flags not in sources["meson.build"])
+        or (twin.name == "metal" and twin.build_flags not in sources[METAL_MESON])
     ):
         failures.append(
             f"core/src/meson.build: the {twin.name} psnr_hvs kernel may contract a multiply and"
@@ -319,7 +398,7 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
         for twin in TWINS:
             with self.subTest(twin=twin.name):
                 failures = _contract_failures(
-                    _planted("meson.build", twin.build_flags, twin.broken_build_flags)
+                    _planted(twin.meson, twin.build_flags, twin.broken_build_flags)
                 )
                 self.assertTrue(
                     any(
@@ -331,11 +410,31 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
         # hvs_mask_at() of the twins that summed per block.
         for twin in TWINS:
             with self.subTest(twin=twin.name):
-                failures = _contract_failures(_planted(twin.kernel, MASK_DOUBLE, MASK_FLOAT))
-                self.assertTrue(any(f"{twin.kernel}: masking table scaled" in i for i in failures))
-                self.assertTrue(
-                    any(f"{twin.kernel}: masking table no longer" in i for i in failures)
-                )
+                source = twin.mask_source
+                failures = _contract_failures(_planted(source, MASK_DOUBLE, MASK_FLOAT))
+                self.assertTrue(any(f"{source}: masking table scaled" in i for i in failures))
+                self.assertTrue(any(f"{source}: masking table no longer" in i for i in failures))
+
+    def test_metal_kernel_masking_table_is_detected(self) -> None:
+        # psnr_hvs_block_body() of the Metal kernel before the port: its own
+        # table, an fp32 product squared.
+        planted = "const float m = csf[lid] * 0.3885746225901003f;\n"
+        failures = _contract_failures(
+            _planted(METAL.device, "inline void hvs_fdct8x8(", planted + "inline void hvs_fdct8x8(")
+        )
+        self.assertTrue(any(f"{METAL.device}: masking table scaled" in i for i in failures))
+
+    def test_metal_host_table_without_the_helper_is_detected(self) -> None:
+        failures = _contract_failures(
+            _planted(METAL.host, "vmaf_psnr_hvs_mask_value(vmaf_mtl_hvs_csf[p][k])", "0.0f")
+        )
+        self.assertTrue(any(f"{METAL.host}: the masking table no longer" in i for i in failures))
+
+    def test_metal_kernel_partial_is_detected(self) -> None:
+        # The reduction the Metal kernel had: one float partial per block.
+        failures = _contract_failures(_planted(METAL.device, METAL.device_store, "ret += term;"))
+        self.assertTrue(any(f"{METAL.device}: the kernel no longer stores" in i for i in failures))
+        self.assertTrue(any(f"{METAL.device}: a float sum of terms" in i for i in failures))
 
     def test_widened_reference_product_is_detected(self) -> None:
         # PR #552's cast, in the scalar reference and in its SIMD forms.
@@ -384,7 +483,7 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
         for twin in TWINS:
             with self.subTest(twin=twin.name):
                 failures = _contract_failures(
-                    _planted(twin.kernel, STORE_TERM, "error_sum += (error * csf) * (error * csf);")
+                    _planted(twin.kernel, twin.term, "error_sum += (error * csf) * (error * csf);")
                 )
                 self.assertTrue(
                     any(f"{twin.kernel}: the kernel no longer stores" in i for i in failures)

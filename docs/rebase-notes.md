@@ -222,6 +222,26 @@ fork then had no VIF runtime helpers; it has had them since ADR-0416. Test-only.
   `vif_scale_frame_s()`, which returns the same bits.
 - `core/test/test_vif_bilinear.c` holds both paths to the per-pixel scaler
   (copied into the test) with `memcmp`.
+## psnr_hvs_metal stores every term and takes the CPU's masking table (2026-10-05)
+
+`fix/metal-psnr-hvs-cpu-sum`. Metal twin, its host and the shared host tail.
+
+- `core/src/feature/metal/integer_psnr_hvs.metal` stores the 64 terms of every
+  block (`terms[slot * 64 + lid]`) and sums nothing on the device; every
+  operation on a value comes from `core/src/feature/metal/metal_psnr_hvs_math.h`
+  (on `metal_portable.h`, no `double`). A sync must not bring back the per-block
+  `ret` partial, the host's float sum of partials or the kernel's own masking
+  table `(csf * 0.3885746225901003f)^2`.
+- `integer_psnr_hvs_metal.mm` binds the masking table at buffer 6, formed with
+  `vmaf_psnr_hvs_mask_value()` (new in `core/src/feature/psnr_hvs_score.c`, the
+  CPU's double product stored as float), and scores through
+  `vmaf_psnr_hvs_plane_score()`, `vmaf_psnr_hvs_combined_score()` and
+  `vmaf_psnr_hvs_score_db()`. The CSF tables moved from the `.mm` into the
+  header (`vmaf_mtl_hvs_csf`).
+- A change to `calc_psnrhvs()` in `third_party/xiph/psnr_hvs.c` changes the
+  header in the same PR, as it changes the CUDA, HIP and SYCL kernels.
+  `test_metal_psnr_hvs_math` and `test_psnr_hvs_twin_exact_sum_contract.py`
+  (now with the Metal twin) guard it without a device.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

@@ -344,6 +344,7 @@ row stays open.
 | `integer_ssim_metal` | Each pixel's term as the CPU's double term, added in the CPU's raster order. | `test_metal_integer_ssim_math` |
 | `float_ssim_metal` | The CPU's window terms with no forced 1 (an identical flat frame gives a finite `enable_db` score, as the CPU), added in raster order. | `test_metal_float_ssim_math` |
 | `float_ms_ssim_metal` | The CPU's decimation and window terms, added in raster order per plane and scale, combined as the CPU combines them. | `test_metal_float_ms_ssim_math` |
+| `integer_psnr_hvs_metal` | Every masked coefficient error of every block is stored and added on the host into one running `float` in the CPU's order, with the CPU's masking table (formed in `double` on the host, since Metal has no `double`); before, each block was summed on the device and the table was an fp32 product, so most frames differed in the last digits. | `test_metal_psnr_hvs_math` |
 
 Options that a twin accepts are now its CPU extractor's, with the same names,
 defaults and ranges, so a feature string that works with `--backend cpu` works

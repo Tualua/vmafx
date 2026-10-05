@@ -352,6 +352,15 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   `iqa_ssim()` order, rounds mean to fp32. ms_ssim decimation =
   `metal_ms_ssim_math.h`, one explicit fma per tap in CPU order. Guards:
   `test_metal_{integer,float,float_ms}_ssim_math` + exact contracts.
+- **psnr_hvs** (ADR-1397 / ADR-1401 design): per-block math only in
+  `metal_psnr_hvs_math.h` (variance ratio, `od_bin_fdct8()`, energy, threshold
+  = fp32 product + Metal `sqrt`, term from integer diff). Kernel stores all 64
+  terms per block, no device sum; host `vmaf_psnr_hvs_plane_score()` /
+  `_combined_score()` / `_score_db()`. Mask table = host
+  `vmaf_psnr_hvs_mask_value()` (double product -> float), buffer 6; never an
+  fp32 `csf * 0.3885746225901003f` square. CSF tables = `vmaf_mtl_hvs_csf`.
+  Change to `calc_psnrhvs()` -> header, same PR. Guards:
+  `test_metal_psnr_hvs_math`, `test_psnr_hvs_twin_exact_sum_contract.py`.
 - **MSL names**: no identifier `half`, `device`, `thread`, `constant`,
   `kernel`, ... in any Metal source or included header (C accepts, MSL does
   not; `test_metal_shader_build_contract`).

@@ -119,15 +119,23 @@ Netflix's statement, and all three functions write it
 The CUDA (`psnr_hvs_cuda`), HIP (`psnr_hvs_hip`) and SYCL (`psnr_hvs_sycl`,
 [ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md)) twins return the
 CPU's scores bit for bit, on every output, at every frame size and depth. The
-Metal twin still sums each block on the device and is held to a tolerance
-([ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)).
+Metal twin (`integer_psnr_hvs_metal`) now has the same design, ported the way
+[ADR-1498](../adr/1498-metal-twins-exact-designs.md) ports the other Metal
+twins: it stores every term, the host adds them in the CPU's order, and the
+masking table is the CPU's. Its arithmetic is checked against the CPU on the
+host (`test_metal_psnr_hvs_math`); it counts as exact once a macOS tester
+report shows `test_metal_integer_psnr_hvs_parity` passing on an Apple GPU
+(`T-METAL-PSNR-HVS-PER-BLOCK-SUM-FP32-MASK-2026-10-05` in
+[the state ledger](../state.md)). Before that change it summed each block on
+the device and formed the masking table in `float`, and an Apple M4 Pro
+measured it up to 1.7e-3 dB away from the CPU.
 
 | Twin | Exact vs CPU | ADR | Evidence (fragment) | Masking threshold (CPU: `double` root of a `float` product) | Measured on |
 |---|---|---|---|---|---|
 | `psnr_hvs_cuda` | Yes | [ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) | `scripts/ci/exact_twins.d/psnr_hvs.cuda` | `float` product, `double` root | RTX 4090 |
 | `psnr_hvs_hip` | Yes | [ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md) | `scripts/ci/exact_twins.d/psnr_hvs.hip` | `float` product, `double` root | gfx1036 (integrated) |
 | `psnr_hvs_sycl` | Yes | ADR-1401 | `scripts/ci/exact_twins.d/psnr_hvs.sycl` | No fp64 in the kernel: `float` product and a correctly rounded `float` root, which is the `double` root rounded to `float` | Arc A380 |
-| Metal | Tolerance | ADR-1361 | none | not applicable | not recorded |
+| `integer_psnr_hvs_metal` | By design; waits for a device report | [ADR-1498](../adr/1498-metal-twins-exact-designs.md) | none yet | No `double` in the kernel: `float` product and Metal's `sqrt`, correctly rounded without fast math, as on SYCL; masking table formed in `double` on the host | not yet measured after the change |
 
 Each exact twin was measured against the CPU at `--precision max` on the
 Netflix 576x324 pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080

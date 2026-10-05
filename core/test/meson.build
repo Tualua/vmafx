@@ -2685,6 +2685,24 @@ test('test_metal_integer_ssim_exact_contract',
     timeout : 30,
 )
 
+# T-METAL-PSNR-HVS-PER-BLOCK-SUM-FP32-MASK-2026-10-05 (ADR-1397, ADR-1401,
+# ADR-1498): psnr_hvs_metal's arithmetic (core/src/feature/metal/
+# metal_psnr_hvs_math.h) composed on the host as the kernel composes it, the
+# masking table from vmaf_psnr_hvs_mask_value() and the terms added by
+# vmaf_psnr_hvs_plane_score(), against the CPU psnr_hvs extractor at `==` on
+# the fixtures of psnr_hvs_twin_parity.h; the fp32 masking table and the
+# per-block float partials the twin had are refused. The device-free source
+# contract is test_psnr_hvs_twin_exact_sum_contract.
+test_metal_psnr_hvs_math = executable('test_metal_psnr_hvs_math',
+    ['test.c', 'test_metal_psnr_hvs_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_metal_psnr_hvs_math', test_metal_psnr_hvs_math, suite : ['fast'],
+    timeout : 120)
+
 # T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30 items (1) and (4):
 # float_ssim_metal's arithmetic (core/src/feature/metal/metal_ssim_terms.h)
 # compiled on the host: the window terms against iqa/ssim_tools.c bit for bit,

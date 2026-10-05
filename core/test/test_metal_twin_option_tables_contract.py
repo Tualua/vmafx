@@ -87,7 +87,9 @@ EXECUTED = {
     "psnr_hvs": (
         "if (!s->enable_chroma) {",
         "s->n_planes = 1u;",
-        "const double combined = (s->n_planes == 1u) ?",
+        # The CPU's luma-only or weighted combine, through the shared host
+        # tail (ADR-1397).
+        "const double combined = vmaf_psnr_hvs_combined_score(plane_score, s->n_planes);",
     ),
     "ssimulacra2": ("switch (s->yuv_matrix) {",),
     "vif": (

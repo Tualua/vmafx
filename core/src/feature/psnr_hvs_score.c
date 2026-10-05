@@ -98,4 +98,13 @@ double vmaf_psnr_hvs_score_db(double score)
     return 10 * (-1 * log10(1.0 * score));
 }
 
+float vmaf_psnr_hvs_mask_value(float csf)
+{
+    /* calc_psnrhvs(): `mask[x][y] = (_csf[x][y] * 0.3885746225901003) *
+     * (_csf[x][y] * 0.3885746225901003);` the float operand is widened to
+     * double, both products are double, the result is stored as float. */
+    const double scaled = (double)csf * 0.3885746225901003;
+    return (float)(scaled * scaled);
+}
+
 /* NOLINTEND(modernize-use-nullptr) */
