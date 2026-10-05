@@ -27,6 +27,7 @@ import io
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -178,18 +179,30 @@ def test_fast_production_mode_requires_geometry(
     assert "--width" in err or "--height" in err
 
 
-def test_fast_production_invokes_extractor_and_runner(
-    tmp_path: Path,
+def _patch_fast_seams(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture,
+    extractor_factory: Any,
+    runner_factory: Any,
+    select_backend: Any,
 ) -> None:
-    """Production CLI builds the seams and threads them into ``fast_recommend``.
+    """Install the sample-extractor, encode-runner and backend-selection stubs on the CLI."""
+    monkeypatch.setattr(cli_module, "_build_fast_sample_extractor", extractor_factory)
+    monkeypatch.setattr(cli_module, "_build_fast_encode_runner", runner_factory)
+    monkeypatch.setattr(cli_module, "select_backend", select_backend)
 
-    We monkey-patch the seam factories to record-only stubs so the
-    test stays in-process. The CLI's job is the wiring; the seam
-    contracts themselves are exercised in ``test_fast.py``.
-    """
-    captured: dict[str, object] = {}
+
+def _stub_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace ``run_proxy`` with a deterministic CRF -> VMAF curve (92 near CRF 24)."""
+    import vmaftune.proxy as proxy_module
+
+    def _fake_run_proxy(features, *, encoder, preset_norm, crf_norm, **_):
+        return 100.0 - 30.0 * crf_norm
+
+    monkeypatch.setattr(proxy_module, "run_proxy", _fake_run_proxy)
+
+
+def _recording_seams(captured: dict[str, Any]) -> tuple[Any, Any, Any]:
+    """Seam factories that record their calls in ``captured`` (extractor, runner, backend)."""
 
     def _fake_extractor_factory(args, workdir):
         captured["extractor_workdir"] = workdir
@@ -219,19 +232,41 @@ def test_fast_production_invokes_extractor_and_runner(
         captured["selected_backend"] = prefer
         return "cpu"
 
-    monkeypatch.setattr(cli_module, "_build_fast_sample_extractor", _fake_extractor_factory)
-    monkeypatch.setattr(cli_module, "_build_fast_encode_runner", _fake_runner_factory)
-    monkeypatch.setattr(cli_module, "select_backend", _fake_select_backend)
+    return _fake_extractor_factory, _fake_runner_factory, _fake_select_backend
+
+
+def _assert_seams_used(captured: dict[str, Any], encode_dir: Path) -> None:
+    """The CLI built both seams under ``encode_dir`` and ran them."""
+    assert captured.get("extractor_workdir") == encode_dir / "probes"
+    assert captured.get("runner_workdir") == encode_dir / "verify"
+    assert captured.get("runner_backend") == "cpu"
+    # Verify pass invoked exactly once at the end.
+    assert len(captured.get("runner_calls", [])) == 1
+    # Extractor ran at least one TPE trial.
+    assert len(captured.get("extractor_calls", [])) >= 1
+
+
+def test_fast_production_invokes_extractor_and_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """Production CLI builds the seams and threads them into ``fast_recommend``.
+
+    We monkey-patch the seam factories to record-only stubs so the
+    test stays in-process. The CLI's job is the wiring; the seam
+    contracts themselves are exercised in ``test_fast.py``.
+    """
+    captured: dict[str, Any] = {}
+    _fake_extractor_factory, _fake_runner_factory, _fake_select_backend = _recording_seams(captured)
+
+    _patch_fast_seams(
+        monkeypatch, _fake_extractor_factory, _fake_runner_factory, _fake_select_backend
+    )
 
     # Stub the v2 proxy session — the CLI test must not require the
     # actual fr_regressor_v2 ONNX file or onnxruntime to be available.
-    import vmaftune.proxy as proxy_module
-
-    def _fake_run_proxy(features, *, encoder, preset_norm, crf_norm, **_):
-        # Deterministic CRF -> predicted VMAF curve so TPE has signal.
-        return 100.0 - 30.0 * crf_norm
-
-    monkeypatch.setattr(proxy_module, "run_proxy", _fake_run_proxy)
+    _stub_proxy(monkeypatch)
 
     src = tmp_path / "ref.yuv"
     src.write_bytes(b"")
@@ -264,14 +299,30 @@ def test_fast_production_invokes_extractor_and_runner(
     assert payload["verify_vmaf"] is not None
     assert payload["proxy_verify_gap"] is not None
     assert payload["proxy_verify_gap"] < 1.5
-    # The CLI built and used both seams.
-    assert captured.get("extractor_workdir") == encode_dir / "probes"
-    assert captured.get("runner_workdir") == encode_dir / "verify"
-    assert captured.get("runner_backend") == "cpu"
-    # Verify pass invoked exactly once at the end.
-    assert len(captured.get("runner_calls", [])) == 1
-    # Extractor ran at least one TPE trial.
-    assert len(captured.get("extractor_calls", [])) >= 1
+    _assert_seams_used(captured, encode_dir)
+
+
+def _ood_fast_args(tmp_path: Path, src: Path) -> list[str]:
+    """CLI arguments of the 720p production run that writes ``result.json``."""
+    return [
+        "fast",
+        "--src",
+        str(src),
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--target-vmaf",
+        "92.0",
+        "--n-trials",
+        "4",
+        "--proxy-tolerance",
+        "1.5",
+        "--encode-dir",
+        str(tmp_path / "scratch"),
+        "--output",
+        str(tmp_path / "result.json"),
+    ]
 
 
 def test_fast_ood_gap_returns_nonzero(
@@ -298,42 +349,19 @@ def test_fast_ood_gap_returns_nonzero(
 
         return _runner
 
-    monkeypatch.setattr(cli_module, "_build_fast_sample_extractor", _fake_extractor_factory)
-    monkeypatch.setattr(cli_module, "_build_fast_encode_runner", _fake_runner_factory)
-    monkeypatch.setattr(cli_module, "select_backend", lambda prefer="auto", vmaf_bin="vmaf": "cpu")
+    _patch_fast_seams(
+        monkeypatch,
+        _fake_extractor_factory,
+        _fake_runner_factory,
+        lambda prefer="auto", vmaf_bin="vmaf": "cpu",
+    )
 
-    import vmaftune.proxy as proxy_module
-
-    def _fake_run_proxy(features, *, encoder, preset_norm, crf_norm, **_):
-        # Synthetic monotone proxy: predicts 92 at crf_norm 0.27 (CRF ~24).
-        return 100.0 - 30.0 * crf_norm
-
-    monkeypatch.setattr(proxy_module, "run_proxy", _fake_run_proxy)
+    _stub_proxy(monkeypatch)
 
     src = tmp_path / "ref.yuv"
     src.write_bytes(b"")
 
-    rc = main(
-        [
-            "fast",
-            "--src",
-            str(src),
-            "--width",
-            "1280",
-            "--height",
-            "720",
-            "--target-vmaf",
-            "92.0",
-            "--n-trials",
-            "4",
-            "--proxy-tolerance",
-            "1.5",
-            "--encode-dir",
-            str(tmp_path / "scratch"),
-            "--output",
-            str(tmp_path / "result.json"),
-        ]
-    )
+    rc = main(_ood_fast_args(tmp_path, src))
     # 3 = OOD signal so a wrapper can fall through to ``recommend``.
     assert rc == 3
     payload = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
@@ -457,18 +485,23 @@ def test_parse_canonical6_means_per_frame_integer_fallback() -> None:
     assert means[2:] == [0.0, 0.0, 0.0, 0.0]
 
 
-def test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_build_fast_sample_extractor decodes container to raw YUV before vmaf."""
+_PROBE_VMAF_PAYLOAD = {
+    "pooled_metrics": {
+        "integer_adm2": {"mean": 0.9550306797027588},
+        "integer_vif_scale0": {"mean": 0.5178422331809998},
+        "integer_vif_scale1": {"mean": 0.8622183203697205},
+        "integer_vif_scale2": {"mean": 0.9155327677726746},
+        "integer_vif_scale3": {"mean": 0.9446256160736084},
+        "integer_motion2": {"mean": 8.946569442749023},
+    }
+}
+
+
+def _sample_extractor_args() -> Any:
+    """The CLI namespace ``_build_fast_sample_extractor`` reads."""
     import argparse
-    from unittest.mock import MagicMock
 
-    import vmaftune.cli as cli_mod
-    from vmaftune.encode import EncodeResult
-
-    args = argparse.Namespace(
+    return argparse.Namespace(
         width=576,
         height=324,
         pix_fmt="yuv420p",
@@ -479,60 +512,76 @@ def test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up(
         vmaf_bin="vmaf",
         vmaf_model="version=vmaf_v0.6.1",
     )
-    workdir = tmp_path / "probes"
 
-    def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):
-        req.output.write_bytes(b"dummy mp4 container")
-        return EncodeResult(
-            request=req,
-            exit_status=0,
-            encode_time_ms=10.0,
-            encode_size_bytes=5000,
-            encoder_version="libx264-enabled",
-            ffmpeg_version="n9.0.1",
-            stderr_tail="",
-        )
 
-    monkeypatch.setattr("vmaftune.encode.run_encode", _fake_run_encode)
+def _ok_encode_result(req: Any) -> Any:
+    """A successful ``EncodeResult`` for ``req``."""
+    from vmaftune.encode import EncodeResult
+
+    return EncodeResult(
+        request=req,
+        exit_status=0,
+        encode_time_ms=10.0,
+        encode_size_bytes=5000,
+        encoder_version="libx264-enabled",
+        ffmpeg_version="n9.0.1",
+        stderr_tail="",
+    )
+
+
+def _install_decode_fakes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[Path, list[Any], list[Any]]:
+    """Fake the decode, command-building and ``subprocess.run`` steps of the sample extractor.
+
+    Returns ``(decoded_file, decode_called, vmaf_commands)``: the raw YUV the fake
+    decode writes and the distorted paths seen by the decode and command builders.
+    """
+    import dataclasses
+    from unittest.mock import MagicMock
 
     decoded_file = tmp_path / "decoded_probe.yuv"
-    decode_called = []
+    decode_called: list[Any] = []
+    vmaf_commands: list[Any] = []
 
     def _fake_maybe_decode_distorted(score_req, workdir, ffmpeg_bin="ffmpeg"):
         decode_called.append(score_req.distorted)
         decoded_file.write_bytes(b"dummy raw yuv")
-        import dataclasses
-
         return dataclasses.replace(score_req, distorted=decoded_file), 0
-
-    monkeypatch.setattr("vmaftune.score.maybe_decode_distorted", _fake_maybe_decode_distorted)
-
-    vmaf_commands = []
 
     def _fake_build_vmaf_command(score_req, json_path, vmaf_bin="vmaf", backend=None):
         vmaf_commands.append(score_req.distorted)
         return ["echo", "vmaf", "--output", str(json_path)]
 
-    monkeypatch.setattr("vmaftune.score.build_vmaf_command", _fake_build_vmaf_command)
-
     def _sub_run_writing_json(cmd, capture_output=True, text=True, check=False):
         if "--output" in cmd:
-            out_idx = cmd.index("--output") + 1
-            out_path = Path(cmd[out_idx])
-            payload = {
-                "pooled_metrics": {
-                    "integer_adm2": {"mean": 0.9550306797027588},
-                    "integer_vif_scale0": {"mean": 0.5178422331809998},
-                    "integer_vif_scale1": {"mean": 0.8622183203697205},
-                    "integer_vif_scale2": {"mean": 0.9155327677726746},
-                    "integer_vif_scale3": {"mean": 0.9446256160736084},
-                    "integer_motion2": {"mean": 8.946569442749023},
-                }
-            }
-            out_path.write_text(json.dumps(payload), encoding="utf-8")
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_text(json.dumps(_PROBE_VMAF_PAYLOAD), encoding="utf-8")
         return MagicMock(returncode=0, stdout="", stderr="")
 
+    monkeypatch.setattr("vmaftune.score.maybe_decode_distorted", _fake_maybe_decode_distorted)
+    monkeypatch.setattr("vmaftune.score.build_vmaf_command", _fake_build_vmaf_command)
     monkeypatch.setattr("subprocess.run", _sub_run_writing_json)
+    return decoded_file, decode_called, vmaf_commands
+
+
+def test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_build_fast_sample_extractor decodes container to raw YUV before vmaf."""
+    import vmaftune.cli as cli_mod
+
+    args = _sample_extractor_args()
+    workdir = tmp_path / "probes"
+
+    def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):
+        req.output.write_bytes(b"dummy mp4 container")
+        return _ok_encode_result(req)
+
+    monkeypatch.setattr("vmaftune.encode.run_encode", _fake_run_encode)
+
+    decoded_file, decode_called, vmaf_commands = _install_decode_fakes(monkeypatch, tmp_path)
 
     extractor = cli_mod._build_fast_sample_extractor(args, workdir)
 
@@ -562,36 +611,16 @@ def test_build_fast_sample_extractor_raises_on_nonzero_vmaf_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_build_fast_sample_extractor raises RuntimeError on non-zero vmaf exit."""
-    import argparse
     from unittest.mock import MagicMock
 
     import vmaftune.cli as cli_mod
-    from vmaftune.encode import EncodeResult
 
-    args = argparse.Namespace(
-        width=576,
-        height=324,
-        pix_fmt="yuv420p",
-        framerate=24.0,
-        preset="medium",
-        sample_chunk_seconds=2.0,
-        ffmpeg_bin="ffmpeg",
-        vmaf_bin="vmaf",
-        vmaf_model="version=vmaf_v0.6.1",
-    )
+    args = _sample_extractor_args()
     workdir = tmp_path / "probes"
 
     def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):
         req.output.write_bytes(b"dummy mp4")
-        return EncodeResult(
-            request=req,
-            exit_status=0,
-            encode_time_ms=10.0,
-            encode_size_bytes=5000,
-            encoder_version="libx264-enabled",
-            ffmpeg_version="n9.0.1",
-            stderr_tail="",
-        )
+        return _ok_encode_result(req)
 
     monkeypatch.setattr("vmaftune.encode.run_encode", _fake_run_encode)
 
@@ -622,22 +651,10 @@ def test_build_fast_sample_extractor_raises_on_encode_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_build_fast_sample_extractor raises RuntimeError on non-zero encode exit."""
-    import argparse
-
     import vmaftune.cli as cli_mod
     from vmaftune.encode import EncodeResult
 
-    args = argparse.Namespace(
-        width=576,
-        height=324,
-        pix_fmt="yuv420p",
-        framerate=24.0,
-        preset="medium",
-        sample_chunk_seconds=2.0,
-        ffmpeg_bin="ffmpeg",
-        vmaf_bin="vmaf",
-        vmaf_model="version=vmaf_v0.6.1",
-    )
+    args = _sample_extractor_args()
     workdir = tmp_path / "probes"
 
     def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):

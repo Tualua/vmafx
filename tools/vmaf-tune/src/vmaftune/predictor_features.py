@@ -380,6 +380,39 @@ def _shot_start_arg(shot: Shot, fps: float) -> str:
     return str(shot.start_frame)
 
 
+def _decode_shot_raw(
+    shot: Shot,
+    source: Path,
+    cfg: FeatureExtractorConfig,
+    run: SubprocessRunner,
+    frames: int,
+    fps: float,
+    raw_path: Path,
+) -> bool:
+    """Decode ``frames`` frames of ``shot`` to raw YUV at ``raw_path``; False on failure."""
+    cmd = [
+        cfg.ffmpeg_bin,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        _shot_start_arg(shot, fps),
+        "-i",
+        str(source),
+        "-frames:v",
+        str(frames),
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "rawvideo",
+        str(raw_path),
+    ]
+    completed = run(cmd, capture_output=True, text=True, check=False)
+    rc = int(getattr(completed, "returncode", 1))
+    return rc == 0 and raw_path.exists()
+
+
 def _compute_saliency(
     shot: Shot,
     source: Path,
@@ -410,27 +443,7 @@ def _compute_saliency(
 
     with tempfile.TemporaryDirectory(prefix="vmaf-tune-saliency-") as tmp:
         raw_path = Path(tmp) / "shot.yuv"
-        cmd = [
-            cfg.ffmpeg_bin,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-ss",
-            _shot_start_arg(shot, fps),
-            "-i",
-            str(source),
-            "-frames:v",
-            str(frames),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "rawvideo",
-            str(raw_path),
-        ]
-        completed = run(cmd, capture_output=True, text=True, check=False)
-        rc = int(getattr(completed, "returncode", 1))
-        if rc != 0 or not raw_path.exists():
+        if not _decode_shot_raw(shot, source, cfg, run, frames, fps, raw_path):
             return (0.0, 0.0)
         try:
             frame_samples = max(1, min(int(cfg.saliency_frame_samples), frames))

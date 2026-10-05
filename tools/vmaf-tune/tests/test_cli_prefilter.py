@@ -152,6 +152,29 @@ def _fake_score_result(req: ScoreRequest) -> ScoreResult:
     )
 
 
+def _live_loop_args(src: Path, tmp_path: Path) -> list[str]:
+    """CLI arguments of the live ``prefilter`` run over the 320x240, 4 s fixture."""
+    return [
+        "prefilter",
+        "--target-vmaf",
+        "91",
+        "--src",
+        str(src),
+        "--width",
+        "320",
+        "--height",
+        "240",
+        "--duration",
+        "4.0",
+        "--n-trials",
+        "6",
+        "--encode-dir",
+        str(tmp_path / "enc"),
+        "--time-budget-s",
+        "30",
+    ]
+
+
 def test_live_loop_runs_with_mocked_encode_and_score(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -191,27 +214,7 @@ def test_live_loop_runs_with_mocked_encode_and_score(
     monkeypatch.setattr(encode_mod, "run_encode", _fake_run_encode)
     monkeypatch.setattr(score_mod, "run_score", _fake_run_score)
 
-    rc = main(
-        [
-            "prefilter",
-            "--target-vmaf",
-            "91",
-            "--src",
-            str(src),
-            "--width",
-            "320",
-            "--height",
-            "240",
-            "--duration",
-            "4.0",
-            "--n-trials",
-            "6",
-            "--encode-dir",
-            str(tmp_path / "enc"),
-            "--time-budget-s",
-            "30",
-        ]
-    )
+    rc = main(_live_loop_args(src, tmp_path))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["smoke"] is False

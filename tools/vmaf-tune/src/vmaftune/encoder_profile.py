@@ -140,6 +140,35 @@ def infer_source_is_container(source: Path, source_kind: str = "auto") -> bool:
     return source.suffix.lower() not in _RAW_VIDEO_SUFFIXES
 
 
+def _source_meta(profile: dict[str, Any]) -> dict[str, Any]:
+    """Return the ``source`` metadata of a profile as a dict."""
+    source_field = profile.get("source") or {}
+    # Profiles written by older vmaf-tune versions may store "source" as a
+    # plain path string rather than a metadata dict.  Normalise before use so
+    # callers get an AttributeError-free dict regardless of the stored type.
+    if isinstance(source_field, str):
+        return {"path": source_field}
+    return dict(source_field) if source_field else {}
+
+
+def _select_preset(
+    preset_override: str | None,
+    recommendation: dict[str, Any],
+    run_meta: dict[str, Any],
+    codec: str,
+) -> str:
+    """Pick the preset: override, recommendation, profile run, then the codec default."""
+    preset = str(
+        preset_override
+        or recommendation.get("preset")
+        or run_meta.get("preset")
+        or _default_preset(codec)
+    )
+    if preset == "adapter default":
+        preset = _default_preset(codec)
+    return preset
+
+
 def build_encode_request(
     profile: dict[str, Any],
     recommendation: dict[str, Any],
@@ -158,14 +187,7 @@ def build_encode_request(
     extra_params: tuple[str, ...] = (),
 ) -> EncodeRequest:
     """Build an :class:`EncodeRequest` from one selected profile row."""
-    _source_field = profile.get("source") or {}
-    # Profiles written by older vmaf-tune versions may store "source" as a
-    # plain path string rather than a metadata dict.  Normalise before use so
-    # callers get an AttributeError-free dict regardless of the stored type.
-    if isinstance(_source_field, str):
-        source_meta: dict = {"path": _source_field}
-    else:
-        source_meta = dict(_source_field) if _source_field else {}
+    source_meta = _source_meta(profile)
     run_meta = profile.get("run") or {}
     source = source_override or Path(str(source_meta.get("path") or ""))
     if not str(source):
@@ -186,15 +208,7 @@ def build_encode_request(
     if not source_is_container and (width <= 0 or height <= 0 or framerate <= 0):
         raise ValueError("raw sources require width, height, and framerate in profile or flags")
 
-    preset = str(
-        preset_override
-        or recommendation.get("preset")
-        or run_meta.get("preset")
-        or _default_preset(codec)
-    )
-    if preset == "adapter default":
-        preset = _default_preset(codec)
-
+    preset = _select_preset(preset_override, recommendation, run_meta, codec)
     duration = float(
         duration_override if duration_override is not None else source_meta.get("duration_s") or 0.0
     )

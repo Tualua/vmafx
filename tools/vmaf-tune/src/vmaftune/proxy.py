@@ -187,6 +187,36 @@ def encode_codec_block(
     return block
 
 
+def _open_session(model_id: str, session_factory: Any | None) -> Any:
+    """Return the inference session for ``model_id`` (``session_factory`` is the test seam)."""
+    if session_factory is None:
+        model_path = _resolve_model_path(model_id)
+        return _load_session(model_id, str(model_path))
+    return session_factory(_resolve_model_path(model_id))
+
+
+def _infer_score(session: Any, feat: Any, codec_block: Any, np: Any) -> float:
+    """Run ``session`` over the feature and codec tensors; return the scalar score."""
+    # The v2 ONNX graph was exported with two *separate* named inputs —
+    # "features" (shape [N, 6]) and "codec" (shape [N, 14]) — matching the
+    # FRRegressor.forward(features, codec_onehot) signature in
+    # ai/src/vmaf_train/models/fr_regressor.py.  Concatenating them into a
+    # single 20-D tensor and feeding it as input[0] was wrong: the first
+    # linear layer of the exported graph reads the 6-D "features" port only,
+    # so the 14 codec dims were silently interpreted as batch padding and the
+    # "codec" port received nothing, breaking fast-path production mode.
+    input_names = [inp.name for inp in session.get_inputs()]
+    if len(input_names) == 2:
+        # Two-input graph: "features" + "codec" (standard v2 export).
+        features_name, codec_name = input_names
+        outputs = session.run(None, {features_name: feat, codec_name: codec_block})
+    else:
+        # Fallback: single-input graph (legacy smoke or future merged export).
+        combined = np.concatenate([feat, codec_block], axis=1)
+        outputs = session.run(None, {input_names[0]: combined})
+    return float(np.asarray(outputs[0]).reshape(-1)[0])
+
+
 def run_proxy(
     features: Sequence[float],
     *,
@@ -205,37 +235,27 @@ def run_proxy(
     features
         Six canonical libvmaf features in the canonical-6 order:
         ``(adm2, vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2)``.
-        If ``normalise=True``, :func:`normalise_features` is applied first.
-        Otherwise, caller is responsible for StandardScaler normalisation.
+        With ``normalise=True``, :func:`normalise_features` is applied first;
+        otherwise the caller applies the StandardScaler normalisation.
     encoder
         Codec name; must be in :data:`ENCODER_VOCAB_V2` (or maps to
         ``unknown`` when ``allow_unknown=True``).
-    preset_norm
-        Preset axis normalised to ``[0, 1]`` (caller-mapped).
-    crf_norm
-        CRF axis normalised to ``[0, 1]`` over the adapter's quality range.
+    preset_norm, crf_norm
+        Preset and CRF axes normalised to ``[0, 1]`` by the caller (CRF over
+        the adapter's quality range).
     model_id
         Registry id; defaults to :data:`DEFAULT_PROXY_MODEL_ID`.
     session_factory
-        Test seam — when provided, called as ``session_factory(model_path)``
-        and must return an object with the onnxruntime ``InferenceSession``
-        ``.run(output_names, input_feed)`` interface. Production callers
-        leave this default.
+        Test seam: called as ``session_factory(model_path)``, returns an object
+        with the onnxruntime ``InferenceSession`` ``.run(output_names,
+        input_feed)`` interface. Production callers leave this default.
     allow_unknown
-        When True, an unknown encoder is mapped to the ``unknown`` one-hot slot.
+        Map an unknown encoder to the ``unknown`` one-hot slot.
     normalise
-        When True, applies the model sidecar's StandardScaler normalisation
-        to ``features``.
+        Apply the model sidecar's StandardScaler normalisation to ``features``.
 
-    Returns
-    -------
-    float
-        Predicted VMAF score on the standard ``[0, 100]`` scale.
-
-    Raises
-    ------
-    ProxyError
-        Onnxruntime missing, model file missing, or contract mismatch.
+    Returns the predicted VMAF score on the standard ``[0, 100]`` scale. Raises
+    :class:`ProxyError` for a missing onnxruntime or model file, or a contract mismatch.
     """
     np = _import_numpy()
     if len(features) != 6:
@@ -251,31 +271,8 @@ def run_proxy(
         crf_norm,
         allow_unknown=allow_unknown,
     ).reshape(1, 14)
-    # The v2 ONNX graph was exported with two *separate* named inputs —
-    # "features" (shape [N, 6]) and "codec" (shape [N, 14]) — matching the
-    # FRRegressor.forward(features, codec_onehot) signature in
-    # ai/src/vmaf_train/models/fr_regressor.py.  Concatenating them into a
-    # single 20-D tensor and feeding it as input[0] was wrong: the first
-    # linear layer of the exported graph reads the 6-D "features" port only,
-    # so the 14 codec dims were silently interpreted as batch padding and the
-    # "codec" port received nothing, breaking fast-path production mode.
-    if session_factory is None:
-        model_path = _resolve_model_path(model_id)
-        session = _load_session(model_id, str(model_path))
-    else:
-        session = session_factory(_resolve_model_path(model_id))
-
-    input_names = [inp.name for inp in session.get_inputs()]
-    if len(input_names) == 2:
-        # Two-input graph: "features" + "codec" (standard v2 export).
-        features_name, codec_name = input_names
-        outputs = session.run(None, {features_name: feat, codec_name: codec_block})
-    else:
-        # Fallback: single-input graph (legacy smoke or future merged export).
-        combined = np.concatenate([feat, codec_block], axis=1)
-        outputs = session.run(None, {input_names[0]: combined})
-    score = float(np.asarray(outputs[0]).reshape(-1)[0])
-    return score
+    session = _open_session(model_id, session_factory)
+    return _infer_score(session, feat, codec_block, np)
 
 
 __all__ = [

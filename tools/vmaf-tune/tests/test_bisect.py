@@ -67,13 +67,25 @@ def _make_runners(
     rc_score = crf_to_score_rc or (lambda crf: 0)
     rc_encode = crf_to_encode_rc or (lambda crf: 0)
     log: list[dict[str, Any]] = []
+    encode_runner = _make_encode_runner(bytes_fn, rc_encode, log)
+    score_runner = _make_score_runner(crf_to_vmaf, rc_score, log)
+    return encode_runner, score_runner, log
 
-    def _crf_from_argv(argv: list[str]) -> int:
-        if "-crf" in argv:
-            return int(argv[argv.index("-crf") + 1])
-        if "-cq" in argv:
-            return int(argv[argv.index("-cq") + 1])
-        return -1
+
+def _crf_from_argv(argv: list[str]) -> int:
+    if "-crf" in argv:
+        return int(argv[argv.index("-crf") + 1])
+    if "-cq" in argv:
+        return int(argv[argv.index("-cq") + 1])
+    return -1
+
+
+def _make_encode_runner(
+    bytes_fn: Callable[[int], int],
+    rc_encode: Callable[[int], int],
+    log: list[dict[str, Any]],
+) -> Callable[..., _FakeCompleted]:
+    """Encode runner that writes ``bytes_fn(crf)`` bytes unless ``rc_encode(crf)`` fails."""
 
     def _encode_runner(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
         crf = _crf_from_argv(argv)
@@ -91,23 +103,35 @@ def _make_runners(
         log.append({"kind": kind, "crf": crf, "argv": list(argv), "rc": rc})
         return _FakeCompleted(returncode=rc)
 
+    return _encode_runner
+
+
+def _crf_from_score_argv(argv: list[str]) -> int:
+    """The CRF the encode runner wrote into the *distorted* path (``-1`` when absent)."""
+    if "--distorted" not in argv:
+        return -1
+    distorted = Path(argv[argv.index("--distorted") + 1])
+    # The decoded sidecar path used by the Bug #3 fix carries an extra
+    # ``.decoded`` stem segment we strip before parsing.
+    stem_parts = distorted.stem.removesuffix(".decoded").split("_")
+    try:
+        return int(stem_parts[-1])
+    except ValueError:
+        return -1
+
+
+def _make_score_runner(
+    crf_to_vmaf: Callable[[int], float],
+    rc_score: Callable[[int], int],
+    log: list[dict[str, Any]],
+) -> Callable[..., _FakeCompleted]:
+    """Score runner that writes the synthetic VMAF JSON for the CRF in the distorted path."""
+
     def _score_runner(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
         # Score runner is invoked with the libvmaf CLI argv. We extract
         # the -crf-equivalent from the *distorted* path the encode
         # runner wrote (filename embeds crf=...) and emit a vmaf JSON.
-        # The decoded sidecar path used by the Bug #3 fix carries an
-        # extra ``.decoded`` stem segment we strip before parsing.
-        if "--distorted" in argv:
-            distorted = Path(argv[argv.index("--distorted") + 1])
-            stem = distorted.stem
-            stem = stem.removesuffix(".decoded")
-            stem_parts = stem.split("_")
-            try:
-                crf = int(stem_parts[-1])
-            except ValueError:
-                crf = -1
-        else:
-            crf = -1
+        crf = _crf_from_score_argv(argv)
         rc = rc_score(crf)
         if "--output" in argv and rc == 0:
             out = Path(argv[argv.index("--output") + 1])
@@ -120,7 +144,7 @@ def _make_runners(
         log.append({"kind": "score", "crf": crf, "argv": list(argv), "rc": rc})
         return _FakeCompleted(returncode=rc)
 
-    return _encode_runner, _score_runner, log
+    return _score_runner
 
 
 def _kwargs(**override: Any) -> dict[str, Any]:

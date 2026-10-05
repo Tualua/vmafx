@@ -716,10 +716,20 @@ def _extract_middle_luma_frame(
         )
 
     n_frames = max(1, file_sz // frame_sz)
-    mid_frame = n_frames // 2
-    offset = mid_frame * frame_sz
+    raw = _read_luma_bytes(yuv_path, (n_frames // 2) * frame_sz, luma_sz)
 
-    bits_16 = pix_fmt.endswith(("10le", "12le", "16le"))
+    if pix_fmt.endswith(("10le", "12le", "16le")):
+        # Interpret as uint16 LE, take high byte (>>8) → uint8.
+        arr_u16 = np.frombuffer(raw, dtype=np.uint16)
+        arr_u8 = (arr_u16 >> 8).astype(np.uint8)
+    else:
+        arr_u8 = np.frombuffer(raw, dtype=np.uint8)
+
+    return arr_u8.reshape(height, width)
+
+
+def _read_luma_bytes(yuv_path: Path, offset: int, luma_sz: int) -> bytes:
+    """Read ``luma_sz`` bytes at ``offset``; raise NRProxyBackendError on I/O failure or short read."""
     try:
         with yuv_path.open("rb") as fh:
             fh.seek(offset)
@@ -734,15 +744,7 @@ def _extract_middle_luma_frame(
             f"truncated luma read from {yuv_path}: expected {luma_sz} bytes, "
             f"got {len(raw)} (file may be incomplete)"
         )
-
-    if bits_16:
-        # Interpret as uint16 LE, take high byte (>>8) → uint8.
-        arr_u16 = np.frombuffer(raw, dtype=np.uint16)
-        arr_u8 = (arr_u16 >> 8).astype(np.uint8)
-    else:
-        arr_u8 = np.frombuffer(raw, dtype=np.uint8)
-
-    return arr_u8.reshape(height, width)
+    return raw
 
 
 def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821

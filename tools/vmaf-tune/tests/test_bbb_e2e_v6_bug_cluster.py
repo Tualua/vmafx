@@ -138,17 +138,8 @@ def test_v6_1_sample_clip_takes_precedence_over_duration(tmp_path: Path) -> None
     assert float(cmd[cmd.index("-ss") + 1]) == 25.0
 
 
-def test_v6_1_iter_rows_threads_duration_into_encode_request(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """``iter_rows`` plumbs ``CorpusJob.duration_s`` into ``EncodeRequest``.
-
-    Pins the corpus-side wiring: the encoder runner sees a request
-    whose ``duration_s`` matches the job, so the encode argv is
-    bounded even when the CLI doesn't opt into sample-clip mode.
-    """
-    import vmaftune.corpus as corpus_mod
-
+def _duration_job(tmp_path: Path) -> tuple[CorpusJob, CorpusOptions]:
+    """A one-cell corpus job over a 7 s container source, with its options."""
     src = tmp_path / "src.mp4"
     src.write_bytes(b"\x00")
     job = CorpusJob(
@@ -166,6 +157,21 @@ def test_v6_1_iter_rows_threads_duration_into_encode_request(
         encode_dir=tmp_path / "enc",
         src_sha256=False,
     )
+    return job, opts
+
+
+def test_v6_1_iter_rows_threads_duration_into_encode_request(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``iter_rows`` plumbs ``CorpusJob.duration_s`` into ``EncodeRequest``.
+
+    Pins the corpus-side wiring: the encoder runner sees a request
+    whose ``duration_s`` matches the job, so the encode argv is
+    bounded even when the CLI doesn't opt into sample-clip mode.
+    """
+    import vmaftune.corpus as corpus_mod
+
+    job, opts = _duration_job(tmp_path)
 
     seen_durations: list[float] = []
 

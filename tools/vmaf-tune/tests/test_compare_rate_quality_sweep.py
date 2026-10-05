@@ -692,6 +692,43 @@ def test_report_v1_compare_json_still_renders_legacy_chart(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# Each codec has its own monotonic R-Q curve: (crf, bitrate_kbps, vmaf_score) rows.
+_FAKE_BISECT_CURVES = {
+    "libx264": [
+        (28, 1100.0, 80.0),
+        (24, 2200.0, 86.0),
+        (22, 3100.0, 91.0),
+        (18, 5800.0, 96.0),
+    ],
+    "libx265": [
+        (28, 750.0, 81.0),
+        (25, 1600.0, 88.0),
+        (23, 2200.0, 92.0),
+        (19, 4400.0, 96.5),
+    ],
+    "libsvtav1": [
+        (38, 550.0, 80.5),
+        (32, 1200.0, 88.5),
+        (30, 1800.0, 92.5),
+        (25, 3700.0, 96.0),
+    ],
+}
+
+
+def _failed_result(codec: str, error: str, samples: tuple = ()) -> RecommendResult:
+    """A not-ok ``RecommendResult`` with no usable bitrate or score."""
+    return RecommendResult(
+        codec=codec,
+        best_crf=-1,
+        bitrate_kbps=float("nan"),
+        encode_time_ms=float("nan"),
+        vmaf_score=float("nan"),
+        ok=False,
+        error=error,
+        bisect_samples=samples,
+    )
+
+
 def _fake_bisect_predicate_with_samples(
     codec: str, src: Path, target_vmaf: float
 ) -> RecommendResult:
@@ -700,37 +737,9 @@ def _fake_bisect_predicate_with_samples(
     Each codec has its own monotonic R-Q curve so the assembled curve
     is well-shaped. Picked-CRF is the one closest above target.
     """
-    curves = {
-        "libx264": [
-            (28, 1100.0, 80.0),
-            (24, 2200.0, 86.0),
-            (22, 3100.0, 91.0),
-            (18, 5800.0, 96.0),
-        ],
-        "libx265": [
-            (28, 750.0, 81.0),
-            (25, 1600.0, 88.0),
-            (23, 2200.0, 92.0),
-            (19, 4400.0, 96.5),
-        ],
-        "libsvtav1": [
-            (38, 550.0, 80.5),
-            (32, 1200.0, 88.5),
-            (30, 1800.0, 92.5),
-            (25, 3700.0, 96.0),
-        ],
-    }
-    rows = curves.get(codec)
+    rows = _FAKE_BISECT_CURVES.get(codec)
     if rows is None:
-        return RecommendResult(
-            codec=codec,
-            best_crf=-1,
-            bitrate_kbps=float("nan"),
-            encode_time_ms=float("nan"),
-            vmaf_score=float("nan"),
-            ok=False,
-            error=f"unknown codec {codec!r}",
-        )
+        return _failed_result(codec, f"unknown codec {codec!r}")
     samples = tuple(
         {"crf": crf, "bitrate_kbps": br, "vmaf_score": vm, "encode_time_ms": 0.0}
         for crf, br, vm in rows
@@ -738,16 +747,7 @@ def _fake_bisect_predicate_with_samples(
     # Pick the lowest-bitrate row that clears the target.
     ok_rows = [(crf, br, vm) for crf, br, vm in rows if vm >= target_vmaf]
     if not ok_rows:
-        return RecommendResult(
-            codec=codec,
-            best_crf=-1,
-            bitrate_kbps=float("nan"),
-            encode_time_ms=float("nan"),
-            vmaf_score=float("nan"),
-            ok=False,
-            error="target unreachable",
-            bisect_samples=samples,
-        )
+        return _failed_result(codec, "target unreachable", samples)
     crf, br, vm = ok_rows[0]
     return RecommendResult(
         codec=codec,

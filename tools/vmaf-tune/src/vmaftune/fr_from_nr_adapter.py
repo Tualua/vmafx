@@ -282,6 +282,43 @@ class NrToFrAdapter:
         stem = source.stem if source.stem else "input"
         return self.scratch_dir / f"{stem}.yuv"
 
+    def _decode_source(
+        self,
+        nr_row: NrInputRow,
+        probe_runner: RunnerFn | None,
+        decode_runner: RunnerFn | None,
+    ) -> tuple[Any, Path]:
+        """Probe the NR source and decode it to the intermediate YUV; return both."""
+        geom = probe_geometry(
+            nr_row.src,
+            ffprobe_bin=self.options.ffprobe_bin,
+            runner=probe_runner,
+        )
+
+        self.scratch_dir.mkdir(parents=True, exist_ok=True)
+        yuv_path = self._intermediate_yuv_path(nr_row.src)
+        decode_to_yuv(
+            nr_row.src,
+            yuv_path,
+            geom,
+            ffmpeg_bin=self.options.ffmpeg_bin,
+            runner=decode_runner,
+        )
+        return geom, yuv_path
+
+    def _corpus_job(self, yuv_path: Path, geom: Any) -> CorpusJob:
+        """Build the corpus job that sweeps the configured cells over the decoded YUV."""
+        cells = tuple((self.preset, crf) for crf in self.crf_sweep)
+        return CorpusJob(
+            source=yuv_path,
+            width=geom.width,
+            height=geom.height,
+            pix_fmt=geom.pix_fmt,
+            framerate=geom.framerate,
+            duration_s=geom.duration_s,
+            cells=cells,
+        )
+
     def run(
         self,
         nr_row: NrInputRow,
@@ -298,33 +335,10 @@ class NrToFrAdapter:
         forwarded into :func:`vmaftune.corpus.iter_rows` unchanged.
         Production callers leave all four ``None``.
         """
-        geom = probe_geometry(
-            nr_row.src,
-            ffprobe_bin=self.options.ffprobe_bin,
-            runner=probe_runner,
-        )
-
-        self.scratch_dir.mkdir(parents=True, exist_ok=True)
-        yuv_path = self._intermediate_yuv_path(nr_row.src)
-        decode_to_yuv(
-            nr_row.src,
-            yuv_path,
-            geom,
-            ffmpeg_bin=self.options.ffmpeg_bin,
-            runner=decode_runner,
-        )
+        geom, yuv_path = self._decode_source(nr_row, probe_runner, decode_runner)
 
         try:
-            cells = tuple((self.preset, crf) for crf in self.crf_sweep)
-            job = CorpusJob(
-                source=yuv_path,
-                width=geom.width,
-                height=geom.height,
-                pix_fmt=geom.pix_fmt,
-                framerate=geom.framerate,
-                duration_s=geom.duration_s,
-                cells=cells,
-            )
+            job = self._corpus_job(yuv_path, geom)
             for row in iter_rows(
                 job,
                 self.options,

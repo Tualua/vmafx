@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T11:22:53Z",
+  "generated_at": "2026-10-05T11:24:13Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "a096e609a0232b2b6aa115920528b94510e15cee",
-  "total_infractions": 103,
+  "commit_sha": "80b76d5ef4e08597bd7718ebc34e351396400a42",
+  "total_infractions": 91,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -781,24 +781,6 @@
       "fingerprint": "scripts/dev/tests/test_merge_train_guard.py:HISS-01:fn:FixtureTrain.git#1"
     },
     {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/encoder_profile.py",
-      "line_number": 143,
-      "symbol": "build_encode_request",
-      "message": "Function 'build_encode_request' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:build_encode_request",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/encoder_profile.py:HISS-04:fn:build_encode_request#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/fr_from_nr_adapter.py",
-      "line_number": 285,
-      "symbol": "run",
-      "message": "Function 'run' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:NrToFrAdapter.run",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/fr_from_nr_adapter.py:HISS-04:fn:NrToFrAdapter.run#1"
-    },
-    {
       "rule_id": "HISS-01",
       "file_path": "tools/vmaf-tune/src/vmaftune/jsonio.py",
       "line_number": 18,
@@ -815,96 +797,6 @@
       "message": "Direct recursion in nan_to_none; the call graph must form an acyclic DAG",
       "anchor": "fn:nan_to_none",
       "fingerprint": "tools/vmaf-tune/src/vmaftune/jsonio.py:HISS-01:fn:nan_to_none#2"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/predictor_features.py",
-      "line_number": 383,
-      "symbol": "_compute_saliency",
-      "message": "Function '_compute_saliency' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_compute_saliency",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/predictor_features.py:HISS-04:fn:_compute_saliency#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/proxy.py",
-      "line_number": 190,
-      "symbol": "run_proxy",
-      "message": "Function 'run_proxy' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_proxy",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/proxy.py:HISS-04:fn:run_proxy#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/src/vmaftune/score_backend.py",
-      "line_number": 682,
-      "symbol": "_extract_middle_luma_frame",
-      "message": "Function '_extract_middle_luma_frame' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_extract_middle_luma_frame",
-      "fingerprint": "tools/vmaf-tune/src/vmaftune/score_backend.py:HISS-04:fn:_extract_middle_luma_frame#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_bbb_e2e_v6_bug_cluster.py",
-      "line_number": 141,
-      "symbol": "test_v6_1_iter_rows_threads_duration_into_encode_request",
-      "message": "Function 'test_v6_1_iter_rows_threads_duration_into_encode_request' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:test_v6_1_iter_rows_threads_duration_into_encode_request",
-      "fingerprint": "tools/vmaf-tune/tests/test_bbb_e2e_v6_bug_cluster.py:HISS-04:fn:test_v6_1_iter_rows_threads_duration_into_encode_request#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_bisect.py",
-      "line_number": 46,
-      "symbol": "_make_runners",
-      "message": "Function '_make_runners' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_make_runners",
-      "fingerprint": "tools/vmaf-tune/tests/test_bisect.py:HISS-04:fn:_make_runners#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_cli_fast.py",
-      "line_number": 181,
-      "symbol": "test_fast_production_invokes_extractor_and_runner",
-      "message": "Function 'test_fast_production_invokes_extractor_and_runner' (94 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:test_fast_production_invokes_extractor_and_runner",
-      "fingerprint": "tools/vmaf-tune/tests/test_cli_fast.py:HISS-04:fn:test_fast_production_invokes_extractor_and_runner#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_cli_fast.py",
-      "line_number": 277,
-      "symbol": "test_fast_ood_gap_returns_nonzero",
-      "message": "Function 'test_fast_ood_gap_returns_nonzero' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:test_fast_ood_gap_returns_nonzero",
-      "fingerprint": "tools/vmaf-tune/tests/test_cli_fast.py:HISS-04:fn:test_fast_ood_gap_returns_nonzero#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_cli_fast.py",
-      "line_number": 460,
-      "symbol": "test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up",
-      "message": "Function 'test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up' (98 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up",
-      "fingerprint": "tools/vmaf-tune/tests/test_cli_fast.py:HISS-04:fn:test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_cli_prefilter.py",
-      "line_number": 155,
-      "symbol": "test_live_loop_runs_with_mocked_encode_and_score",
-      "message": "Function 'test_live_loop_runs_with_mocked_encode_and_score' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:test_live_loop_runs_with_mocked_encode_and_score",
-      "fingerprint": "tools/vmaf-tune/tests/test_cli_prefilter.py:HISS-04:fn:test_live_loop_runs_with_mocked_encode_and_score#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py",
-      "line_number": 695,
-      "symbol": "_fake_bisect_predicate_with_samples",
-      "message": "Function '_fake_bisect_predicate_with_samples' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_fake_bisect_predicate_with_samples",
-      "fingerprint": "tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py:HISS-04:fn:_fake_bisect_predicate_with_samples#1"
     }
   ]
 }
