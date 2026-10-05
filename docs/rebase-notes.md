@@ -61136,3 +61136,12 @@ No score, public API or FFmpeg patch impact.
   (`mcp-server/.../server.py::_vmaf_binary`, `tools/rc1-tester/.../probe.py`)
   and `scripts/ci/run_affected_suites.py` are not test resolvers. No score,
   public API or FFmpeg patch impact.
+## cpu tidy lane reaches zero findings
+
+- `core/src/mcp/3rdparty/cJSON/cJSON.h` (vendored): `cJSON_SetNumberValue`,
+  `cJSON_SetBoolValue` and `cJSON_ArrayForEach` parenthesise their macro
+  arguments; an upstream cJSON sync keeps that form. `core/src/dict_internal.h`
+  `isnumeric()` copies its `string_view` into a `std::string` before `strtof()`.
+  Shared C headers keep their `NOLINTBEGIN/END` blocks citing ADR-1138 (a lint
+  cleanup must not turn their `typedef` into `using` or give an enum a C++-only
+  base). No score, public API or FFmpeg patch impact.

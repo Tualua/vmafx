@@ -20,7 +20,9 @@
 #ifndef VMAF_SRC_METADATA_H_
 #define VMAF_SRC_METADATA_H_
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafContext VmafContext;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Metadata structure.
@@ -33,11 +35,13 @@ typedef struct VmafContext VmafContext;
  *
  * @note This structure is used to pass metadata to a callback function.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafMetadata {
     char *feature_name;
     unsigned picture_index;
     double score;
 } VmafMetadata;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Metadata configuration.
@@ -48,11 +52,13 @@ typedef struct VmafMetadata {
  *
  * @param data         User data to pass to the callback.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafMetadataConfiguration {
     char *feature_name;
     void (*callback)(void *data, VmafMetadata *metadata);
     void *data;
 } VmafMetadataConfiguration;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Register a callback to receive VMAF metadata.

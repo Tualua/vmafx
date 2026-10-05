@@ -26,6 +26,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdio.h>
 
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum json_type {
     JSON_NONE = 0, /* Internal empty-lookahead sentinel; never emitted as an event. */
     JSON_ERROR = 1,
@@ -40,6 +41,7 @@ enum json_type {
     JSON_FALSE = 10,
     JSON_NULL = 11
 };
+/* NOLINTEND(performance-enum-size) */
 
 struct json_allocator {
     void *(*malloc)(size_t);
@@ -47,10 +49,14 @@ struct json_allocator {
     void (*free)(void *);
 };
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef int (*json_user_io)(void *user);
+/* NOLINTEND(modernize-use-using) */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct json_stream json_stream;
 typedef struct json_allocator json_allocator;
+/* NOLINTEND(modernize-use-using) */
 
 PDJSON_SYMEXPORT void json_open_buffer(json_stream *json, const void *buffer, size_t size);
 PDJSON_SYMEXPORT void json_open_string(json_stream *json, const char *string);

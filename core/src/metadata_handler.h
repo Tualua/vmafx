@@ -26,16 +26,20 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafCallbackItem {
     VmafMetadataConfiguration metadata_cfg;
     void (*callback)(void *, VmafMetadata *);
     void *data;
     struct VmafCallbackItem *next;
 } VmafCallbackItem;
+/* NOLINTEND(modernize-use-using) */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafCallbackList {
     VmafCallbackItem *head;
 } VmafCallbackList;
+/* NOLINTEND(modernize-use-using) */
 
 int vmaf_metadata_init(VmafCallbackList **const metadata);
 

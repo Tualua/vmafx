@@ -27,9 +27,11 @@ extern "C" {
 #endif
 
 /** @brief A single key/value pair stored in a VmafDictionary. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafDictionaryEntry {
     const char *key, *val;
 } VmafDictionaryEntry;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Simple string-keyed dictionary used to pass feature options.
@@ -37,10 +39,12 @@ typedef struct VmafDictionaryEntry {
  * Internally a flat, heap-allocated array of VmafDictionaryEntry.  Callers
  * pass a pointer-to-pointer so functions can allocate the dict on first use.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafDictionary {
     VmafDictionaryEntry *entry;
     unsigned size, cnt;
 } VmafDictionary;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Flags that control dictionary mutation behaviour.
@@ -50,10 +54,12 @@ typedef struct VmafDictionary {
  * @var VMAF_DICT_NORMALIZE_NUMERICAL_VALUES
  *   Canonicalise numeric string values (strip trailing zeros, etc.).
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafDictionaryFlags {
     VMAF_DICT_DO_NOT_OVERWRITE = 1 << 0,
     VMAF_DICT_NORMALIZE_NUMERICAL_VALUES = 1 << 1,
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @brief Insert or update a key/value pair.

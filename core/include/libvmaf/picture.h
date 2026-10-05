@@ -48,6 +48,7 @@ extern "C" {
  * compatibility with downstream consumers (the ffmpeg `libvmaf` filter,
  * Go/Rust bindings).
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafPixelFormat {
     VMAF_PIX_FMT_UNKNOWN, /**< Unset / sentinel value. */
     VMAF_PIX_FMT_YUV420P, /**< 4:2:0 chroma subsampling, planar. */
@@ -55,6 +56,7 @@ enum VmafPixelFormat {
     VMAF_PIX_FMT_YUV444P, /**< 4:4:4 (no subsampling), planar. */
     VMAF_PIX_FMT_YUV400P, /**< Luma only (no chroma planes). */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @typedef VmafRef
@@ -67,7 +69,9 @@ enum VmafPixelFormat {
  * the count reaches zero. Callers must treat the field as opaque; the layout
  * is libvmaf-internal and may change between releases without notice.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafRef VmafRef;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @struct VmafPicture
@@ -79,6 +83,7 @@ typedef struct VmafRef VmafRef;
  * `vmaf_read_pictures()`; do not free / unref a picture after handing it
  * to the context.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafPicture {
     enum VmafPixelFormat pix_fmt; /**< planar pixel format (see VmafPixelFormat). */
     unsigned bpc;                 /**< bits per component, typically 8, 10, 12, or 16. */
@@ -90,6 +95,7 @@ typedef struct VmafPicture {
     VmafRef *ref; /**< INTERNAL: opaque refcount handle managed by libvmaf — do not touch. */
     void *priv; /**< INTERNAL: opaque per-picture private slot managed by libvmaf — do not touch. */
 } VmafPicture;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Allocate a planar picture buffer sized for the given format + dimensions.

@@ -28,14 +28,17 @@ extern "C" {
 #endif
 
 /** @brief Scalar type of a VmafOption value. */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafOptionType {
     VMAF_OPT_TYPE_BOOL,   /**< Boolean (parsed from "true"/"false"/"1"/"0"). */
     VMAF_OPT_TYPE_INT,    /**< Integer. */
     VMAF_OPT_TYPE_DOUBLE, /**< Double-precision float. */
     VMAF_OPT_TYPE_STRING, /**< NUL-terminated string (heap-allocated). */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /** @brief Modifier flags for a VmafOption. */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafOptionFlag {
     /** Option controls a feature-extractor parameter (exposed via the dict API). */
     VMAF_OPT_FLAG_FEATURE_PARAM = 1 << 0,
@@ -50,6 +53,7 @@ enum VmafOptionFlag {
      */
     VMAF_OPT_FLAG_DEFAULT_ONLY = 1 << 1,
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @brief Descriptor for a single configurable option on a feature-extractor context.
@@ -68,6 +72,7 @@ enum VmafOptionFlag {
  * @var VmafOption::max          Maximum accepted value (numeric types only).
  * @var VmafOption::flags        Combination of VmafOptionFlag.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafOption {
     const char *name;
     const char *help;
@@ -83,6 +88,7 @@ typedef struct VmafOption {
     double min, max;
     uint64_t flags;
 } VmafOption;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Parse @p val and write it into the field described by @p opt.

@@ -49,6 +49,7 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafGpuPicturePoolConfig {
     unsigned pic_cnt;
     int (*alloc_picture_callback)(VmafPicture *pic, void *cookie);
@@ -56,8 +57,11 @@ typedef struct VmafGpuPicturePoolConfig {
     int (*free_picture_callback)(VmafPicture *pic, void *cookie);
     void *cookie;
 } VmafGpuPicturePoolConfig;
+/* NOLINTEND(modernize-use-using) */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafGpuPicturePool VmafGpuPicturePool;
+/* NOLINTEND(modernize-use-using) */
 
 int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConfig cfg);
 

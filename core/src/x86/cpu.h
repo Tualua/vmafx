@@ -20,6 +20,7 @@
 #ifndef VMAF_SRC_X86_CPU_H_
 #define VMAF_SRC_X86_CPU_H_
 
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafCpuFlags {
     VMAF_X86_CPU_FLAG_SSE2 = 1 << 0,
     VMAF_X86_CPU_FLAG_SSSE3 = 1 << 1,
@@ -28,6 +29,7 @@ enum VmafCpuFlags {
     VMAF_X86_CPU_FLAG_AVX512 = 1 << 4,
     VMAF_X86_CPU_FLAG_AVX512ICL = 1 << 5,
 };
+/* NOLINTEND(performance-enum-size) */
 
 unsigned vmaf_get_cpu_flags_x86(void);
 

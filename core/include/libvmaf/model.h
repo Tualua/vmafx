@@ -43,7 +43,9 @@ extern "C" {
 #define VMAF_NETFLIX_COMPAT_MODEL_VERSION                                                          \
     "vmaf_v0.6.1" /* vmaf-model-pin: Netflix upstream compat restores v0.6.1 default model */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafModel VmafModel;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Discriminates which runtime owns a loaded model.
@@ -62,12 +64,14 @@ typedef struct VmafModel VmafModel;
  * sets `"kind": "nr"` or `"kind": "filter"`, in which case DNN_NR /
  * DNN_FILTER).
  */
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C and C++ translation units; C has no `using`; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 typedef enum VmafModelKind {
     VMAF_MODEL_KIND_SVM = 0,
     VMAF_MODEL_KIND_DNN_FR = 1,
     VMAF_MODEL_KIND_DNN_NR = 2,
     VMAF_MODEL_KIND_DNN_FILTER = 3,
 } VmafModelKind;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /**
  * @brief Bitwise flags that modify how the model emits its final score.
@@ -89,18 +93,21 @@ typedef enum VmafModelKind {
  * both yields undefined behaviour. `DISABLE_CLIP` may be combined with either
  * transform flag.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafModelFlags {
     VMAF_MODEL_FLAGS_DEFAULT = 0,
     VMAF_MODEL_FLAG_DISABLE_CLIP = (1 << 0),
     VMAF_MODEL_FLAG_ENABLE_TRANSFORM = (1 << 1),
     VMAF_MODEL_FLAG_DISABLE_TRANSFORM = (1 << 2),
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @brief Configuration passed to `vmaf_model_load` / `vmaf_model_load_from_path`.
  *
  * Safe to zero-initialise — both fields are optional.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafModelConfig {
     /**
      * Optional display name for the loaded model. When NULL the loader uses
@@ -116,6 +123,7 @@ typedef struct VmafModelConfig {
      */
     uint64_t flags;
 } VmafModelConfig;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Load a built-in VMAF model by version string.
@@ -286,7 +294,9 @@ VMAF_EXPORT const char *vmaf_model_feature_name(const VmafModel *model, unsigned
  * Owns every contained @ref VmafModel — calling
  * @ref vmaf_model_collection_destroy frees them all.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafModelCollection VmafModelCollection;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Discriminates the aggregation method that produced a collection score.
@@ -296,10 +306,12 @@ typedef struct VmafModelCollection VmafModelCollection;
  *                   and the `bootstrap` sub-struct carries the standard
  *                   deviation and the 95% confidence interval.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafModelCollectionScoreType {
     VMAF_MODEL_COLLECTION_SCORE_UNKNOWN = 0,
     VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP,
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @brief Aggregate prediction from a model collection.
@@ -308,6 +320,7 @@ enum VmafModelCollectionScoreType {
  * `vmaf_score_pooled_model_collection`. Read fields based on @p type
  * (see `VmafModelCollectionScoreType`).
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafModelCollectionScore {
     enum VmafModelCollectionScoreType type; /**< Discriminator for the score family. */
     struct {
@@ -321,6 +334,7 @@ typedef struct VmafModelCollectionScore {
         } ci;              /**< Confidence-interval block. */
     } bootstrap;           /**< Bootstrap variant: bagging score + dispersion + 95% CI. */
 } VmafModelCollectionScore;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Load a built-in VMAF model collection by version string.

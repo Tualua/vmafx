@@ -31,6 +31,7 @@ typedef struct VmafCudaState VmafCudaState;
 #endif
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafPictureBufferType {
     VMAF_PICTURE_BUFFER_TYPE_HOST = 0,
     VMAF_PICTURE_BUFFER_TYPE_CUDA_HOST_PINNED,
@@ -50,7 +51,9 @@ enum VmafPictureBufferType {
      * (e.g. CUDA-buffer-into-HIP-extractor). */
     VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE,
 };
+/* NOLINTEND(performance-enum-size) */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafPicturePrivate {
     void *cookie;
     int (*release_picture)(VmafPicture *pic, void *cookie);
@@ -70,6 +73,7 @@ typedef struct VmafPicturePrivate {
 #endif
     enum VmafPictureBufferType buf_type;
 } VmafPicturePrivate;
+/* NOLINTEND(modernize-use-using) */
 
 #ifdef __cplusplus
 extern "C" {

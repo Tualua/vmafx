@@ -113,6 +113,7 @@ static int pool_preallocate_pictures(VmafPicturePool *p, VmafPicturePoolConfig c
         free(p->pictures[i].priv);
         vmaf_ref_close(p->pictures[i].ref);
         p->pictures[i].priv = NULL;
+        /* NOLINTNEXTLINE(modernize-use-nullptr): C translation unit; MSVC C mode has no `nullptr`. ADR-1138. */
         p->pictures[i].ref = NULL;
 
         // Push index onto free list (all pictures start available)
@@ -174,11 +175,13 @@ static int pool_construct(VmafPicturePool **pool, VmafPicturePoolConfig cfg, uns
         return -ENOMEM;
     *stage = POOL_STAGE_FREE_LIST;
 
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C translation unit; MSVC C mode has no `nullptr`. ADR-1138. */
     int err = pthread_mutex_init(&p->lock, NULL);
     if (err)
         return err;
     *stage = POOL_STAGE_MUTEX;
 
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C translation unit; MSVC C mode has no `nullptr`. ADR-1138. */
     err = pthread_cond_init(&p->available, NULL);
     if (err)
         return err;
@@ -203,6 +206,7 @@ int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg)
 
     if (stage != POOL_STAGE_NONE)
         pool_destruct_partial(*pool, stage);
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C translation unit; MSVC C mode has no `nullptr`. ADR-1138. */
     *pool = NULL;
     return err;
 }

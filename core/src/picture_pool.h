@@ -35,6 +35,7 @@ extern "C" {
  * @var VmafPicturePoolConfig::pix_fmt  Pixel format for all slots.
  * @var VmafPicturePoolConfig::bpc      Bits per component (8 or 10).
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafPicturePoolConfig {
     unsigned pic_cnt;
     unsigned w;
@@ -48,9 +49,12 @@ typedef struct VmafPicturePoolConfig {
     int (*attach_picture_callback)(VmafPicture *pic, unsigned idx, void *cookie);
     void *cookie;
 } VmafPicturePoolConfig;
+/* NOLINTEND(modernize-use-using) */
 
 /** @brief Opaque CPU picture pool handle. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafPicturePool VmafPicturePool;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Allocate and initialise a picture pool.

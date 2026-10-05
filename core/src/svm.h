@@ -56,8 +56,10 @@ struct svm_problem {
     struct svm_node **x;
 };
 
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum { C_SVC, NU_SVC, ONE_CLASS, EPSILON_SVR, NU_SVR }; /* svm_type */
 enum { LINEAR, POLY, RBF, SIGMOID, PRECOMPUTED };       /* kernel_type */
+/* NOLINTEND(performance-enum-size) */
 
 struct svm_parameter {
     int svm_type;

@@ -31,6 +31,7 @@ extern "C" {
  * ORT to pick the best available provider; the explicit values pin a
  * single provider (see per-value docs for the exact semantics).
  */
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C and C++ translation units; C has no `using`; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 typedef enum VmafDnnDevice {
     VMAF_DNN_DEVICE_AUTO = 0,     /**< Let ORT pick the best provider. */
     VMAF_DNN_DEVICE_CPU = 1,      /**< CPU execution provider. */
@@ -68,17 +69,20 @@ typedef enum VmafDnnDevice {
     VMAF_DNN_DEVICE_OPENVINO_CPU = 10, /**< OpenVINO EP pinned to the CPU plugin. */
     VMAF_DNN_DEVICE_OPENVINO_GPU = 11, /**< OpenVINO EP pinned to the iGPU/dGPU. */
 } VmafDnnDevice;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /**
  * DNN session configuration. Passed to @ref vmaf_use_tiny_model and
  * @ref vmaf_dnn_session_open; safe to zero-initialise.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafDnnConfig {
     VmafDnnDevice device; /**< execution-provider hint; AUTO lets ORT choose */
     int device_index;     /**< multi-GPU index; 0 for single-GPU/CPU */
     int threads;          /**< CPU EP intra-op threads; 0 = ORT default */
     bool fp16_io;         /**< request fp16 tensors when supported */
 } VmafDnnConfig;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Returns 1 if libvmaf was built with DNN support (-Denable_dnn=true) and
@@ -210,12 +214,14 @@ VMAF_EXPORT int vmaf_dnn_is_codec_aware(const VmafContext *ctx);
  * by approximately 2% on the same input — treat filter choice as a model
  * hyperparameter and document it alongside the model checkpoint.
  */
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C and C++ translation units; C has no `using`; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 typedef enum VmafDnnResizeMode {
     VMAF_DNN_RESIZE_DISABLED = 0, /**< default; no resampling — mismatch -> -ERANGE */
     VMAF_DNN_RESIZE_BILINEAR = 1, /**< OpenCV INTER_LINEAR / torchvision BILINEAR */
     VMAF_DNN_RESIZE_NEAREST = 2,  /**< nearest-neighbour, floor coord */
     VMAF_DNN_RESIZE_BICUBIC = 3,  /**< Catmull-Rom (a = -0.5), separable */
 } VmafDnnResizeMode;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /**
  * Configure the auto-resize filter used by the NCHW tiny-model dispatch
@@ -242,7 +248,9 @@ VMAF_EXPORT int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mod
  * C3). Unlike vmaf_use_tiny_model() this path does NOT need a VmafContext —
  * intended for consumers that want luma-in / luma-out without scoring.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafDnnSession VmafDnnSession;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Open a session against @p onnx_path. Applies the same size-cap + allowlist
@@ -325,12 +333,14 @@ VMAF_EXPORT int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_
  * positionally at the descriptor's array index. Tensors are float32,
  * row-major, with @p rank dimensions.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafDnnInput {
     const char *name;     /**< ONNX graph input name, or NULL for positional binding */
     const float *data;    /**< float32 element buffer, row-major */
     const int64_t *shape; /**< element extents, length @p rank */
     size_t rank;          /**< number of dimensions in @p shape */
 } VmafDnnInput;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * One output tensor for vmaf_dnn_session_run(). @p data / @p capacity
@@ -338,12 +348,14 @@ typedef struct VmafDnnInput {
  * actually produced. @p name binds by ONNX graph output name when
  * non-NULL, else positionally.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafDnnOutput {
     const char *name; /**< ONNX graph output name, or NULL for positional binding */
     float *data;      /**< caller-owned float32 output buffer */
     size_t capacity;  /**< @p data element capacity */
     size_t written;   /**< populated by the call with the element count produced */
 } VmafDnnOutput;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Run one inference pass with arbitrary named inputs and outputs. All

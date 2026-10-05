@@ -39,10 +39,12 @@ extern "C" {
  * @var RegisteredFeatureExtractors::cnt        Number of live entries.
  * @var RegisteredFeatureExtractors::capacity   Allocated capacity of @p fex_ctx.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct {
     VmafFeatureExtractorContext **fex_ctx;
     unsigned cnt, capacity;
 } RegisteredFeatureExtractors;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Initialise an empty RegisteredFeatureExtractors vector.

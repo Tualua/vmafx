@@ -52,6 +52,7 @@ extern "C" {
  *
  * Stable enumerator values — append-only across libvmaf releases.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafLogLevel {
     VMAF_LOG_LEVEL_NONE = 0,
     VMAF_LOG_LEVEL_ERROR,
@@ -59,6 +60,7 @@ enum VmafLogLevel {
     VMAF_LOG_LEVEL_INFO,
     VMAF_LOG_LEVEL_DEBUG,
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @enum VmafBackend
@@ -69,6 +71,7 @@ enum VmafLogLevel {
  * may be appended in future releases; callers must treat unknown values as
  * `VMAF_BACKEND_UNKNOWN`.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafBackend {
     VMAF_BACKEND_UNKNOWN = 0, /**< No GPU state imported; CPU-only context. */
     VMAF_BACKEND_CUDA = 1,    /**< CUDA backend (vmaf_cuda_import_state()). */
@@ -77,6 +80,7 @@ enum VmafBackend {
     VMAF_BACKEND_HIP = 4,     /**< HIP/ROCm backend (vmaf_hip_import_state()). */
     VMAF_BACKEND_VULKAN = 5,  /**< Vulkan backend (reserved; ADR-0726 removed Vulkan). */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @enum  VmafOutputFormat
@@ -98,6 +102,7 @@ enum VmafBackend {
  *
  * Stable enumerator values — append-only across libvmaf releases.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafOutputFormat {
     VMAF_OUTPUT_FORMAT_NONE = 0,
     VMAF_OUTPUT_FORMAT_XML,
@@ -105,6 +110,7 @@ enum VmafOutputFormat {
     VMAF_OUTPUT_FORMAT_CSV,
     VMAF_OUTPUT_FORMAT_SUB,
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @enum  VmafPoolingMethod
@@ -151,6 +157,7 @@ enum VmafOutputFormat {
  */
 #define VMAF_HAVE_PERCENTILE_POOLING 1
 
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafPoolingMethod {
     VMAF_POOL_METHOD_UNKNOWN = 0,
     VMAF_POOL_METHOD_MIN,
@@ -179,6 +186,7 @@ enum VmafPoolingMethod {
     VMAF_POOL_METHOD_NB
 #endif
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @struct VmafConfiguration
@@ -221,6 +229,7 @@ enum VmafPoolingMethod {
  *                    HIP state pointer was imported via
  *                    `vmaf_hip_import_state()`. ADR-0530.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafConfiguration {
     enum VmafLogLevel log_level; /**< Logger verbosity. */
     unsigned n_threads;          /**< Worker thread count; 0 = library default. */
@@ -228,6 +237,7 @@ typedef struct VmafConfiguration {
     uint64_t cpumask;            /**< CPU-ISA disable bitmask; see struct doc above. */
     uint64_t gpumask;            /**< GPU-feature disable bitmask; see struct doc above. */
 } VmafConfiguration;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @typedef VmafContext
@@ -244,7 +254,9 @@ typedef struct VmafConfiguration {
  * parallel; libvmaf's own per-extractor thread pool (configured via
  * @ref VmafConfiguration::n_threads) handles intra-frame parallelism.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafContext VmafContext;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Allocate and open a VMAF instance.
@@ -588,6 +600,7 @@ VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature
  * All slots are allocated to the same dimensions; mixing resolutions in one
  * session requires a fresh `vmaf_init`.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafPictureConfiguration {
     struct {
         unsigned w;                   /**< Luma width in samples. */
@@ -597,6 +610,7 @@ typedef struct VmafPictureConfiguration {
     } pic_params;                     /**< Per-picture shape (width/height/bpc/pixel-format). */
     unsigned pic_cnt;                 /**< Pool size — count of pre-allocated pictures. */
 } VmafPictureConfiguration;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Preallocate pictures for use with multi-threaded feature extraction.

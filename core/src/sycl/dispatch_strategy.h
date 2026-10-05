@@ -16,6 +16,7 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C and C++ translation units; C has no `using`; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 typedef enum {
     /// Submit each kernel directly without recording into a graph.
     /// Best for low-dispatch-count features, small frames, or when
@@ -26,6 +27,7 @@ typedef enum {
     /// large frames where per-pixel work dominates.
     VMAF_SYCL_DISPATCH_GRAPH_REPLAY,
 } VmafSyclDispatchStrategy;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /**
  * Returns the SYCL dispatch strategy for the given feature.

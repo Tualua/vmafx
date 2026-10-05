@@ -46,9 +46,11 @@ using std::memory_order_seq_cst;
  *
  * All operations are sequentially consistent unless noted otherwise.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafRef {
     atomic_int cnt;
 } VmafRef;
+/* NOLINTEND(modernize-use-using) */
 
 #ifdef __cplusplus
 extern "C" {

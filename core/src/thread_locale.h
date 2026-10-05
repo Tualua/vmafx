@@ -28,7 +28,9 @@ extern "C" {
  * Opaque handle for thread-local locale management.
  * Stores platform-specific locale state.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafThreadLocaleState VmafThreadLocaleState;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Push "C" locale (all categories) in the current thread.

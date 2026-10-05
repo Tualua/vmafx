@@ -41,7 +41,9 @@
  * release.  A slot may be reused once every consumer has called
  * vmaf_framesync_release_buf() for that index.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafFrameSyncContext VmafFrameSyncContext;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Allocate and initialise a new VmafFrameSyncContext.

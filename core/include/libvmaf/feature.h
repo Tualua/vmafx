@@ -65,7 +65,9 @@ extern "C" {
  * `-EINVAL` *and* you either passed a NULL argument or called
  * @ref vmaf_use_feature. Otherwise never.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafFeatureDictionary VmafFeatureDictionary;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @brief Set (or replace) a key/value pair in a feature-extractor options dictionary.

@@ -35,6 +35,7 @@
  */
 
 #include <cstdlib>
+#include <string>
 #include <string_view>
 
 /* isnumeric — returns true iff `str` can be parsed as a C floating-point
@@ -42,9 +43,10 @@
  * string must be consumed).  Used by dict_normalize_numeric. */
 [[nodiscard]] inline bool isnumeric(std::string_view str) noexcept
 {
+    const std::string text(str);
     char *end = nullptr;
-    (void)std::strtof(str.data(), &end);
-    if (end == str.data())
+    (void)std::strtof(text.c_str(), &end);
+    if (end == text.c_str())
         return false;
     while (*end == ' ' || *end == '\t' || *end == '\n')
         ++end;
