@@ -7,6 +7,22 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
+
+`port/upstream-speed-python-tests`. Test-only.
+
+- `python/test/speed_chroma_feature_extractor_test.py`,
+  `speed_chroma_quality_runner_test.py`,
+  `speed_temporal_feature_extractor_test.py` and
+  `speed_temporal_quality_runner_test.py` are Netflix's files at upstream
+  `0497a0f29` with the SPDX line and `black` formatting. All 156 assertions are
+  Netflix's, unchanged (AST-identical). The extractors and runners came with
+  #34 (`9e99c0d8c`); these four files were left out then.
+- On a sync, take upstream's changes to these files as they are. They pass on
+  the fork's CPU build because SpEED computes Netflix's expressions
+  (ADR-1477); a value that stops matching is a defect in `speed.c`, not in the
+  test.
+
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 
 `port/6046b1926-speed-without-float`. Netflix builds `speed.c`, `vif_tools.c`
