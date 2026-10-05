@@ -61524,3 +61524,14 @@ No score, public API or FFmpeg patch impact.
   `.pre-commit-config.yaml` moves, compare the list. A new composite action under
   `.github/actions/` is picked up without a config edit. No score, public API or
   FFmpeg patch impact.
+
+## Copyright and SPDX hook reads every language; exceptions are declared
+
+- `check-copyright` (`.pre-commit-config.yaml`) selects files by the extension regex that
+  equals the `case` lists of `scripts/ci/check-copyright.sh`; a rebase keeps the two lists
+  equal and never re-adds a path-name skip to the script. A file that cannot carry a line
+  goes into `.config/lint-exceptions.d/<rule>.toml` with a reason and an expiry
+  (`scripts/ci/lint_exceptions.py`). The ten Pelorus mirror files stay byte-identical to the
+  pin (ADR-1113); `compat/python-vmaf/core/adm_dwt2_cy.pyx` keeps its first line,
+  `# SPDX-License-Identifier: BSD-2-Clause-Patent`, when upstream Netflix is synced. No score,
+  public API or FFmpeg patch impact.

@@ -564,21 +564,31 @@ repos:
         files: '^(\.config/hiss/|\.github/workflows/(required-aggregator|standards-gate)\.yml|\.pre-commit-config\.yaml|AGENTS\.md|Makefile|README\.md|lefthook\.yml|scripts/ci/tests/test_hiss_replay_contract\.py)$'
         pass_filenames: false
       - id: check-copyright
-        name: ADR-0105 / ADR-1250 copyright and SPDX header present (C/C++/CUDA/Go/Python)
+        name: ADR-0105 / ADR-1250 copyright and SPDX header present (every source language)
         entry: scripts/ci/check-copyright.sh
         language: script
-        # Exclusions: (a) upstream vendored subprojects, (b) test fixtures,
-        # (c) resource directories that ship upstream assets unchanged,
-        # (d) core/src/pdjson.{c,h} — vendored 3rd-party JSON parser
-        # retaining its own in-file "Vendored 3rd-party" banner,
-        # (e) compat/python-vmaf/matlab/ — upstream Netflix training-harness MATLAB
-        # MEX C sources, already excluded from other hygiene hooks,
-        # (f) praetor's byte-locked managed files (tools/figures/ and
-        # .config/agent/hooks/block_evasion.py): `praetorctl audit` compares them
-        # with praetor's own bytes, so they cannot take a header; REUSE.toml
-        # labels them (ADR-1351).
-        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$|^tools/figures/|^\.config/agent/hooks/block_evasion\.py$'
-        types_or: [c, c++, cuda, go, python]
+        # pre-commit's `types_or` cannot select `.hip` or `.metal` (identify has no tag
+        # for HIP), so the languages are one extension list; keep it equal to the
+        # script's `case` lists. A file that cannot meet a rule is named in the declared
+        # exception list (.config/lint-exceptions.d/, scripts/ci/lint_exceptions.py), never
+        # excluded here. The one exclusion is data: scripts/ci/exact_twins.d/*.hip are
+        # parity-gate fragments (ADR-1428) that only borrow the extension.
+        files: '\.(c|h|cpp|cxx|cc|hpp|hxx|cu|cuh|hip|metal|mm|go|py|pyx|rs|sh)$'
+        exclude: '^scripts/ci/exact_twins\.d/'
+
+      - id: check-lint-exceptions
+        name: Declared lint exceptions are well formed, tracked and unexpired
+        entry: python3 scripts/ci/lint_exceptions.py check
+        language: system
+        always_run: true
+        pass_filenames: false
+
+      - id: test-lint-exceptions
+        name: Lint exception list keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_lint_exceptions.py
+        language: system
+        files: '^(scripts/ci/(lint_exceptions\.py|check-copyright\.sh|tests/test_lint_exceptions\.py)|\.config/lint-exceptions\.d/|\.pre-commit-config\.yaml)'
+        pass_filenames: false
 
       - id: check-composite-actions
         name: Composite actions keep their structure and shellcheck-clean run blocks
@@ -598,7 +608,7 @@ repos:
         name: Copyright and SPDX header check keeps positive, negative and boundary cases
         entry: python3 scripts/ci/tests/test_check_copyright.py
         language: system
-        files: '^(scripts/ci/(check-copyright\.sh|tests/test_check_copyright\.py)|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/(check-copyright\.sh|lint_exceptions\.py|tests/test_check_copyright\.py)|\.config/lint-exceptions\.d/|\.pre-commit-config\.yaml)'
         pass_filenames: false
 
       - id: spdx-tag-matches-notice

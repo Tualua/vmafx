@@ -148,10 +148,11 @@
     },
     "0105": {
       "sites": {
+        ".config/lint-exceptions.d/copyright.toml": 1,
         ".github/workflows/rule-enforcement.yml": 1,
         ".pre-commit-config.yaml": 1,
         "scripts/ci/check-copyright.sh": 4,
-        "scripts/ci/tests/test_check_copyright.py": 1
+        "scripts/ci/tests/test_check_copyright.py": 3
       },
       "target": "0105-copyright-handling-dual-notice.md"
     },
@@ -5857,13 +5858,14 @@
       "sites": {
         ".claude/hooks/auto-format-on-edit.sh": 1,
         ".codex/hooks/auto-format-on-edit.sh": 1,
+        ".config/lint-exceptions.d/spdx.toml": 10,
         ".github/workflows/lint-and-format.yml": 1,
         ".pre-commit-config.yaml": 1,
         "core/src/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_pelorus_interop.c": 1,
         "scripts/ci/assertion-density.sh": 1,
-        "scripts/ci/check-copyright.sh": 1,
+        "scripts/ci/lint_exceptions.py": 1,
         "scripts/ci/pelorus_mirror.py": 1,
         "scripts/ci/tidy-ratchet.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
@@ -7449,6 +7451,7 @@
     },
     "1250": {
       "sites": {
+        ".config/lint-exceptions.d/spdx.toml": 1,
         ".github/workflows/lint-and-format.yml": 2,
         ".github/workflows/required-aggregator.yml": 1,
         ".pre-commit-config.yaml": 3,
@@ -7459,7 +7462,7 @@
         "docker/Dockerfile.production": 1,
         "python/test/setup_metadata_test.py": 2,
         "scripts/ci/check-copyright.sh": 7,
-        "scripts/ci/tests/test_check_copyright.py": 4,
+        "scripts/ci/tests/test_check_copyright.py": 7,
         "scripts/ci/tests/test_spdx_tag_matches_notice.py": 1,
         "scripts/dev/relicense_fork_files.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
@@ -7580,12 +7583,6 @@
         "scripts/ci/tests/test_hiss_replay_contract.py": 2
       },
       "target": "1274-hiss-21-replay-gate.md"
-    },
-    "1276": {
-      "sites": {
-        "scripts/ci/check-copyright.sh": 1
-      },
-      "target": "1276-pelorus-v022-parser-safety-repin.md"
     },
     "1277": {
       "sites": {
@@ -8041,7 +8038,8 @@
     },
     "1351": {
       "sites": {
-        ".pre-commit-config.yaml": 3,
+        ".config/lint-exceptions.d/spdx.toml": 2,
+        ".pre-commit-config.yaml": 2,
         "REUSE.toml": 1,
         "scripts/ci/check-local-data-contract.sh": 1,
         "scripts/ci/tests/test-check-local-data-contract.sh": 1,
@@ -9178,6 +9176,7 @@
     },
     "1428": {
       "sites": {
+        ".pre-commit-config.yaml": 1,
         "Makefile": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,

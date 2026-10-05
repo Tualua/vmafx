@@ -163,6 +163,47 @@ selection and checking; their target must resolve to an existing regular file
 inside the checkout. External, dangling, looping or directory targets fail.
 The command always derives its own scope; filename arguments do not narrow it.
 
+## Copyright and SPDX hook, and the declared exception list
+
+`check-copyright` runs `scripts/ci/check-copyright.sh` on every tracked file whose
+extension is `c h cpp cxx cc hpp hxx cu cuh hip metal mm go py pyx rs sh`
+(pre-commit's `types_or` cannot select `.hip` or `.metal`, so the hook uses one
+`files:` regex; keep it equal to the script's `case` lists). It requires:
+
+| Rule | Files | Needs, in the first 40 lines |
+| --- | --- | --- |
+| ADR-0105 | `c h cpp cxx cc hpp hxx cu cuh hip mm metal` | a `Copyright` line |
+| ADR-1250 | every extension above | an SPDX licence identifier line |
+
+The hook excludes one thing, `scripts/ci/exact_twins.d/` (parity-gate data
+fragments that only borrow the `.hip` extension). A file that cannot meet a rule
+is not skipped by path: it is named in the **declared exception list**,
+`.config/lint-exceptions.d/<rule>.toml`, where `<rule>` is `spdx` or
+`copyright`. One entry is one tracked file with a reason and an expiry:
+
+```toml
+[[exception]]
+path = "core/src/interop/pelorus_version.c"   # one tracked file, never a pattern
+reason = "Read-only mirror of VMAFx/pelorus (ADR-1113); ..."
+expires = 2026-12-31
+```
+
+An entry stops holding on its `expires` date: the file is read again and the hook
+fails on it, and `check-lint-exceptions` (always run, also in CI's
+`pre-commit run --all-files`) names the entry. It also fails on a missing field, a
+rule that differs from the file name, a path that is a pattern or not tracked, a
+duplicate, and an expiry more than 400 days out. Fix the file when you can; renew
+an entry only with its reason still true.
+
+```bash
+python3 scripts/ci/lint_exceptions.py check
+pre-commit run check-copyright --all-files
+```
+
+Entries today: ten files of the Pelorus mirror (`spdx`, until the line exists in
+Pelorus and the mirror is re-vendored), two praetor-managed files (`spdx`) and
+eight third-party MEX sources of the Netflix MATLAB harness (`copyright`).
+
 ## GitHub Actions workflow validation
 
 Workflow files under `.github/workflows/` are validated against

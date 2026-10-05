@@ -2077,6 +2077,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   workspace are covered without a workflow edit (`docs/development/rust.md`, "Linting").
 
 
+- The copyright and SPDX hook now reads `.hip`, `.metal`, `.mm`, `.pyx`, `.rs` and `.sh` as well,
+  skips no path by name, and takes its exceptions from a declared list with a reason and an
+  expiry per file (`.config/lint-exceptions.d/`, `docs/development/pre-commit-hooks.md`).
+  `adm_dwt2_cy.pyx` gains its SPDX line.
+
+
 - **`scripts/dev/speed_gpu_parity.py` can leave a fixture out, with a stated reason.**
   `--skip-fixture 3840x2160 --skip-reason "<why>"` skips the untracked BBB fixture and prints a
   `SKIPPED` line; a missing fixture file without the option is now a usage error naming the

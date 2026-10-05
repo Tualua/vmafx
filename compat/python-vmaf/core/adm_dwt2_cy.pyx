@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import numpy as np
 
 cimport numpy as np
