@@ -229,6 +229,9 @@ int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *ref, VmafPi
  * @param h       Frame height in pixels.
  * @param bpc     Bits per component (8 or 10).
  *
+ * Synchronous: returns after the copy has completed, so `src` may be freed,
+ * unmapped or refilled as soon as the call returns.
+ *
  * @return 0 on success, negative errno on failure.
  */
 int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, unsigned pitch, int is_ref,

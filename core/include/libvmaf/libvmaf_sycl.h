@@ -309,6 +309,10 @@ VMAF_EXPORT int vmaf_sycl_import_va_surface(VmafSyclState *sycl_state, void *va_
  * @param h            Frame height in pixels.
  * @param bpc          Bits per component (8 or 10).
  *
+ * The call returns after the copy has completed: `src` may be freed,
+ * unmapped or overwritten as soon as it returns, and the plane is in the
+ * shared buffer before the next vmaf_read_pictures_sycl().
+ *
  * @return 0 on success, negative errno on failure.
  *
  * @note Thread safety: Not thread-safe. Each VmafSyclState must be owned by one

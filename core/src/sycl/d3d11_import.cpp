@@ -97,6 +97,8 @@ static int map_and_upload(VmafSyclState *state, ID3D11DeviceContext *ctx,
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: Map returned empty descriptor\n");
         rc = -EIO;
     } else {
+        /* vmaf_sycl_upload_plane() returns after its copy, so the staging
+         * texture may be unmapped and released right after it. */
         rc = vmaf_sycl_upload_plane(state, mapped.pData, mapped.RowPitch, is_ref, w, h, bpc);
     }
 

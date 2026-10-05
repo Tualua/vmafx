@@ -922,6 +922,11 @@ extern "C" int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, uns
                 s += pitch;
             }
         }
+        /* Return only after the copy: `src` is the caller's (a D3D11 staging
+         * map is unmapped right after this call), and vmaf_read_pictures_sycl()
+         * waits on the primary queue only, so an unfinished copy-queue memcpy
+         * would read released memory or race the extractors. */
+        state->copy_queue.wait_and_throw();
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL upload_plane: %s\n", e.what());
         return -EIO;
