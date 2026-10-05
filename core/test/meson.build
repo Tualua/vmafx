@@ -2378,6 +2378,7 @@ test_metal_portable = executable('test_metal_portable',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_portable', test_metal_portable, suite : ['fast'])
 
@@ -2388,6 +2389,7 @@ test_metal_iosurface_layout = executable('test_metal_iosurface_layout',
     ['test.c', 'test_metal_iosurface_layout.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
+    kwargs : test_link_kwargs,
 )
 test('test_metal_iosurface_layout', test_metal_iosurface_layout, suite : ['fast'])
 
@@ -2419,6 +2421,7 @@ test_metal_soft_double = executable('test_metal_soft_double',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     cpp_args : vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_soft_double', test_metal_soft_double, suite : ['fast'], timeout : 120)
 
@@ -2472,6 +2475,7 @@ test_metal_integer_vif_math = executable('test_metal_integer_vif_math',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_integer_vif_math', test_metal_integer_vif_math, suite : ['fast'])
 
@@ -2509,6 +2513,7 @@ test_metal_integer_vif_gain = executable('test_metal_integer_vif_gain',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_integer_vif_gain', test_metal_integer_vif_gain, suite : ['fast'], timeout : 300)
 
@@ -2535,6 +2540,7 @@ test_metal_float_psnr_math = executable('test_metal_float_psnr_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_float_psnr_math', test_metal_float_psnr_math, suite : ['fast'])
 test('test_metal_float_psnr_exact_contract',
@@ -2557,6 +2563,7 @@ test_metal_float_moment_math = executable('test_metal_float_moment_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_float_moment_math', test_metal_float_moment_math, suite : ['fast'])
 # ADR-1497 / ADR-1498: metal_float_moment_sum.h, the Metal copy of the rounded
@@ -2569,6 +2576,7 @@ test_metal_float_moment_sum = executable('test_metal_float_moment_sum',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 # Same frames as test_float_moment_sum, and the same timeout: 35 s on a
 # workstation under the sanitizer job's debug ASan + UBSan build, past 120 s on
@@ -2595,6 +2603,7 @@ test_metal_integer_adm_math = executable('test_metal_integer_adm_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_integer_adm_math', test_metal_integer_adm_math, suite : ['fast'],
     timeout : 120)
@@ -2619,6 +2628,7 @@ test_metal_integer_motion_math = executable('test_metal_integer_motion_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_integer_motion_math', test_metal_integer_motion_math, suite : ['fast'],
     timeout : 120)
@@ -2647,6 +2657,7 @@ test_metal_float_motion_math = executable('test_metal_float_motion_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     cpp_args : vmaf_strict_fp_args,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_float_motion_math', test_metal_float_motion_math,
     suite : ['fast'],
@@ -2725,6 +2736,7 @@ test_metal_integer_ssim_math = executable('test_metal_integer_ssim_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_integer_ssim_math', test_metal_integer_ssim_math, suite : ['fast'],
     timeout : 120)
@@ -2747,6 +2759,7 @@ test_metal_float_ssim_math = executable('test_metal_float_ssim_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_float_ssim_math', test_metal_float_ssim_math, suite : ['fast'],
     timeout : 120)
@@ -2770,6 +2783,7 @@ test_metal_float_ms_ssim_math = executable('test_metal_float_ms_ssim_math',
     c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
 )
 test('test_metal_float_ms_ssim_math', test_metal_float_ms_ssim_math, suite : ['fast'],
     timeout : 120)
@@ -2802,6 +2816,7 @@ foreach _ciede : [['test_metal_ciede_math', []],
       dependencies : [math_lib],
       c_args : vmaf_strict_fp_args + ['-DVMAF_TEST_CIEDE_MATH_HOST_ONLY=1'],
       cpp_args : vmaf_strict_fp_args + _ciede[1],
+      kwargs : test_link_kwargs,
   )
   test(_ciede[0], _exe, suite : ['fast'], timeout : 120)
 endforeach
@@ -2858,7 +2873,8 @@ test_metal_float_adm_math = executable('test_metal_float_adm_math',
         log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_opt_only_objects
+    ] + wave8_opt_only_objects,
+    kwargs : test_link_kwargs,
 )
 test('test_metal_float_adm_math', test_metal_float_adm_math, suite : ['fast'], timeout : 300)
 endif
@@ -2999,6 +3015,7 @@ test_integer_vif_sv_sq = executable('test_integer_vif_sv_sq',
                            include_directories('../src/feature/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
+    kwargs : test_link_kwargs,
 )
 test('test_integer_vif_sv_sq', test_integer_vif_sv_sq, suite : ['fast'])
 test('test_integer_vif_sv_sq_contract',
@@ -3634,6 +3651,7 @@ foreach twin : [['cuda', 'cuh'], ['hip', 'hip']]
         cpp_args : ['-DADM_TWIN_HEADER="feature/' + twin[0] + '/integer_adm/' +
                     'adm_decouple_inline.' + twin[1] + '"'],
         dependencies : [pthread_dependency, math_lib],
+        kwargs : test_link_kwargs,
     )
     test('test_adm_decouple_recip_' + twin[0], _adm_recip_test,
         suite : ['fast'], timeout : 120)
@@ -6400,7 +6418,8 @@ test_sycl_zero_copy_admission = executable('test_sycl_zero_copy_admission',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_zero_copy_admission', test_sycl_zero_copy_admission,
     suite : ['fast', 'sycl'])
@@ -6413,7 +6432,8 @@ test_sycl_zero_copy_model_gate = executable('test_sycl_zero_copy_model_gate',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
 )
 test('test_sycl_zero_copy_model_gate', test_sycl_zero_copy_model_gate,
     suite : ['fast', 'gpu', 'sycl'],
