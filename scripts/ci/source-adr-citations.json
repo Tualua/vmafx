@@ -5186,8 +5186,10 @@
       "sites": {
         "cmd/vmafx-mcp/impl.go": 3,
         "cmd/vmafx-mcp/impl_direct_test.go": 1,
+        "cmd/vmafx-mcp/tools.go": 1,
         "pkg/libvmaf/direct.go": 2,
         "pkg/libvmaf/direct_test.go": 1,
+        "pkg/libvmaf/doc.go": 1,
         "pkg/libvmaf/errors.go": 1,
         "pkg/libvmaf/errors_test.go": 1,
         "pkg/libvmaf/stream.go": 1
@@ -5213,6 +5215,7 @@
         "cmd/vmafx-server/grpc_server_handler_test.go": 3,
         "gen/go/vmafx.pb.go": 1,
         "gen/go/vmafx_grpc.pb.go": 5,
+        "pkg/libvmaf/doc.go": 1,
         "pkg/libvmaf/libvmaf.go": 1,
         "pkg/libvmaf/stream.go": 1,
         "pkg/libvmaf/stream_test.go": 1,

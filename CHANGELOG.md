@@ -3650,6 +3650,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   its own `HEAD`: on a pull request, master plus the PR's commits.
 
 
+- **The Go package documentation says how `vmafx-mcp` and `vmafx-server`
+  reach libvmaf.** `pkg/libvmaf` and the MCP server's tool comment claimed the
+  binaries do not link `libvmaf.so` at run time; they do, through cgo
+  (`ScoreDirect`, `StreamScorer`, `DNNSession`), so the library must be
+  installed next to them. The package documentation now lists all four paths
+  into libvmaf, and a contract test fails when a Go package that links the
+  library claims otherwise.
+
+
 - **The `vmafx-operator`, `vmafx-server` and `vmafx-node` images carry the
   licences of everything they link, and the node image's FFmpeg is
   redistributable.** Each Go program's modules are read from its build

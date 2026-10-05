@@ -28,10 +28,18 @@
 //
 // # Scope
 //
-// This package intentionally exposes only what vmafx-mcp requires:
-// path-validation helpers and subprocess-based scoring delegation. The full
-// libvmaf C API is deliberately NOT wrapped here — the Go MCP server
-// delegates scoring to the vmaf CLI binary (same approach as the Python
-// server) and does not link against libvmaf.so at runtime. A future PR
-// may add direct cgo scoring for embedded use cases.
+// The package reaches libvmaf four ways; three of them are cgo calls into
+// libvmaf.so, so every binary importing the package links the library and
+// needs it at run time:
+//
+//   - [Scorer] runs the vmaf CLI binary as a subprocess and parses its JSON
+//     (the vmafx-mcp default and the vmafx-server unary Score path).
+//   - [ScoreDirect] scores a file pair in process through cgo (ADR-0931;
+//     vmafx-mcp with VMAFX_MCP_DIRECT=1).
+//   - [StreamScorer] keeps a cgo VmafContext and scores raw frames pushed one
+//     at a time (ADR-0933; the gRPC ScoreStream path of vmafx-server).
+//   - [DNNSession] opens a tiny-AI ONNX session through cgo (`dnn.h`).
+//
+// It also holds the path-validation helpers the tool handlers use. Only what
+// these callers need is wrapped; the full C API is not.
 package libvmaf

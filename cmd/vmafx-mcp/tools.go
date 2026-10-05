@@ -21,9 +21,10 @@
 // which has no Python twin — see ADR-1173.
 //
 // Each tool is implemented by a corresponding function in impl.go that calls
-// out to the vmaf CLI binary. The Go server does NOT link against libvmaf.so
-// at runtime — it delegates scoring to the binary, identical to the Python
-// implementation.
+// out to the vmaf CLI binary by default, as the Python implementation does.
+// The binary still links libvmaf.so through pkg/libvmaf (cgo): with
+// VMAFX_MCP_DIRECT=1 the scoring tools call libvmaf in process
+// (impl_direct.go, ADR-0931), so the library must be present at run time.
 
 package main
 
