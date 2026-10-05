@@ -103,7 +103,8 @@ type ScoreRequest struct {
 	Reference string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
 	// Absolute path to the distorted YUV / Y4M / video file.
 	Distorted string `protobuf:"bytes,2,opt,name=distorted,proto3" json:"distorted,omitempty"`
-	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h,
+	// the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
 	Model         string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -225,7 +226,8 @@ type StreamConfig struct {
 	Height uint32 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
 	// Pixel layout for both reference and distorted streams (they must match).
 	PixelFormat PixelFormat `protobuf:"varint,3,opt,name=pixel_format,json=pixelFormat,proto3,enum=vmafx.v1.PixelFormat" json:"pixel_format,omitempty"`
-	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+	// Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h,
+	// the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
 	Model string `protobuf:"bytes,4,opt,name=model,proto3" json:"model,omitempty"`
 	// Optional declared frame count; 0 means unknown / open-ended stream.
 	// When non-zero the server may pre-size internal buffers.

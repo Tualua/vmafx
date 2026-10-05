@@ -198,6 +198,28 @@ sed -i '/^#define VMAF_DEFAULT_MODEL_VERSION /d' "$d/core/include/libvmaf/model.
 git -C "$d" commit -aqm nomacro >/dev/null 2>&1
 expect "missing authoritative macro is caught" 1 "$d"
 
+# 7. an API contract that documents another default model must fail; the
+# proto, OpenAPI and server-page forms are each checked. The OpenAPI phrase
+# wraps across lines, as YAML descriptions do.
+d=$(clone protodoc)
+printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx.proto"
+git -C "$d" commit -aqm protodoc >/dev/null 2>&1
+expect "proto documenting another default is caught" 1 "$d"
+
+d=$(clone openapidoc)
+# shellcheck disable=SC2016 # the backticks are planted Markdown, not an expansion
+printf '\nx-planted:\n  description: |\n    the server defaults to\n    `vmaf_4k_v0.6.1` when omitted.\n' \
+  >>"$d/api/openapi/vmafx-server-v1.yaml"
+git -C "$d" commit -aqm openapidoc >/dev/null 2>&1
+expect "OpenAPI documenting another default (wrapped) is caught" 1 "$d"
+
+d=$(clone serverdoc)
+# shellcheck disable=SC2016 # the backticks are planted Markdown, not an expansion
+printf '\n| `model` | string | No | Model name (default: `vmaf_v0.6.1`) |\n' \
+  >>"$d/docs/server/rest.md"
+git -C "$d" commit -aqm serverdoc >/dev/null 2>&1
+expect "server page documenting another default is caught" 1 "$d"
+
 if [ "$fails" -ne 0 ]; then
   printf '\n%d case(s) failed\n' "$fails"
   exit 1

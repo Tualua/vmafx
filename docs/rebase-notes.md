@@ -61837,3 +61837,16 @@ No score, public API or FFmpeg patch impact.
   functions edits the helper that holds the changed statement; the intrinsics,
   the FMA pattern and the summation order stay as the ADR-1205 / ADR-1208
   contracts fix them. No score, public API or FFmpeg patch impact.
+
+## Server contracts name the default model; embedded OpenAPI follows the YAML
+
+`fix/server-default-model-docs`.
+
+- `scripts/ci/check-default-model-single-source.sh` reads `proto/*.proto`,
+  `api/openapi/*.yaml` and `docs/server/*.md`; a sync that brings back a
+  "defaults to `vmaf_v0.6.1`" sentence in them fails the gate. Name the library
+  default or drop the sentence.
+- `gen/go/oapi/vmafx_server_v1.gen.go` is regenerated whenever
+  `api/openapi/vmafx-server-v1.yaml` changes (header kept, see
+  `gen/go/AGENTS.md`); `TestEmbeddedSpecMatchesContract` fails otherwise. No
+  score, public C API or FFmpeg patch impact.

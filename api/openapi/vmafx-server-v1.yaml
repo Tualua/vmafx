@@ -43,7 +43,8 @@ paths:
 
         The optional `model` field selects the VMAF model JSON filename
         (without the `.json` extension) from `VMAFX_MODEL_DIR`.  When
-        omitted the server defaults to `vmaf_v0.6.1`.
+        omitted the server defaults to `vmaf_v1.0.16_3d0h`, the library
+        default (`VMAF_DEFAULT_MODEL_VERSION`).
       tags: [scoring]
       requestBody:
         required: true
@@ -173,7 +174,7 @@ components:
           description: |
             VMAF model name to use.  Must match a `.json` filename (without
             extension) in the server's `VMAFX_MODEL_DIR`.  Defaults to
-            `vmaf_v0.6.1` when omitted.
+            `vmaf_v1.0.16_3d0h`, the library default, when omitted.
           example: "vmaf_v0.6.1"
 
     ScoreResponse:

@@ -63,7 +63,7 @@ service VmafxScoring {
 message ScoreRequest {
   string reference = 1;  // absolute path to reference YUV/Y4M
   string distorted = 2;  // absolute path to distorted YUV/Y4M
-  string model     = 3;  // model name, e.g. "vmaf_v0.6.1" (default if empty)
+  string model     = 3;  // model name, e.g. "vmaf_v0.6.1"; empty defaults to vmaf_v1.0.16_3d0h
 }
 
 message ScoreResponse {

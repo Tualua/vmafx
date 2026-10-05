@@ -78,6 +78,27 @@ check_mirror tools/vmaf-tune/src/vmaftune/defaultmodel.py \
 check_mirror tools/vmaf-roi-score/src/vmafroiscore/defaultmodel.py \
   's/^DEFAULT_MODEL = "\(.*\)"$/\1/p' "vmaf-roi-score DEFAULT_MODEL"
 
+# --------------------------------------- documented defaults in API contracts --
+# The server's contracts tell clients which model an omitted `model` field
+# selects: the gRPC proto, the OpenAPI document and the server pages. They
+# cannot read the header, and they drifted once (all of them documented
+# vmaf_v0.6.1 while the server used the header's default). Every "defaults
+# to <model>" / "Defaults to <model>" / "(default: <model>)" they contain must
+# name the authoritative default. Files are read with their line breaks folded,
+# because a YAML description wraps the phrase across lines.
+contract_re='[Dd]efaults?[[:space:]]*(to|is|:)?[[:space:]]*[`"'"'"']?(version=)?vmaf_[A-Za-z0-9_.]*[A-Za-z0-9_]'
+while IFS= read -r contract; do
+  [ -n "$contract" ] || continue
+  hits=$(tr -s '\n\t' '  ' <"$contract" | grep -oE "$contract_re" || [ "$?" -eq 1 ])
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    documented=$(printf '%s' "$hit" | grep -oE 'vmaf_[A-Za-z0-9_.]*[A-Za-z0-9_]$')
+    if [ "$documented" != "$authoritative" ]; then
+      bad "$contract documents the default model as \"$documented\"; the server uses \"$authoritative\" ($header)"
+    fi
+  done <<<"$hits"
+done < <(git ls-files -- 'proto/*.proto' 'api/openapi/*.yaml' 'docs/server/*.md')
+
 # ------------------------------------------------- unapproved hardcoded uses --
 # A default is "hardcoded" when a component substitutes a literal model name
 # because the caller supplied none. Those are what this gate is for.

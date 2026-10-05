@@ -78,11 +78,11 @@ deployments that target the bare probe paths:
 }
 ```
 
-| Field       | Type   | Required | Description                              |
-| ----------- | ------ | -------- | ---------------------------------------- |
-| `reference` | string | Yes      | Path to the pristine reference video     |
-| `distorted` | string | Yes      | Path to the compressed distorted video   |
-| `model`     | string | No       | Model name (default: `vmaf_v0.6.1`)      |
+| Field       | Type   | Required | Description                                                    |
+| ----------- | ------ | -------- | -------------------------------------------------------------- |
+| `reference` | string | Yes      | Path to the pristine reference video                           |
+| `distorted` | string | Yes      | Path to the compressed distorted video                         |
+| `model`     | string | No       | Model name (default: `vmaf_v1.0.16_3d0h`, the library default) |
 
 **Response** `200 OK`:
 

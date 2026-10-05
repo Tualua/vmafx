@@ -53,7 +53,8 @@ message ScoreRequest {
   string reference = 1;
   // Absolute path to the distorted YUV / Y4M / video file.
   string distorted = 2;
-  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h,
+  // the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
   string model = 3;
 }
 
@@ -87,7 +88,8 @@ message StreamConfig {
   uint32 height = 2;
   // Pixel layout for both reference and distorted streams (they must match).
   PixelFormat pixel_format = 3;
-  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h,
+  // the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
   string model = 4;
   // Optional declared frame count; 0 means unknown / open-ended stream.
   // When non-zero the server may pre-size internal buffers.
