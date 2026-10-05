@@ -89,7 +89,7 @@ endif
 # END VMAF strict FP compiler-argument policy
 add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])
 
-# ADR-1593: the policy above keys on the C compiler. A mixed toolchain
+# ADR-1714: the policy above keys on the C compiler. A mixed toolchain
 # (CC=gcc CXX=icpx: the dev container and Containerfile.vmafx) would give the
 # C++ translation units icpx compiles GCC's spelling only, and leave them in
 # icpx's default fast model (reassociation, approximate division). They take

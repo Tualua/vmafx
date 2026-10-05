@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# Research-1593: GCC (C) + icpx (C++ / SYCL) container toolchain
+# Research-1714: GCC (C) + icpx (C++ / SYCL) container toolchain
 
-Companion digest for [ADR-1593](../adr/1593-hybrid-gcc-cpu-icpx-sycl.md).
+Companion digest for [ADR-1714](../adr/1714-hybrid-gcc-cpu-icpx-sycl.md).
 
 The measurements below up to "Reproducer" were taken on master `42fb501cc`,
 before [ADR-1461](../adr/1461-strict-fp-every-translation-unit.md) and
@@ -20,7 +20,7 @@ with an Intel Arc A380 (`--device /dev/dri`). Reference: a plain GCC build
 metrics), `--precision=max`, `--cpumask 48` (AVX2) and `63` (scalar). SYCL
 builds use `-Dsycl_icpx_aot_targets=` (JIT) because the image has no ocloc;
 `Containerfile.vmafx` installs ocloc and builds AOT. (`Containerfile.vmafx`:
-[ADR-1594](../adr/1594-vmafx-sycl-ffmpeg-container.md).)
+[ADR-1715](../adr/1715-vmafx-sycl-ffmpeg-container.md).)
 
 ## icx build vs GCC (before)
 
@@ -52,7 +52,7 @@ default `-fp-model=fast` adds ~5e-12 on every frame's VMAF score, removed by
 | CPU scalar vs GCC | 46 / 46 bit-exact |
 | `meson test --suite gpu` (Arc A380) | 63 OK, 0 fail, 1 skipped |
 | `meson test --suite fast` | 286 OK, 1 fail: `test_meson_secret_env_sanitization`, caused by the new `run-all-tests.sh` calling `meson test` directly; fixed by routing it through `scripts/ci/run_meson_test.py` and listing it in the test's runner inventory (passes after the fix) |
-| full `quality_runner_test.py` (ADR-1439 values) | 61 passed, 1 skipped |
+| full `quality_runner_test.py` (values synced to Netflix upstream) | 61 passed, 1 skipped |
 
 Without `test_link_kwargs` the hybrid build failed only in the C-only test
 executables (`gcc: error: unrecognized command-line option '-fsycl'`); with

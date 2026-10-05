@@ -1155,7 +1155,7 @@ comment and no SPDX tag. An upstream sync that touches them keeps the MIT tag.
   stages mirror the CPU image's.
 ## Containers build CPU C with GCC; `Containerfile.vmafx` (2026-10-01)
 
-`feat/vmafx-container-hybrid-toolchain` (ADR-1593, ADR-1594;
+`feat/vmafx-container-hybrid-toolchain` (ADR-1714, ADR-1715;
 rebased onto master `b01ffe42d`, where it was first ADR-1440..1441).
 
 - `core/test/meson.build`: `test_link_kwargs` is defined after the
@@ -1183,10 +1183,6 @@ rebased onto master `b01ffe42d`, where it was first ADR-1440..1441).
 - `compat/python-vmaf/config.py`: `_urlretrieve_with_retries` retries
   transient resource-download errors; an upstream sync of the download code
   keeps it (`python/test/config_download_retry_test.py`).
-- `python/test/quality_runner_test.py`: every assertion shared with Netflix
-  `upstream/master` carries upstream's value and `places` (ADR-1439). An
-  upstream sync that changes one of them takes upstream's new value; do not
-  loosen `places` to make a stale value pass.
 - `scripts/test/run-all-tests.sh` runs Meson tests through
   `scripts/ci/run_meson_test.py` and is listed in the runner inventory of
   `core/test/test_meson_secret_env_sanitization.py`.

@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-1593: The dev and SYCL+ffmpeg containers build CPU C code with GCC and SYCL with icpx
+# ADR-1714: The dev and SYCL+ffmpeg containers build CPU C code with GCC and SYCL with icpx
 
 - **Status**: Accepted
 - **Date**: 2026-10-01
@@ -9,7 +9,7 @@
 ## Context
 
 The dev container (`dev/Containerfile`) and the SYCL + ffmpeg container
-(`Containerfile.vmafx`, [ADR-1594](1594-vmafx-sycl-ffmpeg-container.md)) build
+(`Containerfile.vmafx`, [ADR-1715](1715-vmafx-sycl-ffmpeg-container.md)) build
 libvmaf with `CC=icx CXX=icpx`, because the SYCL kernels need the oneAPI C++
 compiler. That also puts every CPU C translation unit under `icx`.
 
@@ -97,12 +97,15 @@ covered there.
 - req: "да, применяй V3 и запускай V4"; 2026-10-01 popups: hybrid in both
   containers, `-no-intel-lib=libimf` after measurement, SYCL validated on the
   NAS Arc A380, port onto a new branch from master.
-- Research digest: [`docs/research/1593-hybrid-gcc-cpu-icpx-sycl.md`](../research/1593-hybrid-gcc-cpu-icpx-sycl.md).
+- Research digest: [`docs/research/1714-hybrid-gcc-cpu-icpx-sycl.md`](../research/1714-hybrid-gcc-cpu-icpx-sycl.md).
 - [ADR-1461](1461-strict-fp-every-translation-unit.md), [ADR-1495](1495-icx-system-libm.md),
   [ADR-1415](1415-x86-simd-libraries-strict-fp.md), [ADR-1099](1099-sycl-fsycl-link-propagation.md),
-  [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-1594](1594-vmafx-sycl-ffmpeg-container.md).
+  [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-1715](1715-vmafx-sycl-ffmpeg-container.md).
 - Originally drafted as ADR-1440; renumbered to 1502 on the rebase onto
   master `b01ffe42d`, where 1440 had been taken, and to 1561 on the
   rebase onto master `2889f963a`, where 1502 had been taken; then to 1593 on the
   rebase onto master `f224b1b42`, where 1561 had been claimed by other branches
   (and 1562 taken by master).
+- Renumbered to 1714 when it was ported to `VMAFx/vmafx` master `dc9cd9481`,
+  where 1593 had been taken and numbers up to 1713 had been claimed by
+  `VMAFx/vmafx` branches.

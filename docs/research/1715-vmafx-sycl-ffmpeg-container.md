@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# Research-1594: porting `Containerfile.vmafx` onto master
+# Research-1715: porting `Containerfile.vmafx` onto master
 
-Companion digest for [ADR-1594](../adr/1594-vmafx-sycl-ffmpeg-container.md).
+Companion digest for [ADR-1715](../adr/1715-vmafx-sycl-ffmpeg-container.md).
 Host: NAS with a Xeon D-2143IT and an Intel Arc A380, rootless podman.
 
 ## What had to change against the old branch's file
@@ -36,8 +36,10 @@ Zero, no CPU readback), `vmaf_v0.6.1`, Arc A380:
 
 Additional features requested with `feature=name=psnr|name=cambi` are
 computed by the host-upload `libvmaf_sycl` path but silently missing from the
-zero-copy path (only the model's SYCL extractors run there); tracked
-separately as `T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02`.
+zero-copy path (only the model's SYCL extractors ran there). On the
+`VMAFx/vmafx` master this branch was ported to, the zero-copy path refuses
+them by name with `-ENOTSUP` instead
+([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)).
 
 ## Verification
 
