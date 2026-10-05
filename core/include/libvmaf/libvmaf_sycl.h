@@ -214,7 +214,8 @@ VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
  * @param index  Frame index (0-based, sequential).
  *
  * @return 0 on success, -ENOTSUP when a registered extractor cannot run on
- *         the luma plane alone, other negative errno on failure.
+ *         the shared device planes (a CPU extractor, or a SYCL extractor
+ *         without the admission hook), other negative errno on failure.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
@@ -271,8 +272,14 @@ VMAF_EXPORT int vmaf_sycl_dmabuf_import(VmafSyclState *sycl_state, int fd, size_
 VMAF_EXPORT void vmaf_sycl_dmabuf_free(VmafSyclState *sycl_state, void *ptr);
 
 /**
- * Import a VA surface Y-plane into a shared frame buffer. Only the luma
- * plane is imported; see vmaf_read_pictures_sycl() for what that scores.
+ * Import a VA surface (luma and 4:2:0 chroma) into the shared frame buffers.
+ * The Y plane goes to the shared luma buffer; the interleaved UV plane is
+ * de-interleaved into planar Cb / Cr shared planes, so chroma features
+ * (psnr_cb/cr, psnr_hvs_cb/cr, motion with motion_add_uv, speed_chroma) work on
+ * zero-copy input. Chroma of a frame is used only after both the ref and the dis
+ * surface were imported. vmaf_sycl_get_frame_buffers() still returns luma only:
+ * a caller that writes luma into those buffers itself provides no chroma, and
+ * chroma readers then fail with -ENOTSUP.
  * Primary path: exports VA surface as DRM PRIME2 DMA-BUF, imports via
  * Level Zero, and runs a SYCL de-tiling kernel (zero-copy, GPU-only).
  * Fallback: vaGetImage + vaMapBuffer + H2D memcpy (GPU→CPU→GPU).

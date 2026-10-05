@@ -7,22 +7,21 @@
 
 /*
  * The SYCL zero-copy path scores what it can and names what it cannot
- * (ADR-1688), on a SYCL device.
+ * (ADR-1688, widened by ADR-1768), on a SYCL device.
  *
- * vmaf_read_pictures_sycl() reads the luma plane the caller put into the
- * shared frame (here with vmaf_sycl_upload_plane(), the host form of the
- * DMA-BUF / VA import) and hands the extractors no host picture. Before
- * ADR-1688, on an Arc A380 with FFmpeg's libvmaf_sycl filter:
- * - the default model vmaf_v1.0.16_3d0h failed on the first frame with a
- *   bare -22 (speed_chroma_sycl needs the U and V planes);
- * - float_psnr_sycl dereferenced the NULL picture and crashed;
- * - motion_sycl with motion_add_uv added the SAD of chroma it never imported;
- * - a CPU extractor (float_psnr) was skipped on every frame without an error.
- * Each now makes the call return -ENOTSUP before the frame is counted, and
- * the context flushes cleanly afterwards. vmaf_v0.6.1, whose features all
- * read luma, still runs and gives the CPU's per-frame scores, and so does
- * every other twin the path admits (psnr / psnr_hvs without chroma,
- * float_moment, motion_v2, cambi).
+ * vmaf_read_pictures_sycl() reads the planes the caller put into the shared
+ * frame and hands the extractors no host picture. Here the caller writes luma
+ * only, with vmaf_sycl_upload_plane() (the host form of a luma-only import such
+ * as D3D11's); the VA import's chroma is covered by test_sycl_zerocopy_parity.
+ * - a CPU extractor (float_psnr) cannot run there: the call returns -ENOTSUP
+ *   before the frame is counted, again on a retry, and the context flushes;
+ * - a chroma reader on an import that carried no chroma (the default model
+ *   vmaf_v1.0.16_3d0h through speed_chroma_sycl, motion_sycl with
+ *   motion_add_uv, psnr_sycl with chroma) returns -ENOTSUP naming itself
+ *   (vmaf_sycl_require_chroma) instead of scoring stale planes;
+ * - vmaf_v0.6.1 and every twin that reads only the shared luma give the CPU's
+ *   per-frame scores, float_psnr_sycl included (it read host pictures before
+ *   ADR-1766).
  *
  * Skip behaviour: without a SYCL device the test prints
  * "[skip: no SYCL device]" and exits 77.
@@ -164,26 +163,40 @@ static char *refused(VmafSyclState *state, const char *model, const char *featur
     return NULL;
 }
 
-static char *test_default_model_refused(void)
+/* A chroma reader on luma-only input is refused at its submit(), after the
+ * admission check, so only the first call's status is pinned; the context
+ * still closes. */
+static char *refused_without_chroma(VmafSyclState *state, const char *model, const char *feature,
+                                    const char *key, const char *val)
+{
+    Gate g;
+    mu_assert("zero-copy context opens", open_gate(&g, state, model, feature, key, val) == 0);
+    mu_assert("first frame refused with -ENOTSUP", read_zero_copy(&g, 0u) == -ENOTSUP);
+    (void)vmaf_flush_sycl(g.vmaf);
+    mu_assert("the refused context closes", close_gate(&g) == 0);
+    return NULL;
+}
+
+static char *test_chroma_readers_without_chroma_refused(void)
 {
     VmafSyclState *state = NULL;
     if (open_state(&state)) {
         return NULL;
     }
-    char *msg = refused(state, "vmaf_v1.0.16_3d0h", NULL, NULL, NULL);
+    char *msg = refused_without_chroma(state, "vmaf_v1.0.16_3d0h", NULL, NULL, NULL);
+    msg = msg ? msg : refused_without_chroma(state, NULL, "motion_sycl", "motion_add_uv", "true");
+    msg = msg ? msg : refused_without_chroma(state, NULL, "psnr_sycl", NULL, NULL);
     vmaf_sycl_state_free(&state);
     return msg;
 }
 
-static char *test_host_picture_features_refused(void)
+static char *test_cpu_extractor_refused(void)
 {
     VmafSyclState *state = NULL;
     if (open_state(&state)) {
         return NULL;
     }
-    char *msg = refused(state, NULL, "float_psnr_sycl", NULL, NULL);
-    msg = msg ? msg : refused(state, NULL, "motion_sycl", "motion_add_uv", "true");
-    msg = msg ? msg : refused(state, NULL, "float_psnr", NULL, NULL);
+    char *msg = refused(state, NULL, "float_psnr", NULL, NULL);
     vmaf_sycl_state_free(&state);
     return msg;
 }
@@ -307,6 +320,8 @@ static char *test_admitted_twins_run_and_match_cpu(void)
          {.feature = "motion_v2", .score = "VMAF_integer_feature_motion_v2_sad_score"}},
         {{.feature = "cambi_sycl", .score = "Cambi_feature_cambi_score"},
          {.feature = "cambi", .score = "Cambi_feature_cambi_score"}},
+        {{.feature = "float_psnr_sycl", .score = "float_psnr"},
+         {.feature = "float_psnr", .score = "float_psnr"}},
     };
     VmafSyclState *state = NULL;
     if (open_state(&state)) {
@@ -323,8 +338,8 @@ static char *test_admitted_twins_run_and_match_cpu(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_default_model_refused);
-    mu_run_test(test_host_picture_features_refused);
+    mu_run_test(test_chroma_readers_without_chroma_refused);
+    mu_run_test(test_cpu_extractor_refused);
     mu_run_test(test_luma_model_runs_and_matches_cpu);
     mu_run_test(test_admitted_twins_run_and_match_cpu);
     return NULL;

@@ -6,20 +6,18 @@
  */
 
 /*
- * Which extractors the SYCL zero-copy path admits (ADR-1688).
+ * Which extractors the SYCL zero-copy path admits (ADR-1688, widened by
+ * ADR-1768).
  *
- * vmaf_read_pictures_sycl() hands the extractors no host picture, and the
- * DMA-BUF / VA import puts only the luma plane on the device. It admits a
- * registered extractor only when vmaf_feature_extractor_reads_shared_luma_only()
- * answers true, so that answer must be the truth for every SYCL extractor and
- * every option that changes it:
- * - the five luma-only twins on the shared frame answer true;
- * - motion_sycl answers true unless motion_add_uv asks for the reference's
- *   U and V (before ADR-1688 the zero-copy path added the SAD of chroma it
- *   never imported: integer_motion2_mau equalled integer_motion2);
- * - psnr_sycl and psnr_hvs_sycl answer true only with enable_chroma=false;
- * - every other SYCL twin reads host pictures and answers false (several
- *   dereferenced the NULL picture: float_psnr_sycl crashed FFmpeg);
+ * vmaf_read_pictures_sycl() hands the extractors no host picture. The DMA-BUF /
+ * VA import fills the shared luma and, since ADR-1765, chroma planes, and every
+ * SYCL twin reads those planes (ADR-1766, ADR-1767). It admits a registered
+ * extractor only when vmaf_feature_extractor_reads_shared_luma_only() answers
+ * true, so that answer must be the truth for every SYCL extractor and every
+ * option that changes it:
+ * - every SYCL twin answers true, with any chroma option (motion_add_uv,
+ *   enable_chroma): a chroma reader on an import that carried no chroma is
+ *   refused later, at submit(), by vmaf_sycl_require_chroma();
  * - a CPU extractor answers false (the zero-copy path skipped it on every
  *   frame, so its feature was missing from the result without an error).
  *
@@ -100,29 +98,30 @@ static char *test_luma_twins_are_admitted(void)
     return run_cases(cases, sizeof(cases) / sizeof(cases[0]));
 }
 
-static char *test_chroma_options_are_refused(void)
+static char *test_chroma_options_are_admitted(void)
 {
     static const AdmissionCase cases[] = {
-        {"motion_sycl", "motion_add_uv", "true", false},
+        {"motion_sycl", "motion_add_uv", "true", true},
         {"motion_sycl", "motion_add_uv", "false", true},
-        {"psnr_sycl", NULL, NULL, false},
-        {"psnr_sycl", "enable_chroma", "true", false},
+        {"psnr_sycl", NULL, NULL, true},
+        {"psnr_sycl", "enable_chroma", "true", true},
         {"psnr_sycl", "enable_chroma", "false", true},
-        {"psnr_hvs_sycl", NULL, NULL, false},
+        {"psnr_hvs_sycl", NULL, NULL, true},
         {"psnr_hvs_sycl", "enable_chroma", "false", true},
+        {"float_motion_sycl", "motion_add_uv", "true", true},
     };
     return run_cases(cases, sizeof(cases) / sizeof(cases[0]));
 }
 
-static char *test_host_picture_twins_are_refused(void)
+static char *test_shared_plane_twins_are_admitted(void)
 {
     static const AdmissionCase cases[] = {
-        {"speed_chroma_sycl", NULL, NULL, false},  {"speed_temporal_sycl", NULL, NULL, false},
-        {"ciede_sycl", NULL, NULL, false},         {"ssimulacra2_sycl", NULL, NULL, false},
-        {"float_ms_ssim_sycl", NULL, NULL, false}, {"float_ssim_sycl", NULL, NULL, false},
-        {"integer_ssim_sycl", NULL, NULL, false},  {"float_psnr_sycl", NULL, NULL, false},
-        {"float_motion_sycl", NULL, NULL, false},  {"float_vif_sycl", NULL, NULL, false},
-        {"float_adm_sycl", NULL, NULL, false},
+        {"speed_chroma_sycl", NULL, NULL, true},  {"speed_temporal_sycl", NULL, NULL, true},
+        {"ciede_sycl", NULL, NULL, true},         {"ssimulacra2_sycl", NULL, NULL, true},
+        {"float_ms_ssim_sycl", NULL, NULL, true}, {"float_ssim_sycl", NULL, NULL, true},
+        {"integer_ssim_sycl", NULL, NULL, true},  {"float_psnr_sycl", NULL, NULL, true},
+        {"float_motion_sycl", NULL, NULL, true},  {"float_vif_sycl", NULL, NULL, true},
+        {"float_adm_sycl", NULL, NULL, true},
     };
     return run_cases(cases, sizeof(cases) / sizeof(cases[0]));
 }
@@ -141,8 +140,8 @@ static char *test_cpu_extractors_are_refused(void)
 char *run_tests(void)
 {
     mu_run_test(test_luma_twins_are_admitted);
-    mu_run_test(test_chroma_options_are_refused);
-    mu_run_test(test_host_picture_twins_are_refused);
+    mu_run_test(test_chroma_options_are_admitted);
+    mu_run_test(test_shared_plane_twins_are_admitted);
     mu_run_test(test_cpu_extractors_are_refused);
     return NULL;
 }

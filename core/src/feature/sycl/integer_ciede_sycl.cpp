@@ -10,11 +10,13 @@
  *  batch 1c part 2).
  *
  *  Self-contained submit / collect — does *not* register with
- *  vmaf_sycl_graph_register because the shared_frame buffers are
- *  luma-only and ciede needs full Y/U/V. Each submit packs the
- *  ref/dis Y, U and V planes at their native resolution into
- *  pinned staging, uploads them, launches one kernel and reads
- *  back one float per pixel. The kernel reads chroma at
+ *  vmaf_sycl_graph_register. Each submit reads ref/dis Y, U and V
+ *  from the shared device planes at their native resolution
+ *  (ADR-1766): luma from the shared frame, Cb / Cr from the shared
+ *  chroma planes, uploaded by vmaf_sycl_shared_chroma_upload() when
+ *  host pictures are given and imported by the zero-copy path
+ *  otherwise (ADR-1765). It launches one kernel and reads back one
+ *  float per pixel. The kernel reads chroma at
  *  (x >> ss_hor, y >> ss_ver), the nearest-neighbour upsample
  *  of ciede.c::scale_chroma_planes, as the CUDA and HIP twins do.
  *
@@ -81,19 +83,9 @@ struct CiedeStateSycl {
      * `(w + ss_hor) >> ss_hor` so odd luma sizes stage every column. */
     unsigned plane_w[CIEDE_SYCL_PLANES];
     unsigned plane_h[CIEDE_SYCL_PLANES];
-    size_t row_bytes[CIEDE_SYCL_PLANES];
 
     /* SYCL state back-pointer. */
     VmafSyclState *sycl_state;
-
-    /* Host-pinned staging and device USM, one tightly packed buffer
-     * per plane at native resolution: 4:2:0 moves half the bytes the
-     * former luma-resolution upscale did, and the host no longer
-     * writes one byte per luma pixel per plane. */
-    void *h_ref[CIEDE_SYCL_PLANES];
-    void *h_dis[CIEDE_SYCL_PLANES];
-    void *d_ref[CIEDE_SYCL_PLANES];
-    void *d_dis[CIEDE_SYCL_PLANES];
 
     /* One float per pixel, in raster order: the kernel's output and the
      * host's copy of it. */
@@ -114,26 +106,6 @@ struct CiedeStateSycl {
 
     VmafDictionary *feature_name_dict;
 };
-
-/* Copy `rows` rows of plane `p` into a tightly packed host buffer: one
- * memcpy when the picture rows are already contiguous, one per row
- * otherwise. Byte-oriented, so it serves every bit depth. */
-static void stage_plane(const VmafPicture *pic, unsigned p, void *dst, size_t row_bytes,
-                        unsigned rows)
-{
-    const auto *src = static_cast<const uint8_t *>(pic->data[p]);
-    auto *out = static_cast<uint8_t *>(dst);
-    const auto stride = static_cast<size_t>(pic->stride[p]);
-    if (stride == row_bytes) {
-        std::memcpy(out, src, row_bytes * rows);
-        return;
-    }
-    for (unsigned i = 0; i < rows; i++) {
-        std::memcpy(out, src, row_bytes);
-        src += stride;
-        out += row_bytes;
-    }
-}
 
 /* Everything the kernel reads, captured by value as one struct so the
  * output pointer travels with its geometry (same shape as
@@ -218,49 +190,26 @@ static void ciede_set_geometry(CiedeStateSycl *s, enum VmafPixelFormat pix_fmt, 
     s->pix_fmt = pix_fmt;
     s->ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1U : 0U;
     s->ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1U : 0U;
-    const size_t bpp = (bpc <= 8U) ? 1U : 2U;
     for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
         const unsigned sh = (p > 0U) ? s->ss_hor : 0U;
         const unsigned sv = (p > 0U) ? s->ss_ver : 0U;
         s->plane_w[p] = (w + sh) >> sh;
         s->plane_h[p] = (h + sv) >> sv;
-        s->row_bytes[p] = (size_t)s->plane_w[p] * bpp;
     }
     s->constants = vmaf_sycl_ciede::make_constants(bpc);
     s->tables_uploaded = false;
 }
 
-/* Allocate staging, device planes, the per-pixel terms and the tables. Stops at the first
- * failure; close_fex_sycl releases whatever was allocated. */
+/* Allocate the per-pixel terms and the tables. The planes are the shared
+ * device planes (ADR-1766), so there is no per-extractor plane staging. */
 static bool ciede_alloc_buffers(CiedeStateSycl *s)
 {
     VmafSyclState *state = s->sycl_state;
-    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
-        const size_t bytes = s->row_bytes[p] * s->plane_h[p];
-        s->h_ref[p] = vmaf_sycl_malloc_host(state, bytes);
-        s->h_dis[p] = vmaf_sycl_malloc_host(state, bytes);
-        s->d_ref[p] = vmaf_sycl_malloc_device(state, bytes);
-        s->d_dis[p] = vmaf_sycl_malloc_device(state, bytes);
-        if (!s->h_ref[p] || !s->h_dis[p] || !s->d_ref[p] || !s->d_dis[p])
-            return false;
-    }
     const size_t term_bytes = (size_t)s->width * s->height * sizeof(float);
     s->d_terms = static_cast<float *>(vmaf_sycl_malloc_device(state, term_bytes));
     s->h_terms = static_cast<float *>(vmaf_sycl_malloc_host(state, term_bytes));
     s->d_tables = static_cast<float *>(vmaf_sycl_malloc_device(state, CIEDE_TABLE_BYTES));
     return s->d_terms != nullptr && s->h_terms != nullptr && s->d_tables != nullptr;
-}
-
-/* True when `pic` has the geometry the staging buffers were sized for. */
-static bool ciede_picture_matches(const CiedeStateSycl *s, const VmafPicture *pic)
-{
-    if (!pic || pic->bpc != s->bpc)
-        return false;
-    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
-        if (!pic->data[p] || pic->w[p] != s->plane_w[p] || pic->h[p] != s->plane_h[p])
-            return false;
-    }
-    return true;
 }
 
 } /* anonymous namespace */
@@ -295,6 +244,17 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
     s->sycl_state = fex->sycl_state;
 
+    /* Luma and chroma planes come from the shared device frame; both calls
+     * are idempotent across the twins that share them. */
+    int plane_err = vmaf_sycl_shared_frame_init(s->sycl_state, w, h, bpc);
+    if (!plane_err) {
+        plane_err = vmaf_sycl_shared_chroma_init(s->sycl_state, s->plane_w[1], s->plane_h[1]);
+    }
+    if (plane_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: shared planes unavailable (%d)\n", plane_err);
+        return plane_err;
+    }
+
     if (!ciede_alloc_buffers(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: USM allocation failed\n");
         (void)close_fex_sycl(fex);
@@ -312,6 +272,26 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
+/* Make this frame's Y / Cb / Cr current in the shared planes and order the queue
+ * after their upload. Zero-copy input hands no host pictures; its chroma is in
+ * the shared planes only when the import marked it for this frame (ADR-1765). */
+static int ciede_ready_planes(const CiedeStateSycl *s, sycl::queue &q, VmafPicture *ref_pic,
+                              VmafPicture *dist_pic, unsigned index)
+{
+    if (vmaf_sycl_require_chroma(s->sycl_state, "ciede_sycl", ref_pic, dist_pic))
+        return -ENOTSUP;
+    int err = 0;
+    if (ref_pic && dist_pic)
+        err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+    if (!err)
+        err = vmaf_sycl_queue_after_upload(s->sycl_state, &q);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: frame %u plane upload failed (%d)\n", index,
+                 err);
+    }
+    return err;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -321,9 +301,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
-    if (!ciede_picture_matches(s, ref_pic) || !ciede_picture_matches(s, dist_pic))
-        return -EINVAL;
     sycl::queue &q = *qptr;
+    const int ready_err = ciede_ready_planes(s, q, ref_pic, dist_pic, index);
+    if (ready_err)
+        return ready_err;
 
     if (!s->tables_uploaded) {
         /* The tables do not change. The queue is in order, so the copies
@@ -336,16 +317,11 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
 
     CiedeKernelArgs args = {};
-    /* Stage and enqueue plane by plane so the DMA of one plane overlaps
-     * the host packing the next. */
     for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
-        const size_t bytes = s->row_bytes[p] * s->plane_h[p];
-        stage_plane(ref_pic, p, s->h_ref[p], s->row_bytes[p], s->plane_h[p]);
-        q.memcpy(s->d_ref[p], s->h_ref[p], bytes);
-        stage_plane(dist_pic, p, s->h_dis[p], s->row_bytes[p], s->plane_h[p]);
-        q.memcpy(s->d_dis[p], s->h_dis[p], bytes);
-        args.ref[p] = s->d_ref[p];
-        args.dis[p] = s->d_dis[p];
+        args.ref[p] = vmaf_sycl_get_shared_plane(s->sycl_state, 1, p);
+        args.dis[p] = vmaf_sycl_get_shared_plane(s->sycl_state, 0, p);
+        if (!args.ref[p] || !args.dis[p])
+            return -EINVAL;
     }
     args.terms = s->d_terms;
     args.tables = {.atan = s->d_tables, .sin_cos = s->d_tables + vmaf_sycl_ffm::kAtanTableFloats};
@@ -389,9 +365,9 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     auto *s = static_cast<CiedeStateSycl *>(fex->priv);
     if (s->sycl_state) {
         void *const buffers[] = {
-            s->h_ref[0], s->h_ref[1], s->h_ref[2], s->h_dis[0], s->h_dis[1],
-            s->h_dis[2], s->d_ref[0], s->d_ref[1], s->d_ref[2], s->d_dis[0],
-            s->d_dis[1], s->d_dis[2], s->d_terms,  s->h_terms,  s->d_tables,
+            s->d_terms,
+            s->h_terms,
+            s->d_tables,
         };
         for (void *buf : buffers) {
             if (buf)
@@ -405,6 +381,14 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 
 static const char *provided_features_ciede_sycl[] = {"ciede2000", nullptr};
 
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_ciede_sycl = {
     .name = "ciede_sycl",
     .init = init_fex_sycl,
@@ -417,6 +401,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_ciede_sycl = {
     .priv_size = sizeof(CiedeStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_ciede_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .chars =
         {
             .n_dispatches_per_frame = 1,

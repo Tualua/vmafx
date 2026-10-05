@@ -500,15 +500,18 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     /* Upload the frame's chroma BEFORE graph_submit, which puts the
      * combined queue behind the last upload. Once per frame for every
-     * twin; the zero-copy import path hands no host pictures and
-     * imports luma only. */
+     * twin. The zero-copy import path hands no host pictures: its chroma
+     * is already in the shared planes, usable only when the import marked
+     * it for this frame (ADR-1765). */
     if (s->n_planes > 1U) {
-        int const chroma_err = (ref_pic && dist_pic) ?
-                                   vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic) :
-                                   -EINVAL;
+        if (vmaf_sycl_require_chroma(state, "psnr_sycl", ref_pic, dist_pic)) {
+            return -ENOTSUP;
+        }
+        int const chroma_err =
+            (ref_pic && dist_pic) ? vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic) : 0;
         if (chroma_err) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: frame %u chroma not on the device (%d)\n",
-                     index, chroma_err);
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: frame %u chroma upload failed (%d)\n", index,
+                     chroma_err);
             return chroma_err;
         }
     }
@@ -646,13 +649,12 @@ namespace
  * `psnr_cb` / `psnr_cr` requests through the SYCL twin. */
 static const char *provided_features_psnr_sycl[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
 
-/* The zero-copy path (ADR-1688): psnr_y reads the shared luma. With enable_chroma
- * psnr_cb / psnr_cr need the frame's chroma, which the zero-copy path does
- * not put on the device. */
-bool reads_shared_luma_only(const VmafFeatureExtractor *fex)
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: the zero-copy
+ * import fills the shared chroma planes too (ADR-1765), so this twin runs on
+ * that path with or without enable_chroma. */
+bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
 {
-    const auto *s = static_cast<const PsnrStateSycl *>(fex->priv);
-    return !s->enable_chroma;
+    return true;
 }
 
 } // namespace

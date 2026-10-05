@@ -251,6 +251,14 @@ sycl/
   SYCL flush calls it, so it must follow the caller's log level (FFmpeg
   maps `-loglevel` to it). Do not turn it back into `fprintf(stderr, ...)`.
 
+- **The SYCL switches are read once; `VmafSyclState` is an aggregate.**
+  `VMAF_SYCL_PROFILE`, `_TIMING`, `_IMPORT_DEBUG` and `_CHECKSUM` go through
+  `vmaf_gpu_dispatch_env_get` (16-slot snapshot, read once per process); a new
+  switch uses that helper, never `getenv` in a hot path. `VmafSyclState` is built
+  with designated initialisers in `common.cpp`, members ordered by size: a new
+  member needs its place in that order and in the initialiser. Guards:
+  `test_sycl_zerocopy_parity`, `test_sycl_init_unwind`.
+
 ## Rebase-sensitive invariants per kernel
 
 - **Shared planes: one upload per plane per frame for every twin
@@ -276,10 +284,27 @@ sycl/
   copy barrier only if marker is still running. Covers readers next
   collect never waits for (`n_subsample` skips). **On rebase**: new
   compute queue that reads shared slots must add its marker there; keep
-  fence before ref upload; zero-copy import path imports luma
-  only, so chroma readers must fail (`-EINVAL`) on NULL pictures, never
-  read stale chroma. Guards: `test_sycl_shared_planes`,
-  `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
+  fence before ref upload; chroma readers call
+  `vmaf_sycl_require_chroma` (ADR-1765): host pictures pass, NULL
+  pictures pass only when the chroma is current, else `-ENOTSUP`, never
+  stale chroma. Currency: `vmaf_sycl_init_frame_buffers` allocates the
+  chroma planes eagerly for `(w+1)/2 x (h+1)/2` (D-01); the VA import
+  writes `vmaf_sycl_get_shared_plane_upload` and calls
+  `vmaf_sycl_shared_chroma_mark_imported` once both sides noted
+  (`vmaf_sycl_shared_chroma_note_side`, cleared in advance_frame) after
+  luma then chroma (`vmaf_sycl_chroma_import_launch`, `layers[1]`, DMA-BUF
+  and readback paths; D2D never aliases motion's ping-pong); only
+  `vmaf_sycl_advance_frame` promotes the mark to `planes.frame` (after
+  `frame_counter++`, never between the two load-bearing lines).
+  **On rebase**: never set `planes.frame` elsewhere. The VA path never calls
+  `vmaf_sycl_shared_chroma_upload` (that is the host-picture path). The P010/P012
+  shift on chroma happens exactly once, in `chroma_import.cpp` (the
+  `shift = 16 - bpc` argument of `vmaf_sycl_chroma_import_launch`); never run
+  `launch_p010_normalize` over chroma. **On rebase**:
+  `sycl_check_zero_copy_extractors` runs before any state mutation in
+  `vmaf_read_pictures_sycl`. Guards: `test_sycl_shared_planes`,
+  `test_sycl_zerocopy_parity`, `test_sycl_init_unwind` (wraps
+  `vmaf_sycl_shared_chroma_init`).
 
 - **Zero-copy admission gate (ADR-1688).** `vmaf_read_pictures_sycl()`
   (`core/src/libvmaf.c`) calls `sycl_zero_copy_admit()` before

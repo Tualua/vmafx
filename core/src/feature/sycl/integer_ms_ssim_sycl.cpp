@@ -11,10 +11,11 @@
  *  PR's batch 2 part 2b).
  *
  *  Self-contained submit / collect — does *not* register with
- *  vmaf_sycl_graph_register because shared_frame is luma-only
- *  packed at uint width and MS-SSIM needs picture_copy-normalised
- *  float planes + a 5-level pyramid. Same pattern as ssim_sycl
- *  (PR #140).
+ *  vmaf_sycl_graph_register because MS-SSIM needs picture_copy-normalised
+ *  float planes + a 5-level pyramid. The planes come from the shared device
+ *  planes (uint, tight rows) and plane_to_float() normalises them on the
+ *  device with picture_copy's arithmetic (ADR-1766). Same pattern as
+ *  ssim_sycl (PR #140).
  *
  *  5-level pyramid + 3-output SSIM per scale + host-side Wang
  *  product combine. Three SYCL kernels:
@@ -65,7 +66,6 @@
 #include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
-#include "../picture_copy.h"
 #include "sycl/common.h"
 #include "sycl_compat.h"
 #include "sycl_exact_fp.h"
@@ -117,8 +117,6 @@ struct MsSsimPlaneGeometry {
     unsigned scale_h_horiz[MS_SSIM_SCALES];
     unsigned scale_w_final[MS_SSIM_SCALES];
     unsigned scale_h_final[MS_SSIM_SCALES];
-    float *h_ref;
-    float *h_cmp;
     float *d_pyramid_ref[MS_SSIM_SCALES];
     float *d_pyramid_cmp[MS_SSIM_SCALES];
 };
@@ -551,9 +549,6 @@ static void allocate_ms_ssim_buffers(MsSsimStateSycl *s)
 {
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         MsSsimPlaneGeometry &geometry = s->geom[plane];
-        const size_t input_bytes = (size_t)geometry.width * geometry.height * sizeof(float);
-        geometry.h_ref = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, input_bytes));
-        geometry.h_cmp = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, input_bytes));
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
             const size_t bytes =
                 (size_t)geometry.scale_w[scale] * geometry.scale_h[scale] * sizeof(float);
@@ -588,9 +583,6 @@ static bool ms_ssim_allocations_complete(const MsSsimStateSycl *s)
     }
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         const MsSsimPlaneGeometry &geometry = s->geom[plane];
-        if (!geometry.h_ref || !geometry.h_cmp) {
-            return false;
-        }
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
             if (!geometry.d_pyramid_ref[scale] || !geometry.d_pyramid_cmp[scale]) {
                 return false;
@@ -623,6 +615,19 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -EINVAL;
     }
     s->sycl_state = fex->sycl_state;
+
+    /* Luma, and Cb / Cr with enable_chroma, come from the shared device planes;
+     * both calls are idempotent across the twins that share them (ADR-1766). */
+    int shared_err = vmaf_sycl_shared_frame_init(s->sycl_state, w, h, bpc);
+    if (!shared_err && s->n_planes > 1U) {
+        shared_err =
+            vmaf_sycl_shared_chroma_init(s->sycl_state, s->geom[1].width, s->geom[1].height);
+    }
+    if (shared_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: shared planes unavailable (%d)\n",
+                 shared_err);
+        return shared_err;
+    }
 
     allocate_ms_ssim_buffers(s);
     if (!ms_ssim_allocations_complete(s)) {
@@ -679,6 +684,54 @@ static void enqueue_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned p
                             .c2 = s->c2});
 }
 
+/* picture_copy() on the device: float(sample) / scaler + float(offset), the
+ * scaler 4 / 16 / 256 for 10 / 12 / 16 bit and none for 8 bit. The scalers are
+ * powers of two, so the quotient is exact in fp32 and equals the CPU's; the
+ * TU's strict FP line keeps the add from fusing into anything. A shared plane
+ * is tight (rows of exactly `width` samples), 1 byte per sample at 8 bit and 2
+ * above. The kernel has no fp64 and no private array. */
+static void plane_to_float(sycl::queue &q, const void *src, float *dst, unsigned w, unsigned h,
+                           unsigned bpc, float offset)
+{
+    const float scaler = bpc == 10U ? 4.0F : bpc == 12U ? 16.0F : 256.0F;
+    /* picture_copy()'s own split: only 10, 12 and 16 bit take the scaled path. */
+    const bool wide = bpc == 10U || bpc == 12U || bpc == 16U;
+    sycl::range<2> const global{(size_t)h, (size_t)w};
+    q.submit([=](sycl::handler &h_) {
+        h_.parallel_for(global, [=](sycl::id<2> id) {
+            const size_t at = id[0] * (size_t)w + id[1];
+            const float sample = wide ? (float)static_cast<const std::uint16_t *>(src)[at] :
+                                        (float)static_cast<const std::uint8_t *>(src)[at];
+            dst[at] = wide ? sample / scaler + offset : sample + offset;
+        });
+    });
+}
+
+/* Makes the frame's planes current and returns the primary queue ordered after
+ * their upload (ADR-1766). Chroma is uploaded here from host pictures, or is
+ * valid only when a zero-copy import marked it for this frame (ADR-1765). */
+static int ready_frame_planes(MsSsimStateSycl *s, VmafPicture *ref_pic, VmafPicture *dist_pic,
+                              unsigned index, sycl::queue &q)
+{
+    int err = 0;
+    if (s->n_planes > 1U) {
+        if (vmaf_sycl_require_chroma(s->sycl_state, "float_ms_ssim_sycl", ref_pic, dist_pic)) {
+            return -ENOTSUP;
+        }
+        if (ref_pic && dist_pic) {
+            err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+        }
+    }
+    if (!err) {
+        err = vmaf_sycl_queue_after_upload(s->sycl_state, &q);
+    }
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_ms_ssim_sycl: frame %u plane upload failed (%d)\n",
+                 index, err);
+    }
+    return err;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -690,22 +743,28 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         return -EINVAL;
     }
     sycl::queue &q = *qptr;
+    const int ready_err = ready_frame_planes(s, ref_pic, dist_pic, index, q);
+    if (ready_err) {
+        return ready_err;
+    }
 
-    /* Every plane is staged here, not in collect: libvmaf's double-buffered GPU
+    /* Every plane is converted here, not in collect: libvmaf's double-buffered GPU
      * dispatch (libvmaf.c, dispatch_gpu_double_buffer) releases the picture
      * after submit returns, so collect has no VmafPicture to read from. The
-     * whole frame -- pyramids and every scale's l/c/s pass -- is enqueued here
-     * without a wait; collect only waits for the copies of the terms
-     * (ADR-1363). */
+     * whole frame -- the float conversion of the shared planes, the pyramids and
+     * every scale's l/c/s pass -- is enqueued here without a wait; collect only
+     * waits for the copies of the terms (ADR-1363). */
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         const MsSsimPlaneGeometry &geometry = s->geom[plane];
-        const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
-        picture_copy(geometry.h_ref, stride, ref_pic, 0, ref_pic->bpc, (int)plane);
-        picture_copy(geometry.h_cmp, stride, dist_pic, 0, dist_pic->bpc, (int)plane);
-
-        const size_t input_bytes = (size_t)geometry.width * geometry.height * sizeof(float);
-        q.memcpy(geometry.d_pyramid_ref[0], geometry.h_ref, input_bytes);
-        q.memcpy(geometry.d_pyramid_cmp[0], geometry.h_cmp, input_bytes);
+        const void *ref_plane = vmaf_sycl_get_shared_plane(s->sycl_state, 1, plane);
+        const void *dist_plane = vmaf_sycl_get_shared_plane(s->sycl_state, 0, plane);
+        if (!ref_plane || !dist_plane) {
+            return -EINVAL;
+        }
+        plane_to_float(q, ref_plane, geometry.d_pyramid_ref[0], geometry.width, geometry.height,
+                       s->bpc, 0.0F);
+        plane_to_float(q, dist_plane, geometry.d_pyramid_cmp[0], geometry.width, geometry.height,
+                       s->bpc, 0.0F);
 
         /* Build pyramid scales 1..4. */
         for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
@@ -895,8 +954,6 @@ static void free_ms_ssim_pyramid(MsSsimStateSycl *s)
     // NOLINTNEXTLINE(modernize-loop-convert): HISS-02 wants the explicit bound; test_sycl_kernel_source_contract.py (test_ms_ssim_pyramid_plane_loop_regression_is_detected) rejects the range-for form.
     for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++) {
         MsSsimPlaneGeometry &geometry = s->geom[plane];
-        free_ms_ssim_pointer(s->sycl_state, geometry.h_ref);
-        free_ms_ssim_pointer(s->sycl_state, geometry.h_cmp);
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
             free_ms_ssim_pointer(s->sycl_state, geometry.d_pyramid_ref[scale]);
             free_ms_ssim_pointer(s->sycl_state, geometry.d_pyramid_cmp[scale]);
@@ -949,6 +1006,14 @@ static const char *provided_features_ms_ssim_sycl[] = {"float_ms_ssim", "float_m
 
 } // namespace
 
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl = {
     .name = "float_ms_ssim_sycl",
     .init = init_fex_sycl,
@@ -961,6 +1026,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl = {
     .priv_size = sizeof(MsSsimStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_ms_ssim_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .chars =
         {
             .n_dispatches_per_frame = 18,

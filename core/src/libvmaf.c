@@ -927,7 +927,14 @@ int vmaf_sycl_init_frame_buffers(VmafContext *vmaf, unsigned w, unsigned h, unsi
     vmaf->pic_params.bpc = bpc;
     vmaf->pic_params.pix_fmt = VMAF_PIX_FMT_YUV420P;
 
-    return vmaf_sycl_shared_frame_init(vmaf->sycl.state, w, h, bpc);
+    int err = vmaf_sycl_shared_frame_init(vmaf->sycl.state, w, h, bpc);
+    if (err)
+        return err;
+
+    /* Zero-copy chroma (ADR-1765): allocate the Cb / Cr planes up front,
+     * whether or not an extractor wants them, so the import has somewhere to
+     * write from frame 0. Idempotent for the later extractor-init calls. */
+    return vmaf_sycl_shared_chroma_init(vmaf->sycl.state, (w + 1) / 2, (h + 1) / 2);
 }
 
 int vmaf_sycl_get_frame_buffers(VmafContext *vmaf, void **ref, void **dis)

@@ -159,11 +159,10 @@ struct SsimStateSycl {
     /* SYCL state back-pointer. */
     VmafSyclState *sycl_state;
 
-    /* Host-pinned packed raw luma staging and its device copy. */
-    void *h_ref_raw;
-    void *h_cmp_raw;
-    void *d_ref_raw;
-    void *d_cmp_raw;
+    /* The shared luma planes of the frame being submitted, not owned
+     * (ADR-1766); rebound by bind_shared_luma() each submit. */
+    const void *d_ref_raw;
+    const void *d_cmp_raw;
     /* Device USM decimated float ref / cmp + 5 intermediates. */
     float *d_ref;
     float *d_cmp;
@@ -691,15 +690,10 @@ namespace
 
 static void allocate_float_ssim(SsimStateSycl *s)
 {
-    const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
     const size_t input_bytes = (size_t)s->dec_width * s->dec_height * sizeof(float);
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
     const size_t windows = (size_t)s->w_final * s->h_final;
     const size_t terms_bytes = (s->enable_lcs ? 2U : 1U) * windows * sizeof(std::uint64_t);
-    s->h_ref_raw = allocate_host<void>(s->sycl_state, raw_bytes);
-    s->h_cmp_raw = allocate_host<void>(s->sycl_state, raw_bytes);
-    s->d_ref_raw = allocate_device<void>(s->sycl_state, raw_bytes);
-    s->d_cmp_raw = allocate_device<void>(s->sycl_state, raw_bytes);
     s->d_ref = allocate_device<float>(s->sycl_state, input_bytes);
     s->d_cmp = allocate_device<float>(s->sycl_state, input_bytes);
     s->d_ref_mu = allocate_device<float>(s->sycl_state, horiz_bytes);
@@ -720,29 +714,23 @@ static void allocate_float_ssim(SsimStateSycl *s)
 namespace
 {
 
-/* Packs the first `width` samples of every luma row into pinned staging so
- * each plane goes up in one DMA. Shared by float_ssim_sycl (ADR-1370) and
- * integer_ssim_sycl. */
-template <typename T>
-static void pack_integer_plane(T *destination, const VmafPicture *picture, unsigned width,
-                               unsigned height)
+/* Waits for the frame's upload on the primary queue and returns its shared
+ * luma planes, packed at width * bytes per sample. The host read path
+ * uploads them before any extractor submits and the zero-copy import writes
+ * them there, so both ssim twins read the same bytes on both paths
+ * (ADR-1766). Returns 0 or a negative errno. */
+static int bind_shared_luma(VmafSyclState *state, sycl::queue *queue, const char *name,
+                            unsigned index, const void **reference, const void **comparison)
 {
-    const auto *source = static_cast<const uint8_t *>(picture->data[0]);
-    for (unsigned y = 0; y < height; ++y) {
-        __builtin_memcpy(destination + (size_t)y * width, source + (size_t)y * picture->stride[0],
-                         (size_t)width * sizeof(T));
+    const int upload_err = vmaf_sycl_queue_after_upload(state, queue);
+    if (upload_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "%s: frame %u plane upload failed (%d)\n", name, index,
+                 upload_err);
+        return upload_err;
     }
-}
-
-/* The samples picture_copy() reads: uint16 at 10 / 12 / 16 bits, else the
- * first `width` bytes of each row. */
-static void stage_raw_luma(const SsimStateSycl *s, const VmafPicture *picture, void *staging)
-{
-    if (s->sample_bytes == 2U) {
-        pack_integer_plane(static_cast<std::uint16_t *>(staging), picture, s->width, s->height);
-    } else {
-        pack_integer_plane(static_cast<std::uint8_t *>(staging), picture, s->width, s->height);
-    }
+    *reference = vmaf_sycl_get_shared_plane(state, 1, 0);
+    *comparison = vmaf_sycl_get_shared_plane(state, 0, 0);
+    return (*reference && *comparison) ? 0 : -EINVAL;
 }
 
 } // namespace
@@ -753,9 +741,8 @@ namespace
 static bool float_ssim_allocations_complete(const SsimStateSycl *s)
 {
     const bool lcs_complete = !s->enable_lcs || (s->d_structure && s->h_structure);
-    return s->h_ref_raw && s->h_cmp_raw && s->d_ref_raw && s->d_cmp_raw && s->d_ref && s->d_cmp &&
-           s->d_ref_mu && s->d_cmp_mu && s->d_ref_sq && s->d_cmp_sq && s->d_refcmp && s->d_terms &&
-           s->h_terms && lcs_complete;
+    return s->d_ref && s->d_cmp && s->d_ref_mu && s->d_cmp_mu && s->d_ref_sq && s->d_cmp_sq &&
+           s->d_refcmp && s->d_terms && s->h_terms && lcs_complete;
 }
 
 } // namespace
@@ -834,26 +821,21 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
+    (void)ref_pic;
+    (void)dist_pic;
     auto *s = static_cast<SsimStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
-    if (!ref_pic || !dist_pic) {
-        /* vmaf_read_pictures_sycl() passes no host pictures; this twin
-         * uploads its own luma and does not read the shared frame. */
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: needs host pictures\n");
-        return -EINVAL;
-    }
     sycl::queue &q = *qptr;
 
-    /* ADR-1370: raw luma up (one DMA per plane), then picture_copy()'s
-     * normalisation and ssim.c's decimation on the device. No host wait:
+    /* ADR-1370: picture_copy()'s normalisation and ssim.c's decimation on
+     * the device, from the shared luma planes (ADR-1766). No host wait:
      * collect() waits once for the read-back. */
-    stage_raw_luma(s, ref_pic, s->h_ref_raw);
-    stage_raw_luma(s, dist_pic, s->h_cmp_raw);
-    const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
-    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
-    q.memcpy(s->d_cmp_raw, s->h_cmp_raw, raw_bytes);
+    const int bind_err = bind_shared_luma(s->sycl_state, qptr, "float_ssim_sycl", index,
+                                          &s->d_ref_raw, &s->d_cmp_raw);
+    if (bind_err)
+        return bind_err;
     launch_decimate(q,
                     {.reference = s->d_ref_raw,
                      .comparison = s->d_cmp_raw,
@@ -1070,10 +1052,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<SsimStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        release_buffer(s->sycl_state, s->h_ref_raw);
-        release_buffer(s->sycl_state, s->h_cmp_raw);
-        release_buffer(s->sycl_state, s->d_ref_raw);
-        release_buffer(s->sycl_state, s->d_cmp_raw);
         release_buffer(s->sycl_state, s->d_ref);
         release_buffer(s->sycl_state, s->d_cmp);
         release_buffer(s->sycl_state, s->d_ref_mu);
@@ -1096,6 +1074,14 @@ static const char *provided_features_ssim_sycl[] = {"float_ssim", nullptr};
 
 } // namespace
 
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
     .name = "float_ssim_sycl",
     .init = init_fex_sycl,
@@ -1108,6 +1094,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
     .priv_size = sizeof(SsimStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_ssim_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .chars =
         {
             .n_dispatches_per_frame = 3,
@@ -1173,17 +1160,10 @@ struct IssimStateSycl {
 
     VmafSyclState *sycl_state;
 
-    /* Staging buffers: host-pinned input (packed, no stride). */
-    uint8_t *h_ref_u8;
-    uint8_t *h_cmp_u8;
-    uint16_t *h_ref_u16;
-    uint16_t *h_cmp_u16;
-
-    /* Device USM input planes. */
-    uint8_t *d_ref_u8;
-    uint8_t *d_cmp_u8;
-    uint16_t *d_ref_u16;
-    uint16_t *d_cmp_u16;
+    /* The shared luma planes of the frame being submitted, not owned
+     * (ADR-1766); rebound by bind_shared_luma() each submit. */
+    const void *d_ref_raw;
+    const void *d_cmp_raw;
 
     /* Five int64 intermediate device arrays for horizontal pass. */
     int64_t *d_mux;
@@ -1455,8 +1435,6 @@ namespace
 {
 
 struct IntegerBufferSizes {
-    size_t pixels8;
-    size_t pixels16;
     size_t moments;
     size_t terms;
 };
@@ -1488,8 +1466,6 @@ static IntegerBufferSizes integer_buffer_sizes(const IssimStateSycl *s)
 {
     const size_t pixels = (size_t)s->width * s->height;
     return {
-        .pixels8 = pixels * sizeof(uint8_t),
-        .pixels16 = pixels * sizeof(uint16_t),
         .moments = pixels * sizeof(int64_t),
         .terms = pixels * sizeof(uint64_t),
     };
@@ -1502,14 +1478,6 @@ namespace
 
 static void allocate_integer_ssim(IssimStateSycl *s, const IntegerBufferSizes &bytes)
 {
-    s->h_ref_u8 = allocate_host<uint8_t>(s->sycl_state, bytes.pixels8);
-    s->h_cmp_u8 = allocate_host<uint8_t>(s->sycl_state, bytes.pixels8);
-    s->h_ref_u16 = allocate_host<uint16_t>(s->sycl_state, bytes.pixels16);
-    s->h_cmp_u16 = allocate_host<uint16_t>(s->sycl_state, bytes.pixels16);
-    s->d_ref_u8 = allocate_device<uint8_t>(s->sycl_state, bytes.pixels8);
-    s->d_cmp_u8 = allocate_device<uint8_t>(s->sycl_state, bytes.pixels8);
-    s->d_ref_u16 = allocate_device<uint16_t>(s->sycl_state, bytes.pixels16);
-    s->d_cmp_u16 = allocate_device<uint16_t>(s->sycl_state, bytes.pixels16);
     s->d_mux = allocate_device<int64_t>(s->sycl_state, bytes.moments);
     s->d_muy = allocate_device<int64_t>(s->sycl_state, bytes.moments);
     s->d_x2 = allocate_device<int64_t>(s->sycl_state, bytes.moments);
@@ -1526,9 +1494,7 @@ namespace
 
 static bool integer_ssim_allocations_complete(const IssimStateSycl *s)
 {
-    return s->h_ref_u8 && s->h_cmp_u8 && s->h_ref_u16 && s->h_cmp_u16 && s->d_ref_u8 &&
-           s->d_cmp_u8 && s->d_ref_u16 && s->d_cmp_u16 && s->d_mux && s->d_muy && s->d_x2 &&
-           s->d_xy && s->d_y2 && s->d_terms && s->h_terms;
+    return s->d_mux && s->d_muy && s->d_x2 && s->d_xy && s->d_y2 && s->d_terms && s->h_terms;
 }
 
 } // namespace
@@ -1573,26 +1539,17 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
 namespace
 {
 
-template <typename Picture>
-static void submit_integer_horizontal(IssimStateSycl *s, sycl::queue &queue, Picture *reference,
-                                      Picture *comparison)
+static void submit_integer_horizontal(const IssimStateSycl *s, sycl::queue &queue)
 {
-    const size_t pixels = (size_t)s->width * s->height;
     if (s->bpc == 8u) {
-        pack_integer_plane(s->h_ref_u8, reference, s->width, s->height);
-        pack_integer_plane(s->h_cmp_u8, comparison, s->width, s->height);
-        queue.memcpy(s->d_ref_u8, s->h_ref_u8, pixels * sizeof(uint8_t));
-        queue.memcpy(s->d_cmp_u8, s->h_cmp_u8, pixels * sizeof(uint8_t));
-        launch_issim_horiz_8bpc(queue, s->d_ref_u8, s->d_cmp_u8, s->d_mux, s->d_muy, s->d_x2,
-                                s->d_xy, s->d_y2, s->width, s->height);
+        launch_issim_horiz_8bpc(queue, static_cast<const uint8_t *>(s->d_ref_raw),
+                                static_cast<const uint8_t *>(s->d_cmp_raw), s->d_mux, s->d_muy,
+                                s->d_x2, s->d_xy, s->d_y2, s->width, s->height);
         return;
     }
-    pack_integer_plane(s->h_ref_u16, reference, s->width, s->height);
-    pack_integer_plane(s->h_cmp_u16, comparison, s->width, s->height);
-    queue.memcpy(s->d_ref_u16, s->h_ref_u16, pixels * sizeof(uint16_t));
-    queue.memcpy(s->d_cmp_u16, s->h_cmp_u16, pixels * sizeof(uint16_t));
-    launch_issim_horiz_16bpc(queue, s->d_ref_u16, s->d_cmp_u16, s->d_mux, s->d_muy, s->d_x2,
-                             s->d_xy, s->d_y2, s->width, s->height);
+    launch_issim_horiz_16bpc(queue, static_cast<const uint16_t *>(s->d_ref_raw),
+                             static_cast<const uint16_t *>(s->d_cmp_raw), s->d_mux, s->d_muy,
+                             s->d_x2, s->d_xy, s->d_y2, s->width, s->height);
 }
 
 } // namespace
@@ -1606,13 +1563,19 @@ static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
+    (void)ref_pic;
+    (void)dist_pic;
     auto *s = static_cast<IssimStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
     sycl::queue &q = *qptr;
 
-    submit_integer_horizontal(s, q, ref_pic, dist_pic);
+    const int bind_err = bind_shared_luma(s->sycl_state, qptr, "integer_ssim_sycl", index,
+                                          &s->d_ref_raw, &s->d_cmp_raw);
+    if (bind_err)
+        return bind_err;
+    submit_integer_horizontal(s, q);
     launch_issim_terms(q, {.reference_mean = s->d_mux,
                            .comparison_mean = s->d_muy,
                            .reference_square = s->d_x2,
@@ -1660,14 +1623,6 @@ static int close_fex_issim_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<IssimStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        release_buffer(s->sycl_state, s->h_ref_u8);
-        release_buffer(s->sycl_state, s->h_cmp_u8);
-        release_buffer(s->sycl_state, s->h_ref_u16);
-        release_buffer(s->sycl_state, s->h_cmp_u16);
-        release_buffer(s->sycl_state, s->d_ref_u8);
-        release_buffer(s->sycl_state, s->d_cmp_u8);
-        release_buffer(s->sycl_state, s->d_ref_u16);
-        release_buffer(s->sycl_state, s->d_cmp_u16);
         release_buffer(s->sycl_state, s->d_mux);
         release_buffer(s->sycl_state, s->d_muy);
         release_buffer(s->sycl_state, s->d_x2);
@@ -1720,6 +1675,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
     .priv_size = sizeof(IssimStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_issim_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .chars =
         {
             .n_dispatches_per_frame = 2,

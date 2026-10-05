@@ -117,10 +117,10 @@ struct FloatAdmStateSycl {
 
     VmafSyclState *sycl_state;
 
-    void *h_ref_raw;
-    void *h_dis_raw;
-    void *d_ref_raw;
-    void *d_dis_raw;
+    /* The shared luma planes of the frame being submitted, not owned
+     * (ADR-1766); rebound by fadm_bind_planes() each submit. */
+    const void *d_ref_raw;
+    const void *d_dis_raw;
     float *d_dwt_tmp_ref;
     float *d_dwt_tmp_dis;
     float *d_ref_band[FADM_NUM_SCALES];
@@ -232,20 +232,6 @@ static inline void fadm_dwt_vert_item(const FadmDwtVertParams &p, sycl::nd_item<
     float *dst = (plane_is_dis == 0) ? p.dwt_tmp_ref : p.dwt_tmp_dis;
     dst[gy * out_stride + gx] = lo;
     dst[gy * out_stride + (int)p.cur_w + gx] = hi;
-}
-
-template <typename T>
-static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned h)
-{
-    const T *src = static_cast<const T *>(pic->data[0]);
-    T *out = static_cast<T *>(dst);
-    const ptrdiff_t src_stride_t = pic->stride[0] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++)
-            out[j] = src[j];
-        src += src_stride_t;
-        out += w;
-    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -457,14 +443,8 @@ static void fadm_init_reference(FloatAdmStateSycl *s)
     s->gain_limit = vmaf_sycl_fadm::make_gain_limit(s->adm_enhn_gain_limit);
 }
 
-static void fadm_allocate_raw_and_dwt(FloatAdmStateSycl *s)
+static void fadm_allocate_dwt(FloatAdmStateSycl *s)
 {
-    const size_t bytes_per_pixel = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t raw_bytes = (size_t)s->width * s->height * bytes_per_pixel;
-    s->h_ref_raw = vmaf_sycl_malloc_host(s->sycl_state, raw_bytes);
-    s->h_dis_raw = vmaf_sycl_malloc_host(s->sycl_state, raw_bytes);
-    s->d_ref_raw = vmaf_sycl_malloc_device(s->sycl_state, raw_bytes);
-    s->d_dis_raw = vmaf_sycl_malloc_device(s->sycl_state, raw_bytes);
     const size_t dwt_bytes = (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
     s->d_dwt_tmp_ref = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, dwt_bytes));
     s->d_dwt_tmp_dis = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, dwt_bytes));
@@ -502,9 +482,8 @@ static void fadm_allocate_sums(FloatAdmStateSycl *s)
 
 static bool fadm_allocations_complete(const FloatAdmStateSycl *s)
 {
-    if (!s->h_ref_raw || !s->h_dis_raw || !s->d_ref_raw || !s->d_dis_raw || !s->d_dwt_tmp_ref ||
-        !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_fa || !s->d_csf_r || !s->d_csf_fr ||
-        !s->d_terms || !s->d_rows || !s->h_rows)
+    if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_fa || !s->d_csf_r ||
+        !s->d_csf_fr || !s->d_terms || !s->d_rows || !s->h_rows)
         return false;
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         if (!s->d_ref_band[scale] || !s->d_dis_band[scale])
@@ -513,21 +492,25 @@ static bool fadm_allocations_complete(const FloatAdmStateSycl *s)
     return true;
 }
 
-static unsigned fadm_upload_planes(sycl::queue &q, const FloatAdmStateSycl *s,
-                                   const VmafPicture *ref_pic, const VmafPicture *dist_pic)
+/* The frame's luma is in the shared planes (host read path uploads it before
+ * any extractor submits, the zero-copy import writes it there), packed at
+ * width * bytes per sample. Waits for the upload on the primary queue and
+ * binds the planes; returns 0 or a negative errno (ADR-1766). */
+static int fadm_bind_planes(FloatAdmStateSycl *s, sycl::queue *q, unsigned index,
+                            unsigned *raw_stride)
 {
-    const size_t bytes_per_pixel = (s->bpc <= 8u) ? 1u : 2u;
-    if (s->bpc <= 8u) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_ref_raw, s->width, s->height);
-        copy_y_plane<uint8_t>(dist_pic, s->h_dis_raw, s->width, s->height);
-    } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_ref_raw, s->width, s->height);
-        copy_y_plane<uint16_t>(dist_pic, s->h_dis_raw, s->width, s->height);
+    const int upload_err = vmaf_sycl_queue_after_upload(s->sycl_state, q);
+    if (upload_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_adm_sycl: frame %u plane upload failed (%d)\n", index,
+                 upload_err);
+        return upload_err;
     }
-    const size_t raw_bytes = (size_t)s->width * s->height * bytes_per_pixel;
-    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
-    q.memcpy(s->d_dis_raw, s->h_dis_raw, raw_bytes);
-    return (unsigned)(s->width * bytes_per_pixel);
+    s->d_ref_raw = vmaf_sycl_get_shared_plane(s->sycl_state, 1, 0);
+    s->d_dis_raw = vmaf_sycl_get_shared_plane(s->sycl_state, 0, 0);
+    if (!s->d_ref_raw || !s->d_dis_raw)
+        return -EINVAL;
+    *raw_stride = s->width * ((s->bpc <= 8u) ? 1u : 2u);
+    return 0;
 }
 
 static float fadm_pixel_scaler(unsigned bits_per_component)
@@ -990,7 +973,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!fex->sycl_state)
         return -EINVAL;
     s->sycl_state = fex->sycl_state;
-    fadm_allocate_raw_and_dwt(s);
+    fadm_allocate_dwt(s);
     fadm_allocate_bands_and_csf(s);
     fadm_allocate_sums(s);
     if (!fadm_allocations_complete(s)) {
@@ -1010,14 +993,19 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
+    (void)ref_pic;
     (void)ref_pic_90;
+    (void)dist_pic;
     (void)dist_pic_90;
     auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
     sycl::queue &q = *qptr;
-    const unsigned raw_stride = fadm_upload_planes(q, s, ref_pic, dist_pic);
+    unsigned raw_stride = 0u;
+    const int bind_err = fadm_bind_planes(s, qptr, index, &raw_stride);
+    if (bind_err)
+        return bind_err;
     const float scaler = fadm_pixel_scaler(s->bpc);
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
@@ -1055,14 +1043,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref_raw)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_raw);
-        if (s->h_dis_raw)
-            vmaf_sycl_free(s->sycl_state, s->h_dis_raw);
-        if (s->d_ref_raw)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_raw);
-        if (s->d_dis_raw)
-            vmaf_sycl_free(s->sycl_state, s->d_dis_raw);
         if (s->d_dwt_tmp_ref)
             vmaf_sycl_free(s->sycl_state, s->d_dwt_tmp_ref);
         if (s->d_dwt_tmp_dis)
@@ -1108,6 +1088,14 @@ static const char *provided_features_float_adm_sycl[] = {"VMAF_feature_adm2_scor
 
 // NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_float_adm_sycl = {
     .name = "float_adm_sycl",
     .init = init_fex_sycl,
@@ -1120,6 +1108,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_adm_sycl = {
     .priv_size = sizeof(FloatAdmStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_float_adm_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };
 
 } /* extern "C" */

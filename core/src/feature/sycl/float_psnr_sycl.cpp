@@ -56,14 +56,8 @@ struct FloatPsnrStateSycl {
      * truncating genuinely computed values. Default false keeps every
      * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
     bool uncapped;
-    size_t plane_bytes;
 
     VmafSyclState *sycl_state;
-
-    void *h_ref;
-    void *h_dis;
-    void *d_ref;
-    void *d_dis;
 
     /* Per work-group sums of the squared differences, in units of
      * 1 / scaler^2. */
@@ -210,24 +204,6 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
 namespace
 {
 
-template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
-{
-    const T *src = static_cast<const T *>(pic->data[0]);
-    T *out = static_cast<T *>(dst);
-    const ptrdiff_t src_stride_t = pic->stride[0] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++)
-            out[j] = src[j];
-        src += src_stride_t;
-        out += w;
-    }
-}
-
-} // namespace
-
-namespace
-{
-
 static const VmafOption options_float_psnr_sycl[] = {
     {
         .name = "uncapped",
@@ -293,12 +269,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     VmafSyclState *state = fex->sycl_state;
     s->sycl_state = state;
 
-    s->plane_bytes = (size_t)w * h * (bpc <= 8 ? 1u : 2u);
-    s->h_ref = vmaf_sycl_malloc_host(state, s->plane_bytes);
-    s->h_dis = vmaf_sycl_malloc_host(state, s->plane_bytes);
-    s->d_ref = vmaf_sycl_malloc_device(state, s->plane_bytes);
-    s->d_dis = vmaf_sycl_malloc_device(state, s->plane_bytes);
-
     s->wg_count_x = (unsigned)((w + FPSNR_WG_X - 1) / FPSNR_WG_X);
     s->wg_count_y = (unsigned)((h + FPSNR_WG_Y - 1) / FPSNR_WG_Y);
     s->wg_count = s->wg_count_x * s->wg_count_y;
@@ -306,7 +276,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->d_partials = static_cast<uint64_t *>(vmaf_sycl_malloc_device(state, pbytes));
     s->h_partials = static_cast<uint64_t *>(vmaf_sycl_malloc_host(state, pbytes));
 
-    if (!s->h_ref || !s->h_dis || !s->d_ref || !s->d_dis || !s->d_partials || !s->h_partials) {
+    if (!s->d_partials || !s->h_partials) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_psnr_sycl: USM allocation failed\n");
         (void)close_fex_sycl(fex);
         return -ENOMEM;
@@ -329,7 +299,9 @@ namespace
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
+    (void)ref_pic;
     (void)ref_pic_90;
+    (void)dist_pic;
     (void)dist_pic_90;
     auto *s = static_cast<FloatPsnrStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
@@ -338,18 +310,23 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     sycl::queue &q = *qptr;
 
-    if (s->bpc <= 8) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
-        copy_y_plane<uint8_t>(dist_pic, s->h_dis, s->width, s->height);
-    } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
-        copy_y_plane<uint16_t>(dist_pic, s->h_dis, s->width, s->height);
+    /* The luma of this frame is already in the shared planes (the host read
+     * path uploads it before any extractor submits, the zero-copy import
+     * writes it there), packed at width * bytes per sample (ADR-1766). */
+    const int upload_err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
+    if (upload_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_psnr_sycl: frame %u plane upload failed (%d)\n",
+                 index, upload_err);
+        return upload_err;
     }
-    q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
-    q.memcpy(s->d_dis, s->h_dis, s->plane_bytes);
+    const void *ref = vmaf_sycl_get_shared_plane(s->sycl_state, 1, 0);
+    const void *dis = vmaf_sycl_get_shared_plane(s->sycl_state, 0, 0);
+    if (!ref || !dis) {
+        return -EINVAL;
+    }
 
-    launch_float_psnr(q, s->d_ref, s->d_dis, {.partials = s->d_partials}, s->width, s->height,
-                      s->bpc, s->wg_count_x);
+    launch_float_psnr(q, ref, dis, {.partials = s->d_partials}, s->width, s->height, s->bpc,
+                      s->wg_count_x);
     q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(uint64_t));
 
     s->pending_index = index;
@@ -409,14 +386,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatPsnrStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref)
-            vmaf_sycl_free(s->sycl_state, s->h_ref);
-        if (s->h_dis)
-            vmaf_sycl_free(s->sycl_state, s->h_dis);
-        if (s->d_ref)
-            vmaf_sycl_free(s->sycl_state, s->d_ref);
-        if (s->d_dis)
-            vmaf_sycl_free(s->sycl_state, s->d_dis);
         if (s->d_partials)
             vmaf_sycl_free(s->sycl_state, s->d_partials);
         if (s->h_partials)
@@ -431,6 +400,14 @@ static const char *provided_features_float_psnr_sycl[] = {"float_psnr", nullptr}
 
 } // namespace
 
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_float_psnr_sycl = {
     .name = "float_psnr_sycl",
     .init = init_fex_sycl,
@@ -443,4 +420,5 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_psnr_sycl = {
     .priv_size = sizeof(FloatPsnrStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_float_psnr_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };

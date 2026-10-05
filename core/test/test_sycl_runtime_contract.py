@@ -248,9 +248,9 @@ class SyclRuntimeContract(unittest.TestCase):
     def test_submit_in_the_c_entry_point_is_detected(self) -> None:
         failures = _replaced(
             DMABUF,
-            "    return dispatch_detile(state, q, target_buf, imported_ptr, modifier, y_offset,",
+            "    return import_exported_surface(args, desc, &cplan);\n",
             "    (void)detile_tile4(q, target_buf, imported_ptr, y_offset, y_pitch, row_bytes, h, bpc);\n"
-            "    return dispatch_detile(state, q, target_buf, imported_ptr, modifier, y_offset,",
+            "    return import_exported_surface(args, desc, &cplan);\n",
         )
         self._detected(failures, "submits a kernel itself")
 

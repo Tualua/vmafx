@@ -14,6 +14,14 @@ invariant: integer_motion_sycl.cpp::motion_add_uv GPU contract; queue-sync invar
   `d_ref_u[cur_slot]` / `d_ref_v[cur_slot]`; `enqueue_motion_work` runs the
   shared SAD kernel on `d_ref_*[1 - cur_slot]` - `d_ref_*[cur_slot]`,
   accumulating into `d_sad_u` / `d_sad_v`.
+  Zero-copy (no host pictures, ADR-1765): `submit_fex_sycl` calls
+  `vmaf_sycl_require_chroma` (`-ENOTSUP` unless the import marked this
+  frame) and sets `chroma_from_shared`; `motion_pre_graph` then copies the
+  shared ref Cb/Cr compute-slot planes into `d_ref_u/v[cur_slot]` (D2D). Never
+  alias the ping-pong onto the shared planes: the next frame differences
+  against this one after the import overwrote the slot. The integer
+  `motion` has no CPU `motion_add_uv`; `test_sycl_zerocopy_parity` holds
+  zero-copy equal to host upload of the same twin.
   `collect_fex_sycl` sums Y + U + V contributions, each normalized by
   respective plane area (`chroma_w × chroma_h` for UV in YUV420P). The
   numerical gate is the scalar fixed-point oracle in

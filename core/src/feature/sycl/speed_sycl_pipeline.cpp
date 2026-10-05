@@ -33,6 +33,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -1555,8 +1556,10 @@ struct speed_sycl::Pipeline {
     sycl::queue *queue;
     PipelineConfig config;
     size_t plane_bytes;
-    unsigned char *staging;
     unsigned char *raw;
+    /* Raw plane `i` read in place from a shared device plane (pipeline_bind_device),
+     * nullptr when it is the owned raw + i * plane_bytes. */
+    const unsigned char *bound[kMaxRawPlanes];
     float *taps;    /* antialias[kMaxTaps] then lowpass[kMaxTaps] */
     float *lanczos; /* lanczos4 prescale weights, nullptr for any other run */
     float *scaled;
@@ -1583,6 +1586,9 @@ struct speed_sycl::Pipeline {
     uint32_t graph_count;
     bool graphs_disabled;
     ChannelBinding graph_bindings[kMaxGraphs][kMaxChannels];
+    /* The bound plane pointers each recorded chain captured: a graph bakes its
+     * kernel arguments, so a different shared slot needs its own chain. */
+    const unsigned char *graph_bound[kMaxGraphs][kMaxRawPlanes];
 #if defined(SYCL_EXT_ONEAPI_GRAPH)
     ExecGraph *graphs[kMaxGraphs];
 #endif
@@ -1601,7 +1607,6 @@ void allocate_planes(Pipeline &p)
     sycl::queue &q = *p.queue;
     const Geometry &g = p.config.geometry;
     const size_t ch = p.config.channels;
-    p.staging = sycl::malloc_host<unsigned char>(p.plane_bytes * p.config.staged, q);
     p.raw = device_alloc<unsigned char>(q, p.plane_bytes * p.config.raw_planes);
     p.taps = device_alloc<float>(q, size_t{2} * kMaxTaps);
     p.lanczos = device_alloc<float>(q, speed_internal_gpu_lanczos_count(&g));
@@ -1649,8 +1654,8 @@ namespace
 bool allocations_complete(const Pipeline &p)
 {
     const void *const required[] = {
-        p.staging, p.raw,  p.taps, p.down,        p.centered,  p.indterm,       p.means,
-        p.cov,     p.qmat, p.rmat, p.tail_device, p.tail_host, p.entropy.get(),
+        p.raw, p.taps, p.down, p.centered,    p.indterm,   p.means,
+        p.cov, p.qmat, p.rmat, p.tail_device, p.tail_host, p.entropy.get(),
     };
     for (const void *pointer : required) {
         if (pointer == nullptr) {
@@ -1676,7 +1681,6 @@ void release_all(Pipeline &p)
     assert(p.queue != nullptr);
     assert(p.graph_count <= kMaxGraphs);
     sycl::queue &q = *p.queue;
-    release(q, p.staging);
     release(q, p.raw);
     release(q, p.taps);
     release(q, p.lanczos);
@@ -1724,8 +1728,7 @@ bool shape_valid(const PipelineConfig &c)
 bool config_valid(const PipelineConfig &c)
 {
     const bool channels = c.channels == 2u || c.channels == 4u;
-    const bool planes =
-        in_range(c.raw_planes, 1u, kMaxRawPlanes) && in_range(c.staged, 1u, c.raw_planes);
+    const bool planes = in_range(c.raw_planes, 1u, kMaxRawPlanes);
     const bool taps = in_range(c.filters.antialias_width, 1u, kMaxTaps) &&
                       in_range(c.filters.lowpass_width, 1u, kMaxTaps);
     const bool mode = c.scoring.weight_mode >= 0 && c.scoring.weight_mode <= 6;
@@ -1762,17 +1765,21 @@ int upload_lanczos(Pipeline &p)
     return 0;
 }
 
+const void *raw_plane(const Pipeline &p, int32_t index)
+{
+    const auto at = static_cast<size_t>(index);
+    return p.bound[at] != nullptr ? p.bound[at] : p.raw + at * p.plane_bytes;
+}
+
 RawPlanes bind_planes(const Pipeline &p, const ChannelBinding *bindings)
 {
     assert(bindings != nullptr);
     assert(p.config.channels <= kMaxChannels);
     RawPlanes planes{};
     for (uint32_t ch = 0; ch < p.config.channels; ch++) {
-        const void *min_p = p.raw + static_cast<size_t>(bindings[ch].minuend) * p.plane_bytes;
+        const void *min_p = raw_plane(p, bindings[ch].minuend);
         const void *sub_p =
-            bindings[ch].subtrahend < 0 ?
-                nullptr :
-                p.raw + static_cast<size_t>(bindings[ch].subtrahend) * p.plane_bytes;
+            bindings[ch].subtrahend < 0 ? nullptr : raw_plane(p, bindings[ch].subtrahend);
         if (ch == 0u) {
             planes.minuend_0 = min_p;
             planes.subtrahend_0 = sub_p;
@@ -1913,6 +1920,16 @@ void enqueue_chain(Pipeline &p, const ChannelBinding *bindings)
     enqueue_solve(p);
 }
 
+bool same_bound(const Pipeline &p, uint32_t graph)
+{
+    for (uint32_t i = 0; i < p.config.raw_planes; i++) {
+        if (p.graph_bound[graph][i] != p.bound[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool same_bindings(const ChannelBinding *a, const ChannelBinding *b, uint32_t channels)
 {
     for (uint32_t ch = 0; ch < channels; ch++) {
@@ -1948,7 +1965,7 @@ int32_t recorded_chain(Pipeline &p, const ChannelBinding *bindings)
     assert(bindings != nullptr);
     assert(p.graph_count <= kMaxGraphs && p.config.channels <= kMaxChannels);
     for (uint32_t i = 0; i < p.graph_count; i++) {
-        if (same_bindings(p.graph_bindings[i], bindings, p.config.channels)) {
+        if (same_bindings(p.graph_bindings[i], bindings, p.config.channels) && same_bound(p, i)) {
             return static_cast<int32_t>(i);
         }
     }
@@ -1973,6 +1990,7 @@ int32_t recorded_chain(Pipeline &p, const ChannelBinding *bindings)
     }
     std::memcpy(p.graph_bindings[p.graph_count], bindings,
                 sizeof(ChannelBinding) * p.config.channels);
+    std::copy_n(p.bound, kMaxRawPlanes, p.graph_bound[p.graph_count]);
     return static_cast<int32_t>(p.graph_count++);
 }
 #endif
@@ -2065,28 +2083,44 @@ void speed_sycl::pipeline_destroy(Pipeline **pipeline)
     *pipeline = nullptr;
 }
 
-void *speed_sycl::pipeline_staging(Pipeline *pipeline, uint32_t index)
+int speed_sycl::pipeline_upload_device(Pipeline *pipeline, uint32_t index, const void *src_device,
+                                       uint32_t src_w, uint32_t src_h, uint32_t bytes_per_sample)
 {
-    if (!pipeline || index >= pipeline->config.staged) {
-        return nullptr;
-    }
-    return pipeline->staging + static_cast<size_t>(index) * pipeline->plane_bytes;
-}
-
-int speed_sycl::pipeline_upload(Pipeline *pipeline, uint32_t first, uint32_t count)
-{
-    if (!pipeline || count == 0u || count > pipeline->config.staged ||
-        first + count > pipeline->config.raw_planes) {
+    if (!pipeline || !src_device || index >= pipeline->config.raw_planes) {
         return -EINVAL;
     }
+    const Geometry &g = pipeline->config.geometry;
+    if (bytes_per_sample != g.bytes_per_sample || src_w < g.src_w || src_h < g.src_h) {
+        return -EINVAL;
+    }
+    unsigned char *dst = pipeline->raw + static_cast<size_t>(index) * pipeline->plane_bytes;
+    const size_t row_bytes = static_cast<size_t>(g.src_w) * g.bytes_per_sample;
     try {
-        pipeline->queue->memcpy(pipeline->raw + static_cast<size_t>(first) * pipeline->plane_bytes,
-                                pipeline->staging,
-                                static_cast<size_t>(count) * pipeline->plane_bytes);
+        if (src_w == g.src_w) {
+            pipeline->queue->memcpy(dst, src_device, pipeline->plane_bytes);
+        } else {
+            pipeline->queue->ext_oneapi_memcpy2d(dst, row_bytes, src_device,
+                                                 static_cast<size_t>(src_w) * bytes_per_sample,
+                                                 row_bytes, g.src_h);
+        }
     } catch (const sycl::exception &e) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_sycl: upload failed: %s\n", e.what());
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_sycl: device upload failed: %s\n", e.what());
         return -EIO;
     }
+    return 0;
+}
+
+int speed_sycl::pipeline_bind_device(Pipeline *pipeline, uint32_t index, const void *src_device,
+                                     uint32_t src_w, uint32_t src_h, uint32_t bytes_per_sample)
+{
+    if (!pipeline || !src_device || index >= pipeline->config.raw_planes) {
+        return -EINVAL;
+    }
+    const Geometry &g = pipeline->config.geometry;
+    if (bytes_per_sample != g.bytes_per_sample || src_w != g.src_w || src_h < g.src_h) {
+        return -EINVAL;
+    }
+    pipeline->bound[index] = static_cast<const unsigned char *>(src_device);
     return 0;
 }
 
@@ -2138,25 +2172,4 @@ int speed_sycl::pipeline_collect(Pipeline *pipeline, FrameResult *out)
      * speed.c's statements and the host's log2() (ADR-1477). */
     return speed_internal_gpu_tail_scores(&pipeline->shared, pipeline->config.channels,
                                           pipeline->tail_host, pipeline->entropy.get(), out);
-}
-
-int speed_sycl::stage_plane(Pipeline *pipeline, uint32_t index, const VmafPicture *pic,
-                            unsigned plane)
-{
-    auto *dst = static_cast<unsigned char *>(pipeline_staging(pipeline, index));
-    if (!dst || !pic || plane > 2u || !pic->data[plane]) {
-        return -EINVAL;
-    }
-    const Geometry &g = pipeline->config.geometry;
-    if (pic->w[plane] < g.src_w || pic->h[plane] < g.src_h) {
-        return -EINVAL;
-    }
-    const size_t row_bytes = static_cast<size_t>(g.src_w) * g.bytes_per_sample;
-    const auto *src = static_cast<const unsigned char *>(pic->data[plane]);
-    const auto stride = static_cast<ptrdiff_t>(pic->stride[plane]);
-    for (uint32_t row = 0; row < g.src_h; row++) {
-        std::memcpy(dst + static_cast<size_t>(row) * row_bytes,
-                    src + static_cast<ptrdiff_t>(row) * stride, row_bytes);
-    }
-    return 0;
 }

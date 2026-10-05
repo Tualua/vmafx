@@ -6411,7 +6411,7 @@ test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
-# ADR-1688: which extractors the SYCL zero-copy path admits. Device-free:
+# ADR-1688 / ADR-1768: which extractors the SYCL zero-copy path admits. Device-free:
 # reads every SYCL extractor's answer for its parsed options.
 test_sycl_zero_copy_admission = executable('test_sycl_zero_copy_admission',
     ['test.c', 'test_sycl_zero_copy_admission.c'],
@@ -6424,9 +6424,10 @@ test_sycl_zero_copy_admission = executable('test_sycl_zero_copy_admission',
 test('test_sycl_zero_copy_admission', test_sycl_zero_copy_admission,
     suite : ['fast', 'sycl'])
 
-# ADR-1688: on a SYCL device, the zero-copy path refuses the default model and
-# host-picture features with -ENOTSUP before counting the frame, and scores
-# vmaf_v0.6.1 with the CPU's per-frame values.
+# ADR-1688 / ADR-1768: on a SYCL device, the zero-copy path refuses a CPU
+# extractor before counting the frame and a chroma reader on luma-only input at
+# its submit, both with -ENOTSUP, and scores vmaf_v0.6.1 and the luma twins
+# with the CPU's per-frame values.
 test_sycl_zero_copy_model_gate = executable('test_sycl_zero_copy_model_gate',
     ['test.c', 'test_sycl_zero_copy_model_gate.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -6439,6 +6440,39 @@ test('test_sycl_zero_copy_model_gate', test_sycl_zero_copy_model_gate,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false,
     timeout : 300)
+
+# ADR-1765: zero-copy chroma runtime contract (eager planes, per-frame
+# currency, -ENOTSUP when not imported) and psnr / psnr_hvs chroma parity vs
+# the CPU extractors on emulated zero-copy (upload-slot writes + mark).
+test_sycl_zerocopy_parity = executable('test_sycl_zerocopy_parity',
+    ['test.c', 'test_sycl_zerocopy_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_sycl_zerocopy_parity', test_sycl_zerocopy_parity,
+    suite : ['fast', 'gpu', 'sycl'],
+    timeout : 180,
+    is_parallel : false)
+
+# ADR-1765: the layout-addressed chroma de-interleave kernel of the zero-copy
+# import. Host-synthesised NV12 / P010 UV planes in LINEAR, Tile4 and Y-tiled
+# layouts, built by a forward address function independent of the kernel, must
+# come back as the exact planar Cb / Cr; the descriptor validator and the
+# modifier mapping run without a device.
+test_sycl_chroma_import = executable('test_sycl_chroma_import',
+    ['test.c', 'test_sycl_chroma_import.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_sycl_chroma_import', test_sycl_chroma_import,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # Sticky geometry regression test (T-SYCL-SHARED-FRAME-STICKY-GEOMETRY-2026-09-29)
 test_sycl_shared_frame_sticky_geometry = executable('test_sycl_shared_frame_sticky_geometry',

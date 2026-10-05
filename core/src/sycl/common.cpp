@@ -26,6 +26,7 @@
 #include <sycl/ext/oneapi/experimental/graph.hpp>
 #include <level_zero/ze_api.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -65,6 +66,7 @@ static double monotonic_ms()
 #include "common.h"
 #include "dispatch_strategy.h"
 #include "feature/feature_extractor.h"
+#include "gpu_dispatch_env.h"
 #include "log.h"
 #include "scratch_check.h"
 
@@ -85,6 +87,10 @@ using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;
  * every copy is one DMA from pinned memory; `staged` is the last copy out of
  * it.
  *
+ * Zero-copy: the VA import writes the upload slot and marks it
+ * (chroma_import_pending); vmaf_sycl_advance_frame() promotes the mark to
+ * `frame`, so a chroma reader sees only chroma of its own frame.
+ *
  * Slot fence: readers_done[s] holds device markers on every compute queue,
  * taken when slot s stopped being the compute slot; the upload that next
  * overwrites s waits on them. */
@@ -98,6 +104,12 @@ struct SyclPlaneState {
     unsigned h = 0;
     uint64_t frame = UINT64_MAX;
     std::vector<sycl::event> readers_done[2];
+    /* A zero-copy import wrote the upload slot's chroma (ADR-1765).
+     * vmaf_sycl_advance_frame() turns it into `frame`; nothing else may. */
+    bool chroma_import_pending = false;
+    /* Which sides of the upload slot's chroma were imported this frame. */
+    bool chroma_ref_imported = false;
+    bool chroma_dis_imported = false;
 };
 
 /* An aggregate: vmaf_sycl_state_init() initialises `queue` and `copy_queue`
@@ -180,6 +192,7 @@ struct VmafSyclState {
     bool profiling_enabled = false;
     bool extractor_timing = false; // per-extractor q.wait() timing
     bool import_debug = false;     // VMAF_SYCL_IMPORT_DEBUG — resolved once at init
+    bool checksum_probe = false;   // VMAF_SYCL_CHECKSUM — resolved once at init
     bool combined_graphs_recorded = false;
 };
 
@@ -204,6 +217,18 @@ extern "C" int vmaf_sycl_registered_kernel_count(void)
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: kernel registry query failed: %s\n", e.what());
         return -EIO;
     }
+}
+
+extern "C" int vmaf_sycl_require_chroma(const VmafSyclState *state, const char *extractor,
+                                        const VmafPicture *ref, const VmafPicture *dis)
+{
+    if ((ref != nullptr && dis != nullptr) || vmaf_sycl_shared_chroma_current(state)) {
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "%s: needs chroma planes, which this zero-copy import did not provide (-ENOTSUP)\n",
+             extractor);
+    return -ENOTSUP;
 }
 
 /* ------------------------------------------------------------------ */
@@ -263,8 +288,8 @@ static int sycl_resolve_device(const VmafSyclConfiguration &cfg, sycl::device &o
     auto platforms = sycl::platform::get_platforms();
     std::vector<sycl::device> gpus;
     for (auto &p : platforms) {
-        for (auto &d : p.get_devices(sycl::info::device_type::gpu))
-            gpus.push_back(d);
+        const auto devices = p.get_devices(sycl::info::device_type::gpu);
+        gpus.insert(gpus.end(), devices.begin(), devices.end());
     }
     if (static_cast<unsigned>(cfg.device_index) >= gpus.size()) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: device_index %d out of range (%zu GPUs)\n",
@@ -290,14 +315,23 @@ static void sycl_log_fp64_note(bool has_fp64)
     }
 }
 
+/* True when the environment variable @name is set and its value starts with
+ * '1' (the meaning every VMAF_SYCL_* diagnostic switch has always had). Read
+ * through the shared once-only snapshot (ADR-0488) instead of a raw getenv(),
+ * which is not thread-safe against a concurrent setenv(). */
+static bool sycl_env_flag(const char *name)
+{
+    const char *const val = vmaf_gpu_dispatch_env_get(name);
+    return val != nullptr && val[0] == '1';
+}
+
 /* Profiling is on when the config asks for it or VMAF_SYCL_PROFILE=1. */
 static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
 {
     // Allow runtime profiling via environment variable
     if (cfg.enable_profiling)
         return true;
-    const char *env_prof = getenv("VMAF_SYCL_PROFILE");
-    return env_prof != nullptr && env_prof[0] == '1';
+    return sycl_env_flag("VMAF_SYCL_PROFILE");
 }
 
 /* Primary queue properties. The primary queue runs on Level Zero immediate
@@ -369,10 +403,9 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
         auto *s = new VmafSyclState{.queue = std::move(q), .copy_queue = std::move(cq)};
         s->profiling_enabled = profiling;
         // Per-extractor timing via q.wait() — no enable_profiling needed
-        const char *env_timing = getenv("VMAF_SYCL_TIMING");
-        s->extractor_timing = (env_timing && env_timing[0] == '1');
-        const char *env_idbg = getenv("VMAF_SYCL_IMPORT_DEBUG");
-        s->import_debug = (env_idbg && env_idbg[0] == '1');
+        s->extractor_timing = sycl_env_flag("VMAF_SYCL_TIMING");
+        s->import_debug = sycl_env_flag("VMAF_SYCL_IMPORT_DEBUG");
+        s->checksum_probe = sycl_env_flag("VMAF_SYCL_CHECKSUM");
         s->has_fp64 = has_fp64;
         *sycl_state = s;
         return 0;
@@ -652,6 +685,9 @@ static void sycl_shared_chroma_release(VmafSyclState *state)
     chroma.w = 0;
     chroma.h = 0;
     chroma.frame = UINT64_MAX;
+    chroma.chroma_import_pending = false;
+    chroma.chroma_ref_imported = false;
+    chroma.chroma_dis_imported = false;
 }
 
 static int sycl_shared_frame_reinit_unwind(VmafSyclState *state)
@@ -794,12 +830,10 @@ static sycl::event sycl_enqueue_plane_upload(VmafSyclState *state, void *dst_buf
  * when an extractor skips frames (n_subsample) and nothing collected it. */
 static bool sycl_events_pending(const std::vector<sycl::event> &events)
 {
-    for (const sycl::event &e : events) {
-        if (e.get_info<sycl::info::event::command_execution_status>() !=
-            sycl::info::event_command_status::complete)
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(events, [](const sycl::event &e) {
+        return e.get_info<sycl::info::event::command_execution_status>() !=
+               sycl::info::event_command_status::complete;
+    });
 }
 
 static void sycl_fence_slot_readers(VmafSyclState *state, int ui)
@@ -1093,6 +1127,36 @@ extern "C" void *vmaf_sycl_get_shared_plane(VmafSyclState *state, int is_ref, un
     return is_ref ? state->planes.ref[slot][plane - 1] : state->planes.dis[slot][plane - 1];
 }
 
+extern "C" void *vmaf_sycl_get_shared_plane_upload(VmafSyclState *state, int is_ref, unsigned plane)
+{
+    if (!state || plane > 2)
+        return nullptr;
+    int const slot = state->cur_upload;
+    if (plane == 0)
+        return is_ref ? state->shared_ref_buf[slot] : state->shared_dis_buf[slot];
+    return is_ref ? state->planes.ref[slot][plane - 1] : state->planes.dis[slot][plane - 1];
+}
+
+extern "C" void vmaf_sycl_shared_chroma_mark_imported(VmafSyclState *state)
+{
+    if (state)
+        state->planes.chroma_import_pending = true;
+}
+
+extern "C" bool vmaf_sycl_shared_chroma_note_side(VmafSyclState *state, int is_ref)
+{
+    if (!state)
+        return false;
+    (is_ref ? state->planes.chroma_ref_imported : state->planes.chroma_dis_imported) = true;
+    return state->planes.chroma_ref_imported && state->planes.chroma_dis_imported;
+}
+
+extern "C" bool vmaf_sycl_shared_chroma_current(const VmafSyclState *state)
+{
+    return state && state->planes.ref[state->cur_compute][0] != nullptr &&
+           state->planes.frame == state->frame_counter;
+}
+
 /* ------------------------------------------------------------------ */
 /* Queue handle for extractors                                         */
 /* ------------------------------------------------------------------ */
@@ -1104,7 +1168,7 @@ extern "C" void *vmaf_sycl_get_queue_ptr(VmafSyclState *state)
     return &state->queue;
 }
 
-extern "C" bool vmaf_sycl_has_fp64(VmafSyclState *state)
+extern "C" bool vmaf_sycl_has_fp64(const VmafSyclState *state)
 {
     if (!state)
         return false;
@@ -1139,7 +1203,7 @@ extern "C" void *vmaf_sycl_get_shared_dis_slot(VmafSyclState *state, int slot)
     return state->shared_dis_buf[slot];
 }
 
-extern "C" int vmaf_sycl_get_compute_slot(VmafSyclState *state)
+extern "C" int vmaf_sycl_get_compute_slot(const VmafSyclState *state)
 {
     if (!state)
         return 0;
@@ -1154,7 +1218,7 @@ extern "C" void *vmaf_sycl_get_shared_ref_upload(VmafSyclState *state)
     return state->shared_ref_buf[state->cur_upload];
 }
 
-extern "C" bool vmaf_sycl_import_debug_enabled(VmafSyclState *state)
+extern "C" bool vmaf_sycl_import_debug_enabled(const VmafSyclState *state)
 {
     return state && state->import_debug;
 }
@@ -1216,14 +1280,14 @@ extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnque
     return 0;
 }
 
-extern "C" void *vmaf_sycl_get_combined_queue(VmafSyclState *state)
+extern "C" void *vmaf_sycl_get_combined_queue(const VmafSyclState *state)
 {
     if (!state)
         return nullptr;
     return state->combined_queue;
 }
 
-extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv)
+extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, const void *priv)
 {
     if (!state || !priv)
         return -EINVAL;
@@ -1602,6 +1666,14 @@ extern "C" void vmaf_sycl_advance_frame(VmafSyclState *state)
     /* load-bearing: do not insert code between these two lines (order matters) */
     state->cur_upload = 1 - state->cur_upload;
     state->frame_counter++;
+    /* Promotion of an import mark: the only writer of planes.frame besides the
+     * host chroma upload (ADR-1765). */
+    if (state->planes.chroma_import_pending) {
+        state->planes.frame = state->frame_counter;
+        state->planes.chroma_import_pending = false;
+    }
+    state->planes.chroma_ref_imported = false;
+    state->planes.chroma_dis_imported = false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1612,12 +1684,9 @@ extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsig
                                          const char *path_tag)
 {
     /* Zero-cost gate — must be first, before any allocation or queue work.
-     * Mirror the VMAF_SYCL_PROFILE gate at common.cpp:230. */
-    const char *env = getenv("VMAF_SYCL_CHECKSUM");
-    if (!env || env[0] != '1')
-        return 0;
-
-    if (!state || !state->shared_buf_size)
+     * VMAF_SYCL_CHECKSUM is resolved once in vmaf_sycl_state_init
+     * (state->checksum_probe), like VMAF_SYCL_IMPORT_DEBUG. */
+    if (!state || !state->checksum_probe || !state->shared_buf_size)
         return 0;
 
     /* Always probe the slot compute will actually use (cur_compute).
@@ -1760,7 +1829,7 @@ extern "C" void vmaf_sycl_profiling_record(VmafSyclState *state, const char *ker
     entry.count++;
 }
 
-extern "C" bool vmaf_sycl_profiling_is_enabled(VmafSyclState *state)
+extern "C" bool vmaf_sycl_profiling_is_enabled(const VmafSyclState *state)
 {
     if (!state)
         return false;

@@ -56,6 +56,26 @@ extern "C" {
  */
 int vmaf_sycl_registered_kernel_count(void);
 
+/**
+ * Guard for a SYCL extractor submit that reads Cb / Cr (ADR-1765).
+ *
+ * With host pictures the chroma is uploaded by vmaf_sycl_shared_chroma_upload()
+ * and this returns 0. Without them (zero-copy input) the chroma is valid only
+ * when the import marked it (vmaf_sycl_shared_chroma_mark_imported()) and
+ * vmaf_sycl_advance_frame() promoted it for this frame; otherwise the shared
+ * planes hold an older frame and the extractor must not read them.
+ *
+ * @param extractor  Registered extractor name, used in the log line.
+ * @param ref        Reference picture the submit would read, or NULL.
+ * @param dis        Distorted picture the submit would read, or NULL.
+ *
+ * @return 0 when both pictures are non-NULL or the chroma is current for this
+ *         frame; otherwise logs one error naming the extractor and returns
+ *         -ENOTSUP.
+ */
+int vmaf_sycl_require_chroma(const VmafSyclState *state, const char *extractor,
+                             const VmafPicture *ref, const VmafPicture *dis);
+
 /* ---- Device-memory helpers (USM wrappers) ---- */
 
 /**
@@ -291,6 +311,52 @@ int vmaf_sycl_shared_chroma_upload(VmafSyclState *state, VmafPicture *ref, VmafP
 void *vmaf_sycl_get_shared_plane(VmafSyclState *state, int is_ref, unsigned plane);
 
 /**
+ * Device pointer to one shared plane of the upload slot (the slot the next
+ * vmaf_sycl_advance_frame() promotes to the compute slot). The zero-copy VA
+ * import writes luma and chroma here (ADR-1765).
+ *
+ * @param state   The SYCL state.
+ * @param is_ref  Non-zero for the reference picture, zero for the distorted.
+ * @param plane   0 = luma, 1 = Cb, 2 = Cr.
+ *
+ * @return The plane, or NULL when it is not allocated.
+ */
+void *vmaf_sycl_get_shared_plane_upload(VmafSyclState *state, int is_ref, unsigned plane);
+
+/**
+ * Record that the upload slot's Cb / Cr planes of ref and dis were written for
+ * the frame about to be advanced. vmaf_sycl_advance_frame() turns the mark
+ * into "chroma is current for the new frame"; nothing else does (ADR-1765).
+ *
+ * @param state  The SYCL state.
+ */
+void vmaf_sycl_shared_chroma_mark_imported(VmafSyclState *state);
+
+/**
+ * Note that one side (ref or dis) of the upload slot's Cb / Cr planes was
+ * written for the frame about to be advanced. The VA import runs once per
+ * side, so a frame's chroma is complete only when both were noted; the notes
+ * are cleared by vmaf_sycl_advance_frame() (ADR-1765).
+ *
+ * @param state   The SYCL state.
+ * @param is_ref  Non-zero for the reference side, zero for the distorted.
+ *
+ * @return true when both sides are now noted for this frame: the caller then
+ *         calls vmaf_sycl_shared_chroma_mark_imported().
+ */
+bool vmaf_sycl_shared_chroma_note_side(VmafSyclState *state, int is_ref);
+
+/**
+ * Whether the compute slot's Cb / Cr planes hold the current frame's chroma:
+ * they are allocated and an upload or import of this frame produced them.
+ *
+ * @param state  The SYCL state.
+ *
+ * @return true when chroma readers may use vmaf_sycl_get_shared_plane().
+ */
+bool vmaf_sycl_shared_chroma_current(const VmafSyclState *state);
+
+/**
  * Make `queue_ptr` wait on the device for the last shared upload (luma and
  * any chroma) without blocking the host. Extractors that read the shared
  * planes from their own queue call it before their first kernel of a frame;
@@ -324,7 +390,7 @@ void *vmaf_sycl_get_queue_ptr(VmafSyclState *state);
  *
  * @return true if fp64 is supported, false otherwise.
  */
-bool vmaf_sycl_has_fp64(VmafSyclState *state);
+bool vmaf_sycl_has_fp64(const VmafSyclState *state);
 
 /**
  * Get the shared ref device buffer pointer.
@@ -371,7 +437,7 @@ void *vmaf_sycl_get_shared_dis_slot(VmafSyclState *state, int slot);
  *
  * @return Current compute slot index.
  */
-int vmaf_sycl_get_compute_slot(VmafSyclState *state);
+int vmaf_sycl_get_compute_slot(const VmafSyclState *state);
 
 /**
  * Get the shared ref device buffer pointer for the current upload slot.
@@ -397,7 +463,7 @@ void *vmaf_sycl_get_shared_ref_upload(VmafSyclState *state);
  *
  * @return true when VMAF_SYCL_IMPORT_DEBUG=1 was set at init, false otherwise.
  */
-bool vmaf_sycl_import_debug_enabled(VmafSyclState *state);
+bool vmaf_sycl_import_debug_enabled(const VmafSyclState *state);
 
 /**
  * Get the shared dis device buffer pointer for the current upload slot.
@@ -430,7 +496,8 @@ void *vmaf_sycl_get_last_upload_event(VmafSyclState *state);
  *   VMAF_SYCL_CHECKSUM path=<path_tag> frame=<frame_index> slot=<N> ref|dis crc=0x<HEX>
  *
  * Zero cost when VMAF_SYCL_CHECKSUM is unset — returns 0 immediately
- * before any allocation or queue work.
+ * before any allocation or queue work. The variable is resolved once in
+ * vmaf_sycl_state_init (like VMAF_SYCL_IMPORT_DEBUG), not per call.
  *
  * Call from both the VA-import path (path_tag="sycl") and the host-upload
  * oracle path (path_tag="host") to capture exactly what compute will read,
@@ -515,7 +582,7 @@ int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueu
  *
  * @return 0 on success, -EINVAL if state is NULL or priv not found.
  */
-int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv);
+int vmaf_sycl_graph_unregister(VmafSyclState *state, const void *priv);
 
 /**
  * Get the combined compute queue for direct submission.
@@ -525,7 +592,7 @@ int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv);
  *
  * @return Opaque pointer to sycl::queue, or NULL.
  */
-void *vmaf_sycl_get_combined_queue(VmafSyclState *state);
+void *vmaf_sycl_get_combined_queue(const VmafSyclState *state);
 
 /**
  * Submit all registered extractors' GPU work for the current frame.
@@ -647,7 +714,7 @@ void vmaf_sycl_profiling_record(VmafSyclState *state, const char *kernel_name, u
  *
  * @return true if profiling is enabled.
  */
-bool vmaf_sycl_profiling_is_enabled(VmafSyclState *state);
+bool vmaf_sycl_profiling_is_enabled(const VmafSyclState *state);
 
 #ifdef __cplusplus
 }

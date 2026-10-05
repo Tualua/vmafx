@@ -41,6 +41,9 @@ constexpr uint32_t kTemporalSlots = 2u;    /* current and previous frame */
 struct SpeedTemporalSyclState {
     VmafSyclState *sycl_state;
     speed_sycl::Pipeline *pipeline;
+    unsigned width;
+    unsigned height;
+    unsigned bytes_per_sample;
     SpeedInternalSingularTally singular_tally;
     double speed_temporal_kernelscale;
     double speed_temporal_prescale;
@@ -189,7 +192,6 @@ int create_temporal_pipeline(SpeedTemporalSyclState *s, unsigned bpc, unsigned w
     config.queue = vmaf_sycl_get_queue_ptr(s->sycl_state);
     config.channels = kTemporalChannels;
     config.raw_planes = kTemporalChannels * kTemporalSlots;
-    config.staged = kTemporalChannels;
     return speed_sycl::pipeline_create(&s->pipeline, config);
 }
 
@@ -208,6 +210,9 @@ int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
         return -EINVAL;
     }
     s->sycl_state = fex->sycl_state;
+    s->width = w;
+    s->height = h;
+    s->bytes_per_sample = (bpc + 7u) / 8u;
     const int err = create_temporal_pipeline(s, bpc, w, h);
     if (err) {
         (void)close_temporal_sycl(fex);
@@ -222,21 +227,33 @@ int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     return 0;
 }
 
+/* Order the queue after the shared upload, then copy this frame's luma into the
+ * pipeline-owned slot `slot` (device to device; the ring never aliases the shared
+ * planes, which the next upload overwrites). Zero-copy input hands no pictures. */
+int upload_temporal_frame(SpeedTemporalSyclState *s, uint32_t slot)
+{
+    int err = vmaf_sycl_queue_after_upload(s->sycl_state, vmaf_sycl_get_queue_ptr(s->sycl_state));
+    for (uint32_t side = 0u; !err && side < kTemporalChannels; side++) {
+        /* Channel 0 is the reference, channel 1 the distorted side. */
+        const void *plane = vmaf_sycl_get_shared_plane(s->sycl_state, side == 0u ? 1 : 0, 0u);
+        err = plane ? speed_sycl::pipeline_upload_device(s->pipeline, slot + side, plane, s->width,
+                                                         s->height, s->bytes_per_sample) :
+                      -EINVAL;
+    }
+    return err ? -EINVAL : 0;
+}
+
 int submit_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
+    (void)ref_pic;
     (void)ref_pic_90;
+    (void)dist_pic;
     (void)dist_pic_90;
     auto *s = static_cast<SpeedTemporalSyclState *>(fex->priv);
-    int err = speed_sycl::stage_plane(s->pipeline, 0u, ref_pic, 0u);
-    err |= speed_sycl::stage_plane(s->pipeline, 1u, dist_pic, 0u);
-    if (err) {
-        return -EINVAL;
-    }
     const auto current = static_cast<int32_t>(kTemporalChannels * (index % kTemporalSlots));
     const auto previous = static_cast<int32_t>(kTemporalChannels * ((index + 1u) % kTemporalSlots));
-    err =
-        speed_sycl::pipeline_upload(s->pipeline, static_cast<uint32_t>(current), kTemporalChannels);
+    const int err = upload_temporal_frame(s, static_cast<uint32_t>(current));
     if (err || index == 0u) {
         return err;
     }
@@ -260,7 +277,7 @@ int collect_temporal_sycl(VmafFeatureExtractor *fex, unsigned index,
 {
     auto *s = static_cast<SpeedTemporalSyclState *>(fex->priv);
     if (index == 0u) {
-        /* The upload must land before submit() reuses the staging planes. */
+        /* Frame 0 only uploads: wait so the copy leaves the shared slot. */
         const int err = speed_sycl::pipeline_wait(s->pipeline);
         if (err) {
             return err;
@@ -306,6 +323,14 @@ const char *provided_features_temporal[] = {
 
 /* TEMPORAL guarantees in-order frames: the previous frame's planes stay on the
  * device between submits. */
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_speed_temporal_sycl = {
     .name = "speed_temporal_sycl",
     .init = init_temporal_sycl,
@@ -318,4 +343,5 @@ extern "C" VmafFeatureExtractor vmaf_fex_speed_temporal_sycl = {
     .priv_size = sizeof(SpeedTemporalSyclState),
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_temporal,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };

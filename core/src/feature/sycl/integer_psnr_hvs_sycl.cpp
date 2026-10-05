@@ -1074,10 +1074,14 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     int err = 0;
     if (s->n_active_planes > 1U) {
-        /* The zero-copy import path hands no host pictures and imports luma only. */
-        err = (ref_pic && dist_pic) ?
-                  vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic) :
-                  -EINVAL;
+        /* Zero-copy input hands no host pictures; its chroma is in the shared
+         * planes only when the import marked it for this frame (ADR-1765). */
+        if (vmaf_sycl_require_chroma(s->sycl_state, "psnr_hvs_sycl", ref_pic, dist_pic)) {
+            return -ENOTSUP;
+        }
+        if (ref_pic && dist_pic) {
+            err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+        }
     }
     if (!err) {
         err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
@@ -1250,13 +1254,12 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 static const char *provided_features_psnr_hvs_sycl[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr",
                                                         "psnr_hvs", nullptr};
 
-/* The zero-copy path (ADR-1688): psnr_hvs_y reads the shared luma. With
- * enable_chroma psnr_hvs_cb / psnr_hvs_cr need the frame's chroma, which the
- * zero-copy path does not put on the device. */
-bool reads_shared_luma_only(const VmafFeatureExtractor *fex)
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: the zero-copy
+ * import fills the shared chroma planes too (ADR-1765), so this twin runs on
+ * that path with or without enable_chroma. */
+bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
 {
-    const auto *s = static_cast<const PsnrHvsStateSycl *>(fex->priv);
-    return !s->enable_chroma;
+    return true;
 }
 
 } // namespace

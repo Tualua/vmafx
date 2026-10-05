@@ -2059,6 +2059,7 @@ if is_sycl_enabled
         sycl_dir + 'dispatch_strategy.cpp',
         sycl_dir + 'picture_sycl.cpp',
         sycl_dir + 'dmabuf_import.cpp',
+        sycl_dir + 'chroma_import.cpp',
         sycl_dir + 'd3d11_import.cpp',
         sycl_dir + 'scratch_check.cpp',
     ]

@@ -17,6 +17,7 @@
  *  speed_sycl_pipeline.cpp (core/test/test_sycl_kernel_source_contract.py).
  */
 
+#include <cassert>
 #include <cerrno>
 #include <cstddef>
 
@@ -37,6 +38,9 @@ constexpr uint32_t kChromaChannels = 4u; /* U ref, U dis, V ref, V dis */
 struct SpeedChromaSyclState {
     VmafSyclState *sycl_state;
     speed_sycl::Pipeline *pipeline;
+    unsigned chroma_w;
+    unsigned chroma_h;
+    unsigned bytes_per_sample;
     SpeedInternalSingularTally singular_tally;
     double speed_chroma_kernelscale;
     double speed_chroma_prescale;
@@ -178,6 +182,8 @@ int create_chroma_pipeline(SpeedChromaSyclState *s, enum VmafPixelFormat format,
         .speed_nn_floor = s->speed_chroma_nn_floor,
         .speed_weight_var_mode = s->speed_weight_var_mode,
     };
+    s->chroma_w = chroma_w;
+    s->chroma_h = chroma_h;
     SpeedInternalDimensions dim{};
     err = speed_internal_init_dimensions(&dim, (int)chroma_w, (int)chroma_h, opt.speed_prescale);
     if (err) {
@@ -191,7 +197,6 @@ int create_chroma_pipeline(SpeedChromaSyclState *s, enum VmafPixelFormat format,
     config.queue = vmaf_sycl_get_queue_ptr(s->sycl_state);
     config.channels = kChromaChannels;
     config.raw_planes = kChromaChannels;
-    config.staged = kChromaChannels;
     return speed_sycl::pipeline_create(&s->pipeline, config);
 }
 
@@ -209,7 +214,16 @@ int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat format, uns
         return -EINVAL;
     }
     s->sycl_state = fex->sycl_state;
-    const int err = create_chroma_pipeline(s, format, bpc, width, height);
+    s->bytes_per_sample = (bpc + 7u) / 8u;
+    int err = create_chroma_pipeline(s, format, bpc, width, height);
+    /* Luma and chroma come from the shared device planes; both calls are
+     * idempotent across the twins that share them. */
+    if (!err) {
+        err = vmaf_sycl_shared_frame_init(s->sycl_state, width, height, bpc);
+    }
+    if (!err) {
+        err = vmaf_sycl_shared_chroma_init(s->sycl_state, s->chroma_w, s->chroma_h);
+    }
     if (err) {
         (void)close_chroma_sycl(fex);
         return err;
@@ -223,6 +237,38 @@ int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat format, uns
     return 0;
 }
 
+/* Make this frame's Cb / Cr current in the shared planes, order the queue after
+ * their upload, then bind the four shared planes as the pipeline's raw planes in
+ * channel order: U ref, U dis, V ref, V dis. SpEED chroma keeps no state across
+ * frames, so the pipeline reads them in place (no copy; the shared-slot reader
+ * fence covers the primary-queue chain). Zero-copy
+ * input hands no pictures; its chroma is in the shared planes only when the
+ * import marked it for this frame (ADR-1765). */
+int upload_chroma_frame(SpeedChromaSyclState *s, VmafPicture *reference, VmafPicture *distorted)
+{
+    assert(s != nullptr && s->sycl_state != nullptr && s->pipeline != nullptr);
+    /* Host upload hands both pictures, zero-copy hands neither. */
+    assert((reference == nullptr) == (distorted == nullptr));
+    if (vmaf_sycl_require_chroma(s->sycl_state, "speed_chroma_sycl", reference, distorted)) {
+        return -ENOTSUP;
+    }
+    int err = 0;
+    if (reference && distorted) {
+        err = vmaf_sycl_shared_chroma_upload(s->sycl_state, reference, distorted);
+    }
+    if (!err) {
+        err = vmaf_sycl_queue_after_upload(s->sycl_state, vmaf_sycl_get_queue_ptr(s->sycl_state));
+    }
+    for (uint32_t channel = 0u; !err && channel < kChromaChannels; channel++) {
+        const void *plane = vmaf_sycl_get_shared_plane(s->sycl_state, (channel % 2u) == 0u ? 1 : 0,
+                                                       1u + channel / 2u);
+        err = plane ? speed_sycl::pipeline_bind_device(s->pipeline, channel, plane, s->chroma_w,
+                                                       s->chroma_h, s->bytes_per_sample) :
+                      -EINVAL;
+    }
+    return err;
+}
+
 int submit_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *reference, VmafPicture *reference_90,
                        VmafPicture *distorted, VmafPicture *distorted_90, unsigned index)
 {
@@ -230,15 +276,7 @@ int submit_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *reference, VmafPi
     (void)distorted_90;
     (void)index;
     auto *s = static_cast<SpeedChromaSyclState *>(fex->priv);
-    /* Staging order matches the channel pairs: (U ref, U dis), (V ref, V dis). */
-    int err = speed_sycl::stage_plane(s->pipeline, 0u, reference, 1u);
-    err |= speed_sycl::stage_plane(s->pipeline, 1u, distorted, 1u);
-    err |= speed_sycl::stage_plane(s->pipeline, 2u, reference, 2u);
-    err |= speed_sycl::stage_plane(s->pipeline, 3u, distorted, 2u);
-    if (err) {
-        return -EINVAL;
-    }
-    err = speed_sycl::pipeline_upload(s->pipeline, 0u, kChromaChannels);
+    const int err = upload_chroma_frame(s, reference, distorted);
     if (err) {
         return err;
     }
@@ -349,6 +387,14 @@ const char *provided_features_chroma[] = {
 
 } // namespace
 
+/* The zero-copy admission hook (ADR-1688), widened by ADR-1768: this twin
+ * reads only the shared device planes, luma and chroma, which the zero-copy
+ * import fills (ADR-1765, ADR-1766), so it runs on that path for any options. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 extern "C" VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
     .name = "speed_chroma_sycl",
     .init = init_chroma_sycl,
@@ -361,4 +407,5 @@ extern "C" VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
     .priv_size = sizeof(SpeedChromaSyclState),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_chroma,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };

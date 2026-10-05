@@ -11,8 +11,9 @@
  *  single mutex.  On the first call for a given var_name the entry is
  *  populated under the lock; subsequent calls read the cached value
  *  lock-free after a ready-flag acquire load.  The table holds at most
- *  kTableCap entries; 8 is generous for the current 3 backends (CUDA, SYCL,
- *  HIP) plus anticipated Metal.
+ *  kTableCap entries; 16 covers the 11 variables read through it today
+ *  (CUDA / HIP / SYCL dispatch switches plus the SYCL diagnostic flags)
+ *  with room for Metal.
  *
  *  C++23 improvements over the original .c:
  *    - std::string_view for O(1) sized comparisons — no null-pointer UB.
@@ -47,7 +48,7 @@
 namespace
 {
 
-constexpr std::size_t kTableCap = 8;
+constexpr std::size_t kTableCap = 16;
 
 struct EnvRow {
     /* ready is the publication flag.  The slow-path writer sets it last with
@@ -156,7 +157,7 @@ extern "C" {
 
     if (!slot) {
         /* Table exhausted — fall back to a raw getenv.  Should never
-         * happen in production (8 slots, at most 4 backends).
+         * happen in production (16 slots, 11 variables in use).
          * NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
         return std::getenv(var_name);
     }

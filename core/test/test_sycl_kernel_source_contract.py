@@ -319,7 +319,13 @@ FLOAT_MOTION_ROW_PIECES = (
     "accum += diff < 0.0f ? -diff : diff;",
 )
 FLOAT_MOTION_ROW_LAUNCH = "cgh.parallel_for(sycl::range<1>(args.height),"
-FLOAT_MOTION_HOST_TAIL = "vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height)"
+# Since ADR-1767 (motion_add_uv) collect() takes the frame score from frame_sad_score(),
+# which adds the per-plane scores of the shared helper in double, Y then U then V, as the
+# CPU's motion_score_pair() does; each plane's rows still go through the shared helper.
+FLOAT_MOTION_HOST_TAIL = "frame_sad_score(s)"
+FLOAT_MOTION_PLANE_SCORE = (
+    "vmaf_float_motion_score_from_row_sads(s->h_row_sad + p.row_off, p.w, p.h)"
+)
 # Any of these in the TU adds the SAD in an order the CPU does not use.
 FLOAT_MOTION_OTHER_REDUCTION = re.compile(
     r"reduce_over_group|sycl::reduction|atomic_ref|joint_reduce|get_sub_group"
@@ -357,8 +363,13 @@ def _float_motion_failures(sources: dict[str, str]) -> list[str]:
     collect = _function_body(twin, "collect_fex_sycl")
     if FLOAT_MOTION_HOST_TAIL not in collect or "+=" in collect:
         failures.append(
-            f"{FLOAT_MOTION}: collect must take the shared "
-            "vmaf_float_motion_score_from_row_sads() value and keep no sum of its own"
+            f"{FLOAT_MOTION}: collect must take frame_sad_score() and keep no sum of its own"
+        )
+    frame_score = _function_body(twin, "frame_sad_score")
+    if FLOAT_MOTION_PLANE_SCORE not in frame_score or "+=" in frame_score:
+        failures.append(
+            f"{FLOAT_MOTION}: frame_sad_score must take each plane's shared "
+            "vmaf_float_motion_score_from_row_sads() value and keep no row sum of its own"
         )
     helper = _code(sources[FLOAT_MOTION_SAD])
     for piece in (
@@ -765,8 +776,7 @@ class SyclKernelSourceContractTest(unittest.TestCase):
     def test_float_motion_host_sum_of_its_own_is_detected(self) -> None:
         sources = self._float_motion_edit(
             FLOAT_MOTION,
-            "    const double motion_score =\n"
-            "        vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height);\n",
+            "    const double motion_score = frame_sad_score(s);\n",
             "    double motion_score = 0.0;\n"
             "    for (unsigned i = 0; i < s->height; i++) {\n"
             "        motion_score += (double)s->h_row_sad[i];\n"
@@ -774,6 +784,19 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         )
         failures = _float_motion_failures(sources)
         self.assertTrue(any("keep no sum of its own" in item for item in failures))
+
+    def test_float_motion_plane_row_sum_of_its_own_is_detected(self) -> None:
+        sources = self._float_motion_edit(
+            FLOAT_MOTION,
+            "        const double plane_score =\n"
+            "            vmaf_float_motion_score_from_row_sads(s->h_row_sad + p.row_off, p.w, p.h);\n",
+            "        double plane_score = 0.0;\n"
+            "        for (unsigned i = 0; i < p.h; i++) {\n"
+            "            plane_score += (double)s->h_row_sad[p.row_off + i];\n"
+            "        }\n",
+        )
+        failures = _float_motion_failures(sources)
+        self.assertTrue(any("frame_sad_score must take" in item for item in failures))
 
     def test_fp64_float_motion_row_total_is_detected(self) -> None:
         sources = self._float_motion_edit(
