@@ -884,19 +884,31 @@ extern "C" int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, uns
     size_t const row_bytes = static_cast<size_t>(w) * bytes_per_pixel;
 
     try {
+        /* After the slot's previous readers, as vmaf_sycl_shared_frame_upload()
+         * orders its upload (ADR-1369). */
+        sycl_fence_slot_readers(state, ui);
+        sycl::event last_ev;
         if (pitch == row_bytes) {
             /* Contiguous — single H2D copy via copy queue */
-            state->copy_queue.memcpy(target_buf, src, row_bytes * h);
+            last_ev = state->copy_queue.memcpy(target_buf, src, row_bytes * h);
         } else {
             /* Pitched — row-by-row H2D copy via copy queue */
             auto *dst = static_cast<uint8_t *>(target_buf);
             const auto *s = static_cast<const uint8_t *>(src);
             for (unsigned y = 0; y < h; y++) {
-                state->copy_queue.memcpy(dst, s, row_bytes);
+                last_ev = state->copy_queue.memcpy(dst, s, row_bytes);
                 dst += row_bytes;
                 s += pitch;
             }
         }
+        /* Return only once the copy is done. The source is the caller's host
+         * memory, which the caller may free or reuse as soon as this returns
+         * (the D3D11 import unmaps its staging texture right after the call),
+         * and the frame's compute, on another queue, reads the slot without
+         * waiting on this copy. Before the wait a 3840x2160 frame scored the
+         * wrong pixels on an Arc A380
+         * (T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05). */
+        last_ev.wait_and_throw();
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL upload_plane: %s\n", e.what());
         return -EIO;

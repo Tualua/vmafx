@@ -251,6 +251,16 @@ sycl/
   read stale chroma. Guards: `test_sycl_shared_planes`,
   `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
 
+- **`vmaf_sycl_upload_plane()` returns after its copy completed.**
+  Copy queue memcpy from caller host memory; function calls
+  `sycl_fence_slot_readers()` first, then `last_ev.wait_and_throw()`
+  before return. Caller may free/unmap source right after (D3D11 import
+  unmaps staging), and compute on other queues has no barrier on this
+  copy. **On rebase**: never make it return with copy in flight; without
+  wait a 4K frame scored wrong pixels on A380
+  (`T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05`). Guard:
+  `test_sycl_zero_copy_model_gate` case `test_upload_plane_orders_compute`.
+
 - **Zero-copy admission gate (ADR-1688).** `vmaf_read_pictures_sycl()`
   (`core/src/libvmaf.c`) calls `sycl_zero_copy_admit()` before
   `pic_cnt++` / `vmaf_sycl_advance_frame()`: every registered extractor

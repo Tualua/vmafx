@@ -638,6 +638,16 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
   restamped for the `pyproject.toml` header lines.
 - `dev/Containerfile`: the licences label sits on `libvmaf-build` (derived from
   the files it copies); `build-deps` and `release-build` carry none.
+## vmaf_sycl_upload_plane waits for its copy (2026-10-05)
+
+`fix/sycl-upload-plane-fence`. SYCL runtime, one public-header comment.
+
+- `core/src/sycl/common.cpp::vmaf_sycl_upload_plane()` calls `sycl_fence_slot_readers()` and
+  waits for the last copy event before it returns. A sync that restores the fire-and-forget
+  copy brings back wrong 4K scores on the zero-copy and D3D11 paths;
+  `test_sycl_zero_copy_model_gate` (`test_upload_plane_orders_compute`) fails on it.
+- The file's four `getenv()` calls read through `vmaf_gpu_dispatch_env_get()` (ADR-0488),
+  which keeps `common.cpp` at zero clang-tidy findings.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 

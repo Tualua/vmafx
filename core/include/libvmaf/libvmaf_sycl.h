@@ -299,7 +299,9 @@ VMAF_EXPORT int vmaf_sycl_import_va_surface(VmafSyclState *sycl_state, void *va_
 /**
  * Upload a raw Y-plane from host memory into a shared frame buffer.
  * Platform-agnostic path: copies from a host pointer (with pitch) to the
- * SYCL shared ref or dis buffer via H2D memcpy.
+ * SYCL shared ref or dis buffer via H2D memcpy. Returns once the copy
+ * has completed: the caller may free or reuse @p src afterwards, and the
+ * frame's compute in vmaf_read_pictures_sycl() reads the uploaded data.
  *
  * @param sycl_state   The SYCL state.
  * @param src          Pointer to the Y-plane in host memory.

@@ -14,7 +14,7 @@ correct, and how the pre-allocated picture pool works. Back to the
 | Pre-allocated pool | `vmaf_sycl_preallocate_pictures()`, `vmaf_sycl_picture_fetch()` | all | None when the decoder writes device USM |
 | VA-API dmabuf | `vmaf_sycl_dmabuf_import()`, `vmaf_sycl_import_va_surface()` | Linux | None (zero-copy) |
 | D3D11 staging | `vmaf_sycl_import_d3d11_surface()` | Windows | Two PCIe copies; not zero-copy |
-| Plane upload | `vmaf_sycl_upload_plane()` | all | One host-to-device copy |
+| Plane upload | `vmaf_sycl_upload_plane()` | all | One host-to-device copy; returns when it has completed |
 
 The signatures are in
 [`libvmaf_sycl.h`](../../../core/include/libvmaf/libvmaf_sycl.h) and the

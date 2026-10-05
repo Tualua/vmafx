@@ -8363,7 +8363,7 @@
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,
-        "core/src/sycl/common.cpp": 6,
+        "core/src/sycl/common.cpp": 7,
         "core/src/sycl/common.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_sycl_shared_planes.c": 1
