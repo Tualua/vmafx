@@ -1271,3 +1271,7 @@
 1715-vmafx-sycl-ffmpeg-container
 1763-sycl-primary-queue-immediate-cmdlist
 1764-sycl-filter-twin-routing
+1765-sycl-zerocopy-planar-chroma-import
+1766-sycl-host-staging-to-shared-planes
+1767-sycl-float-motion-add-uv
+1768-sycl-zerocopy-chroma-admission-post-1-0

@@ -1,0 +1,1 @@
+| [ADR-1767](1767-sycl-float-motion-add-uv.md) | float_motion_sycl implements motion_add_uv (CPU option order and alias), chroma blurred and summed per plane in the CPU's order (ADR-1411), chroma from the shared planes; zero-copy needs an imported chroma | Proposed | sycl, zero-copy, float-motion, option-parity, fork-local |
