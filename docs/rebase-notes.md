@@ -61335,3 +61335,25 @@ chroma import, which is post-1.0 ([ADR-1685](adr/1685-post-1-0-embedding-zero-co
   `PARITY_STAGE`; the e2e legs never use `-frames:v` / `-t`.
 - No Netflix golden-data or public C API impact (the `vmaf_sycl_upload_plane()`
   contract is stricter, not different).
+
+## SYCL zero-copy chroma import and shared-plane twins, post-1.0 (2026-10-05)
+
+`pr/sycl-zerocopy-chroma`, [ADR-1768](adr/1768-sycl-zerocopy-chroma-admission-post-1-0.md)
+(with ADR-1765, ADR-1766, ADR-1767); a post-1.0 draft on top of the zero-copy
+hardening.
+
+- `core/src/sycl/chroma_import.{h,cpp}`, `dmabuf_import.cpp`: the VA import
+  de-interleaves `layers[1]` (UV) into the upload slot's planar Cb / Cr planes
+  with one layout-addressed kernel (LINEAR, Tile4, Y-tiled) and marks the side;
+  `vmaf_sycl_advance_frame()` turns two marks into "chroma current".
+  `libvmaf.c::vmaf_sycl_init_frame_buffers()` allocates the chroma planes
+  eagerly. Keep both, and keep `vmaf_sycl_require_chroma()` ahead of every read
+  of `vmaf_sycl_get_shared_plane(.., 1|2)` in a twin.
+- Every `core/src/feature/sycl/*_sycl.cpp` twin reads the shared planes, never
+  `ref_pic` / `dist_pic`, and answers ADR-1688's `reads_shared_luma_only()` true
+  (the name is kept; ADR-1768). A master change that adds a host-picture read to
+  a twin must drop its hook; `test_sycl_zero_copy_admission` pins every answer.
+- `test_sycl_zero_copy_model_gate` now expects a CPU extractor refused before
+  the frame and chroma readers on luma-only input refused at submit;
+  `test_sycl_zerocopy_parity` and `test_sycl_chroma_import` cover the chroma.
+- No Netflix golden-data, public API symbol or FFmpeg patch change.

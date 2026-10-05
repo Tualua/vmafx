@@ -33,44 +33,64 @@ so the caller falls back to the D3D11 staging path. DMA-BUF is a Linux kernel
 interface (`ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF`); Level Zero on Windows uses
 NT handles instead.
 
-### Zero-copy import scores luma-only features
+### What the zero-copy import scores
 
-The zero-copy import delivers luma only and hands the extractors no host
-pictures. `vmaf_read_pictures_sycl()` therefore checks every registered
-feature extractor before it counts a frame
-([ADR-1688](../../adr/1688-sycl-zero-copy-luma-only-admission.md)):
+The zero-copy import (FFmpeg `libvmaf_sycl` with QSV surfaces, or any
+caller of `vmaf_read_pictures_sycl()`) imports luma and, for 4:2:0 NV12 and
+P010 surfaces, the Cb and Cr planes on every frame
+([ADR-1765](../../adr/1765-sycl-zerocopy-planar-chroma-import.md)), and hands
+the extractors no host pictures. Every SYCL extractor runs on it and scores
+from the imported planes
+([ADR-1766](../../adr/1766-sycl-host-staging-to-shared-planes.md),
+[ADR-1767](../../adr/1767-sycl-float-motion-add-uv.md)): `adm_sycl`,
+`cambi_sycl`, `float_moment_sycl`, `motion_sycl` and `float_motion_sycl`
+(also with `motion_add_uv=true`), `motion_v2_sycl`, `vif_sycl`, `psnr_sycl`
+and `psnr_hvs_sycl` (luma and chroma), `float_psnr_sycl`, `float_adm_sycl`,
+`float_vif_sycl`, `integer_ssim_sycl`, `float_ssim_sycl`,
+`float_ms_ssim_sycl`, `ciede_sycl`, `ssimulacra2_sycl`, `speed_chroma_sycl`
+and `speed_temporal_sycl`. Both `vmaf_v0.6.1` and `vmaf_float_v0.6.1` score
+on it. On an Arc A380 the full FFmpeg harness (`pass=50 fail=0 nonexact=0`,
+8-bit NV12 and 10-bit P010) finds every value equal to the CPU's, or, for
+`motion_add_uv` (the integer CPU `motion` has no such option), equal to the
+host-upload run of the same twin. Two cases are still refused with
+`-ENOTSUP` (error number 95 on Linux), before the frame changes any state
+and never as a skip or a score from stale data: a CPU extractor (it needs a
+host picture and zero-copy has none), and a chroma reader on an import that
+carried no chroma. Two messages name the cause:
 
-| Runs on the zero-copy path | Refused with `-ENOTSUP` and named |
-| --- | --- |
-| `adm_sycl`, `vif_sycl`, `motion_sycl`, `motion_v2_sycl`, `cambi_sycl`, `float_moment_sycl` | `speed_chroma_sycl` (the default model's `speed_chroma_uv`), `speed_temporal_sycl`, `ciede_sycl`, `ssimulacra2_sycl`, `float_ms_ssim_sycl`, `float_ssim_sycl`, `integer_ssim_sycl`, `float_psnr_sycl`, `float_motion_sycl`, `float_vif_sycl`, `float_adm_sycl` |
-| `psnr_sycl`, `psnr_hvs_sycl` with `enable_chroma=false` | `psnr_sycl`, `psnr_hvs_sycl` with `enable_chroma` (the default), `motion_sycl` with `motion_add_uv=true` |
-| | any CPU extractor (no SYCL twin, or a twin that cannot honour the model's options) |
+- A CPU extractor in the context, from the admission check of
+  [ADR-1688](../../adr/1688-sycl-zero-copy-luma-only-admission.md) (widened by
+  [ADR-1768](../../adr/1768-sycl-zerocopy-chroma-admission-post-1-0.md) to
+  every SYCL twin): `vmaf_read_pictures_sycl: feature extractor "<name>" needs
+  host pictures ...`.
+- A chroma reader on an import that carried no chroma, prefixed with the
+  extractor's name:
+  `needs chroma planes, which this zero-copy import did not provide`.
+  The D3D11 import (Windows) is luma only, so `psnr` / `psnr_hvs` with
+  chroma, `motion_add_uv` on either motion twin, `float_ms_ssim` with
+  `enable_chroma=true`, and `ciede`, `ssimulacra2` and `speed_chroma` (which
+  always read chroma) fail with this message there; set `enable_chroma=false`
+  where the option exists to score luma only. Chroma import for D3D11 is out
+  of scope.
 
-So `vmaf_v0.6.1` runs zero-copy and gives the CPU's per-frame scores. The
-default model `vmaf_v1.0.16_3d0h` does not run zero-copy: the first frame
-fails with a libvmaf error that names `speed_chroma_sycl`. With FFmpeg, score it
-through the bridge below (`hwdownload,format=nv12` and the `libvmaf` filter's
-`sycl_device` option).
-
-Measured on an Arc A380 (xe driver, FFmpeg n9.0.2 with the series, QSV decode
-of the Netflix 576x324 pair as H.264) before the check existed:
-
-- `vmaf_v1.0.16_3d0h` failed with `vmaf_read_pictures_sycl failed: -22` and no
-  word about chroma;
-- `feature=name=float_psnr_sycl` ended FFmpeg with a segmentation fault (the
-  twin dereferenced the missing picture);
-- `motion_sycl` with `motion_add_uv=true` reported `integer_motion2_mau`
-  equal to `integer_motion2` (4.257894 on frame 1, where the host path gives
-  5.536504), because the U and V it adds were never imported;
-- `feature=name=float_psnr` (the CPU extractor) was skipped on every frame,
-  and the result had no `float_psnr` and no error.
-
-Importing the chroma as well would need two pieces of work. The de-tile kernel
-would have to de-interleave the NV12 / P010 UV layer, and every chroma twin
-would need a device chroma path. Neither is implemented. Both belong to the
-post-1.0 zero-copy import
-([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)) and
-need their own ADR.
+The chroma planes are allocated whenever the frame buffers are, not only when
+a chroma reader is registered, so a luma-only zero-copy run pays for them:
+eight device planes (Cb and Cr, reference and distorted, two slots) and four
+pinned host staging planes, each `ceil(w/2) x ceil(h/2)` samples. At 1080p
+that is 4.1 MB of device memory and 2.1 MB pinned at 8 bit (8.3 MB and
+4.1 MB at 10 bit); at 4K it is 16.6 MB and 8.3 MB at 8 bit (33 MB and
+16.6 MB at 10 bit), half the size of the luma buffers. Against the
+luma-only Stage-1 baseline, 1080p throughput on an Arc A380 was +1.9 %
+(8 bit) and -3.9 % (10 bit), against a baseline that itself spread by 3 %
+(Research-1765, "D-01 cost"); 4K was not measured. The DMA-BUF
+Tile4 layout is the only one a real device has delivered so far (Arc A380);
+the LINEAR and Y-tiled chroma layouts are covered by host-synthesised
+vectors, not by hardware. Earlier builds returned `-EINVAL` (error number 22)
+or crashed on a missing picture. Real QSV decode is tested by
+`scripts/test/zerocopy-e2e.sh` (container, Intel GPU);
+`test_sycl_zero_copy_admission`, `test_sycl_zero_copy_model_gate` and
+`test_sycl_zerocopy_parity` cover every extractor on shared device planes
+without a decoder.
 
 ## D3D11 staging-texture import (Windows)
 
@@ -145,9 +165,8 @@ The `libvmaf_sycl` filter resolves each `feature=` name to its SYCL twin, as
 the `vmaf` CLI does. On QSV zero-copy input it refuses to configure when no
 twin can run (a CPU extractor cannot read device-only frames); on software input
 it uses the twin when there is one and otherwise warns and computes the feature
-on the CPU. A twin that needs chroma is still refused at the first frame by the
-admission check above. Zero-copy accepts NV12 and P010 surfaces only. The
-messages and examples are in
+on the CPU. Every SYCL twin runs on zero-copy input (above). Zero-copy accepts
+NV12 and P010 surfaces only. The messages and examples are in
 [Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
 the rationale is [ADR-1764](../../adr/1764-sycl-filter-twin-routing.md).
 

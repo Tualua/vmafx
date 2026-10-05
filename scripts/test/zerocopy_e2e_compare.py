@@ -29,10 +29,11 @@ This module reads those files and decides, per case:
   matches message text beyond the feature names, so the wording may change
   between stages.
 
-Stage 1 is what the luma-only zero-copy path admits (ADR-1688). Stages 2 and 3
-need chroma on the device and the host-staging twins moved to the shared planes,
-the post-1.0 zero-copy import of ADR-1685; until then their cases are refused
-with ``-ENOTSUP`` naming the extractor, which is the loud failure checked here.
+Stage 1 is what a luma-only zero-copy import can serve (ADR-1688). Stage 2 adds
+the chroma import (ADR-1765) and stage 3 the host-staging twins on the shared
+planes (ADR-1766, ADR-1767); with both, run ``--stage 3``. A tree without them
+refuses the later cases with ``-ENOTSUP`` naming the extractor, which is the
+loud failure checked here.
 
 An absent metric in a successful zero-copy output is never a pass (T-12-07).
 
@@ -127,14 +128,13 @@ CASES: dict[str, Case] = {
     "psnr_luma": _feature("psnr", "enable_chroma=false"),
     "psnr_hvs_luma": _feature("psnr_hvs", "enable_chroma=false"),
     "model-vmaf_v0.6.1": Case("model", "version=vmaf_v0.6.1", ("vmaf_v0.6.1",), "vif"),
-    # Stage 2: chroma import (post-1.0; refused on the luma-only path).
+    # Stage 2: chroma import (ADR-1765).
     "psnr": _feature("psnr"),
     "psnr_hvs": _feature("psnr_hvs"),
     # Integer motion with motion_add_uv: the CPU extractor lacks the option, so the
     # reference is host upload of motion_sycl.
     "motion_uv": _feature("motion", "motion_add_uv=true", reference="host"),
-    # Stage 3: host-staging extractors on the shared planes (post-1.0; refused
-    # on the luma-only path).
+    # Stage 3: host-staging extractors on the shared planes (ADR-1766, ADR-1767).
     "float_ssim": _feature("float_ssim"),
     "float_ms_ssim": _feature("float_ms_ssim"),
     "float_psnr": _feature("float_psnr"),

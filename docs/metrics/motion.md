@@ -263,7 +263,7 @@ SAD term. The output range is `[0, motion_max_val]`, with the same semantics as
 | `motion_blend_factor`| `mbf`     | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                          |
 | `motion_blend_offset`| `mbo`     | double | `40.0`    | `0.0–1000.0`  | Blend offset for `motion3_score`                                          |
 | `motion_add_scale1`  | `mdc`     | bool   | `false`   | n/a           | Add half-resolution SAD term on top of the full-resolution SAD of each plane (CPU and `float_motion_hip`) |
-| `motion_add_uv`      | `mau`     | bool   | `false`   | n/a           | Sum U and V plane SADs into the score (CPU and `float_motion_hip`)        |
+| `motion_add_uv`      | `mau`     | bool   | `false`   | n/a           | Sum U and V plane SADs into the score (CPU, `float_motion_hip` and `float_motion_sycl`) |
 | `motion_filter_size` | `mfs`     | int    | `5`       | `0–9`         | Blur filter: `3` = 3-tap, `1` = no blur, any other value = the 5-tap Motion2 filter (CPU and `float_motion_hip`) |
 | `motion_max_val`     | `mmxv`    | double | `10000.0` | `0.0–10000.0` | Upper clamp applied to emitted scores                                     |
 
@@ -279,14 +279,17 @@ at init.
 |---|---|---|---|---|---|---|
 | Scalar C, AVX2, AVX-512, NEON | `float_motion` | `float_motion.c`, `x86/float_motion_avx2.c`, `x86/float_motion_avx512.c`, `arm64/float_motion_neon.c` | Reference | Yes | All | n/a |
 | CUDA | `float_motion_cuda` | `feature/cuda/float_motion_cuda.c` (ADR-0196) | Exact ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)) | Yes | `debug`, `motion_force_zero`, `motion_fps_weight`, `motion_max_val`, `motion_blend_factor`, `motion_blend_offset` | `float_motion.cuda` |
-| SYCL | `float_motion_sycl` | `feature/sycl/float_motion_sycl.cpp` (ADR-0196) | Exact ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md)) | Yes, since 2026-10-03 | As CUDA | `float_motion.sycl` |
+| SYCL | `float_motion_sycl` | `feature/sycl/float_motion_sycl.cpp` (ADR-0196) | Exact ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md)) | Yes, since 2026-10-03 | As CUDA, plus `motion_add_uv` ([ADR-1767](../adr/1767-sycl-float-motion-add-uv.md)) | `float_motion.sycl` |
 | HIP | `float_motion_hip` | `feature/hip/float_motion_hip.c` (ADR-0273) | Exact ([ADR-1419](../adr/1419-hip-float-motion-cpu-float-sum.md)) | Yes ([ADR-1404](../adr/1404-hip-float-motion-motion3-and-options.md)) | The whole CPU table, including `motion_add_scale1`, `motion_add_uv`, `motion_filter_size` | `float_motion.hip` |
 | Metal | `float_motion_metal` | `feature/metal/float_motion_metal.mm` | Not exact (per-block sum) | No (`motion` and `motion2` only; `T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in [`state.md`](../state.md)) | Not `motion_max_val`; see below | none |
 
-The CUDA, SYCL and Metal twins do not declare `motion_add_scale1`,
-`motion_add_uv` or `motion_filter_size`, so a request with one of them is
-computed on the CPU
-([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)). On Metal a
+The CUDA and Metal twins do not declare `motion_add_scale1`, `motion_add_uv`
+or `motion_filter_size`, and the SYCL twin declares `motion_add_uv` only, so a
+request with an option its twin does not declare is computed on the CPU
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)); on QSV
+zero-copy input, where there is no CPU fallback
+([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)), the request
+fails with `cannot honour option`. On Metal a
 `motion_max_val` setting keeps `float_motion` on the CPU as well, and the debug
 `motion` score is emitted without the fps weight.
 
@@ -328,7 +331,13 @@ the low digits.
   runs both on the U and V planes.
 - **SYCL.** `motion3` and both blend options since 2026-10-03. Its `motion3`
   is the CPU's bit for bit, because its SAD already is (ADR-1411) and the blend
-  is the CPU's host arithmetic.
+  is the CPU's host arithmetic. It implements `motion_add_uv` alone
+  ([ADR-1767](../adr/1767-sycl-float-motion-add-uv.md)): Cb and Cr are blurred
+  and summed in the CPU's order and the scores are added in `double`, Y then U
+  then V, so the result equals the CPU's bit for bit. On zero-copy input it
+  also needs the import to have carried the chroma
+  ([ADR-1765](../adr/1765-sycl-zerocopy-planar-chroma-import.md)); otherwise
+  `submit` returns `-ENOTSUP`.
 - **`motion_max_val` and `motion_fps_weight`.** `float_motion_sycl`,
   `float_motion_cuda` and `float_motion_hip` take `motion_max_val` (alias
   `mmxv`) and, like the CPU, scale every score they emit (the debug `motion`

@@ -306,27 +306,24 @@ for (unsigned i = 0; i < nframes; i++) {
 vmaf_flush_sycl(vmaf);
 ```
 
-The path holds the **luma plane only**, and the extractors get no host picture
-([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)). Each call to
-`vmaf_read_pictures_sycl()` first checks every registered feature extractor.
-It returns `-ENOTSUP` before counting the frame, with one libvmaf error line
-naming each extractor that cannot run on luma alone:
-
-- a SYCL twin that reads chroma or a host picture. That includes
-  `speed_chroma_sycl`, which the default model `vmaf_v1.0.16_3d0h` needs for
-  `speed_chroma_uv`; `motion_sycl` with `motion_add_uv=true`; and `psnr_sycl`
-  or `psnr_hvs_sycl` with `enable_chroma` (their default);
-- a CPU extractor: a feature with no SYCL twin, or a twin that cannot honour
-  the model's options.
-
-What runs: `adm_sycl`, `vif_sycl`, `motion_sycl`, `motion_v2_sycl`,
-`cambi_sycl`, `float_moment_sycl`, and `psnr_sycl` / `psnr_hvs_sycl` with
-`enable_chroma=false`. That covers `vmaf_v0.6.1` (`adm2`, `vif`, `motion2`),
-whose scores equal the CPU's on this path. Score anything else from host
-frames with `vmaf_read_pictures()`. Before ADR-1688 such a feature failed with
-a bare `-22`, crashed the process (`float_psnr_sycl`), added the SAD of chroma
-that was never imported (`motion_sycl` with `motion_add_uv`), or was dropped
-from the result without an error (a CPU extractor).
+This path hands the extractors no host pictures. Every SYCL extractor reads
+the library's shared device planes instead
+([ADR-1766](../adr/1766-sycl-host-staging-to-shared-planes.md)), and the VA-API
+import (`vmaf_sycl_import_va_surface`) fills the library's Cb / Cr planes as
+well as luma for 4:2:0 NV12 and P010 surfaces
+([ADR-1765](../adr/1765-sycl-zerocopy-planar-chroma-import.md)), so every SYCL
+twin runs in this loop: `psnr_sycl` and `psnr_hvs_sycl` with chroma,
+`ciede_sycl`, `ssimulacra2_sycl`, `speed_chroma_sycl` (the default model
+`vmaf_v1.0.16_3d0h` included) and the motion twins with `motion_add_uv=true`.
+`vmaf_sycl_get_frame_buffers()` returns the two luma buffers only. Each call to
+`vmaf_read_pictures_sycl()` first checks every registered feature extractor
+([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md), widened by
+[ADR-1768](../adr/1768-sycl-zerocopy-chroma-admission-post-1-0.md)) and returns
+`-ENOTSUP` before counting the frame, with one libvmaf error line naming each
+CPU extractor in the context (it needs host pictures). A caller that writes only
+the luma buffers (the D3D11 import, or its own decoder interop) provides no
+chroma: a chroma reader then fails with `-ENOTSUP` and
+`<extractor>: needs chroma planes, which this zero-copy import did not provide`.
 
 ### GPU-resident import paths
 
@@ -349,7 +346,7 @@ int  vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_device,
 | Function | Role | Notes |
 | --- | --- | --- |
 | `vmaf_sycl_dmabuf_import` | Primitive: turns a DMA-BUF fd into a SYCL device pointer through Level Zero external memory. | Caller keeps the fd. Free the pointer with `vmaf_sycl_dmabuf_free` (`NULL` is a no-op). |
-| `vmaf_sycl_import_va_surface` | Convenience wrapper over dmabuf for a VA-API decode feed. Preferred on Linux. | Imports the luma plane only (see the zero-copy path above for what that can score). Falls back to `vaGetImage` plus a host-to-device copy when the DRM-PRIME export fails (older Mesa, proprietary drivers). `bpc` is 8 or 10. |
+| `vmaf_sycl_import_va_surface` | Convenience wrapper over dmabuf for a VA-API decode feed. Preferred on Linux. | Imports luma and, for NV12 / P010, the Cb / Cr planes. Falls back to `vaGetImage` plus a host-to-device copy when the DRM-PRIME export fails (older Mesa, proprietary drivers). `bpc` is 8 or 10. |
 | `vmaf_sycl_upload_plane` | Platform-agnostic escape hatch: copies a Y plane from host memory with a row pitch. | Use when nothing better works, or as a benchmark baseline. Synchronous: it returns after the copy has completed, so the caller may free, unmap or refill `src` as soon as it returns, and the plane is in place before the next `vmaf_read_pictures_sycl()`. |
 | `vmaf_sycl_import_d3d11_surface` | Windows: copies the decoded texture into a staging texture, maps it and uploads the plane through `vmaf_sycl_upload_plane`. | Implemented in `core/src/sycl/d3d11_import.cpp`. `-EINVAL` for NULL arguments, zero size, `bpc` other than 8 or 10, or a texture smaller than `w` by `h`; `-EIO` when the map fails. |
 

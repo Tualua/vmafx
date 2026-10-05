@@ -267,8 +267,14 @@ into full-resolution GPU SSIM. Pinning `scale=1` on the GPU while leaving the
 CPU on `auto` compares different quantities, not two backends.
 
 The SYCL device-buffer-only `vmaf_read_pictures_sycl()` path has no host
-pictures, so `float_ssim_sycl` cannot run there and fails its first frame with
-an error.
+pictures, so every SYCL extractor, `float_ssim_sycl` included, scores from the
+library's shared device planes there ([ADR-1766](../adr/1766-sycl-host-staging-to-shared-planes.md));
+a CPU extractor in the context fails the first frame with `-ENOTSUP`. A
+VA-API import (QSV) imports the 4:2:0 chroma planes too, so `psnr`, `psnr_hvs`,
+`ciede`, `ssimulacra2`, `speed_chroma` and `motion_add_uv` run there. The
+D3D11 import is luma only and its chroma readers fail with `needs chroma planes,
+which this zero-copy import did not provide`, see the
+[SYCL backend history](sycl/history.md#psnr-psnr_hvs-and-motion_v2-share-the-uploaded-frame-adr-1369-2026-09-29).
 
 ## Related
 

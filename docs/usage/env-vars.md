@@ -44,10 +44,17 @@ precedence.
 |---|---|---|---|
 | `VMAF_SYCL_PROFILE` | `1` | off | Enable SYCL kernel profiling through the queue's `enable_profiling` property. |
 | `VMAF_SYCL_TIMING` | `1` | off | Print per-extractor wall-clock timing to stderr. |
-| `VMAF_SYCL_IMPORT_DEBUG` | `1` | off | Log the addresses of the shared import buffers, to check they are not aliased. |
-| `VMAF_SYCL_CHECKSUM` | `1` | off | Log a CRC of each imported ref / dis device buffer per frame, to localise import corruption. |
+| `VMAF_SYCL_IMPORT_DEBUG` | `1` | off | Log every VA-API import on stderr: the export descriptor (layer count, object count, each layer's DRM format, offset and pitch, each object's size and modifier) and which path (DMA-BUF de-tile or readback) took the frame. |
+| `VMAF_SYCL_CHECKSUM` | `1` | off | Log a CRC32 of each shared luma buffer the SYCL backend is about to compute on. Blocks on a device-to-host copy per frame; for debugging stale or dropped imports only. |
 | `VMAF_SYCL_VIF_SUBGROUP_SIZE` | `16` or `32` | _(automatic)_ | Force the sub-group size of the SYCL VIF kernels. Other values are ignored with a warning, as is a size the device lacks. Used by parity and timing runs ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)). |
 | `VMAF_SYCL_SCRATCH_SELFTEST` | `0` | on | Set to `0` to skip the first-use scratch-memory self-test of the SYCL device ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)). |
+
+The GPU dispatch switches (`VMAF_CUDA_DISPATCH`, `VMAF_SYCL_DISPATCH`,
+`VMAF_SYCL_USE_GRAPH`, `VMAF_SYCL_NO_GRAPH`) and the SYCL diagnostic switches
+(`VMAF_SYCL_PROFILE`, `VMAF_SYCL_TIMING`, `VMAF_SYCL_IMPORT_DEBUG`,
+`VMAF_SYCL_CHECKSUM`) are read once per process, the first time libvmaf needs
+them. Set them before the process starts; a later `setenv()` from inside the
+process is not seen.
 
 ## Dispatch strategy syntax
 

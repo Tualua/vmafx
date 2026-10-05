@@ -44,7 +44,7 @@ Everything lives under `<worktree>/.cache/sycl-dev/` (git-ignored):
 `build/` (meson), `prefix/` (libvmaf install), `ffmpeg-src/` and
 `ffmpeg-prefix/`. Builds are incremental; delete the directory to start over.
 
-## Reproducer: a feature that needs chroma fails loudly on zero-copy input
+## Reproducer: chroma features on zero-copy input
 
 ```bash
 scripts/test/sycl-dev-container.sh libvmaf
@@ -63,12 +63,9 @@ scripts/test/sycl-dev-container.sh exec bash -c '
 ```
 
 The filter routes `psnr` to its twin (`libvmaf_sycl: feature 'psnr' ->
-psnr_sycl`, [ADR-1764](../adr/1764-sycl-filter-twin-routing.md)); `psnr_sycl`
-needs chroma, so the first frame is refused
-([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)) with
-`vmaf_read_pictures_sycl: feature extractor "psnr_sycl" needs host pictures
-...` and the filter's hint to use `hwdownload`, and `ffmpeg` exits non-zero.
-The same command without `feature=name=psnr` prints a VMAF score, and
+psnr_sycl`, [ADR-1764](../adr/1764-sycl-filter-twin-routing.md)), the import
+fills the chroma planes ([ADR-1765](../adr/1765-sycl-zerocopy-planar-chroma-import.md)),
+and the run prints `psnr_y`, `psnr_cb` and `psnr_cr` equal to host upload.
 `feature=name=niqe` (no SYCL twin) fails at configuration with
 `libvmaf_sycl: feature 'niqe' cannot run on zero-copy input: no SYCL twin`.
 Each decoder input has its own QSV device (`qr`, `qd`), as
@@ -144,12 +141,14 @@ scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stag
 
 `--stage N` states how far the zero-copy work has come; a case is held to
 numeric parity once `N` reaches its stage and must fail loudly before that.
-On this tree the zero-copy import carries luma only
-([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)), so run
-`--stage 1`: the stage-2 and stage-3 cases need chroma or the host-staging twins
-on the shared planes, the post-1.0 zero-copy import of
-[ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md), and must be
-refused with an error that names the extractor.
+On this tree the zero-copy import carries chroma
+([ADR-1765](../adr/1765-sycl-zerocopy-planar-chroma-import.md)) and every SYCL
+twin reads the shared planes
+([ADR-1766](../adr/1766-sycl-host-staging-to-shared-planes.md),
+[ADR-1767](../adr/1767-sycl-float-motion-add-uv.md)), so run `--stage 3`. A
+luma-only build ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)
+without [ADR-1768](../adr/1768-sycl-zerocopy-chroma-admission-post-1-0.md))
+passes `--stage 1` and refuses the later cases by name.
 
 | Stage | Cases that must match numerically |
 | --- | --- |
