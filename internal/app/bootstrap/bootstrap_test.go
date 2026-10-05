@@ -10,7 +10,7 @@
 //     pkg/version and honours OTEL_SERVICE_NAME behind the vmafx config key,
 //     and — being a root-scope decorator — reaches golusoris's own module;
 //   - TraceHTTPHandler names spans "<METHOD> <path>", filters probe / scrape
-//     endpoints, and HTTPTracing applies it to the handler golusoris.HTTP
+//     endpoints, and HTTPTracing applies it to the handler bootstrap.HTTP
 //     serves.
 //
 // None of these tests use t.Parallel(): they install the process-global
@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/golusoris/golusoris"
 	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
 	"go.uber.org/fx"
@@ -201,7 +200,7 @@ func TestHTTPTracing_DecoratesGolusorisServerHandler(t *testing.T) {
 		Base,
 		fx.Replace(testEnvOptions()),
 		fx.NopLogger,
-		golusoris.HTTP,
+		HTTP,
 		HTTPTracing,
 		fx.Invoke(func(r chi.Router) {
 			r.Get("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -219,7 +218,7 @@ func TestHTTPTracing_DecoratesGolusorisServerHandler(t *testing.T) {
 		t.Fatalf("GET /v1/health through the golusoris server handler: status %d", rec.Code)
 	}
 	if got := oteltest.Ended(sr, "GET /v1/health"); len(got) != 1 {
-		t.Fatalf("HTTPTracing did not reach golusoris.HTTP's handler; spans: %v", oteltest.Names(sr))
+		t.Fatalf("HTTPTracing did not reach HTTP's handler; spans: %v", oteltest.Names(sr))
 	}
 }
 

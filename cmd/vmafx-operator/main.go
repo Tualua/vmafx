@@ -8,7 +8,7 @@
 // controller-runtime v0.24+ and runs as a Kubernetes Deployment.
 //
 // ADR-1119 Phase 1: this binary is composed with the golusoris fx framework.
-// golusoris.Core supplies config (koanf) + structured slog; otel.Module wires
+// bootstrap.Core supplies config (koanf) + structured slog; otel.Module wires
 // OpenTelemetry; operator.Module (golusoris/k8s/operator) resolves the
 // rest.Config, builds the controller-runtime manager, registers the default
 // healthz/readyz "ping" probes, supports leader election, and runs the manager
@@ -183,7 +183,7 @@ func app() *fx.App {
 // validation test.
 func options() []fx.Option {
 	return []fx.Option{
-		bootstrap.Base, // golusoris.Core + otel.Module + version
+		bootstrap.Base, // bootstrap.Core + otel.Module + version
 		fx.Replace(operatorEnvOptions()),
 		operator.Module,
 		operator.ProvideScheme(vmafxv1.AddToScheme),

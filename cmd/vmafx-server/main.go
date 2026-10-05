@@ -54,7 +54,6 @@ import (
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
-	"github.com/golusoris/golusoris"
 	"github.com/golusoris/golusoris/core/clock"
 	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
@@ -117,7 +116,7 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 		bootstrap.Base,
 		envReplace,
 		bootstrap.FxLogger(),
-		golusoris.HTTP,
+		bootstrap.HTTP,
 		bootstrap.HTTPTracing,
 		grpcmod.Module,
 		serverProviders(),

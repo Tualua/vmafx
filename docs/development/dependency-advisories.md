@@ -69,6 +69,21 @@ A module that calls `golang.org/x/text/language.ParseAcceptLanguage` at
 fails it with `GO-2026-5932: module golang.org/x/crypto has no not_affected
 statement`.
 
+### Code the Go build does not need
+
+An advisory against a package nothing uses is cheapest to close by dropping
+the package from the build (step 2 above). `go mod why -vendor <package>`
+names the import chain from vmafx code; without `-vendor` it also follows the
+tests of other modules. On 2026-10-05 it showed that `golang.org/x/crypto/md4`
+(NTLM SMTP authentication in a mail client) and `golang.org/x/crypto/argon2`
+(a password-hashing helper) reached the binaries only because three files took
+the golusoris `HTTP` and `Core` bundles from its root package, which imports
+every module golusoris has. `internal/app/bootstrap` now composes the modules
+vmafx uses as `bootstrap.Core` and `bootstrap.HTTP`; both packages and 59
+modules, the mail client and the helper among them, left the build
+([ADR-1899](../adr/1899-govulncheck-symbol-gate-openvex.md)). Do not import
+the golusoris root package again; take its sub-packages.
+
 ## Checking a change locally
 
 ```bash

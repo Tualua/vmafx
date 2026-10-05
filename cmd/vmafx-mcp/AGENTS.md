@@ -5,7 +5,7 @@ Go MCP server: exposes 24 tools (`vmaf_score`, `list_models`, ...) to MCP client
 
 ## Composition root (golusoris fx, ADR-1119 Phase-1 PR-5)
 
-`main.go` = `fx.New(...).Run()` over `internal/app/bootstrap.Base` (golusoris.Core = config + slog + clock + id + validate + crypto, plus `otel.Module`, build-version supply). Mirrors sibling migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). Shape:
+`main.go` = `fx.New(...).Run()` over `internal/app/bootstrap.Base` (`bootstrap.Core` = golusoris config + slog + clock + id + validate, plus `otel.Module`, build-version supply). Mirrors sibling migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). Shape:
 
 ```go
 fx.New(
@@ -19,7 +19,7 @@ fx.New(
 
 Facts:
 
-- **MCP server NOT golusoris server module.** golusoris ships no MCP module -> no `golusoris.HTTP` / `grpc.Module` in graph. Transport (stdio or streamable-HTTP from config) owned in `runMCPTransport` fx lifecycle hook: `OnStart` launches goroutine, `OnStop` drains. If golusoris adds MCP module later, fold hook into module. Do not express transport as framework module.
+- **MCP server NOT golusoris server module.** golusoris ships no MCP module -> no `bootstrap.HTTP` / `grpc.Module` in graph. Transport (stdio or streamable-HTTP from config) owned in `runMCPTransport` fx lifecycle hook: `OnStart` launches goroutine, `OnStop` drains. If golusoris adds MCP module later, fold hook into module. Do not express transport as framework module.
 - **`buildServer` domain seam.** `buildMCPServer` = thin fx provider calling `buildServer(*slog.Logger) (*mcp.Server, error)` (`server.go`). `*config.Config` param exists for fx signature / config-driven wiring; `buildServer` itself needs only logger. Tests call `buildServer(nil)` directly and must check error. Error return load-bearing: only path tool failing schema marshal stops process instead of serving without argument validation (invariant #19). Do not widen signature; do not reduce to single return value.
 - **Config keys (env prefix `VMAFX_`, `.` delimiter — `_` becomes `.`):** `VMAFX_MCP_TRANSPORT` -> `mcp.transport` (default `stdio`); `VMAFX_MCP_HTTP_ADDR` -> `mcp.http.addr` (default `:3000`, full listen address). `VMAF_BIN` and `VMAFX_MCP_DIRECT` read directly by tool handlers via `os.Getenv`, NOT koanf — contract unchanged.
 - **Interim env bridge.** `main()` bridges `VMAFX_LOG_LEVEL → LOG_LEVEL` and `VMAFX_LOG_FORMAT → LOG_FORMAT` before `fx.New` (golusoris#234, v0.4.0 log module reads bare `LOG_LEVEL`). Delete lockstep with sibling binaries once carrying golusoris tag lands.

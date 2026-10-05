@@ -262,7 +262,7 @@ func TestOTelWiredThroughBootstrap(t *testing.T) {
 }
 
 // TestHTTPRouteEmitsServerSpan drives a request through the *http.Server
-// golusoris.HTTP built for the production graph and asserts the otelhttp span
+// bootstrap.HTTP built for the production graph and asserts the otelhttp span
 // bootstrap.HTTPTracing adds (ADR-0782 follow-up), plus the probe filter.
 func TestHTTPRouteEmitsServerSpan(t *testing.T) {
 	writeVmafStubForApp(t)

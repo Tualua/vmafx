@@ -62063,3 +62063,12 @@ that conflicts in them takes either side and re-runs the script, then the drift 
   not built (ADR-0708) and is unchanged.
 - New test `core/test/test_log_level_threads.c` and its block in
   `core/test/meson.build`. No score, output or golden impact.
+
+## golusoris modules composed in bootstrap (ADR-1899)
+
+- `internal/app/bootstrap/bootstrap.go` defines `Core` (config, log, clock, id, validate) and
+  `HTTP` (router, server); `Base` uses `Core`, and `cmd/vmafx-server` / `cmd/vmafx-controller`
+  take `bootstrap.HTTP`. No vmafx file imports the golusoris root package: it imports every
+  golusoris module and brought `x/crypto/md4`, `x/crypto/argon2` and 59 otherwise unused
+  modules into the build. A conflict in `go.mod` / `go.sum` takes this side and reruns
+  `go mod tidy`. No upstream file is involved; no score, public API or FFmpeg patch impact.

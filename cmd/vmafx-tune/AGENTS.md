@@ -70,7 +70,7 @@ during migration; see Stage roadmap in
     graph from `bootstrap.Base`, `fx.Populate`s `*slog.Logger` + `*config.Config`
     into handler, runs `fn`, then `app.Stop`s — returns `fn`'s error so
     cobra sets process exit code. **Do not** swap these to
-    `clikit.WithFx(golusoris.Core, fx.Invoke(fn))`: clikit's `WithFx` calls
+    `clikit.WithFx(bootstrap.Core, fx.Invoke(fn))`: clikit's `WithFx` calls
     `app.Run()` (blocks until signal) and discards `fx.Invoke` error, so
     one-shot command would hang, lose exit code. New subcommands follow
     same `withGolusoris` shape; keep `run*` signature

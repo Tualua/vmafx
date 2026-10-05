@@ -84,7 +84,7 @@ decision, not cleanup.
 What new service or new request path does instead:
 
 - fx service: start from `bootstrap.Base`; add `bootstrap.HTTPTracing`
-  next to `golusoris.HTTP`; gRPC spans come with `grpc.Module`.
+  next to `bootstrap.HTTP`; gRPC spans come with `grpc.Module`.
 - one-shot CLI: build `bootstrap.Base` per invocation
   (`cmd/vmafx-tune/cmd/golusoris.go::withGolusoris` is template).
 - application spans: `observability.StartSpan` / `EndSpan` with name

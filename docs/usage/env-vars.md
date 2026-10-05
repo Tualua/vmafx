@@ -274,7 +274,7 @@ addresses are full addresses (`:8080`), not bare ports.
 | `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | `auto` (tint on a TTY, else JSON), `tint` or `json`. |
 
 The node is gRPC-only. Its Kubernetes probe is the `VmafxScoring/Health` RPC;
-there is no HTTP `/livez` or `/readyz` until `golusoris.HTTP` joins the node
+there is no HTTP `/livez` or `/readyz` until `bootstrap.HTTP` joins the node
 graph.
 
 ### Operator (`cmd/vmafx-operator`)

@@ -7,7 +7,7 @@ Fleet-wide invariants: [cmd/AGENTS.md](../../../cmd/AGENTS.md).
 
 ## Rebase-sensitive invariants
 
-1. **`Base` is `golusoris.Core + otel.Module + fx.Supply(version.Get()) +
+1. **`Base` is `Core + otel.Module + fx.Supply(version.Get()) +
    fx.Decorate(withServiceIdentity)`, in that shape.** `otel.Module` =
    only OTel initialiser in tree. `withServiceIdentity` = root-scope
    decorator of golusoris's `otel.Options` (service.version from
@@ -26,14 +26,23 @@ Fleet-wide invariants: [cmd/AGENTS.md](../../../cmd/AGENTS.md).
 
 3. **`HTTPTracing` = opt-in per root, not part of `Base`.**
    `fx.Decorate` of `http.Handler` (what `httpx/server.Module` consumes).
-   Graph without golusoris.HTTP -> nothing to decorate. Roots with
-   golusoris.HTTP add it (server, controller); hand-rolled servers call
+   Graph without `HTTP` -> nothing to decorate. Roots with
+   `HTTP` add it (server, controller); hand-rolled servers call
    `TraceHTTPHandler` directly (mcp). Span naming (`<METHOD> <path>`,
    `/swagger/*` collapse) + probe/scrape filter live only in this package —
    `TestTraceHTTPHandler_SpanNamesAndFilters` +
    `TestHTTPTracing_DecoratesGolusorisServerHandler` lock them.
 
-4. **`FxLogger()` = long-running services only.** `vmafx-tune`'s one-shot
+4. **`Core` / `HTTP` = golusoris modules composed here, never the root
+   package `github.com/golusoris/golusoris`** (ADR-1899). Root package
+   imports every bundle (notify -> go-mail -> `x/crypto/md4`, core/crypto ->
+   argon2id -> `x/crypto/argon2`, river, AWS SDK, casbin, ...) into every
+   binary; composing `config, log, clock, id, validate` and
+   `router, server` dropped 59 modules from go.mod. `core/crypto` left out:
+   no vmafx binary uses PasswordHasher / Encryptor. Never re-import root;
+   new module -> import its own package and add to the bundle here.
+
+5. **`FxLogger()` = long-running services only.** `vmafx-tune`'s one-shot
    graphs use `fx.NopLogger` instead (its AGENTS.md #11).
 
 ## Test requirements

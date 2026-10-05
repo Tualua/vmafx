@@ -302,7 +302,7 @@ func warnHTTPAuthPosture(log *slog.Logger) {
 // request-body size limit), the identical gate to the Python _make_security_middleware so
 // both servers behave the same. The otelhttp server span (bootstrap.TraceHTTPHandler,
 // ADR-0782 / ADR-1119) is outermost so rejected requests are traced with their 401 / 413
-// status too; this hand-rolled *http.Server is not the golusoris.HTTP module, so the
+// status too; this hand-rolled *http.Server is not the bootstrap.HTTP module, so the
 // fx-side bootstrap.HTTPTracing decorator does not reach it and the wrapper is applied
 // here directly.
 func newHTTPTransportServer(srv *mcp.Server, addr string) *http.Server {

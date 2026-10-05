@@ -40,7 +40,7 @@ generated from `cmd/vmafx-controller/proto/controller.proto` via
 Controller wired via `fx.New(...).Run()` over golusoris framework.
 `main.go` supplies vmafx providers + invokes; golusoris owns config (koanf,
 `VMAFX_` prefix, `.` delimiter), structured slog logging, OTel, HTTP stack
-(`golusoris.HTTP` with chi router + graceful `*http.Server`), gRPC server
+(`bootstrap.HTTP` = golusoris router + server modules: chi router + graceful `*http.Server`), gRPC server
 (OTel + logging + panic-recovery interceptors), shutdown.
 
 1. **`productionOptions(envReplace)` = single graph source.** `main` and

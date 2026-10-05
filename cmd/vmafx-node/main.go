@@ -13,10 +13,10 @@
 //
 // The node serves a single gRPC service — VmafxScoring (Score, ScoreStream,
 // Health). It is gRPC-only: there is no HTTP server in the node binary, so the
-// canonical k8s probe is the gRPC Health RPC (golusoris.HTTP is intentionally
+// canonical k8s probe is the gRPC Health RPC (bootstrap.HTTP is intentionally
 // NOT in the graph). mountNodeHealth wires a statuspage readiness check (scorer
 // usable) for parity with the server's seam and so an HTTP livez/readyz can be
-// mounted in one place the day golusoris.HTTP is added to the node.
+// mounted in one place the day bootstrap.HTTP is added to the node.
 //
 // Configuration (koanf via golusoris/config, env prefix VMAFX_, "." delimiter).
 // The golusoris env transform strips the VMAFX_ prefix, lowercases, and replaces
@@ -235,7 +235,7 @@ func nodeLifecycleOptions() fx.Option {
 
 		// Mount the node health surface (statuspage readiness check + log). The
 		// node's k8s probe is the gRPC Health RPC; this seam carries the readiness
-		// state and is where HTTP livez/readyz mount once golusoris.HTTP is wired.
+		// state and is where HTTP livez/readyz mount once bootstrap.HTTP is wired.
 		fx.Invoke(mountNodeHealth),
 	)
 }
@@ -252,7 +252,7 @@ func provideStatusRegistry(clk clock.Clock) *statuspage.Registry {
 // k8s probe is the VmafxScoring Health RPC (always available, even without a
 // scorer). The statuspage check below records whether scoring is actually
 // usable (scorer present) so an HTTP /readyz can expose it the day
-// golusoris.HTTP joins the node graph — without that, k8s would mark a
+// bootstrap.HTTP joins the node graph — without that, k8s would mark a
 // scorer-less node ready and route un-servable Score RPCs to it.
 //
 // Consuming *grpc.Server here is not required for the listener to bind (the

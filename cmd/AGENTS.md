@@ -5,7 +5,7 @@
 
 | Binary             | Shape                                        | Composition                                                                   |
 |--------------------|----------------------------------------------|-------------------------------------------------------------------------------|
-| `vmafx-server`     | long-running fx service (gRPC + HTTP)        | `bootstrap.Base` + `golusoris.HTTP` + `bootstrap.HTTPTracing` + `grpc.Module` |
+| `vmafx-server`     | long-running fx service (gRPC + HTTP)        | `bootstrap.Base` + `bootstrap.HTTP` + `bootstrap.HTTPTracing` + `grpc.Module` |
 | `vmafx-controller` | long-running fx service (gRPC + HTTP)        | same as server, plus the JWT auth interceptors                                |
 | `vmafx-node`       | long-running fx service (gRPC only)          | `bootstrap.Base` + `grpc.Module`                                              |
 | `vmafx-operator`   | long-running fx service (controller-runtime) | `bootstrap.Base` + `k8s/operator.Module`                                      |
@@ -27,7 +27,7 @@
    endpoint, `service.name` = binary name, `service.version` = `pkg/version`).
 
 2. **HTTP surfaces traced via `bootstrap`, not per binary.** Root wiring
-   `golusoris.HTTP` puts `bootstrap.HTTPTracing` next to it (server,
+   `bootstrap.HTTP` puts `bootstrap.HTTPTracing` next to it (server,
    controller). Hand-rolled `*http.Server` wraps handler with
    `bootstrap.TraceHTTPHandler` outermost (mcp). Span name (`<METHOD> <path>`,
    Swagger subtree collapsed) and probe/scrape filter (`/healthz`, `/readyz`,

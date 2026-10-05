@@ -91,7 +91,7 @@ Go gRPC + HTTP scoring service. See
    architecture-specific library path: either compiles binary against
    different libvmaf from runtime.
 
-10. **`bootstrap.HTTPTracing` sits next to `golusoris.HTTP`** (`main.go`,
+10. **`bootstrap.HTTPTracing` sits next to `bootstrap.HTTP`** (`main.go`,
     `app_test.go::productionGraph`, ADR-0782 / ADR-1119): decorates
     `http.Handler` golusoris server module serves with `otelhttp` span
     (`<METHOD> <path>`, probes and `/metrics` filtered) -> every REST route

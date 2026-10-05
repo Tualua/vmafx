@@ -1312,6 +1312,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   longer pass the name check.
 
 
+- The Go binaries take the golusoris modules they use from
+  `internal/app/bootstrap` (`bootstrap.Core`, `bootstrap.HTTP`) instead of the
+  golusoris root package, which imports every module golusoris has. This drops
+  59 unused modules from the build, among them the mail client that pulled
+  `golang.org/x/crypto/md4` and the password-hashing helper that pulled
+  `golang.org/x/crypto/argon2` (ADR-1899). Configuration keys, endpoints and
+  behaviour are unchanged.
+
+
 - **Netflix golden assertions: Netflix's own 2026-04/05 re-records ported verbatim
   (ports of Netflix/vmaf `5c7770080`, `005988ead`, `4679db83c`, `d93495f5c`,
   `e3827e4dd`, [ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)).**
