@@ -2326,6 +2326,18 @@ libvmaf_feature_sources = [
     # pulling vmafx_tad_* undefined references into libvmaf_feature.a, which
     # would break static-lib-linked test executables that don't include
     # rust_tad_dep. See ADR-0707.
+
+    # SpEED (speed_chroma, speed_temporal) is built whatever enable_float
+    # says, as Netflix/vmaf builds it since 4718b4f5f / 6046b1926: the
+    # vmaf_v1.0.16 models, the fork's default among them, read speed_chroma.
+    # ADR-0964: speed_internal.c holds the CPU-side helpers shared by speed.c
+    # and the speed_{chroma,temporal}_{cuda,hip,sycl} GPU twins (see
+    # feature/speed_internal.h). vif_tools.c and common/convolution.c are
+    # SpEED's filter and resampling code; the float VIF extractor shares them.
+    feature_src_dir + 'speed.c',
+    feature_src_dir + 'speed_internal.c',
+    feature_src_dir + 'common/convolution.c',
+    feature_src_dir + 'vif_tools.c',
 ]
 
 if float_enabled
@@ -2335,18 +2347,11 @@ if float_enabled
         feature_src_dir + 'float_motion.c',
         feature_src_dir + 'float_vif.c',
         feature_src_dir + 'float_moment.c',
-        feature_src_dir + 'speed.c',
-        # ADR-0964: speed_internal.c — CPU-side helpers shared by speed.c
-        # and the speed_{chroma,temporal}_{cuda,hip,sycl} GPU twins.
-        # See feature/speed_internal.h for the contract.
-        feature_src_dir + 'speed_internal.c',
 
-        feature_src_dir + 'common/convolution.c',
         feature_src_dir + 'offset.c',
         feature_src_dir + 'adm.c',
         feature_src_dir + 'adm_tools.c',
         feature_src_dir + 'vif.c',
-        feature_src_dir + 'vif_tools.c',
         feature_src_dir + 'motion.c',
         feature_src_dir + 'psnr.c',
         feature_src_dir + 'psnr_tools.cpp',

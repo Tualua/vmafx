@@ -160,3 +160,14 @@ Upstream `compute_cov_kernel_avx2` / `_avx512` (30f472b14) and `_neon`
 Kernel reads up to `width + SPEED_COV_ROW_MAX - 1` floats per row of `data_y`
 whatever `count`: SpEED's block grid always holds those floats. New caller -> same
 guarantee or scalar kernel.
+
+SpEED built + registered whatever `enable_float` says (Netflix/vmaf
+4718b4f5f meson hunk + 6046b1926): `speed.c`, `speed_internal.c`,
+`vif_tools.c`, `common/convolution.c` sit in the unconditional
+`libvmaf_feature_sources` list of `core/src/meson.build`;
+`vmaf_fex_speed_chroma` / `_temporal` sit outside `#if VMAF_FLOAT_FEATURES` in
+`feature_extractor.cpp`. Default model `vmaf_v1.0.16_3d0h` reads
+`speed_chroma`; GPU twins link `speed_internal.c`. **On upstream sync**: never
+move them back under the float gate. SpEED tests in `core/test/meson.build`
+carry no `enable_float` gate; `test_speed` fails in a `-Denable_float=false`
+build when the extractors drop out.

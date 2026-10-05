@@ -176,7 +176,11 @@ CLI flags work without extra configure flags. `float_ansnr` was removed
 ([ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md)).
 
 The integer extractors always compile; this flag only adds the float twins.
-Set `-Denable_float=false` only on size-constrained embedded targets.
+`speed_chroma` and `speed_temporal` are float extractors but compile whatever
+this flag says, as in Netflix/vmaf: the `vmaf_v1.0.16` models, the default
+model among them, read `speed_chroma`, so a `-Denable_float=false` build still
+scores with the default model. Set `-Denable_float=false` only on
+size-constrained embedded targets.
 
 ### `nvcc_threads`
 

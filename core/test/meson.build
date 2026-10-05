@@ -1735,13 +1735,11 @@ endif
 
 # speed_chroma + speed_temporal registration smoke tests — link against
 # libvmaf_feature_static_lib for the extractor list (mirrors test_lpips).
-# Both extractors live in core/src/feature/speed.c, which is only
-# compiled when -Denable_float=true (see core/src/meson.build); the
-# corresponding entries in feature_extractor.c's extractor list are
-# wrapped in `#if VMAF_FLOAT_FEATURES`. Gate the test on the same option
-# so a default `meson setup` (enable_float=false) doesn't fail on a
-# config that legitimately omits these extractors.
-if get_option('enable_float')
+# Both extractors live in core/src/feature/speed.c, which every build
+# compiles and registers whatever enable_float says (Netflix/vmaf 6046b1926:
+# the vmaf_v1.0.16 models read speed_chroma). The SpEED tests below are
+# therefore not gated on enable_float; in a -Denable_float=false build
+# test_speed fails when the extractors drop out of the list.
 test_speed = executable('test_speed',
     ['test.c', 'test_speed.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
      '../src/dict.cpp',
@@ -1764,7 +1762,7 @@ test_speed = executable('test_speed',
 # (T-SPEED-TEMPORAL-PRESCALE-UP-OVERFLOW-2026-09-30, Netflix/vmaf#1626) and
 # speed_chroma at odd frame sizes (T-SPEED-CHROMA-ODD-SIZE-OVERFLOW-2026-09-30).
 # Both overran a heap buffer, which only fails visibly under ASan
-# (sanitizers.yml); same link recipe and float gate as test_speed.
+# (sanitizers.yml); same link recipe as test_speed.
 test_speed_frame_buffers = executable('test_speed_frame_buffers',
     ['test.c', 'test_speed_frame_buffers.c', '../src/mem.cpp', '../src/picture.c',
      '../src/ref.cpp', '../src/dict.cpp',
@@ -1786,8 +1784,8 @@ test_speed_frame_buffers = executable('test_speed_frame_buffers',
 # The lanczos4 prescale weight table the device-resident SpEED twins read
 # (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30): resampling with the table
 # in the scale kernel's operation order must equal vif_scale_frame_s() bit for
-# bit. Device-free, so it runs on every lane; same link recipe and float gate
-# as test_speed. The project-wide strict FP policy (ADR-1461) keeps Intel
+# bit. Device-free, so it runs on every lane; same link recipe as test_speed.
+# The project-wide strict FP policy (ADR-1461) keeps Intel
 # LLVM's default fast model from reordering the replayed sums, as it does for
 # the library.
 test_speed_lanczos4_weights = executable('test_speed_lanczos4_weights',
@@ -1813,8 +1811,8 @@ test('test_speed_lanczos4_weights', test_speed_lanczos4_weights, suite : ['fast'
 # checkasm tree): vif_filter1d_dec16_s(), the fused anti-alias filter and
 # decimation SpEED runs on every target but x86, must leave the bits of
 # vif_filter1d_s() + vif_dec16_s(). Device-free; the aarch64 cross build runs
-# it under qemu, where the extractor takes the fused path. Same link recipe,
-# float gate and fp model as test_speed_lanczos4_weights.
+# it under qemu, where the extractor takes the fused path. Same link recipe
+# and fp model as test_speed_lanczos4_weights.
 test_speed_filter = executable('test_speed_filter',
     ['test.c', 'test_speed_filter.c', '../src/mem.cpp', '../src/picture.c',
      '../src/ref.cpp', '../src/dict.cpp',
@@ -1845,8 +1843,8 @@ test('test_speed_filter', test_speed_filter, suite : ['fast'], timeout : 180)
 # Netflix master returns on the tracked 576x324 pair. The _foreign_libm
 # variant defines VMAF_TEST_ASSUME_FOREIGN_LIBM and runs the path every C
 # library other than glibc takes (Netflix's values reported as skipped), so
-# both paths run on every lane. Device-free; same link recipe and float gate
-# as test_speed_filter. 8.4 million Givens inputs with a software fmaf() where
+# both paths run on every lane. Device-free; same link recipe as
+# test_speed_filter. 8.4 million Givens inputs with a software fmaf() where
 # the build targets a CPU without FMA: a second in a release build, more under
 # a sanitizer or qemu.
 foreach upstream_form : [['test_speed_upstream_form', []],
@@ -1872,7 +1870,6 @@ foreach upstream_form : [['test_speed_upstream_form', []],
     )
     test(upstream_form[0], upstream_form_exe, suite : ['fast'], timeout : 300)
 endforeach
-endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
 test_speed_qa = executable('test_speed_qa',
@@ -3886,11 +3883,10 @@ endif
 # ADR-0865 / ADR-0720: test_ansnr_simd removed — ansnr feature was dropped.
 
 # SpEED covariance row kernels (AVX2, AVX-512, NEON) and matrix-product
-# kernels against their scalar references, bit for bit (ADR-1459).
-# Gated on float_enabled (speed.c is float-only); the aarch64 cross build runs
-# it under qemu.
+# kernels against their scalar references, bit for bit (ADR-1459). speed.c is
+# built whatever enable_float says; the aarch64 cross build runs it under qemu.
 speed_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
-if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
+if speed_simd_test_archs.contains(host_machine.cpu_family())
 test_speed_simd = executable('test_speed_simd',
     ['test.c', 'test_speed_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
@@ -7732,10 +7728,8 @@ test('test_cambi_simd', test_cambi_simd, suite : ['fast', 'simd'])
 test('test_cambi_spatial_mask_simd', test_cambi_spatial_mask_simd, suite : ['fast', 'simd'])
 test('test_cambi_stage_simd', test_cambi_stage_simd, suite : ['fast', 'simd'])
 endif
-if get_option('enable_float')
 test('test_speed', test_speed, suite : ['fast'])
 test('test_speed_frame_buffers', test_speed_frame_buffers, suite : ['fast'])
-endif
 test('test_speed_qa', test_speed_qa, suite : ['fast'])
 test('test_luminance_tools', test_luminance_tools, suite : ['fast'])
 test('test_cli_parse', test_cli_parse, suite : ['fast'])
@@ -7787,7 +7781,7 @@ if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test('test_moment_simd', test_moment_simd, suite : ['fast', 'simd'])
 endif
 
-if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
+if speed_simd_test_archs.contains(host_machine.cpu_family())
 test('test_speed_simd', test_speed_simd, suite : ['fast', 'simd'])
 endif
 

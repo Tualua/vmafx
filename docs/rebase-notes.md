@@ -7,6 +7,28 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
+
+`port/6046b1926-speed-without-float`. Netflix builds `speed.c`, `vif_tools.c`
+and `common/convolution.c` outside the `enable_float` block since `4718b4f5f`
+(a hunk the fork's port of that commit, #1024, left out) and registers
+`speed_chroma` / `speed_temporal` outside `#if VMAF_FLOAT_FEATURES` since
+`6046b1926`. The fork now does both, with its own `speed_internal.c` moved
+alongside `speed.c` because the CUDA, HIP and SYCL SpEED twins link it.
+
+- `core/src/meson.build`: the four sources are at the end of the
+  unconditional `libvmaf_feature_sources` list. On a conflict keep them there;
+  the float block keeps `offset.c`, `adm.c`, `adm_tools.c`, `vif.c` and the
+  float extractors.
+- `core/src/feature/feature_extractor.cpp`: the two externs and list entries
+  sit after `#endif` of the float block. The list order of a float build is
+  the same as before.
+- `core/test/meson.build`: `test_speed`, `test_speed_frame_buffers`,
+  `test_speed_lanczos4_weights`, `test_speed_filter`,
+  `test_speed_upstream_form*` and `test_speed_simd` lost their
+  `enable_float` gate.
+- No score moves in a float build; Netflix golden data unaffected.
+
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 
 `ci/tester-legs-own-paths-and-nightly`. The impact planner, its map, one workflow

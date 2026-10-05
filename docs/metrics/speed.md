@@ -12,8 +12,9 @@ They return the values Netflix/vmaf returns for the same frames, and the
 Both use the full Gaussian-scale-mixture (GSM) prior model with eigenvalue
 decomposition of block covariance matrices. That is more accurate and more
 expensive than the lightweight local-variance estimator of the no-reference
-[`speed_qa`](speed_qa.md) feature. They are compiled when the `enable_float`
-Meson option is on, which is the default.
+[`speed_qa`](speed_qa.md) feature. Every build compiles them, whatever the
+`enable_float` Meson option says: the `vmaf_v1.0.16` models, the default model
+among them, read `speed_chroma`.
 
 ## How to run
 
@@ -91,8 +92,7 @@ The fork differs from Netflix where it decided to:
 
 ### Checking a build against Netflix's values
 
-Run `test_speed_upstream_form` in a build configured with
-`-Denable_float=true`:
+Run `test_speed_upstream_form` in any build:
 
 ```bash
 meson test -C build test_speed_upstream_form
@@ -498,8 +498,8 @@ print(result["Speed_chroma_feature_speed_chroma_uv_score"])
 ```
 
 These wrappers call the `vmafexec` binary with `--feature speed_chroma` or
-`--feature speed_temporal` respectively and parse the resulting XML log. The C
-extractors must have been compiled with `-Denable_float=true` (the default).
+`--feature speed_temporal` respectively and parse the resulting XML log. Every
+build of the C library contains the extractors.
 
 ## Test coverage
 
@@ -512,8 +512,8 @@ extractors must have been compiled with `-Denable_float=true` (the default).
   ([ADR-1218](../adr/1218-gpu-speed-singular-device-solution.md)): the
   singular-matrix path.
 - `core/test/test_{cuda,sycl,hip}_speed_lanczos4_parity`: the lanczos4 weights.
-- `core/test/test_speed`: CPU registration and behaviour, in a build with
-  `-Denable_float=true`.
+- `core/test/test_speed`: CPU registration and behaviour, in every build,
+  `-Denable_float=false` included.
 
 ## History
 

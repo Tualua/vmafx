@@ -51,9 +51,11 @@ extern VmafFeatureExtractor vmaf_fex_float_adm;
 extern VmafFeatureExtractor vmaf_fex_float_motion;
 extern VmafFeatureExtractor vmaf_fex_float_moment;
 extern VmafFeatureExtractor vmaf_fex_float_vif;
+#endif
+/* SpEED is registered whatever enable_float says (Netflix/vmaf 6046b1926):
+ * the vmaf_v1.0.16 models read speed_chroma. */
 extern VmafFeatureExtractor vmaf_fex_speed_chroma;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal;
-#endif
 extern VmafFeatureExtractor vmaf_fex_float_ssim;
 extern VmafFeatureExtractor vmaf_fex_float_ms_ssim;
 extern VmafFeatureExtractor vmaf_fex_ssim;
@@ -279,9 +281,10 @@ namespace
 VmafFeatureExtractor *feature_extractor_list[] = {
 #if VMAF_FLOAT_FEATURES
     &vmaf_fex_float_psnr, &vmaf_fex_float_adm, &vmaf_fex_float_vif, &vmaf_fex_float_motion,
-    &vmaf_fex_float_moment, &vmaf_fex_speed_chroma, &vmaf_fex_speed_temporal,
+    &vmaf_fex_float_moment,
 #endif
-    &vmaf_fex_float_ms_ssim, &vmaf_fex_float_ssim, &vmaf_fex_ssim, &vmaf_fex_ssimulacra2,
+    &vmaf_fex_speed_chroma, &vmaf_fex_speed_temporal, &vmaf_fex_float_ms_ssim, &vmaf_fex_float_ssim,
+    &vmaf_fex_ssim, &vmaf_fex_ssimulacra2,
     /* Y-FUNQUE+ atoms-only (ADR-1114): CPU-only, temporal, no GPU twins. */
     &vmaf_fex_y_funque_plus, &vmaf_fex_niqe, &vmaf_fex_brisque, &vmaf_fex_ciede,
     &vmaf_fex_delta_e_itp, &vmaf_fex_pu21, &vmaf_fex_psnr, &vmaf_fex_psnr_hvs,
