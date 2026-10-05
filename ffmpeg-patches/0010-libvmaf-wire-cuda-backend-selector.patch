@@ -84,7 +84,7 @@ index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b12
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3768798a9 100644
+index 308fd2d94cb2186b7719c1d50db97d5308fcb14b..fbb05fd1ef53ea585c295914c9c98e1f394d0c18 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -45,6 +45,8 @@
@@ -96,7 +96,7 @@ index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3
  #endif
  
  #if CONFIG_LIBVMAF_SYCL
-@@ -93,6 +95,11 @@ typedef struct LIBVMAFContext {
+@@ -94,6 +96,11 @@ typedef struct LIBVMAFContext {
      VmafVulkanState *vulkan_state;
      int             vulkan_pool_initialised;  /* ADR-0238: deferred until first frame */
  #endif
@@ -108,7 +108,7 @@ index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3
  
      VmafContext *vmaf;
      VmafModel **model;
-@@ -122,6 +129,7 @@ static const AVOption libvmaf_options[] = {
+@@ -123,6 +130,7 @@ static const AVOption libvmaf_options[] = {
      {"sycl_device",  "SYCL device index (-1 = disabled).",                              OFFSET(sycl_device),     AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      {"sycl_profile", "Enable SYCL queue profiling.",                                    OFFSET(sycl_profile),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
      {"vulkan_device","Vulkan device index (-1 = disabled, 0+ = device index).",         OFFSET(vulkan_device),   AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
@@ -116,7 +116,7 @@ index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3
      { NULL }
  };
  
-@@ -179,6 +187,37 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
+@@ -180,6 +188,37 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
          }
          err = vmaf_vulkan_picture_fetch(s->vmaf, dst);
      } else
@@ -154,7 +154,7 @@ index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3
  #endif
      {
          err = vmaf_picture_alloc(dst, pix_fmt_map(src->format), bpc,
-@@ -572,6 +611,45 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -643,6 +682,45 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
  
@@ -200,7 +200,7 @@ index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -808,6 +886,13 @@ clean_up:
+@@ -879,6 +957,13 @@ clean_up:
          s->vulkan_state = NULL;
      }
  #endif

@@ -1270,3 +1270,4 @@
 1714-hybrid-gcc-cpu-icpx-sycl
 1715-vmafx-sycl-ffmpeg-container
 1763-sycl-primary-queue-immediate-cmdlist
+1764-sycl-filter-twin-routing

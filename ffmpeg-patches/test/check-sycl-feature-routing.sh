@@ -44,17 +44,6 @@ check() {
   fi
 }
 
-check_absent() {
-  local label="$1"
-  local pattern="$2"
-  if grep -qE "${pattern}" "${PATCH}"; then
-    echo "FAIL: ${label} — pattern '${pattern}' present in $(basename "${PATCH}")" >&2
-    fail=1
-  else
-    echo "PASS: ${label}"
-  fi
-}
-
 check "twin lookup used" 'vmaf_feature_backend_twin\('
 check "parse_features calls use_feature()" 'use_feature\(ctx, s, feature_name, feature_opts_dict\)'
 check "upstream vmaf_use_feature call site replaced" '^-.*vmaf_use_feature\(s->vmaf, feature_name, feature_opts_dict\)'
