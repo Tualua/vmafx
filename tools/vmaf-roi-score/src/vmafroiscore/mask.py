@@ -78,6 +78,27 @@ def apply_saliency_mask(
 
     layout = _layout_for(req.pix_fmt, req.width, req.height)
     frame_size = layout.y_size + (2 * layout.c_size)
+    frame_count = _frame_count(req, frame_size)
+
+    req.output.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        req.reference.open("rb") as ref_fh,
+        req.distorted.open("rb") as dis_fh,
+        req.output.open("wb") as out_fh,
+    ):
+        for _frame_idx in range(frame_count):
+            ref_frame = ref_fh.read(frame_size)
+            dis_frame = dis_fh.read(frame_size)
+            if len(ref_frame) != frame_size or len(dis_frame) != frame_size:
+                raise ValueError("short read while materialising saliency mask")
+            for plane in _masked_planes(req, layout, inference, ref_frame, dis_frame):
+                out_fh.write(plane.tobytes())
+
+    return req.output
+
+
+def _frame_count(req: MaskRequest, frame_size: int) -> int:
+    """Validate that both inputs hold the same whole number of frames; return it."""
     ref_size = req.reference.stat().st_size
     dis_size = req.distorted.stat().st_size
     if ref_size != dis_size:
@@ -87,34 +108,28 @@ def apply_saliency_mask(
             f"input size {ref_size} is not a whole number of {req.pix_fmt} "
             f"{req.width}x{req.height} frames"
         )
+    return ref_size // frame_size
 
-    req.output.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        req.reference.open("rb") as ref_fh,
-        req.distorted.open("rb") as dis_fh,
-        req.output.open("wb") as out_fh,
-    ):
-        for _frame_idx in range(ref_size // frame_size):
-            ref_frame = ref_fh.read(frame_size)
-            dis_frame = dis_fh.read(frame_size)
-            if len(ref_frame) != frame_size or len(dis_frame) != frame_size:
-                raise ValueError("short read while materialising saliency mask")
 
-            ref_planes = _split_frame(ref_frame, layout)
-            dis_planes = _split_frame(dis_frame, layout)
-            rgb = _yuv_to_rgb_bytes(ref_planes.y, ref_planes.u, ref_planes.v, layout)
-            mask = _coerce_mask(inference(rgb, req.width, req.height), req.width, req.height)
-            alpha_y = _mask_to_alpha(mask, req.threshold, req.fade)
-            alpha_c = _resize_nearest(alpha_y, layout.chroma_width, layout.chroma_height)
-
-            out_y = _blend_plane(ref_planes.y, dis_planes.y, alpha_y, layout)
-            out_u = _blend_plane(ref_planes.u, dis_planes.u, alpha_c, layout)
-            out_v = _blend_plane(ref_planes.v, dis_planes.v, alpha_c, layout)
-            out_fh.write(out_y.tobytes())
-            out_fh.write(out_u.tobytes())
-            out_fh.write(out_v.tobytes())
-
-    return req.output
+def _masked_planes(
+    req: MaskRequest,
+    layout: _Layout,
+    inference: Callable[[bytes, int, int], object],
+    ref_frame: bytes,
+    dis_frame: bytes,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Blend one frame: the Y, U and V planes of the distorted frame, masked by saliency."""
+    ref_planes = _split_frame(ref_frame, layout)
+    dis_planes = _split_frame(dis_frame, layout)
+    rgb = _yuv_to_rgb_bytes(ref_planes.y, ref_planes.u, ref_planes.v, layout)
+    mask = _coerce_mask(inference(rgb, req.width, req.height), req.width, req.height)
+    alpha_y = _mask_to_alpha(mask, req.threshold, req.fade)
+    alpha_c = _resize_nearest(alpha_y, layout.chroma_width, layout.chroma_height)
+    return (
+        _blend_plane(ref_planes.y, dis_planes.y, alpha_y, layout),
+        _blend_plane(ref_planes.u, dis_planes.u, alpha_c, layout),
+        _blend_plane(ref_planes.v, dis_planes.v, alpha_c, layout),
+    )
 
 
 def synthesise_uniform_mask(

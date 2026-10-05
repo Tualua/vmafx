@@ -1901,6 +1901,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged (271 passed, 12 skipped, x86-64 and aarch64).
 
 
+- Split the oversized functions of the Python harness (`compat/python-vmaf/`:
+  `routine.py`, `core/cross_validation.py`, `core/executor.py`,
+  `tools/bd_rate.py`, `tools/testutils.py`) into private helpers so every
+  function meets the HISS-04 limits (60 lines, McCabe 10, 50 statements).
+  Public names, signatures, scores, output and error messages are unchanged.
+
+
 - **The Python wheel's `vmafx-mcp` script is a deprecated alias; use `vmaf-mcp`.** `vmafx-mcp`
   is the Go server (`cmd/vmafx-mcp`). For one release the wheel's script of that name prints a
   notice on stderr and hands over to the Go binary when one is on `PATH`, otherwise it runs the
@@ -2227,6 +2234,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 
 
 - Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.
+
+
+- Split the long functions of the `vmaf-mcp` server (`_call_tool_dispatch` is now a table of one handler per tool, `_run_compare`, `_run_ladder` and `_run_tune_per_shot` share `_run_vmaf_tune`, `_run_benchmark`, `_build_roi_argv`, `_execute_probe`, `_run_vmaf_score_encoded`, `_eval_model_on_split`, the HTTP `/v1/score` handler) and the depth guard (explicit stack instead of recursion), plus `scripts/lib/safe_subprocess.run_async`, the ADR-link and dependency-lock checkers, the perf regression gate, `vmaf-roi-score`'s saliency mask and two test fixtures, into helpers without a change in behaviour: same tool names, argument errors, argv, progress notifications, exit codes and messages. The HISS baseline loses those 20 rows.
 
 
 - Brought 29 `ai/` modules to the HISS standard without a change in behaviour (ADR-1142): the long drivers of `ai/scripts` (corpus aggregation, feature extraction, calibration, the MOS-head and FR-regressor trainers, the `batch_materialize_*` runners and the three manifest CSV parsers, which now share `corpus.base.parse_mos_stats`), `ai/src` (`bisect_model_quality`, the three `vmaf-train` commands, `audit_learned_filter`, `export_to_onnx`, the parquet writers), `ai/sidecar` (`SGDEMATrainer.step`, the server loop and two tests) and `ai/train/qat.py` (`run_qat`, 147 lines) are split into helpers that keep their public names and signatures. `train_konvid_mos_head` trains its fold and ship models through one `_fit_model` with the same seed and RNG draw order. The HISS baseline loses 39 rows.

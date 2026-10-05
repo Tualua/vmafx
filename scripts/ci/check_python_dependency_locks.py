@@ -276,19 +276,8 @@ def _validate_alias_consumer_paths(output: str, alias: str, item: dict[str, Any]
     ]
 
 
-def _validate_alias_item(
-    output: str,
-    item: Any,
-    normalized_output: str,
-    seen_aliases: set[str],
-) -> list[str]:
-    if not isinstance(item, dict):
-        return [
-            f"{output}: manifest install_aliases must contain objects with alias, consumer, and context"
-        ]
-    alias = item.get("alias")
-    if not isinstance(alias, str) or not alias:
-        return [f"{output}: manifest install alias must have a non-empty 'alias' string"]
+def _validate_alias_consumer_shape(output: str, alias: str, item: dict[str, Any]) -> list[str]:
+    """Check that ``consumer`` / ``consumers`` of an alias are present and well-formed."""
     problems = []
     consumer = item.get("consumer")
     consumers = item.get("consumers")
@@ -316,15 +305,12 @@ def _validate_alias_item(
         problems.append(
             f"{output}: manifest install alias {alias!r} consumers must be a non-empty array"
         )
+    return problems
 
-    problems.extend(_validate_alias_consumer_paths(output, alias, item))
 
-    context = item.get("context") or item.get("provenance")
-    if not isinstance(context, str) or not context:
-        problems.append(
-            f"{output}: manifest install alias {alias!r} must specify a context or provenance"
-        )
-
+def _validate_alias_text(output: str, alias: str) -> list[str]:
+    """Check the spelling of an alias: trimmed, ``.txt``, a path, a local one."""
+    problems = []
     if alias != alias.strip():
         problems.append(
             f"{output}: manifest install alias {alias!r} must not contain surrounding whitespace"
@@ -335,6 +321,33 @@ def _validate_alias_item(
         problems.append(f"{output}: manifest install alias {alias!r} must not be a bare filename")
     if "://" in alias or alias.startswith(("git+", "hg+", "svn+", "bzr+")):
         problems.append(f"{output}: manifest install alias {alias!r} must be a local path")
+    return problems
+
+
+def _validate_alias_item(
+    output: str,
+    item: Any,
+    normalized_output: str,
+    seen_aliases: set[str],
+) -> list[str]:
+    if not isinstance(item, dict):
+        return [
+            f"{output}: manifest install_aliases must contain objects with alias, consumer, and context"
+        ]
+    alias = item.get("alias")
+    if not isinstance(alias, str) or not alias:
+        return [f"{output}: manifest install alias must have a non-empty 'alias' string"]
+    problems = _validate_alias_consumer_shape(output, alias, item)
+
+    problems.extend(_validate_alias_consumer_paths(output, alias, item))
+
+    context = item.get("context") or item.get("provenance")
+    if not isinstance(context, str) or not context:
+        problems.append(
+            f"{output}: manifest install alias {alias!r} must specify a context or provenance"
+        )
+
+    problems.extend(_validate_alias_text(output, alias))
 
     norm = _normalize_install_target(alias)
     if norm in seen_aliases:
@@ -578,77 +591,96 @@ def _resolve_search_root(root: Path | None = None) -> Path:
     return default_root
 
 
-def _is_local_source(  # noqa: PLR0911, PLR0912
-    value: str,
-    root: Path | None = None,
-    consumer_path: Path | None = None,
-) -> bool:
+def _clean_local_candidate(value: str) -> str | None:
+    """Strip quotes and extras from ``value``; ``None`` when it is empty or a remote spelling."""
     if not value or not isinstance(value, str):
-        return False
+        return None
 
     clean_val = re.sub(r"\[[^\]]*\]$", "", value.strip("\"'"))
     if not clean_val:
-        return False
+        return None
 
     if "://" in clean_val or clean_val.startswith(
         ("git+", "hg+", "svn+", "bzr+", "git@", "ssh@", "http:", "https:", "ftp:")
     ):
-        return False
+        return None
 
     if re.search(r"^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:", clean_val):
-        return False
+        return None
 
     if clean_val.startswith(("\\\\", "//")):
+        return None
+    return clean_val
+
+
+def _escapes_search_root(
+    clean_val: str, norm_val: str, search_root: Path, consumer_path: Path | None
+) -> bool:
+    """True when a ``..`` path resolves outside ``search_root`` (or cannot be resolved)."""
+    if ".." not in norm_val.split("/"):
+        return False
+    try:
+        base_dir = (search_root / consumer_path).parent if consumer_path else search_root
+        resolved = (base_dir / clean_val).resolve()
+        search_root_resolved = search_root.resolve()
+        return not str(resolved).startswith(str(search_root_resolved))
+    except (ValueError, OSError):
+        return True
+
+
+def _absolute_path_is_local(norm_val: str, search_root: Path, consumer_path: Path | None) -> bool:
+    """True when an absolute container path names a file of this repository or a build dir."""
+    if not (
+        norm_val.startswith(SUPPORTED_ABSOLUTE_PREFIXES)
+        or norm_val.startswith(("/opt/", "/wheels/"))
+    ):
+        return False
+    for pfx in ("/build/vmaf/", "/vmaf/"):
+        if norm_val.startswith(pfx):
+            sub = norm_val[len(pfx) :]
+            if (search_root / sub).exists():
+                return True
+    if consumer_path and _is_container_recipe(consumer_path):
+        return True
+    return norm_val.startswith(("/build/", "/tmp/"))  # noqa: S108
+
+
+def _exists_beside(base: Path, clean_val: str) -> bool:
+    """True when ``base / clean_val`` exists (an unusable path counts as absent)."""
+    try:
+        return (base / clean_val).exists()
+    except (ValueError, OSError):
+        return False
+
+
+def _is_local_source(
+    value: str,
+    root: Path | None = None,
+    consumer_path: Path | None = None,
+) -> bool:
+    clean_val = _clean_local_candidate(value)
+    if clean_val is None:
         return False
 
     search_root = _resolve_search_root(root)
-
     norm_val = clean_val.replace("\\", "/")
 
-    if ".." in norm_val.split("/"):
-        try:
-            base_dir = (search_root / consumer_path).parent if consumer_path else search_root
-            resolved = (base_dir / clean_val).resolve()
-            search_root_resolved = search_root.resolve()
-            if not str(resolved).startswith(str(search_root_resolved)):
-                return False
-        except (ValueError, OSError):
-            return False
+    if _escapes_search_root(clean_val, norm_val, search_root, consumer_path):
+        return False
 
     if any(
         norm_val.lower().endswith(ext) for ext in (".whl", ".tar.gz", ".tgz", ".tar.bz2", ".zip")
     ):
         return True
 
-    if norm_val.startswith(SUPPORTED_ABSOLUTE_PREFIXES) or norm_val.startswith(
-        ("/opt/", "/wheels/")
-    ):
-        for pfx in ("/build/vmaf/", "/vmaf/"):
-            if norm_val.startswith(pfx):
-                sub = norm_val[len(pfx) :]
-                if (search_root / sub).exists():
-                    return True
-        if consumer_path and _is_container_recipe(consumer_path):
-            return True
-        if norm_val.startswith(("/build/", "/tmp/")):  # noqa: S108
-            return True
+    if _absolute_path_is_local(norm_val, search_root, consumer_path):
+        return True
 
-    try:
-        cand_root = search_root / clean_val
-        if cand_root.exists():
-            return True
-    except (ValueError, OSError):
-        pass
-
-    if consumer_path:
-        try:
-            cand_consumer = (search_root / consumer_path).parent / clean_val
-            if cand_consumer.exists():
-                return True
-        except (ValueError, OSError):
-            pass
-
-    return False
+    if _exists_beside(search_root, clean_val):
+        return True
+    return bool(consumer_path) and _exists_beside(
+        (search_root / (consumer_path or Path())).parent, clean_val
+    )
 
 
 def _package_arguments(tokens: list[str]) -> list[str]:

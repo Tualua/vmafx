@@ -55,6 +55,36 @@ def _filter_backends(
     return {k: v for k, v in cells.items() if k[1] in wanted}
 
 
+def _compare_cell(
+    key: tuple[str, str, str], base_cell: dict[str, Any], cur_cell: dict[str, Any] | None
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Compare one cell; return ``(record, None)`` or ``({}, skipped_entry)``."""
+    if cur_cell is None:
+        return {}, {
+            "key": key,
+            "reason": "missing in current run",
+            "baseline_ms": base_cell.get("median_ms"),
+        }
+    if base_cell.get("status") != "ok" or cur_cell.get("status") != "ok":
+        return {}, {
+            "key": key,
+            "reason": f"status baseline={base_cell.get('status')} current={cur_cell.get('status')}",
+            "baseline_ms": base_cell.get("median_ms"),
+            "current_ms": cur_cell.get("median_ms"),
+        }
+
+    base_ms = float(base_cell["median_ms"])
+    cur_ms = float(cur_cell["median_ms"])
+    if base_ms <= 0:
+        return {}, {"key": key, "reason": "baseline median_ms <= 0", "baseline_ms": base_ms}
+    return {
+        "key": key,
+        "baseline_ms": base_ms,
+        "current_ms": cur_ms,
+        "delta_pct": (cur_ms - base_ms) / base_ms * 100.0,
+    }, None
+
+
 def compare_runs(
     baseline: dict[str, Any],
     current: dict[str, Any],
@@ -75,42 +105,11 @@ def compare_runs(
     skipped: list[dict[str, Any]] = []
 
     for key, base_cell in sorted(base.items()):
-        cur_cell = cur.get(key)
-        if cur_cell is None:
-            skipped.append(
-                {
-                    "key": key,
-                    "reason": "missing in current run",
-                    "baseline_ms": base_cell.get("median_ms"),
-                }
-            )
+        record, reason = _compare_cell(key, base_cell, cur.get(key))
+        if reason is not None:
+            skipped.append(reason)
             continue
-        if base_cell.get("status") != "ok" or cur_cell.get("status") != "ok":
-            skipped.append(
-                {
-                    "key": key,
-                    "reason": f"status baseline={base_cell.get('status')} current={cur_cell.get('status')}",
-                    "baseline_ms": base_cell.get("median_ms"),
-                    "current_ms": cur_cell.get("median_ms"),
-                }
-            )
-            continue
-
-        base_ms = float(base_cell["median_ms"])
-        cur_ms = float(cur_cell["median_ms"])
-        if base_ms <= 0:
-            skipped.append(
-                {"key": key, "reason": "baseline median_ms <= 0", "baseline_ms": base_ms}
-            )
-            continue
-
-        delta_pct = (cur_ms - base_ms) / base_ms * 100.0
-        record = {
-            "key": key,
-            "baseline_ms": base_ms,
-            "current_ms": cur_ms,
-            "delta_pct": delta_pct,
-        }
+        delta_pct = record["delta_pct"]
         if delta_pct > tolerance_pct:
             regressions.append(record)
         elif delta_pct < -tolerance_pct:

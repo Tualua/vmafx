@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T11:22:12Z",
+  "generated_at": "2026-10-05T11:22:53Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "942c28ac87697f944d39476c8f5b046ed320aa6f",
-  "total_infractions": 134,
+  "commit_sha": "a096e609a0232b2b6aa115920528b94510e15cee",
+  "total_infractions": 103,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -255,42 +255,6 @@
       "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:HISS-07:fn:drop#2"
     },
     {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/core/cross_validation.py",
-      "line_number": 44,
-      "symbol": "run_kfold_cross_validation",
-      "message": "Function 'run_kfold_cross_validation' (85 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ModelCrossValidation.run_kfold_cross_validation",
-      "fingerprint": "compat/python-vmaf/core/cross_validation.py:HISS-04:fn:ModelCrossValidation.run_kfold_cross_validation#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/core/cross_validation.py",
-      "line_number": 131,
-      "symbol": "run_nested_kfold_cross_validation",
-      "message": "Function 'run_nested_kfold_cross_validation' (134 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:ModelCrossValidation.run_nested_kfold_cross_validation",
-      "fingerprint": "compat/python-vmaf/core/cross_validation.py:HISS-04:fn:ModelCrossValidation.run_nested_kfold_cross_validation#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/core/executor.py",
-      "line_number": 765,
-      "symbol": "_open_workfile",
-      "message": "Function '_open_workfile' (100 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:Executor._open_workfile",
-      "fingerprint": "compat/python-vmaf/core/executor.py:HISS-04:fn:Executor._open_workfile#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/core/executor.py",
-      "line_number": 1077,
-      "symbol": "run_executors_in_parallel",
-      "message": "Function 'run_executors_in_parallel' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_executors_in_parallel",
-      "fingerprint": "compat/python-vmaf/core/executor.py:HISS-04:fn:run_executors_in_parallel#1"
-    },
-    {
       "rule_id": "HISS-01",
       "file_path": "compat/python-vmaf/core/result_store.py",
       "line_number": 109,
@@ -327,51 +291,6 @@
       "fingerprint": "compat/python-vmaf/core/result_store.py:HISS-01:fn:FileSystemResultStore._to_python_natives#4"
     },
     {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/routine.py",
-      "line_number": 417,
-      "symbol": "run_test_on_dataset",
-      "message": "Function 'run_test_on_dataset' (264 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_test_on_dataset",
-      "fingerprint": "compat/python-vmaf/routine.py:HISS-04:fn:run_test_on_dataset#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/routine.py",
-      "line_number": 693,
-      "symbol": "train_test_vmaf_on_dataset",
-      "message": "Function 'train_test_vmaf_on_dataset' (234 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:train_test_vmaf_on_dataset",
-      "fingerprint": "compat/python-vmaf/routine.py:HISS-04:fn:train_test_vmaf_on_dataset#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/routine.py",
-      "line_number": 939,
-      "symbol": "cv_on_dataset",
-      "message": "Function 'cv_on_dataset' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:cv_on_dataset",
-      "fingerprint": "compat/python-vmaf/routine.py:HISS-04:fn:cv_on_dataset#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/routine.py",
-      "line_number": 1019,
-      "symbol": "run_vmaf_cv",
-      "message": "Function 'run_vmaf_cv' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_vmaf_cv",
-      "fingerprint": "compat/python-vmaf/routine.py:HISS-04:fn:run_vmaf_cv#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/routine.py",
-      "line_number": 1209,
-      "symbol": "run_vmaf_cv_from_raw",
-      "message": "Function 'run_vmaf_cv_from_raw' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_vmaf_cv_from_raw",
-      "fingerprint": "compat/python-vmaf/routine.py:HISS-04:fn:run_vmaf_cv_from_raw#1"
-    },
-    {
       "rule_id": "HISS-01",
       "file_path": "compat/python-vmaf/tests/test_decorator_extended.py",
       "line_number": 441,
@@ -388,15 +307,6 @@
       "message": "Direct recursion in fact; the call graph must form an acyclic DAG",
       "anchor": "fn:fact",
       "fingerprint": "compat/python-vmaf/tests/test_decorator_extended.py:HISS-01:fn:fact#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/tools/bd_rate.py",
-      "line_number": 33,
-      "symbol": "calculate_bd_rate",
-      "message": "Function 'calculate_bd_rate' (102 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:calculate_bd_rate",
-      "fingerprint": "compat/python-vmaf/tools/bd_rate.py:HISS-04:fn:calculate_bd_rate#1"
     },
     {
       "rule_id": "HISS-07",
@@ -432,15 +342,6 @@
       "message": "Direct recursion in import_python_file; the call graph must form an acyclic DAG",
       "anchor": "fn:import_python_file",
       "fingerprint": "compat/python-vmaf/tools/misc.py:HISS-01:fn:import_python_file#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/tools/testutils.py",
-      "line_number": 108,
-      "symbol": "assert_equivalent_commands",
-      "message": "Function 'assert_equivalent_commands' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:assert_equivalent_commands",
-      "fingerprint": "compat/python-vmaf/tools/testutils.py:HISS-04:fn:assert_equivalent_commands#1"
     },
     {
       "rule_id": "HISS-04",
@@ -853,159 +754,6 @@
       "fingerprint": "ffmpeg-patches/test/check_input_contract.py:HISS-01:fn:resolve_role#1"
     },
     {
-      "rule_id": "HISS-04",
-      "file_path": "ffmpeg-patches/test/test_input_contract.py",
-      "line_number": 35,
-      "symbol": "write_baseline",
-      "message": "Function 'write_baseline' (101 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:InputContractCliTest.write_baseline",
-      "fingerprint": "ffmpeg-patches/test/test_input_contract.py:HISS-04:fn:InputContractCliTest.write_baseline#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py",
-      "line_number": 573,
-      "symbol": "_handle_score",
-      "message": "Function '_handle_score' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_handle_score",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py:HISS-04:fn:_handle_score#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 1193,
-      "symbol": "_eval_model_on_split",
-      "message": "Function '_eval_model_on_split' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_eval_model_on_split",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_eval_model_on_split#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 1825,
-      "symbol": "_run_compare",
-      "message": "Function '_run_compare' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_run_compare",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_run_compare#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 1909,
-      "symbol": "_run_ladder",
-      "message": "Function '_run_ladder' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_run_ladder",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_run_ladder#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 1987,
-      "symbol": "_run_tune_per_shot",
-      "message": "Function '_run_tune_per_shot' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_run_tune_per_shot",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_run_tune_per_shot#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 2068,
-      "symbol": "_run_benchmark",
-      "message": "Function '_run_benchmark' (97 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_run_benchmark",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_run_benchmark#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 2385,
-      "symbol": "_build_roi_argv",
-      "message": "Function '_build_roi_argv' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_build_roi_argv",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_build_roi_argv#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 2687,
-      "symbol": "_execute_probe",
-      "message": "Function '_execute_probe' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_execute_probe",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_execute_probe#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 3012,
-      "symbol": "_run_vmaf_score_encoded",
-      "message": "Function '_run_vmaf_score_encoded' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_run_vmaf_score_encoded",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_run_vmaf_score_encoded#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 4156,
-      "symbol": "_call_tool_dispatch",
-      "message": "Function '_call_tool_dispatch' (192 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_call_tool_dispatch",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-04:fn:_call_tool_dispatch#1"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 4370,
-      "symbol": "_check_depth",
-      "message": "Direct recursion in _check_depth; the call graph must form an acyclic DAG",
-      "anchor": "fn:_check_depth",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-01:fn:_check_depth#1"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py",
-      "line_number": 4373,
-      "symbol": "_check_depth",
-      "message": "Direct recursion in _check_depth; the call graph must form an acyclic DAG",
-      "anchor": "fn:_check_depth",
-      "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:HISS-01:fn:_check_depth#2"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/ci/check-adr-links.py",
-      "line_number": 205,
-      "symbol": "repair_one_file",
-      "message": "Function 'repair_one_file' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:repair_one_file",
-      "fingerprint": "scripts/ci/check-adr-links.py:HISS-04:fn:repair_one_file#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/ci/check_python_dependency_locks.py",
-      "line_number": 279,
-      "symbol": "_validate_alias_item",
-      "message": "Function '_validate_alias_item' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_validate_alias_item",
-      "fingerprint": "scripts/ci/check_python_dependency_locks.py:HISS-04:fn:_validate_alias_item#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/ci/check_python_dependency_locks.py",
-      "line_number": 581,
-      "symbol": "_is_local_source",
-      "message": "Function '_is_local_source' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:_is_local_source",
-      "fingerprint": "scripts/ci/check_python_dependency_locks.py:HISS-04:fn:_is_local_source#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/ci/tests/test_install_cuda_toolkit.py",
-      "line_number": 49,
-      "symbol": "__init__",
-      "message": "Function '__init__' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:FakeHost.__init__",
-      "fingerprint": "scripts/ci/tests/test_install_cuda_toolkit.py:HISS-04:fn:FakeHost.__init__#1"
-    },
-    {
       "rule_id": "HISS-01",
       "file_path": "scripts/dev/check_repository_security.py",
       "line_number": 71,
@@ -1031,33 +779,6 @@
       "message": "Direct recursion in git; the call graph must form an acyclic DAG",
       "anchor": "fn:FixtureTrain.git",
       "fingerprint": "scripts/dev/tests/test_merge_train_guard.py:HISS-01:fn:FixtureTrain.git#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/lib/safe_subprocess.py",
-      "line_number": 598,
-      "symbol": "run_async",
-      "message": "Function 'run_async' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:run_async",
-      "fingerprint": "scripts/lib/safe_subprocess.py:HISS-04:fn:run_async#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/perf/check-regression.py",
-      "line_number": 58,
-      "symbol": "compare_runs",
-      "message": "Function 'compare_runs' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:compare_runs",
-      "fingerprint": "scripts/perf/check-regression.py:HISS-04:fn:compare_runs#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "tools/vmaf-roi-score/src/vmafroiscore/mask.py",
-      "line_number": 46,
-      "symbol": "apply_saliency_mask",
-      "message": "Function 'apply_saliency_mask' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:apply_saliency_mask",
-      "fingerprint": "tools/vmaf-roi-score/src/vmafroiscore/mask.py:HISS-04:fn:apply_saliency_mask#1"
     },
     {
       "rule_id": "HISS-04",

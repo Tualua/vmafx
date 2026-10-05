@@ -202,6 +202,35 @@ def resolve_target(number: str, slug: str, corpus: AdrCorpus) -> tuple[str | Non
     return None, "unknown"
 
 
+def _unresolved_reason(how: str, number: str, corpus: AdrCorpus) -> str:
+    """Explain why a link could not be resolved to one ADR file."""
+    if how == "ambiguous":
+        return "the number and the slug do not agree on one file"
+    if how == "uncorroborated":
+        target_name = corpus.by_number[number][0]
+        return (
+            f"the slug names no ADR, and {target_name} -- which carries that "
+            "number now -- does not mention what the slug is about, so the "
+            "number was probably reallocated"
+        )
+    return "no ADR carries that number or that slug"
+
+
+def _repaired_link(
+    label: str, prefix: str, segment: str, number: str, target: str, how: str
+) -> str:
+    """Render the corrected link for ``target``."""
+    # A slug-resolved link -- exact or reordered -- carries the wrong
+    # number in its text too.
+    # Both spellings occur: a bare "ADR-0241" and a descriptive
+    # "ADR-0241 - vmaf_tiny_v3 ship decision". Only the number is
+    # rewritten; whatever the author wrote after it is left alone.
+    new_label = label
+    if how.startswith("slug") and re.match(rf"ADR-{number}\b", label):
+        new_label = re.sub(rf"^ADR-{number}\b", f"ADR-{target[:4]}", label)
+    return f"[{new_label}]({prefix}{segment}{target})"
+
+
 def repair_one_file(
     path: Path,
     corpus: AdrCorpus,
@@ -244,31 +273,14 @@ def repair_one_file(
         line = text[: match.start()].count("\n") + 1
         target, how = resolve_target(number, slug, corpus)
         if target is None:
-            where = "no ADR carries that number or that slug"
-            if how == "ambiguous":
-                where = "the number and the slug do not agree on one file"
-            elif how == "uncorroborated":
-                target_name = corpus.by_number[number][0]
-                where = (
-                    f"the slug names no ADR, and {target_name} -- which carries that "
-                    "number now -- does not mention what the slug is about, so the "
-                    "number was probably reallocated"
-                )
+            where = _unresolved_reason(how, number, corpus)
             unfixable.append(f"{path}:{line}: [{label}]({segment}{number}-{slug}) -- {where}")
             out.append(match.group(0))
             continue
 
         if fix:
             repaired += 1
-            # A slug-resolved link -- exact or reordered -- carries the wrong
-            # number in its text too.
-            # Both spellings occur: a bare "ADR-0241" and a descriptive
-            # "ADR-0241 - vmaf_tiny_v3 ship decision". Only the number is
-            # rewritten; whatever the author wrote after it is left alone.
-            new_label = label
-            if how.startswith("slug") and re.match(rf"ADR-{number}\b", label):
-                new_label = re.sub(rf"^ADR-{number}\b", f"ADR-{target[:4]}", label)
-            out.append(f"[{new_label}]({prefix}{segment}{target})")
+            out.append(_repaired_link(label, prefix, segment, number, target, how))
             continue
 
         findings.append(f"{path}:{line}: {segment}{number}-{slug} -> {segment}{target} (by {how})")

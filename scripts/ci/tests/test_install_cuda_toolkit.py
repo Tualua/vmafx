@@ -65,10 +65,6 @@ class FakeHost:
         self.log.write_text("", encoding="utf-8")
         self.os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
 
-        self._command(
-            "id",
-            f'if [ "${{1:-}}" = "-u" ]; then echo "{uid}"; else echo testuser; fi',
-        )
         versions = {
             APT_PACKAGE: TOOLKIT_VERSION,
             f"cuda-nvcc-{SERIES}": NVCC_VERSION,
@@ -76,7 +72,17 @@ class FakeHost:
             f"cuda-cudart-{SERIES}": CUDART_VERSION,
         }
         versions.update(installed_versions or {})
+        self._stub_commands(uid=uid, has_sudo=has_sudo, curl_exit=curl_exit, versions=versions)
+        self._install_fake_toolkit()
 
+    def _stub_commands(
+        self, *, uid: int, has_sudo: bool, curl_exit: int, versions: dict[str, str]
+    ) -> None:
+        """Write the command stubs the installer calls into ``self.bin``."""
+        self._command(
+            "id",
+            f'if [ "${{1:-}}" = "-u" ]; then echo "{uid}"; else echo testuser; fi',
+        )
         self._command("apt-get", "exit 0")
         self._command("dpkg", "exit 0")
         query_cases = "\n".join(
@@ -93,6 +99,8 @@ class FakeHost:
         if uid != 0 and has_sudo:
             self._command("sudo", 'exec "$@"')
 
+    def _install_fake_toolkit(self) -> None:
+        """Create the fake CUDA toolkit tree (``nvcc`` and the runtime libraries)."""
         cuda_home = self.prefix / f"cuda-{DOTTED}"
         (cuda_home / "bin").mkdir(parents=True)
         (cuda_home / "lib64").mkdir()

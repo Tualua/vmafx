@@ -33,6 +33,12 @@ class InputContractCliTest(unittest.TestCase):
         self.write_baseline()
 
     def write_baseline(self) -> None:
+        self._write_patch_fixture()
+        self._write_build_wiring()
+        self._write_ffmpeg_doc()
+        self._write_docker_doc()
+
+    def _write_patch_fixture(self) -> None:
         (self.root / "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch").write_text(
             """diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
 --- a/libavfilter/vf_libvmaf.c
@@ -44,6 +50,8 @@ class InputContractCliTest(unittest.TestCase):
 """,
             encoding="utf-8",
         )
+
+    def _write_build_wiring(self) -> None:
         (self.root / "Makefile").write_text(
             """.PHONY: ffmpeg-input-contract
 ffmpeg-input-contract:
@@ -73,6 +81,8 @@ lint-sh: ffmpeg-input-contract
 """,
             encoding="utf-8",
         )
+
+    def _write_ffmpeg_doc(self) -> None:
         (self.root / "docs/usage/ffmpeg.md").write_text(
             """# Fixture
 
@@ -102,6 +112,8 @@ ffmpeg -i reference.mp4 -i distorted.mp4 \\
 """,
             encoding="utf-8",
         )
+
+    def _write_docker_doc(self) -> None:
         (self.root / "docs/usage/docker.md").write_text(
             """# Docker Fixtures
 

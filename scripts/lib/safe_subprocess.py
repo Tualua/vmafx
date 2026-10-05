@@ -144,6 +144,17 @@ class _AllowedExecutables:
 
 
 @dataclass(frozen=True)
+class _RunSettings:
+    """The per-call options that outlive the argument validation."""
+
+    text: bool
+    errors: str
+    check: bool
+    timeout_seconds: float
+    max_output_bytes: int
+
+
+@dataclass(frozen=True)
 class _RunConfiguration:
     environment: dict[str, str]
     working_directory: str | None
@@ -314,10 +325,20 @@ def _prepare_run_configuration(
     stdout: IO[Any] | None,
     stderr: IO[Any] | None,
     stderr_to_stdout: bool,
-    text: bool,
+    settings: _RunSettings,
     encoding: str | None,
-    errors: str,
 ) -> _RunConfiguration:
+    _validate_run_options(
+        input_data=input_data,
+        capture_output=capture_output,
+        stdout=stdout,
+        stderr=stderr,
+        stderr_to_stdout=stderr_to_stdout,
+        text=settings.text,
+        timeout_seconds=settings.timeout_seconds,
+        max_output_bytes=settings.max_output_bytes,
+    )
+    errors = settings.errors
     selected_encoding = encoding or locale.getpreferredencoding(False)
     capture_stdout = capture_output
     capture_stderr = capture_output and not stderr_to_stdout
@@ -434,13 +455,12 @@ async def _terminate_posix_process_group(process: asyncio.subprocess.Process) ->
 async def _supervise(
     process: asyncio.subprocess.Process,
     configuration: _RunConfiguration,
-    *,
-    timeout_seconds: float,
-    max_output_bytes: int,
+    settings: _RunSettings,
 ) -> tuple[bytes | None, bytes | None, bool, bool]:
+    timeout_seconds = settings.timeout_seconds
     stdout_bytes = bytearray()
     stderr_bytes = bytearray()
-    budget = _CaptureBudget(max_output_bytes)
+    budget = _CaptureBudget(settings.max_output_bytes)
     tasks: list[asyncio.Task[Any]] = [asyncio.create_task(process.wait())]
     if configuration.capture_stdout:
         assert process.stdout is not None
@@ -480,17 +500,12 @@ def _finalize_result(
     command: tuple[str, ...],
     process: asyncio.subprocess.Process,
     configuration: _RunConfiguration,
-    stdout: bytes | None,
-    stderr: bytes | None,
-    *,
-    text: bool,
-    errors: str,
-    timed_out: bool,
-    overflowed: bool,
-    timeout_seconds: float,
-    max_output_bytes: int,
-    check: bool,
+    captured: tuple[bytes | None, bytes | None, bool, bool],
+    settings: _RunSettings,
 ) -> CommandResult:
+    stdout, stderr, timed_out, overflowed = captured
+    text, errors, check = settings.text, settings.errors, settings.check
+    timeout_seconds, max_output_bytes = settings.timeout_seconds, settings.max_output_bytes
     decoded_stdout = _decode(
         stdout,
         text=text,
@@ -622,16 +637,7 @@ async def run_async(
     """
     environment = _validated_environment(env)
     command = _validated_argv(argv, allowed_executables, environment.get("PATH", os.defpath))
-    _validate_run_options(
-        input_data=input_data,
-        capture_output=capture_output,
-        stdout=stdout,
-        stderr=stderr,
-        stderr_to_stdout=stderr_to_stdout,
-        text=text,
-        timeout_seconds=timeout_seconds,
-        max_output_bytes=max_output_bytes,
-    )
+    settings = _RunSettings(text, errors, check, timeout_seconds, max_output_bytes)
     configuration = _prepare_run_configuration(
         cwd=cwd,
         environment=environment,
@@ -640,31 +646,12 @@ async def run_async(
         stdout=stdout,
         stderr=stderr,
         stderr_to_stdout=stderr_to_stdout,
-        text=text,
+        settings=settings,
         encoding=encoding,
-        errors=errors,
     )
     process = await asyncio.create_subprocess_exec(*command, **configuration.process_kwargs)
-    captured_stdout, captured_stderr, timed_out, overflowed = await _supervise(
-        process,
-        configuration,
-        timeout_seconds=timeout_seconds,
-        max_output_bytes=max_output_bytes,
-    )
-    return _finalize_result(
-        command,
-        process,
-        configuration,
-        captured_stdout,
-        captured_stderr,
-        text=text,
-        errors=errors,
-        timed_out=timed_out,
-        overflowed=overflowed,
-        timeout_seconds=timeout_seconds,
-        max_output_bytes=max_output_bytes,
-        check=check,
-    )
+    captured = await _supervise(process, configuration, settings)
+    return _finalize_result(command, process, configuration, captured, settings)
 
 
 @overload

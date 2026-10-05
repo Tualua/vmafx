@@ -570,6 +570,30 @@ def _score_success_response(
     )
 
 
+async def _run_score_request(
+    aiohttp: Any,
+    metrics: dict[str, Any],
+    scoring_runtime: Any,
+    score_req: Any,
+    request_id: str,
+    t0: float,
+) -> tuple[Any, Any]:
+    """Run the scorer; return ``(result, None)`` or ``(None, 500 response)`` on failure."""
+    try:
+        with metrics["scoring_duration_seconds"].time():
+            return await scoring_runtime.run_score(score_req), None
+    except Exception as exc:
+        elapsed = (time.monotonic() - t0) * 1000
+        # Log full exception detail server-side; return generic message to the
+        # client to avoid leaking internal exception text (stack-trace exposure).
+        _log_with_rid(logging.ERROR, f"scoring failed in {elapsed:.0f}ms: {exc}", request_id)
+        rejection = _score_error(
+            aiohttp, metrics, 500, "scoring failed; see server logs", request_id
+        )
+        metrics["scoring_errors_total"].inc()
+        return None, rejection
+
+
 async def _handle_score(
     request: Any,
     metrics: dict[str, Any],
@@ -614,19 +638,10 @@ async def _handle_score(
     if rejection is not None:
         return rejection
 
-    # Run the scorer.
-    try:
-        with metrics["scoring_duration_seconds"].time():
-            result = await scoring_runtime.run_score(score_req)
-    except Exception as exc:
-        elapsed = (time.monotonic() - t0) * 1000
-        # Log full exception detail server-side; return generic message to the
-        # client to avoid leaking internal exception text (stack-trace exposure).
-        _log_with_rid(logging.ERROR, f"scoring failed in {elapsed:.0f}ms: {exc}", request_id)
-        rejection = _score_error(
-            aiohttp, metrics, 500, "scoring failed; see server logs", request_id
-        )
-        metrics["scoring_errors_total"].inc()
+    result, rejection = await _run_score_request(
+        aiohttp, metrics, scoring_runtime, score_req, request_id, t0
+    )
+    if rejection is not None:
         return rejection
 
     elapsed = (time.monotonic() - t0) * 1000

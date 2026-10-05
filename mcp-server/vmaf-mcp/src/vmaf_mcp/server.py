@@ -1190,16 +1190,12 @@ _FEATURE_COLUMNS = (
 _VALID_SPLITS = ("train", "val", "test", "all")
 
 
-def _eval_model_on_split(
-    model: Path, features: Path, split: str, input_name: str
-) -> dict[str, Any]:
-    """Run @p model on @p split of @p features and return PLCC/SROCC/RMSE.
+def _import_eval_dependencies() -> tuple[Any, Any, Any, Any, Any]:
+    """Import numpy, onnxruntime, pandas and the scipy correlations on demand.
 
     Imports are lazy so the base mcp-server install (no pandas / onnxruntime
     / scipy) isn't forced to pull in ML deps just to score video.
     """
-    if split not in _VALID_SPLITS:
-        raise ValueError(f"split must be one of {_VALID_SPLITS}; got {split!r}")
     try:
         import numpy as np
         import onnxruntime as ort
@@ -1209,31 +1205,30 @@ def _eval_model_on_split(
         raise RuntimeError(
             "eval_model_on_split requires the 'eval' extra: pip install 'vmaf-mcp[eval]'"
         ) from exc
+    return np, ort, pd, pearsonr, spearmanr
 
-    df = pd.read_parquet(features)
-    if "mos" not in df.columns:
-        raise ValueError(f"{features} has no 'mos' column — can't score correlations")
-    if split != "all" and "key" in df.columns:
-        # Inline the split_keys hashing so we don't depend on vmaf_train.
-        import hashlib
 
-        def bucket(key: str) -> float:
-            h = hashlib.sha256(f"vmaf-train-splits-v1:{key}".encode()).digest()
-            return int.from_bytes(h[:8], "big") / (1 << 64)
+def _split_bucket(key: str) -> float:
+    """Hash @p key into [0, 1) the way ``vmaf_train``'s split_keys does."""
+    import hashlib
 
-        val_frac, test_frac = 0.1, 0.1
+    h = hashlib.sha256(f"vmaf-train-splits-v1:{key}".encode()).digest()
+    return int.from_bytes(h[:8], "big") / (1 << 64)
 
-        def which(key: str) -> str:
-            b = bucket(str(key))
-            if b < test_frac:
-                return "test"
-            if b < test_frac + val_frac:
-                return "val"
-            return "train"
 
-        keep = df["key"].astype(str).map(which) == split
-        df = df[keep]
+def _split_of(key: str) -> str:
+    """Return the split ("test" / "val" / "train") that owns @p key."""
+    val_frac, test_frac = 0.1, 0.1
+    b = _split_bucket(str(key))
+    if b < test_frac:
+        return "test"
+    if b < test_frac + val_frac:
+        return "val"
+    return "train"
 
+
+def _feature_matrix(df: Any, features: Path, split: str, np: Any) -> tuple[Any, Any, list[str]]:
+    """Return ``(x, y, columns)`` for the feature columns and the ``mos`` target of @p df."""
     cols = [c for c in _FEATURE_COLUMNS if c in df.columns]
     if not cols:
         raise ValueError(
@@ -1244,6 +1239,24 @@ def _eval_model_on_split(
     y = df["mos"].to_numpy(dtype=np.float32)
     if len(x) < 2:
         raise ValueError(f"split {split!r} has {len(x)} samples — need ≥2 to compute correlations")
+    return x, y, cols
+
+
+def _eval_model_on_split(
+    model: Path, features: Path, split: str, input_name: str
+) -> dict[str, Any]:
+    """Run @p model on @p split of @p features and return PLCC/SROCC/RMSE."""
+    if split not in _VALID_SPLITS:
+        raise ValueError(f"split must be one of {_VALID_SPLITS}; got {split!r}")
+    np, ort, pd, pearsonr, spearmanr = _import_eval_dependencies()
+
+    df = pd.read_parquet(features)
+    if "mos" not in df.columns:
+        raise ValueError(f"{features} has no 'mos' column — can't score correlations")
+    if split != "all" and "key" in df.columns:
+        # Inline the split_keys hashing so we don't depend on vmaf_train.
+        df = df[df["key"].astype(str).map(_split_of) == split]
+    x, y, cols = _feature_matrix(df, features, split, np)
 
     sess = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
     pred = np.asarray(sess.run(None, {input_name: x})[0]).reshape(-1)
@@ -1822,6 +1835,74 @@ async def _send_progress(
 # ---------------------------------------------------------------------------
 
 
+def _require_vmaftune_binary() -> Path:
+    """Return the vmaf-tune binary path; raise RuntimeError when it is missing."""
+    vmaftune = _vmaftune_binary()
+    if not vmaftune.exists():
+        raise RuntimeError(
+            f"vmaf-tune binary not found at {vmaftune}. "
+            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
+        )
+    return vmaftune
+
+
+async def _run_vmaftune(
+    subcommand: str, argv: list[str], progress_token: str | int | None
+) -> tuple[int, str, str]:
+    """Run one ``vmaf-tune <subcommand>`` subprocess and return ``(rc, stdout, stderr)``.
+
+    Progress notifications mark the start and the end of the run. A non-zero exit
+    raises RuntimeError carrying the stripped stderr.
+    """
+    await _send_progress(progress_token, 0.0, 1.0, f"starting vmaf-tune {subcommand}")
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    stdout, stderr = await _communicate_with_timeout(proc)
+
+    await _send_progress(progress_token, 1.0, 1.0, f"vmaf-tune {subcommand} done")
+
+    stdout_s = stdout.decode(errors="replace")
+    stderr_s = stderr.decode(errors="replace")
+    if proc.returncode != 0:
+        raise RuntimeError(f"vmaf-tune {subcommand} exited {proc.returncode}: {stderr_s.strip()}")
+    return proc.returncode, stdout_s, stderr_s
+
+
+def _compare_argv(
+    vmaftune: Path,
+    src: str,
+    *,
+    format: str,
+    target_vmaf: float | None,
+    target_vmafs: str | None,
+    encoders: str | None,
+    width: int | None,
+    height: int | None,
+    pix_fmt: str,
+    framerate: float | None,
+    no_parallel: bool,
+) -> list[str]:
+    """Build the ``vmaf-tune compare`` command line."""
+    argv: list[str] = [str(vmaftune), "compare", "--src", src, "--format", format]
+    if target_vmafs is not None:
+        argv += ["--target-vmafs", target_vmafs]
+    elif target_vmaf is not None:
+        argv += ["--target-vmaf", str(target_vmaf)]
+    if encoders is not None:
+        argv += ["--encoders", encoders]
+    if width is not None:
+        argv += ["--width", str(width)]
+    if height is not None:
+        argv += ["--height", str(height)]
+    argv += ["--pix-fmt", pix_fmt]
+    if framerate is not None:
+        argv += ["--framerate", str(framerate)]
+    if no_parallel:
+        argv.append("--no-parallel")
+    return argv
+
+
 async def _run_compare(
     src: str,
     *,
@@ -1849,43 +1930,21 @@ async def _run_compare(
     from the subprocess.
     """
     src = _validate_media_path(src)
-    vmaftune = _vmaftune_binary()
-    if not vmaftune.exists():
-        raise RuntimeError(
-            f"vmaf-tune binary not found at {vmaftune}. "
-            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
-        )
-
-    await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune compare")
-
-    argv: list[str] = [str(vmaftune), "compare", "--src", src, "--format", format]
-    if target_vmafs is not None:
-        argv += ["--target-vmafs", target_vmafs]
-    elif target_vmaf is not None:
-        argv += ["--target-vmaf", str(target_vmaf)]
-    if encoders is not None:
-        argv += ["--encoders", encoders]
-    if width is not None:
-        argv += ["--width", str(width)]
-    if height is not None:
-        argv += ["--height", str(height)]
-    argv += ["--pix-fmt", pix_fmt]
-    if framerate is not None:
-        argv += ["--framerate", str(framerate)]
-    if no_parallel:
-        argv.append("--no-parallel")
-
-    proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    vmaftune = _require_vmaftune_binary()
+    argv = _compare_argv(
+        vmaftune,
+        src,
+        format=format,
+        target_vmaf=target_vmaf,
+        target_vmafs=target_vmafs,
+        encoders=encoders,
+        width=width,
+        height=height,
+        pix_fmt=pix_fmt,
+        framerate=framerate,
+        no_parallel=no_parallel,
     )
-    stdout, stderr = await _communicate_with_timeout(proc)
-
-    await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune compare done")
-
-    stdout_s = stdout.decode(errors="replace")
-    stderr_s = stderr.decode(errors="replace")
-    if proc.returncode != 0:
-        raise RuntimeError(f"vmaf-tune compare exited {proc.returncode}: {stderr_s.strip()}")
+    returncode, stdout_s, stderr_s = await _run_vmaftune("compare", argv, progress_token)
 
     # vmaf-tune compare --format json emits JSON to stdout; other formats
     # return a string.  We always pass --format json here so we can parse it.
@@ -1895,7 +1954,7 @@ async def _run_compare(
     except json.JSONDecodeError:
         # Non-JSON format or parse error — return raw output.
         return {
-            "exit_code": proc.returncode,
+            "exit_code": returncode,
             "stdout": stdout_s,
             "stderr": stderr_s,
         }
@@ -1926,15 +1985,7 @@ async def _run_ladder(
     @p target_vmafs: comma-separated VMAF target list, e.g. ``95,90,85``.
     """
     src = _validate_media_path(src)
-    vmaftune = _vmaftune_binary()
-    if not vmaftune.exists():
-        raise RuntimeError(
-            f"vmaf-tune binary not found at {vmaftune}. "
-            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
-        )
-
-    await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune ladder")
-
+    vmaftune = _require_vmaftune_binary()
     argv: list[str] = [
         str(vmaftune),
         "ladder",
@@ -1955,18 +2006,7 @@ async def _run_ladder(
     ]
     if framerate is not None:
         argv += ["--framerate", str(framerate)]
-
-    proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    stdout, stderr = await _communicate_with_timeout(proc)
-
-    await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune ladder done")
-
-    stdout_s = stdout.decode(errors="replace")
-    stderr_s = stderr.decode(errors="replace")
-    if proc.returncode != 0:
-        raise RuntimeError(f"vmaf-tune ladder exited {proc.returncode}: {stderr_s.strip()}")
+    _returncode, stdout_s, _stderr_s = await _run_vmaftune("ladder", argv, progress_token)
 
     # --format json emits JSON to stdout; HLS/DASH returns a manifest string.
     if format == "json":
@@ -2007,14 +2047,7 @@ async def _run_tune_per_shot(
     the actual bisect may take minutes for a long clip.
     """
     src = _validate_media_path(src)
-    vmaftune = _vmaftune_binary()
-    if not vmaftune.exists():
-        raise RuntimeError(
-            f"vmaf-tune binary not found at {vmaftune}. "
-            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
-        )
-
-    await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune tune-per-shot")
+    vmaftune = _require_vmaftune_binary()
 
     # Note: vmaf-tune tune-per-shot does not accept a ``--format`` flag;
     # it always writes the JSON plan to stdout.  The ``format`` parameter
@@ -2038,18 +2071,7 @@ async def _run_tune_per_shot(
         argv += ["--framerate", str(framerate)]
     if scene_threshold is not None:
         argv += ["--scene-threshold", str(scene_threshold)]
-
-    proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    stdout, stderr = await _communicate_with_timeout(proc)
-
-    await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune tune-per-shot done")
-
-    stdout_s = stdout.decode(errors="replace")
-    stderr_s = stderr.decode(errors="replace")
-    if proc.returncode != 0:
-        raise RuntimeError(f"vmaf-tune tune-per-shot exited {proc.returncode}: {stderr_s.strip()}")
+    returncode, stdout_s, stderr_s = await _run_vmaftune("tune-per-shot", argv, progress_token)
 
     try:
         parsed: dict[str, Any] = json.loads(stdout_s)
@@ -2057,7 +2079,7 @@ async def _run_tune_per_shot(
     except json.JSONDecodeError:
         # vmaf-tune emitted non-JSON stdout; return the raw output so the
         # caller can inspect it.
-        return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
+        return {"exit_code": returncode, "stdout": stdout_s, "stderr": stderr_s}
 
 
 # ---------------------------------------------------------------------------
@@ -2065,6 +2087,17 @@ async def _run_tune_per_shot(
 # ---------------------------------------------------------------------------
 
 
+# Root causes of the original run_benchmark failure (ADR-0513):
+# 1. The MCP tool previously passed ``-r ref -d dis --width W --height H`` as
+#    positional args to the script.  bench_all.sh uses ``set -euo pipefail`` and
+#    sources Intel oneAPI ``setvars.sh`` inside the script body.  ``setvars.sh``
+#    reads the calling script's ``$@`` (positional parameters) to process its
+#    own flags; the unknown flags ``-r``, ``-d``, ``--width``, ``--height``
+#    propagate into per-component ``env/vars.sh`` scripts, which hang or exit
+#    non-zero, aborting the outer script before any output is emitted.
+# 2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
+#    script fell back to the relative path ``core/build/tools/vmaf`` which is
+#    absent in the container after ``make install``.
 async def _run_benchmark(
     progress_token: str | int | None = None,
 ) -> dict[str, Any]:
@@ -2074,19 +2107,6 @@ async def _run_benchmark(
     pairs (576x324, 1080p-5f, 4K-BBB-200f) across all available backends.
     It does NOT accept per-call ref/dis arguments — those are hardcoded.
 
-    Root causes of the original failure (ADR-0513):
-    1. The MCP tool previously passed ``-r ref -d dis --width W --height H``
-       as positional args to the script.  bench_all.sh uses ``set -euo
-       pipefail`` and sources Intel oneAPI ``setvars.sh`` inside the script
-       body.  ``setvars.sh`` reads the calling script's ``$@`` (positional
-       parameters) to process its own flags; the unknown flags ``-r``,
-       ``-d``, ``--width``, ``--height`` propagate into per-component
-       ``env/vars.sh`` scripts, which hang or exit non-zero, aborting the
-       outer script before any output is emitted.
-    2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
-       script fell back to the relative path ``core/build/tools/vmaf``
-       which is absent in the container after ``make install``.
-
     Progress notifications (ADR-0608): emitted at start and completion.
     The benchmark takes 30–120 s; no finer-grained progress is available
     from the shell script.
@@ -2094,35 +2114,7 @@ async def _run_benchmark(
     script = _repo_root() / "testdata" / "bench_all.sh"
     if not script.exists():
         raise FileNotFoundError(f"benchmark harness not found: {script}")
-    # Resolve the data root — where bench_all.sh's fixture YUVs live.
-    # Priority:
-    #   1. VMAF_ROOT env var already set by the caller (explicit override).
-    #   2. _repo_root() when it contains the canonical fixture file.
-    #   3. /workspace — the vmaf-dev-mcp container bind-mount (ADR-0513).
-    # This handles the case where the MCP server is installed as an editable
-    # package from a git worktree (e.g. during development): _repo_root()
-    # then resolves to the worktree directory which shares the git objects but
-    # does not have the large YUV fixtures checked out.
-    _fixture_probe = "python/test/resource/yuv/src01_hrc00_576x324.yuv"
-    _candidate_roots = [
-        Path(os.environ["VMAF_ROOT"]) if "VMAF_ROOT" in os.environ else None,
-        _repo_root(),
-        Path("/workspace"),
-    ]
-    vmaf_root = next(
-        (r for r in _candidate_roots if r is not None and (r / _fixture_probe).exists()),
-        _repo_root(),
-    )
-    # Inherit the full environment so that PATH, LD_LIBRARY_PATH, and any
-    # GPU-runtime variables are preserved.  Inject VMAF_ROOT so bench_all.sh
-    # resolves its ``cd`` correctly when git is unavailable, and inject
-    # VMAF_BIN so the script uses the installed binary (not the relative
-    # in-tree path which is absent after ``make install`` in containers).
-    bench_env = {
-        **os.environ,
-        "VMAF_ROOT": str(vmaf_root),
-        "VMAF_BIN": str(_vmaf_binary()),
-    }
+    bench_env = _benchmark_env()
 
     await _send_progress(progress_token, 0.0, 1.0, "starting benchmark harness")
 
@@ -2147,14 +2139,7 @@ async def _run_benchmark(
     # surface marks the call as isError=True (matches the sibling
     # _run_compare / _run_ladder / _run_tune_per_shot error path).
     if proc.returncode != 0:
-        detail = stderr_s.strip() or stdout_s.strip()
-        if not detail:
-            detail = (
-                "no output — likely aborted by set -euo pipefail before printing. "
-                f"Common causes: missing vmaf binary at {_vmaf_binary()}, missing "
-                "fixture YUVs under testdata/ or python/test/resource/yuv/. "
-                "Re-run with `bash -x testdata/bench_all.sh` to bisect."
-            )
+        detail = stderr_s.strip() or stdout_s.strip() or _benchmark_silent_failure_hint()
         raise RuntimeError(f"benchmark failed (rc={proc.returncode}): {detail}")
     payload: dict[str, Any] = {
         "exit_code": proc.returncode,
@@ -2162,6 +2147,51 @@ async def _run_benchmark(
         "stderr": stderr_s,
     }
     return payload
+
+
+def _benchmark_env() -> dict[str, str]:
+    """Environment for bench_all.sh: the inherited one plus ``VMAF_ROOT`` and ``VMAF_BIN``.
+
+    The data root — where bench_all.sh's fixture YUVs live — is, in priority order:
+    1. the VMAF_ROOT env var already set by the caller (explicit override);
+    2. _repo_root() when it contains the canonical fixture file;
+    3. /workspace — the vmaf-dev-mcp container bind-mount (ADR-0513).
+    This handles the case where the MCP server is installed as an editable
+    package from a git worktree (e.g. during development): _repo_root()
+    then resolves to the worktree directory which shares the git objects but
+    does not have the large YUV fixtures checked out.
+
+    The full environment is inherited so that PATH, LD_LIBRARY_PATH, and any
+    GPU-runtime variables are preserved.  VMAF_ROOT lets bench_all.sh resolve
+    its ``cd`` correctly when git is unavailable, and VMAF_BIN makes the script
+    use the installed binary (not the relative in-tree path which is absent
+    after ``make install`` in containers).
+    """
+    fixture_probe = "python/test/resource/yuv/src01_hrc00_576x324.yuv"
+    candidate_roots = [
+        Path(os.environ["VMAF_ROOT"]) if "VMAF_ROOT" in os.environ else None,
+        _repo_root(),
+        Path("/workspace"),
+    ]
+    vmaf_root = next(
+        (r for r in candidate_roots if r is not None and (r / fixture_probe).exists()),
+        _repo_root(),
+    )
+    return {
+        **os.environ,
+        "VMAF_ROOT": str(vmaf_root),
+        "VMAF_BIN": str(_vmaf_binary()),
+    }
+
+
+def _benchmark_silent_failure_hint() -> str:
+    """Diagnostic text for a failed bench_all.sh run that printed nothing."""
+    return (
+        "no output — likely aborted by set -euo pipefail before printing. "
+        f"Common causes: missing vmaf binary at {_vmaf_binary()}, missing "
+        "fixture YUVs under testdata/ or python/test/resource/yuv/. "
+        "Re-run with `bash -x testdata/bench_all.sh` to bisect."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2382,15 +2412,8 @@ async def _vmaf_per_shot(arguments: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _build_roi_argv(
-    binary: str, out_path: str, arguments: dict[str, Any]
-) -> tuple[list[str], dict[str, Any]]:
-    """Validate arguments and return ``(argv, params)`` for vmaf_roi.
-
-    ``params`` carries the validated values the response shape needs. Split out
-    of the handler for the argv-parity test; byte-identical to
-    ``cmd/vmafx-mcp/impl_sidecar.go::buildRoiArgv``.
-    """
+def _validate_roi_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Validate the vmaf_roi arguments in the CLI's order and return the checked values."""
     reference = _validate_path(str(arguments["reference"]))
     width = int(arguments["width"])
     height = int(arguments["height"])
@@ -2417,39 +2440,62 @@ def _build_roi_argv(
     saliency = ""
     if arguments.get("saliency_model"):
         saliency = str(_validate_path(str(arguments["saliency_model"])))
+    return {
+        "reference": reference,
+        "width": width,
+        "height": height,
+        "frame": frame,
+        "pixfmt": pixfmt,
+        "bitdepth": bitdepth,
+        "ctu_size": ctu_size,
+        "encoder": encoder,
+        "strength": strength,
+        "saliency": saliency,
+    }
 
+
+def _build_roi_argv(
+    binary: str, out_path: str, arguments: dict[str, Any]
+) -> tuple[list[str], dict[str, Any]]:
+    """Validate arguments and return ``(argv, params)`` for vmaf_roi.
+
+    ``params`` carries the validated values the response shape needs. Split out
+    of the handler for the argv-parity test; byte-identical to
+    ``cmd/vmafx-mcp/impl_sidecar.go::buildRoiArgv``.
+    """
+    v = _validate_roi_arguments(arguments)
     argv = [
         binary,
         "--reference",
-        str(reference),
+        str(v["reference"]),
         "--width",
-        str(width),
+        str(v["width"]),
         "--height",
-        str(height),
+        str(v["height"]),
         "--frame",
-        str(frame),
+        str(v["frame"]),
         "--output",
         out_path,
         "--pixel_format",
-        pixfmt,
+        v["pixfmt"],
         "--bitdepth",
-        str(bitdepth),
+        str(v["bitdepth"]),
         "--ctu-size",
-        str(ctu_size),
+        str(v["ctu_size"]),
         "--encoder",
-        encoder,
+        v["encoder"],
         "--strength",
-        _fmt_float(strength),
+        _fmt_float(v["strength"]),
     ]
-    if saliency:
-        argv += ["--saliency-model", saliency]
+    if v["saliency"]:
+        argv += ["--saliency-model", v["saliency"]]
     params = {
-        "encoder": encoder,
-        "ctu_size": ctu_size,
-        "frame": frame,
-        "width": width,
-        "height": height,
-        "saliency": bool(saliency),
+        "encoder": v["encoder"],
+        "ctu_size": v["ctu_size"],
+        "frame": v["frame"],
+        "width": v["width"],
+        "height": v["height"],
+        "saliency": bool(v["saliency"]),
     }
     return argv, params
 
@@ -2684,18 +2730,42 @@ def _probe_score(out_json: Path, backend: str) -> tuple[Any, str | None]:
         return None, f"failed to parse vmaf output: {exc}"
 
 
+def _probe_result(
+    backend: str,
+    compiled_in: bool,
+    *,
+    healthy: bool,
+    latency_ms: float | None,
+    score: Any,
+    error: str | None,
+) -> dict[str, Any]:
+    """The health dict of one probe: ``{backend, compiled_in, runtime_healthy, ...}``."""
+    return {
+        "backend": backend,
+        "compiled_in": compiled_in,
+        "runtime_healthy": healthy,
+        "latency_ms": latency_ms,
+        "score": score,
+        "error": error,
+    }
+
+
+def _write_probe_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Write the two probe YUV frames into @p tmp_path; return ``(ref, dis, out_json)`` paths."""
+    ref_yuv = tmp_path / "ref.yuv"
+    dis_yuv = tmp_path / "dis.yuv"
+    ref_yuv.write_bytes(_PROBE_YUV_DATA)
+    dis_yuv.write_bytes(_PROBE_YUV_DATA)
+    return ref_yuv, dis_yuv, tmp_path / "out.json"
+
+
 async def _execute_probe(
     vmaf: Path, backend: str, compiled_in: bool, tmp_path: Path
 ) -> dict[str, Any]:
     """Run the probe subprocess inside @p tmp_path and build its health dict."""
     import time
 
-    ref_yuv = tmp_path / "ref.yuv"
-    dis_yuv = tmp_path / "dis.yuv"
-    out_json = tmp_path / "out.json"
-    ref_yuv.write_bytes(_PROBE_YUV_DATA)
-    dis_yuv.write_bytes(_PROBE_YUV_DATA)
-
+    ref_yuv, dis_yuv, out_json = _write_probe_inputs(tmp_path)
     argv = _probe_argv(vmaf, backend, ref_yuv, dis_yuv, out_json)
 
     t0 = time.monotonic()
@@ -2705,48 +2775,49 @@ async def _execute_probe(
         )
         _stdout, stderr = await _communicate_with_timeout(proc)
     except OSError as exc:
-        return {
-            "backend": backend,
-            "compiled_in": compiled_in,
-            "runtime_healthy": False,
-            "latency_ms": None,
-            "score": None,
-            "error": f"failed to exec vmaf: {exc}",
-        }
-    latency_ms = (time.monotonic() - t0) * 1000.0
+        return _probe_result(
+            backend,
+            compiled_in,
+            healthy=False,
+            latency_ms=None,
+            score=None,
+            error=f"failed to exec vmaf: {exc}",
+        )
+    latency_ms = round((time.monotonic() - t0) * 1000.0, 1)
 
     if proc.returncode != 0:
-        return {
-            "backend": backend,
-            "compiled_in": compiled_in,
-            "runtime_healthy": False,
-            "latency_ms": round(latency_ms, 1),
-            "score": None,
-            "error": f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace').strip()[:500]}",
-        }
+        detail = stderr.decode(errors="replace").strip()[:500]
+        return _probe_result(
+            backend,
+            compiled_in,
+            healthy=False,
+            latency_ms=latency_ms,
+            score=None,
+            error=f"vmaf exited {proc.returncode}: {detail}",
+        )
 
     score, parse_error = _probe_score(out_json, backend)
     if parse_error is not None:
-        return {
-            "backend": backend,
-            "compiled_in": compiled_in,
-            "runtime_healthy": False,
-            "latency_ms": round(latency_ms, 1),
-            "score": None,
-            "error": parse_error,
-        }
+        return _probe_result(
+            backend,
+            compiled_in,
+            healthy=False,
+            latency_ms=latency_ms,
+            score=None,
+            error=parse_error,
+        )
 
     # runtime_healthy requires a non-null score: a null score indicates
     # the backend kernel failed silently (e.g. ADM sub-minimum resolution,
     # driver absent) even though the process returned exit code 0.
-    return {
-        "backend": backend,
-        "compiled_in": compiled_in,
-        "runtime_healthy": score is not None,
-        "latency_ms": round(latency_ms, 1),
-        "score": score,
-        "error": None if score is not None else "vmaf returned exit 0 but score was null",
-    }
+    return _probe_result(
+        backend,
+        compiled_in,
+        healthy=score is not None,
+        latency_ms=latency_ms,
+        score=score,
+        error=None if score is not None else "vmaf returned exit 0 but score was null",
+    )
 
 
 async def _probe_backend(backend: str) -> dict[str, Any]:
@@ -3009,6 +3080,37 @@ async def _decode_to_yuv(src: Path, dst: Path, *, pix_fmt: str) -> None:
         )
 
 
+async def _probe_encoded_geometry(ref_path: Path) -> tuple[int, int, str, int, str]:
+    """Probe the reference stream; return ``(width, height, pixfmt, bitdepth, ffmpeg_pix_fmt)``."""
+    if not shutil.which("ffprobe"):
+        raise RuntimeError("ffprobe not on PATH; install ffmpeg to use vmaf_score_encoded")
+
+    # ADR-1023: use the async wrapper so the blocking subprocess.run inside
+    # _ffprobe_geometry does not stall the event loop.
+    width, height, pixfmt, bitdepth = await _ffprobe_geometry_async(ref_path)
+    ffmpeg_pix_fmt = _PIXFMT_TO_FFMPEG.get((pixfmt, bitdepth))
+    if ffmpeg_pix_fmt is None:
+        raise ValueError(f"unsupported pixfmt/bitdepth combination: {pixfmt}/{bitdepth}")
+    return width, height, pixfmt, bitdepth, ffmpeg_pix_fmt
+
+
+async def _decode_pair_to_yuv(ref: tuple[Path, Path], dis: tuple[Path, Path], pix_fmt: str) -> None:
+    """Decode the ``(source, destination)`` pairs @p ref and @p dis in parallel.
+
+    ADR-1023: return_exceptions=True so one failing decode does not silently
+    swallow the other's error.  Both results are inspected and the first
+    exception found is re-raised so the caller gets a clear message.
+    """
+    decode_results = await asyncio.gather(
+        _decode_to_yuv(ref[0], ref[1], pix_fmt=pix_fmt),
+        _decode_to_yuv(dis[0], dis[1], pix_fmt=pix_fmt),
+        return_exceptions=True,
+    )
+    for _res in decode_results:
+        if isinstance(_res, BaseException):
+            raise _res
+
+
 async def _run_vmaf_score_encoded(
     ref_path: Path,
     dis_path: Path,
@@ -3030,15 +3132,7 @@ async def _run_vmaf_score_encoded(
     """
     import tempfile
 
-    if not shutil.which("ffprobe"):
-        raise RuntimeError("ffprobe not on PATH; install ffmpeg to use vmaf_score_encoded")
-
-    # ADR-1023: use the async wrapper so the blocking subprocess.run inside
-    # _ffprobe_geometry does not stall the event loop.
-    width, height, pixfmt, bitdepth = await _ffprobe_geometry_async(ref_path)
-    ffmpeg_pix_fmt = _PIXFMT_TO_FFMPEG.get((pixfmt, bitdepth))
-    if ffmpeg_pix_fmt is None:
-        raise ValueError(f"unsupported pixfmt/bitdepth combination: {pixfmt}/{bitdepth}")
+    width, height, pixfmt, bitdepth, ffmpeg_pix_fmt = await _probe_encoded_geometry(ref_path)
 
     with tempfile.TemporaryDirectory(prefix="vmaf-mcp-encoded-") as tmp:
         tmp_p = Path(tmp)
@@ -3046,17 +3140,7 @@ async def _run_vmaf_score_encoded(
         dis_yuv = tmp_p / "dis.yuv"
 
         # Decode both inputs in parallel for speed.
-        # ADR-1023: return_exceptions=True so one failing decode does not
-        # silently swallow the other's error.  We inspect both results and
-        # re-raise the first exception found so the caller gets a clear message.
-        decode_results = await asyncio.gather(
-            _decode_to_yuv(ref_path, ref_yuv, pix_fmt=ffmpeg_pix_fmt),
-            _decode_to_yuv(dis_path, dis_yuv, pix_fmt=ffmpeg_pix_fmt),
-            return_exceptions=True,
-        )
-        for _res in decode_results:
-            if isinstance(_res, BaseException):
-                raise _res
+        await _decode_pair_to_yuv((ref_path, ref_yuv), (dis_path, dis_yuv), ffmpeg_pix_fmt)
 
         req = ScoreRequest(
             ref=ref_yuv,
@@ -4153,13 +4237,257 @@ server: Server[Any] = Server(
 )
 
 
+def _backend_and_subsample(arguments: dict[str, Any]) -> tuple[str, int]:
+    """Validate and return the ``backend`` and ``subsample`` arguments of a scoring tool."""
+    backend = str(arguments.get("backend", "auto"))
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
+        )
+    subsample = int(arguments.get("subsample", 1))
+    if subsample < 1:
+        raise ValueError(f"invalid subsample {subsample}: must be >= 1")
+    return backend, subsample
+
+
+def _score_reference_path(arguments: dict[str, Any], extras: ScoreExtras) -> Path | None:
+    """Validate the optional reference path of ``vmaf_score`` (NR mode may omit it)."""
+    ref_arg = arguments.get("ref")
+    if ref_arg:
+        return _validate_path(ref_arg)
+    if extras.no_reference:
+        return None
+    raise ValueError("missing required argument: 'ref' (omit only with no_reference=true)")
+
+
+def _check_no_reference_model(extras: ScoreExtras) -> None:
+    """NR mode needs an NR tiny model (mirrors cli_parse.c:997); reject early otherwise."""
+    if extras.no_reference and not extras.tiny_model:
+        raise ValueError("no_reference requires tiny_model; no classic NR scorer exists")
+
+
+async def _tool_vmaf_score(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    extras = _extras_from_args(arguments)
+    # NR-mode consistency: --no-reference requires an NR tiny model, so reject
+    # early with the same message the CLI emits.
+    _check_no_reference_model(extras)
+    # In NR mode the reference path is optional (only the distorted picture
+    # is scored). A caller may still supply one; validate it when present.
+    ref_path = _score_reference_path(arguments, extras)
+    width = int(arguments["width"])
+    height = int(arguments["height"])
+    if width <= 0 or height <= 0:
+        raise ValueError("width and height must be positive integers")
+    pixfmt = str(arguments["pixfmt"])
+    if pixfmt not in _VALID_PIXFMTS:
+        raise ValueError(f"invalid pixfmt '{pixfmt}': must be one of 420|422|444")
+    bitdepth = int(arguments["bitdepth"])
+    if bitdepth not in _VALID_BITDEPTHS:
+        raise ValueError(f"invalid bitdepth {bitdepth}: must be one of 8|10|12|16")
+    backend, subsample = _backend_and_subsample(arguments)
+    req = ScoreRequest(
+        ref=ref_path,
+        dis=_validate_path(arguments["dis"]),
+        width=width,
+        height=height,
+        pixfmt=pixfmt,
+        bitdepth=bitdepth,
+        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        backend=backend,
+        precision=str(arguments.get("precision", "legacy")),
+        subsample=subsample,
+        output_fmt=extras.output_fmt,
+        extras=extras,
+    )
+    return await _run_vmaf_score(req)
+
+
+async def _tool_list_models(_arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return {"models": _list_models()}
+
+
+async def _tool_list_backends(_arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return await _list_backends()
+
+
+async def _tool_run_benchmark(_arguments: dict[str, Any], progress_token: str | int | None) -> Any:
+    return await _run_benchmark(progress_token=progress_token)
+
+
+async def _tool_eval_model_on_split(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return _eval_model_on_split(
+        model=_validate_path(arguments["model"]),
+        features=_validate_path(arguments["features"]),
+        split=str(arguments.get("split", "test")),
+        input_name=str(arguments.get("input_name", "features")),
+    )
+
+
+async def _tool_compare_models(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    models_in = arguments["models"]
+    if not isinstance(models_in, list) or not models_in:
+        raise ValueError("'models' must be a non-empty list of paths")
+    return _compare_models(
+        models=[_validate_path(m) for m in models_in],
+        features=_validate_path(arguments["features"]),
+        split=str(arguments.get("split", "test")),
+        input_name=str(arguments.get("input_name", "features")),
+    )
+
+
+async def _tool_describe_worst_frames(
+    arguments: dict[str, Any], _progress: str | int | None
+) -> Any:
+    req = ScoreRequest(
+        ref=_validate_path(arguments["ref"]),
+        dis=_validate_path(arguments["dis"]),
+        width=int(arguments["width"]),
+        height=int(arguments["height"]),
+        pixfmt=str(arguments["pixfmt"]),
+        bitdepth=int(arguments["bitdepth"]),
+        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        backend=str(arguments.get("backend", "auto")),
+    )
+    n_raw = int(arguments.get("n", 5))
+    if n_raw < 1 or n_raw > 32:
+        raise ValueError(f"'n' must be between 1 and 32 (schema maximum); got {n_raw}")
+    return await _describe_worst_frames(req, n=n_raw)
+
+
+async def _tool_probe_backend(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    # Argument validation: probe_backend requires 'backend'. If missing,
+    # _call_tool converts the KeyError to a clean ValueError (mirrors any
+    # required-arg tool, e.g. describe_model's 'name'). The schema
+    # marks 'backend' required; this keeps the error message
+    # consistent instead of a bespoke "'backend' is required" string.
+    return await _probe_backend(str(arguments["backend"]))
+
+
+async def _tool_vmaf_version(_arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return await _vmaf_version()
+
+
+async def _tool_vmaf_score_encoded(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    encoded_extras = _extras_from_args(arguments)
+    _check_no_reference_model(encoded_extras)
+    backend, subsample = _backend_and_subsample(arguments)
+    return await _run_vmaf_score_encoded(
+        ref_path=_validate_path(arguments["reference_encoded"]),
+        dis_path=_validate_path(arguments["distorted_encoded"]),
+        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        backend=backend,
+        subsample=subsample,
+        output_fmt=encoded_extras.output_fmt,
+        precision=str(arguments.get("precision", "legacy")),
+        extras=encoded_extras,
+    )
+
+
+# ── P1 tools (ADR-0608) ─────────────────────────────────────────────────
+async def _tool_list_extractors(_arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return {"extractors": _list_extractors()}
+
+
+async def _tool_describe_model(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return _describe_model(str(arguments["name"]))
+
+
+async def _tool_run_compare(arguments: dict[str, Any], progress_token: str | int | None) -> Any:
+    return await _run_compare(
+        src=str(arguments["src"]),
+        target_vmaf=arguments.get("target_vmaf"),
+        target_vmafs=arguments.get("target_vmafs"),
+        encoders=arguments.get("encoders"),
+        format="json",
+        width=int(arguments["width"]) if "width" in arguments else None,
+        height=int(arguments["height"]) if "height" in arguments else None,
+        pix_fmt=str(arguments.get("pix_fmt", "yuv420p")),
+        framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
+        no_parallel=bool(arguments.get("no_parallel", False)),
+        progress_token=progress_token,
+    )
+
+
+async def _tool_run_ladder(arguments: dict[str, Any], progress_token: str | int | None) -> Any:
+    return await _run_ladder(
+        src=str(arguments["src"]),
+        resolutions=str(arguments["resolutions"]),
+        target_vmafs=str(arguments["target_vmafs"]),
+        encoder=str(arguments.get("encoder", "libx264")),
+        quality_tiers=int(arguments.get("quality_tiers", 5)),
+        format=str(arguments.get("format", "json")),
+        spacing=str(arguments.get("spacing", "log_bitrate")),
+        framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
+        progress_token=progress_token,
+    )
+
+
+async def _tool_run_tune_per_shot(
+    arguments: dict[str, Any], progress_token: str | int | None
+) -> Any:
+    return await _run_tune_per_shot(
+        src=str(arguments["src"]),
+        target_vmaf=float(arguments.get("target_vmaf", 92.0)),
+        encoder=str(arguments.get("encoder", "libx264")),
+        output=str(arguments["output"]) if "output" in arguments else None,
+        pix_fmt=str(arguments.get("pix_fmt", "yuv420p")),
+        framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
+        scene_threshold=(
+            float(arguments["scene_threshold"]) if "scene_threshold" in arguments else None
+        ),
+        format=str(arguments.get("format", "json")),
+        progress_token=progress_token,
+    )
+
+
+# ── Sidecar-binary bridge (#1240 item b) ────────────────────────────────
+async def _tool_vmaf_per_shot(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return await _vmaf_per_shot(arguments)
+
+
+async def _tool_vmaf_roi(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return await _vmaf_roi(arguments)
+
+
+async def _tool_vmaf_bench(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return await _vmaf_bench(arguments)
+
+
+async def _tool_vmaf_vpl(arguments: dict[str, Any], _progress: str | int | None) -> Any:
+    return await _vmaf_vpl(arguments)
+
+
+_TOOL_HANDLERS: dict[str, Any] = {
+    "vmaf_score": _tool_vmaf_score,
+    "list_models": _tool_list_models,
+    "list_backends": _tool_list_backends,
+    "run_benchmark": _tool_run_benchmark,
+    "eval_model_on_split": _tool_eval_model_on_split,
+    "compare_models": _tool_compare_models,
+    "describe_worst_frames": _tool_describe_worst_frames,
+    "probe_backend": _tool_probe_backend,
+    "vmaf_version": _tool_vmaf_version,
+    "vmaf_score_encoded": _tool_vmaf_score_encoded,
+    "list_extractors": _tool_list_extractors,
+    "describe_model": _tool_describe_model,
+    "run_compare": _tool_run_compare,
+    "run_ladder": _tool_run_ladder,
+    "run_tune_per_shot": _tool_run_tune_per_shot,
+    "vmaf_per_shot": _tool_vmaf_per_shot,
+    "vmaf_roi": _tool_vmaf_roi,
+    "vmaf_bench": _tool_vmaf_bench,
+    "vmaf_vpl": _tool_vmaf_vpl,
+}
+
+
 async def _call_tool_dispatch(
     name: str, arguments: dict[str, Any], progress_token: str | int | None
 ) -> list[TextContent]:
     """Inner dispatch for :func:`_call_tool`.
 
     Separated so ``_call_tool`` can wrap it with a single KeyError-to-ValueError
-    converter without duplicating the dispatch logic.
+    converter without duplicating the dispatch logic. One handler per tool is
+    looked up in ``_TOOL_HANDLERS``.
     """
     # Depth guard: reject pathologically nested payloads before the pydantic
     # parser recurses into them.  500-level deep dicts hit Python's recursion
@@ -4169,182 +4497,15 @@ async def _call_tool_dispatch(
     # _make_error_result wrapper return a proper isError=True tool result.
     _check_depth(arguments)
 
-    if name == "vmaf_score":
-        extras = _extras_from_args(arguments)
-        # NR-mode consistency (mirrors cli_parse.c:997): --no-reference requires
-        # an NR tiny model, so reject early with the same message the CLI emits.
-        if extras.no_reference and not extras.tiny_model:
-            raise ValueError("no_reference requires tiny_model; no classic NR scorer exists")
-        # In NR mode the reference path is optional (only the distorted picture
-        # is scored). A caller may still supply one; validate it when present.
-        ref_arg = arguments.get("ref")
-        if ref_arg:
-            ref_path: Path | None = _validate_path(ref_arg)
-        elif extras.no_reference:
-            ref_path = None
-        else:
-            raise ValueError("missing required argument: 'ref' (omit only with no_reference=true)")
-        width = int(arguments["width"])
-        height = int(arguments["height"])
-        if width <= 0 or height <= 0:
-            raise ValueError("width and height must be positive integers")
-        pixfmt = str(arguments["pixfmt"])
-        if pixfmt not in _VALID_PIXFMTS:
-            raise ValueError(f"invalid pixfmt '{pixfmt}': must be one of 420|422|444")
-        bitdepth = int(arguments["bitdepth"])
-        if bitdepth not in _VALID_BITDEPTHS:
-            raise ValueError(f"invalid bitdepth {bitdepth}: must be one of 8|10|12|16")
-        backend = str(arguments.get("backend", "auto"))
-        if backend not in _VALID_BACKENDS:
-            raise ValueError(
-                f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
-            )
-        subsample = int(arguments.get("subsample", 1))
-        if subsample < 1:
-            raise ValueError(f"invalid subsample {subsample}: must be >= 1")
-        output_fmt = extras.output_fmt
-        req = ScoreRequest(
-            ref=ref_path,
-            dis=_validate_path(arguments["dis"]),
-            width=width,
-            height=height,
-            pixfmt=pixfmt,
-            bitdepth=bitdepth,
-            model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-            backend=backend,
-            precision=str(arguments.get("precision", "legacy")),
-            subsample=subsample,
-            output_fmt=output_fmt,
-            extras=extras,
-        )
-        result = await _run_vmaf_score(req)
-    elif name == "list_models":
-        result = {"models": _list_models()}
-    elif name == "list_backends":
-        result = await _list_backends()
-    elif name == "run_benchmark":
-        result = await _run_benchmark(progress_token=progress_token)
-    elif name == "eval_model_on_split":
-        result = _eval_model_on_split(
-            model=_validate_path(arguments["model"]),
-            features=_validate_path(arguments["features"]),
-            split=str(arguments.get("split", "test")),
-            input_name=str(arguments.get("input_name", "features")),
-        )
-    elif name == "compare_models":
-        models_in = arguments["models"]
-        if not isinstance(models_in, list) or not models_in:
-            raise ValueError("'models' must be a non-empty list of paths")
-        result = _compare_models(
-            models=[_validate_path(m) for m in models_in],
-            features=_validate_path(arguments["features"]),
-            split=str(arguments.get("split", "test")),
-            input_name=str(arguments.get("input_name", "features")),
-        )
-    elif name == "describe_worst_frames":
-        req = ScoreRequest(
-            ref=_validate_path(arguments["ref"]),
-            dis=_validate_path(arguments["dis"]),
-            width=int(arguments["width"]),
-            height=int(arguments["height"]),
-            pixfmt=str(arguments["pixfmt"]),
-            bitdepth=int(arguments["bitdepth"]),
-            model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-            backend=str(arguments.get("backend", "auto")),
-        )
-        n_raw = int(arguments.get("n", 5))
-        if n_raw < 1 or n_raw > 32:
-            raise ValueError(f"'n' must be between 1 and 32 (schema maximum); got {n_raw}")
-        result = await _describe_worst_frames(req, n=n_raw)
-    elif name == "probe_backend":
-        # Argument validation: probe_backend requires 'backend'. If missing,
-        # _call_tool converts the KeyError to a clean ValueError (mirrors any
-        # required-arg tool, e.g. describe_model's 'name'). The schema
-        # marks 'backend' required; this keeps the error message
-        # consistent instead of a bespoke "'backend' is required" string.
-        result = await _probe_backend(str(arguments["backend"]))
-    elif name == "vmaf_version":
-        result = await _vmaf_version()
-    elif name == "vmaf_score_encoded":
-        encoded_extras = _extras_from_args(arguments)
-        if encoded_extras.no_reference and not encoded_extras.tiny_model:
-            raise ValueError("no_reference requires tiny_model; no classic NR scorer exists")
-        backend = str(arguments.get("backend", "auto"))
-        if backend not in _VALID_BACKENDS:
-            raise ValueError(
-                f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
-            )
-        subsample = int(arguments.get("subsample", 1))
-        if subsample < 1:
-            raise ValueError(f"invalid subsample {subsample}: must be >= 1")
-        output_fmt = encoded_extras.output_fmt
-        result = await _run_vmaf_score_encoded(
-            ref_path=_validate_path(arguments["reference_encoded"]),
-            dis_path=_validate_path(arguments["distorted_encoded"]),
-            model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-            backend=backend,
-            subsample=subsample,
-            output_fmt=output_fmt,
-            precision=str(arguments.get("precision", "legacy")),
-            extras=encoded_extras,
-        )
-    # ── P1 tools (ADR-0608) ─────────────────────────────────────────────
-    elif name == "list_extractors":
-        result = {"extractors": _list_extractors()}
-    elif name == "describe_model":
-        result = _describe_model(str(arguments["name"]))
-    elif name == "run_compare":
-        result = await _run_compare(
-            src=str(arguments["src"]),
-            target_vmaf=arguments.get("target_vmaf"),
-            target_vmafs=arguments.get("target_vmafs"),
-            encoders=arguments.get("encoders"),
-            format="json",
-            width=int(arguments["width"]) if "width" in arguments else None,
-            height=int(arguments["height"]) if "height" in arguments else None,
-            pix_fmt=str(arguments.get("pix_fmt", "yuv420p")),
-            framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
-            no_parallel=bool(arguments.get("no_parallel", False)),
-            progress_token=progress_token,
-        )
-    elif name == "run_ladder":
-        result = await _run_ladder(
-            src=str(arguments["src"]),
-            resolutions=str(arguments["resolutions"]),
-            target_vmafs=str(arguments["target_vmafs"]),
-            encoder=str(arguments.get("encoder", "libx264")),
-            quality_tiers=int(arguments.get("quality_tiers", 5)),
-            format=str(arguments.get("format", "json")),
-            spacing=str(arguments.get("spacing", "log_bitrate")),
-            framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
-            progress_token=progress_token,
-        )
-    elif name == "run_tune_per_shot":
-        result = await _run_tune_per_shot(
-            src=str(arguments["src"]),
-            target_vmaf=float(arguments.get("target_vmaf", 92.0)),
-            encoder=str(arguments.get("encoder", "libx264")),
-            output=str(arguments["output"]) if "output" in arguments else None,
-            pix_fmt=str(arguments.get("pix_fmt", "yuv420p")),
-            framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
-            scene_threshold=(
-                float(arguments["scene_threshold"]) if "scene_threshold" in arguments else None
-            ),
-            format=str(arguments.get("format", "json")),
-            progress_token=progress_token,
-        )
-    # ── Sidecar-binary bridge (#1240 item b) ────────────────────────────
-    elif name == "vmaf_per_shot":
-        result = await _vmaf_per_shot(arguments)
-    elif name == "vmaf_roi":
-        result = await _vmaf_roi(arguments)
-    elif name == "vmaf_bench":
-        result = await _vmaf_bench(arguments)
-    elif name == "vmaf_vpl":
-        result = await _vmaf_vpl(arguments)
-    else:
+    handler = _TOOL_HANDLERS.get(name)
+    if handler is None:
         raise ValueError(f"unknown tool: {name}")
+    result = await handler(arguments, progress_token)
     return [TextContent(type="text", text=_dumps_strict(result))]
+
+
+# Upper bound on the nodes one argument payload may contain for the depth walk.
+_CHECK_DEPTH_NODE_LIMIT = 10_000_000
 
 
 def _check_depth(obj: Any, max_depth: int = 50, depth: int = 0) -> None:
@@ -4359,18 +4520,23 @@ def _check_depth(obj: Any, max_depth: int = 50, depth: int = 0) -> None:
 
     Only ``dict`` and ``list`` containers contribute to nesting depth;
     scalar leaves are counted at the same level as their parent container.
+    The walk keeps an explicit stack, so the check itself never recurses.
     """
-    if depth > max_depth:
-        raise ValueError(
-            f"argument nesting exceeds maximum depth ({max_depth}); "
-            "reduce payload nesting and retry"
-        )
-    if isinstance(obj, dict):
-        for v in obj.values():
-            _check_depth(v, max_depth, depth + 1)
-    elif isinstance(obj, list):
-        for item in obj:
-            _check_depth(item, max_depth, depth + 1)
+    pending: list[tuple[Any, int]] = [(obj, depth)]
+    for _ in range(_CHECK_DEPTH_NODE_LIMIT):
+        if not pending:
+            return
+        node, level = pending.pop()
+        if level > max_depth:
+            raise ValueError(
+                f"argument nesting exceeds maximum depth ({max_depth}); "
+                "reduce payload nesting and retry"
+            )
+        if isinstance(node, dict):
+            pending.extend((v, level + 1) for v in node.values())
+        elif isinstance(node, list):
+            pending.extend((item, level + 1) for item in node)
+    raise ValueError("argument payload has too many nodes")
 
 
 def _classify_parse_error(raw_line: str) -> tuple[str | int | None, int, str]:
