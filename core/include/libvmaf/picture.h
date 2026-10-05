@@ -167,34 +167,42 @@ VMAF_EXPORT int vmaf_picture_unref(VmafPicture *pic);
  * `VMAF_COLOR_RANGE_UNKNOWN` is the unset value; the converter rejects it.
  * Enumerator values are append-only.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafColorRange {
     VMAF_COLOR_RANGE_UNKNOWN, /**< Unset. */
     VMAF_COLOR_RANGE_LIMITED, /**< Studio / limited range. */
     VMAF_COLOR_RANGE_FULL,    /**< Full range. */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /** @enum VmafColorPrimaries @brief Colour primaries. Append-only. */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafColorPrimaries {
     VMAF_COLOR_PRIMARIES_UNKNOWN = 0, /**< Unset. */
     VMAF_COLOR_PRIMARIES_BT709,       /**< ITU-R BT.709. */
     VMAF_COLOR_PRIMARIES_BT2020,      /**< ITU-R BT.2020. */
     VMAF_COLOR_PRIMARIES_SMPTE432,    /**< SMPTE ST 432-1 (DCI-P3 D65). */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /** @enum VmafColorTransferCharacteristic @brief Transfer function. Append-only. */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafColorTransferCharacteristic {
     VMAF_COLOR_TRC_UNKNOWN = 0, /**< Unset. */
     VMAF_COLOR_TRC_BT709,       /**< ITU-R BT.709. */
     VMAF_COLOR_TRC_SMPTE2084,   /**< SMPTE ST 2084 (PQ). */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /** @enum VmafColorMatrixCoefficients @brief YCbCr matrix. Append-only. */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafColorMatrixCoefficients {
     VMAF_COLOR_MATRIX_UNKNOWN = 0, /**< Unset. */
     VMAF_COLOR_MATRIX_BT709,       /**< ITU-R BT.709. */
     VMAF_COLOR_MATRIX_BT2020_NCL,  /**< ITU-R BT.2020 non-constant luminance. */
     VMAF_COLOR_MATRIX_ICTCP,       /**< ICtCp. */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @struct VmafColor
@@ -205,23 +213,27 @@ enum VmafColorMatrixCoefficients {
  * colour of a source picture travels as an argument of
  * `vmaf_picture_convert_context_init_with_color` instead.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafColor {
     enum VmafColorRange range;                /**< Code-value range. */
     enum VmafColorPrimaries primaries;        /**< Colour primaries. */
     enum VmafColorTransferCharacteristic trc; /**< Transfer function. */
     enum VmafColorMatrixCoefficients matrix;  /**< YCbCr matrix. */
 } VmafColor;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @enum  VmafResampleFilter
  * @brief Scaling filter used when the target size differs from the source size.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafResampleFilter {
     VMAF_RESAMPLE_DEFAULT,  /**< The converter's default (bicubic). */
     VMAF_RESAMPLE_BILINEAR, /**< Bilinear. */
     VMAF_RESAMPLE_BICUBIC,  /**< Bicubic. */
     VMAF_RESAMPLE_LANCZOS,  /**< Lanczos. */
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @struct VmafPictureConvertTarget
@@ -229,6 +241,7 @@ enum VmafResampleFilter {
  *
  * `w` / `h` of 0 keep the source size. Every field of `color` must be set.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafPictureConvertTarget {
     enum VmafPixelFormat pix_fmt;            /**< Target pixel format (not UNKNOWN). */
     unsigned bpc;                            /**< Target bits per component, 8 to 16. */
@@ -237,6 +250,7 @@ typedef struct VmafPictureConvertTarget {
     VmafColor color;                         /**< Target colour description. */
     enum VmafResampleFilter resample_filter; /**< Scaling filter. */
 } VmafPictureConvertTarget;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @typedef VmafPictureConvertContext
