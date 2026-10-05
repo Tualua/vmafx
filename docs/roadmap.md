@@ -39,6 +39,10 @@ each stage number matches its `v1.0.0-rc.N` tag (it supersedes the mapping of
 [ADR-1352](adr/1352-rc-phase-shift-plus-one.md)), and
 [ADR-1490](adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts the CPU
 capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
+[ADR-1868](adr/1868-candidate-map-2026-10-05.md) folds the work that joined
+1.0.0 on 2026-10-05 into those candidates without new numbers: the new API and
+provenance into RC4, tool consolidation, new metrics and the Metal SpEED twins
+into RC5, training readiness into RC8.
 
 ### What this means for you
 
@@ -58,11 +62,11 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
 | **RC1** | correctness and tester readiness | — |
 | **RC2** | stabilisation and repair | — |
 | **RC3** | twin exactness | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
-| **RC4** | first full Rust metric and zero-copy device-frame import | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
-| **RC5** | deduplication | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
+| **RC4** | first full Rust metric, zero-copy device-frame import, new VMAFx API and FFmpeg filters, provenance | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
+| **RC5** | deduplication, tool consolidation, new metrics with exact twins, Metal SpEED twins | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
 | **RC6** | GPU capability source of truth | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
 | **RC7** | CPU capability source of truth | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
-| **RC8** | benchmark and tune | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
+| **RC8** | benchmark and tune, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
 | **RC9** | real retraining | [#1246](https://github.com/VMAFx/vmafx/issues/1246), [#1242](https://github.com/VMAFx/vmafx/issues/1242) |
 | **Final `v1.0.0`** | — | — |
 
@@ -93,6 +97,9 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
 
 #### RC4 — first full Rust metric and zero-copy import
 
+Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
+([#2142](https://github.com/VMAFx/vmafx/issues/2142)) through the new API.
+
 - **In scope:** The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer
   adm3, integer motion3, model prediction) in Rust; the C ABI is unchanged and
   the GPU twins stay CUDA, SYCL and HIP code. The whole device-memory import API
@@ -116,17 +123,31 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
 
 - **In scope:** One implementation per behaviour across GPU twins and host code,
   the Rust code included; `libgpudispatch` extracted, folding in the
-  per-backend import code RC4 wrote ([#1455](https://github.com/VMAFx/vmafx/issues/1455))
+  per-backend import code RC4 wrote ([#1455](https://github.com/VMAFx/vmafx/issues/1455)).
+  One implementation per tool ([#1249](https://github.com/VMAFx/vmafx/issues/1249)),
+  the `tools/` surface finished and the known unfinished surfaces closed
+  ([#1250](https://github.com/VMAFx/vmafx/issues/1250),
+  [#1270](https://github.com/VMAFx/vmafx/issues/1270),
+  [#1272](https://github.com/VMAFx/vmafx/issues/1272)). The new metrics with
+  their twins written once on `libgpudispatch`: ΔE-ITP, PU21, NIQE, BRISQUE,
+  Y-FUNQUE+ ([#1247](https://github.com/VMAFx/vmafx/issues/1247),
+  [#1248](https://github.com/VMAFx/vmafx/issues/1248)), HDR-SSIM and
+  HDR-MS-SSIM ([#2161](https://github.com/VMAFx/vmafx/issues/2161)), XPSNR
+  ([#2158](https://github.com/VMAFx/vmafx/issues/2158)); Metal twins of
+  `speed_chroma` and `speed_temporal`
+  ([#2160](https://github.com/VMAFx/vmafx/issues/2160))
 - **Exit boundary:** Scores unchanged against the RC3 reference; duplicated code
-  removed rather than moved
+  removed rather than moved; every new twin bit-identical to its CPU extractor
+  or within a measured libm bound recorded in an ADR
 
 #### RC6 — GPU capability source of truth
 
 - **In scope:** A per-vendor capability table generated from
   `nvcc --list-gpu-arch`, `ocloc` and ROCm `llc -mcpu=help`, checked in with a
-  CI drift check; dispatch and kernel parameters read it, with a generic
-  fallback for unknown devices; every kernel compiled and statically audited for
-  every target (scratch, spills, register ceiling, fp64)
+  CI drift check, covering the twins RC5 adds; dispatch and kernel parameters
+  read it, with a generic fallback for unknown devices; every kernel compiled
+  and statically audited for every target (scratch, spills, register ceiling,
+  fp64)
 - **Exit boundary:** Drift check green; audit clean for every listed target
 
 #### RC7 — CPU capability source of truth
@@ -147,15 +168,26 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
 
 - **In scope:** Comparable benchmark baselines, profiling, hardware-generation
   retuning, and measured performance fixes, including the speed RC3 gave up for
-  exactness
+  exactness. Training readiness: automatic temporal alignment and the
+  HDR-input guard for SDR models
+  ([#2163](https://github.com/VMAFx/vmafx/issues/2163),
+  [#2157](https://github.com/VMAFx/vmafx/issues/2157)), the external-metric
+  runner and estimator calibration
+  ([#2162](https://github.com/VMAFx/vmafx/issues/2162),
+  [#2143](https://github.com/VMAFx/vmafx/issues/2143)), the HDR
+  conversion-check workflow ([#2145](https://github.com/VMAFx/vmafx/issues/2145)),
+  the mini retrain in CI and the measured resource plan of
+  [#1246](https://github.com/VMAFx/vmafx/issues/1246)
 - **Exit boundary:** Results identify the exact artifact, fixtures, host,
   drivers and runtimes; accepted wins are re-measured and preserve
-  correctness/parity
+  correctness/parity; the mini retrain passes every stage
 
 #### RC9 — real retraining
 
 - **In scope:** The locked one-shot model retraining programme on the clean,
-  tuned tree
+  tuned tree, started only when every precondition of
+  [#1246](https://github.com/VMAFx/vmafx/issues/1246) holds (the RC4 to RC8
+  items above included)
 - **Exit boundary:** Model-quality gates, model cards, registry/signing
   metadata, and unchanged Netflix golden assertions pass
 

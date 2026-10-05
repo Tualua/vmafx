@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1281), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1282), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5135,3 +5135,7 @@ Every ADR, one heading each (1281), so the site search finds an ADR by its title
 ## ADR-1852: A new VMAFx C API generated from one definition, libvmaf as its compatibility layer, and VMAFx-named FFmpeg filters (RC4)
 
 [1852-vmafx-api-redesign](1852-vmafx-api-redesign.md)
+
+## ADR-1868: Fold the 2026-10-05 scope into the existing RC4 to RC9 candidates
+
+[1868-candidate-map-2026-10-05](1868-candidate-map-2026-10-05.md)
