@@ -129,8 +129,7 @@ QSV device:
 
 ```bash
 ffmpeg \
-  -init_hw_device drm=drm0:/dev/dri/renderD128 \
-  -init_hw_device vaapi=va0@drm0 \
+  -init_hw_device vaapi=va0:/dev/dri/renderD128 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
@@ -140,6 +139,16 @@ ffmpeg \
 ```
 
 A single shared `qsv` device silently reintroduces the contamination.
+
+Open the VA-API device on the render node directly, as above. Do not derive it
+from a `drm` device (`-init_hw_device drm=drm0:/dev/dri/renderD128
+-init_hw_device vaapi=va0@drm0`): in a rootless container only the render node
+is usable, and that form fails before decoding with `Failed to set value
+'drm=drm0:/dev/dri/renderD128' for option 'init_hw_device': Cannot allocate
+memory`. If the host has more than one GPU, pick the render node of the Intel
+one (`/sys/class/drm/renderD*/device/vendor` is `0x8086`). In a container, pass
+the device with `--device /dev/dri`; the `vmafx-zerocopy-fix` image from
+`Containerfile.vmafx` runs this command as is.
 
 ### Feature routing, supported surfaces and import failures (ADR-1595)
 
