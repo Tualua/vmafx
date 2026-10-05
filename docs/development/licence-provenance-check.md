@@ -39,7 +39,7 @@ request's diff, with the reason in it.
 ## Running it locally
 
 ```bash
-git remote add upstream https://github.com/Netflix/vmaf.git   # once
+git remote add --no-tags upstream https://github.com/Netflix/vmaf.git   # once
 git fetch upstream
 pin="$(python3 scripts/ci/upstream_parity_pin.py --within upstream/master)"
 python3 scripts/dev/relicense_fork_files.py --check --upstream-ref "$pin"

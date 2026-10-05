@@ -250,7 +250,7 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 
 ## 10. Upstream sync
 
-`git remote add upstream https://github.com/Netflix/vmaf.git` (once), then `.claude/skills/sync-upstream/SKILL.md` -> sync PR. Single commits: `port-upstream-commit`.
+`git remote add --no-tags upstream https://github.com/Netflix/vmaf.git` (once), then `.claude/skills/sync-upstream/SKILL.md` -> sync PR. Single commits: `port-upstream-commit`.
 
 ## 11. Release
 
