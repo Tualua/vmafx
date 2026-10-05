@@ -185,7 +185,7 @@ sub_pid=$!
 
 # Wait briefly for supervisor to start
 sleep 0.2
-kill -TERM "$sub_pid" 2>/dev/null || true
+if kill -0 "$sub_pid" 2>/dev/null; then kill -TERM "$sub_pid"; fi
 t4_rc=0
 wait "$sub_pid" 2>/dev/null || t4_rc=$?
 

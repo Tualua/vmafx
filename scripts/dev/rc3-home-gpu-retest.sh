@@ -45,7 +45,7 @@
 #
 # Exit: 0 every selected entry passed or was skipped, 1 an entry missed its
 # row's expectation, 2 an entry could not run, or a usage error.
-set -uo pipefail
+set -euo pipefail
 export LC_ALL=C
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
@@ -103,7 +103,7 @@ entry T-RELEASE-ONEAPI-IMAGE-B580-SIGSEGV-2026-09-29 sycl check_oneapi_image \
 # Arguments
 # ---------------------------------------------------------------------------
 usage() {
-  sed -n '2,/^set -uo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+  sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
 }
 
 die() {
@@ -384,8 +384,10 @@ load_note() { # the load, and what else holds the device, for a timing note
   local text
   text="load $(cut -d' ' -f1 /proc/loadavg)"
   if [ "$B" = cuda ] && command -v nvidia-smi >/dev/null 2>&1; then
-    text+=", 4090 $(timeout "$PROBE_TIMEOUT" nvidia-smi -i "$CUDA_DEV" --query-gpu=memory.used,utilization.gpu \
-      --format=csv,noheader 2>/dev/null | head -n 1) before the run"
+    local gpu
+    gpu="$(timeout "$PROBE_TIMEOUT" nvidia-smi -i "$CUDA_DEV" --query-gpu=memory.used,utilization.gpu \
+      --format=csv,noheader 2>/dev/null | head -n 1)" || gpu=""
+    text+=", 4090 $gpu before the run"
   fi
   printf '%s' "$text"
 }
@@ -399,8 +401,8 @@ run_cmd() {
     printf '    + %s\n' "$(quoted "$@")" >&2
     return 0
   fi
-  timeout --kill-after=30 "${CMD_TIMEOUT:-$RUN_TIMEOUT}" "$@" >>"$ELOG" 2>"$EDIR/last.stderr"
-  local rc=$?
+  local rc=0
+  timeout --kill-after=30 "${CMD_TIMEOUT:-$RUN_TIMEOUT}" "$@" >>"$ELOG" 2>"$EDIR/last.stderr" || rc=$?
   cat "$EDIR/last.stderr" >>"$ELOG"
   [ "$rc" -eq 0 ] || log "exit $rc"
   return "$rc"
@@ -448,8 +450,8 @@ run_side() {
   if [ "$side" = gpu ]; then
     lock_take "${LOCK_FILE[$B]}" lock_fd || return 2
   fi
-  run_cmd "${cmd[@]}"
-  rc=$?
+  rc=0
+  run_cmd "${cmd[@]}" || rc=$?
   lock_drop "$lock_fd"
   return "$rc"
 }
@@ -463,8 +465,8 @@ baseline_check() {
     note "$rel: no file in the baseline"
     return 0
   fi
-  res="$(py compare "$BASELINE/$rel" "$file" 0)"
-  rc=$?
+  rc=0
+  res="$(py compare "$BASELINE/$rel" "$file" 0)" || rc=$?
   if [ "$rc" -ne 0 ] && [ "$strict" = strict ]; then
     raise FAIL "$rel vs baseline: $res"
   else
@@ -495,8 +497,8 @@ parity() {
     keys="${spec%=*}"
     tol="${spec##*=}"
     [ "$keys" = '*' ] && keys=""
-    res="$(py compare "$cpu_json" "$gpu_json" "$tol" "$keys")"
-    rc=$?
+    rc=0
+    res="$(py compare "$cpu_json" "$gpu_json" "$tol" "$keys")" || rc=$?
     case "$rc" in
       0) note "$name $B vs cpu: $res (bound $tol)" ;;
       1) raise FAIL "$name $B vs cpu: $res (bound $tol)" ;;
@@ -589,12 +591,12 @@ speed_parity() {
     lock_drop "$lock_fd"
     return
   fi
-  timeout --kill-after=30 "$LONG_TIMEOUT" "${cmd[@]}" >"$out" 2>&1
-  rc=$?
+  rc=0
+  timeout --kill-after=30 "$LONG_TIMEOUT" "${cmd[@]}" >"$out" 2>&1 || rc=$?
   lock_drop "$lock_fd"
   cat "$out" >>"$ELOG"
   local res
-  res="$(py speedsum "$out")"
+  res="$(py speedsum "$out")" || res=""
   [ "$TIMING" = 0 ] || res+=" ($context)"
   case "$rc" in
     0) note "speed_gpu_parity.py $*: $res" ;;
@@ -665,7 +667,7 @@ check_float_ssim() {
   if ! run_side gpu bbb 2 "$json" --no_prediction --feature float_ssim; then
     raise ERROR "3840x2160 float_ssim: the $B run failed: $(tail -n 2 "$EDIR/last.stderr" 2>/dev/null | tr '\n' ' ')"
   elif [ "$DRY" = 0 ]; then
-    warning="$(grep -m 1 'warning' "$EDIR/last.stderr")"
+    warning="$(grep -m 1 'warning' "$EDIR/last.stderr")" || warning="" # no match, or no stderr file
     [ -z "$warning" ] || raise FAIL "3840x2160 float_ssim: $warning"
     if res="$(py backends "$json" "$B" "float_ssim_$B")"; then
       note "3840x2160 float_ssim: $res"
@@ -752,15 +754,15 @@ check_oneapi_image() {
       raise ERROR "could not take $SYCL_BUILD_LOCK"
       return
     }
-    CMD_TIMEOUT=$LONG_TIMEOUT run_cmd "${build[@]}" .
-    rc=$?
+    rc=0
+    CMD_TIMEOUT=$LONG_TIMEOUT run_cmd "${build[@]}" . || rc=$?
     lock_drop "$lock_fd"
     [ "$rc" -eq 0 ] || {
       raise ERROR "docker build exit $rc: $(tail -n 3 "$EDIR/last.stderr" 2>/dev/null | tr '\n' ' ')"
       return
     }
   fi
-  gid="$(getent group render | cut -d: -f3)"
+  gid="$(getent group render | cut -d: -f3)" || gid="" # no render group on this host
   for backend in cpu sycl; do
     local -a run=(docker run --rm --device /dev/dri)
     [ -z "$gid" ] || run+=(--group-add "$gid")
@@ -779,8 +781,8 @@ check_oneapi_image() {
       printf '    + %s\n' "$(quoted "${run[@]}")" >&2
       rc=0
     else
-      timeout --kill-after=30 "$RUN_TIMEOUT" "${run[@]}" >"$EDIR/image-$backend.json" 2>"$EDIR/last.stderr"
-      rc=$?
+      rc=0
+      timeout --kill-after=30 "$RUN_TIMEOUT" "${run[@]}" >"$EDIR/image-$backend.json" 2>"$EDIR/last.stderr" || rc=$?
       cat "$EDIR/last.stderr" >>"$ELOG"
     fi
     lock_drop "$lock_fd"
@@ -790,8 +792,9 @@ check_oneapi_image() {
     }
   done
   [ "$DRY" = 0 ] || return 0
-  res="$(py image "$EDIR/image-cpu.json" "$EDIR/image-sycl.json" 5e-5)"
-  case $? in
+  rc=0
+  res="$(py image "$EDIR/image-cpu.json" "$EDIR/image-sycl.json" 5e-5)" || rc=$?
+  case $rc in
     0) note "$image on $SYCL_SEL: $res" ;;
     1) raise FAIL "$image on $SYCL_SEL: $res (bound 5e-5)" ;;
     *) raise ERROR "$image: $res" ;;
@@ -804,7 +807,7 @@ check_oneapi_image() {
 # A child inherits the lock descriptors held when it starts, so a child that
 # outlived the kit would keep a device locked for everyone: stop the children
 # when the kit is stopped.
-trap 'pkill -TERM -P "$$" 2>/dev/null; exit 143' INT TERM
+trap 'pkill -TERM -P "$$" 2>/dev/null || echo "rc3-home-gpu-retest: no child process to stop" >&2; exit 143' INT TERM
 
 run_check() { # the entry's function, called by name through this map
   case "$1" in
@@ -830,7 +833,7 @@ build_has() { # build-dir backend: the meson options enable it
   py buildopts "$1" "$2" >/dev/null 2>&1
 }
 
-COMMIT="$(git rev-parse --short HEAD)"
+COMMIT="$(git rev-parse --short HEAD)" || COMMIT=unknown
 if [ -z "$OUT" ]; then
   OUT="$(build_dir_for "${SELECTED_BACKENDS[0]}")/rc3-retest/$(date -u +%Y%m%dT%H%M%SZ)-$COMMIT"
 fi
@@ -913,7 +916,7 @@ for i in "${!ENTRY_ROW[@]}"; do
       note "fixture missing:$missing (docs/development/rc3-home-gpu-retest.md)"
     else
       device_env "$B"
-      run_check "${ENTRY_FUNC[$i]}"
+      run_check "${ENTRY_FUNC[$i]}" || note "check function ${ENTRY_FUNC[$i]} exited $?"
     fi
   fi
   joined="$(printf '%s; ' "${NOTES[@]}")"
@@ -925,7 +928,7 @@ for i in "${!ENTRY_ROW[@]}"; do
   esac
 done
 
-py table "$SUMMARY" >"$OUT/summary.md"
+py table "$SUMMARY" >"$OUT/summary.md" || echo "rc3-home-gpu-retest: could not render $OUT/summary.md" >&2
 printf '\n'
 cat "$OUT/summary.md"
 printf '\nlogs: %s\n' "$OUT"

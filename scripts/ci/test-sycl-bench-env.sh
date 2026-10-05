@@ -67,7 +67,7 @@ export CMPLR_ROOT=/safe/root
 export LD_LIBRARY_PATH=/safe/lib
 EOF
 chmod +x "$clean_root/setvars.sh"
-out1="$(ONEAPI_PREFIX="$clean_root" bash "$GATE" latest --quiet 2>/dev/null || true)"
+out1="$(ONEAPI_PREFIX="$clean_root" bash "$GATE" latest --quiet 2>/dev/null || echo "note: gate exit status $?" >&2)"
 if grep -q 'export CMPLR_ROOT=/safe/root' <<<"$out1"; then
   ok "clean prefix emits export lines"
 else
@@ -97,7 +97,7 @@ cat >"$hostile_root/setvars.sh" <<'EOF'
 export CMPLR_ROOT=/contained
 EOF
 chmod +x "$hostile_root/setvars.sh"
-out2="$(ONEAPI_PREFIX="$hostile_root" bash "$GATE" latest --quiet 2>/dev/null || true)"
+out2="$(ONEAPI_PREFIX="$hostile_root" bash "$GATE" latest --quiet 2>/dev/null || echo "note: gate exit status $?" >&2)"
 if [ -f "${WORKDIR}/pwn-or-marker" ]; then
   ko "hostile ONEAPI_PREFIX || escaped subshell (marker file created)"
   rm -f "${WORKDIR}/pwn-or-marker"
@@ -124,7 +124,7 @@ cat >"$hostile2_root/setvars.sh" <<'EOF'
 export CMPLR_ROOT=/contained2
 EOF
 chmod +x "$hostile2_root/setvars.sh"
-ONEAPI_PREFIX="$hostile2_root" bash "$GATE" latest --quiet >/dev/null 2>&1 || true
+ONEAPI_PREFIX="$hostile2_root" bash "$GATE" latest --quiet >/dev/null 2>&1 || echo "note: gate exit status $?" >&2
 if [ -f "${WORKDIR}/pwn-sub-marker" ]; then
   ko "hostile ONEAPI_PREFIX \$(…) escaped subshell (marker file created)"
   rm -f "${WORKDIR}/pwn-sub-marker"
@@ -144,7 +144,7 @@ cat >"$hostile3_root/setvars.sh" <<'EOF'
 export CMPLR_ROOT=/contained3
 EOF
 chmod +x "$hostile3_root/setvars.sh"
-out3="$(ONEAPI_PREFIX="$hostile3_root" bash "$GATE" latest --quiet 2>/dev/null || true)"
+out3="$(ONEAPI_PREFIX="$hostile3_root" bash "$GATE" latest --quiet 2>/dev/null || echo "note: gate exit status $?" >&2)"
 if [ -f "${WORKDIR}/pwn-quote-sub-marker" ]; then
   ko "hostile ONEAPI_PREFIX '\$(…)' escaped subshell (marker file created)"
   rm -f "${WORKDIR}/pwn-quote-sub-marker"

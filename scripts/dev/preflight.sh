@@ -31,10 +31,10 @@
 # Exit: 0 all stages passed (or were skipped for missing tooling), 1 a stage
 # failed, 2 usage error. A missing toolchain SKIPS its stage with a notice
 # rather than failing, so the script is useful on a partially-provisioned box.
-set -uo pipefail
+set -euo pipefail
 export LC_ALL=C
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 2
 cd "$REPO_ROOT" || exit 2
 
 BASE="${PREFLIGHT_BASE:-origin/master}"
@@ -164,7 +164,8 @@ if want gcc; then
       ok gcc
     else
       bad gcc
-      grep -m3 -A4 'FAILED:\|^Fail:' /tmp/preflight-gcc.log | head -12
+      grep -m3 -A4 'FAILED:\|^Fail:' /tmp/preflight-gcc.log | head -12 ||
+        echo "     (no matching lines in /tmp/preflight-gcc.log)"
     fi
   else
     skipped gcc "meson setup failed"
@@ -186,7 +187,8 @@ if want clang; then
       ok clang
     else
       bad clang
-      grep -m3 -A4 'error:\|^Fail:' /tmp/preflight-clang.log | head -12
+      grep -m3 -A4 'error:\|^Fail:' /tmp/preflight-clang.log | head -12 ||
+        echo "     (no matching lines in /tmp/preflight-clang.log)"
     fi
   else
     skipped clang "meson setup failed"
@@ -201,7 +203,7 @@ if want msvcism; then
   msvc_fail=0
   check_pattern() {
     local pat="$1" why="$2" hits
-    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | head -5)
+    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | head -5) || hits="" # grep / xargs exit non-zero when nothing matches
     if [ -n "$hits" ]; then
       printf '     %s\n' "$why"
       printf '%s\n' "$hits" | sed 's/^/       /'
@@ -224,7 +226,7 @@ if want msvcism; then
   cu_designated=$(changed_cuda | while read -r f; do
     grep -nE '(\{|,)[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=|^[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*(,|\{)[[:space:]]*$' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -5)
+  done | head -5) || cu_designated=""
   if [ -n "$cu_designated" ]; then
     printf '     %s\n' 'designated initializer in CUDA device code — nvcc/MSVC "expected an expression"'
     printf '%s\n' "$cu_designated" | sed 's/^/       /'
@@ -239,7 +241,7 @@ if want msvcism; then
   c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
     grep -nE '\bnullptr\b' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -60)
+  done | head -60) || c_nullptr=""
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'
@@ -256,7 +258,7 @@ if want msvcism; then
     grep -nE 'numeric_limits<[^>]+>::(max|min)\(\)' "$f" 2>/dev/null |
       grep -vE '\(std::numeric_limits<[^>]+>::(max|min)\)\(\)' |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -60)
+  done | head -60) || sycl_minmax=""
   if [ -n "$sycl_minmax" ]; then
     printf '     %s\n' 'numeric_limits<T>::max() / min() in a SYCL source — <windows.h> macro clash; write (std::numeric_limits<T>::max)()'
     printf '%s\n' "$sycl_minmax" | sed 's/^/       /'
@@ -279,7 +281,7 @@ if want msvcism; then
   fi
   py_keys=$(printf '%s\n' "$py_tests" | grep -v '^$' | while read -r f; do
     grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|"
-  done | head -60)
+  done | head -60) || py_keys=""
   if [ -n "$py_keys" ]; then
     printf '     %s\n' 'dictionary keyed by str(path.relative_to(...)) in a core/test Python test — backslashes on Windows; use .as_posix()'
     printf '%s\n' "$py_keys" | sed 's/^/       /'
@@ -297,7 +299,7 @@ if want msvcism; then
   msl_hits=$(changed_metal | while read -r f; do
     grep -nE "\b(ulong|uint|int|float|bool|long|short|auto|char) +$msl_reserved\b" "$f" 2>/dev/null |
       head -2 | sed "s|^|$f:|"
-  done | head -5)
+  done | head -5) || msl_hits=""
   if [ -n "$msl_hits" ]; then
     printf '     %s\n' 'MSL reserved type name used as a variable — macOS Metal redeclaration error'
     printf '%s\n' "$msl_hits" | sed 's/^/       /'
@@ -331,7 +333,7 @@ $(grep -oE '#include "[^"]+"' "$f" 2>/dev/null | sed 's|#include "||; s|"||')
 EOF_INC
     [ "$guarded_by_include" -eq 1 ] && continue
     grep -nE "$m_macros" "$f" | head -2 | sed "s|^|$f:|"
-  done | head -5)
+  done | head -5) || c_math=""
   if [ -n "$c_math" ]; then
     printf '     %s\n' 'M_* math macro without the _USE_MATH_DEFINES / #ifndef guard — MinGW64 C2065'
     printf '     %s\n' '  (the _USE_MATH_DEFINES define needs a cited NOLINTNEXTLINE for'
@@ -348,7 +350,7 @@ EOF_INC
   # diagnostic at all, not even under -std=c23 -pedantic-errors -Weverything,
   # so this is grepped rather than compiled.
   c_static_init=$(changed_sources | grep -E '\.c$' |
-    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | head -5)
+    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | head -5) || c_static_init=""
   if [ -n "$c_static_init" ]; then
     printf '     %s\n' 'non-constant initialiser in a static aggregate — MSVC C2099; use #define'
     printf '%s\n' "$c_static_init" | sed 's/^/       /'
@@ -379,7 +381,8 @@ if want sanitizers; then
       ok sanitizers
     else
       bad sanitizers
-      grep -m3 -A4 'error:\|runtime error\|^Fail:' /tmp/preflight-asan.log | head -12
+      grep -m3 -A4 'error:\|runtime error\|^Fail:' /tmp/preflight-asan.log | head -12 ||
+        echo "     (no matching lines in /tmp/preflight-asan.log)"
     fi
   else
     skipped sanitizers "meson setup failed"
@@ -406,7 +409,7 @@ if want tidy; then
           core/src/compat/win32/*) continue ;;
       esac
       n=$(clang-tidy -p build --quiet "$f" 2>/dev/null |
-        grep -E 'warning:' | grep -vc 'clang-diagnostic')
+        grep -E 'warning:' | grep -vc 'clang-diagnostic') || n="${n:-0}" # grep -c exits 1 when it counts 0
       if [ "${n:-0}" -gt 0 ]; then
         printf '     %-52s %s warning(s)\n' "$f" "$n"
         tidy_fail=1

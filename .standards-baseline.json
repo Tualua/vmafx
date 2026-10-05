@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T10:44:01Z",
+  "generated_at": "2026-10-05T10:46:23Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "1d015a59ec19c7a1ecd8ae6779a070285ec782bd",
-  "total_infractions": 247,
+  "commit_sha": "2cb767b1f917d9c7574a0ff45bd16c79ff78e3cb",
+  "total_infractions": 229,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -1356,134 +1356,6 @@
       "fingerprint": "scripts/ci/check_python_dependency_locks.py:HISS-04:fn:_is_local_source#1"
     },
     {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/test-sycl-bench-env.sh",
-      "line_number": 70,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:5e71ebb429ec",
-      "fingerprint": "scripts/ci/test-sycl-bench-env.sh:HISS-07:text:5e71ebb429ec#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/test-sycl-bench-env.sh",
-      "line_number": 100,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:98b507d24102",
-      "fingerprint": "scripts/ci/test-sycl-bench-env.sh:HISS-07:text:98b507d24102#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/test-sycl-bench-env.sh",
-      "line_number": 127,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:ecd4a059abc0",
-      "fingerprint": "scripts/ci/test-sycl-bench-env.sh:HISS-07:text:ecd4a059abc0#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/test-sycl-bench-env.sh",
-      "line_number": 147,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:01c8517e32f9",
-      "fingerprint": "scripts/ci/test-sycl-bench-env.sh:HISS-07:text:01c8517e32f9#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/test-validate-pr-body.sh",
-      "line_number": 188,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c1022b8ca0a1",
-      "fingerprint": "scripts/ci/test-validate-pr-body.sh:HISS-07:text:c1022b8ca0a1#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 65,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:1c7e8cb8c736",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:1c7e8cb8c736#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 90,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:4672584803d0",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:4672584803d0#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 94,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:3777d9772672",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:3777d9772672#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 96,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:6f076af39773",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:6f076af39773#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 98,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:6728e15e7306",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:6728e15e7306#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 127,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:52bb0bbe5148",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:52bb0bbe5148#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-check-container-build.sh",
-      "line_number": 137,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:08209d9b5d79",
-      "fingerprint": "scripts/ci/tests/test-check-container-build.sh:HISS-07:text:08209d9b5d79#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-default-model-single-source.sh",
-      "line_number": 1,
-      "message": "Shell strict mode incomplete: set -e not enabled, so a failed command, an unset variable or a failure inside a pipeline passes unchecked",
-      "anchor": "text:89abc3a34ad7",
-      "fingerprint": "scripts/ci/tests/test-default-model-single-source.sh:HISS-07:text:89abc3a34ad7#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-default-model-single-source.sh",
-      "line_number": 32,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "fn:clone",
-      "fingerprint": "scripts/ci/tests/test-default-model-single-source.sh:HISS-07:fn:clone#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-default-model-single-source.sh",
-      "line_number": 37,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "fn:clone",
-      "fingerprint": "scripts/ci/tests/test-default-model-single-source.sh:HISS-07:fn:clone#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/ci/tests/test-runner-supervisor.sh",
-      "line_number": 188,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c343d86aec10",
-      "fingerprint": "scripts/ci/tests/test-runner-supervisor.sh:HISS-07:text:c343d86aec10#1"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "scripts/ci/tests/test_install_cuda_toolkit.py",
       "line_number": 49,
@@ -1517,22 +1389,6 @@
       "message": "Direct recursion in differences; the call graph must form an acyclic DAG",
       "anchor": "fn:differences",
       "fingerprint": "scripts/dev/check_repository_security.py:HISS-01:fn:differences#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/dev/preflight.sh",
-      "line_number": 1,
-      "message": "Shell strict mode incomplete: set -e not enabled, so a failed command, an unset variable or a failure inside a pipeline passes unchecked",
-      "anchor": "text:89abc3a34ad7",
-      "fingerprint": "scripts/dev/preflight.sh:HISS-07:text:89abc3a34ad7#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/dev/rc3-home-gpu-retest.sh",
-      "line_number": 1,
-      "message": "Shell strict mode incomplete: set -e not enabled, so a failed command, an unset variable or a failure inside a pipeline passes unchecked",
-      "anchor": "text:89abc3a34ad7",
-      "fingerprint": "scripts/dev/rc3-home-gpu-retest.sh:HISS-07:text:89abc3a34ad7#1"
     },
     {
       "rule_id": "HISS-01",

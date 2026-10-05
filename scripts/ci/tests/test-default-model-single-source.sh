@@ -8,7 +8,7 @@
 # the clean tree passes, and each way of breaking the single-source rule is
 # actually caught. Every case runs against a scratch clone so the working tree
 # is never modified.
-set -uo pipefail
+set -euo pipefail
 export LC_ALL=C
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -29,12 +29,14 @@ clone() {
       rm -rf "$dst/.git"
     }
   # include not-yet-committed work so the test is useful pre-commit too
-  git -C "$repo_root" diff HEAD --binary >"$work/wip.patch" 2>/dev/null || true
+  git -C "$repo_root" diff HEAD --binary >"$work/wip.patch" 2>/dev/null ||
+    echo "note: could not capture uncommitted work; testing HEAD only" >&2
   git -C "$dst" init -q 2>/dev/null
   git -C "$dst" config user.email t@t
   git -C "$dst" config user.name t
   if [ -s "$work/wip.patch" ]; then
-    git -C "$dst" apply "$work/wip.patch" 2>/dev/null || true
+    git -C "$dst" apply "$work/wip.patch" 2>/dev/null ||
+      echo "note: uncommitted work did not apply to the scratch clone" >&2
   fi
   git -C "$dst" add -A -f >/dev/null 2>&1
   git -C "$dst" commit -qm scratch >/dev/null 2>&1
@@ -42,9 +44,8 @@ clone() {
 }
 
 expect() { # $1=label $2=expected-exit $3=dir
-  local out rc
-  out=$(cd "$3" && bash "$gate" 2>&1)
-  rc=$?
+  local out rc=0
+  out=$(cd "$3" && bash "$gate" 2>&1) || rc=$?
   if [ "$rc" -eq "$2" ]; then
     printf 'PASS: %s (exit %d)\n' "$1" "$rc"
   else

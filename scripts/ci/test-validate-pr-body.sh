@@ -185,7 +185,7 @@ expect_exit "ticked Rebase note, no rebase-notes.md in diff" 1 "${work}/case8.bo
 expect_exit "an empty --body file reports empty, not six missing items" 1 \
   "${work}/case9.body" "${work}/case9.diff"
 
-out9="$("${validator}" --body "${work}/case9.body" --diff "${work}/case9.diff" 2>&1 || true)"
+out9="$("${validator}" --body "${work}/case9.body" --diff "${work}/case9.diff" 2>&1 || echo "note: validator exit status $?" >&2)"
 if printf '%s' "${out9}" | grep -q 'description is empty'; then
   echo "PASS: the empty-body message names the real fault"
   pass_count=$((pass_count + 1))

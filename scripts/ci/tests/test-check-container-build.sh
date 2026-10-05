@@ -62,7 +62,7 @@ EXTRACTED="${WORKDIR}/extracted-marker"
 if [ -f "$CONTAINERFILE" ]; then
   sed -n '1,/> \/etc\/vmafx-dev-container/p' "$CONTAINERFILE" |
     grep -E "^[[:space:]]+'[a-z_]+=.*'[[:space:]]*\\\\$" |
-    sed -E "s/^[[:space:]]*'(.*)'[[:space:]]*\\\\$/\1/" >"$EXTRACTED" || true
+    sed -E "s/^[[:space:]]*'(.*)'[[:space:]]*\\\\$/\1/" >"$EXTRACTED" || [ "$?" -eq 1 ]
   if diff -u "$CONTAINER_MARKER" "$EXTRACTED" >"${WORKDIR}/marker.diff" 2>&1; then
     PASS=$((PASS + 1))
     echo "ok   fixture matches the marker dev/Containerfile bakes"
@@ -87,15 +87,14 @@ next_from_after() {
 # root the native release compiles in (ADR-1354). release-build must root at
 # RELEASE_BUILDER_BASE and write the same bytes as build-deps.
 if [ -f "$CONTAINERFILE" ]; then
-  writes="$(grep -c '> /etc/vmafx-dev-container' "$CONTAINERFILE" || true)"
+  writes="$(grep -c '> /etc/vmafx-dev-container' "$CONTAINERFILE" || [ "$?" -eq 1 ])"
   mapfile -t marker_lines < <(grep -n '> /etc/vmafx-dev-container' "$CONTAINERFILE" | cut -d: -f1)
-  # `|| true`: a missing stage must reach the FAIL report below, not end the
+  # `|| [ "$?" -eq 1 ]`: a missing stage must reach the FAIL report below, not end the
   # suite silently through set -e and pipefail.
-  deps_line="$(grep -n '^FROM .* AS build-deps$' "$CONTAINERFILE" | head -1 | cut -d: -f1 || true)"
-  sdks_line="$(grep -n '^FROM build-deps AS gpu-sdks$' "$CONTAINERFILE" | head -1 | cut -d: -f1 ||
-    true)"
+  deps_line="$(grep -n '^FROM .* AS build-deps$' "$CONTAINERFILE" | head -1 | cut -d: -f1 || [ "$?" -eq 1 ])"
+  sdks_line="$(grep -n '^FROM build-deps AS gpu-sdks$' "$CONTAINERFILE" | head -1 | cut -d: -f1 || [ "$?" -eq 1 ])"
   release_line="$(grep -n '^FROM [$]{RELEASE_BUILDER_BASE} AS release-build$' "$CONTAINERFILE" |
-    head -1 | cut -d: -f1 || true)"
+    head -1 | cut -d: -f1 || [ "$?" -eq 1 ])"
   # marker_in_stage <FROM line> — the marker write inside that stage, if any.
   marker_in_stage() {
     local from="$1" end line
@@ -124,7 +123,7 @@ if [ -f "$CONTAINERFILE" ]; then
   if [ -n "$release_marker" ]; then
     sed -n "${release_line},${release_marker}p" "$CONTAINERFILE" |
       grep -E "^[[:space:]]+'[a-z_]+=.*'[[:space:]]*\\\\$" |
-      sed -E "s/^[[:space:]]*'(.*)'[[:space:]]*\\\\$/\1/" >"$RELEASE_EXTRACTED" || true
+      sed -E "s/^[[:space:]]*'(.*)'[[:space:]]*\\\\$/\1/" >"$RELEASE_EXTRACTED" || [ "$?" -eq 1 ]
   else
     : >"$RELEASE_EXTRACTED"
   fi
@@ -134,7 +133,7 @@ if [ -f "$CONTAINERFILE" ]; then
   else
     FAIL=$((FAIL + 1))
     echo "FAIL release-build must root at \${RELEASE_BUILDER_BASE} and write the build-deps marker"
-    diff -u "$CONTAINER_MARKER" "$RELEASE_EXTRACTED" | sed 's/^/       | /' || true
+    diff -u "$CONTAINER_MARKER" "$RELEASE_EXTRACTED" | sed 's/^/       | /' || [ "$?" -eq 1 ]
   fi
 
   # The gate's accepted identity is the Containerfile's, not a second spelling.
