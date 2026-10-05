@@ -6069,6 +6069,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `encode-profile` and `sidecar`).
 
 
+- **VPL decode retry ceiling contract and warning frame drop repair**:
+  `vmaf_vpl` decode retry loop is formally verified under the 60,000-attempt
+  bound on physical Intel Arc A380 hardware and hermetic unit tests. Frames
+  published alongside warning status codes (`sts > 0 && sync != NULL`, e.g.
+  `MFX_WRN_VIDEO_PARAM_CHANGED`) are now delivered instead of dropped, and
+  transient `MFX_WRN_ALLOC_TIMEOUT_EXPIRED` retries cleanly.
+
+
 - **The Windows ARM64 MSVC build links again.** A unit test added on
   2026-10-01 called `pthread_self()` and `pthread_equal()`, which the Windows
   thread shim does not define, so that build failed at link time on every

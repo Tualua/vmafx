@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (791), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (792), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2159,6 +2159,10 @@ Every research digest, one heading each (791), so the site search finds a digest
 ## Research-1590: GPU device code compression
 
 [1590-device-code-compression](1590-device-code-compression.md)
+
+## Research-1900: Verification and contract analysis for VPL decode retry ceiling
+
+[1900-vpl-decode-ceiling-verification-2026-10-05](1900-vpl-decode-ceiling-verification-2026-10-05.md)
 
 ## SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 

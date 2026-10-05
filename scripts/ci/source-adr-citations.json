@@ -6669,12 +6669,14 @@
         "core/tools/test/test_cli_feature_backend.c": 1,
         "core/tools/test/test_vmaf_close_retry.c": 1,
         "core/tools/test/test_vmaf_per_shot_input.c": 1,
+        "core/tools/test/test_vmaf_vpl_decode_ceiling.c": 1,
         "core/tools/vmaf_bench.c": 1,
         "core/tools/vmaf_close_retry.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
         "core/tools/vmaf_roi.c": 2,
         "core/tools/vmaf_roi_input.h": 2,
         "core/tools/vmaf_vpl.c": 1,
+        "core/tools/vmaf_vpl_core.c": 1,
         "core/tools/y4m_input.c": 1,
         "core/tools/yuv_input.c": 1,
         "ffmpeg-patches/test/fault_inject_libvmaf.c": 1,
@@ -7687,8 +7689,11 @@
     },
     "1287": {
       "sites": {
+        "core/tools/test/meson.build": 1,
+        "core/tools/test/test_vmaf_vpl_decode_ceiling.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
-        "core/tools/vmaf_vpl.c": 1
+        "core/tools/vmaf_vpl.c": 1,
+        "core/tools/vmaf_vpl_core.h": 1
       },
       "target": "1287-cli-tool-unbounded-loop-ceilings.md"
     },
@@ -11179,6 +11184,14 @@
         "tools/vmaf-tune/pyproject.toml": 1
       },
       "target": "1886-torch-training-environments-only.md"
+    },
+    "1900": {
+      "sites": {
+        "core/tools/test/meson.build": 1,
+        "core/tools/test/test_vmaf_vpl_decode_ceiling.c": 1,
+        "core/tools/vmaf_vpl_core.h": 2
+      },
+      "target": "1900-vpl-decode-ceiling-contract.md"
     }
   },
   "retired": {

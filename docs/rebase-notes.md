@@ -54,6 +54,26 @@ sum wraps past 2^64 on long 12- and 16-bit clips. An upstream sync that touches 
 Fork-only: `core/src/dnn/dnn_api.c` (`resolve_load_path`) gains the `kInt8Suffix` early return
 matching `core/src/dnn/dnn_attach_api.c:75`. On an upstream sync that touches this file, preserve
 the `kInt8Suffix` check to avoid deriving `<name>.int8.int8.onnx`.
+## VPL decode retry ceiling contract and warning frame drop repair (2026-10-05)
+
+The `vmaf_vpl` decode retry loop is formally verified under the derived 60,000-attempt
+bound (`VPL_DECODE_MAX_ATTEMPTS`). Physical Intel Arc A380 hardware (`/dev/dri/renderD129`)
+confirmed zero ceiling exhaustion or hangs across 48-frame baseline and long-GOP streams.
+Extracted `core/tools/vmaf_vpl_core.h` and `.c` to decouple status classification and
+frame loop execution. Fixed a correctness bug where warning codes with valid synchronization
+points (`sts > 0 && sync != NULL`, such as `MFX_WRN_VIDEO_PARAM_CHANGED`) were previously dropped.
+Added transient retry for `MFX_WRN_ALLOC_TIMEOUT_EXPIRED`. An 8-test deterministic device-free
+unit test suite (`test_vmaf_vpl_decode_ceiling.c`) in Meson `fast` verifies finite busy recovery,
+ceiling sensitivity, exact 60,000 attempt exhaustion, multi-frame ordering, warning publication,
+and hard error fail-fast without GPU hardware. Added automated hardware smoke test
+`test_vmaf_vpl_hardware_smoke.sh` under `slow` / `gpu` suites.
+
+- Research digest: [Research-1900](research/1900-vpl-decode-ceiling-verification-2026-10-05.md).
+- Decision matrix: [ADR-1900](adr/1900-vpl-decode-ceiling-contract.md#alternatives-considered).
+- AGENTS.md invariant: `core/tools/AGENTS.d/vmaf-vpl.md`, "VPL decode retry ceiling contract".
+- Reproducer / smoke: `meson test -C build test_vmaf_vpl_decode_ceiling` and `meson test -C build test_vmaf_vpl_hardware_smoke`.
+- Changelog: `changelog.d/fixed/vpl-decode-ceiling-contract.md`.
+- FFmpeg impact: none; no public C header, exported libvmaf API, CLI flag, or FFmpeg patch touched.
 
 ## MCP tool contract shared by both servers (2026-10-05)
 

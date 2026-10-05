@@ -180,6 +180,8 @@ vmaf_bench = executable(
     link_with : vmaf_bench_link_target,
 )
 
+vmaf_vpl_ok = false
+
 # VPL decode → SYCL pipeline tool
 # Requires SYCL + VA-API + Level Zero + VPL
 if get_option('enable_sycl')
@@ -199,7 +201,7 @@ if get_option('enable_sycl')
     if vmaf_vpl_ok
         vmaf_vpl = executable(
             'vmaf_vpl',
-            ['vmaf_vpl.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
+            ['vmaf_vpl.c', 'vmaf_vpl_core.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
             include_directories : [libvmaf_inc, vmaf_include],
             dependencies: vmaf_vpl_deps,
             c_args : vmaf_cflags_common + ['-DHAVE_SYCL=1'],

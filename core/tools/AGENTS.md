@@ -42,5 +42,5 @@ Three C binaries built by libvmaf's Meson tree:
 | `cli_parse.cpp`, `cli_parse.h` | [precision-and-tinyai](AGENTS.d/precision-and-tinyai.md) | Default precision is %.6f; --precision=max opts in to %.17g; --tiny-model passes string through unchanged. |
 | `vmaf_per_shot.c`, `vmaf_per_shot_input.c` | [vmaf-per-shot](AGENTS.d/vmaf-per-shot.md) | vmaf-perShot is standalone sidecar; --help short-option is -H; scan stops at VMAF_PER_SHOT_MAX_FRAMES or --frames. |
 | `vmaf_roi.c`, `vmaf_roi_core.h`, `vmaf_roi_input.h` | [vmaf-roi](AGENTS.d/vmaf-roi.md) | vmaf_roi sidecar emits x265 or svt-av1 QP offsets with +-12 clamp; per-CTU reduction is mean. |
-| `vmaf_vpl.c` | [vmaf-vpl](AGENTS.d/vmaf-vpl.md) | vpl_decode_frame retries under VPL_DECODE_MAX_ATTEMPTS; VplFallbackState flags release acquired stages. |
+| `vmaf_vpl.c`, `vmaf_vpl_core.h`, `vmaf_vpl_core.c` | [vmaf-vpl](AGENTS.d/vmaf-vpl.md) | vpl_decode_frame bounded by VPL_DECODE_MAX_ATTEMPTS; decoupled classification; warning frames delivered. |
 | `y4m_input.c`, `yuv_input.c`, `vmaf_bench.c` | [y4m-and-yuv-input](AGENTS.d/y4m-and-yuv-input.md) | y4m 411->422jpeg guards secondary write; readers cast to (size_t) before multiply; malloc checks return. |

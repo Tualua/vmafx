@@ -227,3 +227,34 @@ if host_machine.system() == 'windows'
          depends : [vmaf],
          timeout : 60)
 endif
+
+# ADR-1287 / ADR-1900 — VPL decode retry ceiling and status-sequence contract.
+# Deterministic device-free unit test exercising finite device-busy retries,
+# true no-progress loop ceiling termination at 60000 attempts, frame ordering,
+# transient statuses, and too-low ceiling failure.
+vpl_dep_test = dependency('vpl', required : false)
+if vpl_dep_test.found()
+    test_vmaf_vpl_decode_ceiling = executable(
+        'test_vmaf_vpl_decode_ceiling',
+        ['../../test/test.c', 'test_vmaf_vpl_decode_ceiling.c', '../vmaf_vpl_core.c'],
+        include_directories : [include_directories('../../test'), include_directories('..')],
+        dependencies : [vpl_dep_test],
+        c_args : vmaf_tool_cflags,
+    )
+    test('test_vmaf_vpl_decode_ceiling', test_vmaf_vpl_decode_ceiling, suite : ['fast'])
+endif
+
+# Real hardware smoke test on Intel GPU when SYCL + VPL tool is compiled in.
+if get_option('enable_sycl') and vmaf_vpl_ok
+    test_vmaf_vpl_hardware_smoke = find_program('test_vmaf_vpl_hardware_smoke.sh')
+    test('test_vmaf_vpl_hardware_smoke', test_vmaf_vpl_hardware_smoke,
+         suite : ['slow', 'gpu'],
+         depends : [vmaf_vpl],
+         workdir : meson.project_build_root(),
+         env : [
+             'MESON_BUILD_ROOT=' + meson.project_build_root(),
+             'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+         ],
+         is_parallel : false,
+         timeout : 120)
+endif
