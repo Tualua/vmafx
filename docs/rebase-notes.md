@@ -26,6 +26,18 @@ and their tests; no library change.
   schedule event and `validate` narrows the matrix on it. Keep the slot ahead of
   `nightly.yml` and the weekly Release Dry Run (`test_pr_time_verify_workflows.py`
   checks the timeouts against both).
+## adm_cuda and adm_hip take the CPU's integer reciprocal (2026-10-05)
+
+`fix/gpu-adm-decouple-integer-reciprocal`. `decouple_r_s0()` of
+`core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh` and
+`core/src/feature/hip/integer_adm/adm_decouple_inline.hip` takes `2^30 / o` from
+`adm_recip_q30()` (in the same headers), which equals `div_lookup[o + 32768]`
+of `core/src/feature/integer_adm.h` for every `int16` operand. A sync or rebase
+must not restore `int32_t(div_Q_factor / float(o_val))` (another integer for 343
+positive operands) and must not replace the fp32 correction with an integer
+division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
+`test_cuda_adm_cm_register_pressure`. `core/test/test_adm_decouple_recip.cpp`
+(one executable per twin header) fails on the old form without a device.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 

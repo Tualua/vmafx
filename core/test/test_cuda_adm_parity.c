@@ -64,6 +64,7 @@ typedef struct Fixture {
     unsigned h;
     unsigned bpc;
     bool sparse; /* a flat frame with isolated one-level dots instead of texture */
+    bool graded; /* isolated near-full-scale patches, the distorted frame at 60-99% of them */
 } Fixture;
 
 /* Deterministic position hash for the sparse fixture. */
@@ -99,6 +100,35 @@ static unsigned sparse_luma(unsigned row, unsigned col, bool distorted)
     return v;
 }
 
+/* Luma of the graded fixture: mid grey with isolated 4x4 patches of
+ * near-full-scale detail, about one cell of the 16-sample grid in 14, whose
+ * signs follow the signs of the DWT high-pass taps (-, -, +, -) in both
+ * directions, so one scale-0 band sample of a patch reaches 17000 to 22000.
+ * The distorted frame keeps 60 to 99 percent of each patch. The scale-0 ratio
+ * k = t / o then stays below 1 at reference coefficients above 16566, where
+ * the reciprocal 2^30 / o taken as an fp32 quotient (the twins' old form)
+ * changes the restored sample for a few band values; the flat frame around
+ * the patches leaves too little else for that to vanish in the score. The
+ * patches are chosen so that this happens on the 224x224 frame. */
+static unsigned graded_luma(unsigned row, unsigned col, bool distorted)
+{
+    static const int sign4[4] = {-1, -1, 1, -1};
+    if (row < 9u || col < 9u || row >= 8u + 16u * 13u || col >= 8u + 16u * 13u) {
+        return 128u;
+    }
+    const unsigned cell_r = (row - 8u) / 16u;
+    const unsigned cell_c = (col - 8u) / 16u;
+    const unsigned a = ((row - 8u) % 16u) - 1u;
+    const unsigned b = ((col - 8u) % 16u) - 1u;
+    if (a >= 4u || b >= 4u || position_hash(cell_r, cell_c, 90u) % 14u != 0u) {
+        return 128u;
+    }
+    const int pct = 60 + (int)(position_hash(cell_r, cell_c, 91u) % 40u);
+    const int amp = 105 + (int)(position_hash(row, col, 92u) % 23u);
+    const int p = sign4[a] * sign4[b] * amp;
+    return (unsigned)(128 + (distorted ? (p * pct) / 100 : p));
+}
+
 static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
 {
     const unsigned peak = (1u << pic->bpc) - 1u;
@@ -110,6 +140,18 @@ static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned 
     }
 }
 
+/* Luma of one sample of the fixture `fx`. */
+static unsigned fixture_luma(const Fixture *fx, unsigned row, unsigned col, bool distorted)
+{
+    if (fx->graded) {
+        return graded_luma(row, col, distorted);
+    }
+    if (fx->sparse) {
+        return sparse_luma(row, col, distorted);
+    }
+    return textured_luma(row, col, distorted);
+}
+
 static int fill_picture(VmafPicture *pic, const Fixture *fx, bool distorted)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, fx->bpc, fx->w, fx->h);
@@ -118,8 +160,7 @@ static int fill_picture(VmafPicture *pic, const Fixture *fx, bool distorted)
     const unsigned gain = 1u << (fx->bpc - 8u);
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned v =
-                fx->sparse ? sparse_luma(row, col, distorted) : textured_luma(row, col, distorted);
+            const unsigned v = fixture_luma(fx, row, col, distorted);
             put_sample(pic, 0u, row, col, v * gain);
         }
     }
@@ -388,13 +429,13 @@ static char *test_adm_cuda_option_table_mirrors_cpu(void)
  * the default model's option dict. */
 static char *test_adm_model_options_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     return check_exact("adm model-opt", &fx, model_opts, MODEL_KEYS, NUM_MODEL_KEYS);
 }
 
 static char *test_adm_barten_mode_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     return check_exact("adm Barten mode", &fx, barten_opts, BARTEN_KEYS, NUM_BARTEN_KEYS);
 }
 
@@ -409,20 +450,20 @@ static char *test_adm_cuda_registered(void)
 /* Default options, every output including the per-scale sums. */
 static char *test_adm_default_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     return check_exact("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
 }
 
 static char *test_adm_10bit_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 10u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 10u, false, false};
     return check_exact("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
 }
 
 /* Odd at every scale: 322x182 halves to 161x91, 81x46, 41x23 and 21x12. */
 static char *test_adm_odd_frame_exact(void)
 {
-    const Fixture fx = {322u, 182u, 8u, false};
+    const Fixture fx = {322u, 182u, 8u, false, false};
     return check_exact("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
 }
 
@@ -431,7 +472,7 @@ static char *test_adm_odd_frame_exact(void)
  * is wider than one block of the old kernel. */
 static char *test_adm_2160p_exact(void)
 {
-    const Fixture fx = {3840u, 2160u, 8u, false};
+    const Fixture fx = {3840u, 2160u, 8u, false, false};
     return check_exact("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
 }
 
@@ -440,7 +481,7 @@ static char *test_adm_2160p_exact(void)
  * of the row, moves `integer_adm_den_scale2` and `_scale3` (ADR-1416). */
 static char *test_adm_sparse_detail_exact(void)
 {
-    const Fixture fx = {640u, 360u, 8u, true};
+    const Fixture fx = {640u, 360u, 8u, true, false};
     return check_exact("adm sparse", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
 }
 
@@ -452,13 +493,26 @@ static char *test_adm_sparse_detail_exact(void)
  * kernels now take every shift from the CPU's context (ADR-1416). */
 static char *test_adm_shift_boundary_area_exact(void)
 {
-    const Fixture fx = {962u, 13542u, 8u, false};
+    const Fixture fx = {962u, 13542u, 8u, false, false};
     return check_exact("adm shift boundary", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
+}
+
+/* Isolated large-amplitude patches, the distorted frame at 60-99% of them
+ * (T-GPU-ADM-DECOUPLE-FP32-RECIPROCAL-2026-10-03): the scale-0 decouple takes
+ * the reciprocal 2^30 / o from the CPU's integer quotient. An fp32 quotient
+ * truncates to another integer for 343 positive operands, which moves the
+ * ratio k and, for a reference coefficient above 16566, the restored sample. */
+static char *test_adm_attenuated_detail_exact(void)
+{
+    const Fixture fx = {224u, 224u, 8u, false, true};
+    mu_assert_msg(
+        check_exact("adm attenuated detail", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS));
+    return check_exact("adm attenuated detail", &fx, model_opts, MODEL_KEYS, NUM_MODEL_KEYS);
 }
 
 static char *test_adm_skip_scale0_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     return check_exact("adm skip scale 0", &fx, skip_scale0_opts, SKIP_SCALE0_KEYS,
                        NUM_SKIP_SCALE0_KEYS);
 }
@@ -472,6 +526,7 @@ static char *run_exact_default_cases(void)
     mu_run_test(test_adm_2160p_exact);
     mu_run_test(test_adm_sparse_detail_exact);
     mu_run_test(test_adm_shift_boundary_area_exact);
+    mu_run_test(test_adm_attenuated_detail_exact);
     return NULL;
 }
 

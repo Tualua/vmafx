@@ -60,6 +60,7 @@ typedef struct Fixture {
     unsigned h;
     unsigned bpc;
     bool sparse; /* a flat frame with isolated one-level dots instead of texture */
+    bool graded; /* isolated near-full-scale patches, the distorted frame at 60-99% of them */
 } Fixture;
 
 /* Deterministic position hash for the sparse fixture. */
@@ -98,6 +99,36 @@ static unsigned sparse_luma(unsigned row, unsigned col, unsigned frame, bool dis
     return v;
 }
 
+/* Luma of the graded fixture: mid grey with isolated 4x4 patches of
+ * near-full-scale detail, about one cell of the 16-sample grid in 14, whose
+ * signs follow the signs of the DWT high-pass taps (-, -, +, -) in both
+ * directions, so one scale-0 band sample of a patch reaches 17000 to 22000.
+ * The distorted frame keeps 60 to 99 percent of each patch. The scale-0 ratio
+ * k = t / o then stays below 1 at reference coefficients above 16566, where
+ * the reciprocal 2^30 / o taken as an fp32 quotient (the twins' old form)
+ * changes the restored sample for a few band values; the flat frame around
+ * the patches leaves too little else for that to vanish in the score. The
+ * patches are chosen so that this happens on the 224x224 frame. */
+static unsigned graded_luma(unsigned row, unsigned col, unsigned frame, bool distorted)
+{
+    (void)frame; /* the same patches in every frame */
+    static const int sign4[4] = {-1, -1, 1, -1};
+    if (row < 9u || col < 9u || row >= 8u + 16u * 13u || col >= 8u + 16u * 13u) {
+        return 128u;
+    }
+    const unsigned cell_r = (row - 8u) / 16u;
+    const unsigned cell_c = (col - 8u) / 16u;
+    const unsigned a = ((row - 8u) % 16u) - 1u;
+    const unsigned b = ((col - 8u) % 16u) - 1u;
+    if (a >= 4u || b >= 4u || position_hash(cell_r, cell_c, 90u) % 14u != 0u) {
+        return 128u;
+    }
+    const int pct = 60 + (int)(position_hash(cell_r, cell_c, 91u) % 40u);
+    const int amp = 105 + (int)(position_hash(row, col, 92u) % 23u);
+    const int p = sign4[a] * sign4[b] * amp;
+    return (unsigned)(128 + (distorted ? (p * pct) / 100 : p));
+}
+
 static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
 {
     const unsigned peak = (1u << pic->bpc) - 1u;
@@ -109,6 +140,19 @@ static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned 
     }
 }
 
+/* Luma of one sample of the fixture `fx`. */
+static unsigned fixture_luma(const Fixture *fx, unsigned row, unsigned col, unsigned frame,
+                             bool distorted)
+{
+    if (fx->graded) {
+        return graded_luma(row, col, frame, distorted);
+    }
+    if (fx->sparse) {
+        return sparse_luma(row, col, frame, distorted);
+    }
+    return textured_luma(row, col, frame, distorted);
+}
+
 static int fill_picture(VmafPicture *pic, const Fixture *fx, unsigned frame, bool distorted)
 {
     const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, fx->bpc, fx->w, fx->h);
@@ -118,8 +162,7 @@ static int fill_picture(VmafPicture *pic, const Fixture *fx, unsigned frame, boo
     const unsigned gain = 1u << (fx->bpc - 8u);
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned v = fx->sparse ? sparse_luma(row, col, frame, distorted) :
-                                            textured_luma(row, col, frame, distorted);
+            const unsigned v = fixture_luma(fx, row, col, frame, distorted);
             put_sample(pic, 0u, row, col, v * gain);
         }
     }
@@ -336,7 +379,7 @@ static VmafFeatureDictionary *skip_aim_opts(void)
 /* Default options, every output including the per-scale sums. */
 static char *test_adm_default_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor",
               exact_mismatches("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) == 0u);
     return NULL;
@@ -344,7 +387,7 @@ static char *test_adm_default_exact(void)
 
 static char *test_adm_10bit_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 10u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 10u, false, false};
     mu_assert("adm_hip differs from the CPU extractor at 10 bits",
               exact_mismatches("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) == 0u);
     return NULL;
@@ -353,7 +396,7 @@ static char *test_adm_10bit_exact(void)
 /* Odd at every scale: 322x182 halves to 161x91, 81x46, 41x23 and 21x12. */
 static char *test_adm_odd_frame_exact(void)
 {
-    const Fixture fx = {322u, 182u, 8u, false};
+    const Fixture fx = {322u, 182u, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor on an odd frame",
               exact_mismatches("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) == 0u);
     return NULL;
@@ -364,7 +407,7 @@ static char *test_adm_odd_frame_exact(void)
  * fold per thread and a fold per row part. */
 static char *test_adm_2160p_exact(void)
 {
-    const Fixture fx = {3840u, 2160u, 8u, false};
+    const Fixture fx = {3840u, 2160u, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor at 3840x2160",
               exact_mismatches("adm", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) == 0u);
     return NULL;
@@ -375,7 +418,7 @@ static char *test_adm_2160p_exact(void)
  * own, instead of the row, moves `integer_adm_den_scale2` and `_scale3`. */
 static char *test_adm_sparse_detail_exact(void)
 {
-    const Fixture fx = {640u, 360u, 8u, true};
+    const Fixture fx = {640u, 360u, 8u, true, false};
     mu_assert("adm_hip differs from the CPU extractor on a low-detail frame",
               exact_mismatches("adm sparse", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) == 0u);
     return NULL;
@@ -389,7 +432,7 @@ static char *test_adm_sparse_detail_exact(void)
  * the CPU's context. */
 static char *test_adm_shift_boundary_area_exact(void)
 {
-    const Fixture fx = {962u, 13542u, 8u, false};
+    const Fixture fx = {962u, 13542u, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor where the fp32 shift is off by one",
               exact_mismatches("adm shift boundary", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) ==
                   0u);
@@ -400,7 +443,7 @@ static char *test_adm_shift_boundary_area_exact(void)
  * model's option dict. */
 static char *test_adm_model_options_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor with the default model's options",
               exact_mismatches("adm model-opt", &fx, model_opts, MODEL_KEYS, NUM_MODEL_KEYS) == 0u);
     return NULL;
@@ -408,7 +451,7 @@ static char *test_adm_model_options_exact(void)
 
 static char *test_adm_barten_mode_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor in Barten mode",
               exact_mismatches("adm Barten", &fx, barten_opts, BARTEN_KEYS, NUM_BARTEN_KEYS) == 0u);
     return NULL;
@@ -416,16 +459,33 @@ static char *test_adm_barten_mode_exact(void)
 
 static char *test_adm_skip_aim_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor with adm_skip_aim",
               exact_mismatches("adm skip aim", &fx, skip_aim_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) ==
                   0u);
     return NULL;
 }
 
+/* Isolated large-amplitude patches, the distorted frame at 60-99% of them
+ * (T-GPU-ADM-DECOUPLE-FP32-RECIPROCAL-2026-10-03): the scale-0 decouple takes
+ * the reciprocal 2^30 / o from the CPU's integer quotient. An fp32 quotient
+ * truncates to another integer for 343 positive operands, which moves the
+ * ratio k and, for a reference coefficient above 16566, the restored sample. */
+static char *test_adm_attenuated_detail_exact(void)
+{
+    const Fixture fx = {224u, 224u, 8u, false, true};
+    mu_assert("adm_hip differs from the CPU extractor on attenuated detail",
+              exact_mismatches("adm attenuated", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS) ==
+                  0u);
+    mu_assert("adm_hip differs from the CPU extractor on attenuated detail, model options",
+              exact_mismatches("adm attenuated model-opt", &fx, model_opts, MODEL_KEYS,
+                               NUM_MODEL_KEYS) == 0u);
+    return NULL;
+}
+
 static char *test_adm_skip_scale0_exact(void)
 {
-    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false};
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
     mu_assert("adm_hip differs from the CPU extractor with adm_skip_scale0",
               exact_mismatches("adm skip scale 0", &fx, skip_scale0_opts, SKIP_SCALE0_KEYS,
                                NUM_SKIP_SCALE0_KEYS) == 0u);
@@ -440,6 +500,7 @@ static char *run_exact_default_cases(void)
     mu_run_test(test_adm_2160p_exact);
     mu_run_test(test_adm_sparse_detail_exact);
     mu_run_test(test_adm_shift_boundary_area_exact);
+    mu_run_test(test_adm_attenuated_detail_exact);
     return NULL;
 }
 

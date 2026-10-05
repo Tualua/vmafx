@@ -121,3 +121,15 @@ tests for it. Float ADM (`float_adm_hip.c`) has its own staging.
 - `test_hip_adm_dwt2_rows`: host replay of every launched thread row, heights
   1-8192, and every motion tile slot, extents 3-1024. Device-free, fast suite.
 - New tiled HIP kernel: route every halo load through `vmaf_hip_tile_index()`.
+- **Scale-0 decouple reciprocal = `div_lookup`, by arithmetic
+  (`T-GPU-ADM-DECOUPLE-FP32-RECIPROCAL-2026-10-03`).** `adm_recip_q30()` in
+  `integer_adm/adm_decouple_inline.hip`: fp32 quotient `q` (off by at most 11),
+  exact int32 remainder, `floor(r / |o|)` added with the sign of `o`. Equal to
+  `div_lookup[o + 32768]` for every `int16` operand; `int32_t(2^30f / float(o))`
+  alone is another integer for 343 positive operands and moves the restored sample
+  above |o| = 16566. Do not restore it, and do not write a 32-bit integer division
+  there: `adm_cm_line_kernel_8` goes 148 to 228 registers and
+  `test_cuda_adm_cm_register_pressure` (ADR-1226) fails. Guards:
+  `test_adm_decouple_recip_hip` (this header compiled for the host against
+  `adm_decouple_band()`, every `int16` operand, no device) and the case
+  `test_adm_attenuated_detail_exact` of `test_hip_adm_exact` on a device.

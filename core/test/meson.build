@@ -3495,6 +3495,25 @@ test_cuda_adm_dwt2_rows = executable('test_cuda_adm_dwt2_rows',
 test('test_cuda_adm_dwt2_rows', test_cuda_adm_dwt2_rows,
     suite : ['fast'])
 
+# T-GPU-ADM-DECOUPLE-FP32-RECIPROCAL-2026-10-03: the scale-0 decouple of
+# adm_cuda and adm_hip takes the CPU's integer reciprocal 2^30 / o (div_lookup),
+# not an fp32 quotient. The twin's own decouple_r_s0() is compiled for the host
+# and held to adm_decouple_band() over every int16 operand. Device-free and one
+# executable per twin; the device checks are test_cuda_adm_parity and
+# test_hip_adm_exact.
+foreach twin : [['cuda', 'cuh'], ['hip', 'hip']]
+    _adm_recip_test = executable('test_adm_decouple_recip_' + twin[0],
+        ['test.c', 'test_adm_decouple_recip.cpp', 'test_adm_decouple_recip_cpu.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                               include_directories('../src/feature/')],
+        cpp_args : ['-DADM_TWIN_HEADER="feature/' + twin[0] + '/integer_adm/' +
+                    'adm_decouple_inline.' + twin[1] + '"'],
+        dependencies : [pthread_dependency, math_lib],
+    )
+    test('test_adm_decouple_recip_' + twin[0], _adm_recip_test,
+        suite : ['fast'], timeout : 120)
+endforeach
+
 # T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19: score-level parity
 # loses one-unit rounding-placement errors at the float conversion. Exercise
 # the internal row-fold seam on raw int64 accumulators instead.

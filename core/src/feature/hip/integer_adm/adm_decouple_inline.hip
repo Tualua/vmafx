@@ -29,7 +29,35 @@
 
 #include "adm_angle_flag.h"
 
-static constexpr float COS_1DEG_SQ = ADM_ANGLE_FLAG_COS_1DEG_SQ; // cos(1 deg)^2
+namespace
+{
+
+/* The CPU's reciprocal of the scale-0 decouple: `div_lookup[o + 32768]`, the integer
+ * quotient 2^30 / o truncated toward zero (integer_adm.h, div_lookup_populate()),
+ * for o != 0. `int32_t(2^30f / float(o))` is another integer for 343 positive
+ * operands (the first is o = 3), which changes the restored sample for a reference
+ * coefficient above 16566 (T-GPU-ADM-DECOUPLE-FP32-RECIPROCAL-2026-10-03).
+ *
+ * The fp32 quotient q is a first estimate: it is off by at most 11 (at |o| = 3
+ * and 5, measured over all 32768 magnitudes) and its remainder r = 2^30 - q * o
+ * is exact in int32 (|r| <= 32400, |q * o| <= 2^30 + 63). 2^30 / o = q + r / o, so
+ * the quotient is q plus the quotient of r by o truncated toward zero, which is
+ * floor(r / |o|) with the sign of o. |r / o| <= 10.7, where fp32 has a spacing of
+ * 2^-20, and a non-integer r / |o| is at least 1 / 32768 from an integer, so the
+ * fp32 quotient floors to the exact one. `test_adm_decouple_recip_*` holds the
+ * decouple to div_lookup for every int16 operand. A 32-bit integer division in
+ * place of these two fp32 ones takes `adm_cm_line_kernel_8` from 148 to 228
+ * registers and `adm_cm_aim_line_kernel_4` from 208 to 211, past the budget of
+ * `test_cuda_adm_cm_register_pressure` (ADR-1226). */
+__device__ __forceinline__ int32_t adm_recip_q30(int16_t o)
+{
+    const float fo = (float)o;
+    const int32_t q = (int32_t)(1073741824.0f / fo);
+    const int32_t dq = (int32_t)floorf((float)(1073741824 - (q * (int32_t)o)) / fabsf(fo));
+    return o < 0 ? q - dq : q + dq;
+}
+
+constexpr float COS_1DEG_SQ = ADM_ANGLE_FLAG_COS_1DEG_SQ; // cos(1 deg)^2
 
 __device__ __forceinline__ uint16_t get_best15_from32(uint32_t temp, int *x)
 {
@@ -48,8 +76,8 @@ __device__ __forceinline__ int16_t decouple_r_s0(int16_t oh, int16_t ov, int16_t
                                                  int16_t tv, int16_t td, int band, int angle_flag,
                                                  double adm_enhn_gain_limit)
 {
-    const float div_Q_factor = 1073741824; // 2^30
-    int16_t o_val, t_val;
+    int16_t o_val;
+    int16_t t_val;
     if (band == 0) {
         o_val = oh;
         t_val = th;
@@ -61,11 +89,10 @@ __device__ __forceinline__ int16_t decouple_r_s0(int16_t oh, int16_t ov, int16_t
         t_val = td;
     }
 
-    int32_t tmp_k = (o_val == 0) ?
-                        32768 :
-                        (((int64_t)int32_t(div_Q_factor / float(o_val)) * t_val) + 16384) >> 15;
+    const int32_t tmp_k =
+        (o_val == 0) ? 32768 : (((int64_t)adm_recip_q30(o_val) * t_val) + 16384) >> 15;
 
-    int32_t k = max(0, min(32768, tmp_k));
+    const int32_t k = max(0, min(32768, tmp_k));
     if (!angle_flag)
         adm_enhn_gain_limit = 1;
 
@@ -92,9 +119,9 @@ __device__ __forceinline__ int16_t decouple_r_s0(int16_t oh, int16_t ov, int16_t
 __device__ __forceinline__ int decouple_angle_flag_s0(int16_t oh, int16_t ov, int16_t th,
                                                       int16_t tv)
 {
-    int32_t ot_dp = (int32_t)oh * th + (int32_t)ov * tv;
-    int32_t o_mag_sq = (int32_t)oh * oh + (int32_t)ov * ov;
-    int32_t t_mag_sq = (int32_t)th * th + (int32_t)tv * tv;
+    const int32_t ot_dp = (int32_t)oh * th + (int32_t)ov * tv;
+    const int32_t o_mag_sq = (int32_t)oh * oh + (int32_t)ov * ov;
+    const int32_t t_mag_sq = (int32_t)th * th + (int32_t)tv * tv;
     return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, COS_1DEG_SQ);
 }
 
@@ -104,7 +131,8 @@ __device__ __forceinline__ int32_t decouple_r_s123(int32_t oh, int32_t ov, int32
                                                    double adm_enhn_gain_limit)
 {
     const int32_t div_Q_factor = 1073741824; // 2^30
-    int32_t o_val, t_val;
+    int32_t o_val;
+    int32_t t_val;
     if (band == 0) {
         o_val = oh;
         t_val = th;
@@ -117,17 +145,17 @@ __device__ __forceinline__ int32_t decouple_r_s123(int32_t oh, int32_t ov, int32
     }
 
     int32_t kh_shift = 0;
-    uint32_t abs_o = abs(o_val);
-    int8_t sign_o = (o_val < 0 ? -1 : 1);
-    int32_t o_msb = (abs_o < 32768 ? abs_o : get_best15_from32(abs_o, &kh_shift));
+    const uint32_t abs_o = abs(o_val);
+    const int8_t sign_o = (o_val < 0 ? -1 : 1);
+    const int32_t o_msb = (abs_o < 32768 ? abs_o : get_best15_from32(abs_o, &kh_shift));
 
-    int64_t tmp_k =
+    const int64_t tmp_k =
         (o_val == 0) ?
             32768 :
             (((int64_t)(div_Q_factor / o_msb) * t_val) * sign_o + (1 << (14 + kh_shift))) >>
                 (15 + kh_shift);
 
-    int64_t k = tmp_k < 0 ? 0 : (tmp_k > 32768 ? 32768 : tmp_k);
+    const int64_t k = tmp_k < 0 ? 0 : (tmp_k > 32768 ? 32768 : tmp_k);
 
     if (!angle_flag)
         adm_enhn_gain_limit = 1;
@@ -148,10 +176,12 @@ __device__ __forceinline__ int32_t decouple_r_s123(int32_t oh, int32_t ov, int32
 __device__ __forceinline__ int decouple_angle_flag_s123(int32_t oh, int32_t ov, int32_t th,
                                                         int32_t tv)
 {
-    int64_t ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
-    int64_t o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
-    int64_t t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
+    const int64_t ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
+    const int64_t o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
+    const int64_t t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
     return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, COS_1DEG_SQ);
 }
+
+} // namespace
 
 #endif /* ADM_DECOUPLE_INLINE_HIP_ */
