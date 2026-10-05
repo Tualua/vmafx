@@ -47,6 +47,24 @@ XXX" placeholder in `README.md` and `resource/doc/models_v1.md`; the fork's
 counterpart is `docs/models/v1.md`, which had dropped the placeholder
 sentence. The link is in its introduction now; the fork's `README.md` has no
 v1 news line.
+## Port of Netflix/vmaf `8cdd55a03`, `314f14b22`, `12aa1cb44`: three unit tests (2026-10-05)
+
+`port/upstream-tests-motion-blend-predict-barten`. Test-only; no score moves.
+
+- `core/test/test_motion_blend.c` (new, upstream's file with the fork's
+  `static` helper and ADR-1138 bracket) and its `executable()` / `test()`
+  block next to `test_barten_csf` in `core/test/meson.build`, with upstream
+  `03981a80e`'s `stdatomic_dependency`.
+- `core/test/test_barten_csf.c`: upstream's 32 v1.0.17
+  `barten_watson_blend_csf_mae()` cases as four functions of eight
+  assertions under `run_tests_blend_mae_v1017()` (function-size limit).
+- `core/test/test_predict.c`: upstream includes `predict.c` into the test to
+  reach the file-static `post_process_feature_from_another()`. The fork links
+  one predictor implementation (Research-2096), so `predict.c` exports
+  `vmaf_predict_post_process_feature_from_another_for_test()` (declared in
+  `core/src/predict.h`), a pass-through. On an upstream change to that
+  function's parameters, change the test entry with it; do not bring back
+  `#include "predict.c"`.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

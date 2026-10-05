@@ -277,6 +277,18 @@ static int post_process_feature_from_another(const VmafModel *model, struct svm_
     return 0;
 }
 
+int vmaf_predict_post_process_feature_from_another_for_test(const VmafModel *model,
+                                                            struct svm_node *node,
+                                                            double correction_parameter,
+                                                            double value_to_be_corrected,
+                                                            const char *guiding_feature_substr,
+                                                            const char *guided_feature_substr)
+{
+    return post_process_feature_from_another(model, node, correction_parameter,
+                                             value_to_be_corrected, guiding_feature_substr,
+                                             guided_feature_substr);
+}
+
 static int predict_resolve_feature_name(VmafModel *model, unsigned i)
 {
     VmafFeatureExtractor *fex =

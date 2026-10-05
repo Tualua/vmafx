@@ -3057,6 +3057,16 @@ test_barten_csf = executable('test_barten_csf',
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
 )
 
+# Netflix/vmaf 8cdd55a03: motion_blend() (motion_blend_factor /
+# motion_blend_offset of the motion extractors). Header-only helper; the
+# stdatomic dependency is the one upstream 03981a80e adds for MSVC.
+test_motion_blend = executable('test_motion_blend',
+    ['test.c', 'test_motion_blend.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : [stdatomic_dependency],
+)
+test('test_motion_blend', test_motion_blend, suite : ['fast'])
+
 # The CSF weights of float ADM (Watson step and Barten CSF) are upstream's
 # float arithmetic, and the Barten header returns the same bits in a C and
 # in a C++ translation unit (ADR-1489).

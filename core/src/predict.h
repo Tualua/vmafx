@@ -55,4 +55,30 @@ int vmaf_predict_score_at_index_model_collection(VmafModelCollection *model_coll
                                                  VmafFeatureCollector *feature_collector,
                                                  unsigned index, VmafModelCollectionScore *score);
 
+struct svm_node;
+
+/**
+ * @brief Test entry for the chroma-from-luma feature correction.
+ *
+ * Runs the file-static post_process_feature_from_another() of predict.c on a
+ * caller-built SVM node vector, so a unit test can check the correction
+ * without a full prediction (Netflix/vmaf 314f14b22 includes predict.c into
+ * its test instead; the fork links one predictor implementation, see
+ * Research-2096).
+ *
+ * @param model                  Model whose feature slopes / intercepts apply.
+ * @param node                   Normalised feature values, one per model feature.
+ * @param correction_parameter   Correction strength.
+ * @param value_to_be_corrected  Guided-feature value that triggers the correction.
+ * @param guiding_feature_substr Substring naming the guiding feature.
+ * @param guided_feature_substr  Substring naming the guided feature.
+ * @return 0 on success (also when no correction applies), negative errno on failure.
+ */
+int vmaf_predict_post_process_feature_from_another_for_test(const VmafModel *model,
+                                                            struct svm_node *node,
+                                                            double correction_parameter,
+                                                            double value_to_be_corrected,
+                                                            const char *guiding_feature_substr,
+                                                            const char *guided_feature_substr);
+
 #endif /* VMAF_SRC_PREDICT_H_ */

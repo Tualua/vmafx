@@ -6503,6 +6503,7 @@
         "core/test/test_model_libsvm_dup_key.c": 1,
         "core/test/test_moment_simd.c": 1,
         "core/test/test_motion_avx512_parity.c": 1,
+        "core/test/test_motion_blend.c": 1,
         "core/test/test_motion_convolution_oob.c": 1,
         "core/test/test_motion_five_frame_window.c": 1,
         "core/test/test_motion_min_dim.c": 1,

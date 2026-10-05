@@ -25,6 +25,7 @@
 #include "metadata_handler.h"
 #include "predict.h"
 #include "predict_internal.h"
+#include "svm.h"
 #include "test.h"
 
 #include <libvmaf/model.h>
@@ -35,12 +36,6 @@
  * translation unit whose sources spell the null pointer constant `NULL` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
-#if defined(__cplusplus)
-#define PREDICT_TEST_NULLPTR nullptr
-#else
-#define PREDICT_TEST_NULLPTR ((void *)0)
-#endif
 
 typedef struct {
     VmafDictionary **metadata;
@@ -65,7 +60,7 @@ static char *check_predict_nonfinite_contract(double score, int prediction_err, 
     mu_assert("non-finite prediction fails with EINVAL", prediction_err == -EINVAL);
     mu_assert("failed prediction leaves caller output unchanged", score == 42.0);
     mu_assert("failed prediction is not published", published_err != 0);
-    return PREDICT_TEST_NULLPTR;
+    return NULL;
 }
 
 /* Append the same score for every model feature, which is what drives both the
@@ -130,7 +125,7 @@ static char *test_predict_nonfinite_fails_without_publication(void)
 
     vmaf_model_destroy(model);
     vmaf_feature_collector_destroy(feature_collector);
-    return PREDICT_TEST_NULLPTR;
+    return NULL;
 }
 
 static void set_meta(void *data, VmafMetadata *metadata)
@@ -469,12 +464,53 @@ static char *test_piecewise_linear_mapping_rejects_nonfinite_input(void)
     return NULL;
 }
 
+/* Netflix/vmaf 314f14b22: the chroma-from-luma correction of
+ * post_process_feature_from_another() on vmaf_v0.6.1's features. Feature 1 is
+ * the guided feature (motion2) at its normalised zero, feature 0 the guiding
+ * one (adm2) at 0.5. With the sentinel 0.1 nothing changes; with the sentinel
+ * 0.0 the guided value becomes 120 * (1 - 0.5) = 60, normalised. */
+static char *test_post_process_feature_from_another(void)
+{
+    VmafModel *model = NULL;
+    VmafModelConfig cfg = {
+        .name = "vmaf",
+        .flags = VMAF_MODEL_FLAGS_DEFAULT,
+    };
+    int err = vmaf_model_load(&model, &cfg, "vmaf_v0.6.1");
+    mu_assert("problem during vmaf_model_load", !err);
+
+    struct svm_node node[16];
+    mu_assert("vmaf_v0.6.1 has more features than the test vector holds",
+              model->n_features < sizeof(node) / sizeof(node[0]));
+    for (unsigned i = 0; i < model->n_features; i++) {
+        node[i].index = (int)i + 1;
+        const double scale = i == 1 ? 0.0 : 0.5;
+        node[i].value = (scale * model->feature[i].slope) + model->feature[i].intercept;
+    }
+
+    err = vmaf_predict_post_process_feature_from_another_for_test(model, node, 120.0, 0.1, "adm2",
+                                                                  "motion");
+    mu_assert("problem during post_process_feature_from_another", !err);
+    mu_assert("unexpected change to a value after post_process_feature_from_another",
+              node[1].value == model->feature[1].intercept);
+
+    err = vmaf_predict_post_process_feature_from_another_for_test(model, node, 120.0, 0.0, "adm2",
+                                                                  "motion");
+    mu_assert("problem during post_process_feature_from_another", !err);
+    mu_assert("wrong value after post_process_feature_from_another",
+              node[1].value == (60.0 * model->feature[1].slope) + model->feature[1].intercept);
+
+    vmaf_model_destroy(model);
+    return NULL;
+}
+
 static char *run_tests_predict(void)
 {
     mu_run_test(test_predict_score_at_index);
     mu_run_test(test_predict_nonfinite_fails_without_publication);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
+    mu_run_test(test_post_process_feature_from_another);
     return NULL;
 }
 
@@ -495,5 +531,3 @@ char *run_tests(void)
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
-
-#undef PREDICT_TEST_NULLPTR
