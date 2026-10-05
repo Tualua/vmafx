@@ -6,7 +6,7 @@
 #
 # Targets (the CPU image is docker/Dockerfile.production):
 #   final-cuda13     — CUDA build of libvmaf; no NVIDIA library in the image
-#   final-rocm10     — HIP build with the ROCm 10.0.0 runtime files it loads
+#   final-rocm10     — HIP build with the ROCm 10.1.0 runtime files it loads
 #   final-oneapi2026 — SYCL build with the Intel SYCL runtime files it loads
 #                      and the compute-runtime (NEO) GPU stack (ADR-1368)
 #   final-oneapi2025 — alias of final-oneapi2026, kept for existing callers
@@ -49,7 +49,7 @@
 # these lines, then run `make base-images-sync`.
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151"
-ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 ARG ONEAPI_BUILDER="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 
@@ -140,12 +140,12 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model /stage/licenses/nvidia /licence-inp
     && python3 tools/rc1-tester/image/licensing.py scan-build --build build --repo /src \
         --out /licence-inputs/vmafx-sources.json
 
-# --- ROCm 10.0.0 build (ADR-1225, ADR-1517) ---
-# ROCm 10.0.0 ships only as a container image (TheRock; the apt channel at
+# --- ROCm 10.1.0 build (ADR-1225, ADR-1517) ---
+# ROCm 10.1.0 ships only as a container image (TheRock; the apt channel at
 # repo.radeon.com/rocm/apt/ tops out at 7.2.4). Debian 13 with /opt/rocm
 # streamed out of that image by scripts/ci/install-rocm-from-image.sh, as the CI
 # HIP legs and the AMD GPU tester image do; share/doc is kept for the licence
-# texts. The code objects cover every target ROCm 10.0.0 builds its own
+# texts. The code objects cover every target ROCm 10.1.0 builds its own
 # libraries for (share/therock/dist_info.json).
 FROM ${RELEASE_BUILDER_BASE} AS builder-rocm10
 ARG DEBIAN_FRONTEND=noninteractive
@@ -382,7 +382,7 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 # ===========================================================================
 FROM ${RELEASE_BUILDER_BASE} AS rocm10-assembled
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX production ROCm 10.0.0 HIP runtime. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
+LABEL org.opencontainers.image.description="VMAFX production ROCm 10.1.0 HIP runtime. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
