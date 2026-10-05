@@ -60986,3 +60986,12 @@ No score, public API or FFmpeg patch impact.
   the fields in the same change; a lock rename changes the suite's `install`.
   The CI jobs do not read `install` yet. No score, public C API or FFmpeg patch
   impact.
+
+## Release workflows skip tester tags
+
+- `docker-publish-production.yml`, `docker-publish-operator-node.yml` and
+  `supply-chain.yml` carry the job-level guard `github.event_name != 'release'
+  || startsWith(github.event.release.tag_name, 'v')` on `validate-release` and
+  on any `if: always()` summary job. A sync or rebase keeps it, and a new
+  `on: release` workflow adds it (`scripts/ci/tests/test_release_workflows_version_tag_guard.py`
+  fails otherwise). No score, public API or FFmpeg patch impact.

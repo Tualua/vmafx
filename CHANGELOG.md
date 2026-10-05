@@ -4038,6 +4038,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (ADR-1356). PyPI's PEP 740 attestations are unchanged.
 
 
+- **A tester prerelease no longer starts the production release workflows.**
+  `tester-*` prereleases (macOS and Windows tester bundles) fire the `release`
+  event; `docker-publish-production.yml`, `docker-publish-operator-node.yml` and
+  `supply-chain.yml` then failed at "Validate tag" and turned master red. Their
+  first job now runs only for `v*` tags (workflow dispatch recovery unchanged),
+  the rest skip with it, and a contract test covers every `on: release`
+  workflow.
+
+
 - **`scripts/dev/relicense_fork_files.py --check` exits 0.** The tool no longer
   treats the exact-twin data fragments (`scripts/ci/exact_twins.d/`) or
   praetor's byte-locked files as sources that need a header, and it rewrites a

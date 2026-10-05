@@ -64,6 +64,9 @@ env:
 jobs:
   validate-release:
     name: Validate tag
+    # Release events also fire for tester prereleases (tester-*, tester-windows-*);
+    # only version tags (v*) belong to this workflow. Dependent jobs skip with it.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1489,7 +1492,7 @@ jobs:
   # -------------------------------------------------------------------------
   all-images:
     name: Images published
-    if: always()
+    if: always() && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v'))
     needs:
       - build-operator
       - publish-operator

@@ -70,3 +70,13 @@ The dry run builds what the release builds. A new image target, a new
 `vmaf-mcp` build command or a new Syft pin goes into both
 `release-dry-run.yml` and the release workflow, or
 `scripts/ci/tests/test_pr_time_verify_workflows.py` fails.
+
+## Tester prereleases do not start release workflows
+
+The tester workflows publish prereleases tagged `tester-*`, and a published
+release fires the `release` event. `docker-publish-production.yml`,
+`docker-publish-operator-node.yml` and `supply-chain.yml` therefore skip every
+job unless the tag starts with `v` (the guard on `validate-release`; the other
+jobs depend on it). A skipped workflow is neutral for the checks. Version
+validation of a `v*` tag is unchanged. `scripts/ci/tests/test_release_workflows_version_tag_guard.py`
+fails when an `on: release` workflow lacks the guard.
