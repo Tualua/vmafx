@@ -43,3 +43,11 @@ Guards: `test_hip_psnr_hvs_parity{,_large}` (device, `==` on all four outputs,
 Readback = 256 bytes per block (65 MB per 3840x2160 4:2:0 frame, device +
 pinned); tuning tracked as T-SYCL-HIP-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01,
 must stay bit-exact.
+
+- Prefix scan (`hvs_scan_prefix_hip()`) visits every chunk of 256 blocks: `for (c = 0;
+  c < num_chunks; ...)`, like the CUDA twin. A cap (was `32768u`) leaves the
+  later chunk offsets unset and the compaction writes past its buffer: more
+  than 32768 chunks = 8,388,608 blocks = 16384x8640 4:4:4, just past 16K
+  (256,779 chunks at the 32768 cap). Guard:
+  `test_psnr_hvs_gpu_scan_contract.py`
+  (T-GPU-PSNR-HVS-SCAN-32768-CHUNKS-2026-10-05).

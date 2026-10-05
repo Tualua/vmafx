@@ -459,9 +459,11 @@ __global__ __launch_bounds__(1) void hvs_scan_prefix_hip(const uint32_t *chunk_t
                                                          struct PsnrHvsHipHeader *header,
                                                          unsigned num_chunks)
 {
+    /* Every chunk: a cap here left the offsets of the chunks past it unset,
+     * and hvs_compact_hip wrote their terms out of bounds (more than 32768
+     * chunks: 16384x8640 4:4:4 and larger, 256,779 at the 32768 cap). */
     uint32_t running = 0u;
-    const unsigned limit = num_chunks < 32768u ? num_chunks : 32768u;
-    for (unsigned c = 0u; c < limit; c++) {
+    for (unsigned c = 0u; c < num_chunks; c++) {
         chunk_offsets[c] = running;
         running += chunk_totals[c];
     }

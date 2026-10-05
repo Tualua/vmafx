@@ -6901,6 +6901,17 @@ test_speed_singular_tally = executable('test_speed_singular_tally',
 )
 test('test_speed_singular_tally', test_speed_singular_tally, suite : ['fast'])
 
+# T-GPU-PSNR-HVS-SCAN-32768-CHUNKS-2026-10-05: the CUDA, HIP and SYCL psnr_hvs
+# prefix scan visits every chunk of 256 blocks; the HIP and SYCL scans stopped
+# at 32768 chunks and the compaction wrote past its buffer above 16K 4:4:4.
+# Device-free source contract.
+test('test_psnr_hvs_gpu_scan_contract',
+    import('python').find_installation(),
+    args : files('test_psnr_hvs_gpu_scan_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # The score clamp is shared the same way, and is the one place a non-finite
 # score could be published as speed_*_max_val instead of failing the frame.
 test_speed_clamp_score = executable('test_speed_clamp_score',

@@ -4582,6 +4582,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [production images](docs/development/docker-production.md#licences-and-corresponding-source)).
 
 
+- **`psnr_hvs` on HIP and SYCL scores 4:4:4 pictures past 16K.** The twins'
+  scan of the per-block term counts stopped at 32,768 chunks of 256 blocks,
+  so from 16384x8640 in 4:4:4 on the later chunks had no offset and their
+  terms were written past the device buffer. The scan visits every chunk
+  now, as the CUDA twin does; smaller pictures are unchanged.
+
+
 - **`psnr_hvs` on aarch64 returns the scores of the scalar path and of an
   x86-64 build.** `calc_psnrhvs_neon()` multiplied the two `float` factors of
   the masking threshold as `float`; the scalar reference and the AVX2 function

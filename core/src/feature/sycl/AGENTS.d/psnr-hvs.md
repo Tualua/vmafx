@@ -75,3 +75,11 @@ invariant: psnr_hvs_sycl = CPU scores bit for bit; integer_psnr_hvs_sycl.cpp DCT
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|
 | `integer_psnr_hvs_sycl.cpp` | `third_party/xiph/psnr_hvs.c` | `test_sycl_psnr_hvs_parity.c` | ADR-0946 (round 3) |
+
+- Prefix scan (`launch_scan_prefix()`) visits every chunk of 256 blocks: `for (c = 0;
+  c < num_chunks; ...)`, like the CUDA twin. A cap (was `32768u`) leaves the
+  later chunk offsets unset and the compaction writes past its buffer: more
+  than 32768 chunks = 8,388,608 blocks = 16384x8640 4:4:4, just past 16K
+  (256,779 chunks at the 32768 cap). Guard:
+  `test_psnr_hvs_gpu_scan_contract.py`
+  (T-GPU-PSNR-HVS-SCAN-32768-CHUNKS-2026-10-05).
