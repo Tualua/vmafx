@@ -634,21 +634,25 @@ static int alloc_cambi_buffers(CambiState *s, int alloc_w, int alloc_h, int num_
     return 0;
 }
 
-static int open_heatmaps(CambiState *s)
+/* One 16-bit .gray file per scale under `heatmaps_path` (none when it is
+ * NULL), named for the encode size halved per scale. Shared with the GPU
+ * twins through vmaf_cambi_open_heatmaps(). */
+static int open_heatmaps(const char *heatmaps_path, unsigned enc_width, unsigned enc_height,
+                         FILE *heatmaps_files[NUM_SCALES])
 {
-    if (!s->heatmaps_path)
+    if (!heatmaps_path)
         return 0;
 
-    int mkdir_err = mkdirp(s->heatmaps_path, 0770);
+    int mkdir_err = mkdirp(heatmaps_path, 0770);
     if (mkdir_err)
         return -EINVAL;
 
     char path[1024] = {0};
-    int scaled_w = s->enc_width;
-    int scaled_h = s->enc_height;
+    int scaled_w = enc_width;
+    int scaled_h = enc_height;
     for (int scale = 0; scale < NUM_SCALES; scale++) {
         int snp_ret = snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
-                               s->heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
+                               heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
         if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path))
             return -ENAMETOOLONG;
 
@@ -662,11 +666,11 @@ static int open_heatmaps(CambiState *s)
             return -EINVAL;
         }
 #ifdef _WIN32
-        s->heatmaps_files[scale] = _fdopen(hfd, "wb");
+        heatmaps_files[scale] = _fdopen(hfd, "wb");
 #else
-        s->heatmaps_files[scale] = fdopen(hfd, "w");
+        heatmaps_files[scale] = fdopen(hfd, "w");
 #endif
-        if (!s->heatmaps_files[scale]) {
+        if (!heatmaps_files[scale]) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
 #ifdef _WIN32
             (void)_close(hfd);
@@ -679,6 +683,21 @@ static int open_heatmaps(CambiState *s)
         scaled_h = (scaled_h + 1) >> 1;
     }
     return 0;
+}
+
+/* Close every open heatmap file and clear its slot; -EIO when a close fails
+ * (the buffered rows of that file are lost). NULL slots are skipped: a partial
+ * init() failure may close before every scale's file was opened, and
+ * fclose(NULL) is undefined. */
+static int close_heatmap_files(FILE *heatmaps_files[NUM_SCALES])
+{
+    int err = 0;
+    for (int scale = 0; scale < NUM_SCALES; scale++) {
+        if (heatmaps_files[scale] && fclose(heatmaps_files[scale]) && !err)
+            err = -EIO;
+        heatmaps_files[scale] = NULL;
+    }
+    return err;
 }
 
 static void setup_callbacks(CambiState *s)
@@ -765,7 +784,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (err)
         return fail_init(fex, err);
 
-    err = open_heatmaps(s);
+    err =
+        vmaf_cambi_open_heatmaps(s->heatmaps_path, s->enc_width, s->enc_height, s->heatmaps_files);
     if (err)
         return fail_init(fex, err);
 
@@ -1582,8 +1602,9 @@ static int cambi_score(VmafPicture *pics, uint16_t window_size, double topk,
                                scaled_height);
 
         if (write_heatmaps) {
-            int err = dump_c_values(heatmaps_files, buffers->c_values, scaled_width, scaled_height,
-                                    scale, window_size, num_diffs, buffers->diff_weights, frame);
+            int err = vmaf_cambi_dump_c_values(heatmaps_files, buffers->c_values, scaled_width,
+                                               scaled_height, scale, window_size, num_diffs,
+                                               buffers->diff_weights, frame);
             if (err)
                 return err;
         }
@@ -1706,14 +1727,10 @@ static int close_cambi(VmafFeatureExtractor *fex)
     aligned_free(s->buffers.all_diffs);
     aligned_free(s->buffers.derivative_buffer);
 
-    if (s->heatmaps_path) {
-        for (int scale = 0; scale < NUM_SCALES; scale++) {
-            /* NULL-tolerant: a partial init() failure may close before every
-             * scale's file was opened; fclose(NULL) is undefined. */
-            if (s->heatmaps_files[scale])
-                (void)fclose(s->heatmaps_files[scale]);
-        }
-    }
+    /* Every slot is NULL without heatmaps_path (fex->priv is zeroed). */
+    const int heatmaps_err = vmaf_cambi_close_heatmaps(s->heatmaps_files);
+    if (heatmaps_err && !err)
+        err = heatmaps_err;
 
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
@@ -1957,6 +1974,28 @@ int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider
     return 0;
 }
 
+/* The heatmap writers of the `heatmaps_path` option, for the twins whose
+ * c-values reach the host (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05):
+ * thin trampolines, so the twin's files are written by this code. */
+int vmaf_cambi_open_heatmaps(const char *path, unsigned enc_width, unsigned enc_height,
+                             FILE *files[VMAF_CAMBI_NUM_SCALES])
+{
+    return open_heatmaps(path, enc_width, enc_height, files);
+}
+
+int vmaf_cambi_dump_c_values(FILE *files[VMAF_CAMBI_NUM_SCALES], const float *c_values, int width,
+                             int height, int scale, int window_size, uint16_t num_diffs,
+                             const int *diff_weights, int frame)
+{
+    return dump_c_values(files, c_values, width, height, scale, window_size, num_diffs,
+                         diff_weights, frame);
+}
+
+int vmaf_cambi_close_heatmaps(FILE *files[VMAF_CAMBI_NUM_SCALES])
+{
+    return close_heatmap_files(files);
+}
+
 /* ----- internal test trampolines (narrowly exposed for in-tree unit tests) ----- */
 
 void vmaf_cambi_test_anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned height)
@@ -2104,17 +2143,10 @@ int vmaf_cambi_test_get_vlt_luma(double visibility_luminance_threshold, VmafLuma
 
 int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_height)
 {
-    CambiState state = {
-        .enc_width = enc_width,
-        .enc_height = enc_height,
-        .heatmaps_path = path,
-    };
-    int err = open_heatmaps(&state);
-    for (int scale = 0; scale < NUM_SCALES; ++scale) {
-        if (state.heatmaps_files[scale] && fclose(state.heatmaps_files[scale]) && !err)
-            err = -EIO;
-    }
-    return err;
+    FILE *files[NUM_SCALES] = {NULL};
+    const int err = open_heatmaps(path, enc_width, enc_height, files);
+    const int close_err = close_heatmap_files(files);
+    return err ? err : close_err;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

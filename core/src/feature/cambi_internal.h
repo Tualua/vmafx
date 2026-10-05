@@ -31,7 +31,9 @@
 #ifdef __cplusplus
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 
+using std::FILE;
 using std::ptrdiff_t;
 using std::uint16_t;
 using std::uint32_t;
@@ -40,6 +42,7 @@ using std::uint64_t;
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #endif
 
 #include "libvmaf/picture.h"
@@ -209,6 +212,20 @@ int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider
                                 double tvi_threshold, double cambi_vis_lum_threshold,
                                 const char *cambi_eotf, const char *eotf, uint16_t *tvi_for_diff,
                                 uint16_t *vlt_luma, uint16_t *v_band_base, uint16_t *v_band_size);
+
+/* cambi.c's writers of the `heatmaps_path` option, for a twin whose c-values
+ * reach the host (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05). Open one
+ * 16-bit .gray file per scale under `path` for an enc_width x enc_height
+ * encode (returns 0 and opens nothing when `path` is NULL); write one scale's
+ * c-values as frame `frame`, with the adjusted encode window, before the
+ * pooling reorders them; close every open file and clear its slot (-EIO when
+ * a close fails). The twin's files are then the CPU's byte for byte. */
+int vmaf_cambi_open_heatmaps(const char *path, unsigned enc_width, unsigned enc_height,
+                             FILE *files[VMAF_CAMBI_NUM_SCALES]);
+int vmaf_cambi_dump_c_values(FILE *files[VMAF_CAMBI_NUM_SCALES], const float *c_values, int width,
+                             int height, int scale, int window_size, uint16_t num_diffs,
+                             const int *diff_weights, int frame);
+int vmaf_cambi_close_heatmaps(FILE *files[VMAF_CAMBI_NUM_SCALES]);
 
 /* ----- internal test trampolines (narrowly exposed for in-tree unit tests) ----- */
 

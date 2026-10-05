@@ -311,8 +311,19 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   on host. Shared `ff_pair.h` / `ff_math.h` / `ciede_ff_math.h`
   `VMAF_FF_MSL_SUBSET` branches: edit only with byte-identical `-E -P` proof on
   SYCL + HIP TUs; keep `#endif` directly above `#include "ff_math.h"`.
-- **cambi table**: CPU's except `heatmaps_path` (CPU writers static in
-  `cambi.c`); helpers from `cambi_internal.h` only.
+- **cambi table**: = CPU's, `heatmaps_path` included. Heatmaps only through
+  `vmaf_cambi_open_heatmaps()` / `_dump_c_values()` / `_close_heatmaps()`
+  (`cambi.c`'s writers): dump in `cambi_metal_scale_host()` before
+  `vmaf_cambi_spatial_pooling()` (quick-select reorders c-values), distorted
+  pass only, adjusted encode window, frame = `index`. Helpers from
+  `cambi_internal.h` only, no copies.
+- **Names before option slots (every twin)**: `init()` builds
+  `feature_name_dict` before it or any function it calls first writes an option
+  slot (`cambi.c::init` order). cambi: `cambi_metal_resolve_dimensions()` writes
+  `enc_*` / `src_*` (FEATURE_PARAM, default 0); dict after it = every name
+  suffixed `_encbd_8_ench_..._srcw_...`, gate / model / parity test find no
+  score (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05, M4 Pro #2118). Guard:
+  `test_metal_twin_option_tables_contract.py` (`_name_order_failures`).
 - **float_adm**: `adm_frame_size_check()` first in `init()`. Per-sample math
   only in `metal_float_adm_math.h` (= `sycl_float_adm_math.h` method,
   ADR-1434): decouple quotient plain fp32 `/`, never reciprocal; three fp64

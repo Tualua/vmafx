@@ -201,7 +201,10 @@ inputs behind the numbers in the history and lists the measurements.
 ## Generating and Decoding Heatmaps
 
 To generate the heatmaps, run CAMBI with the `heatmaps_path` option set to a
-local folder. It will write files such as:
+local folder. The CPU extractor and the Metal twin (`integer_cambi_metal`)
+write the same files with the same code; the CUDA, SYCL and HIP twins do not
+declare the option, so a request or model that sets it keeps the CPU
+extractor on those backends. It will write files such as:
 
 ```text
 cambi_heatmap_scale_0_1280x720_16b.gray

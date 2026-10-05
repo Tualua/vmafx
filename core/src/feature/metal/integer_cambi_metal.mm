@@ -49,17 +49,24 @@
  *  contribute 0), so the mask is bit-identical to the CPU mask too.
  *
  *  Options (T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26, ADR-1498): the
- *  CPU cambi table but `heatmaps_path`. src_width / src_height take the
- *  CPU's defaults and checks (cambi.c::validate_and_setup_dimensions: unset
- *  means the picture size, both sizes validated, an encode and a source that
- *  scale in opposite directions refused) and size the source window, which
- *  the CPU's vmaf_cambi_check_window_fits_lut() bounds together with the
- *  encode window. full_ref runs the same pipeline on the reference picture at
- *  the source size and window and emits `cambi_source` and
- *  `cambi_full_reference` = MIN(MAX(0, dist - src), cambi_max_val), as
- *  cambi.c::extract does. Not declared: `heatmaps_path` (the CPU writes the
- *  heatmaps with open_heatmaps() / dump_c_values(), which cambi.c keeps
- *  static), so a request or model with it keeps the CPU extractor.
+ *  CPU cambi table. src_width / src_height take the CPU's defaults and checks
+ *  (cambi.c::validate_and_setup_dimensions: unset means the picture size,
+ *  both sizes validated, an encode and a source that scale in opposite
+ *  directions refused) and size the source window, which the CPU's
+ *  vmaf_cambi_check_window_fits_lut() bounds together with the encode window.
+ *  full_ref runs the same pipeline on the reference picture at the source
+ *  size and window and emits `cambi_source` and `cambi_full_reference` =
+ *  MIN(MAX(0, dist - src), cambi_max_val), as cambi.c::extract does.
+ *  heatmaps_path writes the distorted picture's c-values of every scale with
+ *  cambi.c's own writers (vmaf_cambi_open_heatmaps() / _dump_c_values() /
+ *  _close_heatmaps()), before the pooling reorders them, so the files are the
+ *  CPU's (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05).
+ *
+ *  Feature names: init() builds the name dictionary from the options as the
+ *  caller set them, before cambi_metal_resolve_dimensions() writes the
+ *  resolved encode and source sizes into their option slots, as cambi.c::init
+ *  does. Built afterwards, every name carried `_encbd_8_ench_..._srcw_...`
+ *  and nothing read the score (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05).
  *
  *  Feature name: cambi (provided feature "Cambi_feature_cambi_score").
  */
@@ -68,6 +75,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -140,7 +148,7 @@ typedef struct IntegerCambiStateMetal {
     VmafCambiRangeUpdater dec_range_callback;
     VmafCambiDerivativeCalculator derivative_callback;
 
-    /* The CPU cambi.c options, `heatmaps_path` excepted. */
+    /* The CPU cambi.c options. */
     int    enc_width;
     int    enc_height;
     int    enc_bitdepth;
@@ -156,8 +164,12 @@ typedef struct IntegerCambiStateMetal {
     bool   full_ref;
     char  *eotf;
     char  *cambi_eotf;
+    char  *heatmaps_path;
     int    cambi_high_res_speedup;
     bool   high_res_speedup;
+
+    /* One heatmap file per scale when heatmaps_path is set. */
+    FILE  *heatmaps_files[CAMBI_METAL_NUM_SCALES];
 
     /* Largest picture the pipeline runs on (cambi.c::init's alloc_w/h). */
     unsigned alloc_width;
@@ -176,7 +188,7 @@ typedef struct IntegerCambiStateMetal {
 } IntegerCambiStateMetal;
 
 /* --- Options: the CPU cambi.c table (names, aliases, defaults, ranges,
- * flags), except `heatmaps_path`, which this twin does not implement. --- */
+ * flags). --- */
 static const VmafOption options[] = {
     {
         .name        = "cambi_max_val",
@@ -311,6 +323,13 @@ static const VmafOption options[] = {
         .min         = 0,
         .max         = 5,
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name        = "heatmaps_path",
+        .help        = "Path where heatmaps will be dumped.",
+        .offset      = offsetof(IntegerCambiStateMetal, heatmaps_path),
+        .type        = VMAF_OPT_TYPE_STRING,
+        .default_val = {.s = NULL},
     },
     {
         .name        = "full_ref",
@@ -581,6 +600,8 @@ static int cambi_metal_release(IntegerCambiStateMetal *s)
         }
     }
     release_host_buffers(s);
+    const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_files);
+    if (heatmaps != 0 && rc == 0) { rc = heatmaps; }
     if (s->feature_name_dict != NULL) {
         const int e = vmaf_dictionary_free(&s->feature_name_dict);
         if (e != 0 && rc == 0) { rc = e; }
@@ -590,18 +611,12 @@ static int cambi_metal_release(IntegerCambiStateMetal *s)
     return rc;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                          unsigned w, unsigned h)
+/* Everything init() allocates once the sizes are resolved: the context, the
+ * host pictures and scratch of the CPU residual, the device planes and
+ * pipelines, and the heatmap files of the encode size (cambi.c::init's
+ * open_heatmaps()). */
+static int cambi_metal_init_resources(IntegerCambiStateMetal *s)
 {
-    (void)pix_fmt;
-    IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
-
-    int err = cambi_metal_resolve_dimensions(s, bpc, w, h);
-    if (err == 0) {
-        err = cambi_metal_resolve_windows(s);
-    }
-    if (err != 0) { return err; }
-
     /* cambi.c::init's alloc_w / alloc_h: the source size counts only under
      * full_ref, where the reference picture runs at it. */
     s->alloc_width  = (unsigned)s->enc_width;
@@ -612,7 +627,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
             (unsigned)((s->src_height > s->enc_height) ? s->src_height : s->enc_height);
     }
 
-    err = vmaf_metal_context_new(&s->ctx, 0);
+    int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err == 0) {
         err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     }
@@ -629,12 +644,37 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         err = cambi_metal_alloc_device(s);
     }
     if (err == 0) {
-        s->feature_name_dict =
-            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+        err = vmaf_cambi_open_heatmaps(s->heatmaps_path, (unsigned)s->enc_width,
+                                       (unsigned)s->enc_height, s->heatmaps_files);
     }
-    if (err != 0) {
-        (void)cambi_metal_release(s);
+    return err;
+}
+
+static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                          unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
+
+    /* cambi.c::init's order: the feature names follow the options as the
+     * caller set them. cambi_metal_resolve_dimensions() writes the resolved
+     * encode and source sizes into their option slots (FEATURE_PARAM, default
+     * 0), so names built after it carry `_encbd_8_ench_..._srcw_...`
+     * (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05). */
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (s->feature_name_dict == NULL) { return -ENOMEM; }
+
+    int err = cambi_metal_resolve_dimensions(s, bpc, w, h);
+    if (err == 0) {
+        err = cambi_metal_resolve_windows(s);
+    }
+    if (err == 0) {
+        err = cambi_metal_init_resources(s);
+    }
+    if (err != 0 && cambi_metal_release(s) != 0) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_cambi_metal: release after a failed init failed\n");
     }
     return err;
 }
@@ -759,10 +799,13 @@ static int cambi_metal_scale_gpu(IntegerCambiStateMetal *s, id<MTLCommandQueue> 
     return cambi_metal_commit(cmd);
 }
 
-/* The host part of one scale: the CPU's sliding-histogram c-values and
- * top-K pooling on the scale's image and mask. */
-static double cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetalPlanes *pl,
-                                     uint16_t window, double topk)
+/* The host part of one scale: the CPU's sliding-histogram c-values, written
+ * to the scale's heatmap as frame `*heatmap_frame` when that is not NULL
+ * (before the pooling's quick-select reorders them, as cambi.c::cambi_score
+ * does), then the top-K pooling into `*score`. */
+static int cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetalPlanes *pl,
+                                  uint16_t window, double topk, int scale,
+                                  const unsigned *heatmap_frame, double *score)
 {
     copy_buf_to_pic((__bridge id<MTLBuffer>)pl->image, &s->pics[0], pl->width, pl->height);
     copy_buf_to_pic((__bridge id<MTLBuffer>)pl->mask, &s->pics[1], pl->width, pl->height);
@@ -772,14 +815,24 @@ static double cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetal
                                   s->buffers.tvi_for_diff, s->vlt_luma, s->buffers.diff_weights,
                                   s->buffers.all_diffs, (int)pl->width, (int)pl->height,
                                   s->inc_range_callback, s->dec_range_callback);
-    return vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, pl->width, pl->height);
+    if (heatmap_frame != NULL) {
+        const int err = vmaf_cambi_dump_c_values(s->heatmaps_files, s->buffers.c_values,
+                                                 (int)pl->width, (int)pl->height, scale,
+                                                 (int)window, (uint16_t)num_diffs,
+                                                 s->buffers.diff_weights, (int)*heatmap_frame);
+        if (err != 0) { return err; }
+    }
+    *score = vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, pl->width, pl->height);
+    return 0;
 }
 
 /* cambi.c::preprocess_and_extract_cambi() for one picture at width x height
  * with the adjusted window `window`: the weighted score of the five scales,
- * before the cambi_max_val cap. */
+ * before the cambi_max_val cap; the c-values go to the heatmaps as frame
+ * `*heatmap_frame` when that is not NULL. */
 static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, unsigned width,
-                             unsigned height, uint16_t window, double *score)
+                             unsigned height, uint16_t window, const unsigned *heatmap_frame,
+                             double *score)
 {
     void *qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == NULL) { return -ENODEV; }
@@ -794,7 +847,8 @@ static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, 
     for (int scale = 0; scale < CAMBI_METAL_NUM_SCALES && err == 0; ++scale) {
         err = cambi_metal_scale_gpu(s, queue, scale, &pl);
         if (err == 0) {
-            scores_per_scale[scale] = cambi_metal_scale_host(s, &pl, window, topk);
+            err = cambi_metal_scale_host(s, &pl, window, topk, scale, heatmap_frame,
+                                         &scores_per_scale[scale]);
         }
     }
     if (err == 0) {
@@ -814,14 +868,15 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
-    (void)index;
     IntegerCambiStateMetal *s = (IntegerCambiStateMetal *)fex->priv;
 
+    /* Heatmaps of the distorted picture only, as cambi.c writes them. */
+    const unsigned *heatmap_frame = (s->heatmaps_path != NULL) ? &index : NULL;
     int err = cambi_metal_score(s, dist_pic, (unsigned)s->enc_width, (unsigned)s->enc_height,
-                                s->adjusted_window, &s->dist_score);
+                                s->adjusted_window, heatmap_frame, &s->dist_score);
     if (err == 0 && s->full_ref) {
         err = cambi_metal_score(s, ref_pic, (unsigned)s->src_width, (unsigned)s->src_height,
-                                s->src_window, &s->src_score);
+                                s->src_window, NULL, &s->src_score);
     }
     return err;
 }

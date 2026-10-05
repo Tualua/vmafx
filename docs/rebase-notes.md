@@ -424,6 +424,28 @@ three test extensions; no API change.
   `cpu_keys` in `ExactCase` and one CAMBI case that gives only the CPU
   extractor `full_ref=true:src_width=1280:src_height=960`; keep the fields
   and the case when the files are merged or regenerated.
+## Metal CAMBI names and heatmaps (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05, 2026-10-05)
+
+`fix/metal-cambi-feature-name-order`. CAMBI CPU heatmap writers, the Metal twin,
+a contract test and `test_cambi`.
+
+- `core/src/feature/cambi.c` is an upstream-mirror file. `open_heatmaps()`
+  takes `(heatmaps_path, enc_width, enc_height, heatmaps_files)` instead of
+  `CambiState *`, `close_heatmap_files()` replaces the close loop of
+  `close_cambi()` (which now returns `-EIO` when a close fails), and `init()`,
+  `cambi_score()` and `close_cambi()` call the trampolines
+  `vmaf_cambi_open_heatmaps()`, `vmaf_cambi_dump_c_values()` and
+  `vmaf_cambi_close_heatmaps()` at the bottom of the file. An upstream change to
+  `open_heatmaps()`, `dump_c_values()` or the close loop is ported into these
+  state-free forms; the Metal twin writes its heatmaps through them.
+  `core/test/test_cambi_heatmap_writers.c` and the cambi.c `REFERENCE_LINES`
+  of `core/test/test_metal_twin_option_tables_contract.py` fail on a sync that
+  loses them. The file spells the null pointer `NULL` under the ADR-1138
+  `NOLINTBEGIN(modernize-use-nullptr)` bracket (the same hunks as #2111).
+- `core/src/feature/metal/integer_cambi_metal.mm`: `init_fex_metal()` builds the
+  feature-name dictionary before `cambi_metal_resolve_dimensions()`. Never move
+  it after any write to an option slot; the contract's `_name_order_failures`
+  checks every Metal twin.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

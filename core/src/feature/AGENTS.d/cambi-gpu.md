@@ -64,6 +64,9 @@ invariant: CAMBI GPU twins mirror host-side semantics and hybrid host/GPU dispat
     `get_pixels_in_window`, `cambi_preprocessing`,
     `increment_range` / `decrement_range` /
     `get_derivative_data_for_row` callbacks) and the
+    heatmap writers (`open_heatmaps`, `dump_c_values`, the close loop:
+    `vmaf_cambi_open_heatmaps` / `_dump_c_values` / `_close_heatmaps`,
+    called by the CPU and by `integer_cambi_metal`), and the
     `reciprocal_lut` table (`vmaf_cambi_reciprocal_lut`, ADR-1357 —
     device twins upload it verbatim; 42 entries are 1 ulp off
     `1.0f / i`, so never recompute it) to GPU twins via

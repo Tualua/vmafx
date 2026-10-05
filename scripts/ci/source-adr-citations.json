@@ -6306,6 +6306,7 @@
         "core/test/test_c_cxx_enum_definition_contract.py": 1,
         "core/test/test_cambi_dispatch_invariance.c": 1,
         "core/test/test_cambi_full_ref_wide_source.c": 1,
+        "core/test/test_cambi_heatmap_writers.c": 1,
         "core/test/test_cambi_simd.c": 1,
         "core/test/test_cambi_spatial_mask_simd.c": 1,
         "core/test/test_cambi_stage_simd.c": 1,
@@ -6955,7 +6956,6 @@
         "core/test/test_gpu_option_alias_contract.py": 1,
         "core/test/test_hip_twin_option_parity.c": 2,
         "core/test/test_metal_twin_option_parity.c": 2,
-        "core/test/test_metal_twin_option_tables_contract.py": 1,
         "core/test/test_sycl_twin_option_parity.c": 2
       },
       "target": "1183-model-options-gate-gpu-twin-selection.md"
@@ -7243,8 +7243,7 @@
         "core/src/feature/hip/integer_cambi_hip.c": 1,
         "core/src/feature/metal/integer_cambi.metal": 1,
         "core/src/feature/metal/integer_cambi_metal.mm": 1,
-        "core/test/test_hip_cambi_parity.c": 3,
-        "core/test/test_metal_twin_option_tables_contract.py": 1
+        "core/test/test_hip_cambi_parity.c": 3
       },
       "target": "1219-gpu-cambi-tvi-shared-bisection.md"
     },

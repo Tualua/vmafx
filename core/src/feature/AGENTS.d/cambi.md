@@ -3,6 +3,7 @@ paths:
   - core/src/feature/cambi.c
   - core/src/feature/cambi.h
   - core/test/test_cambi_full_ref_wide_source.c
+  - core/test/test_cambi_heatmap_writers.c
 invariant: CAMBI bounded searches, c-values window boundaries, row-by-row 10-bit copies, and UTF-8 heatmap paths.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -57,6 +58,20 @@ invariant: CAMBI bounded searches, c-values window boundaries, row-by-row 10-bit
   fails on it, and the CAMBI case with `cpu_opts` in
   `core/test/test_{cuda,sycl,hip}_exact_twins.c` holds the twin's `cambi`
   equal to the CPU's under those options.
+- **CAMBI heatmap writers are shared with the Metal twin**
+  (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05): `open_heatmaps()` takes the
+  path, encode size and file array instead of `CambiState`, and
+  `close_heatmap_files()` is the one close loop. `cambi_internal.h` exports
+  them with `dump_c_values()` as `vmaf_cambi_open_heatmaps()`,
+  `vmaf_cambi_dump_c_values()` and `vmaf_cambi_close_heatmaps()`; `init()`,
+  `cambi_score()` and `close_cambi()` call those trampolines, and
+  `integer_cambi_metal.mm` calls the same three, so its `.gray` files are the
+  CPU's byte for byte. An upstream sync that touches `open_heatmaps()`,
+  `dump_c_values()` or the close loop keeps the state-free signatures and the
+  file naming, scaling and frame offsets; `core/test/test_cambi_heatmap_writers.c`
+  and the `REFERENCE_LINES` of
+  `test_metal_twin_option_tables_contract.py` fail otherwise. `close_cambi()`
+  returns `-EIO` when a heatmap file fails to close (its buffered rows are lost).
 - **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
   `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and
   `cambi.c::open_heatmaps` must open every `.gray` file through

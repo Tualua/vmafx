@@ -1152,6 +1152,57 @@
    ]
   },
   {
+   "id": "T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05",
+   "closes_when": "integer_cambi_metal emits its score under the CPU's name and equal to the CPU's: every case of test_metal_integer_cambi_parity passes and the parity gate's cambi cell is OK on every fixture",
+   "cases": [
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_metal_registered"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_gradient_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_textured_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_10bit_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_max_val_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_vis_lum_threshold_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_topk_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_window_size_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_max_log_contrast_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_high_res_speedup_exact"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "cambi"
+    }
+   ]
+  },
+  {
    "id": "T-METAL-FFMPEG-FILTER-BIPLANAR-IMPORT-2026-10-05",
    "closes_when": "test_metal_iosurface_import_parity passes on an Apple GPU (NV12 420v / 420f and P010 x420 IOSurfaces imported through the public API give the CPU's planar psnr at ==), and an FFmpeg libvmaf_metal run on VideoToolbox frames gives the libvmaf filter's pooled scores on the same decoded frames (not measured by the bundle)",
    "cases": [

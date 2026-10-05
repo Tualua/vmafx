@@ -8083,6 +8083,16 @@ test_mkdirp = executable('test_mkdirp',
 )
 test('test_mkdirp', test_mkdirp, suite : ['fast'])
 
+# cambi.c's exported heatmap writers, which the Metal twin calls for
+# `heatmaps_path` (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05).
+test_cambi_heatmap_writers = executable('test_cambi_heatmap_writers',
+    ['test.c', 'test_cambi_heatmap_writers.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, gpu_all_deps],
+)
+test('test_cambi_heatmap_writers', test_cambi_heatmap_writers, suite : ['fast'])
+
 # Research-2045: configured private integer-VIF objects also work in shared builds.
 if is_asm_enabled and host_machine.cpu_family().startswith('x86')
 test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',

@@ -237,6 +237,17 @@ configurations (such as the default model `vmaf_v1.0.16_3d0h`):
   — Speed up CAMBI processing by downsampling post-spatial-mask for resolutions
   >= 1080p (possible values: `1080`, `1440`, `2160`, `0`). Matches CPU `cambi`
   and CUDA twins.
+- `heatmaps_path` (string, unset by default) — the folder the per-scale
+  `.gray` heatmaps are written to. The twin writes them with the CPU's own
+  writer, so the files are those `--backend cpu` writes; see
+  [Generating and Decoding Heatmaps](../../metrics/cambi.md#generating-and-decoding-heatmaps).
+
+The twin reports its score as `Cambi_feature_cambi_score` (`cambi` in the
+output), plus the option suffix the CPU adds, such as `cambi_hrs_1080_cmxv_17_vlt_0.06`
+for the default model. Builds before
+`T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05` was fixed also appended the
+resolved sizes (`cambi_encbd_8_ench_324_encw_576_srch_324_srcw_576`), so the
+default model and the parity gate found no CAMBI score on `--backend metal`.
 
 ## Coordination with NEON
 
@@ -336,7 +347,7 @@ row stays open.
 | `integer_motion_v2_metal` | Same window code; `motion_fps_weight` and `motion_max_val` applied per frame, as the CPU. | `test_metal_motion_v2_exact_contract.py` |
 | `integer_psnr_metal` | Exact 64-bit error sum (the old 32-bit halves lost carries above 2^32); `apsnr` and chroma per pixel format. | `test_metal_integer_psnr_exact_contract.py` |
 | `integer_vif_metal` | The CPU's gain integers (one integer division, the CPU's double operations replayed in 64-bit integers when needed). Each scale's score is the quotient of its two `float` sums in single precision, as the CPU divides (a double quotient put every score up to 3.0e-8 off on an Apple M4 Pro). In a model run, frames below 16 pixels go to the CPU `vif`; a direct request on them fails at init. Borders fold as the CPU's mirror. | `test_metal_integer_vif_gain`, `test_metal_integer_vif_math`, `test_sycl_vif_float_sums_contract.py` |
-| `integer_cambi_metal` | CPU option table except `heatmaps_path`. | `test_metal_twin_option_tables_contract.py` |
+| `integer_cambi_metal` | CPU option table, `heatmaps_path` included (written by `cambi.c`'s own heatmap writers); the score keeps the CPU's feature name. | `test_metal_twin_option_tables_contract.py`, `test_cambi_heatmap_writers` |
 | `float_motion_metal` | Row sums in the CPU's order, `motion3` and the CPU's nine options. | `test_metal_float_motion_math` |
 | `integer_ciede_metal` | `ciede.c`'s arithmetic on fp32 pairs, one float per pixel summed in raster order. | `test_metal_ciede_math` |
 | `float_adm_metal` | The CPU's arithmetic: CSF weights from the CPU's routine (`adm_f1s0`..`adm_f2s3` are now options), exact fp32 quotient, fp64 expressions as exact pairs, rows added in the CPU's order, the CPU's frame-sum floor. Frames below 17x17 are refused at init. `adm_csf_mode` stays default-only, as on the other GPU backends. | `test_metal_float_adm_math` |
@@ -359,9 +370,7 @@ device run still closes a twin's row. It is not built on Windows.
 
 Options that a twin accepts are now its CPU extractor's, with the same names,
 defaults and ranges, so a feature string that works with `--backend cpu` works
-with `--backend metal`. Three options are the exceptions.
-`integer_cambi_metal` does not declare `heatmaps_path`, because the CPU's
-heatmap writer is internal to `cambi.c`. `float_adm_metal` runs
+with `--backend metal`. Two options are the exceptions. `float_adm_metal` runs
 `adm_csf_mode=0` only and marks the option default-only, so a model that asks
 for another mode keeps the CPU extractor. `float_ssim_metal` runs at
 decimation scale 1 only: a model run whose automatic scale is larger keeps the
