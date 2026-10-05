@@ -28,6 +28,10 @@
  * float_adm, float_motion, float_ms_ssim, float_vif, float_moment,
  * float_psnr, psnr_hvs, ssimulacra2) have `==` parity tests of their own.
  *
+ * One CAMBI case gives the CPU extractor full_ref with a source twice the
+ * picture, options the twin does not declare: the distorted score must stay
+ * the twin's (T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05).
+ *
  * Skip behaviour: without a SYCL device a case reports the skip and the run
  * exits 77.
  */
@@ -57,6 +61,8 @@
 #define FIXTURE_H 480u
 
 #define MAX_KEYS 8u
+/* Key and value strings of a case's CPU-only options, NULL-terminated. */
+#define MAX_CPU_OPTS 7u
 /* Frames per run: motion needs three for its first blended score, and a
  * fourth shows a steady state. */
 #define NUM_FRAMES 4u
@@ -69,6 +75,11 @@ typedef struct ExactCase {
     const char *opt_val;
     bool nonzero;               /* the first key must not be 0 on every frame */
     const char *keys[MAX_KEYS]; /* outputs compared, NULL-terminated */
+    /* Options only the CPU extractor gets (key, value, ...): a configuration
+     * the twin does not declare, which must leave the CPU's scores of `keys`
+     * unchanged. The CPU then stores them under `cpu_keys`. */
+    const char *cpu_opts[MAX_CPU_OPTS];
+    const char *cpu_keys[MAX_KEYS];
 } ExactCase;
 
 static const ExactCase cases[] = {
@@ -110,6 +121,15 @@ static const ExactCase cases[] = {
      true,
      {"float_ssim", "float_ssim_l", "float_ssim_c", "float_ssim_s"}},
     {"cambi_sycl", "cambi", NULL, NULL, true, {"Cambi_feature_cambi_score"}},
+    /* full_ref with a source twice the picture: `cambi` stays the distorted
+     * picture's score at the encode size, the score the twin computes
+     * (T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05). */
+    {.sycl = "cambi_sycl",
+     .cpu = "cambi",
+     .nonzero = true,
+     .keys = {"Cambi_feature_cambi_score"},
+     .cpu_opts = {"full_ref", "true", "src_width", "1280", "src_height", "960", NULL},
+     .cpu_keys = {"cambi_srch_960_srcw_1280"}},
 };
 #define N_CASES (sizeof(cases) / sizeof(cases[0]))
 
@@ -197,6 +217,22 @@ static int feed_frame(VmafContext *vmaf, unsigned bpc, unsigned frame)
     return vmaf_read_pictures(vmaf, &ref, &dist, frame);
 }
 
+/* The case's CPU-only options, added to `opts`. */
+static int add_cpu_options(VmafFeatureDictionary **opts, const ExactCase *c)
+{
+    int err = 0;
+    for (size_t i = 0; i + 1u < MAX_CPU_OPTS && c->cpu_opts[i] != NULL && !err; i += 2u) {
+        err = vmaf_feature_dictionary_set(opts, c->cpu_opts[i], c->cpu_opts[i + 1u]);
+    }
+    return err;
+}
+
+/* The keys the case's outputs are stored under on the device or the CPU. */
+static const char *const *case_keys(const ExactCase *c, bool on_device)
+{
+    return (!on_device && c->cpu_keys[0] != NULL) ? c->cpu_keys : c->keys;
+}
+
 /* A context with the case's CPU extractor, or its twin on `sycl_state`. */
 static int case_context(VmafContext **vmaf, const ExactCase *c, VmafSyclState *sycl_state)
 {
@@ -208,6 +244,9 @@ static int case_context(VmafContext **vmaf, const ExactCase *c, VmafSyclState *s
     }
     if (!err && c->opt_key) {
         err = vmaf_feature_dictionary_set(&opts, c->opt_key, c->opt_val);
+    }
+    if (!err && !sycl_state) {
+        err = add_cpu_options(&opts, c);
     }
     if (!err) {
         /* vmaf_use_feature() takes the dictionary over, on failure too. */
@@ -221,6 +260,7 @@ static int case_context(VmafContext **vmaf, const ExactCase *c, VmafSyclState *s
 static int case_scores(const ExactCase *c, VmafSyclState *sycl_state, unsigned bpc, double *out)
 {
     const size_t count = key_count(c);
+    const char *const *keys = case_keys(c, sycl_state != NULL);
     VmafContext *vmaf = NULL;
     int err = case_context(&vmaf, c, sycl_state);
     for (unsigned frame = 0; frame < NUM_FRAMES && !err; frame++) {
@@ -230,10 +270,10 @@ static int case_scores(const ExactCase *c, VmafSyclState *sycl_state, unsigned b
         err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     }
     for (size_t i = 0; i < count * NUM_FRAMES && !err; i++) {
-        err = vmaf_feature_score_at_index(vmaf, c->keys[i % count], &out[i], (unsigned)(i / count));
+        err = vmaf_feature_score_at_index(vmaf, keys[i % count], &out[i], (unsigned)(i / count));
         if (err) {
             (void)fprintf(stderr, "\n%s: no score for %s at frame %u\n",
-                          sycl_state ? c->sycl : c->cpu, c->keys[i % count], (unsigned)(i / count));
+                          sycl_state ? c->sycl : c->cpu, keys[i % count], (unsigned)(i / count));
         }
     }
     const int closed = vmaf ? vmaf_close(vmaf) : 0;

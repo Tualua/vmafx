@@ -42,18 +42,18 @@
 #include "mkdirp.h"
 #include "picture.h"
 
-#ifdef _MSC_VER
-#define CAMBI_NULL_POINTER NULL
-#else
-#define CAMBI_NULL_POINTER nullptr
-#endif
-
 #if ARCH_X86
 #include "x86/cambi_avx2.h"
 #include "x86/cambi_avx512.h"
 #elif ARCH_AARCH64
 #include "arm64/cambi_neon.h"
 #endif
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065); upstream
+ * Netflix/vmaf spells the null pointer `NULL` here too. ADR-1138. */
 
 /* Ratio of pixels for computation, must be 0 < topk <= 1.0 */
 #define DEFAULT_CAMBI_TOPK_POOLING (0.6)
@@ -230,7 +230,7 @@ static const VmafOption options[] = {
     CAMBI_OPTION("topk",
                  "Ratio of pixels for the spatial pooling computation, must be 0 < topk <= 1.0",
                  topk, VMAF_OPT_TYPE_DOUBLE, d, DEFAULT_CAMBI_TOPK_POOLING, 0.0001, 1.0,
-                 VMAF_OPT_FLAG_FEATURE_PARAM, CAMBI_NULL_POINTER),
+                 VMAF_OPT_FLAG_FEATURE_PARAM, NULL),
     CAMBI_OPTION(
         "cambi_topk",
         "Ratio of pixels for the spatial pooling computation, must be 0 < cambi_topk <= 1.0",
@@ -246,16 +246,15 @@ static const VmafOption options[] = {
     CAMBI_OPTION("max_log_contrast", max_log_contrast_help, max_log_contrast_opt, VMAF_OPT_TYPE_INT,
                  i, DEFAULT_CAMBI_MAX_LOG_CONTRAST, 0, 5, VMAF_OPT_FLAG_FEATURE_PARAM, "mlc"),
     CAMBI_OPTION("heatmaps_path", "Path where heatmaps will be dumped.", heatmaps_path,
-                 VMAF_OPT_TYPE_STRING, s, CAMBI_NULL_POINTER, 0, 0, 0, CAMBI_NULL_POINTER),
+                 VMAF_OPT_TYPE_STRING, s, NULL, 0, 0, 0, NULL),
     CAMBI_OPTION(
         "full_ref",
         "If true, CAMBI will be run in full-reference mode and will be computed on both the reference and distorted inputs",
-        full_ref, VMAF_OPT_TYPE_BOOL, b, DEFAULT_CAMBI_FULL_REF_FLAG, 0, 0, 0, CAMBI_NULL_POINTER),
+        full_ref, VMAF_OPT_TYPE_BOOL, b, DEFAULT_CAMBI_FULL_REF_FLAG, 0, 0, 0, NULL),
     CAMBI_OPTION(
         "eotf",
         "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'",
-        eotf, VMAF_OPT_TYPE_STRING, s, DEFAULT_CAMBI_EOTF, 0, 0, VMAF_OPT_FLAG_FEATURE_PARAM,
-        CAMBI_NULL_POINTER),
+        eotf, VMAF_OPT_TYPE_STRING, s, DEFAULT_CAMBI_EOTF, 0, 0, VMAF_OPT_FLAG_FEATURE_PARAM, NULL),
     CAMBI_OPTION(
         "cambi_eotf",
         "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'. If both eotf and cambi_eotf are set, cambi_eotf takes precedence.",
@@ -266,7 +265,7 @@ static const VmafOption options[] = {
         "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p. Min speed-up resolution possible values: [1080, 1440, 2160, 0]. Default: 0 (not applied)Note some loss of accuracy is expected with this speedup.",
         cambi_high_res_speedup, VMAF_OPT_TYPE_INT, i, DEFAULT_CAMBI_HIGH_RES_SPEEDUP, 0,
         CAMBI_4K_HEIGHT, VMAF_OPT_FLAG_FEATURE_PARAM, "hrs"),
-    {.name = CAMBI_NULL_POINTER}};
+    {.name = NULL}};
 
 #undef CAMBI_OPTION
 
@@ -389,16 +388,16 @@ static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_con
     *diffs_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
     if (!(*diffs_weights)) {
         aligned_free(*diffs_to_consider);
-        *diffs_to_consider = CAMBI_NULL_POINTER;
+        *diffs_to_consider = NULL;
         return -ENOMEM;
     }
 
     *all_diffs = aligned_malloc(ALIGN_CEIL(sizeof(int)) * (2 * num_diffs + 1), 32);
     if (!(*all_diffs)) {
         aligned_free(*diffs_to_consider);
-        *diffs_to_consider = CAMBI_NULL_POINTER;
+        *diffs_to_consider = NULL;
         aligned_free(*diffs_weights);
-        *diffs_weights = CAMBI_NULL_POINTER;
+        *diffs_weights = NULL;
         return -ENOMEM;
     }
 
@@ -567,8 +566,7 @@ static int setup_contrast_and_luminance(CambiState *s, int num_diffs)
 
     err = vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
                                       s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                      s->buffers.tvi_for_diff, &s->vlt_luma, CAMBI_NULL_POINTER,
-                                      CAMBI_NULL_POINTER);
+                                      s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
     if (err)
         return err;
 
@@ -686,7 +684,7 @@ static int open_heatmaps(CambiState *s)
 static void setup_callbacks(CambiState *s)
 {
     VmafCambiDerivativeCalculator default_derivative;
-    vmaf_cambi_default_callbacks(CAMBI_NULL_POINTER, CAMBI_NULL_POINTER, &default_derivative);
+    vmaf_cambi_default_callbacks(NULL, NULL, &default_derivative);
 
     s->derivative_callback = (VmafDerivativeCalculator)default_derivative;
     s->calc_c_values_callback = calculate_c_values_default;
@@ -864,8 +862,16 @@ static void decimate_same_size_16b(const uint16_t *data, uint16_t *out_data, ptr
                                    unsigned bpc, int shift_factor, int rounding_offset)
 {
     if (bpc == 10) {
-        // memcpy is faster in case the original bitdepth is already 10
-        memcpy(out_data, data, (size_t)stride * out_h * sizeof(uint16_t));
+        /* One row at a time, each with its own stride: under full_ref the
+         * working picture is allocated MAX(src, enc) wide, so its stride can
+         * exceed the input's, and a caller's picture may be wider than ours.
+         * A single copy of `stride * out_h` samples put every row after the
+         * first at the wrong offset
+         * (T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05). */
+        for (unsigned i = 0; i < out_h; i++) {
+            memcpy(out_data + ((ptrdiff_t)i * out_stride), data + ((ptrdiff_t)i * stride),
+                   (size_t)out_w * sizeof(uint16_t));
+        }
     } else {
         for (unsigned i = 0; i < out_h; i++) {
             for (unsigned j = 0; j < out_w; j++) {
@@ -1715,7 +1721,7 @@ static int close_cambi(VmafFeatureExtractor *fex)
     return err;
 }
 
-static const char *provided_features[] = {"Cambi_feature_cambi_score", CAMBI_NULL_POINTER};
+static const char *provided_features[] = {"Cambi_feature_cambi_score", NULL};
 
 extern VmafFeatureExtractor vmaf_fex_cambi;
 VmafFeatureExtractor vmaf_fex_cambi = {
@@ -2111,4 +2117,4 @@ int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_h
     return err;
 }
 
-#undef CAMBI_NULL_POINTER
+/* NOLINTEND(modernize-use-nullptr) */

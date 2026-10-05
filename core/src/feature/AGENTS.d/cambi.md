@@ -2,13 +2,18 @@
 paths:
   - core/src/feature/cambi.c
   - core/src/feature/cambi.h
-invariant: CAMBI bounded searches, c-values window boundaries, and UTF-8 heatmap paths.
+  - core/test/test_cambi_full_ref_wide_source.c
+invariant: CAMBI bounded searches, c-values window boundaries, row-by-row 10-bit copies, and UTF-8 heatmap paths.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # CAMBI Searches, Window Boundaries, and Heatmap Paths
 
 - **CAMBI bounded searches and live private helpers** (ADR-0205 / ADR-1146):
-  `cambi.c` is strict-clean: it contains no `NOLINT` or Cppcheck suppression.
+  `cambi.c` is strict-clean: its one suppression is the file-scoped
+  `NOLINTBEGIN(modernize-use-nullptr)` bracket that ADR-1138 gives every C
+  translation unit (it spells the null pointer `NULL`, as upstream does; a
+  `nullptr` on any non-comment line fails `scripts/dev/preflight.sh --stage
+  msvcism`), and it has no other `NOLINT` and no Cppcheck suppression.
   Preserve the 16-step TVI bisection, the `UINT16_MAX`-bounded VLT scan, and
   the `n`/partition-span bounds on quick-select without changing comparison,
   pivot, swap, or accumulation order. The shared extractor callback ABI stays
@@ -39,6 +44,19 @@ invariant: CAMBI bounded searches, c-values window boundaries, and UTF-8 heatmap
   compute the c-values on the device and do not call it; `cambi_hip` clips
   each window to the frame itself (`cambi_hd_cvals_begin()`,
   `hip/integer_cambi/cambi_hip_device.h`) and must keep matching these bounds.
+- **CAMBI copies a same-size 10-bit plane row by row**
+  (`T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05`):
+  `decimate_same_size_16b()` in `cambi.c` copies one row at a time with the
+  input's stride and the working picture's stride. Under `full_ref` the
+  working pictures are allocated `MAX(src, enc)` wide, so with a source larger
+  than the picture their stride exceeds the input's; upstream's single
+  `memcpy` of `stride * height` samples shifts every row there, and `cambi`
+  must not depend on `full_ref` or the source size. Do not bring the single
+  copy back, here or in a twin that converts on the host (`cambi_metal` calls
+  `vmaf_cambi_preprocessing()`). `core/test/test_cambi_full_ref_wide_source.c`
+  fails on it, and the CAMBI case with `cpu_opts` in
+  `core/test/test_{cuda,sycl,hip}_exact_twins.c` holds the twin's `cambi`
+  equal to the CPU's under those options.
 - **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
   `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and
   `cambi.c::open_heatmaps` must open every `.gray` file through

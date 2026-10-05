@@ -242,6 +242,30 @@ fork then had no VIF runtime helpers; it has had them since ADR-0416. Test-only.
   header in the same PR, as it changes the CUDA, HIP and SYCL kernels.
   `test_metal_psnr_hvs_math` and `test_psnr_hvs_twin_exact_sum_contract.py`
   (now with the Metal twin) guard it without a device.
+## CAMBI copies a same-size 10-bit plane row by row (2026-10-05)
+
+`fix/cambi-fullref-wide-source-rows`. One function of `cambi.c`, one new test,
+three test extensions; no API change.
+
+- `decimate_same_size_16b()` in `core/src/feature/cambi.c` copies a 10-bit
+  plane one row at a time with the input's stride and the working picture's
+  stride. Upstream Netflix/vmaf still copies `stride * height` samples in one
+  `memcpy` (`libvmaf/src/feature/cambi.c`, inside
+  `decimate_generic_uint16_and_convert_to_10b()`), which shifts every row
+  whenever the strides differ: under `full_ref` with a source larger than the
+  picture, and for a caller's picture with a wider stride. Reported upstream
+  as [Netflix/vmaf#1670](https://github.com/Netflix/vmaf/issues/1670). An upstream sync
+  that touches that function keeps the fork's row loop and never takes
+  upstream's `memcpy` back. Drop the fork's version only when upstream merges
+  an equivalent row-by-row copy that honours both strides, and keep
+  `core/test/test_cambi_full_ref_wide_source.c` either way.
+- `core/test/test_cambi_full_ref_wide_source.c` fails on the single copy
+  (3006 misplaced samples in each stride direction, and 10-bit `cambi`
+  2.5075 against 5.1444 with `src_width=640:src_height=480`).
+- `core/test/test_{cuda,sycl,hip}_exact_twins.c` gained `cpu_opts` /
+  `cpu_keys` in `ExactCase` and one CAMBI case that gives only the CPU
+  extractor `full_ref=true:src_width=1280:src_height=960`; keep the fields
+  and the case when the files are merged or regenerated.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

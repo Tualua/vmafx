@@ -30,7 +30,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_extractor.cpp`, `feature_collector.cpp` | [ansnr-removal](AGENTS.d/ansnr-removal.md) | ANSNR and float_ansnr extractors remain removed per ADR-0865. |
 | `brisque.c`, `brisque_math.h` | [brisque](AGENTS.d/brisque.md) | BRISQUE MATLAB pipeline parity and numerical stability assertions. |
 | `cambi.c`, `cuda/integer_cambi_cuda.c`, `hip/integer_cambi_hip.c` | [cambi-gpu](AGENTS.d/cambi-gpu.md) | CAMBI GPU twins mirror host-side semantics and hybrid host/GPU dispatch contracts. |
-| `cambi.c`, `cambi.h` | [cambi](AGENTS.d/cambi.md) | CAMBI bounded searches, c-values window boundaries, and UTF-8 heatmap paths. |
+| `cambi.c`, `cambi.h`, `/core/test/test_cambi_full_ref_wide_source.c` | [cambi](AGENTS.d/cambi.md) | CAMBI bounded searches, c-values window boundaries, row-by-row 10-bit copies, and UTF-8 heatmap paths. |
 | `ciede.c`, `/core/test/test_ciede.c` | [ciede](AGENTS.d/ciede.md) | CIEDE chroma-upsample subsample flags diverge from upstream to ensure correctness. |
 | `integer_adm.c`, `integer_vif.c`, `cambi.c` | [codeql-renames](AGENTS.d/codeql-renames.md) | CodeQL declaration-hides-variable renames preserve bit-exact behavior across extractors. |
 | `compat_builtin.h` | [compat-builtin](AGENTS.d/compat-builtin.md) | MSVC builtin clz shim must use _BitScanReverse, never __lzcnt. |

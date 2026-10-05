@@ -156,6 +156,18 @@ The run emits three scores: `cambi` (the distorted score), `cambi_source` (the
 reference score) and `cambi_full_reference`
 (`MAX(0, distorted_score - reference_score)`).
 
+`cambi` is the distorted picture's score at the encoding resolution, the same
+value a run without `full_ref` reports: `src_width` and `src_height` only set
+the resolution the reference is scored at, so they change `cambi_source` and
+`cambi_full_reference`, never `cambi`. For example,
+`--feature cambi=full_ref=true:src_width=960:src_height=540` on a 480x270
+distorted input upscales the reference to 960x540 for `cambi_source` and
+scores the distorted input at 480x270. Before the fix of
+`T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05`, 10-bit input with a source
+larger than the picture scored a distorted picture with shifted rows, so its
+`cambi` and `cambi_full_reference` from such runs are wrong; 8-, 9-, 12- and
+16-bit input was not affected.
+
 ## Inputs
 
 ### Bit depths

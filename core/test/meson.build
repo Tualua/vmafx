@@ -3551,6 +3551,19 @@ test_cambi_dispatch_invariance = executable('test_cambi_dispatch_invariance',
 test('test_cambi_dispatch_invariance', test_cambi_dispatch_invariance,
     suite : ['fast', 'simd'])
 
+# CAMBI full_ref with a source larger than the picture
+# (T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05): the 10-bit same-size
+# conversion copies row by row with both strides, and the distorted `cambi`
+# score does not depend on full_ref or the source size at 8, 10 and 12 bits.
+test_cambi_full_ref_wide_source = executable('test_cambi_full_ref_wide_source',
+    ['test.c', 'test_cambi_full_ref_wide_source.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib, gpu_all_deps],
+)
+test('test_cambi_full_ref_wide_source', test_cambi_full_ref_wide_source,
+    suite : ['fast'])
+
 # psnr_hvs whole-path dispatch invariance (T-PSNR-HVS-NEON-NOT-SCALAR-BITS-
 # 2026-10-02): the extractor, driven through the public API with the host's
 # instruction set and with every flag masked, returns the same score bits on
