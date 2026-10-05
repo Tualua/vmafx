@@ -42,3 +42,12 @@ invariant: Model options gate GPU twin selection; every option must be parsed or
   plane under 11x11 or a scale above 128 via
   `float_ssim_geometry_supported()`. CUDA, HIP and Metal keep the scale-1
   rule until they port the same kernel.
+- **The v1 models run wholly on CUDA, SYCL and HIP (issue #2144)**:
+  `core/test/test_gpu_v1_models_no_fallback.py` (`test_<backend>_v1_models_no_fallback`)
+  fails when any `vmaf_v1.0.16*` model or the default model lists a CPU
+  extractor in `feature_backends` on a device backend, or differs from the CPU
+  run at `--precision max`. Marking an option a v1 model sets
+  `VMAF_OPT_FLAG_DEFAULT_ONLY`, or dropping it from a twin's table, fails it.
+  Its known-fallback probe relies on `float_adm`'s `adm_csf_mode` being
+  default-only on every twin; a change that implements that mode moves the
+  probe (`KNOWN_FALLBACK_FEATURE`) to another default-only option in the same PR.

@@ -214,6 +214,43 @@ test('test_cuda_parity_gate_default_run',
     timeout : 120,
 )
 
+# Issue #2144: every built-in vmaf_v1.0.16* model and the default model score
+# the Netflix 576x324 pair (8, 10 and 12 bits 4:2:0, 10 bits 4:2:2) and 16
+# frames of the BBB 3840x2160 pair with every extractor on the device
+# (`feature_backends` lists no CPU extractor) and with the CPU run's bits at
+# --precision max. One test per backend this build enables; each skips (77)
+# without its device or the fixtures. The self-test runs the comparison on
+# synthetic receipts. Device-free.
+test('test_gpu_v1_models_no_fallback_selftest',
+    import('python').find_installation(),
+    args : [files('test_gpu_v1_models_no_fallback.py'), '--self-test'],
+    suite : ['fast'],
+    timeout : 30,
+)
+if get_option('enable_tools')
+    v1_models_backends = []
+    if get_option('enable_cuda')
+        v1_models_backends += ['cuda']
+    endif
+    if get_option('enable_sycl')
+        v1_models_backends += ['sycl']
+    endif
+    if get_option('enable_hip') and get_option('enable_hipcc')
+        v1_models_backends += ['hip']
+    endif
+    foreach v1_backend : v1_models_backends
+        test('test_' + v1_backend + '_v1_models_no_fallback',
+            import('python').find_installation(),
+            args : [files('test_gpu_v1_models_no_fallback.py'), '--backend', v1_backend],
+            env : ['VMAF_CLI=' + vmaf.full_path()],
+            depends : [vmaf],
+            suite : ['slow', 'gpu', v1_backend],
+            is_parallel : false,
+            timeout : 900,
+        )
+    endforeach
+endif
+
 # The default run above is registered for every build: on a libvmaf without
 # CUDA it must skip, not report the CLI's refusal of `--backend cuda` as a
 # parity failure. Device-free.

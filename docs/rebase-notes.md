@@ -7,6 +7,17 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Whole-model no-fallback test for the v1 models (2026-10-05)
+
+`test/rc3-v1-models-no-fallback` (issue #2144). Fork-only files:
+`core/test/test_gpu_v1_models_no_fallback.py`, its block in
+`core/test/meson.build`, a note in `core/src/feature/AGENTS.d/model-options.md`.
+
+- An upstream sync that adds an option to a v1 model's `feature_opts_dicts`
+  must add it to the CUDA, SYCL and HIP twin tables in the same PR, or
+  `test_<backend>_v1_models_no_fallback` fails with the extractor named.
+- The test's known fallback is `float_adm=adm_csf_mode=1`. It moves to another
+  default-only option when a twin implements `adm_csf_mode`.
 ## Port of Netflix/vmaf golden-assertion updates `5c7770080`, `005988ead`, `4679db83c`, `d93495f5c`, `e3827e4dd` (2026-10-05)
 
 `port/upstream-golden-updates-2026-05`, [ADR-1828](adr/1828-port-netflix-golden-updates.md).
