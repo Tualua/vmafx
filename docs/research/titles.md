@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (788), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (789), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2115,6 +2115,10 @@ Every research digest, one heading each (788), so the site search finds a digest
 ## Research-1437: Which HIP twins return the CPU extractor's bits — a sweep of every gate feature on a gfx1036
 
 [1437-hip-twin-exactness-sweep](1437-hip-twin-exactness-sweep.md)
+
+## Research-1439: `quality_runner_test.py` vs Netflix upstream
+
+[1439-quality-runner-golden-upstream-sync](1439-quality-runner-golden-upstream-sync.md)
 
 ## Research-1442: What changes when float ADM divides instead of using the processor's reciprocal estimate
 
