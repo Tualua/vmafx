@@ -605,6 +605,9 @@ sidecar `<stem>.json`. If the sidecar declares `quant_mode != "fp32"` (such as
 `"dynamic"`, `"static"` or `"qat"`), the runtime loads the quantised sibling
 `<stem>.int8.onnx` when it is present and valid.
 
+When `--tiny-model` names an explicit `.int8.onnx` path directly, the runtime loads
+that artifact directly without attempting to append a redundant `.int8` suffix.
+
 If the int8 artifact is missing, fails the op allowlist, or cannot be opened by
 the installed ONNX Runtime, the loader falls back to the fp32 baseline
 `<stem>.onnx` rather than failing the run (ADR-1032). The fallback is announced

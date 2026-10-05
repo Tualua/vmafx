@@ -202,7 +202,7 @@ same redirect logic to choose the file:
 | Step | Check | On failure |
 | --- | --- | --- |
 | 1 | Validate the caller-supplied fp32 path: size cap and op allowlist. | Error. |
-| 2 | Load the sidecar. `quant_mode: "fp32"` means the fp32 file is the model. | Resolution stops here on success. |
+| 2 | Load the sidecar. If the caller path already ends in `.int8.onnx`, or `quant_mode: "fp32"`, the given file is the model. | Resolution stops here on success. |
 | 3 | Strip a trailing `.onnx`, append `.int8.onnx`, run the same size and allowlist validation on that sibling. | A path overflowing the 4096-byte buffer returns `-ENAMETOOLONG`. |
 | 4 | If the int8 file validates, load it instead of the fp32 file. | Go to step 5. |
 | 5 | The int8 file is missing, over the size cap, or has a non-allowlisted op. | Log a `VMAF_LOG_LEVEL_DEBUG` line and load the fp32 baseline. The session still reports the sidecar's `quant_mode`; only the weights are fp32. |

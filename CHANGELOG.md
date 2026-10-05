@@ -3570,6 +3570,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   of [ADR-1317](docs/adr/1317-golden-gate-build-isolation.md).
 
 
+- **Preserve explicit int8 paths in tiny-model DNN session loading.** When
+  `vmaf_dnn_session_open()` was called with an explicit `.int8.onnx` path,
+  `resolve_load_path()` lacked the `kInt8Suffix` early return present in
+  `dnn_attach_api.c`, causing it to append a redundant `.int8` suffix and derive
+  `<name>.int8.int8.onnx` before falling back to the fp32 path. The resolver now
+  checks `kInt8Suffix` upfront and preserves explicit int8 paths directly.
+
+
 - Restored the section links that older pages and ADRs use into the CLI,
   `vmaf_bench`, environment-variable and Getting started pages after their
   rewrite (#1934, #1938): each former section name is a short heading that

@@ -35,6 +35,11 @@ in double before narrowing it, as the CPU's `adm_decouple_band_s123()` does; do 
 (`core/src/feature/psnr_score.h`) and adds through `vmaf_psnr_clip_sse_add()`, because the clip
 sum wraps past 2^64 on long 12- and 16-bit clips. An upstream sync that touches `psnr()` /
 `psnr_hbd()` or `flush()` keeps the fork's form. See `core/src/feature/AGENTS.d/psnr.md`.
+## Preserve explicit `.int8.onnx` paths in DNN session open (2026-10-05)
+
+Fork-only: `core/src/dnn/dnn_api.c` (`resolve_load_path`) gains the `kInt8Suffix` early return
+matching `core/src/dnn/dnn_attach_api.c:75`. On an upstream sync that touches this file, preserve
+the `kInt8Suffix` check to avoid deriving `<name>.int8.int8.onnx`.
 
 ## MCP tool contract shared by both servers (2026-10-05)
 
