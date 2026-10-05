@@ -32,7 +32,7 @@ fast = ["optuna>=5.0.0"]
 report = ["matplotlib>=3.10.9"]
 # ONNX inference: the fast-path proxy, the predictor and the saliency
 # models (vmaftune.proxy / predictor / saliency).
-onnx = ["onnxruntime>=1.23"]
+onnx = ["onnxruntime>=1.30.0"]
 # Predictor training (vmaftune.predictor_train). Heavy, so not in dev;
 # tests/test_predictor_train.py skips without it and says so.
 train = ["torch>=2.14.1"]
