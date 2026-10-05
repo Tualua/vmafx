@@ -22,6 +22,20 @@ search:
   the fork's CPU build because SpEED computes Netflix's expressions
   (ADR-1477); a value that stops matching is a defect in `speed.c`, not in the
   test.
+## Tester report keeps the cause of a failure (2026-10-05)
+
+`fix/tester-keep-failure-diagnostics` (`T-TESTER-REPORT-DROPS-FAILURE-CAUSE-2026-10-05`).
+Fork-local tester code only; no upstream file.
+
+- `tools/rc1-tester/src/vmaf_rc1_tester/hw_equiv.py`: `failure_message()` builds a
+  failed run's `FixtureRunError` text (head line unchanged except the signal name,
+  then the diagnostic lines). Keep `run_fixture_meta()` calling it.
+- `hw_suites.py`: `run_one_test()` returns `TIMED_OUT` / `OUTPUT_LIMIT` /
+  `NOT_STARTED` with the partial output instead of `-1, ""`; `run_unit_tests()`
+  records `abnormal_end()` into `reason`, `cases` and `case_messages`. A conflict
+  with a change to either function keeps both.
+- The report schema is unchanged; `tests/test_hw_report.py` and
+  `tests/test_hw_metal.py` pin the text.
 
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 

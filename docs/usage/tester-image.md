@@ -887,6 +887,19 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
 - **Unit tests** and, in the container, the **Netflix golden gate**: passed, failed,
   skipped, names of failures. For the Metal parity tests the report also keeps the
   verdict of every test case (`unit_tests.cases`) and the message of a failing one.
+  A test program that is killed by a signal, times out, or exits with a failure
+  status without reporting a failing case is named in `unit_tests.reason` with what
+  happened and where, for example
+  `test_metal_ssimulacra2_parity: killed by signal 11 (SIGSEGV) during case
+  test_ssimulacra2_rejects_monochrome`. The case it never finished is recorded as
+  `fail` with the message `no verdict printed: ...`. The terminal summary prints the
+  same text after the `unit tests:` line.
+- **Errors of a vmaf run**: when `vmaf` fails on a fixture (dispatch, Metal or GPU
+  equivalence), the fixture's `error` starts with `vmaf exited <status>` (and the
+  signal's name for a crash) and the last line `vmaf` printed, followed by every
+  `problem ...`, `error: ...` and libvmaf `ERROR` / `WARNING` line of its output,
+  each once, at most 20 lines and 4 KB. The last line alone is often a warning
+  printed while closing, after the message that names the failure.
 - **Metal state rows** (macOS bundle, `metal_rows`): for every open Metal row of the
   project's bug ledger, the cases, fixture scores and gate cells of this run that
   close it, and a verdict: `pass` (every one of them passed on this Mac), `fail`, or

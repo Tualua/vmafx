@@ -10,6 +10,8 @@ once with the default dispatch and once with every SIMD flag masked off
 from __future__ import annotations
 
 import json
+import re
+import signal
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -30,6 +32,17 @@ MAX_FRAMES = 100_000
 # A metric the extractor could not finite-evaluate is JSON null; null == null.
 Scores = dict[str, list[float | None]]
 Runner = Callable[..., Any]
+# The stderr lines of a failed vmaf run the error keeps besides its last line: the
+# CLI's `problem ...` / `error: ...` messages and libvmaf's ERROR and WARNING log
+# lines. The last line alone is often a warning printed at close, after the
+# message that names the failure.
+DIAGNOSTIC_LINE = re.compile(
+    r"^(?:problem\b|error:|vmaf: (?:error|warning):)|\blibvmaf (?:ERROR|WARNING)\b"
+)
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+MAX_DIAGNOSTIC_LINES = 20
+MAX_DIAGNOSTIC_BYTES = 4096
+MAX_DIAGNOSTIC_LINE = 300
 
 
 class FixtureRunError(RuntimeError):
@@ -38,6 +51,51 @@ class FixtureRunError(RuntimeError):
     def __init__(self, message: str, returncode: int | None = None) -> None:
         super().__init__(message)
         self.returncode = returncode
+
+
+def signal_name(code: int) -> str | None:
+    """`SIGSEGV` for a process the signal killed (a negative return code), else None."""
+    if code >= 0:
+        return None
+    try:
+        return signal.Signals(-code).name
+    except ValueError:
+        return f"signal {-code}"
+
+
+def diagnostic_lines(stderr: str) -> list[str]:
+    """Every distinct diagnostic line of `stderr` in order, at most
+    MAX_DIAGNOSTIC_LINES lines and MAX_DIAGNOSTIC_BYTES bytes, then a count of
+    the ones left out."""
+    kept: list[str] = []
+    seen: set[str] = set()
+    size = 0
+    left_out = 0
+    for raw in stderr.splitlines():
+        line = ANSI_ESCAPE.sub("", raw).strip()[:MAX_DIAGNOSTIC_LINE]
+        if not DIAGNOSTIC_LINE.search(line) or line in seen:
+            continue
+        seen.add(line)
+        length = len(line.encode("utf-8", "replace")) + 1
+        if len(kept) == MAX_DIAGNOSTIC_LINES or size + length > MAX_DIAGNOSTIC_BYTES:
+            left_out += 1
+            continue
+        kept.append(line)
+        size += length
+    if left_out:
+        kept.append(f"({left_out} more lines not kept)")
+    return kept
+
+
+def failure_message(returncode: int, stderr: str) -> str:
+    """`vmaf exited N[ (SIGNAL)]: <last stderr line>`, then the diagnostic lines."""
+    tail = stderr.strip().splitlines()[-1:] or ["no output"]
+    name = signal_name(returncode)
+    head = f"vmaf exited {returncode}{f' ({name})' if name else ''}: {tail[0]}"
+    lines = diagnostic_lines(stderr)
+    if not lines or lines == [ANSI_ESCAPE.sub("", tail[0]).strip()]:
+        return head
+    return head + "\nstderr problem, error and warning lines:\n" + "\n".join(lines)
 
 
 def build_argv(
@@ -99,8 +157,8 @@ def run_fixture_meta(
             kwargs["environment"] = dict(environment)
         result = runner(build_argv(vmaf, fixture, out_json, cpumask, backend), **kwargs)
         if result.returncode != 0:
-            tail = result.stderr.strip().splitlines()[-1:] or ["no output"]
-            raise FixtureRunError(f"vmaf exited {result.returncode}: {tail[0]}", result.returncode)
+            message = failure_message(result.returncode, result.stderr or "")
+            raise FixtureRunError(message, result.returncode)
         try:
             text = Path(out_json).read_text(encoding="utf-8")
         except OSError as error:

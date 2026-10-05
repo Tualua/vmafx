@@ -12,11 +12,12 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .hw_equiv import Runner
-from .safe_process import run_bounded
+from .hw_equiv import ANSI_ESCAPE, Runner, signal_name
+from .safe_process import CommandOutputLimitExceeded, CommandTimedOut, run_bounded
 
 MESON_SKIP = 77
 MAX_FAILURE_NAMES = 50
@@ -24,6 +25,15 @@ MAX_CASE_MESSAGE = 300
 # One line per case of the Metal parity tests (core/test/metal_twin.h, ADR-1496).
 CASE_LINE = re.compile(r"^@case (test_\w+) (pass|fail|skip)$")
 MESSAGE_LINE = re.compile(r"^@message (test_\w+) (.*)$")
+# What test.h's mu_report() prints when a test function starts: `name: `, then the
+# verdict (`pass` / `fail`) on the same line once it returns.
+STARTED_LINE = re.compile(r"^(test_\w+): (.*)$", re.MULTILINE)
+FINISHED = re.compile(r"\b(?:pass|fail)\s*$")
+# run_one_test()'s codes for a run that ended without an exit status.
+NOT_STARTED = -1000
+TIMED_OUT = -1001
+OUTPUT_LIMIT = -1002
+MAX_REASONS = 20
 GOLDEN_FILES = (
     "python/test/quality_runner_test.py",
     "python/test/feature_extractor_test.py",
@@ -98,6 +108,13 @@ def command_path(test: Mapping[str, Any], root: Path) -> Path:
     return command if command.is_absolute() else root / command
 
 
+def run_limit(test: Mapping[str, Any], timeout_seconds: float) -> float:
+    """Meson's per-test limit with its usual headroom, within the suite's limit."""
+    if "timeout" in test:
+        return min(timeout_seconds, 4.0 * float(test["timeout"]))
+    return timeout_seconds
+
+
 def run_one_test(
     test: Mapping[str, Any],
     root: Path,
@@ -111,9 +128,7 @@ def run_one_test(
     Every test runs in a fresh directory (the image is read-only and some tests
     write next to themselves). With `scratch` it also holds `tools` -> the image's
     build/tools, which is how the Meson shell tests find `./tools/vmaf`."""
-    limit = timeout_seconds
-    if "timeout" in test:  # Meson's per-test limit with its usual headroom
-        limit = min(timeout_seconds, 4.0 * float(test["timeout"]))
+    limit = run_limit(test, timeout_seconds)
     with tempfile.TemporaryDirectory(prefix="vmaf-test-") as work_dir:
         work = Path(work_dir)
         if test.get("scratch"):
@@ -126,9 +141,107 @@ def run_one_test(
         argv = [str(command_path(test, root)), *[str(arg) for arg in test.get("args", [])]]
         try:
             result = runner(argv, **kwargs)
-        except (TimeoutError, RuntimeError, ValueError, OSError):
-            return -1, ""
+        except CommandTimedOut as error:  # the cases it printed before the deadline count
+            return TIMED_OUT, error.stderr + "\n" + error.stdout
+        except CommandOutputLimitExceeded as error:
+            return OUTPUT_LIMIT, error.stderr + "\n" + error.stdout
+        except TimeoutError:
+            return TIMED_OUT, ""
+        except (RuntimeError, ValueError, OSError):
+            return NOT_STARTED, ""
     return result.returncode, (result.stderr or "") + "\n" + (result.stdout or "")
+
+
+def how_it_ended(code: int, limit: float) -> str | None:
+    """How a test executable ended, when that is not a plain pass, skip or fail status."""
+    if code == TIMED_OUT:
+        return f"timed out after {limit:g} s"
+    if code == OUTPUT_LIMIT:
+        return "was stopped at the output limit"
+    if code == NOT_STARTED:
+        return "could not be started"
+    name = signal_name(code)
+    return f"killed by signal {-code} ({name})" if name else None
+
+
+def last_started(output: str) -> tuple[str | None, bool]:
+    """The last test function test.h reported starting, and whether its line
+    carries a verdict (`name: ... pass` / `fail`)."""
+    found = None
+    for found in STARTED_LINE.finditer(ANSI_ESCAPE.sub("", output)):
+        pass
+    if found is None:
+        return None, False
+    return found.group(1), bool(FINISHED.search(found.group(2)))
+
+
+def printed_a_failure(verdicts: Mapping[str, str], output: str) -> bool:
+    """Whether the executable reported a failing case (@case) or test (mu_report)."""
+    if verdicts:
+        return "fail" in verdicts.values()
+    lines = STARTED_LINE.finditer(ANSI_ESCAPE.sub("", output))
+    return any(re.search(r"\bfail\s*$", line.group(2)) for line in lines)
+
+
+def _where(started: str | None, finished: bool, cased: bool) -> str:
+    if started is None:
+        return ""
+    if not finished:
+        return f" during case {started}" if cased else f" during {started}"
+    return f" after its last case ({started})" if cased else f" after {started}"
+
+
+@dataclass(frozen=True)
+class AbnormalEnd:
+    """How a test executable ended (`killed by signal 11 (SIGSEGV)`), the whole
+    line for the suite's `reason`, and the case it started and never finished."""
+
+    how: str
+    text: str
+    unfinished: str | None
+
+
+def abnormal_end(code: int, output: str, limit: float) -> AbnormalEnd | None:
+    """How the executable ended, or None for a pass, a skip or a failure status
+    its own output explains.
+
+    A signal, a timeout or the output limit is always recorded; a failure status
+    only when the executable printed no failing case or test. Report #2118 showed
+    a crash in a Metal parity test's last case as a `fail` with nothing to say."""
+    if code in (0, MESON_SKIP):
+        return None
+    verdicts, _ = parse_case_lines(output)
+    started, finished = last_started(output)
+    cased = bool(verdicts)
+    if cased:
+        finished = started in verdicts
+    how = how_it_ended(code, limit)
+    from_status = how is None
+    if how is None:
+        if printed_a_failure(verdicts, output):
+            return None
+        how = f"exited with status {code}"
+    unfinished = started if started is not None and not finished else None
+    text = how + _where(started, finished, cased)
+    if from_status and unfinished is None:
+        text += " and printed no failing case"
+    return AbnormalEnd(how, text, unfinished)
+
+
+def _record_end(
+    counts: dict[str, Any], name: str, code: int, output: str, limit: float
+) -> str | None:
+    """Mark the case a Metal parity test never finished as failed, with how the
+    executable ended; returns the line for the suite's `reason`."""
+    end = abnormal_end(code, output, limit)
+    if end is None:
+        return None
+    if end.unfinished is not None and parse_case_lines(output)[0]:
+        message = f"no verdict printed: {end.how} during this case"
+        counts.setdefault("cases", {}).setdefault(name, {})[end.unfinished] = "fail"
+        messages = counts.setdefault("case_messages", {}).setdefault(name, {})
+        messages[end.unfinished] = message[:MAX_CASE_MESSAGE]
+    return f"{name}: {end.text}"[:MAX_CASE_MESSAGE]
 
 
 def _count(counts: dict[str, Any], name: str, code: int) -> None:
@@ -169,15 +282,21 @@ def run_unit_tests(
     root = manifest.resolve().parents[1]
     counts = _empty()
     counts["total"] = len(tests)
+    reasons: list[str] = []
     for test in tests:
         name = str(test["name"])
         code, output = run_one_test(
             test, root, timeout_seconds=timeout_seconds, runner=runner, environment=environment
         )
         _record_cases(counts, name, output)
+        reason = _record_end(counts, name, code, output, run_limit(test, timeout_seconds))
+        if reason is not None:
+            reasons.append(reason)
         if observe is not None:
             observe(name, output)
         _count(counts, name, code)
+    if reasons:
+        counts["reason"] = "; ".join(reasons[:MAX_REASONS])
     if document.get("left_out"):
         counts["left_out"] = [dict(item) for item in document["left_out"]]
     return _finish(counts)
@@ -243,8 +362,11 @@ def run_golden_gate(
 
 
 def summary_line(name: str, section: Mapping[str, Any]) -> str:
-    """One human line for stderr."""
-    return (
+    """One human line for stderr; a failing suite's `reason` follows it."""
+    line = (
         f"{name}: {section['status']} "
         f"(passed {section['passed']}, failed {section['failed']}, skipped {section['skipped']})"
     )
+    if section["status"] == "fail" and section.get("reason"):
+        line += f"; {section['reason']}"
+    return line

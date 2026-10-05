@@ -14,7 +14,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaf_rc1_tester import hw_equiv, hw_facts, hw_reference, hw_report, hw_suites
-from vmaf_rc1_tester.safe_process import CommandResult
+from vmaf_rc1_tester.safe_process import CommandResult, CommandTimedOut
 
 FIXTURE = {"id": "f1", "ref": "r.yuv", "dis": "d.yuv", "width": 16, "height": 16,
            "pixel_format": "420", "bitdepth": 8}  # fmt: skip
@@ -93,6 +93,65 @@ def test_parse_scores_positive_and_negative() -> None:
     skipped = {"frames": [{"frameNum": 1, "metrics": {"a": 1.0}}]}
     with pytest.raises(hw_equiv.FixtureRunError):
         hw_equiv.parse_scores(json.dumps(skipped))
+
+
+def failing_run(code: int, stderr: str):
+    """A runner whose vmaf run fails with `code` after printing `stderr`."""
+
+    def run(argv, **_kwargs):
+        return CommandResult(code, "", stderr)
+
+    return run
+
+
+def fixture_error(code: int, stderr: str) -> hw_equiv.FixtureRunError:
+    with pytest.raises(hw_equiv.FixtureRunError) as caught:
+        hw_equiv.run_fixture_meta(
+            "vmaf", FIXTURE, None, timeout_seconds=1, runner=failing_run(code, stderr)
+        )
+    return caught.value
+
+
+def test_failed_run_keeps_the_problem_and_libvmaf_lines() -> None:
+    """The 1080p Metal run of report #2118 failed with -EINVAL; the report kept only the
+    close-time warning that came last and lost the line that named the cause."""
+    stderr = (
+        "libvmaf WARNING est_params: covariance matrix singular, zeroing solution\n"
+        "frame 1 progress\n"
+        'libvmaf WARNING feature "integer_adm2" cannot be overwritten at index 1\n'
+        "\n"
+        "problem reading pictures\n"
+        "libvmaf ERROR something else\n"
+        "libvmaf WARNING est_params: covariance matrix was singular on 4 of 4 solves\n"
+    )
+    error = fixture_error(234, stderr)
+    lines = str(error).splitlines()
+    assert lines[0] == (
+        "vmaf exited 234: libvmaf WARNING est_params: covariance matrix was singular on 4 of 4 solves"
+    )
+    assert 'libvmaf WARNING feature "integer_adm2" cannot be overwritten at index 1' in lines
+    assert "problem reading pictures" in lines and "libvmaf ERROR something else" in lines
+    assert "frame 1 progress" not in lines  # only the diagnostic lines are kept
+    assert error.returncode == 234
+
+
+def test_failed_run_diagnostics_are_capped_and_deduplicated() -> None:
+    warnings = "".join(f"libvmaf WARNING warning number {i} {'x' * 400}\n" for i in range(60))
+    error = fixture_error(1, "problem one\nproblem one\n" + warnings + "problem last\n")
+    text = str(error)
+    kept = text.splitlines()[2:]  # after the head line and the "stderr ..." line
+    assert text.count("problem one") == 1
+    assert len(kept) <= hw_equiv.MAX_DIAGNOSTIC_LINES + 1  # + the "not kept" count
+    assert len(text.encode()) <= hw_equiv.MAX_DIAGNOSTIC_BYTES + 512
+    assert kept[-1].endswith("more lines not kept)")
+    # boundary: no diagnostic line at all leaves the message as it was
+    assert str(fixture_error(1, "boom")) == "vmaf exited 1: boom"
+    assert str(fixture_error(1, "")) == "vmaf exited 1: no output"
+
+
+def test_failed_run_names_the_signal() -> None:
+    assert str(fixture_error(-11, "")) == "vmaf exited -11 (SIGSEGV): no output"
+    assert str(fixture_error(-6, "problem x\n")).startswith("vmaf exited -6 (SIGABRT): problem x")
 
 
 def test_compare_identical_and_one_bit_difference() -> None:
@@ -242,6 +301,91 @@ def test_unit_tests_timeout_counts_as_failure_and_bad_manifest(tmp_path: Path) -
     assert result["failed"] == 1 and result["status"] == "fail"
     missing = hw_suites.run_unit_tests(tmp_path / "none.json", timeout_seconds=1)
     assert missing["status"] == "not_run" and "unreadable" in missing["reason"]
+
+
+CRASHED_CASE_OUTPUT = (
+    "test_a: \x1b[32mpass\x1b[0m\n@case test_a pass\n"
+    "test_b: \x1b[32mpass\x1b[0m\n@case test_b pass\n"
+    "test_c: [skip: no Metal device] \n"
+    "libvmaf test caught fatal signal; backtrace:\n0   test_c  0x1 frame\n"
+)
+
+
+def one_test(tmp_path: Path, code: int, stderr: str) -> dict:
+    def run(argv, **_kwargs):
+        return CommandResult(code, "", stderr)
+
+    return hw_suites.run_unit_tests(manifest(tmp_path, ["t"]), timeout_seconds=1, runner=run)
+
+
+def test_unit_test_killed_during_a_case_names_the_case_and_the_signal(tmp_path: Path) -> None:
+    """Report #2118: test_metal_ssimulacra2_parity died in its ninth case and the report
+    showed eight passing cases, no message and an unexplained `fail`."""
+    result = one_test(tmp_path, -11, CRASHED_CASE_OUTPUT)
+    assert result["results"]["t"] == "fail" and result["failures"] == ["t"]
+    assert result["cases"]["t"] == {"test_a": "pass", "test_b": "pass", "test_c": "fail"}
+    message = result["case_messages"]["t"]["test_c"]
+    assert "no verdict printed" in message and "signal 11 (SIGSEGV)" in message
+    assert result["reason"] == "t: killed by signal 11 (SIGSEGV) during case test_c"
+
+
+def test_unit_test_failing_status_after_its_last_case_is_named(tmp_path: Path) -> None:
+    clean = "test_a: pass\n@case test_a pass\ntest_b: pass\n@case test_b pass\n"
+    result = one_test(tmp_path, 1, clean)
+    assert result["cases"]["t"] == {"test_a": "pass", "test_b": "pass"}
+    assert result["reason"] == (
+        "t: exited with status 1 after its last case (test_b) and printed no failing case"
+    )
+    # A failing case explains the status: nothing more to say.
+    failed = one_test(tmp_path, 1, "test_a: fail\n@case test_a fail\n@message test_a bad\n")
+    assert failed["reason"] is None and failed["case_messages"]["t"] == {"test_a": "bad"}
+    # Boundary: a pass and a skip end normally.
+    assert one_test(tmp_path, 0, clean)["reason"] is None
+    assert one_test(tmp_path, 77, "test_a: [skip] \n@case test_a skip\n")["reason"] is None
+
+
+def test_unit_test_without_case_lines_names_the_test_it_died_in(tmp_path: Path) -> None:
+    output = "test_x: \x1b[32mpass\x1b[0m\ntest_y: "
+    result = one_test(tmp_path, -6, output)
+    assert "t" not in result.get("cases", {})  # no @case lines: no case verdicts
+    assert result["reason"] == "t: killed by signal 6 (SIGABRT) during test_y"
+    after = one_test(tmp_path, -6, "test_x: \x1b[32mpass\x1b[0m\n")
+    assert after["reason"] == "t: killed by signal 6 (SIGABRT) after test_x"
+    silent = one_test(tmp_path, 1, "")
+    assert silent["reason"] == "t: exited with status 1 and printed no failing case"
+
+
+def test_unit_test_timeout_keeps_the_cases_it_printed(tmp_path: Path) -> None:
+    def run(argv, **_kwargs):
+        raise CommandTimedOut(1, "", "test_a: pass\n@case test_a pass\ntest_b: ")
+
+    result = hw_suites.run_unit_tests(manifest(tmp_path, ["t"]), timeout_seconds=1, runner=run)
+    assert result["failed"] == 1 and result["cases"]["t"] == {"test_a": "pass", "test_b": "fail"}
+    assert result["reason"] == "t: timed out after 1 s during case test_b"
+
+
+def test_unit_test_reasons_of_several_tests_are_joined(tmp_path: Path) -> None:
+    codes = {"/t/a": -11, "/t/b": 0, "/t/c": -9}
+
+    def run(argv, **_kwargs):
+        return CommandResult(codes[argv[0]], "", "")
+
+    result = hw_suites.run_unit_tests(
+        manifest(tmp_path, ["a", "b", "c"]), timeout_seconds=1, runner=run
+    )
+    assert result["reason"] == ("a: killed by signal 11 (SIGSEGV); c: killed by signal 9 (SIGKILL)")
+
+
+def test_summary_line_names_how_a_failing_suite_ended(tmp_path: Path) -> None:
+    result = one_test(tmp_path, -11, CRASHED_CASE_OUTPUT)
+    assert hw_suites.summary_line("unit tests", result) == (
+        "unit tests: fail (passed 0, failed 1, skipped 0); "
+        "t: killed by signal 11 (SIGSEGV) during case test_c"
+    )
+    clean = one_test(tmp_path, 0, "test_a: pass\n@case test_a pass\n")
+    assert hw_suites.summary_line("unit tests", clean) == (
+        "unit tests: pass (passed 1, failed 0, skipped 0)"
+    )
 
 
 def test_parse_junit_counts(tmp_path: Path) -> None:

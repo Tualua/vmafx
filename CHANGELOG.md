@@ -5275,6 +5275,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the maintainer notes](docs/development/tester-image.md).
 
 
+- **Tester report: a failure names its cause
+  (`T-TESTER-REPORT-DROPS-FAILURE-CAUSE-2026-10-05`).** A failed `vmaf` run on a
+  fixture used to keep only the last line it printed, often a warning printed
+  while closing; its `error` now also carries every `problem ...`, `error: ...`
+  and libvmaf `ERROR` / `WARNING` line (at most 20 lines, 4 KB) and the signal's
+  name for a crash. A unit-test program that is killed by a signal, times out or
+  exits with a failure status without reporting a failing case is named in
+  `unit_tests.reason` with the case it was in, and that case is recorded as
+  `fail` with `no verdict printed: ...`; a timeout keeps the cases printed before
+  it. The report schema is unchanged.
+
+
 - **The tester image's SPDX SBOM verifies on the digest you pull.** It was
   attested on a per-arch index that `imagetools create` does not publish, so
   `gh attestation verify` on the platform digest of the tag found nothing. It is
