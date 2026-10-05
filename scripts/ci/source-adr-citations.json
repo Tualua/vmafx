@@ -6212,6 +6212,7 @@
         "core/src/libvmaf.c": 1,
         "core/src/mcp/3rdparty/cJSON/cJSON.c": 1,
         "core/src/metal/dispatch_strategy.c": 1,
+        "core/src/metal/iosurface_layout.h": 1,
         "core/src/metal/stubs.c": 1,
         "core/src/model.c": 1,
         "core/src/pdjson.c": 1,
@@ -6454,6 +6455,8 @@
         "core/test/test_metal_integer_vif_gain.c": 1,
         "core/test/test_metal_integer_vif_math.c": 1,
         "core/test/test_metal_integer_vif_parity.c": 1,
+        "core/test/test_metal_iosurface_import_parity.c": 1,
+        "core/test/test_metal_iosurface_layout.c": 1,
         "core/test/test_metal_kernel_coverage_audit.c": 1,
         "core/test/test_metal_kernel_registration.c": 1,
         "core/test/test_metal_motion_v2_parity.c": 1,
@@ -10809,6 +10812,18 @@
         "scripts/dev/tests/test_gen_node_bpf.py": 1
       },
       "target": "1622-bpf-object-generated-at-build-time.md"
+    },
+    "1679": {
+      "sites": {
+        "core/include/libvmaf/libvmaf_metal.h": 1,
+        "core/src/metal/iosurface_layout.h": 1,
+        "core/src/metal/picture_import.mm": 2,
+        "core/test/meson.build": 3,
+        "core/test/test_metal_iosurface_filter_contract.py": 3,
+        "core/test/test_metal_iosurface_import_parity.c": 2,
+        "core/test/test_metal_iosurface_layout.c": 3
+      },
+      "target": "1679-metal-iosurface-biplanar-import.md"
     },
     "1686": {
       "sites": {

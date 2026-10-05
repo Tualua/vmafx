@@ -112,6 +112,19 @@ metal/
 
 ## Rebase-sensitive invariants
 
+- **IOSurface import reads surface layout itself** (fork-local,
+  [ADR-1679](../../../docs/adr/1679-metal-iosurface-biplanar-import.md)).
+  `vmaf_metal_picture_import()` in `picture_import.mm` plans every plane
+  through `iosurface_layout.h`: surface's CoreVideo pixel format picks
+  layout (NV12 `420v`/`420f`, P010 `x420`/`xf20` shift 6, planar
+  `y420`/`f420`); bi-planar planes 1 / 2 = even / odd samples of second
+  plane; unknown format -> `-ENOTSUP`, wrong geometry -> `-EINVAL`, nothing
+  copied. Header stays plain C: `test_metal_iosurface_layout` runs it on
+  every host. FFmpeg patch `0013` imports planes 0..2 of both frames and
+  fails on import error; `build_pictures` still requires `0x7`.
+  **On rebase**: never restore copy of surface plane `n` as picture plane
+  `n`; new accepted layout = table row + host test case + 4:2:0 ring check.
+
 - **Metal dispatch allowlist uses extractor names and exact provided
   feature keys.** `g_metal_features[]` in `dispatch_strategy.c` carries both
   every registered Metal extractor's `.name` and each routable

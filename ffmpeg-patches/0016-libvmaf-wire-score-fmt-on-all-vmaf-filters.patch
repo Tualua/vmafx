@@ -28,7 +28,7 @@ Covers:
  1 file changed, 26 insertions(+), 4 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aaaa06b143 100644
+index e902620e0fcd4feb34f245d732289617041feab9..8ed31a2ebde3647b8ebe6948d2e9d1b903121873 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -122,6 +122,13 @@ typedef struct LIBVMAFContext {
@@ -113,7 +113,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      { NULL }
  };
  #undef MTL_FLAGS
-@@ -2013,7 +2033,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+@@ -2043,7 +2063,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
      }
  
      if (s->vmaf && s->log_path && !err)

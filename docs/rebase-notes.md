@@ -51,6 +51,23 @@ no library change.
   `ComparisonReadTests`, `MasterCliOutcomeTests`) and
   `scripts/ci/tests/test_scorecard_workflow.py` (`SupersededMasterRunTests`
   runs the step's own `run:` script with stub `gh`, `python3` and `sleep`).
+## Metal IOSurface import reads NV12 / P010; libvmaf_metal imports whole frames (ADR-1679, 2026-10-05)
+
+`fix/ffmpeg-metal-filter-planes`. Metal host code, one public-header comment, FFmpeg patch `0013`.
+
+- `core/src/metal/picture_import.mm` reads each plane through `core/src/metal/iosurface_layout.h`:
+  the surface's CoreVideo pixel format picks the layout, a bi-planar surface's planes 1 and 2
+  are the even and odd samples of its second plane, P010 is shifted by 6, anything outside the
+  table returns `-ENOTSUP`. A sync or refactor must not bring back a copy of the surface's
+  plane `n` as picture plane `n` (`IOSurfaceGetBaseAddressOfPlane(surf, plane)`).
+- Patch `0013`: `do_vmaf_metal()` imports planes 0, 1 and 2 of both frames through
+  `import_metal_frame()` and fails on an import error; `config_props_metal()` checks both
+  inputs with `check_metal_input()` (NV12 / P010 only, format named in the error). A refresh of
+  the series keeps those functions; patches `0014` to `0020` only moved by offsets.
+- `core/test/test_metal_iosurface_filter_contract.py` reads the patch and the `.mm`;
+  `test_metal_iosurface_layout` runs the header on every host;
+  `test_metal_iosurface_import_parity` (a Metal parity test, also a self-test on every host)
+  runs the import on IOSurfaces in the macOS tester bundle.
 
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 

@@ -216,22 +216,43 @@ VMAF_EXPORT int vmaf_metal_state_init_external(VmafMetalState **out,
  * `CVPixelBufferRef` via `CVPixelBufferGetIOSurface`) into the
  * libvmaf Metal compute pipeline. Caller retains ownership of the
  * underlying IOSurface; libvmaf locks the surface read-only and
- * memcpys the requested plane into a shared-storage VmafPicture.
+ * copies the requested plane into a shared-storage VmafPicture
+ * (planar 4:2:0).
+ *
+ * The surface's own pixel format decides how a plane is read
+ * (ADR-1679). Accepted, all 4:2:0:
+ * - NV12 (`kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange` /
+ *   `...FullRange`, `bpc` 8) and P010
+ *   (`kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange` /
+ *   `...FullRange`, `bpc` 10), the bi-planar formats VideoToolbox
+ *   decodes to: plane 1 is the Cb and plane 2 the Cr samples of the
+ *   interleaved second plane, de-interleaved during the copy, and a
+ *   P010 sample is shifted from the 10 most significant bits of its
+ *   16 to the 10 least significant ones;
+ * - planar 8-bit 4:2:0 (`kCVPixelFormatType_420YpCbCr8Planar` /
+ *   `...FullRange`, `bpc` 8), read plane by plane.
+ * Any other pixel format returns -ENOTSUP. Import planes 0, 1 and 2
+ * for both the reference and the distorted frame before
+ * @ref vmaf_metal_read_imported_pictures.
  *
  * @param state    Metal state handle.
  * @param iosurface IOSurfaceRef (cast to uintptr_t).
- * @param plane    Plane index (0 = Y, 1 = U, 2 = V — caller is
- *                 responsible for de-interleaving biplanar
- *                 VideoToolbox formats before calling).
+ * @param plane    Plane index of the planar picture (0 = Y,
+ *                 1 = U, 2 = V).
  * @param w        Luma (frame) width.
  * @param h        Luma (frame) height.
- * @param bpc      Bits per component (8 / 10 / 12 / 16).
+ * @param bpc      Bits per component of the samples after the
+ *                 import: 8 for NV12 and planar 8-bit surfaces, 10
+ *                 for P010.
  * @param is_ref   1 = reference frame, 0 = distorted.
  * @param index    Frame index (matches the index passed to
  *                 @ref vmaf_metal_read_imported_pictures).
  *
- * @return 0 on success, -EINVAL on bad arguments, -EIO on
- *         IOSurface lock failure, -ENOMEM on allocation failure.
+ * @return 0 on success, -EINVAL on bad arguments (including a `bpc`
+ *         that is not the surface format's, or a surface plane
+ *         smaller than the frame), -ENOTSUP on a surface pixel
+ *         format outside the list above, -EIO on IOSurface lock
+ *         failure, -ENOMEM on allocation failure.
  */
 VMAF_EXPORT int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
                                           unsigned plane, unsigned w, unsigned h, unsigned bpc,

@@ -43,13 +43,25 @@ import on Apple-Family-7+ hosts. The filter passes
 `AVMetalDeviceContext`. See
 docs/adr/0423-metal-iosurface-import-scaffold.md.
 
+Plane import (VMAFx ADR-1679): VideoToolbox decodes to bi-planar NV12
+and P010. The filter imports planes 0, 1 and 2 of the reference and the
+distorted frame; libvmaf reads plane 0 from the luma plane, planes 1 and
+2 from the even and odd samples of the interleaved CbCr plane, and
+shifts P010 samples from the 10 most significant bits of 16 to the 10
+least significant ones. Other sw_formats are refused at configure time
+with a message naming the format; a frame that cannot be imported fails
+the filter instead of passing through unscored, and a failed pooled
+score prints no score line. Before ADR-1679 the
+filter imported plane 0 only and vmaf_metal_read_imported_pictures()
+refused every frame with -EINVAL.
+
 Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
 ---
  configure                |   3 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 268 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 273 insertions(+)
+ libavfilter/vf_libvmaf.c | 332 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 337 insertions(+)
 
 diff --git a/configure b/configure
 index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1 100755
@@ -97,7 +109,7 @@ index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25e
  extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e59eeb6c8 100644
+index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..4b13515c0281018558ba3704696024ae73077cea 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -76,6 +76,12 @@
@@ -113,7 +125,7 @@ index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1843,3 +1849,265 @@ const FFFilter ff_vf_libvmaf_vulkan = {
+@@ -1843,3 +1849,329 @@ const FFFilter ff_vf_libvmaf_vulkan = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -144,7 +156,7 @@ index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e
 + * VideoToolbox stashes the CVPixelBufferRef in frame->data[3];
 + * CVPixelBufferGetIOSurface() returns the IOSurfaceRef without
 + * a host copy. Returns NULL if the frame is not VideoToolbox-
-+ * backed (caller should fail-fast in config_props). */
++ * backed or its buffer has no IOSurface. */
 +static IOSurfaceRef get_iosurface_from_frame(const AVFrame *frame)
 +{
 +    if (frame == NULL || frame->format != AV_PIX_FMT_VIDEOTOOLBOX) {
@@ -155,6 +167,55 @@ index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e
 +        return NULL;
 +    }
 +    return CVPixelBufferGetIOSurface(pb);
++}
++
++/* The VideoToolbox software formats this filter scores (VMAFx ADR-1679):
++ * 4:2:0 NV12 and P010. libvmaf imports their luma plane, de-interleaves
++ * the CbCr plane into planes 1 and 2, and shifts P010's samples from the
++ * 10 most significant bits of 16 to the 10 least significant ones. */
++static int metal_sw_format_supported(enum AVPixelFormat fmt)
++{
++    return fmt == AV_PIX_FMT_NV12 || fmt == AV_PIX_FMT_P010;
++}
++
++/* Import planes 0, 1 and 2 of one frame. A frame that cannot be imported
++ * fails the filter: passing it through unscored would pool the score over
++ * fewer frames than the user asked for. */
++static int import_metal_frame(AVFilterContext *ctx, LIBVMAFContext *s,
++                              const AVFrame *frame, int is_ref)
++{
++    const char *which = is_ref ? "reference" : "distorted";
++    IOSurfaceRef surf = get_iosurface_from_frame(frame);
++
++    if (surf == NULL) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_metal: %s frame %u has no IOSurface-backed "
++               "VideoToolbox buffer\n", which, s->frame_cnt);
++        return AVERROR(EINVAL);
++    }
++
++    for (unsigned plane = 0; plane < 3; plane++) {
++        int err = vmaf_metal_picture_import(s->metal_state, (uintptr_t)surf,
++                                            plane, frame->width, frame->height,
++                                            s->bpc, is_ref, s->frame_cnt);
++        if (err == -ENOTSUP) {
++            OSType type = CVPixelBufferGetPixelFormatType((CVPixelBufferRef)frame->data[3]);
++            av_log(ctx, AV_LOG_ERROR,
++                   "libvmaf_metal: %s frame %u: IOSurface pixel format "
++                   "'%c%c%c%c' is not supported (supported: nv12, p010)\n",
++                   which, s->frame_cnt,
++                   (char)((type >> 24) & 0xff), (char)((type >> 16) & 0xff),
++                   (char)((type >> 8) & 0xff), (char)(type & 0xff));
++            return AVERROR(ENOSYS);
++        }
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "libvmaf_metal: vmaf_metal_picture_import (%s frame %u, "
++                   "plane %u) failed: %d\n", which, s->frame_cnt, plane, err);
++            return AVERROR_EXTERNAL;
++        }
++    }
++    return 0;
 +}
 +
 +static int do_vmaf_metal(FFFrameSync *fs)
@@ -175,44 +236,23 @@ index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e
 +    if (ret) {
 +        av_log(ctx, AV_LOG_ERROR,
 +               "vmaf_metal_wait_compute failed: %d\n", ret);
++        av_frame_free(&dist);
 +        return AVERROR_EXTERNAL;
 +    }
 +
-+    IOSurfaceRef ref_surf  = get_iosurface_from_frame(ref);
-+    IOSurfaceRef dist_surf = get_iosurface_from_frame(dist);
-+    if (ref_surf == NULL || dist_surf == NULL) {
-+        av_log(ctx, AV_LOG_WARNING,
-+               "non-VideoToolbox frame on libvmaf_metal input — skipping\n");
-+        return ff_filter_frame(ctx->outputs[0], dist);
-+    }
-+
-+    /* Plane 0 = luma. Chroma planes follow the bi-planar layout
-+     * VideoToolbox emits for NV12 / P010; the runtime walks them
-+     * via vmaf_metal_picture_import(plane=1) in T8-IOS-b. */
-+    ret = vmaf_metal_picture_import(s->metal_state, (uintptr_t)ref_surf,
-+                                    /*plane=*/0,
-+                                    ref->width, ref->height, s->bpc,
-+                                    /*is_ref=*/1, s->frame_cnt);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_WARNING,
-+               "vmaf_metal_picture_import (ref) failed: %d — skipping frame\n", ret);
-+        return ff_filter_frame(ctx->outputs[0], dist);
-+    }
-+
-+    ret = vmaf_metal_picture_import(s->metal_state, (uintptr_t)dist_surf,
-+                                    /*plane=*/0,
-+                                    dist->width, dist->height, s->bpc,
-+                                    /*is_ref=*/0, s->frame_cnt);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_WARNING,
-+               "vmaf_metal_picture_import (dist) failed: %d — skipping frame\n", ret);
-+        return ff_filter_frame(ctx->outputs[0], dist);
++    ret = import_metal_frame(ctx, s, ref, 1);
++    if (ret >= 0)
++        ret = import_metal_frame(ctx, s, dist, 0);
++    if (ret < 0) {
++        av_frame_free(&dist);
++        return ret;
 +    }
 +
 +    ret = vmaf_metal_read_imported_pictures(s->vmaf, s->frame_cnt++);
 +    if (ret) {
 +        av_log(ctx, AV_LOG_ERROR,
 +               "vmaf_metal_read_imported_pictures failed: %d\n", ret);
++        av_frame_free(&dist);
 +        return AVERROR_EXTERNAL;
 +    }
 +
@@ -246,8 +286,10 @@ index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e
 +        err = vmaf_score_pooled(s->vmaf, s->model[i], pool_method_map(s->pool),
 +                                &vmaf_score, 0, s->frame_cnt - 1);
 +        if (err) {
++            /* No score line: a 0 printed after a failure reads as a result. */
 +            av_log(ctx, AV_LOG_ERROR,
 +                   "problem getting pooled vmaf score.\n");
++            continue;
 +        }
 +        av_log(ctx, AV_LOG_INFO, "VMAF score: %f\n", vmaf_score);
 +    }
@@ -270,34 +312,68 @@ index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e
 +        vmaf_metal_state_free(&s->metal_state);
 +}
 +
++/* One input of the filter: VideoToolbox frames of a format the import
++ * reads. Returns the software format in *sw_format. */
++static int check_metal_input(AVFilterContext *ctx, unsigned idx,
++                             enum AVPixelFormat *sw_format)
++{
++    FilterLink *l = ff_filter_link(ctx->inputs[idx]);
++    const char *pad = idx ? "reference" : "main";
++    AVHWFramesContext *frames_ctx;
++
++    if (!l->hw_frames_ctx) {
++        av_log(ctx, AV_LOG_ERROR,
++               "No VideoToolbox hw_frames_ctx on the %s input. "
++               "Use -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld.\n",
++               pad);
++        return AVERROR(EINVAL);
++    }
++
++    frames_ctx = (AVHWFramesContext *)l->hw_frames_ctx->data;
++    if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
++        av_log(ctx, AV_LOG_ERROR,
++               "Expected VideoToolbox frames on the %s input, got type %d\n",
++               pad, frames_ctx->device_ctx->type);
++        return AVERROR(EINVAL);
++    }
++
++    if (!metal_sw_format_supported(frames_ctx->sw_format)) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_metal: VideoToolbox sw_format %s on the %s input is not "
++               "supported (supported: nv12, p010). For other formats use "
++               "hwdownload and the libvmaf filter's metal_device option.\n",
++               av_get_pix_fmt_name(frames_ctx->sw_format), pad);
++        return AVERROR(ENOSYS);
++    }
++
++    *sw_format = frames_ctx->sw_format;
++    return 0;
++}
++
 +static int config_props_metal(AVFilterLink *outlink)
 +{
 +    int err;
 +    AVFilterContext *ctx = outlink->src;
 +    LIBVMAFContext *s = ctx->priv;
 +    AVFilterLink *inlink = ctx->inputs[0];
-+    FilterLink *inl = ff_filter_link(inlink);
-+    AVHWFramesContext *frames_ctx;
-+    AVHWDeviceContext *device_ctx;
++    enum AVPixelFormat main_fmt, ref_fmt;
 +    const AVPixFmtDescriptor *desc;
 +
-+    if (!inl->hw_frames_ctx) {
++    err = check_metal_input(ctx, 0, &main_fmt);
++    if (err)
++        return err;
++    err = check_metal_input(ctx, 1, &ref_fmt);
++    if (err)
++        return err;
++    if (main_fmt != ref_fmt) {
 +        av_log(ctx, AV_LOG_ERROR,
-+               "No VideoToolbox hw_frames_ctx on input. Use -hwaccel videotoolbox.\n");
++               "libvmaf_metal: the main input is %s and the reference input is %s; "
++               "both inputs must have the same sw_format\n",
++               av_get_pix_fmt_name(main_fmt), av_get_pix_fmt_name(ref_fmt));
 +        return AVERROR(EINVAL);
 +    }
 +
-+    frames_ctx = (AVHWFramesContext *)inl->hw_frames_ctx->data;
-+    if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
-+        av_log(ctx, AV_LOG_ERROR,
-+               "Expected VideoToolbox frames, got type %d\n",
-+               frames_ctx->device_ctx->type);
-+        return AVERROR(EINVAL);
-+    }
-+    device_ctx = frames_ctx->device_ctx;
-+    (void)device_ctx; /* T8-IOS-b: pull AVMetalDeviceContext when FFmpeg exposes one */
-+
-+    desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
++    desc = av_pix_fmt_desc_get(main_fmt);
 +    s->bpc = desc->comp[0].depth;
 +
 +    av_log(ctx, AV_LOG_INFO,

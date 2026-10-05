@@ -484,8 +484,8 @@ ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i distorted.mp4 \
 **VideoToolbox decode, Metal compute** with `libvmaf_metal`:
 
 ```bash
-ffmpeg -hwaccel videotoolbox -hwaccel_output_format videotoolbox -i distorted.mp4 \
-       -hwaccel videotoolbox -hwaccel_output_format videotoolbox -i reference.mp4 \
+ffmpeg -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i distorted.mp4 \
+       -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf_metal=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -496,6 +496,32 @@ Build FFmpeg with `--enable-libvmaf-metal` against a libvmaf compiled with
 `vmaf_metal_picture_import`. That call locks the surface read-only and copies
 each plane into a shared-storage `VmafPicture`; on Apple Silicon the
 unified-memory cost equals a Shared `MTLBuffer` copy.
+`videotoolbox_vld` is FFmpeg's name for VideoToolbox hardware frames;
+`-hwaccel_output_format videotoolbox` is not a pixel format name and is
+refused.
+
+The decoder must output 4:2:0 frames in NV12 (8-bit) or P010 (10-bit), which
+is what VideoToolbox decodes 8-bit and 10-bit 4:2:0 content to. The filter
+imports all three planes of both frames. libvmaf splits the interleaved CbCr
+plane into Cb and Cr and moves each P010 sample from the top 10 bits of its 16
+to the bottom 10 ([ADR-1679](../adr/1679-metal-iosurface-biplanar-import.md)).
+
+The filter checks both inputs when it is configured:
+
+- any other software format stops the filter with an error that names the
+  format, for example `libvmaf_metal: VideoToolbox sw_format p210 on the main
+  input is not supported (supported: nv12, p010)`. That covers 4:2:2 and
+  4:4:4 content such as ProRes or HEVC 4:2:2. Score those with `hwdownload`
+  and the `libvmaf` filter's `metal_device` option;
+- the two inputs must use the same software format.
+
+If a frame cannot be imported, the filter fails. It never passes the frame
+through unscored, because the pooled score would then cover fewer frames than
+the input.
+
+Nothing in this path has run on an Apple device yet. Until a macOS tester
+report confirms it, the row `T-METAL-FFMPEG-FILTER-BIPLANAR-IMPORT-2026-10-05`
+in [the state ledger](../state.md) stays open.
 
 Two caveats apply:
 

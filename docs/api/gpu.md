@@ -498,7 +498,7 @@ vmaf_metal_state_free(&state)        only after close returned 0
 
 | Function | Does |
 | --- | --- |
-| `vmaf_metal_picture_import` | Imports one plane (0 = Y, 1 = U, 2 = V; de-interleave biplanar formats first) of an `IOSurfaceRef`. The caller keeps the surface; libvmaf locks it read-only and copies the plane into a shared-storage `VmafPicture`. `bpc` is 8, 10, 12 or 16. Errors: `-EINVAL`, `-EIO` (lock failure), `-ENOMEM`. |
+| `vmaf_metal_picture_import` | Imports one plane (0 = Y, 1 = U, 2 = V) of an `IOSurfaceRef` into a planar 4:2:0 `VmafPicture`. The caller keeps the surface; libvmaf locks it read-only and copies the plane. The surface's pixel format decides the read ([ADR-1679](../adr/1679-metal-iosurface-biplanar-import.md)). NV12 (`420v` / `420f`, `bpc` 8) and P010 (`x420` / `xf20`, `bpc` 10) are what VideoToolbox decodes to: planes 1 and 2 are the Cb and Cr samples of their interleaved second plane, and P010 samples are shifted from the top 10 bits of 16 to the bottom 10. Planar 8-bit 4:2:0 (`y420` / `f420`) is read plane by plane. Errors: `-ENOTSUP` for any other pixel format, `-EINVAL` (including a `bpc` that is not the format's, or a surface plane smaller than the frame), `-EIO` (lock failure), `-ENOMEM`. |
 | `vmaf_metal_wait_compute` | Blocks until Metal work on the state finished. Currently a synchronous no-op, because the import is a host-side copy; a later asynchronous path will drain an `MTLSharedEvent`. `-EINVAL` for a NULL state. |
 | `vmaf_metal_read_imported_pictures` | Triggers a score read for the imported reference and distorted surfaces at `index`. All three planes (Y, U, V) of both must have been imported at that index. |
 

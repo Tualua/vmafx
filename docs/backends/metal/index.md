@@ -143,6 +143,11 @@ CPU and Apple Silicon GPU without PCIe staging.
 External frames imported via `vmaf_metal_picture_import` (e.g. from VideoToolbox
 hardware decoding) are currently handled via `IOSurfaceLock` followed by a
 synchronous CPU `memcpy` into the shared-storage `VmafPicture` buffer (ADR-0423).
+The copy reads the surface's pixel format. VideoToolbox's bi-planar NV12 and
+P010 frames are split into Cb and Cr, and P010 samples are shifted to the low
+10 bits. Any other layout is refused with `-ENOTSUP`
+([ADR-1679](../../adr/1679-metal-iosurface-biplanar-import.md)). The table of
+accepted layouts is `core/src/metal/iosurface_layout.h`.
 True zero-copy GPU texture or buffer binding without CPU memcpy
 (`[MTLDevice newTextureWithDescriptor:iosurface:plane:]` or direct buffer pointer
 mapping with GPU completion/fence tracking) is deferred under

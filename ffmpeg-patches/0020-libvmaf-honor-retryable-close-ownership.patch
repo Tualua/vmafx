@@ -16,7 +16,7 @@ expire during retryable teardown.
  2 files changed, 82 insertions(+), 19 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 17f2a4ef29d6b207efde8147f0749c7aea1cb88d..b5980acd0e97a066b5d6554d89203655db8fde0a 100644
+index 9c3bb9637ac39b81259d304cd931d7c1123ff95d..d16da1953fff5490378f01bfb68c87e3e800804c 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -147,6 +147,7 @@ typedef struct LIBVMAFContext {
@@ -158,7 +158,7 @@ index 17f2a4ef29d6b207efde8147f0749c7aea1cb88d..b5980acd0e97a066b5d6554d89203655
      if (s->vulkan_state)
          vmaf_vulkan_state_free(&s->vulkan_state);
  }
-@@ -2081,6 +2118,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+@@ -2111,6 +2148,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
                                        s->score_fmt);
  
  clean_up:
@@ -168,7 +168,7 @@ index 17f2a4ef29d6b207efde8147f0749c7aea1cb88d..b5980acd0e97a066b5d6554d89203655
      if (s->model) {
          for (unsigned i = 0; i < s->model_cnt; i++) {
              if (s->model[i])
-@@ -2089,8 +2129,6 @@ clean_up:
+@@ -2119,8 +2159,6 @@ clean_up:
          av_free(s->model);
      }
  

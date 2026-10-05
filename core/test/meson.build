@@ -2289,6 +2289,26 @@ test_metal_portable = executable('test_metal_portable',
 )
 test('test_metal_portable', test_metal_portable, suite : ['fast'])
 
+# ADR-1679: core/src/metal/iosurface_layout.h, the source layouts of the Metal
+# IOSurface import (NV12 / P010 de-interleave, P010 shift, refusals). Plain C,
+# every host; the device side is test_metal_iosurface_import_parity.
+test_metal_iosurface_layout = executable('test_metal_iosurface_layout',
+    ['test.c', 'test_metal_iosurface_layout.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+)
+test('test_metal_iosurface_layout', test_metal_iosurface_layout, suite : ['fast'])
+
+# ADR-1679: the FFmpeg libvmaf_metal filter imports every plane of an NV12 /
+# P010 VideoToolbox frame, refuses other formats by name and never passes a
+# frame through unscored. Device-free: reads patch 0013 and picture_import.mm.
+test('test_metal_iosurface_filter_contract',
+    import('python').find_installation(),
+    args : files('test_metal_iosurface_filter_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Host tests and source contracts of the Metal ports (ADR-1498). Each group
 # of ports adds its blocks directly below its own marker line.
 
@@ -7466,7 +7486,7 @@ metal_parity_tests = [
   'float_adm', 'float_moment', 'float_motion', 'float_ms_ssim', 'float_psnr',
   'float_ssim', 'float_vif', 'integer_adm', 'integer_cambi', 'integer_ciede',
   'integer_motion', 'integer_psnr', 'integer_psnr_hvs', 'integer_ssim',
-  'integer_vif', 'motion_v2', 'ssimulacra2', 'twin_option',
+  'integer_vif', 'iosurface_import', 'motion_v2', 'ssimulacra2', 'twin_option',
 ]
 metal_test_opt = get_option('enable_metal')
 if metal_test_opt.enabled() or (metal_test_opt.auto() and host_machine.system() == 'darwin')
@@ -7506,12 +7526,18 @@ endif
 # (core/test/metal_twin.h), which the macOS tester bundle reports per state
 # row. Without a Metal device every case skips and the run exits 77. The same
 # sources build as device-free self-tests below the Metal block.
+# ADR-1679: test_metal_iosurface_import_parity writes its frames into
+# IOSurface-backed CVPixelBuffers, as VideoToolbox hands them to FFmpeg.
+metal_parity_frameworks = [
+  dependency('CoreFoundation', required : true),
+  dependency('CoreVideo', required : true),
+]
 foreach _m : metal_parity_tests
   _exe = executable('test_metal_' + _m + '_parity',
       ['test.c', 'test_metal_' + _m + '_parity.c'],
       include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
       link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-      dependencies: [pthread_dependency, math_lib],
+      dependencies: [pthread_dependency, math_lib] + metal_parity_frameworks,
       c_args: ['-DHAVE_METAL=1'])
   test('test_metal_' + _m + '_parity', _exe,
       suite : ['fast', 'gpu'],

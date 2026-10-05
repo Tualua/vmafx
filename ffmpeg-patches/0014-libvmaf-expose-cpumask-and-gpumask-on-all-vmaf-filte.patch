@@ -39,7 +39,7 @@ ADR-0576.
  1 file changed, 30 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index a240dec42a9fcf44a398cac82e9d029e59eeb6c8..52a192f936cebd72491870dafd93ac0a9a65f5b9 100644
+index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617041feab9 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -122,6 +122,12 @@ typedef struct LIBVMAFContext {
@@ -133,7 +133,7 @@ index a240dec42a9fcf44a398cac82e9d029e59eeb6c8..52a192f936cebd72491870dafd93ac0a
      { NULL }
  };
  #undef MTL_FLAGS
-@@ -2064,6 +2092,8 @@ static int config_props_metal(AVFilterLink *outlink)
+@@ -2128,6 +2156,8 @@ static int config_props_metal(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,

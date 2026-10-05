@@ -761,6 +761,14 @@ backend within it.
   guard it. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
+- **Metal IOSurface import reads NV12 / P010 itself ([ADR-1679](../adr/1679-metal-iosurface-biplanar-import.md))**:
+  `core/src/metal/picture_import.mm` plans each plane from the surface's CoreVideo
+  pixel format through `core/src/metal/iosurface_layout.h` (bi-planar chroma
+  de-interleaved, P010 shifted, other layouts `-ENOTSUP`), and FFmpeg patch `0013`
+  imports planes 0, 1 and 2 of both frames and fails on an import error.
+  `core/test/test_metal_iosurface_filter_contract.py`, `test_metal_iosurface_layout`
+  and `test_metal_iosurface_import_parity` guard it. See
+  [core/src/metal/AGENTS.md](../../core/src/metal/AGENTS.md).
 - **Metal `float_ms_ssim` option parity ([ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md))**:
   `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
   matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and
