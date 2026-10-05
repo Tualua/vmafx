@@ -166,7 +166,58 @@ static void fill_fixture(float *a, float *b, int w, enum sad_fixture kind, uint3
 
 static int floats_bit_equal(float x, float y)
 {
-    return memcmp(&x, &y, sizeof(float)) == 0;
+    uint32_t xb;
+    uint32_t yb;
+    (void)memcpy(&xb, &x, sizeof(xb));
+    (void)memcpy(&yb, &y, sizeof(yb));
+    return xb == yb;
+}
+
+/* One (fixture, offset, width) case; 1 when the NEON line SAD differs from the
+ * scalar's bits, with a diagnostic line when `report` is set. */
+static int sad_line_case_diverges(float *a_buf, float *b_buf, int kind, int off, int w, int report)
+{
+    float *a = a_buf + off;
+    float *b = b_buf + off;
+
+    fill_fixture(a, b, w, (enum sad_fixture)kind,
+                 0x5eed0000u ^ (uint32_t)(w * 131 + kind * 7919 + off));
+
+    const float expected = ref_float_sad_line(a, b, w);
+    const float got = float_sad_line_neon(a, b, w);
+
+    if (floats_bit_equal(expected, got)) {
+        return 0;
+    }
+    if (report) {
+        uint32_t eb;
+        uint32_t gb;
+        (void)memcpy(&eb, &expected, sizeof(eb));
+        (void)memcpy(&gb, &got, sizeof(gb));
+        (void)fprintf(stderr,
+                      "  %s w=%d off=%d: scalar %.9g (0x%08x) != "
+                      "neon %.9g (0x%08x)\n",
+                      fixture_names[kind], w, off, (double)expected, eb, (double)got, gb);
+    }
+    return 1;
+}
+
+/* Every offset and width of one fixture: the number of diverging cases.
+ * `reported` is how many were already reported, so that the first eight over
+ * all fixtures print. */
+static int sad_line_fixture_mismatches(float *a_buf, float *b_buf, int kind, const int *wide,
+                                       int n_wide, int reported)
+{
+    int mismatches = 0;
+    for (int off = 0; off < 4; ++off) {
+        for (int idx = 0; idx < 40 + n_wide; ++idx) {
+            const int w = (idx < 40) ? idx + 1 : wide[idx - 40]; /* 1..40, then the wide set */
+            if (sad_line_case_diverges(a_buf, b_buf, kind, off, w, reported + mismatches < 8)) {
+                ++mismatches;
+            }
+        }
+    }
+    return mismatches;
 }
 
 static char *test_float_sad_line_neon_matches_scalar(void)
@@ -184,35 +235,9 @@ static char *test_float_sad_line_neon_matches_scalar(void)
     int mismatches = 0;
     int per_fixture[FIX_COUNT] = {0};
     for (int kind = 0; kind < FIX_COUNT; ++kind) {
-        for (int off = 0; off < 4; ++off) {
-            for (int idx = 0; idx < 40 + n_wide; ++idx) {
-                const int w = (idx < 40) ? idx + 1 : wide[idx - 40]; /* 1..40, then the wide set */
-                float *a = a_buf + off;
-                float *b = b_buf + off;
-
-                fill_fixture(a, b, w, (enum sad_fixture)kind,
-                             0x5eed0000u ^ (uint32_t)(w * 131 + kind * 7919 + off));
-
-                const float expected = ref_float_sad_line(a, b, w);
-                const float got = float_sad_line_neon(a, b, w);
-
-                if (!floats_bit_equal(expected, got)) {
-                    ++mismatches;
-                    ++per_fixture[kind];
-                    if (mismatches <= 8) {
-                        uint32_t eb;
-                        uint32_t gb;
-                        memcpy(&eb, &expected, sizeof(eb));
-                        memcpy(&gb, &got, sizeof(gb));
-                        (void)fprintf(stderr,
-                                      "  %s w=%d off=%d: scalar %.9g (0x%08x) != "
-                                      "neon %.9g (0x%08x)\n",
-                                      fixture_names[kind], w, off, (double)expected, eb,
-                                      (double)got, gb);
-                    }
-                }
-            }
-        }
+        per_fixture[kind] =
+            sad_line_fixture_mismatches(a_buf, b_buf, kind, wide, n_wide, mismatches);
+        mismatches += per_fixture[kind];
     }
 
     simd_test_aligned_free(a_buf);
@@ -222,9 +247,10 @@ static char *test_float_sad_line_neon_matches_scalar(void)
         const int cases = FIX_COUNT * 4 * (40 + n_wide);
         (void)fprintf(stderr, "  %d / %d mismatching (fixture, width, offset) triples\n",
                       mismatches, cases);
-        for (int kind = 0; kind < FIX_COUNT; ++kind)
+        for (int kind = 0; kind < FIX_COUNT; ++kind) {
             (void)fprintf(stderr, "    %-10s %d / %d\n", fixture_names[kind], per_fixture[kind],
                           4 * (40 + n_wide));
+        }
     }
     mu_assert("float_sad_line_neon diverges from the scalar reference", mismatches == 0);
     return NULL;

@@ -219,13 +219,14 @@ static void tally_band_values(const float *ref, const float *simd, const DwtGeom
                 ++tally->tail_col;
             if (j == g->w_half - 1)
                 ++tally->last_col;
-            if (verbose && tally->mismatches <= 8)
+            if (verbose && tally->mismatches <= 8) {
                 (void)fprintf(stderr,
                               "  %dx%d (src_stride %d, dst_stride %d) %s[%d][%d]%s:"
                               " scalar %.9g (0x%08x) != neon %.9g (0x%08x)\n",
                               g->w, g->h, g->src_px_stride, g->dst_px_stride, name, i, j,
                               (j == g->w_half - 1) ? " (last col)" : "", (double)ref[idx], want,
                               (double)simd[idx], got);
+            }
         }
     }
 }
@@ -241,11 +242,12 @@ static void tally_band_padding(const float *simd, const DwtGeom *g, const char *
             if (float_bits(simd[idx]) == POISON_BITS)
                 continue;
             ++tally->mismatches;
-            if (verbose)
+            if (verbose) {
                 (void)fprintf(stderr,
                               "  %dx%d %s: neon wrote past the last valid column (%d)"
                               " into the stride padding at row %d, col %d\n",
                               g->w, g->h, name, g->w_half - 1, i, j);
+            }
         }
     }
 }
@@ -256,7 +258,8 @@ static char *run_and_tally(DwtBuffers *buf, const DwtGeom *g, int signed_zero_ca
                            DwtTally *tally)
 {
     static const char *const names[4] = {"band_a", "band_v", "band_h", "band_d"};
-    adm_dwt_band_t_s ref_band, simd_band;
+    adm_dwt_band_t_s ref_band;
+    adm_dwt_band_t_s simd_band;
 
     ref_band.band_a = buf->bands[0];
     ref_band.band_v = buf->bands[1];
@@ -319,11 +322,12 @@ static char *compare_geometry(int w, int h, int src_pad, int dst_pad, int signed
     if (msg)
         return msg;
 
-    if (verbose && tally.mismatches)
+    if (verbose && tally.mismatches) {
         (void)fprintf(stderr,
                       "  %dx%d: %d mismatching cells (%d whose support touches the"
                       " vertical scalar tail, %d in the mirrored last column)\n",
                       w, h, tally.mismatches, tally.tail_col, tally.last_col);
+    }
 
     *out_mismatches = tally.mismatches;
     return NULL;

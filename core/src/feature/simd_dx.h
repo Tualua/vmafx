@@ -188,7 +188,7 @@
 #if (defined(__ARM_NEON) || defined(_M_ARM64) || defined(_M_ARM64EC)) && !defined(SIMD_DX_NO_NEON)
 
 /* NEON 128-bit `float32x4_t` covers 4 lanes. 16-byte aligned. */
-#define SIMD_ALIGNED_F32_BUF_NEON(name) alignas(16) float name[4]
+#define SIMD_ALIGNED_F32_BUF_NEON(name) alignas(16) float(name)[4]
 #define SIMD_LANES_NEON 4
 
 #endif /* __ARM_NEON */

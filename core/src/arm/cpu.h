@@ -20,6 +20,10 @@
 #ifndef VMAF_SRC_ARM_CPU_H_
 #define VMAF_SRC_ARM_CPU_H_
 
+/* NOLINTBEGIN(performance-enum-size): C header, also
+ * included by C++ translation units. A fixed underlying
+ * type (`: unsigned char`) cannot be spelled in C on the required MSVC lane
+ * (ADR-1138); one plain-C definition serves both languages (ADR-1470). */
 enum CpuFlags {
     VMAF_ARM_CPU_FLAG_NEON = 1 << 0,
     /* SVE2 (T7-38) — runtime-detected via getauxval(AT_HWCAP2) &
@@ -28,6 +32,7 @@ enum CpuFlags {
      * flag is purely additive. */
     VMAF_ARM_CPU_FLAG_SVE2 = 1 << 1,
 };
+/* NOLINTEND(performance-enum-size) */
 
 unsigned vmaf_get_cpu_flags_arm(void);
 

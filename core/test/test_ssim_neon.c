@@ -490,7 +490,11 @@ static char *test_ssim_neon_end_to_end_matches_scalar(void)
     uint32_t state = 0x5eed0004u;
     char *msg = NULL;
 
-    mu_assert("out of memory", ref && cmp);
+    if (ref == NULL || cmp == NULL) {
+        free(ref);
+        free(cmp);
+        mu_assert("out of memory", 0);
+    }
 
     init_gaussian_window(&window);
 

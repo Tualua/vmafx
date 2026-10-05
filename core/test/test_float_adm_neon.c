@@ -221,6 +221,83 @@ static const geom_t geoms[] = {
 };
 
 static const float factors[] = {1.0f, 0.10133042f, 3.7071068f};
+/* The two floats have the same bit pattern. */
+static int float_bits_same(float a, float b)
+{
+    uint32_t ab;
+    uint32_t bb;
+    (void)memcpy(&ab, &a, sizeof(ab));
+    (void)memcpy(&bb, &b, sizeof(bb));
+    return ab == bb;
+}
+
+#define CSF_PLANES 5
+
+/* `n` zeroed floats for each of the CSF_PLANES planes; 0, or -1 with nothing
+ * left allocated. */
+static int csf_planes_alloc(float *planes[CSF_PLANES], size_t n)
+{
+    for (int p = 0; p < CSF_PLANES; ++p) {
+        planes[p] = calloc(n, sizeof(float));
+        if (planes[p] == NULL) {
+            for (int q = 0; q < p; ++q) {
+                free(planes[q]);
+            }
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* One geometry through float_adm_csf_neon() and the scalar reference for every
+ * factor: the number of cells whose bits differ, or -1 when the buffers could
+ * not be allocated. */
+static int csf_geom_mismatches(const geom_t *geo, size_t g)
+{
+    const int w = geo->w;
+    const int h = geo->h;
+    const size_t n = (size_t)w * h;
+    float *planes[CSF_PLANES];
+    int mismatches = 0;
+
+    if (csf_planes_alloc(planes, n) != 0) {
+        return -1;
+    }
+    float *src = planes[0];
+    float *ref_dst = planes[1];
+    float *ref_flt = planes[2];
+    float *neon_dst = planes[3];
+    float *neon_flt = planes[4];
+    fill_plane(src, geo, 0x51ed0000u ^ (uint32_t)g);
+
+    for (size_t f = 0; f < sizeof(factors) / sizeof(factors[0]); ++f) {
+        const float factor = factors[f];
+
+        ref_csf(src, ref_dst, ref_flt, w, h, w, w, factor, TEST_ONE_BY_30);
+        float_adm_csf_neon(src, neon_dst, neon_flt, w, h, (int)(w * sizeof(float)),
+                           (int)(w * sizeof(float)), factor, TEST_ONE_BY_30);
+
+        for (size_t i = 0; i < n; ++i) {
+            if (float_bits_same(ref_dst[i], neon_dst[i]) &&
+                float_bits_same(ref_flt[i], neon_flt[i])) {
+                continue;
+            }
+            ++mismatches;
+            if (mismatches <= 6) {
+                (void)fprintf(stderr,
+                              "  csf %dx%d factor=%.9g idx %zu: dst %.9g vs %.9g, "
+                              "flt %.9g vs %.9g\n",
+                              w, h, (double)factor, i, (double)ref_dst[i], (double)neon_dst[i],
+                              (double)ref_flt[i], (double)neon_flt[i]);
+            }
+        }
+    }
+
+    for (int p = 0; p < CSF_PLANES; ++p) {
+        free(planes[p]);
+    }
+    return mismatches;
+}
 #endif /* ARCH_AARCH64 */
 
 static char *test_float_adm_csf_neon_matches_scalar(void)
@@ -229,48 +306,9 @@ static char *test_float_adm_csf_neon_matches_scalar(void)
     return NULL; /* NEON kernel is aarch64-only. */
 #else
     for (size_t g = 0; g < sizeof(geoms) / sizeof(geoms[0]); ++g) {
-        const geom_t *geo = &geoms[g];
-        const int w = geo->w, h = geo->h;
-        const size_t n = (size_t)w * h;
+        const int mismatches = csf_geom_mismatches(&geoms[g], g);
 
-        float *src = calloc(n, sizeof(float));
-        float *ref_dst = calloc(n, sizeof(float));
-        float *ref_flt = calloc(n, sizeof(float));
-        float *neon_dst = calloc(n, sizeof(float));
-        float *neon_flt = calloc(n, sizeof(float));
-        int mismatches = 0;
-
-        mu_assert("calloc failed", src && ref_dst && ref_flt && neon_dst && neon_flt);
-        fill_plane(src, geo, 0x51ed0000u ^ (uint32_t)g);
-
-        for (size_t f = 0; f < sizeof(factors) / sizeof(factors[0]); ++f) {
-            const float factor = factors[f];
-
-            ref_csf(src, ref_dst, ref_flt, w, h, w, w, factor, TEST_ONE_BY_30);
-            float_adm_csf_neon(src, neon_dst, neon_flt, w, h, (int)(w * sizeof(float)),
-                               (int)(w * sizeof(float)), factor, TEST_ONE_BY_30);
-
-            for (size_t i = 0; i < n; ++i) {
-                if (memcmp(&ref_dst[i], &neon_dst[i], sizeof(float)) != 0 ||
-                    memcmp(&ref_flt[i], &neon_flt[i], sizeof(float)) != 0) {
-                    ++mismatches;
-                    if (mismatches <= 6) {
-                        (void)fprintf(stderr,
-                                      "  csf %dx%d factor=%.9g idx %zu: dst %.9g vs %.9g, "
-                                      "flt %.9g vs %.9g\n",
-                                      w, h, (double)factor, i, (double)ref_dst[i],
-                                      (double)neon_dst[i], (double)ref_flt[i], (double)neon_flt[i]);
-                    }
-                }
-            }
-        }
-
-        free(src);
-        free(ref_dst);
-        free(ref_flt);
-        free(neon_dst);
-        free(neon_flt);
-
+        mu_assert("calloc failed", mismatches >= 0);
         mu_assert("float_adm_csf_neon diverges from the scalar reference", mismatches == 0);
     }
     return NULL;
@@ -300,7 +338,7 @@ static char *test_float_adm_csf_den_scale_neon_matches_scalar(void)
                 float_adm_csf_den_scale_neon(src, geo->w, geo->h, (int)(geo->w * sizeof(float)),
                                              geo->left, geo->top, geo->right, geo->bottom, factor);
 
-            if (memcmp(&expected, &got, sizeof(float)) != 0) {
+            if (!float_bits_same(expected, got)) {
                 ++failures;
                 (void)fprintf(stderr,
                               "  den_scale %dx%d rect[%d,%d)x[%d,%d) width=%d tail=%d "
@@ -341,7 +379,7 @@ static char *test_float_adm_sum_cube_neon_matches_scalar(void)
                 float_adm_sum_cube_neon(src, geo->w, geo->h, (int)(geo->w * sizeof(float)),
                                         geo->left, geo->top, geo->right, geo->bottom);
 
-            if (memcmp(&expected, &got, sizeof(float)) != 0) {
+            if (!float_bits_same(expected, got)) {
                 ++failures;
                 (void)fprintf(stderr,
                               "  sum_cube %dx%d rect[%d,%d)x[%d,%d) width=%d tail=%d mode=%d: "

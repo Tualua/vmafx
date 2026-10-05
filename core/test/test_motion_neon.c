@@ -171,15 +171,18 @@ static int count_mismatches(const uint16_t *dst_ref, const uint16_t *dst_neon, u
     for (unsigned i = 0; i < h; ++i) {
         for (unsigned j = 0; j < w; ++j) {
             const size_t idx = (size_t)i * (size_t)dst_stride + j;
-            if (dst_ref[idx] == dst_neon[idx])
+            if (dst_ref[idx] == dst_neon[idx]) {
                 continue;
-            if (mismatches == 0)
+            }
+            if (mismatches == 0) {
                 first_bad_col = j;
+            }
             last_bad_col = j;
-            if (j >= left_edge && j < right_edge)
+            if (j >= left_edge && j < right_edge) {
                 ++interior_mismatches;
-            else
+            } else {
                 ++edge_mismatches;
+            }
             if (mismatches < 6) {
                 (void)fprintf(stderr,
                               "  %ux%u %s: dst[%u][%u] scalar=%u neon=%u"

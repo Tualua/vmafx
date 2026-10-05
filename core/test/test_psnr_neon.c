@@ -168,6 +168,86 @@ static void fill_pair_16(uint16_t *ref, uint16_t *dis, unsigned w, int pat, uint
 }
 #endif /* ARCH_AARCH64 */
 
+#if ARCH_AARCH64
+/* All offset pairs of one (width, pattern) 8-bit case; 1 on the first
+ * divergence from the scalar reference, 0 when every offset matches. */
+static int psnr_sse_line_8_case_diverges(uint8_t *ref_buf, uint8_t *dis_buf, size_t bytes,
+                                         unsigned w, int pat)
+{
+    for (size_t io = 0; io < N_OFFSETS; ++io) {
+        uint8_t *ref = ref_buf + k_off_ref[io];
+        uint8_t *dis = dis_buf + k_off_dis[io];
+        const uint32_t seed =
+            0x5eed0000u ^ (uint32_t)(w * 131u + (unsigned)pat * 7u + (unsigned)io);
+
+        /* Poison the whole buffer so any over-read past `w` shows up. */
+        memset(ref_buf, 0xA5, bytes);
+        memset(dis_buf, 0x5A, bytes);
+        fill_pair_8(ref, dis, w, pat, seed);
+
+        const uint32_t expected = ref_sse_line_8(ref, dis, w);
+        const uint32_t got = psnr_sse_line_8_neon(ref, dis, w);
+        if (expected != got) {
+            (void)fprintf(stderr,
+                          "  w=%u pat=%s off=(%u,%u): scalar %u != neon %u "
+                          "(delta %lld)\n",
+                          w, pattern_name(pat), k_off_ref[io], k_off_dis[io], expected, got,
+                          (long long)got - (long long)expected);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The 16-bit twin of psnr_sse_line_8_case_diverges(). */
+static int psnr_sse_line_16_case_diverges(uint16_t *ref_buf, uint16_t *dis_buf, size_t bytes,
+                                          unsigned w, int pat)
+{
+    for (size_t io = 0; io < N_OFFSETS; ++io) {
+        uint16_t *ref = ref_buf + k_off_ref[io];
+        uint16_t *dis = dis_buf + k_off_dis[io];
+        const uint32_t seed =
+            0xbeef0000u ^ (uint32_t)(w * 131u + (unsigned)pat * 7u + (unsigned)io);
+
+        memset(ref_buf, 0xA5, bytes);
+        memset(dis_buf, 0x5A, bytes);
+        fill_pair_16(ref, dis, w, pat, seed);
+
+        const uint64_t expected = ref_sse_line_16(ref, dis, w);
+        const uint64_t got = psnr_sse_line_16_neon(ref, dis, w);
+        if (expected != got) {
+            (void)fprintf(stderr, "  w=%u pat=%s off=(%u,%u): scalar %llu != neon %llu\n", w,
+                          pattern_name(pat), k_off_ref[io], k_off_dis[io],
+                          (unsigned long long)expected, (unsigned long long)got);
+            return 1;
+        }
+    }
+    return 0;
+}
+/* Every pattern at one width; 1 on the first divergence. */
+static int psnr_sse_line_8_width_diverges(uint8_t *ref_buf, uint8_t *dis_buf, size_t bytes,
+                                          unsigned w)
+{
+    for (int pat = 0; pat < N_PATTERNS; ++pat) {
+        if (psnr_sse_line_8_case_diverges(ref_buf, dis_buf, bytes, w, pat)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int psnr_sse_line_16_width_diverges(uint16_t *ref_buf, uint16_t *dis_buf, size_t bytes,
+                                           unsigned w)
+{
+    for (int pat = 0; pat < N_PATTERNS; ++pat) {
+        if (psnr_sse_line_16_case_diverges(ref_buf, dis_buf, bytes, w, pat)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+#endif /* ARCH_AARCH64 */
+
 static char *test_psnr_sse_line_8_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
@@ -177,35 +257,17 @@ static char *test_psnr_sse_line_8_neon_matches_scalar(void)
     const size_t bytes = (size_t)max_w + 16u;
     uint8_t *ref_buf = malloc(bytes);
     uint8_t *dis_buf = malloc(bytes);
-    mu_assert("allocation failed", ref_buf != NULL && dis_buf != NULL);
+    if (ref_buf == NULL || dis_buf == NULL) {
+        free(ref_buf);
+        free(dis_buf);
+        mu_assert("allocation failed", 0);
+    }
 
     for (size_t iw = 0; iw < N_WIDTHS; ++iw) {
-        const unsigned w = k_widths[iw];
-        for (int pat = 0; pat < N_PATTERNS; ++pat) {
-            for (size_t io = 0; io < N_OFFSETS; ++io) {
-                uint8_t *ref = ref_buf + k_off_ref[io];
-                uint8_t *dis = dis_buf + k_off_dis[io];
-                const uint32_t seed =
-                    0x5eed0000u ^ (uint32_t)(w * 131u + (unsigned)pat * 7u + (unsigned)io);
-
-                /* Poison the whole buffer so any over-read past `w` shows up. */
-                memset(ref_buf, 0xA5, bytes);
-                memset(dis_buf, 0x5A, bytes);
-                fill_pair_8(ref, dis, w, pat, seed);
-
-                const uint32_t expected = ref_sse_line_8(ref, dis, w);
-                const uint32_t got = psnr_sse_line_8_neon(ref, dis, w);
-                if (expected != got) {
-                    (void)fprintf(stderr,
-                                  "  w=%u pat=%s off=(%u,%u): scalar %u != neon %u "
-                                  "(delta %lld)\n",
-                                  w, pattern_name(pat), k_off_ref[io], k_off_dis[io], expected, got,
-                                  (long long)got - (long long)expected);
-                    free(ref_buf);
-                    free(dis_buf);
-                    mu_assert("psnr_sse_line_8_neon diverges from the scalar reference", 0);
-                }
-            }
+        if (psnr_sse_line_8_width_diverges(ref_buf, dis_buf, bytes, k_widths[iw])) {
+            free(ref_buf);
+            free(dis_buf);
+            mu_assert("psnr_sse_line_8_neon diverges from the scalar reference", 0);
         }
     }
 
@@ -224,32 +286,17 @@ static char *test_psnr_sse_line_16_neon_matches_scalar(void)
     const size_t bytes = ((size_t)max_w + 16u) * sizeof(uint16_t);
     uint16_t *ref_buf = malloc(bytes);
     uint16_t *dis_buf = malloc(bytes);
-    mu_assert("allocation failed", ref_buf != NULL && dis_buf != NULL);
+    if (ref_buf == NULL || dis_buf == NULL) {
+        free(ref_buf);
+        free(dis_buf);
+        mu_assert("allocation failed", 0);
+    }
 
     for (size_t iw = 0; iw < N_WIDTHS; ++iw) {
-        const unsigned w = k_widths[iw];
-        for (int pat = 0; pat < N_PATTERNS; ++pat) {
-            for (size_t io = 0; io < N_OFFSETS; ++io) {
-                uint16_t *ref = ref_buf + k_off_ref[io];
-                uint16_t *dis = dis_buf + k_off_dis[io];
-                const uint32_t seed =
-                    0xbeef0000u ^ (uint32_t)(w * 131u + (unsigned)pat * 7u + (unsigned)io);
-
-                memset(ref_buf, 0xA5, bytes);
-                memset(dis_buf, 0x5A, bytes);
-                fill_pair_16(ref, dis, w, pat, seed);
-
-                const uint64_t expected = ref_sse_line_16(ref, dis, w);
-                const uint64_t got = psnr_sse_line_16_neon(ref, dis, w);
-                if (expected != got) {
-                    (void)fprintf(stderr, "  w=%u pat=%s off=(%u,%u): scalar %llu != neon %llu\n",
-                                  w, pattern_name(pat), k_off_ref[io], k_off_dis[io],
-                                  (unsigned long long)expected, (unsigned long long)got);
-                    free(ref_buf);
-                    free(dis_buf);
-                    mu_assert("psnr_sse_line_16_neon diverges from the scalar reference", 0);
-                }
-            }
+        if (psnr_sse_line_16_width_diverges(ref_buf, dis_buf, bytes, k_widths[iw])) {
+            free(ref_buf);
+            free(dis_buf);
+            mu_assert("psnr_sse_line_16_neon diverges from the scalar reference", 0);
         }
     }
 
@@ -280,7 +327,11 @@ static char *check_sse_line_8_wrap(void)
 
     uint8_t *ref8 = malloc(max_w);
     uint8_t *dis8 = malloc(max_w);
-    mu_assert("allocation failed", ref8 != NULL && dis8 != NULL);
+    if (ref8 == NULL || dis8 == NULL) {
+        free(ref8);
+        free(dis8);
+        mu_assert("allocation failed", 0);
+    }
     memset(ref8, 255, max_w);
     memset(dis8, 0, max_w);
 
@@ -311,7 +362,11 @@ static char *check_sse_line_16_no_truncation(void)
     const unsigned w16 = 7680u;
     uint16_t *ref16 = malloc((size_t)w16 * sizeof(uint16_t));
     uint16_t *dis16 = malloc((size_t)w16 * sizeof(uint16_t));
-    mu_assert("allocation failed", ref16 != NULL && dis16 != NULL);
+    if (ref16 == NULL || dis16 == NULL) {
+        free(ref16);
+        free(dis16);
+        mu_assert("allocation failed", 0);
+    }
     for (unsigned j = 0; j < w16; ++j) {
         ref16[j] = 65535u;
         dis16[j] = 0u;

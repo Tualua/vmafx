@@ -88,7 +88,8 @@ static void h_row_neon(const float *img_row, float *cache_row, int uc, int kw_ev
 {
     for (int x = 0; x < dst_w_simd; x += 4) {
         const int kx = x + uc;
-        float64x2_t acc_lo, acc_hi;
+        float64x2_t acc_lo;
+        float64x2_t acc_hi;
         h_tap4_neon(img_row, kx, uc, kw_even, kh, &acc_lo, &acc_hi);
         const float32x4_t out = vcombine_f32(vcvt_f32_f64(acc_lo), vcvt_f32_f64(acc_hi));
         vst1q_f32(cache_row + kx, out);
@@ -161,7 +162,8 @@ static void v_row_neon(const float *img_cache, float *dst_row, int w, int ky, in
 {
     for (int x = 0; x < dst_w_simd; x += 4) {
         const int kx = x + uc;
-        float64x2_t acc_lo, acc_hi;
+        float64x2_t acc_lo;
+        float64x2_t acc_hi;
         v_tap4_neon(img_cache, w, ky, kx, vc, kh_even, kv, &acc_lo, &acc_hi);
         const float32x4_t out = vcombine_f32(vcvt_f32_f64(acc_lo), vcvt_f32_f64(acc_hi));
         vst1q_f32(dst_row + x, out);

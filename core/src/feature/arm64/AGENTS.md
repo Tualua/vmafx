@@ -199,6 +199,21 @@ processor (`test_moment_simd` and `test_iqa_convolve` did until ADR-1500).
 chain, do not introduce vector `cbrtf` / `powf` polynomials. SSIMULACRA 2
 invariants apply identically to NEON and SVE2.
 
+## SSIMULACRA 2 shared header (ADR-1142)
+
+`ssimulacra2_arm64_common.h` = one definition of scalar parts NEON, SVE2,
+host TUs share: XYB (`Ss2XybK`, `ss2_xyb_block_neon`, `ss2_xyb_pixel`), SSIM +
+edge-diff sums, YUV scalar pixel (`Ss2YuvK`), NEON 2x2 row. Includers set
+`#pragma STDC FP_CONTRACT OFF` before include.
+
+- Rebase: scalar expression change in `ssimulacra2_math.h` /
+  `ssimulacra2.c` changes header same PR; no per-TU copy back.
+- SVE vector not struct member or array element: SVE2 helpers keep scalars
+  or state rows in memory.
+- Every kernel <= 60 lines (HISS-04); `NOLINT(readability-function-size)`
+  carve-outs gone.
+- Guard: `test_ssimulacra2_simd` (NEON + SVE2 vs scalar, `==`).
+
 ## Adding a new NEON / SVE2 TU
 
 Use [`/add-simd-path`](../../../../.claude/skills/add-simd-path/SKILL.md).
