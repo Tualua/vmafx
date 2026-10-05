@@ -1,0 +1,19 @@
+{
+  "comment": "Pins of the hash locks with no wheel for CPython 3.14 on manylinux x86_64, with the sdist's build-system requires. Regenerate: scripts/ci/sdist_only_pins.py write",
+  "platform": "manylinux x86_64 (glibc <= 2.39)",
+  "python": "3.14",
+  "sdist_only": {
+    "csscompressor==0.9.5": [
+      "setuptools"
+    ],
+    "jsmin==3.0.1": [
+      "setuptools"
+    ],
+    "libsvm-official==3.37.0": [
+      "setuptools"
+    ],
+    "reuse==6.2.0": [
+      "poetry-core"
+    ]
+  }
+}
