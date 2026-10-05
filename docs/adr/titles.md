@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1285), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1286), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5055,6 +5055,10 @@ Every ADR, one heading each (1285), so the site search finds an ADR by its title
 ## ADR-1622: the node's eBPF object is generated at build time with a pinned clang and no object is committed
 
 [1622-bpf-object-generated-at-build-time](1622-bpf-object-generated-at-build-time.md)
+
+## ADR-1673: A push to master never cancels the runs of an earlier master commit; the concurrency group carries the SHA there
+
+[1673-master-runs-not-cancelled-by-concurrency](1673-master-runs-not-cancelled-by-concurrency.md)
 
 ## ADR-1679: The Metal IOSurface import reads NV12 and P010 surfaces itself, and the FFmpeg filter imports whole frames
 

@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: rust-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: rust-ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Least-privilege default for the whole workflow (ADR-0875).
 # Jobs widen only if they need to publish artefacts or push.

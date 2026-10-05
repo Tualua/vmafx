@@ -11,7 +11,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "security-scans.yml"
-EXPECTED_GROUP = "group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}"
+EXPECTED_GROUP = (
+    "group: security-${{ github.workflow }}-${{ github.event_name }}-"
+    "${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}"
+)
 COLLIDING_GROUP = "group: security-${{ github.workflow }}-${{ github.ref }}"
 EXPECTED_DEPENDENCY_LICENSE_ALLOWLIST = {
     "pkg:pypi/python-debian",
@@ -41,7 +44,7 @@ class SecurityWorkflowContractTest(unittest.TestCase):
 
         self.assertIn(EXPECTED_GROUP, concurrency)
         self.assertNotIn(COLLIDING_GROUP, concurrency)
-        self.assertIn("cancel-in-progress: true", concurrency)
+        self.assertIn("cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}", concurrency)
 
     def test_cpp_configure_is_outside_extraction_and_checkout(self) -> None:
         workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")

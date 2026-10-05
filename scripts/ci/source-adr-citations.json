@@ -7703,7 +7703,8 @@
     "1294": {
       "sites": {
         ".github/workflows/docs.yml": 2,
-        ".github/workflows/required-aggregator.yml": 1
+        ".github/workflows/required-aggregator.yml": 1,
+        "scripts/ci/tests/test_master_concurrency_contract.py": 1
       },
       "target": "1294-docs-build-concurrency-per-job.md"
     },
@@ -10943,6 +10944,12 @@
         "scripts/dev/tests/test_gen_node_bpf.py": 1
       },
       "target": "1622-bpf-object-generated-at-build-time.md"
+    },
+    "1673": {
+      "sites": {
+        ".pre-commit-config.yaml": 1
+      },
+      "target": "1673-master-runs-not-cancelled-by-concurrency.md"
     },
     "1679": {
       "sites": {

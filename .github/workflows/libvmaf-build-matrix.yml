@@ -28,8 +28,8 @@ permissions:
 # Ported from the now-deleted windows.yml (ADR-0115). Cancels superseded
 # runs on the same ref so a force-push doesn't queue duplicate matrix runs.
 concurrency:
-  group: libvmaf-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: libvmaf-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   DEBIAN_FRONTEND: noninteractive

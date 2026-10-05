@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-image-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: docker-image-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   impact:
@@ -93,8 +93,10 @@ jobs:
             >"$out_dir/stdout.log" 2>"$out_dir/stderr.log" || rc=$?
           if [ "$rc" -ne 0 ]; then
             echo "::error::vmaf exited $rc inside the image"
-            echo "----- vmaf stdout -----"; cat "$out_dir/stdout.log" || true
-            echo "----- vmaf stderr -----"; cat "$out_dir/stderr.log" || true
+            for log in stdout stderr; do
+              echo "----- vmaf $log -----"
+              if [ -f "$out_dir/$log.log" ]; then cat "$out_dir/$log.log"; fi
+            done
             exit 1
           fi
           python3 - "$out_dir/result.json" <<'PYEOF'

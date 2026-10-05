@@ -182,7 +182,11 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertNotIn("continue-on-error", self.workflow)
         self.assertNotRegex(self.workflow, r"git\s+(?:push|tag)|gh\s+pr\s+create")
         self.assertEqual(self.workflow.count("persist-credentials: false"), 2)
-        self.assertIn("${{ github.event_name }}-${{ github.ref }}", self.workflow)
+        self.assertIn(
+            "${{ github.event_name }}-"
+            "${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}",
+            self.workflow,
+        )
 
     def test_refresh_retains_proposal_even_on_failure(self) -> None:
         record = _step(self.refresh, "Record proposed refresh")

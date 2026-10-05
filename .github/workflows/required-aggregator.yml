@@ -25,9 +25,13 @@ permissions:
   checks: read
   pull-requests: read
 
+# Master pushes: SHA-scoped group, never cancelled (docs/development/ci.md,
+# "Master push runs"). A re-run of an older master head therefore cannot cancel
+# the aggregator of a newer one. PR refs keep one group per ref with
+# cancel-in-progress: re-running an older PR head still cancels the current one.
 concurrency:
-  group: required-aggregator-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: required-aggregator-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   aggregator:

@@ -23,8 +23,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: doxygen-public-api-${{ github.ref }}
-  cancel-in-progress: true
+  group: doxygen-public-api-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   impact:

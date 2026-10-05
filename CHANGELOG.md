@@ -1592,6 +1592,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [known upstream bugs](docs/development/known-upstream-bugs.md#upstream-gpu-defects-checked-against-the-fork-2026-10-05).
 
 
+- CI: a push to `master` no longer cancels the workflow runs of the previous
+  master commit. The concurrency group of every push-to-master workflow carries
+  the commit SHA on master and `cancel-in-progress` stays on for pull request
+  refs; publish, release, Scorecard and Pages deploy stay serialised. A contract
+  test (`scripts/ci/tests/test_master_concurrency_contract.py`) enforces it
+  (ADR-1673).
+
+
 - **Metal kernels compile without fast math or FP contraction**
   (ADR-1498): every `.metal` file takes `-fno-fast-math -ffp-contract=off`,
   so fp32 `+ - * /`, `sqrt` and `fma` are correctly rounded and no `a * b + c`

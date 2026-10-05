@@ -16,8 +16,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: lint-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: lint-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   pre-commit:

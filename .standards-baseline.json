@@ -1,26 +1,10 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T17:51:49Z",
+  "generated_at": "2026-10-05T21:10:57Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "0cf544c542466e67e5339ec6459349f0fa21cfb0",
-  "total_infractions": 6,
+  "commit_sha": "e3b42ece57190544919f6437bb02017e9fe49d94",
+  "total_infractions": 4,
   "infractions": [
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-image.yml",
-      "line_number": 96,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:0384c48dc174",
-      "fingerprint": ".github/workflows/docker-image.yml:HISS-07:text:0384c48dc174#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-image.yml",
-      "line_number": 97,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:90891aa10dd2",
-      "fingerprint": ".github/workflows/docker-image.yml:HISS-07:text:90891aa10dd2#1"
-    },
     {
       "rule_id": "HISS-07",
       "file_path": ".github/workflows/pr-type-label.yml",

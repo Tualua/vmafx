@@ -19,8 +19,9 @@ category without superseding ADR that provides reproducibly pinned policy.
 Security Scans concurrency group includes `github.event_name` between
 workflow name and ref. Scheduled scan and master push both use
 `refs/heads/master`; without event discriminator, either can cancel
-other's CodeQL coverage. Preserve `cancel-in-progress: true` so superseded
-runs of same event/ref still collapse, keep
+other's CodeQL coverage. On master the ref slot is the SHA and
+`cancel-in-progress` is `github.ref != 'refs/heads/master'` (ADR-1673), so
+only superseded PR runs collapse; keep
 `scripts/ci/test_security_workflow_contract.py` in always-on Rules gate.
 
 ## Meson configure precedes CodeQL extraction (ADR-1222 / Alert 1279)

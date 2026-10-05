@@ -222,6 +222,38 @@ Adding a top-level directory or file? Add it to `known_prefixes` or
 fails otherwise, because an unknown path would silently force `full` mode on
 every PR that touches it.
 
+## Master push runs
+
+Master commits land every few minutes through a local merge train. A push to
+`master` must not cancel the runs of the previous master commit, or no master
+commit ever gets a complete verdict ([ADR-1673](../adr/1673-master-runs-not-cancelled-by-concurrency.md)).
+
+- Every workflow triggered by a push to `master` puts the SHA in its group on
+  master and keeps the ref elsewhere:
+
+  ```yaml
+  group: <name>-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  ```
+
+  On a PR ref the group is still the ref and a newer push cancels the older
+  run; on master each commit has its own group and nothing cancels it.
+- The merge train keeps one sentinel master commit's runs alive and cancels the
+  other superseded master runs itself through the API. GitHub's per-ref
+  cancellation is not involved on master.
+- The Required Checks Aggregator follows the same rule. Re-running the
+  aggregator of an old master head no longer cancels the newest one. On a PR ref
+  the old warning stands: re-running an older head's aggregator cancels the
+  current head's.
+- Blocks that must serialise keep their group and are listed with a reason in
+  `scripts/ci/tests/test_master_concurrency_contract.py`: `dev-container-publish.yml`
+  (registry publish), `release-please.yml` (one release PR per push),
+  `scorecard.yml` (attestation publish) and the `deploy` job of `docs.yml` (one
+  Pages deployment).
+- A new workflow that triggers on a push to `master` takes the SHA form or is
+  added to that list with a reason. Run the check with
+  `python3 -B -m unittest scripts/ci/tests/test_master_concurrency_contract.py`.
+
 ## Required-checks aggregator
 
 The single required check on `master` branch protection is the **Required

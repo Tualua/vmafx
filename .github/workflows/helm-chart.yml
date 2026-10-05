@@ -14,8 +14,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: helm-chart-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: helm-chart-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Least-privilege default for the whole workflow (ADR-0875).
 permissions:

@@ -726,6 +726,18 @@ no library change.
   `vmaf_read_pictures_sycl()` accepted the frame and maps `-ENOTSUP` to a message;
   `uninit_sycl()` prints no score line after a failed pooled score. Later patches moved by
   offsets only.
+## Master push runs are not cancelled by concurrency (ADR-1673, 2026-10-05)
+
+`ci/master-runs-not-cancelled-by-concurrency`. Workflows only; no C change.
+
+- Every push-to-master workflow's concurrency group is
+  `... ${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}` with
+  `cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}`. An upstream or
+  rebase conflict in a `concurrency:` block keeps this form. The serialising
+  blocks (`dev-container-publish.yml`, `release-please.yml`, `scorecard.yml`,
+  `docs.yml` deploy) stay as they were. `scripts/ci/tests/test_master_concurrency_contract.py`
+  and `scripts/ci/test_security_workflow_contract.py` guard it; add a new
+  push-to-master workflow in the same form.
 
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 

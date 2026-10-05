@@ -64,8 +64,8 @@ jobs:
     # Ref-scoped: one docs build per branch, superseded only by a newer push to
     # that same branch. No cross-PR contention.
     concurrency:
-      group: docs-build-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
+      group: docs-build-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

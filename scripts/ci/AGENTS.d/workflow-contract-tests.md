@@ -4,8 +4,9 @@ paths:
   - scripts/ci/check-helm-selector-isolation.py
   - scripts/ci/tests/test_check_helm_selector_isolation.py
   - scripts/ci/test_security_workflow_contract.py
+  - scripts/ci/tests/test_master_concurrency_contract.py
   - scripts/ci/tests/test-dedupe-gate.sh
-invariant: Each contract test pins one workflow step; script, step name and callers change in the same PR.
+invariant: Contract test and caller change together.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Workflow contract tests: E2E, Helm selectors, Security Scans, dedupe gate
@@ -24,3 +25,7 @@ invariant: Each contract test pins one workflow step; script, step name and call
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
 | `tests/test-dedupe-gate.sh` | `standards-gate.yml` — `Reject duplicate implementation families`; `rule-enforcement.yml` — `Verify duplicate implementation gate`; `.pre-commit-config.yaml` — `dedupe-gate-contract`; `lefthook.yml`; `make verify-all` | The clone scan stays explicit in the required Standards job, both blocking local lefthook stages, and the aggregate local command. Its real-Make fixture proves a scanner failure makes `make verify-all` fail. `standardsctl audit` is not a substitute because it does not run the AST clone detector. |
+
+| Script | Workflow lane(s) that invoke it | What couples them |
+| --- | --- | --- |
+| `tests/test_master_concurrency_contract.py` | every workflow triggered by a push to `master` (`.github/workflows/*.yml`); `.pre-commit-config.yaml` — `test-master-concurrency-contract` | A master push must not cancel or evict an earlier master run: the concurrency group carries `github.sha` on master, `cancel-in-progress` stays for PR refs, and a block that must serialise is listed in the test with a reason (ADR-1673). Stale list entries fail. |

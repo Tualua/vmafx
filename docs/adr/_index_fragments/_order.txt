@@ -1284,3 +1284,4 @@
 1874-vmaf-list-backends
 1880-format-envelope-device-targets
 1768-ffmpeg-libvmaf-no-score-after-error
+1673-master-runs-not-cancelled-by-concurrency
