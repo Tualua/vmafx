@@ -2445,6 +2445,17 @@ test('test_metal_twin_option_tables_contract',
     timeout : 120,
 )
 
+# ADR-1836 (T-GPU-VIF-NAMES-AFTER-OPTION-RESET-2026-10-05): every CUDA, SYCL
+# and HIP twin builds its feature-name dictionary in init() before it writes an
+# option slot, so its names follow the options the caller set. Device-free;
+# refuses planted orders.
+test('test_gpu_twin_name_order_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_twin_name_order_contract.py'),
+    suite : ['fast'],
+    timeout : 120,
+)
+
 # integer vif gain (ADR-1498)
 # T-METAL-INTEGER-VIF-FP32-GAIN-2026-10-03: the two integers integer_vif_metal's
 # kernels take from the gain (feature/metal/metal_integer_vif_gain.h, the Metal

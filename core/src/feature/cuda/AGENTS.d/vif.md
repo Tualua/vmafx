@@ -3,7 +3,7 @@ paths:
   - core/src/feature/cuda/integer_vif_cuda.c
   - core/src/feature/cuda/integer_vif_cuda.h
   - core/src/feature/cuda/integer_vif/filter1d.cu
-invariant: vif_cuda enforces 16-pixel minimum, reads CPU log2 table, and resets on picture stream.
+invariant: vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing enable_chroma, picture-stream reset.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer VIF minimum size, log2 table, and stream reset
@@ -65,3 +65,17 @@ invariant: vif_cuda enforces 16-pixel minimum, reads CPU log2 table, and resets 
   `double` -> `int32_t` conversion of `sigma2_sq - g * sigma12`
   (`test_integer_vif_sv_sq_contract.py`). Header listed in the backend's
   `depend_files` (`core/src/meson.build`).
+
+## `vif_cuda` names its features before it clears `enable_chroma` (ADR-1836)
+
+- `init_fex_cuda()` builds `feature_name_dict` from the options as the caller
+  set them, then `vif_drop_vestigial_chroma_option()` clears the no-op
+  `enable_chroma`: `enable_chroma=true` gives `integer_vif_scaleN_enable_chroma`
+  (scores unchanged). Clearing first gave the default names; every other
+  extractor names its features from its options first. A failure after the
+  dictionary exists goes through `vif_init_unwind()`, which frees it.
+- Guards: `test_gpu_twin_name_order_contract.py` (every CUDA, SYCL, HIP twin;
+  no exception), `test_integer_vif_cpu_cuda_parity` (reads the suffixed names
+  and refuses the default ones for `enable_chroma=true`),
+  `test_cuda_vif_log2_contract.py` (init order ends in
+  `return vif_setup_buffers(`).

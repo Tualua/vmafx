@@ -102,7 +102,8 @@ static const VmafOption options[] = {{
                                           * and across upstream Netflix/vmaf — see
                                           * ADR-0597.  Setting `enable_chroma=true` emits a
                                           * one-shot warning during init() and otherwise has
-                                          * no effect on the produced scores. */
+                                          * no effect on the produced scores; their names
+                                          * carry `_enable_chroma` (ADR-1836). */
                                          .name = "enable_chroma",
                                          .help =
                                              "no-op (luma-only kernel; ADR-0597). retained for "
@@ -489,6 +490,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (table_err)
         return vif_init_unwind(fex, s, table_err);
 
+    /* The names follow the options as the caller set them, before the no-op
+     * `enable_chroma` is cleared below: `enable_chroma=true` gives the
+     * `_enable_chroma` names, as every extractor names its features from its
+     * options first in init() (ADR-1836). A later failure releases the
+     * dictionary through vif_init_unwind(). */
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return vif_init_unwind(fex, s, -ENOMEM);
+
     vif_drop_vestigial_chroma_option(s);
     (void)pix_fmt; /* YUV400P needs no special case — luma-only path handles it. */
     s->n_planes = 1;
@@ -501,15 +512,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (attr_res != CUDA_SUCCESS)
         return vif_init_unwind(fex, s, vmaf_cuda_result_to_errno((int)attr_res));
 
-    int ret = vif_setup_buffers(fex, s, w, h, tex_alignment, hbd);
-    if (ret)
-        return ret;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return vif_init_unwind(fex, s, -ENOMEM);
-    return 0;
+    return vif_setup_buffers(fex, s, w, h, tex_alignment, hbd);
 }
 
 static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *dis_in, int w,

@@ -68,7 +68,7 @@ INIT_ORDER = (
     "const int cuda_err = vif_init_cuda_context(fex, s, cu_f);",
     "vmaf_cuda_vif_upload_log2_table(fex->cu_state, s->filter1d_module);",
     "return vif_init_unwind(fex, s, table_err);",
-    "int ret = vif_setup_buffers(",
+    "return vif_setup_buffers(",
 )
 TABLE_EXPRESSION = (
     "log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);"

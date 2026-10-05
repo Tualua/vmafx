@@ -78,7 +78,7 @@ prefix):
 | `vif_prescale_method` | `pm` | `float_vif` | string | `nearest` | `nearest`, `bilinear`, `bicubic`, `lanczos4` | Scaling method for the prescale. |
 | `vif_scale1_min_val`, `vif_scale2_min_val`, `vif_scale3_min_val` | `s1miv`, `s2miv`, `s3miv` | `float_vif` | double | `0.0` | `0.0` to `1.0` | A scale's score below its floor is reported as the floor. |
 | `vif_sigma_nsq` | `snsq` | `float_vif` | double | `2.0` | `0.0` to `5.0` | Neural noise variance. |
-| `enable_chroma` | none | `vif_cuda` only | bool | `false` | n/a | **No-op** retained for backward compatibility with callers that pass the option on the CLI or in a model JSON. VIF is luma-only by design; `enable_chroma=true` emits a one-shot warning during init (`integer_vif (CUDA): enable_chroma=true requested but VIF is luma-only by design (...); option is a no-op. See ADR-0597.`) and otherwise has no effect. |
+| `enable_chroma` | none | `vif_cuda` only | bool | `false` | n/a | **No-op** retained for backward compatibility with callers that pass the option on the CLI or in a model JSON. VIF is luma-only by design; `enable_chroma=true` emits a one-shot warning during init (`integer_vif (CUDA): enable_chroma=true requested but VIF is luma-only by design (...); option is a no-op. See ADR-0597.`) and leaves the scores unchanged. The scores are reported under names with the option's suffix, as for any option the caller sets: `integer_vif_scale0_enable_chroma` to `integer_vif_scale3_enable_chroma` (in the collector and `--output`), since [ADR-1836](../adr/1836-cuda-vif-enable-chroma-names.md); before it they kept the default `integer_vif_scale0` to `integer_vif_scale3` names. |
 
 Option aliases are part of the published collector key. Equivalent GPU twin
 options use the CPU spellings (`ks`, `ssclz` and `egl`) so backend selection
@@ -374,3 +374,5 @@ Now under [floating-point stage dumps](#floating-point-stage-dumps).
 - [Features](features.md) - full feature extractor reference
 - [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md) - why
   `enable_chroma` is a documented no-op on the CUDA twin.
+- [ADR-1836](../adr/1836-cuda-vif-enable-chroma-names.md) - why its scores
+  carry the `_enable_chroma` suffix when the option is set.

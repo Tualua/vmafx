@@ -68,6 +68,19 @@ No rebase impact: docs only.
 `docs/v1-gpu-fallbacks-zero-copy`. no rebase impact: docs only. Edits `docs/usage/ffmpeg.md`,
 `docs/backends/cuda/overview.md`, `docs/backends/hip/uploads.md` and a dated correction note
 in `docs/research/0086-tiny-ai-sota-deep-dive-2026-05-08.md`; no code, no FFmpeg patch.
+## `vif_cuda` names its features before it clears `enable_chroma` (2026-10-05)
+
+`fix/cuda-vif-names-before-option-reset` (T-GPU-VIF-NAMES-AFTER-OPTION-RESET-2026-10-05,
+[ADR-1836](adr/1836-cuda-vif-enable-chroma-names.md)). Fork-only file.
+
+- `init_fex_cuda()` in `core/src/feature/cuda/integer_vif_cuda.c` builds
+  `feature_name_dict` right after the log2 table upload and before
+  `vif_drop_vestigial_chroma_option()`, and ends in
+  `return vif_setup_buffers(...)`. Keep that order on a rebase:
+  `test_gpu_twin_name_order_contract.py` refuses an option write before the
+  dictionary in any CUDA, SYCL or HIP twin, and `test_cuda_vif_log2_contract.py`
+  holds the init tail. `test_integer_vif_cpu_cuda_parity` reads the
+  `_enable_chroma` names.
 
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 

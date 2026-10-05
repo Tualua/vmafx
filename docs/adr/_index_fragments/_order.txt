@@ -1274,3 +1274,4 @@
 1829-rc4-zero-copy-import
 1830-sycl-vif-simd16-only
 1806-metal-kernels-host-replay
+1836-cuda-vif-enable-chroma-names
