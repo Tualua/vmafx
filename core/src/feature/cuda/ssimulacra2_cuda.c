@@ -47,6 +47,7 @@
 #include "cuda/kernel_template.h"
 #include "cuda/ssimulacra2_cuda.h"
 #include "cuda_helper.cuh"
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 #include "picture.h"
 #include "picture_cuda.h"
@@ -335,15 +336,11 @@ static void ss2c_yuv_coeffs(int yuv_matrix, unsigned bpc, Ss2cYuvCoefficients *c
     c->c_off = 0.5f;
 }
 
-/* Plane sizes of the input pictures (picture.c: ceiling division). 4:0:0 has
- * no chroma to convert; check_context_cuda sends it to the CPU extractor. */
-static int ss2c_configure_planes(Ssimu2StateCuda *s, enum VmafPixelFormat pix_fmt)
+/* Plane sizes of the input pictures (picture.c: ceiling division). init()
+ * has refused 4:0:0 (vmaf_ss2_check_pixel_format()); check_context_cuda sends
+ * it to the CPU extractor. */
+static void ss2c_configure_planes(Ssimu2StateCuda *s, enum VmafPixelFormat pix_fmt)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssimulacra2_cuda: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input\n");
-        return -EINVAL;
-    }
     const unsigned ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     const unsigned ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
     for (unsigned p = 0; p < SS2C_CHANNELS; p++) {
@@ -352,7 +349,6 @@ static int ss2c_configure_planes(Ssimu2StateCuda *s, enum VmafPixelFormat pix_fm
         s->plane_w[p] = (s->width + sh) >> sh;
         s->plane_h[p] = (s->height + sv) >> sv;
     }
-    return 0;
 }
 
 static void ss2c_configure_scales(Ssimu2StateCuda *s)
@@ -784,6 +780,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                          unsigned w, unsigned h)
 {
     Ssimu2StateCuda *s = fex->priv;
+    int err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2_cuda");
+    if (err)
+        return err;
     if (!fex->cu_state)
         return -EINVAL;
     if (w < 8u || h < 8u) {
@@ -794,9 +793,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    int err = ss2c_configure_planes(s, pix_fmt);
-    if (err)
-        return err;
+    ss2c_configure_planes(s, pix_fmt);
     ss2c_configure_scales(s);
     ss2c_setup_gaussian(s, SS2C_SIGMA);
     if (s->rg_radius < 1 || s->rg_radius > SS2C_BLUR_MAX_RADIUS)
@@ -820,8 +817,7 @@ static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
 {
     (void)fex;
     (void)bpc;
-    const bool chroma = pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN;
-    return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
+    return (vmaf_ss2_has_chroma(pix_fmt) && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
 }
 
 static const char *provided_features[] = {"ssimulacra2", NULL};

@@ -55,6 +55,7 @@
 #include "feature_extractor.h"
 #include "log.h"
 
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 #include "picture.h"
 #include "ssimulacra2_hip.h"
@@ -290,8 +291,7 @@ static int check_context_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
 {
     (void)fex;
     (void)bpc;
-    const bool chroma = pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN;
-    return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
+    return (vmaf_ss2_has_chroma(pix_fmt) && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
 }
 
 #ifdef HAVE_HIPCC
@@ -408,15 +408,10 @@ static struct Ss2hYuvCoefficients ss2h_yuv_coefficients(int yuv_matrix, unsigned
     return k;
 }
 
-/* Plane geometry by picture.c's ceil rule. YUV 4:0:0 has no chroma planes to
- * convert; the CPU extractor would read planes that do not exist. */
-static int ss2h_configure_planes(Ssimu2StateHip *s, enum VmafPixelFormat pix_fmt)
+/* Plane geometry by picture.c's ceil rule. init() has refused YUV 4:0:0, which
+ * has no chroma planes to convert (vmaf_ss2_check_pixel_format()). */
+static void ss2h_configure_planes(Ssimu2StateHip *s, enum VmafPixelFormat pix_fmt)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssimulacra2_hip: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input\n");
-        return -EINVAL;
-    }
     const unsigned ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     const unsigned ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
     const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
@@ -427,7 +422,6 @@ static int ss2h_configure_planes(Ssimu2StateHip *s, enum VmafPixelFormat pix_fmt
         s->plane_h[p] = (s->height + sv) >> sv;
         s->row_bytes[p] = (size_t)s->plane_w[p] * bytes_per_sample;
     }
-    return 0;
 }
 
 static void ss2h_configure_scales(Ssimu2StateHip *s)
@@ -930,6 +924,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return -ENOSYS;
 #else
     Ssimu2StateHip *s = fex->priv;
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2_hip");
+    if (fmt_err)
+        return fmt_err;
 
     if (w < 8u || h < 8u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_hip: input %ux%u below 8x8 lower bound\n", w,
@@ -940,9 +937,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    const int plane_err = ss2h_configure_planes(s, pix_fmt);
-    if (plane_err)
-        return plane_err;
+    ss2h_configure_planes(s, pix_fmt);
     ss2h_configure_scales(s);
     ss2h_setup_gaussian(&s->iir, SS2H_SIGMA);
     /* The row pass finds every left input of a tile in the tile before it

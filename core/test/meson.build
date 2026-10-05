@@ -2254,6 +2254,26 @@ test_ssimulacra2_nonfinite = executable('test_ssimulacra2_nonfinite',
 )
 test('test_ssimulacra2_nonfinite', test_ssimulacra2_nonfinite, suite : ['fast'])
 
+# T-METAL-SSIMULACRA2-YUV400-ACCEPTED-2026-10-05: the one 4:0:0 check of the
+# CPU ssimulacra2 extractor and its CUDA, SYCL, HIP and Metal twins
+# (feature/ssimulacra2_pixel_format.h): 4:2:0 / 4:2:2 / 4:4:4 pass silently,
+# 4:0:0 and an unknown format get -EINVAL and the CPU's message. The test
+# defines its own vmaf_log() to read that message. The contract checks that
+# every extractor's init() calls the check before it allocates; it failed on
+# ssimulacra2_metal.mm, whose init() discarded the pixel format.
+test_ssimulacra2_pixel_format = executable('test_ssimulacra2_pixel_format',
+    ['test.c', 'test_ssimulacra2_pixel_format.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+)
+test('test_ssimulacra2_pixel_format', test_ssimulacra2_pixel_format, suite : ['fast'])
+test('test_ssimulacra2_pixel_format_contract',
+    import('python').find_installation(),
+    args : files('test_ssimulacra2_pixel_format_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1433 — feature/ordered_sum.h (the bits of `for (...) s += x[i];` over
 # non-negative doubles, from chunk-wise integer increments) against that loop:
 # random terms, terms that tie on every add, zeros, 600 binades of range, NaN

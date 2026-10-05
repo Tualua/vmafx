@@ -69,6 +69,7 @@
  * host's (ssimulacra2_math.h, ADR-1363). */
 #define VMAF_SS2_FDIV(a, b) vmaf_sycl_exact::div_rn((a), (b))
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 
 namespace
@@ -407,14 +408,10 @@ Ss2YuvCoefficients ss2s_yuv_coefficients(int yuv_matrix, unsigned bpc)
     return k;
 }
 
-/* Plane geometry by picture.c's ceil rule; YUV400 has no chroma to convert. */
-int ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
+/* Plane geometry by picture.c's ceil rule. init() has refused 4:0:0, which
+ * has no chroma to convert (vmaf_ss2_check_pixel_format()). */
+void ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssimulacra2_sycl: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input\n");
-        return -EINVAL;
-    }
     const unsigned ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     const unsigned ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
     const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
@@ -425,7 +422,6 @@ int ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
         s->plane_h[p] = (s->height + sv) >> sv;
         s->row_bytes[p] = (size_t)s->plane_w[p] * bytes_per_sample;
     }
-    return 0;
 }
 
 void ss2s_configure_scales(Ssimu2StateSycl *s)
@@ -1501,6 +1497,9 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
                   unsigned h)
 {
     auto *s = static_cast<Ssimu2StateSycl *>(fex->priv);
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2_sycl");
+    if (fmt_err)
+        return fmt_err;
     if (w < 8u || h < 8u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: input %ux%u below 8x8 lower bound\n", w,
                  h);
@@ -1511,9 +1510,7 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    const int plane_err = ss2s_configure_planes(s, pix_fmt);
-    if (plane_err)
-        return plane_err;
+    ss2s_configure_planes(s, pix_fmt);
     ss2s_configure_scales(s);
     ss2s_setup_gaussian(&s->iir, SS2S_SIGMA);
     s->yuv = ss2s_yuv_coefficients(s->yuv_matrix, bpc);
@@ -1535,8 +1532,7 @@ int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
 {
     (void)fex;
     (void)bpc;
-    const bool chroma = pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN;
-    return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
+    return (vmaf_ss2_has_chroma(pix_fmt) && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
 }
 
 bool ss2s_picture_matches(const Ssimu2StateSycl *s, const VmafPicture *pic)

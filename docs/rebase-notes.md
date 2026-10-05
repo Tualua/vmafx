@@ -36,6 +36,24 @@ Fork-local tester code only; no upstream file.
   with a change to either function keeps both.
 - The report schema is unchanged; `tests/test_hw_report.py` and
   `tests/test_hw_metal.py` pin the text.
+## One 4:0:0 check for every ssimulacra2 extractor (2026-10-05)
+
+`fix/metal-ssimulacra2-refuse-yuv400` (`T-METAL-SSIMULACRA2-YUV400-ACCEPTED-2026-10-05`).
+`core/src/feature/ssimulacra2_pixel_format.h` is new and fork-local:
+`vmaf_ss2_check_pixel_format()` and `vmaf_ss2_has_chroma()`.
+
+- `core/src/feature/ssimulacra2.c` (fork-local) lost its static
+  `check_pixel_format()`; `init()` calls the header with the name
+  `"ssimulacra2"`, so the log line is unchanged.
+- `cuda/ssimulacra2_cuda.c`, `sycl/ssimulacra2_sycl.cpp` and
+  `hip/ssimulacra2_hip.c`: `init()` calls the check first; their
+  `*_configure_planes()` no longer refuse and return `void`; the context
+  checks use `vmaf_ss2_has_chroma()`. `metal/ssimulacra2_metal.mm`'s `init()`
+  no longer discards `pix_fmt`.
+- On a conflict in any of these files keep the call to the header and do not
+  bring back a private `VMAF_PIX_FMT_YUV400P` comparison:
+  `core/test/test_ssimulacra2_pixel_format_contract.py` fails on either.
+- Netflix golden data unaffected: no score changes for 4:2:0, 4:2:2 or 4:4:4.
 
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 

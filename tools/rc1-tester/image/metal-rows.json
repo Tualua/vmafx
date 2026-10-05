@@ -662,6 +662,48 @@
    ]
   },
   {
+   "id": "T-METAL-SSIMULACRA2-YUV400-ACCEPTED-2026-10-05",
+   "closes_when": "test_metal_ssimulacra2_parity prints all nine of its cases on an Apple GPU and passes them, test_ssimulacra2_rejects_monochrome included: ssimulacra2_metal refuses 4:0:0 input in init() with -EINVAL instead of reading its missing U plane in submit()",
+   "cases": [
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_metal_registered"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_metal_lifecycle"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_identical_frames_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_lower_third_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_large_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_odd_frame_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_10bit_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_rejects_monochrome"
+    }
+   ]
+  },
+  {
    "id": "T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29",
    "closes_when": "integer_vif_metal refuses a direct request below 16 px, model dispatch sends such frames to the CPU vif, and 16 px and up are the CPU's",
    "cases": [

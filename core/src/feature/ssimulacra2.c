@@ -45,6 +45,7 @@
 #include "feature_extractor.h"
 #include "feature/common/fmaf_exact.h"
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 #include "feature/ssimulacra2_simd_common.h"
 #include "log.h"
@@ -994,18 +995,6 @@ static void init_simd_dispatch(Ssimu2State *s)
 #endif
 }
 
-/* The colour conversion reads U and V; 4:0:0 has neither plane (its data[1] /
- * data[2] are NULL), so init() refuses it instead of letting extract() read
- * through a NULL plane. ssimulacra2_sycl refuses it the same way. */
-static int check_pixel_format(enum VmafPixelFormat pix_fmt)
-{
-    if (pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN)
-        return 0;
-    vmaf_log(VMAF_LOG_LEVEL_ERROR,
-             "ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input, not 4:0:0\n");
-    return -EINVAL;
-}
-
 /* Every buffer init() allocates. aligned_free(NULL) is a no-op, so this also
  * releases a partial allocation; the pointers are cleared so that nothing is
  * freed twice. */
@@ -1054,7 +1043,9 @@ static int alloc_buffers(Ssimu2State *s, unsigned w)
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
-    const int fmt_err = check_pixel_format(pix_fmt);
+    /* The colour conversion reads U and V: 4:0:0 and an unknown format are
+     * refused here, as every twin's init() does (ssimulacra2_pixel_format.h). */
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2");
     if (fmt_err)
         return fmt_err;
     Ssimu2State *s = fex->priv;

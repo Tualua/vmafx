@@ -65,6 +65,7 @@ extern "C" {
 #include "libvmaf/picture.h"
 
 #include "feature/ssimulacra2_math.h" /* vmaf_ss2_cbrtf / vmaf_ss2_srgb_eotf */
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 
 #include "../../metal/common.h"
@@ -692,7 +693,11 @@ static void ss2m_release_device_buffers(Ssimu2StateMetal *s)
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
-    (void)pix_fmt;
+    /* Before anything is allocated: submit()'s colour conversion reads the U
+     * and V planes, which a 4:0:0 picture does not have (its data[1] is NULL,
+     * so ss2m_read_plane() read address -1 and the process died). */
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2_metal");
+    if (fmt_err != 0) { return fmt_err; }
     Ssimu2StateMetal *s = (Ssimu2StateMetal *)fex->priv;
 
     if (w < 8u || h < 8u) {
