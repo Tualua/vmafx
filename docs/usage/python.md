@@ -272,6 +272,31 @@ See the directory
 for more examples. Also refer to the [Datasets](../models/datasets.md) document
 regarding publicly available datasets.
 
+Dataset-level settings (`width`, `height`, `yuv_fmt`, `quality_width`,
+`quality_height`, `resampling_type`, `crop_cmd`, `pad_cmd`, `fps_cmd`,
+`workfile_yuv_type`, ...) apply to every video. Each video can also carry its
+own:
+
+- `width` and `height` on a reference or a distorted video set that side's
+  size, and both must be given together. When the two sides end up with
+  different sizes, the dataset needs `quality_width` and `quality_height` to
+  scale them to; reading it fails otherwise.
+- `resampling_type` on a reference or a distorted video sets how that side is
+  scaled. A side without one uses the dataset's, else the distorted video's.
+- `crop_cmd`, `pad_cmd` and `fps_cmd` on a video apply to that side only; a
+  dataset-level command applies to both.
+- `workfile_yuv_type` on a distorted video sets the work-file format of that
+  asset when the dataset sets none.
+
+`vmaf.routine.read_dataset(dataset, **kwargs)` turns a dataset into `Asset`
+objects; it is `SubjectiveDatasetReader(dataset, **kwargs).read()`, where
+`kwargs` can select `content_ids` or `asset_ids`, name the `groundtruth_key`,
+or skip assets without groundtruth (`skip_asset_with_none_groundtruth=True`).
+`SubjectiveDatasetTester(reader, quality_runner_class, ...)` runs a quality
+runner on the assets of a reader and, after `run()`, holds `test_assets`,
+`results` and the correlation `stats` (`SRCC`, `PCC`, `RMSE`, ...);
+`run_test_on_dataset()`, which `run_testing` below calls, is built on it.
+
 ### Validate a Dataset
 
 Once a dataset is created, first validate the dataset using existing VMAF or

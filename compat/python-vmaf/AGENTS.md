@@ -162,6 +162,12 @@ python/vmaf/
   file under another licence here, or a new header `adm_dwt2_cy.pyx` pulls in,
   fails `python/test/setup_metadata_test.py` until the expression and the texts
   gain it.
+- **`SubjectiveDatasetReader` / `SubjectiveDatasetTester` are Netflix's API
+  over the fork's helpers (2e6bbb657).** `read_dataset()` /
+  `run_test_on_dataset()` wrap them. Port Netflix changes of `read()` / `run()`
+  into `_resolve_asset_fields()`, `_build_asset_dict()`,
+  `_tester_optional_dict()` and friends; never paste the long methods back
+  (HISS-04). The tester keeps `allow_uncalibrated` (ADR-0620).
 
 ## Governing ADRs
 

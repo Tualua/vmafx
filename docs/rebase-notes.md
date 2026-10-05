@@ -141,6 +141,36 @@ upstream counterpart.
 - `core/test/metal_msl_host_shim.h` and `core/test/metal_msl_host/metal_stdlib`
   let a test compile an unmodified `.metal` file on the host.
 - Netflix golden data unaffected (Metal only, and no CPU code changed).
+## Port of Netflix/vmaf `2e6bbb657`, `3685aa3c1`, `2f2bb601b`: SubjectiveDatasetReader and SubjectiveDatasetTester (2026-10-05)
+
+`port/upstream-subjective-dataset-reader`. Python harness only.
+
+- `compat/python-vmaf/routine.py`: `SubjectiveDatasetReader` and
+  `SubjectiveDatasetTester` with Netflix's constructor signatures, attributes
+  (`dataset`, `kwargs`, `test_assets`, `test_raw_assets`, `results`, `stats`)
+  and methods (`read()`, `derive_assets()`, `run()`); `read_dataset()` and
+  `run_test_on_dataset()` are Netflix's thin wrappers over them. The bodies are
+  not Netflix's 350- and 160-line methods but the fork's helpers
+  (`_read_dataset_assets()`, `_resolve_asset_fields()`, `_build_asset_dict()`,
+  `_run_test_runner()`, `_compute_test_stats()`, ...) extended with Netflix's
+  new behaviour: per-side `width` / `height` (`_resolve_side_dimensions()`,
+  `_assert_equalizable()`; the old "ref and dis width must agree" assert is
+  gone), per-side resampling (`_resampling_entries()`, Netflix's four cases),
+  dataset- and video-level `fps_cmd`, the distorted video's
+  `workfile_yuv_type`, the hfr model paths and `delete_workdir`
+  (`_tester_optional_dict()`), the runner on the raw assets after subjective
+  modeling.
+- Kept fork deviations: `allow_uncalibrated` / `CalibrationError` (ADR-0620;
+  the tester takes `allow_uncalibrated`), bootstrap keys read from bootstrap
+  runners only, the classifier stats branch.
+- `python/test/routine_test.py`: Netflix's 14 `TestReadDataset` cases of
+  `2f2bb601b` and the three classes of `3685aa3c1` (local `matplotlib`
+  imports, as in that commit), assertions unchanged; the rest of the file
+  stays the fork's (golden stop of `005988ead`). 14 fixtures added and two
+  `enc_width` / `enc_height` pairs in `test_read_dataset_dataset3.py`, each
+  with the SPDX line and `black`.
+- On a sync: take Netflix's changes to the two classes into the helpers, not
+  as a copy of the long methods.
 
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 
