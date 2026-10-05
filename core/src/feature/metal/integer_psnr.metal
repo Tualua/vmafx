@@ -51,15 +51,12 @@ inline void psnr_store_group_sse(ulong my_se, uint lid, uint slot, threadgroup u
     }
 }
 
-kernel void integer_psnr_kernel_8bpc(const device uchar *ref [[buffer(0)]],
-                                     const device uchar *dis [[buffer(1)]],
-                                     device ulong *sse_parts [[buffer(2)]],
-                                     constant uint2 &strides [[buffer(3)]],
-                                     constant uint2 &dim [[buffer(4)]],
-                                     uint2 gid [[thread_position_in_grid]],
-                                     uint2 bid [[threadgroup_position_in_grid]],
-                                     uint2 grid_groups [[threadgroups_per_grid]],
-                                     uint lid [[thread_index_in_threadgroup]])
+kernel void integer_psnr_kernel_8bpc(
+    const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
+    device ulong *sse_parts [[buffer(2)]], constant uint2 &strides [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], uint2 gid [[thread_position_in_grid]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint lid [[thread_index_in_threadgroup]])
 {
     threadgroup ulong tg_se[PSNR_TG_THREADS];
 
@@ -73,15 +70,12 @@ kernel void integer_psnr_kernel_8bpc(const device uchar *ref [[buffer(0)]],
     psnr_store_group_sse(my_se, lid, bid.y * grid_groups.x + bid.x, tg_se, sse_parts);
 }
 
-kernel void integer_psnr_kernel_16bpc(const device uchar *ref [[buffer(0)]],
-                                      const device uchar *dis [[buffer(1)]],
-                                      device ulong *sse_parts [[buffer(2)]],
-                                      constant uint2 &strides [[buffer(3)]],
-                                      constant uint2 &dim [[buffer(4)]],
-                                      uint2 gid [[thread_position_in_grid]],
-                                      uint2 bid [[threadgroup_position_in_grid]],
-                                      uint2 grid_groups [[threadgroups_per_grid]],
-                                      uint lid [[thread_index_in_threadgroup]])
+kernel void integer_psnr_kernel_16bpc(
+    const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
+    device ulong *sse_parts [[buffer(2)]], constant uint2 &strides [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], uint2 gid [[thread_position_in_grid]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint lid [[thread_index_in_threadgroup]])
 {
     threadgroup ulong tg_se[PSNR_TG_THREADS];
 

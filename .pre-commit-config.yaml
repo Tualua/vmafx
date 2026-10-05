@@ -87,6 +87,18 @@ repos:
         # a vendored read-only mirror (ADR-1113). The wrapper exempts only paths
         # in the shared exact-path manifest; an added pelorus_*.cpp stays linted.
         exclude: '^subprojects/|^core/test/data/'
+      # `.hip` and `.metal` have no identify tag, so `types_or` above never selects them;
+      # this second entry reads them by extension, with the same wrapper, the same
+      # `.clang-format` and the same pin. `scripts/ci/exact_twins.d/*.hip` are parity-gate
+      # data fragments (ADR-1428) that only borrow the extension. `make format` and
+      # `make format-check` read the same set (CLANG_FORMAT_FILES in the Makefile).
+      - id: clang-format
+        alias: clang-format-hip-metal
+        name: clang-format (hip, metal)
+        entry: python3 scripts/ci/pelorus_mirror.py clang-format
+        types: [file]
+        files: '\.(hip|metal)$'
+        exclude: '^scripts/ci/exact_twins\.d/'
 
   - repo: https://github.com/psf/black
     rev: 26.10.0
@@ -1033,3 +1045,10 @@ repos:
         files: '^(scripts/docs/(agents_index|agents_migration_check|tests/test_agents_index)\.py|scripts/dev/project_modernization_audit\.py|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
+
+      - id: test-clang-format-scope
+        name: clang-format reads hip and metal in the hook, make format and the native hook
+        entry: python3 -B scripts/ci/tests/test_clang_format_scope.py
+        language: system
+        files: '^(scripts/ci/tests/test_clang_format_scope\.py|scripts/githooks/pre-commit\.sh|Makefile|\.pre-commit-config\.yaml)$'
+        pass_filenames: false

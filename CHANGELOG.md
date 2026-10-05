@@ -739,6 +739,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged (271 passed, 12 skipped, x86-64 and aarch64).
 
 
+- `clang-format` now reads `.hip` and `.metal` sources in the pre-commit hook, `make format`,
+  `make format-check` and the native hook; the 18 kernel files that were not clean are
+  formatted (line breaks only, device code unchanged). See
+  `docs/development/pre-commit-hooks.md`, "clang-format reads `.hip` and `.metal`".
+
+
 - The ten products that CodeQL's `cpp/integer-multiplication-cast-to-long`
   reported after the upstream-parity reverts (ADR-1475, ADR-1476, ADR-1488) in
   `ciede.c`, `third_party/xiph/psnr_hvs.c`, `x86/psnr_hvs_avx2.c`,

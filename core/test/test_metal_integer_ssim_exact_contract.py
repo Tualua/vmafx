@@ -64,7 +64,7 @@ TERM_STORE = "terms[gid.y * width + gid.x] ="
 TERM_CALL = (
     "vmaf_mtl_issim_term_bits(m, vmaf_mtl_issim_stabilisers(params.k1_bits, params.k2_bits));"
 )
-KERNEL_PARAMS = "constant     VmafMtlIssimParams  &params [[buffer(2)]]"
+KERNEL_PARAMS = "constant VmafMtlIssimParams &params [[buffer(2)]]"
 KERNEL_WEIGHT = "vmaf_mtl_issim_tap_weight(vmaf_mtl_issim_tap_range(gid.x, width))"
 
 HOST_SUM = (

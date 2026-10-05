@@ -217,7 +217,7 @@ class FloatPsnrMetalExactContract(unittest.TestCase):
     def test_float_partials_buffer_is_detected(self) -> None:
         failures = self._edited(
             KERNEL,
-            "device       ulong  *partials [[buffer(2)]]",
+            "device ulong *partials [[buffer(2)]]",
             "device float *partials [[buffer(2)]]",
         )
         self._assert_detected(failures, "does not add the header's integer terms")

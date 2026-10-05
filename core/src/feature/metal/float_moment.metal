@@ -215,11 +215,13 @@ kernel void float_moment_plane_sums(
 
 /* Each row's exact sum: threadgroup x = row, y = plane; dim = (width, height,
  * stride in bytes, 0). */
-kernel void float_moment_row_totals(
-    const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
-    const device ulong *sums [[buffer(2)]], device ulong *row_totals [[buffer(3)]],
-    constant uint4 &dim [[buffer(4)]], uint2 bid [[threadgroup_position_in_grid]],
-    uint lane [[thread_index_in_threadgroup]])
+kernel void float_moment_row_totals(const device uchar *ref [[buffer(0)]],
+                                    const device uchar *dis [[buffer(1)]],
+                                    const device ulong *sums [[buffer(2)]],
+                                    device ulong *row_totals [[buffer(3)]],
+                                    constant uint4 &dim [[buffer(4)]],
+                                    uint2 bid [[threadgroup_position_in_grid]],
+                                    uint lane [[thread_index_in_threadgroup]])
 {
     threadgroup ulong totals[VMAF_MTL_MSUM_LANES];
     const uint row = bid.x;
@@ -241,10 +243,12 @@ kernel void float_moment_row_totals(
 
 /* The plan of every row of one plane, threadgroup x = plane: the lanes stage
  * a batch of row sums, lane 0 follows their prefix, the lanes store the plans. */
-kernel void float_moment_row_plans(
-    const device ulong *sums [[buffer(0)]], const device ulong *row_totals [[buffer(1)]],
-    device int *plans [[buffer(2)]], constant uint4 &dim [[buffer(3)]],
-    uint plane [[threadgroup_position_in_grid]], uint lane [[thread_index_in_threadgroup]])
+kernel void float_moment_row_plans(const device ulong *sums [[buffer(0)]],
+                                   const device ulong *row_totals [[buffer(1)]],
+                                   device int *plans [[buffer(2)]],
+                                   constant uint4 &dim [[buffer(3)]],
+                                   uint plane [[threadgroup_position_in_grid]],
+                                   uint lane [[thread_index_in_threadgroup]])
 {
     threadgroup ulong staged_totals[VMAF_MTL_MSUM_BATCH];
     threadgroup int staged_plans[VMAF_MTL_MSUM_BATCH];
@@ -254,8 +258,8 @@ kernel void float_moment_row_plans(
     const size_t base = (size_t)plane * height;
     ulong prefix = 0uL;
     for (uint first = 0u; first < height; first += VMAF_MTL_MSUM_BATCH) {
-        const uint count = height - first < VMAF_MTL_MSUM_BATCH ? height - first
-                                                                : VMAF_MTL_MSUM_BATCH;
+        const uint count =
+            height - first < VMAF_MTL_MSUM_BATCH ? height - first : VMAF_MTL_MSUM_BATCH;
         const bool staged = lane < count && lane < VMAF_MTL_MSUM_BATCH;
         if (staged)
             staged_totals[lane] = row_totals[base + first + lane];
@@ -359,8 +363,8 @@ kernel void float_moment_ordered_totals(
         if (lane != 0u)
             continue;
         if (todo == VMAF_MTL_MSUM_WALK_RUNS) {
-            sum = vmaf_mtl_msum_walk_row_runs(vmaf_mtl_msum_line(luma, (size_t)dim.z, what),
-                                              dim.x, sum, run_totals, run_low, run_high);
+            sum = vmaf_mtl_msum_walk_row_runs(vmaf_mtl_msum_line(luma, (size_t)dim.z, what), dim.x,
+                                              sum, run_totals, run_low, run_high);
             row = what + 1u;
         } else {
             first = what * VMAF_MTL_MSUM_BATCH;

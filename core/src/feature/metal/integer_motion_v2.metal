@@ -75,7 +75,8 @@ constant int MV2_FILTER[5] = {3571, 16004, 26386, 16004, 3571};
  */
 inline int mv2_mirror(int idx, int sup)
 {
-    if (sup <= 1) return 0;
+    if (sup <= 1)
+        return 0;
     while (idx < 0 || idx >= sup)
         idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx;
     return idx;
@@ -93,32 +94,25 @@ inline int mv2_mirror(int idx, int sup)
  *   [[threadgroup(0)]] tile  — int32[20 * 21]
  */
 kernel void motion_v2_kernel_8bpc(
-    const device uchar       *prev    [[buffer(0)]],
-    const device uchar       *cur     [[buffer(1)]],
-    device   uint            *partials [[buffer(2)]],
-    constant uint2           &strides [[buffer(3)]],
-    constant uint2           &dim     [[buffer(4)]],
-    threadgroup int          *s_diff  [[threadgroup(0)]],
-    uint2  gid               [[thread_position_in_grid]],
-    uint2  tid               [[thread_position_in_threadgroup]],
-    uint2  bid               [[threadgroup_position_in_grid]],
-    uint2  grid_groups       [[threadgroups_per_grid]],
-    uint   lid               [[thread_index_in_threadgroup]],
-    uint   simd_lane         [[thread_index_in_simdgroup]],
-    uint   simd_id           [[simdgroup_index_in_threadgroup]],
-    uint   simd_count        [[simdgroups_per_threadgroup]])
+    const device uchar *prev [[buffer(0)]], const device uchar *cur [[buffer(1)]],
+    device uint *partials [[buffer(2)]], constant uint2 &strides [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], threadgroup int *s_diff [[threadgroup(0)]],
+    uint2 gid [[thread_position_in_grid]], uint2 tid [[thread_position_in_threadgroup]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint lid [[thread_index_in_threadgroup]], uint simd_lane [[thread_index_in_simdgroup]],
+    uint simd_id [[simdgroup_index_in_threadgroup]], uint simd_count [[simdgroups_per_threadgroup]])
 {
-    constexpr int MV2_RADIUS    = 2;
-    constexpr int MV2_BLOCK_X   = 16;
-    constexpr int MV2_BLOCK_Y   = 16;
-    constexpr int MV2_TILE_W    = MV2_BLOCK_X + 2 * MV2_RADIUS; /* 20 */
-    constexpr int MV2_TILE_H    = MV2_BLOCK_Y + 2 * MV2_RADIUS; /* 20 */
-    constexpr int MV2_TILE_PITCH = MV2_TILE_W + 1;              /* 21 */
+    constexpr int MV2_RADIUS = 2;
+    constexpr int MV2_BLOCK_X = 16;
+    constexpr int MV2_BLOCK_Y = 16;
+    constexpr int MV2_TILE_W = MV2_BLOCK_X + 2 * MV2_RADIUS; /* 20 */
+    constexpr int MV2_TILE_H = MV2_BLOCK_Y + 2 * MV2_RADIUS; /* 20 */
+    constexpr int MV2_TILE_PITCH = MV2_TILE_W + 1;           /* 21 */
 
-    const int width  = (int)dim.x;
+    const int width = (int)dim.x;
     const int height = (int)dim.y;
     const int prev_stride = (int)strides.x;
-    const int cur_stride  = (int)strides.y;
+    const int cur_stride = (int)strides.y;
 
     const int shift_y = 8;
     const int round_y = 1 << 7;
@@ -127,16 +121,16 @@ kernel void motion_v2_kernel_8bpc(
 
     const int tile_origin_x = (int)bid.x * MV2_BLOCK_X - MV2_RADIUS;
     const int tile_origin_y = (int)bid.y * MV2_BLOCK_Y - MV2_RADIUS;
-    const int tile_elems    = MV2_TILE_W * MV2_TILE_H;
-    const int wg_size       = MV2_BLOCK_X * MV2_BLOCK_Y;
+    const int tile_elems = MV2_TILE_W * MV2_TILE_H;
+    const int wg_size = MV2_BLOCK_X * MV2_BLOCK_Y;
 
     for (int i = (int)lid; i < tile_elems; i += wg_size) {
         const int ty = i / MV2_TILE_W;
         const int tx = i % MV2_TILE_W;
         const int gx = mv2_mirror(tile_origin_x + tx, width);
         const int gy = mv2_mirror(tile_origin_y + ty, height);
-        const int p  = (int)prev[gy * prev_stride + gx];
-        const int c  = (int)cur [gy * cur_stride  + gx];
+        const int p = (int)prev[gy * prev_stride + gx];
+        const int c = (int)cur[gy * cur_stride + gx];
         s_diff[ty * MV2_TILE_PITCH + tx] = p - c;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -153,9 +147,9 @@ kernel void motion_v2_kernel_8bpc(
         for (int xf = 0; xf < 5; ++xf) {
             int blurred_y = 0;
             for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += MV2_FILTER[yf] *
-                             s_diff[(ly - MV2_RADIUS + yf) * MV2_TILE_PITCH +
-                                    (lx - MV2_RADIUS + xf)];
+                blurred_y +=
+                    MV2_FILTER[yf] *
+                    s_diff[(ly - MV2_RADIUS + yf) * MV2_TILE_PITCH + (lx - MV2_RADIUS + xf)];
             }
             const int v = (blurred_y + round_y) >> shift_y;
             blurred += (long)MV2_FILTER[xf] * (long)v;
@@ -191,33 +185,26 @@ kernel void motion_v2_kernel_8bpc(
  * uint4 with the bpc in .z; see `integer_motion_v2_metal.mm`).
  */
 kernel void motion_v2_kernel_16bpc(
-    const device uchar       *prev    [[buffer(0)]],
-    const device uchar       *cur     [[buffer(1)]],
-    device   uint            *partials [[buffer(2)]],
-    constant uint4           &strides [[buffer(3)]],
-    constant uint2           &dim     [[buffer(4)]],
-    threadgroup int          *s_diff  [[threadgroup(0)]],
-    uint2  gid               [[thread_position_in_grid]],
-    uint2  tid               [[thread_position_in_threadgroup]],
-    uint2  bid               [[threadgroup_position_in_grid]],
-    uint2  grid_groups       [[threadgroups_per_grid]],
-    uint   lid               [[thread_index_in_threadgroup]],
-    uint   simd_lane         [[thread_index_in_simdgroup]],
-    uint   simd_id           [[simdgroup_index_in_threadgroup]],
-    uint   simd_count        [[simdgroups_per_threadgroup]])
+    const device uchar *prev [[buffer(0)]], const device uchar *cur [[buffer(1)]],
+    device uint *partials [[buffer(2)]], constant uint4 &strides [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], threadgroup int *s_diff [[threadgroup(0)]],
+    uint2 gid [[thread_position_in_grid]], uint2 tid [[thread_position_in_threadgroup]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint lid [[thread_index_in_threadgroup]], uint simd_lane [[thread_index_in_simdgroup]],
+    uint simd_id [[simdgroup_index_in_threadgroup]], uint simd_count [[simdgroups_per_threadgroup]])
 {
-    constexpr int MV2_RADIUS    = 2;
-    constexpr int MV2_BLOCK_X   = 16;
-    constexpr int MV2_BLOCK_Y   = 16;
-    constexpr int MV2_TILE_W    = MV2_BLOCK_X + 2 * MV2_RADIUS; /* 20 */
-    constexpr int MV2_TILE_H    = MV2_BLOCK_Y + 2 * MV2_RADIUS; /* 20 */
-    constexpr int MV2_TILE_PITCH = MV2_TILE_W + 1;              /* 21 */
+    constexpr int MV2_RADIUS = 2;
+    constexpr int MV2_BLOCK_X = 16;
+    constexpr int MV2_BLOCK_Y = 16;
+    constexpr int MV2_TILE_W = MV2_BLOCK_X + 2 * MV2_RADIUS; /* 20 */
+    constexpr int MV2_TILE_H = MV2_BLOCK_Y + 2 * MV2_RADIUS; /* 20 */
+    constexpr int MV2_TILE_PITCH = MV2_TILE_W + 1;           /* 21 */
 
-    const int width  = (int)dim.x;
+    const int width = (int)dim.x;
     const int height = (int)dim.y;
     const int prev_stride = (int)strides.x; /* bytes */
-    const int cur_stride  = (int)strides.y; /* bytes */
-    const int bpc         = (int)strides.z;
+    const int cur_stride = (int)strides.y;  /* bytes */
+    const int bpc = (int)strides.z;
 
     const int shift_y = bpc;
     const int round_y = 1 << (bpc - 1);
@@ -226,20 +213,18 @@ kernel void motion_v2_kernel_16bpc(
 
     const int tile_origin_x = (int)bid.x * MV2_BLOCK_X - MV2_RADIUS;
     const int tile_origin_y = (int)bid.y * MV2_BLOCK_Y - MV2_RADIUS;
-    const int tile_elems    = MV2_TILE_W * MV2_TILE_H;
-    const int wg_size       = MV2_BLOCK_X * MV2_BLOCK_Y;
+    const int tile_elems = MV2_TILE_W * MV2_TILE_H;
+    const int wg_size = MV2_BLOCK_X * MV2_BLOCK_Y;
 
     for (int i = (int)lid; i < tile_elems; i += wg_size) {
         const int ty = i / MV2_TILE_W;
         const int tx = i % MV2_TILE_W;
         const int gx = mv2_mirror(tile_origin_x + tx, width);
         const int gy = mv2_mirror(tile_origin_y + ty, height);
-        const device ushort *prev_row =
-            (const device ushort *)(prev + gy * prev_stride);
-        const device ushort *cur_row  =
-            (const device ushort *)(cur  + gy * cur_stride);
+        const device ushort *prev_row = (const device ushort *)(prev + gy * prev_stride);
+        const device ushort *cur_row = (const device ushort *)(cur + gy * cur_stride);
         const int p = (int)prev_row[gx];
-        const int c = (int)cur_row [gx];
+        const int c = (int)cur_row[gx];
         s_diff[ty * MV2_TILE_PITCH + tx] = p - c;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -253,9 +238,9 @@ kernel void motion_v2_kernel_16bpc(
         for (int xf = 0; xf < 5; ++xf) {
             long blurred_y = 0;
             for (int yf = 0; yf < 5; ++yf) {
-                blurred_y += (long)MV2_FILTER[yf] *
-                             (long)s_diff[(ly - MV2_RADIUS + yf) * MV2_TILE_PITCH +
-                                          (lx - MV2_RADIUS + xf)];
+                blurred_y +=
+                    (long)MV2_FILTER[yf] *
+                    (long)s_diff[(ly - MV2_RADIUS + yf) * MV2_TILE_PITCH + (lx - MV2_RADIUS + xf)];
             }
             const int v = (int)((blurred_y + (long)round_y) >> shift_y);
             blurred += (long)MV2_FILTER[xf] * (long)v;

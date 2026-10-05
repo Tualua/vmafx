@@ -61,11 +61,10 @@ using namespace metal;
 /* ------------------------------------------------------------------ */
 /*  Kernels 1a and 1b: ms_ssim_decimate_{h,v}                          */
 /* ------------------------------------------------------------------ */
-kernel void ms_ssim_decimate_h(
-    const device float                *src  [[buffer(0)]],
-    device       float                *tmp  [[buffer(1)]],
-    constant     VmafMtlMsdecParams   &dims [[buffer(2)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void ms_ssim_decimate_h(const device float *src [[buffer(0)]],
+                               device float *tmp [[buffer(1)]],
+                               constant VmafMtlMsdecParams &dims [[buffer(2)]],
+                               uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= dims.output_width || gid.y >= dims.height) {
         return;
@@ -73,19 +72,16 @@ kernel void ms_ssim_decimate_h(
     const int x_src = (int)gid.x * 2;
     float acc = 0.0f;
     for (int tap = 0; tap < VMAF_MTL_MSDEC_TAPS; ++tap) {
-        const int xi =
-            vmaf_mtl_msdec_mirror(x_src + tap - VMAF_MTL_MSDEC_HALF, (int)dims.width);
-        acc = vmaf_mtl_msdec_tap(acc, src[gid.y * dims.width + (uint)xi],
-                                 vmaf_mtl_msdec_lpf[tap]);
+        const int xi = vmaf_mtl_msdec_mirror(x_src + tap - VMAF_MTL_MSDEC_HALF, (int)dims.width);
+        acc = vmaf_mtl_msdec_tap(acc, src[gid.y * dims.width + (uint)xi], vmaf_mtl_msdec_lpf[tap]);
     }
     tmp[gid.y * dims.output_width + gid.x] = acc;
 }
 
-kernel void ms_ssim_decimate_v(
-    const device float                *tmp  [[buffer(0)]],
-    device       float                *dst  [[buffer(1)]],
-    constant     VmafMtlMsdecParams   &dims [[buffer(2)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void ms_ssim_decimate_v(const device float *tmp [[buffer(0)]],
+                               device float *dst [[buffer(1)]],
+                               constant VmafMtlMsdecParams &dims [[buffer(2)]],
+                               uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= dims.output_width || gid.y >= dims.output_height) {
         return;
@@ -93,8 +89,7 @@ kernel void ms_ssim_decimate_v(
     const int y_src = (int)gid.y * 2;
     float acc = 0.0f;
     for (int tap = 0; tap < VMAF_MTL_MSDEC_TAPS; ++tap) {
-        const int yi =
-            vmaf_mtl_msdec_mirror(y_src + tap - VMAF_MTL_MSDEC_HALF, (int)dims.height);
+        const int yi = vmaf_mtl_msdec_mirror(y_src + tap - VMAF_MTL_MSDEC_HALF, (int)dims.height);
         acc = vmaf_mtl_msdec_tap(acc, tmp[(uint)yi * dims.output_width + gid.x],
                                  vmaf_mtl_msdec_lpf[tap]);
     }
@@ -104,12 +99,10 @@ kernel void ms_ssim_decimate_v(
 /* ------------------------------------------------------------------ */
 /*  Kernel 2: ms_ssim_horiz                                            */
 /* ------------------------------------------------------------------ */
-kernel void ms_ssim_horiz(
-    const device float  *ref_in [[buffer(0)]],
-    const device float  *cmp_in [[buffer(1)]],
-    device       float  *hbuf   [[buffer(2)]],
-    constant     uint4  &params [[buffer(3)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void ms_ssim_horiz(const device float *ref_in [[buffer(0)]],
+                          const device float *cmp_in [[buffer(1)]],
+                          device float *hbuf [[buffer(2)]], constant uint4 &params [[buffer(3)]],
+                          uint2 gid [[thread_position_in_grid]])
 {
     const uint width = params.x;
     const uint height = params.y;
@@ -136,13 +129,12 @@ kernel void ms_ssim_horiz(
 /* ------------------------------------------------------------------ */
 /*  Kernel 3: ms_ssim_vert_lcs                                         */
 /* ------------------------------------------------------------------ */
-kernel void ms_ssim_vert_lcs(
-    const device float                    *hbuf      [[buffer(0)]],
-    device       ulong                    *luminance [[buffer(1)]],
-    device       ulong                    *contrast  [[buffer(2)]],
-    device       float                    *structure [[buffer(3)]],
-    constant     VmafMtlSsimWindowParams  &params    [[buffer(4)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void ms_ssim_vert_lcs(const device float *hbuf [[buffer(0)]],
+                             device ulong *luminance [[buffer(1)]],
+                             device ulong *contrast [[buffer(2)]],
+                             device float *structure [[buffer(3)]],
+                             constant VmafMtlSsimWindowParams &params [[buffer(4)]],
+                             uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= params.final_width || gid.y >= params.final_height) {
         return;

@@ -474,12 +474,18 @@ lint-md:
 	    fi; \
 	fi
 
+# The files clang-format reads, one definition for `format` and `format-check`: the
+# C-family sources plus `.hip` and `.metal` (which pre-commit's `types_or` cannot select;
+# see the second clang-format entry of .pre-commit-config.yaml). The exact_twins.d
+# fragments only borrow the `.hip` extension; the Pelorus mirror is filtered out.
+CLANG_FORMAT_FILES = git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.hip' '*.metal' \
+	| grep -v '^subprojects/' | grep -v '^core/test/data/' | grep -v '^scripts/ci/exact_twins\.d/' \
+	| python3 scripts/ci/pelorus_mirror.py filter
+
 # Formatters — writes changes.
 format:
 	@command -v clang-format >/dev/null && \
-	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
-	                   | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	                   | python3 scripts/ci/pelorus_mirror.py filter) || true
+	 clang-format -i $$($(CLANG_FORMAT_FILES)) || true
 	@command -v black >/dev/null && black python/ ai/ scripts/ tools/rc1-tester/ 2>/dev/null || true
 	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ tools/rc1-tester/ || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
@@ -487,10 +493,7 @@ format:
 # Formatters — check-only (CI gate, no writes).
 format-check:
 	$(call require-tool,clang-format,your package manager, e.g. pacman -S clang)
-	clang-format --dry-run --Werror \
-	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
-	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	      | python3 scripts/ci/pelorus_mirror.py filter)
+	clang-format --dry-run --Werror $$($(CLANG_FORMAT_FILES))
 	$(call require-tool,black,make lint-tools)
 	black --check python/ ai/ scripts/ tools/rc1-tester/
 	$(call require-tool,ruff,make lint-tools)

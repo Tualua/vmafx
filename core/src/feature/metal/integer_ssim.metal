@@ -83,12 +83,11 @@ inline void issim_store_row_sums(device long *hbuf, uint plane, uint index, Vmaf
 /* ------------------------------------------------------------------ */
 /*  Pass 0: horizontal moment accumulation (8 bpc)                      */
 /* ------------------------------------------------------------------ */
-kernel void integer_ssim_horiz_8bpc(
-    const device uchar  *ref    [[buffer(0)]],
-    const device uchar  *dis    [[buffer(1)]],
-    device       long   *hbuf   [[buffer(2)]],
-    constant     uint4  &params [[buffer(3)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void integer_ssim_horiz_8bpc(const device uchar *ref [[buffer(0)]],
+                                    const device uchar *dis [[buffer(1)]],
+                                    device long *hbuf [[buffer(2)]],
+                                    constant uint4 &params [[buffer(3)]],
+                                    uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= params.x || gid.y >= params.y) {
         return;
@@ -101,12 +100,11 @@ kernel void integer_ssim_horiz_8bpc(
 /* ------------------------------------------------------------------ */
 /*  Pass 0: horizontal moment accumulation (16 bpc)                     */
 /* ------------------------------------------------------------------ */
-kernel void integer_ssim_horiz_16bpc(
-    const device uchar  *ref    [[buffer(0)]],
-    const device uchar  *dis    [[buffer(1)]],
-    device       long   *hbuf   [[buffer(2)]],
-    constant     uint4  &params [[buffer(3)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void integer_ssim_horiz_16bpc(const device uchar *ref [[buffer(0)]],
+                                     const device uchar *dis [[buffer(1)]],
+                                     device long *hbuf [[buffer(2)]],
+                                     constant uint4 &params [[buffer(3)]],
+                                     uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= params.x || gid.y >= params.y) {
         return;
@@ -120,11 +118,10 @@ kernel void integer_ssim_horiz_16bpc(
 /* ------------------------------------------------------------------ */
 /*  Pass 1: vertical accumulation and the pixel's fp64 term             */
 /* ------------------------------------------------------------------ */
-kernel void integer_ssim_vert_terms(
-    const device long                *hbuf   [[buffer(0)]],
-    device       ulong               *terms  [[buffer(1)]],
-    constant     VmafMtlIssimParams  &params [[buffer(2)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void integer_ssim_vert_terms(const device long *hbuf [[buffer(0)]],
+                                    device ulong *terms [[buffer(1)]],
+                                    constant VmafMtlIssimParams &params [[buffer(2)]],
+                                    uint2 gid [[thread_position_in_grid]])
 {
     const uint width = params.width;
     const uint height = params.height;
@@ -136,10 +133,9 @@ kernel void integer_ssim_vert_terms(
     VmafMtlIssimSums sums = vmaf_mtl_issim_sums_make(0, 0, 0, 0, 0);
     for (int tap = rows.first; tap < rows.last; ++tap) {
         const uint source = (uint)((int)gid.y - VMAF_MTL_ISSIM_HALF + tap) * width + gid.x;
-        const VmafMtlIssimSums row =
-            vmaf_mtl_issim_sums_make(hbuf[0u * plane + source], hbuf[1u * plane + source],
-                                     hbuf[2u * plane + source], hbuf[3u * plane + source],
-                                     hbuf[4u * plane + source]);
+        const VmafMtlIssimSums row = vmaf_mtl_issim_sums_make(
+            hbuf[0u * plane + source], hbuf[1u * plane + source], hbuf[2u * plane + source],
+            hbuf[3u * plane + source], hbuf[4u * plane + source]);
         sums = vmaf_mtl_issim_vertical_tap(sums, (long)vmaf_mtl_issim_kernel[tap], row);
     }
     const VmafMtlIssimMoments m =

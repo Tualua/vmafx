@@ -45,8 +45,8 @@ extern "C" {
 
 /* Decimate: one thread per output sample of ms_ssim_decimate().
  * src: float input (w x h), dst: float output (w_out x h_out). */
-__global__ void ms_ssim_decimate(const float *__restrict__ src, float *__restrict__ dst,
-                                 unsigned w, unsigned h, unsigned w_out, unsigned h_out)
+__global__ void ms_ssim_decimate(const float *__restrict__ src, float *__restrict__ dst, unsigned w,
+                                 unsigned h, unsigned w_out, unsigned h_out)
 {
     const unsigned x_out = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y_out = blockIdx.y * blockDim.y + threadIdx.y;

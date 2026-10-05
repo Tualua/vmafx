@@ -80,15 +80,12 @@ inline float fvif_sample(const device uchar *raw_plane, const device float *floa
 /*   [[buffer(7)]] input    VmafMtlFvifInputArgs                        */
 /*  Grid: width x height threads, one per pixel.                        */
 /* ------------------------------------------------------------------ */
-kernel void float_vif_vertical(const device uchar *ref_raw [[buffer(0)]],
-                               const device uchar *dis_raw [[buffer(1)]],
-                               const device float *ref_f [[buffer(2)]],
-                               const device float *dis_f [[buffer(3)]],
-                               device float *moments [[buffer(4)]],
-                               constant float *taps [[buffer(5)]],
-                               constant VmafMtlFvifFilterArgs &geometry [[buffer(6)]],
-                               constant VmafMtlFvifInputArgs &input [[buffer(7)]],
-                               uint2 gid [[thread_position_in_grid]])
+kernel void float_vif_vertical(
+    const device uchar *ref_raw [[buffer(0)]], const device uchar *dis_raw [[buffer(1)]],
+    const device float *ref_f [[buffer(2)]], const device float *dis_f [[buffer(3)]],
+    device float *moments [[buffer(4)]], constant float *taps [[buffer(5)]],
+    constant VmafMtlFvifFilterArgs &geometry [[buffer(6)]],
+    constant VmafMtlFvifInputArgs &input [[buffer(7)]], uint2 gid [[thread_position_in_grid]])
 {
     const int width = (int)geometry.width;
     const int height = (int)geometry.height;
@@ -137,8 +134,7 @@ kernel void float_vif_vertical(const device uchar *ref_raw [[buffer(0)]],
 /*  Grid: width x height threads, one per pixel.                        */
 /* ------------------------------------------------------------------ */
 kernel void float_vif_compute(const device float *moments [[buffer(0)]],
-                              device float *terms [[buffer(1)]],
-                              constant float *taps [[buffer(2)]],
+                              device float *terms [[buffer(1)]], constant float *taps [[buffer(2)]],
                               constant VmafMtlFvifFilterArgs &geometry [[buffer(3)]],
                               constant VmafMtlFvifStatisticArgs &stat [[buffer(4)]],
                               uint2 gid [[thread_position_in_grid]])
@@ -222,16 +218,12 @@ kernel void float_vif_row_sums(const device float *terms [[buffer(0)]],
 /*   [[buffer(8)]] input    VmafMtlFvifInputArgs                        */
 /*  Grid: out_width x out_height threads, one per output pixel.         */
 /* ------------------------------------------------------------------ */
-kernel void float_vif_decimate(const device uchar *ref_raw [[buffer(0)]],
-                               const device uchar *dis_raw [[buffer(1)]],
-                               const device float *ref_f [[buffer(2)]],
-                               const device float *dis_f [[buffer(3)]],
-                               device float *ref_out [[buffer(4)]],
-                               device float *dis_out [[buffer(5)]],
-                               constant float *taps [[buffer(6)]],
-                               constant VmafMtlFvifDecimateArgs &dims [[buffer(7)]],
-                               constant VmafMtlFvifInputArgs &input [[buffer(8)]],
-                               uint2 gid [[thread_position_in_grid]])
+kernel void float_vif_decimate(
+    const device uchar *ref_raw [[buffer(0)]], const device uchar *dis_raw [[buffer(1)]],
+    const device float *ref_f [[buffer(2)]], const device float *dis_f [[buffer(3)]],
+    device float *ref_out [[buffer(4)]], device float *dis_out [[buffer(5)]],
+    constant float *taps [[buffer(6)]], constant VmafMtlFvifDecimateArgs &dims [[buffer(7)]],
+    constant VmafMtlFvifInputArgs &input [[buffer(8)]], uint2 gid [[thread_position_in_grid]])
 {
     const int x = (int)gid.x;
     const int y = (int)gid.y;

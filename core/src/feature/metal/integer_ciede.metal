@@ -77,33 +77,25 @@ inline void ciede_store_pixel(const device Sample *ref_y, const device Sample *r
 }
 
 /* 8 bpc: the six planes hold uchar samples. */
-kernel void integer_ciede_kernel_8bpc(const device uchar *ref_y [[buffer(0)]],
-                                      const device uchar *ref_u [[buffer(1)]],
-                                      const device uchar *ref_v [[buffer(2)]],
-                                      const device uchar *dis_y [[buffer(3)]],
-                                      const device uchar *dis_u [[buffer(4)]],
-                                      const device uchar *dis_v [[buffer(5)]],
-                                      device float *terms [[buffer(6)]],
-                                      constant uint2 &dim [[buffer(7)]],
-                                      constant vmaf_metal_ciede::Constants &constants
-                                      [[buffer(8)]],
-                                      uint2 gid [[thread_position_in_grid]])
+kernel void integer_ciede_kernel_8bpc(
+    const device uchar *ref_y [[buffer(0)]], const device uchar *ref_u [[buffer(1)]],
+    const device uchar *ref_v [[buffer(2)]], const device uchar *dis_y [[buffer(3)]],
+    const device uchar *dis_u [[buffer(4)]], const device uchar *dis_v [[buffer(5)]],
+    device float *terms [[buffer(6)]], constant uint2 &dim [[buffer(7)]],
+    constant vmaf_metal_ciede::Constants &constants [[buffer(8)]],
+    uint2 gid [[thread_position_in_grid]])
 {
     ciede_store_pixel(ref_y, ref_u, ref_v, dis_y, dis_u, dis_v, terms, dim, constants, gid);
 }
 
 /* 10, 12 and 16 bpc: the six planes hold ushort samples. */
-kernel void integer_ciede_kernel_16bpc(const device ushort *ref_y [[buffer(0)]],
-                                       const device ushort *ref_u [[buffer(1)]],
-                                       const device ushort *ref_v [[buffer(2)]],
-                                       const device ushort *dis_y [[buffer(3)]],
-                                       const device ushort *dis_u [[buffer(4)]],
-                                       const device ushort *dis_v [[buffer(5)]],
-                                       device float *terms [[buffer(6)]],
-                                       constant uint2 &dim [[buffer(7)]],
-                                       constant vmaf_metal_ciede::Constants &constants
-                                       [[buffer(8)]],
-                                       uint2 gid [[thread_position_in_grid]])
+kernel void integer_ciede_kernel_16bpc(
+    const device ushort *ref_y [[buffer(0)]], const device ushort *ref_u [[buffer(1)]],
+    const device ushort *ref_v [[buffer(2)]], const device ushort *dis_y [[buffer(3)]],
+    const device ushort *dis_u [[buffer(4)]], const device ushort *dis_v [[buffer(5)]],
+    device float *terms [[buffer(6)]], constant uint2 &dim [[buffer(7)]],
+    constant vmaf_metal_ciede::Constants &constants [[buffer(8)]],
+    uint2 gid [[thread_position_in_grid]])
 {
     ciede_store_pixel(ref_y, ref_u, ref_v, dis_y, dis_u, dis_v, terms, dim, constants, gid);
 }

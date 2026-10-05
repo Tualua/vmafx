@@ -86,15 +86,13 @@ inline VmafMtlFmCorners fm_corners(const device float *plane, uint width, VmafMt
 /* Blurs the plane into `cur_blur` and, when `args.compute_sad` is set,
  * stores |cur_blur - prev_blur| of every sample in the transposed plane
  * `diff` for float_motion_row_sum. */
-kernel void float_motion_blur(const device uchar *ref [[buffer(0)]],
-                              device float *cur_blur [[buffer(1)]],
-                              const device float *prev_blur [[buffer(2)]],
-                              device float *diff [[buffer(3)]],
-                              constant VmafMtlFmBlurArgs &args [[buffer(4)]],
-                              uint2 gid [[thread_position_in_grid]],
-                              uint2 bid [[threadgroup_position_in_grid]],
-                              uint2 lid2 [[thread_position_in_threadgroup]],
-                              uint lid [[thread_index_in_threadgroup]])
+kernel void
+float_motion_blur(const device uchar *ref [[buffer(0)]], device float *cur_blur [[buffer(1)]],
+                  const device float *prev_blur [[buffer(2)]], device float *diff [[buffer(3)]],
+                  constant VmafMtlFmBlurArgs &args [[buffer(4)]],
+                  uint2 gid [[thread_position_in_grid]], uint2 bid [[threadgroup_position_in_grid]],
+                  uint2 lid2 [[thread_position_in_threadgroup]],
+                  uint lid [[thread_index_in_threadgroup]])
 {
     threadgroup float tile[VMAF_MTL_FM_TILE * VMAF_MTL_FM_TILE];
 
@@ -145,12 +143,11 @@ kernel void float_motion_scale1_diff(const device float *cur_blur [[buffer(0)]],
     if (gid.x >= args.scaled_width || gid.y >= args.scaled_height) {
         return;
     }
-    const VmafMtlFmBilinearAt at = vmaf_mtl_fm_bilinear_at(args.width, args.height, args.ratio_x,
-                                                           args.ratio_y, gid.x, gid.y);
+    const VmafMtlFmBilinearAt at =
+        vmaf_mtl_fm_bilinear_at(args.width, args.height, args.ratio_x, args.ratio_y, gid.x, gid.y);
     const float cur = vmaf_mtl_fm_bilinear(fm_corners(cur_blur, args.width, at), at.dx, at.dy);
     const float prev = vmaf_mtl_fm_bilinear(fm_corners(prev_blur, args.width, at), at.dx, at.dy);
-    diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.scaled_width)] =
-        vmaf_mtl_fm_abs_diff(cur, prev);
+    diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.scaled_width)] = vmaf_mtl_fm_abs_diff(cur, prev);
 }
 
 /* float_sad_line() of every row of an `args.width` x `args.height` plane:

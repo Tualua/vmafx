@@ -271,6 +271,35 @@ git config --show-origin --get core.hooksPath
 git rev-parse --path-format=absolute --git-path hooks
 ```
 
+## clang-format reads `.hip` and `.metal`
+
+The `clang-format` hook (pin `v23.1.2`, `.clang-format` at the root) reads C, C++
+and CUDA by file type and HIP and Metal by extension: pre-commit's `types_or`
+has no tag for either, so a second entry, `clang-format-hip-metal`, selects
+`\.(hip|metal)$`. Both entries go through `scripts/ci/pelorus_mirror.py`, so the
+Pelorus mirror stays exempt. The one exclusion is `scripts/ci/exact_twins.d/`:
+those `*.hip` files are parity-gate data fragments ([ADR-1428](../adr/1428-exact-twins-fragments.md))
+that only borrow the extension.
+
+| Reader | Files |
+| --- | --- |
+| hook `clang-format` | C, C++, CUDA by type |
+| hook `clang-format-hip-metal` | `*.hip`, `*.metal` |
+| `make format`, `make format-check` | `CLANG_FORMAT_FILES` in the `Makefile`: `*.c *.h *.cpp *.hpp *.cu *.cuh *.hip *.metal`, minus the fragments and the mirror |
+| native hook (`VMAFX_NATIVE_HOOKS=1`) | the same extensions, staged files |
+
+```bash
+pre-commit run clang-format clang-format-hip-metal --all-files
+make format-check
+```
+
+Formatting a kernel moves line breaks only. For a `.hip` file, prove it with the
+device assembly (`hipcc -S --cuda-device-only --offload-arch=gfx1036 ...`, the
+random `__hip_cuid_*` symbol masked) before and after; for a `.metal` file, which
+only builds on macOS, compare the files with all whitespace removed.
+`test_clang_format_scope.py` keeps the selection, the Makefile list and the native
+regex in step.
+
 ## Native formatting option
 
 ```bash

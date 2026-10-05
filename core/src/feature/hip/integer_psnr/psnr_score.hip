@@ -51,10 +51,8 @@ extern "C" {
  */
 __global__ void calculate_psnr_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
                                                const uint8_t *__restrict__ dis,
-                                               ptrdiff_t ref_stride,
-                                               ptrdiff_t dis_stride,
-                                               unsigned long long *__restrict__ sse,
-                                               unsigned width,
+                                               ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                               unsigned long long *__restrict__ sse, unsigned width,
                                                unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -96,21 +94,17 @@ __global__ void calculate_psnr_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
  */
 __global__ void calculate_psnr_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
                                                 const uint8_t *__restrict__ dis,
-                                                ptrdiff_t ref_stride,
-                                                ptrdiff_t dis_stride,
+                                                ptrdiff_t ref_stride, ptrdiff_t dis_stride,
                                                 unsigned long long *__restrict__ sse,
-                                                unsigned width,
-                                                unsigned height)
+                                                unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     uint64_t my_se = 0;
     if (x < (int)width && y < (int)height) {
-        const uint16_t r = reinterpret_cast<const uint16_t *>(
-            ref + (ptrdiff_t)y * ref_stride)[x];
-        const uint16_t d = reinterpret_cast<const uint16_t *>(
-            dis + (ptrdiff_t)y * dis_stride)[x];
+        const uint16_t r = reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
+        const uint16_t d = reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
         const int64_t diff = (int64_t)r - (int64_t)d;
         my_se = (uint64_t)(diff * diff);
     }

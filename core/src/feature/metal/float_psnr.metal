@@ -62,16 +62,13 @@ inline void fpsnr_store_group_sum(ulong mine, uint lid, uint group, threadgroup 
 /* ------------------------------------------------------------------ */
 /*  8 bpc kernel                                                        */
 /* ------------------------------------------------------------------ */
-kernel void float_psnr_kernel_8bpc(
-    const device uchar  *ref      [[buffer(0)]],
-    const device uchar  *dis      [[buffer(1)]],
-    device       ulong  *partials [[buffer(2)]],
-    constant     uint2  &strides  [[buffer(3)]],
-    constant     uint2  &dim      [[buffer(4)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint   lid         [[thread_index_in_threadgroup]])
+kernel void
+float_psnr_kernel_8bpc(const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
+                       device ulong *partials [[buffer(2)]], constant uint2 &strides [[buffer(3)]],
+                       constant uint2 &dim [[buffer(4)]], uint2 gid [[thread_position_in_grid]],
+                       uint2 bid [[threadgroup_position_in_grid]],
+                       uint2 grid_groups [[threadgroups_per_grid]],
+                       uint lid [[thread_index_in_threadgroup]])
 {
     ulong my_noise = 0ul;
     if (gid.x < dim.x && gid.y < dim.y) {
@@ -89,15 +86,11 @@ kernel void float_psnr_kernel_8bpc(
 /*  1 / scaler^2 (the host divides).                                    */
 /* ------------------------------------------------------------------ */
 kernel void float_psnr_kernel_16bpc(
-    const device uchar  *ref      [[buffer(0)]],
-    const device uchar  *dis      [[buffer(1)]],
-    device       ulong  *partials [[buffer(2)]],
-    constant     uint2  &strides  [[buffer(3)]],
-    constant     uint2  &dim      [[buffer(4)]],
-    uint2  gid         [[thread_position_in_grid]],
-    uint2  bid         [[threadgroup_position_in_grid]],
-    uint2  grid_groups [[threadgroups_per_grid]],
-    uint   lid         [[thread_index_in_threadgroup]])
+    const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
+    device ulong *partials [[buffer(2)]], constant uint2 &strides [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], uint2 gid [[thread_position_in_grid]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint lid [[thread_index_in_threadgroup]])
 {
     ulong my_noise = 0ul;
     if (gid.x < dim.x && gid.y < dim.y) {

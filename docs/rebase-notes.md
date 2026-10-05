@@ -61723,3 +61723,11 @@ No score, public API or FFmpeg patch impact.
   `core/src/interop/pelorus_*.c` takes master's side and re-runs
   `scripts/sync-pelorus-interop.sh --update`; never merge a hunk by hand. No score, public API
   or FFmpeg patch impact.
+## clang-format covers the HIP and Metal kernels
+
+- The second `clang-format` entry of `.pre-commit-config.yaml` (`clang-format-hip-metal`)
+  and `CLANG_FORMAT_FILES` in the `Makefile` read `.hip` and `.metal`; an upstream sync or a
+  rebase of a kernel formats it with the pinned clang-format before committing
+  (`pre-commit run clang-format-hip-metal --files <file>`). The 18 files formatted here changed
+  line breaks only, so a conflict in one of them is resolved by taking the incoming side and
+  re-running the formatter. No score, public API or FFmpeg patch impact.

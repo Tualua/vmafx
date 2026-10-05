@@ -59,12 +59,10 @@ using namespace metal;
 /* ------------------------------------------------------------------ */
 /*  Pass 0: horizontal convolution                                      */
 /* ------------------------------------------------------------------ */
-kernel void float_ssim_horiz(
-    const device float  *ref_f  [[buffer(0)]],
-    const device float  *dis_f  [[buffer(1)]],
-    device       float  *hbuf   [[buffer(2)]],
-    constant     uint4  &params [[buffer(3)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void float_ssim_horiz(const device float *ref_f [[buffer(0)]],
+                             const device float *dis_f [[buffer(1)]],
+                             device float *hbuf [[buffer(2)]], constant uint4 &params [[buffer(3)]],
+                             uint2 gid [[thread_position_in_grid]])
 {
     const uint width = params.x;
     const uint height = params.y;
@@ -90,8 +88,8 @@ kernel void float_ssim_horiz(
 
 /* The CPU's lv, cv and sv of the window at (x, y). */
 inline VmafMtlSsimDoubleTerms float_ssim_window_terms(const device float *hbuf,
-                                                      constant VmafMtlSsimWindowParams &p,
-                                                      uint x, uint y)
+                                                      constant VmafMtlSsimWindowParams &p, uint x,
+                                                      uint y)
 {
     const uint plane = p.horizontal_width * p.horizontal_height;
     VmafMtlSsimPairs sums = vmaf_mtl_ssim_pairs_zero();
@@ -109,11 +107,10 @@ inline VmafMtlSsimDoubleTerms float_ssim_window_terms(const device float *hbuf,
 /* ------------------------------------------------------------------ */
 /*  Pass 1: vertical convolution + the window's fp64 term               */
 /* ------------------------------------------------------------------ */
-kernel void float_ssim_vert_terms(
-    const device float                    *hbuf   [[buffer(0)]],
-    device       ulong                    *terms  [[buffer(1)]],
-    constant     VmafMtlSsimWindowParams  &params [[buffer(2)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void float_ssim_vert_terms(const device float *hbuf [[buffer(0)]],
+                                  device ulong *terms [[buffer(1)]],
+                                  constant VmafMtlSsimWindowParams &params [[buffer(2)]],
+                                  uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= params.final_width || gid.y >= params.final_height) {
         return;
@@ -124,13 +121,12 @@ kernel void float_ssim_vert_terms(
 
 /* enable_lcs variant: lv and cv as fp64 bit patterns and the fp32 sv, each at
  * the window's raster position; the host forms the product and the sums. */
-kernel void float_ssim_vert_lcs(
-    const device float                    *hbuf      [[buffer(0)]],
-    device       ulong                    *luminance [[buffer(1)]],
-    device       ulong                    *contrast  [[buffer(2)]],
-    device       float                    *structure [[buffer(3)]],
-    constant     VmafMtlSsimWindowParams  &params    [[buffer(4)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void float_ssim_vert_lcs(const device float *hbuf [[buffer(0)]],
+                                device ulong *luminance [[buffer(1)]],
+                                device ulong *contrast [[buffer(2)]],
+                                device float *structure [[buffer(3)]],
+                                constant VmafMtlSsimWindowParams &params [[buffer(4)]],
+                                uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= params.final_width || gid.y >= params.final_height) {
         return;

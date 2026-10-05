@@ -26,8 +26,8 @@
 # Tools run (each conditional on availability — missing tools are
 # skipped with a one-line notice, never block the commit):
 #
-#   - ruff check --fix         (Python: ai/, scripts/, tools/, python/)
-#   - clang-format -i          (C/C++/CUDA: core/, cmd/, ffmpeg-patches src)
+#   - ruff check --fix         (Python: every .py / .pyi; the declared exceptions are skipped)
+#   - clang-format -i          (C/C++/CUDA/HIP/Metal: core/, cmd/, ffmpeg-patches src)
 #   - shfmt -w -i 2 -ci        (shell: scripts/, dev/, top-level *.sh)
 #
 # Re-stages files that the formatters touched so the commit picks up
@@ -65,21 +65,23 @@ for f in "${staged[@]}"; do
   # e.g. concurrent edit). Formatting a missing file would noisily fail.
   [ -f "$f" ] || continue
 
-  # Python — fork-added trees only. Mirrors .pre-commit-config.yaml
-  # ruff hook scope (^(python|ai|scripts|tools)/.*\.py$). Use regex
-  # rather than case-globs because case `*` matches `/` and produces
-  # SC2221/SC2222 shellcheck warnings when listing multi-segment
-  # patterns side-by-side.
-  if [[ "$f" =~ ^(python|ai|scripts|tools)/.*\.py$ ]]; then
+  # Python — every file, as the .pre-commit-config.yaml ruff hook reads it.
+  # The declared exceptions (.config/lint-exceptions.d/ruff.toml) are
+  # skipped by `ruff --force-exclude` below through pyproject.toml's
+  # extend-exclude. Regex rather than case-globs: case `*` matches `/` and
+  # produces SC2221/SC2222 shellcheck warnings.
+  if [[ "$f" =~ \.pyi?$ ]]; then
     py_files+=("$f")
     continue
   fi
 
-  # C / C++ / CUDA — clang-format honours .clang-format.
+  # C / C++ / CUDA / HIP / Metal — clang-format honours .clang-format.
   # subprojects/ and core/test/data/ are excluded to mirror the
-  # framework hook's exclude pattern (upstream-vendored sources).
-  if [[ "$f" =~ \.(c|h|cpp|hpp|cc|cu|cuh)$ ]]; then
-    if [[ "$f" =~ ^(subprojects/|core/test/data/) ]]; then
+  # framework hook's exclude pattern (upstream-vendored sources);
+  # scripts/ci/exact_twins.d/ holds parity-gate data fragments that only
+  # borrow the .hip extension.
+  if [[ "$f" =~ \.(c|h|cpp|hpp|cc|cu|cuh|hip|metal)$ ]]; then
+    if [[ "$f" =~ ^(subprojects/|core/test/data/|scripts/ci/exact_twins\.d/) ]]; then
       continue
     fi
     c_files+=("$f")
@@ -107,9 +109,11 @@ _apply_formatter() {
 
   case "$tool" in
     ruff)
-      # --fix to apply autofixes, --quiet to suppress per-file noise.
-      # Non-zero exit on unfixable findings — propagate to block commit.
-      "$binary" check --fix --quiet -- "$@" || return $?
+      # --fix to apply autofixes, --quiet to suppress per-file noise,
+      # --force-exclude so the declared exceptions in pyproject.toml hold for
+      # explicitly named files. Non-zero exit on unfixable findings —
+      # propagate to block commit.
+      "$binary" check --fix --quiet --force-exclude -- "$@" || return $?
       ;;
     clang-format)
       "$binary" -i -- "$@"

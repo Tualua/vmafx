@@ -162,16 +162,11 @@ inline void psnr_hvs_block_terms(threadgroup int *s_ref, threadgroup int *s_dist
 /*  8 bpc kernel                                                        */
 /* ------------------------------------------------------------------ */
 kernel void integer_psnr_hvs_8bpc(
-    const device uchar  *ref      [[buffer(0)]],
-    const device uchar  *dis      [[buffer(1)]],
-    device       float  *terms    [[buffer(2)]],
-    const constant float *csf     [[buffer(3)]],
-    constant     uint4  &dims     [[buffer(4)]],
-    constant     uint2  &strides  [[buffer(5)]],
-    const constant float *mask    [[buffer(6)]],
-    uint2 bid       [[threadgroup_position_in_grid]],
-    uint2 lpos      [[thread_position_in_threadgroup]],
-    uint  local_idx [[thread_index_in_threadgroup]])
+    const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
+    device float *terms [[buffer(2)]], const constant float *csf [[buffer(3)]],
+    constant uint4 &dims [[buffer(4)]], constant uint2 &strides [[buffer(5)]],
+    const constant float *mask [[buffer(6)]], uint2 bid [[threadgroup_position_in_grid]],
+    uint2 lpos [[thread_position_in_threadgroup]], uint local_idx [[thread_index_in_threadgroup]])
 {
     threadgroup int s_ref[64];
     threadgroup int s_dist[64];
@@ -179,7 +174,7 @@ kernel void integer_psnr_hvs_8bpc(
     threadgroup int z_d[64];
     threadgroup float s_threshold;
 
-    const uint width  = dims.x;
+    const uint width = dims.x;
     const uint height = dims.y;
     const uint num_blocks_x = dims.z;
     const uint num_blocks_y = dims.w;
@@ -199,32 +194,27 @@ kernel void integer_psnr_hvs_8bpc(
     if (valid_block) {
         const uint sx = x0 + lx;
         const uint sy = y0 + ly;
-        my_ref  = (int)ref[sy * strides.x + sx];
+        my_ref = (int)ref[sy * strides.x + sx];
         my_dist = (int)dis[sy * strides.y + sx];
     }
-    s_ref[local_idx]  = my_ref;
+    s_ref[local_idx] = my_ref;
     s_dist[local_idx] = my_dist;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     const uint slot = blk_y * num_blocks_x + blk_x;
-    psnr_hvs_block_terms(s_ref, s_dist, z_s, z_d, &s_threshold, csf, mask, terms, slot,
-                         local_idx, valid_block);
+    psnr_hvs_block_terms(s_ref, s_dist, z_s, z_d, &s_threshold, csf, mask, terms, slot, local_idx,
+                         valid_block);
 }
 
 /* ------------------------------------------------------------------ */
 /*  16 bpc kernel                                                       */
 /* ------------------------------------------------------------------ */
 kernel void integer_psnr_hvs_16bpc(
-    const device uchar  *ref      [[buffer(0)]],
-    const device uchar  *dis      [[buffer(1)]],
-    device       float  *terms    [[buffer(2)]],
-    const constant float *csf     [[buffer(3)]],
-    constant     uint4  &dims     [[buffer(4)]],
-    constant     uint2  &strides  [[buffer(5)]],
-    const constant float *mask    [[buffer(6)]],
-    uint2 bid       [[threadgroup_position_in_grid]],
-    uint2 lpos      [[thread_position_in_threadgroup]],
-    uint  local_idx [[thread_index_in_threadgroup]])
+    const device uchar *ref [[buffer(0)]], const device uchar *dis [[buffer(1)]],
+    device float *terms [[buffer(2)]], const constant float *csf [[buffer(3)]],
+    constant uint4 &dims [[buffer(4)]], constant uint2 &strides [[buffer(5)]],
+    const constant float *mask [[buffer(6)]], uint2 bid [[threadgroup_position_in_grid]],
+    uint2 lpos [[thread_position_in_threadgroup]], uint local_idx [[thread_index_in_threadgroup]])
 {
     threadgroup int s_ref[64];
     threadgroup int s_dist[64];
@@ -232,7 +222,7 @@ kernel void integer_psnr_hvs_16bpc(
     threadgroup int z_d[64];
     threadgroup float s_threshold;
 
-    const uint width  = dims.x;
+    const uint width = dims.x;
     const uint height = dims.y;
     const uint num_blocks_x = dims.z;
     const uint num_blocks_y = dims.w;
@@ -257,14 +247,14 @@ kernel void integer_psnr_hvs_16bpc(
          * and divides the final score by samplemax^2. */
         const device ushort *ref_row = (const device ushort *)(ref + sy * strides.x);
         const device ushort *dis_row = (const device ushort *)(dis + sy * strides.y);
-        my_ref  = (int)ref_row[sx];
+        my_ref = (int)ref_row[sx];
         my_dist = (int)dis_row[sx];
     }
-    s_ref[local_idx]  = my_ref;
+    s_ref[local_idx] = my_ref;
     s_dist[local_idx] = my_dist;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     const uint slot = blk_y * num_blocks_x + blk_x;
-    psnr_hvs_block_terms(s_ref, s_dist, z_s, z_d, &s_threshold, csf, mask, terms, slot,
-                         local_idx, valid_block);
+    psnr_hvs_block_terms(s_ref, s_dist, z_s, z_d, &s_threshold, csf, mask, terms, slot, local_idx,
+                         valid_block);
 }

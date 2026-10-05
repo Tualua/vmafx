@@ -417,9 +417,8 @@ __global__ __launch_bounds__(PSNR_HVS_HIP_WG) void psnr_hvs_hip(PsnrHvsHipKernel
     }
     // SAFETY: args.terms holds PSNR_HVS_HIP_TERMS floats per block and
     // lane.block < args.total_blocks on an active work-item.
-    const uint64_t mask =
-        hvs_store_terms(args.terms + ((size_t)lane.block * PSNR_HVS_HIP_TERMS), blk,
-                        blk + kLaneStride, threshold, lane.plane);
+    const uint64_t mask = hvs_store_terms(args.terms + ((size_t)lane.block * PSNR_HVS_HIP_TERMS),
+                                          blk, blk + kLaneStride, threshold, lane.plane);
     if (args.block_masks != nullptr) {
         args.block_masks[lane.block] = mask;
     }
@@ -472,13 +471,10 @@ __global__ __launch_bounds__(1) void hvs_scan_prefix_hip(const uint32_t *chunk_t
     header->total_terms = running;
 }
 
-__global__ __launch_bounds__(256) void hvs_compact_hip(struct PsnrHvsHipKernelArgs args,
-                                                       const float *raw_terms,
-                                                       const uint64_t *block_masks,
-                                                       const uint32_t *block_counts,
-                                                       const uint32_t *chunk_offsets,
-                                                       float *packed_terms,
-                                                       struct PsnrHvsHipHeader *header)
+__global__ __launch_bounds__(256) void hvs_compact_hip(
+    struct PsnrHvsHipKernelArgs args, const float *raw_terms, const uint64_t *block_masks,
+    const uint32_t *block_counts, const uint32_t *chunk_offsets, float *packed_terms,
+    struct PsnrHvsHipHeader *header)
 {
     __shared__ uint32_t s_data[256];
     const unsigned tid = threadIdx.x;

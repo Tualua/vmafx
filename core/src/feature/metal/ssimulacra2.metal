@@ -84,21 +84,21 @@ inline float nc(float v)
 /*                                        .z=plane_count, .w=plane_str) */
 /*  Grid: ceil(w/16) x ceil(h/8), threads 16x8.                        */
 /* ------------------------------------------------------------------ */
-kernel void ssimulacra2_mul3(
-    const device float  *a      [[buffer(0)]],
-    const device float  *b      [[buffer(1)]],
-    device       float  *out    [[buffer(2)]],
-    constant     uint4  &params [[buffer(3)]],
-    uint2  gid [[thread_position_in_grid]])
+kernel void ssimulacra2_mul3(const device float *a [[buffer(0)]],
+                             const device float *b [[buffer(1)]], device float *out [[buffer(2)]],
+                             constant uint4 &params [[buffer(3)]],
+                             uint2 gid [[thread_position_in_grid]])
 {
-    const uint width        = params.x;
-    const uint height        = params.y;
-    const uint plane_count  = params.z;
+    const uint width = params.x;
+    const uint height = params.y;
+    const uint plane_count = params.z;
     const uint plane_stride = params.w;
 
     const uint x = gid.x;
     const uint y = gid.y;
-    if (x >= width || y >= height) { return; }
+    if (x >= width || y >= height) {
+        return;
+    }
 
     const uint base = y * width + x;
     for (uint c = 0u; c < plane_count; ++c) {
@@ -124,25 +124,24 @@ kernel void ssimulacra2_mul3(
 /*                            d1 = (d1_0, d1_1, d1_2, 0)              */
 /*  Grid: ceil(height/64) x 1 x 3, threads 64x1x1.                     */
 /* ------------------------------------------------------------------ */
-kernel void ssimulacra2_blur_h3(
-    const device float  *in_buf  [[buffer(0)]],
-    device       float  *out_buf [[buffer(1)]],
-    constant     uint4  &params  [[buffer(2)]],
-    constant     float4 &n2v     [[buffer(3)]],
-    constant     float4 &d1v     [[buffer(4)]],
-    uint3  gid [[thread_position_in_grid]])
+kernel void
+ssimulacra2_blur_h3(const device float *in_buf [[buffer(0)]], device float *out_buf [[buffer(1)]],
+                    constant uint4 &params [[buffer(2)]], constant float4 &n2v [[buffer(3)]],
+                    constant float4 &d1v [[buffer(4)]], uint3 gid [[thread_position_in_grid]])
 {
-    const uint width        = params.x;
-    const uint height        = params.y;
-    const int  radius       = (int)params.z;
+    const uint width = params.x;
+    const uint height = params.y;
+    const int radius = (int)params.z;
     const uint plane_stride = params.w;
 
-    const uint c   = gid.z;
+    const uint c = gid.z;
     const uint row = gid.x;
-    if (row >= height) { return; }
+    if (row >= height) {
+        return;
+    }
 
     const int xsize = (int)width;
-    const int N     = radius;
+    const int N = radius;
 
     const float n2_0 = n2v.x, n2_1 = n2v.y, n2_2 = n2v.z;
     const float d1_0 = d1v.x, d1_1 = d1v.y, d1_2 = d1v.z;
@@ -150,14 +149,14 @@ kernel void ssimulacra2_blur_h3(
     float prev1_0 = 0.0f, prev1_1 = 0.0f, prev1_2 = 0.0f;
     float prev2_0 = 0.0f, prev2_1 = 0.0f, prev2_2 = 0.0f;
 
-    const uint in_base  = c * plane_stride + row * width;
+    const uint in_base = c * plane_stride + row * width;
     const uint out_base = c * plane_stride + row * width;
 
     for (int n = -N + 1; n < xsize; ++n) {
-        const int left  = n - N - 1;
+        const int left = n - N - 1;
         const int right = n + N - 1;
-        const float lv = (left  >= 0)     ? in_buf[in_base + (uint)left]  : 0.0f;
-        const float rv = (right < xsize)  ? in_buf[in_base + (uint)right] : 0.0f;
+        const float lv = (left >= 0) ? in_buf[in_base + (uint)left] : 0.0f;
+        const float rv = (right < xsize) ? in_buf[in_base + (uint)right] : 0.0f;
         const float sum = lv + rv;
 
         /* o = n2*sum - d1*prev1 - prev2, kept FMA-free via nc(). */
@@ -193,25 +192,24 @@ kernel void ssimulacra2_blur_h3(
 /*  Buffer bindings: identical layout to ssimulacra2_blur_h3.           */
 /*  Grid: ceil(width/64) x 1 x 3, threads 64x1x1.                       */
 /* ------------------------------------------------------------------ */
-kernel void ssimulacra2_blur_v3(
-    const device float  *in_buf  [[buffer(0)]],
-    device       float  *out_buf [[buffer(1)]],
-    constant     uint4  &params  [[buffer(2)]],
-    constant     float4 &n2v     [[buffer(3)]],
-    constant     float4 &d1v     [[buffer(4)]],
-    uint3  gid [[thread_position_in_grid]])
+kernel void
+ssimulacra2_blur_v3(const device float *in_buf [[buffer(0)]], device float *out_buf [[buffer(1)]],
+                    constant uint4 &params [[buffer(2)]], constant float4 &n2v [[buffer(3)]],
+                    constant float4 &d1v [[buffer(4)]], uint3 gid [[thread_position_in_grid]])
 {
-    const uint width        = params.x;
-    const uint height        = params.y;
-    const int  radius       = (int)params.z;
+    const uint width = params.x;
+    const uint height = params.y;
+    const int radius = (int)params.z;
     const uint plane_stride = params.w;
 
-    const uint c   = gid.z;
+    const uint c = gid.z;
     const uint col = gid.x;
-    if (col >= width) { return; }
+    if (col >= width) {
+        return;
+    }
 
     const int ysize = (int)height;
-    const int N     = radius;
+    const int N = radius;
 
     const float n2_0 = n2v.x, n2_1 = n2v.y, n2_2 = n2v.z;
     const float d1_0 = d1v.x, d1_1 = d1v.y, d1_2 = d1v.z;
@@ -222,12 +220,10 @@ kernel void ssimulacra2_blur_v3(
     const uint base = c * plane_stride;
 
     for (int n = -N + 1; n < ysize; ++n) {
-        const int left  = n - N - 1;
+        const int left = n - N - 1;
         const int right = n + N - 1;
-        const float lv =
-            (left  >= 0)    ? in_buf[base + (uint)left  * width + col] : 0.0f;
-        const float rv =
-            (right < ysize) ? in_buf[base + (uint)right * width + col] : 0.0f;
+        const float lv = (left >= 0) ? in_buf[base + (uint)left * width + col] : 0.0f;
+        const float rv = (right < ysize) ? in_buf[base + (uint)right * width + col] : 0.0f;
         const float sum = lv + rv;
 
         const float o0 = nc(n2_0 * sum) - nc(d1_0 * prev1_0) - prev2_0;

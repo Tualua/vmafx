@@ -9184,7 +9184,7 @@
     },
     "1428": {
       "sites": {
-        ".pre-commit-config.yaml": 1,
+        ".pre-commit-config.yaml": 2,
         "Makefile": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
