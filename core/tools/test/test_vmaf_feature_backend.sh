@@ -10,14 +10,14 @@
 #   test_vmaf_feature_backend.sh <backend>  # cuda|sycl|hip|metal: twin routing
 #
 # The device run exits 77 (meson SKIP) when the backend is not usable here.
-set -e
+set -eu
 
 BACKEND="${1:-cpu}"
 # MESON_SOURCE_ROOT is core/; the Netflix fixtures sit one level above it.
-if [ -d "${MESON_SOURCE_ROOT}/python/test/resource/yuv" ]; then
-  YUV="${MESON_SOURCE_ROOT}/python/test/resource/yuv"
+if [ -d "${MESON_SOURCE_ROOT:-}/python/test/resource/yuv" ]; then
+  YUV="${MESON_SOURCE_ROOT:-}/python/test/resource/yuv"
 else
-  YUV="${MESON_SOURCE_ROOT}/../python/test/resource/yuv"
+  YUV="${MESON_SOURCE_ROOT:-}/../python/test/resource/yuv"
 fi
 REF="${YUV}/src01_hrc00_576x324.yuv"
 DIS="${YUV}/src01_hrc01_576x324.yuv"
@@ -97,7 +97,7 @@ set +e
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 --frame_cnt 1 \
   --no_prediction --feature ciede --backend "$BACKEND" >/dev/null 2>&1
 probe=$?
-set -e
+set -eu
 if [ "$probe" -ne 0 ]; then
   echo "[skip: backend $BACKEND not usable on this machine]"
   exit 77

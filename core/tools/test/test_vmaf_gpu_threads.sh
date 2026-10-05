@@ -22,17 +22,17 @@
 #      4.382255 and the pooled VMAF from 82.814059 to 82.823778.
 #
 # Exit 77 is meson's SKIP code, used when no GPU is present.
-set -e
+set -eu
 
 BACKEND="${1:-cuda}"
 # meson is invoked as `meson setup <build> core`, so MESON_SOURCE_ROOT is the
 # core/ directory, not the repository root. The Netflix fixtures live at
 # <repo>/python/test/resource/yuv, one level above it. Accept either, so the
 # script also works when run by hand from a checkout.
-if [ -d "${MESON_SOURCE_ROOT}/python/test/resource/yuv" ]; then
-  YUV="${MESON_SOURCE_ROOT}/python/test/resource/yuv"
+if [ -d "${MESON_SOURCE_ROOT:-}/python/test/resource/yuv" ]; then
+  YUV="${MESON_SOURCE_ROOT:-}/python/test/resource/yuv"
 else
-  YUV="${MESON_SOURCE_ROOT}/../python/test/resource/yuv"
+  YUV="${MESON_SOURCE_ROOT:-}/../python/test/resource/yuv"
 fi
 REF="${YUV}/src01_hrc00_576x324.yuv"
 DIS="${YUV}/src01_hrc01_576x324.yuv"

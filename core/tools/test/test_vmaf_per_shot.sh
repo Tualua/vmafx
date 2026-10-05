@@ -298,12 +298,12 @@ if [ "${POSIX_DEVICES}" -eq 1 ]; then
     --output "${FIFO_CSV}" \
     --frames 5; then
     echo "test_vmaf_per_shot: FIFO test timed out or failed" >&2
-    kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
+    if kill -0 "${FIFO_WRITER_PID}" 2>/dev/null; then kill -9 "${FIFO_WRITER_PID}"; fi
     rm -f "${FIFO_TEST}"
     exit 1
   fi
-  kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
-  wait "${FIFO_WRITER_PID}" 2>/dev/null || true
+  if kill -0 "${FIFO_WRITER_PID}" 2>/dev/null; then kill -9 "${FIFO_WRITER_PID}"; fi
+  wait "${FIFO_WRITER_PID}" 2>/dev/null || echo "test_vmaf_per_shot: FIFO writer was killed (expected)" >&2
   rm -f "${FIFO_TEST}"
 
   FIFO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${FIFO_CSV}")

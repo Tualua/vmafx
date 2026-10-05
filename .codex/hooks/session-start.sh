@@ -12,7 +12,7 @@ echo "VMAF fork session — branch: $branch" >&2
 
 # Upstream delta (if upstream remote is configured)
 if git remote get-url upstream >/dev/null 2>&1; then
-  git fetch --quiet upstream master 2>/dev/null || true
+  if ! git fetch --quiet upstream master 2>/dev/null; then echo "  NOTE: could not fetch upstream/master; delta below may be stale" >&2; fi
   behind=$(git rev-list --count HEAD..upstream/master 2>/dev/null || echo 0)
   if [[ "$behind" -gt 0 ]]; then
     echo "  upstream/master has $behind commits we don't have — consider /sync-upstream" >&2

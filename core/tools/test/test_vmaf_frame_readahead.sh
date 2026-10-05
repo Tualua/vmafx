@@ -57,7 +57,7 @@ PY
 fail() {
   echo "FAIL: $1" >&2
   echo "--- stderr ---" >&2
-  cat "${WORK}/err.txt" >&2 || true
+  if [ -f "${WORK}/err.txt" ]; then cat "${WORK}/err.txt" >&2; fi
   exit 1
 }
 

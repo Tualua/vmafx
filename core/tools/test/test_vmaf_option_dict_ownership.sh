@@ -49,7 +49,7 @@ OVERLOAD="vif.vif_enhn_gain_limit=1.0"
 fail() {
   echo "FAIL: $1" >&2
   echo "--- stderr ---" >&2
-  cat "${WORK}/err.txt" >&2 || true
+  if [ -f "${WORK}/err.txt" ]; then cat "${WORK}/err.txt" >&2; fi
   exit 1
 }
 

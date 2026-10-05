@@ -14,7 +14,7 @@
 # This is a cheap gate — O(# of registry entries) — but it locks the
 # tree-in state of every shipped tiny model. Tampering with a .onnx
 # without updating registry.json will fail CI.
-set -eu
+set -euo pipefail
 
 TINY_DIR="${TINY_DIR:-model/tiny}"
 REG="$TINY_DIR/registry.json"

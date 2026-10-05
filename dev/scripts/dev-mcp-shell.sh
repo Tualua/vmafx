@@ -11,7 +11,9 @@
 set -euo pipefail
 
 CONTAINER="${1:-vmaf-dev-mcp}"
-shift || true
+if [ "$#" -gt 0 ]; then
+  shift
+fi
 CMD="${*:-bash}"
 
 echo "[dev-mcp-shell] Attaching to ${CONTAINER}…"

@@ -7,8 +7,8 @@ set -euo pipefail
 
 file="${CLAUDE_TOOL_INPUT_file_path:-}"
 if [[ -z "$file" ]] && command -v jq >/dev/null 2>&1; then
-  input=$(cat 2>/dev/null || true)
-  [[ -n "$input" ]] && file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
+  input=$(cat 2>/dev/null) || input=""
+  [[ -n "$input" ]] && file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || file=""
 fi
 [[ -z "$file" ]] && exit 0
 

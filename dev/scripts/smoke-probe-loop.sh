@@ -41,7 +41,9 @@ IFS=$'\n\t'
 _SMOKE_TMPFILES=()
 _smoke_cleanup() {
   if [ "${#_SMOKE_TMPFILES[@]}" -gt 0 ]; then
-    rm -f "${_SMOKE_TMPFILES[@]}" 2>/dev/null || true
+    if ! rm -f "${_SMOKE_TMPFILES[@]}" 2>/dev/null; then
+      echo "[smoke-probe] warning: could not remove staging files" >&2
+    fi
   fi
 }
 trap _smoke_cleanup EXIT INT TERM
@@ -50,6 +52,9 @@ trap _smoke_cleanup EXIT INT TERM
 # Configuration
 # ---------------------------------------------------------------------------
 PROBE_INTERVAL="${PROBE_INTERVAL_SECONDS:-900}"
+# Scalar bound of the continuous loop (HISS-02): centuries at the default 900 s
+# interval, so a container never reaches it, but the loop has a bound.
+PROBE_MAX_CYCLES="${PROBE_MAX_CYCLES:-1000000000}"
 PROBE_OUTPUT_DIR="${PROBE_OUTPUT_DIR:-/probes}"
 TESTDATA="${VMAF_TESTDATA_PATH:-/workspace/testdata}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
@@ -100,52 +105,10 @@ probe_failed_record() {
     "$(json_str "probe failed")"
 }
 
-# ---------------------------------------------------------------------------
-# Single backend probe
-# Outputs: score, duration_ms, and JSON-encoded error (unit-separator-delimited)
-# ---------------------------------------------------------------------------
-probe_backend() {
-  local backend="${1}"
-  local t0 t1 score err
-
-  t0="$(ms_now)"
-
-  # Reject unknown values before invoking the CLI. Every supported value is
-  # passed through the exclusive selector so a successful probe proves that
-  # exact backend ran rather than silently falling back through auto dispatch.
-  case "${backend}" in
-    cpu | cuda | sycl | hip) ;;
-    *)
-      printf 'null%s0%s%s' "${RESULT_SEP}" "${RESULT_SEP}" \
-        "$(json_str "unknown backend: ${backend}")"
-      return
-      ;;
-  esac
-
-  # The CLI reports pooled scores in its JSON output file. It deliberately
-  # suppresses the human pooled-score line on non-TTY stderr, so grepping the
-  # redirected process output can never be a valid probe. Keep the JSON and
-  # diagnostic log separate and verify backend_used as well as the score.
-  local tmp_json tmp_log
-  tmp_json="$(mktemp)"
-  tmp_log="$(mktemp)"
-  _SMOKE_TMPFILES+=("${tmp_json}" "${tmp_log}")
-
-  if vmaf \
-    --reference "${REF_YUV}" \
-    --distorted "${DIS_YUV}" \
-    --width "${WIDTH}" \
-    --height "${HEIGHT}" \
-    --pixel_format "${PIXEL_FORMAT}" \
-    --bitdepth "${BITDEPTH}" \
-    --model "path=${VMAF_MODEL}" \
-    --backend "${backend}" \
-    --json \
-    --output "${tmp_json}" \
-    >"${tmp_log}" 2>&1; then
-    t1="$(ms_now)"
-    if score="$(
-      python3 - "${tmp_json}" "${backend}" 2>>"${tmp_log}" <<'PY'
+# Python helpers live in variables so the shell functions below stay short.
+# Each program reads its arguments from sys.argv exactly as before.
+_SCORE_PY="$(
+  cat <<'PY'
 import json
 import math
 import sys
@@ -160,31 +123,10 @@ if backend_used != sys.argv[2]:
     raise ValueError(f"requested backend {sys.argv[2]!r}, output reports {backend_used!r}")
 print(score)
 PY
-    )"; then
-      err="null"
-    else
-      score="null"
-      err="$(json_str "$(tail -3 "${tmp_log}" | tr '\n' ' ')")"
-    fi
-  else
-    t1="$(ms_now)"
-    score="null"
-    err="$(json_str "$(tail -3 "${tmp_log}" | tr '\n' ' ')")"
-  fi
-  rm -f "${tmp_json}" "${tmp_log}"
+)"
 
-  local duration_ms=$((t1 - t0))
-  printf '%s%s%s%s%s' "${score}" "${RESULT_SEP}" "${duration_ms}" \
-    "${RESULT_SEP}" "${err}"
-}
-
-# Run one MCP tool call over the production Go stdio server. MCP requires an
-# initialize handshake before tools/call; a bare tools/call was rejected by the
-# Go SDK even when the tool name happened to exist in the retired Python server.
-_mcp_call() {
-  local tool_name="$1" arguments_json="$2"
-
-  python3 - "${tool_name}" "${arguments_json}" <<'PY'
+_MCP_CALL_PY="$(
+  cat <<'PY'
 import json
 import os
 import selectors
@@ -282,6 +224,77 @@ if response is None:
     raise RuntimeError(f"MCP tool {tool!r} returned no response")
 print(json.dumps(response, separators=(",", ":")))
 PY
+)"
+
+# ---------------------------------------------------------------------------
+# Single backend probe
+# Outputs: score, duration_ms, and JSON-encoded error (unit-separator-delimited)
+# ---------------------------------------------------------------------------
+probe_backend() {
+  local backend="${1}"
+  local t0 t1 score err
+
+  t0="$(ms_now)"
+
+  # Reject unknown values before invoking the CLI. Every supported value is
+  # passed through the exclusive selector so a successful probe proves that
+  # exact backend ran rather than silently falling back through auto dispatch.
+  case "${backend}" in
+    cpu | cuda | sycl | hip) ;;
+    *)
+      printf 'null%s0%s%s' "${RESULT_SEP}" "${RESULT_SEP}" \
+        "$(json_str "unknown backend: ${backend}")"
+      return
+      ;;
+  esac
+
+  # The CLI reports pooled scores in its JSON output file. It deliberately
+  # suppresses the human pooled-score line on non-TTY stderr, so grepping the
+  # redirected process output can never be a valid probe. Keep the JSON and
+  # diagnostic log separate and verify backend_used as well as the score.
+  local tmp_json tmp_log
+  tmp_json="$(mktemp)"
+  tmp_log="$(mktemp)"
+  _SMOKE_TMPFILES+=("${tmp_json}" "${tmp_log}")
+
+  if vmaf \
+    --reference "${REF_YUV}" \
+    --distorted "${DIS_YUV}" \
+    --width "${WIDTH}" \
+    --height "${HEIGHT}" \
+    --pixel_format "${PIXEL_FORMAT}" \
+    --bitdepth "${BITDEPTH}" \
+    --model "path=${VMAF_MODEL}" \
+    --backend "${backend}" \
+    --json \
+    --output "${tmp_json}" \
+    >"${tmp_log}" 2>&1; then
+    t1="$(ms_now)"
+    if score="$(python3 -c "${_SCORE_PY}" "${tmp_json}" "${backend}" 2>>"${tmp_log}")"; then
+      err="null"
+    else
+      score="null"
+      err="$(json_str "$(tail -3 "${tmp_log}" | tr '\n' ' ')")"
+    fi
+  else
+    t1="$(ms_now)"
+    score="null"
+    err="$(json_str "$(tail -3 "${tmp_log}" | tr '\n' ' ')")"
+  fi
+  rm -f "${tmp_json}" "${tmp_log}"
+
+  local duration_ms=$((t1 - t0))
+  printf '%s%s%s%s%s' "${score}" "${RESULT_SEP}" "${duration_ms}" \
+    "${RESULT_SEP}" "${err}"
+}
+
+# Run one MCP tool call over the production Go stdio server. MCP requires an
+# initialize handshake before tools/call; a bare tools/call was rejected by the
+# Go SDK even when the tool name happened to exist in the retired Python server.
+_mcp_call() {
+  local tool_name="$1" arguments_json="$2"
+
+  python3 -c "${_MCP_CALL_PY}" "${tool_name}" "${arguments_json}"
 }
 
 # ---------------------------------------------------------------------------
@@ -489,7 +502,7 @@ fi
 # Continuous loop
 echo "[smoke-probe-loop] Starting continuous probe loop (interval: ${PROBE_INTERVAL}s)" >&2
 
-while true; do
+for ((cycle = 0; cycle < PROBE_MAX_CYCLES; cycle++)); do
   ts_tag="$(date +%Y%m%dT%H%M%S)"
   out="${PROBE_OUTPUT_DIR}/probe-${ts_tag}.json"
   run_probe "${out}" || echo "[smoke-probe-loop] WARNING: probe failed at ${ts_tag}" >&2

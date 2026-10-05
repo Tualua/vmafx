@@ -45,6 +45,9 @@ CYCLE_SLEEP_SECONDS="${SUPERVISOR_CYCLE_SLEEP:-20}"
 BACKOFF_BASE_SECONDS="${SUPERVISOR_BACKOFF_BASE:-10}"
 BACKOFF_MAX_SECONDS="${SUPERVISOR_BACKOFF_MAX:-300}"
 MAX_ITERATIONS="${SUPERVISOR_MAX_ITERATIONS:-0}"
+# Scalar bound of the daemon loop (HISS-02): at the default 20 s cycle this is
+# centuries, so a supervised run never reaches it, but the loop has a bound.
+ITERATION_CAP="${SUPERVISOR_ITERATION_CAP:-1000000000}"
 
 mkdir -p "$(dirname -- "${LOG_FILE}")"
 mkdir -p "$(dirname -- "${PAUSE_FILE}")"
@@ -57,7 +60,7 @@ log_msg() {
 
 cleanup() {
   log_msg "SIGTERM/SIGINT received; shutting down runner supervisor"
-  docker compose -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || true
+  docker compose -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || log_msg "compose down failed during shutdown"
   exit 0
 }
 trap cleanup SIGTERM SIGINT
@@ -67,7 +70,7 @@ iteration=0
 
 cd "${REPO_ROOT}"
 
-while true; do
+while [[ "${iteration}" -lt "${ITERATION_CAP}" ]]; do
   if [[ "${MAX_ITERATIONS}" -gt 0 && "${iteration}" -ge "${MAX_ITERATIONS}" ]]; then
     log_msg "reached max iterations (${MAX_ITERATIONS}); stopping supervisor"
     break
@@ -84,15 +87,15 @@ while true; do
   # 2. Wait for any active runner container to finish its ephemeral job
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${CONTAINER_NAME}"; then
     log_msg "runner container '${CONTAINER_NAME}' alive; waiting for job completion"
-    docker wait "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-    docker compose -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || true
+    docker wait "${CONTAINER_NAME}" >/dev/null 2>&1 || log_msg "docker wait on '${CONTAINER_NAME}' failed; continuing"
+    docker compose -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || log_msg "compose down failed; continuing"
     log_msg "job finished; container removed"
     sleep 5
   fi
 
   # Ensure no stale stopped container is hanging around
   if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "${CONTAINER_NAME}"; then
-    docker compose -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || true
+    docker compose -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || log_msg "compose down of stale container failed; continuing"
   fi
 
   # Re-check pause in case it was created while waiting for job completion

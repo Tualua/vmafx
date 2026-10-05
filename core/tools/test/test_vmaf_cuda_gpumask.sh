@@ -1,6 +1,6 @@
 #!/bin/sh -x
 # SPDX-License-Identifier: BSD-2-Clause-Patent
-set -e
+set -eu
 
 # Graceful skip when no CUDA driver is available (CI / no-GPU machines).
 # The C GPU tests use the same pattern: probe, print [skip:...], exit 0.

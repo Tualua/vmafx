@@ -10,9 +10,9 @@ set -euo pipefail
 file="${CLAUDE_TOOL_INPUT_file_path:-}"
 if [[ -z "$file" ]] && command -v jq >/dev/null 2>&1; then
   # Read stdin (non-blocking — the hook runtime always provides it).
-  input=$(cat 2>/dev/null || true)
+  input=$(cat 2>/dev/null) || input=""
   if [[ -n "$input" ]]; then
-    file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
+    file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null) || file=""
   fi
 fi
 
@@ -34,20 +34,20 @@ esac
 case "$file" in
   *.c | *.h | *.cpp | *.hpp | *.cu | *.cuh)
     if command -v clang-format >/dev/null 2>&1; then
-      clang-format -i --style=file "$file" || true
+      if ! clang-format -i --style=file "$file"; then echo "clang-format failed on $file" >&2; fi
     fi
     ;;
   *.py)
     if command -v black >/dev/null 2>&1; then
-      black -q "$file" || true
+      if ! black -q "$file"; then echo "black failed on $file" >&2; fi
     fi
     if command -v isort >/dev/null 2>&1; then
-      isort -q "$file" || true
+      if ! isort -q "$file"; then echo "isort failed on $file" >&2; fi
     fi
     ;;
   *.sh)
     if command -v shfmt >/dev/null 2>&1; then
-      shfmt -w -i 2 -ci "$file" || true
+      if ! shfmt -w -i 2 -ci "$file"; then echo "shfmt failed on $file" >&2; fi
     fi
     ;;
 esac
