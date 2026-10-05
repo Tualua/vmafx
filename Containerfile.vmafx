@@ -158,10 +158,13 @@ ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROO
 # this layer stays cached across source edits.
 # The lock keeps its repo path: the hook accepts only the lock outputs and the
 # install aliases recorded in requirements/locks/manifest.json.
+# --ignore-installed: apt's meson pulls python3-packaging, which ships no pip
+# RECORD file, so pip cannot uninstall it to put the locked version in place
+# ("uninstall-no-record-file"); install the locked versions over it instead.
 WORKDIR /tmp/vmafx-pylock
 COPY python/requirements-test-lock.txt python/requirements-test-lock.txt
-RUN pip3 install --no-cache-dir --break-system-packages --require-hashes \
-        -r python/requirements-test-lock.txt
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        --require-hashes -r python/requirements-test-lock.txt
 
 # `xxd` — REQUIRED for the default built-in VMAF models. core/src/meson.build's
 # `built_in_models` embed does `find_program('xxd', required: false)` and
