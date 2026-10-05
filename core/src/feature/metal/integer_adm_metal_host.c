@@ -98,6 +98,13 @@ size_t iadm_metal_buffer_bytes(const IadmMetalGeometry *g, IadmMetalBuffer buffe
 
 int iadm_metal_check_options(const IadmMetalOptions *o)
 {
+    assert(o != NULL);
+    const int geom_err =
+        adm_viewing_geometry_check("adm_metal", o->adm_norm_view_dist, o->adm_ref_display_height);
+    if (geom_err) {
+        return geom_err;
+    }
+
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
         const AdmCsfFactors f =
             adm_csf_factors(scale, o->adm_norm_view_dist, o->adm_ref_display_height,

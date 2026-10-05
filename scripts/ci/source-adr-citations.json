@@ -6128,6 +6128,7 @@
         "core/src/dnn/ort_backend.c": 1,
         "core/src/dnn/tiny_extractor_template.h": 1,
         "core/src/feature/adm.c": 1,
+        "core/src/feature/adm_csf_fixed_point.h": 1,
         "core/src/feature/adm_options.h": 1,
         "core/src/feature/arm64/ssimulacra2_neon.c": 2,
         "core/src/feature/arm64/ssimulacra2_sve2.c": 2,

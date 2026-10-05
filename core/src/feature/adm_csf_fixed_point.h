@@ -137,11 +137,21 @@ static inline double adm_csf_fixed_limit(int scale, int band)
  * relational expression intentionally matches the CPU reference's handling
  * of non-finite doubles; the option parser owns those range checks.
  */
-static inline int adm_viewing_geometry_check(double adm_norm_view_dist, int adm_ref_display_height)
+static inline int adm_viewing_geometry_check(const char *extractor, double adm_norm_view_dist,
+                                             int adm_ref_display_height)
 {
-    return adm_norm_view_dist * (double)adm_ref_display_height < ADM_MIN_VIEWING_GEOMETRY ?
-               -EINVAL :
-               0;
+    const double product = adm_norm_view_dist * (double)adm_ref_display_height;
+    if (product < ADM_MIN_VIEWING_GEOMETRY) {
+        if (extractor) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "%s: viewing geometry adm_norm_view_dist (%g) * adm_ref_display_height (%d) = "
+                     "%g is below the 3240 floor (1080p at 3H); float_adm is the extractor that "
+                     "accepts it.\n",
+                     extractor, adm_norm_view_dist, adm_ref_display_height, product);
+        }
+        return -EINVAL;
+    }
+    return 0;
 }
 
 /**
@@ -221,7 +231,10 @@ static inline int adm_csf_fixed_scale(int scale, const float rfactor1[3], double
                                       int adm_ref_display_height, int adm_csf_mode, double fixed[3],
                                       uint32_t *normalization_shift)
 {
-    const int geometry_err = adm_viewing_geometry_check(adm_norm_view_dist, adm_ref_display_height);
+    /* NOLINTBEGIN(modernize-use-nullptr): C header shared with C++; MSVC C mode has no nullptr. ADR-1138. */
+    const int geometry_err =
+        adm_viewing_geometry_check(NULL, adm_norm_view_dist, adm_ref_display_height);
+    /* NOLINTEND(modernize-use-nullptr) */
     if (geometry_err) {
         return geometry_err;
     }

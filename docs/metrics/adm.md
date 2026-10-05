@@ -70,7 +70,7 @@ extractor that does not declare an option rejects it as unknown.
 | --- | --- | --- | --- | --- | --- | --- |
 | `debug` | — | bool | `false` | — | all | Emit debug metrics. |
 | `adm_enhn_gain_limit` | `egl` | double | `100.0` | `1.0–100.0` | all | How many times its reference value a restored coefficient may count for. `1.0` (`egl=1.0`) counts no enhancement as restored detail (NEG models and `vmaf_v1.0.16_*`); `100.0` is upstream's default. Note 1. |
-| `adm_norm_view_dist` | `nvd` | double | `3.0` | `0.75–24.0` | all | Normalised viewing distance (distance ÷ display height). |
+| `adm_norm_view_dist` | `nvd` | double | `3.0` | `0.75–24.0` (integer `adm`: `nvd × rdh ≥ 3240`) | all | Normalised viewing distance (distance ÷ display height). Note 6. |
 | `adm_ref_display_height` | `rdh` (`adm`), `rdf` (`float_adm`) | int | `1080` | `1–4320` | all | Reference display height in pixels, for viewing-distance scaling. |
 | `adm_csf_mode` | `csf` | int | `0` | `0–3` (`adm`), `0–9` (`float_adm`) | all | Contrast-sensitivity-function model. Note 2. |
 | `adm_csf_scale` | `scf` | double | `1.0` | `0–50` | all | H/V-axis CSF sensitivity scale. Read only by `adm_csf_mode=1`. Note 3. |
@@ -108,6 +108,10 @@ extractor that does not declare an option rejects it as unknown.
     [ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md)).
 - **Note 3** — `1.0` is upstream-canonical. Modes 0, 2 and 3 ignore it on every
   backend, the CPU included. It is the `adm_csf_scale` argument of `barten_csf()`.
+- **Note 6** — The integer `adm` pipeline enforces an angular-frequency floor
+  of `adm_norm_view_dist × adm_ref_display_height ≥ 3240` (1080p viewed at 3H).
+  Geometries below this floor are refused with a named error and `-EINVAL`;
+  use `float_adm` for geometries below the floor ([Fixed-point CSF limits](#fixed-point-csf-limits)).
 
 ### Notes on `adm_p_norm` and `adm_skip_scale0`
 

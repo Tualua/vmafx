@@ -1164,7 +1164,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     /* The 16-bit pipeline cannot handle an angular frequency below 1080p at
      * 3H. Keep the reference check shared with every integer-ADM GPU twin. */
     const int geometry_err =
-        adm_viewing_geometry_check(s->adm_norm_view_dist, s->adm_ref_display_height);
+        adm_viewing_geometry_check("adm", s->adm_norm_view_dist, s->adm_ref_display_height);
     if (geometry_err)
         return geometry_err;
 

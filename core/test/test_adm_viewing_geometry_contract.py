@@ -133,6 +133,19 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
         self.assertGreater(skipped, init)
         self.assertGreater(unavailable_return, skipped)
 
+    def test_all_backends_name_refusal_via_shared_guard(self) -> None:
+        sources = {
+            "integer_adm.c": '"adm"',
+            "cuda/integer_adm_cuda.c": '"adm_cuda"',
+            "hip/integer_adm_hip.c": '"adm_hip"',
+            "sycl/integer_adm_sycl.cpp": '"adm_sycl"',
+            "metal/integer_adm_metal_host.c": '"adm_metal"',
+        }
+        for path, extractor in sources.items():
+            with self.subTest(path=path):
+                content = (FEATURE_ROOT / path).read_text(encoding="utf-8")
+                self.assertIn(f"adm_viewing_geometry_check({extractor}", content)
+
 
 if __name__ == "__main__":
     unittest.main()

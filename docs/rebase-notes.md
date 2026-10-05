@@ -20,6 +20,16 @@ upstream-mirror `core/src/feature/vif_tools.h` and calls it in `float_vif.c::ini
 indexes `vif_tools.c` with `int`, so a sync keeps the three calls and the helper; if upstream ever
 widens the indices of `vif_tools.c` to a 64-bit type, the check can go. `core/test/test_prescaled_plane_int_index.c`
 fails without it. See `core/src/feature/AGENTS.d/float-vif.md`.
+## Integer ADM: named refusal when viewing geometry is below fixed-point floor (2026-10-06)
+
+`fix/adm-viewing-floor-named-refusal`. `core/src/feature/adm_csf_fixed_point.h` adds
+`adm_viewing_geometry_check()` which logs a named refusal at ERROR when
+`adm_norm_view_dist * adm_ref_display_height < 3240` (the 3240 floor, 1080p at 3H)
+naming the extractor, parameter values, product, and pointing to `float_adm`.
+The CPU extractor (`core/src/feature/integer_adm.c`) calls it from `extract()` with
+`"adm"`; GPU twins (`adm_cuda`, `adm_hip`, `adm_sycl`, `adm_metal`) call it during `init()`.
+An upstream sync that touches integer ADM option validation or CSF setup must preserve
+the named refusal and the contract where CPU fails in `extract()` and GPU twins fail in `init()`.
 
 ## Integer ADM: scale-0 contrast-masking rows summed unsigned; GPU gain product bounded before narrowing (2026-10-05)
 

@@ -38,9 +38,10 @@ when rebasing or changing any integer-ADM twin:
   negative sentinel, instead of converting it to unsigned.
 - reject every viewing geometry where
   `adm_norm_view_dist * adm_ref_display_height < 3240` through the shared
-  `adm_viewing_geometry_check()` helper; this floor is independent of CSF mode.
-  The CPU reference checks before computation; GPU twins check before
-  normalization or device work.
+  `adm_viewing_geometry_check(extractor, nvd, rdh)` helper; this floor is independent of CSF mode.
+  When rejected, it logs a named refusal naming the extractor, option values, product,
+  the 3240 floor (`1080p at 3H`), and `float_adm` as the accepting alternative.
+  The CPU reference checks in `extract()`; GPU twins check during `init()`.
 
 `test_integer_adm_cm_budget` holds the limits against the taps and scores
 adversarial frames against `float_adm`.

@@ -384,6 +384,13 @@ AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist, int adm_ref_
  */
 int adm_csf_config_check(const AdmStateSycl *s)
 {
+    assert(s != nullptr);
+    const int geom_err =
+        adm_viewing_geometry_check("adm_sycl", s->adm_norm_view_dist, s->adm_ref_display_height);
+    if (geom_err) {
+        return geom_err;
+    }
+
     for (int scale = 0; scale < 4; ++scale) {
         const AdmCsfFactors f =
             adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
