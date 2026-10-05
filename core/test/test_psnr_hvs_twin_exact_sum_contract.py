@@ -444,7 +444,9 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
                 new = old.replace("sqrt((double)(", "sqrt((double)", 1)
                 failures = _contract_failures(_planted(name, old, new))
                 self.assertTrue(any(f"{name}: masking threshold is not" in i for i in failures))
-                self.assertTrue(any(f"{name}: the masking product is widened" in i for i in failures))
+                self.assertTrue(
+                    any(f"{name}: the masking product is widened" in i for i in failures)
+                )
 
     def test_exact_twin_product_is_detected(self) -> None:
         # The product the twins formed between ADR-1397 / ADR-1401 and

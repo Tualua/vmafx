@@ -61897,3 +61897,13 @@ No score, public API or FFmpeg patch impact.
   derives that set from the tree, so a sync that adds a Dockerfile mirroring a
   `build-config.env` image key adds it to both lists. No score, public API or FFmpeg patch
   impact.
+## black and ruff read every Python file
+
+- The `black` and `ruff-check` hooks of `.pre-commit-config.yaml` have no `files:` filter; their
+  `exclude` regexes are exactly the files of `.config/lint-exceptions.d/{black,ruff}.toml`, which
+  `pyproject.toml`'s `extend-exclude` repeats (`scripts/ci/tests/test_python_format_scope.py`).
+  A rebase that adds an exception edits the three together. An upstream Netflix sync of
+  `compat/python-vmaf/resource/*.py` formats the incoming file with black before committing
+  (the 30 files here were reformatted; a conflict takes the incoming side and re-runs black).
+  `core/test/test_*_contract.py` files carry named constants for the counts they assert; a change
+  to a counted construct changes the constant. No score, public API or FFmpeg patch impact.

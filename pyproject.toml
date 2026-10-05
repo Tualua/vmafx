@@ -34,21 +34,27 @@ extend-exclude = '''
   | build
   | dist
   | subprojects
-  | python/test/resource
-  | compat/python-vmaf/resource
-  | compat/python-vmaf/matlab
 )/
+  | \.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py
+  | tools/figures/mkdocs_hook\.py
 '''
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# Every Python file is read. The files below are the declared exceptions of
+# .config/lint-exceptions.d/ruff.toml (a reason and an expiry each); keep the two in step
+# (scripts/ci/tests/test_python_format_scope.py).
 extend-exclude = [
   "build",
   "subprojects",
-  "python/test/resource",
-  "compat/python-vmaf/resource",
-  "compat/python-vmaf/matlab",
+  ".config/lint-exceptions.d",
+  ".config/hiss/testdata/HISS-04/python/gap/cyclomatic-high.py",
+  ".config/hiss/testdata/HISS-04/python/negative/loc-at-cap-60.py",
+  ".config/hiss/testdata/HISS-04/python/positive/loc-def-over-cap.py",
+  ".config/hiss/testdata/HISS-08/python/positive/eval-call.py",
+  ".config/agent/hooks/block_evasion.py",
+  "tools/figures/mkdocs_hook.py",
 ]
 
 [tool.ruff.lint]

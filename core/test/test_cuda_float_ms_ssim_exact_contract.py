@@ -97,7 +97,9 @@ def _kernel_failures(kernel: str) -> list[str]:
     flat = _flat(kernel)
     for piece in TERM_STORES:
         if piece not in flat:
-            failures.append(f"{KERNEL}: a term is not stored at its window's raster position ({piece})")
+            failures.append(
+                f"{KERNEL}: a term is not stored at its window's raster position ({piece})"
+            )
     if DOUBLE_REDUCTION.search(_code(kernel)):
         failures.append(f"{KERNEL}: the double terms are reduced on the device")
     return failures
@@ -109,7 +111,9 @@ def _host_failures(host: str) -> list[str]:
     sums = " ".join(_function_body(_code(host), "ms_ssim_scale_sums").split())
     for piece in HOST_SUM:
         if piece not in sums:
-            failures.append(f"{HOST}: ms_ssim_scale_sums() is not three doubles in raster order ({piece})")
+            failures.append(
+                f"{HOST}: ms_ssim_scale_sums() is not three doubles in raster order ({piece})"
+            )
     if sums.count("for (") != 1:
         failures.append(f"{HOST}: ms_ssim_scale_sums() is not one pass in raster order")
     if HOST_CALL not in flat:
@@ -161,16 +165,20 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
     def test_warp_reduction_of_the_terms_is_detected(self) -> None:
         # The earlier kernel's shuffle loop.
         sources = _sources()
-        sources[KERNEL] += (
-            "\ndouble r(double wl) { return wl + __shfl_down_sync(0xffffffff, wl, 16u); }\n"
+        sources[
+            KERNEL
+        ] += "\ndouble r(double wl) { return wl + __shfl_down_sync(0xffffffff, wl, 16u); }\n"
+        self.assertTrue(
+            any("reduced on the device" in item for item in _contract_failures(sources))
         )
-        self.assertTrue(any("reduced on the device" in item for item in _contract_failures(sources)))
 
     def test_block_partial_array_is_detected(self) -> None:
         # The earlier kernel's `s_l_warp`.
         sources = _sources()
         sources[KERNEL] += "\nvoid f(void) { __shared__ double s_l_warp[4]; }\n"
-        self.assertTrue(any("reduced on the device" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("reduced on the device" in item for item in _contract_failures(sources))
+        )
 
     def test_unstored_term_is_detected(self) -> None:
         sources = _sources()
@@ -210,14 +218,20 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
     def test_reordered_host_sum_is_detected(self) -> None:
         sources = _sources()
         sources[HOST] = sources[HOST].replace(
-            "for (size_t j = 0u; j < n_windows; j++) {", "for (size_t j = n_windows; j-- > 0u;) {", 1
+            "for (size_t j = 0u; j < n_windows; j++) {",
+            "for (size_t j = n_windows; j-- > 0u;) {",
+            1,
         )
-        self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("three doubles in raster" in item for item in _contract_failures(sources))
+        )
 
     def test_sum_of_another_plane_is_detected(self) -> None:
         sources = _sources()
         sources[HOST] = sources[HOST].replace("c += c_terms[j];", "c += l_terms[j];", 1)
-        self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("three doubles in raster" in item for item in _contract_failures(sources))
+        )
 
     def test_fp32_structure_sum_is_detected(self) -> None:
         # The CPU widens s before it adds it; an fp32 accumulator is another sum.
@@ -225,7 +239,9 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
         sources[HOST] = sources[HOST].replace(
             "st += (double)s_terms[j];", "st = (double)((float)st + s_terms[j]);", 1
         )
-        self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("three doubles in raster" in item for item in _contract_failures(sources))
+        )
 
     def test_luma_only_plane_count_is_detected(self) -> None:
         # The HIP twin's former `n_planes = 1u` whatever enable_chroma said.

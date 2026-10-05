@@ -227,7 +227,9 @@ def _vmafexec_base_command(
     )
 
 
-def _vmafexec_feature_flags(float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment):
+def _vmafexec_feature_flags(
+    float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment
+):
     """The ``--feature`` flags of ``call_vmafexec``, in the order the command has always had."""
     flags = ""
     if float_psnr:
@@ -268,7 +270,9 @@ def _vmafexec_model_overloads(
     if motion_force_zero:
         assert isinstance(motion_force_zero, bool)
         force_zero = str(motion_force_zero).lower()
-        suffix += f":motion.motion_force_zero={force_zero}:float_motion.motion_force_zero={force_zero}"
+        suffix += (
+            f":motion.motion_force_zero={force_zero}:float_motion.motion_force_zero={force_zero}"
+        )
 
     # CAMBI encode-resolution / encode-bitdepth overrides. These
     # flow through to the cambi feature so its feature-name key

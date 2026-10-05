@@ -72,6 +72,9 @@ EPS_EXP = "-70"
 HOST_GUARD = "#if !defined(__METAL_VERSION__)"
 
 
+GAIN_LIMIT_BINDINGS = 2  # gain-limit bindings in the kernel and in the host
+
+
 def _code(source: str) -> str:
     """The source without comments and with whitespace collapsed."""
     return SPACE.sub(" ", COMMENT.sub(" ", source))
@@ -128,7 +131,7 @@ def _math_failures(sources: dict[str, str]) -> list[str]:
         f"VMAF_MTL_IVIF_EPS_EXP ({EPS_EXP})" not in math
     ):
         failures.append(f"{MATH}: the eps constants are not 65536 * 1.0e-10")
-    if 65536 * 1.0e-10 != int(EPS_MANT, 16) * 2.0 ** int(EPS_EXP):
+    if int(EPS_MANT, 16) * 2.0 ** int(EPS_EXP) != 65536 * 1.0e-10:
         failures.append("the contract's own eps constant is not 65536 * 1.0e-10")
     select = _function_body(math, "vmaf_mtl_ivif_gain_terms")
     for piece in (
@@ -196,7 +199,7 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{KERNEL}: fp64 type in a kernel (Metal has none)")
     if "float vif_enhn_gain_limit" in kernel or "constant float4 &cfgf" in kernel:
         failures.append(f"{KERNEL}: the gain limit reaches the kernel as an fp32 value")
-    if kernel.count("constant VmafMtlGainLimit &gain_limit") != 2:
+    if kernel.count("constant VmafMtlGainLimit &gain_limit") != GAIN_LIMIT_BINDINGS:
         failures.append(f"{KERNEL}: both compute kernels must take a VmafMtlGainLimit")
     return failures
 
@@ -208,7 +211,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{HOST}: the gain limit is not converted on the host")
     if "(float)s->vif_enhn_gain_limit" in host:
         failures.append(f"{HOST}: the gain limit is narrowed to fp32 on the host")
-    if host.count("setBytes:&egl length:sizeof(egl)") != 2:
+    if host.count("setBytes:&egl length:sizeof(egl)") != GAIN_LIMIT_BINDINGS:
         failures.append(f"{HOST}: both compute encoders must bind the VmafMtlGainLimit")
     if '#include "metal_integer_vif_gain.h"' not in host:
         failures.append(f"{HOST}: the host does not include metal_integer_vif_gain.h")

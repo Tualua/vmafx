@@ -132,6 +132,9 @@ REFERENCE_LINES = (
 TABLE_LINE = "const int32_t recip = (int32_t)(div_Q_factor / i);"
 
 
+GUARD_COUNT = 2  # #if !defined(__METAL_VERSION__) guards of the shared header
+
+
 def _flat(source: str) -> str:
     """Code without comments, every run of whitespace collapsed."""
     return " ".join(COMMENT.sub(" ", source).split())
@@ -253,7 +256,7 @@ def _shared_failures(shared: str) -> list[str]:
     guards = [m.start() for m in re.finditer(r"#if !defined\(__METAL_VERSION__\)", code)]
     product = code.find("adm_gain_limit_product(int32_t rst")
     split = code.find("adm_gain_limit_split(double gain)")
-    if len(guards) != 2 or not guards[0] < guards[1] < split:
+    if len(guards) != GUARD_COUNT or not guards[0] < guards[1] < split:
         return [f"{SHARED}: the includes and the split are not kept out of Metal"]
     if product < 0 or code.rfind("#endif", 0, product) < split:
         return [f"{SHARED}: adm_gain_limit_product() is not visible to Metal"]

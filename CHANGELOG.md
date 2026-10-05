@@ -730,6 +730,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   the verdict is marked advisory.
 
 
+- `black` and `ruff` now read every Python file in the tree in the pre-commit hooks, `make lint-py`,
+  `make format` and `make format-check`, not only `python/ ai/ scripts/ tools/`. About 80 files were
+  reformatted and the ruff findings fixed (no behaviour change; the syntax tree of the
+  reformatted files is identical); the files that cannot meet a tool are declared with a reason
+  and an expiry in `.config/lint-exceptions.d/` (`docs/development/pre-commit-hooks.md`).
+
+
 - **The BRISQUE model's terms are stated as the LIVE release notice grants
   them.** The fork had described the bundled LIVE model as research- and
   education-only under a "research-use exception". The BRISQUE release notice

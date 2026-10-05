@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -93,10 +96,7 @@ class GpuPublicHeaderDocsTest(unittest.TestCase):
 class PublicHeaderDoxygenContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[2]
-        self.headers = [
-            p for p in INCLUDE_DIR.glob("*.h")
-            if "pelorus" not in p.parts
-        ]
+        self.headers = [p for p in INCLUDE_DIR.glob("*.h") if "pelorus" not in p.parts]
         self.doxyfile = self.repo_root / "core" / "doc" / "Doxyfile.public-api"
         self.workflow = self.repo_root / ".github" / "workflows" / "doxygen-public-api.yml"
 
@@ -146,11 +146,8 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
 
     def test_doxygen_execution_zero_warnings(self) -> None:
         """ADR-1315: running Doxygen against Doxyfile.public-api must produce zero warnings."""
-        import shutil
-        import subprocess
-        import tempfile
-
-        if not shutil.which("doxygen"):
+        doxygen = shutil.which("doxygen")
+        if not doxygen:
             self.skipTest("doxygen binary not found on PATH")
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -161,8 +158,8 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
             content += f"WARN_LOGFILE = {warn_log}\n"
             tmp_doxyfile.write_text(content, encoding="utf-8")
 
-            proc = subprocess.run(
-                ["doxygen", str(tmp_doxyfile)],
+            proc = subprocess.run(  # noqa: S603 -- doxygen resolved by shutil.which, fixed argv
+                [doxygen, str(tmp_doxyfile)],
                 cwd=str(self.repo_root),
                 capture_output=True,
                 text=True,

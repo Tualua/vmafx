@@ -209,6 +209,9 @@ TERMS_STEPS = {
 GAUSSIAN = re.compile(r"vmaf_mtl_ssim_gauss\[VMAF_MTL_SSIM_TAPS\]\s*=\s*\{([^}]*)\}")
 
 
+GAUSSIAN_TAPS = 11  # taps of g_gaussian_window_h
+
+
 def _code(source: str) -> str:
     """The source with its comments blanked, so prose cannot trip a check."""
     return COMMENT.sub(" ", source)
@@ -250,7 +253,7 @@ def _options(source: str) -> list[tuple[str, str]]:
     code = _code(source)
     names = re.findall(r'\.name\s*=\s*"(\w+)"', code)
     types = re.findall(r"\.type\s*=\s*(VMAF_OPT_TYPE_\w+)", code)
-    return list(zip(names, types))
+    return list(zip(names, types, strict=False))
 
 
 def _host_failures(host: str, cpu: str) -> list[str]:
@@ -271,7 +274,7 @@ def _host_failures(host: str, cpu: str) -> list[str]:
 
 
 def _device_part(terms: str) -> str:
-    return terms.split(HOST_ONLY)[0]
+    return terms.split(HOST_ONLY, maxsplit=1)[0]
 
 
 def _terms_failures(terms: str) -> list[str]:
@@ -317,7 +320,7 @@ def _reference_failures(sources: dict[str, str]) -> list[str]:
             failures.append(f"{MATH_TEST.name}: reference_terms() lost `{line}`")
     cpu_taps = re.findall(r"g_gaussian_window_h\[GAUSSIAN_LEN\]\s*=\s*\{([^}]*)\}", sources[TAPS])
     taps = re.findall(r"\d\.\d+f", cpu_taps[0]) if cpu_taps else []
-    if taps != _gaussian(sources[TERMS], GAUSSIAN) or len(taps) != 11:
+    if taps != _gaussian(sources[TERMS], GAUSSIAN) or len(taps) != GAUSSIAN_TAPS:
         failures.append(f"{TERMS}: the Gaussian is not g_gaussian_window_h's")
     return failures
 

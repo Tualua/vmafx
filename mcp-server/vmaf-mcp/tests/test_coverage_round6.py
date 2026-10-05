@@ -378,6 +378,7 @@ def test_send_progress_swallows_unexpected_exception() -> None:
     """When send_progress_notification raises an unexpected exception it must
     be swallowed and logged as a warning — never propagated.
     """
+
     class _BoomSession:
         async def send_progress_notification(self, *_a: Any, **_kw: Any) -> None:
             raise OSError("unexpected transport failure")

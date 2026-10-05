@@ -197,6 +197,9 @@ C_FAMILY_SUFFIXES = (".c", ".cc", ".cpp", ".cxx")
 BUILD_ROOT_ENV = "VMAF_STRICT_FP_BUILD_ROOT"
 
 
+POLICY_DEFINITIONS = 2  # definitions of cuda_device_strict_fp_args (clang and nvcc spelling)
+
+
 def _project_floor_failures(source: str, tests: str, tools: str, metal: str) -> list[str]:
     """ADR-1461: one project argument, above the first target, never undone."""
     failures: list[str] = []
@@ -319,8 +322,8 @@ def _cuda_device_policy_failures(source: str) -> list[str]:
     except ValueError:
         return ["the CUDA device strict FP policy markers are missing"]
     code = _meson_code(source)
-    if code.count("cuda_device_strict_fp_args = ") != 2 or (
-        policy.count("cuda_device_strict_fp_args = ") != 2
+    if code.count("cuda_device_strict_fp_args = ") != POLICY_DEFINITIONS or (
+        policy.count("cuda_device_strict_fp_args = ") != POLICY_DEFINITIONS
     ):
         failures.append("cuda_device_strict_fp_args is defined outside its policy block")
     if code.count("'--fmad=false'") != 1 or policy.count("'--fmad=false'") != 1:

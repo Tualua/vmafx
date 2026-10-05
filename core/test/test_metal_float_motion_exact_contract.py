@@ -374,7 +374,7 @@ class MetalFloatMotionExactContract(unittest.TestCase):
         src = planted(
             HOST,
             "fm_metal_append(s, feature_collector, feature_name, 0.0, 0u)",
-            "fm_metal_append(s, feature_collector, \"VMAF_feature_motion2_score\", 0.0, 0u)",
+            'fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, 0u)',
         )
         self.assert_detected(src, "a one-frame run emits no motion3")
 

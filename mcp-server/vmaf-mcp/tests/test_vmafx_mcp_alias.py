@@ -73,7 +73,9 @@ def test_alias_runs_the_python_server_when_no_go_binary_is_on_path(
     ran: list[bool] = []
     monkeypatch.setattr(console_alias.sys, "argv", [str(own)])
     monkeypatch.setenv("PATH", str(own.parent))
-    monkeypatch.setattr(console_alias.os, "execv", lambda *_: pytest.fail("exec without a Go binary"))
+    monkeypatch.setattr(
+        console_alias.os, "execv", lambda *_: pytest.fail("exec without a Go binary")
+    )
     monkeypatch.setattr(server, "main", lambda: ran.append(True))
     console_alias.deprecated_vmafx_mcp_alias()
     assert ran == [True]

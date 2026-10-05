@@ -285,7 +285,7 @@ def _before_names(code: str, init: str) -> list[str] | None:
             return None
         at = body.find(NAME_DICT)
         if at >= 0:
-            return texts + [body[:at]]
+            return [*texts, body[:at]]
         step = next((m for m in CALLED.finditer(body) if m.group(1) in naming), None)
         if step is None:
             return None

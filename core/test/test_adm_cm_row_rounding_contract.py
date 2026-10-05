@@ -312,8 +312,7 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["avx2"] = _sub_exact(
             sources["avx2"],
-            r"inner\[b\]\s*\+=\s*cm_as_int64\(biased - \(lanes \* "
-            r"f->band\[b\]\.cub_bias\)\);",
+            r"inner\[b\]\s*\+=\s*cm_as_int64\(biased - \(lanes \* " r"f->band\[b\]\.cub_bias\)\);",
             "inner[b] += cm_as_int64(biased - (lanes * f->band[b].cub_bias)) >> "
             "c->shift_inner_accum;",
         )
@@ -337,9 +336,7 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
             r"c->add_shift_inner_accum,\s*c->shift_inner_accum\);",
             "interior_row(c, i, bd, inner);",
         )
-        self.assertTrue(
-            any("kernels:adm_cm_rows" in item for item in _contract_failures(sources))
-        )
+        self.assertTrue(any("kernels:adm_cm_rows" in item for item in _contract_failures(sources)))
 
     def test_private_row_loop_mutation_is_detected(self) -> None:
         sources = _sources()
@@ -348,9 +345,7 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
             r"adm_cm_rows\(&c, &bd, cm_row_avx512, accum\);",
             "cm_row_avx512(&c, bd.start_row, &bd, accum);",
         )
-        self.assertTrue(
-            any("avx512:adm_cm_avx512" in item for item in _contract_failures(sources))
-        )
+        self.assertTrue(any("avx512:adm_cm_avx512" in item for item in _contract_failures(sources)))
 
     def test_truncation_mutation_is_detected(self) -> None:
         sources = _sources()

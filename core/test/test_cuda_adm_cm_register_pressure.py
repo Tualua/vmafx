@@ -33,7 +33,7 @@ def dump_fatbin_resources(fatbin_path: Path) -> str:
     cuobjdump = shutil.which("cuobjdump")
     if not cuobjdump:
         raise unittest.SkipTest("cuobjdump executable not found in PATH")
-    res = subprocess.run(
+    res = subprocess.run(  # noqa: S603 -- cuobjdump resolved by shutil.which, fixed argv
         [cuobjdump, "-res-usage", str(fatbin_path)],
         capture_output=True,
         text=True,

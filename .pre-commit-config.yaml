@@ -104,23 +104,19 @@ repos:
     rev: 26.10.0
     hooks:
       - id: black
-        files: '^(python|ai|scripts|tools)/.*\.py$'
-        # Upstream Netflix training-harness tree — not authored by us; see
-        # pyproject.toml [tool.black] extend-exclude. Black's extend-exclude
-        # only filters during directory walks, not explicitly-passed files,
-        # so pre-commit needs its own exclude to skip them.
-        # tools/figures/ is praetor's figure engine: `standardsctl audit` locks
-        # it byte for byte, so a reformat would break the Standards gate
-        # (ADR-1351, cordanaLLM/praetor#578).
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^tools/figures/'
+        # Every Python file in the tree (pre-commit's default `types_or`: python, pyi).
+        # The only exclusions are the files declared in
+        # .config/lint-exceptions.d/black.toml (a reason and an expiry each);
+        # scripts/ci/tests/test_python_format_scope.py keeps this regex, the list and
+        # pyproject.toml's extend-exclude equal.
+        exclude: '^(\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py|tools/figures/mkdocs_hook\.py)$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.10
     hooks:
       - id: ruff-check
-        files: '^(python|ai|scripts|tools)/.*\.py$'
-        # Same praetor-locked tools/figures/ exclusion as black above.
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^tools/figures/'
+        # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
+        exclude: '^(\.config/hiss/testdata/HISS-04/python/(gap/cyclomatic-high|negative/loc-at-cap-60|positive/loc-def-over-cap)\.py|\.config/hiss/testdata/HISS-08/python/positive/eval-call\.py|\.config/agent/hooks/block_evasion\.py|tools/figures/mkdocs_hook\.py)$'
         args: ["--fix"]
 
   - repo: https://github.com/scop/pre-commit-shfmt
@@ -1068,4 +1064,11 @@ repos:
         entry: python3 -B scripts/ci/tests/test_clang_format_scope.py
         language: system
         files: '^(scripts/ci/tests/test_clang_format_scope\.py|scripts/githooks/pre-commit\.sh|Makefile|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-python-format-scope
+        name: black and ruff read every Python file; their exceptions are declared and unexpired
+        entry: python3 -B scripts/ci/tests/test_python_format_scope.py
+        language: system
+        always_run: true
         pass_filenames: false

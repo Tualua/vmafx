@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 import unittest
+from collections.abc import Iterable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -537,41 +538,58 @@ def _ms_ssim_sources() -> dict[str, str]:
     }
 
 
-def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
+def _lacking(text: str, pieces: Iterable[str], message: str) -> list[str]:
+    """`message` with `{piece}` filled in, for every piece missing from `text`."""
+    return [message.format(piece=piece) for piece in pieces if piece not in text]
+
+
+def _shared_terms_failures(name: str, sources: dict[str, str]) -> list[str]:
+    """One twin takes the SSIM arithmetic from the shared header and keeps no private copy."""
     failures: list[str] = []
-    twin = _code(sources[MS_SSIM])
-    decimate = _function_body(twin, "decimate_pixel")
-    for piece in MS_SSIM_DECIMATE_PIECES:
-        if piece not in decimate:
-            failures.append(f"{MS_SSIM}: the decimate tap is not one fused multiply-add ({piece})")
-    for piece in MS_SSIM_KERNEL_PIECES:
-        if piece not in twin:
-            failures.append(f"{MS_SSIM}: not the CPU's window or l / c / s arithmetic ({piece})")
-    for name in MS_SSIM_OLD_SUMS:
-        if name in twin:
-            failures.append(
-                f"{MS_SSIM}: the l / c / s sums are reduced on the device again ({name})"
-            )
-    for piece in MS_SSIM_HOST_PIECES:
-        if piece not in twin:
-            failures.append(f"{MS_SSIM}: the host no longer combines as the CPU does ({piece})")
-    return failures + _ssim_terms_header_failures(sources)
+    source = _code(sources[name])
+    if f'#include "{SSIM_TERMS_HEADER}"' not in sources[name]:
+        failures.append(f"{name}: does not take the SSIM arithmetic from {SSIM_TERMS_HEADER}")
+    for helper in SSIM_TERMS_SHARED:
+        if re.search(rf"\binline\b[^;{{]*\b{re.escape(helper)}", source):
+            failures.append(f"{name}: a private copy of {helper[:-1]}() beside the shared one")
+    return failures
 
 
 def _ssim_terms_header_failures(sources: dict[str, str]) -> list[str]:
     """The shared SSIM terms header: the CPU's operand types, used by both twins."""
-    failures: list[str] = []
-    header = _code(sources[SSIM_TERMS_HEADER])
-    for piece in SSIM_TERMS_PIECES:
-        if piece not in header:
-            failures.append(f"{SSIM_TERMS_HEADER}: not the CPU's operand types ({piece})")
+    return _lacking(
+        _code(sources[SSIM_TERMS_HEADER]),
+        SSIM_TERMS_PIECES,
+        f"{SSIM_TERMS_HEADER}: not the CPU's operand types ({{piece}})",
+    )
+
+
+def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
+    twin = _code(sources[MS_SSIM])
+    decimate = _function_body(twin, "decimate_pixel")
+    failures = _lacking(
+        decimate,
+        MS_SSIM_DECIMATE_PIECES,
+        f"{MS_SSIM}: the decimate tap is not one fused multiply-add ({{piece}})",
+    )
+    failures += _lacking(
+        twin,
+        MS_SSIM_KERNEL_PIECES,
+        f"{MS_SSIM}: not the CPU's window or l / c / s arithmetic ({{piece}})",
+    )
+    failures += [
+        f"{MS_SSIM}: the l / c / s sums are reduced on the device again ({name})"
+        for name in MS_SSIM_OLD_SUMS
+        if name in twin
+    ]
+    failures += _lacking(
+        twin,
+        MS_SSIM_HOST_PIECES,
+        f"{MS_SSIM}: the host no longer combines as the CPU does ({{piece}})",
+    )
+    failures += _ssim_terms_header_failures(sources)
     for name in (MS_SSIM, FLOAT_SSIM):
-        source = _code(sources[name])
-        if f'#include "{SSIM_TERMS_HEADER}"' not in sources[name]:
-            failures.append(f"{name}: does not take the SSIM arithmetic from {SSIM_TERMS_HEADER}")
-        for helper in SSIM_TERMS_SHARED:
-            if re.search(rf"\binline\b[^;{{]*\b{re.escape(helper)}", source):
-                failures.append(f"{name}: a private copy of {helper[:-1]}() beside the shared one")
+        failures += _shared_terms_failures(name, sources)
     return failures
 
 

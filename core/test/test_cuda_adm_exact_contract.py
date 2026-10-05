@@ -66,6 +66,10 @@ ROW_LAUNCHES = (
 CPU_FOLD = "accum[k] += adm_csf_den_round_row_total(inner[k], add_shift_accum, shift_accum);"
 
 
+MIN_CALLS = 2  # calls of one helper a kernel must keep
+ROW_LOOP_COUNT = 2  # row loops the denominator kernel keeps
+
+
 def _code(source: str) -> str:
     """The source with its comments blanked, so prose cannot trip a check."""
     return COMMENT.sub(" ", source)
@@ -100,7 +104,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
         if not _calls(flat, call):
             failures.append(f"{HOST}: a scale is no longer concluded by {call.split('(')[0]}()")
     for call in CPU_DEN_CONTEXTS:
-        if _calls(flat, call) < 2:
+        if _calls(flat, call) < MIN_CALLS:
             failures.append(
                 f"{HOST}: {call.split('(')[0]}() no longer feeds both the launch and the result"
             )
@@ -131,7 +135,7 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
         failures.append(
             f"{DEN_KERNEL}: the fold is no longer thread 0's, after the block has been reduced"
         )
-    if flat.count(ROW_LOOP) != 2:
+    if flat.count(ROW_LOOP) != ROW_LOOP_COUNT:
         failures.append(f"{DEN_KERNEL}: a block no longer covers a whole row of its band")
     return failures
 

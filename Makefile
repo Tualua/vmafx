@@ -412,9 +412,9 @@ preflight:
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
 	$(call require-tool,ruff,make lint-tools)
-	ruff check python/ ai/ scripts/ tools/rc1-tester/
+	ruff check .
 	$(call require-tool,black,make lint-tools)
-	black --check python/ ai/ scripts/ tools/rc1-tester/
+	black --check .
 # mypy is advisory (leading `-`): it currently reports ~295 module-resolution
 # errors ("duplicate module", "adding __init__.py somewhere") that stop it
 # before it type-checks anything real. That is a mypy-configuration gap
@@ -486,8 +486,8 @@ CLANG_FORMAT_FILES = git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.
 format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$($(CLANG_FORMAT_FILES)) || true
-	@command -v black >/dev/null && black python/ ai/ scripts/ tools/rc1-tester/ 2>/dev/null || true
-	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ tools/rc1-tester/ || true
+	@command -v black >/dev/null && black . 2>/dev/null || true
+	@command -v ruff >/dev/null && ruff check --fix-only --quiet . || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
 
 # Formatters — check-only (CI gate, no writes).
@@ -495,9 +495,9 @@ format-check:
 	$(call require-tool,clang-format,your package manager, e.g. pacman -S clang)
 	clang-format --dry-run --Werror $$($(CLANG_FORMAT_FILES))
 	$(call require-tool,black,make lint-tools)
-	black --check python/ ai/ scripts/ tools/rc1-tester/
+	black --check .
 	$(call require-tool,ruff,make lint-tools)
-	ruff check --select I python/ ai/ scripts/ tools/rc1-tester/
+	ruff check --select I .
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
 	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
 

@@ -320,6 +320,32 @@ The native formatter reads working-tree files and restages the whole file
 when it changes one. Use the framework path for partially staged files to
 preserve the unstaged portion through the framework's stash/restore flow.
 
+## black and ruff read every Python file
+
+The `black` (pin `26.10.0`) and `ruff-check` (pin `v0.16.10`) hooks select files by
+type, `python` and `pyi`, with no path filter: every tracked `.py`, `.pyi` and
+extensionless Python script is read, wherever it lives (`python/`, `compat/`,
+`core/test/`, `mcp-server/`, `dev-llm/`, `testdata/`, `.config/`, ...). The only
+files left out are the **declared exceptions**,
+`.config/lint-exceptions.d/black.toml` and `.config/lint-exceptions.d/ruff.toml`:
+one tracked file per entry, with a reason and an expiry (format and rules:
+`scripts/ci/lint_exceptions.py`). Today these are the praetor-managed
+`tools/figures/mkdocs_hook.py` and `.config/agent/hooks/block_evasion.py`
+(`praetorctl audit` compares them with praetor's own bytes) and five HISS scanner
+fixtures that are a defect by design.
+
+The hook `exclude` regexes, the `extend-exclude` of `pyproject.toml` and the list
+name the same files; `test-python-format-scope` (always run) fails when they
+differ, when a listed file no longer fails its tool (a stale entry), or when an
+entry is past its expiry. `make lint-py`, `make format` and `make format-check`
+run `ruff check .` and `black .`, which read the same `extend-exclude`; the native
+pre-commit hook runs `ruff check --force-exclude` on every staged Python file.
+
+```bash
+pre-commit run black ruff-check --all-files
+make lint-py
+```
+
 ## Regression checks
 
 ```bash

@@ -8065,8 +8065,10 @@
     },
     "1351": {
       "sites": {
+        ".config/lint-exceptions.d/black.toml": 1,
+        ".config/lint-exceptions.d/ruff.toml": 2,
         ".config/lint-exceptions.d/spdx.toml": 2,
-        ".pre-commit-config.yaml": 2,
+        ".pre-commit-config.yaml": 1,
         "REUSE.toml": 1,
         "scripts/ci/check-local-data-contract.sh": 1,
         "scripts/ci/tests/test-check-local-data-contract.sh": 1,
@@ -8697,7 +8699,7 @@
         "core/test/test_sycl_ssim_exact_contract.py": 1,
         "core/test/test_sycl_ssimulacra2_exact_contract.py": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
-        "core/test/test_sycl_vif_exact_gain_contract.py": 1,
+        "core/test/test_sycl_vif_exact_gain_contract.py": 2,
         "tools/rc1-tester/src/vmaf_rc1_tester/hw_sycl.py": 1
       },
       "target": "1395-sycl-kernels-no-scratch.md"
