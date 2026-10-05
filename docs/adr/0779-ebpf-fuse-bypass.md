@@ -1,6 +1,6 @@
 # ADR-0779: eBPF FUSE read-path bypass for vmafx-node rclone mounts
 
-- **Status**: Proposed
+- **Status**: Proposed (the compiled-object build notes are superseded by [ADR-1622](1622-bpf-object-generated-at-build-time.md))
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `ebpf`, `node`, `rclone`, `performance`, `phase4b`, `fork-local`

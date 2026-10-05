@@ -490,6 +490,7 @@ nav:
       - Credential-safe Meson tests: development/meson-test-runner.md
       - CI tmate debug: development/ci-tmate-debug.md
       - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
+      - Node eBPF object build: development/node-ebpf-build.md
       - Performance claims (May 2026): development/perf-claims-2026-05-10.md
   - ADRs:
       # ADR-1510: the sidebar lists the index, the template and the tag index;

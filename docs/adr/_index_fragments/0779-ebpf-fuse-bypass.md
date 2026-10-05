@@ -1,1 +1,1 @@
-| [ADR-0779](0779-ebpf-fuse-bypass.md) | eBPF FUSE read-path bypass for vmafx-node rclone mounts | Proposed | `ebpf`, `node`, `rclone`, `performance`, `phase4b`, `fork-local` |
+| [ADR-0779](0779-ebpf-fuse-bypass.md) | eBPF FUSE read-path bypass for vmafx-node rclone mounts | Proposed (the compiled-object build notes are superseded by [ADR-1622](1622-bpf-object-generated-at-build-time.md)) | `ebpf`, `node`, `rclone`, `performance`, `phase4b`, `fork-local` |

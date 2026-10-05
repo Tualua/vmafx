@@ -1,0 +1,5 @@
+The eBPF object of cmd/vmafx-node (rclonebypass_bpfel.o) is generated at build
+time by scripts/dev/gen-node-bpf.sh (make node-bpf) and is not committed
+(ADR-1622, docs/development/node-ebpf-build.md). This file stays so that the
+go:embed pattern "rclonebypass_bpfel.o*" in object_embed.go matches a file on a
+checkout that has not generated the object.

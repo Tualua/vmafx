@@ -54,7 +54,7 @@ GOLDEN_ARM64_CROSS_FILE ?= build-aux/aarch64-linux-gnu$(if $(filter clang,$(GOLD
 GOLDEN_ARM64_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden-arm64-$(GOLDEN_ARM64_CC)
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
-    go-build go-test go-fix go-fix-check go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
+    node-bpf go-build go-test go-fix go-fix-check go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
     build-golden build-golden-arm64 test-affected
 
 default: build
@@ -719,7 +719,7 @@ silent-revert-check:
 
 # ── Go workspace (ADR-0702) ─────────────────────────────────────────────────
 #
-# go-build:     compile all Go packages in the workspace (no output binary in the
+# go-build:     (after node-bpf) compile all Go packages in the workspace (no output binary in the
 #               foundation PR; cmd/ binaries are added by per-sweep PRs).
 # go-test:      run `go test ./...` (covers pkg/version and future packages).
 # go-fix:       apply authoritative Go modernizations via `go fix ./...`.
@@ -728,13 +728,23 @@ silent-revert-check:
 # All targets require the Go toolchain declared by go.mod. If `go` is absent,
 # they fail with an actionable message rather than "command not found".
 
-go-build:
+# node-bpf:     generate the vmafx-node eBPF object and its bpf2go binding
+#               (ADR-1622). The object is not committed; go-build and go-test
+#               run it first, so the node embeds it and its tests run. Needs clang with the BPF
+#               target, llvm-strip and the libbpf headers; it fails naming the
+#               missing tool. `make node-bpf BPF_PIN=--require-pin` refuses a
+#               clang other than BPF_CLANG_VERSION (build-config.env).
+BPF_PIN ?=
+node-bpf:
+	@scripts/dev/gen-node-bpf.sh $(BPF_PIN)
+
+go-build: node-bpf
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
 	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build ./...
 
-go-test:
+go-test: node-bpf
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
 	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
@@ -837,6 +847,7 @@ help:
 	@echo "  make hooks-install    — legacy alias for install-hooks"
 	@echo ""
 	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
+	@echo "  make node-bpf         — generate the vmafx-node eBPF object (needs clang; ADR-1622)"
 	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
 	@echo "  make go-fix           — go fix ./... (apply Go modernizations, ADR-1338)"
 	@echo "  make go-fix-check     — go fix -diff ./... (check Go modernizations, ADR-1338)"

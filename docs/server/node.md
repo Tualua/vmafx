@@ -344,6 +344,10 @@ into one multi-arch index that is signed, attested and given an SBOM as a whole
 ([ADR-1349](../adr/1349-native-arch-node-image-build.md)). Built under QEMU
 emulation instead, the arm64 half did not finish within two hours.
 
+Building the node from source needs clang for its eBPF object, which is
+generated at build time ([node eBPF build guide](../development/node-ebpf-build.md));
+the image build below carries it.
+
 Build example:
 
 ```bash

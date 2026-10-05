@@ -141,20 +141,28 @@ The program only reads; it changes no kernel state other than its own maps.
 ## Build and regenerate the BPF object
 
 The compiled object (`rclonebypass_bpfel.o`, for amd64, arm64 and the other
-little-endian Go targets) and its Go binding are committed and embedded in
-the node binary, so building the node needs no BPF toolchain. `vmlinux.h`
-next to the program is a minimal header with only the types it uses. After
-changing the C source, regenerate with clang and the libbpf headers:
+little-endian Go targets) is generated at build time and is not committed
+([ADR-1622](../adr/1622-bpf-object-generated-at-build-time.md)):
+building the node with the tracker needs clang with the BPF target, `llvm-strip`
+and the libbpf headers. Its Go binding (`rclonebypass_bpfel.go`) is committed.
+`vmlinux.h` next to the program is a minimal header with only the types it
+uses. Generate the object with:
 
 ```bash
-go generate ./cmd/vmafx-node/bpf/
+make node-bpf        # scripts/dev/gen-node-bpf.sh
 ```
 
-Commit the C source, the two generated files and any header change together.
+A node built without it stops at `VMAFX_EBPF_BYPASS=1` and names this command.
+Without clang the command stops and names it; there is no pre-built object to
+download. The pinned compiler,
+the install commands and the digest check are in the
+[node eBPF build guide](node-ebpf-build.md).
+
 On a big-endian architecture the node refuses `VMAFX_EBPF_BYPASS`.
 `TestEmbeddedObjectMatchesMirrors` checks the object's programs, maps and
-struct sizes against the Go side without kernel privileges; the same clang
-version regenerates the object byte for byte.
+struct sizes against the Go side without kernel privileges;
+`TestEmbeddedObjectMatchesPinnedDigest` checks that the pinned clang's object
+has the recorded sha256.
 
 ## Licence
 

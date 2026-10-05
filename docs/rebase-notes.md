@@ -7,6 +7,27 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
+
+`build/bpf-object-at-build-time`. Build system, Go node, CI; no C library change.
+
+- `cmd/vmafx-node/bpf/rclonebypass_bpfel.o` is deleted from the tree and
+  git-ignored; `scripts/dev/gen-node-bpf.sh` generates it. A sync or rebase
+  must not restore it (Scorecard `Binary-Artifacts` flags the ELF) and must
+  keep every caller of the script: `go-ci.yml` (through
+  `.github/actions/gen-node-bpf`), `docker/Dockerfile.node` (`go-builder` stage
+  and its clang / llvm / libbpf packages), `dev/Containerfile` (`go-build`
+  stage), the `node-bpf` Makefile prerequisites of `go-build` and `go-test`.
+  `rclonebypass_bpfel.go` stays committed with its embed rewritten to
+  `embeddedObject()` (`object_embed.go`, `embed_generated_object.sh`,
+  `rclonebypass_bpfel.o.NOTICE`); a sync that restores bpf2go's own `go:embed`
+  breaks the locked `Go API Compatibility` gate, which builds the package
+  without the object. `praetor-api.yml` is a locked asset and is untouched.
+- `build-config.env` owns `BPF_CLANG_VERSION` and `BPF_OBJECT_SHA256`; a change to
+  `rclone_bypass.bpf.c`, `vmlinux.h` or the `go:generate` flags re-records the digest.
+- `gen.go`: the `go:generate` line runs bpf2go at the `go.mod` module version
+  (no `@version`, no `-cc`); the compiler comes from `BPF2GO_CC`, which the script sets.
+
 ## Metal helper-header licences and tester signature suffix (2026-10-05)
 
 `fix/master-red-lint-scorecard-2026-10-05`. Data, two workflow lines and one test.

@@ -119,6 +119,7 @@ func TestStart_StopsOnPreflight(t *testing.T) {
 // mirrors the loader writes and reads.
 func TestEmbeddedObjectMatchesMirrors(t *testing.T) {
 	t.Parallel()
+	requireGeneratedObject(t)
 	spec, err := loadRcloneBypass()
 	if err != nil {
 		t.Fatalf("loadRcloneBypass: %v", err)
@@ -161,6 +162,7 @@ const kernelLicence = "GPL"
 // kernelLicence.
 func TestEmbeddedObjectLicence(t *testing.T) {
 	t.Parallel()
+	requireGeneratedObject(t)
 	spec, err := loadRcloneBypass()
 	if err != nil {
 		t.Fatalf("loadRcloneBypass: %v", err)
@@ -180,6 +182,7 @@ func TestEmbeddedObjectLicence(t *testing.T) {
 // verifier accepts the programs, GPL-only helper calls included, and the
 // tracepoints attach. Elsewhere it skips and names the missing precondition.
 func TestEmbeddedObjectLoadsIntoKernel(t *testing.T) {
+	requireGeneratedObject(t)
 	if err := Preflight(); err != nil {
 		t.Skipf("this host cannot load the tracker: %v", err)
 	}

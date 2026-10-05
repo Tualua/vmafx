@@ -374,10 +374,17 @@ FROM ${RELEASE_GO_BASE} AS go-builder
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
 
+# clang (BPF target), llvm-strip and the libbpf headers compile the node's eBPF
+# object (ADR-1622): that object is generated here and committed nowhere.
+# gen-node-bpf.sh --require-pin below fails unless clang is BPF_CLANG_VERSION of
+# build-config.env and the object's sha256 is BPF_OBJECT_SHA256.
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        clang-19 \
         gcc \
+        libbpf-dev \
+        llvm-19 \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -391,6 +398,10 @@ WORKDIR /src
 COPY . .
 
 RUN go mod download
+
+# The eBPF object and its bpf2go binding (cmd/vmafx-node/bpf) are generated, not
+# committed: the build would fail on a missing embed without them (ADR-1622).
+RUN ./scripts/dev/gen-node-bpf.sh --require-pin
 
 # Keep module download independently cacheable from source compilation.
 # hadolint ignore=DL3059

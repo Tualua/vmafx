@@ -102,6 +102,9 @@ func (l *Loader) Start(ctx context.Context) error {
 	if err := preflight(); err != nil {
 		return err
 	}
+	if err := requireObject(_RcloneBypassBytes); err != nil {
+		return err
+	}
 	// Remove the default locked memory limit so BPF maps can be allocated.
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("ebpf: remove memlock: %w", err)

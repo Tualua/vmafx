@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1539: vmafx-node starts the eBPF descriptor tracker on request, fails closed when the host cannot run it, and ships the compiled BPF object
 
-- **Status**: Accepted
+- **Status**: Accepted (the committed-object part is superseded by [ADR-1622](1622-bpf-object-generated-at-build-time.md))
 - **Date**: 2026-10-04
 - **Deciders**: maintainer, agent
 - **Tags**: go, node, ebpf, rclone, security, supply-chain, phase4b, fork-local

@@ -10463,6 +10463,7 @@
       "sites": {
         "cmd/vmafx-node/bpf/bypass_loader.go": 1,
         "cmd/vmafx-node/bpf/bypass_smoke_test.go": 1,
+        "cmd/vmafx-node/bpf/digest_test.go": 1,
         "cmd/vmafx-node/bpf/gen.go": 1,
         "cmd/vmafx-node/bpf/preflight.go": 1,
         "cmd/vmafx-node/bpf/vmlinux.h": 1,
@@ -10786,6 +10787,23 @@
         "scripts/ci/tests/test_pr_time_verify_workflows.py": 1
       },
       "target": "1595-pr-time-verify-push-only-workflows.md"
+    },
+    "1622": {
+      "sites": {
+        ".github/actions/gen-node-bpf/action.yml": 1,
+        ".github/workflows/go-ci.yml": 1,
+        "Makefile": 2,
+        "cmd/vmafx-node/bpf/digest_test.go": 1,
+        "cmd/vmafx-node/bpf/embed_generated_object.sh": 2,
+        "cmd/vmafx-node/bpf/gen.go": 2,
+        "cmd/vmafx-node/bpf/object_embed.go": 1,
+        "cmd/vmafx-node/bpf/rclonebypass_bpfel.go": 1,
+        "dev/Containerfile": 2,
+        "docker/Dockerfile.node": 2,
+        "scripts/dev/gen-node-bpf.sh": 1,
+        "scripts/dev/tests/test_gen_node_bpf.py": 1
+      },
+      "target": "1622-bpf-object-generated-at-build-time.md"
     }
   },
   "retired": {

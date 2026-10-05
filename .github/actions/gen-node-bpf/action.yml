@@ -1,0 +1,26 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Generate the vmafx-node eBPF object and its bpf2go binding (ADR-1622).
+# cmd/vmafx-node/bpf embeds an object that is not committed, so every job that
+# runs the node's object-dependent tests runs this first, after the
+# repository checkout and the Go toolchain. clang is the pinned release
+# (BPF_CLANG_VERSION in build-config.env); `gen-node-bpf.sh --require-pin` fails
+# on another clang and on an object whose sha256 is not BPF_OBJECT_SHA256.
+name: Generate the vmafx-node eBPF object
+description: Install clang, llvm-strip and the libbpf headers, then run scripts/dev/gen-node-bpf.sh --require-pin
+runs:
+  using: composite
+  steps:
+    - name: Install clang, llvm-strip and libbpf headers
+      shell: bash
+      run: |
+        # The hosted runner ships pre-provisioned Microsoft/Azure apt sources
+        # that intermittently fail `apt-get update`; the build needs none.
+        sudo rm -f /etc/apt/sources.list.d/*microsoft* \
+                   /etc/apt/sources.list.d/*azure*
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends clang-19 llvm-19 libbpf-dev
+    - name: Generate the object (pinned clang)
+      shell: bash
+      run: scripts/dev/gen-node-bpf.sh --require-pin

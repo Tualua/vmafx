@@ -236,6 +236,11 @@ build-upstream-parity/
 # per-vendor copies drift and are regenerated from it.
 .agents/skills/
 
+# vmafx-node eBPF object: generated at build time by scripts/dev/gen-node-bpf.sh,
+# never committed (ADR-1622). The bpf2go binding next to it is committed source.
+/cmd/vmafx-node/bpf/rclonebypass_bpfel.o
+/cmd/vmafx-node/bpf/.rclonebypass.stamp
+
 # BEGIN praetor private artifacts (praetorctl adopt)
 /.workingdir/
 /.workingdir2/

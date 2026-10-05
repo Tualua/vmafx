@@ -168,6 +168,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     clang-19 \
     clang++-19 \
     libclang-rt-19-dev \
+    # vmafx-node's eBPF object is compiled at build time (ADR-1622): clang's
+    # BPF target, llvm-strip and the libbpf headers
+    llvm-19 \
+    libbpf-dev \
     # Build system
     meson \
     ninja-build \
@@ -1209,12 +1213,16 @@ WORKDIR /build/vmaf
 # The libvmaf-build stage intentionally copies only its C/Python build inputs.
 # Copy the Go module and every repository-local package imported by ./cmd/...
 # here so this stage remains cacheable without bloating the earlier image.
-COPY go.mod go.sum ./
+COPY go.mod go.sum build-config.env ./
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
 COPY api/ ./api/
 COPY gen/ ./gen/
 COPY internal/ ./internal/
+# vmafx-node embeds an eBPF object that is not committed (ADR-1622): generate it
+# with the pinned clang before the build; --require-pin fails on any other clang.
+COPY scripts/dev/gen-node-bpf.sh ./scripts/dev/gen-node-bpf.sh
+RUN ./scripts/dev/gen-node-bpf.sh --require-pin
 # cgo needs to find libvmaf.so and libvmaf.h from the libvmaf-build stage.
 ENV CGO_ENABLED=1
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \

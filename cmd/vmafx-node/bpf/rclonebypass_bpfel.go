@@ -8,7 +8,6 @@ package bpf
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"io"
 	"structs"
@@ -186,5 +185,6 @@ func _RcloneBypassClose(closers ...io.Closer) error {
 
 // Do not access this directly.
 //
-//go:embed rclonebypass_bpfel.o
-var _RcloneBypassBytes []byte
+// ADR-1622: bpf2go embeds the object here; embed_generated_object.sh reads it
+// through embeddedObject() (object_embed.go) so the package builds without it.
+var _RcloneBypassBytes = embeddedObject()

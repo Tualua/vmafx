@@ -59,6 +59,12 @@ jobs:
           go-version-file: go.mod  # single source of truth: the go directive in go.mod (Renovate bumps it)
           cache: true
 
+      # ADR-1622: cmd/vmafx-node embeds an eBPF object that is not committed.
+      # Generate it with the pinned clang before anything loads the package.
+      - name: Generate the vmafx-node eBPF object (pinned clang)
+        if: steps.impact.outputs.go_checks == 'true'
+        uses: ./.github/actions/gen-node-bpf
+
       # ADR-1338: fail before native setup when the pinned Go toolchain can
       # produce a reviewed source modernization that is not yet committed.
       - name: go fix (diff)
