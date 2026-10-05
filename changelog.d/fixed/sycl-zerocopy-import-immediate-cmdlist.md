@@ -14,5 +14,5 @@
   1080p throughput. `scripts/test/zerocopy-e2e.sh --repeat N` repeats the
   zero-copy leg and fails on any differing run (ADR-1763,
   `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02`;
-  [SYCL bundling](../../docs/backends/sycl/bundling.md),
-  [SYCL zero-copy testing](../../docs/development/sycl-zerocopy-testing.md)).
+  [SYCL bundling](docs/backends/sycl/bundling.md),
+  [SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).

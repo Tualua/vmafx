@@ -6,11 +6,11 @@ the Intel GPU (`/dev/dri`). Use it for the QSV zero-copy path of the
 `libvmaf_sycl` filter, which needs the oneVPL GPU runtime and a QSV-enabled
 FFmpeg build.
 
-It is a separate launcher, not `vmaf-dev-mcp`, for the reasons recorded in
-[ADR-1595](../adr/1595-sycl-zerocopy-fail-loud-twin-routing.md): master has no
-`scripts/test/lib/container-rt.sh` / `Containerfile.vmafx` yet, the work needs
-the oneVPL runtime and the QSV build dependencies that
-`localhost/vmafx:build-ocloc` carries, and it publishes no artifacts.
+It is a separate launcher, not `vmaf-dev-mcp`: the work needs the oneVPL
+runtime and the QSV build dependencies that `localhost/vmafx:build-ocloc`
+carries, it builds from the worktree incrementally, and it publishes no
+artifacts. `Containerfile.vmafx` builds the same stack as a self-contained
+image ([ADR-1715](../adr/1715-vmafx-sycl-ffmpeg-container.md)).
 
 ## Modes
 
@@ -44,7 +44,7 @@ Everything lives under `<worktree>/.cache/sycl-dev/` (git-ignored):
 `build/` (meson), `prefix/` (libvmaf install), `ffmpeg-src/` and
 `ffmpeg-prefix/`. Builds are incremental; delete the directory to start over.
 
-## Reproducer: a CPU extractor on zero-copy input fails loudly
+## Reproducer: a feature that needs chroma fails loudly on zero-copy input
 
 ```bash
 scripts/test/sycl-dev-container.sh libvmaf
@@ -62,10 +62,16 @@ scripts/test/sycl-dev-container.sh exec bash -c '
     -lavfi "[0:v][1:v]libvmaf_sycl=feature=name=psnr" -f null -'
 ```
 
-The run exits non-zero and logs `feature extractor 'psnr' runs on the CPU and
-needs host pictures, which zero-copy input does not provide; register its SYCL
-twin 'psnr_sycl' instead`. The same command without `feature=name=psnr` prints
-a VMAF score. Each decoder input has its own QSV device (`qr`, `qd`), as
+The filter routes `psnr` to its twin (`libvmaf_sycl: feature 'psnr' ->
+psnr_sycl`, [ADR-1764](../adr/1764-sycl-filter-twin-routing.md)); `psnr_sycl`
+needs chroma, so the first frame is refused
+([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)) with
+`vmaf_read_pictures_sycl: feature extractor "psnr_sycl" needs host pictures
+...` and the filter's hint to use `hwdownload`, and `ffmpeg` exits non-zero.
+The same command without `feature=name=psnr` prints a VMAF score, and
+`feature=name=niqe` (no SYCL twin) fails at configuration with
+`libvmaf_sycl: feature 'niqe' cannot run on zero-copy input: no SYCL twin`.
+Each decoder input has its own QSV device (`qr`, `qd`), as
 [the SYCL overview](../backends/sycl/overview.md) requires.
 
 ## End-to-end harness: `zerocopy-e2e.sh`
@@ -99,6 +105,12 @@ column.
 Feature cases switch the default model off (`model=`) so only the named feature
 is measured; the two model cases use `model=version=...`.
 
+Every leg runs both inputs to their end. The harness never cuts a leg with
+`-frames:v` or `-t`: FFmpeg enforces those after the filtergraph, so a
+`libvmaf*` filter can score one more pair than `ffmpeg` outputs (see
+[Score exactly N frames](../usage/ffmpeg.md#score-exactly-n-frames)). To score a
+prefix, use `trim=end_frame=N` on both inputs.
+
 ```bash
 scripts/test/sycl-dev-container.sh libvmaf
 scripts/test/sycl-dev-container.sh ffmpeg
@@ -130,8 +142,14 @@ scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stag
 
 ### Stages
 
-`--stage N` states how far the zero-copy fixes have come; a case is held to
+`--stage N` states how far the zero-copy work has come; a case is held to
 numeric parity once `N` reaches its stage and must fail loudly before that.
+On this tree the zero-copy import carries luma only
+([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)), so run
+`--stage 1`: the stage-2 and stage-3 cases need chroma or the host-staging twins
+on the shared planes, the post-1.0 zero-copy import of
+[ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md), and must be
+refused with an error that names the extractor.
 
 | Stage | Cases that must match numerically |
 | --- | --- |
@@ -174,8 +192,9 @@ cannot be a zero-copy regression (`SYCL_TWIN_OMITTED` in the comparator).
 
 The zero-copy end-to-end runs are local / container only: the self-hosted
 Arc A380 CI runner has no FFmpeg or oneVPL. CI carries the device unit tests
-instead (`--suite sycl`, for example `test_sycl_zerocopy_guards`), which
-emulate the VA import by writing the shared upload slots directly.
+instead (`--suite sycl`, for example `test_sycl_zero_copy_admission` and
+`test_sycl_zero_copy_model_gate`), which emulate the VA import by writing the
+shared upload slots directly.
 
 Two contracts need no device and run on every pull request and in pre-commit:
 
@@ -184,7 +203,7 @@ make sycl-zerocopy-contract
 ```
 
 It runs `ffmpeg-patches/test/check-sycl-feature-routing.sh` (the text of patch
-0005: twin routing, NV12 / P010 only, no warn-and-skip on import failure) and
+0005: twin routing and NV12 / P010 only) and
 `scripts/test/test_zerocopy_e2e_compare.py` (every verdict of the comparator,
 including `reference=host` cases and the declared `ciede` bound; needs `pytest`,
 see `requirements/locks/pytest-timeout.txt`). CI step: `FFmpeg Patch Stack`,

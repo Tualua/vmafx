@@ -113,17 +113,43 @@ QSV device:
 
 ```bash
 ffmpeg \
-  -init_hw_device drm=drm0:/dev/dri/renderD128 \
-  -init_hw_device vaapi=va0@drm0 \
+  -init_hw_device vaapi=va0:/dev/dri/renderD128 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_ref -c:v hevc_qsv -i ref.mkv \
-  -lavfi '[0:v][1:v]libvmaf_sycl=log_fmt=csv:log_path=out.csv' \
-  -frames:v 500 -f null -
+  -lavfi '[0:v]trim=end_frame=500[d];[1:v]trim=end_frame=500[r];[d][r]libvmaf_sycl=log_fmt=csv:log_path=out.csv' \
+  -f null -
 ```
 
 A single shared `qsv` device silently reintroduces the contamination.
+
+Open the VA-API device on the render node directly, as above. Do not derive it
+from a `drm` device (`-init_hw_device drm=drm0:/dev/dri/renderD128
+-init_hw_device vaapi=va0@drm0`): in a rootless container only the render node
+is usable, and that form fails before decoding with `Failed to set value
+'drm=drm0:/dev/dri/renderD128' for option 'init_hw_device': Cannot allocate
+memory`. If the host has more than one GPU, pick the render node of the Intel
+one (`/sys/class/drm/renderD*/device/vendor` is `0x8086`). In a container, pass
+the device with `--device /dev/dri`; an image built from `Containerfile.vmafx`
+runs this command as is.
+
+The two `trim=end_frame=500` filters score exactly the first 500 pairs. Do not
+use `-frames:v 500` for that: FFmpeg applies it after the filtergraph, so the
+filter can score a 501st pair
+([Score exactly N frames](../../usage/ffmpeg.md#score-exactly-n-frames)).
+
+### Feature routing and supported surfaces (ADR-1764)
+
+The `libvmaf_sycl` filter resolves each `feature=` name to its SYCL twin, as
+the `vmaf` CLI does. On QSV zero-copy input it refuses to configure when no
+twin can run (a CPU extractor cannot read device-only frames); on software input
+it uses the twin when there is one and otherwise warns and computes the feature
+on the CPU. A twin that needs chroma is still refused at the first frame by the
+admission check above. Zero-copy accepts NV12 and P010 surfaces only. The
+messages and examples are in
+[Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
+the rationale is [ADR-1764](../../adr/1764-sycl-filter-twin-routing.md).
 
 ### P010/P012 pixels are normalized in the import
 

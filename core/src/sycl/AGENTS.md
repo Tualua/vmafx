@@ -237,6 +237,20 @@ sycl/
   `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` with the property removed (must show
   `PASS`, 0 of 10 runs differing, 8 and 10 bit).
 
+- **`vmaf_sycl_upload_plane()` is synchronous.** It waits on the copy
+  queue before it returns, so callers may release `src` at once
+  (`d3d11_import.cpp` unmaps its staging texture right after the call) and
+  the plane is in the shared buffer before the next
+  `vmaf_read_pictures_sycl()`, which waits on the primary queue only.
+  **On rebase / refactor**: an asynchronous form needs an event that
+  `sycl_apply_input_barriers()` orders before the compute and a caller
+  contract for `src`; do not just drop the wait
+  (`T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05`).
+
+- **`vmaf_sycl_print_timing()` logs through `vmaf_log` at INFO.** Every
+  SYCL flush calls it, so it must follow the caller's log level (FFmpeg
+  maps `-loglevel` to it). Do not turn it back into `fprintf(stderr, ...)`.
+
 ## Rebase-sensitive invariants per kernel
 
 - **Shared planes: one upload per plane per frame for every twin
