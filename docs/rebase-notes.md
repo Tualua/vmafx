@@ -61652,3 +61652,11 @@ No score, public API or FFmpeg patch impact.
   pin (ADR-1113); `compat/python-vmaf/core/adm_dwt2_cy.pyx` keeps its first line,
   `# SPDX-License-Identifier: BSD-2-Clause-Patent`, when upstream Netflix is synced. No score,
   public API or FFmpeg patch impact.
+
+## Pelorus pin moves to the qp_report_csv initialisation fix
+
+- `PELORUS_VENDOR_SHA` moves to `42cb17106a2d` (VMAFx/pelorus #79: `csv_cols` starts at -1 in
+  `x265_csv_read_rows()`). The mirror stays verbatim (ADR-1113): a conflict in
+  `core/src/interop/pelorus_*.c` takes master's side and re-runs
+  `scripts/sync-pelorus-interop.sh --update`; never merge a hunk by hand. No score, public API
+  or FFmpeg patch impact.
