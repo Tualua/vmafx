@@ -1084,6 +1084,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (ADR-1428).
 
 
+- **The FFmpeg guide says how to score exactly N frames.** Cutting a run with
+  the output options `-frames:v N` or `-t` lets any `libvmaf*` filter score one
+  more pair than `ffmpeg` outputs (FFmpeg n9.0.2 applies them after the
+  filtergraph; measured in 4 to 7 of 12 runs with `-frames:v`, every run with
+  `-t`). Trim both inputs with `trim=end_frame=N` instead
+  ([Score exactly N frames](docs/usage/ffmpeg.md#score-exactly-n-frames)).
+
+
 - **The NEON float ADM kernels are at the lint and HISS standard (ADR-1142).**
   `core/src/feature/arm64/float_adm_dwt2_neon.c` held the wavelet as one
   function of 136 lines; `float_adm_dwt2_neon()` keeps its name and signature
@@ -4651,6 +4659,21 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   were not affected. Not yet on Windows, which builds from clean.
 
 
+- **FFmpeg's `libvmaf_sycl` runs `feature=` names on their SYCL twins.** The
+  filter registered each name as written, so `feature=name=psnr` ran the CPU
+  extractor on software input and was refused on QSV zero-copy input even
+  where its twin runs there. It now resolves names through
+  `vmaf_feature_backend_twin()`, as the `vmaf` CLI does: on zero-copy input a
+  feature without a usable twin fails at configuration and names the reason,
+  on software input the filter warns and computes it on the CPU. QSV zero-copy
+  accepts NV12 and P010 surfaces only and names any other format
+  ([ADR-1764](docs/adr/1764-sycl-filter-twin-routing.md);
+  [Using VMAF with FFmpeg](docs/usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl)).
+  `scripts/test/zerocopy-e2e.sh` checks the zero-copy path against host upload
+  and the CPU on an Intel GPU
+  ([SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).
+
+
 - **`float_adm_sycl` returns the CPU's scores bit for bit.** The SYCL float
   ADM twin was up to 1.7e-5 from the CPU extractor: it associated the angle
   test's threshold differently, used `float` where the CPU uses `double` for the
@@ -5112,6 +5135,24 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (`T-SYCL-TIDY-OVERRIDING-OPTION-2026-10-02`).
 
 
+- **The SYCL timing summary follows the log level.** Every SYCL flush printed
+  `[vmaf-sycl] timing: ...` straight to stderr, so FFmpeg's `libvmaf_sycl`
+  filter showed it even at `-loglevel error`. It now goes through libvmaf's
+  logger at the info level: FFmpeg prints it from `-loglevel info` up, and the
+  `vmaf` CLI still prints it by default, now with the `libvmaf INFO` prefix
+  every other libvmaf message carries. `vmaf_sycl_profiling_print()`
+  (`VMAF_SYCL_PROFILE=1`) keeps writing to stderr.
+
+
+- **`vmaf_sycl_upload_plane()` now returns after its copy has completed.**
+  It used to enqueue the host-to-device copy and return, while nothing made
+  the extractors wait for it and the documentation did not say how long
+  `src` had to stay valid. On Windows `vmaf_sycl_import_d3d11_surface()`
+  unmapped its staging texture straight after the call, so the copy could
+  read unmapped memory. Callers may now free, unmap or refill `src` as soon
+  as the call returns; see [docs/api/gpu.md](docs/api/gpu.md).
+
+
 - **A SYCL error while de-tiling a VA surface no longer ends the process.**
   `vmaf_sycl_import_va_surface()` submitted its de-tile copy or kernel outside
   any `try`, so a synchronous `sycl::exception` (a kernel the device cannot
@@ -5183,6 +5224,26 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   CPU's per-frame scores. The filter no longer prints `VMAF score: 0.000000`
   after a failed pooled score. The SYCL history and HIP upload pages no longer
   call the default model luma-only.
+
+
+- **SYCL zero-copy scores no longer drift from run to run under batched
+  command lists.** With `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0`, the setting the
+  SYCL bundling page recommends for Arc A-series GPUs, FFmpeg's `libvmaf_sycl`
+  on QSV-decoded input stopped importing new frames from a random frame on in
+  3 to 7 of every 10 runs on an Arc A380 (compute-runtime 26.35). The driver
+  silently dropped the per-frame surface import once each frame's DMA-BUF import
+  was mapped at the GPU address the previous frame's import had just freed, so
+  every extractor scored two stale frames; `cambi` showed it as a frozen pair
+  of values and differed from host upload by up to 2.3. libvmaf now creates its
+  primary SYCL queue, which runs the import, with immediate command lists
+  whatever the variable says; the other queues still follow it. Zero-copy
+  `cambi`, `vif` and `vmaf_v0.6.1` now equal host upload in 10 of 10 runs on
+  the Netflix pair and the 1080p checkerboard at 8 and 10 bit, at unchanged
+  1080p throughput. `scripts/test/zerocopy-e2e.sh --repeat N` repeats the
+  zero-copy leg and fails on any differing run (ADR-1763,
+  `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02`;
+  [SYCL bundling](docs/backends/sycl/bundling.md),
+  [SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).
 
 
 - **Golden tests no longer fail on a dropped connection while downloading

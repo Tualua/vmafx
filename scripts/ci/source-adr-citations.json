@@ -9290,7 +9290,8 @@
         "core/test/test_sycl_ciede_parity.c": 3,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
-        "scripts/dev/gen_sycl_ff_math.py": 2
+        "scripts/dev/gen_sycl_ff_math.py": 2,
+        "scripts/test/zerocopy_e2e_compare.py": 2
       },
       "target": "1436-sycl-ciede-cpu-arithmetic.md"
     },
@@ -10881,6 +10882,12 @@
       },
       "target": "1679-metal-iosurface-biplanar-import.md"
     },
+    "1685": {
+      "sites": {
+        "scripts/test/zerocopy_e2e_compare.py": 1
+      },
+      "target": "1685-post-1-0-embedding-zero-copy-milestone.md"
+    },
     "1686": {
       "sites": {
         ".github/workflows/scorecard.yml": 5,
@@ -10919,7 +10926,8 @@
         "core/src/libvmaf.c": 1,
         "core/test/meson.build": 2,
         "core/test/test_sycl_zero_copy_admission.c": 2,
-        "core/test/test_sycl_zero_copy_model_gate.c": 2
+        "core/test/test_sycl_zero_copy_model_gate.c": 2,
+        "scripts/test/zerocopy_e2e_compare.py": 2
       },
       "target": "1688-sycl-zero-copy-luma-only-admission.md"
     },
@@ -10956,6 +10964,20 @@
         "scripts/test/run-all-tests.sh": 1
       },
       "target": "1715-vmafx-sycl-ffmpeg-container.md"
+    },
+    "1763": {
+      "sites": {
+        "core/src/sycl/common.cpp": 2,
+        "core/test/test_sycl_runtime_contract.py": 2
+      },
+      "target": "1763-sycl-primary-queue-immediate-cmdlist.md"
+    },
+    "1764": {
+      "sites": {
+        "ffmpeg-patches/test/check-sycl-feature-routing.sh": 1,
+        "scripts/test/zerocopy_e2e_compare.py": 1
+      },
+      "target": "1764-sycl-filter-twin-routing.md"
     }
   },
   "retired": {

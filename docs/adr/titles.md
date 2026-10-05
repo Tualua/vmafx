@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1270), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1272), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5091,3 +5091,11 @@ Every ADR, one heading each (1270), so the site search finds an ADR by its title
 ## ADR-1715: `Containerfile.vmafx` — a self-contained SYCL + patched-ffmpeg image with a build-time golden gate
 
 [1715-vmafx-sycl-ffmpeg-container](1715-vmafx-sycl-ffmpeg-container.md)
+
+## ADR-1763: The SYCL primary queue, which runs the VA-surface import, uses immediate command lists
+
+[1763-sycl-primary-queue-immediate-cmdlist](1763-sycl-primary-queue-immediate-cmdlist.md)
+
+## ADR-1764: The `libvmaf_sycl` filter routes `feature=` names to their SYCL twins
+
+[1764-sycl-filter-twin-routing](1764-sycl-filter-twin-routing.md)

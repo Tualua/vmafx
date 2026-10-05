@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (790), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (791), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2167,6 +2167,10 @@ Every research digest, one heading each (790), so the site search finds a digest
 ## Research-1715: porting `Containerfile.vmafx` onto master
 
 [1715-vmafx-sycl-ffmpeg-container](1715-vmafx-sycl-ffmpeg-container.md)
+
+## Research-1763: SYCL zero-copy hardening on the luma-only path
+
+[1763-sycl-zerocopy-hardening](1763-sycl-zerocopy-hardening.md)
 
 ## SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 
