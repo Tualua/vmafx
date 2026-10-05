@@ -27,7 +27,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_adm_cuda.c`, `integer_ssim_cuda.c` | [error-handling](AGENTS.d/error-handling.md) | CUDA error paths must return mapped errno instead of literal error codes. |
 | `/scripts/ci/exact_twins.d/adm.cuda`, `/scripts/ci/twin-drift-check.sh` | [exact-twins](AGENTS.d/exact-twins.md) | All declared exact twin extractors in CUDA maintain bit-identical output with CPU. |
 | `float_adm_cuda.c`, `float_adm_cuda.h` | [float-adm](AGENTS.d/float-adm.md) | float_adm AIM/ADM3 scores, exact CPU bits, and kernel argument delivery. |
-| `float_motion_cuda.c`, `float_motion_cuda.h` | [float-motion](AGENTS.d/float-motion.md) | float_motion emits CPU motion3 and executes SAD in bit-exact CPU order. |
+| `float_motion_cuda.c`, `float_motion_cuda.h`, `float_motion/float_motion_score.cu` | [float-motion](AGENTS.d/float-motion.md) | float_motion emits CPU motion3 and executes SAD in bit-exact CPU order. |
 | `float_psnr_cuda.c`, `float_psnr_cuda.h`, `float_psnr/float_psnr_score.cu` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_cuda matches CPU float_psnr bit for bit, past 2^53 units too. |
 | `float_ssim_cuda.h`, `ssim_cuda.c` | [float-ssim](AGENTS.d/float-ssim.md) | float_ssim sums in CPU raster order on host and reproduces CPU pipeline per scale. |
 | `float_vif_cuda.c`, `float_vif_cuda.h` | [float-vif](AGENTS.d/float-vif.md) | float_vif options must be kernel arguments and match CPU reference bits. |

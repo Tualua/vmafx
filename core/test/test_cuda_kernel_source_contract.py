@@ -424,8 +424,17 @@ def _float_motion_sum_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+FLOAT_MOTION_TILE_INDEX = "vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx, sup), sup)"
+
+
 def _guard_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
+    # T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05: a padding load of
+    # a plane narrower or shorter than one tile reflected to a negative index.
+    if FLOAT_MOTION_TILE_INDEX not in _code(sources[FLOAT_MOTION_KERNEL]):
+        failures.append(
+            f"{FLOAT_MOTION_KERNEL}: a tile load can reflect to an index outside the plane"
+        )
     adm = sources[ADM_KERNEL]
     if "adm_dwt2_source_row(y_out, i, h)" not in adm:
         failures.append(f"{ADM_KERNEL}: scale-0 rows bypass the clamped adm_dwt2_source_row()")
@@ -693,6 +702,15 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             "c_means[i] = total_c / n_pixels;",
         )
         self._assert_detected(sources, "combines as the CPU does")
+
+    def test_unclamped_float_motion_tile_mirror_is_detected(self) -> None:
+        # The master form: reflect-101 without the clamp into the plane.
+        sources = self._edit(
+            FLOAT_MOTION_KERNEL,
+            FLOAT_MOTION_TILE_INDEX,
+            "idx < 0 ? -idx : (idx >= sup ? 2 * (sup - 1) - idx : idx)",
+        )
+        self._assert_detected(sources, "reflect to an index outside the plane")
 
     def test_block_reduced_float_motion_sad_is_detected(self) -> None:
         sources = _sources()

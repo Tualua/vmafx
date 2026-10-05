@@ -28,6 +28,7 @@
 
 #include "cuda_helper.cuh"
 #include "common.h"
+#include "cuda/cuda_tile_index.h"
 
 #define FM_BX 16
 #define FM_BY 16
@@ -40,13 +41,14 @@ __device__ static const float FM_FILT[5] = {
     0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f, 0.054488685f,
 };
 
+/* Tile-load index: the CPU's skip-boundary mirror (reflect-101), clamped into
+ * the plane for the padding loads no output consumes. A plane narrower or
+ * shorter than one tile (3 to 9 samples, or 17) reflected some of those loads
+ * to a negative index, a read before the plane; the HIP twin clamps them the
+ * same way (fm_tile_index()). */
 __device__ __forceinline__ int fm_mirror(int idx, int sup)
 {
-    if (idx < 0)
-        return -idx;
-    if (idx >= sup)
-        return 2 * (sup - 1) - idx;
-    return idx;
+    return vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx, sup), sup);
 }
 
 /* picture_copy() of an 8-bit sample. */

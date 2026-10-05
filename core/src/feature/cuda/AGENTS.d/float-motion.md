@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/cuda/float_motion_cuda.c
   - core/src/feature/cuda/float_motion_cuda.h
+  - core/src/feature/cuda/float_motion/float_motion_score.cu
 invariant: float_motion emits CPU motion3 and executes SAD in bit-exact CPU order.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -31,3 +32,11 @@ invariant: float_motion emits CPU motion3 and executes SAD in bit-exact CPU orde
   identical, all three outputs; 4K time unchanged (3.00 -> 2.98 ms).
   `EXACT_TWINS` lists `float_motion`: `cuda`. SYCL / HIP / Metal twins
   still per block: `T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01`.
+
+- Tile loads index through `vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx,
+  sup), sup)` (`cuda/cuda_tile_index.h`), as HIP's `fm_tile_index()`. Bare
+  reflect-101 sent padding loads of a plane 3-9 or 17 samples wide / high to
+  a negative index: a read before the plane, into memory no output uses
+  (T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05). Scores unchanged.
+  Guard: `test_cuda_kernel_source_contract.py`
+  (`test_unclamped_float_motion_tile_mirror_is_detected`).
