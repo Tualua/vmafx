@@ -88,7 +88,7 @@ typedef struct IntegerPsnrStateMetal {
     bool uncapped;
 
     /* `enable_apsnr` totals across frames, published by flush(). */
-    uint64_t apsnr_sse[PSNR_NUM_PLANES];
+    VmafPsnrClipSse apsnr_sse[PSNR_NUM_PLANES];
     uint64_t apsnr_n_pixels[PSNR_NUM_PLANES];
 
     VmafDictionary *feature_name_dict;
@@ -219,7 +219,8 @@ static void psnr_metal_init_scores(IntegerPsnrStateMetal *s, unsigned bpc)
     for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
         const double min_sse = (p < s->n_planes) ? s->min_sse : 0.0;
         s->psnr_max[p] = vmaf_psnr_max(bpc, s->peak, min_sse, s->width[p], s->height[p]);
-        s->apsnr_sse[p] = 0U;
+        s->apsnr_sse[p].lo = 0u;
+        s->apsnr_sse[p].hi = 0u;
         s->apsnr_n_pixels[p] = 0U;
     }
 }
@@ -383,7 +384,7 @@ static int psnr_metal_emit_plane(IntegerPsnrStateMetal *s, unsigned p, unsigned 
     int err = psnr_metal_plane_sse(s, p, &sse);
     if (err != 0) { return err; }
     if (s->enable_apsnr) {
-        s->apsnr_sse[p] += sse;
+        vmaf_psnr_clip_sse_add(&s->apsnr_sse[p], sse);
         s->apsnr_n_pixels[p] += (uint64_t)s->height[p] * s->width[p];
     }
     const double mse = ((double)sse) / (s->width[p] * s->height[p]);

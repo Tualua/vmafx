@@ -6209,6 +6209,7 @@
         "core/src/feature/nonfinite_score.h": 1,
         "core/src/feature/perceptual_weight.c": 1,
         "core/src/feature/psnr_hvs_score.c": 1,
+        "core/src/feature/psnr_score.h": 1,
         "core/src/feature/pu21.c": 1,
         "core/src/feature/pu21_ssim.c": 1,
         "core/src/feature/speed.c": 1,

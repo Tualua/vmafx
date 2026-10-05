@@ -18,6 +18,13 @@ the unsigned row and frame: a scale-0 row passes INT64_MAX (`core/test/adm_cm_ro
 Scales 1-3 keep upstream's signed sums. The CUDA and HIP `decouple_r_s123()` bound the gain product
 in double before narrowing it, as the CPU's `adm_decouple_band_s123()` does; do not restore
 `(int32_t)(...) * adm_enhn_gain_limit`. See `core/src/feature/AGENTS.d/adm-rounding.md`.
+## APSNR clip squared error summed in 128 bits (2026-10-05)
+
+`fix/apsnr-clip-sse-128`. Upstream Netflix/vmaf's `integer_psnr.c` keeps `apsnr.sse[]` as
+`uint64_t` and adds `s->apsnr.sse[p] += sse;`; the fork holds it as `VmafPsnrClipSse`
+(`core/src/feature/psnr_score.h`) and adds through `vmaf_psnr_clip_sse_add()`, because the clip
+sum wraps past 2^64 on long 12- and 16-bit clips. An upstream sync that touches `psnr()` /
+`psnr_hbd()` or `flush()` keeps the fork's form. See `core/src/feature/AGENTS.d/psnr.md`.
 
 ## MCP tool contract shared by both servers (2026-10-05)
 

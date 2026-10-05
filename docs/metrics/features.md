@@ -496,7 +496,10 @@ consumers of the float pipeline. See [PSNR](psnr.md) for the full comparison.
   `libvmaf=feature=name=psnr`.
 - **Output metrics** (fixed) — `psnr_y`, `psnr_cb`, `psnr_cr`. With
   `enable_mse=true` also `mse_y/cb/cr`. With `enable_apsnr=true` also
-  `apsnr_y/cb/cr` (aggregate across the whole clip, emitted at flush).
+  `apsnr_y/cb/cr` (aggregate across the whole clip, emitted at flush). The
+  clip's squared error is summed in 128 bits, so a clip of any length gives
+  the exact aggregate; a 64-bit sum wrapped at frame 33 of 16K at 16 bits
+  with every sample at the maximum difference.
   `float_psnr` emits `float_psnr`, luma only.
 - **Output range** — dB, saturated at `6 × bpc + 12`: 60 dB for 8 bpc, 72 dB
   for 10 bpc, 84 dB for 12 bpc, 108 dB for 16 bpc. That value is reported both

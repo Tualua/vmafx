@@ -224,6 +224,7 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
         "vmaf_psnr_max(",
         "vmaf_psnr_from_mse(",
         "vmaf_psnr_aggregate(",
+        "vmaf_psnr_clip_sse_add(",
     ):
         if helper not in psnr:
             failures.append(f"integer_psnr_cuda.c: does not call psnr_score.h {helper}")

@@ -432,6 +432,7 @@ def _option_failures(src: dict[str, str]) -> list[str]:
         "vmaf_psnr_max(",
         "vmaf_psnr_from_mse(",
         "vmaf_psnr_aggregate(",
+        "vmaf_psnr_clip_sse_add(",
     ):
         if helper not in psnr:
             failures.append(f"{PSNR_HOST}: {helper}) of psnr_score.h is not called")
