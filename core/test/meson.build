@@ -223,6 +223,16 @@ if get_option('enable_tools')
     endforeach
 endif
 
+# No CUDA, HIP, SYCL or Metal source advances a pointer to samples wider than
+# a byte by a byte stride (the class of an upstream CUDA 16-bit motion defect):
+# a static scan of core/src with planted upstream forms. Device-free.
+test('test_gpu_byte_stride_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_byte_stride_contract.py'),
+    suite : ['fast'],
+    timeout : 60,
+)
+
 # ADR-1496: the macOS tester bundle measures every open Metal row with exact
 # tests: tools/rc1-tester/image/metal-rows.json against docs/state.md, the
 # Metal parity tests, the bundle's unit list and the gate. Device-free.

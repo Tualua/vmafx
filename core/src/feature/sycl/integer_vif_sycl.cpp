@@ -340,7 +340,10 @@ static inline uint32_t dev_read_pixel(const void *src, int y, int x, unsigned st
         }
         return static_cast<const uint16_t *>(src)[y * (stride / 2) + x];
     } else {
-        return static_cast<const uint32_t *>(src)[y * stride + x] & 0xFFFF;
+        /* Scales 1 to 3 read the previous scale's uint32 buffers: stride counts
+         * elements there, bytes only at scale 0. */
+        const unsigned stride_elems = stride;
+        return static_cast<const uint32_t *>(src)[y * stride_elems + x] & 0xFFFF;
     }
 }
 } // namespace

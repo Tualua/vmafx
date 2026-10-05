@@ -39,6 +39,22 @@ No rebase impact: docs only.
   device.
 - The fixture bytes are pinned in the contract test; a change to the generator
   re-pins them and re-records every backend.
+## GPU byte-stride contract (2026-10-05)
+
+`test/rc3-gpu-byte-stride-contract`. Fork-only files:
+`core/test/test_gpu_byte_stride_contract.py`, its block in `core/test/meson.build`,
+`core/src/feature/AGENTS.d/gpu-row-stride.md`, a section of
+`docs/development/gpu-backend-template.md`.
+
+- An upstream sync that brings a CUDA, HIP, SYCL or Metal kernel addressing a
+  16-bit row as `reinterpret_cast<const uint16_t *>(base) + y * stride` fails
+  `test_gpu_byte_stride_contract`. Port it through a byte pointer
+  (`reinterpret_cast<const uint16_t *>(base + y * stride)`) or convert the
+  stride to elements.
+- `integer_adm_sycl.cpp` (`adm_dev_dwt_src()`) and `integer_vif_sycl.cpp`
+  (`dev_read_pixel()`) copy their element stride into a local `*_elems`
+  variable for the scales above 0. Keep the names on a rebase; the scan reads
+  them.
 ## Port of Netflix/vmaf golden-assertion updates `5c7770080`, `005988ead`, `4679db83c`, `d93495f5c`, `e3827e4dd` (2026-10-05)
 
 `port/upstream-golden-updates-2026-05`, [ADR-1828](adr/1828-port-netflix-golden-updates.md).

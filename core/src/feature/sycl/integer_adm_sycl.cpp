@@ -481,7 +481,10 @@ constexpr int ADM_DWT_TILE_H = (2 * ADM_DWT_WG_Y) + 2; // 18
 inline int32_t adm_dev_dwt_src(const AdmDwtVertArgs &a, const void *p_in, int x, int y)
 {
     if (a.scale != 0) {
-        return static_cast<const int32_t *>(p_in)[y * a.in_stride + x];
+        /* Scales 1 to 3 read the int32 band buffer: in_stride counts elements
+         * there (buf_stride), bytes only at scale 0. */
+        const unsigned band_stride_elems = a.in_stride;
+        return static_cast<const int32_t *>(p_in)[y * band_stride_elems + x];
     }
     if (a.bpc <= 8) {
         return static_cast<const uint8_t *>(p_in)[y * a.in_stride + x];
