@@ -12,8 +12,9 @@ With ``--backend``, every built-in ``vmaf_v1.0.16*`` model (one per JSON file
 under ``model/vmaf_v1.0.16*/``) and the CLI's default (a run without
 ``--model``) score each fixture twice with the ``vmaf`` CLI of this build, at
 ``--precision max``: once with ``--backend cpu`` and once with the device
-backend. The fixtures are the Netflix 576x324 pair at 8, 10 and 12 bits 4:2:0
-and 10 bits 4:2:2, and the first 16 frames of the 3840x2160 BBB pair. A run
+backend. The fixtures are the 576x324 `src01_hrc00` / `src01_hrc01` pair at 8, 10
+and 12 bits 4:2:0 and 10 bits 4:2:2, and the first 16 frames of the 3840x2160
+pair in `testdata/bbb`. A run
 fails when the device run lists an extractor on any other backend in
 ``feature_backends`` (a CPU fallback), when its ``backend_used`` is not the
 device, and on any difference in a per-frame, pooled or aggregate metric,
@@ -54,7 +55,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 YUV = ROOT / "python" / "test" / "resource" / "yuv"
-BBB = ROOT / "testdata" / "bbb"
+UHD = ROOT / "testdata" / "bbb"
 MODEL_GLOB = "vmaf_v1.0.16*/vmaf_v1.0.16*.json"
 DEFAULT_LABEL = "default"
 SKIP = 77
@@ -65,7 +66,7 @@ BACKEND_OPTION = {"cuda": "enable_cuda", "sycl": "enable_sycl", "hip": "enable_h
 LOCK_FILE = {"cuda": "cuda-4090.lock", "sycl": "sycl-a380.lock", "hip": "hip-gfx1036.lock"}
 KNOWN_FALLBACK_FEATURE = "float_adm=adm_csf_mode=1"
 KNOWN_FALLBACK_EXTRACTOR = "float_adm"
-# The four SDR and the four HFR models of Netflix's v1.0.16 release.
+# The four SDR and the four HFR models of the upstream v1.0.16 release.
 V1_MODEL_COUNT = 8
 
 
@@ -83,8 +84,8 @@ class Fixture:
     frame_cnt: int | None = None
 
 
-def nf_fixture(name: str, suffix: str, pix_fmt: str, bitdepth: int) -> Fixture:
-    """The Netflix src01 576x324 pair stored as `src01_hrc0N_576x324<suffix>`."""
+def src01_fixture(name: str, suffix: str, pix_fmt: str, bitdepth: int) -> Fixture:
+    """The 576x324 src01 pair stored as `src01_hrc0N_576x324<suffix>`."""
     return Fixture(
         name=name,
         ref=YUV / f"src01_hrc00_576x324{suffix}",
@@ -97,14 +98,14 @@ def nf_fixture(name: str, suffix: str, pix_fmt: str, bitdepth: int) -> Fixture:
 
 
 FIXTURES: tuple[Fixture, ...] = (
-    nf_fixture("netflix-420-8", ".yuv", "420", 8),
-    nf_fixture("netflix-420-10", ".yuv420p10le.yuv", "420", 10),
-    nf_fixture("netflix-420-12", ".yuv420p12le.yuv", "420", 12),
-    nf_fixture("netflix-422-10", ".yuv422p10le.yuv", "422", 10),
+    src01_fixture("src01-420-8", ".yuv", "420", 8),
+    src01_fixture("src01-420-10", ".yuv420p10le.yuv", "420", 10),
+    src01_fixture("src01-420-12", ".yuv420p12le.yuv", "420", 12),
+    src01_fixture("src01-422-10", ".yuv422p10le.yuv", "422", 10),
     Fixture(
-        name="bbb-3840x2160-420-8",
-        ref=BBB / "ref_3840x2160_200f.yuv",
-        dis=BBB / "dis_3840x2160_200f.yuv",
+        name="uhd-3840x2160-420-8",
+        ref=UHD / "ref_3840x2160_200f.yuv",
+        dis=UHD / "dis_3840x2160_200f.yuv",
         width=3840,
         height=2160,
         pix_fmt="420",

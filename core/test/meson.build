@@ -252,8 +252,8 @@ test('test_cuda_parity_gate_default_run',
 )
 
 # Issue #2144: every built-in vmaf_v1.0.16* model and the default model score
-# the Netflix 576x324 pair (8, 10 and 12 bits 4:2:0, 10 bits 4:2:2) and 16
-# frames of the BBB 3840x2160 pair with every extractor on the device
+# the 576x324 src01 pair (8, 10 and 12 bits 4:2:0, 10 bits 4:2:2) and 16
+# frames of the 3840x2160 testdata/bbb pair with every extractor on the device
 # (`feature_backends` lists no CPU extractor) and with the CPU run's bits at
 # --precision max. One test per backend this build enables; each skips (77)
 # without its device or the fixtures. The self-test runs the comparison on

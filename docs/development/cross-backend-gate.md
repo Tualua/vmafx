@@ -358,8 +358,9 @@ set end to end. For every built-in `vmaf_v1.0.16*` model and the default model,
 it scores these fixtures with `--backend cpu` and with the device backend at
 `--precision max`:
 
-- the Netflix 576x324 pair at 8, 10 and 12 bits 4:2:0 and 10 bits 4:2:2;
-- the first 16 frames of the BBB 3840x2160 pair.
+- the 576x324 `src01_hrc00` / `src01_hrc01` pair at 8, 10 and 12 bits 4:2:0
+  and 10 bits 4:2:2;
+- the first 16 frames of the 3840x2160 pair in `testdata/bbb`.
 
 It fails when the device run's `feature_backends` lists an extractor on any
 other backend, or when any per-frame, pooled or aggregate value differs.

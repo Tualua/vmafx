@@ -7,6 +7,9 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## v1-model test fixtures named by file (2026-10-05)
+
+No rebase impact: wording and fixture labels of a fork-only test.
 ## Whole-model no-fallback test for the v1 models (2026-10-05)
 
 `test/rc3-v1-models-no-fallback` (issue #2144). Fork-only files:
