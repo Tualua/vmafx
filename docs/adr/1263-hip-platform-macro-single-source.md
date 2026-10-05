@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1263: `__HIP_PLATFORM_AMD__` is declared once by the build, not by each source
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: hip, build, meson, warnings, fork-local
@@ -57,3 +57,18 @@ eight in-file `#define`s are deleted.
 - [ADR-0141](0141-touched-file-cleanup-rule.md), [ADR-1142](1142-whole-codebase-standards.md) —
   the touched-file rule that made the reserved-identifier finding blocking.
 - Source: `req` — the user's direction to work through the bug ledger and fix every entry.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. core/src/hip/meson.build adds
+-D__HIP_PLATFORM_AMD__=1 once to hip_deps outside the discovery branches and
+no source defines the macro itself. Evidence on `master`: PR #1506,
+`11a47f39b`.
+
+Verification command:
+
+```bash
+grep -n 'HIP_PLATFORM_AMD' core/src/hip/meson.build
+```

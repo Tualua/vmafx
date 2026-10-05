@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1310: Reuse the merge-base mypy gate in required CI
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-25
 - **Deciders**: VMAFx maintainers
 - **Tags**: `ci`, `python`, `tooling`, `testing`
@@ -65,3 +65,17 @@ module split, and fail-closed exit semantics remain unchanged.
 - [Research-2103](../research/2103-mypy-ci-fail-closed-2026-09-25.md) — branch audit, parent repro, and mutation evidence.
 - [actions/checkout fetch-depth contract](https://github.com/actions/checkout#fetch-all-history-for-all-tags-and-branches).
 - Source: `req` — “we fix everything until we cant find anything anymore for now”.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The Python Lint job in lint-and-format.yml runs
+scripts/git-hooks/pre-push-mypy.py with VMAFX_MYPY_BASE_REF set from the push
+event. Evidence on `master`: PR #1561, `dd51d00db`.
+
+Verification command:
+
+```bash
+grep -n 'VMAFX_MYPY_BASE_REF\|pre-push-mypy' .github/workflows/lint-and-format.yml
+```

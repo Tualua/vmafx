@@ -5,7 +5,7 @@
 
 # ADR-0665: <fill in title>
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-21
 - **Deciders**: <fill in>
 - **Tags**: <fill in>
@@ -87,3 +87,18 @@ and rejection reasons whenever it is written.
 - [ADR-0615](0615-fast-nr-prescoring.md)
 - [ADR-0624](0624-fast-nr-prescoring-impl.md)
 - Source: `req` — "ai unlocks the speedup in tune for the full netflix style pipeline on consumer stuff"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The PLCC and sample-count gate with
+--allow-weak-calibration shipped in PR 1487 in
+ai/scripts/calibrate_nr_threshold.py (defaults 10 samples, PLCC 0.70).
+Evidence on `master`: PR #1487, `3516f75ee`.
+
+Verification command:
+
+```bash
+git grep -n -E 'allow-weak-calibration|_DEFAULT_MIN_PLCC' origin/master -- ai/scripts/calibrate_nr_threshold.py
+```

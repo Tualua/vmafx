@@ -2,7 +2,7 @@
 
 # ADR-1204: GPU ADM contrast-masking twins clamp the far edge instead of mirroring it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, sycl, hip, metal, correctness, feature-extractor, testing
@@ -74,3 +74,18 @@ the last index, matching the CPU closed form. Reads are only ever at `+/-1`, so
 - Reproducer: `meson test -C build --suite=gpu test_cuda_float_adm_parity`
   on a CUDA host, or the width/height sweep in the PR description.
 - Source: `req` — user direction to fix the outstanding GPU parity failures.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The CUDA, SYCL, HIP and Metal float_adm twins
+clamp the contrast-masking far edge to the last index, and the asymmetric edge
+rule is recorded in core/src/feature/AGENTS.d/adm-contrast-masking.md.
+Evidence on `master`: PR #1363, `43aabd684`.
+
+Verification command:
+
+```bash
+git show --stat 43aabd684 | grep float_adm
+```

@@ -2,7 +2,7 @@
 
 # ADR-1195: Record and verify which source revision the dev container was built from
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: ci, build, testing, agents
@@ -92,3 +92,18 @@ resulting image. `--allow-behind` exists for local experiments and says so loudl
   this complements.
 - CLAUDE.md rule 15 — the rebuild-trigger rule whose time-based phrasing this makes
   checkable.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. dev/Containerfile writes /etc/vmafx-dev-source in
+the final stage, and scripts/dev/check-container-source.sh and
+dev/scripts/container-build.sh exist as decided. Evidence on `master`:
+PR #1337, `9cec679a4`.
+
+Verification command:
+
+```bash
+ls scripts/dev/check-container-source.sh dev/scripts/container-build.sh; grep -n vmafx-dev-source dev/Containerfile
+```

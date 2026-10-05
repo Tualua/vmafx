@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0612: Tiny-AI training on the original Netflix VMAF training corpus
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-19
 - **Deciders**: Lusoris
 - **Tags**: `ai`, `docs`, `workspace`, `mcp`
@@ -127,3 +127,18 @@ training PR, pending user confirmation via the alternatives table below.
   (paraphrase — the corpus lives at `.workingdir2/netflix/`; the Lusoris /
   Claude collaboration ADR documents the decision to scaffold before running).
 - Related PRs: #153, #418, #759, #920.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The scaffold-only decision (ADR, research digest
+0612, changelog fragment, training-data cross-reference) shipped in PR 1414
+and the files exist; no training was part of the decision. Evidence on
+`master`: PR #1414, `16503c033`.
+
+Verification command:
+
+```bash
+git show --stat --format=%h 16503c033 | grep -E 'adr/0612|research/0612'
+```

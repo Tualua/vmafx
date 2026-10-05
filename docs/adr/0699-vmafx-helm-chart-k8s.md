@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0699: VMAFX Helm Chart and Kubernetes Manifests with 3-Vendor GPU Device-Plugin Support
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris
 - **Tags**: deploy, kubernetes, helm, gpu, cuda, hip, sycl, vulkan, fork-local
@@ -88,3 +88,19 @@ Ship a Helm chart at `deploy/helm/vmafx/` with:
 - ADR-0698 (vmafx-production-dockerfile) — sibling production container
 - ADR-0686 (vmafx-rebrand-aggressive-modernization) — project rebrand umbrella
 - req: user direction 2026-05-28 — Helm chart + K8s manifests with 3-vendor GPU device-plugin support
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. deploy/helm/vmafx has the gpu vendor mapping
+helpers vmafx.gpuResource and vmafx.backendEnvValue, workload selection among
+Deployment, Job and StatefulSet, the optional prometheus-pushgateway
+dependency, and the two docs pages. Shipped in PR #1570. Evidence on `master`:
+PR #1570, `4b5f93f0c`.
+
+Verification command:
+
+```bash
+grep -n 'vmafx.gpuResource\|vmafx.backendEnvValue' deploy/helm/vmafx/templates/_helpers.tpl | head -3
+```

@@ -61165,3 +61165,12 @@ No score, public API or FFmpeg patch impact.
   Shared C headers keep their `NOLINTBEGIN/END` blocks citing ADR-1138 (a lint
   cleanup must not turn their `typedef` into `using` or give an enum a C++-only
   base). No score, public API or FFmpeg patch impact.
+## ADR status sweep 2026-10-05
+
+- no rebase impact: docs only. 78 ADR status lines and their index rows changed
+  (`docs/adr/*.md`, `docs/adr/_index_fragments/*.md`, regenerated `docs/adr/README.md`);
+  a sync that conflicts on one takes master's status line and keeps the dated
+  `### Status update 2026-10-05` note at the end of the file. The new gate
+  `scripts/ci/check-adr-status-drift.py` (exceptions in
+  `scripts/ci/adr-status-exceptions.json`, expiring 2027-01-05) has its own test
+  (`scripts/ci/tests/test_check_adr_status_drift.py`).

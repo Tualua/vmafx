@@ -1,1 +1,1 @@
-| [ADR-1289](1289-hip-ssimulacra2-host-helper-split.md) | The three SSIMULACRA2 HIP host functions may be split; their no-split citations are withdrawn | Proposed | hip, agents, code-quality, ci |
+| [ADR-1289](1289-hip-ssimulacra2-host-helper-split.md) | The three SSIMULACRA2 HIP host functions may be split; their no-split citations are withdrawn | Superseded by [ADR-1390](1390-hip-ssimulacra2-device-resident.md) | hip, agents, code-quality, ci |

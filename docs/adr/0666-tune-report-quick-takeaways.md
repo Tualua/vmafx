@@ -5,7 +5,7 @@
 
 # ADR-0666: <fill in title>
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-21
 - **Deciders**: <fill in>
 - **Tags**: <fill in>
@@ -82,3 +82,18 @@ row counts, ladder bitrate/resolution span, and per-shot CRF range.
 - [Research-0686](../research/0686-tune-report-quick-takeaways.md)
 - [ADR-0643](0643-vmaf-tune-encoder-profile-contract.md)
 - Source: `req` — "they need to be helpful to the human users to quickly understand what the data really says -> means it shouldn't be only for experts"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The Quick takeaways section in Markdown and HTML
+reports shipped in PR 1489 and is rendered by
+tools/vmaf-tune/src/vmaftune/report.py. Evidence on `master`: PR #1489,
+`fe2169230`.
+
+Verification command:
+
+```bash
+git grep -n 'Quick takeaways' origin/master -- tools/vmaf-tune/src/vmaftune/report.py
+```

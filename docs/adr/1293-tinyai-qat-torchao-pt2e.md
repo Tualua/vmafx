@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1293: Move tiny-AI QAT onto torchao's pt2e API
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-22
 - **Deciders**: VMAFx maintainers
 - **Tags**: `ai`, `python`, `dependencies`, `numerical-correctness`
@@ -119,3 +119,17 @@ its own PLCC against the same budget gate.
 - [ADR-0129](0129-tinyai-ptq-quantization.md) — the ORT static-PTQ path the
   recipe is meant to match.
 - `docs/research/tinyai-qat-pt2e-migration-2026-09-22.md` — the measurements.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. ai/pyproject.toml depends on torchao>=0.18.0,<1.0
+and ai/train/qat.py uses prepare_qat_pt2e with move_exported_model_to_train.
+Evidence on `master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'torchao' ai/pyproject.toml; grep -n move_exported_model_to_train ai/train/qat.py
+```

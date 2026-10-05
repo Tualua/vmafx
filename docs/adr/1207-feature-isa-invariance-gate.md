@@ -2,7 +2,7 @@
 
 # ADR-1207: A test gates every feature's score against the host instruction set
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: testing, simd, correctness, ci, reproducibility
@@ -72,3 +72,18 @@ catch.
   bit-exactness contract being gated.
 - Source: `req` — user direction to close the recurrence hole in the
   ssimulacra2 SIMD test.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. core/test/test_feature_isa_invariance.c exists
+and is registered in core/test/meson.build, comparing the host ISA against a
+cpumask-disabled run for bit identity. The commit carries no PR number in its
+subject. Evidence on `master`: `5b164cb79`.
+
+Verification command:
+
+```bash
+grep -n 'test_feature_isa_invariance' core/test/meson.build
+```

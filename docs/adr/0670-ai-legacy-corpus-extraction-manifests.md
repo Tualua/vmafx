@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0670: AI Legacy Corpus Extraction Manifests
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris maintainers
 - **Tags**: ai, training, provenance, corpus
@@ -73,3 +73,17 @@ unavailable defaults so stale cached BVI rows no longer fail the current
 - [docs/ai/training.md](../ai/training.md)
 - Source: req "go on with next backlog?"
 - Source: req "everything we did so far needs updates"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. extract_full_features.py, konvid_to_vmaf_pairs.py
+and bvi_dvc_to_corpus_jsonl.py emit replay manifests by default. Shipped in
+PR #1493. Evidence on `master`: PR #1493, `becf95d16`.
+
+Verification command:
+
+```bash
+grep -c 'manifest-out' ai/scripts/extract_full_features.py ai/scripts/konvid_to_vmaf_pairs.py ai/scripts/bvi_dvc_to_corpus_jsonl.py
+```

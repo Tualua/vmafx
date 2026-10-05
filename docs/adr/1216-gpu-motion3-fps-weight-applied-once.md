@@ -2,7 +2,7 @@
 
 # ADR-1216: The GPU motion3 twins apply `motion_fps_weight` exactly once
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `sycl`, `hip`, `correctness`, `feature-extractor`, `testing`
@@ -84,3 +84,18 @@ does. Each of the three motion3 parity tests gains a variant that pins
 - [ADR-1204](1204-adm-cm-edge-clamp-gpu-twins.md),
   [ADR-1206](1206-gpu-parity-large-fixture-variants.md) — the same
   pinned-fixture blind-spot pattern.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. motion_fps_weight is applied once on the CUDA,
+SYCL and HIP motion3 twins, with a parity variant pinned to
+motion_fps_weight=0.6 in the CUDA and HIP tests. Evidence on `master`:
+PR #1375, `0eb385574`.
+
+Verification command:
+
+```bash
+grep -n FPS_WEIGHT_KEY core/test/test_cuda_motion3_parity.c core/test/test_hip_motion3_parity.c
+```

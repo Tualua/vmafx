@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1264: The HIP scaffold posture reports `-ENOSYS`, and its tests check both sites
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: hip, testing, scaffold, gpu, fork-local
@@ -74,3 +74,17 @@ registration or at extract.
 - `core/meson_options.txt` — the `enable_hipcc` description stating the `-ENOSYS` contract.
 - Bug ledger `L-79` (`.workingdir/BUGS.md`).
 - Source: `req` — the user's direction to work the bug ledger and fix every entry.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. Shipped in the integration train: the HIP twins
+return -ENOSYS first in init without hipcc and the parity tests recognise it
+at both observation points. Evidence on `master`: PR #1506, `11a47f39b`.
+
+Verification command:
+
+```bash
+grep -n 'return -ENOSYS' core/test/test_hip_device_resident_contract.py core/test/hip_parity_skip.h
+```

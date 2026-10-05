@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0698: VMAFX Production Dockerfile — Multi-Arch, Image Signing, SBOM
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-28
 - **Deciders**: lusoris
 - **Tags**: `docker`, `ci`, `release`, `security`, `sbom`, `signing`, `vmafx`, `fork-local`
@@ -115,3 +115,20 @@ cosign/syft tooling and maps cleanly to the Sigstore supply-chain story.
 - PR: `feat(docker): production multi-arch Dockerfile + image signing + SBOM`
 - Parent PR: #1546 (VMAFX rebrand umbrella)
 - Source: user direction (VMAFX Phase 3B brief, 2026-05-28)
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. docker/Dockerfile.production and
+Dockerfile.production-gpu exist, and docker-publish-production.yml builds
+multi-arch images with cosign signing and a syft SBOM attestation. The GPU
+target set has since moved to CUDA 13 and ROCm 10 with Vulkan removed under
+ADR-0726, which does not change the decision. Evidence on `master`: PR #1572,
+`78ecafe11`.
+
+Verification command:
+
+```bash
+grep -n 'cosign\|syft' .github/workflows/docker-publish-production.yml | head -3
+```

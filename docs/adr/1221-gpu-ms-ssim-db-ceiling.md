@@ -2,7 +2,7 @@
 
 # ADR-1221: `clip_db` is a ceiling on the MS-SSIM dB output, not a clamp on the linear score
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `sycl`, `hip`, `correctness`, `feature-extractor`, `testing`
@@ -100,3 +100,17 @@ finite and that it matches the CPU.
 - ADR-1216 (PR #1375), ADR-1217 (PR #1376) and ADR-1220 (PR #1379) — the same
   default-options blind spot on other feature families. Referenced by number
   because this branch does not carry those files.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The MS-SSIM twins derive max_db at init and
+convert through ms_ssim_convert_to_db() mirroring the CPU, as recorded in the
+per-backend ms-ssim invariants. Evidence on `master`: PR #1425, `b3e95901c`.
+
+Verification command:
+
+```bash
+grep -rn ms_ssim_convert_to_db core/src/feature/cuda/AGENTS.d/ms-ssim.md core/src/feature/hip/AGENTS.d/ms-ssim.md
+```

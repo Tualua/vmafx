@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1295: Correct sureal's Gaussian density for unanimously rated stimuli in-process
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-22
 - **Deciders**: VMAFx maintainers
 - **Tags**: `python`, `numerical-correctness`, `dependencies`, `testing`
@@ -101,3 +101,17 @@ can have nor reads.
 - [NumPy `nansum`](https://numpy.org/doc/stable/reference/generated/numpy.nansum.html) — treats `nan` as zero, which is what hid the truncation.
 - [SciPy `curve_fit`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html) — `pcov` is filled with `inf` when the residual degrees of freedom are zero.
 - [NumPy `polynomial.Polynomial.fit`](https://numpy.org/doc/stable/reference/generated/numpy.polynomial.polynomial.Polynomial.fit.html) — least-squares fit without a covariance estimate.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. compat/python-vmaf/tools/stats.py defines the
+zero-scale-safe vectorized_gaussian and train_test_model.py binds it over
+sureal's at import. Evidence on `master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'vectorized_gaussian' compat/python-vmaf/tools/stats.py compat/python-vmaf/core/train_test_model.py
+```

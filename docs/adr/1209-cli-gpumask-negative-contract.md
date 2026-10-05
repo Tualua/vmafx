@@ -2,7 +2,7 @@
 
 # ADR-1209: `--gpumask` keeps rejecting negative values; the test script uses a positive mask
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cli, testing, upstream-divergence, correctness
@@ -85,3 +85,18 @@ described a per-op mask, which the option has never been.
   `libvmaf/tools/cli_parse.c`.
 - Source: `req` — user direction to fix the `--gpumask -1` regression found
   while running the full suite for ADR-1204 / ADR-1205.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The CLI keeps rejecting negative --gpumask, the
+test script was changed to a positive mask, and docs/usage/cli.md describes
+--gpumask as not a per-op mask. The commit carries no PR number in its
+subject. Evidence on `master`: `53e417476`.
+
+Verification command:
+
+```bash
+grep -n 'gpumask' docs/usage/cli.md | head -3
+```

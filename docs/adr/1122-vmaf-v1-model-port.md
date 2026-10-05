@@ -2,7 +2,7 @@
 
 # ADR-1122: Adopt and port VMAF v1 models (opt-in, v0.6.1 stays default)
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-01
 - **Deciders**: Lusoris Dev (<dsp@mvdnet.org>)
 - **Tags**: `vmaf`, `models`, `upstream-port`, `cambi`, `chroma`, `sycl`, `golden-gate`
@@ -80,3 +80,18 @@ tests are green across CPU/CUDA/SYCL/HIP.
 - Upstream: Netflix/vmaf `v3.2.0`; `resource/doc/models_v1.md`; `model/vmaf_v1.0.16/*.json`.
 - Related: [ADR-1121](1121-sycl-qsv-zerocopy-p010-normalization.md) (10-bit zero-copy),
   [ADR-0220](0220-sycl-fp64-fallback.md) (fp64-free SYCL kernels — blocks `speed_chroma_sycl`).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The port of the six v1.0.16 model JSONs shipped
+and the files are present. The clause that kept vmaf_v0.6.1 as the default
+model was later reversed by ADR-1169, which made vmaf_v1.0.16_3d0h the
+default. Evidence on `master`: PR #1082, PR #1261, `15b721a4e`.
+
+Verification command:
+
+```bash
+ls model/vmaf_v1.0.16 model/vmaf_v1.0.16_hfr; ls docs/adr/1169-default-model-v1-0-16.md
+```

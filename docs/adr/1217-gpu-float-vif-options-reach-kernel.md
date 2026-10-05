@@ -2,7 +2,7 @@
 
 # ADR-1217: The GPU float-VIF kernels read `vif_sigma_nsq` and `vif_enhn_gain_limit` from their options
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `sycl`, `hip`, `correctness`, `feature-extractor`, `testing`
@@ -94,3 +94,17 @@ float-VIF parity test.
   the CPU and GPU paths coincide is not covered by a default-options parity
   test. Referenced by number rather than by link because this branch does not
   carry those files.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. vif_sigma_nsq and vif_enhn_gain_limit are passed
+to the CUDA, SYCL and HIP float-VIF kernels as arguments, with NEG-option
+parity variants. Evidence on `master`: PR #1376, `ca8a39ea4`.
+
+Verification command:
+
+```bash
+git show --stat ca8a39ea4
+```

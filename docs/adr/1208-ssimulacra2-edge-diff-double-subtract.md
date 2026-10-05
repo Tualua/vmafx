@@ -2,7 +2,7 @@
 
 # ADR-1208: The ssimulacra2 edge-diff SIMD loops take their difference in double
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: simd, correctness, feature-extractor, reproducibility
@@ -75,3 +75,18 @@ vector subtract contributed was the rounding error.
 - Reproducer: `meson test -C build test_feature_isa_invariance`.
 - Source: `req` — user direction to close the recurrence hole in the
   ssimulacra2 SIMD test.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The ssimulacra2 edge-diff difference is taken in
+double in the NEON and SVE2 kernels (marked ADR-1208), and a follow-up shares
+the accumulation with the scalar tail. The commits carry no PR number in their
+subjects. Evidence on `master`: `5b164cb79`, `4d2f7c366`.
+
+Verification command:
+
+```bash
+grep -rn 'ADR-1208' core/src/feature/arm64
+```

@@ -5,7 +5,7 @@
 
 # ADR-0673: <fill in title>
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-21
 - **Deciders**: <fill in>
 - **Tags**: <fill in>
@@ -102,3 +102,18 @@ script so row statuses and output columns stay identical.
   — implementation digest.
 - Source: req — "well go on i guess we have enough backlog..."
 - Source: req — "well and in this audit perhaps find gaps that we have no metric/signal for at all or so"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. ai/scripts/batch_materialize_saliency_features.py
+and its test exist as the manifest-driven batch orchestrator over the
+single-table materializer. Shipped in PR #1496. Evidence on `master`:
+PR #1496, `caefbe3ff`.
+
+Verification command:
+
+```bash
+ls ai/scripts/batch_materialize_saliency_features.py ai/tests/test_batch_materialize_saliency_features.py
+```

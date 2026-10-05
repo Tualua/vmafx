@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0703: vmafx-server in Go — gRPC + HTTP, observability
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-28
 - **Deciders**: lusoris
 - **Tags**: `server`, `go`, `grpc`, `http`, `observability`, `cloud-native`, `vmafx`
@@ -99,3 +99,17 @@ Dockerfile.go-server — multi-stage: golang:1.23-bookworm → distroless
   foundation (PR #1583); this ADR is a child/successor.
 - [ADR-0686](0686-vmafx-rebrand-aggressive-modernization.md) — VMAFX rebrand umbrella.
 - `req` — "vmafx-server in Go (gRPC + HTTP)" (per user task specification, 2026-05-28).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. cmd/vmafx-server provides the gRPC and HTTP
+server with proto/vmafx.proto, pkg/libvmaf cgo wrapper and pkg/observability,
+as decided. Shipped in PR #15. Evidence on `master`: PR #15, `79c66591b`.
+
+Verification command:
+
+```bash
+ls cmd/vmafx-server/grpc_server.go cmd/vmafx-server/http_server.go proto/vmafx.proto pkg/observability/observability.go
+```

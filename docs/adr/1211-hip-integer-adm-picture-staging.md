@@ -2,7 +2,7 @@
 
 # ADR-1211: `integer_adm_hip` stages the luma plane onto the device before launching
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: hip, correctness, feature-extractor, adm
@@ -80,3 +80,19 @@ than the picture's stride.
 - Reproducer: `meson test -C build test_hip_adm_parity` on a ROCm device; before
   this change the process dies with the fault above.
 - Source: `req` — user direction to fix bugs.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. integer_adm_hip.c stages the scale-0 luma planes
+onto the device through adm_hip_stage_luma() with a packed stride of w, now
+through the shared device frame of ADR-1408. The original staging commit
+carries no PR number in its subject. Evidence on `master`: PR #1701,
+`56b355a2b`, `6283ee500`.
+
+Verification command:
+
+```bash
+grep -n 'ADR-1211' core/src/feature/hip/integer_adm_hip.c
+```

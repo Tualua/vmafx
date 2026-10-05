@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1294: Scope the docs build's concurrency group to its ref, not to Pages
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-22
 - **Deciders**: VMAFx maintainers
 - **Tags**: `ci`, `docs`
@@ -89,3 +89,17 @@ Delete the workflow-level `concurrency` block and give each job its own.
   already skips this job when docs are untouched.
 - [ADR-0313](0313-ci-required-checks-aggregator.md) — how required contexts are
   resolved, and why absence is treated as path-filter-skipped.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The docs workflow has per-job concurrency groups:
+docs-build per ref with cancel-in-progress and a non-cancelling pages group
+for deploy. Evidence on `master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'group:' .github/workflows/docs*.yml
+```

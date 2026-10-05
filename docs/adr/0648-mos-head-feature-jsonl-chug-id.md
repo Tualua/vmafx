@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0648: CHUG HDR MOS Trainer Entry Point
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-20
 - **Deciders**: Lusoris
 - **Tags**: ai, hdr, chug, mos, training
@@ -64,3 +64,17 @@ surface and used by the CHUG wrapper.
 - [ADR-0336](0336-konvid-mos-head-v1.md)
 - Source: `req` — "well yeah and chug is hdr mos... so thats different because netflix (current) model is 8bit only etc... so its our model or the chug model we use for hdr until netflix finally releases their model"
 - Source: `req` — "you talk about chug and the script is named konvid? ffs..."
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. ai/scripts/train_chug_hdr_mos_head.py and the
+shared trainer's --feature-jsonl path shipped in PR 1448 and exist now.
+Evidence on `master`: PR #1448, `ac35c9817`.
+
+Verification command:
+
+```bash
+git ls-tree --name-only origin/master ai/scripts/train_chug_hdr_mos_head.py
+```

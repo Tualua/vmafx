@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0551: VCQ-223 LocalExplainer CI timeout — root cause and fix path
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `python`, `test`, `local-explainer`, `performance`, `bugfix`, `fork-local`
@@ -130,3 +130,18 @@ follow-up fix PR so CI can confirm the scores before the skip is lifted.
   `python/vmaf/core/train_test_model.py:1184–1192`
 - `docs/state.md` tracking item: T-VCQ-223-LOCAL-EXPLAINER-HANG
 - req: per the agent brief "research only, do NOT fix yet — open a sharp PR with the diagnosis + a proposed fix sketch"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The LocalExplainer hang was fixed in PR 1334 by
+capping the runner's default neighbor_samples at 100 and unskipping the test;
+the test now exists unskipped in python/test/local_explainer_test.py. Evidence
+on `master`: PR #1334, `6fd36ee6d`.
+
+Verification command:
+
+```bash
+git show 6fd36ee6d --stat | head -20
+```

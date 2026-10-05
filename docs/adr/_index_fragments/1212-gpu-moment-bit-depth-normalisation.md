@@ -1,1 +1,1 @@
-| [ADR-1212](1212-gpu-moment-bit-depth-normalisation.md) | The GPU `float_moment` twins normalise by the bit-depth scaler on the host | Proposed | cuda, sycl, hip, correctness, feature-extractor, bit-depth |
+| [ADR-1212](1212-gpu-moment-bit-depth-normalisation.md) | The GPU `float_moment` twins normalise by the bit-depth scaler on the host | Accepted | cuda, sycl, hip, correctness, feature-extractor, bit-depth |

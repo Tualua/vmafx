@@ -2,7 +2,7 @@
 
 # ADR-1224: CUDA Tile C++ is not adopted; the audit's incidental findings are
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `performance`, `build`, `correctness`
@@ -148,3 +148,17 @@ installed toolkit and its GEMM/attention win class does not exist here.
   floor and the CI bump, decided independently.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — the places=4 gate this would put at
   risk.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. CUDA Tile was declined as decided, and the
+incidental fixes shipped: the int64 warp_reduce in integer_ssim_score.cu and
+the nvcc --threads meson option. Evidence on `master`: PR #1425, `7a0d835c8`.
+
+Verification command:
+
+```bash
+grep -n 'ADR-1224' core/meson_options.txt core/src/meson.build
+```

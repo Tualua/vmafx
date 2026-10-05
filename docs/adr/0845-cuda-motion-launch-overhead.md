@@ -1,6 +1,6 @@
 # ADR-0845: CUDA motion — multi-frame SAD batching to reduce per-launch overhead
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `performance`, `motion`, `fork-local`
@@ -86,3 +86,18 @@ numerical correctness (ADR-0219 / ADR-0214 places=4 gate).
 - `req`: per-agent task brief 2026-05-29 — "reduce per-launch overhead...
   Target: motion CUDA wins or ties CPU at 576p AND 1080p"
 - PR #75, PR #77: benchmark findings that motivated this work
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. core/src/feature/cuda/integer_motion_cuda.c
+batches eight frames per synchronise using MOTION_BATCH_DEPTH, as decided;
+ADR-1372 keeps the batch. Shipped in PR #217. Evidence on `master`: PR #217,
+`f4879cc1a`.
+
+Verification command:
+
+```bash
+grep -n 'MOTION_BATCH_DEPTH' core/src/feature/cuda/integer_motion_cuda.c | head -3
+```

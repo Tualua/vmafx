@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0928: VmafPicture v2 — explicit per-backend GPU state
 
-- **Status**: Proposed
+- **Status**: Accepted (Phase 1 only; the remaining phases stay Proposed)
 - **Date**: 2026-05-31
 - **Deciders**: lusoris
 - **Tags**: api, abi, gpu, cuda, sycl, hip, metal, ffmpeg, rust, fork-local, vmafx-rebrand
@@ -150,3 +150,19 @@ No SONAME bump. Header is declared, not yet built into libvmaf.so.
   — consumer migration recipes.
 - Related: SONAME policy historically rev'd only at major
   releases; v3→v4 timing aligns with VMAFX v4.0.0.
+
+### Status update 2026-10-05: Accepted, scoped to Phase 1
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. Phase 1 (the dual-API VmafPicture2 introduction)
+shipped: core/include/libvmaf/picture_v2.h and core/src/picture_v2.c implement
+all five entry points with a unit test. The SONAME bump to libvmaf.so.4 is
+deferred by the ADR itself to the next major release. Evidence on `master`:
+PR #886, `d1039ac2c`.
+
+Verification command:
+
+```bash
+ls core/include/libvmaf/picture_v2.h core/src/picture_v2.c
+```

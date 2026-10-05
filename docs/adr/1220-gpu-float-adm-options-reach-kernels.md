@@ -2,7 +2,7 @@
 
 # ADR-1220: The GPU float-ADM kernels honour `adm_p_norm`, `adm_bypass_cm` and `adm_skip_scale0`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `sycl`, `hip`, `metal`, `correctness`, `feature-extractor`, `testing`
@@ -98,3 +98,17 @@ remain green.
 - ADR-1216 (PR #1375) and ADR-1217 (PR #1376) — the same default-options blind
   spot on `motion_fps_weight` and the float-VIF options. Referenced by number
   because this branch does not carry those files.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. adm_p_norm, adm_bypass_cm and adm_skip_scale0 now
+reach the float-ADM twin kernels and hosts, for example the CUDA and Metal
+option tables. Evidence on `master`: PR #1425, `36ebf66b5`.
+
+Verification command:
+
+```bash
+grep -n 'adm_p_norm\|adm_bypass_cm' core/src/feature/cuda/float_adm_cuda.c core/src/feature/metal/float_adm_metal.mm
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1265: The clang-tidy header filter matches absolute paths, so headers count
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: ci, clang-tidy, lint, ratchet, fork-local
@@ -66,3 +66,17 @@ is committed from that artifact rather than from a local run with a different cl
 - [ADR-1142](1142-whole-codebase-standards.md), [ADR-0141](0141-touched-file-cleanup-rule.md).
 - Bug ledger `L-45`; measurement 2026-09-19 (`clang-tidy -p build --quiet core/src/picture.c`).
 - Source: `Q` — popup answer 2026-09-19, "Fix it, re-record all baselines".
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The HeaderFilterRegex in .clang-tidy matches
+absolute and relative paths and every lane baseline was re-recorded. Evidence
+on `master`: PR #1504, `8845ac2eb`.
+
+Verification command:
+
+```bash
+grep -n HeaderFilterRegex .clang-tidy
+```

@@ -2,7 +2,7 @@
 
 # ADR-1297: Every check that reports on a pull request is a required context
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-22
 - **Deciders**: lusoris
 - **Tags**: `ci`, `policy`, `build`, `security`, `docs`
@@ -170,3 +170,18 @@ claim the legs were advisory while nothing acted on the claim.
   `160ddfc3d`; master run 35519558357 (2026-09-20, every build leg `success`).
 - Source: `req` — the maintainer's standing direction, given more than once,
   that a check which reports but blocks nothing does not count as a gate.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The required aggregator lists the broadened check
+set including Semgrep OSS and gitleaks, and the advisory suffix on Tidy SYCL
+is gone. The required list has grown beyond the 78 names stated in the ADR.
+Evidence on `master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n "Semgrep OSS\|gitleaks" .github/workflows/required-aggregator.yml
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1298: Scope the local HISS audit's touched-file rule to what the committer wrote
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-22
 - **Deciders**: VMAFx maintainers
 - **Tags**: `ci`, `agents`, `code-quality`
@@ -107,3 +107,17 @@ untouched: `0 new unbaselined` still fails the audit. `-allow-increase` and
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — the touched-file rule for
   clang-tidy, which is separate, gated by `Tidy Changed` and the ratchet, and
   unaffected.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. lefthook.yml hiss-audit runs
+scripts/git-hooks/hiss-audit.sh with the merge-touched scope. Evidence on
+`master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n hiss-audit.sh lefthook.yml; ls scripts/git-hooks/hiss-audit.sh
+```

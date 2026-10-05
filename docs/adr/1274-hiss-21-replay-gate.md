@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1274: Make HISS-21 claims replayable and platform-gated
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-20
 - **Deciders**: VMAFx maintainers
 - **Tags**: ci, governance, agents, testing, docs
@@ -65,3 +65,17 @@ redundant visible heading beneath the banner.
 - [Research-2074](../research/2074-hiss-21-replay-evidence.md) records the measured gap and fixture selection.
 - `req` (2026-09-20): “well the badge says 16 as well”.
 - `req` (2026-09-20): “well then do that asap wtf... thats a huge blindspot in ci as well then”.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. praetorctl hiss coverage --verify runs in make
+verify-all, lefthook hooks and the standards gate with a Linux, macOS and
+Windows matrix. Evidence on `master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'hiss coverage' Makefile lefthook.yml .github/workflows/standards-gate.yml
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0454: VIF CUDA shared-memory staging for horizontal and vertical filter passes
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-16
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `gpu`, `vif`, `performance`, `smem`, `fork-local`
@@ -71,3 +71,18 @@ All arithmetic is unchanged — results are bit-identical to the pre-patch kerne
 - Perf audit: `.workingdir/perf-audit-cuda-2026-05-16.md` wins #1, #4.
 - ADR-0214 (GPU parity CI gate — `places=4` must pass).
 - NVIDIA CUDA C Best Practices Guide §"Shared Memory".
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. Shared-memory staging of the 17-tap integer VIF
+filter loops shipped in PR 1160 and
+core/src/feature/cuda/integer_vif/filter1d.cu still holds the tiles. Evidence
+on `master`: PR #1160, `41c1f5045`.
+
+Verification command:
+
+```bash
+git show origin/master:core/src/feature/cuda/integer_vif/filter1d.cu | grep -n '__shared__'
+```

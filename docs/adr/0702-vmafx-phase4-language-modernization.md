@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0702: VMAFX Phase 4 — Multi-Language Modernization Foundation
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris
 - **Tags**: go, rust, cpp23, language-policy, modernization, tooling, fork-local, phase4
@@ -160,3 +160,20 @@ User direction (verbatim, per CLAUDE.md References rule):
   was Go; addendum was to add a Rust pilot alongside Go).
 - `"Both: C++23 internals + Rust pilot"` — user's answer when asked about core
   language strategy.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The Go workspace (go.mod, pkg/version, go-ci.yml,
+go-build and go-test targets) and the Rust workspace (Cargo.toml, rust-ci.yml,
+bindings/rust/vmafx-sys, rust-build and rust-test targets) exist as the
+foundation decided. The child ADRs it names were the vehicle for the rest, and
+the C++23 policy was record-only by design. Evidence on `master`: PR #14,
+PR #16, `e3f222baa`, `bb9848c0a`.
+
+Verification command:
+
+```bash
+ls go.mod Cargo.toml pkg/version/version.go .github/workflows/go-ci.yml .github/workflows/rust-ci.yml
+```

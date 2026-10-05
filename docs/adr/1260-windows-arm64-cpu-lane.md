@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-1260: Windows on ARM64 CPU build-and-test lane
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: ci, build, arm64, windows, simd, fork-local
@@ -192,3 +192,19 @@ The lane's first run found it. A lane that only builds would not have.
   [ADR-1057](1057-revert-float-adm-simd-dispatch-neon-fma.md),
   [ADR-1142](1142-whole-codebase-standards.md),
   [ADR-1234](1234-local-preflight-gate.md).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The Windows ARM64 MSVC lane with its PE machine
+check, the NEON guard-page test rewrite and the simd_dx.h MSVC ARM64 gating
+shipped; the lane was later made a required check (ADR-1283), and the flag was
+renamed from arm64_strict_fp_args to vmaf_strict_fp_args (ADR-1461). Evidence
+on `master`: PR #1492, `a9a45f5e3`.
+
+Verification command:
+
+```bash
+grep -n 'windows-arm64\|0xAA64' .github/workflows/libvmaf-build-matrix.yml
+```

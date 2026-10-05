@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0668: AI Derived Table Provenance
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris maintainers
 - **Tags**: ai, training, provenance, parquet
@@ -68,3 +68,17 @@ schemas remain unchanged.
 - [docs/ai/training.md](../ai/training.md)
 - Source: req "batch things that are connected and create them"
 - Source: req "everything we did so far needs updates"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The three FULL_FEATURES parquet scripts write a
+default sibling manifest sidecar and accept --manifest-out, as decided.
+Shipped in PR #1491. Evidence on `master`: PR #1491, `242305e67`.
+
+Verification command:
+
+```bash
+grep -c 'manifest-out' ai/scripts/extract_k150k_features.py ai/scripts/combine_full_feature_parquets.py ai/scripts/enrich_k150k_parquet_metadata.py
+```

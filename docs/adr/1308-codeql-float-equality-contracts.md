@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1308: Resolve CodeQL float equality alerts via contract-preserving comparisons
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-24
 - **Deciders**: VMAFx maintainers
 - **Tags**: `codeql`, `security`, `floating-point`, `quality`
@@ -114,3 +114,17 @@ Implement the exact semantic contract for each site:
 - [Research-2097](../research/2097-codeql-equality-on-floats-2026-09-24.md) — complete analysis, CodeQL SARIF verification, and test logs.
 - CodeQL query rule `cpp/equality-on-floats` (`FloatComparison.ql`).
 - GitHub CodeQL alerts 168, 927, 1101, 1201, 1221, 1244.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. feature_name.cpp defines option_double_equals and
+predict.c uses float_values_equal for the sentinel check. Evidence on
+`master`: PR #1561, `dd51d00db`.
+
+Verification command:
+
+```bash
+grep -n 'option_double_equals' core/src/feature/feature_name.cpp; grep -n float_values_equal core/src/predict.c
+```

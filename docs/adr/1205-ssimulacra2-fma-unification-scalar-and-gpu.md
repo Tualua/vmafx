@@ -2,7 +2,7 @@
 
 # ADR-1205: The ssimulacra2 FMA unification extends to the scalar fallback and every GPU host copy
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, sycl, hip, metal, simd, correctness, feature-extractor, reproducibility
@@ -80,3 +80,19 @@ computes one value.
 - Reproducer: `meson test -C build --suite=gpu test_cuda_ssimulacra2_parity`
   on a CUDA host.
 - Source: `req` — user direction to fix the outstanding GPU parity failures.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The ssimulacra2 YCbCr to linear-RGB conversion
+uses one single-rounded FMA sequence in the scalar fallback and the CUDA, HIP,
+Metal and SYCL host conversions, now through vmaf_fmaf_exact in
+feature/common/fmaf_exact.h. Evidence on `master`: PR #1363, `43aabd684`,
+`acb8c344f`.
+
+Verification command:
+
+```bash
+grep -n 'fmaf_exact' core/src/feature/ssimulacra2.c
+```

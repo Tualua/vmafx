@@ -2,7 +2,7 @@
 
 # ADR-1200: The dev container falls back to the GitHub mirror for nv-codec-headers
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: build, supply-chain, ci
@@ -88,3 +88,17 @@ was extracted instead of a hard-coded name.
   six hours on this exact layer.
 - [ADR-1102](1102-phase4b9-container-only-publishing.md) — container-canonical publishing,
   which is what makes this outage a release-path problem and not just an inconvenience.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. dev/Containerfile fetches nv-codec-headers from
+the upstream host first and falls back to the GitHub mirror archive with a
+content assertion. Evidence on `master`: PR #1348, `defb879a0`.
+
+Verification command:
+
+```bash
+grep -n 'github.com/FFmpeg/nv-codec-headers' dev/Containerfile
+```

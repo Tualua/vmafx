@@ -1,6 +1,6 @@
 # ADR-0779: eBPF FUSE read-path bypass for vmafx-node rclone mounts
 
-- **Status**: Proposed (the compiled-object build notes are superseded by [ADR-1622](1622-bpf-object-generated-at-build-time.md))
+- **Status**: Accepted (the compiled-object build notes are superseded by [ADR-1622](1622-bpf-object-generated-at-build-time.md))
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `ebpf`, `node`, `rclone`, `performance`, `phase4b`, `fork-local`
@@ -88,3 +88,18 @@ The loader uses `github.com/cilium/ebpf` (v0.21.0) as the Go-side BPF library.
 - Linux kernel docs: `Documentation/filesystems/fuse.rst`,
   `Documentation/bpf/`.
 - req: "Implement the eBPF FUSE bypass per Research-0733 (37× p50 latency win)."
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. cmd/vmafx-node/bpf holds the openat/close tracker
+(rclone_bypass.bpf.c) and its cilium/ebpf loader, enabled only by
+VMAFX_EBPF_BYPASS, as decided. The compiled-object build notes were later
+replaced by ADR-1622. Evidence on `master`: PR #137, `1f48be4e2`.
+
+Verification command:
+
+```bash
+ls cmd/vmafx-node/bpf/rclone_bypass.bpf.c cmd/vmafx-node/bpf/bypass_loader.go cmd/vmafx-node/ebpf_config.go
+```

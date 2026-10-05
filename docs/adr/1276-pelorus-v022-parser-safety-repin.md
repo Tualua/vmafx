@@ -2,7 +2,7 @@
 
 # ADR-1276: Re-pin the Pelorus mirror for released parser safety fixes
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-20
 - **Deciders**: Lusoris
 - **Supersedes**: the Pelorus mirror pin and update workflow in
@@ -87,3 +87,17 @@ The maintenance contract is:
   `VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16`.
 - Source: `req` — update VMAFx for Pelorus releases and keep the interop mirror
   exact rather than carrying fork-local parser changes.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. scripts/sync-pelorus-interop.sh pins
+PELORUS_VENDOR_SHA to the v0.2.2 commit and the Pre-Commit workflow reads that
+pin for the drift guard. Evidence on `master`: PR #1515, `6c8e7b8ea`.
+
+Verification command:
+
+```bash
+grep -n '^PELORUS_VENDOR_SHA' scripts/sync-pelorus-interop.sh
+```

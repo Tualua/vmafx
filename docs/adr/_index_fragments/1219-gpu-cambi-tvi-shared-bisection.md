@@ -1,1 +1,1 @@
-| [ADR-1219](1219-gpu-cambi-tvi-shared-bisection.md) | The HIP and Metal CAMBI twins use the shared TVI bisection and the CPU's border rules | Proposed | hip, metal, correctness, feature-extractor, testing |
+| [ADR-1219](1219-gpu-cambi-tvi-shared-bisection.md) | The HIP and Metal CAMBI twins use the shared TVI bisection and the CPU's border rules | Accepted | hip, metal, correctness, feature-extractor, testing |

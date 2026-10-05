@@ -2,7 +2,7 @@
 
 # ADR-1218: The GPU SpEED twins zero the device solution and report singularity from the temporal path
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `sycl`, `hip`, `correctness`, `feature-extractor`, `testing`
@@ -110,3 +110,17 @@ to the three `speed_temporal` twins so they match `speed_extract_score()`.
   construction, so those tests run the singular path on *every* frame and never
   exercise the regular one. The new tests use 960x960 (36 chroma blocks, 144
   luma) so a regular frame can precede a singular one.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The six SpEED twins zero the device solution on
+the singular path and the speed_temporal twins report singularity as
+speed_extract_score() does. Evidence on `master`: PR #1377, `ff49e6fe8`.
+
+Verification command:
+
+```bash
+grep -ln singular core/src/feature/cuda/speed_temporal_cuda.c core/src/feature/sycl/speed_temporal_sycl.cpp
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1271: Pass NEO GitHub credentials through optional BuildKit secrets
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-20
 - **Deciders**: kilian, Codex
 - **Tags**: `build`, `container`, `security`, `supply-chain`, `ci`, `fork-local`
@@ -68,3 +68,17 @@ warning-fatal Docker and Compose `--check` steps before the full image build.
 - [ADR-1145](1145-neo-stack-derived-from-release.md)
 - [Research-2070](../research/2070-intel-neo-fetch-fail-closed.md)
 - Source: req ("no ... warning or error is just ignored")
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The optional github_token BuildKit secret is
+mounted in dev/Containerfile and sourced by Compose, with a checker script
+under scripts/ci. Evidence on `master`: PR #1468, `fec6ec9ac`.
+
+Verification command:
+
+```bash
+grep -n 'id=github_token' dev/Containerfile; ls scripts/ci/check-dev-container-build-secret.py
+```

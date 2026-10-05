@@ -2,7 +2,7 @@
 
 # ADR-1212: The GPU `float_moment` twins normalise by the bit-depth scaler on the host
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, sycl, hip, correctness, feature-extractor, bit-depth
@@ -80,3 +80,18 @@ no `float_moment` gate at all, gets one.
   spot (one fixture *resolution*); this ADR closes the one-fixture *bit depth*.
 - Reproducer: `vmaf -r src01_hrc00_576x324.yuv420p10le.yuv -d src01_hrc01_576x324.yuv420p10le.yuv --width 576 --height 324 --pixel_format 420 --bitdepth 10 --no_prediction --feature float_moment_cuda --output /dev/stdout --json`; compare against `--feature float_moment`.
 - Source: `req` — user direction to fix bugs found by the twin-drift sweep.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The CUDA, SYCL and HIP float_moment collect paths
+divide the device sums by the bit-depth scaler, and the parity fixtures are
+bit-depth generic with 10-bit variants and a new HIP gate. Evidence on
+`master`: PR #1425, `8276f2b0d`, `5b523b24e`, `df06c2586`.
+
+Verification command:
+
+```bash
+grep -ln scaler core/src/feature/cuda/integer_moment_cuda.c core/src/feature/sycl/integer_moment_sycl.cpp core/src/feature/hip/float_moment_hip.c
+```

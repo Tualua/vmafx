@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0649: CHUG HDR Wide MOS Feature Schema
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-20
 - **Deciders**: Lusoris
 - **Tags**: ai, hdr, chug, mos, training
@@ -75,3 +75,17 @@ regression comparisons.
 - Source: `req` — "no widen them"
 - Source: `req` — "we need them, didnt say to stop anything"
 - Source: `req` — "so means we need both anyways lol"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The chug-hdr-wide-v1 schema is defined in
+ai/scripts/train_konvid_mos_head.py and is the CHUG wrapper's default, shipped
+with PR 1448. Evidence on `master`: PR #1448, `ac35c9817`.
+
+Verification command:
+
+```bash
+git grep -n 'chug-hdr-wide-v1' origin/master -- ai/scripts
+```

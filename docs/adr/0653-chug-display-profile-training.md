@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0653: CHUG Display Profile Training
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-20
 - **Deciders**: Lusoris
 - **Tags**: ai, hdr, chug, mos, training
@@ -69,3 +69,18 @@ profile fills only missing display features.
 - Source: `req` - "the biggest win will be hdr"
 - Source: `req` - "CHUG is hdr mos... so thats different because netflix (current) model is 8bit only etc... so its our model or the chug model we use for hdr until netflix finally releases their model"
 - Source: `req` - "so that means we need panel tuning on tune ai etc.! (backlog)"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The chug-hdr-display-v1 schema and the
+--display-profile-json flag shipped in PR 1451 and exist in
+ai/scripts/train_chug_hdr_mos_head.py. Evidence on `master`: PR #1451,
+`d12064436`.
+
+Verification command:
+
+```bash
+git grep -n 'display-profile-json' origin/master -- ai/scripts
+```

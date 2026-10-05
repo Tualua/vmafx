@@ -2,7 +2,7 @@
 
 # ADR-1222: In-code suppressions do not close code-scanning alerts; scope the scan instead
 
-- **Status**: Proposed (partially superseded by [ADR-1307](1307-sha256-memoization-cache-invalidation.md) for Alerts 947–949 and [ADR-1309](1309-socket-path-ownership-and-owner-only-mode.md) for Alert 946)
+- **Status**: Accepted (partially superseded by [ADR-1307](1307-sha256-memoization-cache-invalidation.md) for Alerts 947–949 and [ADR-1309](1309-socket-path-ownership-and-owner-only-mode.md) for Alert 946)
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `ci`, `security`, `docs`, `mcp`
@@ -107,3 +107,18 @@ We will treat the scan's **scope** as the thing to fix, not the code:
   suppression of `cpp/poorly-documented-function` and its rationale.
 - [ADR-1142](1142-whole-codebase-standards.md) — the whole-tree lint policy
   that keeps `core/test` in scope.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The code-scan paths-ignore globs match at any
+depth in .github/codeql-config.yml and the duplicated MCP constant block was
+removed; alerts 946 to 949 were later handled by ADR-1307 and ADR-1309 as the
+status line records. Evidence on `master`: PR #1425, `5774a1ba6`.
+
+Verification command:
+
+```bash
+grep -n 'build-\*' .github/codeql-config.yml
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0616: VMAF NEG Integration into vmaf-tune
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-19
 - **Deciders**: lusoris
 - **Tags**: `ai`, `planning`, `vmaf-tune`, `docs`
@@ -69,3 +69,18 @@ Total estimate: 1.5 days (the smallest-win item on the roadmap — model files e
 - `model/vmaf_v0.6.1neg.json`, `model/vmaf_4k_v0.6.1neg.json`.
 - `tools/vmaf-tune/src/vmaftune/score_backend.py`, `bisect.py`.
 - Source: per user direction (roadmap planning session 2026-05-19).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The --neg flag routing to the NEG model shipped
+in PR 1426 and is wired through _add_neg_flag in
+tools/vmaf-tune/src/vmaftune/cli.py and documented in
+docs/usage/vmaf-tune-bisect.md. Evidence on `master`: PR #1426, `0e53ed697`.
+
+Verification command:
+
+```bash
+git grep -n '_add_neg_flag' origin/master -- tools/vmaf-tune/src/vmaftune/cli.py
+```

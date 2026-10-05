@@ -2,7 +2,7 @@
 
 # ADR-1219: The HIP and Metal CAMBI twins use the shared TVI bisection and the CPU's border rules
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `hip`, `metal`, `correctness`, `feature-extractor`, `testing`
@@ -104,3 +104,17 @@ the CPU score is non-degenerate before comparing, so the gate cannot rot back to
   fixture both before and after, which is what isolated the two HIP-only
   defects.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — the GPU parity CI gate.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The HIP and Metal CAMBI twins call the shared
+vmaf_cambi_init_tvi_and_vlt() and drop the hand-rolled TVI search. Evidence on
+`master`: PR #1425, `7c29e70b2`.
+
+Verification command:
+
+```bash
+grep -n vmaf_cambi_init_tvi_and_vlt core/src/feature/hip/integer_cambi_hip.c core/src/feature/metal/integer_cambi_metal.mm
+```

@@ -2,7 +2,7 @@
 
 # ADR-1201: Cut release candidates before the final 1.0.0
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: release, ci, supply-chain
@@ -99,3 +99,19 @@ and `release-as: 1.0.0`.
   contract gate this retargets.
 - [ADR-1127](1127-single-semver-release-stream.md) — the ordinary-SemVer version scheme this extends
   with exactly one prerelease channel.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. release-please-config.json is set to prerelease
+with type rc and the release scripts accept only vX.Y.Z-rc.N; v1.0.0-rc.1 was
+cut. The release-as field was later replaced by prerelease versioning
+(ADR-1348), which keeps the decision intact. Evidence on `master`: PR #1353,
+PR #1213, `c1680c02f`, `34b92fc9a`.
+
+Verification command:
+
+```bash
+grep -n 'prerelease' release-please-config.json
+```

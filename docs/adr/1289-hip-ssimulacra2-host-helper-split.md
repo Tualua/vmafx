@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1289: The three SSIMULACRA2 HIP host functions may be split; their no-split citations are withdrawn
 
-- **Status**: Proposed
+- **Status**: Superseded by [ADR-1390](1390-hip-ssimulacra2-device-resident.md)
 - **Date**: 2026-09-22
 - **Deciders**: Lusoris (pending — see References)
 - **Tags**: hip, agents, code-quality, ci
@@ -110,3 +110,20 @@ scalar body, so splitting it would force matching splits in four more files.
   belongs, or supersede the ADR — but the code and the citation must agree."
   No user popup was taken; no `req` or `Q<r>.<q>` citation exists for this
   decision, which is why the Status is Proposed.
+
+### Status update 2026-10-05: Superseded by ADR-1390
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The helper split landed in #1518 but
+ssimulacra2_hip.c was later rewritten as a device-resident pipeline
+(ADR-1390), so only ss2h_yuv_primaries survives and the decision is moot. The
+classification as superseded by code rewrite rather than by an explicit
+Supersedes line is a judgement call. Evidence on `master`: PR #1518,
+`6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'ss2h_upload_xyb' core/src/feature/hip/ssimulacra2_hip.c; ls docs/adr/1390-hip-ssimulacra2-device-resident.md
+```

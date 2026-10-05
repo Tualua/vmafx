@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1273: Select language standards through warning-clean Meson preference lists
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-20
 - **Deciders**: Lusoris
 - **Tags**: build, meson, c23, cpp23, windows, warnings, fork-local
@@ -68,3 +68,19 @@ C++ flag injection and amends ADR-0692's claim that every compiler uses C23.
   intel-llvm-cl backend advertises only c89/c99/c11, so a list without
   `none` aborts configure on the Windows MSVC+SYCL leg.
 - Source: `req` — "there is no on touch rule anymore, no warning or error is just ignored because of being og netflix code, fix them all".
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. core/meson.build selects the language standards
+through c_std and cpp_std preference lists in default_options with a
+std::expected probe, and no direct std flags except the MSVC /std:clatest. The
+exact lists were later extended with c++26 and none. Evidence on `master`:
+PR #1516, `7f1005915`.
+
+Verification command:
+
+```bash
+grep -n "c_std=\|cpp_std=\|std::expected" core/meson.build
+```

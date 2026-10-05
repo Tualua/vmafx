@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1304: Bind MCP HTTP scoring runtimes per server instance
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-23
 - **Deciders**: VMAFx maintainers
 - **Tags**: `mcp`, `python`, `architecture`, `concurrency`
@@ -59,3 +59,17 @@ entire lifetime.
 - [HTTP transport embedding guide](../mcp/http-transport.md).
 - GitHub CodeQL alerts 917 and 918.
 - req: "oh of course all bugs.md's in this local repo should of course be fully fixed"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. http_scoring.py keeps a narrow HttpScoringRuntime
+protocol and http_transport.run_http_server passes an injected runtime through
+_serve per application. Evidence on `master`: PR #1538, `b71bfc563`.
+
+Verification command:
+
+```bash
+grep -n 'HttpScoringRuntime\|_serve(' mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py
+```

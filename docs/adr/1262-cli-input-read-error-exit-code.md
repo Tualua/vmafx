@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1262: A failed input read exits 102; a legitimately shorter stream stays exit 0
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: cli, tools, exit-codes, fork-local
@@ -73,3 +73,17 @@ break callers that rely on it.
   `ret1 && ret2` ordering as knowingly left unfixed.
 - Source: `req` — the user's standing direction to fix every defect found rather than defer
   it ("pre-existing is no excuse ever").
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. core/tools/vmaf.cpp defines
+VMAF_EXIT_INPUT_READ_ERROR as 102 and sets it when a frame read fails.
+Evidence on `master`: PR #1506, `11a47f39b`.
+
+Verification command:
+
+```bash
+grep -n VMAF_EXIT_INPUT_READ_ERROR core/tools/vmaf.cpp
+```

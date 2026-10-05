@@ -2,7 +2,7 @@
 
 # ADR-1261: The local type-check hook fails on findings a branch introduces, not on ones it inherits
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-19
 - **Deciders**: Lusoris
 - **Tags**: ci, hooks, python, tooling, fork-local
@@ -58,3 +58,17 @@ The hook stays blocking, and it measures a delta.
 - [ADR-0922](0922-coverage-ratchet-aggressive.md) — the same delta shape for coverage, which this follows.
 - [ADR-0332](0332-agent-worktree-drift-hard-guard.md) — why the baseline worktree must always be removed.
 - `req` (paraphrased, standing instruction): a pre-existing defect is not a reason to leave a gate broken; fix it.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The pre-push mypy hook checks the same files at
+the merge base in a disposable worktree and reports only new findings.
+Evidence on `master`: PR #1491, `d0d64dfd5`, `d68fa5cd7`.
+
+Verification command:
+
+```bash
+grep -n 'merge base' scripts/git-hooks/pre-push-mypy.py
+```

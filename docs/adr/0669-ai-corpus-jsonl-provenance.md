@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0669: AI Corpus JSONL Provenance
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris maintainers
 - **Tags**: ai, training, provenance, corpus
@@ -61,3 +61,17 @@ different sidecar path. Existing JSONL row schemas remain unchanged.
 - [docs/ai/mos-corpora.md](../ai/mos-corpora.md)
 - Source: req "batch things that are connected and create them"
 - Source: req "everything we did so far needs updates"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. aggregate_corpora.py and merge_corpora.py emit
+manifest sidecars with --manifest-out. Shipped in PR #1492. Evidence on
+`master`: PR #1492, `74e1fe772`.
+
+Verification command:
+
+```bash
+grep -c 'manifest-out' ai/scripts/aggregate_corpora.py ai/scripts/merge_corpora.py
+```

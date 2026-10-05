@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0615: Fast NR Pre-Scoring for CRF Bisect Acceleration
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-19
 - **Deciders**: lusoris
 - **Tags**: `ai`, `planning`, `vmaf-tune`
@@ -71,3 +71,18 @@ Total estimate: 3 days.
 - `tools/vmaf-tune/src/vmaftune/score_backend.py`, `bisect.py`.
 - `tools/vmaf-tune/src/vmaftune/conformal.py` — future conformal upgrade path.
 - Source: per user direction (roadmap planning session 2026-05-19).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. NRProxyBackend in score_backend.py and the
+--fast-nr bisect acceleration shipped in commit 026f02f4f and later
+calibration hardening (PR 1478, PR 1487), with
+docs/usage/vmaf-tune-fast-nr.md. Evidence on `master`: `026f02f4f`.
+
+Verification command:
+
+```bash
+git grep -n -E 'class NRProxyBackend|--fast-nr' origin/master -- tools/vmaf-tune/src/vmaftune
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1292: Resolve the `vmaf` compatibility shim by file location instead of re-import
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-22
 - **Deciders**: VMAFx maintainers
 - **Tags**: `python`, `testing`, `concurrency`
@@ -117,3 +117,17 @@ supervisors:
   measured `sys.path` states.
 - [Research-1292](../research/1292-fifo-bounded-startup-wait-2026-09-23.md) —
   BUG-090 reproducer, supervision alternatives, cleanup contract, and evidence.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The vmaf compatibility shim loads compat/vmaf
+through importlib.util.spec_from_file_location instead of re-importing itself.
+Evidence on `master`: PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n spec_from_file_location python/vmaf/__init__.py
+```

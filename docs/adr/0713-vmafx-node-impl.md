@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0713: vmafx-node Go Worker Binary
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris
 - **Tags**: `go`, `node`, `grpc`, `libvmaf`, `cgo`, `onnx`, `ffmpeg`, `k8s`, `phase4b`, `fork-local`
@@ -116,3 +116,18 @@ Node-specific `nodeSelector` and `tolerations` override global values.
 - ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 - ADR-0601: vmafx-tune QSV/AMF hw-init + probe fix (QSV init chain pattern).
 - Source: per user direction (Phase 4b.2 task brief, 2026-05-28).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. cmd/vmafx-node, pkg/gpu, pkg/ai, the pkg/encoder
+discover.go and hardware.go files, docker/Dockerfile.node and the Helm
+node.yaml template all exist as decided. Shipped in PR #32. Evidence on
+`master`: PR #32, `ec214f537`.
+
+Verification command:
+
+```bash
+ls cmd/vmafx-node/main.go pkg/gpu/detect.go pkg/encoder/discover.go pkg/encoder/hardware.go docker/Dockerfile.node deploy/helm/vmafx/templates/node.yaml
+```

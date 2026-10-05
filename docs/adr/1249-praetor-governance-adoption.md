@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1249: Adopt praetor governance, with lefthook owning the git hooks
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-15
 - **Deciders**: lusoris
 - **Tags**: ci, process, agents, tooling, governance, docs, workspace
@@ -121,3 +121,18 @@ conclusion.
   rc1; scaffolding and gate now, epic tasks after), and 2026-09-18 (refresh onto
   praetor `e4b35cb` with a scratch engine build; rewrite `AGENTS.md` in the
   internal register).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. Praetor scaffolding landed: lefthook.yml,
+.standards.yaml, a 278-line AGENTS.md harness with the hard-rules and
+rebase-invariant pages, and canonical reviewer personas under .agents/agents.
+Evidence on `master`: PR #1454, PR #1482, `5730fca22`, `663b1430c`.
+
+Verification command:
+
+```bash
+ls lefthook.yml .standards.yaml .agents/agents docs/development/agent-hard-rules.md
+```

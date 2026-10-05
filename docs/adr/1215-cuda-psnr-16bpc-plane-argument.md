@@ -2,7 +2,7 @@
 
 # ADR-1215: The 16-bpc CUDA PSNR kernel takes the plane index the host has always passed
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: cuda, correctness, feature-extractor, bit-depth
@@ -69,3 +69,17 @@ TU is registered again at 10 bpc.
 - [ADR-1212](1212-gpu-moment-bit-depth-normalisation.md) — the sibling
   bit-depth blind spot in `float_moment`, found by the same sweep.
 - Source: `req` — user direction to fix bugs found by the twin-drift sweep.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. calculate_psnr_kernel_16bpc takes and uses the
+plane argument, with the PSNR parity fixture generalised to 10 bpc. Evidence
+on `master`: PR #1425, `9170dfb04`, `0d1f9303c`.
+
+Verification command:
+
+```bash
+grep -rn -A2 'calculate_psnr_kernel_16bpc' core/src/feature/cuda | head
+```

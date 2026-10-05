@@ -2,7 +2,7 @@
 
 # ADR-1206: Every CUDA parity test also runs against a second, larger fixture
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: testing, cuda, ci, correctness
@@ -82,3 +82,18 @@ comparing two different metrics.
 - Bugs found by this change: [ADR-1204](1204-adm-cm-edge-clamp-gpu-twins.md),
   [ADR-1205](1205-ssimulacra2-fma-unification-scalar-and-gpu.md).
 - Source: `req` — user direction to fix the outstanding GPU parity failures.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. core/test/meson.build registers a _large 960x540
+variant for the CUDA parity tests, and the same was extended to the SYCL and
+HIP parity tests. Evidence on `master`: PR #1363, `43aabd684`, `eab3e164b`,
+`7ba146691`.
+
+Verification command:
+
+```bash
+grep -n 'parity_large_fixture_tests' core/test/meson.build
+```

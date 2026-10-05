@@ -2,7 +2,7 @@
 
 # ADR-1197: The threaded flush leaves GPU extractors to their own backend flush
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, sycl, threading, cli, testing
@@ -94,3 +94,19 @@ means the context could not be synchronized.
 - `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06` in [state.md](../state.md).
 - [ADR-0845](0845-cuda-motion-launch-overhead.md) — the batched motion collect whose boundary
   semantics this preserves.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. flush_context_threaded() in core/src/libvmaf.c
+skips CUDA and SYCL extractors so the backend flush owns them in threaded and
+serial mode. The CPU-side half is split into
+flush_non_temporal_cpu_extractors(). Evidence on `master`: PR #1343,
+`ee43938f1`.
+
+Verification command:
+
+```bash
+grep -n 'ADR-1197' core/src/libvmaf.c
+```

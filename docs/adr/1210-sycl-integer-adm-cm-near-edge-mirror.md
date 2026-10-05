@@ -2,7 +2,7 @@
 
 # ADR-1210: The SYCL integer-ADM contrast-masking kernel mirrors its near edge
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: sycl, correctness, feature-extractor, adm
@@ -86,3 +86,18 @@ matching the CPU closed form and the three twins that already do.
 - Reproducer: `meson test -C build --suite sycl test_sycl_adm_parity` on a host
   with an Intel GPU.
 - Source: `req` — user direction to fix bugs found by the parity sweep.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. integer_adm_sycl.cpp mirrors the near edge to
+index 1 under the ADR-1210 asymmetric rule, which the CUDA and HIP kernels
+also cite. The commit carries no PR number in its subject. Evidence on
+`master`: `b4ae551a3`.
+
+Verification command:
+
+```bash
+grep -n 'ADR-1210' core/src/feature/sycl/integer_adm_sycl.cpp
+```

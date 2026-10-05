@@ -2,7 +2,7 @@
 
 # ADR-1223: The CUDA backend requires compute capability 8.0 (Ampere), and CI standardises on CUDA 13.3.1
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `cuda`, `build`, `ci`, `docs`
@@ -102,3 +102,17 @@ leg and the dev container.
   the build matrix on 13.2.0.
 - [NVIDIA CUDA Tile C++ requirements](https://developer.nvidia.com/blog/develop-high-performance-gpu-kernels-in-cpp-with-nvidia-cuda-tile/)
   — compute capability 8.0+, noted only as context for the follow-up.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The CUDA gencode floor is compute capability 8.0
+with an -ENOTSUP check in core/src/cuda/common.c and the sm_75 target dropped
+from core/src/meson.build. Evidence on `master`: PR #1384, `925dae926`.
+
+Verification command:
+
+```bash
+grep -n 'ADR-1223' core/src/meson.build; grep -n ENOTSUP core/src/cuda/common.c
+```

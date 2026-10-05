@@ -2,7 +2,7 @@
 
 # ADR-1214: The float-ADM GPU twins ignore `adm_csf_scale` in Watson mode and share the CPU's option aliases
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: cuda, sycl, hip, metal, correctness, feature-extractor, options
@@ -90,3 +90,19 @@ true once the twin stops consulting a Barten-mode argument in Watson mode.
 - [ADR-1183](1183-model-options-gate-gpu-twin-selection.md) — option-honouring
   extractor selection and alias-derived feature names.
 - Source: `req` — user direction to fix bugs found by the twin-drift sweep.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The float_adm twins compute the Watson-mode
+rfactor as the CPU does and ignore adm_csf_scale there; the commits add the
+ADR and the watson-mode no-op regression tests in the CUDA, HIP, SYCL and
+Metal parity tests. Evidence on `master`: PR #1373, PR #1425, `64ea351be`,
+`8d0cdd7c4`.
+
+Verification command:
+
+```bash
+grep -ln watson_mode_noop core/test/*.c
+```

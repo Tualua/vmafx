@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1278: Use spawn-safe Python process execution and the canonical five-parameter logistic curve
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-21
 - **Deciders**: VMAFx maintainers
 - **Tags**: `python`, `testing`, `concurrency`, `numerical-correctness`, `dependencies`
@@ -93,3 +93,18 @@ components:
 - [Sheikh, Sabir, and Bovik, 2006, equation 3](https://utw10503.utweb.utexas.edu/publications/2006/hrs-transIP-06.pdf)
 - [Research digest](../research/python-warning-root-causes-2026-09-21.md)
 - Source: `req` — "no fucking warning or error is just ignored because of being og netflix code, fix them all ffs"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. parallel_map uses loky workers, FIFO helpers use
+a spawn context, the 5PL uses scipy.special.expit, joblib is a direct
+dependency, and pytest treats warnings as errors. Evidence on `master`:
+PR #1518, `6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'joblib' python/pyproject.toml; grep -n 'expit' compat/python-vmaf/core/train_test_model.py
+```

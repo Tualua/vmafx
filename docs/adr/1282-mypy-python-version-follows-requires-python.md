@@ -2,7 +2,7 @@
 
 # ADR-1282: mypy's `python_version` follows `requires-python`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-21
 - **Deciders**: Lusoris
 - **Tags**: ci, python, tooling, hooks, ai, fork-local
@@ -116,3 +116,17 @@ with this change.
   `__init__.pyi` uses, which mypy rejects below `python_version = 3.12`.
 - [mypy configuration reference](https://mypy.readthedocs.io/en/stable/config_file.html#confval-python_version)
   — `python_version` selects the language version the checker models.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The mypy python_version is 3.14 and tracks
+requires-python in pyproject.toml. Evidence on `master`: PR #1518,
+`6475fa9ea`.
+
+Verification command:
+
+```bash
+grep -n 'python_version\|requires-python' pyproject.toml
+```

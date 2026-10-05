@@ -2,7 +2,7 @@
 
 # ADR-1198: An unknown `changelog.d/` subdirectory fails the run instead of warning
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: ci, release, docs, testing
@@ -70,3 +70,18 @@ an `Added` or `Changed` entry describing the surface it documents.
 - [ADR-0221](0221-changelog-adr-fragment-pattern.md) — the fragment-rendering pattern.
 - [ADR-0892](0892-conventional-commits-and-changelog-fragment-hygiene.md) — introduced the
   warning this ADR promotes to an error.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. scripts/release/concat-changelog-fragments.sh now
+prints an ERROR and fails for an unknown changelog.d subdirectory, and the
+changelog.d/docs fragment was moved out. Evidence on `master`: PR #1347,
+`fb7169b38`.
+
+Verification command:
+
+```bash
+grep -n 'ADR-1198' scripts/release/concat-changelog-fragments.sh
+```

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-0996: eBPF FUSE bypass for rclone zero-copy path in vmafx-node
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-06-03
 - **Deciders**: Lusoris
 - **Tags**: `ci`, `go`, `ebpf`, `rclone`, `performance`, `security`, `supply-chain`
@@ -69,3 +69,19 @@ when the BPF toolchain is absent.
 - Open DRAFT PR: #137 (`feat(node): eBPF FUSE bypass for rclone`).
 - ADR-0709: Phase 4b distributed platform (rclone mount-abstraction invariant).
 - ADR-0719: vmafx-node rclone integration (the surface this optimizes).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The probe-only eBPF program, cilium/ebpf loader,
+VMAFX_EBPF_BYPASS opt-in and non-Linux stub exist under cmd/vmafx-node/bpf and
+cmd/vmafx-node. The commits cite the duplicate ADR-0779 rather than ADR-0996,
+and the object is now generated at build time per ADR-1622. Evidence on
+`master`: PR #137, PR #1993, `1f48be4e2`, `8cf6d61d4`.
+
+Verification command:
+
+```bash
+ls cmd/vmafx-node/bpf/rclone_bypass.bpf.c cmd/vmafx-node/ebpf_config.go
+```

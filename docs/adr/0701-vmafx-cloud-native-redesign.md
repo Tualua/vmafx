@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0701: vmafx-server HTTP transport + observability foundation
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-28
 - **Deciders**: lusoris
 - **Tags**: `mcp`, `server`, `http`, `observability`, `cloud-native`, `k8s`, `vmafx`
@@ -78,3 +78,18 @@ this server are separate PRs.
 - [ADR-0686](0686-vmafx-rebrand-aggressive-modernization.md) — VMAFX rebrand umbrella.
 - Related PRs: #1570 (Helm chart), #1572 (production Dockerfile).
 - Source: `req` — "Full server-mode redesign (Recommended)" (user popup answer, 2026-05-28).
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep.
+mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py serves /healthz, /readyz,
+/metrics and POST /v1/score behind the optional http transport. Shipped in
+PR #1583. Evidence on `master`: PR #1583, `1143a54de`.
+
+Verification command:
+
+```bash
+grep -n 'healthz\|readyz\|v1/score' mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py | head -4
+```

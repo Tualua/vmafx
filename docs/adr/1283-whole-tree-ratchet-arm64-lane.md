@@ -2,7 +2,7 @@
 
 # ADR-1283: The whole-tree clang-tidy ratchet gets an arm64 cross lane
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-21
 - **Deciders**: Lusoris
 - **Tags**: ci, clang-tidy, lint, ratchet, simd, arm64, fork-local
@@ -129,3 +129,18 @@ headers as much as on clang-tidy's version (ADR-1230).
 - Source: `req` — paraphrased user direction: fix the tracked bug that no
   clang-tidy lane measures the arm64 sources, and do not fake a lane that
   measures nothing.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. The arm64 ratchet lane exists as
+TIDY_RATCHET_EXTRA_arm64 in the Makefile, build-aux/aarch64-linux-gnu.ini and
+a measured tidy-baseline-arm64.json. Evidence on `master`: PR #1518,
+`6475fa9ea`.
+
+Verification command:
+
+```bash
+ls scripts/ci/tidy-baseline-arm64.json build-aux/aarch64-linux-gnu.ini; grep -n TIDY_RATCHET_EXTRA_arm64 Makefile
+```

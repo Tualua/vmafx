@@ -2,7 +2,7 @@
 
 # ADR-1213: `ciede_hip` sizes its chroma staging with the picture's ceil dimensions
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: hip, correctness, feature-extractor, memory-safety
@@ -58,3 +58,18 @@ registered at 577x325.
 - `core/src/picture.c` (chroma allocation and its hazard comment).
 - [ADR-1154](1154-hip-backend-gaps.md) — the HIP backend gap inventory.
 - Source: `req` — user direction to fix bugs found by the twin-drift sweep.
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. HIP ciede sizes its chroma staging planes with
+the ceil formula in core/src/feature/hip/ciede_hip.c and the parity test has
+an odd-width 577x325 variant. Evidence on `master`: PR #1425, `8276f2b0d`,
+`5b523b24e`.
+
+Verification command:
+
+```bash
+grep -n 'odd luma' core/src/feature/hip/ciede_hip.c
+```

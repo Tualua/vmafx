@@ -2,7 +2,7 @@
 
 # ADR-1203: `psnr_hvs_cuda` defaults `enable_chroma` to true, matching every other backend
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, correctness, feature-extractor, options
@@ -83,3 +83,17 @@ explicit opt-out.
   this test enforces
 - `ai/data/feature_extractor.py` (`FULL_FEATURES`),
   `ai/scripts/extract_k150k_features.py` (`CUDA_EXTRACTOR_NAMES`)
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. psnr_hvs_cuda defaults enable_chroma to true in
+core/src/feature/cuda/integer_psnr_hvs_cuda.c, shipped in the combined
+ADR-1202/1203 PR. Evidence on `master`: PR #1360, `8aee0982f`.
+
+Verification command:
+
+```bash
+grep -n -A5 'enable_chroma"' core/src/feature/cuda/integer_psnr_hvs_cuda.c
+```

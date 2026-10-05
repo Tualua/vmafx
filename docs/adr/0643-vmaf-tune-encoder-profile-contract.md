@@ -5,7 +5,7 @@
 
 # ADR-0643: <fill in title>
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-20
 - **Deciders**: <fill in>
 - **Tags**: <fill in>
@@ -103,3 +103,18 @@ FFmpeg.
 - [tools/vmaf-tune/AGENTS.md](../../tools/vmaf-tune/AGENTS.md)
 - Source: `req` — "make the reports a) perfect for humans and b) with all metadata as well to use them as encoder profiles"
 - Source: `req` — "we actually need a new ffmpeg patch and toll that can read the files and encode by them"
+
+### Status update 2026-10-05: Accepted
+
+Per [ADR-0106](0106-adr-maintenance-rule.md) the body above is frozen; this
+note records why the status line changed from Proposed, as found by the
+2026-10-05 ADR status sweep. Encoder-profile reports (encoder_profile.v1
+schema, vmaf-tune encode-profile command) shipped in commit 8ac880fe4 and
+ffmpeg-patches/0015-vmaf-tune-profile-cli-glue.patch exists; the PR number was
+not recoverable from the commit subject. Evidence on `master`: `8ac880fe4`.
+
+Verification command:
+
+```bash
+git grep -n 'encode_profile' origin/master -- tools/vmaf-tune/src/vmaftune/cli.py
+```
