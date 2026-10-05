@@ -274,9 +274,20 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
           if ($hash -ne $pins['INTEL_BASEKIT_WINDOWS_SHA256']) { throw "installer SHA-256 $hash is not the pinned $($pins['INTEL_BASEKIT_WINDOWS_SHA256'])" }
           $extracted = Join-Path $env:RUNNER_TEMP 'oneapi-extracted'
-          Start-Process -FilePath $exe -ArgumentList @('-s', '-x', '-f', $extracted) -Wait -NoNewWindow
-          Remove-Item $exe
+          $x = Start-Process -FilePath $exe -ArgumentList @('-s', '-x', '-f', $extracted) -Wait -PassThru -NoNewWindow
+          if ($x.ExitCode -ne 0) { throw "extracting the oneAPI installer exited $($x.ExitCode)" }
           $boot = Join-Path $extracted 'bootstrapper.exe'
+          if (-not (Test-Path $boot)) { throw "$boot is missing after the extraction" }
+          # The self-extractor's child (or the runner's virus scan) can hold the 2.5 GB
+          # installer for a few seconds after the extraction returned: removing it at
+          # once failed run 37271658228 with "being used by another process". The file
+          # is only disk space, so a bounded retry, then a visible warning, not a failure.
+          $removed = $false
+          for ($try = 1; $try -le 10 -and -not $removed; $try++) {
+            try { Remove-Item -LiteralPath $exe -ErrorAction Stop; $removed = $true }
+            catch { Start-Sleep -Seconds 3 }
+          }
+          if (-not $removed) { Write-Host "##[warning]could not remove $exe after 10 tries; it stays in RUNNER_TEMP" }
           $p = Start-Process -FilePath $boot -Wait -PassThru -NoNewWindow -ArgumentList @(
             '-s', '--action', 'install', "--components=$env:BASEKIT_WINDOWS_COMPONENTS", '--eula=accept',
             '-p=NEED_VS2017_INTEGRATION=0', '-p=NEED_VS2019_INTEGRATION=0', '-p=NEED_VS2022_INTEGRATION=0',

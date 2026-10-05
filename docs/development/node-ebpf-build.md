@@ -33,7 +33,9 @@ docker build -f docker/Dockerfile.node --target node-cpu -t vmafx-node:dev .
 | libbpf headers (`/usr/include/bpf/bpf_helpers.h`) | the distribution's | `apt-get install libbpf-dev` | `pacman -S libbpf` |
 | bpf2go | `github.com/cilium/ebpf` in `go.mod` | none (run through `go run`) | none |
 
-The script looks for `clang`, then `clang-19`. `BPF_CLANG` and
+The script looks for `clang-19`, then `clang`, so a host that carries the pinned
+release beside another default `clang` (the GitHub-hosted Ubuntu runner has clang 21
+as `clang`) still builds with the pin. `BPF_CLANG` and
 `BPF_LLVM_STRIP` name other binaries.
 
 If a tool is missing the script stops with exit status 2 and says which:

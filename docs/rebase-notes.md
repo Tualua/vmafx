@@ -61047,3 +61047,13 @@ No score, public API or FFmpeg patch impact.
   on any `if: always()` summary job. A sync or rebase keeps it, and a new
   `on: release` workflow adds it (`scripts/ci/tests/test_release_workflows_version_tag_guard.py`
   fails otherwise). No score, public API or FFmpeg patch impact.
+
+## gen-node-bpf prefers the versioned clang; oneAPI installer removal retries
+
+- `scripts/dev/gen-node-bpf.sh` `find_tool()` tries `<tool>-<major of the pin>`
+  before `<tool>`; an upstream sync or rebase keeps that order
+  (`scripts/dev/tests/test_gen_node_bpf.py::test_versioned_pinned_clang_wins_over_a_newer_default_clang`).
+  The `Install Intel oneAPI` step of `.github/workflows/windows-tester-bundle.yml`
+  keeps its exit-code checks and the bounded `Remove-Item` retry
+  (`scripts/ci/tests/test_windows_tester_oneapi_install.py`). No score, public API
+  or FFmpeg patch impact.

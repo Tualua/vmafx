@@ -23,8 +23,8 @@
 #   --force        regenerate even when the outputs match the inputs' stamp.
 #
 # Environment:
-#   BPF_CLANG       clang to use (default: clang, then clang-<major of the pin>)
-#   BPF_LLVM_STRIP  llvm-strip to use (default: llvm-strip, then llvm-strip-<major>)
+#   BPF_CLANG       clang to use (default: clang-<major of the pin>, then clang)
+#   BPF_LLVM_STRIP  llvm-strip to use (default: llvm-strip-<major>, then llvm-strip)
 #
 # Exit status: 0 generated (or up to date), 2 a tool is missing or has the
 # wrong version, 3 the object's digest differs from the pin, 4 (--require-pin) the
@@ -66,9 +66,12 @@ install_hint="install clang ${want_clang} with the BPF target and libbpf headers
   Arch Linux: pacman -S clang llvm libbpf
   (see docs/development/node-ebpf-build.md)"
 
+# The versioned name comes first: a host can carry the pinned release as
+# `<name>-<major>` beside a different default `<name>` (the GitHub-hosted
+# Ubuntu runner ships clang 21 as /usr/bin/clang), and the pin must win.
 find_tool() { # find_tool <override> <name> -> prints the first one on PATH
   local candidate
-  for candidate in "$1" "$2" "$2-${major}"; do
+  for candidate in "$1" "$2-${major}" "$2"; do
     if [ -n "${candidate}" ] && command -v "${candidate}" >/dev/null 2>&1; then
       command -v "${candidate}"
       return 0

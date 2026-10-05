@@ -151,6 +151,16 @@ class GenNodeBpf(unittest.TestCase):
         self.assertIn("BPF_OBJECT_SHA256", result.stderr)
 
     @unittest.skipUnless(HAS_LIBBPF, "needs /usr/include/bpf/bpf_helpers.h (libbpf-dev)")
+    def test_versioned_pinned_clang_wins_over_a_newer_default_clang(self) -> None:
+        # The hosted Ubuntu runner has clang 21 as `clang` and the pin as `clang-19`.
+        self.set_clang("21.1.8")
+        executable(self.bin / "clang-19", FAKE_CLANG.format(version=PIN))
+        result = self.run_script("--require-pin")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"clang {PIN} (pin {PIN})", result.stdout)
+        self.assertNotIn("21.1.8", result.stderr)
+
+    @unittest.skipUnless(HAS_LIBBPF, "needs /usr/include/bpf/bpf_helpers.h (libbpf-dev)")
     def test_other_clang_is_refused_with_require_pin(self) -> None:
         self.set_clang("18.1.8")
         result = self.run_script("--require-pin")
