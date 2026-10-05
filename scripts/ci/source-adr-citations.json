@@ -528,6 +528,7 @@
         "core/src/read_json_model.cpp": 1,
         "core/src/ref.cpp": 2,
         "core/src/svm.cpp": 2,
+        "core/src/sycl/chroma_import.h": 1,
         "core/src/sycl/common.cpp": 1,
         "core/src/sycl/common.h": 1,
         "core/src/sycl/dmabuf_import.h": 1,
@@ -1340,6 +1341,7 @@
         "core/src/feature/sycl/sycl_soft_signed.h": 1,
         "core/src/feature/sycl/sycl_ssim_terms.h": 2,
         "core/src/feature/sycl/sycl_ssimulacra2_math.h": 1,
+        "core/src/sycl/chroma_import.cpp": 1,
         "core/src/sycl/common.cpp": 1,
         "core/test/meson.build": 1,
         "core/test/test_float_moment_sum_contract.py": 1,
@@ -3123,6 +3125,7 @@
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
         "core/src/mcp/compute_vmaf.c": 2,
+        "core/src/sycl/common.cpp": 1,
         "core/test/test_sycl_kernel_scratch.c": 1
       },
       "target": "0488-gpu-dispatch-env-shared-snapshot.md"
@@ -5790,7 +5793,8 @@
     },
     "1099": {
       "sites": {
-        "core/test/meson.build": 1
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1099-sycl-fsycl-link-propagation.md"
     },
@@ -6566,6 +6570,7 @@
         "core/test/test_svm_parser.c": 2,
         "core/test/test_sycl_adm_parity.c": 1,
         "core/test/test_sycl_cambi_parity.c": 1,
+        "core/test/test_sycl_chroma_import.c": 1,
         "core/test/test_sycl_ciede_math.c": 1,
         "core/test/test_sycl_ciede_parity.c": 1,
         "core/test/test_sycl_cuda_serial_upload_lifetime.c": 1,
@@ -6603,6 +6608,7 @@
         "core/test/test_sycl_vif_parity.c": 1,
         "core/test/test_sycl_zero_copy_admission.c": 1,
         "core/test/test_sycl_zero_copy_model_gate.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
         "core/test/test_tad_rust.c": 1,
         "core/test/test_thread_pool.c": 1,
         "core/test/test_thread_pool_backpressure.c": 1,
@@ -8120,6 +8126,7 @@
         "core/src/meson.build": 2,
         "core/test/test_strict_fp_compiler_args.py": 1,
         "core/test/test_sycl_kernel_source_contract.py": 2,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
         "scripts/dev/speed_gpu_parity.py": 1
       },
       "target": "1358-sycl-speed-device-resident-linalg.md"
@@ -8315,6 +8322,7 @@
         "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip": 1,
         "core/src/feature/hip/integer_psnr_hvs_hip.c": 1,
         "core/src/feature/hip/integer_psnr_hvs_hip.h": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,
@@ -8330,7 +8338,7 @@
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
         "core/src/feature/hip/float_ssim/ssim_decimate.h": 1,
         "core/src/feature/iqa/decimate_dim.h": 1,
-        "core/src/feature/sycl/integer_ssim_sycl.cpp": 8,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 7,
         "core/test/test_feature_backend_twin.c": 1,
         "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
         "core/test/test_sycl_exact_twins.c": 1,
@@ -8642,6 +8650,7 @@
         "core/src/feature/sycl/sycl_ordered_sum.h": 1,
         "core/src/feature/sycl/sycl_soft_double.h": 2,
         "core/src/feature/sycl/sycl_soft_signed.h": 1,
+        "core/src/sycl/chroma_import.cpp": 1,
         "core/src/sycl/common.cpp": 1,
         "core/src/sycl/scratch_check.cpp": 2,
         "core/src/sycl/scratch_check.h": 1,
@@ -8983,7 +8992,8 @@
         "core/test/test_metal_float_ms_ssim_parity.c": 1,
         "core/test/test_sycl_exact_twins.c": 1,
         "core/test/test_sycl_kernel_source_contract.py": 2,
-        "core/test/test_sycl_ms_ssim_parity.c": 3
+        "core/test/test_sycl_ms_ssim_parity.c": 3,
+        "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1414-sycl-float-ms-ssim-cpu-arithmetic.md"
     },
@@ -9288,6 +9298,7 @@
         "core/test/test_sycl_ciede_math.c": 1,
         "core/test/test_sycl_ciede_math_probe.cpp": 1,
         "core/test/test_sycl_ciede_parity.c": 3,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
         "scripts/dev/gen_sycl_ff_math.py": 2,
@@ -9448,6 +9459,7 @@
         "core/test/test_sycl_ssimulacra2_math.c": 1,
         "core/test/test_sycl_ssimulacra2_math_probe.cpp": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 4,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
         "scripts/ci/gpu_ulp_calibration.yaml": 3
       },
       "target": "1446-sycl-ssimulacra2-cpu-bits.md"
@@ -9871,6 +9883,7 @@
         "core/test/test_sycl_speed_chroma_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_speed_temporal_parity.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/exact_twins.d/speed_chroma.hip": 1,
         "scripts/ci/exact_twins.d/speed_temporal.hip": 1,
@@ -10882,12 +10895,6 @@
       },
       "target": "1679-metal-iosurface-biplanar-import.md"
     },
-    "1685": {
-      "sites": {
-        "scripts/test/zerocopy_e2e_compare.py": 1
-      },
-      "target": "1685-post-1-0-embedding-zero-copy-milestone.md"
-    },
     "1686": {
       "sites": {
         ".github/workflows/scorecard.yml": 5,
@@ -10915,18 +10922,28 @@
       "sites": {
         "core/include/libvmaf/libvmaf_sycl.h": 2,
         "core/src/feature/feature_extractor.h": 2,
+        "core/src/feature/sycl/float_adm_sycl.cpp": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
+        "core/src/feature/sycl/float_vif_sycl.cpp": 1,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
         "core/src/feature/sycl/integer_moment_sycl.cpp": 1,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "core/src/feature/sycl/integer_vif_sycl.cpp": 1,
+        "core/src/feature/sycl/speed_chroma_sycl.cpp": 1,
+        "core/src/feature/sycl/speed_temporal_sycl.cpp": 1,
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,
         "core/test/meson.build": 2,
-        "core/test/test_sycl_zero_copy_admission.c": 2,
-        "core/test/test_sycl_zero_copy_model_gate.c": 2,
+        "core/test/test_sycl_zero_copy_admission.c": 1,
+        "core/test/test_sycl_zero_copy_model_gate.c": 1,
         "scripts/test/zerocopy_e2e_compare.py": 2
       },
       "target": "1688-sycl-zero-copy-luma-only-admission.md"
@@ -10978,6 +10995,86 @@
         "scripts/test/zerocopy_e2e_compare.py": 1
       },
       "target": "1764-sycl-filter-twin-routing.md"
+    },
+    "1765": {
+      "sites": {
+        "core/src/feature/sycl/float_adm_sycl.cpp": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 2,
+        "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
+        "core/src/feature/sycl/float_vif_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ciede_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
+        "core/src/feature/sycl/speed_chroma_sycl.cpp": 2,
+        "core/src/feature/sycl/speed_temporal_sycl.cpp": 1,
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 2,
+        "core/src/libvmaf.c": 1,
+        "core/src/sycl/chroma_import.cpp": 1,
+        "core/src/sycl/chroma_import.h": 3,
+        "core/src/sycl/common.cpp": 2,
+        "core/src/sycl/common.h": 4,
+        "core/src/sycl/dmabuf_import.cpp": 2,
+        "core/src/sycl/dmabuf_import.h": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_chroma_import.c": 1,
+        "core/test/test_sycl_zero_copy_admission.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 4,
+        "scripts/test/zerocopy_e2e_compare.py": 2
+      },
+      "target": "1765-sycl-zerocopy-planar-chroma-import.md"
+    },
+    "1766": {
+      "sites": {
+        "core/src/feature/sycl/float_adm_sycl.cpp": 3,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 3,
+        "core/src/feature/sycl/float_psnr_sycl.cpp": 2,
+        "core/src/feature/sycl/float_vif_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_ciede_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 4,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 5,
+        "core/src/feature/sycl/speed_chroma_sycl.cpp": 1,
+        "core/src/feature/sycl/speed_temporal_sycl.cpp": 1,
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 4,
+        "core/test/test_sycl_zero_copy_admission.c": 1,
+        "core/test/test_sycl_zero_copy_model_gate.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 2,
+        "scripts/test/zerocopy_e2e_compare.py": 2
+      },
+      "target": "1766-sycl-host-staging-to-shared-planes.md"
+    },
+    "1767": {
+      "sites": {
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/test/test_sycl_kernel_source_contract.py": 1,
+        "core/test/test_sycl_zero_copy_admission.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1,
+        "scripts/test/zerocopy_e2e_compare.py": 2
+      },
+      "target": "1767-sycl-float-motion-add-uv.md"
+    },
+    "1768": {
+      "sites": {
+        "core/src/feature/sycl/float_adm_sycl.cpp": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
+        "core/src/feature/sycl/float_vif_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
+        "core/src/feature/sycl/speed_chroma_sycl.cpp": 1,
+        "core/src/feature/sycl/speed_temporal_sycl.cpp": 1,
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_zero_copy_admission.c": 1,
+        "core/test/test_sycl_zero_copy_model_gate.c": 1
+      },
+      "target": "1768-sycl-zerocopy-chroma-admission-post-1-0.md"
     }
   },
   "retired": {

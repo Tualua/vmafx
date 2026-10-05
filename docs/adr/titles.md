@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1272), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1276), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5099,3 +5099,19 @@ Every ADR, one heading each (1272), so the site search finds an ADR by its title
 ## ADR-1764: The `libvmaf_sycl` filter routes `feature=` names to their SYCL twins
 
 [1764-sycl-filter-twin-routing](1764-sycl-filter-twin-routing.md)
+
+## ADR-1765: SYCL zero-copy imports the VA surface's Cb/Cr into the shared planar chroma planes with one layout-addressed kernel
+
+[1765-sycl-zerocopy-planar-chroma-import](1765-sycl-zerocopy-planar-chroma-import.md)
+
+## ADR-1766: SYCL extractors that stage luma from host pictures read the shared device planes on both paths
+
+[1766-sycl-host-staging-to-shared-planes](1766-sycl-host-staging-to-shared-planes.md)
+
+## ADR-1767: `float_motion_sycl` implements `motion_add_uv`, chroma SAD in the CPU's order
+
+[1767-sycl-float-motion-add-uv](1767-sycl-float-motion-add-uv.md)
+
+## ADR-1768: Post-1.0, the SYCL zero-copy path imports chroma and admits every SYCL twin
+
+[1768-sycl-zerocopy-chroma-admission-post-1-0](1768-sycl-zerocopy-chroma-admission-post-1-0.md)

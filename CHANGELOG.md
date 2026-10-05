@@ -334,6 +334,27 @@
   `docs/development/pre-commit-hooks.md`.
 
 
+- **`float_motion_sycl` takes `motion_add_uv`.** The option (alias `mau`) blurs
+  Cb and Cr at their own size from the shared chroma planes and adds the
+  per-plane SAD scores to the luma score, in the CPU's order, so the SYCL twin
+  returns the CPU's `motion`, `motion2` and `motion3` bit for bit (8 and 10 bit,
+  measured on an Arc A380) and `libvmaf_sycl` scores
+  `feature=name=float_motion:motion_add_uv=true` on QSV zero-copy input instead
+  of stopping with `cannot honour option 'motion_add_uv'`. Zero-copy input needs
+  a chroma-marked import (ADR-1765). See the [motion page](docs/metrics/motion.md)
+  and [ADR-1767](docs/adr/1767-sycl-float-motion-add-uv.md).
+
+
+- **Zero-copy `libvmaf_sycl` imports chroma.** On QSV / VA-API input the library now imports the 4:2:0 chroma planes
+  along with luma, so `psnr` chroma (`psnr_cb`, `psnr_cr`), `psnr_hvs` chroma and
+  `motion_sycl` with `motion_add_uv=true` score on zero-copy frames instead of
+  failing with `-ENOTSUP`. On an Arc A380 they equal the CPU (`psnr`, `psnr_hvs`)
+  and host upload (`motion_add_uv`) bit for bit at 8 and 10 bit
+  ([ADR-1765](docs/adr/1765-sycl-zerocopy-planar-chroma-import.md)). The D3D11
+  import still carries luma only; chroma readers fail there with `needs chroma
+  planes, which this zero-copy import did not provide`.
+
+
 - **A tester image and a macOS bundle let someone outside the project test the fork
   without building it, and send the result for credit.** `ghcr.io/vmafx/vmafx:<tag>-tester`
   (linux/amd64 and linux/arm64) and a macOS arm64 `.tar.gz` each run one command that
@@ -2354,6 +2375,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   tested fixtures (48/48 frames on Netflix 576x324, 50/50 frames on BBB 4K, max
   abs diff 0.0), with 4K throughput measured at 17.05 ms/frame on Arc A380
   (down from 18.53 ms/frame).
+
+
+- **The SYCL diagnostic switches are read once per process.** `VMAF_SYCL_PROFILE`,
+  `VMAF_SYCL_TIMING`, `VMAF_SYCL_IMPORT_DEBUG` and `VMAF_SYCL_CHECKSUM` now go
+  through the shared environment snapshot (`vmaf_gpu_dispatch_env_get`, ADR-0488)
+  that the other SYCL switches use, instead of a `getenv()` per call. Names and
+  the "value starts with `1`" meaning are unchanged, but a change made after the
+  first SYCL state is created is not seen by a running process
+  ([env vars](docs/usage/env-vars.md)).
 
 
 - **Six more SYCL twins are held to the CPU's bits by the parity gate.**
@@ -5224,6 +5254,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   CPU's per-frame scores. The filter no longer prints `VMAF score: 0.000000`
   after a failed pooled score. The SYCL history and HIP upload pages no longer
   call the default model luma-only.
+
+
+- **Every SYCL extractor now runs on zero-copy `libvmaf_sycl` input.** The float
+  extractors (`float_psnr`, `float_adm`, `float_vif`, `float_motion`), `ssim`,
+  `float_ssim`, `float_ms_ssim`, `ciede`, `ssimulacra2` and `speed_chroma` /
+  `speed_temporal` used to stage through host pictures and failed with
+  `-ENOTSUP` on QSV / VA-API frames; they now read the library's shared device
+  planes, on host-uploaded and zero-copy input alike, so the `vmaf_float_v0.6.1`
+  model scores on zero-copy too. On an Arc A380 the FFmpeg harness
+  (`scripts/test/zerocopy-e2e.sh --stage 3`) finds every value equal to the CPU
+  at 8-bit NV12 and 10-bit P010. Only the Windows D3D11 import stays luma only
+  (its chroma readers still fail with `needs chroma planes`), see
+  [ADR-1766](docs/adr/1766-sycl-host-staging-to-shared-planes.md) and the
+  [SYCL overview](docs/backends/sycl/overview.md).
 
 
 - **SYCL zero-copy scores no longer drift from run to run under batched
