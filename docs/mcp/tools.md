@@ -8,6 +8,11 @@ Source of truth: the tool registrations in
 [cmd/vmafx-mcp/tools.go](../../cmd/vmafx-mcp/tools.go) and the `list_tools()`
 handler in
 [mcp-server/vmaf-mcp/src/vmaf_mcp/server.py](../../mcp-server/vmaf-mcp/src/vmaf_mcp/server.py).
+The names, property types and required arguments the two servers share are
+recorded in
+[mcp-server/vmaf-mcp/tool-contract.json](../../mcp-server/vmaf-mcp/tool-contract.json),
+written from the Python handler and checked against both servers
+([Tests](index.md#tests)).
 
 Every tool returns a single `TextContent` message whose body is a JSON
 document. On error the body has shape `{"error": "<string>"}`, so clients

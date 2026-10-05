@@ -158,6 +158,12 @@ call** (ADR-0517). `setvars.sh` references variables (`SETVARS_ARGS`,
   `vmaf` CLI argv. Additions update both servers in lockstep. Pinned by
   `tests/test_parity_argv.py` and `TestGoAndPythonArgvParity`. Both include
   `python/test/resource/yuv` in allowed roots.
+- **`tool-contract.json` = this server's tool list for Go parity.**
+  `python3 -m vmaf_mcp.tool_contract --write` derives it from
+  `_list_tools()` (names, property JSON types, required sets);
+  `tests/test_tool_contract.py` fails while stale. Go
+  `cmd/vmafx-mcp/tool_contract_test.go` reads it. Tool change -> regenerate,
+  commit in same PR, add Go twin. Never hand-edit.
 - **`_list_tools()` and `_scoring_extra_properties()` assembled from
   helpers (T-HISS-PY-COMPAT-2026-09-21).** Split for 60-LOC HISS-04 bound.
   Group functions concatenated in declaration order; catalogue byte-identical

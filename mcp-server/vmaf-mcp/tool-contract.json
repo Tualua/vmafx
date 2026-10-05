@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "source": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py::_list_tools",
+  "tools": {
+    "compare_models": {
+      "properties": {
+        "features": "string",
+        "input_name": "string",
+        "models": "array",
+        "split": "string"
+      },
+      "required": [
+        "features",
+        "models"
+      ]
+    },
+    "describe_model": {
+      "properties": {
+        "name": "string"
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "describe_worst_frames": {
+      "properties": {
+        "backend": "string",
+        "bitdepth": "integer",
+        "dis": "string",
+        "height": "integer",
+        "model": "string",
+        "n": "integer",
+        "pixfmt": "string",
+        "ref": "string",
+        "width": "integer"
+      },
+      "required": [
+        "bitdepth",
+        "dis",
+        "height",
+        "pixfmt",
+        "ref",
+        "width"
+      ]
+    },
+    "eval_model_on_split": {
+      "properties": {
+        "features": "string",
+        "input_name": "string",
+        "model": "string",
+        "split": "string"
+      },
+      "required": [
+        "features",
+        "model"
+      ]
+    },
+    "list_backends": {
+      "properties": {},
+      "required": []
+    },
+    "list_extractors": {
+      "properties": {},
+      "required": []
+    },
+    "list_models": {
+      "properties": {},
+      "required": []
+    },
+    "probe_backend": {
+      "properties": {
+        "backend": "string"
+      },
+      "required": [
+        "backend"
+      ]
+    },
+    "run_benchmark": {
+      "properties": {},
+      "required": []
+    },
+    "run_compare": {
+      "properties": {
+        "encoders": "string",
+        "framerate": "number",
+        "height": "integer",
+        "no_parallel": "boolean",
+        "pix_fmt": "string",
+        "src": "string",
+        "target_vmaf": "number",
+        "target_vmafs": "string",
+        "width": "integer"
+      },
+      "required": [
+        "src"
+      ]
+    },
+    "run_ladder": {
+      "properties": {
+        "encoder": "string",
+        "format": "string",
+        "framerate": "number",
+        "quality_tiers": "integer",
+        "resolutions": "string",
+        "spacing": "string",
+        "src": "string",
+        "target_vmafs": "string"
+      },
+      "required": [
+        "resolutions",
+        "src",
+        "target_vmafs"
+      ]
+    },
+    "run_tune_per_shot": {
+      "properties": {
+        "encoder": "string",
+        "format": "string",
+        "framerate": "number",
+        "output": "string",
+        "pix_fmt": "string",
+        "scene_threshold": "number",
+        "src": "string",
+        "target_vmaf": "number"
+      },
+      "required": [
+        "src"
+      ]
+    },
+    "vmaf_bench": {
+      "properties": {
+        "bpc": "integer",
+        "data_dir": "string",
+        "device_list": "boolean",
+        "frames": "integer",
+        "gpu_only": "boolean",
+        "resolution": "string",
+        "validate": "boolean"
+      },
+      "required": []
+    },
+    "vmaf_per_shot": {
+      "properties": {
+        "bitdepth": "integer",
+        "crf_max": "integer",
+        "crf_min": "integer",
+        "diff_threshold": "number",
+        "format": "string",
+        "height": "integer",
+        "pixel_format": "string",
+        "reference": "string",
+        "target_vmaf": "number",
+        "width": "integer"
+      },
+      "required": [
+        "height",
+        "reference",
+        "width"
+      ]
+    },
+    "vmaf_roi": {
+      "properties": {
+        "bitdepth": "integer",
+        "ctu_size": "integer",
+        "encoder": "string",
+        "frame": "integer",
+        "height": "integer",
+        "pixel_format": "string",
+        "reference": "string",
+        "saliency_model": "string",
+        "strength": "number",
+        "width": "integer"
+      },
+      "required": [
+        "frame",
+        "height",
+        "reference",
+        "width"
+      ]
+    },
+    "vmaf_score": {
+      "properties": {
+        "aom_ctc": "string",
+        "backend": "string",
+        "bitdepth": "integer",
+        "cpumask": "integer",
+        "csv": "boolean",
+        "dis": "string",
+        "disable_clip": "boolean",
+        "dnn_ep": "string",
+        "enable_transform": "boolean",
+        "feature": "array",
+        "frame_cnt": "integer",
+        "frame_skip_dist": "integer",
+        "frame_skip_ref": "integer",
+        "gpumask": "integer",
+        "height": "integer",
+        "hip_device": "integer",
+        "metal_device": "integer",
+        "model": "string",
+        "nflx_ctc": "string",
+        "no_prediction": "boolean",
+        "no_reference": "boolean",
+        "output_fmt": "string",
+        "pixfmt": "string",
+        "precision": "string",
+        "ref": "string",
+        "sub": "boolean",
+        "subsample": "integer",
+        "sycl_device": "integer",
+        "threads": "integer",
+        "tiny_codec": "string",
+        "tiny_crf": "integer",
+        "tiny_device": "string",
+        "tiny_fp16": "boolean",
+        "tiny_model": "string",
+        "tiny_model_verify": "boolean",
+        "tiny_preset": "string",
+        "tiny_resize": "string",
+        "tiny_threads": "integer",
+        "width": "integer"
+      },
+      "required": [
+        "bitdepth",
+        "dis",
+        "height",
+        "pixfmt",
+        "ref",
+        "width"
+      ]
+    },
+    "vmaf_score_encoded": {
+      "properties": {
+        "aom_ctc": "string",
+        "backend": "string",
+        "cpumask": "integer",
+        "csv": "boolean",
+        "disable_clip": "boolean",
+        "distorted_encoded": "string",
+        "dnn_ep": "string",
+        "enable_transform": "boolean",
+        "feature": "array",
+        "frame_cnt": "integer",
+        "frame_skip_dist": "integer",
+        "frame_skip_ref": "integer",
+        "gpumask": "integer",
+        "hip_device": "integer",
+        "metal_device": "integer",
+        "model": "string",
+        "nflx_ctc": "string",
+        "no_prediction": "boolean",
+        "no_reference": "boolean",
+        "output_fmt": "string",
+        "precision": "string",
+        "reference_encoded": "string",
+        "sub": "boolean",
+        "subsample": "integer",
+        "sycl_device": "integer",
+        "threads": "integer",
+        "tiny_codec": "string",
+        "tiny_crf": "integer",
+        "tiny_device": "string",
+        "tiny_fp16": "boolean",
+        "tiny_model": "string",
+        "tiny_model_verify": "boolean",
+        "tiny_preset": "string",
+        "tiny_resize": "string",
+        "tiny_threads": "integer"
+      },
+      "required": [
+        "distorted_encoded",
+        "reference_encoded"
+      ]
+    },
+    "vmaf_version": {
+      "properties": {},
+      "required": []
+    },
+    "vmaf_vpl": {
+      "properties": {
+        "device": "integer",
+        "dis": "string",
+        "fallback": "boolean",
+        "frames": "integer",
+        "model": "string",
+        "ref": "string",
+        "render_node": "string"
+      },
+      "required": [
+        "dis",
+        "ref"
+      ]
+    }
+  }
+}

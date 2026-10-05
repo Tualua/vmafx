@@ -6969,6 +6969,12 @@
       },
       "target": "1183-model-options-gate-gpu-twin-selection.md"
     },
+    "1184": {
+      "sites": {
+        "cmd/vmafx-mcp/tool_contract_test.go": 1
+      },
+      "target": "1184-mcp-grpc-bridge-go-only.md"
+    },
     "1185": {
       "sites": {
         "testdata/bench_upstream_ab.py": 1

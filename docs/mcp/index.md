@@ -39,7 +39,9 @@ this page covers the Python and Go servers; the Go server section starts at
     tools and the 4 sidecar tools (`vmaf_per_shot`, `vmaf_roi`, `vmaf_bench`,
     `vmaf_vpl`) have identical names and schemas in both servers. The 5
     control-plane tools (`submit_job`, `get_job`, `cancel_job`, `list_jobs`,
-    `vmaf_score_remote`) exist only in the Go server.
+    `vmaf_score_remote`) exist only in the Go server. The shared list is
+    [`mcp-server/vmaf-mcp/tool-contract.json`](../../mcp-server/vmaf-mcp/tool-contract.json)
+    (see [Tests](#tests)).
 
 Use an MCP server when you want an LLM to:
 
@@ -375,10 +377,28 @@ the tool name; nothing in the environment can cause or fix it.
 go test ./cmd/vmafx-mcp/ -v
 ```
 
-`TestToolListMatchesPython` and `TestToolSchemasMatchPython` run without any
-external dependencies. `TestVmafScoreTool` and `TestGoVsPythonOutputParity`
-require the Netflix golden YUVs and the `vmaf` binary; they skip
-automatically when these are absent.
+`TestToolListMatchesPython` and `TestToolSchemasMatchPython` compare the
+served tools with the Python server's tool list, read from
+[`mcp-server/vmaf-mcp/tool-contract.json`](../../mcp-server/vmaf-mcp/tool-contract.json):
+every Python tool must be served with the same property names, JSON types and
+required arguments, and every other tool must be one of the five declared
+Go-only tools. They need neither Python nor the test YUVs (the package still
+links libvmaf, like every `go test` here). `TestVmafScoreTool` and
+`TestGoVsPythonOutputParity` require the Netflix golden YUVs and the `vmaf`
+binary; they skip automatically when these are absent.
+
+The contract file is written from the Python server's `_list_tools()`, never
+by hand. After adding or changing a tool in `server.py`, regenerate it and
+commit it with the change:
+
+```bash
+PYTHONPATH=mcp-server/vmaf-mcp/src python3 -m vmaf_mcp.tool_contract --write
+```
+
+`mcp-server/vmaf-mcp/tests/test_tool_contract.py` fails while the file is
+stale (`python3 -m vmaf_mcp.tool_contract --check` gives the same answer), and
+a change to the file runs the Go checks in CI, so the Go tests then name the
+tool the Go server still lacks.
 
 ## Related
 

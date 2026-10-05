@@ -219,6 +219,7 @@
     },
     "go": {
       "patterns": [
+        "mcp-server/vmaf-mcp/tool-contract.json",
         "cmd/*",
         "cmd/**",
         "pkg/*",

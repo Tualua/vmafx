@@ -301,6 +301,14 @@ class RoutingContract(unittest.TestCase):
         self.assertFalse(plan.selectors["c_core"])
         self.assertFalse(plan.selectors["python"])
 
+    def test_mcp_tool_contract_change_runs_go_checks(self) -> None:
+        # The Go MCP server's parity tests read the Python server's tool
+        # contract; a Python-only PR that changes it must run them.
+        plan = _plan_for(["mcp-server/vmaf-mcp/tool-contract.json"])
+        self.assertTrue(plan.selectors["go"])
+        self.assertTrue(plan.selectors["go_checks"])
+        self.assertTrue(plan.selectors["python"])
+
     def test_python_harness_change_runs_goldens_but_not_c_builds(self) -> None:
         plan = _plan_for(["python/vmaf/core/result.py"])
         self.assertTrue(plan.selectors["python"])

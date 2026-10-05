@@ -7,6 +7,12 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## MCP tool contract shared by both servers (2026-10-05)
+
+No rebase impact: both MCP servers are fork-only. Keep `mcp-server/vmaf-mcp/tool-contract.json`
+generated (`python3 -m vmaf_mcp.tool_contract --write`); on a conflict in it, take either side and
+regenerate. `cmd/vmafx-mcp/tool_contract_test.go` replaces the hand-copied lists that used to be in
+`server_test.go`; do not bring them back.
 ## v1-model test fixtures named by file (2026-10-05)
 
 No rebase impact: wording and fixture labels of a fork-only test.
