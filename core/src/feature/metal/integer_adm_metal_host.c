@@ -298,8 +298,8 @@ static uint64_t iadm_slot(const uint32_t *accum, unsigned wg, unsigned slot)
 /* The three bands' sums of one scale over its reduction rows. */
 typedef struct IadmScaleSums {
     uint64_t den[3];
-    int64_t cm[3];
-    int64_t aim[3];
+    uint64_t cm[3]; /* every term is non-negative; a scale-0 sum can pass INT64_MAX */
+    uint64_t aim[3];
 } IadmScaleSums;
 
 static IadmScaleSums iadm_scale_sums(const uint32_t *accum, unsigned wg_count)
@@ -309,8 +309,8 @@ static IadmScaleSums iadm_scale_sums(const uint32_t *accum, unsigned wg_count)
     for (unsigned wg = 0u; wg < wg_count; ++wg) {
         for (unsigned band = 0u; band < 3u; ++band) {
             t.den[band] += iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_DEN + band);
-            t.cm[band] += (int64_t)iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_CM + band);
-            t.aim[band] += (int64_t)iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_AIM + band);
+            t.cm[band] += iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_CM + band);
+            t.aim[band] += iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_AIM + band);
         }
     }
     return t;
@@ -318,7 +318,7 @@ static IadmScaleSums iadm_scale_sums(const uint32_t *accum, unsigned wg_count)
 
 /* adm_cm_result() / i4_adm_cm_result() on the CPU's context of the scale. */
 static float iadm_cm_result(const IadmMetalOptions *o, int scale, int w, int h,
-                            const int64_t accum[3], double noise_weight)
+                            const uint64_t accum[3], double noise_weight)
 {
     AdmBuffer no_planes;
     (void)memset(&no_planes, 0, sizeof(no_planes));
@@ -334,7 +334,9 @@ static float iadm_cm_result(const IadmMetalOptions *o, int scale, int w, int h,
     i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, o->adm_norm_view_dist,
                        o->adm_ref_display_height, o->adm_csf_mode, o->adm_csf_scale,
                        o->adm_csf_diag_scale, false);
-    return i4_adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);
+    /* Scales 1-3 stay below 2^63 (accumulator bounds). */
+    const int64_t sums[3] = {(int64_t)accum[0], (int64_t)accum[1], (int64_t)accum[2]};
+    return i4_adm_cm_result(&c, &bd, sums, noise_weight, o->adm_p_norm);
 }
 
 /* adm_csf_den_result() / i4_adm_csf_den_result(). */

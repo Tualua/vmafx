@@ -25,7 +25,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `integer_adm.c`, `integer_adm.h` | [adm-dwt](AGENTS.d/adm-dwt.md) | Integer ADM DWT mirror table for tiny extents and 16-bit vertical int64 sums. |
 | `integer_adm.c`, `adm_tools.c` | [adm-kernels-restructure](AGENTS.d/adm-kernels-restructure.md) | Integer ADM kernels header separation, AIM clipping differences, and adm_min_val clamping. |
 | `integer_adm_kernels.h`, `sycl/integer_adm_sycl.cpp`, `metal/integer_adm_metal.mm`, `metal/integer_adm_metal_host.c`, `/core/test/test_integer_adm_quant_step.c`, `/core/test/test_integer_adm_quant_step_contract.py` | [adm-quant-step](AGENTS.d/adm-quant-step.md) | dwt_quant_step() exponent = float product of k, temp, temp, as upstream; CPU and SYCL copies change together. |
-| `integer_adm.c`, `integer_adm_kernels.h`, `arm64/adm_neon.c` | [adm-rounding](AGENTS.d/adm-rounding.md) | Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits. |
+| `integer_adm.c`, `integer_adm_kernels.h`, `arm64/adm_neon.c`, `adm_cm_accumulator.h`, `x86/adm_avx2.c`, `x86/adm_avx512.c` | [adm-rounding](AGENTS.d/adm-rounding.md) | Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits. |
 | `feature_extractor.h` | [allocation-limits](AGENTS.d/allocation-limits.md) | Per-frame malloc or aligned_malloc for geometry-sized buffers is strictly prohibited. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [ansnr-removal](AGENTS.d/ansnr-removal.md) | ANSNR and float_ansnr extractors remain removed per ADR-0865. |
 | `brisque.c`, `brisque_math.h` | [brisque](AGENTS.d/brisque.md) | BRISQUE MATLAB pipeline parity and numerical stability assertions. |

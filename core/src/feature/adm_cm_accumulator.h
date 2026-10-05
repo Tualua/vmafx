@@ -34,6 +34,27 @@ adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
 }
 
 /**
+ * Scale-0 form of adm_cm_round_row_total(), on an unsigned row total.
+ *
+ * A scale-0 contrast-masking term is a non-negative cube, and a row of them
+ * can pass INT64_MAX: at the default CSF weights a picture 31-32 or 63-64
+ * pixels wide whose reference has full-range detail and no distortion
+ * reaches 1.044 / 1.021 INT64_MAX (0.52 of 2^64), and a horizontal or
+ * vertical CSF weight above 38,400 does at 16K (37,600 at the cap). The row
+ * (and the frame) are summed unsigned, which holds every row up to a
+ * horizontal or vertical weight of about 45,200; the weights between that
+ * and the ADR-1472 limit of 46,603 are
+ * T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05. A row below 2^63
+ * gives the bits the signed form gave. `shift` is the row shift (ceil(log2)
+ * of the band height), so the result is far below 2^63.
+ */
+static VMAF_ADM_CM_HOST_DEVICE inline uint64_t
+adm_cm_round_row_total_s0(uint64_t row_total, uint64_t rounding, uint32_t shift)
+{
+    return (row_total + rounding) >> shift;
+}
+
+/**
  * Apply the denominator rounding shift to one complete row total.
  *
  * The denominator reductions (adm_csf_den_scale(), adm_csf_den_s123()) add

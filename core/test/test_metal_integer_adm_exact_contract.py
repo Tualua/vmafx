@@ -116,7 +116,7 @@ HOST_PIECES = {
     ),
     "conclusion": (
         "return adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);",
-        "return i4_adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);",
+        "return i4_adm_cm_result(&c, &bd, sums, noise_weight, o->adm_p_norm);",
         "return adm_csf_den_result(&c, accum, o->adm_noise_weight);",
         "return i4_adm_csf_den_result(&c, accum, o->adm_noise_weight);",
         "out[0] = iadm_cm_result(o, scale, w, h, t.cm, o->adm_noise_weight);",

@@ -133,6 +133,17 @@ __forceinline__ __device__ int64_t warp_reduce(int64_t x)
 }
 
 typedef unsigned long long int uint64_cu;
+
+/* Warp sum of non-negative 64-bit terms whose total may pass INT64_MAX. */
+__forceinline__ __device__ uint64_cu warp_reduce_u64(uint64_cu x)
+{
+#pragma unroll
+    for (int i = 16; i > 0; i >>= 1) {
+        x += __shfl_down_sync(0xffffffff, x, i);
+    }
+    return x;
+}
+
 __forceinline__ __device__ int64_t atomicAdd_int64(int64_t *address, int64_t val)
 {
     return atomicAdd(reinterpret_cast<uint64_cu *>(address), static_cast<uint64_cu>(val));

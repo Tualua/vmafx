@@ -3713,6 +3713,30 @@ test_feature_isa_invariance = executable('test_feature_isa_invariance',
 test('test_feature_isa_invariance', test_feature_isa_invariance,
     suite : ['fast'])
 
+# T-ADM-CM-SCALE0-ROW-INT64-OVERFLOW-2026-10-05: a 64x64 picture compared with
+# itself drives one scale-0 contrast-masking row of the integer ADM past
+# INT64_MAX. The extractor must score it, at 8, 10 and 16 bits, with the same
+# bits on the host's SIMD dispatch and on the scalar code. The GPU twins are
+# held to the scalar CPU on the same picture by test_gpu_adm_tiny_frames.
+test_integer_adm_cm_row_unsigned = executable('test_integer_adm_cm_row_unsigned',
+    ['test.c', 'test_integer_adm_cm_row_unsigned.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_cm_row_unsigned', test_integer_adm_cm_row_unsigned,
+    suite : ['fast'])
+
+# T-GPU-ADM-S123-GAIN-PRODUCT-NARROWING-2026-10-05: the CUDA and HIP scale 1-3
+# decouple bound the gain-limited product in double before narrowing it to
+# int32, as the CPU does. Device-free source contract.
+test('test_gpu_adm_gain_product_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_adm_gain_product_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # CAMBI end-to-end dispatch invariance: every option path that routes through
 # different CAMBI stages (10-bit, full reference, max_log_contrast 5, high-res
 # speedup, window 33, 4:4:4 odd size), scored at each dispatch level the host

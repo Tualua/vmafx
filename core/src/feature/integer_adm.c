@@ -510,7 +510,7 @@ static float adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
                     measure_aim);
     const AdmCmBounds bd = adm_cm_bounds(w, h);
 
-    int64_t accum[3] = {0, 0, 0};
+    uint64_t accum[3] = {0, 0, 0};
     adm_cm_rows(&c, &bd, adm_cm_row, accum);
     return adm_cm_result(&c, &bd, accum, adm_noise_weight, adm_p_norm);
 }

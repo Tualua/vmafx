@@ -505,18 +505,19 @@ __device__ __forceinline__ void s0_dlm_thresholds(const S0CmParams &p, int16_t *
 /* Warp-reduce each output row of a scale-0 thread and add the row's rounded
  * total to the band accumulator. */
 template <int rows_per_thread>
-__device__ __forceinline__ void s0_cm_flush_rows(const int64_t (&accum_row)[rows_per_thread], int y,
-                                                 int end_row, int64_t *band_accum,
+__device__ __forceinline__ void s0_cm_flush_rows(const uint64_cu (&accum_row)[rows_per_thread],
+                                                 int y, int end_row, int64_t *band_accum,
                                                  const uint32_t shift_inner_accum,
                                                  const uint32_t add_shift_inner_accum)
 {
 #pragma unroll
     for (int row = 0; row < rows_per_thread; ++row) {
-        const int64_t row_total = warp_reduce(accum_row[row]);
+        /* Unsigned: a scale-0 row can pass INT64_MAX (adm_cm_round_row_total_s0()). */
+        const uint64_cu row_total = warp_reduce_u64(accum_row[row]);
         if (threadIdx.x == 0 && (y + row) < end_row) {
-            const int64_t shifted =
-                adm_cm_round_row_total(row_total, add_shift_inner_accum, shift_inner_accum);
-            atomicAdd_int64(band_accum, shifted);
+            const uint64_cu shifted =
+                adm_cm_round_row_total_s0(row_total, add_shift_inner_accum, shift_inner_accum);
+            atomicAdd(reinterpret_cast<uint64_cu *>(band_accum), shifted);
         }
     }
 }
@@ -538,7 +539,7 @@ adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int en
     const CmCubeShifts cube = s0_cm_cube_shifts(ws, band2);
     const int32_t shift_sub_block = shift_sub[blockIdx.z];
 
-    int64_t accum_row[rows_per_thread] = {0};
+    uint64_cu accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
@@ -558,7 +559,7 @@ adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int en
             }
             const int32_t accum_thread = adm_cm_excess_s0(int32_t(p.i_rfactor[blockIdx.z] * sb),
                                                           thr[row], (uint32_t)shift_sub_block);
-            accum_row[row] += cm_cube(accum_thread, cube);
+            accum_row[row] += static_cast<uint64_cu>(cm_cube(accum_thread, cube));
         }
     }
 
@@ -872,7 +873,7 @@ __device__ __forceinline__ void adm_cm_aim_line_kernel(
     const CmCubeShifts cube = s0_cm_cube_shifts(ws, band2);
     const int32_t shift_sub_block = shift_sub[blockIdx.z];
 
-    int64_t accum_row[rows_per_thread] = {0};
+    uint64_cu accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* Reflected x-positions for the 3 columns (matches adm_cm_line_kernel).
@@ -891,7 +892,7 @@ __device__ __forceinline__ void adm_cm_aim_line_kernel(
             }
             const int32_t accum_thread_val =
                 adm_cm_excess_s0(aim_signal, thr[row], (uint32_t)shift_sub_block);
-            accum_row[row] += cm_cube(accum_thread_val, cube);
+            accum_row[row] += static_cast<uint64_cu>(cm_cube(accum_thread_val, cube));
         }
     }
 

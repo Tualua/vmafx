@@ -1112,11 +1112,11 @@ inline int64_t adm_dev_den_cube(const AdmCmArgs &a, int32_t o)
 }
 
 /* CSF-denominator terms of one sample: |o|^3 of the three reference bands. */
-inline void adm_dev_den_px(const AdmCmArgs &a, int row, int col, int64_t den[ADM_NUM_BANDS])
+inline void adm_dev_den_px(const AdmCmArgs &a, int row, int col, uint64_t den[ADM_NUM_BANDS])
 {
     unsigned const idx = ((unsigned)row * a.in.stride) + (unsigned)col;
     for (int b = 0; b < ADM_NUM_BANDS; ++b) {
-        den[b] += adm_dev_den_cube(a, a.in.ref[b][idx]);
+        den[b] += (uint64_t)adm_dev_den_cube(a, a.in.ref[b][idx]);
     }
 }
 
@@ -1124,33 +1124,34 @@ inline void adm_dev_den_px(const AdmCmArgs &a, int row, int col, int64_t den[ADM
  * AIM (the CPU's measure_aim): the roles swap -- threshold from csf(r),
  * measure t - r -- and the pass adds no noise floor (host side). cm[] holds
  * the DLM bands, then the AIM bands. */
-inline void adm_dev_cm_px(const AdmCmArgs &a, int row, int col, int64_t cm[2 * ADM_NUM_BANDS])
+inline void adm_dev_cm_px(const AdmCmArgs &a, int row, int col, uint64_t cm[2 * ADM_NUM_BANDS])
 {
     AdmBandInputs const &in = a.in;
     AdmSample const s = adm_dev_sample(in, ((unsigned)row * in.stride) + (unsigned)col);
     int64_t const thr = adm_dev_threshold(in, a.csf_f, s.d, row, col);
     for (int b = 0; b < ADM_NUM_BANDS; ++b) {
-        cm[b] += adm_dev_cm_cube(a, b, s.r[b], thr);
+        cm[b] += (uint64_t)adm_dev_cm_cube(a, b, s.r[b], thr);
     }
     if (!in.aim) {
         return;
     }
     int64_t const thr_aim = adm_dev_threshold(in, a.csf_f_aim, s.r, row, col);
     for (int b = 0; b < ADM_NUM_BANDS; ++b) {
-        cm[ADM_NUM_BANDS + b] += adm_dev_cm_cube(a, b, s.d[b], thr_aim);
+        cm[ADM_NUM_BANDS + b] += (uint64_t)adm_dev_cm_cube(a, b, s.d[b], thr_aim);
     }
 }
 
 /* Sub-group sums of one term's per-item band totals into local memory,
  * slot [term][band][sub-group]. */
-inline void adm_dev_sg_partials(sycl::nd_item<1> item, const sycl::local_accessor<int64_t, 1> &lmem,
-                                int term, const int64_t sums[ADM_NUM_BANDS])
+inline void adm_dev_sg_partials(sycl::nd_item<1> item,
+                                const sycl::local_accessor<uint64_t, 1> &lmem, int term,
+                                const uint64_t sums[ADM_NUM_BANDS])
 {
     sycl::sub_group const sg = item.get_sub_group();
     uint32_t const sg_id = sg.get_group_linear_id();
     bool const sg_leader = sg.get_local_linear_id() == 0;
     for (int b = 0; b < ADM_NUM_BANDS; ++b) {
-        int64_t const part = sycl::reduce_over_group(sg, sums[b], sycl::plus<int64_t>{});
+        uint64_t const part = sycl::reduce_over_group(sg, sums[b], sycl::plus<uint64_t>{});
         if (sg_leader) {
             size_t const k = ((size_t)term * ADM_NUM_BANDS) + (size_t)b;
             lmem[(k * ADM_CM_MAX_SG) + sg_id] = part;
@@ -1161,12 +1162,16 @@ inline void adm_dev_sg_partials(sycl::nd_item<1> item, const sycl::local_accesso
 /* Fold one complete row total into the frame accumulator of sum k. ADR-1167:
  * the rounding shift is applied once per row, after every column of the row
  * has been summed -- never to a work-item or sub-group partial. */
-inline void adm_dev_fold_row(const AdmCmArgs &a, int k, int64_t row_total)
+inline void adm_dev_fold_row(const AdmCmArgs &a, int k, uint64_t row_total)
 {
     int const term = k / ADM_NUM_BANDS;
     uint32_t const shift = (term == ADM_TERM_DEN) ? a.sh.den_accum : a.sh.cm_inner;
-    int64_t const rounding = shift > 0 ? ((int64_t)1 << (shift - 1)) : 0;
-    int64_t const shifted = adm_cm_round_row_total(row_total, rounding, shift);
+    uint64_t const rounding = shift > 0 ? ((uint64_t)1 << (shift - 1)) : 0;
+    /* Every term of every scale is non-negative, and a scale-0 contrast row
+     * can pass INT64_MAX, so the rows are summed and shifted unsigned
+     * (adm_cm_round_row_total_s0()); below 2^63 that is the signed form's
+     * value. The frame slot sums modulo 2^64. */
+    auto const shifted = (int64_t)adm_cm_round_row_total_s0(row_total, rounding, shift);
     sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
                      sycl::access::address_space::global_space> const
         slot(a.accum[(term * ADM_TERM_SLOTS) + (k % ADM_NUM_BANDS)]);
@@ -1174,7 +1179,7 @@ inline void adm_dev_fold_row(const AdmCmArgs &a, int k, int64_t row_total)
 }
 
 /* Work-group sum of every sub-group partial, then one fold per sum. */
-inline void adm_dev_fold_rows(sycl::nd_item<1> item, const sycl::local_accessor<int64_t, 1> &lmem,
+inline void adm_dev_fold_rows(sycl::nd_item<1> item, const sycl::local_accessor<uint64_t, 1> &lmem,
                               const AdmCmArgs &a)
 {
     item.barrier(sycl::access::fence_space::local_space);
@@ -1183,7 +1188,7 @@ inline void adm_dev_fold_rows(sycl::nd_item<1> item, const sycl::local_accessor<
     }
     uint32_t const n_sg = item.get_sub_group().get_group_linear_range();
     for (int k = 0; k < ADM_CM_SUMS; ++k) {
-        int64_t row_total = 0;
+        uint64_t row_total = 0;
         for (uint32_t i = 0; i < n_sg; ++i) {
             row_total += lmem[((size_t)k * ADM_CM_MAX_SG) + i];
         }
@@ -1201,18 +1206,18 @@ sycl::event launch_csf_den_cm(sycl::queue &q, const AdmCmArgs &args, int num_row
     assert(args.right > args.left);
     AdmCmArgs const a = args;
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<int64_t, 1> const lmem(
+        sycl::local_accessor<uint64_t, 1> const lmem(
             sycl::range<1>((size_t)ADM_CM_SUMS * ADM_CM_MAX_SG), cgh);
         cgh.parallel_for(sycl::nd_range<1>((size_t)num_rows * ADM_CM_WG, ADM_CM_WG),
                          [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(ADM_CM_SG) {
                              int const row = a.top + (int)item.get_group(0);
                              int const first = a.left + (int)item.get_local_id(0);
-                             int64_t den[ADM_NUM_BANDS] = {};
+                             uint64_t den[ADM_NUM_BANDS] = {};
                              for (int col = first; col < a.right; col += ADM_CM_WG) {
                                  adm_dev_den_px(a, row, col, den);
                              }
                              adm_dev_sg_partials(item, lmem, ADM_TERM_DEN, den);
-                             int64_t cm[2 * ADM_NUM_BANDS] = {};
+                             uint64_t cm[2 * ADM_NUM_BANDS] = {};
                              for (int col = first; col < a.right; col += ADM_CM_WG) {
                                  adm_dev_cm_px(a, row, col, cm);
                              }
@@ -1304,7 +1309,8 @@ float adm_cm_scale_cpu(const int64_t accum[3], int h, int w, int scale,
         for (int i = 0; i < 3; ++i) {
             int const divisor_exp =
                 base_exp[i] - restored_bits - (int)shift_cub[i] - (int)shift_inner_accum;
-            f_accum[i] = (float)(accum[i] / std::pow(2, divisor_exp));
+            // The scale-0 sum is unsigned (adm_cm_round_row_total_s0()).
+            f_accum[i] = (float)((uint64_t)accum[i] / std::pow(2, divisor_exp));
         }
     } else {
         auto const shift_cub = (uint32_t)std::ceil(std::log2(w));

@@ -1155,6 +1155,19 @@ backend within it.
   and the "fix/adm-cm-centre-tap-wrap" entry of
   [rebase-notes](../rebase-notes.md).
 
+- **Integer ADM scale-0 contrast-masking rows are unsigned**:
+  a scale-0 row of the masking reduction is a sum of non-negative cubes that
+  passes INT64_MAX on a 64-pixel-wide picture at the default CSF weights and on
+  any picture with a weight near its ADR-1472 budget. The CPU sums it, and the
+  frame, in `uint64_t` (`adm_cm_round_row_total_s0()` in
+  `core/src/feature/adm_cm_accumulator.h`, `adm_cm_fold_s0()` in
+  `core/src/feature/integer_adm_kernels.h`), the AVX2 / AVX-512 rows add
+  unsigned, and the CUDA, HIP, SYCL and Metal twins sum unsigned too. Upstream
+  Netflix/vmaf sums int64; a sync keeps the fork's form. Scales 1-3 stay
+  signed. `test_integer_adm_cm_row_unsigned`, `test_gpu_adm_tiny_frames` and
+  `test_adm_cm_row_rounding_contract.py` guard it. See
+  [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md).
+
 - **Integer ADM enhancement gain limit ([ADR-1413](../adr/1413-adm-gain-limit-truncated-double-product.md))**:
   the limited sample is the double product `rst * adm_enhn_gain_limit`
   truncated toward zero, as the scalar kernels in

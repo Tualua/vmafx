@@ -3,6 +3,9 @@ paths:
   - core/src/feature/integer_adm.c
   - core/src/feature/integer_adm_kernels.h
   - core/src/feature/arm64/adm_neon.c
+  - core/src/feature/adm_cm_accumulator.h
+  - core/src/feature/x86/adm_avx2.c
+  - core/src/feature/x86/adm_avx512.c
 invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -105,3 +108,25 @@ invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 maskin
   same PR. Guards: `test_integer_adm_simd` (aarch64: gains 1, 1.2, 1.5, 2, 3,
   7, 100, -32768 and angle-boundary samples; fails on a `+1` in the limited
   sample), `make test-netflix-golden-arm64`.
+- **`integer_adm` scale-0 contrast-masking rows summed unsigned**
+  (T-ADM-CM-SCALE0-ROW-INT64-OVERFLOW-2026-10-05; departs from upstream,
+  which sums int64). Scale-0 terms = non-negative cubes; a row passes
+  INT64_MAX at default weights on 31-32 / 63-64 px wide pictures (1.044 /
+  1.021 INT64_MAX = 0.52 of 2^64, `core/test/adm_cm_row_overflow_frame.h`) and
+  with an h/v CSF weight above 38,400 at 16K. Below 2^64 up to an h/v
+  weight of about 45,200; above that, up to the ADR-1472 limit of 46,603,
+  31-32 px rows still pass 2^64 (open:
+  T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05). So scale 0 =
+  `uint64_t` row (`adm_cm_accum_px()`, `AdmCmRowFn`, `cm_row_avx2/512()`
+  via `hsum_epu64`), `adm_cm_fold_s0()` + `adm_cm_round_row_total_s0()`,
+  `uint64_t` frame accum into `adm_cm_result()`. Twins: CUDA
+  `warp_reduce_u64()` + `uint64_cu` rows, HIP `uint64_cu` shared tree, SYCL
+  `uint64_t` partials + unsigned fold (every scale, all terms non-negative),
+  Metal already `ulong` rows, host sums `uint64_t`; GPU hosts reinterpret the
+  device int64 slots as `uint64_t` for scale 0. Scales 1-3 stay signed
+  (2.8x margin; CUDA i4 negative rounding, ADR-0155). Below 2^63 the bits
+  are the signed form's. Never restore an int64 scale-0 row or a signed
+  scale-0 fold. Guards: `test_integer_adm_cm_row_unsigned` (64x64, 8/10/16
+  bit, SIMD == scalar), `test_gpu_adm_tiny_frames`
+  (`test_gpu_adm_row_past_int64_max_parity`),
+  `test_adm_cm_row_rounding_contract.py`.

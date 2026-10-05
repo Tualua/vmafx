@@ -19,7 +19,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `integer_adm_cuda.c`, `integer_adm_cuda.h` | [adm](AGENTS.d/adm.md) | Integer ADM options, CPU bits, negative rounding terms, tiny frame shifts, and int64 vertical sums. |
+| `integer_adm_cuda.c`, `integer_adm_cuda.h`, `integer_adm/adm_decouple_inline.cuh` | [adm](AGENTS.d/adm.md) | Integer ADM options, CPU bits, negative rounding terms, tiny frame shifts, and int64 vertical sums. |
 | `integer_cambi_cuda.c`, `integer_cambi_cuda.h` | [cambi](AGENTS.d/cambi.md) | Device-resident CAMBI TVI helper, single readback, and bit-exact CPU contract. |
 | `cuda_tile_index.h`, `integer_adm_cuda.c` | [channel-reads-unwind](AGENTS.d/channel-reads-unwind.md) | LDG channel reads, tile indexing padding clamping, and unwind helper teardown. |
 | `integer_ciede_cuda.c`, `integer_ciede_cuda.h` | [ciede](AGENTS.d/ciede.md) | ciede_cuda performs CPU arithmetic with libm apart. |

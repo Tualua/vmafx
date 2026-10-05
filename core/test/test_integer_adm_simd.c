@@ -589,7 +589,7 @@ static float cm_scalar(CmFixture *f, bool aim, double p_norm)
     adm_cm_ctx_init(&c, &f->buf, f->w, f->h, f->stride, f->stride, CM_NVD, CM_RDH,
                     ADM_CSF_MODE_WATSON97, 1.0, 1.0, aim);
     const AdmCmBounds bd = adm_cm_bounds(f->w, f->h);
-    int64_t accum[3] = {0, 0, 0};
+    uint64_t accum[3] = {0, 0, 0};
     adm_cm_rows(&c, &bd, adm_cm_row, accum);
     return adm_cm_result(&c, &bd, accum, CM_NW, p_norm);
 }

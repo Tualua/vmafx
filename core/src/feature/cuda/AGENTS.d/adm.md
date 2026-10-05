@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/cuda/integer_adm_cuda.c
   - core/src/feature/cuda/integer_adm_cuda.h
+  - core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh
 invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame shifts, and int64 vertical sums.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -143,3 +144,10 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   `test_adm_decouple_recip_cuda` (this header compiled for the host against
   `adm_decouple_band()`, every `int16` operand, no device) and the case
   `test_adm_attenuated_detail_exact` of `test_cuda_adm_parity` on a device.
+- **Scale 1-3 decouple bounds the gain product before narrowing**
+  (T-GPU-ADM-S123-GAIN-PRODUCT-NARROWING-2026-10-05). `decouple_r_s123()`:
+  `gained = (double)rst_q * adm_enhn_gain_limit`, then
+  `(int32_t)(rst_f > 0 ? fmin(gained, t) : fmax(gained, t))`, as the CPU's
+  `adm_decouple_band_s123()`. |o| reaches 1.45e9 at scale 1, so
+  `(int32_t)(...) * gain` narrowed first is an undefined conversion (the
+  saturating device cvt hid it). Guard: `test_gpu_adm_gain_product_contract.py`.

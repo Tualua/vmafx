@@ -894,6 +894,18 @@ static inline void adm_cm_fold(int64_t inner[3], int64_t accum[3], uint32_t add_
     }
 }
 
+/* Scale-0 twin of adm_cm_fold(): the row and the frame are summed unsigned,
+ * because a scale-0 row of non-negative cubes can pass INT64_MAX
+ * (adm_cm_round_row_total_s0()). */
+static inline void adm_cm_fold_s0(uint64_t inner[3], uint64_t accum[3],
+                                  uint32_t add_shift_inner_accum, uint32_t shift_inner_accum)
+{
+    for (int k = 0; k < 3; ++k) {
+        accum[k] += adm_cm_round_row_total_s0(inner[k], add_shift_inner_accum, shift_inner_accum);
+        inner[k] = 0;
+    }
+}
+
 /* p-norm of the accumulated contrast plus the noise floor of the area. */
 static inline float adm_num_scale(float f_accum, int area, double adm_noise_weight,
                                   float p_norm_exp)
@@ -1004,8 +1016,9 @@ static inline void adm_cm_ctx_init(AdmCmCtx *c, AdmBuffer *buf, int w, int h, in
     c->add_shift_inner_accum = adm_half_shift(c->shift_inner_accum);
 }
 
-/* Accumulate the three bands of one sample into the row accumulator. */
-static inline void adm_cm_accum_px(const AdmCmCtx *c, int i, int j, int64_t inner[3])
+/* Accumulate the three bands of one sample into the row accumulator. Every
+ * term is a non-negative cube (adm_cm_excess_s0() clamps the excess at 0). */
+static inline void adm_cm_accum_px(const AdmCmCtx *c, int i, int j, uint64_t inner[3])
 {
     const ptrdiff_t idx = (ptrdiff_t)i * c->src_stride + j;
     const int32_t xh = c->src->band_h[idx] * c->i_rfactor[0];
@@ -1014,14 +1027,14 @@ static inline void adm_cm_accum_px(const AdmCmCtx *c, int i, int j, int64_t inne
     //thr is shifted to make it's Q format equivalent to xh,xv,xd
     const int32_t thr = adm_cm_thresh(c->angles, c->flt_angles, c->csf_a_stride, c->w, c->h, i, j);
 
-    inner[0] += adm_cm_accum_round(xh, thr, &c->band[0]);
-    inner[1] += adm_cm_accum_round(xv, thr, &c->band[1]);
-    inner[2] += adm_cm_accum_round(xd, thr, &c->band[2]);
+    inner[0] += (uint64_t)adm_cm_accum_round(xh, thr, &c->band[0]);
+    inner[1] += (uint64_t)adm_cm_accum_round(xv, thr, &c->band[1]);
+    inner[2] += (uint64_t)adm_cm_accum_round(xd, thr, &c->band[2]);
 }
 
 /* One row: the optional first / last column (when the border region reaches
  * the frame edge) plus the interior columns. */
-static inline void adm_cm_row(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3])
+static inline void adm_cm_row(const AdmCmCtx *c, int i, const AdmCmBounds *bd, uint64_t inner[3])
 {
     if (bd->left_edge) {
         adm_cm_accum_px(c, i, 0, inner);
@@ -1034,7 +1047,7 @@ static inline void adm_cm_row(const AdmCmCtx *c, int i, const AdmCmBounds *bd, i
     }
 }
 
-static inline float adm_cm_restore_accum(int64_t accum, int base_exp, uint32_t normalization_shift,
+static inline float adm_cm_restore_accum(uint64_t accum, int base_exp, uint32_t normalization_shift,
                                          uint32_t shift_cub, uint32_t shift_inner_accum)
 {
     const int divisor_exp =
@@ -1051,7 +1064,7 @@ static inline float adm_cm_restore_accum(int64_t accum, int base_exp, uint32_t n
  * => after cubing (6+23)*3=87 after squaring shifted by 30
  * hence pending is 57-shift's done based on width and height
  */
-static inline float adm_cm_result(const AdmCmCtx *c, const AdmCmBounds *bd, const int64_t accum[3],
+static inline float adm_cm_result(const AdmCmCtx *c, const AdmCmBounds *bd, const uint64_t accum[3],
                                   double adm_noise_weight, double adm_p_norm)
 {
     const float f_accum_h = adm_cm_restore_accum(accum[0], 52, c->normalization_shift,
@@ -1072,30 +1085,30 @@ static inline float adm_cm_result(const AdmCmCtx *c, const AdmCmBounds *bd, cons
 
 /* One interior row of a contrast-masking reduction: the scalar reference
  * passes adm_cm_row(), a SIMD twin its vector row. */
-typedef void (*AdmCmRowFn)(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3]);
+typedef void (*AdmCmRowFn)(const AdmCmCtx *c, int i, const AdmCmBounds *bd, uint64_t inner[3]);
 
 /* Rows of the scale-0 reduction. The first and last row need the mirrored /
  * clamped neighbourhood and always take the scalar kernel. */
 static inline void adm_cm_rows(const AdmCmCtx *c, const AdmCmBounds *bd, AdmCmRowFn interior_row,
-                               int64_t accum[3])
+                               uint64_t accum[3])
 {
-    int64_t inner[3] = {0, 0, 0};
+    uint64_t inner[3] = {0, 0, 0};
 
     /* i=0 */
     if (bd->b.top <= 0) {
         adm_cm_row(c, 0, bd, inner);
     }
-    adm_cm_fold(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
+    adm_cm_fold_s0(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
     /* 0 < i < h-1 */
     for (int i = bd->start_row; i < bd->end_row; ++i) {
         interior_row(c, i, bd, inner);
-        adm_cm_fold(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
+        adm_cm_fold_s0(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
     }
     /* i=h-1 */
     if (bd->b.bottom > (c->h - 1)) {
         adm_cm_row(c, c->h - 1, bd, inner);
     }
-    adm_cm_fold(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
+    adm_cm_fold_s0(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
 }
 
 /* Scales 1..3 (32-bit) contrast-masking state. */

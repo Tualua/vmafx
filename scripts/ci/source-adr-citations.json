@@ -689,6 +689,7 @@
         "core/src/feature/metal/metal_integer_adm_uniforms.h": 1,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/test/test_adm_cm_row_rounding.c": 1,
+        "core/test/test_adm_cm_row_rounding_contract.py": 1,
         "core/test/test_integer_adm_cm_budget.c": 1
       },
       "target": "0155-adm-i4-rounding-deferred-netflix-955.md"
@@ -6451,6 +6452,7 @@
         "core/test/test_hip_wavefront_reduce.c": 1,
         "core/test/test_integer_adm_aim_unclipped.c": 1,
         "core/test/test_integer_adm_cm_budget.c": 1,
+        "core/test/test_integer_adm_cm_row_unsigned.c": 1,
         "core/test/test_integer_adm_cm_threshold.c": 1,
         "core/test/test_integer_adm_dwt16_range.c": 1,
         "core/test/test_integer_adm_min_dim.c": 1,
@@ -9840,8 +9842,10 @@
     },
     "1472": {
       "sites": {
+        "core/src/feature/adm_cm_accumulator.h": 1,
         "core/src/feature/adm_csf_fixed_point.h": 3,
         "core/test/meson.build": 1,
+        "core/test/test_adm_cm_row_rounding_contract.py": 1,
         "core/test/test_integer_adm_cm_budget.c": 1
       },
       "target": "1472-integer-adm-cm-weight-budget.md"

@@ -7,6 +7,18 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Integer ADM: scale-0 contrast-masking rows summed unsigned; GPU gain product bounded before narrowing (2026-10-05)
+
+`fix/adm-cm-row-total-unsigned`. Upstream Netflix/vmaf sums every contrast-masking row of
+`integer_adm.c` in `int64_t`; the fork sums the scale-0 rows and frame unsigned
+(`adm_cm_round_row_total_s0()` in `core/src/feature/adm_cm_accumulator.h`, `adm_cm_fold_s0()`,
+`uint64_t` in `adm_cm_accum_px()`, `adm_cm_row()`, `AdmCmRowFn`, `adm_cm_rows()`, `adm_cm_result()`,
+`cm_row_avx2()` / `cm_row_avx512()`). An upstream sync that touches the scale-0 masking loops keeps
+the unsigned row and frame: a scale-0 row passes INT64_MAX (`core/test/adm_cm_row_overflow_frame.h`).
+Scales 1-3 keep upstream's signed sums. The CUDA and HIP `decouple_r_s123()` bound the gain product
+in double before narrowing it, as the CPU's `adm_decouple_band_s123()` does; do not restore
+`(int32_t)(...) * adm_enhn_gain_limit`. See `core/src/feature/AGENTS.d/adm-rounding.md`.
+
 ## MCP tool contract shared by both servers (2026-10-05)
 
 No rebase impact: both MCP servers are fork-only. Keep `mcp-server/vmaf-mcp/tool-contract.json`

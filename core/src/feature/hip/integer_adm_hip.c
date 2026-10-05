@@ -226,7 +226,10 @@ static float adm_hip_cm_scale_result(const AdmStateHip *s, const int64_t accum[3
         adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist,
                         s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
                         s->adm_csf_diag_scale, false);
-        return adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
+        /* The device sums modulo 2^64 into int64 storage; the scale-0 sum is
+         * unsigned (adm_cm_round_row_total_s0()). */
+        const uint64_t s0_accum[3] = {(uint64_t)accum[0], (uint64_t)accum[1], (uint64_t)accum[2]};
+        return adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm);
     }
     I4AdmCmCtx c;
     i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist,

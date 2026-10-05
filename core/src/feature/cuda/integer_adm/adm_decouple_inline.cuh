@@ -154,19 +154,18 @@ __device__ __forceinline__ int32_t decouple_r_s123(int32_t oh, int32_t ov, int32
 
     const int64_t k = tmp_k < 0 ? 0 : (tmp_k > 32768 ? 32768 : tmp_k);
 
-    if (!angle_flag)
-        adm_enhn_gain_limit = 1;
-
-    int32_t rst = (int32_t)(((k * o_val) + 16384) >> 15) * adm_enhn_gain_limit;
-
+    const int32_t rst_q = (int32_t)(((k * o_val) + 16384) >> 15);
     const float rst_f = ((float)k / 32768) * ((float)o_val / 64);
+    if (!angle_flag || rst_f == 0.f)
+        return rst_q;
 
-    if (angle_flag && (rst_f > 0.f))
-        rst = min(rst, t_val);
-    if (angle_flag && (rst_f < 0.f))
-        rst = max(rst, t_val);
-
-    return rst;
+    /* adm_decouple_band_s123(): the gain-limited product is formed and bounded by
+     * t in double and narrowed once. |o| reaches 1.45e9 at scale 1, so the
+     * product with the default limit of 100 leaves int32; narrowing it before
+     * the bound was an undefined conversion that the device's saturating
+     * cvt happened to bound to t. */
+    const double gained = (double)rst_q * adm_enhn_gain_limit;
+    return (int32_t)((rst_f > 0.f) ? fmin(gained, (double)t_val) : fmax(gained, (double)t_val));
 }
 
 /* Scales 1-3 angle flag test from H,V ref/dis bands. */

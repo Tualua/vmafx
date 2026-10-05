@@ -46,7 +46,7 @@ LOCAL_COPY = re.compile(
     re.M,
 )
 CPU_RESULTS = (
-    "adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
+    "adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm)",
     "i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
     "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
     "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
