@@ -35,11 +35,25 @@ not honour the checkout SHA for that scan. Three rules follow:
   for the newer commit. Use the matching newer workflow run; never copy its
   score onto the older head.
 - The gate also reads the final live master ref, because upstream fetches
-  commit metadata and its default-HEAD archive separately. That ref must still
-  equal the event SHA.
+  commit metadata and its default-HEAD archive separately. Only a ref that still
+  equals the event SHA gives a verdict; the next section covers a moved master.
 - This binds the scan window under the enforced no-force/no-deletion branch
   policy. It cannot defend against a privileged actor changing and restoring
   that policy and branch during the run.
+
+### Superseded master runs
+
+When master moved on during the scan to a commit that descends from the event
+SHA, the run is **superseded** and ends **cancelled**, neither green nor red
+([ADR-1686](../adr/1686-scorecard-superseded-master-runs.md)). The gate checks
+the ancestry with GitHub's comparison of the two commits (status `ahead`, the
+event SHA as base and merge base), writes a receipt with `outcome: superseded`,
+and names the newer commit in a notice and in the step summary. That commit's
+own push run gives the verdict; open it instead. The gate job cancels its own
+run through the REST API, which is why it holds `actions: write`. A final ref
+that is invalid, or that names a commit which does not descend from the event
+SHA (a rewrite), still fails the gate, as does a comparison GitHub does not
+answer. The artifact keeps `final-master-ref.json` and `master-compare.json`.
 
 ### Scan scope on pull requests
 
@@ -97,7 +111,9 @@ score.
 ## Maintainer workflow
 
 1. Open the failed gate's exact workflow run and check its repository, SHA,
-   source scope, run attempt, tool identity and raw artifact.
+   source scope, run attempt, tool identity and raw artifact. A cancelled run
+   whose summary says **superseded** needs no action: open the run of the newer
+   commit it names.
 2. For schema, missing report, parser or API errors, repair the cause. Do not
    suppress a check, change its score, use a stale API result or widen the
    unavailable-release exception.
@@ -135,7 +151,9 @@ execution are distinct evidence; the latter requires the workflow to run.
 
 ## Authentication and publisher restrictions
 
-The default ephemeral GitHub token supplies read access. The publishing job
+The default ephemeral GitHub token supplies read access. The master gate job
+also holds `actions: write`, used only to cancel its own superseded run
+([ADR-1686](../adr/1686-scorecard-superseded-master-runs.md)). The publishing job
 alone
 has OIDC and Security-tab write permissions; its only steps are the actions
 allowed by the pinned upstream publisher. Keep arbitrary validation scripts in

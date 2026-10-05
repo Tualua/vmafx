@@ -7382,7 +7382,7 @@
         ".github/workflows/required-aggregator.yml": 1,
         ".github/workflows/scorecard-policy.yml": 1,
         ".github/workflows/scorecard.yml": 2,
-        "scripts/ci/scorecard_gate.py": 2,
+        "scripts/ci/scorecard_gate.py": 3,
         "scripts/ci/tests/test_scorecard_gate.py": 1
       },
       "target": "1247-scorecard-exact-head-gates.md"
@@ -10810,6 +10810,15 @@
         "scripts/dev/tests/test_gen_node_bpf.py": 1
       },
       "target": "1622-bpf-object-generated-at-build-time.md"
+    },
+    "1686": {
+      "sites": {
+        ".github/workflows/scorecard.yml": 5,
+        "scripts/ci/scorecard_gate.py": 3,
+        "scripts/ci/tests/test_scorecard_gate.py": 2,
+        "scripts/ci/tests/test_scorecard_workflow.py": 3
+      },
+      "target": "1686-scorecard-superseded-master-runs.md"
     },
     "1687": {
       "sites": {

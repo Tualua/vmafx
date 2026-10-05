@@ -19,6 +19,7 @@ import re
 import shutil
 import stat
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from fractions import Fraction
@@ -67,10 +68,29 @@ LOCAL_CHECKS = frozenset(WEIGHTS) - {
     "Signed-Releases",
 }
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+# ADR-1686: master moved on to a descendant during the scan. Distinct from 0 (verdict:
+# pass), 1 (verdict: fail or invalid evidence) and 2 (argparse usage error).
+SUPERSEDED_EXIT = 3
+# The fields of GitHub's commit comparison the ancestry decision reads; gh applies it.
+COMPARE_FIELDS = (
+    "{status, ahead_by, behind_by, base_commit: .base_commit.sha,"
+    " merge_base_commit: .merge_base_commit.sha, head_commit: .commits[-1].sha}"
+)
+COMPARE_TIMEOUT_SECONDS = 60
 
 
 class InvalidReport(ValueError):
     """Missing, contradictory or unbound evidence cannot satisfy the gate."""
+
+
+class Superseded(Exception):  # An outcome, not an error: never a ValueError.
+    """Master moved on to a descendant while the scan ran: no verdict for this commit."""
+
+    def __init__(self, newer: str, ahead_by: int) -> None:
+        super().__init__(f"remote master moved on to its descendant {newer}")
+        self.newer = newer
+        self.ahead_by = ahead_by
 
 
 def object_value(value: object, label: str) -> dict[str, object]:
@@ -120,7 +140,7 @@ class Assessment:
 def validate_context(report: dict[str, object], scope: str, repository: str, sha: str) -> None:
     if scope not in {"master", "local"} or not SHA.fullmatch(sha):
         raise InvalidReport("expected scope or full commit is invalid")
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+    if not REPOSITORY.fullmatch(repository):
         raise InvalidReport("expected repository must be owner/name")
     expected = {"name": f"github.com/{repository}", "commit": sha}
     if scope == "local":
@@ -309,17 +329,80 @@ def source_identity(root: Path, sha: str, allowed_output: str | None = None) -> 
     }
 
 
-def master_identity(reference: dict[str, object], sha: str) -> dict[str, object]:
-    """Reject advancement between upstream's separate GraphQL/archive reads."""
+def final_master(reference: dict[str, object]) -> str:
+    """Return the commit the final live master ref names; an invalid ref is a failure."""
     target = object_value(reference.get("object"), "master ref object")
+    commit = target.get("sha")
     if (
         reference.get("ref") != "refs/heads/master"
         or target.get("type") != "commit"
-        or target.get("sha") != sha
-        or not SHA.fullmatch(sha)
+        or not isinstance(commit, str)
+        or not SHA.fullmatch(commit)
     ):
-        raise InvalidReport("remote master moved or its final ref is invalid")
-    return {"ref": "refs/heads/master", "commit": sha}
+        raise InvalidReport("remote master's final ref is invalid")
+    return commit
+
+
+def descendant_distance(comparison: dict[str, object], sha: str, newer: str) -> int:
+    """Return how far ``newer`` is ahead of ``sha``; anything but a descendant fails."""
+    ahead_by = comparison.get("ahead_by")
+    if (
+        comparison.get("status") != "ahead"
+        or type(comparison.get("behind_by")) is not int
+        or comparison.get("behind_by") != 0
+        or type(ahead_by) is not int
+        or ahead_by < 1
+        or comparison.get("base_commit") != sha
+        or comparison.get("merge_base_commit") != sha
+        or comparison.get("head_commit") != newer
+    ):
+        raise InvalidReport(f"remote master moved to {newer}, which does not descend from {sha}")
+    return ahead_by
+
+
+def master_identity(
+    reference: dict[str, object],
+    sha: str,
+    compare: Callable[[str], dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Bind the report to final master, or report that a descendant superseded it.
+
+    Upstream reads GraphQL metadata and the default-HEAD archive separately, so a
+    report belongs to ``sha`` only while master still names it (ADR-1247). A move to a
+    descendant raises Superseded (ADR-1686); any other move is a failure.
+    """
+    if not SHA.fullmatch(sha):
+        raise InvalidReport("expected commit is not a full lowercase SHA")
+    newer = final_master(reference)
+    if newer == sha:
+        return {"ref": "refs/heads/master", "commit": sha}
+    if compare is None:
+        raise InvalidReport(f"remote master moved to {newer} and its ancestry was not read")
+    raise Superseded(newer, descendant_distance(compare(newer), sha, newer))
+
+
+def fetch_comparison(
+    repository: str, sha: str, newer: str, evidence: Path | None
+) -> dict[str, object]:
+    """Read GitHub's comparison of the scanned commit with the newer master commit."""
+    if not REPOSITORY.fullmatch(repository) or not SHA.fullmatch(sha) or not SHA.fullmatch(newer):
+        raise InvalidReport("comparison needs owner/name and two full commits")
+    executable = shutil.which("gh")
+    if executable is None:
+        raise InvalidReport("GitHub CLI is required to compare a moved master")
+    route = f"repos/{repository}/compare/{sha}...{newer}"
+    raw = run_command(
+        [executable, "api", "--hostname", "github.com", route, "--jq", COMPARE_FIELDS],
+        allowed_executables=(executable,),
+        check=True,
+        capture_output=True,
+        timeout_seconds=COMPARE_TIMEOUT_SECONDS,
+    ).stdout
+    data = raw if isinstance(raw, bytes) else raw.encode()
+    if evidence is not None:
+        evidence.write_bytes(data)
+    value: object = json.loads(data, object_pairs_hook=unique_object)
+    return object_value(value, "master comparison")
 
 
 def markdown(assessment: Assessment) -> str:
@@ -351,6 +434,43 @@ def markdown(assessment: Assessment) -> str:
     return "\n".join(lines) + "\n"
 
 
+def superseded_markdown(sha: str, superseded: Superseded) -> str:
+    """Name the newer commit whose own push run carries the verdict."""
+    return (
+        f"## Scorecard: superseded, no verdict for {sha}\n\n"
+        f"Remote master moved on to {superseded.newer}, {superseded.ahead_by} commit(s)"
+        " ahead of this one, while the scan ran. The upstream action reads master through"
+        " separate API calls, so this report is not attributed to this commit. The push run"
+        f" of {superseded.newer} gives the verdict; this run ends cancelled (ADR-1686).\n"
+    )
+
+
+def write_superseded(args: argparse.Namespace, superseded: Superseded) -> int:
+    """Record a superseded run: a receipt, a step summary and a notice, never a verdict."""
+    receipt = {
+        "outcome": "superseded",
+        "repository": args.repository,
+        "commit": args.sha,
+        "master": {"ref": "refs/heads/master", "commit": superseded.newer},
+        "ahead_by": superseded.ahead_by,
+        "action_commit": ACTION_COMMIT,
+        "run_id": os.environ.get("GITHUB_RUN_ID"),
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+    }
+    args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
+    summary = superseded_markdown(args.sha, superseded)
+    print(
+        f"::notice title=Scorecard superseded::No verdict for {args.sha}: master moved on to"
+        f" its descendant {superseded.newer} during the scan; that commit's push run gives"
+        " the verdict."
+    )
+    print(summary)
+    if args.summary:
+        with args.summary.open("a") as stream:
+            stream.write(summary)
+    return SUPERSEDED_EXIT
+
+
 def parse_args() -> argparse.Namespace:
     """Parse the scorecard evidence mode and explicit binding paths."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -361,6 +481,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--snapshot", type=Path)
     parser.add_argument("--master-ref", type=Path)
+    parser.add_argument("--master-compare", type=Path, help="keep the comparison read here")
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--summary", type=Path)
     return parser.parse_args()
@@ -406,14 +527,21 @@ def validate_source_binding(args: argparse.Namespace) -> dict[str, object] | Non
         return binding
     if args.master_ref is None:
         raise InvalidReport("master mode requires the final live master-ref receipt")
-    return master_identity(load_json(args.master_ref), args.sha)
+    return master_identity(
+        load_json(args.master_ref),
+        args.sha,
+        lambda newer: fetch_comparison(args.repository, args.sha, newer, args.master_compare),
+    )
 
 
 def write_assessment(args: argparse.Namespace) -> int:
     """Validate one report and write its bound machine and Markdown receipts."""
     if args.report is None:
         raise InvalidReport("--report is required")
-    binding = validate_source_binding(args)
+    try:
+        binding = validate_source_binding(args)
+    except Superseded as superseded:
+        return write_superseded(args, superseded)
     report = load_json(args.report)
     assessment = assess(report, args.mode, args.repository, args.sha)
     receipt = asdict(assessment)

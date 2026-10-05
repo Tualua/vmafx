@@ -5,13 +5,19 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import re
 import shutil
 import sys
+import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from typing import Any, cast
+
+import yaml  # type: ignore[import-untyped]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -25,6 +31,7 @@ SUBPROCESS_TIMEOUT_S = 120
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
+GATE_SCRIPT = ROOT / "scripts/ci/scorecard_gate.py"
 
 
 class ScorecardWorkflowTests(unittest.TestCase):
@@ -62,7 +69,10 @@ class ScorecardWorkflowTests(unittest.TestCase):
         workflow = (WORKFLOWS / "scorecard.yml").read_text()
         gate = workflow.split("\n  gate:", 1)[1]
         self.assertIn("needs: analysis", gate)
-        self.assertIn("if: always()", gate)
+        # A failed analysis still reaches the gate, which then fails; a cancelled run
+        # does not (ADR-1686: GitHub keeps running a job whose `if` stays true).
+        self.assertIn("\n    if: ${{ !cancelled() }}\n", gate)
+        self.assertNotIn("\n    if: always()\n", gate)
         self.assertIn('run: test "$ANALYSIS_RESULT" = success', gate)
         self.assertIn("ANALYSIS_RESULT: ${{ needs.analysis.result }}", gate)
         self.assertIn("ref: ${{ github.sha }}", gate)
@@ -235,6 +245,139 @@ new AsyncFunction('github','context','core','process','Date','setTimeout',input.
         self.assertIn("allow-dependencies-licenses: pkg:pypi/text-unidecode", review_block)
         # Must not include version in purl since GitHub Dependency Review ignores version in purl matching
         self.assertNotIn("pkg:pypi/text-unidecode@", review_block)
+
+
+GATE_STEP = "Enforce exact-head full repository policy"
+RUN_ID = "4242"
+# The superseded step's wait for its own cancellation stays well inside the gate
+# job's 5-minute timeout, so a cancel that never lands still ends the step red.
+WAIT_CEILING_SECONDS = 180
+# Stubs for the policy step's commands: each records its call; python3 plays the
+# gate's exit status, sleep returns at once so the bounded wait is counted, not waited.
+STUBS = {
+    "gh": 'printf "%s\\n" "$*" >> "$STUB_DIR/gh-calls"\nprintf "{}\\n"\n',
+    "python3": 'printf "%s\\n" "$*" >> "$STUB_DIR/python-calls"\nexit "$STUB_GATE_STATUS"\n',
+    "sleep": 'printf "%s\\n" "$1" >> "$STUB_DIR/sleeps"\n',
+}
+
+
+def scorecard_gate_job() -> dict[str, Any]:
+    workflow = yaml.safe_load((WORKFLOWS / "scorecard.yml").read_text(encoding="utf-8"))
+    return cast(dict[str, Any], workflow["jobs"]["gate"])
+
+
+def gate_step(name: str) -> dict[str, Any]:
+    matches = [step for step in scorecard_gate_job()["steps"] if step.get("name") == name]
+    if len(matches) != 1:
+        raise AssertionError(f"scorecard.yml gate job has {len(matches)} steps named {name!r}")
+    return cast(dict[str, Any], matches[0])
+
+
+class SupersededMasterRunTests(unittest.TestCase):
+    """ADR-1686: a run whose master moved on to a descendant ends cancelled."""
+
+    def test_gate_job_is_cancellable_and_may_cancel_its_own_run(self) -> None:
+        job = scorecard_gate_job()
+        self.assertEqual(job["if"], "${{ !cancelled() }}")
+        self.assertEqual(job["permissions"], {"contents": "read", "actions": "write"})
+        gate_text = (WORKFLOWS / "scorecard.yml").read_text().split("\n  gate:", 1)[1]
+        permissions = gate_text.split("    permissions:\n", 1)[1].split("    steps:", 1)[0]
+        reason = permissions.split("      actions: write", 1)[0]
+        self.assertIn("cancel", reason)
+        self.assertIn("ADR-1686", reason)
+        step = gate_step(GATE_STEP)
+        self.assertEqual(step["env"]["RUN_ID"], "${{ github.run_id }}")
+        self.assertNotIn("if", step)
+        self.assertNotIn("continue-on-error", step)
+
+    def test_receipt_and_live_check_conditions_survive_a_cancelled_run(self) -> None:
+        self.assertEqual(
+            gate_step("Verify live repository protection")["if"], "${{ !cancelled() }}"
+        )
+        self.assertEqual(gate_step("Preserve gate receipt")["if"], "always()")
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "the step is a bash script")
+    def test_only_the_superseded_exit_cancels_the_run(self) -> None:
+        for status in (0, 1, 2, 4):
+            with self.subTest(status=status):
+                code, calls, output = self.run_policy_step(status)
+                self.assertEqual(code, status, output)
+                self.assertEqual(len(calls["gh"]), 1)
+                self.assertIn("git/ref/heads/master", calls["gh"][0])
+                self.assertEqual(calls["sleeps"], [])
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "the step is a bash script")
+    def test_superseded_exit_cancels_then_fails_if_the_cancel_never_lands(self) -> None:
+        spec = importlib.util.spec_from_file_location("scorecard_gate", GATE_SCRIPT)
+        assert spec and spec.loader
+        gate = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault(spec.name, gate)
+        spec.loader.exec_module(gate)
+        code, calls, output = self.run_policy_step(gate.SUPERSEDED_EXIT)
+        self.assertEqual(len(calls["python"]), 1)
+        self.assertIn("--master-compare ", calls["python"][0])
+        self.assertEqual(len(calls["gh"]), 2)
+        self.assertEqual(
+            calls["gh"][1].split(),
+            [
+                "api",
+                "--hostname",
+                "github.com",
+                "--method",
+                "POST",
+                f"repos/VMAFx/vmafx/actions/runs/{RUN_ID}/cancel",
+            ],
+        )
+        # The wait is bounded; a run the cancel never reached is red, never green.
+        waited = sum(int(seconds) for seconds in calls["sleeps"])
+        self.assertTrue(0 < waited <= WAIT_CEILING_SECONDS, calls["sleeps"])
+        self.assertEqual(code, 1)
+        self.assertIn(f"::error::Run {RUN_ID} was not cancelled", output)
+
+    def run_policy_step(self, gate_status: int) -> tuple[int, dict[str, list[str]], str]:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "runner/scorecard-master").mkdir(parents=True)
+            (root / "bin").mkdir()
+            for name, body in STUBS.items():
+                stub = root / "bin" / name
+                stub.write_text("#!/usr/bin/env bash\n" + body, encoding="utf-8")
+                stub.chmod(0o755)
+            env = {
+                "PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}",
+                "HOME": str(root),
+                "STUB_DIR": str(root),
+                "STUB_GATE_STATUS": str(gate_status),
+                "RUNNER_TEMP": str(root / "runner"),
+                "GITHUB_STEP_SUMMARY": str(root / "summary.md"),
+                "EXPECTED_SHA": "b" * 40,
+                "EXPECTED_REPOSITORY": "VMAFx/vmafx",
+                "GH_TOKEN": "stub-token",
+                "RUN_ID": RUN_ID,
+            }
+            bash = shutil.which("bash")
+            assert bash is not None
+            result = run_command(
+                [bash, "-e", "-c", gate_step(GATE_STEP)["run"]],
+                allowed_executables=(bash,),
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout_seconds=SUBPROCESS_TIMEOUT_S,
+            )
+            calls = {
+                name: (
+                    (root / f"{name}-calls").read_text().splitlines()
+                    if (root / f"{name}-calls").exists()
+                    else []
+                )
+                for name in ("gh", "python")
+            }
+            sleeps = root / "sleeps"
+            calls["sleeps"] = sleeps.read_text().splitlines() if sleeps.exists() else []
+            return result.returncode, calls, f"{result.stdout}{result.stderr}"
 
 
 if __name__ == "__main__":

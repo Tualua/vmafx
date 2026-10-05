@@ -32,6 +32,25 @@ no library change.
   conflict in any of those arrays keeps both sides' names.
 - `scripts/ci/required_aggregator_harness.py` strips comment lines before it reads
   the `required` names and takes an `event` argument; keep both.
+## A superseded Scorecard master run ends cancelled (ADR-1686, 2026-10-05)
+
+`fix/scorecard-superseded-master-runs`. CI workflow and its gate script; no C change.
+
+- `.github/workflows/scorecard.yml`, `gate` job: `if: ${{ !cancelled() }}` (not
+  `always()`, which keeps the job running through a cancellation), job-level
+  `actions: write` with its comment, `RUN_ID` in the policy step, and the
+  step's handling of exit 3 (cancel the run, bounded wait, `exit 1`). An
+  upstream or rebase conflict there keeps all four; ADR-1673's concurrency form
+  does not apply to `scorecard.yml`, whose `scorecard-${{ github.ref }}` group
+  keeps the newest pending run.
+- `scripts/ci/scorecard_gate.py`: `final_master()`, `descendant_distance()`,
+  `master_identity(reference, sha, compare)`, `fetch_comparison()`,
+  `Superseded` (not a `ValueError`, so `main()` never turns it into exit 1) and
+  `SUPERSEDED_EXIT = 3`, which the workflow step tests literally.
+- Guards: `scripts/ci/tests/test_scorecard_gate.py` (`MasterSupersessionTests`,
+  `ComparisonReadTests`, `MasterCliOutcomeTests`) and
+  `scripts/ci/tests/test_scorecard_workflow.py` (`SupersededMasterRunTests`
+  runs the step's own `run:` script with stub `gh`, `python3` and `sleep`).
 
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 

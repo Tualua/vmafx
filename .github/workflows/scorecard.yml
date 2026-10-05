@@ -5,6 +5,8 @@
 # regressions on pinning, branch-protection, and dependency-review postures.
 #
 # ADR-1247: publisher stays restricted; the separate gate consumes its same-run JSON.
+# ADR-1686: a run whose master moved on to a descendant during the scan ends cancelled
+# (no verdict); the newer commit's own push run gives the verdict.
 
 name: scorecard
 on:
@@ -61,12 +63,19 @@ jobs:
     # required-aggregator
     name: Scorecard Master Gate
     needs: analysis
-    if: always()
+    # Not always(): GitHub keeps running a job whose `if` is still true when its run is
+    # cancelled, and a superseded run must end cancelled (ADR-1686). A failed analysis
+    # still reaches the gate, which then fails.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read
+      # ADR-1686: a superseded run cancels itself (POST .../actions/runs/{id}/cancel); a
+      # job reaches no other conclusion that is neither success nor failure. Write also
+      # grants the read the same-run artifact download needs. Scorecard's
+      # Token-Permissions check warns on a job-level actions: write and keeps the score.
+      actions: write  # cancel this run when superseded (ADR-1686)
     steps:
       - name: Require successful authenticated analysis
         env:
@@ -86,15 +95,30 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
           EXPECTED_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           gh api --hostname github.com "repos/$EXPECTED_REPOSITORY/git/ref/heads/master" \
             > "$RUNNER_TEMP/scorecard-master/final-master-ref.json"
+          status=0
           python3 -B scripts/ci/scorecard_gate.py master \
             --sha "$EXPECTED_SHA" --repository "$EXPECTED_REPOSITORY" \
             --report "$RUNNER_TEMP/scorecard-master/results.json" \
             --master-ref "$RUNNER_TEMP/scorecard-master/final-master-ref.json" \
+            --master-compare "$RUNNER_TEMP/scorecard-master/master-compare.json" \
             --receipt "$RUNNER_TEMP/scorecard-master/gate.json" \
-            --summary "$GITHUB_STEP_SUMMARY"
+            --summary "$GITHUB_STEP_SUMMARY" || status=$?
+          if [ "$status" -ne 3 ]; then
+            exit "$status"
+          fi
+          # Exit 3 (ADR-1686): master moved on to a descendant; this run has no verdict.
+          # Cancel it and wait to be stopped. A cancel that never lands ends the step red.
+          gh api --hostname github.com --method POST \
+            "repos/$EXPECTED_REPOSITORY/actions/runs/$RUN_ID/cancel"
+          for _ in $(seq 1 24); do
+            sleep 5
+          done
+          echo "::error::Run $RUN_ID was not cancelled within 120 s; a superseded run must not pass."
+          exit 1
       - name: Verify live repository protection
         if: ${{ !cancelled() }}
         env:
