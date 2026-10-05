@@ -60,7 +60,13 @@ The table is generated, not hand-kept. `scripts/docs/generate-hardware-reports.p
 reads every report under [hardware reports](../hardware-reports/index.md), decides for
 each report which rows it counts for (the processor's dispatch flags for a CPU row, the
 GPU family the report measured for a GPU row), and prints the number of reports and the
-worst verdict. `make docs-fragments-check` fails when the table is stale. The families,
+worst verdict. The verdict is the one of the checks the row is about, not the report's
+overall verdict: a CPU row reads the dispatch and reference equivalence checks, the unit
+tests, the golden check and whether the package's files match its build (the native
+macOS row adds the Metal equivalence and the Metal gate, since it closes the Metal rows),
+and a GPU row reads its device's result. A report whose GPU section fails therefore still
+counts as a pass for its processor's row. `make docs-fragments-check` fails when the table
+is stale. The families,
 packages and ledger rows come from `scripts/docs/hardware-needs.json`; the generator
 refuses a GPU family of the tester image's row maps that has no row there, and a
 ledger id that does not exist.

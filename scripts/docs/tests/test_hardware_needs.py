@@ -20,14 +20,29 @@ sys.modules[SPEC.name] = GEN
 SPEC.loader.exec_module(GEN)
 
 
+PASSING_SECTIONS = {
+    "dispatch_equivalence": "identical",
+    "reference_equivalence": "identical",
+    "metal_equivalence": "not_applicable",
+    "metal_gate": "not_applicable",
+    "unit_tests": "pass",
+    "golden_gate": "not_applicable",
+    "gpu": "pass",
+}
+
+
 def host(**kw: Any) -> dict[str, Any]:
+    """A passing report of the given host: every section passes."""
     base = {
         "platform": "linux",
         "machine": "x86_64",
         "dispatch_flags": ["avx2", "avx512"],
         "cpu_model": "Intel(R) Xeon(R) Gold 6338",
     }
-    return {"host": {**base, **kw}, "verdict": "pass"}
+    report: dict[str, Any] = {"host": {**base, **kw}, "verdict": "pass", "failed_checks": []}
+    report.update({key: {"status": status} for key, status in PASSING_SECTIONS.items()})
+    report["image"] = {"files_match_build": True}
+    return report
 
 
 def gpu_report(
@@ -93,6 +108,58 @@ class StatusTests(unittest.TestCase):
     def test_unmeasured_rows_are_not_a_pass(self) -> None:
         status = GEN._status(row("Hopper"), [gpu_report("hopper", rows="not_measured")])
         self.assertIn("not fully measured", status)
+
+
+def checked_report(failed: list[str], **host_kw: Any) -> dict[str, Any]:
+    """A report whose sections pass except the named ones (section keys), with the
+    verdict and failed_checks the tester would write."""
+    report = host(**host_kw)
+    for key in failed:
+        report[key] = {"status": "fail"}
+    report["verdict"] = "fail" if failed else "pass"
+    report["failed_checks"] = list(failed)
+    return report
+
+
+class CpuRowVerdictTests(unittest.TestCase):
+    """A CPU row takes the verdict of the report's CPU checks, not the report's overall
+    verdict: a GPU or Metal failure is not a finding about the processor."""
+
+    def avx2_host(self) -> dict[str, Any]:
+        return {"dispatch_flags": ["sse2", "ssse3", "sse4.1", "avx2"],
+                "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500"}  # fmt: skip
+
+    def test_gpu_failure_does_not_fail_the_cpu_row(self) -> None:
+        # The shape of the UHD 770 report (#2116): every CPU check passes, the SYCL
+        # section fails, so the report's verdict is `fail` with failed_checks ["gpu"].
+        report = checked_report(["gpu"], **self.avx2_host())
+        self.assertEqual(report["verdict"], "fail")
+        status = GEN._status(row("x86 with AVX2"), [report])
+        self.assertEqual(status, "1 reported, worst pass")
+
+    def test_cpu_failure_fails_the_cpu_row(self) -> None:
+        for check in ("dispatch_equivalence", "reference_equivalence", "unit_tests"):
+            report = checked_report([check], **self.avx2_host())
+            status = GEN._status(row("x86 with AVX2"), [report])
+            self.assertEqual(status, "1 reported, worst fail", check)
+
+    def test_image_mismatch_fails_the_cpu_row(self) -> None:
+        report = checked_report([], **self.avx2_host())
+        report["image"]["files_match_build"] = False
+        report["verdict"], report["failed_checks"] = "fail", ["image_files_match_build"]
+        self.assertEqual(GEN._status(row("x86 with AVX2"), [report]), "1 reported, worst fail")
+
+    def test_metal_failure_fails_the_mac_row_only(self) -> None:
+        # The shape of the M4 Pro report (#2118): the Metal checks fail. The native
+        # macOS row closes the Metal rows, so they are its own checks.
+        mac = {"platform": "darwin", "machine": "arm64", "dispatch_flags": ["neon"],
+               "cpu_model": "Apple M4 Pro"}  # fmt: skip
+        report = checked_report(["metal_equivalence", "metal_gate"], **mac)
+        self.assertEqual(GEN._status(row("Apple M-series, native"), [report]),
+                         "1 reported, worst fail")  # fmt: skip
+        passing = checked_report([], **mac)
+        self.assertEqual(GEN._status(row("Apple M-series, native"), [passing]),
+                         "1 reported, worst pass")  # fmt: skip
 
 
 class RefusalTests(unittest.TestCase):

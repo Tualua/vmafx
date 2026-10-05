@@ -28,6 +28,18 @@ alongside `speed.c` because the CUDA, HIP and SYCL SpEED twins link it.
   `test_speed_upstream_form*` and `test_speed_simd` lost their
   `enable_float` gate.
 - No score moves in a float build; Netflix golden data unaffected.
+## Hardware-we-need CPU rows read the CPU checks (2026-10-05)
+
+`fix/hardware-needs-cpu-row-verdict`. Documentation generator and its test; no
+library change.
+
+- `scripts/docs/generate-hardware-reports.py::_host_verdict()` rates a CPU row from
+  the report's own CPU checks (`CPU_CHECKS`, plus `METAL_CHECKS` for a row with
+  `metal_rows`), read through `CHECK_KEYS` and `PASSING` of
+  `tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`, and from
+  `image.files_match_build`. A sync must not bring back `report["verdict"]` for CPU
+  rows, and must not copy the passing statuses into the generator: they have one
+  definition, in the tester. `CpuRowVerdictTests` fails on the old form.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 
