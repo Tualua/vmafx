@@ -70,7 +70,7 @@ required and which ADR owns it, see
 | [`windows-tester-bundle.yml`](../../.github/workflows/windows-tester-bundle.yml) | The Windows tester zips: the x64 zip on a pull request, all four on a push, published on dispatch; required context `Windows Tester Zip` (ADR-1687). |
 | [`dev-container-build.yml`](../../.github/workflows/dev-container-build.yml) | PR-time build gate for `dev/Containerfile` (ADR-0819). |
 | [`helm-chart.yml`](../../.github/workflows/helm-chart.yml) | `helm lint` of the chart. |
-| [`rust-ci.yml`](../../.github/workflows/rust-ci.yml) | Rust crates: `cargo fmt` and `clippy` on `vmafx-sys`, `cargo test --workspace`, the golden smoke example and `cargo-deny`; the planner may skip the work, the gates `vmafx-sys CI` and `cargo-deny` are required. |
+| [`rust-ci.yml`](../../.github/workflows/rust-ci.yml) | Rust crates: `cargo fmt --all` and `clippy --workspace`, `cargo test --workspace`, the golden smoke example and `cargo-deny`; the planner may skip the work, the gates `vmafx-sys CI` and `cargo-deny` are required. |
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan and UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |

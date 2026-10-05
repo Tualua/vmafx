@@ -61200,3 +61200,10 @@ No score, public API or FFmpeg patch impact.
   `scripts/ci/check-adr-status-drift.py` (exceptions in
   `scripts/ci/adr-status-exceptions.json`, expiring 2027-01-05) has its own test
   (`scripts/ci/tests/test_check_adr_status_drift.py`).
+
+## Rust CI lints the whole workspace
+
+- `.github/workflows/rust-ci.yml` runs `cargo fmt --all --check` and
+  `cargo clippy --workspace --all-targets -- -D warnings`. A sync or rebase keeps
+  both on `--workspace` / `--all`: a `-p <crate>` form would leave the other members
+  unlinted again. No score, public API or FFmpeg patch impact.

@@ -1990,6 +1990,11 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `docs/development/release-workflow-verification.md`.
 
 
+- Rust CI now runs `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings`.
+  Until now only `vmafx-sys` was linted; `vmafx`, `vmafx-tad` and any crate added to the
+  workspace are covered without a workflow edit (`docs/development/rust.md`, "Linting").
+
+
 - **`scripts/dev/speed_gpu_parity.py` can leave a fixture out, with a stated reason.**
   `--skip-fixture 3840x2160 --skip-reason "<why>"` skips the untracked BBB fixture and prints a
   `SKIPPED` line; a missing fixture file without the option is now a usage error naming the

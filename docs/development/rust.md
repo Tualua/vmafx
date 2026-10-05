@@ -204,15 +204,15 @@ gracefully.
 ## Linting
 
 ```bash
-cargo fmt -p vmafx-sys --check
-cargo clippy -p vmafx-sys --all-targets -- -D warnings
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-CI (`.github/workflows/rust-ci.yml`) runs these two gates, the build,
-the tests, the golden smoke example and `cargo-deny` on every PR touching
-`bindings/rust/` or the Rust workspace. The required contexts are `vmafx-sys CI`
-and
-`cargo-deny`.
+Both cover every workspace member (`vmafx-sys`, `vmafx`, `vmafx-tad`, and any
+crate added to the root `Cargo.toml`). CI (`.github/workflows/rust-ci.yml`) runs
+these two gates, the build, the tests, the golden smoke example and `cargo-deny`
+on every PR touching `bindings/rust/` or the Rust workspace. The required
+contexts are `vmafx-sys CI` and `cargo-deny`.
 
 ## Environment variables reference
 

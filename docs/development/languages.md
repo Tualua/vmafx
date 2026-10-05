@@ -208,7 +208,7 @@ See the backend-specific guides:
 |---|---|---|
 | C / C++23 | clang-tidy, cppcheck, credential-safe Meson test runner | `.github/workflows/lint-and-format.yml` |
 | Go | `go fix -diff ./...` + `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
-| Rust | `cargo fmt` + `cargo clippy` (`vmafx-sys`) + `cargo test --workspace --all-features` | `.github/workflows/rust-ci.yml` |
+| Rust | `cargo fmt --all` + `cargo clippy --workspace` + `cargo test --workspace --all-features` | `.github/workflows/rust-ci.yml` |
 | Python | ruff (pre-commit hooks) + mypy delta gate + pytest | `.github/workflows/lint-and-format.yml` (Python Lint), `.github/workflows/tests-and-quality-gates.yml` (pytest; which job runs which suite: [test suites](test-suites.md)) |
 
 ## References

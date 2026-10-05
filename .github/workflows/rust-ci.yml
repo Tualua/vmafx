@@ -101,13 +101,15 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
 
-      - name: Cargo fmt check
-        run: cargo fmt -p vmafx-sys --check
+      - name: Cargo fmt check (every workspace crate)
+        run: cargo fmt --all --check
 
-      - name: Cargo clippy
+      - name: Cargo clippy (every workspace crate)
+        # --workspace: a crate added to Cargo.toml `members` is linted without
+        # a workflow edit (RC3 hygiene; was `-p vmafx-sys` only).
         env:
           LIBVMAF_PREFIX: /usr/local
-        run: cargo clippy -p vmafx-sys --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Cargo build
         env:
