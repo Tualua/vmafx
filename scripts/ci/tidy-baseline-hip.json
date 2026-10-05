@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 455,
+  "tus": 456,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -283,6 +283,7 @@
     "core/test/test_hip_cambi_parity.c",
     "core/test/test_hip_ciede_math_probe.cpp",
     "core/test/test_hip_ciede_parity.c",
+    "core/test/test_hip_device_selection.c",
     "core/test/test_hip_exact_twins.c",
     "core/test/test_hip_first_frame_clear.c",
     "core/test/test_hip_float_adm_math.c",
@@ -525,5 +526,21 @@
     "core/test/test_hip_float_adm_math_probe.hip": 2,
     "core/test/test_sycl_fp_arith_contract.c": 1
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/test/test_hip_device_selection.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_hip_device_selection.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "71f83194533c1421d6ee90a523d53a437a4a8ec74fad57464d71a73a6d080072"
+    }
+  ]
 }

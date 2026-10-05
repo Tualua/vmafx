@@ -34,7 +34,7 @@ MAKEFILE = ROOT / "Makefile"
 SCRIPT = ROOT / "scripts/dev/tidy-lane.sh"
 HIP_WRAPPER = ROOT / "scripts/ci/clang-tidy-hip.sh"
 WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
-CONTAINER_LANES = ("cpu", "cuda", "hip", "sycl", "arm64")
+CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64")
 
 # The entry point is a bash script that drives docker and GNU tar: it runs on
 # the Linux workstation that has the dev image. Elsewhere its cases are skipped
@@ -125,6 +125,44 @@ class LaneConfiguration(unittest.TestCase):
         override = (ROOT / files[1]).read_text(encoding="utf-8")
         self.assertIn("exe_wrapper = ['qemu-aarch64', '-L', '/usr/aarch64-linux-gnu']", override)
         self.assertIn("qemu-user", SCRIPT.read_text(encoding="utf-8"))
+
+    def test_cpu_reads_the_embedded_mcp_server(self) -> None:
+        """core/src/mcp and its tests are in no other lane's compile database."""
+        options = variable("TIDY_RATCHET_SETUP_cpu")
+        for flag in (
+            "-Denable_mcp=true",
+            "-Denable_mcp_sse=enabled",
+            "-Denable_mcp_uds=true",
+            "-Denable_mcp_stdio=true",
+        ):
+            self.assertIn(flag, options)
+
+    def test_clang_lane_builds_the_fuzz_harnesses_and_measures_only_them(self) -> None:
+        """libFuzzer needs clang; the gcc lanes cannot configure -Dfuzz=true."""
+        self.assertEqual(
+            variable("TIDY_RATCHET_COMPILERS_clang"), ["CC=clang-22", "CXX=clang++-22"]
+        )
+        self.assertIn("-Dfuzz=true", variable("TIDY_RATCHET_SETUP_clang"))
+        self.assertEqual(
+            variable("TIDY_RATCHET_EXTRA_clang"),
+            ["--select", "core/test/fuzz/", "--select", "core/src/read_json_model.c"],
+        )
+
+    def test_metal_job_is_the_makefile_configuration(self) -> None:
+        """The macOS lane has no container; its job repeats the Makefile line."""
+        job = (ROOT / ".github/workflows/tidy-metal.yml").read_text(encoding="utf-8")
+        job = job.replace("\\\n", " ")
+        match = re.search(
+            r'^\s*((?:[A-Z]+=\S+\s+)*)meson setup "\$TIDY_BUILD_DIR" core(.*)$', job, re.MULTILINE
+        )
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.group(1).split(), variable("TIDY_RATCHET_COMPILERS_metal"))
+        self.assertEqual(
+            sorted(match.group(2).split()), sorted(variable("TIDY_RATCHET_SETUP_metal"))
+        )
+        self.assertIn("llvm@22", job)
+        self.assertTrue((ROOT / "scripts/ci/tidy-baseline-metal.json").is_file())
 
     def test_hip_lane_dispatches_kernels_to_the_rocm_clang_tidy(self) -> None:
         self.assertIn("$(CURDIR)/scripts/ci/clang-tidy-hip.sh", variable("TIDY_RATCHET_EXTRA_hip"))
@@ -247,10 +285,12 @@ class HostSide(unittest.TestCase):
         self.assertFalse([name for name in sent if "ignored.o" in name or ".git/" in name])
         self.assertEqual(self._calls()[-1], "rm -f fakecid")
 
-    def test_all_runs_the_five_container_lanes(self) -> None:
+    def test_all_runs_the_six_container_lanes(self) -> None:
         self.assertEqual(self._run("all").returncode, 0)
         create = next(call for call in self._calls() if call.startswith("create "))
-        self.assertTrue(create.endswith("--in-container --jobs 8 cpu cuda hip sycl arm64"), create)
+        self.assertTrue(
+            create.endswith("--in-container --jobs 8 cpu clang cuda hip sycl arm64"), create
+        )
 
     def test_ratchet_exit_code_is_the_scripts(self) -> None:
         result = self._run("cuda", FAKE_START_RC="3")

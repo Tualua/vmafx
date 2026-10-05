@@ -236,6 +236,25 @@ positive operands) and must not replace the fp32 correction with an integer
 division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
 `test_cuda_adm_cm_register_pressure`. `core/test/test_adm_decouple_recip.cpp`
 (one executable per twin header) fails on the old form without a device.
+## Every translation unit is read by a tidy lane (RC3 exit, 2026-10-05)
+
+`rc3-tidy-coverage`. Tooling only; no library change.
+
+- `Makefile` `TIDY_RATCHET_SETUP_cpu` carries `-Denable_mcp=true
+  -Denable_mcp_sse=enabled -Denable_mcp_uds=true -Denable_mcp_stdio=true`, and
+  the `Tidy Ratchet` job of `lint-and-format.yml` repeats them
+  (`test_tidy_lane_container.py` compares the two). A rebase that takes either
+  side must keep both lines the same.
+- Lanes `clang` and `metal` are new (`scripts/dev/tidy-lane.sh` knows `clang`;
+  `metal` runs in the `Tidy Metal` workflow, `tidy-metal.yml`). `scripts/ci/tidy-baseline-clang.json`
+  and `tidy-baseline-metal.json` are generated: take one side at a conflict and
+  regenerate.
+- The exception entries for units no lane reads land in the follow-up pull
+  request, in the shared lint exception list. `tidy-ratchet.py --select` and the scoped write's `measured_sources`
+  update are additive.
+- `core/test/test_mcp_*.c`, `core/src/mcp/{mcp,dispatcher}.c` and three fuzz
+  harnesses carry `NOLINTBEGIN(modernize-use-nullptr)` blocks citing ADR-1138
+  (C builds without `nullptr` on MSVC); an upstream-style sync must keep them.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 

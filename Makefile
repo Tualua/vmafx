@@ -237,7 +237,7 @@ lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
 	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
 	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
-# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip|arm64
+# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|clang|cuda|sycl|hip|arm64
 # (default cpu). `tidy-ratchet` measures a build dir that is configured for the
 # lane (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)) and compares it with
 # scripts/ci/tidy-baseline-$(LANE).json; `tidy-ratchet-write` rewrites that
@@ -298,12 +298,23 @@ export CLANG_TIDY_BIN
 # with the distribution's aarch64 gcc; the second cross file names Ubuntu's
 # `qemu-aarch64` where the first names `qemu-aarch64-static`.
 TIDY_RATCHET_COMPILERS_cpu := CC=gcc-15 CXX=g++-15
+TIDY_RATCHET_COMPILERS_clang := CC=clang-22 CXX=clang++-22
 TIDY_RATCHET_COMPILERS_cuda := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_hip := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_sycl := CC=icx CXX=icpx
 TIDY_RATCHET_COMPILERS_arm64 :=
-TIDY_RATCHET_SETUP_cpu := -Denable_cuda=false -Denable_sycl=false \
+# The metal lane is the one lane with no container: Apple's SDK exists on a
+# macOS host only. The `Tidy Metal` workflow (tidy-metal.yml) repeats these
+# two lines and passes the --select list of the Metal host sources.
+TIDY_RATCHET_COMPILERS_metal := CC=clang CXX=clang++
+TIDY_RATCHET_SETUP_metal := -Denable_metal=enabled -Denable_cuda=false -Denable_sycl=false \
 	-Denable_dnn=disabled -Db_lto=false
+TIDY_RATCHET_SETUP_cpu := -Denable_cuda=false -Denable_sycl=false \
+	-Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled \
+	-Denable_mcp_uds=true -Denable_mcp_stdio=true -Db_lto=false
+TIDY_RATCHET_SETUP_clang := -Denable_cuda=false -Denable_sycl=false \
+	-Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled \
+	-Denable_mcp_uds=true -Denable_mcp_stdio=true -Dfuzz=true -Db_lto=false
 TIDY_RATCHET_SETUP_cuda := -Denable_cuda=true -Denable_nvcc=true \
 	-Denable_sycl=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false
 TIDY_RATCHET_SETUP_hip := -Denable_hip=true -Denable_hipcc=true \
@@ -314,6 +325,7 @@ TIDY_RATCHET_SETUP_arm64 := --cross-file build-aux/aarch64-linux-gnu.ini \
 	--cross-file build-aux/aarch64-linux-gnu-qemu-user.ini \
 	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
 TIDY_RATCHET_EXTRA_cpu :=
+TIDY_RATCHET_EXTRA_clang := --select core/test/fuzz/ --select core/src/read_json_model.c
 TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
 TIDY_RATCHET_EXTRA_hip := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-hip.sh \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
@@ -327,6 +339,7 @@ TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 # cuda and hip lanes measure the host files only and the sycl lane measures zero
 # SYCL feature TUs, recording an empty backend in its baseline.
 TIDY_RATCHET_COMPDB_cpu :=
+TIDY_RATCHET_COMPDB_clang :=
 TIDY_RATCHET_COMPDB_cuda := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
 	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_hip := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \

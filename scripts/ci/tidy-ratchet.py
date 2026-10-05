@@ -413,18 +413,21 @@ def run_one(
     return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode
 
 
-def measure(
-    lane: str,
-    build_dir: Path,
+def selected(path: str, chosen: tuple[str, ...]) -> bool:
+    """A ``--select`` entry ending in ``/`` is a directory; any other is one file."""
+    return any(path.startswith(c) if c.endswith("/") else path == c for c in chosen)
+
+
+def select_units(
+    units: list[tuple[Path, Path]],
     repo_root: Path,
-    binary: str,
-    extra_args: list[str],
-    jobs: int,
-    only: Iterable[str] = (),
-) -> Measurement:
-    """Run clang-tidy over every TU of *build_dir* and count NOLINTs."""
-    binary = resolve_clang_tidy(binary, repo_root)
-    units = load_compile_commands(build_dir, repo_root)
+    only: Iterable[str],
+    select: Iterable[str],
+) -> list[tuple[Path, Path]]:
+    """Narrow *units* to the ``--select`` prefixes, then to the ``--only`` files."""
+    chosen = tuple(select)
+    if chosen:
+        units = [u for u in units if selected(u[0].relative_to(repo_root).as_posix(), chosen)]
     wanted = {Path(p).resolve() for p in only}
     if wanted:
         missing = wanted - {unit[0].resolve() for unit in units}
@@ -435,6 +438,27 @@ def measure(
         units = [u for u in units if u[0].resolve() in wanted]
     if not units:
         raise ValueError("compile database selected no translation units")
+    return units
+
+
+def measure(
+    lane: str,
+    build_dir: Path,
+    repo_root: Path,
+    binary: str,
+    extra_args: list[str],
+    jobs: int,
+    only: Iterable[str] = (),
+    select: Iterable[str] = (),
+) -> Measurement:
+    """Run clang-tidy over every TU of *build_dir* and count NOLINTs.
+
+    *select* keeps only the given repository-relative files and the TUs below
+    the given directories (entries ending in ``/``): a lane that reads one part of the tree (the macOS Metal lane)
+    measures that part and nothing the other lanes already read.
+    """
+    binary = resolve_clang_tidy(binary, repo_root)
+    units = select_units(load_compile_commands(build_dir, repo_root), repo_root, only, select)
     result = Measurement(lane=lane, tus=len(units))
     result.sources = sorted(source.relative_to(repo_root).as_posix() for source, _ in units)
     result.clang_tidy_version = clang_tidy_version(binary, repo_root)
@@ -583,6 +607,28 @@ class ScopedRegressionError(ValueError):
     """A scoped write must never retain a larger debt allowance."""
 
 
+def record_measured_sources(
+    result: dict[str, Any],
+    original: dict[str, Any],
+    wanted: set[str],
+    changes: dict[str, dict[str, list[Any]]],
+) -> None:
+    """Record the selected TUs of a scoped write as measured by the lane.
+
+    A scoped write is also how a translation unit the lane did not read before
+    enters it, so the coverage check (follow-up pull request) sees
+    it without a full rewrite.
+    """
+    if "measured_sources" not in original:
+        return
+    known = set(original["measured_sources"])
+    added = sorted(wanted - known)
+    if added:
+        result["measured_sources"] = sorted(known | wanted)
+        result["tus"] = int(original.get("tus", 0)) + len(added)
+        changes.setdefault("measured_sources", {})["added"] = added
+
+
 def merge_scoped_baseline(
     original: dict[str, Any], measured: Measurement, requested: list[str]
 ) -> dict[str, Any]:
@@ -602,7 +648,7 @@ def merge_scoped_baseline(
     if baseline.clang_tidy_version != measured.clang_tidy_version:
         raise ValueError("scoped write requires the original clang-tidy version")
     result = copy.deepcopy(original)
-    changes: dict[str, dict[str, list[int]]] = {}
+    changes: dict[str, dict[str, list[Any]]] = {}
     for metric in ("warnings", "nolint_uncited"):
         before: dict[str, int] = getattr(baseline, metric)
         after: dict[str, int] = getattr(measured, metric)
@@ -630,6 +676,7 @@ def merge_scoped_baseline(
                 merged.pop(path, None)
         result[metric] = dict(sorted(merged.items()))
         result[f"total_{metric}"] = sum(merged.values())
+    record_measured_sources(result, original, wanted, changes)
     if changes:
         provenance = {
             "sources": sorted(wanted),
@@ -725,7 +772,9 @@ def write_full_baseline(path: Path, measured: Measurement, expected: bytes | Non
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--lane", default="cpu", help="baseline lane name (cpu, cuda, sycl, hip, arm64)"
+        "--lane",
+        default="cpu",
+        help="baseline lane name (cpu, clang, cuda, sycl, hip, arm64, metal)",
     )
     parser.add_argument("--build-dir", default="build", type=Path)
     parser.add_argument("--repo-root", default=".", type=Path)
@@ -742,6 +791,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         default=[],
         help="measure exactly these TUs; with --write, tighten only their allowance",
+    )
+    parser.add_argument(
+        "--select",
+        action="append",
+        default=[],
+        help="measure only this file, or (ending in /) the TUs below this directory (repeatable)",
     )
     parser.add_argument("--report", type=Path, help="write the measurement JSON here")
     parser.add_argument(
@@ -817,6 +872,7 @@ def main(argv: list[str] | None = None) -> int:
             args.extra_arg,
             args.jobs,
             args.only,
+            args.select,
         )
         if args.report:
             # ADR-1230: the report artifact carries the diagnostics behind the

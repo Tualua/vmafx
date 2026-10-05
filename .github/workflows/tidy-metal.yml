@@ -1,0 +1,100 @@
+# Tidy Metal -- clang-tidy over the Objective-C++ Metal host code on a hosted macOS runner.
+#
+# The Linux lanes cannot read core/src/metal/*.mm, core/src/feature/metal/*_metal.mm and the
+# Metal-only C tests: they need Apple's SDK. Homebrew's clang-tidy of the Linux lanes' major
+# (22) reads them against the Xcode SDK (docs/development/tidy-lanes.md, "The macOS metal
+# lane"); the measurement is compared with scripts/ci/tidy-baseline-metal.json.
+#
+# A macOS runner bills at ten times a Linux one, so, like the macOS tester bundle
+# (ADR-1595), this is not a per-pull-request gate: it runs weekly, on a pull request that
+# touches the Metal host sources or the lane itself, and on dispatch. It is not in
+# required-aggregator.yml until it has passed on master; a lane that did not run is never
+# reported as clean.
+
+name: Tidy Metal
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - "core/src/metal/**"
+      - "core/src/feature/metal/**"
+      - "core/test/test_metal_install_header.c"
+      - "core/test/test_metal_kernel_coverage_audit.c"
+      - "core/test/test_metal_kernel_registration.c"
+      - "core/test/test_metal_smoke.c"
+      - "scripts/ci/tidy-ratchet.py"
+      - "scripts/ci/tidy-baseline-metal.json"
+      - ".github/workflows/tidy-metal.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tidy-metal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy-metal:
+    # RC3 coverage: the Objective-C++ Metal host code and the Metal-only C tests
+    # are in no Linux lane's compile database. Homebrew's clang-tidy of the same
+    # major as the Linux lanes reads them against the Xcode SDK. The lane
+    # measures only those files (--select) and has its own baseline,
+    # scripts/ci/tidy-baseline-metal.json. Not in required-aggregator.yml until
+    # it has passed on master (the ADR-1297 path the SYCL lane took).
+    # The `.metal` kernels are not read here: clang-tidy has no Metal language
+    # mode; they are listed in the lint exception list (follow-up pull request).
+    name: Tidy Metal
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.8
+      - name: Install meson, ninja, clang-tidy 22 and the Metal toolchain
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          python -m pip install --require-hashes -r requirements/locks/build.txt
+          brew install -q ninja nasm pkg-config llvm@22
+          xcodebuild -downloadComponent MetalToolchain
+          "$(brew --prefix llvm@22)/bin/clang-tidy" --version | grep -F 'LLVM version 22.'
+      - name: Build (compile_commands.json + generated headers)
+        run: |
+          # Apple clang, as the macOS Metal build leg. The options are
+          # TIDY_RATCHET_SETUP_metal in the Makefile; the lane contract test
+          # keeps the two lines identical.
+          TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-metal"
+          CC=clang CXX=clang++ meson setup "$TIDY_BUILD_DIR" core \
+            -Denable_metal=enabled -Denable_cuda=false -Denable_sycl=false \
+            -Denable_dnn=disabled -Db_lto=false
+          meson compile -C "$TIDY_BUILD_DIR"
+          python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
+      - name: Ratchet — Metal host code vs committed baseline
+        run: |
+          # Homebrew's clang-tidy has no implicit SDK: name the Xcode one.
+          python3 scripts/ci/tidy-ratchet.py --lane metal \
+            --build-dir "$RUNNER_TEMP/vmafx-tidy-metal" \
+            --clang-tidy "$(brew --prefix llvm@22)/bin/clang-tidy" \
+            --extra-arg="-isysroot$(xcrun --show-sdk-path)" \
+            --select core/src/metal/ --select core/src/feature/metal/ \
+            --select core/test/test_metal_install_header.c \
+            --select core/test/test_metal_kernel_coverage_audit.c \
+            --select core/test/test_metal_kernel_registration.c \
+            --select core/test/test_metal_smoke.c \
+            --jobs "$(sysctl -n hw.ncpu)" --report tidy-ratchet-metal.json
+      - name: Upload measurement (commit it as the new baseline when the ratchet asks)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: tidy-ratchet-metal
+          path: tidy-ratchet-metal.json

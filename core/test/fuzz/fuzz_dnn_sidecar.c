@@ -52,7 +52,8 @@
  * 128 KiB to keep iterations fast — past that the parser's
  * `strstr` linear-scan dominates wall time without adding
  * meaningful branch coverage. */
-#define FUZZ_MAX_INPUT_BYTES (128u * 1024u)
+/* 128 KiB, spelled out: a product widens when compared with a size_t. */
+#define FUZZ_MAX_INPUT_BYTES 131072u
 
 /* Reuse the same on-disk tempfile pair across iterations.
  * Re-creating + unlinking per iteration would dominate wall

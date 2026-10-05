@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "lane": "clang",
+  "generator": "scripts/ci/tidy-ratchet.py",
+  "clang_tidy_version": "22.1.8",
+  "cc_version": "Ubuntu clang version 22.1.8 (++20260714015917+ca7933e47d3a-1~exp1~20260714135927.17)",
+  "tus": 6,
+  "measured_sources": [
+    "core/src/read_json_model.c",
+    "core/test/fuzz/fuzz_cli_parse.c",
+    "core/test/fuzz/fuzz_dnn_sidecar.c",
+    "core/test/fuzz/fuzz_json_model.c",
+    "core/test/fuzz/fuzz_y4m_input.c",
+    "core/test/fuzz/fuzz_yuv_input.c"
+  ],
+  "compile_failures": [],
+  "total_warnings": 0,
+  "total_nolint_uncited": 0,
+  "warnings": {},
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/read_json_model.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/read_json_model.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c7db523b5ba133a13b4e79206212778c6a65e4dc1abe8b76f34f82e22673b066"
+    }
+  ]
+}

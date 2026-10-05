@@ -47,6 +47,11 @@
 #include "libvmaf/model.h"
 #include "read_json_model.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 /* Hard cap on input size: shipped models top out around 23 KiB
  * (`model/vmaf_4k_v0.6.1neg.json`). 64 KiB of headroom lets the
  * fuzzer splice a few oversized libsvm SV blocks without paying
@@ -118,3 +123,5 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     return 0;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

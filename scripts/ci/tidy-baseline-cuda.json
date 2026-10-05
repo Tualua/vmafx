@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 425,
+  "tus": 426,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -251,6 +251,7 @@
     "core/test/test_cuda_float_ssim_parity.c",
     "core/test/test_cuda_float_vif_parity.c",
     "core/test/test_cuda_motion3_parity.c",
+    "core/test/test_cuda_motion_five_frame_window.c",
     "core/test/test_cuda_motion_sad_score.c",
     "core/test/test_cuda_motion_tiny_frames.c",
     "core/test/test_cuda_motion_v2_parity.c",
@@ -537,6 +538,20 @@
         }
       },
       "previous_baseline_sha256": "955d1ea488afc4b81588d82b886d1fc1ff5be92c3fb1ca6be011ab97d5988deb"
+    },
+    {
+      "sources": [
+        "core/test/test_cuda_motion_five_frame_window.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_cuda_motion_five_frame_window.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "fff273de4d097208f05f0010f3b7add47b335c3822b242038da34e6c9beae880"
     }
   ]
 }

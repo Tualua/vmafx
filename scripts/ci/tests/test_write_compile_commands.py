@@ -161,10 +161,12 @@ class CompileCommandsExportTest(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text(encoding="utf-8")
         nightly = (ROOT / ".github/workflows/nightly.yml").read_text(encoding="utf-8")
+        metal = (ROOT / ".github/workflows/tidy-metal.yml").read_text(encoding="utf-8")
         invocation = "scripts/ci/write-compile-commands.py"
         self.assertEqual(makefile.count(invocation), 3)
         self.assertEqual(workflow.count(invocation), 4)
         self.assertEqual(nightly.count(invocation), 1)
+        self.assertEqual(metal.count(invocation), 1)
         lint_target = makefile.split("lint-c:", 1)[1].split("# ADR-1142", 1)[0]
         self.assertLess(
             lint_target.index(invocation), lint_target.index("scripts/ci/lint-configured.py")

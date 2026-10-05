@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 377,
+  "tus": 389,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -123,6 +123,12 @@
     "core/src/libvmaf.c",
     "core/src/log.cpp",
     "core/src/mcp/3rdparty/cJSON/cJSON.c",
+    "core/src/mcp/compute_vmaf.c",
+    "core/src/mcp/dispatcher.c",
+    "core/src/mcp/mcp.c",
+    "core/src/mcp/transport_sse.c",
+    "core/src/mcp/transport_stdio.c",
+    "core/src/mcp/transport_uds.c",
     "core/src/mem.cpp",
     "core/src/metadata_handler.cpp",
     "core/src/metal/stubs.c",
@@ -253,6 +259,10 @@
     "core/test/test_log.c",
     "core/test/test_lpips.c",
     "core/test/test_luminance_tools.cpp",
+    "core/test/test_mcp_compute_vmaf_allowlist.c",
+    "core/test/test_mcp_coverage.c",
+    "core/test/test_mcp_smoke.c",
+    "core/test/test_mcp_stop_idempotent.c",
     "core/test/test_metal_ciede_math_probe.cpp",
     "core/test/test_metal_float_adm_math.c",
     "core/test/test_metal_float_adm_parity.c",
@@ -282,6 +292,8 @@
     "core/test/test_metal_integer_vif_gain.c",
     "core/test/test_metal_integer_vif_math.c",
     "core/test/test_metal_integer_vif_parity.c",
+    "core/test/test_metal_iosurface_import_parity.c",
+    "core/test/test_metal_iosurface_layout.c",
     "core/test/test_metal_motion_v2_parity.c",
     "core/test/test_metal_ms_ssim_option_semantics.c",
     "core/test/test_metal_portable.c",
@@ -388,5 +400,43 @@
   "total_warnings": 0,
   "total_nolint_uncited": 0,
   "warnings": {},
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/mcp/compute_vmaf.c",
+        "core/src/mcp/dispatcher.c",
+        "core/src/mcp/mcp.c",
+        "core/src/mcp/transport_sse.c",
+        "core/src/mcp/transport_stdio.c",
+        "core/src/mcp/transport_uds.c",
+        "core/test/test_mcp_compute_vmaf_allowlist.c",
+        "core/test/test_mcp_coverage.c",
+        "core/test/test_mcp_smoke.c",
+        "core/test/test_mcp_stop_idempotent.c",
+        "core/test/test_metal_iosurface_import_parity.c",
+        "core/test/test_metal_iosurface_layout.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/mcp/compute_vmaf.c",
+            "core/src/mcp/dispatcher.c",
+            "core/src/mcp/mcp.c",
+            "core/src/mcp/transport_sse.c",
+            "core/src/mcp/transport_stdio.c",
+            "core/src/mcp/transport_uds.c",
+            "core/test/test_mcp_compute_vmaf_allowlist.c",
+            "core/test/test_mcp_coverage.c",
+            "core/test/test_mcp_smoke.c",
+            "core/test/test_mcp_stop_idempotent.c",
+            "core/test/test_metal_iosurface_import_parity.c",
+            "core/test/test_metal_iosurface_layout.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "2e3ce35b91782b7f4c261deabfc9cebd521805dcd9d5fcd1e6217ac9209f9a0e"
+    }
+  ]
 }

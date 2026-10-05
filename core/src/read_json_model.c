@@ -33,6 +33,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 #define MODEL_FEATURE_INITIAL_CAP 8u
 #define MODEL_KNOT_INITIAL_CAP 4u
 
@@ -835,3 +840,5 @@ int vmaf_read_json_model_collection_from_buffer(VmafModel **model,
     json_close(&s);
     return err;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

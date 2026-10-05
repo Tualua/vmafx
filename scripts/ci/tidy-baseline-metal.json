@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "lane": "metal",
+  "generator": "scripts/ci/tidy-ratchet.py",
+  "clang_tidy_version": "",
+  "cc_version": "",
+  "tus": 0,
+  "measured_sources": [],
+  "compile_failures": [],
+  "total_warnings": 0,
+  "total_nolint_uncited": 0,
+  "warnings": {},
+  "nolint_uncited": {}
+}

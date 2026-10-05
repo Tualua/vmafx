@@ -43,6 +43,11 @@
 #include "libvmaf/libvmaf_mcp.h"
 #include "mcp_internal.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 int vmaf_mcp_available(void)
 {
 #ifdef HAVE_MCP
@@ -189,6 +194,7 @@ static int sse_bind_loopback(uint16_t requested_port, uint16_t *resolved_port)
     /* Resolve the bound port (so port==0 callers learn what the
      * kernel picked). */
     struct sockaddr_in bound;
+    (void)memset(&bound, 0, sizeof(bound));
     socklen_t blen = sizeof(bound);
     if (getsockname(fd, (struct sockaddr *)&bound, &blen) != 0) {
         int saved = errno;
@@ -502,3 +508,5 @@ void vmaf_mcp_close(VmafMcpServer **server)
     free(s);
     *server = NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

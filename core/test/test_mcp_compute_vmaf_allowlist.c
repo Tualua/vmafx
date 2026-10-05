@@ -41,6 +41,11 @@
 /* White-box include of the CU under test to reach the static validate_path(). */
 /* NOLINTNEXTLINE(bugprone-suspicious-include) — white-box test, see above (ADR-0141 / ADR-0278). */
 #include "mcp/compute_vmaf.c"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 #undef vmaf_mcp_compute_vmaf
 
 /* Return the repo root via the same marker-walk validate_path() uses, so
@@ -214,3 +219,5 @@ char *run_tests(void)
     mu_run_test(test_vmaf_mcp_allow_extends_roots);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

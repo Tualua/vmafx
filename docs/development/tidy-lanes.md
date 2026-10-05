@@ -13,7 +13,7 @@ one place: the dev container
 
 ```bash
 make tidy-lane LANE=cpu          # compare with the committed baseline
-make tidy-lane LANE=all          # cpu, cuda, hip, sycl and arm64, one after the other
+make tidy-lane LANE=all          # cpu, clang, cuda, hip, sycl and arm64, one after the other
 make tidy-lane-write LANE=hip    # rewrite scripts/ci/tidy-baseline-hip.json
 ```
 
@@ -139,7 +139,8 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 
 | Lane | Compilers | `meson setup` options | Parsed by |
 | --- | --- | --- | --- |
-| `cpu` | gcc-15 / g++-15 | `-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false` | clang-tidy 22 |
+| `cpu` | gcc-15 / g++-15 | `-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled -Denable_mcp_uds=true -Denable_mcp_stdio=true -Db_lto=false` | clang-tidy 22 |
+| `clang` | clang-22 / clang++-22 | the `cpu` options plus `-Dfuzz=true` | clang-tidy 22, `--select core/test/fuzz/ --select core/src/read_json_model.c` |
 | `cuda` | gcc-15 / g++-15, nvcc | `-Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22, `--cuda-host-only -nocudalib` |
 | `hip` | gcc-15 / g++-15, hipcc | `-Denable_hip=true -Denable_hipcc=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 for the host files, ROCm's clang-tidy for the `.hip` kernels |
 | `sycl` | icx / icpx | `-Denable_sycl=true -Dsycl_icpx_aot_targets= -Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 through `scripts/ci/clang-tidy-sycl.sh` |
@@ -175,6 +176,69 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
   second one, `build-aux/aarch64-linux-gnu-qemu-user.ini`, that names
   Ubuntu's `qemu-aarch64` (the first names `qemu-aarch64-static`, which
   Ubuntu 26.04 does not package); meson runs its compiler check through it.
+
+- `clang` exists because libFuzzer is a clang feature: `-Dfuzz=true` is a
+  configure error under gcc, so the five harnesses of `core/test/fuzz/` (and
+  `core/src/read_json_model.c`, which only they compile) are in no gcc
+  database. The lane builds the `cpu` configuration with clang and measures
+  those files only (`--select`, a path prefix of `scripts/ci/tidy-ratchet.py`),
+  so a file the other lanes own is not counted twice. The container installs
+  `clang-22` and `libclang-rt-22-dev` from the same apt.llvm.org archive as
+  clang-tidy.
+- `cpu` configures the embedded MCP server (`-Denable_mcp=true` and its three
+  transports), so `core/src/mcp/` and `core/test/test_mcp_*.c` are read. The
+  hosted `Tidy Ratchet` job repeats the same options.
+
+## What every translation unit is read by
+
+Every tracked `.c`, `.cc`, `.cpp`, `.cxx`, `.cu`, `.hip`, `.mm` and `.metal`
+file is in the `measured_sources` of at least one baseline
+(`scripts/ci/tidy-baseline-<lane>.json`) or in
+the shared lint exception list. The check that fails otherwise lands in the
+follow-up pull request; until then the rule is by review.
+
+A new translation unit therefore has to land in a lane: configure the option
+that builds it in the lane that reads it, and write its allowance with
+`scripts/dev/tidy-lane.sh --write --only <path> <lane>` (the scoped write also
+records the file as measured). A file no lane can read gets one entry in the
+exception list: the path, the rule `tidy-coverage`, a reason that names the
+missing tool or toolchain, and an expiry date. An entry fails the check once
+it has expired, when its file is gone, and when a lane reads the file after
+all; extend or delete it, never leave it.
+
+| Group | Read by | Why the rest is excepted |
+| --- | --- | --- |
+| C, C++ and the device kernels | `cpu`, `clang`, `cuda`, `hip`, `sycl`, `arm64` (the six container lanes) | |
+| Metal host code (`core/src/metal/*.mm`, `core/src/feature/metal/*_metal.mm`) and the Metal-only C tests | `metal` (macOS, below) | |
+| Metal kernels (`core/src/feature/metal/*.metal`) | nothing | Upstream clang-tidy has no Metal language mode (`clang -x metal` answers "language not recognized"). |
+| `.config/hiss/testdata/` | nothing | The planted defect is the fixture. |
+| `cmd/vmafx-node/bpf/` | nothing | Includes `vmlinux.h`, generated from a running kernel's BTF. |
+| `core/tools/compat/win32/getopt.c`, `core/tools/test/test_vmaf_windows_utf8_argv.cpp` | nothing | Built on Windows only. |
+| `core/src/feature/tad_rust.c`, `core/test/test_tad_rust.c` | nothing | Need `-Denable_rust_features=true` (cargo and cbindgen), absent from the image. |
+| Pelorus interop mirror (`scripts/ci/pelorus-mirror-paths.txt`) | nothing | Byte-exact mirror (ADR-1113); fixes go upstream. |
+| `scripts/dev/upstream_parity_harness.c`, `scripts/dev/hip_dispatch_drop_probe.hip` | nothing | Built by hand or by a script, outside meson. |
+
+`core/src/feature/hip/integer_adm/adm_decouple_inline.hip` is a header that two
+kernels include; the check does not count it as a unit.
+
+## The macOS `metal` lane
+
+The Objective-C++ sources of the Metal backend need Apple's SDK, which no
+container has. The `Tidy Metal` workflow
+([`tidy-metal.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/tidy-metal.yml))
+runs on `macos-latest` weekly, on a pull request that touches the Metal host
+sources, and on dispatch (a macOS runner bills ten times a Linux one, so it is
+not a per-pull-request gate, as for the tester bundle): Homebrew's `llvm@22` clang-tidy (the Linux lanes'
+major), Apple clang's compile commands, `-isysroot` named explicitly because
+Homebrew's clang-tidy has no implicit SDK. It measures
+`core/src/metal/`, `core/src/feature/metal/` and the four Metal-only tests
+(`--select`) against `scripts/ci/tidy-baseline-metal.json`. The configuration
+is `TIDY_RATCHET_COMPILERS_metal` / `TIDY_RATCHET_SETUP_metal` in the
+`Makefile`, repeated by the job; `test_tidy_lane_container.py` compares them.
+The job is not a required check yet. It becomes one after it has passed on
+`master`, the path the SYCL lane took (ADR-1297). The artifact of a run
+(`tidy-ratchet-metal`) holds every diagnostic behind the counts; the baseline
+is the same JSON without them.
 
 ## What the hosted job covers
 

@@ -467,7 +467,9 @@ jobs:
           # identical.
           TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"
           CC=gcc-15 CXX=g++-15 meson setup "$TIDY_BUILD_DIR" core \
-            -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
+            -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled \
+            -Denable_mcp=true -Denable_mcp_sse=enabled -Denable_mcp_uds=true \
+            -Denable_mcp_stdio=true -Db_lto=false
           meson compile -C "$TIDY_BUILD_DIR"
           python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
       - name: Ratchet — whole-tree clang-tidy vs committed baseline

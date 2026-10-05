@@ -200,7 +200,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     memcpy(buf, data, size);
 
     char *argv[FUZZ_MAX_ARGC];
-    memset(argv, 0, sizeof(argv));
+    /* The cast keeps bugprone-multi-level-implicit-pointer-conversion quiet. */
+    memset((void *)argv, 0, sizeof(argv));
     const unsigned argc = tokenise_argv(buf, size, argv, FUZZ_MAX_ARGC);
     if (argc < 2u) {
         free(buf);

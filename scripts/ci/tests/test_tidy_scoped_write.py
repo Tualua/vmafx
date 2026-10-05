@@ -116,6 +116,39 @@ class ScopedWriter(unittest.TestCase):
         )
         self.assertEqual(self.baseline.read_bytes(), once)
 
+    def test_scoped_write_records_a_new_unit_as_measured(self) -> None:
+        """A unit a lane did not read before enters its measured sources."""
+        original = copy.deepcopy(self.original)
+        original["measured_sources"] = ["core/src/b.c"]
+        self.baseline.write_text(json.dumps(original) + "\n")
+        self.assertEqual(
+            ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key]), 0
+        )
+        updated = json.loads(self.baseline.read_text())
+        self.assertEqual(updated["measured_sources"], ["core/src/a.c", "core/src/b.c"])
+        self.assertEqual(updated["tus"], 293)
+        added = updated["scoped_updates"][0]["changes"]["measured_sources"]["added"]
+        self.assertEqual(added, [self.key])
+        # A unit already measured changes nothing.
+        before = self.baseline.read_bytes()
+        ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key])
+        self.assertEqual(json.loads(self.baseline.read_text())["tus"], 293)
+        self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_select_keeps_only_the_prefixes_then_the_only_files(self) -> None:
+        units = [(self.root / name, self.root) for name in ("a/x.c", "a/y.c", "b/z.c")]
+        picked = ratchet.select_units(units, self.root, [], ["a/", "b/z.c"])
+        self.assertEqual(len(picked), 3)
+        # A file entry is one file: "b/z.c" does not select "b/z.cpp".
+        both = [(self.root / "b/z.c", self.root), (self.root / "b/z.cpp", self.root)]
+        self.assertEqual(len(ratchet.select_units(both, self.root, [], ["b/z.c"])), 1)
+        picked = ratchet.select_units(units, self.root, [str(self.root / "a/y.c")], ["a/"])
+        self.assertEqual([u[0].name for u in picked], ["y.c"])
+        with self.assertRaises(ValueError):
+            ratchet.select_units(units, self.root, [str(self.root / "b/z.c")], ["a/"])
+        with self.assertRaises(ValueError):
+            ratchet.select_units(units, self.root, [], ["nothing/"])
+
     def test_scoped_write_preserves_legacy_exact_vendor_entries(self) -> None:
         vendor = "core/src/interop/pelorus_interop.c"
         original = copy.deepcopy(self.original)
