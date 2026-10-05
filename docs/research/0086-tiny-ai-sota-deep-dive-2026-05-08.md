@@ -12,6 +12,17 @@
   ADR-0309 (ensemble retrain), ADR-0310 (BVI-DVC ingestion), ADR-0042 (tiny-AI
   per-PR doc bar)
 
+> **Correction, 2026-10-05.** The licence statements in this digest ("BSD/permissive",
+> "BSD-3-Clause-Plus-Patent", "our BSD stack") describe the fork before
+> [ADR-1250](../adr/1250-eupl-fork-relicense.md) and are out of date. Fork-authored
+> code is EUPL-1.2; Netflix-inherited code keeps BSD-2-Clause-Patent; there is no
+> dual, commercial or permissive licence for the fork
+> ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md),
+> [`docs/licensing.md`](../licensing.md)). The licence-compatibility reasoning
+> about GPL-2.0 code (x264-pVMAF) below was made against the old licence and
+> has not been redone. The rest of the digest is unchanged, as a record of
+> 2026-05-08. Do not quote its licence lines.
+
 ---
 
 ## TL;DR

@@ -63,6 +63,11 @@ No rebase impact: docs only.
   `VMAF_SYCL_VIF_SUBGROUP_SIZE` are removed, and so is
   `test_sycl_vif_parity_sg32`. They spilled on Xe-LP. A sync must not bring
   any of them back; the source contract refuses it.
+## CUDA path is not zero-copy: documentation wording (2026-10-05)
+
+`docs/v1-gpu-fallbacks-zero-copy`. no rebase impact: docs only. Edits `docs/usage/ffmpeg.md`,
+`docs/backends/cuda/overview.md`, `docs/backends/hip/uploads.md` and a dated correction note
+in `docs/research/0086-tiny-ai-sota-deep-dive-2026-05-08.md`; no code, no FFmpeg patch.
 
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 

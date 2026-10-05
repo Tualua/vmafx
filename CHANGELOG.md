@@ -1042,6 +1042,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   off by default; the documented cache flags never existed).
 
 
+- The CUDA / NVDEC path of the `libvmaf_cuda` FFmpeg filter is no longer called
+  "zero-copy" in the documentation: no frame goes through host memory, but each
+  decoded frame is copied device to device into libvmaf's picture pool
+  (ADR-1685). The HIP upload page no longer says the CUDA backend imports
+  external memory (no source file does), and Research-0086 carries a dated note
+  that its licence lines predate ADR-1250.
+
+
 - **Thirty-six pages that were outside the site navigation are audited and reachable.** Each was
   checked against the code: the contributor, CI, architecture, Kubernetes and observability pages
   were corrected (coverage gate and CI job names rewritten from the workflows, publishing, cargo-deny,

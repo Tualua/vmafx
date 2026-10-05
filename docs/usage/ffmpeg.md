@@ -324,7 +324,10 @@ The complete list is in
 
 ### `libvmaf_cuda`
 
-`libvmaf_cuda` keeps CUDA hwaccel frames on the GPU end to end. It needs
+`libvmaf_cuda` keeps CUDA hwaccel frames on the GPU: no frame goes through host
+memory. It is not zero-copy: the filter copies each decoded frame device to device into
+libvmaf's own picture pool ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md);
+importing the decoder's frame without that copy is post-1.0 work). It needs
 libvmaf built with `-Denable_cuda=true` and FFmpeg configured with
 `--enable-libvmaf-cuda` (patch `0010`).
 
@@ -459,7 +462,9 @@ faster than software decode. Bridge them to the libvmaf compute backend:
 | VideoToolbox | `libvmaf_metal` | No |
 | Plain VAAPI (AMD or non-QSV Intel) | `libvmaf` with `sycl_device=N` | Yes |
 
-**CUDA, zero-copy end to end** (decode and compute on the same GPU):
+**CUDA, device-resident** (decode and compute on the same GPU; no host copy, one
+device-to-device copy per frame into libvmaf's pool, see
+[`libvmaf_cuda`](#libvmaf_cuda)):
 
 ```bash
 ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \

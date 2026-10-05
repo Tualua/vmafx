@@ -10,11 +10,13 @@ process; the `vmaf` tool creates one.
 
 ## Zero-copy import
 
-Unlike the CUDA backend (which supports `cudaImportExternalMemory` via
-`vmaf_cuda_picture_alloc`) and hardware decoders with DMA-BUF zero-copy
-pipelines,
-the HIP backend currently does not provide zero-copy picture buffer import
-(`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
+The CUDA backend has no zero-copy import either: a decoded CUDA frame is
+copied device to device into libvmaf's own pool
+([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)); no source
+file calls `cuImportExternalMemory`. Only the SYCL backend imports a DMA-BUF or
+VA surface without a copy, and then luma only
+([zero-copy guide](../sycl/zero-copy.md)). The HIP backend does not provide any
+picture buffer import (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
 
 Incoming frames arrive with `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory.
 The planes the extractors of a run read are copied to the device once per
