@@ -400,9 +400,7 @@
         "core/src/feature/x86/convolve_avx2.c": 1,
         "core/src/feature/x86/psnr_hvs_avx2.c": 1,
         "core/src/feature/x86/speed_matmul_avx2.c": 1,
-        "core/src/feature/x86/ssimulacra2_avx2.c": 6,
-        "core/src/feature/x86/ssimulacra2_avx512.c": 6,
-        "core/src/feature/x86/ssimulacra2_host_avx2.c": 1,
+        "core/src/feature/x86/ssimulacra2_avx512.c": 2,
         "core/src/feature/x86/vif_avx512.c": 6,
         "core/src/feature/x86/vif_statistic_avx2.c": 2,
         "core/test/simd_bitexact_test.h": 1,
@@ -438,10 +436,9 @@
         "core/src/feature/x86/speed_matmul_avx2.c": 1,
         "core/src/feature/x86/ssim_avx2.c": 1,
         "core/src/feature/x86/ssim_avx512.c": 2,
-        "core/src/feature/x86/ssimulacra2_avx2.c": 2,
+        "core/src/feature/x86/ssimulacra2_avx2.c": 3,
         "core/src/feature/x86/ssimulacra2_avx2.h": 1,
-        "core/src/feature/x86/ssimulacra2_avx512.c": 1,
-        "core/src/feature/x86/ssimulacra2_host_avx2.c": 1,
+        "core/src/feature/x86/ssimulacra2_avx512.c": 3,
         "core/src/feature/x86/vif_avx512.c": 6,
         "core/src/feature/x86/vif_statistic_avx2.c": 3,
         "core/test/simd_bitexact_test.h": 1,
@@ -513,9 +510,7 @@
         "core/src/feature/third_party/xiph/psnr_hvs.c": 3,
         "core/src/feature/x86/adm_avx2.c": 2,
         "core/src/feature/x86/adm_avx512.c": 2,
-        "core/src/feature/x86/ssimulacra2_avx2.c": 10,
-        "core/src/feature/x86/ssimulacra2_avx512.c": 8,
-        "core/src/feature/x86/ssimulacra2_host_avx2.c": 3,
+        "core/src/feature/x86/ssimulacra2_avx512.c": 2,
         "core/src/feature/x86/vif_avx512.c": 2,
         "core/src/feature/y_funque_plus.c": 1,
         "core/src/gpu_dispatch_env.cpp": 1,
@@ -745,7 +740,7 @@
         "core/src/feature/x86/ssimulacra2_avx2.c": 2,
         "core/src/feature/x86/ssimulacra2_avx512.c": 1,
         "core/src/feature/x86/ssimulacra2_avx512.h": 1,
-        "core/src/feature/x86/ssimulacra2_host_avx2.c": 3,
+        "core/src/feature/x86/ssimulacra2_host_avx2.c": 2,
         "core/src/feature/x86/ssimulacra2_host_avx2.h": 1,
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
@@ -1603,12 +1598,6 @@
       },
       "target": "0251-vulkan-async-pending-fence.md"
     },
-    "0252": {
-      "sites": {
-        "core/src/feature/x86/ssimulacra2_host_avx2.c": 1
-      },
-      "target": "0252-ssimulacra2-host-xyb-simd.md"
-    },
     "0253": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 1,
@@ -1847,7 +1836,6 @@
         "core/src/feature/tad_rust.c": 1,
         "core/src/feature/third_party/xiph/psnr_hvs.c": 2,
         "core/src/feature/transnet_v2.c": 1,
-        "core/src/feature/x86/ssimulacra2_host_avx2.c": 2,
         "core/src/feature/x86/vif_avx512.c": 1,
         "core/src/gpu_dispatch_env.cpp": 1,
         "core/src/libvmaf.c": 2,
@@ -5053,7 +5041,7 @@
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 2,
         "core/src/feature/x86/ssimulacra2_avx2.c": 2,
-        "core/src/feature/x86/ssimulacra2_avx512.c": 2,
+        "core/src/feature/x86/ssimulacra2_avx512.c": 3,
         "core/src/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_feature_isa_invariance.c": 1,

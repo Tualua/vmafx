@@ -123,99 +123,130 @@ void ssimulacra2_multiply_3plane_avx512(const float *a, const float *b, float *m
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+/* One 16-pixel block of the linear RGB -> XYB conversion. The helpers below
+ * hold the exact statements the single kernel used to carry, in the same
+ * order; every operation is a separate IEEE-754 float operation (this TU is
+ * built with contraction off), so splitting the kernel does not change a
+ * bit. */
+typedef struct {
+    float m01;
+    float m11;
+    float m22;
+    float cbrt_bias;
+} xyb_coefs_avx512_t;
+
+/* LMS mixing matrix + opsin bias, clamped at zero. Addition order MUST match
+ * scalar left-to-right: ((a + b) + c) + d. IEEE-754 add is non-associative
+ * and test_xyb catches the drift. */
+static inline void xyb_lms_avx512(const xyb_coefs_avx512_t *k, __m512 r, __m512 g, __m512 b,
+                                  __m512 *l, __m512 *m, __m512 *sv)
+{
+    const __m512 vbias = _mm512_set1_ps(kOpsinBias);
+    const __m512 vzero = _mm512_setzero_ps();
+    __m512 lv = _mm512_add_ps(_mm512_mul_ps(_mm512_set1_ps(kM00), r),
+                              _mm512_mul_ps(_mm512_set1_ps(k->m01), g));
+    lv = _mm512_add_ps(lv, _mm512_mul_ps(_mm512_set1_ps(kM02), b));
+    lv = _mm512_add_ps(lv, vbias);
+    __m512 mv = _mm512_add_ps(_mm512_mul_ps(_mm512_set1_ps(kM10), r),
+                              _mm512_mul_ps(_mm512_set1_ps(k->m11), g));
+    mv = _mm512_add_ps(mv, _mm512_mul_ps(_mm512_set1_ps(kM12), b));
+    mv = _mm512_add_ps(mv, vbias);
+    __m512 sw = _mm512_add_ps(_mm512_mul_ps(_mm512_set1_ps(kM20), r),
+                              _mm512_mul_ps(_mm512_set1_ps(kM21), g));
+    sw = _mm512_add_ps(sw, _mm512_mul_ps(_mm512_set1_ps(k->m22), b));
+    sw = _mm512_add_ps(sw, vbias);
+    /* Clamp to zero below, as the scalar `if (l < 0.0f) l = 0.0f`. */
+    *l = _mm512_max_ps(lv, vzero);
+    *m = _mm512_max_ps(mv, vzero);
+    *sv = _mm512_max_ps(sw, vzero);
+}
+
+/* MakePositiveXYB rescale in libjxl order (B uses Y before the Y offset).
+ * X = 0.5 * (L - M), then X * 14 + 0.42: the folded (L - M) * 7 rounds
+ * differently and fails the bit-exact assertion in test_xyb. */
+static inline void xyb_rescale_avx512(__m512 L, __m512 M, __m512 S, __m512 *xf, __m512 *yf,
+                                      __m512 *bf)
+{
+    const __m512 Y = _mm512_mul_ps(_mm512_set1_ps(0.5f), _mm512_add_ps(L, M));
+    *bf = _mm512_add_ps(_mm512_sub_ps(S, Y), _mm512_set1_ps(0.55f));
+    const __m512 X_half = _mm512_mul_ps(_mm512_set1_ps(0.5f), _mm512_sub_ps(L, M));
+    *xf = _mm512_add_ps(_mm512_mul_ps(X_half, _mm512_set1_ps(14.0f)), _mm512_set1_ps(0.42f));
+    *yf = _mm512_add_ps(Y, _mm512_set1_ps(0.01f));
+}
+
+static inline void xyb_block_avx512(const xyb_coefs_avx512_t *k, const float *const rgb[3],
+                                    float *const xyb[3], size_t i)
+{
+    __m512 l;
+    __m512 m;
+    __m512 sv;
+    xyb_lms_avx512(k, _mm512_loadu_ps(rgb[0] + i), _mm512_loadu_ps(rgb[1] + i),
+                   _mm512_loadu_ps(rgb[2] + i), &l, &m, &sv);
+    const __m512 vcbrt_bias = _mm512_set1_ps(k->cbrt_bias);
+    /* `cbrtf` is applied per lane through scalar libm; see `cbrtf_lane_avx512`. */
+    const __m512 L = _mm512_sub_ps(cbrtf_lane_avx512(l), vcbrt_bias);
+    const __m512 M = _mm512_sub_ps(cbrtf_lane_avx512(m), vcbrt_bias);
+    const __m512 S = _mm512_sub_ps(cbrtf_lane_avx512(sv), vcbrt_bias);
+    __m512 xf;
+    __m512 yf;
+    __m512 bf;
+    xyb_rescale_avx512(L, M, S, &xf, &yf, &bf);
+    _mm512_storeu_ps(xyb[0] + i, xf);
+    _mm512_storeu_ps(xyb[1] + i, yf);
+    _mm512_storeu_ps(xyb[2] + i, bf);
+}
+
+/* Scalar tail pixel, identical to the scalar reference body. */
+static inline void xyb_pixel_scalar(const xyb_coefs_avx512_t *k, const float *const rgb[3],
+                                    float *const xyb[3], size_t i)
+{
+    const float r = rgb[0][i];
+    const float g = rgb[1][i];
+    const float bb = rgb[2][i];
+    float l = kM00 * r + k->m01 * g + kM02 * bb + kOpsinBias;
+    float m = kM10 * r + k->m11 * g + kM12 * bb + kOpsinBias;
+    float s = kM20 * r + kM21 * g + k->m22 * bb + kOpsinBias;
+    if (l < 0.0f)
+        l = 0.0f;
+    if (m < 0.0f)
+        m = 0.0f;
+    if (s < 0.0f)
+        s = 0.0f;
+    const float L = vmaf_ss2_cbrtf(l) - k->cbrt_bias;
+    const float M = vmaf_ss2_cbrtf(m) - k->cbrt_bias;
+    const float S = vmaf_ss2_cbrtf(s) - k->cbrt_bias;
+    float X = 0.5f * (L - M);
+    float Y = 0.5f * (L + M);
+    float B = S;
+    B = (B - Y) + 0.55f;
+    X = X * 14.0f + 0.42f;
+    Y = Y + 0.01f;
+    xyb[0][i] = X;
+    xyb[1][i] = Y;
+    xyb[2][i] = B;
+}
+
 void ssimulacra2_linear_rgb_to_xyb_avx512(const float *lin, float *xyb, unsigned w, unsigned h)
 {
     assert(lin != NULL);
     assert(xyb != NULL);
     assert(w > 0 && h > 0);
     const size_t plane_sz = (size_t)w * (size_t)h;
-    const float *rp = lin;
-    const float *gp = lin + plane_sz;
-    const float *bp = lin + 2 * plane_sz;
-    float *xp = xyb;
-    float *yp = xyb + plane_sz;
-    float *bxp = xyb + 2 * plane_sz;
-
-    const float m01 = 1.0f - kM00 - kM02;
-    const float m11 = 1.0f - kM10 - kM12;
-    const float m22 = 1.0f - kM20 - kM21;
-    const float cbrt_bias = vmaf_ss2_cbrtf(kOpsinBias);
-
-    const __m512 vm00 = _mm512_set1_ps(kM00);
-    const __m512 vm01 = _mm512_set1_ps(m01);
-    const __m512 vm02 = _mm512_set1_ps(kM02);
-    const __m512 vm10 = _mm512_set1_ps(kM10);
-    const __m512 vm11 = _mm512_set1_ps(m11);
-    const __m512 vm12 = _mm512_set1_ps(kM12);
-    const __m512 vm20 = _mm512_set1_ps(kM20);
-    const __m512 vm21 = _mm512_set1_ps(kM21);
-    const __m512 vm22 = _mm512_set1_ps(m22);
-    const __m512 vbias = _mm512_set1_ps(kOpsinBias);
-    const __m512 vzero = _mm512_setzero_ps();
-    const __m512 vcbrt_bias = _mm512_set1_ps(cbrt_bias);
-    const __m512 vhalf = _mm512_set1_ps(0.5f);
-    const __m512 v14 = _mm512_set1_ps(14.0f);
-    const __m512 v42 = _mm512_set1_ps(0.42f);
-    const __m512 v55 = _mm512_set1_ps(0.55f);
-    const __m512 v01 = _mm512_set1_ps(0.01f);
+    const float *const rgb[3] = {lin, lin + plane_sz, lin + 2 * plane_sz};
+    float *const out[3] = {xyb, xyb + plane_sz, xyb + 2 * plane_sz};
+    const xyb_coefs_avx512_t k = {
+        .m01 = 1.0f - kM00 - kM02,
+        .m11 = 1.0f - kM10 - kM12,
+        .m22 = 1.0f - kM20 - kM21,
+        .cbrt_bias = vmaf_ss2_cbrtf(kOpsinBias),
+    };
 
     size_t i = 0;
     for (; i + 16 <= plane_sz; i += 16) {
-        const __m512 r = _mm512_loadu_ps(rp + i);
-        const __m512 g = _mm512_loadu_ps(gp + i);
-        const __m512 b = _mm512_loadu_ps(bp + i);
-        __m512 l = _mm512_add_ps(_mm512_mul_ps(vm00, r), _mm512_mul_ps(vm01, g));
-        l = _mm512_add_ps(l, _mm512_mul_ps(vm02, b));
-        l = _mm512_add_ps(l, vbias);
-        __m512 m = _mm512_add_ps(_mm512_mul_ps(vm10, r), _mm512_mul_ps(vm11, g));
-        m = _mm512_add_ps(m, _mm512_mul_ps(vm12, b));
-        m = _mm512_add_ps(m, vbias);
-        __m512 sv = _mm512_add_ps(_mm512_mul_ps(vm20, r), _mm512_mul_ps(vm21, g));
-        sv = _mm512_add_ps(sv, _mm512_mul_ps(vm22, b));
-        sv = _mm512_add_ps(sv, vbias);
-        l = _mm512_max_ps(l, vzero);
-        m = _mm512_max_ps(m, vzero);
-        sv = _mm512_max_ps(sv, vzero);
-        const __m512 L = _mm512_sub_ps(cbrtf_lane_avx512(l), vcbrt_bias);
-        const __m512 M = _mm512_sub_ps(cbrtf_lane_avx512(m), vcbrt_bias);
-        const __m512 S = _mm512_sub_ps(cbrtf_lane_avx512(sv), vcbrt_bias);
-        const __m512 X = _mm512_mul_ps(vhalf, _mm512_sub_ps(L, M));
-        const __m512 Y = _mm512_mul_ps(vhalf, _mm512_add_ps(L, M));
-        const __m512 B = S;
-        const __m512 Bfinal = _mm512_add_ps(_mm512_sub_ps(B, Y), v55);
-        const __m512 Xfinal = _mm512_add_ps(_mm512_mul_ps(X, v14), v42);
-        const __m512 Yfinal = _mm512_add_ps(Y, v01);
-        _mm512_storeu_ps(xp + i, Xfinal);
-        _mm512_storeu_ps(yp + i, Yfinal);
-        _mm512_storeu_ps(bxp + i, Bfinal);
+        xyb_block_avx512(&k, rgb, out, i);
     }
-
     for (; i < plane_sz; i++) {
-        float r = rp[i];
-        float g = gp[i];
-        float bb = bp[i];
-        float l = kM00 * r + m01 * g + kM02 * bb + kOpsinBias;
-        float m = kM10 * r + m11 * g + kM12 * bb + kOpsinBias;
-        float s = kM20 * r + kM21 * g + m22 * bb + kOpsinBias;
-        if (l < 0.0f)
-            l = 0.0f;
-        if (m < 0.0f)
-            m = 0.0f;
-        if (s < 0.0f)
-            s = 0.0f;
-        float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
-        float M = vmaf_ss2_cbrtf(m) - cbrt_bias;
-        float S = vmaf_ss2_cbrtf(s) - cbrt_bias;
-        float X = 0.5f * (L - M);
-        float Y = 0.5f * (L + M);
-        float B = S;
-        B = (B - Y) + 0.55f;
-        X = X * 14.0f + 0.42f;
-        Y = Y + 0.01f;
-        xp[i] = X;
-        yp[i] = Y;
-        bxp[i] = B;
+        xyb_pixel_scalar(&k, rgb, out, i);
     }
 }
 
@@ -274,69 +305,83 @@ void ssimulacra2_downsample_2x2_avx512(const float *in, unsigned iw, unsigned ih
     }
 }
 
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+/* d = 1.0 - (num_m * num_s / denom_s), taken in double to match the scalar
+ * reference's (double)num_m * (double)num_s / (double)denom_s (ADR-0139). */
+static inline void ssim_accum_d(double *sum_l1, double *sum_l4, float num_m, float num_s,
+                                float denom_s)
+{
+    double d = 1.0 - ((double)num_m * (double)num_s / (double)denom_s);
+    if (d < 0.0)
+        d = 0.0;
+    *sum_l1 += d;
+    *sum_l4 += quartic_d(d);
+}
+
+/* One 16-pixel block: pointwise float terms in SIMD, then a per-lane double
+ * accumulate (spill + scalar tail, ADR-0139) to keep the scalar summation
+ * tree. */
+static inline void ssim_block_avx512(const float *const p[5], size_t i, double *sum_l1,
+                                     double *sum_l4)
+{
+    const __m512 vc2 = _mm512_set1_ps(kC2);
+    const __m512 mu1 = _mm512_loadu_ps(p[0] + i);
+    const __m512 mu2 = _mm512_loadu_ps(p[1] + i);
+    const __m512 mu11 = _mm512_mul_ps(mu1, mu1);
+    const __m512 mu22 = _mm512_mul_ps(mu2, mu2);
+    const __m512 mu12 = _mm512_mul_ps(mu1, mu2);
+    const __m512 diff = _mm512_sub_ps(mu1, mu2);
+    const __m512 num_m = _mm512_sub_ps(_mm512_set1_ps(1.0f), _mm512_mul_ps(diff, diff));
+    const __m512 num_s = _mm512_add_ps(
+        _mm512_mul_ps(_mm512_set1_ps(2.0f), _mm512_sub_ps(_mm512_loadu_ps(p[4] + i), mu12)), vc2);
+    const __m512 denom_s =
+        _mm512_add_ps(_mm512_add_ps(_mm512_sub_ps(_mm512_loadu_ps(p[2] + i), mu11),
+                                    _mm512_sub_ps(_mm512_loadu_ps(p[3] + i), mu22)),
+                      vc2);
+    alignas(64) float num_m_f[16];
+    alignas(64) float num_s_f[16];
+    alignas(64) float denom_s_f[16];
+    _mm512_store_ps(num_m_f, num_m);
+    _mm512_store_ps(num_s_f, num_s);
+    _mm512_store_ps(denom_s_f, denom_s);
+    for (int k = 0; k < 16; k++) {
+        ssim_accum_d(sum_l1, sum_l4, num_m_f[k], num_s_f[k], denom_s_f[k]);
+    }
+}
+
+/* Scalar tail pixel, identical to the scalar reference. */
+static inline void ssim_pixel_scalar(const float *const p[5], size_t i, double *sum_l1,
+                                     double *sum_l4)
+{
+    const float mu1 = p[0][i];
+    const float mu2 = p[1][i];
+    const float mu11 = mu1 * mu1;
+    const float mu22 = mu2 * mu2;
+    const float mu12 = mu1 * mu2;
+    const float num_m = 1.0f - (mu1 - mu2) * (mu1 - mu2);
+    const float num_s = 2.0f * (p[4][i] - mu12) + kC2;
+    const float denom_s = (p[2][i] - mu11) + (p[3][i] - mu22) + kC2;
+    ssim_accum_d(sum_l1, sum_l4, num_m, num_s, denom_s);
+}
+
 void ssimulacra2_ssim_map_avx512(const float *m1, const float *m2, const float *s11,
                                  const float *s22, const float *s12, unsigned w, unsigned h,
                                  double plane_averages[6])
 {
     const size_t plane = (size_t)w * (size_t)h;
     const double one_per_pixels = 1.0 / (double)plane;
-    const __m512 vc2 = _mm512_set1_ps(kC2);
-    const __m512 vone = _mm512_set1_ps(1.0f);
-    const __m512 vtwo = _mm512_set1_ps(2.0f);
 
     for (int c = 0; c < 3; c++) {
         double sum_l1 = 0.0;
         double sum_l4 = 0.0;
-        const float *rm1 = m1 + (size_t)c * plane;
-        const float *rm2 = m2 + (size_t)c * plane;
-        const float *rs11 = s11 + (size_t)c * plane;
-        const float *rs22 = s22 + (size_t)c * plane;
-        const float *rs12 = s12 + (size_t)c * plane;
+        const size_t off = (size_t)c * plane;
+        const float *const p[5] = {m1 + off, m2 + off, s11 + off, s22 + off, s12 + off};
 
         size_t i = 0;
         for (; i + 16 <= plane; i += 16) {
-            const __m512 mu1 = _mm512_loadu_ps(rm1 + i);
-            const __m512 mu2 = _mm512_loadu_ps(rm2 + i);
-            const __m512 mu11 = _mm512_mul_ps(mu1, mu1);
-            const __m512 mu22 = _mm512_mul_ps(mu2, mu2);
-            const __m512 mu12 = _mm512_mul_ps(mu1, mu2);
-            const __m512 diff = _mm512_sub_ps(mu1, mu2);
-            const __m512 num_m = _mm512_sub_ps(vone, _mm512_mul_ps(diff, diff));
-            const __m512 num_s = _mm512_add_ps(
-                _mm512_mul_ps(vtwo, _mm512_sub_ps(_mm512_loadu_ps(rs12 + i), mu12)), vc2);
-            const __m512 denom_s =
-                _mm512_add_ps(_mm512_add_ps(_mm512_sub_ps(_mm512_loadu_ps(rs11 + i), mu11),
-                                            _mm512_sub_ps(_mm512_loadu_ps(rs22 + i), mu22)),
-                              vc2);
-            alignas(64) float num_m_f[16];
-            alignas(64) float num_s_f[16];
-            alignas(64) float denom_s_f[16];
-            _mm512_store_ps(num_m_f, num_m);
-            _mm512_store_ps(num_s_f, num_s);
-            _mm512_store_ps(denom_s_f, denom_s);
-            for (int k = 0; k < 16; k++) {
-                double d = 1.0 - ((double)num_m_f[k] * (double)num_s_f[k] / (double)denom_s_f[k]);
-                if (d < 0.0)
-                    d = 0.0;
-                sum_l1 += d;
-                sum_l4 += quartic_d(d);
-            }
+            ssim_block_avx512(p, i, &sum_l1, &sum_l4);
         }
         for (; i < plane; i++) {
-            float mu1 = rm1[i];
-            float mu2 = rm2[i];
-            float mu11 = mu1 * mu1;
-            float mu22 = mu2 * mu2;
-            float mu12 = mu1 * mu2;
-            float num_m = 1.0f - (mu1 - mu2) * (mu1 - mu2);
-            float num_s = 2.0f * (rs12[i] - mu12) + kC2;
-            float denom_s = (rs11[i] - mu11) + (rs22[i] - mu22) + kC2;
-            double d = 1.0 - ((double)num_m * (double)num_s / (double)denom_s);
-            if (d < 0.0)
-                d = 0.0;
-            sum_l1 += d;
-            sum_l4 += quartic_d(d);
+            ssim_pixel_scalar(p, i, &sum_l1, &sum_l4);
         }
         plane_averages[c * 2 + 0] = one_per_pixels * sum_l1;
         plane_averages[c * 2 + 1] = sqrt(sqrt(one_per_pixels * sum_l4));
@@ -449,27 +494,99 @@ static void hblur_16rows_avx512(const float rg_n2[3], const float rg_d1[3], int 
     }
 }
 
-/* ADR-0141 carve-out: SIMD main loop + scalar tail share IIR state. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+/* Output of one IIR step: o = n2 * sum - d1 * prev1 - prev2, in the scalar
+ * reference's order. */
+static inline __m512 iir_out_avx512(__m512 vn2, __m512 vd1, __m512 sum, __m512 p1, __m512 p2)
+{
+    const __m512 o = _mm512_sub_ps(_mm512_mul_ps(vn2, sum), _mm512_mul_ps(vd1, p1));
+    return _mm512_sub_ps(o, p2);
+}
+
+/* Scalar order: (o0 + o1) + o2. */
+static inline __m512 iir_sum3_avx512(__m512 o0, __m512 o1, __m512 o2)
+{
+    return _mm512_add_ps(_mm512_add_ps(o0, o1), o2);
+}
+
+/* Per-column IIR state: three `prev1` and three `prev2` rows of `w` floats,
+ * contiguous in `col_state` as [prev1_0|prev1_1|prev1_2|prev2_0|prev2_1|prev2_2]. */
+typedef struct {
+    float *prev1[3];
+    float *prev2[3];
+} vblur_state_t;
+
+static inline void vblur_state_init(vblur_state_t *st, float *col_state, size_t xsize)
+{
+    for (size_t k = 0; k < 3; k++) {
+        st->prev1[k] = col_state + k * xsize;
+        st->prev2[k] = col_state + (3u + k) * xsize;
+    }
+}
+
+/* 16 columns at `x`: the three poles in SIMD, state updated in place. */
+static inline void vblur_cols16_avx512(const __m512 vn2[3], const __m512 vd1[3],
+                                       const vblur_state_t *st, const float *lrow,
+                                       const float *rrow, float *orow, size_t x)
+{
+    const __m512 lv = lrow ? _mm512_loadu_ps(lrow + x) : _mm512_setzero_ps();
+    const __m512 rv = rrow ? _mm512_loadu_ps(rrow + x) : _mm512_setzero_ps();
+    const __m512 sum = _mm512_add_ps(lv, rv);
+    __m512 p1[3];
+    __m512 p2[3];
+    __m512 o[3];
+    for (int k = 0; k < 3; k++) {
+        p1[k] = _mm512_loadu_ps(st->prev1[k] + x);
+        p2[k] = _mm512_loadu_ps(st->prev2[k] + x);
+    }
+    for (int k = 0; k < 3; k++) {
+        o[k] = iir_out_avx512(vn2[k], vd1[k], sum, p1[k], p2[k]);
+    }
+    for (int k = 0; k < 3; k++) {
+        _mm512_storeu_ps(st->prev2[k] + x, p1[k]);
+        _mm512_storeu_ps(st->prev1[k] + x, o[k]);
+    }
+    if (orow) {
+        _mm512_storeu_ps(orow + x, iir_sum3_avx512(o[0], o[1], o[2]));
+    }
+}
+
+/* One column of the scalar tail, identical to the scalar reference body. */
+static inline void vblur_col_scalar(const float rg_n2[3], const float rg_d1[3],
+                                    const vblur_state_t *st, const float *lrow, const float *rrow,
+                                    float *orow, size_t x)
+{
+    const float lv = lrow ? lrow[x] : 0.f;
+    const float rv = rrow ? rrow[x] : 0.f;
+    const float sum = lv + rv;
+    const float o0 = rg_n2[0] * sum - rg_d1[0] * st->prev1[0][x] - st->prev2[0][x];
+    const float o1 = rg_n2[1] * sum - rg_d1[1] * st->prev1[1][x] - st->prev2[1][x];
+    const float o2 = rg_n2[2] * sum - rg_d1[2] * st->prev1[2][x] - st->prev2[2][x];
+    st->prev2[0][x] = st->prev1[0][x];
+    st->prev2[1][x] = st->prev1[1][x];
+    st->prev2[2][x] = st->prev1[2][x];
+    st->prev1[0][x] = o0;
+    st->prev1[1][x] = o1;
+    st->prev1[2][x] = o2;
+    if (orow) {
+        orow[x] = o0 + o1 + o2;
+    }
+}
+
 static void vblur_simd_16cols_avx512(const float rg_n2[3], const float rg_d1[3], int rg_radius,
                                      float *col_state, const float *in, float *out, unsigned w,
                                      unsigned h)
 {
     const size_t xsize = (size_t)w;
-    float *prev1_0 = col_state + 0u * xsize;
-    float *prev1_1 = col_state + 1u * xsize;
-    float *prev1_2 = col_state + 2u * xsize;
-    float *prev2_0 = col_state + 3u * xsize;
-    float *prev2_1 = col_state + 4u * xsize;
-    float *prev2_2 = col_state + 5u * xsize;
+    vblur_state_t st;
+    vblur_state_init(&st, col_state, xsize);
     memset(col_state, 0, 6u * xsize * sizeof(float));
 
-    const __m512 vn2_0 = _mm512_set1_ps(rg_n2[0]);
-    const __m512 vn2_1 = _mm512_set1_ps(rg_n2[1]);
-    const __m512 vn2_2 = _mm512_set1_ps(rg_n2[2]);
-    const __m512 vd1_0 = _mm512_set1_ps(rg_d1[0]);
-    const __m512 vd1_1 = _mm512_set1_ps(rg_d1[1]);
-    const __m512 vd1_2 = _mm512_set1_ps(rg_d1[2]);
+    __m512 vn2[3];
+    __m512 vd1[3];
+    for (int k = 0; k < 3; k++) {
+        vn2[k] = _mm512_set1_ps(rg_n2[k]);
+        vd1[k] = _mm512_set1_ps(rg_d1[k]);
+    }
 
     const ptrdiff_t N = (ptrdiff_t)rg_radius;
     const ptrdiff_t ysize = (ptrdiff_t)h;
@@ -483,48 +600,10 @@ static void vblur_simd_16cols_avx512(const float rg_n2[3], const float rg_d1[3],
 
         size_t x = 0;
         for (; x + 16 <= xsize; x += 16) {
-            const __m512 lv = lrow ? _mm512_loadu_ps(lrow + x) : _mm512_setzero_ps();
-            const __m512 rv = rrow ? _mm512_loadu_ps(rrow + x) : _mm512_setzero_ps();
-            const __m512 sum = _mm512_add_ps(lv, rv);
-            const __m512 p1_0 = _mm512_loadu_ps(prev1_0 + x);
-            const __m512 p1_1 = _mm512_loadu_ps(prev1_1 + x);
-            const __m512 p1_2 = _mm512_loadu_ps(prev1_2 + x);
-            const __m512 p2_0 = _mm512_loadu_ps(prev2_0 + x);
-            const __m512 p2_1 = _mm512_loadu_ps(prev2_1 + x);
-            const __m512 p2_2 = _mm512_loadu_ps(prev2_2 + x);
-            __m512 o0 = _mm512_sub_ps(_mm512_mul_ps(vn2_0, sum), _mm512_mul_ps(vd1_0, p1_0));
-            o0 = _mm512_sub_ps(o0, p2_0);
-            __m512 o1 = _mm512_sub_ps(_mm512_mul_ps(vn2_1, sum), _mm512_mul_ps(vd1_1, p1_1));
-            o1 = _mm512_sub_ps(o1, p2_1);
-            __m512 o2 = _mm512_sub_ps(_mm512_mul_ps(vn2_2, sum), _mm512_mul_ps(vd1_2, p1_2));
-            o2 = _mm512_sub_ps(o2, p2_2);
-            _mm512_storeu_ps(prev2_0 + x, p1_0);
-            _mm512_storeu_ps(prev2_1 + x, p1_1);
-            _mm512_storeu_ps(prev2_2 + x, p1_2);
-            _mm512_storeu_ps(prev1_0 + x, o0);
-            _mm512_storeu_ps(prev1_1 + x, o1);
-            _mm512_storeu_ps(prev1_2 + x, o2);
-            if (orow) {
-                const __m512 res = _mm512_add_ps(_mm512_add_ps(o0, o1), o2);
-                _mm512_storeu_ps(orow + x, res);
-            }
+            vblur_cols16_avx512(vn2, vd1, &st, lrow, rrow, orow, x);
         }
         for (; x < xsize; x++) {
-            const float lv = lrow ? lrow[x] : 0.f;
-            const float rv = rrow ? rrow[x] : 0.f;
-            const float sum = lv + rv;
-            const float o0 = rg_n2[0] * sum - rg_d1[0] * prev1_0[x] - prev2_0[x];
-            const float o1 = rg_n2[1] * sum - rg_d1[1] * prev1_1[x] - prev2_1[x];
-            const float o2 = rg_n2[2] * sum - rg_d1[2] * prev1_2[x] - prev2_2[x];
-            prev2_0[x] = prev1_0[x];
-            prev2_1[x] = prev1_1[x];
-            prev2_2[x] = prev1_2[x];
-            prev1_0[x] = o0;
-            prev1_1[x] = o1;
-            prev1_2[x] = o2;
-            if (orow) {
-                orow[x] = o0 + o1 + o2;
-            }
+            vblur_col_scalar(rg_n2, rg_d1, &st, lrow, rrow, orow, x);
         }
     }
 }
@@ -642,12 +721,11 @@ static inline void compute_matrix_coefs_avx512(int yuv_matrix, float *kr_out, fl
  * declared in `ssimulacra2_avx2.h` — see ADR-0163 for the YUV→linear-RGB
  * pipeline definition.
  *
- * Why this kernel is one large function: bit-exactness vs the scalar
- * reference is enforced by ADR-0138/ADR-0139. Splitting the body into
- * helpers would perturb register allocation and the chroma-reconstruction
- * reduction order, which has been observed to introduce ULP drift in
- * `/cross-backend-diff` runs. The NOLINT below is the load-bearing
- * suppression mandated by ADR-0141.
+ * The kernel is split into small static helpers (coefficient setup, the
+ * per-lane reads, the FMA matmul + clamp + EOTF block, the scalar tail
+ * pixel). Every helper holds the statements the single kernel used to carry,
+ * in the same order, and this TU is built with contraction off, so the split
+ * does not change a bit (ADR-0138 / ADR-0139 / ADR-0891).
  *
  * Caller contract: `planes` must hold three `simd_plane_t` planes laid
  * out in source picture order (Y, U, V) of size `w * h`. `out` must
@@ -656,7 +734,125 @@ static inline void compute_matrix_coefs_avx512(int yuv_matrix, float *kr_out, fl
  * (8 / 10 / 12); peak / scaling derive from it. `yuv_matrix` selects
  * BT.601/709/2020 coefficients via `compute_matrix_coefs_avx512`.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
+/* Derived YUV -> RGB coefficients, mirroring the scalar reference. */
+typedef struct {
+    float inv_peak;
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_off;
+    float c_off;
+} ycc_coefs_t;
+
+static inline void ycc_coefs_init(ycc_coefs_t *k, int yuv_matrix, unsigned bpc)
+{
+    const float peak = (float)((1u << bpc) - 1u);
+    float kr;
+    float kg;
+    float kb;
+    int limited;
+    compute_matrix_coefs_avx512(yuv_matrix, &kr, &kg, &kb, &limited);
+    k->inv_peak = 1.0f / peak;
+    k->cr_r = 2.0f * (1.0f - kr);
+    k->cb_b = 2.0f * (1.0f - kb);
+    k->cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
+    k->cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
+    k->y_scale = limited ? (255.0f / 219.0f) : 1.0f;
+    k->c_scale = limited ? (255.0f / 224.0f) : 1.0f;
+    k->y_off = limited ? (16.0f / 255.0f) : 0.0f;
+    k->c_off = 0.5f;
+}
+
+/* Per-lane scalar reads of 16 pixels from the three planes, scaled to [0, 1]. */
+static inline void ycc_read8_avx512(const simd_plane_t planes[3], unsigned w, unsigned h,
+                                    unsigned bpc, unsigned x, unsigned y, __m512 inv_peak,
+                                    __m512 yuv[3])
+{
+    alignas(64) float tmp[3][16];
+    for (int i = 0; i < 16; i++) {
+        for (int c = 0; c < 3; c++) {
+            tmp[c][i] =
+                read_plane_scalar_s2_av512(&planes[c], w, h, (int)(x + (unsigned)i), (int)y, bpc);
+        }
+    }
+    for (int c = 0; c < 3; c++) {
+        yuv[c] = _mm512_mul_ps(_mm512_load_ps(tmp[c]), inv_peak);
+    }
+}
+
+/* Normalise, FMA matmul, clamp and sRGB EOTF for 16 lanes.
+ *
+ * ADR-0891 round-2 fix: explicit FMA intrinsics pair with `fmaf()` in the
+ * scalar tail and test reference. Under icx + `-mfma`, a separate
+ * `_mm512_add_ps(_, _mm512_mul_ps(_, _))` was auto-fused despite
+ * `-fp-model=precise` while gcc kept it as mul + add. Forcing FMA on both
+ * sides unifies the rounding for every compiler, and the left-to-right
+ * association of the G computation is preserved. */
+static inline void ycc_to_rgb8_avx512(const ycc_coefs_t *k, const __m512 yuv[3], __m512 rgb[3])
+{
+    const __m512 vzero = _mm512_setzero_ps();
+    const __m512 vone = _mm512_set1_ps(1.0f);
+    const __m512 vc_off = _mm512_set1_ps(k->c_off);
+    const __m512 vc_scale = _mm512_set1_ps(k->c_scale);
+    const __m512 Yn =
+        _mm512_mul_ps(_mm512_sub_ps(yuv[0], _mm512_set1_ps(k->y_off)), _mm512_set1_ps(k->y_scale));
+    const __m512 Un = _mm512_mul_ps(_mm512_sub_ps(yuv[1], vc_off), vc_scale);
+    const __m512 Vn = _mm512_mul_ps(_mm512_sub_ps(yuv[2], vc_off), vc_scale);
+    __m512 R = _mm512_fmadd_ps(_mm512_set1_ps(k->cr_r), Vn, Yn);
+    __m512 G = _mm512_fmadd_ps(_mm512_set1_ps(k->cb_g), Un, Yn);
+    G = _mm512_fmadd_ps(_mm512_set1_ps(k->cr_g), Vn, G);
+    __m512 B = _mm512_fmadd_ps(_mm512_set1_ps(k->cb_b), Un, Yn);
+    R = _mm512_max_ps(_mm512_min_ps(R, vone), vzero);
+    G = _mm512_max_ps(_mm512_min_ps(G, vone), vzero);
+    B = _mm512_max_ps(_mm512_min_ps(B, vone), vzero);
+    rgb[0] = srgb_to_linear_lane_avx512(R);
+    rgb[1] = srgb_to_linear_lane_avx512(G);
+    rgb[2] = srgb_to_linear_lane_avx512(B);
+}
+
+static inline float clamp01_s2(float v)
+{
+    if (v < 0.0f)
+        v = 0.0f;
+    if (v > 1.0f)
+        v = 1.0f;
+    return v;
+}
+
+/* Scalar tail pixel, identical to the scalar reference body.
+ *
+ * ADR-0891: explicit fmaf(); icx + `-mfma` may contract plain `a + b*c` to
+ * FMA even under `-fp-model=precise`, diverging from the SIMD reference. The
+ * left-to-right association of the G computation is preserved. */
+static inline void ycc_pixel_scalar(const ycc_coefs_t *k, const simd_plane_t planes[3], unsigned w,
+                                    unsigned h, unsigned bpc, unsigned x, unsigned y,
+                                    float *const rgb[3])
+{
+    const float Ys =
+        read_plane_scalar_s2_av512(&planes[0], w, h, (int)x, (int)y, bpc) * k->inv_peak;
+    const float Us =
+        read_plane_scalar_s2_av512(&planes[1], w, h, (int)x, (int)y, bpc) * k->inv_peak;
+    const float Vs =
+        read_plane_scalar_s2_av512(&planes[2], w, h, (int)x, (int)y, bpc) * k->inv_peak;
+    const float Yn = (Ys - k->y_off) * k->y_scale;
+    const float Un = (Us - k->c_off) * k->c_scale;
+    const float Vn = (Vs - k->c_off) * k->c_scale;
+    float R = fmaf(k->cr_r, Vn, Yn);
+    float G = fmaf(k->cb_g, Un, Yn);
+    G = fmaf(k->cr_g, Vn, G);
+    float B = fmaf(k->cb_b, Un, Yn);
+    R = clamp01_s2(R);
+    G = clamp01_s2(G);
+    B = clamp01_s2(B);
+    const size_t idx = (size_t)y * w + x;
+    rgb[0][idx] = vmaf_ss2_srgb_eotf(R);
+    rgb[1][idx] = vmaf_ss2_srgb_eotf(G);
+    rgb[2][idx] = vmaf_ss2_srgb_eotf(B);
+}
+
 void ssimulacra2_picture_to_linear_rgb_avx512(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
                                               const simd_plane_t planes[3], float *out)
 {
@@ -665,117 +861,24 @@ void ssimulacra2_picture_to_linear_rgb_avx512(int yuv_matrix, unsigned bpc, unsi
     assert(w > 0 && h > 0);
 
     const size_t plane_sz = (size_t)w * (size_t)h;
-    float *rp = out;
-    float *gp = out + plane_sz;
-    float *bp = out + 2 * plane_sz;
-
-    const float peak = (float)((1u << bpc) - 1u);
-    const float inv_peak = 1.0f / peak;
-
-    float kr;
-    float kg;
-    float kb;
-    int limited;
-    compute_matrix_coefs_avx512(yuv_matrix, &kr, &kg, &kb, &limited);
-
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
-
-    const __m512 vinv_peak = _mm512_set1_ps(inv_peak);
-    const __m512 vy_scale = _mm512_set1_ps(y_scale);
-    const __m512 vc_scale = _mm512_set1_ps(c_scale);
-    const __m512 vy_off = _mm512_set1_ps(y_off);
-    const __m512 vc_off = _mm512_set1_ps(c_off);
-    const __m512 vcr_r = _mm512_set1_ps(cr_r);
-    const __m512 vcb_b = _mm512_set1_ps(cb_b);
-    const __m512 vcb_g = _mm512_set1_ps(cb_g);
-    const __m512 vcr_g = _mm512_set1_ps(cr_g);
-    const __m512 vzero = _mm512_setzero_ps();
-    const __m512 vone = _mm512_set1_ps(1.0f);
-
-    alignas(64) float y_tmp[16];
-    alignas(64) float u_tmp[16];
-    alignas(64) float v_tmp[16];
+    float *const rgb[3] = {out, out + plane_sz, out + 2 * plane_sz};
+    ycc_coefs_t k;
+    ycc_coefs_init(&k, yuv_matrix, bpc);
+    const __m512 vinv_peak = _mm512_set1_ps(k.inv_peak);
 
     for (unsigned y = 0; y < h; y++) {
         unsigned x = 0;
         for (; x + 16 <= w; x += 16) {
-            for (int i = 0; i < 16; i++) {
-                y_tmp[i] = read_plane_scalar_s2_av512(&planes[0], w, h, (int)(x + (unsigned)i),
-                                                      (int)y, bpc);
-                u_tmp[i] = read_plane_scalar_s2_av512(&planes[1], w, h, (int)(x + (unsigned)i),
-                                                      (int)y, bpc);
-                v_tmp[i] = read_plane_scalar_s2_av512(&planes[2], w, h, (int)(x + (unsigned)i),
-                                                      (int)y, bpc);
+            __m512 yuv[3];
+            __m512 lin[3];
+            ycc_read8_avx512(planes, w, h, bpc, x, y, vinv_peak, yuv);
+            ycc_to_rgb8_avx512(&k, yuv, lin);
+            for (int c = 0; c < 3; c++) {
+                _mm512_storeu_ps(rgb[c] + (size_t)y * w + x, lin[c]);
             }
-            const __m512 Y = _mm512_mul_ps(_mm512_load_ps(y_tmp), vinv_peak);
-            const __m512 U = _mm512_mul_ps(_mm512_load_ps(u_tmp), vinv_peak);
-            const __m512 V = _mm512_mul_ps(_mm512_load_ps(v_tmp), vinv_peak);
-            const __m512 Yn = _mm512_mul_ps(_mm512_sub_ps(Y, vy_off), vy_scale);
-            const __m512 Un = _mm512_mul_ps(_mm512_sub_ps(U, vc_off), vc_scale);
-            const __m512 Vn = _mm512_mul_ps(_mm512_sub_ps(V, vc_off), vc_scale);
-            /* ADR-0891 round-2 fix: explicit FMA intrinsics — see
-             * sibling AVX2 TU for rationale (icx auto-fuses the
-             * separate mul+add pattern under `-fp-model=precise`,
-             * gcc does not; unifying on FMA via fmaf() in the
-             * scalar reference is the bit-exact pairing). */
-            __m512 R = _mm512_fmadd_ps(vcr_r, Vn, Yn);
-            __m512 G = _mm512_fmadd_ps(vcb_g, Un, Yn);
-            G = _mm512_fmadd_ps(vcr_g, Vn, G);
-            __m512 B = _mm512_fmadd_ps(vcb_b, Un, Yn);
-            R = _mm512_max_ps(_mm512_min_ps(R, vone), vzero);
-            G = _mm512_max_ps(_mm512_min_ps(G, vone), vzero);
-            B = _mm512_max_ps(_mm512_min_ps(B, vone), vzero);
-            R = srgb_to_linear_lane_avx512(R);
-            G = srgb_to_linear_lane_avx512(G);
-            B = srgb_to_linear_lane_avx512(B);
-            _mm512_storeu_ps(rp + (size_t)y * w + x, R);
-            _mm512_storeu_ps(gp + (size_t)y * w + x, G);
-            _mm512_storeu_ps(bp + (size_t)y * w + x, B);
         }
         for (; x < w; x++) {
-            const float Ys =
-                read_plane_scalar_s2_av512(&planes[0], w, h, (int)x, (int)y, bpc) * inv_peak;
-            const float Us =
-                read_plane_scalar_s2_av512(&planes[1], w, h, (int)x, (int)y, bpc) * inv_peak;
-            const float Vs =
-                read_plane_scalar_s2_av512(&planes[2], w, h, (int)x, (int)y, bpc) * inv_peak;
-            const float Yn = (Ys - y_off) * y_scale;
-            const float Un = (Us - c_off) * c_scale;
-            const float Vn = (Vs - c_off) * c_scale;
-            /* ADR-0891: explicit fmaf() — icx + `-mfma` may contract
-             * plain `a + b*c` to FMA even under `-fp-model=precise`,
-             * diverging from the SIMD reference. Preserves the
-             * left-to-right associativity of the G computation. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
-            if (R < 0.0f)
-                R = 0.0f;
-            if (R > 1.0f)
-                R = 1.0f;
-            if (G < 0.0f)
-                G = 0.0f;
-            if (G > 1.0f)
-                G = 1.0f;
-            if (B < 0.0f)
-                B = 0.0f;
-            if (B > 1.0f)
-                B = 1.0f;
-            const float Rl = vmaf_ss2_srgb_eotf(R);
-            const float Gl = vmaf_ss2_srgb_eotf(G);
-            const float Bl = vmaf_ss2_srgb_eotf(B);
-            const size_t idx = (size_t)y * w + x;
-            rp[idx] = Rl;
-            gp[idx] = Gl;
-            bp[idx] = Bl;
+            ycc_pixel_scalar(&k, planes, w, h, bpc, x, y, rgb);
         }
     }
 }

@@ -68,13 +68,108 @@ static inline __m256 cbrtf_lane8(const __m256 v)
     return _mm256_load_ps(tmp);
 }
 
-/* ADR-0141 §2 / ADR-0252 / ADR-0161 / ADR-0278 carve-out: matmul + per-lane
- * cbrtf + XYB rescale stay together for line-for-line diff against the host
- * scalar reference in ss2v_host_linear_rgb_to_xyb.  Splitting would break the
- * bit-exact audit.  The citation lives here rather than on the directive line
- * below because that directive applies to the single line following it — a
- * wrapped justification would suppress the comment, not the function. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
+/* The helpers below hold the exact statements the single kernel used to
+ * carry, in the same order; every operation is a separate IEEE-754 float
+ * operation (this TU is built with contraction off), so splitting the kernel
+ * does not change a bit. */
+typedef struct {
+    float m01;
+    float m11;
+    float m22;
+    float cbrt_bias;
+} xyb_coefs_avx2_t;
+
+/* LMS mixing matrix + opsin bias, clamped at zero. Addition order MUST match
+ * scalar left-to-right: ((a + b) + c) + d. IEEE-754 add is non-associative
+ * and test_xyb catches the drift. */
+static inline void xyb_lms_avx2(const xyb_coefs_avx2_t *k, __m256 r, __m256 g, __m256 b, __m256 *l,
+                                __m256 *m, __m256 *sv)
+{
+    const __m256 vbias = _mm256_set1_ps(kOpsinBias);
+    const __m256 vzero = _mm256_setzero_ps();
+    __m256 lv = _mm256_add_ps(_mm256_mul_ps(_mm256_set1_ps(kM00), r),
+                              _mm256_mul_ps(_mm256_set1_ps(k->m01), g));
+    lv = _mm256_add_ps(lv, _mm256_mul_ps(_mm256_set1_ps(kM02), b));
+    lv = _mm256_add_ps(lv, vbias);
+    __m256 mv = _mm256_add_ps(_mm256_mul_ps(_mm256_set1_ps(kM10), r),
+                              _mm256_mul_ps(_mm256_set1_ps(k->m11), g));
+    mv = _mm256_add_ps(mv, _mm256_mul_ps(_mm256_set1_ps(kM12), b));
+    mv = _mm256_add_ps(mv, vbias);
+    __m256 sw = _mm256_add_ps(_mm256_mul_ps(_mm256_set1_ps(kM20), r),
+                              _mm256_mul_ps(_mm256_set1_ps(kM21), g));
+    sw = _mm256_add_ps(sw, _mm256_mul_ps(_mm256_set1_ps(k->m22), b));
+    sw = _mm256_add_ps(sw, vbias);
+    /* Clamp to zero below, as the scalar `if (l < 0.0f) l = 0.0f`. */
+    *l = _mm256_max_ps(lv, vzero);
+    *m = _mm256_max_ps(mv, vzero);
+    *sv = _mm256_max_ps(sw, vzero);
+}
+
+/* MakePositiveXYB rescale in libjxl order (B uses Y before the Y offset).
+ * X = 0.5 * (L - M), then X * 14 + 0.42: the folded (L - M) * 7 rounds
+ * differently and fails the bit-exact assertion in test_xyb. */
+static inline void xyb_rescale_avx2(__m256 L, __m256 M, __m256 S, __m256 *xf, __m256 *yf,
+                                    __m256 *bf)
+{
+    const __m256 Y = _mm256_mul_ps(_mm256_set1_ps(0.5f), _mm256_add_ps(L, M));
+    *bf = _mm256_add_ps(_mm256_sub_ps(S, Y), _mm256_set1_ps(0.55f));
+    const __m256 X_half = _mm256_mul_ps(_mm256_set1_ps(0.5f), _mm256_sub_ps(L, M));
+    *xf = _mm256_add_ps(_mm256_mul_ps(X_half, _mm256_set1_ps(14.0f)), _mm256_set1_ps(0.42f));
+    *yf = _mm256_add_ps(Y, _mm256_set1_ps(0.01f));
+}
+
+static inline void xyb_block_avx2(const xyb_coefs_avx2_t *k, const float *const rgb[3],
+                                  float *const xyb[3], size_t i)
+{
+    __m256 l;
+    __m256 m;
+    __m256 sv;
+    xyb_lms_avx2(k, _mm256_loadu_ps(rgb[0] + i), _mm256_loadu_ps(rgb[1] + i),
+                 _mm256_loadu_ps(rgb[2] + i), &l, &m, &sv);
+    const __m256 vcbrt_bias = _mm256_set1_ps(k->cbrt_bias);
+    /* `cbrtf` is applied per lane through scalar libm; see `cbrtf_lane8`. */
+    const __m256 L = _mm256_sub_ps(cbrtf_lane8(l), vcbrt_bias);
+    const __m256 M = _mm256_sub_ps(cbrtf_lane8(m), vcbrt_bias);
+    const __m256 S = _mm256_sub_ps(cbrtf_lane8(sv), vcbrt_bias);
+    __m256 xf;
+    __m256 yf;
+    __m256 bf;
+    xyb_rescale_avx2(L, M, S, &xf, &yf, &bf);
+    _mm256_storeu_ps(xyb[0] + i, xf);
+    _mm256_storeu_ps(xyb[1] + i, yf);
+    _mm256_storeu_ps(xyb[2] + i, bf);
+}
+
+/* Scalar tail pixel, identical to the scalar reference body. */
+static inline void xyb_pixel_scalar(const xyb_coefs_avx2_t *k, const float *const rgb[3],
+                                    float *const xyb[3], size_t i)
+{
+    const float r = rgb[0][i];
+    const float g = rgb[1][i];
+    const float bb = rgb[2][i];
+    float l = kM00 * r + k->m01 * g + kM02 * bb + kOpsinBias;
+    float m = kM10 * r + k->m11 * g + kM12 * bb + kOpsinBias;
+    float s = kM20 * r + kM21 * g + k->m22 * bb + kOpsinBias;
+    if (l < 0.0f)
+        l = 0.0f;
+    if (m < 0.0f)
+        m = 0.0f;
+    if (s < 0.0f)
+        s = 0.0f;
+    const float L = vmaf_ss2_cbrtf(l) - k->cbrt_bias;
+    const float M = vmaf_ss2_cbrtf(m) - k->cbrt_bias;
+    const float S = vmaf_ss2_cbrtf(s) - k->cbrt_bias;
+    float X = 0.5f * (L - M);
+    float Y = 0.5f * (L + M);
+    float B = S;
+    B = (B - Y) + 0.55f;
+    X = X * 14.0f + 0.42f;
+    Y = Y + 0.01f;
+    xyb[0][i] = X;
+    xyb[1][i] = Y;
+    xyb[2][i] = B;
+}
+
 void ssimulacra2_host_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsigned w, unsigned h,
                                              size_t plane_stride)
 {
@@ -83,106 +178,65 @@ void ssimulacra2_host_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsig
     assert(w > 0 && h > 0);
     assert(plane_stride >= (size_t)w * (size_t)h);
 
-    const float *rp = lin;
-    const float *gp = lin + plane_stride;
-    const float *bp = lin + 2u * plane_stride;
-    float *xp = xyb;
-    float *yp = xyb + plane_stride;
-    float *bxp = xyb + 2u * plane_stride;
-
-    const float m01 = 1.0f - kM00 - kM02;
-    const float m11 = 1.0f - kM10 - kM12;
-    const float m22 = 1.0f - kM20 - kM21;
-    const float cbrt_bias = vmaf_ss2_cbrtf(kOpsinBias);
-
-    const __m256 vm00 = _mm256_set1_ps(kM00);
-    const __m256 vm01 = _mm256_set1_ps(m01);
-    const __m256 vm02 = _mm256_set1_ps(kM02);
-    const __m256 vm10 = _mm256_set1_ps(kM10);
-    const __m256 vm11 = _mm256_set1_ps(m11);
-    const __m256 vm12 = _mm256_set1_ps(kM12);
-    const __m256 vm20 = _mm256_set1_ps(kM20);
-    const __m256 vm21 = _mm256_set1_ps(kM21);
-    const __m256 vm22 = _mm256_set1_ps(m22);
-    const __m256 vbias = _mm256_set1_ps(kOpsinBias);
-    const __m256 vzero = _mm256_setzero_ps();
-    const __m256 vcbrt_bias = _mm256_set1_ps(cbrt_bias);
+    const float *const rgb[3] = {lin, lin + plane_stride, lin + 2u * plane_stride};
+    float *const out[3] = {xyb, xyb + plane_stride, xyb + 2u * plane_stride};
+    const xyb_coefs_avx2_t k = {
+        .m01 = 1.0f - kM00 - kM02,
+        .m11 = 1.0f - kM10 - kM12,
+        .m22 = 1.0f - kM20 - kM21,
+        .cbrt_bias = vmaf_ss2_cbrtf(kOpsinBias),
+    };
 
     const size_t scale_pixels = (size_t)w * (size_t)h;
     size_t i = 0;
-
     for (; i + 8 <= scale_pixels; i += 8) {
-        const __m256 r = _mm256_loadu_ps(rp + i);
-        const __m256 g = _mm256_loadu_ps(gp + i);
-        const __m256 b = _mm256_loadu_ps(bp + i);
-        /* LMS mixing: left-to-right addition order matches scalar reference
-         * ss2v_host_linear_rgb_to_xyb exactly — IEEE-754 add is
-         * non-associative and test_ssimulacra2_simd catches drift. */
-        __m256 l = _mm256_add_ps(_mm256_mul_ps(vm00, r), _mm256_mul_ps(vm01, g));
-        l = _mm256_add_ps(l, _mm256_mul_ps(vm02, b));
-        l = _mm256_add_ps(l, vbias);
-        __m256 m = _mm256_add_ps(_mm256_mul_ps(vm10, r), _mm256_mul_ps(vm11, g));
-        m = _mm256_add_ps(m, _mm256_mul_ps(vm12, b));
-        m = _mm256_add_ps(m, vbias);
-        __m256 sv = _mm256_add_ps(_mm256_mul_ps(vm20, r), _mm256_mul_ps(vm21, g));
-        sv = _mm256_add_ps(sv, _mm256_mul_ps(vm22, b));
-        sv = _mm256_add_ps(sv, vbias);
-        l = _mm256_max_ps(l, vzero);
-        m = _mm256_max_ps(m, vzero);
-        sv = _mm256_max_ps(sv, vzero);
-
-        const __m256 L = _mm256_sub_ps(cbrtf_lane8(l), vcbrt_bias);
-        const __m256 M = _mm256_sub_ps(cbrtf_lane8(m), vcbrt_bias);
-        const __m256 S = _mm256_sub_ps(cbrtf_lane8(sv), vcbrt_bias);
-
-        const __m256 X = _mm256_mul_ps(_mm256_set1_ps(0.5f), _mm256_sub_ps(L, M));
-        const __m256 Y = _mm256_mul_ps(_mm256_set1_ps(0.5f), _mm256_add_ps(L, M));
-        /* MakePositiveXYB rescale — order matches scalar:
-         *   B = (S - Y) + 0.55f;   X = X * 14.0f + 0.42f;   Y = Y + 0.01f */
-        const __m256 Bfinal = _mm256_add_ps(_mm256_sub_ps(S, Y), _mm256_set1_ps(0.55f));
-        const __m256 Xfinal =
-            _mm256_add_ps(_mm256_mul_ps(X, _mm256_set1_ps(14.0f)), _mm256_set1_ps(0.42f));
-        const __m256 Yfinal = _mm256_add_ps(Y, _mm256_set1_ps(0.01f));
-
-        _mm256_storeu_ps(xp + i, Xfinal);
-        _mm256_storeu_ps(yp + i, Yfinal);
-        _mm256_storeu_ps(bxp + i, Bfinal);
+        xyb_block_avx2(&k, rgb, out, i);
     }
-
-    /* Scalar tail — bit-identical to ss2v_host_linear_rgb_to_xyb body. */
     for (; i < scale_pixels; i++) {
-        float r = rp[i];
-        float g = gp[i];
-        float bb = bp[i];
-        float lv = kM00 * r + m01 * g + kM02 * bb + kOpsinBias;
-        float mv = kM10 * r + m11 * g + kM12 * bb + kOpsinBias;
-        float sv = kM20 * r + kM21 * g + m22 * bb + kOpsinBias;
-        if (lv < 0.0f)
-            lv = 0.0f;
-        if (mv < 0.0f)
-            mv = 0.0f;
-        if (sv < 0.0f)
-            sv = 0.0f;
-        float L = vmaf_ss2_cbrtf(lv) - cbrt_bias;
-        float M = vmaf_ss2_cbrtf(mv) - cbrt_bias;
-        float S = vmaf_ss2_cbrtf(sv) - cbrt_bias;
-        float X = 0.5f * (L - M);
-        float Y = 0.5f * (L + M);
-        float B = S;
-        B = (B - Y) + 0.55f;
-        X = X * 14.0f + 0.42f;
-        Y = Y + 0.01f;
-        xp[i] = X;
-        yp[i] = Y;
-        bxp[i] = B;
+        xyb_pixel_scalar(&k, rgb, out, i);
     }
 }
 
-/* A fully unrolled AVX2 kernel. Splitting it changes register allocation and
- * scheduling, which is what the bit-exactness contracts in ADR-0138 /
- * ADR-0139 pin down; the size is the unrolling, not accidental complexity.
- * ADR-0141 / ADR-0278. */
-// NOLINTNEXTLINE(readability-function-size)
+/* Deinterleave the even / odd pairs of two 8-float vectors into one vector
+ * each, in pixel order. `_mm256_shuffle_ps` works inside 128-bit lanes, so
+ * `_mm256_permute4x64_pd` restores lanes [0,1,2,3] = output pixels
+ * [ox..ox+7], the same pattern as ssimulacra2_downsample_2x2_avx2. */
+static inline void deinterleave8_avx2(__m256 a, __m256 b, __m256 *even, __m256 *odd)
+{
+    const __m256 e_raw = _mm256_shuffle_ps(a, b, 0x88);
+    const __m256 o_raw = _mm256_shuffle_ps(a, b, 0xDD);
+    *even = _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(e_raw), 0xD8));
+    *odd = _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(o_raw), 0xD8));
+}
+
+/* 8 output pixels at `ox`. Sequential summation preserves the scalar
+ * left-to-right order `((r0e + r0o) + r1e) + r1o`. */
+static inline void downsample_block8_avx2(const float *row0, const float *row1, float *orow,
+                                          unsigned ox)
+{
+    const size_t base = (size_t)ox * 2u;
+    __m256 r0e;
+    __m256 r0o;
+    __m256 r1e;
+    __m256 r1o;
+    deinterleave8_avx2(_mm256_loadu_ps(row0 + base), _mm256_loadu_ps(row0 + base + 8), &r0e, &r0o);
+    deinterleave8_avx2(_mm256_loadu_ps(row1 + base), _mm256_loadu_ps(row1 + base + 8), &r1e, &r1o);
+    __m256 acc = _mm256_add_ps(r0e, r0o);
+    acc = _mm256_add_ps(acc, r1e);
+    acc = _mm256_add_ps(acc, r1o);
+    _mm256_storeu_ps(orow + ox, _mm256_mul_ps(acc, _mm256_set1_ps(0.25f)));
+}
+
+/* Scalar tail pixel, bit-identical to ss2v_downsample_2x2. */
+static inline void downsample_pixel_scalar(const float *row0, const float *row1, float *orow,
+                                           unsigned ox, unsigned iw)
+{
+    const unsigned ix0 = ox * 2;
+    const unsigned ix1 = (ix0 + 1 < iw) ? ix0 + 1 : iw - 1;
+    const float sum = row0[ix0] + row0[ix1] + row1[ix0] + row1[ix1];
+    orow[ox] = sum * 0.25f;
+}
+
 void ssimulacra2_host_downsample_2x2_avx2(const float *in, unsigned iw, unsigned ih, float *out,
                                           unsigned ow, unsigned oh, size_t plane_stride)
 {
@@ -190,8 +244,6 @@ void ssimulacra2_host_downsample_2x2_avx2(const float *in, unsigned iw, unsigned
     assert(out != NULL);
     assert(iw > 0 && ih > 0);
     assert(plane_stride >= (size_t)iw * (size_t)ih);
-
-    const __m256 vquarter = _mm256_set1_ps(0.25f);
 
     for (int c = 0; c < 3; c++) {
         const float *ip = in + (size_t)c * plane_stride;
@@ -203,46 +255,13 @@ void ssimulacra2_host_downsample_2x2_avx2(const float *in, unsigned iw, unsigned
             const float *row1 = ip + (size_t)iy1 * iw;
             float *orow = op + (size_t)oy * ow;
             unsigned ox = 0;
-            /* SIMD interior: 8 output lanes at a time.
-             * Deinterleave even/odd pairs and add sequentially to
-             * preserve scalar left-to-right summation order
-             * `((r0e + r0o) + r1e) + r1o`. Lane crossing from
-             * `_mm256_shuffle_ps` is corrected with `_mm256_permute4x64_pd`
-             * — the same pattern as ssimulacra2_downsample_2x2_avx2. */
+            /* SIMD interior: 8 output lanes at a time. */
             const unsigned interior_end = (ow > 0u && iw >= 2u) ? (((ow - 1u) / 8u) * 8u) : 0u;
             for (; ox < interior_end; ox += 8) {
-                const size_t base = (size_t)ox * 2u;
-                const __m256 r00 = _mm256_loadu_ps(row0 + base);
-                const __m256 r01 = _mm256_loadu_ps(row0 + base + 8);
-                const __m256 r10 = _mm256_loadu_ps(row1 + base);
-                const __m256 r11 = _mm256_loadu_ps(row1 + base + 8);
-                /* Deinterleave even / odd positions. */
-                const __m256 r0e_raw = _mm256_shuffle_ps(r00, r01, 0x88);
-                const __m256 r0o_raw = _mm256_shuffle_ps(r00, r01, 0xDD);
-                const __m256 r1e_raw = _mm256_shuffle_ps(r10, r11, 0x88);
-                const __m256 r1o_raw = _mm256_shuffle_ps(r10, r11, 0xDD);
-                /* Fix 128-bit lane crossing: permute so lanes [0,1,2,3]
-                 * correspond to output pixels [ox..ox+7]. */
-                const __m256 r0e =
-                    _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(r0e_raw), 0xD8));
-                const __m256 r0o =
-                    _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(r0o_raw), 0xD8));
-                const __m256 r1e =
-                    _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(r1e_raw), 0xD8));
-                const __m256 r1o =
-                    _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(r1o_raw), 0xD8));
-                /* Sequential summation: (r0e + r0o) + r1e + r1o. */
-                __m256 acc = _mm256_add_ps(r0e, r0o);
-                acc = _mm256_add_ps(acc, r1e);
-                acc = _mm256_add_ps(acc, r1o);
-                _mm256_storeu_ps(orow + ox, _mm256_mul_ps(acc, vquarter));
+                downsample_block8_avx2(row0, row1, orow, ox);
             }
-            /* Scalar tail — bit-identical to ss2v_downsample_2x2. */
             for (; ox < ow; ox++) {
-                unsigned ix0 = ox * 2;
-                unsigned ix1 = (ix0 + 1 < iw) ? ix0 + 1 : iw - 1;
-                float sum = row0[ix0] + row0[ix1] + row1[ix0] + row1[ix1];
-                orow[ox] = sum * 0.25f;
+                downsample_pixel_scalar(row0, row1, orow, ox, iw);
             }
         }
     }

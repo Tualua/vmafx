@@ -61811,3 +61811,11 @@ No score, public API or FFmpeg patch impact.
   `_CHECKSUM` through `vmaf_gpu_dispatch_env_get()`; a sync keeps that and does not bring
   `getenv()` back. `core/src/feature/ssimulacra2_eotf_lut.h` keeps its `NOLINT` block (and
   `scripts/gen_ssimulacra2_eotf_lut.py` emits it). No score or public API impact.
+
+- **HISS native batch 2 (`refactor/hiss-zero-native-x86`)**: the x86 SSIMULACRA 2
+  kernels (`core/src/feature/x86/ssimulacra2_avx2.c`, `ssimulacra2_avx512.c`,
+  `ssimulacra2_host_avx2.c`) are drivers over static helpers (vector block, scalar
+  tail pixel, shared IIR step). An upstream or fork change to one of these
+  functions edits the helper that holds the changed statement; the intrinsics,
+  the FMA pattern and the summation order stay as the ADR-1205 / ADR-1208
+  contracts fix them. No score, public API or FFmpeg patch impact.
