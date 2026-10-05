@@ -63,7 +63,7 @@ fi
 # (3) The MSVC guard must carry an explicit architecture allowlist covering
 #     every architecture MSVC targets. Continuation lines are joined first,
 #     because the guard legitimately spans several physical lines.
-guard=$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$HDR" | grep -E '^#if defined\(_MSC_VER\)' || true)
+guard=$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$HDR" | grep -E '^#if defined\(_MSC_VER\)' || [ "$?" -eq 1 ])
 if [[ -z "$guard" ]]; then
   echo "FAIL: $HDR has no '#if defined(_MSC_VER)' guard at all." >&2
   rc=1
@@ -93,7 +93,7 @@ fi
 others=$(grep -rlE '\b__lzcnt(64)?\b' "$ROOT/core/src" \
   --include='*.c' --include='*.h' --include='*.cpp' --include='*.hpp' \
   --include='*.cu' --include='*.cuh' --include='*.hip' --include='*.mm' \
-  --include='*.metal' --exclude='compat_builtin.h' 2>/dev/null || true)
+  --include='*.metal' --exclude='compat_builtin.h' 2>/dev/null || [ "$?" -eq 1 ])
 if [[ -n "$others" ]]; then
   echo "FAIL: __lzcnt used outside the audited shim:" >&2
   echo "$others" >&2

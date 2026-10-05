@@ -71,7 +71,7 @@ for file in "$@"; do
   if [ "${#colliders[@]}" -gt 0 ]; then
     _error "${file}" \
       "ADR number collision: ${file} shares prefix ${num} with: ${colliders[*]}." \
-      >&2 || true
+      >&2
     echo "" >&2
     echo "  Run 'scripts/adr/next-free.sh' to pick a free number." >&2
     echo "  Then rename both the file and its '# ADR-${num}:' heading." >&2
@@ -82,16 +82,16 @@ for file in "$@"; do
   # ── Check 2: heading consistency ───────────────────────────────────────────
   # The first non-blank line must be "# ADR-NNNN: ...".
   if [ -f "${file}" ]; then
-    first_heading="$(grep -m1 '^# ADR-' "${file}" 2>/dev/null || true)"
-    heading_num="$(printf '%s' "${first_heading}" | grep -oE 'ADR-[0-9]{4}' | head -1 | grep -oE '[0-9]{4}' || true)"
+    first_heading="$(grep -m1 '^# ADR-' "${file}" 2>/dev/null || [ "$?" -eq 1 ])"
+    heading_num="$(printf '%s' "${first_heading}" | grep -oE 'ADR-[0-9]{4}' | head -1 | grep -oE '[0-9]{4}' || [ "$?" -eq 1 ])"
 
     if [ -z "${heading_num}" ]; then
       _error "${file}" \
-        "ADR heading missing or malformed in ${file}: expected '# ADR-${num}: ...' as the first heading." >&2 || true
+        "ADR heading missing or malformed in ${file}: expected '# ADR-${num}: ...' as the first heading." >&2
       fail=1
     elif [ "${heading_num}" != "${num}" ]; then
       _error "${file}" \
-        "ADR heading/filename mismatch in ${file}: filename says ${num} but heading says ${heading_num}. Update the heading to match." >&2 || true
+        "ADR heading/filename mismatch in ${file}: filename says ${num} but heading says ${heading_num}. Update the heading to match." >&2
       fail=1
     fi
   fi

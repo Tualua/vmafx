@@ -217,7 +217,7 @@ if grep -qxF 'docs/state.md' "$tmp_diff"; then
   # Inserted-line predicate: starts with single `+`, not `+++`. Strip
   # the leading `+` so subsequent regex doesn't have to anchor around
   # diff metadata.
-  inserted_lines="$(grep -E '^\+[^+]' "$tmp_state_diff" | sed 's/^+//' || true)"
+  inserted_lines="$(grep -E '^\+[^+]' "$tmp_state_diff" | sed 's/^+//' || [ "$?" -eq 1 ])"
 
   placeholder_hits=""
   if [ -n "$inserted_lines" ]; then

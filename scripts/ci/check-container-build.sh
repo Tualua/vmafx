@@ -99,7 +99,7 @@ EOF
 # whether an empty value is fatal.
 read_field() {
   local key="$1" file="$2" line
-  line="$(grep -m1 -E "^${key}=" -- "$file" 2>/dev/null || true)"
+  line="$(grep -m1 -E "^${key}=" -- "$file" 2>/dev/null || [ "$?" -eq 1 ])"
   printf '%s' "${line#*=}" | tr -d '\r'
 }
 

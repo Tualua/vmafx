@@ -101,12 +101,12 @@ for local_root in "$state_root" "$retired_root" "$corpus_root"; do
 done
 
 retired_refs=$(git grep -n -I -F "$retired_root" -- "${active_paths[@]}" \
-  ':(exclude)tools/markdownlint' 2>/dev/null || true)
+  ':(exclude)tools/markdownlint' 2>/dev/null || [ "$?" -eq 1 ])
 praetor_rule_refs=$(printf '%s\n' "$retired_refs" |
   sed -n "s|^\.gitignore:\([0-9]*\):/$retired_root/\$|\1|p")
 for line in $praetor_rule_refs; do
   if praetor_block_has_line "$line"; then
-    retired_refs=$(printf '%s\n' "$retired_refs" | grep -vFx -- ".gitignore:$line:/$retired_root/" || true)
+    retired_refs=$(printf '%s\n' "$retired_refs" | grep -vFx -- ".gitignore:$line:/$retired_root/" || [ "$?" -eq 1 ])
   fi
 done
 if [ -n "$retired_refs" ]; then
@@ -114,21 +114,21 @@ if [ -n "$retired_refs" ]; then
 fi
 
 local_links=$(git grep -n -I -E \
-  '\[[^]]+\]\([^)]*\.(workingdir2?|corpus)(/|\))' -- '*.md' 2>/dev/null || true)
+  '\[[^]]+\]\([^)]*\.(workingdir2?|corpus)(/|\))' -- '*.md' 2>/dev/null || [ "$?" -eq 1 ])
 if [ -n "$local_links" ]; then
   report_paths "Markdown links target ignored machine-local data" "$local_links"
 fi
 
 corpus_in_state=$(git grep -n -I -E \
   '\.workingdir/(netflix|chug|konvid-|lsvq|youtube-ugc|waterloo|live-vqc|bvi-dvc|aggregated|corpus_run|encodes)(/|[^[:alnum:]_-])' \
-  -- "${active_paths[@]}" 2>/dev/null || true)
+  -- "${active_paths[@]}" 2>/dev/null || [ "$?" -eq 1 ])
 if [ -n "$corpus_in_state" ]; then
   report_paths "dataset or reusable derived-data path is placed under .workingdir" "$corpus_in_state"
 fi
 
 state_in_corpus=$(git grep -n -I -E \
   '\.corpus/(OPEN|BACKLOG|BUGS|QUESTIONS|STATE)\.md' \
-  -- "${active_paths[@]}" 2>/dev/null || true)
+  -- "${active_paths[@]}" 2>/dev/null || [ "$?" -eq 1 ])
 if [ -n "$state_in_corpus" ]; then
   report_paths "session-state path is placed under .corpus" "$state_in_corpus"
 fi

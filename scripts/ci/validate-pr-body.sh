@@ -151,7 +151,7 @@ fi
 # wrapper on PATH that returns the file list when the parser asks for
 # `git diff --name-only`. Less invasive than monkey-patching the parser.
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || repo_root=""
 if [ -z "${repo_root}" ]; then
   echo "validate-pr-body: not inside a git repository." >&2
   exit 2

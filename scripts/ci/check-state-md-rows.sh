@@ -293,7 +293,7 @@ report="$(awk '
   }
 ' "$file")"
 
-dupes="$(printf '%s\n' "$report" | grep -E '^(ID|ROW|MOVED)' || true)"
+dupes="$(printf '%s\n' "$report" | grep -E '^(ID|ROW|MOVED)' || [ "$?" -eq 1 ])"
 
 if [[ -n "$dupes" ]]; then
   echo "::error title=state.md contradictory rows::bug rows must be unique and agree with move tombstones" >&2
@@ -326,8 +326,8 @@ fi
 
 # A row whose status disagrees with the section it is filed under. No duplicate
 # is involved, so the two checks above cannot see it.
-misfiled="$(printf '%s\n' "$report" | grep -E '^SECTION' | sort -t$'\t' -k2,2n || true)"
-nosection="$(printf '%s\n' "$report" | grep -E '^NOSECTION' || true)"
+misfiled="$(printf '%s\n' "$report" | grep -E '^SECTION' | sort -t$'\t' -k2,2n || [ "$?" -eq 1 ])"
+nosection="$(printf '%s\n' "$report" | grep -E '^NOSECTION' || [ "$?" -eq 1 ])"
 
 if [[ -n "$misfiled" || -n "$nosection" ]]; then
   echo "::error title=state.md misfiled rows::a row's status must match its section (ADR-0165)" >&2

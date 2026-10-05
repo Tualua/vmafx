@@ -60,7 +60,7 @@ bad() {
 mapfile -t files < <(
   {
     git ls-files 'Dockerfile*' 'docker/Dockerfile*' 'dev/Containerfile*' |
-      grep -v '^docker/dev/' || true
+      grep -v '^docker/dev/' || [ "$?" -eq 1 ]
     git ls-files 'docker/dev/ubuntu-26.04-cuda.Dockerfile'
   } | sort -u
 )

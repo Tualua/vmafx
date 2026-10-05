@@ -61,7 +61,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 git ls-files >"$tmpdir/tracked"
 grep -E '(^|/)meson\.build$|(^|/)setup\.py$|\.pyx$' "$tmpdir/tracked" \
-  >"$tmpdir/buildfiles" || true
+  >"$tmpdir/buildfiles" || [ "$?" -eq 1 ]
 
 if [ ! -s "$tmpdir/buildfiles" ]; then
   echo "twin-drift: no build files (meson.build / setup.py / *.pyx) found; skipping"
@@ -87,7 +87,8 @@ n_ignored=0
 #   KIND = ignore  VALUE = the twin-drift-ignore reason
 # POSIX awk only (mawk on Ubuntu runners): no gensub, no length(array).
 # ---------------------------------------------------------------------------
-read -r -d '' AWK_PROG <<'EOF' || true
+AWK_PROG="$(
+  cat <<'EOF'
 function strip_comment(s,    i, c, q, out) {
     q = ""; out = ""
     for (i = 1; i <= length(s); i++) {
@@ -254,6 +255,7 @@ FNR == NR {
     carry = tail_ident(s)
 }
 EOF
+)"
 
 # grep -E metacharacter escape for the suffix search.
 re_escape() {
@@ -278,7 +280,7 @@ while IFS= read -r bf; do
       search)
         n_search=$((n_search + 1))
         esc="$(re_escape "$value")"
-        matches="$(grep -E -- "(^|/)[^/]*${esc}\$" "$tmpdir/tracked" || true)"
+        matches="$(grep -E -- "(^|/)[^/]*${esc}\$" "$tmpdir/tracked" || [ "$?" -eq 1 ])"
         if [ -z "$matches" ]; then
           echo "FAIL: unresolved source reference ${bf}:${line} ${lit} — no tracked file ends with '${value}'" >&2
           fail=$((fail + 1))
@@ -303,8 +305,8 @@ echo "twin-drift: ${n_exact} exact + ${n_search} suffix-searched source referenc
 # ---------------------------------------------------------------------------
 # (a) twin pairs
 # ---------------------------------------------------------------------------
-grep -E '\.c$' "$tmpdir/tracked" | sed 's/\.c$//' | sort >"$tmpdir/stems_c" || true
-grep -E '\.cpp$' "$tmpdir/tracked" | sed 's/\.cpp$//' | sort >"$tmpdir/stems_cpp" || true
+grep -E '\.c$' "$tmpdir/tracked" | sed 's/\.c$//' | sort >"$tmpdir/stems_c" || [ "$?" -eq 1 ]
+grep -E '\.cpp$' "$tmpdir/tracked" | sed 's/\.cpp$//' | sort >"$tmpdir/stems_cpp" || [ "$?" -eq 1 ]
 comm -12 "$tmpdir/stems_c" "$tmpdir/stems_cpp" >"$tmpdir/twins"
 n_twins="$(wc -l <"$tmpdir/twins")"
 echo "twin-drift: ${n_twins} .c/.cpp twin pairs"

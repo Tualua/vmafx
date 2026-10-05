@@ -120,7 +120,7 @@ else
 fi
 
 # Locate coordinated version markers from release-please-config.json
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || repo_root=""
 config_file=""
 if [ -f "release-please-config.json" ]; then
   config_file="release-please-config.json"
@@ -131,7 +131,8 @@ fi
 extra_files=()
 if [ -n "${config_file}" ] && command -v jq >/dev/null 2>&1; then
   mapfile -t extra_files < <(
-    jq -r '.packages["."]."extra-files"[]? | if type == "string" then . else .path end' "${config_file}" 2>/dev/null || true
+    jq -r '.packages["."]."extra-files"[]? | if type == "string" then . else .path end' "${config_file}" 2>/dev/null ||
+      echo "warning: could not read extra-files from ${config_file}" >&2
   )
 fi
 
@@ -190,18 +191,22 @@ collect_changed_paths() {
     fi
   elif [ -n "${base_sha}" ] && [ -n "${head_sha}" ]; then
     git cat-file -e "${base_sha}^{commit}" 2>/dev/null ||
-      git fetch --no-tags origin "${base_sha}" 2>/dev/null || true
+      git fetch --no-tags origin "${base_sha}" 2>/dev/null ||
+      echo "warning: could not fetch ${base_sha}; the diff may be incomplete" >&2
     git cat-file -e "${head_sha}^{commit}" 2>/dev/null ||
-      git fetch --no-tags origin "${head_sha}" 2>/dev/null || true
+      git fetch --no-tags origin "${head_sha}" 2>/dev/null ||
+      echo "warning: could not fetch ${head_sha}; the diff may be incomplete" >&2
     local diff_base
     diff_base="$(git merge-base "${base_sha}" "${head_sha}" 2>/dev/null || printf '%s' "${base_sha}")"
-    git diff --name-only "${diff_base}..${head_sha}" 2>/dev/null || true
+    git diff --name-only "${diff_base}..${head_sha}" 2>/dev/null ||
+      echo "warning: git diff ${diff_base}..${head_sha} failed" >&2
   elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     if git rev-parse --verify origin/master >/dev/null 2>&1; then
       local diff_base
-      diff_base="$(git merge-base origin/master HEAD 2>/dev/null || true)"
+      diff_base="$(git merge-base origin/master HEAD 2>/dev/null)" || diff_base=""
       if [ -n "${diff_base}" ]; then
-        git diff --name-only "${diff_base}..HEAD" 2>/dev/null || true
+        git diff --name-only "${diff_base}..HEAD" 2>/dev/null ||
+          echo "warning: git diff ${diff_base}..HEAD failed" >&2
       fi
     fi
   fi

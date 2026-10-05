@@ -185,9 +185,11 @@ if [ -n "$diff_file" ]; then
 else
   if [ -n "$base_sha" ] && [ -n "$head_sha" ]; then
     git cat-file -e "${base_sha}^{commit}" 2>/dev/null ||
-      git fetch --no-tags origin "${base_sha}" 2>/dev/null || true
+      git fetch --no-tags origin "${base_sha}" 2>/dev/null ||
+      echo "warning: could not fetch ${base_sha}; the diff may be incomplete" >&2
     git cat-file -e "${head_sha}^{commit}" 2>/dev/null ||
-      git fetch --no-tags origin "${head_sha}" 2>/dev/null || true
+      git fetch --no-tags origin "${head_sha}" 2>/dev/null ||
+      echo "warning: could not fetch ${head_sha}; the diff may be incomplete" >&2
     # Use the MERGE BASE of the two, not base_sha itself.
     #
     # GitHub's `pull_request.base.sha` is the base branch tip as it was when the
@@ -228,7 +230,7 @@ done <"$tmp_paths"
 
 # If no branch was explicitly given and not in git env, try reading current branch
 if [ -z "$branch" ]; then
-  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch=""
 fi
 
 # 2. Check author / branch requirement (Condition a)

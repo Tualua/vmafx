@@ -42,7 +42,7 @@ if [ -z "$authoritative" ]; then
   note "       That macro is the single source of truth for the fork's default model."
   exit 1
 fi
-count=$(grep -c '^#define VMAF_DEFAULT_MODEL_VERSION ' "$header" || true)
+count=$(grep -c '^#define VMAF_DEFAULT_MODEL_VERSION ' "$header" || [ "$?" -eq 1 ])
 if [ "$count" -ne 1 ]; then
   bad "$header defines VMAF_DEFAULT_MODEL_VERSION $count times; expected exactly 1"
 fi
@@ -141,13 +141,13 @@ default_use_re="${default_use_re}|(=|return)[^=]*[[:space:]]else[[:space:]]+${M}
 
 offenders=$(git grep -nIE "$default_use_re" -- . 2>/dev/null |
   grep -vE "$allow_re" |
-  grep -vE "$test_re" || true)
+  grep -vE "$test_re" || [ "$?" -eq 1 ])
 
 # A line may pin a model deliberately by carrying the marker below, which
 # forces the author to say why in the source itself rather than in a path list.
 # The AOM CTC preset uses it: the CTC specification requires that exact model,
 # so it is not a default and must never follow the fork's default.
-offenders=$(printf '%s\n' "$offenders" | grep -v 'vmaf-model-pin:' || true)
+offenders=$(printf '%s\n' "$offenders" | grep -v 'vmaf-model-pin:' || [ "$?" -eq 1 ])
 
 if [ -n "${offenders//[[:space:]]/}" ]; then
   note ""

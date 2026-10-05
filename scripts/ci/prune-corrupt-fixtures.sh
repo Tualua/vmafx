@@ -42,7 +42,7 @@ while IFS= read -r -d '' f; do
   if [ ! -s "${f}" ]; then
     reason="empty"
   else
-    head_bytes=$(head -c 64 "${f}" 2>/dev/null | tr -d '\0' || true)
+    head_bytes=$(head -c 64 "${f}" 2>/dev/null | tr -d '\0') || head_bytes=""
     case "${head_bytes}" in
       "version https://git-lfs"*)
         reason="Git-LFS pointer, not the payload"

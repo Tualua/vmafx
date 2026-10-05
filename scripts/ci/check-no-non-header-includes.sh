@@ -83,7 +83,7 @@ for rel_path in "${files_to_check[@]}"; do
   while IFS=: read -r lineno match_line; do
     echo "ERROR: $rel_path:$lineno: non-header source inclusion: $match_line" >&2
     errors=$((errors + 1))
-  done < <(grep -n -E '^[[:space:]]*#[[:space:]]*include[[:space:]]+["<][^">]+\.(c|cpp)[">]' "$full_path" 2>/dev/null || true)
+  done < <(grep -n -E '^[[:space:]]*#[[:space:]]*include[[:space:]]+["<][^">]+\.(c|cpp)[">]' "$full_path" 2>/dev/null || [ "$?" -eq 1 ])
 done
 
 if [[ $errors -gt 0 ]]; then

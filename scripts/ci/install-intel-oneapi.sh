@@ -132,12 +132,14 @@ trap 'rm -rf "$tmp"' EXIT
 # --- repository key: keep exactly the pinned key --------------------------
 key_url="https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
 keyring=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg
-curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/intel.pub" "$key_url"
+curl -fsSL --connect-timeout 20 --max-time 120 --proto '=https' --tlsv1.2 -o "$tmp/intel.pub" "$key_url"
 export GNUPGHOME="$tmp/gnupg"
 mkdir -m 0700 "$GNUPGHOME"
 # Without gpg-agent (a Recommends of gpg) the import still stores the public
 # keys but exits 2; the fingerprint check below is what decides.
-gpg --batch --quiet --no-autostart --import "$tmp/intel.pub" 2>/dev/null || true
+if ! gpg --batch --quiet --no-autostart --import "$tmp/intel.pub" 2>/dev/null; then
+  echo "note: gpg import exited non-zero (no gpg-agent); the fingerprint check below decides" >&2
+fi
 gpg --batch --export "$INTEL_ONEAPI_APT_SIGNER_FINGERPRINT" >"$tmp/keyring.gpg"
 exported="$(gpg --batch --with-colons --show-keys "$tmp/keyring.gpg" 2>/dev/null |
   awk -F: '$1 == "fpr" { print $10; exit }')"

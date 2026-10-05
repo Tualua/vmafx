@@ -33,7 +33,7 @@ try:
     print(data.get('host', {}).get('c', {}).get('id', ''))
 except Exception:
     sys.exit(1)
-" "${info_file}" 2>/dev/null || true)
+" "${info_file}" 2>/dev/null) || compiler_id=""
 
   if [[ -z "${compiler_id}" ]]; then
     echo "error: failed to inspect compiler id from '${info_file}'" >&2

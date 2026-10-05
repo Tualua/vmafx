@@ -39,7 +39,7 @@
 
 set -euo pipefail
 
-toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" || toplevel=""
 if [ -z "$toplevel" ]; then
   # Not inside a git tree — pre-commit framework would not invoke us
   # here, but bail safely just in case.
@@ -62,7 +62,7 @@ if [ ! -d "$agent_dir" ]; then
 fi
 
 # Collect agent-* directories. Empty-glob safe.
-shopt -s nullglob 2>/dev/null || true
+shopt -s nullglob
 agent_worktrees=("$agent_dir"/agent-*)
 if [ "${#agent_worktrees[@]}" -eq 0 ]; then
   exit 0

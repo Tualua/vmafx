@@ -51,7 +51,7 @@ check_backend() {
   while IFS= read -r sym; do
     found_any=1
     local count
-    count=$(grep -cF "&${sym}" <<<"$list_block" || true)
+    count=$(grep -cF "&${sym}" <<<"$list_block" || [ "$?" -eq 1 ])
     if [[ "$count" -eq 0 ]]; then
       echo "  MISSING: $sym not in feature_extractor_list[]"
       rc=1
