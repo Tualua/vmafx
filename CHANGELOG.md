@@ -2680,6 +2680,19 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `isnumeric()` no longer reads a `string_view` as a C string. No score or API change.
 
 
+- torch is installed only by the two training packages, `ai/` and
+  `tools/ensemble-training-kit/` (ADR-1886). The vmaf-tune predictor trainer
+  moved to `vmaf_train.predictor_train` (`python -m vmaf_train.predictor_train`
+  in the ai/ environment), and vmaf-tune's `train` extra is gone; vmaf-tune
+  still loads the trained ONNX predictors. `describe_worst_frames` in the
+  Python MCP server describes frames with a local vision-language model through
+  ONNX Runtime GenAI: install `vmaf-mcp[vlm]` (now `onnxruntime-genai`, no
+  torch or transformers) and point `VMAF_MCP_VLM_MODEL` at a model directory
+  such as the CPU build of Phi-3.5-vision-instruct-onnx. The server no longer
+  downloads models or runs model-hub code; without a model it returns frame
+  metadata with a note that names what is missing.
+
+
 - **The fixed-point VIF log2 table has one definition for every backend.**
   `vif_log2_table_generate()` moved to `core/src/feature/vif_log2_table.h`,
   which `integer_vif.h` includes. The SYCL and Metal hosts of the `vif` twins
@@ -6122,6 +6135,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   cluster-wide `vmafxtenants` access for a reconciler that does not exist. The
   controller now runs under its own account, `<name>-controller`, the only one
   bound to the Role, and the operator's tenant rules are gone.
+
+
+- The nine PyTorch advisories without a fixed release (PYSEC-2025-189, -190,
+  -192 to -197, -210) no longer reach any runtime package, and
+  `security/vex/torch.openvex.json` records why the two training packages are
+  not affected. `scripts/ci/check-torch-scope.py` keeps torch out of every other
+  package; the triage process is in `docs/development/dependency-advisories.md`.
 
 ## [1.0.0-rc.2] - 2026-09-28
 ### Changed

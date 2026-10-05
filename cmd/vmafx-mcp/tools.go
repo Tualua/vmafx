@@ -396,11 +396,11 @@ func registerModelEvalTools(reg *toolRegistrar) {
 func registerFrameInspectionTools(reg *toolRegistrar) {
 	reg.add(&mcp.Tool{
 		Name: "describe_worst_frames",
-		Description: "Score a (ref, dis) pair, pick the N worst-VMAF frames, extract " +
-			"each as PNG via ffmpeg, and run a vision-language model " +
-			"(SmolVLM -> Moondream2 fallback) to describe the visible " +
-			"artefacts. Falls back to metadata-only output when the [vlm] " +
-			"extras are not installed. ADR-0172 / T6-6.",
+		Description: "Score a (ref, dis) pair, pick the N worst-VMAF frames and extract " +
+			"each as PNG via ffmpeg. Descriptions come from a local vision-language " +
+			"model through ONNX Runtime GenAI in the Python server only " +
+			"(VMAF_MCP_VLM_MODEL, [vlm] extra); this server returns frame " +
+			"metadata with a note. ADR-0172 / ADR-1886.",
 	}, schemaObj{
 		"type":     "object",
 		"required": []string{"ref", "dis", "width", "height", "pixfmt", "bitdepth"},

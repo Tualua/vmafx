@@ -61965,3 +61965,15 @@ No score, public API or FFmpeg patch impact.
   (the 30 files here were reformatted; a conflict takes the incoming side and re-runs black).
   `core/test/test_*_contract.py` files carry named constants for the counts they assert; a change
   to a counted construct changes the constant. No score, public API or FFmpeg patch impact.
+
+## torch only in the training packages (ADR-1886)
+
+- `vmaftune.predictor_train` is now `ai/src/vmaf_train/predictor_train.py`, with its tests in
+  `ai/tests/`; an upstream-independent fork file, so no Netflix sync touches it. A change that
+  re-adds the module to vmaf-tune, or torch to any pyproject outside `ai/` and
+  `tools/ensemble-training-kit/`, fails `scripts/ci/check-torch-scope.py`.
+- `mcp-server/vmaf-mcp/src/vmaf_mcp/vlm.py` is the only VLM path of `describe_worst_frames`
+  (ONNX Runtime GenAI, local `VMAF_MCP_VLM_MODEL`); keep the `vlm` extra free of torch and
+  transformers. The `vmaf-tune-train` test suite is removed from `.github/test-suites.json` and
+  `tests-and-quality-gates.yml`; a conflict there takes the side without it. No score, public C
+  API or FFmpeg patch impact.

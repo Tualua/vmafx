@@ -1153,8 +1153,9 @@ func extractWorstFramePNGs(
 		pngPath := filepath.Join(tmpDir, fmt.Sprintf("frame_%06d.png", frameIdx))
 
 		extractErr := extractFramePNG(ctx, dis, pngPath, width, height, pixFmtFFmpeg, frameIdx)
-		desc := "(VLM unavailable — Go implementation does not include vlm extras; " +
-			"use the Python vmaf-mcp server for VLM descriptions)"
+		desc := "(VLM unavailable — the Go server runs no vision-language model; " +
+			"the Python vmaf-mcp server describes frames with the [vlm] extra and " +
+			"VMAF_MCP_VLM_MODEL)"
 		if extractErr != nil {
 			desc = fmt.Sprintf("(frame extraction failed: %v)", extractErr)
 			pngPath = ""

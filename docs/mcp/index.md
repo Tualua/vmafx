@@ -326,7 +326,7 @@ variables.
 | Tool count | 19 | 24 (19 shared + 5 control-plane) |
 | Shared tool names / schemas | Reference | Byte-for-byte parity |
 | Transport | stdio (default), HTTP (PR #1583); `--transport` / `--port` flags | stdio (default), streamable HTTP; env vars `VMAFX_MCP_TRANSPORT` / `VMAFX_MCP_HTTP_ADDR`, no flags (ADR-1119) |
-| VLM descriptions (`describe_worst_frames`) | SmolVLM / Moondream2 when the `[vlm]` extra is installed | Returns a placeholder; a native VLM bridge is planned |
+| VLM descriptions (`describe_worst_frames`) | A local ONNX Runtime GenAI vision model (`[vlm]` extra, `VMAF_MCP_VLM_MODEL`) | Returns a placeholder |
 | `eval_model_on_split`, `compare_models` | Native Python (onnxruntime, pandas, scipy) | Native Go, no Python: parquet via `parquet-go`, statistics in `pkg/modeleval`, ONNX via libvmaf's `vmaf_dnn_session_*` API |
 | Binary size | about 50 MB Python environment | about 10 MB static binary |
 | Startup time | about 300 ms (Python import) | about 10 ms |

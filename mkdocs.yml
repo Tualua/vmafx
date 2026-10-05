@@ -446,6 +446,7 @@ nav:
       - Best Practices assessment: development/best-practices-assessment.md
       - Repository security: development/repository-security.md
       - Dependency bot: development/dependency-bot.md
+      - Dependency advisories: development/dependency-advisories.md
       - Python dependency locks: development/python-dependency-locks.md
       - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md

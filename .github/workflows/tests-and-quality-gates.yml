@@ -480,28 +480,6 @@ jobs:
           VMAF_BIN_FOR_TESTS: ${{ github.workspace }}/core/build/tools/vmaf
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v -rs --timeout=60 --timeout-method=signal
-      # Suite vmaf-tune-train (ADR-1568): vmaf-tune's predictor trainer
-      # needs torch, which only this venv holds. The test puts
-      # tools/vmaf-tune/src on sys.path itself. Any skip fails the step:
-      # torch, onnxruntime, numpy and the shipped models are inputs here.
-      - name: Run the vmaf-tune predictor trainer tests
-        if: steps.impact.outputs.tiny_ai == 'true'
-        run: |
-          set -o pipefail
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/python" scripts/ci/suite_registry.py \
-            list vmaf-tune-train > "${RUNNER_TEMP}/vmaf-tune-train-files.txt"
-          mapfile -t files < "${RUNNER_TEMP}/vmaf-tune-train-files.txt"
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "::error::the registry lists no vmaf-tune-train test files" >&2
-            exit 1
-          fi
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" "${files[@]}" -rs \
-            --timeout=120 --timeout-method=signal | tee "${RUNNER_TEMP}/vmaf-tune-train.log"
-          if grep -E '^SKIPPED' "${RUNNER_TEMP}/vmaf-tune-train.log"; then
-            echo "::error::a vmaf-tune predictor trainer test skipped in the torch venv" >&2
-            exit 1
-          fi
-
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
       # entries whose `quant_mode == "fp32"` (nothing to gate).

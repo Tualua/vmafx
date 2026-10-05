@@ -25,15 +25,18 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+# The trained model's runtime consumer: vmaf-tune's predictor (no torch there).
+sys.path.insert(0, str(_REPO_ROOT / "tools" / "vmaf-tune" / "src"))
 
-from vmaftune import predictor_train
-from vmaftune.predictor import Predictor, ShotFeatures
-from vmaftune.predictor_train import (
+from vmaftune.predictor import Predictor, ShotFeatures  # noqa: E402
+
+from vmaf_train import predictor_train  # noqa: E402
+from vmaf_train.predictor_train import (  # noqa: E402
     CODECS,
     INPUT_DIM,
     TrainConfig,
@@ -48,14 +51,11 @@ from vmaftune.predictor_train import (
     train_val_split,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
 _MODEL_DIR = _REPO_ROOT / "model"
 
-# The trainer needs torch, which the dev extra leaves out (it is the
-# heavy `train` extra); onnxruntime and numpy come with the dev extra.
-torch = pytest.importorskip(
-    "torch", reason="predictor training needs the 'train' extra: pip install -e '.[train]'"
-)
+# The trainer needs torch, which only the ai/ training environment carries
+# (ADR-1886); onnxruntime and numpy come with it.
+torch = pytest.importorskip("torch", reason="predictor training runs in the ai/ environment")
 ort = pytest.importorskip("onnxruntime")
 np = pytest.importorskip("numpy")
 
@@ -258,11 +258,18 @@ def test_train_all_codecs_consumes_directory_corpus(
     )
     seen: list[tuple[str, int, str]] = []
 
-    def fake_train_one_codec(codec, rows, *, cfg, output_dir, corpus_kind):
+    def fake_train_one_codec(
+        codec: str,
+        rows: list[dict[str, Any]],
+        *,
+        cfg: TrainConfig,
+        output_dir: Path,
+        corpus_kind: str,
+    ) -> TrainResult:
         seen.append((codec, len(rows), corpus_kind))
         return _dummy_train_result(codec, output_dir)
 
-    def fail_synthetic(codec, n_rows):
+    def fail_synthetic(codec: str, n_rows: int) -> list[dict[str, Any]]:
         raise AssertionError(f"synthetic fallback used for {codec}")
 
     monkeypatch.setattr(predictor_train, "CODECS", ("libx264",))
@@ -289,11 +296,18 @@ def test_main_consumes_directory_corpus(tmp_path: Path, monkeypatch: pytest.Monk
     )
     seen: list[tuple[str, int, str]] = []
 
-    def fake_train_one_codec(codec, rows, *, cfg, output_dir, corpus_kind):
+    def fake_train_one_codec(
+        codec: str,
+        rows: list[dict[str, Any]],
+        *,
+        cfg: TrainConfig,
+        output_dir: Path,
+        corpus_kind: str,
+    ) -> TrainResult:
         seen.append((codec, len(rows), corpus_kind))
         return _dummy_train_result(codec, output_dir)
 
-    def fail_synthetic(codec, n_rows):
+    def fail_synthetic(codec: str, n_rows: int) -> list[dict[str, Any]]:
         raise AssertionError(f"synthetic fallback used for {codec}")
 
     monkeypatch.setattr(predictor_train, "train_one_codec", fake_train_one_codec)
@@ -321,7 +335,7 @@ def test_main_consumes_directory_corpus(tmp_path: Path, monkeypatch: pytest.Monk
 # ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("codec", CODECS)
+@pytest.mark.parametrize("codec", CODECS)  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
 def test_predictor_loads_each_shipped_model(codec: str) -> None:
     """Every shipped predictor_<codec>.onnx loads + emits a clamped VMAF."""
     onnx_path = _MODEL_DIR / f"predictor_{codec}.onnx"
@@ -343,7 +357,7 @@ def test_predictor_loads_each_shipped_model(codec: str) -> None:
     assert 0.0 <= val <= 100.0, f"{codec}: out-of-range output {val}"
 
 
-@pytest.mark.parametrize("codec", CODECS)
+@pytest.mark.parametrize("codec", CODECS)  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
 def test_shipped_model_is_monotone_decreasing_in_crf(codec: str) -> None:
     """Smoke: shipped model's prediction does not increase as CRF rises.
 
@@ -418,10 +432,10 @@ def test_pick_crf_uses_onnx_when_present() -> None:
         def __init__(self) -> None:
             self._inputs = [type("Input", (), {"name": "input"})()]
 
-        def get_inputs(self):
+        def get_inputs(self) -> list[Any]:
             return self._inputs
 
-        def run(self, _output_names, _inputs):
+        def run(self, _output_names: Any, _inputs: Any) -> list[Any]:
             # Return a constant 87.5 — far from any analytical output
             # for these inputs, so observing it proves the ONNX branch.
             return [np.array([[87.5]], dtype=np.float32)]

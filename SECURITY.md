@@ -52,6 +52,14 @@ Please include:
 These are the current response policy and targets, not a statement that past
 reports met them. Badge assessments need actual response and remediation records.
 
+## Advisories in dependencies
+
+Advisories against third-party dependencies are triaged in the open: update to
+a fixed release, remove the dependency where it is not needed, or record why the
+project is not affected as an OpenVEX statement under `security/vex/`. The
+process and the current statements are in
+[dependency advisories](docs/development/dependency-advisories.md).
+
 ## Release verification
 
 The [supply-chain workflow](.github/workflows/supply-chain.yml) defines intended

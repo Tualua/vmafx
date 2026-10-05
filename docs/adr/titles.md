@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1286), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1287), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5155,3 +5155,7 @@ Every ADR, one heading each (1286), so the site search finds an ADR by its title
 ## ADR-1880: Format envelope and device-targeted scoring in the 1.0.0 candidates
 
 [1880-format-envelope-device-targets](1880-format-envelope-device-targets.md)
+
+## ADR-1886: torch only where training runs
+
+[1886-torch-training-environments-only](1886-torch-training-environments-only.md)

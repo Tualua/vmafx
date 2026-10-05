@@ -33,9 +33,9 @@ report = ["matplotlib>=3.11.2"]
 # ONNX inference: the fast-path proxy, the predictor and the saliency
 # models (vmaftune.proxy / predictor / saliency).
 onnx = ["onnxruntime>=1.30.0"]
-# Predictor training (vmaftune.predictor_train). Heavy, so not in dev;
-# tests/test_predictor_train.py skips without it and says so.
-train = ["torch>=2.14.1"]
+# Predictor training moved to the ai/ training package
+# (vmaf_train.predictor_train, ADR-1886): no dependency group of this runtime
+# package may name torch (scripts/ci/check-torch-scope.py).
 
 [project.scripts]
 vmaf-tune = "vmaftune.cli:main"

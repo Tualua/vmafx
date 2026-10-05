@@ -21,11 +21,11 @@ from pathlib import Path
 import pytest
 
 _HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+_REPO_ROOT = _HERE.parents[1]
+sys.path.insert(0, str(_REPO_ROOT / "tools" / "vmaf-tune" / "src"))
 
-from vmaftune.predictor_train import _write_model_card
+from vmaf_train.predictor_train import _write_model_card  # noqa: E402
 
-_REPO_ROOT = _HERE.parents[2]
 _CARDS = sorted((_REPO_ROOT / "model").glob("predictor_*_card.md"))
 
 
@@ -91,6 +91,6 @@ def test_every_committed_card_is_found() -> None:
     assert len(_CARDS) >= 14, f"expected the 14 shipped predictor cards, found {len(_CARDS)}"
 
 
-@pytest.mark.parametrize("card", _CARDS, ids=lambda p: p.name)
+@pytest.mark.parametrize("card", _CARDS, ids=lambda p: p.name)  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
 def test_committed_card_markdown_shape(card: Path) -> None:
     _check_markdown_shape(card.read_text(encoding="utf-8"))

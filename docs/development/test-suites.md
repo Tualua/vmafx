@@ -54,7 +54,6 @@ registry cannot go stale.
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | `MCP Smoke` | `pytest` with the dev lock (which carries the `eval` extra), the MCP build as `VMAF_BIN` and the golden YUVs | — |
 | `rc1-tester` | `tools/rc1-tester/tests/` | `RC1 Tester Report` | `pytest` with the package's dev lock | — |
 | `vmaf-tune` | `tools/vmaf-tune/tests/` | `Python Package Tests (vmaf-tune)` (its own job: it needs `MCP Smoke`) | `pytest` over the files `suite_registry.py list vmaf-tune` prints, with the package's dev lock, MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`) as `VMAF_BIN_FOR_TESTS` and the golden YUVs; a skip for a missing binary or missing YUVs fails the job | 4: `VMAF_TUNE_INTEGRATION=1` with ffmpeg/x265 (2; opt-in; the two-pass case fails until `T-VMAFTUNE-X265-TWO-PASS-CRF-2026-10-04` closes, PR #2020, ADR-1565), QSV hardware (1) and the BBB corpus (1) |
-| `vmaf-tune-train` | `tools/vmaf-tune/tests/test_predictor_train.py` | `Tiny AI` | `pytest` in the Tiny AI venv, the only one with torch (vmaf-tune's `train` extra, which its dev lock leaves out); the file path wins over the `vmaf-tune` directory, and any skip fails the step | — |
 | `dev-llm` | `dev-llm/tests/` | `Python Package Tests (dev-llm)` | `pytest` with the dev lock, which carries the `modelcard` extra | — |
 | `vmaf-roi-score` | `tools/vmaf-roi-score/tests/` | `Python Package Tests (vmaf-roi-score)` | `pytest` with the package's dev lock | — |
 | `go` | `api/`, `cmd/`, `internal/`, `pkg/` | `go vet + go test` | `go test ./...` against the CPU + ONNX Runtime libvmaf build | Individual tests skip when a tool they drive is absent |
@@ -157,7 +156,8 @@ A changed lock gives a new directory, so the next run rebuilds; delete the old
 ones by hand when disk matters (`ai` holds torch and is several GB). The
 editable packages are re-pointed at the checkout on every run, so one cache
 serves every worktree, and a per-venv file lock serialises two runs that share
-it. `vmaf-tune-train` runs in the venv of `ai` (`venv_of`), as in CI. The tests
+it. A suite with `venv_of` runs in another suite's venv, as in CI (no suite uses it
+since the predictor trainer moved into `ai`, ADR-1886). The tests
 run with `pytest -p no:cacheprovider -rs` and the per-test timeout CI uses,
 under a 900 s cap per suite (`--time-cap`).
 
@@ -170,8 +170,7 @@ in 5 to 8 minutes, so a change under `scripts/` is the slow case.
 A suite fails on a failed test, on a time-cap overrun and on a skip whose reason
 is a missing dependency (`could not import`, `No module named`, `not installed`)
 or a missing input the suite declares in `fail_on_skip`: the `vmaf` binary and
-the Netflix golden YUVs for `ai`, `mcp` and `vmaf-tune`, any skip for
-`vmaf-tune-train`. Pass the binary the train built with `--vmaf-bin` (or
+the Netflix golden YUVs for `ai`, `mcp` and `vmaf-tune`. Pass the binary the train built with `--vmaf-bin` (or
 `VMAF_BIN`); the YUVs are `python/test/resource/yuv`. Suites that need a build or
 a toolchain (`core`, `python-harness`, `go`, `rust`, `helm-chart`,
 `ffmpeg-patches`) carry a `not_local` reason; the runner prints `NOT RUN` for

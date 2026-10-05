@@ -407,6 +407,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-torch-scope
+        name: torch only in the training packages (ADR-1886)
+        entry: scripts/ci/check-torch-scope.py
+        language: script
+        pass_filenames: false
+        files: '(^|/)(pyproject\.toml|requirements[^/]*\.(txt|in))$|^scripts/ci/(check-torch-scope\.py|tests/test_check_torch_scope\.py)$'
+
       - id: check-cuda-pin-lockstep
         name: CUDA release and exact apt metadata stay locked across seven sites
         entry: scripts/ci/check-cuda-pin-lockstep.py

@@ -53,15 +53,13 @@ eval = [
   "onnxruntime>=1.30.0",
   "scipy>=1.18.1",
 ]
-# Optional: enables `describe_worst_frames` with vision-language fallback
-# (SmolVLM → Moondream2 → metadata-only). Pulls in transformers + torch.
-# Heavy install; off by default so the base MCP keeps a light footprint
-# (ADR-0172 / T6-6).
+# Optional: `describe_worst_frames` descriptions from a local vision-language
+# model through ONNX Runtime GenAI; the model directory comes from
+# VMAF_MCP_VLM_MODEL (ADR-0172, ADR-1886). Without it the tool returns frame
+# metadata. torch must not appear in any group of this package
+# (scripts/ci/check-torch-scope.py).
 vlm = [
-  "transformers>=5.18.0",
-  "torch>=2.14.1",
-  "Pillow>=12.3.0",
-  "accelerate>=1.15.0",
+  "onnxruntime-genai>=0.17.1",
 ]
 
 [project.scripts]

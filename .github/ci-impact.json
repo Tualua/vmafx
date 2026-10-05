@@ -46,6 +46,7 @@
     "requirements/",
     "resource/",
     "scripts/",
+    "security/",
     "test/",
     "testdata/",
     "tools/"
@@ -203,6 +204,7 @@
         "dev-llm/**",
         "scripts/*.py",
         "scripts/**/*.py",
+        "security/**",
         "pyproject.toml",
         "noxfile.py",
         "requirements/*",

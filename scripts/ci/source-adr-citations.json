@@ -115,9 +115,9 @@
     "0042": {
       "sites": {
         ".codex/agents/doc-reviewer.toml": 1,
+        "ai/src/vmaf_train/predictor_train.py": 2,
         "scripts/ci/tests/test_check_adr_links.py": 12,
-        "scripts/ci/tests/test_check_source_adr_citations.py": 8,
-        "tools/vmaf-tune/src/vmaftune/predictor_train.py": 2
+        "scripts/ci/tests/test_check_source_adr_citations.py": 8
       },
       "target": "0042-tinyai-docs-required-per-pr.md"
     },
@@ -3647,6 +3647,8 @@
     },
     "0546": {
       "sites": {
+        "ai/src/vmaf_train/predictor_train.py": 2,
+        "ai/tests/test_predictor_train.py": 2,
         "cmd/vmafx-tune/cmd/recommend_saliency.go": 2,
         "core/src/hip/meson.build": 2,
         "core/src/meson.build": 2,
@@ -3655,11 +3657,9 @@
         "pkg/saliency/saliency.go": 3,
         "pkg/saliency/saliency_test.go": 2,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1,
-        "tools/vmaf-tune/src/vmaftune/predictor_train.py": 2,
         "tools/vmaf-tune/src/vmaftune/saliency.py": 4,
         "tools/vmaf-tune/tests/test_codec_adapter_two_pass_real.py": 1,
         "tools/vmaf-tune/tests/test_help_texts_and_adr_refs.py": 2,
-        "tools/vmaf-tune/tests/test_predictor_train.py": 2,
         "tools/vmaf-tune/tests/test_saliency_roi_codec.py": 4
       },
       "target": "0546-audit-bundle-vulkan-saliency-modelcard.md"
@@ -8074,10 +8074,10 @@
         ".config/lint-exceptions.d/spdx.toml": 2,
         ".pre-commit-config.yaml": 1,
         "REUSE.toml": 1,
+        "ai/tests/test_predictor_card_markdown.py": 1,
         "scripts/ci/check-local-data-contract.sh": 1,
         "scripts/ci/tests/test-check-local-data-contract.sh": 1,
-        "scripts/dev/relicense_fork_files.py": 1,
-        "tools/vmaf-tune/tests/test_predictor_card_markdown.py": 1
+        "scripts/dev/relicense_fork_files.py": 1
       },
       "target": "1351-praetor-engine-pin-move.md"
     },
@@ -10736,7 +10736,7 @@
         ".github/workflows/dev-container-build.yml": 1,
         ".github/workflows/lint-and-format.yml": 4,
         ".github/workflows/rule-enforcement.yml": 2,
-        ".github/workflows/tests-and-quality-gates.yml": 2,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
         "scripts/ci/suite_registry.py": 3,
         "scripts/ci/test_e2e_runtime_contract.py": 1,
         "scripts/ci/test_fail_closed_ci.py": 1,
@@ -11152,6 +11152,22 @@
         "tools/vmaf-tune/tests/test_score_backend_coverage_push.py": 1
       },
       "target": "1874-vmaf-list-backends.md"
+    },
+    "1886": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "ai/src/vmaf_train/predictor_train.py": 1,
+        "ai/tests/test_predictor_train.py": 1,
+        "cmd/vmafx-mcp/tools.go": 1,
+        "mcp-server/vmaf-mcp/pyproject.toml": 1,
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 2,
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/vlm.py": 1,
+        "mcp-server/vmaf-mcp/tests/test_vlm_onnx_genai.py": 1,
+        "scripts/ci/check-torch-scope.py": 2,
+        "scripts/ci/tests/test_check_torch_scope.py": 1,
+        "tools/vmaf-tune/pyproject.toml": 1
+      },
+      "target": "1886-torch-training-environments-only.md"
     }
   },
   "retired": {

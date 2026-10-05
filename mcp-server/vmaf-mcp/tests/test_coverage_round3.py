@@ -14,11 +14,7 @@ server.py
 - ``_eval_model_on_split`` — features parquet missing 'mos' column.
 - ``_eval_model_on_split`` — missing feature columns error.
 - ``_eval_model_on_split`` — too-few-samples (< 2) error.
-- ``_describe_image_with_vlm`` — non-list return path from pipe.
-- ``_describe_image_with_vlm`` — list of non-dict return path.
-- ``_describe_image_with_vlm`` — list of dict with generated_text key.
-- ``_describe_image_with_vlm`` — list of dict with text key fallback.
-- ``_describe_image_with_vlm`` — TypeError fallback (no prompt= kwarg).
+- ``_describe_image_with_vlm`` — loaded describer output, unconfigured note.
 - ``_extract_frame_png`` — success path (mocked ffmpeg process).
 - ``_run_benchmark`` — FileNotFoundError when bench_all.sh absent.
 - ``_run_benchmark`` — non-zero rc + empty output emits error key.
@@ -329,79 +325,35 @@ def test_pick_worst_frames_empty_frames_list():
 
 
 # ---------------------------------------------------------------------------
-# _describe_image_with_vlm — non-list return paths
+# _describe_image_with_vlm — loaded describer
 # ---------------------------------------------------------------------------
 
 
-def test_describe_image_with_vlm_returns_string_when_pipe_returns_string(monkeypatch):
-    """When the VLM pipeline returns a plain string (not a list), the function
-    must return that string stripped."""
-    # Prime the state so _load_vlm skips the import step.
+def test_describe_image_with_vlm_strips_the_describer_output(monkeypatch):
+    """A loaded describer's text is returned stripped, for the image path given."""
+    seen: list[str] = []
+
+    def describe(path: str) -> str:
+        seen.append(path)
+        return "  compression artefact \n"
+
     monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", lambda _path, **_kw: "compression artefact")
+    monkeypatch.setitem(srv._vlm_state, "pipeline", describe)
     monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
 
     result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
     assert result == "compression artefact"
+    assert seen == ["/tmp/fake.png"]
 
 
-def test_describe_image_with_vlm_list_of_non_dict(monkeypatch):
-    """When the VLM pipeline returns a list of strings, the result is str-ified."""
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", lambda _path, **_kw: ["noise in the image"])
-    monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
-
+def test_describe_image_with_vlm_unconfigured_names_the_variable(monkeypatch):
+    """No VMAF_MCP_VLM_MODEL: metadata-only, and the note says which variable."""
+    monkeypatch.setitem(srv._vlm_state, "loaded", False)
+    monkeypatch.setitem(srv._vlm_state, "pipeline", None)
+    monkeypatch.setitem(srv._vlm_state, "model_id", None)
+    monkeypatch.delenv("VMAF_MCP_VLM_MODEL", raising=False)
     result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    # The list contains strings, not dicts — so the isinstance(out[0], dict)
-    # branch is False, and str(out) is returned.
-    assert isinstance(result, str)
-    assert len(result) > 0
-
-
-def test_describe_image_with_vlm_list_of_dict_generated_text(monkeypatch):
-    """List[dict] with 'generated_text' key uses that value."""
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(
-        srv._vlm_state, "pipeline", lambda _p, **_kw: [{"generated_text": "blocking artefact"}]
-    )
-    monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
-
-    result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    assert result == "blocking artefact"
-
-
-def test_describe_image_with_vlm_list_of_dict_text_key_fallback(monkeypatch):
-    """List[dict] with 'text' key uses that value when 'generated_text' absent."""
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", lambda _p, **_kw: [{"text": "banding visible"}])
-    monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
-
-    result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    assert result == "banding visible"
-
-
-def test_describe_image_with_vlm_type_error_fallback(monkeypatch):
-    """When the pipeline raises TypeError on prompt= kwarg, the function retries
-    without it (older transformers compatibility branch)."""
-    call_log: list[dict] = []
-
-    def fake_pipe(path_str: str, **kwargs: Any) -> Any:
-        call_log.append({"path": path_str, "kwargs": dict(kwargs)})
-        if "prompt" in kwargs:
-            raise TypeError("unexpected keyword argument 'prompt'")
-        # Second call (without prompt) succeeds.
-        return [{"generated_text": "retry succeeded"}]
-
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", fake_pipe)
-    monkeypatch.setitem(srv._vlm_state, "model_id", "legacy-model")
-
-    result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    assert result == "retry succeeded"
-    # First call included prompt=, second did not.
-    assert len(call_log) == 2
-    assert "prompt" in call_log[0]["kwargs"]
-    assert "prompt" not in call_log[1]["kwargs"]
+    assert "VLM unavailable: VMAF_MCP_VLM_MODEL is not set" in result
 
 
 # ---------------------------------------------------------------------------

@@ -20,7 +20,7 @@ invariant: Saliency inference consumes RGB; predictor uses raw-YUV helper; tempo
   `saliency.compute_saliency_map(raw_path, width, height, ...)`;
   public `predict --source` accepts containers, but saliency
   helper intentionally remains raw-YUV-only.
-  `predictor_train.project_row()` must preserve row-provided
+  `vmaf_train.predictor_train.project_row()` must preserve row-provided
   saliency / signalstats values in existing 14-column predictor
   layout and only zero-fill missing legacy rows.
 - **Saliency temporal aggregation is CLI-visible contract

@@ -525,12 +525,32 @@ a string.
 ## `describe_worst_frames`
 
 Score a `(ref, dis)` pair, pick the N frames with lowest VMAF, extract
-each as PNG via `ffmpeg`, and run a vision-language model
-(SmolVLM → Moondream2 fallback) to describe the visible artefacts.
-Falls back to a metadata-only output when the `vlm` extras aren't
-installed — useful as a debugging affordance for an LLM agent that
-wants narrative context for low-quality regions. Added in
-[ADR-0172](../adr/0172-mcp-describe-worst-frames.md) (T6-6).
+each as PNG via `ffmpeg`, and describe the visible artefacts with a local
+vision-language model through ONNX Runtime GenAI. Without a model it
+returns the frame metadata with a note. It is a debugging aid for an LLM
+agent that wants narrative context for low-quality regions. Added in
+[ADR-0172](../adr/0172-mcp-describe-worst-frames.md); the model runtime
+is [ADR-1886](../adr/1886-torch-training-environments-only.md).
+
+### Setting up descriptions
+
+The Python server only (the Go server always returns metadata):
+
+1. `pip install 'vmaf-mcp[vlm]'` installs `onnxruntime-genai`.
+2. Put an ONNX Runtime GenAI vision model on the machine, a directory
+   with `genai_config.json`, the ONNX graphs and the tokenizer. The
+   tested one is the CPU build of
+   [Phi-3.5-vision-instruct-onnx](https://huggingface.co/microsoft/Phi-3.5-vision-instruct-onnx)
+   (MIT, 3.2 GB), directory `cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4`.
+   Verify the download against the SHA-256 the hub lists for each file.
+   Other families ONNX Runtime GenAI supports (Phi-4 multimodal, the Qwen
+   vision models, LFM2-VL, Mistral 3, Gemma 3) get their image placeholder
+   from `vmaf_mcp/vlm.py`.
+3. Start the server with `VMAF_MCP_VLM_MODEL=<that directory>`.
+
+The server never downloads a model and runs no model code; it reads the
+directory once, on the first call. With the tested model, a description
+took 48 s per frame on four CPU cores and peaked at 8.6 GB of memory.
 
 ### Input schema
 
@@ -554,24 +574,22 @@ wants narrative context for low-quality regions. Added in
    `select='eq(n,<idx>)'` and `-fps_mode passthrough` to emit a single
    PNG. This needs FFmpeg 5.1 or newer: FFmpeg 5.0 and older do not know
    `-fps_mode`, and FFmpeg 9 removed the older `-vsync 0` spelling.
-4. Pass the PNG to the cached VLM pipeline. The pipeline is loaded
-   lazily on first call:
-   - Try `HuggingFaceTB/SmolVLM-Instruct` (~2 GB).
-   - Fall back to `vikhyatk/moondream2` (~2 GB).
-   - If neither loads (or `transformers` isn't importable), every
-     frame's `description` carries
-     `"(VLM unavailable — install with pip install vmaf-mcp[vlm])"`.
+4. Describe the PNG with the configured model (greedy decoding, at most
+   4096 tokens including the prompt). When the `vlm` extra is missing,
+   `VMAF_MCP_VLM_MODEL` is unset, or the directory has no
+   `genai_config.json`, every frame's `description` is a note that says
+   which, for example `(VLM unavailable: VMAF_MCP_VLM_MODEL is not set. ...)`.
 5. Return frame metadata + descriptions.
 
-The PNGs are written under `/tmp/vmaf-mcp-worst-<pid>/`. They aren't
-auto-deleted — callers can fetch them at the returned `png` paths
-during the lifetime of the process.
+The PNGs are written to a temporary directory of the call, which is
+removed when the call returns; the `png` paths in the response name
+where each frame was, not files that still exist.
 
 ### Response body
 
 ```json
 {
-  "model_id": "HuggingFaceTB/SmolVLM-Instruct",
+  "model_id": "cpu-int4-rtn-block-32-acc-level-4",
   "frames": [
     {
       "frame_index": 12,
@@ -583,7 +601,7 @@ during the lifetime of the process.
 }
 ```
 
-`model_id` is `null` when the metadata-only fallback path fired.
+`model_id` is the model directory's name, and `null` when no model ran.
 
 ### Errors
 
@@ -596,8 +614,8 @@ during the lifetime of the process.
 - Unsupported `pixfmt`/`bitdepth` combo →
   `{"error": "unsupported pixfmt/bitdepth combo: ..."}`.
 - VMAF subprocess failure → bubbles up the underlying `vmaf_score` error.
-- VLM inference exception per-frame → the frame's `description`
-  carries the exception string; other frames still proceed.
+- A configured model that fails to load or to describe a frame fails
+  the call with that error; nothing falls back to metadata silently.
 
 ## `probe_backend`
 

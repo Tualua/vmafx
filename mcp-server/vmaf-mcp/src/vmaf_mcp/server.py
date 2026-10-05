@@ -23,9 +23,9 @@ The ten core tools are listed below; the P1 tools ``list_extractors``,
   cache on a deterministic split and report PLCC/SROCC/RMSE.
 - ``compare_models``        — rank several ONNX models on the same split.
 - ``describe_worst_frames`` — score a pair, pick the N worst-VMAF frames, and
-  describe the visible artefacts via SmolVLM / Moondream2 (ADR-0172 / T6-6;
-  requires the ``vlm`` extras for actual descriptions, otherwise returns
-  frame metadata only).
+  describe the visible artefacts with a local vision-language model through
+  ONNX Runtime GenAI (ADR-0172 / ADR-1886; needs the ``vlm`` extra and a model
+  directory in ``VMAF_MCP_VLM_MODEL``, otherwise returns frame metadata only).
 
 The server assumes ``build/tools/vmaf`` exists (build first with
 ``meson compile -C build``). Paths are validated to live under either the
@@ -76,6 +76,7 @@ from mcp.types import (
 )
 from pydantic import TypeAdapter
 
+from vmaf_mcp import vlm
 from vmaf_mcp.http_scoring import HttpScoringRuntime, install_http_scoring_runtime
 
 _logger = logging.getLogger(__name__)
@@ -1298,75 +1299,38 @@ def _compare_models(
 # ---------------------------------------------------------------------------
 
 
-_VLM_PROMPT = (
-    "Describe what visible compression / encoding artefacts you see in this video "
-    "frame in 1-2 sentences. Focus on blocking, ringing, banding, blur, or chroma "
-    "distortion if present. Skip aesthetic commentary."
-)
-
-# Cached VLM pipeline (model + processor). Populated by `_load_vlm()` on
-# first call and then reused. None means "unavailable / disabled".
-_vlm_state: dict[str, Any] = {"loaded": False, "pipeline": None, "model_id": None}
+# Cached describer of the configured local model (vmaf_mcp.vlm). Populated
+# by `_load_vlm()` on the first call and then reused. "pipeline" None after
+# loading means no model runs; "reason" says why.
+_vlm_state: dict[str, Any] = {"loaded": False, "pipeline": None, "model_id": None, "reason": None}
 
 
 def _load_vlm() -> tuple[Any, str] | None:
-    """Lazy-import transformers and load the smallest available VLM.
+    """Load the model ``VMAF_MCP_VLM_MODEL`` names through ONNX Runtime GenAI.
 
-    Returns ``(pipeline, model_id)`` on success, ``None`` if the
-    ``vlm`` extras aren't installed or both candidate models fail to
-    load. Cached across calls — the first load is slow, subsequent
-    calls hit the in-memory state.
+    Returns ``(describe, model_id)``, or ``None`` when the ``vlm`` extra or
+    the model directory is missing (the reason is kept in ``_vlm_state``).
+    Cached across calls. A configured model that fails to load raises: the
+    caller asked for descriptions and gets the error, not metadata.
     """
     if _vlm_state["loaded"]:
         return (_vlm_state["pipeline"], _vlm_state["model_id"]) if _vlm_state["pipeline"] else None
     _vlm_state["loaded"] = True
-
-    try:
-        import torch  # noqa: F401
-        from transformers import pipeline as hf_pipeline
-    except ImportError:
+    loaded = vlm.load_configured()
+    if isinstance(loaded, str):
+        _vlm_state["reason"] = loaded
         return None
-
-    candidates = (
-        "HuggingFaceTB/SmolVLM-Instruct",  # ~2 GB, OK on CPU
-        "vikhyatk/moondream2",  # ~2 GB, well-known fallback
-    )
-    for model_id in candidates:
-        try:
-            pipe = hf_pipeline(
-                "image-to-text",
-                model=model_id,
-                trust_remote_code=True,
-            )
-            _vlm_state["pipeline"] = pipe
-            _vlm_state["model_id"] = model_id
-            return (pipe, model_id)
-        except Exception:  # pragma: no cover - depends on local env
-            _logger.warning(
-                "VLM candidate %s failed to load; trying next fallback",
-                model_id,
-                exc_info=True,
-            )
-            continue
-    return None
+    _vlm_state["pipeline"], _vlm_state["model_id"] = loaded
+    return loaded
 
 
 def _describe_image_with_vlm(image_path: Path) -> str:
-    """Run the cached VLM on @p image_path. Returns "(VLM unavailable)" when
-    the ``vlm`` extras are missing or no candidate model loaded."""
+    """Describe @p image_path with the configured model, or say why none runs."""
     loaded = _load_vlm()
     if not loaded:
-        return "(VLM unavailable — install with `pip install vmaf-mcp[vlm]`)"
-    pipe, _model_id = loaded
-    try:
-        out = pipe(str(image_path), prompt=_VLM_PROMPT)
-    except TypeError:
-        # Older transformers don't accept `prompt=` for image-to-text;
-        # the model defaults to its training caption prompt.
-        out = pipe(str(image_path))
-    if isinstance(out, list) and out and isinstance(out[0], dict):
-        return str(out[0].get("generated_text") or out[0].get("text") or out[0]).strip()
-    return str(out).strip()
+        return vlm.unavailable_note(str(_vlm_state.get("reason") or "no model loaded"))
+    describe, _model_id = loaded
+    return str(describe(str(image_path))).strip()
 
 
 async def _extract_frame_png(
@@ -3698,10 +3662,10 @@ def _worst_frames_tool() -> list[Tool]:
             name="describe_worst_frames",
             description=(
                 "Score a (ref, dis) pair, pick the N worst-VMAF frames, extract "
-                "each as PNG via ffmpeg, and run a vision-language model "
-                "(SmolVLM → Moondream2 fallback) to describe the visible "
-                "artefacts. Falls back to metadata-only output when the [vlm] "
-                "extras are not installed. ADR-0172 / T6-6."
+                "each as PNG via ffmpeg, and describe the visible artefacts with "
+                "a local vision-language model through ONNX Runtime GenAI "
+                "(VMAF_MCP_VLM_MODEL, [vlm] extra). Returns frame metadata with "
+                "a note when no model is configured. ADR-0172 / ADR-1886."
             ),
             inputSchema={
                 "type": "object",

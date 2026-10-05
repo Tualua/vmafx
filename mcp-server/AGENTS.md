@@ -94,6 +94,14 @@ call** (ADR-0517). `setvars.sh` references variables (`SETVARS_ARGS`,
 
 ## Rebase-sensitive invariants
 
+- **`describe_worst_frames` VLM = ONNX Runtime GenAI from a local directory
+  only** (ADR-1886). [`src/vmaf_mcp/vlm.py`](vmaf-mcp/src/vmaf_mcp/vlm.py):
+  `VMAF_MCP_VLM_MODEL` names directory with `genai_config.json`; no download,
+  no `trust_remote_code`, no torch / transformers in any extra
+  (`scripts/ci/check-torch-scope.py` fails). Unset / missing -> metadata +
+  note naming cause; configured model that fails to load -> raise, never
+  silent metadata. Per-family image tag table = `IMAGE_TAGS` (from
+  onnxruntime-genai `examples/python/common.py`).
 - **`_probe_backends` reads `vmaf --help`, not `--version`** (ADR-0509,
   Bug A). Compiled backends surface in `--help` as `--no_<backend>`.
   `--version` banner does NOT list GPU backends (`vmaf-dev-mcp`). Results cached

@@ -45,7 +45,7 @@
       "name": "ai",
       "paths": ["ai/tests/", "ai/sidecar/tests/"],
       "checks": ["Tiny AI"],
-      "source_paths": ["ai/", "model/"],
+      "source_paths": ["ai/", "model/", "tools/vmaf-tune/src/vmaftune/predictor.py"],
       "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
       "pytest": {"timeout": 60, "method": "signal"},
       "fail_on_skip": "vmaf binary|vmaf CLI|golden YUV|Netflix .*(YUV|fixtures)|checkerboard YUVs",
@@ -77,16 +77,6 @@
       "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "tools/vmaf-tune/requirements-dev-lock.txt"], "editable": ["tools/vmaf-tune"]},
       "fail_on_skip": "vmaf binary|vmaf CLI|golden YUV|Netflix .*(YUV|fixtures)|checkerboard YUVs",
       "runs": "pytest over this suite's files (suite_registry.py list vmaf-tune) with tools/vmaf-tune/requirements-dev-lock.txt"
-    },
-    {
-      "name": "vmaf-tune-train",
-      "paths": ["tools/vmaf-tune/tests/test_predictor_train.py"],
-      "checks": ["Tiny AI"],
-      "source_paths": ["tools/vmaf-tune/src/", "model/"],
-      "install": {"python": "3.14", "venv_of": "ai"},
-      "pytest": {"timeout": 120, "method": "signal"},
-      "fail_on_skip": ".*",
-      "runs": "pytest in the Tiny AI job, whose venv holds torch from ai/requirements-dev-lock.txt; vmaf-tune's dev lock leaves torch out (the train extra), so the predictor trainer test runs there; the file path wins over the vmaf-tune directory (ADR-1568)"
     },
     {
       "name": "dev-llm",
