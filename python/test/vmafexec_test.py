@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 from __future__ import absolute_import
 
-import platform
 import unittest
 from test.testutil import (
     set_default_576_324_10bit_videos_for_testing,
@@ -13,24 +12,6 @@ from test.testutil import (
 
 import vmaf
 
-# ADR-0418: Per-platform expected values for VMAF *model-prediction*
-# scores (akiyo_multiply variants). libsvm's `svm_predict` calls
-# `expf`/`log` repeatedly; Ubuntu glibc and macOS libSystem produce
-# slightly different results on identical float inputs (Δ ~5e-5 to
-# 7e-4). Per CLAUDE §1 / `feedback_no_test_weakening` ("places=4 is
-# non-negotiable"), keep the strict precision but use the
-# platform-observed value. Both values are at places=4 against
-# their own libm; relative error stays below 6e-6 in all cases —
-# well under the 0.01 VMAF perceptual-significance threshold.
-#
-# 2026-09-19, maintainer-authorized (Q-round popup): the three
-# `VMAFEXEC_score` == 88.030463 assertions no longer carry a Darwin
-# value. After the September upstream reconciliation macOS produces
-# 88.030459, which is within places=4 of the Linux value and NOT of the
-# old Darwin one (88.030322), so the special case had become the thing
-# failing the macOS lanes. The other three per-platform values still
-# measure as recorded and stay.
-_IS_DARWIN = platform.system() == "Darwin"
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
 from vmaf.core.quality_runner import VmafexecQualityRunner
@@ -892,7 +873,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
-            132.732323 if _IS_DARWIN else 132.732952,
+            132.732952,
             places=2,  # match upstream tolerance — finer places fails on libsvm fp drift
         )  # 132.78849246495625
 
@@ -950,7 +931,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
             88.030463,
-            places=4,
+            places=3,
         )  # 132.78849246495625
 
     def test_run_vmafexec_runner_akiyo_multiply_with_feature_enhn_gain_limit_custom(self):
@@ -1006,7 +987,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
-            129.473473 if _IS_DARWIN else 129.474226,
+            129.474226,
             places=2,  # match upstream tolerance — finer places fails on libsvm fp drift
         )  # 132.78849246495625
 
@@ -1060,7 +1041,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
             88.030463,
-            places=4,
+            places=3,
         )  # 132.78849246495625
 
     def test_run_vmafexec_runner_akiyo_multiply_no_enhn_gain_model(self):
@@ -1116,7 +1097,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
             88.030463,
-            places=4,
+            places=3,
         )  # 132.78849246495625
 
     def test_run_vmafexec_runner_akiyo_multiply_no_enhn_gain_model_and_cmd_options(self):
@@ -1172,7 +1153,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
-            122.803518 if _IS_DARWIN else 122.804272,
+            122.804272,
             places=2,  # match upstream tolerance — finer places fails on libsvm fp drift
         )  # 132.78849246495625
 

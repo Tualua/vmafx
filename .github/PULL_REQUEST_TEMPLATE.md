@@ -46,7 +46,7 @@
 
 <!-- CI runs the 3 Netflix CPU golden pairs (1 normal + 2 checkerboard) on every PR. -->
 
-- [ ] I did **not** modify any `assertAlmostEqual(...)` score in the Netflix golden Python tests.
+- [ ] I did **not** modify any `assertAlmostEqual(...)` score in the Netflix golden Python tests, except by porting Netflix's own updated assertion verbatim from upstream (value and places as upstream has them, measured against the fork's CPU build first; [ADR-1828](../docs/adr/1828-port-netflix-golden-updates.md)).
 - [ ] If I believe a golden value must change, I have explained why below AND pinged @Lusoris for a CODEOWNERS exception.
 
 ## Cross-backend numerical results

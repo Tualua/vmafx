@@ -113,6 +113,7 @@ Two rules. Scope: ALL agents, ALL tools, ALL commits, no exception. Override eve
 
 1. **NEVER modify Netflix golden-data assertions** (`python/test/` `assertAlmostEqual` values).
    Numerical-correctness ground truth. Scores drift -> fix code, not assertions.
+   Sole exception: port Netflix upstream update verbatim (value + places as upstream, never fork-invented) after measuring on fork CPU build ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)).
 2. **EVERY user-discoverable surface gets human-readable documentation in the same PR** as the code.
    No docs = unmergeable PR. ADRs, code comments: no substitute.
 
@@ -230,7 +231,7 @@ Each workflow = Claude skill under `.claude/skills/`. Agents without slash-comma
 | Local-LLM file review             | `.claude/skills/dev-llm-review/SKILL.md`          |
 | Release dry-run                   | `.claude/skills/prep-release/SKILL.md`            |
 
-## 8. Netflix golden-data gate — never modify
+## 8. Netflix golden-data gate — never modify (except verbatim upstream port)
 
 Three Netflix-authored CPU reference test pairs = numerical-correctness ground truth:
 
@@ -240,7 +241,7 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 
 - YUV files: `python/test/resource/yuv/`.
 - Golden-score assertions: hardcoded `assertAlmostEqual(...)` calls in `python/test/` (`quality_runner_test.py`, `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, `feature_extractor_test.py`, `result_test.py`).
-- **Never modified by any PR.** Run in CI as required status check.
+- **Never modified by any PR** except verbatim port of Netflix upstream update ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)): measure first, port value + places exact, no fork-invented value. Run in CI as required status check.
 - **Isolated build profile ([ADR-1317](docs/adr/1317-golden-gate-build-isolation.md))**: `make test-netflix-golden` uses dedicated `GOLDEN_BUILD_DIR ?= core/build-golden` compiled via `scripts/ci/setup-golden-build.sh` enforcing `gcc` or `clang` and passes `VMAF_BUILD_DIR` to Python tests. This isolates the gate from developer builds configured with oneAPI ICX, which exhibit floating-point contraction drift on float-motion and float-VIF convolutions.
 - Fork-added tests: separate files + directories.
 

@@ -2885,8 +2885,7 @@
     "0418": {
       "sites": {
         "core/src/feature/adm_tools.c": 2,
-        "python/test/local_explainer_test.py": 14,
-        "python/test/vmafexec_test.py": 1
+        "python/test/local_explainer_test.py": 14
       },
       "target": "0418-macos-test-recal-post-vif-sync.md"
     },

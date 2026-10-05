@@ -7,6 +7,27 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Port of Netflix/vmaf golden-assertion updates `5c7770080`, `005988ead`, `4679db83c`, `d93495f5c`, `e3827e4dd` (2026-10-05)
+
+`port/upstream-golden-updates-2026-05`, [ADR-1828](adr/1828-port-netflix-golden-updates.md).
+
+- Future upstream syncs port Netflix's own golden-assertion updates verbatim
+  (value and `places` exactly as upstream, never a fork-chosen value) after a
+  measurement against the fork's CPU build like the one behind this PR (summary
+  in the PR body). Upstream's value that the fork does not reproduce is a code
+  question, not a reason to loosen or edit a value.
+- Where upstream's tip differs from a commit's own value (a later upstream
+  commit), the tip is taken: `float_vifks360o97` `VMAF_score` and
+  `input160x90` `VMAF_score` keep places 3 and 2, not the 4 / 3 of `5c7770080`.
+- `vmafexec_test.py` loses its `_IS_DARWIN` constant and the per-platform
+  values, as upstream's `4679db83c` has it (six `VMAFEXEC_score` assertions,
+  three of them places 4 to 3). A macOS lane that differs from Linux by more
+  than 5e-4 on those scores would now fail.
+- Not portable: `test_run_vmaf_runner_v1_model` is skipped in the fork
+  (ADR-0865), so its upstream rows have no assertion to edit; the source part of
+  `5c7770080` (`chroma_correction_parameter`, `postprocess_feature_from_another`)
+  already landed with #2136.
+
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 
 `port/upstream-speed-python-tests`. Test-only.

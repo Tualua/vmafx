@@ -6,7 +6,11 @@ referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness, which impo
 this page rather than inlining it so every vendor context file stays inside its
 line budget. Changing a rule here changes it for every agent.
 
-1. Never modify Netflix golden-score assertions (§8).
+1. Never modify Netflix golden-score assertions (§8). The one exception is
+   porting Netflix's own updated assertion verbatim from upstream, with value
+   and places exactly as upstream has them, after measuring it against the
+   fork's CPU build; the fork never invents or loosens a value
+   ([ADR-1828](../adr/1828-port-netflix-golden-updates.md)).
 2. Never `git push --force` to `master`. Branch protection also rejects
    force-push and deletion on the host; see
    [ADR-0037](../adr/0037-master-branch-protection.md) and
