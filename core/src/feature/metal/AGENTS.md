@@ -338,6 +338,12 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
   (ADR-1561: x86's 0 below 0, defined everywhere). Change to
   `vif_accumulate_pixel()` lines of `integer_vif.c` / `x86/vif_avx2.c` /
   `x86/vif_avx512.c` -> header, same PR. Guards: `test_metal_integer_vif_gain`, `..._gain_contract.py`.
+- **integer vif host tail**: `scale_num_den()` rounds each scale's num / den
+  to float (`vif_store_residuals()`); `collect_fex_metal()` score set =
+  `write_scores()`: `.single_precision_ratio = true`, frame sums add the
+  rounded values. Double quotient = every score off by up to half an fp32
+  step (M4 Pro, #2118). Guard: `test_sycl_vif_float_sums_contract.py` (every
+  integer VIF twin).
 - **integer ssim**: `metal_integer_ssim_math.h` = `sycl_integer_ssim_math.h`
   (ADR-1443); terms stored unreduced, host adds in `calc_ssim()` raster order.
 - **float_ssim / float_ms_ssim**: window terms = `metal_ssim_terms.h` (CPU fp32

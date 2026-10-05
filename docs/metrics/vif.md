@@ -259,9 +259,13 @@ enhancement-gain-enabled VIF. Fixed per
 
 - **`integer_vif_metal`.** A 4-scale fixed-point Gaussian pyramid
   (`feature/metal/integer_vif.metal` + `_metal.mm`) with int64 moment
-  accumulators and the integer log2-LUT. Because Apple GPUs lack fp64 the
-  per-pixel gain is computed in float (the same fp64-free trade-off as the SYCL
-  twin, ADR-0220).
+  accumulators and the CPU's log2 table. Apple GPUs have no fp64, so the two
+  integers the CPU truncates from its double gain come from an integer
+  division, with the CPU's double operations replayed in 64-bit integers next
+  to an integer boundary (`metal_integer_vif_gain.h`, the SYCL twin's method,
+  [ADR-1498](../adr/1498-metal-twins-exact-designs.md)). The host rounds each
+  scale's sums to `float` and divides them in single precision, as
+  `integer_vif.c` does.
 - **`float_vif_metal`.** A 4-scale separable-Gaussian pyramid with per-scale
   mean/variance/covariance statistics (`feature/metal/float_vif.metal` +
   `_metal.mm`).

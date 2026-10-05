@@ -128,6 +128,20 @@ v1 news line.
 - `lefthook.yml` `pre-push` runs `scripts/git-hooks/check-push-tags.py`
   (`tag-guard`); a rebase of `lefthook.yml` keeps the command with
   `use_stdin: true`. Its contract is `scripts/release/tests/test_inherited_tags.py`.
+## integer_vif_metal divides in single precision (2026-10-05)
+
+`fix/metal-vif-single-precision-ratio`. One host line, comments, one contract
+test; no kernel change.
+
+- `core/src/feature/metal/integer_vif_metal.mm::collect_fex_metal()` builds its
+  `VmafVifScoreSet` with `.single_precision_ratio = true`, as
+  `integer_vif.c::write_scores()` and the CUDA, HIP and SYCL twins do. A sync
+  that rewrites the collect path must keep the flag and `scale_num_den()`'s two
+  `float` roundings.
+- `core/test/test_sycl_vif_float_sums_contract.py` now checks the host tail of
+  every integer VIF twin (CUDA, HIP, SYCL, Metal) from one table (`TWINS`); a
+  new twin or a renamed tail function is a new row there. The file keeps its
+  name and meson test name.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

@@ -486,9 +486,10 @@ test('test_sycl_ssimulacra2_exact_contract',
     timeout : 30,
 )
 
-# vif_sycl's host tail rounds each scale's sums to float and divides in
-# single precision, as integer_vif.c does, and its debug option defaults to
-# the CPU's false. Device-free; the device check is test_sycl_vif_parity.
+# The host tail of every integer VIF twin (vif_cuda, vif_hip, vif_sycl,
+# integer_vif_metal) rounds each scale's sums to float and divides in single
+# precision, as integer_vif.c does, and its debug option defaults to the
+# CPU's false. Device-free; the device checks are each twin's parity test.
 test('test_sycl_vif_float_sums_contract',
     import('python').find_installation(),
     args : files('test_sycl_vif_float_sums_contract.py'),

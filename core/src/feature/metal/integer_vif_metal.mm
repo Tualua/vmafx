@@ -20,10 +20,13 @@
  *    3. Scales 1..3: integer_vif_decimate_{8,16} (subsample_rd_{8,16} twin)
  *       builds the decimated uint16 pyramid, then integer_vif_compute_16
  *       runs the statistic at that scale.
- *    4. Host (collect): sum per-WG int64 partials per scale, apply the exact
- *       CPU final formula to get (num, den) per scale, then divide ->
+ *    4. Host (collect): sum per-WG int64 partials per scale, round each
+ *       scale's (num, den) to float as integer_vif.c::vif_store_residuals()
+ *       does, and build the score set as integer_vif.c::write_scores() does:
+ *       the frame sums add the rounded values and the emitter divides each
+ *       scale in single precision (single_precision_ratio) ->
  *       VMAF_integer_feature_vif_scale{0..3}_score (+ optional debug
- *       aggregates), identical to integer_vif.c::write_scores.
+ *       aggregates).
  *
  *  log2 LUT: integer_vif.c fills a VIF_LOG2_TABLE_SIZE (32768) entry uint16
  *  table host-side with vif_log2_table_generate() (feature/vif_log2_table.h).
@@ -610,8 +613,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
  *   num = accum_num_log/2048.0 +
  *         (accum_den_non_log - (accum_num_non_log/16384.0)/65025.0)
  *   den = accum_den_log/2048.0 + accum_den_non_log
- * (float casts mirror integer_vif.c's `num[0]` / `den[0]` writes, which are
- *  float; we keep double here and cast at the score division.) */
+ * Each result is rounded to float, as integer_vif.c::vif_store_residuals()
+ * stores it; the double the caller receives holds that float exactly.
+ * collect_fex_metal() then divides in single precision, as the CPU does. */
 static void scale_num_den(const IntegerVifStateMetal *s, int scale, double *num, double *den)
 {
     const VifWgAccumHost *p = (const VifWgAccumHost *)[(__bridge id<MTLBuffer>)s->wg_accum[scale]
@@ -642,7 +646,11 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         scale_num_den(s, i, &num[i], &den[i]);
     }
 
+    /* integer_vif.c::write_scores(): the emitter divides each scale's
+     * float-rounded sums in single precision. A double division gives a
+     * score up to half an fp32 step away from the CPU's on every frame. */
     VmafVifScoreSet output = {
+        .single_precision_ratio = true,
         .skip_scale0 = s->vif_skip_scale0,
         .debug = s->debug,
     };
