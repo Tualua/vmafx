@@ -142,6 +142,28 @@ test; no kernel change.
   every integer VIF twin (CUDA, HIP, SYCL, Metal) from one table (`TWINS`); a
   new twin or a renamed tail function is a new row there. The file keeps its
   name and meson test name.
+## Port of the rest of Netflix/vmaf `c70debb10`: `test_vif_tools`, `test_speed_chroma` (2026-10-05)
+
+`port/c70debb10-vif-tools-speed-chroma-tests`. Entry "0085" below ported the
+ADM and Barten halves of `c70debb10` and left these two files out because the
+fork then had no VIF runtime helpers; it has had them since ADR-0416. Test-only.
+
+- `core/test/test_vif_tools.c`: upstream's file and tables unchanged apart from
+  `static`, `(void)` prototypes and the ADR-1138 bracket.
+- `core/test/test_speed_chroma.c`: upstream's test includes `speed.c`; the
+  fork's tests may not include sources (`check-no-non-header-includes`), so
+  `speed.c` gains two more test entries next to the ADR-1477 ones,
+  `speed_internal_cpu_est_params()` (scalar kernels, work buffers allocated
+  per call) and `speed_internal_cpu_compute_eigenvalues()`, declared in
+  `speed_internal.h` with `SpeedInternalEstGeometry`; the score case uses
+  the existing `speed_internal_cpu_speed_score()`. Upstream's inputs and
+  expected values are file-scope arrays and one helper runs the three
+  `est_params()` cases (function-size limit). A change to the signature of
+  `est_params()` or `compute_eigenvalues()` in `speed.c` changes the entries
+  in the same PR.
+- Upstream gates both on `enable_float`; the fork does not, because
+  `vif_tools.c` and `speed.c` are in every build since 6046b1926. On a
+  sync, do not bring the gate back.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

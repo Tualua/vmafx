@@ -3068,6 +3068,28 @@ test_motion_blend = executable('test_motion_blend',
 )
 test('test_motion_blend', test_motion_blend, suite : ['fast'])
 
+# Netflix/vmaf c70debb10 (the half rebase-notes 0085 left out): the VIF / SpEED
+# filter helpers of vif_tools.c against upstream's tables, and SpEED's
+# est_params(), compute_eigenvalues() and get_speed_score() (through speed.c's
+# test entries in speed_internal.h) against upstream's values. Upstream gates
+# both on enable_float; here vif_tools.c and speed.c are in every build
+# (Netflix/vmaf 6046b1926, see test_speed), so neither test is gated.
+test_vif_tools = executable('test_vif_tools',
+    ['test.c', 'test_vif_tools.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_vif_tools', test_vif_tools, suite : ['fast'])
+
+test_speed_chroma = executable('test_speed_chroma',
+    ['test.c', 'test_speed_chroma.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_speed_chroma', test_speed_chroma, suite : ['fast'])
+
 # The CSF weights of float ADM (Watson step and Barten CSF) are upstream's
 # float arithmetic, and the Barten header returns the same bits in a C and
 # in a C++ translation unit (ADR-1489).

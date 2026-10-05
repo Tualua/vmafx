@@ -1103,6 +1103,72 @@ float speed_internal_cpu_speed_score(size_t num_blocks, size_t elements_in_block
                            speed_weight_var_mode);
 }
 
+void speed_internal_cpu_compute_eigenvalues(float *A, float *eigenvalues, int size, float *buffer)
+{
+    compute_eigenvalues(A, eigenvalues, size, buffer);
+}
+
+static void speed_est_dimensions(SpeedDimensions *dim, const SpeedInternalEstGeometry *geom)
+{
+    memset(dim, 0, sizeof(*dim));
+    dim->operating_width = geom->operating_width;
+    dim->operating_height = geom->operating_height;
+    dim->block_size = geom->block_size;
+    dim->truncated_width = geom->truncated_width;
+    dim->truncated_height = geom->truncated_height;
+    dim->num_blocks_horizontal = geom->num_blocks_horizontal;
+    dim->num_blocks_vertical = geom->num_blocks_vertical;
+    dim->num_blocks = geom->num_blocks;
+    dim->elements_in_block = geom->elements_in_block;
+    dim->submatrix_width = geom->submatrix_width;
+    dim->submatrix_height = geom->submatrix_height;
+}
+
+/* Work buffers of one est_params() call, in one allocation, sized as
+ * Netflix's test_speed_chroma.c sizes them: two rectangular buffers of
+ * elements x blocks, the covariance matrix, the eigenvalues, and a scratch
+ * of five square buffers plus two rectangular ones. */
+static float *speed_est_work_alloc(SpeedBuffers *b, size_t el, size_t blocks)
+{
+    const size_t rect = el * blocks;
+    const size_t total = 4 * rect + 6 * el * el + el;
+    float *work = aligned_malloc(total * sizeof(float), 32);
+    if (!work)
+        return NULL;
+    memset(work, 0, total * sizeof(float));
+    b->independent_term = work;
+    b->linear_system_sol = work + rect;
+    b->cov_mat = work + 2 * rect;
+    b->eigenvalues = b->cov_mat + el * el;
+    b->tmp_buffer = b->eigenvalues + el;
+    return work;
+}
+
+int speed_internal_cpu_est_params(const SpeedInternalEstGeometry *geom, const float *data,
+                                  float sigma_nn, SpeedInternalScoreSide out)
+{
+    if (!geom || !data || !out.entropies || !out.variances)
+        return -EINVAL;
+    /* SpEED's blocks are at most 5x5; the block bound keeps the sizes below
+     * far from size_t overflow. */
+    if (geom->elements_in_block == 0 || geom->elements_in_block > 25 || geom->num_blocks == 0 ||
+        geom->num_blocks > ((size_t)1 << 24))
+        return -EINVAL;
+    SpeedState s;
+    memset(&s, 0, sizeof(s));
+    speed_est_dimensions(&s.dimensions, geom);
+    float *work = speed_est_work_alloc(&s.buffers, geom->elements_in_block, geom->num_blocks);
+    if (!work)
+        return -ENOMEM;
+    s.float_stride = geom->operating_width * sizeof(float);
+    SpeedResultBuffers results = {out.entropies, out.variances};
+    s.ref_results = results;
+    s.dis_results = results;
+    const int err = est_params(&s, data, sigma_nn, &results);
+    aligned_free(work);
+    return err;
+}
+
 static void subtract_image(float *im1, const float *im2, int w, int h, size_t stride)
 {
     size_t stride_px = stride / sizeof(float);

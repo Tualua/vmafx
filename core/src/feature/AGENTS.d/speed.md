@@ -136,6 +136,16 @@ only, in scalar arithmetic; port needed comment edits only.
 AVX2 path. Port only with x86 before/after JSON identity at `--precision max`
 (scalar, AVX2, AVX-512 dispatch).
 
+Test entries `speed_internal_cpu_est_params()` and
+`speed_internal_cpu_compute_eigenvalues()` (after `get_speed_score()` in
+`speed.c`, declared in `speed_internal.h` with `SpeedInternalEstGeometry`)
+serve `core/test/test_speed_chroma.c` (Netflix c70debb10: `est_params()`,
+`compute_eigenvalues()`, `get_speed_score()` against upstream's values at
+1e-4). Upstream's test includes `speed.c`; the fork's may not
+(`check-no-non-header-includes`). **On upstream sync**: keep the entries; a
+signature change of `est_params()` / `compute_eigenvalues()` changes them in
+the same PR.
+
 ## SpEED covariance sums: row kernels return scalar's bits (ADR-1459)
 
 [`speed_cov.h`](../speed_cov.h) = contract. Reference: `compute_cov_kernel_scalar()`
