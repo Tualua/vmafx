@@ -405,6 +405,15 @@ backend within it.
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
+- **SYCL zero-copy admission ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md))**:
+  `vmaf_read_pictures_sycl()` in `core/src/libvmaf.c` refuses, before counting a frame,
+  every registered extractor whose `reads_shared_luma_only()` hook is absent or false for
+  its options, with an error naming it and `-ENOTSUP`; `vmaf_flush_sycl()` skips
+  uninitialized extractors. The hooks sit on eight SYCL twins
+  (`core/src/feature/sycl/AGENTS.d/zero-copy-admission.md`); a twin that starts reading a
+  host picture narrows its hook in the same PR. `test_sycl_zero_copy_admission` and
+  `test_sycl_zero_copy_model_gate` guard it. See
+  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

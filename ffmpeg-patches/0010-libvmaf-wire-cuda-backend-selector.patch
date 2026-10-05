@@ -84,7 +84,7 @@ index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b12
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index b6bcc3f39933728a8c19e8c737b6350952a8f1d5..cf447b93d182cd7f3b33e99c1697bcdd7df16a2d 100644
+index a6f4bd6ac7c026bc93c9957a7d0e6f7cab781302..49aacaa7d32956c97c08ffb069660be3768798a9 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -45,6 +45,8 @@

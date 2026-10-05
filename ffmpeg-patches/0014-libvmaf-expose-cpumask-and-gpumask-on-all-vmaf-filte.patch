@@ -39,7 +39,7 @@ ADR-0576.
  1 file changed, 30 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617041feab9 100644
+index dfcbd693fafb8c5c069268a764b10ea31aaa337b..ffe9d332d4080ae1bd97eeb92c832f685bfa1b4b 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -122,6 +122,12 @@ typedef struct LIBVMAFContext {
@@ -93,7 +93,7 @@ index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617
      { NULL }
  };
  #undef SYCL_FLAGS
-@@ -1500,6 +1516,8 @@ static int config_props_sycl(AVFilterLink *outlink)
+@@ -1514,6 +1530,8 @@ static int config_props_sycl(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -102,7 +102,7 @@ index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1588,6 +1606,10 @@ static const AVOption libvmaf_vulkan_options[] = {
+@@ -1602,6 +1620,10 @@ static const AVOption libvmaf_vulkan_options[] = {
                    OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, VK_FLAGS},
      {"feature",   "Set the feature to be used for computing vmaf.",
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
@@ -113,7 +113,7 @@ index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617
      { NULL }
  };
  #undef VK_FLAGS
-@@ -1802,6 +1824,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
+@@ -1816,6 +1838,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -122,7 +122,7 @@ index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617
      };
      err = vmaf_init(&s->vmaf, cfg);
      if (err)
-@@ -1867,6 +1891,10 @@ static const AVOption libvmaf_metal_options[] = {
+@@ -1881,6 +1905,10 @@ static const AVOption libvmaf_metal_options[] = {
                    OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
      {"feature",   "Set the feature to be used for computing vmaf.",
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
@@ -133,7 +133,7 @@ index 4b13515c0281018558ba3704696024ae73077cea..e902620e0fcd4feb34f245d732289617
      { NULL }
  };
  #undef MTL_FLAGS
-@@ -2128,6 +2156,8 @@ static int config_props_metal(AVFilterLink *outlink)
+@@ -2142,6 +2170,8 @@ static int config_props_metal(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,

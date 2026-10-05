@@ -195,6 +195,18 @@ typedef struct VmafFeatureExtractor {
     bool (*reads_prev_prev_ref)(const struct VmafFeatureExtractor *fex);
 
     /**
+     * Optional, for VMAF_FEATURE_EXTRACTOR_SYCL extractors: whether this
+     * instance, with the options it was given, computes from the luma plane
+     * of the shared device frame alone. Only such an extractor runs on the
+     * zero-copy path (vmaf_read_pictures_sycl()), which hands no host picture
+     * and has no chroma on the device; every other registered extractor makes
+     * that call fail with -ENOTSUP and an error naming it (ADR-1688). Called
+     * after the options are parsed into `priv`, before init(). NULL means the
+     * extractor reads host pictures (chroma, or a host copy of luma).
+     */
+    bool (*reads_shared_luma_only)(const struct VmafFeatureExtractor *fex);
+
+    /**
      * Per-feature characteristics descriptor — drives the per-backend
      * dispatch_strategy modules in core/src/{cuda,sycl,hip,metal}/.
      * Defaults to all-zero (= no preference) for unseeded extractors;
@@ -297,6 +309,16 @@ bool vmaf_feature_extractor_honours_options(const VmafFeatureExtractor *fex,
  * (ADR-1478). False for NULL.
  */
 bool vmaf_feature_extractor_reads_prev_prev_ref(const VmafFeatureExtractor *fex);
+
+/**
+ * @brief Whether @p fex runs on the SYCL zero-copy path.
+ *
+ * True only for a VMAF_FEATURE_EXTRACTOR_SYCL extractor whose
+ * reads_shared_luma_only() answers true for the options in its `priv`
+ * (ADR-1688). False for NULL, for a CPU extractor and for a SYCL extractor
+ * without the hook.
+ */
+bool vmaf_feature_extractor_reads_shared_luma_only(const VmafFeatureExtractor *fex);
 
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,

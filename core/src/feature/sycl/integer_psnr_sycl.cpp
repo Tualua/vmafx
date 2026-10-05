@@ -646,6 +646,15 @@ namespace
  * `psnr_cb` / `psnr_cr` requests through the SYCL twin. */
 static const char *provided_features_psnr_sycl[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
 
+/* The zero-copy path (ADR-1688): psnr_y reads the shared luma. With enable_chroma
+ * psnr_cb / psnr_cr need the frame's chroma, which the zero-copy path does
+ * not put on the device. */
+bool reads_shared_luma_only(const VmafFeatureExtractor *fex)
+{
+    const auto *s = static_cast<const PsnrStateSycl *>(fex->priv);
+    return !s->enable_chroma;
+}
+
 } // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_psnr_sycl = {
@@ -660,6 +669,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_psnr_sycl = {
     .priv_size = sizeof(PsnrStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_TEMPORAL,
     .provided_features = provided_features_psnr_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     /* 3 dispatches/frame (one per plane), reduction-dominated;
      * AUTO + 1080p area matches motion's profile (see ADR-0181 /
      * ADR-0182). Three small dispatches are still well under the

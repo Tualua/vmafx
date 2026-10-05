@@ -30,6 +30,13 @@ two patches give users:
   * libvmaf=sycl_device=N      — software frames + SYCL compute
   * libvmaf_sycl=...           — QSV/VAAPI hwdec + zero-copy SYCL
 
+Zero-copy admission (VMAFx ADR-1688): the zero-copy path carries the
+luma plane only, so libvmaf refuses a model or feature that needs
+chroma or host frames with -ENOTSUP and names it; the filter adds the
+remedy (hwdownload and the libvmaf filter's sycl_device option) and
+counts only frames libvmaf accepted. A failed pooled score prints no
+score line.
+
 Validated end-to-end on Intel Arc A380 with VAAPI hwdec via QSV
 oneVPL. Patch is on top of 0001-0004 (post-vulkan-selector
 baseline).
@@ -37,8 +44,8 @@ baseline).
  configure                |   5 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 368 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 375 insertions(+)
+ libavfilter/vf_libvmaf.c | 382 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 389 insertions(+)
 
 diff --git a/configure b/configure
 index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc51d79e3b0 100755
@@ -102,7 +109,7 @@ index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999b
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd7acd7307 100644
+index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900bf5e78c9 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -51,6 +51,11 @@
@@ -148,7 +155,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
      }
  
      return VMAF_POOL_METHOD_MEAN;
-@@ -1015,3 +1033,353 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -1015,3 +1033,367 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -241,12 +248,24 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
 +        }
 +
 +        // Submit frame for SYCL VMAF compute (non-blocking)
-+        ret = vmaf_read_pictures_sycl(s->vmaf, s->frame_cnt++);
++        ret = vmaf_read_pictures_sycl(s->vmaf, s->frame_cnt);
++        if (ret == -ENOTSUP) {
++            /* libvmaf named each feature above (VMAFx ADR-1688): the
++             * zero-copy import carries the luma plane only. */
++            av_log(ctx, AV_LOG_ERROR,
++                   "libvmaf_sycl: the model or a feature needs chroma or host frames, "
++                   "which the QSV zero-copy path does not provide. Use "
++                   "hwdownload,format=nv12 and the libvmaf filter's sycl_device option.\n");
++            av_frame_free(&dist);
++            return AVERROR(ENOSYS);
++        }
 +        if (ret) {
 +            av_log(ctx, AV_LOG_ERROR,
 +                   "vmaf_read_pictures_sycl failed: %d\n", ret);
++            av_frame_free(&dist);
 +            return AVERROR_EXTERNAL;
 +        }
++        s->frame_cnt++;
 +    } else {
 +        // Software path: YUV420P / YUV420P10LE frames — copy via vmaf_picture_alloc.
 +        VmafPicture ref_pic = {0}, dist_pic = {0};
@@ -331,8 +350,10 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
 +        err = vmaf_score_pooled(s->vmaf, s->model[i], pool_method_map(s->pool),
 +                                &vmaf_score, 0, s->frame_cnt - 1);
 +        if (err) {
++            /* No score line: a 0 printed after a failure reads as a result. */
 +            av_log(ctx, AV_LOG_ERROR,
 +                   "problem getting pooled vmaf score.\n");
++            continue;
 +        }
 +
 +        av_log(ctx, AV_LOG_INFO, "VMAF score: %f\n", vmaf_score);

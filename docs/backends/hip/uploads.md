@@ -32,8 +32,10 @@ A frame's planes are uploaded once, whatever the number of extractors
 extractor of a frame that needs a plane uploads it into a buffer the
 `VmafContext` owns, together with the other planes the extractors read in the
 frame before; every other extractor reads that device copy. A plane no
-extractor needs is not uploaded, so a luma-only run (the default model)
-uploads no chroma.
+extractor needs is not uploaded, so a run whose features read luma only (such
+as `vmaf_v0.6.1`) uploads no chroma. The default model `vmaf_v1.0.16_3d0h` is
+not luma-only: `speed_chroma_hip` reads U and V for `speed_chroma_uv` and
+uploads them itself, outside the shared planes.
 
 Thirteen extractors read the shared planes: `psnr_hip`,
 `float_psnr_hip`, `float_moment_hip`, `ciede_hip`, `integer_ssim_hip`,

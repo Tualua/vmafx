@@ -33,17 +33,44 @@ so the caller falls back to the D3D11 staging path. DMA-BUF is a Linux kernel
 interface (`ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF`); Level Zero on Windows uses
 NT handles instead.
 
+### Zero-copy import scores luma-only features
+
 The zero-copy import delivers luma only and hands the extractors no host
-pictures:
+pictures. `vmaf_read_pictures_sycl()` therefore checks every registered
+feature extractor before it counts a frame
+([ADR-1688](../../adr/1688-sycl-zero-copy-luma-only-admission.md)):
 
-- `motion_v2_sycl` and `psnr_hvs_sycl` with `enable_chroma=false` need only the
-  imported luma.
-- `psnr_sycl` and `psnr_hvs_sycl` with chroma fail the frame with
-  `psnr_sycl: frame N chroma not on the device (-22)` or
-  `psnr_hvs_sycl: frame N planes not on the device (-22)`.
+| Runs on the zero-copy path | Refused with `-ENOTSUP` and named |
+| --- | --- |
+| `adm_sycl`, `vif_sycl`, `motion_sycl`, `motion_v2_sycl`, `cambi_sycl`, `float_moment_sycl` | `speed_chroma_sycl` (the default model's `speed_chroma_uv`), `speed_temporal_sycl`, `ciede_sycl`, `ssimulacra2_sycl`, `float_ms_ssim_sycl`, `float_ssim_sycl`, `integer_ssim_sycl`, `float_psnr_sycl`, `float_motion_sycl`, `float_vif_sycl`, `float_adm_sycl` |
+| `psnr_sycl`, `psnr_hvs_sycl` with `enable_chroma=false` | `psnr_sycl`, `psnr_hvs_sycl` with `enable_chroma` (the default), `motion_sycl` with `motion_add_uv=true` |
+| | any CPU extractor (no SYCL twin, or a twin that cannot honour the model's options) |
 
-This path was not run for the change that introduced the chroma errors (no
-VA-API decode under WSL2).
+So `vmaf_v0.6.1` runs zero-copy and gives the CPU's per-frame scores. The
+default model `vmaf_v1.0.16_3d0h` does not run zero-copy: the first frame
+fails with a libvmaf error that names `speed_chroma_sycl`. With FFmpeg, score it
+through the bridge below (`hwdownload,format=nv12` and the `libvmaf` filter's
+`sycl_device` option).
+
+Measured on an Arc A380 (xe driver, FFmpeg n9.0.2 with the series, QSV decode
+of the Netflix 576x324 pair as H.264) before the check existed:
+
+- `vmaf_v1.0.16_3d0h` failed with `vmaf_read_pictures_sycl failed: -22` and no
+  word about chroma;
+- `feature=name=float_psnr_sycl` ended FFmpeg with a segmentation fault (the
+  twin dereferenced the missing picture);
+- `motion_sycl` with `motion_add_uv=true` reported `integer_motion2_mau`
+  equal to `integer_motion2` (4.257894 on frame 1, where the host path gives
+  5.536504), because the U and V it adds were never imported;
+- `feature=name=float_psnr` (the CPU extractor) was skipped on every frame,
+  and the result had no `float_psnr` and no error.
+
+Importing the chroma as well would need two pieces of work. The de-tile kernel
+would have to de-interleave the NV12 / P010 UV layer, and every chroma twin
+would need a device chroma path. Neither is implemented. Both belong to the
+post-1.0 zero-copy import
+([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)) and
+need their own ADR.
 
 ## D3D11 staging-texture import (Windows)
 

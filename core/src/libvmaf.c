@@ -4110,6 +4110,34 @@ static int read_pictures_sycl_extractors(VmafContext *vmaf, unsigned index)
     return 0;
 }
 
+/* The zero-copy path hands the extractors no host picture, and the import
+ * puts only the luma plane on the device (ADR-1688). Every registered
+ * extractor must be a SYCL extractor that, with its options, computes from
+ * that luma alone; each one that does not is named. Without this check a
+ * CPU extractor was skipped on every frame, and a SYCL twin that reads host
+ * pictures failed with a bare -EINVAL, crashed on a NULL picture, or added
+ * the SAD of stale chroma. */
+static int sycl_zero_copy_admit(const VmafContext *vmaf)
+{
+    int err = 0;
+    for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
+        const VmafFeatureExtractor *fex = vmaf->registered_feature_extractors.fex_ctx[i]->fex;
+        if (vmaf_feature_extractor_reads_shared_luma_only(fex))
+            continue;
+        const bool sycl = (fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) != 0;
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "vmaf_read_pictures_sycl: feature extractor \"%s\" %s, but the zero-copy "
+                 "import puts only the luma plane on the device. Score this model or feature "
+                 "from host frames with vmaf_read_pictures().\n",
+                 fex->name,
+                 sycl ?
+                     "needs host pictures (the chroma planes, or a host copy of the luma plane)" :
+                     "has no SYCL twin for these options and would run on the CPU");
+        err = -ENOTSUP;
+    }
+    return err;
+}
+
 int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
 {
     if (!vmaf)
@@ -4118,6 +4146,10 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
         return -EINVAL;
     if (vmaf->flushed)
         return -EINVAL;
+    /* Before the frame is counted or the slots advance, so nothing moves. */
+    const int admit_err = sycl_zero_copy_admit(vmaf);
+    if (admit_err)
+        return admit_err;
 
     // Ensure de-tile kernels on the primary queue have finished reading from
     // imported VA surface memory.  After this function returns, the caller
@@ -4175,7 +4207,10 @@ int vmaf_flush_sycl(VmafContext *vmaf)
             }
         }
         for (unsigned i = 0; i < rfe.cnt; i++) {
-            if (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) {
+            /* An extractor that never saw a frame (the zero-copy admission
+             * refused the first one) has nothing to flush. */
+            if ((rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) &&
+                rfe.fex_ctx[i]->is_initialized) {
                 err |=
                     vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);
             }

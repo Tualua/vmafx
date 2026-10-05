@@ -792,6 +792,13 @@ bool vmaf_feature_extractor_reads_prev_prev_ref(const VmafFeatureExtractor *fex)
     return fex->reads_prev_prev_ref(fex);
 }
 
+bool vmaf_feature_extractor_reads_shared_luma_only(const VmafFeatureExtractor *fex)
+{
+    if (!fex || !(fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) || !fex->reads_shared_luma_only)
+        return false;
+    return fex->reads_shared_luma_only(fex);
+}
+
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict)

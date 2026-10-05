@@ -959,8 +959,13 @@ Three parity gaps between SYCL twins and the CPU reference were resolved:
 Every SYCL run uploads the luma of both pictures once per frame into the state's
 shared frame. `psnr_sycl`, `psnr_hvs_sycl` and `motion_v2_sycl` now read it
 there instead of uploading their own copies, and chroma goes up once per frame
-into shared Cb / Cr planes that exist only when a twin that reads chroma is in
-use — a luma-only run, such as the default model, never uploads chroma.
+into shared Cb / Cr planes that exist only when a twin that reads chroma from
+them is in use. A run whose features read luma only, such as `vmaf_v0.6.1`,
+never uploads chroma. The default model `vmaf_v1.0.16_3d0h` is not luma-only:
+`speed_chroma_sycl` reads U and V for `speed_chroma_uv` and stages them itself,
+outside the shared planes. (Corrected 2026-10-05: this paragraph called the
+default model luma-only, which stopped being true when the default moved to
+v1.0.16.)
 
 The chroma is packed into a pinned staging buffer and copied with one DMA per
 plane. Nothing but the results comes back to the host.
@@ -1003,7 +1008,11 @@ gate.
   chroma fail the frame with `psnr_sycl: frame N chroma not on the device
   (-22)` or `psnr_hvs_sycl: frame N planes not on the device (-22)` where they
   used to dereference the missing picture. This path was not run for this
-  change (no VA-API decode under WSL2).
+  change (no VA-API decode under WSL2). Since
+  [ADR-1688](../../adr/1688-sycl-zero-copy-luma-only-admission.md) the
+  zero-copy path checks every registered extractor before it counts a frame
+  and refuses one that needs chroma or a host picture with `-ENOTSUP`, naming
+  it; see [the zero-copy guide](zero-copy.md#zero-copy-import-scores-luma-only-features).
 - **One SYCL state, one frame size (fixed since).** A state kept the shared
   planes of the first frame size it saw. When a program reused a state for a
   context with another size, twins that read chroma failed at init and

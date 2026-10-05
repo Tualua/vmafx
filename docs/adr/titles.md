@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1267), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1268), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5071,6 +5071,10 @@ Every ADR, one heading each (1267), so the site search finds an ADR by its title
 ## ADR-1687: Require the pull-request release legs through the aggregator
 
 [1687-required-release-dry-run-legs](1687-required-release-dry-run-legs.md)
+
+## ADR-1688: The SYCL zero-copy path admits only extractors that compute from the shared luma, and names every other one
+
+[1688-sycl-zero-copy-luma-only-admission](1688-sycl-zero-copy-luma-only-admission.md)
 
 ## ADR-1700: The tester selectors follow their own paths, not the full-mode fallback
 

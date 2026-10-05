@@ -6119,6 +6119,33 @@ test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# ADR-1688: which extractors the SYCL zero-copy path admits. Device-free:
+# reads every SYCL extractor's answer for its parsed options.
+test_sycl_zero_copy_admission = executable('test_sycl_zero_copy_admission',
+    ['test.c', 'test_sycl_zero_copy_admission.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_zero_copy_admission', test_sycl_zero_copy_admission,
+    suite : ['fast', 'sycl'])
+
+# ADR-1688: on a SYCL device, the zero-copy path refuses the default model and
+# host-picture features with -ENOTSUP before counting the frame, and scores
+# vmaf_v0.6.1 with the CPU's per-frame values.
+test_sycl_zero_copy_model_gate = executable('test_sycl_zero_copy_model_gate',
+    ['test.c', 'test_sycl_zero_copy_model_gate.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_zero_copy_model_gate', test_sycl_zero_copy_model_gate,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 300)
+
 # Sticky geometry regression test (T-SYCL-SHARED-FRAME-STICKY-GEOMETRY-2026-09-29)
 test_sycl_shared_frame_sticky_geometry = executable('test_sycl_shared_frame_sticky_geometry',
     ['test.c', 'test_sycl_shared_frame_sticky_geometry.c'],

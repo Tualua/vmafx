@@ -233,8 +233,9 @@ sycl/
   uploads into `cur_compute`, rest return 0 on `frame == frame_counter`;
   folded into `last_upload_event`. Never copy chroma straight from
   pageable picture (pitched 2-D copy cost 168 ms per 576x324 frame on
-  UHD 770). Luma-only runs (default model) never allocate or
-  upload chroma: do not move chroma upload into
+  UHD 770). Runs whose twins read no chroma from these planes (e.g.
+  `vmaf_v0.6.1`; default model's `speed_chroma_sycl` stages own U/V)
+  never allocate or upload chroma: do not move chroma upload into
   `vmaf_sycl_shared_frame_upload`. Readers: `psnr_sycl` (chroma in
   `post_fn`, after `graph_submit`'s upload barrier), `psnr_hvs_sycl` and
   `motion_v2_sycl` on primary queue behind
@@ -249,6 +250,17 @@ sycl/
   only, so chroma readers must fail (`-EINVAL`) on NULL pictures, never
   read stale chroma. Guards: `test_sycl_shared_planes`,
   `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
+
+- **Zero-copy admission gate (ADR-1688).** `vmaf_read_pictures_sycl()`
+  (`core/src/libvmaf.c`) calls `sycl_zero_copy_admit()` before
+  `pic_cnt++` / `vmaf_sycl_advance_frame()`: every registered extractor
+  must answer `vmaf_feature_extractor_reads_shared_luma_only()` true, else
+  one ERROR line names it and call returns `-ENOTSUP`. CPU extractor and
+  SYCL twin without hook = refused. `vmaf_flush_sycl()` skips uninitialized
+  extractors so refused context flushes 0. **On rebase**: keep gate first
+  in read; never make zero-copy path skip, fall back or pass NULL pictures
+  to refused twin. Guards: `test_sycl_zero_copy_admission` (device-free),
+  `test_sycl_zero_copy_model_gate` (A380).
 
 - **`dmabuf_import.cpp` normalizes P010/P012 luma MSB→LSB on every
   import path (ADR-1121).** VA-API delivers 10/12-bit samples

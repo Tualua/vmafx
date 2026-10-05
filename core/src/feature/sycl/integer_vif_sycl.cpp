@@ -2032,6 +2032,13 @@ static const char *provided_features[] = {"VMAF_integer_feature_vif_scale0_score
                                           "integer_vif_num_scale3",
                                           "integer_vif_den_scale3",
                                           nullptr};
+/* Runs on the zero-copy path (ADR-1688): integer VIF reads the shared luma through the
+ * device graph; submit() never reads its picture arguments. */
+bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 } // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_vif_sycl = {
@@ -2046,6 +2053,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_vif_sycl = {
     .priv_size = sizeof(VifStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .context_check = check_context_sycl,
     .context_fallback_name = "vif",
 };

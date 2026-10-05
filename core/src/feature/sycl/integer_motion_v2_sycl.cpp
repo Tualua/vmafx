@@ -437,6 +437,13 @@ static const char *provided_features_motion_v2_sycl[] = {
     "VMAF_integer_feature_motion_v2_sad_score", "VMAF_integer_feature_motion2_v2_score",
     "VMAF_integer_feature_motion3_v2_score", nullptr};
 
+/* Runs on the zero-copy path (ADR-1688): motion_v2 reads the shared luma only; submit()
+ * never reads its picture arguments. */
+bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 } // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl = {
@@ -451,4 +458,5 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_v2_sycl = {
     .priv_size = sizeof(MotionV2StateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_motion_v2_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };

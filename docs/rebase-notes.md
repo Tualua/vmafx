@@ -88,6 +88,32 @@ no library change.
   `test_metal_iosurface_layout` runs the header on every host;
   `test_metal_iosurface_import_parity` (a Metal parity test, also a self-test on every host)
   runs the import on IOSurfaces in the macOS tester bundle.
+## SYCL zero-copy admission (ADR-1688, 2026-10-05)
+
+`fix/sycl-zero-copy-chroma`. libvmaf C, eight SYCL extractor registrations, one public-header comment, FFmpeg patch `0005`.
+
+- `VmafFeatureExtractor` gains `reads_shared_luma_only` after `reads_prev_prev_ref`
+  (`core/src/feature/feature_extractor.h`). C++ designated initializers follow declaration
+  order: an extractor sets `.reads_shared_luma_only` after `.provided_features` and before
+  `.chars` / `.context_check`.
+- `core/src/libvmaf.c`: `sycl_zero_copy_admit()` runs first in `vmaf_read_pictures_sycl()`,
+  before `pic_cnt++` and `vmaf_sycl_advance_frame()`; `vmaf_flush_sycl()` skips an
+  extractor that is not initialized. A sync must keep both.
+- Hooks: `adm_sycl`, `vif_sycl`, `motion_v2_sycl`, `cambi_sycl`, `float_moment_sycl` (true),
+  `motion_sycl` (`!motion_add_uv`), `psnr_sycl` and `psnr_hvs_sycl` (`!enable_chroma`). A
+  change that makes one of them read a host picture removes or narrows its hook in the same
+  PR; `test_sycl_zero_copy_admission` lists every SYCL extractor's answer.
+- `integer_psnr_hvs_sycl.cpp` (touched for its hook, brought to zero clang-tidy findings, sycl
+  baseline 5 → 0): the two kernels' Hillis-Steele scan is `hvs_group_inclusive_scan()`, the
+  compact kernel's per-block work is `hvs_record_plane_offsets()` (constant plane indices,
+  ADR-1395) and `hvs_pack_block_terms()`, and `reduce_hvs_planes()` bounds its plane loop by
+  `PSNR_HVS_NUM_PLANES`. Integer arithmetic unchanged: `test_sycl_psnr_hvs_parity` (`==`),
+  the scratch audit (131 kernels, 0 in scratch) and the CLI on the Netflix pair (48 of 48
+  frames identical to the CPU at `--precision max`) on the A380.
+- Patch `0005`: `do_vmaf_sycl()` increments `frame_cnt` only after
+  `vmaf_read_pictures_sycl()` accepted the frame and maps `-ENOTSUP` to a message;
+  `uninit_sycl()` prints no score line after a failed pooled score. Later patches moved by
+  offsets only.
 
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 

@@ -1832,6 +1832,13 @@ int close_fex_sycl(VmafFeatureExtractor *fex)
 
 const char *provided_features_cambi_sycl[] = {"Cambi_feature_cambi_score", nullptr};
 
+/* Runs on the zero-copy path (ADR-1688): CAMBI is luma-only and runs on the shared frame;
+ * submit() never reads its picture arguments. */
+bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 } // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
@@ -1846,6 +1853,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
     .priv_size = sizeof(CambiStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_cambi_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     /* Device-resident (ADR-1357): ~65 kernels per frame on the combined
      * in-order queue — reset, preprocess, mask, and per scale decimate,
      * filter, c-values and 8 top-K pooling kernels — and one readback. No

@@ -627,6 +627,13 @@ static const char *provided_features_moment_sycl[] = {
     nullptr,
 };
 
+/* Runs on the zero-copy path (ADR-1688): the moments are those of the shared frame's luma;
+ * submit() never reads its picture arguments. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 // NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_moment_sycl = {
@@ -641,6 +648,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_moment_sycl = {
     .priv_size = sizeof(MomentStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_moment_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .chars =
         {
             .n_dispatches_per_frame = 1,

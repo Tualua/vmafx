@@ -422,7 +422,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 154,
+  "total_warnings": 149,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -433,7 +433,6 @@
     "core/src/dict.h": 3,
     "core/src/dict_internal.h": 1,
     "core/src/feature/ssimulacra2_eotf_lut.h": 6,
-    "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 5,
     "core/src/feature/vif_tools.h": 1,
     "core/src/fex_ctx_vector.h": 1,
     "core/src/framesync.h": 1,
@@ -460,5 +459,22 @@
     "core/test/test_sycl_shared_frame_sticky_geometry.c": 13,
     "core/test/test_sycl_vif_min_dim.c": 1
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": {
+          "warnings": [
+            5,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "fbe6b0634718850b0791a9cff6ae0debdcaa65c7bcf70a83ba9e54b7e8d99f71"
+    }
+  ]
 }

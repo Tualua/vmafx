@@ -307,6 +307,21 @@ It has no `sycl_device` option: the device comes from the QSV frame context.
 `sycl_device=N` belongs to the generic `libvmaf` filter. See
 [vmaf-vpl.md](vmaf-vpl.md) for the SYCL backend overview.
 
+On QSV input the filter imports the **luma plane only**. That is enough for
+`vmaf_v0.6.1`, the filter's default model, whose scores on this path equal the
+CPU's. A model or feature that needs chroma or a host frame fails on the first
+frame. That includes the library's default model `vmaf_v1.0.16_3d0h`, which
+reads chroma through `speed_chroma_uv`. A libvmaf error names each feature
+extractor that cannot run, and the filter then prints:
+
+> `libvmaf_sycl: the model or a feature needs chroma or host frames, which the
+> QSV zero-copy path does not provide. Use hwdownload,format=nv12 and the
+> libvmaf filter's sycl_device option.`
+
+The complete list is in
+[SYCL zero-copy imports](../backends/sycl/zero-copy.md#zero-copy-import-scores-luma-only-features)
+([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)).
+
 ### `libvmaf_cuda`
 
 `libvmaf_cuda` keeps CUDA hwaccel frames on the GPU end to end. It needs

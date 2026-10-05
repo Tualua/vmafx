@@ -1942,6 +1942,13 @@ const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                    "integer_adm_den_scale3",
                                    nullptr};
 
+/* Runs on the zero-copy path (ADR-1688): integer ADM reads the shared luma through the
+ * device graph; submit() never reads its picture arguments. */
+bool reads_shared_luma_only(const VmafFeatureExtractor * /*fex*/)
+{
+    return true;
+}
+
 } // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_adm_sycl = {
@@ -1956,4 +1963,5 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_adm_sycl = {
     .priv_size = sizeof(AdmStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };

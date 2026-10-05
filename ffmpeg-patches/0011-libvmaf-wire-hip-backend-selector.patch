@@ -86,7 +86,7 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index cf447b93d182cd7f3b33e99c1697bcdd7df16a2d..82a64fbbcb6327782452bc2381875c55a206c8e4 100644
+index 49aacaa7d32956c97c08ffb069660be3768798a9..971a0f669551e92e2f11a5bd6d18e0c3c85e7c3f 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -68,6 +68,10 @@

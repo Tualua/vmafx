@@ -145,6 +145,13 @@ VMAF_EXPORT int vmaf_sycl_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
  * via Intel VPL → Level Zero memory) and then calls
  * vmaf_read_pictures_sycl() instead of vmaf_read_pictures().
  * This avoids per-frame host→device copies entirely.
+ *
+ * The path holds the luma plane only and hands the extractors no host
+ * picture, so it scores only features computed from luma on the device
+ * (ADR-1688): adm_sycl, vif_sycl, motion_sycl, motion_v2_sycl, cambi_sycl,
+ * float_moment_sycl, and psnr_sycl / psnr_hvs_sycl with enable_chroma=false.
+ * That covers vmaf_v0.6.1, not the default model vmaf_v1.0.16_3d0h
+ * (speed_chroma_uv reads chroma).
  * ------------------------------------------------------------------ */
 
 /**
@@ -197,10 +204,17 @@ VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
  * Assumes the caller has already written Y-plane data into the buffers
  * returned by vmaf_sycl_get_frame_buffers().
  *
+ * Before the frame is counted, every registered feature extractor is
+ * checked (ADR-1688). One that needs chroma or a host picture (a SYCL twin
+ * that reads them, or a CPU extractor) makes the call return -ENOTSUP, with
+ * a libvmaf error naming it; nothing is counted, and the context can still
+ * be flushed and closed. Score such a model with vmaf_read_pictures().
+ *
  * @param vmaf   The VMAF context.
  * @param index  Frame index (0-based, sequential).
  *
- * @return 0 on success, negative errno on failure.
+ * @return 0 on success, -ENOTSUP when a registered extractor cannot run on
+ *         the luma plane alone, other negative errno on failure.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
@@ -257,7 +271,8 @@ VMAF_EXPORT int vmaf_sycl_dmabuf_import(VmafSyclState *sycl_state, int fd, size_
 VMAF_EXPORT void vmaf_sycl_dmabuf_free(VmafSyclState *sycl_state, void *ptr);
 
 /**
- * Import a VA surface Y-plane into a shared frame buffer.
+ * Import a VA surface Y-plane into a shared frame buffer. Only the luma
+ * plane is imported; see vmaf_read_pictures_sycl() for what that scores.
  * Primary path: exports VA surface as DRM PRIME2 DMA-BUF, imports via
  * Level Zero, and runs a SYCL de-tiling kernel (zero-copy, GPU-only).
  * Fallback: vaGetImage + vaMapBuffer + H2D memcpy (GPU→CPU→GPU).

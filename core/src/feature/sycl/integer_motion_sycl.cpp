@@ -969,6 +969,15 @@ static const char *provided_features[] = {
     nullptr,
 };
 
+/* The zero-copy path (ADR-1688): the luma SAD reads the shared frame. With
+ * motion_add_uv it also reads the reference's U and V host planes, which the
+ * zero-copy path does not have: it would add the SAD of stale staging. */
+static bool reads_shared_luma_only(const VmafFeatureExtractor *fex)
+{
+    const auto *s = static_cast<const MotionStateSycl *>(fex->priv);
+    return !s->motion_add_uv;
+}
+
 // NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_sycl = {
@@ -983,4 +992,5 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_sycl = {
     .priv_size = sizeof(MotionStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features,
+    .reads_shared_luma_only = reads_shared_luma_only,
 };

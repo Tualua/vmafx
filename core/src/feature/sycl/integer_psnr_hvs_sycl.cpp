@@ -706,6 +706,51 @@ static PsnrHvsScratchLayout hvs_compute_scratch_layout(unsigned total_blocks)
     return l;
 }
 
+/* Inclusive prefix sum of a work-group's 256 counts in local memory
+ * (Hillis-Steele), shared by the scan-reduce and compact kernels. */
+static inline void hvs_group_inclusive_scan(const sycl::nd_item<1> &item,
+                                            const sycl::local_accessor<uint32_t, 1> &s_data,
+                                            unsigned tid)
+{
+    for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
+        uint32_t n = 0u;
+        if (tid >= offset) {
+            n = s_data[tid - offset];
+        }
+        item.barrier(sycl::access::fence_space::local_space);
+        s_data[tid] += n;
+        item.barrier(sycl::access::fence_space::local_space);
+    }
+}
+
+/* The packed offset of the first block of each plane. Constant plane
+ * indices: a dynamic index into the kernel argument would put it in
+ * private memory (ADR-1395). */
+static inline void hvs_record_plane_offsets(const PsnrHvsKernelArgs &k_args, unsigned b,
+                                            uint32_t global_base, PsnrHvsHeader *header)
+{
+    if (0u < k_args.n_planes && b == k_args.plane[0].first_block) {
+        header->plane_offsets[0] = global_base;
+    }
+    if (1u < k_args.n_planes && b == k_args.plane[1].first_block) {
+        header->plane_offsets[1] = global_base;
+    }
+    if (2u < k_args.n_planes && b == k_args.plane[2].first_block) {
+        header->plane_offsets[2] = global_base;
+    }
+}
+
+/* Copy the block's terms whose bit is set in `mask`, in bit order. */
+static inline void hvs_pack_block_terms(const float *src, float *dst, uint64_t mask)
+{
+    uint32_t out_idx = 0u;
+    for (int bit = 0; bit < 64 && mask != 0ULL; bit++) {
+        const int idx = __builtin_ctzll(mask);
+        dst[out_idx++] = src[idx];
+        mask &= mask - 1ULL;
+    }
+}
+
 class PsnrHvsScanReduceKernel;
 
 static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uint32_t *chunk_totals,
@@ -713,7 +758,7 @@ static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uin
 {
     const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
     q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
+        const sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
         h.parallel_for<PsnrHvsScanReduceKernel>(ndr, [=](sycl::nd_item<1> item) {
             const unsigned tid = (unsigned)item.get_local_id(0);
             const unsigned chunk = (unsigned)item.get_group(0);
@@ -722,15 +767,7 @@ static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uin
             s_data[tid] = val;
             item.barrier(sycl::access::fence_space::local_space);
 
-            for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
-                uint32_t n = 0u;
-                if (tid >= offset) {
-                    n = s_data[tid - offset];
-                }
-                item.barrier(sycl::access::fence_space::local_space);
-                s_data[tid] += n;
-                item.barrier(sycl::access::fence_space::local_space);
-            }
+            hvs_group_inclusive_scan(item, s_data, tid);
 
             if (tid == 255u) {
                 chunk_totals[chunk] = s_data[255u];
@@ -769,7 +806,7 @@ static void launch_compact(sycl::queue &q, const PsnrHvsKernelArgs &args, const 
 {
     const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
     q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
+        const sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
         const PsnrHvsKernelArgs k_args = args;
         h.parallel_for<PsnrHvsCompactKernel>(ndr, [=](sycl::nd_item<1> item) {
             const unsigned tid = (unsigned)item.get_local_id(0);
@@ -779,42 +816,20 @@ static void launch_compact(sycl::queue &q, const PsnrHvsKernelArgs &args, const 
             s_data[tid] = count;
             item.barrier(sycl::access::fence_space::local_space);
 
-            for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
-                uint32_t n = 0u;
-                if (tid >= offset) {
-                    n = s_data[tid - offset];
-                }
-                item.barrier(sycl::access::fence_space::local_space);
-                s_data[tid] += n;
-                item.barrier(sycl::access::fence_space::local_space);
-            }
+            hvs_group_inclusive_scan(item, s_data, tid);
 
             const uint32_t intra_offset = s_data[tid] - count;
             const uint32_t global_base = chunk_offsets[chunk] + intra_offset;
 
-            if (b < k_args.total_blocks) {
-                if (0u < k_args.n_planes && b == k_args.plane[0].first_block) {
-                    header->plane_offsets[0] = global_base;
-                }
-                if (1u < k_args.n_planes && b == k_args.plane[1].first_block) {
-                    header->plane_offsets[1] = global_base;
-                }
-                if (2u < k_args.n_planes && b == k_args.plane[2].first_block) {
-                    header->plane_offsets[2] = global_base;
-                }
-
-                uint64_t mask = block_masks[b];
-                if (mask != 0ULL) {
-                    // SAFETY: raw_terms holds HVS_TERMS floats per block; packed_terms capacity >= total_terms.
-                    const float *src = raw_terms + ((size_t)b * HVS_TERMS);
-                    float *dst = packed_terms + global_base;
-                    uint32_t out_idx = 0u;
-                    for (int bit = 0; bit < 64 && mask != 0ULL; bit++) {
-                        const int idx = __builtin_ctzll(mask);
-                        dst[out_idx++] = src[idx];
-                        mask &= mask - 1ULL;
-                    }
-                }
+            if (b >= k_args.total_blocks) {
+                return; /* past the last block; no barrier follows */
+            }
+            hvs_record_plane_offsets(k_args, b, global_base, header);
+            const uint64_t mask = block_masks[b];
+            if (mask != 0ULL) {
+                // SAFETY: raw_terms holds HVS_TERMS floats per block; packed_terms capacity >= total_terms.
+                hvs_pack_block_terms(raw_terms + ((size_t)b * HVS_TERMS),
+                                     packed_terms + global_base, mask);
             }
         });
     });
@@ -1139,11 +1154,13 @@ static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_
         return;
     }
     const float *compact_terms = s->h_terms;
-    for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
+    const unsigned n_planes = (s->n_active_planes < (unsigned)PSNR_HVS_NUM_PLANES) ?
+                                  s->n_active_planes :
+                                  (unsigned)PSNR_HVS_NUM_PLANES;
+    for (unsigned plane = 0; plane < n_planes; plane++) {
         const uint32_t start = s->h_header->plane_offsets[plane];
-        const uint32_t end = (plane + 1u < s->n_active_planes) ?
-                                 s->h_header->plane_offsets[plane + 1u] :
-                                 s->h_header->total_terms;
+        const uint32_t end = (plane + 1u < n_planes) ? s->h_header->plane_offsets[plane + 1u] :
+                                                       s->h_header->total_terms;
         const size_t n_compact = (size_t)(end - start);
         scores[plane] = vmaf_psnr_hvs_plane_score_compacted(compact_terms + start, n_compact,
                                                             s->num_blocks[plane], s->bpc);
@@ -1233,6 +1250,15 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 static const char *provided_features_psnr_hvs_sycl[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr",
                                                         "psnr_hvs", nullptr};
 
+/* The zero-copy path (ADR-1688): psnr_hvs_y reads the shared luma. With
+ * enable_chroma psnr_hvs_cb / psnr_hvs_cr need the frame's chroma, which the
+ * zero-copy path does not put on the device. */
+bool reads_shared_luma_only(const VmafFeatureExtractor *fex)
+{
+    const auto *s = static_cast<const PsnrHvsStateSycl *>(fex->priv);
+    return !s->enable_chroma;
+}
+
 } // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl = {
@@ -1247,6 +1273,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl = {
     .priv_size = sizeof(PsnrHvsStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_psnr_hvs_sycl,
+    .reads_shared_luma_only = reads_shared_luma_only,
     .chars =
         {
             .n_dispatches_per_frame = 1,
