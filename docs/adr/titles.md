@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1280), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1281), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5131,3 +5131,7 @@ Every ADR, one heading each (1280), so the site search finds an ADR by its title
 ## ADR-1836: `vif_cuda` names its scores after `enable_chroma` when the caller sets it
 
 [1836-cuda-vif-enable-chroma-names](1836-cuda-vif-enable-chroma-names.md)
+
+## ADR-1852: A new VMAFx C API generated from one definition, libvmaf as its compatibility layer, and VMAFx-named FFmpeg filters (RC4)
+
+[1852-vmafx-api-redesign](1852-vmafx-api-redesign.md)

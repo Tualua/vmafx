@@ -100,11 +100,17 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
   `VmafPicture2` with fences in both directions for CUDA, SYCL, HIP and Metal,
   NV12 and P010 on the GPU, CUDA without its device-to-device copy, SYCL chroma
   import and D3D11, Metal IOSurface and MTLTexture bound without the CPU copy,
-  a HIP import path, FFmpeg filters that take hardware frames
+  a HIP import path, FFmpeg filters that take hardware frames. The new VMAFx C
+  API (`vmafx/*.h`, `libvmafx.so.1`) generated with every other surface from
+  `core/api/vmafx.toml`, `libvmaf.h` as a thin compatibility library on it, and
+  the FFmpeg filters under VMAFx names (`vmafx`, `vmafx_tune`, `vmafx_pre`)
+  ([ADR-1852](adr/1852-vmafx-api-redesign.md))
 - **Exit boundary:** The Rust path is bit-identical to the C path on the parity
   fixtures; an imported device frame scores bit-identically to the same frame
   uploaded from the host, with no host copy of pixel data and fence-ordering
-  tests that fail when a fence is skipped
+  tests that fail when a fence is skipped; the golden-data gate passes through
+  the compatibility library and every generated surface is checked against the
+  definition
 
 #### RC5 — deduplication
 
