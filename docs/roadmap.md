@@ -13,12 +13,12 @@ map of where that plan lives and how the releases are sequenced.
 
 | Milestone | Theme |
 | --- | --- |
-| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric, RC5 deduplication, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
+| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric and zero-copy import, RC5 deduplication, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
 | [1.1](https://github.com/VMAFx/vmafx/milestone/2) | New metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), their GPU twins, and the tools surface |
 | [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Cloud-native foundation: server mode, observability, containers and Kubernetes |
 | [1.3](https://github.com/VMAFx/vmafx/milestone/4) | Cloud-native scale-out: operator, controller/node, multi-vendor GPU scheduling |
 | [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Language modernization — Go tools, Rust pilots, C++23 internals — completing the cloud-native arc |
-| [Post-1.0 embedding](https://github.com/VMAFx/vmafx/milestone/8) | Embedding in encoders and media pipelines after 1.0.0: zero-copy device-frame import with fences, asynchronous window scores, Windows and macOS shared libraries and a CMake package ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md), epic [#2067](https://github.com/VMAFx/vmafx/issues/2067)) |
+| [Post-1.0 embedding](https://github.com/VMAFx/vmafx/milestone/8) | Embedding in encoders and media pipelines after 1.0.0: asynchronous window scores, Windows and macOS shared libraries and a CMake package ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md); the zero-copy import API moved to RC4 by [ADR-1829](adr/1829-rc4-zero-copy-import.md), epic [#2067](https://github.com/VMAFx/vmafx/issues/2067)) |
 
 Two milestones are deliberately **rolling** rather than tied to a release:
 
@@ -58,7 +58,7 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
 | **RC1** | correctness and tester readiness | — |
 | **RC2** | stabilisation and repair | — |
 | **RC3** | twin exactness | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
-| **RC4** | first full Rust metric | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
+| **RC4** | first full Rust metric and zero-copy device-frame import | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
 | **RC5** | deduplication | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
 | **RC6** | GPU capability source of truth | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
 | **RC7** | CPU capability source of truth | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
@@ -91,19 +91,26 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
   Netflix pairs, the 1080p checkerboard pairs and the 4K fixture; Netflix golden
   assertions unchanged
 
-#### RC4 — first full Rust metric
+#### RC4 — first full Rust metric and zero-copy import
 
 - **In scope:** The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer
   adm3, integer motion3, model prediction) in Rust; the C ABI is unchanged and
-  the GPU twins stay CUDA, SYCL and HIP code
+  the GPU twins stay CUDA, SYCL and HIP code. The whole device-memory import API
+  ([ADR-1829](adr/1829-rc4-zero-copy-import.md)): additive import on
+  `VmafPicture2` with fences in both directions for CUDA, SYCL, HIP and Metal,
+  NV12 and P010 on the GPU, CUDA without its device-to-device copy, SYCL chroma
+  import and D3D11, Metal IOSurface and MTLTexture bound without the CPU copy,
+  a HIP import path, FFmpeg filters that take hardware frames
 - **Exit boundary:** The Rust path is bit-identical to the C path on the parity
-  fixtures
+  fixtures; an imported device frame scores bit-identically to the same frame
+  uploaded from the host, with no host copy of pixel data and fence-ordering
+  tests that fail when a fence is skipped
 
 #### RC5 — deduplication
 
 - **In scope:** One implementation per behaviour across GPU twins and host code,
-  the Rust code included; `libgpudispatch` extracted
-  ([#1455](https://github.com/VMAFx/vmafx/issues/1455))
+  the Rust code included; `libgpudispatch` extracted, folding in the
+  per-backend import code RC4 wrote ([#1455](https://github.com/VMAFx/vmafx/issues/1455))
 - **Exit boundary:** Scores unchanged against the RC3 reference; duplicated code
   removed rather than moved
 

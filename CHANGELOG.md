@@ -2025,6 +2025,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (ADR-1421).
 
 
+- Release plan: RC4 now owns the whole device-memory import API (fences in both directions for CUDA, SYCL, HIP and Metal, NV12 and P010 on the GPU, FFmpeg filters taking hardware frames) next to the first full Rust metric, so `v1.0.0` scores device-resident frames without a host copy. It moved from the post-1.0 embedding milestone; the candidate numbering is unchanged ([ADR-1829](docs/adr/1829-rc4-zero-copy-import.md)).
+
+
 - **Refactor CUDA test files part 1 for clang-tidy and HISS standard compliance (ADR-1142).**
   Brings 11 CUDA test files (`test_cuda_pic_preallocation.c`, `test_cuda_float_adm_parity.c`,
   `test_cuda_motion3_parity.c`, `test_cuda_psnr_parity.c`, `test_cuda_float_ms_ssim_parity.c`,

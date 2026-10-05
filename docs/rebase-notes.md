@@ -30,6 +30,19 @@ search:
 ## Research digests describe third-party products generically (2026-10-05)
 
 No rebase impact: docs only.
+## RC4 owns the device-memory import API (2026-10-05)
+
+`docs/rc4-zerocopy-scope`. Docs and ledger only; no source file.
+
+- [ADR-1829](adr/1829-rc4-zero-copy-import.md) moves the import API with fences
+  from the post-1.0 embedding milestone into RC4. `AGENTS.md` section 11,
+  `docs/roadmap.md`, `docs/development/release.md` and the RC4 rows of
+  `docs/state.md` carry the new scope; the vendor context files are compiled
+  from `AGENTS.md`.
+- On a sync or rebase, keep the fork's RC4 text in all of them. A conflict in
+  the `AGENTS.md` candidate-map line is resolved per hunk and followed by
+  `praetorctl compile-context` in the rebasing worktree only. No upstream file
+  is touched.
 
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 

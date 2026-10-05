@@ -1,0 +1,1 @@
+| [ADR-1829](1829-rc4-zero-copy-import.md) | RC4 owns the whole device-memory import API with fences in both directions (CUDA, SYCL, HIP, Metal; NV12/P010 on the GPU; FFmpeg hardware frames) next to its Rust metric; refines ADR-1490 and ADR-1685, RC5 folds it into `libgpudispatch`, numbering unchanged | Accepted | release, rc, api, abi, gpu, cuda, sycl, hip, metal, roadmap |
