@@ -89,7 +89,7 @@ WORKDIR /src
 COPY core core
 COPY model model
 COPY REUSE.toml REUSE.toml
-COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/check-msvc-clz-shim.sh
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/exact_twin_matrix.py scripts/ci/
 COPY tools/rc1-tester/image tools/rc1-tester/image
 COPY tools/rc1-tester/src tools/rc1-tester/src
 # hadolint ignore=SC2046
@@ -219,7 +219,7 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
 COPY docs/adr docs/adr
 COPY tools/rc1-tester/image tools/rc1-tester/image
@@ -468,7 +468,7 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
 COPY docs/adr docs/adr
 COPY tools/rc1-tester/image tools/rc1-tester/image
@@ -689,7 +689,7 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
 COPY docs/adr docs/adr
 COPY tools/rc1-tester/image tools/rc1-tester/image
