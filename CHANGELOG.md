@@ -2229,6 +2229,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 - Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.
 
 
+- Brought 29 `ai/` modules to the HISS standard without a change in behaviour (ADR-1142): the long drivers of `ai/scripts` (corpus aggregation, feature extraction, calibration, the MOS-head and FR-regressor trainers, the `batch_materialize_*` runners and the three manifest CSV parsers, which now share `corpus.base.parse_mos_stats`), `ai/src` (`bisect_model_quality`, the three `vmaf-train` commands, `audit_learned_filter`, `export_to_onnx`, the parquet writers), `ai/sidecar` (`SGDEMATrainer.step`, the server loop and two tests) and `ai/train/qat.py` (`run_qat`, 147 lines) are split into helpers that keep their public names and signatures. `train_konvid_mos_head` trains its fold and ship models through one `_fit_model` with the same seed and RNG draw order. The HISS baseline loses 39 rows.
+
+
 - **The integer motion SIMD kernels meet the lint and HISS standard.**
   `core/src/feature/x86/motion_avx2.c`, `core/src/feature/x86/motion_avx512.c`
   and `core/src/feature/arm64/motion_neon.c` have no clang-tidy finding in any
