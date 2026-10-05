@@ -29,7 +29,7 @@ dev = [
 fast = ["optuna>=5.0.0"]
 # Charts in `vmaf-tune report` (ADR-0498); without matplotlib the report
 # renders its tables and a placeholder instead of each chart.
-report = ["matplotlib>=3.10.9"]
+report = ["matplotlib>=3.11.2"]
 # ONNX inference: the fast-path proxy, the predictor and the saliency
 # models (vmaftune.proxy / predictor / saliency).
 onnx = ["onnxruntime>=1.30.0"]
