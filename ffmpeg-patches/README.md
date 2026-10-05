@@ -21,7 +21,10 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   `vmaf_vulkan_state_init` + the deferred-pool path from ADR-0238.
 - **`0005-libvmaf-add-libvmaf-sycl-filter.patch`** — registers a
   dedicated `libvmaf_sycl` filter for zero-copy VAAPI/QSV import
-  (consumes `AVFrame->data[3] -> mfxFrameSurface1*`).
+  (consumes `AVFrame->data[3] -> mfxFrameSurface1*`). Each input's
+  surfaces are imported with that input's VA display; a failed import is
+  tried three times and then stops the filter with an error naming the
+  frame ([ADR-1761](../docs/adr/1761-sycl-filter-import-retry-then-fail.md)).
 - **`0006-libvmaf-add-libvmaf-vulkan-filter.patch`** — registers a
   dedicated `libvmaf_vulkan` filter for zero-copy VkImage import per
   [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md).
@@ -65,7 +68,9 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   on the regular libvmaf filter) — together they give users
   `libvmaf=metal_device=N` (software AVFrame input + Metal compute)
   and `libvmaf_metal=...` (VideoToolbox hwdec + zero-copy import). See
-  [ADR-0423](../docs/adr/0423-metal-iosurface-import-scaffold.md).
+  [ADR-0423](../docs/adr/0423-metal-iosurface-import-scaffold.md). A frame
+  that cannot be imported or read stops the filter, which then prints no
+  pooled score ([ADR-1761](../docs/adr/1761-sycl-filter-import-retry-then-fail.md)).
 - **`0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch`** — adds a
   `score_fmt` AVOption (string, default `NULL` = `"%.6f"`) to all four
   vmaf filters (`libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`,
@@ -198,6 +203,21 @@ can select another stable released tag for compatibility testing. The helper
 creates a disposable checkout and rejects any existing `FFMPEG_SRC` path.
 Set `KEEP_BUILD=1` to retain a successful build; failed builds are retained
 for diagnosis. It never resets or cleans an existing checkout.
+
+### SYCL filter import failures (needs an Intel GPU)
+
+```bash
+docker exec -e VA_DEVICE=/dev/dri/renderD129 vmaf-dev-mcp \
+  bash /workspace/ffmpeg-patches/test/check-sycl-import-retry.sh
+```
+
+Runs `libvmaf_sycl` on QSV-decoded clips with failures injected into
+`vmaf_sycl_import_va_surface()` through `LD_PRELOAD`
+(`test/fault_inject_sycl_import.c`): a transient failure recovers with every
+frame scored, a persistent one stops the run naming the frame and prints no
+score. It also checks two VA devices and an odd-height software input against
+the CPU filter. It needs an FFmpeg with the series that links `libvmaf.so`
+dynamically (set `FFMPEG`), and exits 77 without one or without a QSV device.
 
 ## How to regenerate
 

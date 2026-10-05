@@ -125,6 +125,24 @@ ffmpeg \
 
 A single shared `qsv` device silently reintroduces the contamination.
 
+### Each input is imported with its own VA display; a failed import stops the filter
+
+`libvmaf_sycl` reads the VA display of each input's QSV session and imports
+that input's surfaces with it
+([ADR-1761](../../adr/1761-sycl-filter-import-retry-then-fail.md)). Before
+this, the reference surfaces were imported with the distorted input's display.
+On an Arc A380 with the two decoders on two VA devices
+(`-init_hw_device vaapi=va0:... -init_hw_device vaapi=va1:...`), that gave 0 of
+24 frames equal to the CPU and a plausible-looking pooled score (54.914218
+against 53.419552), without an error. When a surface ID did not exist in the
+other display, it gave the `invalid VASurfaceID` import failures that the
+filter used to skip.
+
+A failed import is tried again, three tries in all with 1 ms between them, and
+then stops the filter with an error naming the frame. A filter that stopped
+prints no pooled score. `ffmpeg-patches/test/check-sycl-import-retry.sh`
+injects transient and persistent failures to check both outcomes.
+
 ### P010/P012 pixels are normalized in the import
 
 VA-API stores 10-bit (P010) / 12-bit (P012) samples **MSB-aligned**

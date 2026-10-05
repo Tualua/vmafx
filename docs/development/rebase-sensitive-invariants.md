@@ -407,6 +407,15 @@ backend within it.
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
+- **`libvmaf_sycl` imports each input with its own VA display and never skips a frame ([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md))**:
+  FFmpeg patch `0005` reads the VA display of both inputs' QSV sessions and imports each
+  input's surfaces with its own; a failed import is retried in a bounded loop and then stops
+  the filter naming the frame, with no pooled score after it. Patch `0013`'s `libvmaf_metal`
+  prints no pooled score after a stop either. A refresh or an upstream rebase must not
+  bring back the single display, the pass-through on a failed import, or a score after a
+  stop. `core/test/test_sycl_filter_import_contract.py` and
+  `core/test/test_metal_iosurface_filter_contract.py` guard it without a device,
+  `ffmpeg-patches/test/check-sycl-import-retry.sh` on one.
 - **SYCL zero-copy admission ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md))**:
   `vmaf_read_pictures_sycl()` in `core/src/libvmaf.c` refuses, before counting a frame,
   every registered extractor whose `reads_shared_luma_only()` hook is absent or false for

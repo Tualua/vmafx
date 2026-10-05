@@ -1276,3 +1276,4 @@
 1806-metal-kernels-host-replay
 1836-cuda-vif-enable-chroma-names
 1822-additive-picture-convert
+1761-sycl-filter-import-retry-then-fail

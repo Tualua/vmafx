@@ -34,7 +34,7 @@ replaying the full series against a clean n8.1 checkout
  1 file changed, 41 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index cfea4b90fe580ced55edb64d2af4e9e4abd8eab4..05bff60bbb8ff8714a3ed1a77ecae73cf2e465c1 100644
+index 3d1f93285a80e2dd0bbae688a55630113426603f..727a3ffdaece129eb7db17cee80ef77c2df2e6b1 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -29,6 +29,9 @@
@@ -47,7 +47,7 @@ index cfea4b90fe580ced55edb64d2af4e9e4abd8eab4..05bff60bbb8ff8714a3ed1a77ecae73c
  #include "libavutil/avstring.h"
  #include "libavutil/mem.h"
  #include "libavutil/opt.h"
-@@ -136,6 +139,7 @@ typedef struct LIBVMAFContext {
+@@ -139,6 +142,7 @@ typedef struct LIBVMAFContext {
      int64_t cpumask;
      int64_t gpumask;
  
@@ -55,7 +55,7 @@ index cfea4b90fe580ced55edb64d2af4e9e4abd8eab4..05bff60bbb8ff8714a3ed1a77ecae73c
      VmafContext *vmaf;
      VmafModel **model;
      unsigned model_cnt;
-@@ -170,6 +174,7 @@ static const AVOption libvmaf_options[] = {
+@@ -173,6 +177,7 @@ static const AVOption libvmaf_options[] = {
      {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
      {"gpumask",      "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).", OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
      {"score_fmt",    "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).", OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS},
@@ -63,7 +63,7 @@ index cfea4b90fe580ced55edb64d2af4e9e4abd8eab4..05bff60bbb8ff8714a3ed1a77ecae73c
      { NULL }
  };
  
-@@ -313,6 +318,42 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -316,6 +321,42 @@ static int do_vmaf(FFFrameSync *fs)
          return AVERROR(ENOMEM);
      }
  

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1277), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1278), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5083,6 +5083,10 @@ Every ADR, one heading each (1277), so the site search finds an ADR by its title
 ## ADR-1701: Build and test the tester image every night on master
 
 [1701-nightly-tester-image-build](1701-nightly-tester-image-build.md)
+
+## ADR-1761: The libvmaf\_sycl filter retries a failed VA import, then stops naming the frame; each input is imported with its own VA display
+
+[1761-sycl-filter-import-retry-then-fail](1761-sycl-filter-import-retry-then-fail.md)
 
 ## ADR-1762: Every translation unit is read by a clang-tidy lane or excepted by name
 

@@ -457,6 +457,22 @@ a contract test and `test_cambi`.
   feature-name dictionary before `cambi_metal_resolve_dimensions()`. Never move
   it after any write to an option slot; the contract's `_name_order_failures`
   checks every Metal twin.
+## libvmaf_sycl import retry, per-input VA display (ADR-1761, 2026-10-05)
+
+`fix/ffmpeg-sycl-import-retry`. FFmpeg patch `0005` and a device test under `ffmpeg-patches/test/`.
+
+- `0005`: `LIBVMAFContext` gains `va_display_ref` and `stopped`. `config_props_sycl()` reads
+  each input's display through `qsv_link_va_display()`. `do_vmaf_sycl()` imports through
+  `import_va_surface_retry()`, a bounded loop of `LIBVMAF_SYCL_IMPORT_TRIES` with an
+  `av_usleep()` between tries, and never returns the frame after a failed import.
+  `uninit_sycl()` prints no pooled score when `stopped` is set. The software path copies
+  `(height + 1) / 2` chroma rows. `stopped` sits outside the SYCL block: `0013` uses it too.
+- `0013`: `do_vmaf_metal()` sets `stopped` on a failed wait, import or read and advances
+  `frame_cnt` only after a read succeeded; `uninit_metal()` prints no pooled score when it
+  is set. A refresh keeps both; the other later patches moved by offsets only.
+- `core/test/test_sycl_filter_import_contract.py` reads the patch;
+  `ffmpeg-patches/test/check-sycl-import-retry.sh` with `fault_inject_sycl_import.c`
+  (LD_PRELOAD) is the device run.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
 

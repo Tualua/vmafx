@@ -18,6 +18,8 @@ This test reads the sources, without a device or an FFmpeg build:
   checks both inputs;
 - an import failure fails the filter, no frame is passed through unscored, and
   a failed pooled score prints no score line;
+- a filter that stopped on a frame prints no pooled score: it would cover
+  fewer frames than were decoded (ADR-1761);
 - the import reads the surface's pixel format through iosurface_layout.h and
   refuses a layout outside its table with -ENOTSUP;
 - the planes the filter imports are the planes build_pictures requires.
@@ -41,8 +43,10 @@ IMPORT_CALL = re.compile(r"vmaf_metal_picture_import\((.*?)\);", re.S)
 PLANE_LOOP = re.compile(r"for \(unsigned plane = 0; plane < 3; plane\+\+\)")
 PASS_THROUGH = re.compile(r"skipping|non-VideoToolbox frame")
 WANT_ALL_PLANES = re.compile(r"const unsigned want = 0x7u;")
-SCORE_SKIPPED_ON_FAILURE = re.compile(
-    r'"problem getting pooled vmaf score\.\\n"\);\s*continue;'
+SCORE_SKIPPED_ON_FAILURE = re.compile(r'"problem getting pooled vmaf score\.\\n"\);\s*continue;')
+STOP_RECORDED = re.compile(r"if \(ret < 0\) \{\s*s->stopped = 1;")
+NO_SCORE_AFTER_STOP = re.compile(
+    r"if \(s->stopped\) \{[^}]*no pooled score[^}]*goto clean_up;\s*\}", re.S
 )
 
 
@@ -73,6 +77,8 @@ def filter_problems(code: str) -> list[str]:
         problems.append("the reference input is not checked")
     if not SCORE_SKIPPED_ON_FAILURE.search(code):
         problems.append("a score line is printed after the pooled score failed")
+    if not (STOP_RECORDED.search(code) and NO_SCORE_AFTER_STOP.search(code)):
+        problems.append("a filter that stopped on a frame still prints a pooled score")
     return problems
 
 
@@ -95,6 +101,23 @@ PRE_ADR_1679 = """
 """
 
 
+# The filter before ADR-1761 (abridged): the import fails the filter, and
+# uninit_metal() then pools the frames before it and prints their score.
+PRE_ADR_1761 = """
+    ret = import_metal_frame(ctx, s, ref, 1);
+    if (ret >= 0)
+        ret = import_metal_frame(ctx, s, dist, 0);
+    if (ret < 0) {
+        av_frame_free(&dist);
+        return ret;
+    }
+    if (!s->frame_cnt)
+        goto clean_up;
+
+    err = vmaf_read_pictures(s->vmaf, NULL, NULL, 0);
+"""
+
+
 class MetalIOSurfaceFilterContract(unittest.TestCase):
     def test_filter_imports_whole_frames(self) -> None:
         code = added_filter_code(PATCH.read_text(encoding="utf-8"))
@@ -106,6 +129,12 @@ class MetalIOSurfaceFilterContract(unittest.TestCase):
         self.assertIn("no loop over planes 0, 1 and 2", problems)
         self.assertIn("a frame that fails the import is passed through unscored", problems)
         self.assertIn("a score line is printed after the pooled score failed", problems)
+
+    def test_the_pre_adr_1761_filter_is_refused(self) -> None:
+        self.assertIn(
+            "a filter that stopped on a frame still prints a pooled score",
+            filter_problems(PRE_ADR_1761),
+        )
 
     def test_import_reads_the_surface_layout(self) -> None:
         source = IMPORT_MM.read_text(encoding="utf-8")

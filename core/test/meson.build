@@ -2414,6 +2414,17 @@ test('test_metal_iosurface_filter_contract',
     timeout : 30,
 )
 
+# ADR-1761: the FFmpeg libvmaf_sycl filter retries a failed VA import in a
+# bounded loop and then stops naming the frame, imports each input with its own
+# VA display, and copies every chroma row of an odd height. Device-free: reads
+# patch 0005; the device run is ffmpeg-patches/test/check-sycl-import-retry.sh.
+test('test_sycl_filter_import_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_filter_import_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Host tests and source contracts of the Metal ports (ADR-1498). Each group
 # of ports adds its blocks directly below its own marker line.
 

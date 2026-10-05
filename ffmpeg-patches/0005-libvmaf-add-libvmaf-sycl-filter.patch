@@ -37,6 +37,13 @@ remedy (hwdownload and the libvmaf filter's sycl_device option) and
 counts only frames libvmaf accepted. A failed pooled score prints no
 score line.
 
+Import failures (VMAFx ADR-1761): each input's VA surfaces are imported
+with that input's own VA display, so two QSV decoders on two VA devices
+no longer read each other's surfaces. A failed import is tried again,
+three tries in all with 1 ms between them, and then stops the filter
+with an error naming the frame; no frame is passed through unscored,
+and a filter that stopped prints no pooled score. The software path copies every chroma row of an odd-height frame.
+
 Validated end-to-end on Intel Arc A380 with VAAPI hwdec via QSV
 oneVPL. Patch is on top of 0001-0004 (post-vulkan-selector
 baseline).
@@ -44,8 +51,8 @@ baseline).
  configure                |   5 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 382 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 389 insertions(+)
+ libavfilter/vf_libvmaf.c | 452 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 459 insertions(+)
 
 diff --git a/configure b/configure
 index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc51d79e3b0 100755
@@ -109,32 +116,35 @@ index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999b
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900bf5e78c9 100644
+index 3529b485ac6b427e3d0b9e3de2462708a6846bff..3cce4ed2b5c44b98cbef1174ef977f34d7ed3557 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -51,6 +51,11 @@
+@@ -51,6 +51,12 @@
  #include <libvmaf/libvmaf_sycl.h>
  #endif
  
 +#if CONFIG_LIBVMAF_SYCL_FILTER
 +#include "libavutil/hwcontext.h"
 +#include "libavutil/hwcontext_qsv.h"
++#include "libavutil/time.h"
 +#endif
 +
  #if CONFIG_LIBVMAF_VULKAN
  #include <libvmaf/libvmaf_vulkan.h>
  #endif
-@@ -73,6 +78,9 @@ typedef struct LIBVMAFContext {
-     int   sycl_profile;
+@@ -74,6 +80,11 @@ typedef struct LIBVMAFContext {
  #if CONFIG_LIBVMAF_SYCL
      VmafSyclState *sycl_state;
-+#endif
-+#if CONFIG_LIBVMAF_SYCL_FILTER
-+    void *va_display;
  #endif
++#if CONFIG_LIBVMAF_SYCL_FILTER
++    void *va_display;     /* VA display of the main (distorted) input */
++    void *va_display_ref; /* VA display of the reference input */
++#endif
++    int   stopped;        /* a frame could not be scored: no pooled score (VMAFx ADR-1761) */
      int   vulkan_device;
  #if CONFIG_LIBVMAF_VULKAN
-@@ -717,10 +725,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+     VmafVulkanState *vulkan_state;
+@@ -717,10 +728,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
      if (pool_method) {
          if (!strcmp(pool_method, "min"))
              return VMAF_POOL_METHOD_MIN;
@@ -155,7 +165,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
      }
  
      return VMAF_POOL_METHOD_MEAN;
-@@ -1015,3 +1033,367 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -1015,3 +1036,434 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -183,6 +193,38 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +};
 +#undef SYCL_FLAGS
 +FRAMESYNC_DEFINE_CLASS(libvmaf_sycl, LIBVMAFContext, fs);
++
++/* VMAFx ADR-1761: a failed VA import is tried again, at most LIBVMAF_SYCL_IMPORT_TRIES
++ * times in all with a short pause between tries, and then stops the filter
++ * with an error naming the frame. A frame is never passed through unscored:
++ * the pooled score would cover fewer frames than were decoded. */
++#define LIBVMAF_SYCL_IMPORT_TRIES 3
++#define LIBVMAF_SYCL_IMPORT_PAUSE_US 1000
++
++static int import_va_surface_retry(AVFilterContext *ctx, LIBVMAFContext *s, void *va_display,
++                                   unsigned int surface, int is_ref, const AVFrame *frame)
++{
++    const char *which = is_ref ? "reference" : "distorted";
++    int ret = 0;
++
++    for (int attempt = 1; attempt <= LIBVMAF_SYCL_IMPORT_TRIES; attempt++) {
++        ret = vmaf_sycl_import_va_surface(s->sycl_state, va_display, surface, is_ref,
++                                          frame->width, frame->height, s->bpc);
++        if (!ret)
++            return 0;
++        av_log(ctx, AV_LOG_WARNING,
++               "libvmaf_sycl: importing the %s VA surface %u of frame %u failed "
++               "(%s), try %d of %d\n", which, surface, s->frame_cnt,
++               av_err2str(ret), attempt, LIBVMAF_SYCL_IMPORT_TRIES);
++        if (attempt < LIBVMAF_SYCL_IMPORT_TRIES)
++            av_usleep(LIBVMAF_SYCL_IMPORT_PAUSE_US);
++    }
++    av_log(ctx, AV_LOG_ERROR,
++           "libvmaf_sycl: cannot import the %s VA surface %u of frame %u after %d tries "
++           "(%s). The filter stops instead of scoring fewer frames than were decoded.\n",
++           which, surface, s->frame_cnt, LIBVMAF_SYCL_IMPORT_TRIES, av_err2str(ret));
++    return AVERROR_EXTERNAL;
++}
 +
 +static int do_vmaf_sycl(FFFrameSync *fs)
 +{
@@ -227,24 +269,16 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +        unsigned int ref_surface  = *(unsigned int *)ref_pair->first;
 +        unsigned int dist_surface = *(unsigned int *)dist_pair->first;
 +
-+        ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
-+                                           ref_surface, 1,
-+                                           ref->width, ref->height, s->bpc);
-+        if (ret) {
-+            av_log(ctx, AV_LOG_WARNING,
-+                   "vmaf_sycl_import_va_surface (ref) failed: %d "
-+                   "(VA surface may have been freed by decoder) — skipping frame\n", ret);
-+            return ff_filter_frame(ctx->outputs[0], dist);
-+        }
-+
-+        ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
-+                                           dist_surface, 0,
-+                                           dist->width, dist->height, s->bpc);
-+        if (ret) {
-+            av_log(ctx, AV_LOG_WARNING,
-+                   "vmaf_sycl_import_va_surface (dist) failed: %d "
-+                   "(VA surface may have been freed by decoder) — skipping frame\n", ret);
-+            return ff_filter_frame(ctx->outputs[0], dist);
++        /* Each input's surfaces are imported with that input's VA display:
++         * with two VA devices a surface ID of one names a different surface,
++         * or none, in the other (VMAFx ADR-1761). */
++        ret = import_va_surface_retry(ctx, s, s->va_display_ref, ref_surface, 1, ref);
++        if (ret >= 0)
++            ret = import_va_surface_retry(ctx, s, s->va_display, dist_surface, 0, dist);
++        if (ret < 0) {
++            s->stopped = 1;
++            av_frame_free(&dist);
++            return ret;
 +        }
 +
 +        // Submit frame for SYCL VMAF compute (non-blocking)
@@ -262,6 +296,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +        if (ret) {
 +            av_log(ctx, AV_LOG_ERROR,
 +                   "vmaf_read_pictures_sycl failed: %d\n", ret);
++            s->stopped = 1;
 +            av_frame_free(&dist);
 +            return AVERROR_EXTERNAL;
 +        }
@@ -286,7 +321,8 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +        }
 +        // Copy luma and chroma planes from AVFrame to VmafPicture.
 +        for (int p = 0; p < 3; p++) {
-+            const int h = p == 0 ? ref->height : ref->height / 2;
++            /* 4:2:0 chroma has (h + 1) / 2 rows: an odd height ends on a full row. */
++            const int h = p == 0 ? ref->height : (ref->height + 1) / 2;
 +            const uint8_t *src_r = ref->data[p];
 +            const uint8_t *src_d = dist->data[p];
 +            uint8_t *dst_r = (uint8_t *)ref_pic.data[p];
@@ -304,6 +340,8 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +        if (ret) {
 +            av_log(ctx, AV_LOG_ERROR,
 +                   "vmaf_read_pictures (sw path) failed: %d\n", ret);
++            s->stopped = 1;
++            av_frame_free(&dist);
 +            return AVERROR_EXTERNAL;
 +        }
 +    }
@@ -327,6 +365,13 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +
 +    if (!s->frame_cnt)
 +        goto clean_up;
++    if (s->stopped) {
++        /* VMAFx ADR-1761: a pooled score must cover every decoded frame. */
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_sycl: no pooled score: the filter stopped at frame %u\n",
++               s->frame_cnt);
++        goto clean_up;
++    }
 +
 +    // Pick the flush that drains whichever read path do_vmaf_sycl() used:
 +    //   * QSV zero-copy path (va_display set) feeds vmaf_read_pictures_sycl(),
@@ -394,6 +439,40 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +    }
 +}
 +
++/* The VA display behind a QSV input's session. */
++static int qsv_link_va_display(AVFilterContext *ctx, AVFilterLink *link, const char *pad,
++                               void **display)
++{
++    FilterLink *l = ff_filter_link(link);
++    AVHWFramesContext *frames_ctx;
++    AVQSVDeviceContext *qsv_hwctx;
++    mfxHDL handle = NULL;
++    mfxStatus sts;
++
++    if (!l->hw_frames_ctx) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_sycl: the %s input has no hw_frames_ctx; both inputs must be QSV\n",
++               pad);
++        return AVERROR(EINVAL);
++    }
++    frames_ctx = (AVHWFramesContext *)l->hw_frames_ctx->data;
++    if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_QSV) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_sycl: hw_frames_ctx of the %s input is not QSV (%d)\n",
++               pad, frames_ctx->device_ctx->type);
++        return AVERROR(EINVAL);
++    }
++    qsv_hwctx = frames_ctx->device_ctx->hwctx;
++    sts = MFXVideoCORE_GetHandle(qsv_hwctx->session, MFX_HANDLE_VA_DISPLAY, &handle);
++    if (sts != MFX_ERR_NONE || !handle) {
++        av_log(ctx, AV_LOG_ERROR,
++               "MFXVideoCORE_GetHandle(VA_DISPLAY) failed on the %s input: %d\n", pad, sts);
++        return AVERROR_EXTERNAL;
++    }
++    *display = handle;
++    return 0;
++}
++
 +static int config_props_sycl(AVFilterLink *outlink)
 +{
 +    int err;
@@ -413,20 +492,17 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +            return AVERROR(EINVAL);
 +        }
 +
-+        // Get display handle from the QSV session via oneVPL
-+        {
-+            AVQSVDeviceContext *qsv_hwctx = frames_ctx->device_ctx->hwctx;
-+            mfxHDL display_handle = NULL;
-+            mfxStatus sts = MFXVideoCORE_GetHandle(qsv_hwctx->session,
-+                                                    MFX_HANDLE_VA_DISPLAY,
-+                                                    &display_handle);
-+            if (sts != MFX_ERR_NONE || !display_handle) {
-+                av_log(ctx, AV_LOG_ERROR,
-+                       "MFXVideoCORE_GetHandle(VA_DISPLAY) failed: %d\n", sts);
-+                return AVERROR_EXTERNAL;
-+            }
-+            s->va_display = display_handle;
-+        }
++        // VA display of each input's QSV session (oneVPL)
++        err = qsv_link_va_display(ctx, inlink, "main", &s->va_display);
++        if (err)
++            return err;
++        err = qsv_link_va_display(ctx, ctx->inputs[1], "reference", &s->va_display_ref);
++        if (err)
++            return err;
++        if (s->va_display_ref != s->va_display)
++            av_log(ctx, AV_LOG_INFO,
++                   "libvmaf_sycl: the two inputs decode on different VA displays; "
++                   "each input's surfaces are imported with its own\n");
 +
 +        desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
 +        s->bpc = desc->comp[0].depth;
@@ -438,6 +514,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..52b4474cbee7c7693918ad766c354900
 +        desc = av_pix_fmt_desc_get(inlink->format);
 +        s->bpc = desc->comp[0].depth;
 +        s->va_display = NULL;
++        s->va_display_ref = NULL;
 +        av_log(ctx, AV_LOG_INFO,
 +               "libvmaf_sycl: software path, format=%s bpc=%u %dx%d\n",
 +               desc->name, s->bpc, inlink->w, inlink->h);

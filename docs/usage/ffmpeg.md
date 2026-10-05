@@ -322,6 +322,17 @@ The complete list is in
 [SYCL zero-copy imports](../backends/sycl/zero-copy.md#zero-copy-import-scores-luma-only-features)
 ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)).
 
+If importing a decoded surface fails, the filter tries again, three tries in
+all with 1 ms between them, and logs each failed try with the frame number. If
+the third try fails too, the filter stops with
+`libvmaf_sycl: cannot import the reference VA surface <id> of frame <n> after 3 tries`
+and prints no pooled score. It never passes a frame through unscored, so a
+score always covers every decoded frame
+([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md)). Each input's
+surfaces are imported with that input's own VA display. The two decoders may
+therefore run on two VA devices: their surfaces are no longer read through the
+other input's display, which used to give a wrong score without an error.
+
 ### `libvmaf_cuda`
 
 `libvmaf_cuda` keeps CUDA hwaccel frames on the GPU: no frame goes through host
@@ -535,9 +546,14 @@ The filter checks both inputs when it is configured:
   and the `libvmaf` filter's `metal_device` option;
 - the two inputs must use the same software format.
 
-If a frame cannot be imported, the filter fails. It never passes the frame
-through unscored, because the pooled score would then cover fewer frames than
-the input.
+If a frame cannot be imported or read, the filter fails with an error that
+names the frame. It never passes the frame through unscored, and after the
+failure it prints no pooled score and writes no log for the frames before it
+(`libvmaf_metal: no pooled score: the filter stopped at frame N`): either
+would cover fewer frames than the input
+([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md)). VideoToolbox
+imports fail for a format or size the surface cannot hold, which a second try
+does not change, so the filter does not retry them.
 
 Nothing in this path has run on an Apple device yet. Until a macOS tester
 report confirms it, the row `T-METAL-FFMPEG-FILTER-BIPLANAR-IMPORT-2026-10-05`

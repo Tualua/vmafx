@@ -55,13 +55,16 @@ score prints no score line. Before ADR-1679 the
 filter imported plane 0 only and vmaf_metal_read_imported_pictures()
 refused every frame with -EINVAL.
 
+A filter that stopped (VMAFx ADR-1761) prints no pooled score and
+writes no log: the score would cover fewer frames than were decoded.
+
 Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
 ---
  configure                |   3 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 332 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 337 insertions(+)
+ libavfilter/vf_libvmaf.c | 346 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 351 insertions(+)
 
 diff --git a/configure b/configure
 index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1 100755
@@ -109,10 +112,10 @@ index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25e
  extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index fd07305293fa15cb333e8c1ead2deddbfc80d5df..dfcbd693fafb8c5c069268a764b10ea31aaa337b 100644
+index 521d1709c03644e192ddf7a156b4a625db5d0017..ca3cdc84da773458cb5621201f5b273ac940f278 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -76,6 +76,12 @@
+@@ -77,6 +77,12 @@
  #include <libvmaf/libvmaf_metal.h>
  #endif
  
@@ -125,7 +128,7 @@ index fd07305293fa15cb333e8c1ead2deddbfc80d5df..dfcbd693fafb8c5c069268a764b10ea3
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1857,3 +1863,329 @@ const FFFilter ff_vf_libvmaf_vulkan = {
+@@ -1927,3 +1933,343 @@ const FFFilter ff_vf_libvmaf_vulkan = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -236,25 +239,33 @@ index fd07305293fa15cb333e8c1ead2deddbfc80d5df..dfcbd693fafb8c5c069268a764b10ea3
 +    if (ret) {
 +        av_log(ctx, AV_LOG_ERROR,
 +               "vmaf_metal_wait_compute failed: %d\n", ret);
-+        av_frame_free(&dist);
-+        return AVERROR_EXTERNAL;
++        ret = AVERROR_EXTERNAL;
 +    }
 +
-+    ret = import_metal_frame(ctx, s, ref, 1);
++    if (ret >= 0)
++        ret = import_metal_frame(ctx, s, ref, 1);
 +    if (ret >= 0)
 +        ret = import_metal_frame(ctx, s, dist, 0);
++
++    if (ret >= 0) {
++        ret = vmaf_metal_read_imported_pictures(s->vmaf, s->frame_cnt);
++        if (ret) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_metal_read_imported_pictures (frame %u) failed: %d\n",
++                   s->frame_cnt, ret);
++            ret = AVERROR_EXTERNAL;
++        }
++    }
++
++    /* VMAFx ADR-1761: a frame that cannot be scored stops the filter, and
++     * uninit_metal() then prints no pooled score: it would cover fewer
++     * frames than were decoded. */
 +    if (ret < 0) {
++        s->stopped = 1;
 +        av_frame_free(&dist);
 +        return ret;
 +    }
-+
-+    ret = vmaf_metal_read_imported_pictures(s->vmaf, s->frame_cnt++);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_ERROR,
-+               "vmaf_metal_read_imported_pictures failed: %d\n", ret);
-+        av_frame_free(&dist);
-+        return AVERROR_EXTERNAL;
-+    }
++    s->frame_cnt++;
 +
 +    return ff_filter_frame(ctx->outputs[0], dist);
 +}
@@ -275,6 +286,12 @@ index fd07305293fa15cb333e8c1ead2deddbfc80d5df..dfcbd693fafb8c5c069268a764b10ea3
 +
 +    if (!s->frame_cnt)
 +        goto clean_up;
++    if (s->stopped) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_metal: no pooled score: the filter stopped at frame %u\n",
++               s->frame_cnt);
++        goto clean_up;
++    }
 +
 +    err = vmaf_read_pictures(s->vmaf, NULL, NULL, 0);
 +    if (err)
