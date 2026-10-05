@@ -13,27 +13,21 @@ from __future__ import absolute_import
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
-from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-def _get_vmaf_cli():
-    # Prefer worktree build if present
-    worktree_vmaf = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../core/build/tools/vmaf")
-    )
-    if os.path.exists(worktree_vmaf) and os.access(worktree_vmaf, os.X_OK):
-        return worktree_vmaf
-    return ExternalProgram.vmafexec
+from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
 
 
-def _probe_sycl():
-    vmaf = _get_vmaf_cli()
-    if not os.path.exists(vmaf) or not os.access(vmaf, os.X_OK):
-        return False
+def _probe_sycl(vmaf):
     ref = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv")
     if not os.path.exists(ref):
         return False
@@ -99,8 +93,11 @@ class SyclMotionParityTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.vmaf = _get_vmaf_cli()
-        if not _probe_sycl():
+        vmaf = vmaftest.find()
+        if vmaf is None:
+            raise unittest.SkipTest(vmaftest.MISSING_MESSAGE)
+        cls.vmaf = str(vmaf)
+        if not _probe_sycl(cls.vmaf):
             raise unittest.SkipTest("SYCL device not available or not built with SYCL support")
 
     def _run_pair(self, ref_file, dis_file, width, height, option_str="motion_max_val=18.0"):

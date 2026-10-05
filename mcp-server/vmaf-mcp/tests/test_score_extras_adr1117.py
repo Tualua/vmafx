@@ -22,6 +22,7 @@ from pathlib import Path
 
 import anyio
 import pytest
+from scripts.lib import vmaftest
 
 from vmaf_mcp import server as srv
 
@@ -285,9 +286,9 @@ def _score_fixture_pair() -> tuple[Path, Path]:
     dis = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
     if not ref.exists() or not dis.exists():
         pytest.skip("Netflix src01 fixtures not found")
-    vmaf_bin = srv._vmaf_binary()
-    if not vmaf_bin.exists():
-        pytest.skip(f"vmaf binary {vmaf_bin} not found")
+    # conftest.py points the server's VMAF_BIN at this binary.
+    if vmaftest.find() is None:
+        pytest.skip(vmaftest.MISSING_MESSAGE)
     return ref, dis
 
 

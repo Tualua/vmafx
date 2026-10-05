@@ -7,7 +7,9 @@ and ``_call_tool``) rather than internal helpers, so they verify the full
 surface a Claude Code MCP client would see.
 
 Requirements:
-  - ``build/tools/vmaf`` must exist (``meson compile -C build``).
+  - The vmaf CLI under test (``scripts/lib/vmaftest.py``: ``VMAF_BIN``,
+    ``VMAF_BIN_FOR_TESTS``, then the repository's build directories, never
+    ``PATH``); ``conftest.py`` points the server's ``VMAF_BIN`` at it.
   - The Netflix golden YUV fixtures must be present under
     ``python/test/resource/yuv/``.
 
@@ -25,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts.lib import vmaftest
 
 from vmaf_mcp import server as srv
 
@@ -45,19 +48,12 @@ _HEIGHT = 324
 _EXPECTED_VMAF_SCORE = 76.66890519623612
 
 
-def _binary_present() -> bool:
-    # The server's own resolution (VMAF_BIN first): MCP Smoke builds into
-    # core/build-mcp and points VMAF_BIN there, so a fixed build/ path skipped
-    # this test in CI on every run.
-    return srv._vmaf_binary().is_file()
-
-
 def _fixtures_present() -> bool:
     return _REF_YUV.exists() and _DIS_YUV.exists()
 
 
 pytestmark_needs_binary = pytest.mark.skipif(
-    not _binary_present(), reason="vmaf binary not found — run: meson compile -C build"
+    vmaftest.find() is None, reason=vmaftest.MISSING_MESSAGE
 )
 pytestmark_needs_fixtures = pytest.mark.skipif(
     not _fixtures_present(),

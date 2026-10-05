@@ -6,20 +6,26 @@ The source-pinning tests read the CLI sources under ``core/tools/`` and
 the integration tests run the fork's ``vmaf`` binary. Both lookups live
 here so a rename (``vmaf.c`` to ``vmaf.cpp``, ``libvmaf/`` to ``core/``)
 fails every caller at once instead of turning some of them into silent
-skips.
+skips. The binary itself comes from ``scripts/lib/vmaftest.py``, the one
+resolver every Python suite uses: ``VMAF_BIN``, ``VMAF_BIN_FOR_TESTS``,
+then the repository's build directories, never ``PATH``.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# Imported after the sys.path line above, which makes it importable.
+from scripts.lib import vmaftest
 
 
 def repo_source(relative: str) -> str:
@@ -37,9 +43,9 @@ def repo_source(relative: str) -> str:
 def binary_supports_backend_flag(path: Path) -> bool:
     """True iff the binary advertises ``--backend`` in its help output.
 
-    A ``vmaf`` that does not is not this fork's CLI (an upstream system
-    install such as ``/usr/local/bin/vmaf`` 3.2.0, which even exits 0 on
-    the unknown option), so it cannot stand in for the binary under test.
+    A ``vmaf`` that does not is not this fork's CLI (an upstream release,
+    which even exits 0 on the unknown option), so it cannot stand in for
+    the binary under test.
     """
     try:
         result = subprocess.run([str(path), "--help"], capture_output=True, text=True, timeout=10)
@@ -48,29 +54,27 @@ def binary_supports_backend_flag(path: Path) -> bool:
     return "--backend" in (result.stdout + result.stderr)
 
 
-def resolve_vmaf_binary(
-    start: Path, supports: Callable[[Path], bool] = binary_supports_backend_flag
-) -> Path | None:
-    """Locate this fork's ``vmaf`` CLI, or ``None``.
+def vmaf_under_test() -> Path:
+    """The ``vmaf`` CLI under test; skips the test with the resolver's message when there is none."""
+    binary = vmaftest.find()
+    if binary is None:
+        pytest.skip(vmaftest.MISSING_MESSAGE)
+    return binary
 
-    Order: ``$VMAF_BIN_FOR_TESTS`` (taken as given), the ``vmaf`` on
-    ``PATH``, then ``build/tools/vmaf`` / ``core/build/tools/vmaf`` under
-    the nearest repository root above ``start``; the last two only when
-    ``supports`` accepts them.
+
+def fork_vmaf_under_test(
+    supports: Callable[[Path], bool] = binary_supports_backend_flag,
+) -> Path:
+    """:func:`vmaf_under_test`, failing the test when it is not this fork's CLI.
+
+    The binary under test is the only candidate: one that does not pass
+    ``supports`` is a misconfigured ``VMAF_BIN`` or build, not a reason to
+    look elsewhere.
     """
-    env = os.environ.get("VMAF_BIN_FOR_TESTS")
-    if env:
-        env_path = Path(env)
-        if env_path.is_file() and os.access(env_path, os.X_OK):
-            return env_path
-    which = shutil.which("vmaf")
-    if which and supports(Path(which)):
-        return Path(which)
-    for parent in [start, *start.parents]:
-        if (parent / "meson.build").is_file() or (parent / "core" / "meson.build").is_file():
-            for rel in (Path("build/tools/vmaf"), Path("core/build/tools/vmaf")):
-                candidate = parent / rel
-                if candidate.is_file() and os.access(candidate, os.X_OK) and supports(candidate):
-                    return candidate
-            break
-    return None
+    binary = vmaf_under_test()
+    if not supports(binary):
+        pytest.fail(
+            f"the vmaf binary under test ({binary}) does not advertise --backend, so it is "
+            "not this fork's CLI; point VMAF_BIN at a VMAFx build"
+        )
+    return binary

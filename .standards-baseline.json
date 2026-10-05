@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T07:26:37Z",
+  "generated_at": "2026-10-05T08:52:29Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "7786e9db4d4ea351508c9a41335f6ca2009335e2",
-  "total_infractions": 366,
+  "commit_sha": "60ec9bc275831de60e605f974a80d54e04776d6d",
+  "total_infractions": 365,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -666,15 +666,6 @@
       "message": "Direct recursion in _collect_loop_violations; the call graph must form an acyclic DAG",
       "anchor": "fn:_collect_loop_violations",
       "fingerprint": "ai/src/vmaf_train/op_allowlist.py:HISS-01:fn:_collect_loop_violations#2"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_chug_extract_features_smoke.py",
-      "line_number": 115,
-      "symbol": "test_chug_extract_features_floor_below_identity_on_degraded_pair",
-      "message": "Function 'test_chug_extract_features_floor_below_identity_on_degraded_pair' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:test_chug_extract_features_floor_below_identity_on_degraded_pair",
-      "fingerprint": "ai/tests/test_chug_extract_features_smoke.py:HISS-04:fn:test_chug_extract_features_floor_below_identity_on_degraded_pair#1"
     },
     {
       "rule_id": "HISS-04",

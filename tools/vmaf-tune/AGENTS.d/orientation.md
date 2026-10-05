@@ -26,7 +26,10 @@ for option-space digest.
   existing pins kept. Tests read repository sources and find the `vmaf`
   CLI through `tests/_vmaf_cli.py` (a missing in-repo source fails, it
   never skips), and `tests/conftest.py` gives every test its own working
-  directory.
+  directory. The binary comes from `scripts/lib/vmaftest.py` alone
+  (`VMAF_BIN`, `VMAF_BIN_FOR_TESTS`, the repository's build directories):
+  never add a `PATH` lookup or a host-install candidate to a test, and keep
+  capability checks (`--backend` support) as predicates on that binary.
 - **Usage docs describe shipped implementation status.**
   Dedicated `docs/usage/vmaf-tune-*.md` pages and umbrella
   `docs/usage/vmaf-tune.md` page are user-discoverable contracts,

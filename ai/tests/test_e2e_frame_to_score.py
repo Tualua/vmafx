@@ -17,9 +17,10 @@ in `feature_dump.py` — wrong pix_fmt default and missing
 `integer_<name>` fallback. A CI run against the Netflix golden YUV
 pair is the cheapest place to keep that guarantee.
 
-The test is skipped if either the vmaf binary under `core/build-cpu/tools/`
-or the Netflix YUV fixtures are missing, so it no-ops on a fresh
-checkout without a build.
+The vmaf binary is the build under test (`scripts/lib/vmaftest.py`:
+`VMAF_BIN`, `VMAF_BIN_FOR_TESTS`, then the repository's build directories,
+never `PATH`). The test skips when there is none or when the Netflix YUV
+fixtures are missing; the Tiny AI job fails on either skip.
 """
 
 from __future__ import annotations
@@ -34,17 +35,12 @@ ort = pytest.importorskip("onnxruntime")
 
 import numpy as np  # noqa: E402
 from onnx import TensorProto, helper  # noqa: E402
+from scripts.lib import vmaftest  # noqa: E402
 
 from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Honour VMAF_BIN so any worktree / CI run can point at a freshly-built binary.
-# Default follows the post-ADR-0700 rename: libvmaf/ → core/.
-# Use None as sentinel: Path('') == Path('.'), which would execute CWD as binary.
-_vmaf_bin_env = os.environ.get("VMAF_BIN")  # None when unset; VMAF_BIN='' means unset
-VMAF_BIN = (
-    Path(_vmaf_bin_env) if _vmaf_bin_env else (REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf")
-)
+VMAF_UNDER_TEST = vmaftest.find()
 # Honour VMAF_YUVDIR for worktrees where python/test/resource/ isn't checked out.
 YUV_DIR = Path(
     os.environ.get(
@@ -89,8 +85,10 @@ def _make_linear_fr_onnx(path: Path, n_features: int) -> None:
 
 
 def test_frame_to_score_pipeline(tmp_path: Path) -> None:
-    if not VMAF_BIN.exists():
-        pytest.skip(f"vmaf binary not built at {VMAF_BIN}")
+    vmaf_bin = VMAF_UNDER_TEST
+    if vmaf_bin is None:
+        pytest.skip(vmaftest.MISSING_MESSAGE)
+    assert vmaf_bin is not None  # pytest.skip() raised otherwise; narrows the type
     if not REF_YUV.exists() or not DIS_YUV.exists():
         pytest.skip("Netflix YUV fixtures missing")
 
@@ -103,7 +101,7 @@ def test_frame_to_score_pipeline(tmp_path: Path) -> None:
         pix_fmt="yuv420p",  # exercise FFmpeg→vmaf pix_fmt translation
     )
     parquet = tmp_path / "features.parquet"
-    dump_features([entry], parquet, vmaf_binary=VMAF_BIN, features=DEFAULT_FEATURES)
+    dump_features([entry], parquet, vmaf_binary=vmaf_bin, features=DEFAULT_FEATURES)
     assert parquet.exists()
 
     import pandas as pd

@@ -52,7 +52,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from _vmaf_cli import resolve_vmaf_binary
+from _vmaf_cli import fork_vmaf_under_test
 
 from vmaftune.corpus import (
     _VMAF_RAW_SUFFIXES,
@@ -80,21 +80,6 @@ class _FakeCompleted:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_vmaf_binary() -> Path | None:
-    """Locate this fork's ``vmaf`` CLI for the integration test.
-
-    ``$VMAF_BIN_FOR_TESTS``, then a ``vmaf`` on ``PATH`` that advertises
-    ``--backend``, then ``build/tools/vmaf`` / ``core/build/tools/vmaf``
-    under the repository root (``_vmaf_cli.resolve_vmaf_binary``, shared
-    with the ADR-0543 tests). An upstream ``vmaf`` on ``PATH`` used to
-    be picked: it prints "unrecognized option '--backend'" and exits 0,
-    which this test then reported as an ADR-0726 regression.
-
-    Returns ``None`` when nothing is reachable; the caller skips.
-    """
-    return resolve_vmaf_binary(_HERE)
-
-
 def _find_yuv_resource_root() -> Path | None:
     """Walk up from this file to the Netflix golden YUV fixture root."""
     for parent in [_HERE, *_HERE.parents]:
@@ -113,17 +98,14 @@ def test_vmaf_backend_vulkan_rejected_after_adr_0726() -> None:
     non-zero. This pin guards against accidental reintroduction of
     a vulkan code path that would silently succeed.
 
-    The test mirrors the V4-A improvements: it honours
-    ``VMAF_BIN_FOR_TESTS`` and the canonical ``build/tools/vmaf``
-    path so it exercises a built binary even when ``$PATH`` is not
-    augmented.
+    The binary is the build under test (``_vmaf_cli.fork_vmaf_under_test``:
+    ``VMAF_BIN``, ``VMAF_BIN_FOR_TESTS``, then the repository's build
+    directories, never ``PATH``). An upstream ``vmaf`` prints
+    "unrecognized option '--backend'" and exits 0, which this test would
+    report as an ADR-0726 regression, so a binary under test without
+    ``--backend`` fails instead.
     """
-    binary = _resolve_vmaf_binary()
-    if binary is None:
-        pytest.skip(
-            "no vmaf binary reachable for V5-1 (set VMAF_BIN_FOR_TESTS, "
-            "ensure 'vmaf' is on PATH, or run after `ninja -C build vmaf`)"
-        )
+    binary = fork_vmaf_under_test()
     yuv_root = _find_yuv_resource_root()
     if yuv_root is None:
         pytest.skip("Netflix golden YUV fixtures not available")

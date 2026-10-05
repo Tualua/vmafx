@@ -91,6 +91,46 @@ The tooling suite's shell tests expect `git`, `bash`, `cc`, `readelf`,
 Docker is optional: the container-source test runs its Docker-backed cases
 only when `docker info` succeeds.
 
+## How a test finds the `vmaf` binary
+
+A Python test that runs the `vmaf` CLI runs the build under test. It takes the
+binary from [`scripts/lib/vmaftest.py`](../../scripts/lib/vmaftest.py), which
+looks in this order and nowhere else:
+
+1. `VMAF_BIN`;
+2. `VMAF_BIN_FOR_TESTS`;
+3. `build/tools/vmaf`, `core/build/tools/vmaf`, then `core/build-cpu/tools/vmaf`
+   under the repository root (`vmaf.exe` on Windows).
+
+A variable that is set must name an executable file. If it does not, the test
+errors and does not go on to the build directories. A relative value is read
+from the directory the test run started in. With neither variable set and no
+build, a test that needs the binary skips with a message that names both
+variables and `meson setup build core && ninja -C build`. In `ai`, `mcp` and
+`vmaf-tune` that skip fails the run, both in CI and in
+`run_affected_suites.py` (`fail_on_skip`).
+
+The resolver never searches `PATH` and never uses `/usr/local/bin/vmaf`. A test
+that picked up a stale host install used to pass while the tree under test was
+never run. Point the suites at a build like this:
+
+```bash
+VMAF_BIN=$PWD/build/tools/vmaf python3 -m pytest ai/tests/test_e2e_frame_to_score.py
+python3 scripts/ci/run_affected_suites.py --base origin/master --head HEAD --vmaf-bin build/tools/vmaf
+```
+
+A test that needs a particular build, such as a CUDA test, checks that the
+resolved binary can do the job and skips or fails when it cannot. It does not
+look for another binary. Name such a build with `VMAF_BIN`. The `mcp` suite's
+`conftest.py` sets the server's `VMAF_BIN` to the resolved binary before every
+test, so the server's own lookup, which does check `/usr/local/bin` for
+installed use, never reaches a host install from a test.
+[`scripts/ci/tests/test_tests_use_vmaf_under_test.py`](../../scripts/ci/tests/test_tests_use_vmaf_under_test.py)
+(pre-commit hook `tests-use-vmaf-under-test`) fails on a `which("vmaf")` call
+in any suite's test files. It also fails when one of them names the host path,
+except for the listed files that only pass it as data. The Go tests follow the
+same rule through `internal/vmaftest` ([Go development](languages.md)).
+
 ## Run the affected suites locally
 
 `scripts/ci/run_affected_suites.py` runs the Python suites a change touches, the
@@ -146,9 +186,9 @@ the workflow; a follow-up makes them read `install` too.
 
 ## Pre-commit hooks that run tests
 
-Fifty local pre-commit hooks run a test of the tooling suite when a file they
-watch changes. They stay active at commit time, where they give the fastest
-feedback. The CI `Pre-Commit` job skips them, because Tooling Tests runs the
+Fifty-one local pre-commit hooks run a test of the tooling suite when a file
+they watch changes. They stay active at commit time, where they give the
+fastest feedback. The CI `Pre-Commit` job skips them, because Tooling Tests runs the
 same files on every pull request and push:
 `python scripts/ci/suite_registry.py precommit-skip` names the hooks whose
 entry runs only tooling tests, and the job passes that list in `SKIP`. A hook

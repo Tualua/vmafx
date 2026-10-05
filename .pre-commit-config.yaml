@@ -263,6 +263,13 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: tests-use-vmaf-under-test
+        name: Python tests run the vmaf under test, never PATH or a host install
+        entry: python3 -B -m unittest scripts.lib.test_vmaftest scripts.ci.tests.test_tests_use_vmaf_under_test
+        language: system
+        files: '\.py$|^\.github/test-suites\.json$'
+        pass_filenames: false
+
       - id: suite-registry
         name: Every test file belongs to a suite a required check runs (ADR-1528)
         entry: python3 scripts/ci/suite_registry.py check

@@ -61102,3 +61102,20 @@ No score, public API or FFmpeg patch impact.
   keeps its exit-code checks and the bounded `Remove-Item` retry
   (`scripts/ci/tests/test_windows_tester_oneapi_install.py`). No score, public API
   or FFmpeg patch impact.
+
+## Python tests resolve the vmaf CLI through scripts/lib/vmaftest.py
+
+- Python tests that run the `vmaf` CLI call `scripts.lib.vmaftest.find()`
+  (`VMAF_BIN`, `VMAF_BIN_FOR_TESTS`, then `build/`, `core/build/`,
+  `core/build-cpu/`; a set variable that names no executable raises) and skip
+  or fail with `vmaftest.MISSING_MESSAGE` when it returns `None`. The vmaf-tune
+  suite goes through `tools/vmaf-tune/tests/_vmaf_cli.py`
+  (`vmaf_under_test()`, `fork_vmaf_under_test()`), and the `mcp` suite's
+  `tests/conftest.py` points the server's `VMAF_BIN` at the resolved binary
+  before every test. Do not add a `PATH` lookup, a `/usr/local/bin/vmaf`
+  candidate or a private resolver to a test;
+  `scripts/ci/tests/test_tests_use_vmaf_under_test.py` fails on either outside
+  its `ALLOWED` data-only files. The shipped tools' runtime discovery
+  (`mcp-server/.../server.py::_vmaf_binary`, `tools/rc1-tester/.../probe.py`)
+  and `scripts/ci/run_affected_suites.py` are not test resolvers. No score,
+  public API or FFmpeg patch impact.

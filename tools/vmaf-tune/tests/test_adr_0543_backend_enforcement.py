@@ -16,22 +16,22 @@ ADR-0543 hardens that gate with three contracts the tests below pin:
   ``*_sycl`` / ``*_vulkan`` / ``*_hip`` / ``*_metal`` must hard-fail
   when the matching backend isn't active in this run.
 
-Reuses the binary-resolution + YUV-fixture helpers from the V5-1
-test in ``test_bbb_e2e_v5_bug_cluster.py`` for parity with the
-existing ADR-0498 regression test (V5-1 also probes
-``VMAF_BIN_FOR_TESTS`` and the canonical ``build/tools/vmaf``
-location). Skips cleanly when no binary is reachable.
+The binary is the build under test (``_vmaf_cli.fork_vmaf_under_test``,
+over the shared ``scripts/lib/vmaftest.py`` resolver, as in the V5-1
+test of ``test_bbb_e2e_v5_bug_cluster.py``). With none the tests skip
+with the resolver's message, which the vmaf-tune CI job turns into a
+failure; a binary under test that does not advertise ``--backend``
+fails them.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
 import pytest
 
@@ -39,21 +39,24 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 
-from _vmaf_cli import binary_supports_backend_flag, repo_source, resolve_vmaf_binary
+from _vmaf_cli import (
+    binary_supports_backend_flag,
+    fork_vmaf_under_test,
+    repo_source,
+    vmaftest,
+)
 
-# Module-level names so the lookup-order tests below can patch them.
+# Module-level name so the binary-gate tests below can patch it.
 _binary_supports_backend_flag = binary_supports_backend_flag
 
 
-def _resolve_vmaf_binary() -> Path | None:
-    """Locate this fork's ``vmaf`` CLI (``_vmaf_cli.resolve_vmaf_binary``).
+def _fork_vmaf() -> Path:
+    """The ``vmaf`` CLI under test, which must advertise ``--backend``.
 
-    ``$VMAF_BIN_FOR_TESTS`` override first, then a capable ``vmaf``
-    on ``PATH``, then a capable in-tree build. Binaries that do not
-    advertise ``--backend`` are pre-ADR-0543 system installs that would
-    return 255 instead of the expected 100 for explicit-backend failures.
+    A CLI without it predates ADR-0543 and returns 255 instead of the
+    expected 100 for explicit-backend failures.
     """
-    return resolve_vmaf_binary(_HERE, _binary_supports_backend_flag)
+    return fork_vmaf_under_test(_binary_supports_backend_flag)
 
 
 def _find_yuv_resource_root() -> Path | None:
@@ -81,12 +84,7 @@ def _yuv_pair() -> tuple[Path, Path] | None:
 
 
 def _run_backend(backend: str, output_path: Path | None = None) -> subprocess.CompletedProcess:
-    binary = _resolve_vmaf_binary()
-    if binary is None:
-        pytest.skip(
-            "no vmaf binary reachable for ADR-0543 (set VMAF_BIN_FOR_TESTS, "
-            "ensure 'vmaf' is on PATH, or build with `ninja -C build vmaf`)"
-        )
+    binary = _fork_vmaf()
     pair = _yuv_pair()
     if pair is None:
         pytest.skip("Netflix golden YUV fixtures not available")
@@ -192,12 +190,7 @@ def test_adr_0543_per_feature_pinned_to_inactive_backend_fails(tmp_path: Path) -
     by hard-failing any GPU-pinned feature name when the matching
     backend isn't active.
     """
-    binary = _resolve_vmaf_binary()
-    if binary is None:
-        pytest.skip(
-            "no vmaf binary reachable for ADR-0543 (set VMAF_BIN_FOR_TESTS, "
-            "ensure 'vmaf' is on PATH, or build with `ninja -C build vmaf`)"
-        )
+    binary = _fork_vmaf()
     pair = _yuv_pair()
     if pair is None:
         pytest.skip("Netflix golden YUV fixtures not available")
@@ -337,54 +330,47 @@ def test_binary_supports_backend_flag_handles_process_errors(
     assert _binary_supports_backend_flag(Path("unusable-vmaf")) is False
 
 
-def test_resolve_vmaf_binary_prefers_explicit_override(
+def _executable(path: Path) -> Path:
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def test_fork_vmaf_is_the_binary_under_test_and_never_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    explicit = tmp_path / "explicit-vmaf"
-    explicit.touch()
+    explicit = _executable(tmp_path / vmaftest.executable_name())
     which = Mock(return_value=str(tmp_path / "path-vmaf"))
     capability = Mock(return_value=True)
-    monkeypatch.setenv("VMAF_BIN_FOR_TESTS", str(explicit))
-    monkeypatch.setattr(os, "access", Mock(return_value=True))
+    monkeypatch.setenv("VMAF_BIN", str(explicit))
     monkeypatch.setattr(shutil, "which", which)
     monkeypatch.setattr(sys.modules[__name__], "_binary_supports_backend_flag", capability)
 
-    assert _resolve_vmaf_binary() == explicit
+    assert _fork_vmaf() == explicit
     which.assert_not_called()
-    capability.assert_not_called()
+    capability.assert_called_once_with(explicit)
 
 
-def test_resolve_vmaf_binary_accepts_capable_path_binary(
+def test_fork_vmaf_fails_on_a_binary_without_backend_flag(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    path_binary = tmp_path / "path-vmaf"
+    upstream = _executable(tmp_path / vmaftest.executable_name())
+    monkeypatch.setenv("VMAF_BIN", str(upstream))
+    monkeypatch.setattr(
+        sys.modules[__name__], "_binary_supports_backend_flag", Mock(return_value=False)
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="does not advertise --backend"):
+        _fork_vmaf()
+
+
+def test_fork_vmaf_skips_with_the_resolver_message_when_nothing_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     capability = Mock(return_value=True)
-    monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
-    monkeypatch.setattr(shutil, "which", Mock(return_value=str(path_binary)))
+    monkeypatch.setattr(vmaftest, "find", Mock(return_value=None))
     monkeypatch.setattr(sys.modules[__name__], "_binary_supports_backend_flag", capability)
 
-    assert _resolve_vmaf_binary() == path_binary
-    capability.assert_called_once_with(path_binary)
-
-
-def test_resolve_vmaf_binary_filters_path_and_uses_capable_in_tree_build(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    repo_root = tmp_path / "repo"
-    fake_here = repo_root / "tools" / "vmaf-tune" / "tests"
-    fake_here.mkdir(parents=True)
-    (repo_root / "meson.build").touch()
-    in_tree = repo_root / "build" / "tools" / "vmaf"
-    in_tree.parent.mkdir(parents=True)
-    in_tree.touch()
-    legacy_path = tmp_path / "legacy-path-vmaf"
-    capability = Mock(side_effect=lambda path: path == in_tree)
-
-    monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
-    monkeypatch.setattr(sys.modules[__name__], "_HERE", fake_here)
-    monkeypatch.setattr(shutil, "which", Mock(return_value=str(legacy_path)))
-    monkeypatch.setattr(os, "access", Mock(return_value=True))
-    monkeypatch.setattr(sys.modules[__name__], "_binary_supports_backend_flag", capability)
-
-    assert _resolve_vmaf_binary() == in_tree
-    assert capability.call_args_list == [call(legacy_path), call(in_tree)]
+    with pytest.raises(pytest.skip.Exception, match="vmaf binary under test not found"):
+        _fork_vmaf()
+    capability.assert_not_called()

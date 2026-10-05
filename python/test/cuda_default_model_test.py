@@ -4,53 +4,66 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from vmaf.config import VmafConfig
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-def _find_vmaf_binary():
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    candidates = [
-        os.path.join(repo_root, "core", "build", "tools", "vmaf"),
-        os.path.join(repo_root, "build", "tools", "vmaf"),
-        os.path.join(repo_root, "core", "build-cuda", "tools", "vmaf"),
-        os.path.join(repo_root, "core", "build-all", "tools", "vmaf"),
-    ]
-    for c in candidates:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
-    return None
+from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
 
 
-def _probe_cuda(vmaf_bin):
-    if not vmaf_bin:
-        return False
-    # Check if nvidia-smi runs and CUDA device is responsive
+def _nvidia_gpu_answers():
     try:
         res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if res.returncode != 0:
-            return False
     except FileNotFoundError:
         return False
-    return True
+    return res.returncode == 0
+
+
+def _probe_cuda(vmaf_bin, ref_yuv):
+    """True when an NVIDIA GPU answers and ``vmaf_bin`` scores one frame with --backend cuda.
+
+    A binary built without CUDA refuses the backend (exit 100, ADR-0543), so
+    a CPU build under test skips these tests instead of failing them.
+    """
+    if not _nvidia_gpu_answers():
+        return False
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = [
+            vmaf_bin,
+            *("-r", ref_yuv, "-d", ref_yuv, "-w", "576", "-h", "324", "-p", "420", "-b", "8"),
+            *("--backend", "cuda", "--no_prediction", "--feature", "psnr", "--frame_cnt", "1"),
+            *("--json", "-o", os.path.join(tmp, "probe.json")),
+        ]
+        res = subprocess.run(probe, capture_output=True, text=True, timeout=120)
+    return res.returncode == 0
 
 
 class CudaDefaultModelTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.vmaf_bin = _find_vmaf_binary()
-        if not cls.vmaf_bin:
-            raise unittest.SkipTest("vmaf binary not found in build tree")
-        if not _probe_cuda(cls.vmaf_bin):
-            raise unittest.SkipTest("CUDA / NVIDIA GPU not available on this host")
+        # The vmaf under test (scripts/lib/vmaftest.py). Its build
+        # directories are CPU builds: name a CUDA build with VMAF_BIN.
+        vmaf_bin = vmaftest.find()
+        if vmaf_bin is None:
+            raise unittest.SkipTest(vmaftest.MISSING_MESSAGE)
+        cls.vmaf_bin = str(vmaf_bin)
 
         cls.ref_yuv = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv")
         cls.dis_yuv = VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv")
         if not os.path.isfile(cls.ref_yuv) or not os.path.isfile(cls.dis_yuv):
             raise unittest.SkipTest("Required test YUV video files not found")
+        if not _probe_cuda(cls.vmaf_bin, cls.ref_yuv):
+            raise unittest.SkipTest(
+                "no NVIDIA GPU on this host, or the vmaf under test was built without CUDA"
+            )
 
     def _build_parity_command(self, backend_options, out_json):
         return [

@@ -27,6 +27,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from _vmaf_cli import vmaf_under_test
+
 from vmaftune import cli as cli_module
 from vmaftune.proxy import (
     DEFAULT_PROXY_MODEL_ID,
@@ -35,21 +37,6 @@ from vmaftune.proxy import (
     load_proxy_sidecar,
     normalise_features,
 )
-
-
-def _resolve_vmaf_bin() -> str | None:
-    # Check VMAF_BIN_FOR_TESTS, then in-tree core/build/tools/vmaf, then PATH
-    import os
-
-    if "VMAF_BIN_FOR_TESTS" in os.environ:
-        p = Path(os.environ["VMAF_BIN_FOR_TESTS"])
-        if p.exists() and os.access(p, os.X_OK):
-            return str(p)
-    repo_root = Path(__file__).resolve().parents[3]
-    candidate = repo_root / "core" / "build" / "tools" / "vmaf"
-    if candidate.exists() and os.access(candidate, os.X_OK):
-        return str(candidate)
-    return shutil.which("vmaf")
 
 
 def test_encoder_vocab_matches_sidecar() -> None:
@@ -170,16 +157,15 @@ def _run_go_twin(repo_root: Path, vmaf_bin: str) -> tuple[list[float], list[floa
 def _require_parity_toolchain() -> tuple[str, str, Path, Path]:
     """Resolve ``(ffmpeg, vmaf, repo_root, ref_yuv)`` or skip with the reason.
 
-    The parity run needs ffmpeg, the vmaf CLI, the Go toolchain and the
-    in-tree fixture; every one of them is optional on a developer box, so
-    a missing piece is a skip, not a failure.
+    The parity run needs ffmpeg, the vmaf CLI under test, the Go toolchain
+    and the in-tree fixture; every one of them is optional on a developer
+    box, so a missing piece is a skip, not a failure (the vmaf-tune CI job
+    fails on a skip for a missing vmaf binary).
     """
     ffmpeg_bin = shutil.which("ffmpeg")
     if not ffmpeg_bin:
         pytest.skip("ffmpeg not on PATH")
-    vmaf_bin = _resolve_vmaf_bin()
-    if not vmaf_bin:
-        pytest.skip("vmaf binary not reachable")
+    vmaf_bin = str(vmaf_under_test())
     if not shutil.which("go"):
         pytest.skip("go toolchain not on PATH; cannot drive the Go twin")
 

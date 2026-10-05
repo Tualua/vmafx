@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.lib import vmaftest
 from testdata.run_sycl_scores import build_vmaf_cmd, prepare_sycl_env
 
 TESTDATA_DIR = Path(__file__).resolve().parent
@@ -36,10 +37,9 @@ def normalize_score_report(report: dict) -> dict:
     return {key: value for key, value in report.items() if key != "fps"}
 
 
-def run_sycl_4k_once(iteration: int, tmp_path: Path, threads: int | None) -> dict:
-    """Run a single 4K SYCL VMAF execution and parse the output metrics."""
+def run_sycl_4k_once(iteration: int, tmp_path: Path, threads: int | None, vmaf_bin: str) -> dict:
+    """Run a single 4K SYCL VMAF execution with ``vmaf_bin`` and parse the output metrics."""
     out_json = tmp_path / f"sycl_4k_run_{iteration}.json"
-    vmaf_bin = os.environ.get("VMAF_BIN", "/usr/local/bin/vmaf")
 
     cmd = build_vmaf_cmd(
         vmaf_bin=vmaf_bin,
@@ -92,7 +92,7 @@ def test_run_sycl_4k_once_removes_diagnostic_and_dispatch_overrides(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    report = run_sycl_4k_once(0, tmp_path, threads=None)
+    report = run_sycl_4k_once(0, tmp_path, threads=None, vmaf_bin="vmaf-under-test")
 
     assert report == {"version": "test"}
     assert all(name not in captured_env for name in override_names)
@@ -105,12 +105,16 @@ def test_run_sycl_4k_once_removes_diagnostic_and_dispatch_overrides(
 @pytest.mark.parametrize("threads", [None, 1], ids=["serial", "threads-1"])
 def test_sycl_4k_consecutive_runs_deterministic(tmp_path: Path, threads: int | None) -> None:
     """Verify 20 full normalized reports are bit-exact in serial and threaded modes."""
+    vmaf_bin = vmaftest.find()
+    if vmaf_bin is None:
+        pytest.skip(vmaftest.MISSING_MESSAGE)
     num_runs = int(os.environ.get("VMAF_SYCL_REPEAT_COUNT", "20"))
     assert num_runs >= 2, "VMAF_SYCL_REPEAT_COUNT must be at least 2"
     reports = []
 
     for i in range(num_runs):
-        reports.append(normalize_score_report(run_sycl_4k_once(i, tmp_path, threads)))
+        report = run_sycl_4k_once(i, tmp_path, threads, str(vmaf_bin))
+        reports.append(normalize_score_report(report))
 
     for i, report in enumerate(reports[1:], start=1):
         assert report == reports[0], (

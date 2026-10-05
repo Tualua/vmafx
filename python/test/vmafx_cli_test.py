@@ -7,8 +7,16 @@ import os
 import pty
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
 
 
 def _run_pty(cmd):
@@ -33,23 +41,14 @@ class VmafxCliTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        candidates_vmafx = [
-            os.path.join(cls.repo_root, "build", "tools", "vmafx"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmafx"),
-            os.path.join(cls.repo_root, "build", "tools", "vmafx.exe"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmafx.exe"),
-        ]
-        candidates_vmaf = [
-            os.path.join(cls.repo_root, "build", "tools", "vmaf"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmaf"),
-            os.path.join(cls.repo_root, "build", "tools", "vmaf.exe"),
-            os.path.join(cls.repo_root, "core", "build", "tools", "vmaf.exe"),
-        ]
-        cls.vmafx_bin = next((p for p in candidates_vmafx if os.path.exists(p)), None)
-        cls.vmaf_bin = next((p for p in candidates_vmaf if os.path.exists(p)), None)
-        assert cls.vmafx_bin is not None, f"vmafx binary not found in {candidates_vmafx}"
-        assert cls.vmaf_bin is not None, f"vmaf binary not found in {candidates_vmaf}"
+        cls.repo_root = str(_REPO_ROOT)
+        # The vmaf under test (scripts/lib/vmaftest.py) and the vmafx name of
+        # the same build, which sits next to it.
+        vmaf_bin = vmaftest.find()
+        assert vmaf_bin is not None, vmaftest.MISSING_MESSAGE
+        vmafx_bin = vmaf_bin.with_name("vmafx" + vmaf_bin.suffix)
+        assert vmafx_bin.exists(), f"vmafx binary not found next to {vmaf_bin}"
+        cls.vmaf_bin, cls.vmafx_bin = str(vmaf_bin), str(vmafx_bin)
 
         cls.ref_yuv = os.path.join(
             cls.repo_root, "python", "test", "resource", "yuv", "src01_hrc00_576x324.yuv"

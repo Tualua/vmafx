@@ -3195,7 +3195,7 @@
         "tools/vmaf-tune/src/vmaftune/saliency.py": 1,
         "tools/vmaf-tune/src/vmaftune/score.py": 2,
         "tools/vmaf-tune/tests/test_adr_0498_followup7.py": 5,
-        "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 6,
+        "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 5,
         "tools/vmaf-tune/tests/test_bbb_e2e_v2_bug_cluster.py": 2,
         "tools/vmaf-tune/tests/test_bbb_e2e_v3_bug_cluster.py": 4,
         "tools/vmaf-tune/tests/test_encode_dispatcher_per_adapter.py": 1
@@ -3625,8 +3625,8 @@
         "core/src/libvmaf.c": 1,
         "core/tools/test/test_vmaf_feature_backend.sh": 1,
         "core/tools/vmaf.cpp": 5,
-        "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 19,
-        "tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py": 1
+        "python/test/cuda_default_model_test.py": 1,
+        "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 17
       },
       "target": "0543-adr-0498-enforcement-hardening.md"
     },
@@ -4152,7 +4152,6 @@
       "sites": {
         ".github/workflows/go-ci.yml": 1,
         "Makefile": 1,
-        "ai/tests/test_e2e_frame_to_score.py": 1,
         "cmd/vmafx-mcp/impl.go": 1,
         "compat/python-vmaf/config.py": 1,
         "core/src/meson.build": 1,
