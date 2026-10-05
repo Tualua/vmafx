@@ -15,6 +15,13 @@ import struct
 
 N = 1024
 
+NOLINT_NOTE = """/* NOLINTBEGIN(modernize-use-std-numbers): generated data table. Six entries
+ * of the sRGB EOTF sampled at i / 1023 land within the check's tolerance of
+ * pi-derived constants; they are table samples, not those constants, and the
+ * header has to stay plain C for the CUDA twin and C translation units
+ * (ADR-1391). ADR-0141 reserves a suppression for a rule that cannot be
+ * followed without breaking a load-bearing invariant. */"""
+
 # sRGB EOTF piecewise threshold per IEC 61966-2-1.
 SRGB_PIECEWISE_THRESHOLD = 0.04045
 
@@ -44,6 +51,8 @@ print("#endif")
 print("")
 print("/* LUT[i] = srgb_eotf(i / (SS2_EOTF_LUT_SIZE - 1)) for i in [0, N-1],")
 print(" * where srgb_eotf(v) = v/12.92 if v<=0.04045 else ((v+0.055)/1.055)^2.4. */")
+for line in NOLINT_NOTE.splitlines():
+    print(line)
 print("VMAF_SS2_EOTF_LUT_STORAGE float vmaf_ss2_eotf_lut[SS2_EOTF_LUT_SIZE] = {")
 
 for i in range(N):
@@ -57,5 +66,6 @@ for i in range(N):
     print(f"    {hex_lit}f,   /* x={x:.6f}, v={f32:.8e} */")
 
 print("};")
+print("/* NOLINTEND(modernize-use-std-numbers) */")
 print("")
 print("#endif /* SSIMULACRA2_EOTF_LUT_H_ */")

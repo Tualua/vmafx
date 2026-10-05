@@ -61804,3 +61804,10 @@ No score, public API or FFmpeg patch impact.
   keeps all four together; a model must never be freed with a plain `free()`.
   The Rust `Drop` impls leak instead of aborting. No score or FFmpeg patch
   impact; the public header only gains documentation.
+## SYCL psnr_hvs scan helpers and once-read SYCL env switches (ADR-1142)
+## Once-read SYCL env switches (ADR-1142)
+
+- `core/src/sycl/common.cpp` reads `VMAF_SYCL_PROFILE`, `_TIMING`, `_IMPORT_DEBUG` and
+  `_CHECKSUM` through `vmaf_gpu_dispatch_env_get()`; a sync keeps that and does not bring
+  `getenv()` back. `core/src/feature/ssimulacra2_eotf_lut.h` keeps its `NOLINT` block (and
+  `scripts/gen_ssimulacra2_eotf_lut.py` emits it). No score or public API impact.

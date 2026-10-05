@@ -11,6 +11,11 @@
 #include "config.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 #if HAVE_SYCL
 
 #include "libvmaf/libvmaf.h"
@@ -32,6 +37,18 @@ static char *test_sycl_pool_init_sycl(void)
     return NULL;
 }
 
+/* Open a context and import the shared SYCL state into it. */
+static char *open_context_with_sycl_state(VmafContext **vmaf)
+{
+    VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
+    int err = vmaf_init(vmaf, vmaf_cfg);
+    mu_assert("vmaf_init should succeed", err == 0);
+
+    err = vmaf_sycl_import_state(*vmaf, sycl);
+    mu_assert("vmaf_sycl_import_state should succeed", err == 0);
+    return NULL;
+}
+
 static char *test_sycl_preallocate_none(void)
 {
     if (sycl_init_failed) {
@@ -39,22 +56,34 @@ static char *test_sycl_preallocate_none(void)
         return NULL;
     }
 
-    VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("vmaf_init should succeed", err == 0);
-
-    err = vmaf_sycl_import_state(vmaf, sycl);
-    mu_assert("vmaf_sycl_import_state should succeed", err == 0);
+    mu_assert_msg(open_context_with_sycl_state(&vmaf));
 
     VmafSyclPictureConfiguration pic_cfg = {
         .pic_params = {.w = 1920, .h = 1080, .bpc = 8, .pix_fmt = VMAF_PIX_FMT_YUV420P},
         .pic_prealloc_method = VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE,
     };
-    err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
+    int err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
     mu_assert("preallocate with NONE should succeed as no-op", err == 0);
 
     vmaf_close(vmaf);
+    return NULL;
+}
+
+/* One fetch -> check -> unref pass over the device pool. */
+static char *fetch_check_unref_device_picture(VmafContext *vmaf)
+{
+    VmafPicture pic;
+    memset(&pic, 0, sizeof(pic));
+    int err = vmaf_sycl_picture_fetch(vmaf, &pic);
+    mu_assert("picture_fetch should succeed", err == 0);
+    mu_assert("fetched picture should have Y-plane data", pic.data[0] != NULL);
+    mu_assert("fetched picture should have ref", pic.ref != NULL);
+    mu_assert("picture width preserved", pic.w[0] == 1920);
+    mu_assert("picture height preserved", pic.h[0] == 1080);
+    mu_assert("picture bpc preserved", pic.bpc == 8);
+    err = vmaf_picture_unref(&pic);
+    mu_assert("picture_unref should succeed", err == 0);
     return NULL;
 }
 
@@ -65,44 +94,42 @@ static char *test_sycl_preallocate_device_fetch_cycle(void)
         return NULL;
     }
 
-    VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("vmaf_init should succeed", err == 0);
-
-    err = vmaf_sycl_import_state(vmaf, sycl);
-    mu_assert("vmaf_sycl_import_state should succeed", err == 0);
+    mu_assert_msg(open_context_with_sycl_state(&vmaf));
 
     VmafSyclPictureConfiguration pic_cfg = {
         .pic_params = {.w = 1920, .h = 1080, .bpc = 8, .pix_fmt = VMAF_PIX_FMT_YUV420P},
         .pic_prealloc_method = VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE,
     };
-    err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
+    int err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
     mu_assert("preallocate DEVICE should succeed", err == 0);
 
     /* Repeat alloc-fails: second preallocate call should reject */
     err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
     mu_assert("second preallocate should fail with EBUSY", err != 0);
 
-    /* Exercise fetch → unref cycle across the ring; a pool depth of 2 means
+    /* Exercise fetch -> unref cycle across the ring; a pool depth of 2 means
      * we must be able to cycle through >N frames. */
     for (unsigned i = 0; i < 10; i++) {
-        VmafPicture pic;
-        memset(&pic, 0, sizeof(pic));
-        err = vmaf_sycl_picture_fetch(vmaf, &pic);
-        mu_assert("picture_fetch should succeed", err == 0);
-        mu_assert("fetched picture should have Y-plane data", pic.data[0] != NULL);
-        mu_assert("fetched picture should have ref", pic.ref != NULL);
-        mu_assert("picture width preserved", pic.w[0] == 1920);
-        mu_assert("picture height preserved", pic.h[0] == 1080);
-        mu_assert("picture bpc preserved", pic.bpc == 8);
-        err = vmaf_picture_unref(&pic);
-        mu_assert("picture_unref should succeed", err == 0);
+        mu_assert_msg(fetch_check_unref_device_picture(vmaf));
     }
 
     /* vmaf_close should release the pool without leaking. */
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close should succeed with pool", err == 0);
+    return NULL;
+}
+
+/* Host USM is CPU-writable: write a sentinel pair and read it back. */
+static char *check_host_picture_round_trip(VmafPicture *pic)
+{
+    mu_assert("host-pool picture has data[0]", pic->data[0] != NULL);
+
+    uint8_t *y = (uint8_t *)pic->data[0];
+    y[0] = 0x5A;
+    y[1] = 0xA5;
+    mu_assert("host buffer byte 0 round-trips", y[0] == 0x5A);
+    mu_assert("host buffer byte 1 round-trips", y[1] == 0xA5);
     return NULL;
 }
 
@@ -113,34 +140,21 @@ static char *test_sycl_preallocate_host_fetch_cycle(void)
         return NULL;
     }
 
-    VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("vmaf_init should succeed", err == 0);
-
-    err = vmaf_sycl_import_state(vmaf, sycl);
-    mu_assert("vmaf_sycl_import_state should succeed", err == 0);
+    mu_assert_msg(open_context_with_sycl_state(&vmaf));
 
     VmafSyclPictureConfiguration pic_cfg = {
         .pic_params = {.w = 640, .h = 480, .bpc = 10, .pix_fmt = VMAF_PIX_FMT_YUV420P},
         .pic_prealloc_method = VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST,
     };
-    err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
+    int err = vmaf_sycl_preallocate_pictures(vmaf, pic_cfg);
     mu_assert("preallocate HOST should succeed", err == 0);
 
-    /* Host USM is CPU-writable — sanity-check a write+read round-trip. */
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
     err = vmaf_sycl_picture_fetch(vmaf, &pic);
     mu_assert("picture_fetch (host) should succeed", err == 0);
-    mu_assert("host-pool picture has data[0]", pic.data[0] != NULL);
-
-    /* Write + read back a sentinel byte at start and end of the buffer. */
-    uint8_t *y = (uint8_t *)pic.data[0];
-    y[0] = 0x5A;
-    y[1] = 0xA5;
-    mu_assert("host buffer byte 0 round-trips", y[0] == 0x5A);
-    mu_assert("host buffer byte 1 round-trips", y[1] == 0xA5);
+    mu_assert_msg(check_host_picture_round_trip(&pic));
 
     err = vmaf_picture_unref(&pic);
     mu_assert("picture_unref should succeed", err == 0);
@@ -169,6 +183,14 @@ static char *test_sycl_preallocate_without_state(void)
     return NULL;
 }
 
+static char *check_pinned_picture_planes(const VmafPicture *pic)
+{
+    mu_assert("pic.data[0] should not be null", pic->data[0] != NULL);
+    mu_assert("pic.data[1] should not be null", pic->data[1] != NULL);
+    mu_assert("pic.data[2] should not be null", pic->data[2] != NULL);
+    return NULL;
+}
+
 static char *test_sycl_cli_preallocate_pinned_pool(void)
 {
     if (sycl_init_failed || sycl == NULL) {
@@ -176,13 +198,8 @@ static char *test_sycl_cli_preallocate_pinned_pool(void)
         return NULL;
     }
 
-    VmafConfiguration vmaf_cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, vmaf_cfg);
-    mu_assert("vmaf_init should succeed", err == 0);
-
-    err = vmaf_sycl_import_state(vmaf, sycl);
-    mu_assert("vmaf_sycl_import_state should succeed", err == 0);
+    mu_assert_msg(open_context_with_sycl_state(&vmaf));
 
     VmafPictureConfiguration pic_cfg = {
         .pic_params =
@@ -194,16 +211,14 @@ static char *test_sycl_cli_preallocate_pinned_pool(void)
             },
         .pic_cnt = 6,
     };
-    err = vmaf_preallocate_pictures(vmaf, pic_cfg);
+    int err = vmaf_preallocate_pictures(vmaf, pic_cfg);
     mu_assert("vmaf_preallocate_pictures should succeed", err == 0);
 
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
     err = vmaf_fetch_preallocated_picture(vmaf, &pic);
     mu_assert("vmaf_fetch_preallocated_picture should succeed", err == 0);
-    mu_assert("pic.data[0] should not be null", pic.data[0] != NULL);
-    mu_assert("pic.data[1] should not be null", pic.data[1] != NULL);
-    mu_assert("pic.data[2] should not be null", pic.data[2] != NULL);
+    mu_assert_msg(check_pinned_picture_planes(&pic));
 
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref should succeed", err == 0);
@@ -246,3 +261,5 @@ char *run_tests(void)
 }
 
 #endif /* HAVE_SYCL */
+
+/* NOLINTEND(modernize-use-nullptr) */

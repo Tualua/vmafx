@@ -371,7 +371,10 @@ int  vmaf_sycl_profiling_get_string(VmafSyclState *state, char **out);
 
 Request profiling at init: set `VmafSyclConfiguration.enable_profiling = 1`
 (or `VMAF_SYCL_PROFILE=1` in the environment). Then use the enable and
-disable pair to choose which frame ranges are timed.
+disable pair to choose which frame ranges are timed. The SYCL environment
+switches (`VMAF_SYCL_PROFILE`, `VMAF_SYCL_TIMING`, `VMAF_SYCL_IMPORT_DEBUG`,
+`VMAF_SYCL_CHECKSUM`) are read once, at first use, like `VMAF_SYCL_DISPATCH`;
+set them before the first SYCL state is created.
 
 !!! warning
     `vmaf_sycl_profiling_enable()` does not re-create the queue. It only

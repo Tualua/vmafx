@@ -64,6 +64,7 @@ static double monotonic_ms()
 #include "picture.h"
 #include "common.h"
 #include "dispatch_strategy.h"
+#include "gpu_dispatch_env.h"
 #include "feature/feature_extractor.h"
 #include "log.h"
 #include "scratch_check.h"
@@ -296,7 +297,7 @@ static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
     // Allow runtime profiling via environment variable
     if (cfg.enable_profiling)
         return true;
-    const char *env_prof = getenv("VMAF_SYCL_PROFILE");
+    const char *env_prof = vmaf_gpu_dispatch_env_get("VMAF_SYCL_PROFILE");
     return env_prof != nullptr && env_prof[0] == '1';
 }
 
@@ -343,9 +344,9 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
         auto *s = new VmafSyclState{.queue = std::move(q), .copy_queue = std::move(cq)};
         s->profiling_enabled = profiling;
         // Per-extractor timing via q.wait() — no enable_profiling needed
-        const char *env_timing = getenv("VMAF_SYCL_TIMING");
+        const char *env_timing = vmaf_gpu_dispatch_env_get("VMAF_SYCL_TIMING");
         s->extractor_timing = (env_timing && env_timing[0] == '1');
-        const char *env_idbg = getenv("VMAF_SYCL_IMPORT_DEBUG");
+        const char *env_idbg = vmaf_gpu_dispatch_env_get("VMAF_SYCL_IMPORT_DEBUG");
         s->import_debug = (env_idbg && env_idbg[0] == '1');
         s->has_fp64 = has_fp64;
         *sycl_state = s;
@@ -1582,7 +1583,7 @@ extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsig
 {
     /* Zero-cost gate — must be first, before any allocation or queue work.
      * Mirror the VMAF_SYCL_PROFILE gate at common.cpp:230. */
-    const char *env = getenv("VMAF_SYCL_CHECKSUM");
+    const char *env = vmaf_gpu_dispatch_env_get("VMAF_SYCL_CHECKSUM");
     if (!env || env[0] != '1')
         return 0;
 

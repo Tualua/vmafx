@@ -24,6 +24,12 @@
 
 /* LUT[i] = srgb_eotf(i / (SS2_EOTF_LUT_SIZE - 1)) for i in [0, N-1],
  * where srgb_eotf(v) = v/12.92 if v<=0.04045 else ((v+0.055)/1.055)^2.4. */
+/* NOLINTBEGIN(modernize-use-std-numbers): generated data table. Six entries
+ * of the sRGB EOTF sampled at i / 1023 land within the check's tolerance of
+ * pi-derived constants; they are table samples, not those constants, and the
+ * header has to stay plain C for the CUDA twin and C translation units
+ * (ADR-1391). ADR-0141 reserves a suppression for a rule that cannot be
+ * followed without breaking a load-bearing invariant. */
 VMAF_SS2_EOTF_LUT_STORAGE float vmaf_ss2_eotf_lut[SS2_EOTF_LUT_SIZE] = {
     0x0.0p+0f,              /* x=0.000000, v=0.00000000e+00 */
     0x1.3d56780000000p-14f, /* x=0.000978, v=7.56592199e-05 */
@@ -1050,5 +1056,6 @@ VMAF_SS2_EOTF_LUT_STORAGE float vmaf_ss2_eotf_lut[SS2_EOTF_LUT_SIZE] = {
     0x1.fedcb80000000p-1f,  /* x=0.999022, v=9.97777700e-01 */
     0x1.0000000000000p+0f,  /* x=1.000000, v=1.00000000e+00 */
 };
+/* NOLINTEND(modernize-use-std-numbers) */
 
 #endif /* SSIMULACRA2_EOTF_LUT_H_ */

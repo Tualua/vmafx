@@ -505,6 +505,7 @@
         "core/src/feature/speed_gpu_common.h": 1,
         "core/src/feature/speed_internal.h": 4,
         "core/src/feature/ssimulacra2.c": 6,
+        "core/src/feature/ssimulacra2_eotf_lut.h": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
         "core/src/feature/sycl/integer_moment_sycl.cpp": 1,
@@ -597,7 +598,8 @@
         "core/tools/cli_parse.h": 1,
         "core/tools/vidinput.h": 2,
         "core/tools/vmaf_per_shot.c": 2,
-        "core/tools/yuv_input.c": 3
+        "core/tools/yuv_input.c": 3,
+        "scripts/gen_ssimulacra2_eotf_lut.py": 1
       },
       "target": "0141-touched-file-cleanup-rule.md"
     },
@@ -6597,6 +6599,7 @@
         "core/test/test_svm_api.c": 2,
         "core/test/test_svm_multiclass.c": 1,
         "core/test/test_svm_parser.c": 2,
+        "core/test/test_sycl.c": 1,
         "core/test/test_sycl_adm_parity.c": 1,
         "core/test/test_sycl_cambi_parity.c": 1,
         "core/test/test_sycl_ciede_math.c": 1,
@@ -6614,6 +6617,8 @@
         "core/test/test_sycl_fp_arith_contract.c": 1,
         "core/test/test_sycl_integer_ssim_math.c": 1,
         "core/test/test_sycl_integer_vif_math.c": 1,
+        "core/test/test_sycl_kernel_registration.c": 1,
+        "core/test/test_sycl_kernel_scratch.c": 1,
         "core/test/test_sycl_motion3_parity.c": 1,
         "core/test/test_sycl_motion_add_uv_parity.c": 1,
         "core/test/test_sycl_motion_five_frame_window.c": 1,
@@ -6622,8 +6627,10 @@
         "core/test/test_sycl_motion_v2_parity.c": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_ordered_sum.c": 1,
+        "core/test/test_sycl_pic_preallocation.c": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
         "core/test/test_sycl_psnr_parity.c": 1,
+        "core/test/test_sycl_shared_frame_sticky_geometry.c": 1,
         "core/test/test_sycl_shared_planes.c": 1,
         "core/test/test_sycl_speed_chroma_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
@@ -8640,12 +8647,12 @@
         "core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu": 2,
         "core/src/feature/cuda/ssimulacra2_cuda.c": 2,
         "core/src/feature/cuda/ssimulacra2_cuda.h": 1,
-        "core/src/feature/ssimulacra2_eotf_lut.h": 1,
+        "core/src/feature/ssimulacra2_eotf_lut.h": 2,
         "core/src/feature/ssimulacra2_math.h": 1,
         "core/src/feature/ssimulacra2_score.h": 1,
         "core/test/test_cuda_ssimulacra2_parity.c": 1,
         "core/test/test_metal_ssimulacra2_parity.c": 1,
-        "scripts/gen_ssimulacra2_eotf_lut.py": 1
+        "scripts/gen_ssimulacra2_eotf_lut.py": 2
       },
       "target": "1391-cuda-ssimulacra2-device-resident.md"
     },
