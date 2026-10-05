@@ -171,7 +171,9 @@ for cand in "${ONEAPI_CANDIDATES[@]}"; do
   if [[ -n "${cand}" && -f "${cand}" ]]; then
     set +u
     # shellcheck disable=SC1090
-    source "${cand}" >/dev/null 2>&1 || true
+    if ! source "${cand}" >/dev/null 2>&1; then
+      echo "warning: sourcing ${cand} failed; continuing" >&2
+    fi
     set -u
     SYCL_AVAILABLE=1
     break
@@ -411,70 +413,10 @@ except Exception as e:
 PYEOF
 }
 
-# Run one (resolution × backend × metric) cell, return timing and score JSON
-# Outputs to stdout: a JSON object
-run_cell() {
-  local res_key="$1" backend="$2" metric="$3"
-  local w="${RES_W[$res_key]}" h="${RES_H[$res_key]}" bd="${RES_BD[$res_key]}"
-  local nf="${RES_NF[$res_key]}"
-  local ref="${WORKSPACE}/${RES_REF[$res_key]}"
-  local dis="${WORKSPACE}/${RES_DIS[$res_key]}"
-  local feature="${METRIC_FEATURE[$metric]}"
-  local json_key="${METRIC_JSON_KEY[$metric]}"
-  # shellcheck disable=SC2086
-  local flags="${BACKEND_FLAGS[$backend]}"
-  local out_json
-  out_json=$(mktemp "${SCRATCH_DIR}/vmaf-bench-XXXXX.json")
-
-  local times=()
-  local vmaf_score feature_score
-  vmaf_score="null"
-  feature_score="null"
-
-  local run_ok=0
-  local skip_reason=""
-  local vmaf_error=""
-
-  for ((i = 0; i < RUNS; i++)); do
-    local t_start t_end elapsed_ms rc err_file
-    err_file="${LOG_DIR}/vmaf-${res_key}-${backend}-${metric}-$(date +%s%N).err"
-    t_start=$(date +%s%N)
-    # Capture stderr instead of discarding it — without this, OOM, missing
-    # model, GPU init failures and the like silently emit null scores and
-    # the user has no signal. The per-call err file is read on rc != 0 and
-    # surfaced in the cell JSON as "vmaf_error".
-    # shellcheck disable=SC2086
-    "${VMAF}" \
-      --reference "${ref}" --distorted "${dis}" \
-      --width "${w}" --height "${h}" \
-      --pixel_format 420 --bitdepth "${bd}" \
-      --feature "${feature}" \
-      --model "path=${MODEL}" --threads 1 \
-      --output "${out_json}" --json -q \
-      ${flags} 2>"${err_file}"
-    rc=$?
-    t_end=$(date +%s%N)
-    elapsed_ms=$(((t_end - t_start) / 1000000))
-    if [[ ${rc} -ne 0 ]]; then
-      skip_reason="vmaf exited ${rc}"
-      # Read stderr (cap at 4 KiB to keep the JSON manageable; the full log
-      # stays on disk for the duration of the run via SCRATCH_DIR).
-      if [[ -s "${err_file}" ]]; then
-        vmaf_error="$(head -c 4096 "${err_file}")"
-      fi
-      break
-    fi
-    if [[ ! -f "${out_json}" ]]; then
-      skip_reason="no output file"
-      break
-    fi
-    times+=("${elapsed_ms}")
-    run_ok=1
-    # Parse scores only once (first successful run)
-    if [[ ${#times[@]} -eq 1 ]]; then
-      local parse_result
-      parse_result=$(
-        python3 - "${out_json}" "${json_key}" 2>/dev/null <<'PYEOF'
+# Read the pooled VMAF mean and the requested feature mean from one run's JSON.
+# Prints "<vmaf> <feature>" ("null" for a missing feature), or "null null # why".
+_cell_parse_scores() {
+  python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import json, sys
 path = sys.argv[1]
 feature_key = sys.argv[2]
@@ -495,50 +437,86 @@ try:
 except Exception as e:
     print(f"null null # {e}")
 PYEOF
-      )
-      vmaf_score=$(echo "${parse_result}" | awk '{print $1}')
-      feature_score=$(echo "${parse_result}" | awk '{print $2}')
+}
+
+# Time RUNS runs of one cell. Results land in the _CELL_* globals:
+#   _CELL_TIMES (ms per run), _CELL_RUN_OK, _CELL_SKIP_REASON, _CELL_VMAF_ERROR,
+#   _CELL_VMAF_SCORE, _CELL_FEATURE_SCORE.
+# Args: ref dis width height bitdepth feature json_key flags out_json log_tag
+_cell_measure() {
+  local ref="$1" dis="$2" w="$3" h="$4" bd="$5" feature="$6" json_key="$7"
+  local flags="$8" out_json="$9" log_tag="${10}"
+  _CELL_TIMES=()
+  _CELL_RUN_OK=0
+  _CELL_SKIP_REASON=""
+  _CELL_VMAF_ERROR=""
+  _CELL_VMAF_SCORE="null"
+  _CELL_FEATURE_SCORE="null"
+
+  for ((i = 0; i < RUNS; i++)); do
+    local t_start t_end elapsed_ms rc err_file
+    err_file="${LOG_DIR}/vmaf-${log_tag}-$(date +%s%N).err"
+    t_start=$(date +%s%N)
+    # Capture stderr instead of discarding it — without this, OOM, missing
+    # model, GPU init failures and the like silently emit null scores and
+    # the user has no signal. The per-call err file is read on rc != 0 and
+    # surfaced in the cell JSON as "vmaf_error".
+    # shellcheck disable=SC2086
+    "${VMAF}" \
+      --reference "${ref}" --distorted "${dis}" \
+      --width "${w}" --height "${h}" \
+      --pixel_format 420 --bitdepth "${bd}" \
+      --feature "${feature}" \
+      --model "path=${MODEL}" --threads 1 \
+      --output "${out_json}" --json -q \
+      ${flags} 2>"${err_file}"
+    rc=$?
+    t_end=$(date +%s%N)
+    elapsed_ms=$(((t_end - t_start) / 1000000))
+    if [[ ${rc} -ne 0 ]]; then
+      _CELL_SKIP_REASON="vmaf exited ${rc}"
+      # Read stderr (cap at 4 KiB to keep the JSON manageable; the full log
+      # stays on disk for the duration of the run via SCRATCH_DIR).
+      if [[ -s "${err_file}" ]]; then
+        _CELL_VMAF_ERROR="$(head -c 4096 "${err_file}")"
+      fi
+      break
+    fi
+    if [[ ! -f "${out_json}" ]]; then
+      _CELL_SKIP_REASON="no output file"
+      break
+    fi
+    _CELL_TIMES+=("${elapsed_ms}")
+    _CELL_RUN_OK=1
+    # Parse scores only once (first successful run)
+    if [[ ${#_CELL_TIMES[@]} -eq 1 ]]; then
+      local parse_result
+      parse_result=$(_cell_parse_scores "${out_json}" "${json_key}")
+      _CELL_VMAF_SCORE=$(echo "${parse_result}" | awk '{print $1}')
+      _CELL_FEATURE_SCORE=$(echo "${parse_result}" | awk '{print $2}')
     fi
   done
+}
 
-  rm -f "${out_json}"
-
-  local median_ms="null"
-  local fps="null"
-  if [[ ${run_ok} -eq 1 && ${#times[@]} -gt 0 ]]; then
-    # Compute median via python
-    local times_csv
-    times_csv=$(
-      IFS=,
-      echo "${times[*]}"
-    )
-    median_ms=$(python3 -c "
+# Median of the per-run times (ms). Args: the times.
+_cell_median_ms() {
+  local times_csv
+  times_csv=$(
+    IFS=,
+    echo "$*"
+  )
+  python3 -c "
 t = sorted([${times_csv}])
 n = len(t)
 m = t[n//2] if n%2 else (t[n//2-1]+t[n//2])//2
 print(m)
-")
-    fps=$(python3 -c "print(round(${nf} * 1000 / ${median_ms}, 2))" 2>/dev/null || echo "null")
-  fi
+"
+}
 
-  # ncu (CUDA only, if requested)
-  local ncu_json="{}"
-  if [[ ${USE_NCU} -eq 1 && "${backend}" == "cuda" && ${run_ok} -eq 1 ]]; then
-    local ncu_out
-    ncu_out=$(mktemp "${SCRATCH_DIR}/vmaf-bench-ncu-XXXXX.json")
-    ncu_json=$(run_ncu_cell "${ref}" "${dis}" "${w}" "${h}" "${bd}" "${feature}" "${ncu_out}")
-  fi
-
-  python3 - \
-    "${res_key}" "${backend}" "${metric}" \
-    "${w}" "${h}" "${bd}" "${nf}" \
-    "${median_ms}" "${fps}" \
-    "${vmaf_score}" "${feature_score}" \
-    "${run_ok}" "${skip_reason:-}" \
-    "${ncu_json}" \
-    "${RES_SRC[$res_key]}" \
-    "${vmaf_error:-}" \
-    <<'PYEOF'
+# Print the cell's JSON object. Args: res backend metric w h bd nf median_ms fps
+# vmaf_score feature_score run_ok skip_reason ncu_json source vmaf_error
+_cell_emit_json() {
+  python3 - "$@" <<'PYEOF'
 import json, sys
 a = sys.argv
 skip = (a[12] == "0")
@@ -563,6 +541,51 @@ obj = {
 }
 print(json.dumps(obj))
 PYEOF
+}
+
+# Run one (resolution × backend × metric) cell, return timing and score JSON
+# Outputs to stdout: a JSON object
+run_cell() {
+  local res_key="$1" backend="$2" metric="$3"
+  local w="${RES_W[$res_key]}" h="${RES_H[$res_key]}" bd="${RES_BD[$res_key]}"
+  local nf="${RES_NF[$res_key]}"
+  local ref="${WORKSPACE}/${RES_REF[$res_key]}"
+  local dis="${WORKSPACE}/${RES_DIS[$res_key]}"
+  local feature="${METRIC_FEATURE[$metric]}"
+  local json_key="${METRIC_JSON_KEY[$metric]}"
+  # shellcheck disable=SC2086
+  local flags="${BACKEND_FLAGS[$backend]}"
+  local out_json
+  out_json=$(mktemp "${SCRATCH_DIR}/vmaf-bench-XXXXX.json")
+
+  _cell_measure "${ref}" "${dis}" "${w}" "${h}" "${bd}" "${feature}" "${json_key}" \
+    "${flags}" "${out_json}" "${res_key}-${backend}-${metric}"
+
+  rm -f "${out_json}"
+
+  local median_ms="null"
+  local fps="null"
+  if [[ ${_CELL_RUN_OK} -eq 1 && ${#_CELL_TIMES[@]} -gt 0 ]]; then
+    median_ms=$(_cell_median_ms "${_CELL_TIMES[@]}")
+    fps=$(python3 -c "print(round(${nf} * 1000 / ${median_ms}, 2))" 2>/dev/null || echo "null")
+  fi
+
+  # ncu (CUDA only, if requested)
+  local ncu_json="{}"
+  if [[ ${USE_NCU} -eq 1 && "${backend}" == "cuda" && ${_CELL_RUN_OK} -eq 1 ]]; then
+    local ncu_out
+    ncu_out=$(mktemp "${SCRATCH_DIR}/vmaf-bench-ncu-XXXXX.json")
+    ncu_json=$(run_ncu_cell "${ref}" "${dis}" "${w}" "${h}" "${bd}" "${feature}" "${ncu_out}")
+  fi
+
+  _cell_emit_json "${res_key}" "${backend}" "${metric}" \
+    "${w}" "${h}" "${bd}" "${nf}" \
+    "${median_ms}" "${fps}" \
+    "${_CELL_VMAF_SCORE}" "${_CELL_FEATURE_SCORE}" \
+    "${_CELL_RUN_OK}" "${_CELL_SKIP_REASON:-}" \
+    "${ncu_json}" \
+    "${RES_SRC[$res_key]}" \
+    "${_CELL_VMAF_ERROR:-}"
 }
 
 # ─── hardware / env metadata ─────────────────────────────────────────────────

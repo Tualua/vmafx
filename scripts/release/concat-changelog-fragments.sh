@@ -210,7 +210,7 @@ if [[ "$mode" == check ]]; then
     # but on real drift, fail loud.
     diff <(printf '%s' "$current_block") <(printf '%s' "$rendered") >/dev/null && exit 0
   fi
-  diff -u <(printf '%s' "$current_block") <(printf '%s' "$rendered") || true
+  diff -u <(printf '%s' "$current_block") <(printf '%s' "$rendered") || [ "$?" -eq 1 ]
   printf '\nCHANGELOG.md Unreleased block is out of sync with changelog.d/.\n' >&2
   printf 'Run: scripts/release/concat-changelog-fragments.sh --write\n' >&2
   exit 1

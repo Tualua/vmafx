@@ -198,7 +198,7 @@ if [[ "$mode" == check ]]; then
       continue
     fi
     if ! diff -q "$f" "$BY_TAG_DIR/$bn" >/dev/null; then
-      diff -u "$BY_TAG_DIR/$bn" "$f" >&2 || true
+      diff -u "$BY_TAG_DIR/$bn" "$f" >&2 || [ "$?" -eq 1 ]
       drift=1
     fi
   done < <(find "$WORK_DIR" -maxdepth 1 -type f -name '*.md')

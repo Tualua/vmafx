@@ -118,6 +118,10 @@ echo "[build-libvmaf] copied $src_bin -> $dest_dir/vmaf"
 
 # Print a sanity probe — the helper just verifies the binary launches;
 # it does NOT run any scoring.
-"$dest_dir/vmaf" --version 2>&1 | head -1 || true
+if ! version_line="$("$dest_dir/vmaf" --version 2>&1 | head -1)"; then
+  echo "[build-libvmaf] warning: $dest_dir/vmaf --version did not run" >&2
+else
+  printf '%s\n' "$version_line"
+fi
 
 echo "[build-libvmaf] done. rsync $dest_dir back to the kit packager."

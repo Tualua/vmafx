@@ -124,7 +124,7 @@ if grep -Fqx -- "$derive" "$active" &&
 else
   bad "validate-release does not derive pep440_version with pep440-version.sh"
 fi
-env_lines="$(grep -E '^[[:space:]]+VMAFX_PEP440_VERSION:' "$active" || true)"
+env_lines="$(grep -E '^[[:space:]]+VMAFX_PEP440_VERSION:' "$active" || [ "$?" -eq 1 ])"
 if [[ -n "$env_lines" ]] &&
   ! grep -Fvx '          VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}' \
     <<<"$env_lines" >/dev/null; then
@@ -200,7 +200,7 @@ check_globs() {
       printf '  %s matched %s file(s) for %s: %s\n' "$kind" "$count" "$semver" "$line" >&2
       errors=$((errors + 1))
     fi
-  done < <(grep -E '^[[:space:]]*(wheels|sdists)=\(.*vmaf_mcp-.*\$' "$workflow" || true)
+  done < <(grep -E '^[[:space:]]*(wheels|sdists)=\(.*vmaf_mcp-.*\$' "$workflow" || [ "$?" -eq 1 ])
   [[ "$lines" -gt 0 && "$errors" -eq 0 ]]
 }
 
@@ -221,7 +221,7 @@ expect_globs "multi-digit rc globs match hatchling's 1.2.3rc10 filenames" \
 expect_globs "final wheel/sdist globs still match 1.0.0 and not 1.0.0rc1" \
   "$active" 1.0.0 1.0.0 1.0.0rc1
 
-pypi_urls="$(grep -F 'pypi.org/pypi/vmaf-mcp/' "$active" || true)"
+pypi_urls="$(grep -F 'pypi.org/pypi/vmaf-mcp/' "$active" || [ "$?" -eq 1 ])"
 if [[ -n "$pypi_urls" ]] &&
   ! grep -Fv '"https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json"' \
     <<<"$pypi_urls" >/dev/null; then
@@ -232,8 +232,8 @@ fi
 
 # The version-bound sdist "glob" has no wildcard, so the workflow must prove
 # the file exists; otherwise a wrong sdist name still counts as one match.
-sdist_lines="$(grep -cE '^[[:space:]]*sdists=\(.*vmaf_mcp-.*\$' "$active" || true)"
-exists_checks="$(grep -cF '! -f "${sdists[0]}"' "$active" || true)"
+sdist_lines="$(grep -cE '^[[:space:]]*sdists=\(.*vmaf_mcp-.*\$' "$active" || [ "$?" -eq 1 ])"
+exists_checks="$(grep -cF '! -f "${sdists[0]}"' "$active" || [ "$?" -eq 1 ])"
 if [[ "$sdist_lines" -gt 0 && "$exists_checks" -eq "$sdist_lines" ]]; then
   ok "every version-bound sdist match requires the file to exist ($sdist_lines sites)"
 else

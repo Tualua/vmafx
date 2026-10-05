@@ -41,9 +41,9 @@
 #   - docs/development/agent-worktree-discipline.md
 #   - scripts/ci/check-agent-worktree-drift.sh (sibling pre-commit guard)
 
-set -eu
+set -euo pipefail
 
-toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" || toplevel=""
 if [ -z "$toplevel" ]; then
   exit 0
 fi
@@ -60,7 +60,7 @@ if [ ! -d "$agent_dir" ]; then
   exit 0
 fi
 
-shopt -s nullglob 2>/dev/null || true
+shopt -s nullglob
 agent_worktrees=("$agent_dir"/agent-*)
 if [ "${#agent_worktrees[@]}" -eq 0 ]; then
   exit 0

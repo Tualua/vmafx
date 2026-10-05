@@ -139,11 +139,11 @@ for relative_path in "${marker_files[@]}"; do
     printf 'ERROR: coordinated version file missing: %s\n' "$relative_path" >&2
     exit 1
   fi
-  marker_line="$(grep -E 'x-release-please-version' "$marker_path" || true)"
-  marker_count="$(grep -Ec 'x-release-please-version' "$marker_path" || true)"
+  marker_line="$(grep -E 'x-release-please-version' "$marker_path" || [ "$?" -eq 1 ])"
+  marker_count="$(grep -Ec 'x-release-please-version' "$marker_path" || [ "$?" -eq 1 ])"
   # Same extractor as the tag-time verifier: without the optional group a
   # 1.0.0-rc.1 marker reads as "1.0.0" and mismatches the version it agrees with.
-  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' || true)"
+  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' || [ "$?" -eq 1 ])"
   if [[ "$marker_count" -ne 1 || "$marker_version" != "$version" ]]; then
     printf 'ERROR: %s does not contain exactly one %s release marker\n' \
       "$relative_path" "$version" >&2

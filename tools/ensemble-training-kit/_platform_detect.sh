@@ -28,11 +28,14 @@
 #
 # Without any KIT_FAKE_* override the helper probes the real host.
 #
-# This file is SOURCED, not executed. We deliberately do NOT enable
-# `set -euo pipefail` at the top level because that would mutate the
-# caller's shell options. Callers (01-prereqs.sh, 02-generate-corpus.sh,
+# This file is SOURCED, not executed. Sourced, it does NOT change the
+# caller's shell options: callers (01-prereqs.sh, 02-generate-corpus.sh,
 # run-full-pipeline.sh, tests/test_platform_detect.sh) each set their own
-# strict mode and the functions defined here inherit it at call time.
+# strict mode and the functions defined here inherit it at call time. Run
+# directly (for a quick probe) the file enables strict mode itself.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+fi
 
 # shellcheck disable=SC2120  # all functions read env vars, no positional args
 

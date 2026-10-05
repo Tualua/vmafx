@@ -213,7 +213,7 @@ check_render_manifest() {
 
   printf 'error: sync render destinations differ from the shared mirror manifest\n' >&2
   diff -u --label 'shared lint-exempt mirror paths' \
-    --label 'sync render destinations' "$shared" "$rendered" >&2 || true
+    --label 'sync render destinations' "$shared" "$rendered" >&2 || [ "$?" -eq 1 ]
   return 1
 }
 
@@ -242,7 +242,7 @@ check_tracked_mirror_set() {
 
   printf 'DRIFT: tracked exact-mirror path set differs from the manifest\n' >&2
   diff -u --label 'manifest-owned mirror paths' \
-    --label 'tracked lint-exempt mirror paths' "$expected" "$actual" >&2 || true
+    --label 'tracked lint-exempt mirror paths' "$expected" "$actual" >&2 || [ "$?" -eq 1 ]
   return 1
 }
 
@@ -278,7 +278,7 @@ for row in "${manifest[@]}"; do
   if ! cmp -s "$expected" "$dst"; then
     printf 'DRIFT: %s differs from pinned pelorus %s\n' "$rel_dst" "$rel_src" >&2
     diff -u --label "pelorus:$rel_src (transformed)" --label "$rel_dst" \
-      "$expected" "$dst" >&2 || true
+      "$expected" "$dst" >&2 || [ "$?" -eq 1 ]
     drift=1
   fi
 done
@@ -295,13 +295,10 @@ done
 # complete rendered file is byte-sensitive through EOF, so prefix mutations,
 # local reformats, and trailing-newline changes all fail closed.
 
-# Emit the canonical VMAFx fixture (prefix plus rewritten Pelorus body).
-render_fixture() {
-  local pinned_interop="$sync_tmp/pinned-interop.h"
-  local pinned_fixture="$sync_tmp/pinned-interop-test.c"
-  read_src "include/pelorus/interop.h" >"$pinned_interop"
-  read_src "test/interop_test.c" >"$pinned_fixture"
-  python3 - "$PELORUS_VENDOR_SHA" "$pinned_interop" "$pinned_fixture" <<'PY'
+# The fixture renderer's source, kept apart from the shell function so the
+# function stays short.
+_RENDER_FIXTURE_PY="$(
+  cat <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -365,6 +362,15 @@ prefix = f"""/**
 """.encode()
 sys.stdout.buffer.write(prefix + body)
 PY
+)"
+
+# Emit the canonical VMAFx fixture (prefix plus rewritten Pelorus body).
+render_fixture() {
+  local pinned_interop="$sync_tmp/pinned-interop.h"
+  local pinned_fixture="$sync_tmp/pinned-interop-test.c"
+  read_src "include/pelorus/interop.h" >"$pinned_interop"
+  read_src "test/interop_test.c" >"$pinned_fixture"
+  python3 -c "$_RENDER_FIXTURE_PY" "$PELORUS_VENDOR_SHA" "$pinned_interop" "$pinned_fixture"
 }
 
 if [ "$mode" = "update" ]; then
@@ -383,7 +389,7 @@ if [ "$mode" = "check" ]; then
     if ! cmp -s "$expected_fixture" "$test_dst"; then
       printf 'DRIFT: conformance fixture differs from canonical rendered source\n' >&2
       diff -u --label 'pelorus:test/interop_test.c (canonical transform)' \
-        --label "$test_rel" "$expected_fixture" "$test_dst" >&2 || true
+        --label "$test_rel" "$expected_fixture" "$test_dst" >&2 || [ "$?" -eq 1 ]
       drift=1
     fi
   fi

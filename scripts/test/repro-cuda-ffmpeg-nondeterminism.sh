@@ -33,7 +33,7 @@
 # there. Interleave the two arms run-by-run.
 #
 # Exit: 0 if every run agreed, 1 if any run deviated, 2 on a setup problem.
-set -uo pipefail
+set -euo pipefail
 
 N="${1:-40}"
 EXTRA_LIB="${2:-}"
@@ -54,7 +54,7 @@ command -v ffmpeg >/dev/null || {
 # Capture rather than `grep -q`: with `set -o pipefail`, grep -q closes the pipe
 # on its first match, ffmpeg takes SIGPIPE, and the pipeline reports failure even
 # though the filter IS present.
-have_filter="$(ffmpeg -hide_banner -filters 2>/dev/null | grep -c libvmaf_cuda || true)"
+have_filter="$(ffmpeg -hide_banner -filters 2>/dev/null | grep -c libvmaf_cuda || [ "$?" -eq 1 ])"
 if [[ "$have_filter" -eq 0 ]]; then
   echo "repro: this ffmpeg does not list a libvmaf_cuda filter." >&2
   echo "  Inside the dev container this usually means the runtime library path" >&2
@@ -76,7 +76,8 @@ for ((i = 1; i <= N; i++)); do
     -s 576x324 -pix_fmt yuv420p -i "$DIS" \
     -s 576x324 -pix_fmt yuv420p -i "$REF" \
     -lavfi "[0:v]hwupload[d];[1:v]hwupload[r];[d][r]libvmaf_cuda=log_fmt=json:log_path=$work/run_$i.json" \
-    -f null - >/dev/null 2>&1 || true
+    -f null - >/dev/null 2>&1 ||
+    echo "repro: run $i: ffmpeg exited $?" >&2
 done
 
 python3 - "$work" <<'PY'

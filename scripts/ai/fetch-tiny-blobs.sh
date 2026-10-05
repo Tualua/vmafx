@@ -35,7 +35,9 @@ REGISTRY="$REPO_ROOT/model/tiny/registry.json"
 _TINY_STAGING_FILES=()
 _cleanup_staging() {
   if [ "${#_TINY_STAGING_FILES[@]}" -gt 0 ]; then
-    rm -f "${_TINY_STAGING_FILES[@]}" 2>/dev/null || true
+    if ! rm -f "${_TINY_STAGING_FILES[@]}" 2>/dev/null; then
+      echo "warning: could not remove staging files" >&2
+    fi
   fi
 }
 trap _cleanup_staging EXIT INT TERM

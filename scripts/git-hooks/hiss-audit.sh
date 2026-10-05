@@ -38,7 +38,7 @@ set -euo pipefail
 offline_flag() {
   local usage
   # Captured first: `grep -q` closing the pipe early would fail the pipeline.
-  usage="$(praetorctl audit -h 2>&1 || true)"
+  usage="$(praetorctl audit -h 2>&1)" || [ "$?" -le 2 ]
   case "$usage" in
     *' -offline'*) printf '%s\n' --offline ;;
   esac

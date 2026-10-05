@@ -39,7 +39,7 @@
 
 set -euo pipefail
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || repo_root=""
 if [ -z "${repo_root}" ]; then
   # Not in a git repo — nothing to do.
   exit 0
@@ -98,6 +98,58 @@ done
 changed_count=0
 declare -A changed_by_tool
 
+# Run one formatter over the files. Returns the tool's own status, or 2 for an
+# unknown tool name.
+_apply_formatter() {
+  local tool="$1"
+  local binary="$2"
+  shift 2
+
+  case "$tool" in
+    ruff)
+      # --fix to apply autofixes, --quiet to suppress per-file noise.
+      # Non-zero exit on unfixable findings — propagate to block commit.
+      "$binary" check --fix --quiet -- "$@" || return $?
+      ;;
+    clang-format)
+      "$binary" -i -- "$@"
+      ;;
+    shfmt)
+      "$binary" -w -i 2 -ci -- "$@"
+      ;;
+    *)
+      printf '[pre-commit] internal error: unknown tool %s\n' "$tool" >&2
+      return 2
+      ;;
+  esac
+}
+
+# Re-stage every file whose hash differs between the two snapshots.
+# $1 = tool name, $2 = hashes before, $3 = hashes after, $@>=4 = files (same
+# order as the hash lists).
+_restage_changed() {
+  local tool="$1"
+  local before_hashes="$2"
+  local after_hashes="$3"
+  shift 3
+  local -a files=("$@")
+  local tool_changed=0
+  local i=0
+  # Parse line-by-line; both lists are in the same order as "${files[@]}".
+  local -a before_arr after_arr
+  mapfile -t before_arr <<<"$before_hashes"
+  mapfile -t after_arr <<<"$after_hashes"
+
+  for ((i = 0; i < ${#files[@]}; i++)); do
+    if [ "${before_arr[$i]:-}" != "${after_arr[$i]:-}" ]; then
+      git add -- "${files[$i]}"
+      tool_changed=$((tool_changed + 1))
+      changed_count=$((changed_count + 1))
+    fi
+  done
+  changed_by_tool["$tool"]="$tool_changed"
+}
+
 run_formatter() {
   # $1 = tool name (display)
   # $2 = binary to look up on PATH
@@ -118,46 +170,14 @@ run_formatter() {
   fi
 
   # Snapshot pre-tool hashes for change detection.
-  local before_hashes
-  before_hashes="$(git hash-object -- "${files[@]}" 2>/dev/null || true)"
+  local before_hashes after_hashes
+  before_hashes="$(git hash-object -- "${files[@]}" 2>/dev/null)" || before_hashes=""
 
-  case "$tool" in
-    ruff)
-      # --fix to apply autofixes, --quiet to suppress per-file noise.
-      # Non-zero exit on unfixable findings — propagate to block commit.
-      "$binary" check --fix --quiet -- "${files[@]}" || return $?
-      ;;
-    clang-format)
-      "$binary" -i -- "${files[@]}"
-      ;;
-    shfmt)
-      "$binary" -w -i 2 -ci -- "${files[@]}"
-      ;;
-    *)
-      printf '[pre-commit] internal error: unknown tool %s\n' "$tool" >&2
-      return 2
-      ;;
-  esac
+  _apply_formatter "$tool" "$binary" "${files[@]}" || return $?
 
   # Compute per-file delta. Re-stage touched files.
-  local after_hashes
-  after_hashes="$(git hash-object -- "${files[@]}" 2>/dev/null || true)"
-
-  local tool_changed=0
-  local i=0
-  # Parse line-by-line; both lists are in the same order as "${files[@]}".
-  local -a before_arr after_arr
-  mapfile -t before_arr <<<"$before_hashes"
-  mapfile -t after_arr <<<"$after_hashes"
-
-  for ((i = 0; i < ${#files[@]}; i++)); do
-    if [ "${before_arr[$i]:-}" != "${after_arr[$i]:-}" ]; then
-      git add -- "${files[$i]}"
-      tool_changed=$((tool_changed + 1))
-      changed_count=$((changed_count + 1))
-    fi
-  done
-  changed_by_tool["$tool"]="$tool_changed"
+  after_hashes="$(git hash-object -- "${files[@]}" 2>/dev/null)" || after_hashes=""
+  _restage_changed "$tool" "$before_hashes" "$after_hashes" "${files[@]}"
 }
 
 # ---- Run formatters ---------------------------------------------------------

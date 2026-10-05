@@ -58,29 +58,39 @@ print_failure_diagnostics() {
     cat "${tmp_dir}/score.json" >&2
     printf '\n' >&2
   fi
-  cat "${tmp_dir}/port-forward.log" >&2 2>/dev/null || true
+  if [[ -f "${tmp_dir}/port-forward.log" ]]; then
+    cat "${tmp_dir}/port-forward.log" >&2
+  fi
   # jsonpath prints the selector map as {"key":"value",...}. Label keys and
   # values cannot contain '{', '}', '"', ':' or ',', so stripping the JSON
   # punctuation and turning ':' into '=' yields a valid label selector.
   selector="$(
     kubectl get service --namespace "${NAMESPACE}" "${SERVICE}" \
       --output 'jsonpath={.spec.selector}' 2>/dev/null |
-      tr -d '{}"' | tr ':' '=' || true
-  )"
+      tr -d '{}"' | tr ':' '='
+  )" || selector=""
   if [[ -z "${selector}" ]]; then
     printf 'service/%s has no selector; server logs unavailable\n' "${SERVICE}" >&2
     return 0
   fi
   printf 'Logs of Pods selected by service/%s (%s):\n' "${SERVICE}" "${selector}" >&2
   kubectl logs --namespace "${NAMESPACE}" --selector "${selector}" \
-    --all-containers --prefix --tail=200 >&2 2>/dev/null || true
+    --all-containers --prefix --tail=200 >&2 2>/dev/null ||
+    printf 'could not read the logs of Pods selected by service/%s\n' "${SERVICE}" >&2
 }
 
 cleanup() {
   status=$?
   if [[ -n "${port_forward_pid}" ]]; then
-    kill "${port_forward_pid}" >/dev/null 2>&1 || true
-    wait "${port_forward_pid}" >/dev/null 2>&1 || true
+    if kill -0 "${port_forward_pid}" 2>/dev/null; then
+      kill "${port_forward_pid}"
+    fi
+    wait_status=0
+    wait "${port_forward_pid}" >/dev/null 2>&1 || wait_status=$?
+    # 143: ended by the TERM sent above.
+    if [[ "${wait_status}" -ne 0 && "${wait_status}" -ne 143 ]]; then
+      printf 'port-forward exited with status %s\n' "${wait_status}" >&2
+    fi
   fi
   if [[ "${status}" -ne 0 ]]; then
     print_failure_diagnostics
@@ -101,7 +111,7 @@ for _ in $(seq 1 60); do
     printf 'kubectl port-forward exited before the server became ready\n' >&2
     exit 1
   fi
-  if curl --fail --silent --show-error \
+  if curl --fail --silent --show-error --connect-timeout 5 --max-time 10 \
     "http://127.0.0.1:${LOCAL_PORT}/readyz" >/dev/null 2>&1; then
     ready=true
     break
@@ -114,7 +124,7 @@ if [[ "${ready}" != "true" ]]; then
   exit 1
 fi
 
-curl --fail-with-body --silent --show-error \
+curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 120 \
   --header 'Content-Type: application/json' \
   --data '{"reference":"/fixtures/ref.y4m","distorted":"/fixtures/dist.y4m"}' \
   "http://127.0.0.1:${LOCAL_PORT}/v1/score" \

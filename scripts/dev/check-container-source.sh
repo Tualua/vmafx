@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || repo_root=""
 if [[ -z "$repo_root" ]]; then
   echo "check-container-source: not inside a git repository" >&2
   exit 2

@@ -70,13 +70,13 @@ for relative_path in "${marker_files[@]}"; do
     printf 'ERROR: coordinated version file missing: %s\n' "$relative_path" >&2
     exit 1
   fi
-  marker_count="$(grep -Ec 'x-release-please-version' "$marker_path" || true)"
-  marker_line="$(grep -E 'x-release-please-version' "$marker_path" || true)"
+  marker_count="$(grep -Ec 'x-release-please-version' "$marker_path" || [ "$?" -eq 1 ])"
+  marker_line="$(grep -E 'x-release-please-version' "$marker_path" || [ "$?" -eq 1 ])"
   # ADR-1201: the marker carries the full version including any `-rc.N`
   # suffix, so the extractor must match it too. Without the optional group this
   # reads 1.0.0-rc.1 as "1.0.0" and then reports the marker as mismatched
   # against the tag it actually agrees with.
-  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' || true)"
+  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' || [ "$?" -eq 1 ])"
   if [[ "$marker_count" -ne 1 || "$marker_version" != "$version" ]]; then
     printf 'ERROR: %s does not contain exactly one %s release marker\n' \
       "$relative_path" "$version" >&2
@@ -96,7 +96,7 @@ done
 
 escaped_version="${version//./\\.}"
 heading_count="$(grep -Ec "^## \\[${escaped_version}\\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" \
-  "$CHANGELOG" || true)"
+  "$CHANGELOG" || [ "$?" -eq 1 ])"
 if [[ "$heading_count" -ne 1 ]]; then
   printf 'ERROR: CHANGELOG.md must contain exactly one "## [%s] - YYYY-MM-DD" heading (found %s)\n' \
     "$version" "$heading_count" >&2

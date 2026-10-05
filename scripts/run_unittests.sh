@@ -9,7 +9,9 @@
 set -eu
 # pipefail is bash/ksh/zsh; gate the opt-in to avoid tripping pure /bin/dash.
 # shellcheck disable=SC3040  # set -o pipefail is non-POSIX, intentional guard
-(set -o pipefail 2>/dev/null) && set -o pipefail || true
+if (set -o pipefail 2>/dev/null); then
+  set -o pipefail
+fi
 
 if [ -z "${1:-}" ]; then
   pattern='*_test.py'

@@ -54,12 +54,14 @@ run_gh_lookup() {
   command_pid=$!
   (
     sleep "${lookup_timeout}"
-    kill -TERM "${command_pid}" 2>/dev/null || true
+    kill -TERM "${command_pid}" 2>/dev/null || [ "$?" -eq 1 ]
   ) &
   watchdog_pid=$!
   wait "${command_pid}" || status=$?
-  kill -TERM "${watchdog_pid}" 2>/dev/null || true
-  wait "${watchdog_pid}" 2>/dev/null || true
+  if kill -TERM "${watchdog_pid}" 2>/dev/null; then
+    # 143: the watchdog ended by the TERM sent just above.
+    wait "${watchdog_pid}" 2>/dev/null || [ "$?" -eq 143 ]
+  fi
   return "${status}"
 }
 
@@ -227,7 +229,8 @@ release_pr_exempt() {
   local identity=()
   local verdict
 
-  mapfile -t identity < <(release_pr_identity "${input_path}" 2>/dev/null || true)
+  mapfile -t identity < <(release_pr_identity "${input_path}" 2>/dev/null ||
+    echo "pre-push-pr-body-lint: could not read the PR identity" >&2)
   verdict="$(HEAD_REF="${identity[0]:-}" PR_AUTHOR="${identity[1]:-}" \
     PR_AUTHOR_TYPE="${identity[2]:-}" DIFF_FILE="${diff_file}" GITHUB_OUTPUT="" bash "${predicate}")" || return 1
   printf 'pre-push-pr-body-lint: %s\n' "${verdict}" >&2
@@ -244,7 +247,7 @@ release_pr_exempt() {
   fi
 }
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || repo_root=""
 if [ -z "${repo_root}" ]; then
   exit 0
 fi
@@ -256,7 +259,7 @@ if [ ! -x "${validator}" ]; then
   exit 0
 fi
 
-branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch=""
 if [ -z "${branch}" ] || [ "${branch}" = "HEAD" ]; then
   # Detached HEAD — no PR association possible.
   exit 0
@@ -296,7 +299,7 @@ fi
 pr_json="$(<"${pr_path}")"
 
 # Skip closed / merged PRs.
-state="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+state="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null)" || state=""
 if [ "${state}" != "OPEN" ] && [ -n "${state}" ]; then
   echo "pre-push-pr-body-lint: PR for '${branch}' is ${state} — skipping." >&2
   exit 0
@@ -312,7 +315,7 @@ fi
 
 tmp_diff="${temporary_directory}/changed-files.txt"
 if git rev-parse --verify origin/master >/dev/null 2>&1; then
-  base="$(git merge-base origin/master HEAD 2>/dev/null || true)"
+  base="$(git merge-base origin/master HEAD 2>/dev/null)" || base=""
   if [ -n "${base}" ]; then
     git diff --name-only "${base}..HEAD" >"${tmp_diff}" 2>/dev/null || : >"${tmp_diff}"
   else
@@ -339,7 +342,7 @@ elif release_pr_exempt "${pr_path}" "${exemption_predicate}" "${branch}" "${tmp_
   exit 0
 fi
 
-body="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("body",""))' 2>/dev/null || true)"
+body="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("body",""))' 2>/dev/null)" || body=""
 if [ -z "${body}" ]; then
   echo "pre-push-pr-body-lint: PR body is empty — letting push through; CI will catch it." >&2
   exit 0

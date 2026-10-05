@@ -106,7 +106,7 @@ if [[ "$mode" == check ]]; then
   if diff -u "$README" <(printf '%s\n' "$rendered") >/dev/null; then
     exit 0
   fi
-  diff -u "$README" <(printf '%s\n' "$rendered") || true
+  diff -u "$README" <(printf '%s\n' "$rendered") || [ "$?" -eq 1 ]
   printf '\ndocs/adr/README.md is out of sync with docs/adr/_index_fragments/.\n' >&2
   printf 'Run: scripts/docs/concat-adr-index.sh --write\n' >&2
   exit 1

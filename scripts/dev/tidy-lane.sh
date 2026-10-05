@@ -288,7 +288,9 @@ run_lane() {
 }
 
 run_in_container() {
-  renice -n 10 -p $$ >/dev/null 2>&1 || true
+  if ! renice -n 10 -p $$ >/dev/null 2>&1; then
+    echo "note: could not lower the priority of the lane run" >&2
+  fi
   mkdir -p "$WORK/out"
   cd "$WORK/src"
   ensure_clang_tidy

@@ -72,7 +72,7 @@ for entry in "${FIXTURES[@]}"; do
   fi
 
   echo "fetch   ${name}"
-  if ! curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+  if ! curl -fsSL --connect-timeout 30 --max-time 900 --retry 5 --retry-delay 2 --retry-all-errors \
     -o "${target}" "${BASE_URL}/${name}"; then
     echo "ERROR: download failed for ${name}" >&2
     failed=$((failed + 1))
