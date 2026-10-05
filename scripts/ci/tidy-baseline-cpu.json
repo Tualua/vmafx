@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 389,
+  "tus": 391,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -137,6 +137,7 @@
     "core/src/output.cpp",
     "core/src/pdjson.c",
     "core/src/picture.c",
+    "core/src/picture_convert.c",
     "core/src/picture_pool.c",
     "core/src/picture_pool.cpp",
     "core/src/picture_v2.c",
@@ -327,6 +328,7 @@
     "core/test/test_perceptual_weight.c",
     "core/test/test_pic_preallocation.c",
     "core/test/test_picture.c",
+    "core/test/test_picture_convert_api.c",
     "core/test/test_picture_pool_error_paths.c",
     "core/test/test_picture_v2.c",
     "core/test/test_pixel_format_edge_coverage.c",
@@ -437,6 +439,22 @@
         }
       },
       "previous_baseline_sha256": "2e3ce35b91782b7f4c261deabfc9cebd521805dcd9d5fcd1e6217ac9209f9a0e"
+    },
+    {
+      "sources": [
+        "core/src/picture_convert.c",
+        "core/test/test_picture_convert_api.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/picture_convert.c",
+            "core/test/test_picture_convert_api.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "3aeb14e4d9d8f0af05173bc21b0e3da3b8ea497b8788c94b3e4bf1c24086a7b9"
     }
   ]
 }

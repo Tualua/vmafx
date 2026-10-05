@@ -199,3 +199,56 @@ if (err == 0) err = vmaf_picture_v2_to_v1(&p2, &p1);   /* p1 shares p2's planes 
 /* ... fill, then vmaf_read_pictures(vmaf, &p1, ...) takes the p1 reference ... */
 vmaf_picture2_unref(&p2);                               /* drop the caller's own reference */
 ```
+
+## Converting pictures (`vmaf_picture_convert`)
+
+`vmaf_picture_convert()` turns a picture into another pixel format, bit depth,
+size and colour description through [zimg](https://github.com/sekrit-twc/zimg).
+It is Netflix/vmaf `0497a0f29` with one difference, described below, and it is
+opt-in at build time.
+
+Build with zimg 2.7 or newer installed (found through `pkg-config`):
+
+```bash
+meson setup build core -Denable_zimg=true
+```
+
+Without `-Denable_zimg=true` (the default) the three functions below return
+`-ENOTSUP` and log `libvmaf was built without zimg support`. A configure with
+`-Denable_zimg=true` and no usable zimg stops at `meson setup`.
+
+| Function | Does | Errors |
+| --- | --- | --- |
+| `int vmaf_picture_convert_context_init_with_color(VmafPictureConvertContext **ctx, const VmafPicture *src, const VmafColor *src_color, const VmafPictureConvertTarget *target)` | Builds a conversion for the format of `src` (pixel format, bit depth, size) with the colour `*src_color` to `*target`. `target->w` / `h` of 0 keep the source size. | `-EINVAL` (NULL, unset or unsupported colour value, target `bpc` outside 8 to 16, a graph zimg cannot build), `-ENOMEM`, `-ENOTSUP` |
+| `int vmaf_picture_convert(VmafPictureConvertContext *ctx, VmafPicture *dst, const VmafPicture *src)` | Allocates `dst` with `vmaf_picture_alloc()` and converts into it. `src` must match the format the context was created with. Call it for any number of pictures. | `-EINVAL` (NULL, mismatched `src`, conversion failure; `dst` untouched), `-ENOMEM`, `-ENOTSUP` |
+| `int vmaf_picture_convert_context_close(VmafPictureConvertContext *ctx)` | Frees the context. | `-EINVAL` (NULL), `-ENOTSUP` |
+
+Every colour field must be set: range `LIMITED` or `FULL`; primaries `BT709`,
+`BT2020` or `SMPTE432`; transfer `BT709` or `SMPTE2084`; matrix `BT709`,
+`BT2020_NCL` or `ICTCP`. Pixel formats are the four planar ones of
+`VmafPixelFormat`. `VMAF_RESAMPLE_DEFAULT` means bicubic.
+
+```c
+VmafColor sdr = { VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT709,
+                  VMAF_COLOR_TRC_BT709, VMAF_COLOR_MATRIX_BT709 };
+VmafPictureConvertTarget target = {
+    .pix_fmt = VMAF_PIX_FMT_YUV444P, .bpc = 10, .color = sdr,
+};
+VmafPictureConvertContext *conv = NULL;
+int err = vmaf_picture_convert_context_init_with_color(&conv, &src, &sdr, &target);
+if (err == 0) err = vmaf_picture_convert(conv, &dst, &src);   /* dst is yours */
+/* ... use dst, then vmaf_picture_unref(&dst) ... */
+vmaf_picture_convert_context_close(conv);
+```
+
+### Difference from upstream
+
+Upstream stores the colour description in a new `VmafPicture::color` member
+and its `vmaf_picture_convert_context_init(ctx, src, target)` reads the source
+colour from there. That inserts a member before `ref` and `priv` and breaks the
+binary layout of `VmafPicture`, so the fork does not take it
+([ADR-1822](../adr/1822-additive-picture-convert.md)): `VmafPicture` is
+unchanged, the source colour is the `src_color` argument, and a converted
+`dst` carries no colour (it is `target->color`, which you already hold). The
+types, enumerators and the other two functions are upstream's. When upstream
+releases the function the ADR describes the migration.

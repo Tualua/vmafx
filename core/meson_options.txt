@@ -43,6 +43,11 @@ option('enable_nvtx',
     value: false,
     description: 'Enable NVTX range support')
 
+option('enable_zimg',
+    type: 'boolean',
+    value: false,
+    description: 'Enable zimg-based picture conversion (vmaf_picture_convert); needs zimg >= 2.7 (pkg-config), ADR-1822')
+
 option('enable_nvcc',
     type: 'boolean',
     value: true,

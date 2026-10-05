@@ -549,6 +549,7 @@
         "core/test/test_adm_small_border.c": 2,
         "core/test/test_adm_wide_rounding.c": 2,
         "core/test/test_ciede.c": 1,
+        "core/test/test_colorspace.c": 5,
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_dists.c": 1,
         "core/test/test_fastdvdnet_pre.c": 1,
@@ -1866,6 +1867,7 @@
         "core/test/fuzz/fuzz_y4m_input.c": 2,
         "core/test/fuzz/fuzz_yuv_input.c": 2,
         "core/test/test_ciede.c": 1,
+        "core/test/test_colorspace.c": 5,
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_gpu_dispatch_env_oom.cpp": 1,
         "core/test/test_iqa_convolve.c": 4,
@@ -6107,7 +6109,7 @@
         "core/include/libvmaf/feature.h": 1,
         "core/include/libvmaf/libvmaf.h": 7,
         "core/include/libvmaf/model.h": 7,
-        "core/include/libvmaf/picture.h": 3,
+        "core/include/libvmaf/picture.h": 4,
         "core/src/arm/cpu.h": 1,
         "core/src/compat/path_utf8.c": 1,
         "core/src/cuda/common.c": 1,
@@ -6246,6 +6248,7 @@
         "core/src/pdjson.c": 1,
         "core/src/pdjson.h": 3,
         "core/src/picture.h": 2,
+        "core/src/picture_convert.c": 1,
         "core/src/picture_pool.c": 4,
         "core/src/picture_pool.h": 2,
         "core/src/predict.c": 1,
@@ -6314,6 +6317,7 @@
         "core/test/test_cjson.c": 1,
         "core/test/test_cli_parse.c": 28,
         "core/test/test_cli_parse_long_only_args.c": 1,
+        "core/test/test_colorspace.c": 1,
         "core/test/test_compat_clz.c": 1,
         "core/test/test_context.c": 1,
         "core/test/test_convolution_edge_small.c": 1,
@@ -6540,6 +6544,7 @@
         "core/test/test_perceptual_weight.c": 1,
         "core/test/test_pic_preallocation.c": 1,
         "core/test/test_picture.c": 1,
+        "core/test/test_picture_convert_api.c": 1,
         "core/test/test_picture_pool_error_paths.c": 1,
         "core/test/test_picture_v2.c": 1,
         "core/test/test_pixel_format_edge_coverage.c": 1,
@@ -11004,6 +11009,18 @@
         "core/test/test_nonfinite_collector_wiring.py": 1
       },
       "target": "1806-metal-kernels-host-replay.md"
+    },
+    "1822": {
+      "sites": {
+        "core/include/libvmaf/picture.h": 2,
+        "core/meson_options.txt": 1,
+        "core/src/meson.build": 3,
+        "core/src/picture_convert.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_colorspace.c": 1,
+        "core/test/test_picture_convert_api.c": 1
+      },
+      "target": "1822-additive-picture-convert.md"
     },
     "1830": {
       "sites": {

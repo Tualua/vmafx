@@ -113,6 +113,12 @@ only currently-extracted shared internal helper.
   months; removed when SONAME bumps `libvmaf.so.3` to `.4` at VMAFX v4.0.0.
   `picture_v2.h` implemented and linked as of cycle N+1
   (`core/src/picture_v2.c`); all 5 entry points live in libvmaf.so.
+- **`vmaf_picture_convert*` is additive ([ADR-1822](../../../docs/adr/1822-additive-picture-convert.md))**:
+  `picture.h` carries upstream's `VmafColor` and colour enums but `VmafPicture`
+  gets no `color` member; the source colour is the `src_color` argument of
+  `vmaf_picture_convert_context_init_with_color()`. A sync of Netflix's
+  `0497a0f29` hunk of `picture.h` must not insert `VmafColor color` before
+  `ref`. `core/test/test_picture_convert_api.c` guards the layout.
 - **Doxygen-clean public API**
   ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md),
   [ADR-1315](../../../docs/adr/1315-doxygen-public-api-fail-closed.md)):

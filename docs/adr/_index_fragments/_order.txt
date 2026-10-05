@@ -1275,3 +1275,4 @@
 1830-sycl-vif-simd16-only
 1806-metal-kernels-host-replay
 1836-cuda-vif-enable-chroma-names
+1822-additive-picture-convert

@@ -160,6 +160,149 @@ VMAF_EXPORT int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fm
  */
 VMAF_EXPORT int vmaf_picture_unref(VmafPicture *pic);
 
+/**
+ * @enum  VmafColorRange
+ * @brief Sample range of a picture's code values (Netflix/vmaf 0497a0f29).
+ *
+ * `VMAF_COLOR_RANGE_UNKNOWN` is the unset value; the converter rejects it.
+ * Enumerator values are append-only.
+ */
+enum VmafColorRange {
+    VMAF_COLOR_RANGE_UNKNOWN, /**< Unset. */
+    VMAF_COLOR_RANGE_LIMITED, /**< Studio / limited range. */
+    VMAF_COLOR_RANGE_FULL,    /**< Full range. */
+};
+
+/** @enum VmafColorPrimaries @brief Colour primaries. Append-only. */
+enum VmafColorPrimaries {
+    VMAF_COLOR_PRIMARIES_UNKNOWN = 0, /**< Unset. */
+    VMAF_COLOR_PRIMARIES_BT709,       /**< ITU-R BT.709. */
+    VMAF_COLOR_PRIMARIES_BT2020,      /**< ITU-R BT.2020. */
+    VMAF_COLOR_PRIMARIES_SMPTE432,    /**< SMPTE ST 432-1 (DCI-P3 D65). */
+};
+
+/** @enum VmafColorTransferCharacteristic @brief Transfer function. Append-only. */
+enum VmafColorTransferCharacteristic {
+    VMAF_COLOR_TRC_UNKNOWN = 0, /**< Unset. */
+    VMAF_COLOR_TRC_BT709,       /**< ITU-R BT.709. */
+    VMAF_COLOR_TRC_SMPTE2084,   /**< SMPTE ST 2084 (PQ). */
+};
+
+/** @enum VmafColorMatrixCoefficients @brief YCbCr matrix. Append-only. */
+enum VmafColorMatrixCoefficients {
+    VMAF_COLOR_MATRIX_UNKNOWN = 0, /**< Unset. */
+    VMAF_COLOR_MATRIX_BT709,       /**< ITU-R BT.709. */
+    VMAF_COLOR_MATRIX_BT2020_NCL,  /**< ITU-R BT.2020 non-constant luminance. */
+    VMAF_COLOR_MATRIX_ICTCP,       /**< ICtCp. */
+};
+
+/**
+ * @struct VmafColor
+ * @brief Colour description of a picture: range, primaries, transfer function, matrix.
+ *
+ * Same type as upstream Netflix/vmaf 0497a0f29. Upstream also embeds one in
+ * `VmafPicture`; the fork does not (binary compatibility, ADR-1822), so the
+ * colour of a source picture travels as an argument of
+ * `vmaf_picture_convert_context_init_with_color` instead.
+ */
+typedef struct VmafColor {
+    enum VmafColorRange range;                /**< Code-value range. */
+    enum VmafColorPrimaries primaries;        /**< Colour primaries. */
+    enum VmafColorTransferCharacteristic trc; /**< Transfer function. */
+    enum VmafColorMatrixCoefficients matrix;  /**< YCbCr matrix. */
+} VmafColor;
+
+/**
+ * @enum  VmafResampleFilter
+ * @brief Scaling filter used when the target size differs from the source size.
+ */
+enum VmafResampleFilter {
+    VMAF_RESAMPLE_DEFAULT,  /**< The converter's default (bicubic). */
+    VMAF_RESAMPLE_BILINEAR, /**< Bilinear. */
+    VMAF_RESAMPLE_BICUBIC,  /**< Bicubic. */
+    VMAF_RESAMPLE_LANCZOS,  /**< Lanczos. */
+};
+
+/**
+ * @struct VmafPictureConvertTarget
+ * @brief Format a converted picture is produced in.
+ *
+ * `w` / `h` of 0 keep the source size. Every field of `color` must be set.
+ */
+typedef struct VmafPictureConvertTarget {
+    enum VmafPixelFormat pix_fmt;            /**< Target pixel format (not UNKNOWN). */
+    unsigned bpc;                            /**< Target bits per component, 8 to 16. */
+    unsigned w;                              /**< Target luma width, 0 = source width. */
+    unsigned h;                              /**< Target luma height, 0 = source height. */
+    VmafColor color;                         /**< Target colour description. */
+    enum VmafResampleFilter resample_filter; /**< Scaling filter. */
+} VmafPictureConvertTarget;
+
+/**
+ * @typedef VmafPictureConvertContext
+ * @brief Opaque conversion graph.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafPictureConvertContext VmafPictureConvertContext;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * @brief Create a conversion context from the format of @p src to @p target.
+ *
+ * The context fixes the source pixel format, bit depth, size and colour; it
+ * converts any number of pictures of that same format.
+ *
+ * Requires a libvmaf built with `-Denable_zimg=true`. Without it nothing is
+ * created, @p *ctx is left untouched, an error is logged and `-ENOTSUP` is
+ * returned.
+ *
+ * Differs from upstream Netflix/vmaf `vmaf_picture_convert_context_init()`
+ * (ADR-1822): upstream reads the source colour from `src->color`, a field
+ * `VmafPicture` does not have here, so the caller passes it.
+ *
+ * @param ctx       Out: the new context. Not written on failure.
+ * @param src       Example source picture (format, bit depth and size only).
+ * @param src_color Source colour description, every field set to a supported value.
+ * @param target    Target format, every colour field set to a supported value.
+ *
+ * @return 0 on success, `-EINVAL` for a NULL argument, an unset or unsupported
+ *         colour value, a target bit depth outside 8 to 16 or a conversion
+ *         zimg cannot build, `-ENOMEM` when out of memory, `-ENOTSUP` without zimg.
+ *
+ * @since libvmaf 3.0.0 (fork addition).
+ */
+VMAF_EXPORT int
+vmaf_picture_convert_context_init_with_color(VmafPictureConvertContext **ctx,
+                                             const VmafPicture *src, const VmafColor *src_color,
+                                             const VmafPictureConvertTarget *target);
+
+/**
+ * @brief Convert @p src into a newly allocated picture @p dst.
+ *
+ * @p src must have the pixel format, bit depth and size the context was
+ * created with. On success @p dst is allocated with @ref vmaf_picture_alloc and
+ * owned by the caller (release it with @ref vmaf_picture_unref); on failure it
+ * is left untouched. The colour description of @p dst is the `color` of the
+ * context's target; the picture does not carry it.
+ *
+ * @return 0 on success, `-EINVAL` for a NULL argument, a source that does not
+ *         match the context or a conversion failure, `-ENOMEM`, `-ENOTSUP`
+ *         without zimg.
+ *
+ * @since libvmaf 3.0.0 (fork addition; same signature as upstream).
+ */
+VMAF_EXPORT int vmaf_picture_convert(VmafPictureConvertContext *ctx, VmafPicture *dst,
+                                     const VmafPicture *src);
+
+/**
+ * @brief Free a conversion context.
+ *
+ * @return 0 on success, `-EINVAL` for a NULL context, `-ENOTSUP` without zimg.
+ *
+ * @since libvmaf 3.0.0 (fork addition; same signature as upstream).
+ */
+VMAF_EXPORT int vmaf_picture_convert_context_close(VmafPictureConvertContext *ctx);
+
 #ifdef __cplusplus
 }
 #endif

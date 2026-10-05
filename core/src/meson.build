@@ -168,6 +168,17 @@ else
 endif
 is_avx512_enabled = get_option('enable_avx512') == true
 is_nvtx_enabled = get_option('enable_nvtx') == true
+# zimg picture conversion (ADR-1822, Netflix/vmaf 0497a0f29). Opt-in: with
+# enable_zimg=true a missing zimg >= 2.7 fails the configure step (no silent
+# fallback); with it off picture_convert.c compiles to -ENOTSUP stubs.
+# ZIMG_MATRIX_ICTCP first appeared in zimg 2.7.
+is_zimg_enabled = get_option('enable_zimg') == true
+zimg_dependency = []
+zimg_defines = []
+if is_zimg_enabled
+    zimg_dependency = dependency('zimg', version : '>=2.7', required : true)
+    zimg_defines = ['-DHAVE_ZIMG=1']
+endif
 # AVX-512 is a pure assembly path and requires enable_asm=true to have any
 # effect.  When enable_asm=false (a --no-asm build)
 # silently disabling would produce a confusing build; warn and force-disable
@@ -2719,6 +2730,18 @@ predict_c_lib = static_library(
 
 predict_c_dependency = declare_dependency(link_with : predict_c_lib)
 
+# ADR-1822: vmaf_picture_convert*() compiled once; libvmaf and the tests that
+# exercise it (test_colorspace, test_picture) link the same archive.
+picture_convert_lib = static_library(
+    'picture_convert',
+    src_dir + 'picture_convert.c',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    c_args : vmaf_cflags_common + zimg_defines,
+    dependencies : [zimg_dependency],
+    pic : true,
+    install : false,
+)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'model.c',
@@ -2809,6 +2832,7 @@ libvmaf = library(
       hip_deps,
       metal_deps,
       rust_tad_dep,
+      zimg_dependency,
     ],
     objects : [
         platform_specific_cpu_objects,
@@ -2829,6 +2853,8 @@ libvmaf = library(
         # One predictor implementation identity shared with private-source
         # test binaries; see Research-2096.
         predict_c_lib.extract_all_objects(recursive: true),
+        # ADR-1822: zimg picture conversion (or its -ENOTSUP stubs).
+        picture_convert_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,
@@ -2880,6 +2906,10 @@ pkg_mod = import('pkgconfig')
 # Use libraries_private for deps found via cc.find_library() that lack .pc files.
 libvmaf_private_libs = [thread_lib, math_lib]
 libvmaf_private_reqs = []
+
+if is_zimg_enabled
+    libvmaf_private_reqs += 'zimg'
+endif
 
 if is_sycl_enabled
     # sycl, svml, irc are Intel compiler runtime libs without .pc files.

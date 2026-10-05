@@ -917,6 +917,32 @@ test_picture = executable('test_picture',
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
+# ADR-1822: additive vmaf_picture_convert API. test_picture_convert_api runs in
+# every build (VmafPicture layout guard; the -ENOTSUP contract without zimg);
+# test_colorspace runs the conversions and needs -Denable_zimg=true.
+picture_convert_test_args = zimg_defines
+test_picture_convert_api = executable('test_picture_convert_api',
+    ['test.c', 'test_picture_convert_api.c'],
+    objects : log_cpp23_test_objects,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : [picture_convert_lib, test_picture_lib],
+    c_args : picture_convert_test_args,
+    dependencies : [stdatomic_dependency, pthread_dependency, thread_lib, zimg_dependency, gpu_all_deps],
+)
+test('test_picture_convert_api', test_picture_convert_api, suite : ['fast'])
+
+if is_zimg_enabled
+    test_colorspace = executable('test_colorspace',
+        ['test.c', 'test_colorspace.c'],
+        objects : log_cpp23_test_objects,
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : [picture_convert_lib, test_picture_lib],
+        c_args : zimg_defines,
+        dependencies : [stdatomic_dependency, pthread_dependency, thread_lib, zimg_dependency, gpu_all_deps],
+    )
+    test('test_colorspace', test_colorspace, suite : ['fast'])
+endif
+
 # ADR-0928 cycle N+1: picture_v2 unit tests
 test_picture_v2 = executable('test_picture_v2',
     ['test.c', 'test_picture_v2.c', '../src/picture_v2.c'],

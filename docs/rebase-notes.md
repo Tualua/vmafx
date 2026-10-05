@@ -81,6 +81,34 @@ in `docs/research/0086-tiny-ai-sota-deep-dive-2026-05-08.md`; no code, no FFmpeg
   dictionary in any CUDA, SYCL or HIP twin, and `test_cuda_vif_log2_contract.py`
   holds the init tail. `test_integer_vif_cpu_cuda_parity` reads the
   `_enable_chroma` names.
+## Port of Netflix/vmaf `0497a0f29`: `vmaf_picture_convert`, additive variant (2026-10-05)
+
+`port/upstream-picture-convert-additive`, [ADR-1822](adr/1822-additive-picture-convert.md).
+This API deliberately differs from upstream's until upstream releases it.
+
+- **Do not restore `VmafPicture::color`.** Upstream's `picture.h` hunk adds
+  `VmafColor color;` between `data[3]` and `ref`; the fork keeps `VmafPicture`
+  as it is (HISS-14). `core/test/test_picture_convert_api.c` fails the build
+  when a member is inserted. Take upstream's enums, `VmafColor`,
+  `VmafResampleFilter`, `VmafPictureConvertTarget` and the context typedef as
+  they are; they match.
+- **Init differs.** Upstream `vmaf_picture_convert_context_init(ctx, src,
+  target)` reads `src->color`; the fork has
+  `vmaf_picture_convert_context_init_with_color(ctx, src, src_color, target)`.
+  `vmaf_picture_convert()` does not compare the source colour (the picture has
+  none) and does not set `dst->color`.
+- **Different file.** Upstream's code is appended to `libvmaf/src/picture.c`;
+  the fork has it in `core/src/picture_convert.c` (built once as
+  `picture_convert_lib`), so a sync of `picture.c` hunks of `0497a0f29` is
+  not applicable. Upstream's `test_picture.c` colour-default test is not ported
+  (no field); the without-zimg test and the layout guard live in
+  `core/test/test_picture_convert_api.c`, the zimg cases in
+  `core/test/test_colorspace.c` (upstream's, init call adapted, the
+  "mismatched colour" case becomes a mismatched format case).
+- `enable_zimg` has upstream's name and default (`false`); the dependency is
+  `zimg >= 2.7` through pkg-config, also in `Requires.private`.
+- Upstream's `goto fail` in init is split into `validate_init_args()`,
+  `build_graph()` and `allocate_tmp()` (HISS-01, HISS-04).
 
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 

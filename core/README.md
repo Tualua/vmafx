@@ -39,6 +39,7 @@ Special cases:
 - add `-Denable_avx512=true` to support wider SIMD instructions to achieve the fastest processing on supported CPUs
 - add `-Denable_cuda=true` to build with CUDA support, which requires `nvcc` for compilation (tested with CUDA >= 11)
 - add `-Denable_nvtx=true` to build with [NVTX](https://github.com/NVIDIA/NVTX) marker support, which enables easy profiling using Nsight Systems
+- add `-Denable_zimg=true` to build picture conversion (`vmaf_picture_convert`) via [zimg](https://github.com/sekrit-twc/zimg) >= 2.7, which must be installed and discoverable via `pkg-config`
 - add `-Denable_sycl=true` to build with Intel oneAPI/SYCL support, which requires `icpx` (DPC++ compiler from Intel oneAPI toolkit)
 
 ### SYCL Build
