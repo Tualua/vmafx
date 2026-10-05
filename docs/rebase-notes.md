@@ -74,6 +74,16 @@ search:
 - `test-publication-environment-binding.sh` lists four verifier targets for
   `docker-publish-operator-node.yml` and requires one per `publish-*` job; a sync that adds a
   published image adds its target to `VERIFY_TARGETS`.
+## macOS glibc probe and VIF signed sum (2026-10-04)
+
+`fix/master-red-macos-ubsan`. Two test fixes and one cast.
+
+- `core/test/test_icx_system_libm.py` probes glibc through `_gnu_libc_version()`
+  (never a bare `os.confstr()`); a sync keeps the guard, `LibcDetectionTest` fails without it.
+- `sigma_nsq + sigma1_sq` is formed in `uint32_t` in `integer_vif.c`, `x86/vif_avx2.c`,
+  `arm64/vif_neon.c`, `cuda/integer_vif/vif_statistics.cuh`, `hip/integer_vif/vif_statistics.hip`
+  and `metal/integer_vif.metal` ([ADR-1601](adr/1601-vif-den-log-sum-unsigned.md)); a sync
+  taking Netflix's text must not restore the signed sum.
 
 ## The registry validator has no fallback (2026-10-04)
 

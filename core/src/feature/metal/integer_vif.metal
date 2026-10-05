@@ -196,7 +196,7 @@ inline void ivif_pixel_stat(uint mu1_val, uint mu2_val, uint xx_filt_val, uint y
 
     sigma2_sq = max(sigma2_sq, 0);
     if (sigma1_sq >= sigma_nsq) {
-        acc.den_log += vif_log2_32(log2_table, (uint)(sigma_nsq + sigma1_sq)) - 2048L * 17L;
+        acc.den_log += vif_log2_32(log2_table, (uint)sigma_nsq + (uint)sigma1_sq) - 2048L * 17L;
 
         if (sigma12 > 0 && sigma2_sq > 0) {
             /* The two integers the CPU truncates from its fp64 gain, from
