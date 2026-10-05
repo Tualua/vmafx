@@ -61977,3 +61977,17 @@ No score, public API or FFmpeg patch impact.
   transformers. The `vmaf-tune-train` test suite is removed from `.github/test-suites.json` and
   `tests-and-quality-gates.yml`; a conflict there takes the side without it. No score, public C
   API or FFmpeg patch impact.
+
+## A model collection's per-frame score reads its stored values first
+
+`fix/model-set-score-idempotent` (T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05).
+
+- `core/src/libvmaf.c` gains `read_predicted_collection_score()`, which
+  `vmaf_score_at_index_model_collection()` calls before
+  `vmaf_predict_score_at_index_model_collection()`: a frame whose four named
+  bootstrap scores are already in the collector returns them. Upstream
+  Netflix/vmaf predicts every time and has the same failure; an upstream
+  sync that touches this function keeps the read.
+- New test `core/test/test_model_collection_score_repeat.c` and its block in
+  `core/test/meson.build`. No score or golden impact: a first prediction is
+  unchanged and a repeat returns its stored values.
