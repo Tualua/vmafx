@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1261), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1262), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5055,3 +5055,7 @@ Every ADR, one heading each (1261), so the site search finds an ADR by its title
 ## ADR-1622: the node's eBPF object is generated at build time with a pinned clang and no object is committed
 
 [1622-bpf-object-generated-at-build-time](1622-bpf-object-generated-at-build-time.md)
+
+## ADR-1685: A post-1.0 embedding milestone: zero-copy device-frame import with fences, asynchronous window scores, and an unchanged licence
+
+[1685-post-1-0-embedding-zero-copy-milestone](1685-post-1-0-embedding-zero-copy-milestone.md)

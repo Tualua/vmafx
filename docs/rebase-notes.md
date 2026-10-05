@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
+
+`docs/adr-post-1-0-embedding-milestone`. no rebase impact: docs only.
+
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 
 `build/bpf-object-at-build-time`. Build system, Go node, CI; no C library change.

@@ -18,6 +18,7 @@ map of where that plan lives and how the releases are sequenced.
 | [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Cloud-native foundation: server mode, observability, containers and Kubernetes |
 | [1.3](https://github.com/VMAFx/vmafx/milestone/4) | Cloud-native scale-out: operator, controller/node, multi-vendor GPU scheduling |
 | [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Language modernization — Go tools, Rust pilots, C++23 internals — completing the cloud-native arc |
+| [Post-1.0 embedding](https://github.com/VMAFx/vmafx/milestone/8) | Embedding in encoders and media pipelines after 1.0.0: zero-copy device-frame import with fences, asynchronous window scores, Windows and macOS shared libraries and a CMake package ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md), epic [#2067](https://github.com/VMAFx/vmafx/issues/2067)) |
 
 Two milestones are deliberately **rolling** rather than tied to a release:
 

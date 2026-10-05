@@ -1770,6 +1770,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 - `tools/vmaf-tune`: batch `TuneCache` index writes via in-memory caching and a dirty flag, flushed once per sweep or on LRU eviction rather than rewriting `__index__.json` on every `get()` / `put()`.
 
 
+- Roadmap: a post-1.0 embedding milestone covers zero-copy device-frame import
+  with fences, asynchronous window scores, and Windows / macOS shared libraries with
+  a CMake package; the licence stays EUPL-1.2 plus BSD-2-Clause-Patent with documented
+  embedding rules (ADR-1685, `docs/roadmap.md`).
+
+
 - The praetor governance engine moves from `f41e74d` to `6c772713a133`
   (ADR-1351), the newest praetor commit whose own CI is green. Its HISS
   scanners now find 244 existing issues the old engine did not measure: 140
