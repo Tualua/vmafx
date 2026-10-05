@@ -187,9 +187,6 @@ struct VifStateSycl {
     // Host-side accumulator download buffer
     int64_t *h_accum;
 
-    // Subgroup size selection (auto-detected at init)
-    bool use_simd16;
-
     // Fused V+H kernel mode: uses SLM intermediates, skips tmp buffers.
     // Saves ~70 MB VRAM at 4K but may be slower on some GPUs due to
     // SLM pressure and reduced occupancy.
@@ -926,23 +923,19 @@ static inline void dev_hori_item_step(sycl::nd_item<2> item, const VifHoriLaunch
 
 namespace
 {
-/* ADR-1395: at SIMD-32 the horizontal and the fused kernels need more
- * registers than a hardware thread's default 128-entry register file holds,
- * and IGC 2.41.5 spilled 96 to 8832 bytes per thread on an Arc A380. Under
- * the Linux xe driver a kernel that spills returns wrong values (the A380
- * scored every frame num = den = 0). The 256-entry file holds them all. At
- * SIMD-16 each value takes half the space and the default file suffices. */
-constexpr int vif_grf_size(int sg_size)
-{
-    return (sg_size == 32) ? 256 : 0;
-}
+/* The VIF kernels run at SIMD-16 on every device (ADR-1830). At SIMD-32 the
+ * horizontal and the fused kernels needed the 256-entry register file
+ * (ADR-1395), which Xe-LP does not have: there they spilled 1664 to 10048
+ * bytes per thread (UHD 770, issues #2116 and #2122), and they were never
+ * faster than SIMD-16 on an Arc A380. */
+constexpr int VIF_SG_SIZE = 16;
 
 /* The fused kernel of scale 0 carries the widest filter next to the gain
  * terms' 64-bit integers (ADR-1432): at SIMD-16 it spilled 128 bytes with the
  * default register file. */
-constexpr int vif_fused_grf_size(int scale, int sg_size)
+constexpr int vif_fused_grf_size(int scale)
 {
-    return (sg_size == 32 || scale == 0) ? 256 : 0;
+    return (scale == 0) ? 256 : 0;
 }
 
 struct VifHoriCoeffs {
@@ -952,8 +945,28 @@ struct VifHoriCoeffs {
 
 constexpr int VIF_HORI_MAX_SUBGROUPS = 32;
 
-template <int SCALE, int SG_SIZE>
-class IntegerVifHoriKernel : public VmafSyclKernelShape<SG_SIZE, vif_grf_size(SG_SIZE)>
+/* The scale-0 instance of the SIMD-16 horizontal kernel (17 taps) spilled
+ * 384 bytes on Xe-LP (tgllp, adl-*, rpl-*: no large register file; measured
+ * on a UHD 770) and 128 bytes on Xe-LPG (mtl-*, arl-*) at a required SIMD-16
+ * with the default register file (ADR-1395). It leaves the sub-group size to
+ * the compiler with the large register file (ADR-1501): SIMD-8 on Xe-LP,
+ * SIMD-16 with 256 registers on Xe-HPG and Xe-LPG, SIMD-32 with 256 on Xe2,
+ * no spill on any target of the default AOT list. Its sums are exact int64
+ * additions, so the size does not change them, and a 16x16 work-group has at
+ * most VIF_HORI_MAX_SUBGROUPS sub-groups of 8. */
+constexpr int vif_hori_sg_size(int scale)
+{
+    return (scale == 0) ? 0 : VIF_SG_SIZE;
+}
+
+constexpr int vif_hori_grf_size(int scale)
+{
+    return (scale == 0) ? 256 : 0;
+}
+
+template <int SCALE>
+class IntegerVifHoriKernel
+    : public VmafSyclKernelShape<vif_hori_sg_size(SCALE), vif_hori_grf_size(SCALE)>
 {
   public:
     IntegerVifHoriKernel(const VifHoriLaunchParams &p, const VifHoriCoeffs &c,
@@ -962,7 +975,7 @@ class IntegerVifHoriKernel : public VmafSyclKernelShape<SG_SIZE, vif_grf_size(SG
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(SG_SIZE) void operator()(sycl::nd_item<2> item) const
+    VMAF_SYCL_FUNCTOR_SG_SIZE(VIF_SG_SIZE) void operator()(sycl::nd_item<2> item) const
     {
         dev_hori_item_step<SCALE, vif_fwidth[SCALE], vif_fwidth_rd[SCALE], VIF_HORI_MAX_SUBGROUPS>(
             item, p_, c_.fcoeff, c_.fcoeff_rd, lmem_);
@@ -991,7 +1004,7 @@ template <int SCALE> static VifHoriCoeffs make_vif_hori_coeffs()
 
 namespace
 {
-template <int SCALE, int SG_SIZE>
+template <int SCALE>
 static sycl::event
 launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
                      const VifGainLimit &vif_enhn_gain_limit, const uint32_t *tmp_mu1,
@@ -1025,7 +1038,7 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
     };
 
     return q.submit([&](sycl::handler &cgh) {
-        const IntegerVifHoriKernel<SCALE, SG_SIZE> kernel(
+        const IntegerVifHoriKernel<SCALE> kernel(
             p, coeffs,
             sycl::local_accessor<int64_t, 1>(
                 sycl::range<1>(static_cast<size_t>(ACCUM_FIELDS) * VIF_HORI_MAX_SUBGROUPS), cgh));
@@ -1036,61 +1049,30 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
 
 namespace
 {
-static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width, unsigned height,
-                                      const VifGainLimit &vif_enhn_gain_limit, uint32_t *tmp_mu1,
-                                      uint32_t *tmp_mu2, uint32_t *tmp_ref, uint32_t *tmp_dis,
-                                      uint32_t *tmp_ref_dis, uint32_t *tmp_ref_convol,
-                                      uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref,
-                                      uint32_t *rd_dis, const uint32_t *log2_lut)
+static sycl::event launch_vif_hori(sycl::queue &q, int scale, unsigned width, unsigned height,
+                                   const VifGainLimit &vif_enhn_gain_limit, uint32_t *tmp_mu1,
+                                   uint32_t *tmp_mu2, uint32_t *tmp_ref, uint32_t *tmp_dis,
+                                   uint32_t *tmp_ref_dis, uint32_t *tmp_ref_convol,
+                                   uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref,
+                                   uint32_t *rd_dis, const uint32_t *log2_lut)
 {
     switch (scale) {
     case 0:
-        return launch_vif_hori_impl<0, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<0>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 1:
-        return launch_vif_hori_impl<1, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<1>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 2:
-        return launch_vif_hori_impl<2, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<2>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     default:
-        return launch_vif_hori_impl<3, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    }
-}
-} // namespace
-
-namespace
-{
-static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned width,
-                                           unsigned height, const VifGainLimit &vif_enhn_gain_limit,
-                                           uint32_t *tmp_mu1, uint32_t *tmp_mu2, uint32_t *tmp_ref,
-                                           uint32_t *tmp_dis, uint32_t *tmp_ref_dis,
-                                           uint32_t *tmp_ref_convol, uint32_t *tmp_dis_convol,
-                                           int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis,
-                                           const uint32_t *log2_lut)
-{
-    switch (scale) {
-    case 0:
-        return launch_vif_hori_impl<0, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 1:
-        return launch_vif_hori_impl<1, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 2:
-        return launch_vif_hori_impl<2, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    default:
-        return launch_vif_hori_impl<3, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+        return launch_vif_hori_impl<3>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                       tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                       tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     }
 }
 } // namespace
@@ -1399,11 +1381,9 @@ struct VifFusedLocal {
     sycl::local_accessor<int64_t, 1> lmem;
 };
 
-/* See vif_grf_size(): the SIMD-32 instances take the 256-entry register
- * file (ADR-1395). */
-template <int SCALE, int SG_SIZE>
-class IntegerVifFusedKernel
-    : public VmafSyclKernelShape<SG_SIZE, vif_fused_grf_size(SCALE, SG_SIZE)>
+/* SIMD-16 only (ADR-1830); see vif_fused_grf_size(). */
+template <int SCALE>
+class IntegerVifFusedKernel : public VmafSyclKernelShape<VIF_SG_SIZE, vif_fused_grf_size(SCALE)>
 {
   public:
     using G = VifFusedGeometry<SCALE>;
@@ -1414,7 +1394,7 @@ class IntegerVifFusedKernel
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(SG_SIZE) void operator()(sycl::nd_item<2> item) const
+    VMAF_SYCL_FUNCTOR_SG_SIZE(VIF_SG_SIZE) void operator()(sycl::nd_item<2> item) const
     {
         dev_fused_item_step<SCALE, G::FW_V, G::FW_H, G::FW_RD, G::TILE_H, G::TILE_W, G::VERT_TOTAL,
                             G::WG_SIZE, G::MAX_SUBGROUPS>(item, ref_data_, dis_data_, p_, c_,
@@ -1433,7 +1413,7 @@ class IntegerVifFusedKernel
 
 namespace
 {
-template <int SCALE, int SG_SIZE>
+template <int SCALE>
 static sycl::event launch_vif_fused_impl(sycl::queue &q, const void *ref_data, const void *dis_data,
                                          const VifFusedLaunchParams &p)
 {
@@ -1453,7 +1433,7 @@ static sycl::event launch_vif_fused_impl(sycl::queue &q, const void *ref_data, c
             .lmem = sycl::local_accessor<int64_t, 1>(
                 sycl::range<1>(static_cast<size_t>(ACCUM_FIELDS) * G::MAX_SUBGROUPS), cgh),
         };
-        const IntegerVifFusedKernel<SCALE, SG_SIZE> kernel(ref_data, dis_data, p, c, slm);
+        const IntegerVifFusedKernel<SCALE> kernel(ref_data, dis_data, p, c, slm);
         cgh.parallel_for(sycl::nd_range<2>(global, local), kernel);
     });
 }
@@ -1463,9 +1443,9 @@ namespace
 {
 static sycl::event launch_vif_fused(sycl::queue &q, const void *ref_data, const void *dis_data,
                                     int scale, unsigned width, unsigned height, unsigned src_stride,
-                                    unsigned bpc, bool use_simd16,
-                                    const VifGainLimit &vif_enhn_gain_limit, int64_t *accum,
-                                    uint32_t *rd_ref, uint32_t *rd_dis, const uint32_t *log2_lut)
+                                    unsigned bpc, const VifGainLimit &vif_enhn_gain_limit,
+                                    int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis,
+                                    const uint32_t *log2_lut)
 {
     const VifFusedLaunchParams p = {
         .width = width,
@@ -1478,28 +1458,15 @@ static sycl::event launch_vif_fused(sycl::queue &q, const void *ref_data, const 
         .rd_dis = rd_dis,
         .log2_lut = log2_lut,
     };
-    if (use_simd16) {
-        switch (scale) {
-        case 0:
-            return launch_vif_fused_impl<0, 16>(q, ref_data, dis_data, p);
-        case 1:
-            return launch_vif_fused_impl<1, 16>(q, ref_data, dis_data, p);
-        case 2:
-            return launch_vif_fused_impl<2, 16>(q, ref_data, dis_data, p);
-        default:
-            return launch_vif_fused_impl<3, 16>(q, ref_data, dis_data, p);
-        }
-    } else {
-        switch (scale) {
-        case 0:
-            return launch_vif_fused_impl<0, 32>(q, ref_data, dis_data, p);
-        case 1:
-            return launch_vif_fused_impl<1, 32>(q, ref_data, dis_data, p);
-        case 2:
-            return launch_vif_fused_impl<2, 32>(q, ref_data, dis_data, p);
-        default:
-            return launch_vif_fused_impl<3, 32>(q, ref_data, dis_data, p);
-        }
+    switch (scale) {
+    case 0:
+        return launch_vif_fused_impl<0>(q, ref_data, dis_data, p);
+    case 1:
+        return launch_vif_fused_impl<1>(q, ref_data, dis_data, p);
+    case 2:
+        return launch_vif_fused_impl<2>(q, ref_data, dis_data, p);
+    default:
+        return launch_vif_fused_impl<3>(q, ref_data, dis_data, p);
     }
 }
 } // namespace
@@ -1624,46 +1591,20 @@ static int vif_init_resources(VmafFeatureExtractor *fex, VmafSyclState *state, V
 
 namespace
 {
-/* VMAF_SYCL_VIF_SUBGROUP_SIZE=16 or 32 overrides the automatic choice in
- * vif_configure_device(). Every Intel GPU has SIMD-16 sub-groups, so the
- * SIMD-32 kernels run there only through this override; parity and timing
- * runs use it to reach them (ADR-1395). Returns 16, 32, or 0 for none. */
-static int vif_subgroup_override()
+/* The kernels require SIMD-16 sub-groups (ADR-1830), which every Intel GPU
+ * has. A device without them gets -ENOTSUP before anything is allocated. */
+static int vif_check_device(const sycl::queue &q)
 {
-    const char *env = vmaf_gpu_dispatch_env_get("VMAF_SYCL_VIF_SUBGROUP_SIZE");
-    if (env == nullptr || env[0] == '\0')
+    const auto sg_sizes = q.get_device().get_info<sycl::info::device::sub_group_sizes>();
+    if (std::ranges::any_of(sg_sizes, [](size_t sz) { return std::cmp_equal(sz, VIF_SG_SIZE); })) {
         return 0;
-    if (strcmp(env, "16") == 0)
-        return 16;
-    if (strcmp(env, "32") == 0)
-        return 32;
-    vmaf_log(VMAF_LOG_LEVEL_WARNING,
-             "vif_sycl: VMAF_SYCL_VIF_SUBGROUP_SIZE=%s ignored; use 16 or 32\n", env);
-    return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: the device has no SIMD-%d sub-groups\n", VIF_SG_SIZE);
+    return -ENOTSUP;
 }
 
-static void vif_configure_device(const sycl::queue &q, VifStateSycl *s)
+static void vif_log_kernel_mode(const VifStateSycl *s)
 {
-    const auto dev = q.get_device();
-    const auto sg_sizes = dev.get_info<sycl::info::device::sub_group_sizes>();
-    const auto supported = [&sg_sizes](int size) {
-        return std::ranges::any_of(sg_sizes,
-                                   [size](size_t sz) { return std::cmp_equal(sz, size); });
-    };
-    s->use_simd16 = supported(16);
-    const int forced = vif_subgroup_override();
-    if (forced != 0 && supported(forced)) {
-        s->use_simd16 = (forced == 16);
-        vmaf_log(VMAF_LOG_LEVEL_INFO,
-                 "vif_sycl: SIMD-%d subgroup size forced by VMAF_SYCL_VIF_SUBGROUP_SIZE\n", forced);
-    } else if (forced != 0) {
-        vmaf_log(
-            VMAF_LOG_LEVEL_WARNING,
-            "vif_sycl: device has no SIMD-%d sub-groups; VMAF_SYCL_VIF_SUBGROUP_SIZE ignored\n",
-            forced);
-    }
-    vmaf_log(VMAF_LOG_LEVEL_DEBUG, "vif_sycl: using SIMD-%d subgroup size\n",
-             s->use_simd16 ? 16 : 32);
     vmaf_log(VMAF_LOG_LEVEL_DEBUG, "vif_sycl: kernel mode = %s\n",
              s->use_fused ? "fused V+H (saves VRAM)" : "separate V+H");
 }
@@ -1726,13 +1667,15 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     auto *q_ptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
     if (!q_ptr)
         return -EINVAL;
-    const sycl::queue &q = *q_ptr;
+    const int device_err = vif_check_device(*q_ptr);
+    if (device_err)
+        return device_err;
 
     const int err = vif_init_resources(fex, state, s, w, h, bpc);
     if (err)
         return err;
 
-    vif_configure_device(q, s);
+    vif_log_kernel_mode(s);
     return vif_register_graph(fex, state, s);
 }
 } // namespace
@@ -1749,23 +1692,14 @@ static inline void vif_dispatch_scale(sycl::queue &q, VifStateSycl *s, int scale
 {
     if (s->use_fused) {
         launch_vif_fused(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc,
-                         s->use_simd16, s->gain_limit, scale_accum, s->d_rd_ref, s->d_rd_dis,
-                         s->d_log2_lut);
+                         s->gain_limit, scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
     } else {
         launch_vif_vert(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc, s->d_tmp_mu1,
                         s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
                         s->d_tmp_ref_convol, s->d_tmp_dis_convol);
-        if (s->use_simd16) {
-            launch_vif_hori_v2_sg16(q, scale, cur_w, cur_h, s->gain_limit, s->d_tmp_mu1,
-                                    s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
-                                    s->d_tmp_ref_convol, s->d_tmp_dis_convol, scale_accum,
-                                    s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
-        } else {
-            launch_vif_hori_v2(q, scale, cur_w, cur_h, s->gain_limit, s->d_tmp_mu1, s->d_tmp_mu2,
-                               s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis, s->d_tmp_ref_convol,
-                               s->d_tmp_dis_convol, scale_accum, s->d_rd_ref, s->d_rd_dis,
-                               s->d_log2_lut);
-        }
+        launch_vif_hori(q, scale, cur_w, cur_h, s->gain_limit, s->d_tmp_mu1, s->d_tmp_mu2,
+                        s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis, s->d_tmp_ref_convol,
+                        s->d_tmp_dis_convol, scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
     }
 }
 } // namespace

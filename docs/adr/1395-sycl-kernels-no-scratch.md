@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1395: SYCL kernels use no scratch memory on Intel GPUs
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by [ADR-1830](1830-sycl-vif-simd16-only.md): the SIMD-32 `vif_sycl` kernels and `VMAF_SYCL_VIF_SUBGROUP_SIZE` are removed)
 - **Date**: 2026-10-01
 - **Deciders**: lusoris
 - **Tags**: sycl, gpu, numerics, testing, rc3, fork-local

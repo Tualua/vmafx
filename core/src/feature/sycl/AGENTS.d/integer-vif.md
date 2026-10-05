@@ -9,7 +9,7 @@ invariant: integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling d
 # Integer VIF extractor and kernels
 
 - **`integer_vif_sycl.cpp` rd_stride uses ceiling division for odd widths** (ADR-1034).
-  Both `launch_vif_hori_impl` (scalar/SIMD-32) and `launch_vif_fused_impl` (SIMD-16)
+  Both `launch_vif_hori_impl` and `launch_vif_fused_impl` (SIMD-16 only, ADR-1830)
   compute downsampled row stride as `(e_w + 1U) / 2U`, not `e_w / 2U`.
   `rd_ref`/`rd_dis` allocation in `init_fex_sycl` uses `((w+1U)/2U) * ((h+1U)/2U)`
   elements. Must stay in sync. On rebase: if future PR modifies

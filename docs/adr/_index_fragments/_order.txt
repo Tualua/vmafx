@@ -1272,3 +1272,4 @@
 1762-tidy-every-translation-unit-read
 1828-port-netflix-golden-updates
 1829-rc4-zero-copy-import
+1830-sycl-vif-simd16-only

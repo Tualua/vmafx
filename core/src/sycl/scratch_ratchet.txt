@@ -6,7 +6,8 @@
 # no longer uses scratch memory makes the test print a note: delete its line in
 # the same PR. Never add a line to make the test pass; remove the scratch use
 # (move the array to local memory or registers, split the kernel, or request the
-# 256-entry register file, as integer_vif_sycl.cpp does at SIMD-32).
+# 256-entry register file, as integer_vif_sycl.cpp's scale-0 fused kernel does;
+# Xe-LP has no such file, so measure every default target, ADR-1830).
 #
 # The list is the Arc A380 (dg2-g11) measurement of 2026-10-01: Linux 7.2.8,
 # xe driver, NEO 26.35.39758.10, IGC 2.41.5, icpx 2026.0, JIT build of master

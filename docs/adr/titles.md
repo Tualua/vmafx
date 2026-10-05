@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1273), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1274), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5103,3 +5103,7 @@ Every ADR, one heading each (1273), so the site search finds an ADR by its title
 ## ADR-1829: RC4 owns the whole device-memory import API, not only the first full Rust metric
 
 [1829-rc4-zero-copy-import](1829-rc4-zero-copy-import.md)
+
+## ADR-1830: `vif_sycl` runs at SIMD-16 only; the SIMD-32 kernels and `VMAF_SYCL_VIF_SUBGROUP_SIZE` are removed
+
+[1830-sycl-vif-simd16-only](1830-sycl-vif-simd16-only.md)

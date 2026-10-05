@@ -400,8 +400,10 @@ backend within it.
   in memory or spilled registers return wrong values. `test_sycl_kernel_scratch`
   fails on a scratch kernel missing from `core/src/sycl/scratch_ratchet.txt`,
   whose extractors must match `kScratchExtractors` in
-  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl`'s
-  SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
+  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl` runs
+  at SIMD-16 only ([ADR-1830](../adr/1830-sycl-vif-simd16-only.md)): a sync
+  must not bring back its SIMD-32 kernels or `VMAF_SYCL_VIF_SUBGROUP_SIZE`,
+  which spilled on Xe-LP. See
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 

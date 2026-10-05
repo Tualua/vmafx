@@ -6485,14 +6485,6 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
 test('test_sycl_vif_parity', test_sycl_vif_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
-# ADR-1395: an Intel GPU runs the SIMD-32 VIF kernels only when told to; the
-# same parity test runs them here. They needed the 256-register file to stop
-# spilling, and a spilling kernel scored every frame 0/0 on an Arc A380 under
-# the xe driver.
-test('test_sycl_vif_parity_sg32', test_sycl_vif_parity,
-    env : ['VMAF_SYCL_VIF_SUBGROUP_SIZE=32'],
-    suite : ['fast', 'gpu', 'sycl'],
-    is_parallel : false)
 
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
 # Pin the cross-backend tolerance (places=4) for the SpEED-family GPU

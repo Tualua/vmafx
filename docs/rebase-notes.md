@@ -43,6 +43,26 @@ No rebase impact: docs only.
   the `AGENTS.md` candidate-map line is resolved per hunk and followed by
   `praetorctl compile-context` in the rebasing worktree only. No upstream file
   is touched.
+## SYCL kernels scratch-free on Xe-LP: slot, term, scale-0 vif hori, 16-bit motion SAD (2026-10-05)
+## SYCL kernels scratch-free on Xe-LP: slot, term, scale-0 vif hori, 16-bit motion SAD; vif SIMD-16 only (2026-10-05)
+
+`fix/sycl-xelp-scratch` (T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02). Fork-only files.
+
+- `Ss2SlotKernel` (`ssimulacra2_sycl.cpp`), `IssimTermKernel`
+  (`integer_ssim_sycl.cpp`) and `IntegerVifHoriKernel<0, 16>`
+  (`integer_vif_sycl.cpp`, through `vif_hori_sg_size()` /
+  `vif_hori_grf_size()`) have `VmafSyclKernelShape<0, 256>` (ADR-1501): no
+  required sub-group size, the large register file. `MotionSadHbdKernel`
+  (`integer_motion_pipeline_sycl.cpp`) is `VmafSyclKernelShape<16, 0>`.
+  A required SIMD-16 (or SIMD-32 for the motion kernel) spills on Xe-LP,
+  which has no 256-entry register file. Keep these shapes on a rebase;
+  `test_sycl_kernel_source_contract.py`, `test_sycl_ssim_exact_contract.py`
+  and `test_sycl_ssimulacra2_exact_contract.py` refuse the old ones.
+- `integer_vif_sycl.cpp` runs at SIMD-16 only (ADR-1830): the SIMD-32
+  hori and fused instances, `use_simd16`, `launch_vif_hori_v2` and
+  `VMAF_SYCL_VIF_SUBGROUP_SIZE` are removed, and so is
+  `test_sycl_vif_parity_sg32`. They spilled on Xe-LP. A sync must not bring
+  any of them back; the source contract refuses it.
 
 ## Port of Netflix/vmaf `7922f2c04`, `10ec73c73`, `6a7b1ae34`: SpEED Python tests (2026-10-05)
 
