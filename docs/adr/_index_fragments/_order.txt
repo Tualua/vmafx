@@ -1267,3 +1267,4 @@
 1700-tester-selectors-own-paths-only
 1701-nightly-tester-image-build
 1688-sycl-zero-copy-luma-only-admission
+1439-quality-runner-golden-upstream-sync

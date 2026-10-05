@@ -61259,3 +61259,10 @@ No score, public API or FFmpeg patch impact.
   `core/test/test_pelorus_interop.c` takes master's side and re-runs
   `scripts/sync-pelorus-interop.sh --update`; never merge a hunk by hand. No score,
   public API or FFmpeg patch impact.
+## `quality_runner_test.py` goldens synced to Netflix upstream (ADR-1439)
+
+- `python/test/quality_runner_test.py`: every assertion shared with Netflix
+  `upstream/master` carries upstream's value and `places` (ADR-1439). An
+  upstream sync that changes one of them takes upstream's new value; do not
+  loosen `places` to make a stale value pass. Fork-only assertions are
+  unchanged. No code, public API or FFmpeg patch impact.
