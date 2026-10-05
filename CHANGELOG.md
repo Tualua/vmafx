@@ -2618,6 +2618,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the SYCL backend guide](docs/backends/sycl/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins-2026-09-29).
 
 
+- The SYCL twin option regression cases (flat-frame `float_ssim` with `enable_db`, `psnr` `enable_apsnr` with `--subsample 2`, `motion_v2` `motion_fps_weight` / `motion_max_val`, one-frame `motion_v2`) are recorded as proven on an Arc A380: each fails when its defect is planted back into the SYCL twin and passes on master. No code change; the state ledger row narrows to the Metal remainder.
+
+
 - **Regression test for model-collection growth failure.** When the array of a
   model collection cannot grow, `libvmaf` returns `-ENOMEM` and keeps the
   collection and its models intact; upstream Netflix/vmaf loses them
