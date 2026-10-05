@@ -1269,3 +1269,4 @@
 1688-sycl-zero-copy-luma-only-admission
 1714-hybrid-gcc-cpu-icpx-sycl
 1715-vmafx-sycl-ffmpeg-container
+1763-sycl-primary-queue-immediate-cmdlist
