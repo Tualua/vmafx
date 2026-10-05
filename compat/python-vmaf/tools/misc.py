@@ -135,6 +135,27 @@ def get_hashable_value_tuple_from_dict(d):
     return tuple(map(lambda k: tuple(d[k]) if isinstance(d[k], list) else d[k], sorted(d.keys())))
 
 
+def _to_ordered_dict(root):
+    """Copy nested dicts into ``OrderedDict`` s sorted by key; other values pass through.
+
+    Walks with an explicit stack instead of recursing (HISS-01).
+    """
+    from collections import OrderedDict
+
+    result = [None]
+    pending = [(root, result, 0)]
+    while pending:
+        node, holder, slot = pending.pop()
+        if isinstance(node, dict):
+            items = sorted(node.items())
+            copy = OrderedDict((key, None) for key, _ in items)
+            holder[slot] = copy
+            pending.extend((value, copy, key) for key, value in items)
+        else:
+            holder[slot] = node
+    return result[0]
+
+
 def get_unique_str_from_recursive_dict(d):
     """String representation with sorted keys and values for recursive dict.
 
@@ -144,23 +165,8 @@ def get_unique_str_from_recursive_dict(d):
     '{"a": 1, "b": {"x": "0", "y": "1"}, "c": 2}'
     """
     import json
-    from collections import OrderedDict
 
-    def to_ordered_dict_recursively(d):
-        if isinstance(d, dict):
-            return OrderedDict(
-                map(
-                    lambda t: (
-                        to_ordered_dict_recursively(t[0]),
-                        to_ordered_dict_recursively(t[1]),
-                    ),
-                    sorted(d.items()),
-                )
-            )
-        else:
-            return d
-
-    return json.dumps(to_ordered_dict_recursively(d))
+    return json.dumps(_to_ordered_dict(d))
 
 
 def indices(a, func):
@@ -180,58 +186,62 @@ def indices(a, func):
     return [i for (i, val) in enumerate(a) if func(val)]
 
 
+def _load_module_from_path(filepath: str):
+    """Import the python file at ``filepath`` as a module named after the file."""
+    filename = get_file_name_without_extension(filepath)
+    # SourceFileLoader.load_module() was deprecated in Python 3.4 and
+    # scheduled for removal in Python 3.15.  imp.load_source() was
+    # removed in Python 3.12.  Use the modern importlib.util path that
+    # works on all supported Python versions (3.8+).
+    import importlib.util  # noqa: PLC0415
+
+    spec = importlib.util.spec_from_file_location(filename, filepath)
+    ret = importlib.util.module_from_spec(spec)
+    sys.modules[filename] = ret
+    spec.loader.exec_module(ret)
+    return ret
+
+
+def _override_line(key, value) -> str:
+    """Render the assignment ``key = value`` the way ``import_python_file`` writes it."""
+    return f"{key} = '{value}'" if isinstance(value, str) else f"{key} = {value}"
+
+
+def _write_overridden_copy(filepath: str, tmpfile_name: str, override_: dict) -> None:
+    """Copy ``filepath`` to ``tmpfile_name``, rewriting the single-line assignments in ``override_``.
+
+    Keys that were not found in the source are appended at the end. ``override_`` is consumed.
+    """
+    with open(filepath, "r") as fin, open(tmpfile_name, "w") as fout:
+        for line in fin:
+            if len(override_) > 0:
+                suffixes = []
+                for key in list(override_.keys()):
+                    if key in line and "=" in line:
+                        suffixes.append(_override_line(key, override_[key]))
+                        del override_[key]
+                if len(suffixes) > 0:
+                    line = "\n".join([line.strip()] + suffixes) + "\n"
+            fout.write(line)
+        for key in override_:
+            fout.write(_override_line(key, override_[key]) + "\n")
+
+
 def import_python_file(filepath: str, override: dict = None):
     """
     Import a python file as a module, allowing overriding some of the variables.
     Assumption: in the original python file, variables to be overridden get assigned once only, in a single line.
     """
     if override is None:
-        filename = get_file_name_without_extension(filepath)
-        # SourceFileLoader.load_module() was deprecated in Python 3.4 and
-        # scheduled for removal in Python 3.15.  imp.load_source() was
-        # removed in Python 3.12.  Use the modern importlib.util path that
-        # works on all supported Python versions (3.8+).
-        import importlib.util  # noqa: PLC0415
-        import sys  # noqa: PLC0415
-
-        spec = importlib.util.spec_from_file_location(filename, filepath)
-        ret = importlib.util.module_from_spec(spec)
-        sys.modules[filename] = ret
-        spec.loader.exec_module(ret)
-        return ret
-    else:
-        override_ = override.copy()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmpfile:
-            tmpfile_name = tmpfile.name
-        try:
-            with open(filepath, "r") as fin, open(tmpfile_name, "w") as fout:
-                for line in fin:
-                    if len(override_) > 0:
-                        suffixes = []
-                        for key in list(override_.keys()):
-                            if key in line and "=" in line:
-                                s = (
-                                    f"{key} = '{override_[key]}'"
-                                    if isinstance(override_[key], str)
-                                    else f"{key} = {override_[key]}"
-                                )
-                                suffixes.append(s)
-                                del override_[key]
-                        if len(suffixes) > 0:
-                            line = "\n".join([line.strip()] + suffixes) + "\n"
-                    fout.write(line)
-                if len(override_) > 0:
-                    for key in override_:
-                        s = (
-                            f"{key} = '{override_[key]}'"
-                            if isinstance(override_[key], str)
-                            else f"{key} = {override_[key]}"
-                        )
-                        s += "\n"
-                        fout.write(s)
-            return import_python_file(tmpfile_name)
-        finally:
-            os.remove(tmpfile_name)
+        return _load_module_from_path(filepath)
+    override_ = override.copy()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmpfile:
+        tmpfile_name = tmpfile.name
+    try:
+        _write_overridden_copy(filepath, tmpfile_name, override_)
+        return _load_module_from_path(tmpfile_name)
+    finally:
+        os.remove(tmpfile_name)
 
 
 def _import_dataset_and_filter(dataset_filepath, content_ids=None, asset_ids=None):

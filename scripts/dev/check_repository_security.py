@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / ".github/repository-security-policy.json"
 API_HOST = "api.github.com"
 PAGE_SIZE = 100
+# Upper bound on the comparison steps of one policy document.
+DIFFERENCES_NODE_LIMIT = 1_000_000
 BYPASS_QUERY = """query {
   repository(owner: "VMAFx", name: "vmafx") {
     rulesets(first: 100) {
@@ -58,40 +61,66 @@ def get_json(route: str) -> Any:
         connection.close()
 
 
-def differences(expected: Any, actual: Any, path: str = "policy") -> list[str]:
-    """Compare declared values; permit API metadata but no list additions."""
+def _sort_key_for(expected: list[Any]) -> Callable[[Any], str]:
+    """Return the key that orders a list the way GitHub may reorder it."""
+    # GitHub may return rules and permitted merge methods in a different order.
+    typed_rules = expected and all(isinstance(item, dict) and "type" in item for item in expected)
+
+    def sort_key(item: Any) -> str:
+        if typed_rules:
+            return str(item.get("type", "")) if isinstance(item, dict) else ""
+        return json.dumps(item, sort_keys=True)
+
+    return sort_key
+
+
+# One step of the comparison: a message to report, or a pair of values to compare.
+_Step = tuple[str, Any, Any, str]
+
+
+def _compare_node(expected: Any, actual: Any, path: str) -> list[_Step]:
+    """Return the steps (in report order) that compare one declared value with the live one."""
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
-            return [f"{path}: expected object"]
-        errors = []
+            return [("error", f"{path}: expected object", None, "")]
+        steps: list[_Step] = []
         for key, value in expected.items():
             if key not in actual:
-                errors.append(f"{path}.{key}: missing")
+                steps.append(("error", f"{path}.{key}: missing", None, ""))
             else:
-                errors.extend(differences(value, actual[key], f"{path}.{key}"))
-        return errors
+                steps.append(("compare", value, actual[key], f"{path}.{key}"))
+        return steps
     if isinstance(expected, list):
         if not isinstance(actual, list) or len(expected) != len(actual):
-            return [f"{path}: list membership differs"]
-        # GitHub may return rules and permitted merge methods in a different order.
-        typed_rules = expected and all(
-            isinstance(item, dict) and "type" in item for item in expected
-        )
-
-        def sort_key(item: Any) -> str:
-            if typed_rules:
-                return str(item.get("type", "")) if isinstance(item, dict) else ""
-            return json.dumps(item, sort_keys=True)
-
-        errors = []
-        for index, (left, right) in enumerate(
-            zip(sorted(expected, key=sort_key), sorted(actual, key=sort_key), strict=True)
-        ):
-            errors.extend(differences(left, right, f"{path}[{index}]"))
-        return errors
+            return [("error", f"{path}: list membership differs", None, "")]
+        sort_key = _sort_key_for(expected)
+        pairs = zip(sorted(expected, key=sort_key), sorted(actual, key=sort_key), strict=True)
+        return [
+            ("compare", left, right, f"{path}[{index}]")
+            for index, (left, right) in enumerate(pairs)
+        ]
     if type(expected) is not type(actual) or expected != actual:
-        return [f"{path}: expected {expected!r}, received {actual!r}"]
+        return [("error", f"{path}: expected {expected!r}, received {actual!r}", None, "")]
     return []
+
+
+def differences(expected: Any, actual: Any, path: str = "policy") -> list[str]:
+    """Compare declared values; permit API metadata but no list additions.
+
+    The walk keeps an explicit work stack (HISS-01); the steps of a node are pushed
+    reversed so the errors come out in document order.
+    """
+    errors: list[str] = []
+    pending: list[_Step] = [("compare", expected, actual, path)]
+    for _ in range(DIFFERENCES_NODE_LIMIT):
+        if not pending:
+            return errors
+        kind, left, right, where = pending.pop()
+        if kind == "error":
+            errors.append(left)
+        else:
+            pending.extend(reversed(_compare_node(left, right, where)))
+    raise ValueError("policy document is too large to compare")
 
 
 def bypass_count(rule_id: int) -> int:

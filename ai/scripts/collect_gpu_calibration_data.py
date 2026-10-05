@@ -36,7 +36,7 @@ import json
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -220,45 +220,21 @@ def collect_for_cell(
     metrics = FEATURE_METRICS[feature]
     out_cpu = workdir / f"{feature}_cpu.json"
     out_gpu = workdir / f"{feature}_{backend}.json"
-
-    cpu_cmd = build_command(
-        binary,
-        ref,
-        dist,
-        width,
-        height,
-        pix_fmt,
-        bitdepth,
-        feature,
-        "cpu",
-        None,
-        out_cpu,
-        frame_limit,
+    commands = _cell_commands(
+        feature=feature,
+        backend=backend,
+        binary=binary,
+        ref=ref,
+        dist=dist,
+        width=width,
+        height=height,
+        pix_fmt=pix_fmt,
+        bitdepth=bitdepth,
+        device=device,
+        out_paths=(out_cpu, out_gpu),
+        frame_limit=frame_limit,
     )
-    gpu_cmd = build_command(
-        binary,
-        ref,
-        dist,
-        width,
-        height,
-        pix_fmt,
-        bitdepth,
-        feature,
-        backend,
-        device,
-        out_gpu,
-        frame_limit,
-    )
-
-    rc_cpu, err_cpu = run_one(cpu_cmd)
-    if rc_cpu != 0:
-        sys.stderr.write(f"[{feature}/cpu] vmaf failed (rc={rc_cpu}): {err_cpu.strip()[:200]}\n")
-        return []
-    rc_gpu, err_gpu = run_one(gpu_cmd)
-    if rc_gpu != 0:
-        sys.stderr.write(
-            f"[{feature}/{backend}] vmaf failed (rc={rc_gpu}): {err_gpu.strip()[:200]}\n"
-        )
+    if not _run_cell_commands(feature, backend, commands):
         return []
 
     cpu_frames = load_frames(out_cpu)
@@ -269,6 +245,69 @@ def collect_for_cell(
             f"cpu={len(cpu_frames)} gpu={len(gpu_frames)} — skipping cell\n"
         )
         return []
+    return _paired_rows(feature, metrics, arch_id, cpu_frames, gpu_frames)
+
+
+def _cell_commands(
+    *,
+    feature: str,
+    backend: str,
+    binary: Path,
+    ref: Path,
+    dist: Path,
+    width: int,
+    height: int,
+    pix_fmt: str,
+    bitdepth: int,
+    device: int | None,
+    out_paths: tuple[Path, Path],
+    frame_limit: int | None,
+) -> tuple[list[str], list[str]]:
+    """Return the (CPU, backend) ``vmaf`` command lines of one cell."""
+
+    def command(which: str, which_device: int | None, out: Path) -> list[str]:
+        return build_command(
+            binary,
+            ref,
+            dist,
+            width,
+            height,
+            pix_fmt,
+            bitdepth,
+            feature,
+            which,
+            which_device,
+            out,
+            frame_limit,
+        )
+
+    return command("cpu", None, out_paths[0]), command(backend, device, out_paths[1])
+
+
+def _run_cell_commands(feature: str, backend: str, commands: tuple[list[str], list[str]]) -> bool:
+    """Run the CPU command then the backend command; report a failure on stderr."""
+
+    rc_cpu, err_cpu = run_one(commands[0])
+    if rc_cpu != 0:
+        sys.stderr.write(f"[{feature}/cpu] vmaf failed (rc={rc_cpu}): {err_cpu.strip()[:200]}\n")
+        return False
+    rc_gpu, err_gpu = run_one(commands[1])
+    if rc_gpu != 0:
+        sys.stderr.write(
+            f"[{feature}/{backend}] vmaf failed (rc={rc_gpu}): {err_gpu.strip()[:200]}\n"
+        )
+        return False
+    return True
+
+
+def _paired_rows(
+    feature: str,
+    metrics: Sequence[str],
+    arch_id: str,
+    cpu_frames: list[dict[str, Any]],
+    gpu_frames: list[dict[str, Any]],
+) -> list[Row]:
+    """Pair the CPU and backend frames of one cell into per-metric rows."""
 
     rows: list[Row] = []
     for f_cpu, f_gpu in zip(cpu_frames, gpu_frames, strict=True):
@@ -287,6 +326,10 @@ def collect_for_cell(
     return rows
 
 
+class ParquetSupportError(RuntimeError):
+    """Raised when the optional pandas / pyarrow dependency is missing."""
+
+
 def write_parquet(rows: Iterable[Row], path: Path) -> int:
     """Write ``rows`` to ``path`` as parquet. Returns the row count."""
 
@@ -300,11 +343,10 @@ def write_parquet(rows: Iterable[Row], path: Path) -> int:
     try:
         import pandas as pd
     except ImportError as exc:
-        sys.stderr.write(
+        raise ParquetSupportError(
             f"pandas required for parquet output ({exc}); "
-            "install via `pip install pandas pyarrow`\n"
-        )
-        sys.exit(2)
+            "install via `pip install pandas pyarrow`"
+        ) from exc
 
     df = pd.DataFrame(
         [
@@ -524,7 +566,11 @@ def main(argv: list[str] | None = None) -> int:
 
     features, backends, frame_limit = _resolve_selection(args)
     all_rows = _collect_rows(args, features, backends, frame_limit)
-    n = write_parquet(all_rows, args.output)
+    try:
+        n = write_parquet(all_rows, args.output)
+    except ParquetSupportError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
     _write_manifest(
         path=args.manifest_out,
         args=args,

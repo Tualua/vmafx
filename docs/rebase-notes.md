@@ -61207,3 +61207,13 @@ No score, public API or FFmpeg patch impact.
   `cargo clippy --workspace --all-targets -- -D warnings`. A sync or rebase keeps
   both on `--workspace` / `--all`: a `-p <crate>` form would leave the other members
   unlinted again. No score, public API or FFmpeg patch impact.
+## compat/python-vmaf helpers keep their iterative form (HISS-01 / HISS-07)
+
+- `compat/python-vmaf/tools/misc.py` (`_to_ordered_dict`, `_load_module_from_path`,
+  `_write_overridden_copy`, `import_python_file`), `core/result_store.py`
+  (`_to_python_natives` with its work stack) and `tools/decorator.py`
+  (`persist_to_file` raises `PersistCacheError` instead of calling `sys.exit(1)`) differ
+  from Netflix's text. An upstream sync that touches them keeps the fork's side of each
+  hunk; `compat/python-vmaf/tests/test_decorator_extended.py` and
+  `compat/python-vmaf/tests/test_result_store.py` cover the new shapes. No score, public
+  API or FFmpeg patch impact.

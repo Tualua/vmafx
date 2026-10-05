@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import onnx
 
@@ -63,22 +64,38 @@ class AllowlistReport:
         return "allowlist FAIL: " + " | ".join(parts)
 
 
+# Upper bound on the graphs and nodes one model walk visits.
+_WALK_LIMIT = 10_000_000
+
+
+def _subgraphs(node: "onnx.NodeProto", scope: str) -> list[tuple["onnx.GraphProto", str]]:
+    """Return the embedded subgraphs of ``node`` with the scope label of each."""
+    found: list[tuple["onnx.GraphProto", str]] = []
+    for attr in node.attribute:
+        if attr.type == onnx.AttributeProto.GRAPH:
+            found.append((attr.g, f"{scope}::{node.op_type}.{attr.name}"))
+        elif attr.type == onnx.AttributeProto.GRAPHS:
+            for i, sub in enumerate(attr.graphs):
+                found.append((sub, f"{scope}::{node.op_type}.{attr.name}[{i}]"))
+    return found
+
+
 def _collect_op_types(graph: "onnx.GraphProto") -> set[str]:
-    """Walk a GraphProto and collect every op_type, recursing into the
+    """Walk a GraphProto and collect every op_type, descending into the
     embedded subgraphs of control-flow ops (Loop.body, If.then_branch,
-    If.else_branch). Mirrors the C-side scanner's recursion in
-    `core/src/dnn/onnx_scan.c` so the export-time check and the
-    runtime load-time check stay in lockstep (ADR-0169 / T6-5)."""
+    If.else_branch) with an explicit work stack (HISS-01). Mirrors the
+    C-side scanner in `core/src/dnn/onnx_scan.c` so the export-time check
+    and the runtime load-time check stay in lockstep (ADR-0169 / T6-5)."""
     used: set[str] = set()
-    for node in graph.node:
-        used.add(node.op_type)
-        for attr in node.attribute:
-            if attr.type == onnx.AttributeProto.GRAPH:
-                used |= _collect_op_types(attr.g)
-            elif attr.type == onnx.AttributeProto.GRAPHS:
-                for sub in attr.graphs:
-                    used |= _collect_op_types(sub)
-    return used
+    pending = [graph]
+    for _ in range(_WALK_LIMIT):
+        if not pending:
+            return used
+        current = pending.pop()
+        for node in current.node:
+            used.add(node.op_type)
+            pending.extend(sub for sub, _ in _subgraphs(node, ""))
+    raise ValueError("ONNX graph is too large to scan")
 
 
 def _constant_int64_value(node: "onnx.NodeProto") -> int | None:
@@ -112,19 +129,36 @@ def _constant_int64_value(node: "onnx.NodeProto") -> int | None:
     return None
 
 
-def _collect_loop_violations(
-    graph: "onnx.GraphProto", *, max_trip_count: int = MAX_LOOP_TRIP_COUNT, scope: str = "<top>"
-) -> list[str]:
-    """Walk a GraphProto and surface every `Loop` whose first input does
-    not trace to a `Constant` int64 scalar with value in [0, max_trip_count].
+def _loop_violation(
+    node: "onnx.NodeProto",
+    producers: dict[str, "onnx.NodeProto"],
+    *,
+    max_trip_count: int,
+    scope: str,
+) -> str | None:
+    """Return the diagnostic for a `Loop` node that is not statically bounded."""
+    if not node.input:
+        return f"{scope}::Loop(no inputs)"
+    m_input = node.input[0]
+    producer = producers.get(m_input)
+    if producer is None:
+        return f"{scope}::Loop(M={m_input!r} is a graph input, not a Constant)"
+    val = _constant_int64_value(producer)
+    if val is None:
+        return f"{scope}::Loop(M traces to {producer.op_type!r}, not a scalar int64 Constant)"
+    if val < 0 or val > max_trip_count:
+        return f"{scope}::Loop(M={val}, max_trip_count={max_trip_count})"
+    return None
 
-    Inner subgraphs are walked recursively; a Loop body is checked in
-    isolation against the same rule (a Loop nested inside a Loop must
-    itself be statically bounded).
 
-    Returns a list of human-readable diagnostics.
-    """
-    violations: list[str] = []
+# One unit of the violation walk: a graph to open, or a Loop node to check.
+_WalkItem = tuple[str, Any, Any]
+
+
+def _expand_graph(
+    graph: "onnx.GraphProto", scope: str, max_trip_count: int, pending: list[_WalkItem]
+) -> None:
+    """Queue the Loop checks and subgraphs of ``graph`` so they pop in source order."""
     # Build an output-name -> producer-node map for this scope. ONNX
     # requires nodes in topological order, but a forward map costs us
     # nothing and makes the lookup obvious.
@@ -133,48 +167,41 @@ def _collect_loop_violations(
         for out in node.output:
             producers[out] = node
 
+    items: list[_WalkItem] = []
     for node in graph.node:
         if node.op_type == "Loop":
-            if not node.input:
-                violations.append(f"{scope}::Loop(no inputs)")
-            else:
-                m_input = node.input[0]
-                producer = producers.get(m_input)
-                if producer is None:
-                    violations.append(
-                        f"{scope}::Loop(M={m_input!r} is a graph input, not a Constant)"
-                    )
-                else:
-                    val = _constant_int64_value(producer)
-                    if val is None:
-                        violations.append(
-                            f"{scope}::Loop(M traces to {producer.op_type!r}, "
-                            "not a scalar int64 Constant)"
-                        )
-                    elif val < 0 or val > max_trip_count:
-                        violations.append(
-                            f"{scope}::Loop(M={val}, " f"max_trip_count={max_trip_count})"
-                        )
-        # Recurse into embedded subgraphs regardless of op_type.
-        for attr in node.attribute:
-            if attr.type == onnx.AttributeProto.GRAPH:
-                violations.extend(
-                    _collect_loop_violations(
-                        attr.g,
-                        max_trip_count=max_trip_count,
-                        scope=f"{scope}::{node.op_type}.{attr.name}",
-                    )
-                )
-            elif attr.type == onnx.AttributeProto.GRAPHS:
-                for i, sub in enumerate(attr.graphs):
-                    violations.extend(
-                        _collect_loop_violations(
-                            sub,
-                            max_trip_count=max_trip_count,
-                            scope=f"{scope}::{node.op_type}.{attr.name}[{i}]",
-                        )
-                    )
-    return violations
+            items.append(("loop", node, (producers, scope, max_trip_count)))
+        # Subgraphs are walked regardless of op_type.
+        items.extend(("graph", sub, sub_scope) for sub, sub_scope in _subgraphs(node, scope))
+    pending.extend(reversed(items))
+
+
+def _collect_loop_violations(
+    graph: "onnx.GraphProto", *, max_trip_count: int = MAX_LOOP_TRIP_COUNT, scope: str = "<top>"
+) -> list[str]:
+    """Walk a GraphProto and surface every `Loop` whose first input does
+    not trace to a `Constant` int64 scalar with value in [0, max_trip_count].
+
+    Inner subgraphs are walked too (explicit work stack, HISS-01); a Loop
+    body is checked in isolation against the same rule (a Loop nested inside
+    a Loop must itself be statically bounded).
+
+    Returns a list of human-readable diagnostics, in source order.
+    """
+    violations: list[str] = []
+    pending: list[_WalkItem] = [("graph", graph, scope)]
+    for _ in range(_WALK_LIMIT):
+        if not pending:
+            return violations
+        kind, payload, extra = pending.pop()
+        if kind == "graph":
+            _expand_graph(payload, extra, max_trip_count, pending)
+            continue
+        producers, loop_scope, limit = extra
+        found = _loop_violation(payload, producers, max_trip_count=limit, scope=loop_scope)
+        if found is not None:
+            violations.append(found)
+    raise ValueError("ONNX graph is too large to scan")
 
 
 def check_model(

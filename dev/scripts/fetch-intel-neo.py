@@ -122,29 +122,25 @@ def make_request(url: str, token: str | None = None) -> bytes:
             body = err.read().decode("utf-8", errors="replace")
 
         if err.code in (403, 429) or "rate limit" in body.lower():
-            print(
-                f"\nFATAL: GitHub API rate limit exceeded while accessing {url}.\n"
+            _fatal(
+                f"GitHub API rate limit exceeded while accessing {url}.\n"
                 f"Response: {body}\n"
                 "Remedy: export GITHUB_TOKEN and pass it with "
                 "--secret id=github_token,env=GITHUB_TOKEN, or wait for rate limit reset.",
-                file=sys.stderr,
+                leading_newline=True,
             )
-            sys.exit(1)
         elif err.code == HTTP_NOT_FOUND:
-            print(
-                f"\nFATAL: Resource not found (HTTP 404): {url}\nResponse: {body}",
-                file=sys.stderr,
+            _fatal(
+                f"Resource not found (HTTP 404): {url}\nResponse: {body}",
+                leading_newline=True,
             )
-            sys.exit(1)
         else:
-            print(
-                f"\nFATAL: HTTP error {err.code} while accessing {url}: {err.reason}\nResponse: {body}",
-                file=sys.stderr,
+            _fatal(
+                f"HTTP error {err.code} while accessing {url}: {err.reason}\nResponse: {body}",
+                leading_newline=True,
             )
-            sys.exit(1)
     except (http.client.HTTPException, OSError, ValueError) as err:
-        print(f"\nFATAL: Network error while accessing {url}: {err}", file=sys.stderr)
-        sys.exit(1)
+        _fatal(f"Network error while accessing {url}: {err}", leading_newline=True)
 
 
 def sha256_file(path: Path) -> str:
@@ -181,12 +177,13 @@ def download_file(
             if temporary_path is not None:
                 with contextlib.suppress(FileNotFoundError):
                     temporary_path.unlink()
-    print(f"FATAL: download failed for {url}: {last_error}", file=sys.stderr, flush=True)
-    sys.exit(1)
+    _fatal(f"download failed for {url}: {last_error}")
 
 
-def _fatal(message: str) -> NoReturn:
-    print(f"FATAL: {message}", file=sys.stderr)
+def _fatal(message: str, *, leading_newline: bool = False) -> NoReturn:
+    """Report ``message`` on stderr and end the run with status 1."""
+    prefix = "\n" if leading_newline else ""
+    print(f"{prefix}FATAL: {message}", file=sys.stderr, flush=True)
     raise SystemExit(1)
 
 

@@ -9,20 +9,23 @@ import math
 from pathlib import Path
 from typing import Any, Iterator
 
+from aiutils.json_tree import map_json_tree
+
+
+def _nonfinite_to_none(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
 
 def _sanitize_nonfinite(obj: Any) -> Any:
-    """Recursively replace non-finite floats (NaN, Infinity) with None.
+    """Replace non-finite floats (NaN, Infinity) with None in a nested document.
 
     Standard JSON does not support NaN or Infinity; replacing with null
     (None) keeps the document valid while preserving all other fields.
+    Dicts and lists are copied; the walk uses an explicit stack (HISS-01).
     """
-    if isinstance(obj, float) and not math.isfinite(obj):
-        return None
-    if isinstance(obj, dict):
-        return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_nonfinite(v) for v in obj]
-    return obj
+    return map_json_tree(obj, _nonfinite_to_none)
 
 
 def dumps_jsonl_row(obj: dict[str, Any], **kwargs: Any) -> str:

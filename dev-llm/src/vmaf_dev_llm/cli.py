@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from importlib import resources
 from pathlib import Path
 from typing import Annotated
@@ -85,7 +84,7 @@ def review(
         out = _run_ollama(cfg, prompt=prompt, model=model)
     except OllamaError as e:
         console.print(f"[red]{e}[/red]")
-        sys.exit(1)
+        raise typer.Exit(code=1)
     console.print(out)
 
 
@@ -101,17 +100,17 @@ def commitmsg(
         stderr = getattr(e, "stderr", None)
         detail = stderr.strip() if isinstance(stderr, str) and stderr.strip() else str(e)
         console.print(f"[red]git diff --staged failed: {detail}[/red]")
-        sys.exit(1)
+        raise typer.Exit(code=1)
     if not diff.strip():
         console.print("[yellow]No staged changes — nothing to draft.[/yellow]")
-        sys.exit(2)
+        raise typer.Exit(code=2)
     template = _load_prompt(cfg, "commit_msg.md")
     prompt = template.replace("{{DIFF}}", diff)
     try:
         out = _run_ollama(cfg, prompt=prompt, model=model)
     except OllamaError as e:
         console.print(f"[red]{e}[/red]")
-        sys.exit(1)
+        raise typer.Exit(code=1)
     # Print without rich formatting so the user can pipe or copy cleanly.
     print(out.strip())
 
@@ -135,7 +134,7 @@ def docgen(
         out = _run_ollama(cfg, prompt=prompt, model=model)
     except OllamaError as e:
         console.print(f"[red]{e}[/red]")
-        sys.exit(1)
+        raise typer.Exit(code=1)
     print(out.strip())
 
 
@@ -191,7 +190,7 @@ def modelcard(
         out = _run_ollama(cfg, prompt=prompt, model=model)
     except OllamaError as e:
         console.print(f"[red]{e}[/red]")
-        sys.exit(1)
+        raise typer.Exit(code=1)
     print(out.strip())
 
 
@@ -206,7 +205,7 @@ def check() -> None:
     ok = client.available()
     color = "green" if ok else "red"
     console.print(f"ollama reachable: [{color}]{ok}[/{color}]")
-    sys.exit(0 if ok else 1)
+    raise typer.Exit(code=0 if ok else 1)
 
 
 if __name__ == "__main__":

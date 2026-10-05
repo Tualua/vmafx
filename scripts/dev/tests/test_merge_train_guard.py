@@ -48,7 +48,7 @@ class FixtureTrain(guard.Train):
             raise guard.Refused("fixture push rejected")
         result: str = super().git(*args, cwd=cwd)
         if args[0] == "push" and self.metadata:
-            self.metadata["headRefOid"] = self.git("rev-parse", "HEAD", cwd=cwd)
+            self.metadata["headRefOid"] = super().git("rev-parse", "HEAD", cwd=cwd)
         return result
 
 

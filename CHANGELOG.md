@@ -2236,6 +2236,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 - Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.
 
 
+- Removed 48 HISS baseline rows from 17 Python modules without a change in behaviour (ADR-1142). Recursive walks of JSON-like documents (`aiutils` JSONL and run-manifest writers, the op allowlist scan, `FileSystemResultStore`, `vmaf-tune`'s `jsonio`, the repository-security policy diff, the FFmpeg input-contract label resolver) now use an explicit work stack; `sys.exit` calls moved out of library code (`vmaf-dev-llm` commands raise `typer.Exit`, the NEO fetcher reports through `_fatal`, scripts return their status from `main()`); the `materialize_*` and `collect_gpu_calibration_data` scripts are split into helpers. One visible difference: `persist_to_file` raises `PersistCacheError` for an unreadable cache file instead of ending the process with status 1.
+
+
 - Split the long functions of the `vmaf-mcp` server (`_call_tool_dispatch` is now a table of one handler per tool, `_run_compare`, `_run_ladder` and `_run_tune_per_shot` share `_run_vmaf_tune`, `_run_benchmark`, `_build_roi_argv`, `_execute_probe`, `_run_vmaf_score_encoded`, `_eval_model_on_split`, the HTTP `/v1/score` handler) and the depth guard (explicit stack instead of recursion), plus `scripts/lib/safe_subprocess.run_async`, the ADR-link and dependency-lock checkers, the perf regression gate, `vmaf-roi-score`'s saliency mask and two test fixtures, into helpers without a change in behaviour: same tool names, argument errors, argv, progress notifications, exit codes and messages. The HISS baseline loses those 20 rows.
 
 

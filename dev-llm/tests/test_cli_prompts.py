@@ -70,3 +70,57 @@ def test_commitmsg_reports_git_stderr(monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "git diff --staged failed: fatal: fixture failure" in result.output
+
+
+def _unreachable(_cfg: Config, **_kwargs: object) -> str:
+    raise cli.OllamaError("fixture: ollama unreachable")
+
+
+def test_commitmsg_without_staged_changes_exits_two(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "load_config", Config)
+    monkeypatch.setattr(cli, "checked_output", lambda *_a, **_k: "  \n")
+
+    result = CliRunner().invoke(cli.app, ["commitmsg"])
+
+    assert result.exit_code == 2
+    assert "nothing to draft" in result.output
+
+
+def test_commitmsg_ollama_failure_exits_one(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "load_config", Config)
+    monkeypatch.setattr(cli, "checked_output", lambda *_a, **_k: "diff --git a b\n")
+    monkeypatch.setattr(cli, "_run_ollama", _unreachable)
+
+    result = CliRunner().invoke(cli.app, ["commitmsg"])
+
+    assert result.exit_code == 1
+    assert "ollama unreachable" in result.output
+
+
+def test_review_and_docgen_ollama_failure_exit_one(monkeypatch, tmp_path: Path) -> None:
+    source = tmp_path / "sample.c"
+    source.write_text("int main(void) { return 0; }\n")
+    monkeypatch.setattr(cli, "load_config", Config)
+    monkeypatch.setattr(cli, "_run_ollama", _unreachable)
+
+    review = CliRunner().invoke(cli.app, ["review", "--file", str(source)])
+    docgen = CliRunner().invoke(cli.app, ["docgen", "--file", str(source), "--symbol", "main"])
+
+    assert review.exit_code == 1
+    assert docgen.exit_code == 1
+
+
+class _FakeClient:
+    def __init__(self, reachable: bool) -> None:
+        self._reachable = reachable
+
+    def available(self) -> bool:
+        return self._reachable
+
+
+def test_check_exit_status_follows_ollama_reachability(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "load_config", Config)
+    for reachable, status in ((True, 0), (False, 1)):
+        monkeypatch.setattr(cli, "OllamaClient", lambda r=reachable, **_k: _FakeClient(r))
+        result = CliRunner().invoke(cli.app, ["check"])
+        assert result.exit_code == status

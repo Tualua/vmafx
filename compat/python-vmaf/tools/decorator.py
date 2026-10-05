@@ -8,7 +8,6 @@ __license__ = "BSD+Patent"
 import contextlib
 import hashlib
 import json
-import sys
 import tempfile
 import threading
 import warnings
@@ -207,6 +206,10 @@ class memoized(object):
         return partial(self.__call__, obj)
 
 
+class PersistCacheError(RuntimeError):
+    """Raised when the cache file of ``persist_to_file`` exists but cannot be read."""
+
+
 def persist_to_file(file_name):
     """
     Cache (or persist) returned value of function in a json file.
@@ -223,8 +226,10 @@ def persist_to_file(file_name):
             try:
                 with open(file_name, "rt", encoding="utf-8") as fh:
                     cache = json.load(fh)
-            except (IOError, ValueError):
-                sys.exit(1)
+            except (IOError, ValueError) as exc:
+                raise PersistCacheError(
+                    f"persist_to_file: unreadable cache file {file_name}: {exc}"
+                ) from exc
 
         def new_func(*args):
             raw_key = (str(original_func.__name__) + str(args)).encode()

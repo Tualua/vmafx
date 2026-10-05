@@ -434,16 +434,13 @@ class TestCacheKeyStabilityAndCollision:
         call_count = [0]
 
         @persist
-        def fib(n):
+        def square(n):
             call_count[0] += 1
-            if n < 2:
-                return n
-            return fib(n - 1) + fib(n - 2)
+            return n * n
 
-        ans = fib(15)
-        assert ans == 610
-        # Without memoization fib(15) requires 1973 calls.
-        # With memoization it evaluates each 0..15 exactly once (16 calls).
+        # 16 distinct arguments, each requested five times: one evaluation each.
+        answers = [square(n) for _ in range(5) for n in range(16)]
+        assert answers == [n * n for _ in range(5) for n in range(16)]
         assert call_count[0] == 16
 
     def test_persist_to_file_multiprocess_concurrent_updates_no_clobber(self, tmp_path):
@@ -493,32 +490,54 @@ class TestCacheKeyStabilityAndCollision:
         assert p2.exitcode == 0
         assert eval_counter.value == 1
 
-    def test_persist_to_file_reentrant_recursion(self, tmp_path):
-        """Recursive functions decorated with persist_to_file must re-enter file locks without deadlocking."""
-        cache_file = str(tmp_path / "reentrant_recurse.json")
+    def test_persist_to_file_reentrant_file_lock(self, tmp_path):
+        """A decorated function must be able to re-enter the file lock its wrapper holds."""
+        import json
+
+        cache_file = str(tmp_path / "reentrant_lock.json")
         eval_counts = [0]
 
         @persist_to_file(cache_file)
-        def fact(n):
-            eval_counts[0] += 1
-            if n <= 1:
-                return 1
-            return n * fact(n - 1)
+        def double(n):
+            # The wrapper holds ``lock`` and the file lock while this body runs.
+            with decorator_module._file_lock(f"{cache_file}.lock"):
+                eval_counts[0] += 1
+                return n * 2
 
-        ans = fact(6)
-        assert ans == 720
-        assert eval_counts[0] == 6
-
-        import json
+        assert double(3) == 6
+        assert eval_counts[0] == 1
 
         with open(cache_file, "rt", encoding="utf-8") as fh:
             disk_cache = json.load(fh)
-        assert len(disk_cache) == 6
+        assert len(disk_cache) == 1
 
         # Second call hits in-memory/disk cache
-        ans2 = fact(6)
-        assert ans2 == 720
-        assert eval_counts[0] == 6
+        assert double(3) == 6
+        assert eval_counts[0] == 1
+
+    def test_persist_to_file_unreadable_cache_raises(self, tmp_path):
+        """A cache file that is not valid JSON is reported, not turned into a process exit."""
+        import pytest
+
+        cache_file = tmp_path / "corrupt_cache.json"
+        cache_file.write_text("{not json", encoding="utf-8")
+
+        with pytest.raises(decorator_module.PersistCacheError, match="unreadable cache file"):
+
+            @persist_to_file(str(cache_file))
+            def compute(item):
+                return item
+
+    def test_persist_to_file_missing_cache_starts_empty(self, tmp_path):
+        """No cache file yet: the decorator starts with an empty cache."""
+        cache_file = str(tmp_path / "fresh_cache.json")
+
+        @persist_to_file(cache_file)
+        def compute(item):
+            return item + 1
+
+        assert compute(1) == 2
+        assert os.path.exists(cache_file)
 
     def test_file_lock_uses_windows_byte_range_backend(self, monkeypatch, tmp_path):
         """The Windows fallback must lock and unlock byte zero through msvcrt."""

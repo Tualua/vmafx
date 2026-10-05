@@ -96,34 +96,58 @@ class FileSystemResultStore(ResultStore):
 
     @staticmethod
     def _to_python_natives(obj):
-        """Recursively convert numpy scalars / arrays to Python natives.
+        """Convert numpy scalars / arrays to Python natives.
 
         Lists and tuples are walked element-by-element. Dicts are walked
         value-by-value with keys converted likewise. Anything that exposes
         a no-argument ``.item()`` (numpy scalar) is collapsed to its
         Python equivalent. Pass-through for str / bool / None / native
-        int / float.
+        int / float. The walk keeps an explicit work stack (HISS-01): a
+        ``("visit", value)`` entry converts one value and leaves its result
+        on ``done``; a ``("dict", n)`` / ``("seq", type, n)`` entry collects
+        the ``2n`` / ``n`` results below it into the container.
         """
+        done = []
+        work = [("visit", obj)]
+        while work:
+            entry = work.pop()
+            if entry[0] == "visit":
+                FileSystemResultStore._visit_native(entry[1], work, done)
+            elif entry[0] == "dict":
+                count = entry[1]
+                flat = done[len(done) - 2 * count :]
+                del done[len(done) - 2 * count :]
+                done.append(dict(zip(flat[0::2], flat[1::2])))
+            else:
+                count = entry[2]
+                items = done[len(done) - count :]
+                del done[len(done) - count :]
+                done.append(entry[1](items))
+        return done[0]
+
+    @staticmethod
+    def _visit_native(obj, work, done):
+        """Convert ``obj`` if it is a leaf, else queue its children (see ``_to_python_natives``)."""
         if isinstance(obj, dict):
-            return {
-                FileSystemResultStore._to_python_natives(
-                    k
-                ): FileSystemResultStore._to_python_natives(v)
-                for k, v in obj.items()
-            }
-        if isinstance(obj, (list, tuple)):
-            converted = [FileSystemResultStore._to_python_natives(v) for v in obj]
-            return type(obj)(converted)
-        if hasattr(obj, "tolist") and not isinstance(obj, (str, bytes)):
+            work.append(("dict", len(obj)))
+            # Reversed so that keys and values pop (and finish) in source order.
+            for k, v in reversed(list(obj.items())):
+                work.append(("visit", v))
+                work.append(("visit", k))
+        elif isinstance(obj, (list, tuple)):
+            work.append(("seq", type(obj), len(obj)))
+            work.extend(("visit", v) for v in reversed(list(obj)))
+        elif hasattr(obj, "tolist") and not isinstance(obj, (str, bytes)):
             # numpy.ndarray: convert recursively so element-wise scalars
             # also collapse to natives.
-            return FileSystemResultStore._to_python_natives(obj.tolist())
-        if hasattr(obj, "item") and not isinstance(obj, (str, bytes, bool)):
+            work.append(("visit", obj.tolist()))
+        elif hasattr(obj, "item") and not isinstance(obj, (str, bytes, bool)):
             try:
-                return obj.item()
+                done.append(obj.item())
             except (ValueError, AttributeError):
-                return obj
-        return obj
+                done.append(obj)
+        else:
+            done.append(obj)
 
     @staticmethod
     def load_result(result_file_path, AssetClass=Asset):

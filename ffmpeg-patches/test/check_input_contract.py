@@ -336,35 +336,58 @@ def graph_definitions(graph: str) -> dict[str, str]:
     return definitions
 
 
+def _resolve_terminal(normalized: str, inputs: list[str]) -> tuple[str | None, str | None] | None:
+    """Resolve a label that ends a definition chain; ``None`` when it continues one."""
+    index_match = re.fullmatch(r"(\d+)(?::[vas](?:\d+)?)?", normalized)
+    if not index_match:
+        return None
+    input_index = int(index_match.group(1))
+    if input_index >= len(inputs):
+        return None, f"filter pad [{normalized}] references missing input {input_index}"
+    return role_from_name(inputs[input_index]), None
+
+
+def _combine_role(normalized: str, source_role: str | None) -> tuple[str | None, str | None]:
+    """Role of a label whose definition traces to ``source_role``."""
+    label_role = role_from_name(normalized)
+    if label_role and source_role and label_role != source_role:
+        return None, (f"label [{normalized}] says {label_role} but traces to a {source_role} input")
+    return label_role or source_role, None
+
+
 def resolve_role(
     label: str,
     inputs: list[str],
     definitions: dict[str, str],
     seen: frozenset[str] = frozenset(),
 ) -> tuple[str | None, str | None]:
-    normalized = label.strip()
-    if normalized in seen:
-        return None, f"cyclic filter-label definition at [{normalized}]"
+    """Trace ``label`` through the filter-label definitions to the role of its input.
 
-    index_match = re.fullmatch(r"(\d+)(?::[vas](?:\d+)?)?", normalized)
-    source_role: str | None = None
-    if index_match:
-        input_index = int(index_match.group(1))
-        if input_index >= len(inputs):
-            return None, f"filter pad [{normalized}] references missing input {input_index}"
-        return role_from_name(inputs[input_index]), None
-
-    if normalized in definitions:
-        source_role, error = resolve_role(
-            definitions[normalized], inputs, definitions, seen | {normalized}
-        )
-        if error:
-            return None, error
-
-    label_role = role_from_name(normalized)
-    if label_role and source_role and label_role != source_role:
-        return None, (f"label [{normalized}] says {label_role} but traces to a {source_role} input")
-    return label_role or source_role, None
+    The chain of definitions is followed with a loop and unwound from its end, so a
+    long chain never recurses (HISS-01); the visited set is bounded by ``definitions``.
+    """
+    visited = set(seen)
+    chain: list[str] = []
+    current = label
+    terminal: tuple[str | None, str | None] | None = None, "filter-label chain too long"
+    for _ in range(len(definitions) + len(visited) + 2):
+        normalized = current.strip()
+        if normalized in visited:
+            terminal = None, f"cyclic filter-label definition at [{normalized}]"
+            break
+        terminal = _resolve_terminal(normalized, inputs)
+        if terminal is not None:
+            break
+        if normalized not in definitions:
+            terminal = _combine_role(normalized, None)
+            break
+        chain.append(normalized)
+        visited.add(normalized)
+        current = definitions[normalized]
+    result = terminal
+    for normalized in reversed(chain):
+        result = (None, result[1]) if result[1] else _combine_role(normalized, result[0])
+    return result
 
 
 def analyze_command(command: str) -> tuple[list[tuple[str | None, str | None]], list[str]]:
