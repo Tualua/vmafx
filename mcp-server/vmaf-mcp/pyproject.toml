@@ -40,7 +40,7 @@ dev = [
 # Optional HTTP operator surface (--transport http). Kept separate so stdio
 # clients do not need aiohttp or Prometheus at runtime (ADR-0701).
 http = [
-  "aiohttp>=3.14.3",
+  "aiohttp>=3.14.4",
   "prometheus-client>=0.26.0",
 ]
 # Optional: enables `eval_model_on_split` + `compare_models`. Pulls in the
