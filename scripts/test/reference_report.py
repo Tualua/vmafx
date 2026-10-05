@@ -20,13 +20,13 @@ actual CPU (and SYCL) values, the delta, the tolerance, and the verdict.
 ║ without the EXPRESS consent of the product owner. See the NETFLIX_VMAF     ║
 ║ table below; every entry cites its quality_runner_test.py line + places.   ║
 ║                                                                            ║
-║ src01 provenance (ADR-1439): the reference is Netflix's CURRENT value      ║
+║ src01 provenance: the reference is Netflix upstream's CURRENT value        ║
 ║ 76.66783025 @ places=4, not the older 76.66890519623612 @ places=2. The    ║
 ║ latter predates Netflix commit a44e5e611 ("bugfix for edge mirroring" in   ║
 ║ integer_motion), which corrected motion2 3.8953519 -> 3.8943597 and        ║
 ║ re-tightened the assertion to places=4. The fork's code already produces   ║
-║ the corrected value; syncing the golden completes the port. Product-owner  ║
-║ approved 2026-07-09.                                                        ║
+║ the corrected value; the golden sync of quality_runner_test.py, a change   ║
+║ of its own, puts it in the fork's file. Product-owner approved 2026-07-09. ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 The Cross-backend section is a SEPARATE, fork-internal parity check (does the
@@ -66,7 +66,7 @@ PAIRS = [
         324,
         76.66783025,
         5e-5,
-        "quality_runner_test.py:151 (places=4; Netflix a44e5e611 motion edge-mirror fix)",
+        "quality_runner_test.py:152 (places=4; Netflix a44e5e611 motion edge-mirror fix)",
     ),
     (
         "checkerboard 1px 1920x1080",
@@ -76,7 +76,7 @@ PAIRS = [
         1080,
         35.06866714286451,
         5e-5,
-        "quality_runner_test.py:380 (places=4)",
+        "quality_runner_test.py:384 (places=4)",
     ),
     (
         "checkerboard 10px 1920x1080",
@@ -86,7 +86,7 @@ PAIRS = [
         1080,
         7.985898744818505,
         5e-5,
-        "quality_runner_test.py:378 (places=4)",
+        "quality_runner_test.py:382 (places=4)",
     ),
 ]
 
