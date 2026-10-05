@@ -1314,6 +1314,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
 
 
+- **The ADR allocator and its tests meet the HISS shell rules (ADR-1142).**
+  `scripts/adr/next-free.sh` and its three tests handle the exit status of every
+  command they used to discard with `|| true`: a grep that finds nothing is
+  accepted by status, a failed fetch or ADR-claim cleanup prints a warning,
+  local files are listed by testing that they exist, and the shallow-safety test
+  sources the extracted function instead of `eval`ing it. The allocator picks
+  the same numbers as before. The HISS baseline loses 31 infractions.
+
+
 - **The codex hooks, dev scripts and CLI shell tests meet the HISS shell rules
   (ADR-1142).** The agent hooks under `.codex/hooks/`, the dev-container scripts
   under `dev/scripts/` and the CLI shell tests under `core/tools/test/` handle

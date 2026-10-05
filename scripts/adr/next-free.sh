@@ -123,8 +123,16 @@ _acquire_lock() {
   trap '_release_lock' EXIT INT TERM
 }
 
+# Succeed for grep's "no match" status (1); return any other failure status.
+# Use as: `grep ... || _no_match_ok $?`.
+_no_match_ok() {
+  [ "$1" -le 1 ] || return "$1"
+}
+
 _release_lock() {
-  rmdir "${LOCK_DIR}" 2>/dev/null || true
+  if [ -d "${LOCK_DIR}" ]; then
+    rmdir "${LOCK_DIR}" 2>/dev/null || printf 'WARNING: could not remove ADR allocator lock %s\n' "${LOCK_DIR}" >&2
+  fi
   trap - EXIT INT TERM
 }
 
@@ -173,16 +181,20 @@ _collect_remote_branch_numbers() {
   # Soft failure: if the network drops between the ls-remote above and here,
   # ls-tree will simply find nothing.
   mapfile -t _adr_depth < <(adr_depth_args --depth=1)
-  git fetch --no-tags "${_adr_depth[@]}" --quiet origin \
-    "${shas[@]}" 2>/dev/null || true
+  if ! git fetch --no-tags "${_adr_depth[@]}" --quiet origin \
+    "${shas[@]}" 2>/dev/null; then
+    printf 'WARNING: could not fetch remote branch tips; their ADR numbers are skipped.\n' >&2
+  fi
 
   # Step 4: for each SHA, run git ls-tree to enumerate docs/adr/ entries.
   # git ls-tree is fast (tree object lookup, no working-tree I/O).
   for sha in "${shas[@]}"; do
-    git ls-tree -r --name-only "${sha}" -- docs/adr/ 2>/dev/null |
-      grep -oE 'docs/adr/[0-9]{4}-' |
-      grep -oE '[0-9]{4}' ||
-      true
+    local listing
+    if listing="$(git ls-tree -r --name-only "${sha}" -- docs/adr/ 2>/dev/null)"; then
+      printf '%s\n' "${listing}" |
+        grep -oE 'docs/adr/[0-9]{4}-' |
+        grep -oE '[0-9]{4}' || _no_match_ok $?
+    fi
   done
 }
 
@@ -192,19 +204,32 @@ _collect_remote_branch_numbers() {
 #   3. origin/master
 #   4. .git/adr-claims/ (cross-worktree claims by sibling agents)
 # Prints one 4-digit number per line, sorted unique.
+# Print each argument that names an existing path (a glob that matched nothing
+# stays a literal pattern and is skipped).
+_list_existing() {
+  local path
+  for path in "$@"; do
+    if [ -e "${path}" ] || [ -L "${path}" ]; then
+      printf '%s\n' "${path}"
+    fi
+  done
+}
+
 _collect_local_taken() {
   {
     # Local real ADR files
-    ls "${ADR_DIR}"/[0-9][0-9][0-9][0-9]-*.md 2>/dev/null || true
+    _list_existing "${ADR_DIR}"/[0-9][0-9][0-9][0-9]-*.md
     # Local stub files (cross-process claim markers within this worktree)
-    ls "${ADR_DIR}"/[0-9][0-9][0-9][0-9]-*.md.stub 2>/dev/null || true
+    _list_existing "${ADR_DIR}"/[0-9][0-9][0-9][0-9]-*.md.stub
     # origin/master (already fetched before this function is called)
-    git ls-tree -r --name-only origin/master -- docs/adr/ 2>/dev/null |
-      grep -E '^docs/adr/[0-9]{4}-' || true
+    local master_listing
+    if master_listing="$(git ls-tree -r --name-only origin/master -- docs/adr/ 2>/dev/null)"; then
+      printf '%s\n' "${master_listing}" |
+        grep -E '^docs/adr/[0-9]{4}-' || _no_match_ok $?
+    fi
     # .git/adr-claims/ — claims by sibling worktrees sharing this .git/
     if [ -d "${ADR_CLAIMS_DIR}" ]; then
-      find "${ADR_CLAIMS_DIR}" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]' \
-        -exec basename {} \; 2>/dev/null || true
+      _list_existing "${ADR_CLAIMS_DIR}"/[0-9][0-9][0-9][0-9] | sed 's|.*/||'
     fi
   } |
     sed 's|.*/||' |
@@ -280,7 +305,9 @@ _write_claim_sidepointer() {
 # Remove the .git/adr-claims/<NUMBER> side-pointer (called by --release).
 _remove_claim_sidepointer() {
   local number="$1"
-  rm -f "${ADR_CLAIMS_DIR}/${number}" 2>/dev/null || true
+  if ! rm -f "${ADR_CLAIMS_DIR}/${number}" 2>/dev/null; then
+    printf 'WARNING: could not remove claim pointer %s/%s\n' "${ADR_CLAIMS_DIR}" "${number}" >&2
+  fi
 }
 
 # ── argument parsing ──────────────────────────────────────────────────────────
@@ -387,7 +414,8 @@ remote_numbers=()
 if [ "${REMOTE_OFFLINE}" -eq 0 ]; then
   while IFS= read -r n; do
     [ -n "${n}" ] && remote_numbers+=("${n}")
-  done < <(_collect_remote_branch_numbers "${ls_remote_out}" 2>/dev/null || true)
+  done < <(_collect_remote_branch_numbers "${ls_remote_out}" 2>/dev/null ||
+    printf 'WARNING: remote branch scan failed.\n' >&2)
 fi
 
 if [ "${REMOTE_OFFLINE}" -eq 1 ]; then

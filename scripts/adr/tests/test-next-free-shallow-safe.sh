@@ -41,10 +41,13 @@ git clone -q "$tmp/upstream" "$tmp/full"
 (
   cd "$tmp/full"
   # shellcheck disable=SC1090  # the script under test is resolved at runtime
-  depth_fn="$(sed -n '/^adr_depth_args()/,/^}/p' "$SCRIPT")"
-  eval "$depth_fn"
+  sed -n '/^adr_depth_args()/,/^}/p' "$SCRIPT" >"$tmp/depth_fn.sh"
+  # shellcheck disable=SC1091  # generated at run time from the script under test
+  source "$tmp/depth_fn.sh"
   mapfile -t d < <(adr_depth_args --depth=50)
-  git fetch origin master "${d[@]}" --quiet 2>/dev/null || true
+  if ! git fetch origin master "${d[@]}" --quiet 2>/dev/null; then
+    echo "note: fetch from the fixture upstream failed"
+  fi
 )
 
 if [ "$(git -C "$tmp/full" rev-parse --is-shallow-repository)" = true ]; then
@@ -57,10 +60,10 @@ fi
 # a genuinely shallow checkout, like CI: the depth flag must still be used
 git clone -q --depth=1 "file://$tmp/upstream" "$tmp/shallow" 2>/dev/null
 if [ "$(git -C "$tmp/shallow" rev-parse --is-shallow-repository)" = true ]; then
-  depth_fn="$(sed -n '/^adr_depth_args()/,/^}/p' "$SCRIPT")"
   (
     cd "$tmp/shallow"
-    eval "$depth_fn"
+    # shellcheck disable=SC1091  # generated at run time from the script under test
+    source "$tmp/depth_fn.sh"
     mapfile -t d < <(adr_depth_args --depth=50)
     if [ "${#d[@]}" -eq 1 ] && [ "${d[0]}" = "--depth=50" ]; then
       echo "PASS: shallow checkout still gets --depth=50"

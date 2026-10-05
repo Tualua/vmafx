@@ -43,11 +43,11 @@ _fail() {
 _STUBS_TO_CLEAN=()
 _cleanup() {
   for s in "${_STUBS_TO_CLEAN[@]+"${_STUBS_TO_CLEAN[@]}"}"; do
-    rm -f "${s}" 2>/dev/null || true
+    rm -f "${s}"
   done
   # Remove the lock directory if we left it behind.
   _repo_key="$(printf '%s' "${REPO_ROOT}" | tr '/' '_')"
-  rmdir "/tmp/vmaf_adr_claim_lock_${_repo_key}" 2>/dev/null || true
+  if [ -d "/tmp/vmaf_adr_claim_lock_${_repo_key}" ]; then rmdir "/tmp/vmaf_adr_claim_lock_${_repo_key}"; fi
 }
 trap '_cleanup' EXIT INT TERM
 

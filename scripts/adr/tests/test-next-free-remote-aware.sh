@@ -79,7 +79,7 @@ _cleanup() {
   local gcd lkey
   gcd="${FAKE_REPO}/.git"
   lkey="$(printf '%s' "${gcd}" | tr '/' '_')"
-  rmdir "/tmp/vmaf_adr_claim_lock_${lkey}" 2>/dev/null || true
+  if [ -d "/tmp/vmaf_adr_claim_lock_${lkey}" ]; then rmdir "/tmp/vmaf_adr_claim_lock_${lkey}"; fi
   rm -rf "${TMPDIR_BASE}"
 }
 trap '_cleanup' EXIT INT TERM
@@ -151,7 +151,7 @@ chmod +x "${STUB_BIN}/git"
 
 # Use --claim so the remote-branch scan path is exercised (query mode is
 # local-only by design).
-result_t1=$(_run --claim test-remote-t1 2>/dev/null || true)
+result_t1=$(_run --claim test-remote-t1 2>/dev/null) || echo "note: _run exited non-zero" >&2
 _STUBS_T1=("${FAKE_REPO}/docs/adr/${result_t1}-test-remote-t1.md.stub")
 if [ "${result_t1}" = "0604" ]; then
   _pass "test 1: remote branches with overlapping ADRs → allocator returns 0604 (max+1)"
@@ -160,16 +160,24 @@ else
 fi
 
 # Clean up stub, branch refs, and git stub.
-rm -f "${_STUBS_T1[@]+"${_STUBS_T1[@]}"}" 2>/dev/null || true
+rm -f "${_STUBS_T1[@]+"${_STUBS_T1[@]}"}"
 GIT_COMMON_T1="$(_git_common_dir)"
-rm -f "${GIT_COMMON_T1}/adr-claims/${result_t1}" 2>/dev/null || true
+rm -f "${GIT_COMMON_T1}/adr-claims/${result_t1}"
 # Delete the remote-tracking refs AND the local branches so that subsequent
 # git ls-remote origin calls (which hit the local-path remote and return its
 # refs/heads/*) do not see branch-a / branch-b.
-git -C "${FAKE_REPO}" update-ref -d "refs/remotes/origin/branch-a" 2>/dev/null || true
-git -C "${FAKE_REPO}" update-ref -d "refs/remotes/origin/branch-b" 2>/dev/null || true
-git -C "${FAKE_REPO}" branch -D branch-a 2>/dev/null || true
-git -C "${FAKE_REPO}" branch -D branch-b 2>/dev/null || true
+if git -C "${FAKE_REPO}" show-ref --verify --quiet "refs/remotes/origin/branch-a"; then
+  git -C "${FAKE_REPO}" update-ref -d "refs/remotes/origin/branch-a"
+fi
+if git -C "${FAKE_REPO}" show-ref --verify --quiet "refs/remotes/origin/branch-b"; then
+  git -C "${FAKE_REPO}" update-ref -d "refs/remotes/origin/branch-b"
+fi
+if git -C "${FAKE_REPO}" show-ref --verify --quiet "refs/heads/branch-a"; then
+  git -C "${FAKE_REPO}" branch -D branch-a >/dev/null
+fi
+if git -C "${FAKE_REPO}" show-ref --verify --quiet "refs/heads/branch-b"; then
+  git -C "${FAKE_REPO}" branch -D branch-b >/dev/null
+fi
 rm -f "${STUB_BIN}/git"
 
 # ── test 2: offline mode → local fallback + WARNING on stderr ─────────────────
@@ -192,7 +200,7 @@ GITEOF
 chmod +x "${STUB_BIN}/git"
 
 stderr_t2="$(mktemp)"
-result_t2=$(_run --claim test-offline-t2 2>"${stderr_t2}" || true)
+result_t2=$(_run --claim test-offline-t2 2>"${stderr_t2}") || echo "note: _run exited non-zero" >&2
 GIT_COMMON_T2="$(_git_common_dir)"
 
 if printf '%s' "${result_t2}" | grep -qE '^[0-9]{4}$'; then
@@ -208,8 +216,8 @@ else
 fi
 
 # Clean up stub, claim stub, and side-pointer.
-rm -f "${FAKE_REPO}/docs/adr/${result_t2}-test-offline-t2.md.stub" 2>/dev/null || true
-rm -f "${GIT_COMMON_T2}/adr-claims/${result_t2}" 2>/dev/null || true
+rm -f "${FAKE_REPO}/docs/adr/${result_t2}-test-offline-t2.md.stub"
+rm -f "${GIT_COMMON_T2}/adr-claims/${result_t2}"
 rm -f "${stderr_t2}" "${STUB_BIN}/git"
 
 # ── test 3: sibling worktree claim via .git/adr-claims/ ───────────────────────
@@ -223,7 +231,7 @@ mkdir -p "${GIT_COMMON}/adr-claims"
 printf 'sibling-slug 2026-05-19T00:00:00Z sibling/branch\n' \
   >"${GIT_COMMON}/adr-claims/0602"
 
-result_t3=$(_run --claim test-sibling-t3 2>/dev/null || true)
+result_t3=$(_run --claim test-sibling-t3 2>/dev/null) || echo "note: _run exited non-zero" >&2
 if [ "${result_t3}" = "0603" ]; then
   _pass "test 3: sibling worktree claim in .git/adr-claims/ correctly blocked 0602 → returned 0603"
 else
@@ -232,8 +240,8 @@ fi
 
 # Clean up side-pointers and stub.
 rm -f "${GIT_COMMON}/adr-claims/0602"
-rm -f "${GIT_COMMON}/adr-claims/${result_t3}" 2>/dev/null || true
-rm -f "${FAKE_REPO}/docs/adr/${result_t3}-test-sibling-t3.md.stub" 2>/dev/null || true
+rm -f "${GIT_COMMON}/adr-claims/${result_t3}"
+rm -f "${FAKE_REPO}/docs/adr/${result_t3}-test-sibling-t3.md.stub"
 
 # ── test 4: performance smoke ─────────────────────────────────────────────────
 #
@@ -263,14 +271,14 @@ GITEOF
 chmod +x "${STUB_BIN}/git"
 
 perf_start="$(date +%s%3N)"
-result_t4=$(_run --claim test-perf-t4 2>/dev/null || true)
+result_t4=$(_run --claim test-perf-t4 2>/dev/null) || echo "note: _run exited non-zero" >&2
 perf_end="$(date +%s%3N)"
 elapsed_ms=$((perf_end - perf_start))
 
 GIT_COMMON_T4="$(_git_common_dir)"
 rm -f "${STUB_BIN}/git"
-rm -f "${FAKE_REPO}/docs/adr/${result_t4}-test-perf-t4.md.stub" 2>/dev/null || true
-rm -f "${GIT_COMMON_T4}/adr-claims/${result_t4}" 2>/dev/null || true
+rm -f "${FAKE_REPO}/docs/adr/${result_t4}-test-perf-t4.md.stub"
+rm -f "${GIT_COMMON_T4}/adr-claims/${result_t4}"
 
 if [ "${elapsed_ms}" -lt 5000 ]; then
   _pass "test 4a: performance smoke completed in ${elapsed_ms} ms (< 5000 ms)"
