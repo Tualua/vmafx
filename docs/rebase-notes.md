@@ -63,6 +63,11 @@ named `close_fex`. A sync that brings an upstream change to one of these functio
 conflict on the definition line or the initialiser takes the fork's side. Upstream's name collides with the C
 library's labelled `close()` in a macOS full-LTO link. `core/test/test_libc_named_internal_functions.py` fails if
 a `static close` comes back. See `core/src/feature/AGENTS.d/libc-named-statics.md`.
+## Heavy fast-suite tests sized for the sanitizer jobs (2026-10-06)
+
+`fix/sanitizer-heavy-test-timeouts`. no rebase impact: fork-only test files. `test_integer_psnr_coverage` carries
+`timeout : 480` for its 5e9-sample APSNR wrap case, and `test_metal_psnr_hvs_math` forms each masking table's
+terms once for both summations.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 
