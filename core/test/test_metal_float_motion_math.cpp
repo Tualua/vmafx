@@ -163,7 +163,7 @@ VmafMtlFmWindow fm_window(const float *tile, unsigned lx, unsigned ly)
 
 /* One threadgroup of float_motion_blur: the tile load of all its threads,
  * then the blur of each thread's sample, with the kernel's index arithmetic. */
-void fm_twin_blur_group(const float *samples, unsigned w, unsigned h, VmafMtlFmTaps taps,
+void fm_twin_blur_group(const float *samples, unsigned w, unsigned h, const VmafMtlFmTaps &taps,
                         unsigned bx, unsigned by, float *out)
 {
     float tile[VMAF_MTL_FM_TILE * VMAF_MTL_FM_TILE];
@@ -344,7 +344,7 @@ float *fm_twin_rows(const float *cur, const float *prev, unsigned w, unsigned h)
 }
 
 /* The four samples of `plane` float_motion.metal's fm_corners() reads. */
-VmafMtlFmCorners fm_corners(const float *plane, unsigned w, VmafMtlFmBilinearAt at)
+VmafMtlFmCorners fm_corners(const float *plane, unsigned w, const VmafMtlFmBilinearAt &at)
 {
     const size_t row1 = (size_t)at.y1 * w;
     const size_t row2 = (size_t)at.y2 * w;

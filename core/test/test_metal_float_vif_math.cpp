@@ -732,7 +732,7 @@ struct Frames {
     Plane dis;
     std::vector<float> cpu_ref; /* stride in bytes: aligned */
     std::vector<float> cpu_dis;
-    int cpu_stride_bytes;
+    int cpu_stride_bytes = 0;
 };
 
 /* The pair, as the float planes both sides read: stride = width for the

@@ -4482,6 +4482,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   caller sees and the log output are unchanged.
 
 
+- **`Cppcheck` is clean on the Metal host tests and shared math headers.** Seventeen
+  findings are fixed (two by-value blocks carry a cited suppression because the
+  headers are shared with Metal Shading Language, the rest are code changes); the six
+  affected Metal host tests still pass (`T-CI-CPPCHECK-METAL-HOST-TESTS-2026-10-06`).
+
+
 - **The `Go` workflow builds the node's eBPF object with the pinned clang again,
   and the Windows SYCL tester leg no longer fails on a locked installer.**
   `scripts/dev/gen-node-bpf.sh` now prefers `clang-19` (and `llvm-strip-19`) to a

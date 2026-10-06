@@ -67,11 +67,14 @@
 /* ------------------------------------------------------------------ */
 
 /* ms_ssim_decimate_h / _v of float_ms_ssim.metal for every output. */
-static void twin_decimate(const float *src, unsigned w, unsigned h, float *dst)
+static int twin_decimate(const float *src, unsigned w, unsigned h, float *dst)
 {
     const unsigned w_out = vmaf_mtl_msdec_extent(w);
     const unsigned h_out = vmaf_mtl_msdec_extent(h);
     float *tmp = (float *)malloc((size_t)w_out * h * sizeof(float));
+    if (tmp == NULL) {
+        return -1;
+    }
     for (unsigned y = 0u; y < h; y++) {
         for (unsigned x = 0u; x < w_out; x++) {
             float acc = 0.0f;
@@ -97,6 +100,7 @@ static void twin_decimate(const float *src, unsigned w, unsigned h, float *dst)
         }
     }
     free(tmp);
+    return 0;
 }
 
 static float noise_sample(uint64_t seed, size_t i)
@@ -136,7 +140,7 @@ static char *decimate_compare(const DecimateBufs *b, unsigned w, unsigned h, uin
     mu_assert("the decimated extent differs", (unsigned)rw == w_out && (unsigned)rh == h_out);
     mu_assert("ms_ssim_decimate failed",
               ms_ssim_decimate(b->src, (int)w, (int)h, b->dispatched, NULL, NULL) == 0);
-    twin_decimate(b->src, w, h, b->twin);
+    mu_assert("twin_decimate: allocation failed", twin_decimate(b->src, w, h, b->twin) == 0);
     size_t bad = 0u;
     for (size_t i = 0u; i < out_count; i++) {
         if (!same_bits(b->twin[i], b->scalar[i]) || !same_bits(b->twin[i], b->dispatched[i])) {
@@ -342,8 +346,10 @@ static int twin_ms_ssim(const float *ref, const float *cmp, unsigned w, unsigned
             memcpy(ref_level[0], ref, n * sizeof(float));
             memcpy(cmp_level[0], cmp, n * sizeof(float));
         } else {
-            twin_decimate(ref_level[i - 1], width[i - 1], height[i - 1], ref_level[i]);
-            twin_decimate(cmp_level[i - 1], width[i - 1], height[i - 1], cmp_level[i]);
+            err = twin_decimate(ref_level[i - 1], width[i - 1], height[i - 1], ref_level[i]);
+            if (!err) {
+                err = twin_decimate(cmp_level[i - 1], width[i - 1], height[i - 1], cmp_level[i]);
+            }
         }
     }
     for (int i = 0; i < SCALES && !err; i++)

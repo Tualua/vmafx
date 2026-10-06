@@ -35,6 +35,11 @@
 
 #include "metal_portable.h"
 
+/* cppcheck passedByValue: every function here takes its argument structs by
+ * value because the header is shared with C and Metal Shading Language, which
+ * have no const references (an MSL reference needs an address space), ADR-1498. */
+// cppcheck-suppress-begin passedByValue
+
 #if defined(__METAL_VERSION__)
 #define VMAF_MTL_FM_FLOOR(x) metal::floor(x)
 #define VMAF_MTL_FM_CEIL(x) metal::ceil(x)
@@ -349,5 +354,7 @@ static inline double vmaf_mtl_fm_plane_score(const float *rows, unsigned width, 
 /* NOLINTEND(modernize-use-nullptr) */
 
 #endif /* !defined(__METAL_VERSION__) */
+
+// cppcheck-suppress-end passedByValue
 
 #endif /* VMAF_FEATURE_METAL_METAL_FLOAT_MOTION_MATH_H_ */

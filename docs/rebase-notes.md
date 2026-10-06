@@ -10,6 +10,9 @@ search:
 ## Licence provenance of the Metal integer ADM host files (2026-10-06)
 
 `fix/master-red-licence-provenance`. `scripts/dev/relicense_provenance.toml` gains two `[ports]` entries and one `[not_ports]` line; `integer_adm_metal_host.c` / `.h` take the Netflix notice and the dual tag, `.config/lint-exceptions.d/spdx.toml` its header. An upstream sync that touches `integer_adm.c` keeps the entries. No other rebase impact.
+## Cppcheck on the Metal host tests (2026-10-06)
+
+`fix/master-red-cppcheck-metal`. `metal_float_motion_math.h` and `metal_float_vif_math.h` carry a `cppcheck-suppress-begin` / `-end passedByValue` block (ADR-1498: the headers are shared with MSL); a sync must keep the block and the `{0}` initialiser in `vmaf_mtl_fvif_statistic_args()`. Six test files changed in place. No upstream-mirror file; no other rebase impact.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 

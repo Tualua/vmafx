@@ -659,7 +659,7 @@ static char *test_netflix_crop(void)
 {
     uint8_t *luma = netflix_luma();
     if (!luma) {
-        (void)fprintf(stderr, "[skip: no src01_hrc0[01]_576x324.yuv in " VMAF_REPLAY_YUV_DIR "] ");
+        (void)fprintf(stderr, "[skip: no src01_hrc0[01]_576x324.yuv in %s] ", VMAF_REPLAY_YUV_DIR);
         return NULL;
     }
     ReplayCase list[] = {
