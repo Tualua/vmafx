@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
+
+`fix/metal-f64-equal-no-libimf`. no rebase impact: fork-only Metal header (`core/src/feature/metal/metal_portable.h`); no upstream file.
+
 ## CI: the push aggregator reads its own branch's runs (2026-10-06)
 
 `fix/aggregator-own-branch-runs`. no rebase impact: the fork's aggregator workflow and its test harness; no upstream file.

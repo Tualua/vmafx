@@ -4872,6 +4872,9 @@ The Meson test secret-environment contract test reports repository paths with fo
   `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26`).
 
 
+The oneAPI (icx) build links the Metal host tests again: the double comparison of the Metal headers uses the compiler's builtins instead of `<math.h>` macros that icx turns into calls into a library the build does not link.
+
+
 - **The FFmpeg `libvmaf_metal` filter can score NV12 and P010 VideoToolbox
   frames.** It imported only the luma plane, and libvmaf refused every frame
   with `-EINVAL`, so the filter failed on its first frame. Importing the

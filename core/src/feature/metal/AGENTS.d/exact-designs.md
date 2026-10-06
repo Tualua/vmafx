@@ -131,6 +131,9 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
 - **Host-only equality and by-pointer structs in the shared headers (CodeQL sweep, 2026-10-06).**
   `vmaf_mtl_f64_equal()` (`metal_portable.h`, host branch) is `==` for doubles spelled with
   `isless` / `isgreater` / `isunordered`: same answer for every input, +0 equals -0, a NaN equals nothing.
+  Spelled through `VMAF_MTL_ISLESS` / `_ISGREATER` / `_ISUNORDERED` = `__builtin_*` where the compiler has
+  them: icx's C `<math.h>` maps the `<math.h>` macros to libimf calls, which the strict-FP link drops
+  (`-no-intel-lib=libimf`); three C tests did not link in the oneAPI build. MSVC keeps `<math.h>`.
   The host-only gain-limit builders (`metal_float_adm_math.h`, `metal_integer_vif_gain.h`) use it instead of `==`
   (`cpp/equality-on-floats`); do not replace it by a bit compare (it must keep the reference's `==` semantics)
   or a tolerance. `vmaf_mtl_fm_blur()` takes its 100-byte window by `const VMAF_MTL_FM_THR` pointer
