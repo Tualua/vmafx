@@ -13,12 +13,22 @@ map of where that plan lives and how the releases are sequenced.
 
 | Milestone | Theme |
 | --- | --- |
-| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric and zero-copy import, RC5 deduplication, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
-| [1.1](https://github.com/VMAFx/vmafx/milestone/2) | New metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), their GPU twins, and the tools surface |
-| [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Cloud-native foundation: server mode, observability, containers and Kubernetes |
-| [1.3](https://github.com/VMAFx/vmafx/milestone/4) | Cloud-native scale-out: operator, controller/node, multi-vendor GPU scheduling |
-| [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Language modernization — Go tools, Rust pilots, C++23 internals — completing the cloud-native arc |
-| [Post-1.0 embedding](https://github.com/VMAFx/vmafx/milestone/8) | Embedding in encoders and media pipelines after 1.0.0: asynchronous window scores, Windows and macOS shared libraries and a CMake package ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md); the zero-copy import API moved to RC4 by [ADR-1829](adr/1829-rc4-zero-copy-import.md), epic [#2067](https://github.com/VMAFx/vmafx/issues/2067)) |
+| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric and zero-copy import, RC5 deduplication and cloud-native deployment, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
+| [1.1](https://github.com/VMAFx/vmafx/milestone/2) | Integrations and live quality: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), [#2148](https://github.com/VMAFx/vmafx/issues/2148), [#2147](https://github.com/VMAFx/vmafx/issues/2147), [#2144](https://github.com/VMAFx/vmafx/issues/2144), [#2146](https://github.com/VMAFx/vmafx/issues/2146), [#2159](https://github.com/VMAFx/vmafx/issues/2159) |
+| [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/VMAFx/vmafx/issues/2067)), [#2164](https://github.com/VMAFx/vmafx/issues/2164), [#2156](https://github.com/VMAFx/vmafx/issues/2156) |
+| [1.3](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), [#2166](https://github.com/VMAFx/vmafx/issues/2166), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168) |
+| [1.4](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
+| [1.5](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
+| [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the C++23 core, the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
+
+[ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) set this layout on
+2026-10-06 and declared it the last change of the milestone map until 2.0,
+apart from bugs and findings. The cloud-native work (scoring API contract,
+server mode, containers, Helm, operator, GPU pool arbiter) is part of 1.0.0.
+Every release after 1.0.0 runs its own candidate cycle: features first, then
+deduplication, tests and bug fixing, then capability tables with benchmarks and
+tuning, then training if models change, then the release; the same phase rules
+as for 1.0.0 apply inside each cycle.
 
 Two milestones are deliberately **rolling** rather than tied to a release:
 
@@ -30,8 +40,8 @@ Two milestones are deliberately **rolling** rather than tied to a release:
 
 ## How 1.0.0 is gated
 
-The fork's first release candidate, `v1.0.0-rc.1`, was published on
-2026-09-27; older tags are inherited upstream history.
+The fork's first release candidate, `v1.0.0-rc.1`, was published on 2026-09-27;
+older tags are inherited upstream history.
 [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) gives each
 first-release candidate one responsibility.
 [ADR-1421](adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags, so that
@@ -43,11 +53,17 @@ capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
 1.0.0 on 2026-10-05 into those candidates without new numbers: the new API and
 provenance into RC4, tool consolidation, new metrics and the Metal SpEED twins
 into RC5, training readiness into RC8.
-[ADR-1880](adr/1880-format-envelope-device-targets.md) adds the format
-envelope: an overflow audit at 8K and 16K and 8K exactness in RC3, the
-supported resolutions, bit depths and layouts per backend and device in the
-RC6 and RC7 tables, throughput per resolution in RC8; and device-targeted
-scoring (one decode scored for several displays) in RC5.
+[ADR-1880](adr/1880-format-envelope-device-targets.md) adds the format envelope:
+an overflow audit at 8K and 16K and 8K exactness in RC3, the supported
+resolutions, bit depths and layouts per backend and device in the RC6 and RC7
+tables, throughput per resolution in RC8; and device-targeted scoring (one
+decode scored for several displays) in RC5.
+[ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) moves the
+cloud-native work into 1.0.0 without new numbers: the versioned scoring API
+contract, server mode and observability in RC4, containers, Helm chart, operator
+and GPU pool arbiter in RC5, distributed throughput in RC8; a native GStreamer
+element, an API ready for OBS Studio and real-time FFmpeg GPU scoring in RC4.
+The OBS Studio plugin follows in 1.1.
 
 ### What this means for you
 
@@ -67,11 +83,11 @@ scoring (one decode scored for several displays) in RC5.
 | **RC1** | correctness and tester readiness | — |
 | **RC2** | stabilisation and repair | — |
 | **RC3** | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
-| **RC4** | first full Rust metric, zero-copy device-frame import, new VMAFx API and FFmpeg filters, provenance | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
-| **RC5** | deduplication, tool consolidation, new metrics with exact twins, Metal SpEED twins, device-targeted scoring | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
-| **RC6** | GPU capability source of truth, GPU format envelope | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
-| **RC7** | CPU capability source of truth, CPU format envelope | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
-| **RC8** | benchmark and tune, throughput per resolution, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
+| **RC4** | first full Rust metric, zero-copy device-frame import, new VMAFx API and FFmpeg filters, provenance, scoring API contract, server mode, GStreamer element, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
+| **RC5** | deduplication, tool consolidation, new metrics with exact twins, Metal SpEED twins, device-targeted scoring, containers, Helm, operator, GPU pool arbiter | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
+| **RC6** | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
+| **RC7** | CPU capability source of truth, CPU format envelope, full SIMD ladder on five architectures | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
+| **RC8** | benchmark and tune, throughput per resolution, distributed throughput, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
 | **RC9** | real retraining | [#1246](https://github.com/VMAFx/vmafx/issues/1246), [#1242](https://github.com/VMAFx/vmafx/issues/1242) |
 | **Final `v1.0.0`** | — | — |
 
@@ -115,12 +131,24 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   ([ADR-1829](adr/1829-rc4-zero-copy-import.md)): additive import on
   `VmafPicture2` with fences in both directions for CUDA, SYCL, HIP and Metal,
   NV12 and P010 on the GPU, CUDA without its device-to-device copy, SYCL chroma
-  import and D3D11, Metal IOSurface and MTLTexture bound without the CPU copy,
-  a HIP import path, FFmpeg filters that take hardware frames. The new VMAFx C
-  API (`vmafx/*.h`, `libvmafx.so.1`) generated with every other surface from
+  import and D3D11, Metal IOSurface and MTLTexture bound without the CPU copy, a
+  HIP import path, FFmpeg filters that take hardware frames. The new VMAFx C API
+  (`vmafx/*.h`, `libvmafx.so.1`) generated with every other surface from
   `core/api/vmafx.toml`, `libvmaf.h` as a thin compatibility library on it, and
   the FFmpeg filters under VMAFx names (`vmafx`, `vmafx_tune`, `vmafx_pre`)
-  ([ADR-1852](adr/1852-vmafx-api-redesign.md))
+  ([ADR-1852](adr/1852-vmafx-api-redesign.md)). Since 2026-10-06
+  ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)): the versioned
+  scoring API contract ([#2155](https://github.com/VMAFx/vmafx/issues/2155)) and
+  server mode with observability
+  ([#1251](https://github.com/VMAFx/vmafx/issues/1251)), generated from the same
+  definition; a native `vmafx` GStreamer element
+  ([#2236](https://github.com/VMAFx/vmafx/issues/2236)) and CI conformance of
+  the `vmaf` element of upstream's gst-plugins-bad on the compatibility
+  `libvmaf.so.3` ([#2237](https://github.com/VMAFx/vmafx/issues/2237)); an API
+  ready for OBS Studio ([#2238](https://github.com/VMAFx/vmafx/issues/2238):
+  texture import including OpenGL interop, asynchronous window scores, bounded
+  queues); real-time FFmpeg GPU scoring with `n_stats`
+  ([#2138](https://github.com/VMAFx/vmafx/issues/2138))
 - **Exit boundary:** The Rust path is bit-identical to the C path on the parity
   fixtures; an imported device frame scores bit-identically to the same frame
   uploaded from the host, with no host copy of pixel data and fence-ordering
@@ -131,26 +159,32 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 #### RC5 — deduplication
 
 - **In scope:** One implementation per behaviour across GPU twins and host code,
-  the Rust code included; `libgpudispatch` extracted, folding in the
-  per-backend import code RC4 wrote ([#1455](https://github.com/VMAFx/vmafx/issues/1455)).
-  One implementation per tool ([#1249](https://github.com/VMAFx/vmafx/issues/1249)),
-  the `tools/` surface finished and the known unfinished surfaces closed
+  the Rust code included; `libgpudispatch` extracted, folding in the per-backend
+  import code RC4 wrote ([#1455](https://github.com/VMAFx/vmafx/issues/1455)).
+  One implementation per tool
+  ([#1249](https://github.com/VMAFx/vmafx/issues/1249)), the `tools/` surface
+  finished and the known unfinished surfaces closed
   ([#1250](https://github.com/VMAFx/vmafx/issues/1250),
   [#1270](https://github.com/VMAFx/vmafx/issues/1270),
   [#1272](https://github.com/VMAFx/vmafx/issues/1272)). The new metrics with
   their twins written once on `libgpudispatch`: ΔE-ITP, PU21, NIQE, BRISQUE,
   Y-FUNQUE+ ([#1247](https://github.com/VMAFx/vmafx/issues/1247),
-  [#1248](https://github.com/VMAFx/vmafx/issues/1248)), HDR-SSIM and
-  HDR-MS-SSIM ([#2161](https://github.com/VMAFx/vmafx/issues/2161)), XPSNR
+  [#1248](https://github.com/VMAFx/vmafx/issues/1248)), HDR-SSIM and HDR-MS-SSIM
+  ([#2161](https://github.com/VMAFx/vmafx/issues/2161)), XPSNR
   ([#2158](https://github.com/VMAFx/vmafx/issues/2158)); Metal twins of
   `speed_chroma` and `speed_temporal`
-  ([#2160](https://github.com/VMAFx/vmafx/issues/2160)). Device-targeted
-  scoring ([ADR-1880](adr/1880-format-envelope-device-targets.md)): device
-  profiles (phone, tablet, laptop, TV, VR per eye, portrait included), each a
-  target resolution, a scaling and a viewing distance per display height mapped
-  onto the ADM options `nvd` and `rdh`; one decode scored for many targets;
-  a short research pass first, the profile table generated by the RC6 / RC7
-  table machinery
+  ([#2160](https://github.com/VMAFx/vmafx/issues/2160)). Device-targeted scoring
+  ([ADR-1880](adr/1880-format-envelope-device-targets.md)): device profiles
+  (phone, tablet, laptop, TV, VR per eye, portrait included), each a target
+  resolution, a scaling and a viewing distance per display height mapped onto
+  the ADM options `nvd` and `rdh`; one decode scored for many targets; a short
+  research pass first, the profile table generated by the RC6 / RC7 table
+  machinery. Cloud-native deployment
+  ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)): containers,
+  Helm chart and a kind plus kuttl test setup
+  ([#1252](https://github.com/VMAFx/vmafx/issues/1252)); the operator, the
+  controller / node split and the GPU pool arbiter in `libgpudispatch`
+  ([#1253](https://github.com/VMAFx/vmafx/issues/1253))
 - **Exit boundary:** Scores unchanged against the RC3 reference; duplicated code
   removed rather than moved; every new twin bit-identical to its CPU extractor
   or within a measured libm bound recorded in an ADR; a multi-target run scores
@@ -166,7 +200,12 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   fp64). The table also declares the format envelope per backend and device
   ([ADR-1880](adr/1880-format-envelope-device-targets.md)): maximum resolution
   up to 16K with measured memory limits and tiling where needed, bit depths 8
-  to 16, chroma layouts, odd and portrait sizes, each row backed by a test
+  to 16, chroma layouts, odd and portrait sizes, each row backed by a test.
+  Legacy build variants ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)):
+  CUDA 12.x builds for Maxwell, Pascal and Volta (sm_50 to sm_72; CUDA 13.4
+  starts at compute_75), the Intel legacy compute runtime for Gen9 to Gen11
+  iGPUs, and every AMD target the pinned ROCm compiler still emits, each
+  bit-exact and listed in the table
 - **Exit boundary:** Drift check green, the envelope included; audit clean for
   every listed target
 
@@ -177,7 +216,13 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   per-translation-unit compile flags in `core/src/meson.build` and the runtime
   gates in `core/src/x86/cpu.c` and `core/src/arm/cpu.c`), with a CI drift
   check; a per-function disassembly audit for x86 and aarch64; every dispatch
-  level run bit-exact against scalar under emulation. The CPU format envelope
+  level run bit-exact against scalar under emulation. The full SIMD ladder
+  ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)): every
+  extractor gets a bit-exact kernel at every useful ISA level with runtime
+  dispatch, on x86-64 (SSE2, SSSE3, SSE4.1, AVX, AVX2, AVX-512, AVX-512 ICL,
+  AVX10), AArch64 (NEON, dotprod/i8mm, SVE, SVE2), RISC-V RVV 1.0, POWER VSX
+  and LoongArch LSX/LASX; qemu-user CI for architectures without hardware,
+  the golden gate on each. The CPU format envelope
   (resolution up to 16K with measured memory limits, bit depths 8 to 16, chroma
   layouts, odd and portrait sizes) in the same table, each row test-backed
   ([ADR-1880](adr/1880-format-envelope-device-targets.md))
@@ -191,16 +236,17 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 
 - **In scope:** Comparable benchmark baselines, profiling, hardware-generation
   retuning, and measured performance fixes, including the speed RC3 gave up for
-  exactness; throughput per resolution, 16K included (the envelope itself is
-  RC6 / RC7 evidence). Training readiness: automatic temporal alignment and the
-  HDR-input guard for SDR models
+  exactness; throughput per resolution, 16K included (the envelope itself is RC6
+  / RC7 evidence), and distributed throughput across nodes
+  ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)). Training
+  readiness: automatic temporal alignment and the HDR-input guard for SDR models
   ([#2163](https://github.com/VMAFx/vmafx/issues/2163),
   [#2157](https://github.com/VMAFx/vmafx/issues/2157)), the external-metric
   runner and estimator calibration
   ([#2162](https://github.com/VMAFx/vmafx/issues/2162),
-  [#2143](https://github.com/VMAFx/vmafx/issues/2143)), the HDR
-  conversion-check workflow ([#2145](https://github.com/VMAFx/vmafx/issues/2145)),
-  the mini retrain in CI and the measured resource plan of
+  [#2143](https://github.com/VMAFx/vmafx/issues/2143)), the HDR conversion-check
+  workflow ([#2145](https://github.com/VMAFx/vmafx/issues/2145)), the mini
+  retrain in CI and the measured resource plan of
   [#1246](https://github.com/VMAFx/vmafx/issues/1246)
 - **Exit boundary:** Results identify the exact artifact, fixtures, host,
   drivers and runtimes; accepted wins are re-measured and preserve
@@ -243,7 +289,9 @@ affected candidate checks or measurements to be rerun.
 ## Things that do not change
 
 Some guarantees are load-bearing for downstream users and hold across every
-milestone above, including 2.0:
+milestone above, with one exception: 2.0 removes the `libvmaf.h` compatibility
+library ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md),
+[ADR-1852](adr/1852-vmafx-api-redesign.md)). Until then:
 
 - The **Netflix golden values** are never edited. They are the numerical
   ground truth; if scores drift, the code is wrong.

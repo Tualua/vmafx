@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1293), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1294), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5183,3 +5183,7 @@ Every ADR, one heading each (1293), so the site search finds an ADR by its title
 ## ADR-1930: `sycl_device_asan` puts the device sanitizer on every SYCL compile and the link
 
 [1930-sycl-device-asan-option](1930-sycl-device-asan-option.md)
+
+## ADR-2001: Release scope of 1.0.0 and the roadmap to 2.0
+
+[2001-release-scope-1-0-and-roadmap-to-2-0](2001-release-scope-1-0-and-roadmap-to-2-0.md)
