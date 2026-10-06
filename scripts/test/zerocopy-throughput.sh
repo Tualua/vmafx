@@ -16,7 +16,7 @@
 #     bash scripts/test/zerocopy-throughput.sh --out DIR --ref PATH --dis PATH \
 #     [--frames N] [--model NAME] [--feature SPEC] [--n-subsample K] [--repeat R]
 #     [--env KEY=VAL]... [--label TAG] [--build-root DIR] [--ladder L0|L1|L2]
-#     [--cpu-ref] [--vtune] [--dry-run] [--leg-timeout S]
+#     [--cpu-ref] [--vtune] [--dry-run] [--leg-timeout S] [--warmup N]
 #
 # Attribution ladder: L0 decodes both inputs through the same trims into a null
 # sink (no libvmaf); L1 runs libvmaf_sycl with no model and one feature; L2 runs
@@ -45,6 +45,7 @@ CPU_REF=0
 VTUNE=0
 DRY=0
 LEG_TIMEOUT=900
+WARMUP=0
 ENV_ROWS=()
 ENV_JOINED=""
 BASES=()
@@ -58,6 +59,7 @@ usage: zerocopy-throughput.sh --out DIR --ref PATH --dis PATH [--frames N]
          [--model NAME] [--feature SPEC] [--n-subsample K] [--repeat R]
          [--env KEY=VAL]... [--label TAG] [--build-root DIR]
          [--ladder L0|L1|L2] [--cpu-ref] [--vtune] [--dry-run] [--leg-timeout S]
+         [--warmup N]
 USAGE
   exit 2
 }
@@ -77,6 +79,7 @@ set_opt() {
     --build-root) BUILD_ROOT="$2" ;;
     --ladder) LADDER="$2" ;;
     --leg-timeout) LEG_TIMEOUT="$2" ;;
+    --warmup) WARMUP="$2" ;;
     *) usage ;;
   esac
 }
@@ -100,6 +103,7 @@ validate_args() {
   case "$N_SUB" in '' | *[!0-9]* | 0) usage ;; esac
   case "$REPEAT" in '' | *[!0-9]* | 0) usage ;; esac
   case "$LEG_TIMEOUT" in '' | *[!0-9]* | 0) usage ;; esac
+  case "$WARMUP" in '' | *[!0-9]*) usage ;; esac
   case "$LADDER" in L0 | L1 | L2) ;; *) usage ;; esac
   if [ "$LADDER" = L1 ] && [ -z "$FEATURE" ]; then FEATURE="name=motion"; fi
   local IFS=,
@@ -287,6 +291,13 @@ main() {
   fi
   local slug="${FEATURE:-$MODEL}" base i
   slug="${slug//[^A-Za-z0-9._-]/_}"
+  # Unrecorded warm-up legs: the first process of a session runs about 30 %
+  # slower (cold device and caches), which would fail the spread gate.
+  for ((i = 1; i <= WARMUP && DRY == 0; i++)); do
+    base="$OUT/warmup-$LABEL-$LADDER-${slug:-nomodel}-w$i"
+    build_cmd "$base" zc
+    run_one "$base" env "${ENV_ROWS[@]}" "${CMD[@]}"
+  done
   for ((i = 1; i <= REPEAT; i++)); do
     base="$OUT/$LABEL-$LADDER-${slug:-nomodel}-n$N_SUB-r$i"
     do_leg "$base" zc "$i"
