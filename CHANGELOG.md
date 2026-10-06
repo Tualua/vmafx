@@ -4500,6 +4500,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   affected Metal host tests still pass (`T-CI-CPPCHECK-METAL-HOST-TESTS-2026-10-06`).
 
 
+- **`go fix` and `cargo fmt` are clean on master.** Six Go files take the pinned
+  toolchain's fixes (`maps.Copy`, `max`, `strings.SplitSeq`, `new(expr)`) and one
+  Rust example is formatted; no behaviour changes
+  (`T-CI-GO-FIX-RUST-FMT-2026-10-06`).
+
+
 - **The `Go` workflow builds the node's eBPF object with the pinned clang again,
   and the Windows SYCL tester leg no longer fails on a locked installer.**
   `scripts/dev/gen-node-bpf.sh` now prefers `clang-19` (and `llvm-strip-19`) to a

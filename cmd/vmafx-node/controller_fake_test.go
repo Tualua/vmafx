@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"sync"
 	"testing"
@@ -70,9 +71,7 @@ func (f *fakeController) callsSnapshot() map[string]int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make(map[string]int, len(f.calls))
-	for k, v := range f.calls {
-		out[k] = v
-	}
+	maps.Copy(out, f.calls)
 	return out
 }
 

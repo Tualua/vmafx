@@ -16,6 +16,9 @@ search:
 ## CI gates read the right inputs (2026-10-06)
 
 `fix/master-red-ci-gates`. Fork-only CI and test files: `core/test/test_meson_secret_env_sanitization.py` (`EXTERNAL_CHECKOUT_ROOTS`), three workflow files (`docs.yml`, `lint-and-format.yml`, `tests-and-quality-gates.yml`), `scripts/ci/tests/test-default-model-single-source.sh` and a new `scripts/ci/tests/test_tidy_changed_exclusions.py`. No upstream-mirror file changed; no rebase impact beyond keeping the `.ci/` skip and the three `exclude_untidyable()` entries.
+## go fix and cargo fmt applied (2026-10-06)
+
+`fix/master-red-go-rust-fmt`. Formatting and fixer output only, in Go files under `cmd/` and `pkg/` and one Rust example; no upstream-mirror file. no rebase impact.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 

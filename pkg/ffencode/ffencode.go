@@ -186,10 +186,7 @@ func withABRRateControl(args []string, req Request) ([]string, error) {
 		if a != "-crf" || i+1 >= len(args) {
 			continue
 		}
-		kbps := int(math.RoundToEven(req.ABRBitrateKbps))
-		if kbps < 1 {
-			kbps = 1
-		}
+		kbps := max(int(math.RoundToEven(req.ABRBitrateKbps)), 1)
 		out := append([]string(nil), args[:i]...)
 		out = append(out, "-b:v", fmt.Sprintf("%dk", kbps))
 		return append(out, args[i+2:]...), nil
