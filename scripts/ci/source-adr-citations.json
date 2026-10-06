@@ -5871,7 +5871,7 @@
         ".github/workflows/lint-and-format.yml": 1,
         ".pre-commit-config.yaml": 1,
         "core/src/meson.build": 1,
-        "core/test/meson.build": 1,
+        "core/test/meson.build": 2,
         "core/test/test_pelorus_interop.c": 1,
         "scripts/ci/assertion-density.sh": 1,
         "scripts/ci/lint_exceptions.py": 1,

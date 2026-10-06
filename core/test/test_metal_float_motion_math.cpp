@@ -179,7 +179,8 @@ void fm_twin_blur_group(const float *samples, unsigned w, unsigned h, const Vmaf
             const unsigned x = bx * VMAF_MTL_FM_BLOCK + lx;
             const unsigned y = by * VMAF_MTL_FM_BLOCK + ly;
             if (x < w && y < h) {
-                out[(size_t)y * w + x] = vmaf_mtl_fm_blur(taps, fm_window(tile, lx, ly));
+                const VmafMtlFmWindow win = fm_window(tile, lx, ly);
+                out[(size_t)y * w + x] = vmaf_mtl_fm_blur(taps, &win);
             }
         }
     }

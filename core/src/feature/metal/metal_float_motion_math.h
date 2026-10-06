@@ -41,9 +41,12 @@
 // cppcheck-suppress-begin passedByValue
 
 #if defined(__METAL_VERSION__)
+/* The address space of a pointer to the thread's own window: an MSL pointer needs one. */
+#define VMAF_MTL_FM_THR thread
 #define VMAF_MTL_FM_FLOOR(x) metal::floor(x)
 #define VMAF_MTL_FM_CEIL(x) metal::ceil(x)
 #else
+#define VMAF_MTL_FM_THR
 #define VMAF_MTL_FM_FLOOR(x) floorf(x)
 #define VMAF_MTL_FM_CEIL(x) ceilf(x)
 #endif
@@ -199,13 +202,13 @@ VMAF_MTL_FUNC vmaf_mtl_i32 vmaf_mtl_fm_reflect101(vmaf_mtl_i32 idx, vmaf_mtl_i32
  * every product and every sum rounded to fp32: convolution_edge_s(), the
  * interior loops of convolution_y_c_s() / convolution_x_c_s() and the AVX2
  * scanlines alike. */
-VMAF_MTL_FUNC float vmaf_mtl_fm_blur(VmafMtlFmTaps t, VmafMtlFmWindow win)
+VMAF_MTL_FUNC float vmaf_mtl_fm_blur(VmafMtlFmTaps t, const VMAF_MTL_FM_THR VmafMtlFmWindow *win)
 {
     float col[VMAF_MTL_FM_TAPS];
     for (int c = 0; c < VMAF_MTL_FM_TAPS; c++) {
         float accum = 0.0f;
         for (int r = 0; r < VMAF_MTL_FM_TAPS; r++) {
-            const float product = t.w[r] * win.v[r * VMAF_MTL_FM_TAPS + c];
+            const float product = t.w[r] * win->v[r * VMAF_MTL_FM_TAPS + c];
             accum += product;
         }
         col[c] = accum;

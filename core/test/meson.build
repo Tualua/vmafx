@@ -1787,6 +1787,12 @@ test_pelorus_interop = executable('test_pelorus_interop',
      '../src/interop/pelorus_qp_report_csv.c',
      '../src/interop/pelorus_version.c'],
     include_directories : [libvmaf_inc, test_inc],
+    # The vendored parser is compiled here and into libvmaf. CodeQL merges the two copies of
+    # pel_x265_csv_parse() and then reports the static helpers of one copy unreachable
+    # (cpp/unused-static-function); a private name per copy keeps their call edges apart. The
+    # source is byte-locked (ADR-1113), so the rename is a compiler argument, not an edit.
+    c_args : ['-Dopen_utf8=pel_interop_test_open_utf8',
+              '-Dx265_csv_read_rows=pel_interop_test_x265_csv_read_rows'],
 )
 
 # LPIPS registration tests — verify feature wiring without depending on a

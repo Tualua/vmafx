@@ -41,7 +41,7 @@ MATH_PIECES = (
     "return scaled + -128.0f;",
     "const vmaf_mtl_i32 period = 2 * (size - 1);",
     "return (m < size) ? m : period - m;",
-    "const float product = t.w[r] * win.v[r * VMAF_MTL_FM_TAPS + c];",
+    "const float product = t.w[r] * win->v[r * VMAF_MTL_FM_TAPS + c];",
     "accum += product;",
     "const float product = t.w[c] * col[c];",
     "blurred += product;",
@@ -58,7 +58,7 @@ MATH_PIECES = (
 # the CPU's order from the transposed plane.
 KERNEL_PIECES = (
     '#include "metal_float_motion_math.h"',
-    "vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), win)",
+    "vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), &win)",
     "diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.width)] = "
     "vmaf_mtl_fm_abs_diff(blurred, prev_blur[off]);",
     "diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.scaled_width)] = "
@@ -310,9 +310,9 @@ class MetalFloatMotionExactContract(unittest.TestCase):
     def test_fused_blur_tap_is_detected(self) -> None:
         src = planted(
             MATH,
-            "            const float product = t.w[r] * win.v[r * VMAF_MTL_FM_TAPS + c];\n"
+            "            const float product = t.w[r] * win->v[r * VMAF_MTL_FM_TAPS + c];\n"
             "            accum += product;",
-            "            accum = VMAF_MTL_FMA(t.w[r], win.v[r * VMAF_MTL_FM_TAPS + c], accum);",
+            "            accum = VMAF_MTL_FMA(t.w[r], win->v[r * VMAF_MTL_FM_TAPS + c], accum);",
         )
         self.assert_detected(src, "fused multiply-add")
 

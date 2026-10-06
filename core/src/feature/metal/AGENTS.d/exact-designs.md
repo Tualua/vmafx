@@ -127,3 +127,11 @@ Apple device on lanes: arithmetic checked on host only; device = tester report
 - **MSL names**: no identifier `half`, `device`, `thread`, `constant`,
   `kernel`, ... in any Metal source or included header (C accepts, MSL does
   not; `test_metal_shader_build_contract`).
+
+- **Host-only equality and by-pointer structs in the shared headers (CodeQL sweep, 2026-10-06).**
+  `vmaf_mtl_f64_equal()` (`metal_portable.h`, host branch) is `==` for doubles spelled with
+  `isless` / `isgreater` / `isunordered`: same answer for every input, +0 equals -0, a NaN equals nothing.
+  The host-only gain-limit builders (`metal_float_adm_math.h`, `metal_integer_vif_gain.h`) use it instead of `==`
+  (`cpp/equality-on-floats`); do not replace it by a bit compare (it must keep the reference's `==` semantics)
+  or a tolerance. `vmaf_mtl_fm_blur()` takes its 100-byte window by `const VMAF_MTL_FM_THR` pointer
+  (`thread` under Metal, empty on the host; `cpp/large-parameter`); `float_motion.metal` passes `&win`.

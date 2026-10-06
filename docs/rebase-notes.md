@@ -19,6 +19,13 @@ Fork-only; no upstream counterpart. A rebase keeps both entries and their expiry
 `pip install` of an unhashed local wheel is a Scorecard Pinned-Dependencies finding and the repository's
 own lock check forbids a generated requirements file. `_set_seed()` in `ai/src/vmaf_train/predictor_train.py`
 uses `find_spec()`. Both are fork-only.
+## CodeQL sweep: Metal headers, include guards, Pelorus test (2026-10-06)
+
+`fix/codeql-metal-headers-guards`. `core/src/feature/ssim.h` and `ms_ssim.h` (Netflix files) gained `SSIM_H_` / `MS_SSIM_H_`
+guards in the style of `motion.h`: an upstream sync that rewrites either file keeps the guard. `vmaf_mtl_fm_blur()` takes
+`const VMAF_MTL_FM_THR VmafMtlFmWindow *` (Metal-only fork code). `core/test/meson.build` renames two static helpers of the
+vendored Pelorus parser for `test_pelorus_interop` with `c_args`; keep them when the mirror is re-vendored (the names must
+stay private to that executable).
 
 ## FFmpeg patch 0022: input colorimetry from the AVFrame (2026-10-06)
 

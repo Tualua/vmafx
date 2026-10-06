@@ -93,6 +93,14 @@ static inline uint32_t vmaf_mtl_clz64(uint64_t x)
     return n;
 }
 
+/* `a == b` for doubles, spelled with ordered comparisons: the same answer for every input
+ * (+0 equals -0, an infinity equals itself, a NaN equals nothing). Host code only. Two
+ * computed values compared with `==` are CodeQL cpp/equality-on-floats findings. */
+static inline int vmaf_mtl_f64_equal(double a, double b)
+{
+    return !(isless(a, b) || isgreater(a, b) || isunordered(a, b));
+}
+
 #define VMAF_MTL_F2U(x) vmaf_mtl_f2u(x)
 #define VMAF_MTL_U2F(x) vmaf_mtl_u2f(x)
 #define VMAF_MTL_CLZ64(x) vmaf_mtl_clz64((uint64_t)(x))
