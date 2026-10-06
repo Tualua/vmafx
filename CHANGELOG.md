@@ -4491,6 +4491,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   FFmpeg patch impact.
 
 
+- **The Metal integer ADM host files carry their provenance.**
+  `integer_adm_metal_host.c` and `.h` now name the Netflix code they reproduce in part
+  (`EUPL-1.2 AND BSD-2-Clause-Patent`), and `Licence Provenance` is clean again
+  (`T-CI-LICENCE-PROVENANCE-METAL-ADM-HOST-2026-10-06`).
+
+
 - **Seven Metal helper headers carry the licence of the Netflix code they reproduce, and the tester bundles are signed in a form Scorecard counts.**
   Five `core/src/feature/metal/metal_*_math.h` headers now list `Copyright 2016-... Netflix, Inc.` and
   `EUPL-1.2 AND BSD-2-Clause-Patent` like their CUDA, HIP and SYCL twins, and two are recorded as

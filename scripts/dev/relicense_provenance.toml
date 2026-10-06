@@ -260,6 +260,13 @@ from = ["netflix-nvidia-adm"]
 from = ["netflix-integer-adm", "netflix-nvidia-adm"]
 [ports."core/src/feature/metal/integer_adm_metal.mm"]
 from = ["netflix-integer-adm", "netflix-nvidia-adm"]
+# The host side split out of integer_adm_metal.mm: the geometry, the band and
+# scratch sizes and the DWT rounding of integer_adm.c, reproduced in part (the
+# fixed-point terms themselves are read from integer_adm_kernels.h).
+[ports."core/src/feature/metal/integer_adm_metal_host.c"]
+from = ["netflix-integer-adm"]
+[ports."core/src/feature/metal/integer_adm_metal_host.h"]
+from = ["netflix-integer-adm"]
 [ports."core/src/feature/hip/integer_motion_hip.c"]
 from = ["netflix-nvidia-motion"]
 [ports."core/src/feature/hip/integer_vif_hip.h"]
@@ -376,6 +383,7 @@ from = ["netflix-speed"]  # transcribes update_entropy() and get_speed_score() o
 "core/src/feature/metal/metal_float_moment_sum.h" = "a Metal-address-space copy of the fork-authored float_moment_sum.h and ordered_sum.h (both EUPL-1.2); no moment.c code"
 "core/src/feature/metal/metal_integer_vif_math.h" = "a periodic fold of the border index; integer_vif.c reflects each tap with its own pad_top_and_bottom code, none of which is reproduced"
 "core/src/feature/metal/metal_ciede_math.h" = "names the Metal primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
+"core/src/feature/metal/metal_integer_adm_uniforms.h" = "the fork's own uniform and reduction-slot layout shared by the kernels and the host; each fixed-point term is filled from integer_adm_kernels.h, none is reproduced"
 "core/src/feature/compat_builtin.h" = "'upstream-verbatim' describes the call sites, not this shim"
 "core/src/feature/pu21.c" = "mirrors float_ssim.c's allocate-once discipline, not its code"
 "core/src/feature/pu21_ssim.h" = "mirrors float_ssim.c's buffer-ownership discipline, not its code"

@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2020 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  *
  *  The host side of integer_adm_metal that does not touch the Metal API
  *  (integer_adm_metal_host.h). Every fixed-point term and every score formula

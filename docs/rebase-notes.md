@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Licence provenance of the Metal integer ADM host files (2026-10-06)
+
+`fix/master-red-licence-provenance`. `scripts/dev/relicense_provenance.toml` gains two `[ports]` entries and one `[not_ports]` line; `integer_adm_metal_host.c` / `.h` take the Netflix notice and the dual tag, `.config/lint-exceptions.d/spdx.toml` its header. An upstream sync that touches `integer_adm.c` keeps the entries. No other rebase impact.
+
 ## SYCL twin option cases proven on a device (2026-10-06)
 
 `test/rc3-sycl-twin-option-regression`. no rebase impact: ledger, changelog fragment and this note only; no source or test file changed.
