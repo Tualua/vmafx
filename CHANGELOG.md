@@ -4745,6 +4745,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   agreed; no tool changes.
 
 
+The Meson test secret-environment contract test reports repository paths with forward slashes on Windows, so it passes there as it does on Linux and macOS.
+
+
 - **`--backend metal` reports CAMBI under the CPU's feature name, and the Metal
   twin writes heatmaps.** `integer_cambi_metal` built its feature names after it
   had written the resolved encode and source sizes into the `enc_width`,
