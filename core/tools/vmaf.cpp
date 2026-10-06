@@ -2196,8 +2196,17 @@ namespace
         return -1;
     }
     err = vmaf_set_sample_range_check_enabled(state->vmaf, state->c.check_sample_range ? 1 : 0);
-    if (err)
+    if (err) {
         (void)fprintf(stderr, "problem enabling the sample range check\n");
+        return -1;
+    }
+    /* ed61076b2: per-input colorimetry, consumed by a model's conversion_target.
+     * Fork adaptation: given to the context, not attached to each picture
+     * (VmafPicture is unchanged, ADR-1822 / ADR-2093). An all-unknown colour
+     * is an unspecified input. */
+    err = vmaf_set_input_colorimetry(state->vmaf, &state->c.color_ref, &state->c.color_dist);
+    if (err)
+        (void)fprintf(stderr, "problem setting the input colorimetry\n");
     return err ? -1 : 0;
 }
 

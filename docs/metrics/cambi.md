@@ -85,7 +85,7 @@ example `--feature cambi=window_size=50:topk=0.5`.
 | `eotf` | none | string | `bt1886` | `bt1886`, `pq` | EOTF used to compute the visibility thresholds. |
 | `cambi_eotf` | `ceot` | string | `bt1886` | `bt1886`, `pq` | Same as `eotf`; takes precedence when both are set. |
 | `full_ref` | none | bool | `false` | n/a | Run CAMBI as a full-reference metric: output the per-frame difference between the encoded and source images as well as the existing no-reference score. Not a command-line flag; pass it as `--feature cambi=full_ref=true`. |
-| `enc_width`, `enc_height` | `encw`, `ench` | int | 0 | 180 to 7680, 150 to 7680 | Encoding/processing resolution to compute the banding score, useful when scaling was applied to the input prior to the computation of metrics. |
+| `enc_width`, `enc_height` | `encw`, `ench` | int | 0 | 144 to 7680 (both) | Encoding/processing resolution to compute the banding score, useful when scaling was applied to the input prior to the computation of metrics. |
 | `enc_bitdepth` | `encbd` | int | 0 | 6 to 16 | Encoding bit depth. |
 | `src_width`, `src_height` | `srcw`, `srch` | int | 0 | 320 to 7680, 200 to 4320 | Encoding/processing resolution of the reference image; only used if `full_ref=true`. |
 | `cambi_high_res_speedup` | `hrs` | int | 0 | 1080, 1440, 2160 or 0 | Speed up by downsampling post spatial mask for resolutions at or above the given height. Some loss of accuracy is expected. 0 means not applied. |

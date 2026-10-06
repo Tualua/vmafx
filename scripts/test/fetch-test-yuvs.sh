@@ -45,6 +45,11 @@ FIXTURES=(
   "checkerboard_1920_1080_10_3_0_0.yuv ad14c75d1897e7f2bc72a882c32e49a6"
   "checkerboard_1920_1080_10_3_1_0.yuv 0e290566458d800c534ab18103619d43"
   "checkerboard_1920_1080_10_3_10_0.yuv 289119e1168ab656ac79487df8d307b9"
+  # 576x324, 1 frame, yuv420p10le, PQ / BT.2020nc / limited range (the files carry
+  # no colorimetry): the HDR conversion fixtures of python/test/vmafexec_color_args_test.py,
+  # added to Netflix/vmaf_resource 2026-10-03 (commit 5e7b853ba), BSD-2-Clause-Patent.
+  "ref_dock-na-HDR_res2160_rate5p0_maxRate100000_bufSize200000_fps59p940_576x324_1frame.yuv 14391e847683cc27c7f39768afa3ffda"
+  "dis_dock-na-HDR_res1440_rate15p0_maxRate10000_bufSize20000_fps59p940_576x324_1frame.yuv 6665d2b17cb15ede58d5f31eddd7a753"
 )
 
 mkdir -p "${YUV_DIR}"

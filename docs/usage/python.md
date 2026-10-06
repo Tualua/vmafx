@@ -651,6 +651,12 @@ initialization. There are two fields to put the optional parameters:
 
 - `optional_dict`: a dictionary field to specify parameters that will impact
   numerical result (e.g. which wavelet transform to use).
+  `VmafexecQualityRunner` also reads `color_ref` and `color_dist` from it, each a
+  dict with exactly the keys `range`, `primaries`, `trc` and `matrix` (for
+  example `{'range': 'limited', 'primaries': 'bt2020', 'trc': 'smpte2084',
+  'matrix': 'bt2020nc'}`), and passes them to `vmafexec` as the
+  `--color_*_ref` / `--color_*_dist` flags of the
+  [CLI](cli.md#input-colorimetry); an incomplete dict is an `AssertionError`.
 - `optional_dict2`: a dictionary field to specify parameters that will NOT
   impact numerical result (e.g. outputting optional results).
 

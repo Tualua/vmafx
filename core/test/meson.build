@@ -1086,6 +1086,30 @@ if is_zimg_enabled
     test('test_colorspace', test_colorspace, suite : ['fast'])
 endif
 
+# Netflix/vmaf a6c0ba6d5: conversion policy of the model's conversion_target
+# (pure decision logic, no zimg).
+test_conversion_policy = executable('test_conversion_policy',
+    ['test.c', 'test_conversion_policy.c', '../src/conversion_policy.c'],
+    objects : log_cpp23_test_objects,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
+    dependencies : [stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_conversion_policy', test_conversion_policy, suite : ['fast'])
+
+# Netflix/vmaf a6c0ba6d5 / 130569c45: vmaf_read_pictures() converts to the
+# model's conversion_target. The conversions need -Denable_zimg=true; without it
+# the test checks that a model with a target fails closed (-ENOTSUP).
+test_read_pictures_convert_args = [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'] + zimg_defines
+test_read_pictures_convert = executable('test_read_pictures_convert',
+    ['test.c', 'test_read_pictures_convert.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    c_args : test_read_pictures_convert_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, thread_lib],
+)
+test('test_read_pictures_convert', test_read_pictures_convert, suite : ['fast'])
+
 # ADR-0928 cycle N+1: picture_v2 unit tests
 test_picture_v2 = executable('test_picture_v2',
     ['test.c', 'test_picture_v2.c', '../src/picture_v2.c'],
@@ -2697,6 +2721,14 @@ test('test_metal_integer_vif_min_dim_contract',
     args : files('test_metal_integer_vif_min_dim_contract.py'),
     suite : ['fast'],
     timeout : 30,
+)
+
+# Netflix/vmaf 4f3f71b68 / ADR-2093: every CAMBI extractor's enc_width and
+# enc_height minimum is 144 (device-free source scan of the five tables).
+test('test_cambi_enc_dimension_minimum_contract',
+    import('python').find_installation(),
+    args : files('test_cambi_enc_dimension_minimum_contract.py'),
+    suite : ['fast'],
 )
 
 # T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26, option tables (ADR-1498):

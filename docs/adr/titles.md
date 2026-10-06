@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1302), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1303), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5219,3 +5219,7 @@ Every ADR, one heading each (1302), so the site search finds an ADR by its title
 ## ADR-2062: The `cpu` tidy lane measures the MATLAB MEX sources against self-authored stub headers
 
 [2062-matlab-mex-lint-stubs](2062-matlab-mex-lint-stubs.md)
+
+## ADR-2093: HDR-VMAF groundwork from upstream, with the input colorimetry on the context
+
+[2093-upstream-hdr-groundwork-input-colorimetry](2093-upstream-hdr-groundwork-input-colorimetry.md)

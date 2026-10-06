@@ -104,6 +104,7 @@ typedef struct {
     unsigned height;
     enum VmafPixelFormat pix_fmt;
     unsigned bitdepth;
+    VmafColor color_ref, color_dist; /* ed61076b2; all four attributes or none */
     enum VmafOutputFormat output_fmt;
     unsigned model_cnt;
     unsigned feature_cnt;

@@ -30,6 +30,7 @@
 
 #include "dict.h"
 #include "libvmaf/model.h"
+#include "libvmaf/picture.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -107,6 +108,14 @@ struct VmafModel {
         } knots;
         bool out_lte_in, out_gte_in;
     } score_transform;
+    /* Optional `conversion_target` block of the model file (Netflix/vmaf
+     * 1ddf81607). pix_fmt UNKNOWN / bpc 0 mean "keep the source picture's". */
+    struct {
+        bool enabled;
+        VmafColor color;
+        enum VmafPixelFormat pix_fmt;
+        unsigned bpc;
+    } conversion_target;
     struct svm_model *svm;
     // Pre-allocated prediction state (populated lazily, reused per frame)
     struct svm_node *predict_nodes; // n_features + 1 entries

@@ -2789,6 +2789,8 @@ libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'model.c',
     src_dir + 'picture.c',
+    src_dir + 'conversion_policy.c', # Netflix a6c0ba6d5: model conversion_target policy
+    src_dir + 'conversion_context.c', # ADR-2093: conversion state of one VmafContext
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
     src_dir + 'picture_sample_range.c', # ADR-1918: opt-in sample range check of vmaf_read_pictures()
     src_dir + 'mem.cpp',

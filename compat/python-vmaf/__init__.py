@@ -251,6 +251,28 @@ def _vmafexec_feature_flags(
     return flags
 
 
+_VMAFEXEC_COLOR_KEYS = {"range", "primaries", "trc", "matrix"}
+
+
+def _vmafexec_color_flags(color_ref, color_dist):
+    """``--color_<attribute>_ref`` / ``--color_<attribute>_dist`` of ``call_vmafexec``.
+
+    Per-input source colorimetry, e.g. ``{'range': 'limited', 'primaries': 'bt2020',
+    'trc': 'smpte2084', 'matrix': 'bt2020nc'}``. All four keys are required for an
+    input that is given; ``None`` leaves that input unspecified.
+    """
+    flags = ""
+    for suffix, color in (("ref", color_ref), ("dist", color_dist)):
+        if color is None:
+            continue
+        assert (
+            set(color) == _VMAFEXEC_COLOR_KEYS
+        ), "color_{} needs exactly range, primaries, trc and matrix".format(suffix)
+        for attribute, value in color.items():
+            flags += " --color_{}_{} {}".format(attribute, suffix, value)
+    return flags
+
+
 def _vmafexec_model_overloads(
     vif_enhn_gain_limit, adm_enhn_gain_limit, motion_force_zero, enc_width, enc_height, enc_bitdepth
 ):
@@ -457,14 +479,16 @@ class ExternalProgramCaller(object):
         enc_height=None,
         enc_bitdepth=None,
         backend=None,
+        color_ref=None,
+        color_dist=None,
     ):
-
         if exe is None:
             exe = required(ExternalProgram.vmafexec)
 
         vmafexec_cmd = _vmafexec_base_command(
             exe, reference, distorted, width, height, pixel_format, bitdepth, output
         )
+        vmafexec_cmd += _vmafexec_color_flags(color_ref, color_dist)
         vmafexec_cmd += _vmafexec_feature_flags(
             float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment
         )

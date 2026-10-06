@@ -50,6 +50,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "libvmaf/picture.h"
 
 #include "bootstrap_names.h"
+#include "conversion_context.h"
 #include "cpu.h"
 #include "dnn/dnn_ctx.h"
 #include "dnn/tensor_io.h"
@@ -205,8 +206,9 @@ typedef struct VmafContext {
      * is fine — `have_last_index` guards the first call. */
     unsigned last_index;
     bool have_last_index;
-    VmafPicture prev_ref;      // n-1 ref pic for PREV_REF extractors (in-order only)
-    VmafPicture prev_prev_ref; // n-2 ref pic, kept only while keep_prev_prev_ref (ADR-1478)
+    VmafConversionState convert; // ADR-2093: model conversion_target + input colorimetry
+    VmafPicture prev_ref;        // n-1 ref pic for PREV_REF extractors (in-order only)
+    VmafPicture prev_prev_ref;   // n-2 ref pic, kept only while keep_prev_prev_ref (ADR-1478)
     /* ADR-1478: set once a registered extractor reads frame n-2 (the
      * five-frame motion window). Only then does the context keep
      * prev_prev_ref, and only then must a preallocated pool hold
@@ -2135,6 +2137,7 @@ static int vmaf_commit_extractor_owners(VmafContext *vmaf)
 static int vmaf_commit_remaining_owners(VmafContext *vmaf)
 {
     int err = 0;
+    vmaf_conversion_state_close(&vmaf->convert); /* ADR-2093; idempotent on a close retry */
     if (vmaf->prev_ref.ref) {
         err = vmaf_picture_unref(&vmaf->prev_ref);
         if (err)
@@ -2207,6 +2210,13 @@ int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled)
 
     vmaf->check_sample_range = (enabled != 0);
     return 0;
+}
+
+int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
+{
+    if (!vmaf)
+        return -EINVAL;
+    return vmaf_conversion_state_set_input_color(&vmaf->convert, ref, dist);
 }
 
 int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
@@ -2485,7 +2495,9 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
     if (!model)
         return -EINVAL;
 
-    int err = 0;
+    int err = vmaf_conversion_state_register_model(&vmaf->convert, model);
+    if (err)
+        return err;
     const unsigned fex_flags = compute_fex_flags(vmaf);
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
@@ -4055,7 +4067,13 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
     ReadPicturesFrame fr = {.ref = ref, .dist = dist};
     if (vmaf->flushed)
         return read_pictures_frame_cleanup(vmaf, &fr, -EINVAL);
-    int err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
+    /* Before validation and before any device upload: the model's
+     * conversion_target (Netflix/vmaf a6c0ba6d5) changes the format the rest
+     * of the call sees. */
+    int err = vmaf_conversion_state_convert(&vmaf->convert, ref, dist);
+    if (err)
+        return read_pictures_frame_cleanup(vmaf, &fr, err);
+    err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
     if (err)
         return read_pictures_frame_cleanup(vmaf, &fr, err);
     err = resolve_context_fallbacks(vmaf);
@@ -4169,6 +4187,10 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     const int admit_err = sycl_zero_copy_admit(vmaf);
     if (admit_err)
         return admit_err;
+    const int convert_err =
+        vmaf_conversion_state_refuse_zero_copy(&vmaf->convert, "vmaf_read_pictures_sycl");
+    if (convert_err)
+        return convert_err;
 
     // Ensure de-tile kernels on the primary queue have finished reading from
     // imported VA surface memory.  After this function returns, the caller

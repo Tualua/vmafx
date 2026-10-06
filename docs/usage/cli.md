@@ -477,6 +477,36 @@ still contribute to memory use. See
 `--subsample` trades precision for speed. Pooled scores are still computed over
 the sampled subset, so keep it at 1 for final reports.
 
+## Input colorimetry
+
+```text
+--color_range_ref/_dist <limited|full|unknown>
+--color_primaries_ref/_dist <bt709|bt2020|unknown>
+--color_trc_ref/_dist <bt709|smpte2084|pq|unknown>
+--color_matrix_ref/_dist <bt709|bt2020nc|ictcp|unknown>
+```
+
+A raw `.yuv` or `.y4m` file carries no colorimetry, so each input is described
+separately: the `_ref` flags describe the reference, the `_dist` flags the
+distorted video. Give all four attributes of an input or none of them; a partly
+specified input is a usage error. `pq` is an alias of `smpte2084`.
+
+Only a model that declares a [`conversion_target`](../models/v1.md#model-declared-conversion-target)
+reads these flags: libvmaf then converts both inputs to the model's colorspace
+(and pixel format and bit depth, where the model pins them) before it extracts
+features, and refuses a run whose input colorimetry is missing
+(`libvmaf returned -22`, with a message naming the missing attributes). Models
+without a `conversion_target`, including every shipped VMAF model, ignore the
+flags and score the pictures as they are. The conversion needs a `vmaf` built
+with `-Denable_zimg=true` ([build flags](../development/build-flags.md)); without
+it a run that needs a conversion fails with `-ENOTSUP`.
+
+```bash
+vmaf -r ref.yuv -d dist.yuv -w 576 -h 324 -p 420 -b 10 -m path=hdr_model.json \
+  --color_range_ref limited --color_primaries_ref bt2020 --color_trc_ref pq --color_matrix_ref bt2020nc \
+  --color_range_dist limited --color_primaries_dist bt2020 --color_trc_dist pq --color_matrix_dist bt2020nc
+```
+
 ## Input read-ahead
 
 `vmaf` reads the reference and the distorted input on two reader threads, each

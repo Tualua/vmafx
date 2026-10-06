@@ -31,6 +31,12 @@ extern "C" {
  */
 int vmaf_picture_check_sample_range(const VmafPicture *pic, const char *which);
 
+/**
+ * Non-zero when the host can read the samples of `pic`: a host or pinned-host
+ * picture, or one with no private slot. Zero for a picture in device memory.
+ */
+int vmaf_picture_host_readable(const VmafPicture *pic);
+
 #ifdef __cplusplus
 }
 #endif

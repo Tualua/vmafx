@@ -19,19 +19,24 @@ scripts/test/fetch-test-yuvs.sh
 
 The script:
 
-- Downloads five files into `python/test/resource/yuv/` when they are
+- Downloads seven files into `python/test/resource/yuv/` when they are
   not already present: `src01_hrc00_576x324.yuv` and
-  `src01_hrc01_576x324.yuv` (576x324), and
+  `src01_hrc01_576x324.yuv` (576x324),
   `checkerboard_1920_1080_10_3_0_0.yuv`,
   `checkerboard_1920_1080_10_3_1_0.yuv` and
-  `checkerboard_1920_1080_10_3_10_0.yuv` (1920x1080).
+  `checkerboard_1920_1080_10_3_10_0.yuv` (1920x1080), and the two
+  single-frame HDR clips `ref_dock-na-HDR_res2160_..._576x324_1frame.yuv` /
+  `dis_dock-na-HDR_res1440_..._576x324_1frame.yuv` (576x324, `yuv420p10le`,
+  PQ / BT.2020nc / limited range; the files carry no colorimetry). The HDR
+  pair is read by `python/test/vmafexec_color_args_test.py` and is not part of
+  the golden gate.
 - Verifies the md5 sum of every file against hardcoded expected values.
   A local file with the right name but the wrong content is detected,
   deleted and downloaded again.
 - Is idempotent. Re-running on a fully provisioned tree prints
   `ok      <name> (md5 verified)` for each fixture and exits 0.
 
-These five files are the three Netflix test pairs of the CPU golden gate
+The first five files are the three Netflix test pairs of the CPU golden gate
 (normal, checkerboard 1-px, checkerboard 10-px; see section 8 of
 [AGENTS.md](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md) and
 [ADR-0024](../adr/0024-netflix-golden-preserved.md)). The cross-backend

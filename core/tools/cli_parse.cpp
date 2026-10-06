@@ -70,6 +70,14 @@ enum : std::uint16_t {
     ARG_FRAME_CNT,
     ARG_FRAME_SKIP_REF,
     ARG_FRAME_SKIP_DIST,
+    ARG_COLOR_RANGE_REF,
+    ARG_COLOR_RANGE_DIST,
+    ARG_COLOR_PRIMARIES_REF,
+    ARG_COLOR_PRIMARIES_DIST,
+    ARG_COLOR_TRC_REF,
+    ARG_COLOR_TRC_DIST,
+    ARG_COLOR_MATRIX_REF,
+    ARG_COLOR_MATRIX_DIST,
     ARG_NO_CUDA,
     ARG_NO_SYCL,
     ARG_SYCL_DEVICE,
@@ -162,6 +170,17 @@ const struct option long_opts[] = {
     {.name = "frame_cnt", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_CNT},
     {.name = "frame_skip_ref", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_SKIP_REF},
     {.name = "frame_skip_dist", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_SKIP_DIST},
+    {.name = "color_range_ref", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_RANGE_REF},
+    {.name = "color_range_dist", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_RANGE_DIST},
+    {.name = "color_primaries_ref", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_PRIMARIES_REF},
+    {.name = "color_primaries_dist",
+     .has_arg = 1,
+     .flag = nullptr,
+     .val = ARG_COLOR_PRIMARIES_DIST},
+    {.name = "color_trc_ref", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_TRC_REF},
+    {.name = "color_trc_dist", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_TRC_DIST},
+    {.name = "color_matrix_ref", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_MATRIX_REF},
+    {.name = "color_matrix_dist", .has_arg = 1, .flag = nullptr, .val = ARG_COLOR_MATRIX_DIST},
     {.name = "no_cuda", .has_arg = 0, .flag = nullptr, .val = ARG_NO_CUDA},
     {.name = "no_sycl", .has_arg = 0, .flag = nullptr, .val = ARG_NO_SYCL},
     {.name = "sycl_device", .has_arg = 1, .flag = nullptr, .val = ARG_SYCL_DEVICE},
@@ -216,35 +235,45 @@ const struct option long_opts[] = {
 void print_usage_options_part1(FILE *const out, const char *const app)
 {
     (void)fprintf(out, "Usage: %s [options]\n\n", app);
-    (void)fprintf(out, "Supported options:\n"
-                       " --help:                      print this message and exit\n"
-                       " --reference/-r $path:        path to reference .y4m or .yuv\n"
-                       " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
-                       " --width/-w $unsigned:        width\n"
-                       " --height/-h $unsigned:       height\n"
-                       " --pixel_format/-p: $string   pixel format (420/422/444)\n"
-                       " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
-                       " --model/-m $params:          model parameters, colon \":\" delimited\n"
-                       "                              `path=` path to model file\n"
-                       "                              `version=` built-in model version\n"
-                       "                              `name=` name used in log (optional)\n"
-                       " --output/-o $path:           output file\n"
-                       " --xml:                       write output file as XML (default)\n"
-                       " --json:                      write output file as JSON\n"
-                       " --csv:                       write output file as CSV\n"
-                       " --sub:                       write output file as subtitle\n"
-                       " --threads $unsigned:         number of threads to use\n"
-                       " --feature $string:           additional feature\n"
-                       " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
-                       " --gpumask: $bitmask          restrict permitted GPU operations\n"
-                       " --frame_cnt $unsigned:       maximum number of frames to process\n"
-                       " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
-                       " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
-                       " --subsample: $unsigned       compute scores only every N frames\n"
-                       " --no_cuda:                   disable CUDA backend\n"
-                       " --no_sycl:                    disable SYCL/oneAPI backend\n"
-                       " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
-                       "                              [Vulkan backend removed in ADR-0726]\n");
+    (void)fprintf(
+        out,
+        "Supported options:\n"
+        " --help:                      print this message and exit\n"
+        " --reference/-r $path:        path to reference .y4m or .yuv\n"
+        " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
+        " --width/-w $unsigned:        width\n"
+        " --height/-h $unsigned:       height\n"
+        " --pixel_format/-p: $string   pixel format (420/422/444)\n"
+        " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
+        " --model/-m $params:          model parameters, colon \":\" delimited\n"
+        "                              `path=` path to model file\n"
+        "                              `version=` built-in model version\n"
+        "                              `name=` name used in log (optional)\n"
+        " --output/-o $path:           output file\n"
+        " --xml:                       write output file as XML (default)\n"
+        " --json:                      write output file as JSON\n"
+        " --csv:                       write output file as CSV\n"
+        " --sub:                       write output file as subtitle\n"
+        " --threads $unsigned:         number of threads to use\n"
+        " --feature $string:           additional feature\n"
+        " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
+        " --gpumask: $bitmask          restrict permitted GPU operations\n"
+        " --frame_cnt $unsigned:       maximum number of frames to process\n"
+        " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
+        " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
+        " --subsample: $unsigned       compute scores only every N frames\n"
+        " --color_range_ref/_dist $string:\n"
+        "                              color range for the reference/distorted input\n"
+        " --color_primaries_ref/_dist $string:\n"
+        "                              color primaries for the reference/distorted input\n"
+        " --color_trc_ref/_dist $string:\n"
+        "                              transfer characteristic for the reference/distorted input\n"
+        " --color_matrix_ref/_dist $string:\n"
+        "                              matrix coefficients for the reference/distorted input\n"
+        " --no_cuda:                   disable CUDA backend\n"
+        " --no_sycl:                    disable SYCL/oneAPI backend\n"
+        " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
+        "                              [Vulkan backend removed in ADR-0726]\n");
 }
 
 /* The codec-context and NR flags of tiny models; split out of
@@ -500,6 +529,162 @@ void error(const char *const app, const char *const optarg, const int option,
     }
 
     return pix_fmt;
+}
+
+/* Per-input colorimetry flags (Netflix/vmaf ed61076b2): --color_X_ref and
+ * --color_X_dist describe the reference and the distorted input. Fork
+ * adaptation: upstream stores the parsed colour into every fetched picture's
+ * `VmafPicture::color`; the fork keeps VmafPicture unchanged (ADR-1822) and
+ * hands it to vmaf_set_input_colorimetry() (ADR-2093). */
+struct NamedValue {
+    const char *name;
+    unsigned val;
+};
+
+[[nodiscard]] bool lookup_named_value(const NamedValue *const table, const size_t table_len,
+                                      const char *const optarg, unsigned *const val)
+{
+    for (size_t i = 0; i < table_len; i++) {
+        if (!strcmp(optarg, table[i].name)) {
+            *val = table[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const NamedValue color_range_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_RANGE_UNKNOWN},
+    {.name = "limited", .val = VMAF_COLOR_RANGE_LIMITED},
+    {.name = "full", .val = VMAF_COLOR_RANGE_FULL},
+};
+
+const NamedValue color_primaries_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_PRIMARIES_UNKNOWN},
+    {.name = "bt709", .val = VMAF_COLOR_PRIMARIES_BT709},
+    {.name = "bt2020", .val = VMAF_COLOR_PRIMARIES_BT2020},
+};
+
+const NamedValue color_trc_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_TRC_UNKNOWN},
+    {.name = "bt709", .val = VMAF_COLOR_TRC_BT709},
+    {.name = "smpte2084", .val = VMAF_COLOR_TRC_SMPTE2084},
+    {.name = "pq", .val = VMAF_COLOR_TRC_SMPTE2084},
+};
+
+const NamedValue color_matrix_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_MATRIX_UNKNOWN},
+    {.name = "bt709", .val = VMAF_COLOR_MATRIX_BT709},
+    {.name = "bt2020nc", .val = VMAF_COLOR_MATRIX_BT2020_NCL},
+    {.name = "ictcp", .val = VMAF_COLOR_MATRIX_ICTCP},
+};
+
+template <size_t N>
+[[nodiscard]] unsigned parse_color_attr(const NamedValue (&table)[N], const char *const optarg,
+                                        const int option, const char *const app,
+                                        const char *const expected)
+{
+    unsigned val = 0;
+    if (!lookup_named_value(table, N, optarg, &val))
+        error(app, optarg, option, expected);
+    return val;
+}
+
+[[nodiscard]] bool color_any_set(const VmafColor *const color)
+{
+    return color->range != VMAF_COLOR_RANGE_UNKNOWN ||
+           color->primaries != VMAF_COLOR_PRIMARIES_UNKNOWN ||
+           color->trc != VMAF_COLOR_TRC_UNKNOWN || color->matrix != VMAF_COLOR_MATRIX_UNKNOWN;
+}
+
+[[nodiscard]] bool color_all_set(const VmafColor *const color)
+{
+    return color->range != VMAF_COLOR_RANGE_UNKNOWN &&
+           color->primaries != VMAF_COLOR_PRIMARIES_UNKNOWN &&
+           color->trc != VMAF_COLOR_TRC_UNKNOWN && color->matrix != VMAF_COLOR_MATRIX_UNKNOWN;
+}
+
+void handle_color_range_flag(const int o, const char *const optarg, const char *const app,
+                             CLISettings *const settings)
+{
+    const char *const expected = "a valid color range (unknown/limited/full)";
+    VmafColor *const color =
+        (o == ARG_COLOR_RANGE_REF) ? &settings->color_ref : &settings->color_dist;
+    color->range = static_cast<enum VmafColorRange>(
+        parse_color_attr(color_range_names, optarg, o, app, expected));
+}
+
+void handle_color_primaries_flag(const int o, const char *const optarg, const char *const app,
+                                 CLISettings *const settings)
+{
+    const char *const expected = "a valid color primaries name, e.g. unknown/bt709/bt2020";
+    VmafColor *const color =
+        (o == ARG_COLOR_PRIMARIES_REF) ? &settings->color_ref : &settings->color_dist;
+    color->primaries = static_cast<enum VmafColorPrimaries>(
+        parse_color_attr(color_primaries_names, optarg, o, app, expected));
+}
+
+void handle_color_trc_flag(const int o, const char *const optarg, const char *const app,
+                           CLISettings *const settings)
+{
+    const char *const expected = "a valid transfer characteristic name, e.g. unknown/bt709/pq";
+    VmafColor *const color =
+        (o == ARG_COLOR_TRC_REF) ? &settings->color_ref : &settings->color_dist;
+    color->trc = static_cast<enum VmafColorTransferCharacteristic>(
+        parse_color_attr(color_trc_names, optarg, o, app, expected));
+}
+
+void handle_color_matrix_flag(const int o, const char *const optarg, const char *const app,
+                              CLISettings *const settings)
+{
+    const char *const expected = "a valid matrix coefficients name, e.g. bt709/bt2020nc/ictcp";
+    VmafColor *const color =
+        (o == ARG_COLOR_MATRIX_REF) ? &settings->color_ref : &settings->color_dist;
+    color->matrix = static_cast<enum VmafColorMatrixCoefficients>(
+        parse_color_attr(color_matrix_names, optarg, o, app, expected));
+}
+
+/* True for any of the eight --color_*_ref / --color_*_dist options (consecutive enumerators). */
+[[nodiscard]] bool is_color_flag(const int o)
+{
+    return o >= ARG_COLOR_RANGE_REF && o <= ARG_COLOR_MATRIX_DIST;
+}
+
+void handle_color_flag(const int o, const char *const optarg, const char *const app,
+                       CLISettings *const settings)
+{
+    switch (o) {
+    case ARG_COLOR_RANGE_REF:
+    case ARG_COLOR_RANGE_DIST:
+        handle_color_range_flag(o, optarg, app, settings);
+        break;
+    case ARG_COLOR_PRIMARIES_REF:
+    case ARG_COLOR_PRIMARIES_DIST:
+        handle_color_primaries_flag(o, optarg, app, settings);
+        break;
+    case ARG_COLOR_TRC_REF:
+    case ARG_COLOR_TRC_DIST:
+        handle_color_trc_flag(o, optarg, app, settings);
+        break;
+    default:
+        handle_color_matrix_flag(o, optarg, app, settings);
+        break;
+    }
+}
+
+/* Each input needs all four attributes or none. */
+void validate_color_settings(const char *const app, const CLISettings *const settings)
+{
+    if (color_any_set(&settings->color_ref) && !color_all_set(&settings->color_ref)) {
+        usage(app, "The reference colorimetry must either be fully specified or left unset: "
+                   "provide all of --color_range_ref, --color_primaries_ref, "
+                   "--color_trc_ref and --color_matrix_ref\n");
+    }
+    if (color_any_set(&settings->color_dist) && !color_all_set(&settings->color_dist)) {
+        usage(app, "The distorted colorimetry must either be fully specified or left unset: "
+                   "provide all of --color_range_dist, --color_primaries_dist, "
+                   "--color_trc_dist and --color_matrix_dist\n");
+    }
 }
 
 /* ADR-1190 — escape-aware splitting of the `--model` / `--feature` option
@@ -1259,6 +1444,7 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
         usage(app, "Distorted .y4m or .yuv (-d/--distorted) is required");
 
     validate_yuv_settings(app, settings);
+    validate_color_settings(app, settings);
 
     if (settings->model_cnt == 0 && !settings->no_prediction) {
 #if VMAF_BUILT_IN_MODELS
@@ -1418,6 +1604,10 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
 {
     if (handle_primary_cli_opt(o, optarg, app, settings))
         return;
+    if (is_color_flag(o)) {
+        handle_color_flag(o, optarg, app, settings);
+        return;
+    }
 
     switch (o) {
     case ARG_FRAME_CNT:

@@ -863,6 +863,195 @@ static char *test_json_model_score_transform_p1_bad_type(void)
     return NULL;
 }
 
+/* The bytes of the model file, NUL terminated; NULL on any I/O error. */
+static char *read_model_json(size_t *len)
+{
+    FILE *f = fopen(JSON_MODEL_PATH "vmaf_v0.6.1.json", "rb");
+    if (!f)
+        return NULL;
+    char *buf = NULL;
+    long n = -1;
+    if (!fseek(f, 0, SEEK_END))
+        n = ftell(f);
+    if (n > 0 && !fseek(f, 0, SEEK_SET))
+        buf = calloc((size_t)n + 1, 1);
+    const bool read_ok = buf && fread(buf, 1, (size_t)n, f) == (size_t)n;
+    const bool close_ok = !fclose(f);
+    if (!read_ok || !close_ok) {
+        free(buf);
+        return NULL;
+    }
+    *len = (size_t)n;
+    return buf;
+}
+
+/* Upper bound on the model file the tests read (it is about 100 KiB). */
+#define MODEL_JSON_MAX ((size_t)1 << 22)
+
+/* `buf` (the model file, `n` bytes, NUL terminated) with `block` spliced in after
+ * the `"model_dict": {` key; NULL when the key is missing or memory runs out. */
+static char *splice_model_json(const char *buf, size_t n, const char *block)
+{
+    const char *key = "\"model_dict\": {";
+    const char *at = strstr(buf, key);
+    const size_t block_len = strlen(block);
+    if (!at || n > MODEL_JSON_MAX || block_len > MODEL_JSON_MAX)
+        return NULL;
+    at += strlen(key);
+
+    const size_t head = (size_t)(at - buf);
+    const size_t total = n + block_len;
+    if (total > 2 * MODEL_JSON_MAX)
+        return NULL;
+    char *res = calloc(total + 1, 1);
+    if (!res)
+        return NULL;
+    const int written = snprintf(res, total + 1, "%.*s%s%s", (int)head, buf, block, at);
+    if (written < 0 || (size_t)written != total) {
+        free(res);
+        return NULL;
+    }
+    return res;
+}
+
+static char *read_model_json_with_block(char **out, const char *block)
+{
+    size_t n = 0;
+    char *buf = read_model_json(&n);
+    mu_assert("could not read model json", buf);
+    char *res = splice_model_json(buf, n, block);
+    free(buf);
+    mu_assert("could not splice the block into the model_dict", res);
+    *out = res;
+    return NULL;
+}
+
+static int load_model_with_block(VmafModel **model, const char *block)
+{
+    char *json;
+    if (read_model_json_with_block(&json, block))
+        return -EIO;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(model, &cfg, json, (int)strlen(json));
+    free(json);
+    return err;
+}
+
+static char *test_model_without_conversion_target()
+{
+    VmafModel *model;
+    int err = load_model_with_block(&model, "");
+    mu_assert("problem loading model", !err);
+    mu_assert("model without a block should have no conversion target",
+              !model->conversion_target.enabled);
+    vmaf_model_destroy(model);
+
+    return NULL;
+}
+
+static char *test_model_conversion_target()
+{
+    VmafModel *model;
+    int err = load_model_with_block(
+        &model, "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+                "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\", "
+                "\"matrix\": \"ictcp\"}}, ");
+    mu_assert("problem loading model with conversion_target", !err);
+    mu_assert("conversion target should be enabled", model->conversion_target.enabled);
+    const VmafColor *c = &model->conversion_target.color;
+    mu_assert("range", c->range == VMAF_COLOR_RANGE_LIMITED);
+    mu_assert("primaries", c->primaries == VMAF_COLOR_PRIMARIES_BT2020);
+    mu_assert("trc", c->trc == VMAF_COLOR_TRC_SMPTE2084);
+    mu_assert("matrix", c->matrix == VMAF_COLOR_MATRIX_ICTCP);
+    vmaf_model_destroy(model);
+
+    return NULL;
+}
+
+static char *test_model_conversion_target_rejects_bad_input()
+{
+    const char *bad[] = {
+        /* unknown name */
+        "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+        "\"primaries\": \"bt2020\", \"trc\": \"hlg\", "
+        "\"matrix\": \"ictcp\"}}, ",
+        /* missing attribute */
+        "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+        "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\"}}, ",
+        /* "unknown" is not a valid target value */
+        "\"conversion_target\": {\"colorspace\": {\"range\": \"unknown\", "
+        "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\", "
+        "\"matrix\": \"ictcp\"}}, ",
+        /* block without a colorspace */
+        "\"conversion_target\": {}, ",
+    };
+
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(*bad); i++) {
+        VmafModel *model = NULL;
+        int err = load_model_with_block(&model, bad[i]);
+        /* a failed load leaves the half-built model with the caller */
+        if (model)
+            vmaf_model_destroy(model);
+        mu_assert("a malformed conversion_target should be rejected", err);
+    }
+
+    return NULL;
+}
+
+static char *test_model_conversion_target_format_and_depth()
+{
+    VmafModel *model;
+    int err = load_model_with_block(
+        &model, "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+                "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\", "
+                "\"matrix\": \"ictcp\"}, \"pixel_format\": \"420\", "
+                "\"bit_depth\": 16}, ");
+    mu_assert("problem loading model with format and depth", !err);
+    mu_assert("pixel_format should be parsed",
+              model->conversion_target.pix_fmt == VMAF_PIX_FMT_YUV420P);
+    mu_assert("bit_depth should be parsed", model->conversion_target.bpc == 16);
+    vmaf_model_destroy(model);
+
+    err = load_model_with_block(&model,
+                                "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+                                "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\", "
+                                "\"matrix\": \"ictcp\"}}, ");
+    mu_assert("problem loading model without format and depth", !err);
+    mu_assert("an absent pixel_format should mean keep the source's",
+              model->conversion_target.pix_fmt == VMAF_PIX_FMT_UNKNOWN);
+    mu_assert("an absent bit_depth should mean keep the source's",
+              model->conversion_target.bpc == 0);
+    vmaf_model_destroy(model);
+
+    return NULL;
+}
+
+static char *test_model_conversion_target_rejects_bad_format_and_depth()
+{
+    const char *colorspace = "\"colorspace\": {\"range\": \"limited\", \"primaries\": \"bt2020\", "
+                             "\"trc\": \"smpte2084\", \"matrix\": \"ictcp\"}";
+    const char *extra[] = {
+        "\"pixel_format\": \"400\"", "\"pixel_format\": \"yuv420p\"",
+        "\"pixel_format\": 420",     "\"bit_depth\": 7",
+        "\"bit_depth\": 17",         "\"bit_depth\": 10.5",
+        "\"bit_depth\": \"16\"",
+    };
+
+    for (unsigned i = 0; i < sizeof(extra) / sizeof(*extra); i++) {
+        char block[512];
+        const int block_len = snprintf(block, sizeof(block), "\"conversion_target\": {%s, %s}, ",
+                                       colorspace, extra[i]);
+        mu_assert("the block fits its buffer", block_len > 0 && (size_t)block_len < sizeof(block));
+        VmafModel *model = NULL;
+        int err = load_model_with_block(&model, block);
+        if (model)
+            vmaf_model_destroy(model);
+        mu_assert("a bad pixel_format or bit_depth should be rejected", err);
+    }
+
+    return NULL;
+}
+
 /* parse_score_transform: p2 bad type → -EINVAL (line 240). */
 static char *test_json_model_score_transform_p2_bad_type(void)
 {
@@ -1521,6 +1710,11 @@ static const MuTest model_api_tests[] = {
     MU_TEST(test_model_check_default_behavior_set_flags),
     MU_TEST(test_model_set_flags),
     MU_TEST(test_model_feature),
+    MU_TEST(test_model_without_conversion_target),
+    MU_TEST(test_model_conversion_target),
+    MU_TEST(test_model_conversion_target_rejects_bad_input),
+    MU_TEST(test_model_conversion_target_format_and_depth),
+    MU_TEST(test_model_conversion_target_rejects_bad_format_and_depth),
 };
 
 /* JSON model and model-collection loading, from a path and from a buffer. */

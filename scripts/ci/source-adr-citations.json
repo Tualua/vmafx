@@ -6119,6 +6119,7 @@
         "core/include/libvmaf/picture.h": 11,
         "core/src/arm/cpu.h": 1,
         "core/src/compat/path_utf8.c": 1,
+        "core/src/conversion_context.c": 1,
         "core/src/cuda/common.c": 1,
         "core/src/cuda/dispatch_strategy.c": 1,
         "core/src/cuda/drain_batch.c": 1,
@@ -6344,12 +6345,13 @@
         "core/test/test_ciede_upstream_products.c": 1,
         "core/test/test_cjson.c": 1,
         "core/test/test_cli_exit_status.c": 1,
-        "core/test/test_cli_parse.c": 28,
+        "core/test/test_cli_parse.c": 29,
         "core/test/test_cli_parse_long_only_args.c": 1,
         "core/test/test_collector_owns_mounted_model.c": 1,
         "core/test/test_colorspace.c": 1,
         "core/test/test_compat_clz.c": 1,
         "core/test/test_context.c": 1,
+        "core/test/test_conversion_policy.c": 1,
         "core/test/test_convolution_edge_small.c": 1,
         "core/test/test_convolution_horizontal.c": 1,
         "core/test/test_cpu.c": 1,
@@ -6601,6 +6603,7 @@
         "core/test/test_psnr_uncapped.c": 1,
         "core/test/test_pu21.c": 1,
         "core/test/test_public_api_score.c": 1,
+        "core/test/test_read_pictures_convert.c": 1,
         "core/test/test_read_pictures_failure_ownership.c": 1,
         "core/test/test_read_pictures_monotonic.c": 1,
         "core/test/test_ref.c": 1,
@@ -9287,6 +9290,7 @@
         "core/src/libvmaf.c": 1,
         "core/test/meson.build": 2,
         "core/test/test_cuda_oom_pictures_released.c": 1,
+        "core/test/test_read_pictures_convert.c": 1,
         "core/test/test_read_pictures_failure_ownership.c": 2,
         "core/test/test_read_pictures_monotonic.c": 1,
         "core/test/test_validate_pic_params_bpc.c": 1
@@ -11206,11 +11210,17 @@
       "sites": {
         "core/include/libvmaf/picture.h": 2,
         "core/meson_options.txt": 1,
+        "core/src/conversion_context.h": 1,
+        "core/src/conversion_policy.h": 1,
         "core/src/meson.build": 3,
         "core/src/picture_convert.c": 1,
         "core/test/meson.build": 1,
         "core/test/test_colorspace.c": 1,
-        "core/test/test_picture_convert_api.c": 1
+        "core/test/test_conversion_policy.c": 1,
+        "core/test/test_picture_convert_api.c": 1,
+        "core/test/test_read_pictures_convert.c": 1,
+        "core/tools/cli_parse.cpp": 1,
+        "core/tools/vmaf.cpp": 1
       },
       "target": "1822-additive-picture-convert.md"
     },
@@ -11330,6 +11340,19 @@
         "scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py": 1
       },
       "target": "2062-matlab-mex-lint-stubs.md"
+    },
+    "2093": {
+      "sites": {
+        "core/src/conversion_context.h": 1,
+        "core/src/libvmaf.c": 2,
+        "core/src/meson.build": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_cambi_enc_dimension_minimum_contract.py": 1,
+        "core/test/test_read_pictures_convert.c": 1,
+        "core/tools/cli_parse.cpp": 1,
+        "core/tools/vmaf.cpp": 1
+      },
+      "target": "2093-upstream-hdr-groundwork-input-colorimetry.md"
     }
   },
   "retired": {

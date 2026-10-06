@@ -7,6 +7,43 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Port of Netflix/vmaf `ed61076b2`, `1ddf81607`, `a6c0ba6d5`, `130569c45`, `efe90c8b8`, `5c3f4fb90`, `4f3f71b68`: HDR-VMAF groundwork (2026-10-06)
+
+`port/upstream-hdr-groundwork`, [ADR-2093](adr/2093-upstream-hdr-groundwork-input-colorimetry.md).
+Netflix PRs #1671 to #1675, #1677 and #1678, one batch because each depends on the one before.
+
+- **No `VmafPicture::color`.** Upstream's `vmaf.c` writes `pic->color = color` and
+  `libvmaf.c` / `conversion_policy.c` read `pic->color`; the fork has
+  `vmaf_set_input_colorimetry()` (ADR-2093) and passes the colour as an argument
+  (`vmaf_conversion_policy_target(ref, ref_color, dist, dist_color, ...)`). A sync of
+  those hunks keeps the fork's side; `ed61076b2`'s `fetch_picture()` change is not
+  applicable (`init_cli_context()` calls the setter).
+- **`libvmaf.c` glue lives in `core/src/conversion_context.c`.** Upstream's `convert`
+  member, `convert_picture()`, `convert_pictures()` and `register_conversion_target()`
+  are in that file; `libvmaf.c` has `VmafConversionState convert`, the register call in
+  `vmaf_use_features_from_model()`, the convert call at the top of
+  `vmaf_read_pictures()` (failure releases the pictures, ADR-1431) and the close in
+  `vmaf_commit_remaining_owners()`. A device picture is refused with `-ENOTSUP`, and so is
+  `vmaf_read_pictures_sycl()` when a model declares a target
+  (`vmaf_conversion_state_refuse_zero_copy()`), since no conversion reaches that path.
+- **Files.** `libvmaf/tools/cli_parse.c` / `vmaf.c` are `core/tools/cli_parse.cpp` /
+  `vmaf.cpp` (the flag handlers are split per attribute, HISS-04). The model parser has
+  a C twin (`read_json_model.c`, compiled by the fuzz harness) and the built C++ file
+  (`read_json_model.cpp`); `conversion_target` is in both. The `zimg` hunk of
+  `5c3f4fb90` is in `core/src/picture_convert.c`, not `picture.c`. The Python harness is
+  `compat/python-vmaf/` (`color_ref` / `color_dist` follow `backend` in
+  `call_vmafexec()`, so the existing positional order is kept).
+- **CAMBI twins.** `4f3f71b68` changes `cambi.c` only; the fork changes the same two
+  minimums in the CUDA, HIP, SYCL and Metal option tables. Keep them equal on a sync.
+- **Tests.** `test_cli_parse.c` (colour tests as `run_color_tests()`),
+  `test_model.c` (the hunk merges into the fork's tables), `test_conversion_policy.c`
+  (a `TaggedPic` holds the colour), `test_read_pictures_convert.c` (colour set through
+  the setter; no unref after a failed read) are upstream's, adapted as noted. The
+  missing-colour log line names `--color_range_ref/_dist` etc.; upstream's names flags
+  that do not exist.
+- **Fixtures.** The two dock clips are in `scripts/test/fetch-test-yuvs.sh` with md5
+  sums (Netflix/vmaf_resource `5e7b853ba`).
+
 ## Meson secret-env contract test spells paths with forward slashes (2026-10-06)
 
 `fix/meson-secret-env-test-posix-paths`. ADR-1333 entry preserved: only the path spelling in `core/test/test_meson_secret_env_sanitization.py` changed; the runner, the setup and the credential inventory are untouched. no other rebase impact.

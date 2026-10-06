@@ -26,7 +26,7 @@ static unsigned first_above(const uint16_t *row, unsigned w, unsigned limit)
 }
 
 /* True when the host can read the samples of `pic`. */
-static int host_readable(const VmafPicture *pic)
+int vmaf_picture_host_readable(const VmafPicture *pic)
 {
     const VmafPicturePrivate *priv = pic->priv;
     if (!priv) {
@@ -50,7 +50,7 @@ int vmaf_picture_check_sample_range(const VmafPicture *pic, const char *which)
     if (pic->bpc <= 8u || pic->bpc >= 16u) {
         return 0;
     }
-    if (!host_readable(pic)) {
+    if (!vmaf_picture_host_readable(pic)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "vmaf_read_pictures: the sample range check reads the %s picture on the "
                  "host, and it is in device memory\n",

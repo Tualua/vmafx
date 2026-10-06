@@ -20,6 +20,7 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 | --- | --- | --- |
 | `meson.build`, `/core/test/check_exported_symbols.py` | [build-and-compiler](AGENTS.d/build-and-compiler.md) | Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common. |
 | `feature/ciede.c`, `feature/cuda/integer_ciede/ciede_device.h`, `feature/ciede_ff_math.h`, `/core/test/test_ciede_upstream_products.c` | [ciede-squares-are-products](AGENTS.d/ciede-squares-are-products.md) | ciede.c squares = products (ADR-1467); its chroma and rotation products = float, no double cast (ADR-1476). |
+| `conversion_context.c`, `conversion_context.h`, `conversion_policy.c`, `conversion_policy.h`, `read_json_model.c`, `read_json_model.cpp` | [conversion-target](AGENTS.d/conversion-target.md) | Convert to the model's conversion_target on the host; input colour lives on the context. |
 | `picture.h`, `picture_pool.h` | [doxygen-header-invariants](AGENTS.d/doxygen-header-invariants.md) | Internal core/src headers carry Doxygen file briefs and parameter comments. |
 | `framesync.c`, `framesync.h` | [framesync-producer](AGENTS.d/framesync-producer.md) | Framesync buffer error paths invoke vmaf_framesync_abort to prevent consumer cond_wait hang. |
 | `picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp` | [init-and-teardown](AGENTS.d/init-and-teardown.md) | Out-parameter init clears handles on failure; teardown owners replace partial cleanup ladders. |

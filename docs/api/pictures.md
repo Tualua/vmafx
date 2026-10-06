@@ -259,3 +259,34 @@ unchanged, the source colour is the `src_color` argument, and a converted
 `dst` carries no colour (it is `target->color`, which you already hold). The
 types, enumerators and the other two functions are upstream's. When upstream
 releases the function the ADR describes the migration.
+
+## Converting to a model's conversion target
+
+A model can declare a [`conversion_target`](../models/v1.md#model-declared-conversion-target).
+For such a model `vmaf_read_pictures()` converts both pictures to the target
+before feature extraction (Netflix/vmaf `a6c0ba6d5`), through the conversion
+above. The conversion runs on the host, before any upload to a GPU backend, so
+CUDA, SYCL, HIP and Metal runs see the converted pictures; a device-side
+conversion is not part of this.
+
+Upstream reads each picture's source colour from `VmafPicture::color`; the
+fork declares it once per input on the context instead:
+
+```c
+VmafColor pq = { VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT2020,
+                 VMAF_COLOR_TRC_SMPTE2084, VMAF_COLOR_MATRIX_BT2020_NCL };
+int err = vmaf_set_input_colorimetry(vmaf, &pq, &pq);   /* ref, dist; NULL = unspecified */
+```
+
+| Case | Result |
+| --- | --- |
+| model without `conversion_target` | pass-through; the colour is ignored |
+| target and both inputs fully specified | each picture not already matching is converted; the others are passed on |
+| target and an input unspecified or partly specified | `-EINVAL`, the log names the missing attributes |
+| models of one run with different targets (or some with, some without) | `vmaf_use_features_from_model()` returns `-EINVAL` |
+| target but no zimg in the build, a picture in device memory, or the SYCL zero-copy entry point `vmaf_read_pictures_sycl()` | `-ENOTSUP` |
+| `vmaf_set_input_colorimetry()` after a picture was converted | `-EBUSY` |
+
+`vmaf_set_input_colorimetry()` must be called before the first picture that is
+converted, because the zimg context is built from it. As for any error of
+`vmaf_read_pictures()`, the context releases the pictures it was given.

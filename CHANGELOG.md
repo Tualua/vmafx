@@ -132,6 +132,23 @@
   container image, the Intel, NVIDIA and AMD GPU images, and "Other / built from source".
 
 
+- **HDR-VMAF groundwork from upstream: input colorimetry, a model `conversion_target`,
+  conversion in `vmaf_read_pictures()` (ports of Netflix/vmaf `ed61076b2`, `1ddf81607`,
+  `a6c0ba6d5`, `130569c45`, `efe90c8b8`, `5c3f4fb90`; [ADR-2093](docs/adr/2093-upstream-hdr-groundwork-input-colorimetry.md)).**
+  A model file may declare a `conversion_target` (colorspace, optional pixel format and
+  bit depth); `vmaf_read_pictures()` then converts both pictures to it with zimg before
+  extraction, on the host and before any GPU upload. The source colorimetry comes from the
+  new `--color_range_ref/_dist`, `--color_primaries_ref/_dist`, `--color_trc_ref/_dist` and
+  `--color_matrix_ref/_dist` flags (all four of an input, or none) and, in the C API, from
+  the new `vmaf_set_input_colorimetry()`: `VmafPicture` keeps its layout, so the colour is
+  declared on the context instead of in each picture. Models without a target, which is
+  every shipped model, are unaffected. The Python harness passes `color_ref` / `color_dist`
+  from `optional_dict` to `vmafexec`. zimg stays the opt-in `-Denable_zimg=true`. See
+  [CLI](docs/usage/cli.md#input-colorimetry),
+  [model files](docs/models/v1.md#model-declared-conversion-target) and
+  [Pictures](docs/api/pictures.md#converting-to-a-models-conversion-target).
+
+
 - **The Helm chart deploys vmafx-controller, and releases publish its image
   ([ADR-1589](docs/adr/1589-helm-controller-workload.md)).**
   `controller.enabled` renders a one-replica controller (Recreate, SQLite job
@@ -809,6 +826,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   tester licence record now say so
   ([ADR-1507](docs/adr/1507-brisque-live-notice-terms.md),
   [BRISQUE](docs/metrics/brisque.md#licence-of-the-bundled-model)).
+
+
+- **CAMBI accepts native 144p encode dimensions (port of Netflix/vmaf `4f3f71b68`).**
+  The minimum of `enc_width` and `enc_height` is 144 (was 180 and 150), on the CPU
+  extractor and on the CUDA, HIP, SYCL and Metal twins. See
+  [CAMBI](docs/metrics/cambi.md).
 
 
 - **The first-release candidates absorb the work added to 1.0.0 on
@@ -2965,6 +2988,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `bitrate_kbps` is now an error for these picks. Migration: results that read
   the old pick change; rerun `recommend` and the ladder, and pin a CRF
   explicitly where the higher-quality encode is wanted. See ADR-1562.
+
+
+- **zimg picture conversion allows approximate gamma (port of Netflix/vmaf `5c3f4fb90`).**
+  `vmaf_picture_convert()` builds its zimg graph with `allow_approximate_gamma`, as FFmpeg's
+  `zscale` does: exact transfer functions are about 20 times slower for PQ and change scores
+  negligibly. Only builds with `-Denable_zimg=true` are affected. See
+  [Pictures](docs/api/pictures.md#converting-pictures-vmaf_picture_convert).
 
 
 - Every published image, the dev container included, now stores its layers as zstd

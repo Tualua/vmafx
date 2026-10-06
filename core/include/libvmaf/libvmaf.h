@@ -457,6 +457,43 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
 VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled);
 
 /**
+ * Declare the colorimetry (range, primaries, transfer characteristic and matrix)
+ * of the reference and the distorted pictures that `vmaf_read_pictures()` will
+ * receive.
+ *
+ * A model can declare a `conversion_target` in its model file: the colorspace
+ * (and optionally the pixel format and bit depth) its features are defined in.
+ * For such a model `vmaf_read_pictures()` converts both pictures to that target
+ * before extraction, and needs to know what the pictures are. All four
+ * attributes of each input must be specified, otherwise the call returns
+ * `-EINVAL` and logs the missing ones: a guessed colorimetry would give a
+ * plausible but wrong score. A model without a `conversion_target` never
+ * converts and ignores this. The conversion needs libvmaf built with zimg
+ * (`-Denable_zimg=true`); without it `-ENOTSUP`.
+ *
+ * Netflix/vmaf carries this colour in `VmafPicture::color`. The fork keeps
+ * `VmafPicture` unchanged (ABI), so the colour is declared once per input on
+ * the context instead. The `vmaf` command line sets it with
+ * `--color_range_ref/_dist`, `--color_primaries_ref/_dist`,
+ * `--color_trc_ref/_dist` and `--color_matrix_ref/_dist`. See
+ * docs/api/pictures.md.
+ *
+ * The conversion context is built from the first picture, so this must be
+ * called before the first `vmaf_read_pictures()` that converts.
+ *
+ * @param vmaf The VMAF context allocated with `vmaf_init()`.
+ * @param ref  Colorimetry of the reference input, or NULL for unspecified.
+ * @param dist Colorimetry of the distorted input, or NULL for unspecified.
+ *
+ * @return 0 on success, `-EINVAL` without a context, or `-EBUSY` once a
+ *         picture has been converted.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_EXPORT int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref,
+                                           const VmafColor *dist);
+
+/**
  * Predict VMAF score at specific index.
  *
  * @param vmaf   The VMAF context allocated with `vmaf_init()`.

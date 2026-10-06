@@ -119,6 +119,13 @@ only currently-extracted shared internal helper.
   `vmaf_picture_convert_context_init_with_color()`. A sync of Netflix's
   `0497a0f29` hunk of `picture.h` must not insert `VmafColor color` before
   `ref`. `core/test/test_picture_convert_api.c` guards the layout.
+- **`vmaf_set_input_colorimetry()` replaces `VmafPicture::color`
+  ([ADR-2093](../../../docs/adr/2093-upstream-hdr-groundwork-input-colorimetry.md))**:
+  the source colour of the reference and distorted inputs is declared once on
+  the context (`libvmaf.h`) and read by the model `conversion_target` step of
+  `vmaf_read_pictures()`. A sync of Netflix's `VmafPicture::color` hunks or of
+  `pic->color` reads keeps the fork's side. `-EBUSY` once a picture has been
+  converted.
 - **Doxygen-clean public API**
   ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md),
   [ADR-1315](../../../docs/adr/1315-doxygen-public-api-fail-closed.md)):
