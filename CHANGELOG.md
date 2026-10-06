@@ -5039,6 +5039,9 @@ The Meson test secret-environment contract test reports repository paths with fo
   [production images](docs/development/docker-production.md#licences-and-corresponding-source)).
 
 
+The `--restore-tracked` step that drops unusable restored CI fixtures no longer needs a bash 4 builtin, so it runs on the macOS runners' bash 3.2 again.
+
+
 - **`psnr_hvs` on HIP and SYCL scores 4:4:4 pictures past 16K.** The twins'
   scan of the per-block term counts stopped at 32,768 chunks of 256 blocks,
   so from 16384x8640 in 4:4:4 on the later chunks had no offset and their

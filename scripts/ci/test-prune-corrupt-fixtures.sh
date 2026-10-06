@@ -94,7 +94,34 @@ else
 fi
 git -C "${repo}" checkout -q -- resource/__init__.py
 
+# macOS runs bash 3.2, which has neither mapfile nor readarray: exported
+# functions of those names that fail with "command not found" make the pruner
+# fail here exactly as it does there. A file name with a space must survive.
+printf 'x = 1\n' >"${repo}/resource/with space.py"
+git -C "${repo}" add "resource/with space.py"
+git -C "${repo}" -c user.name=t -c user.email=t@t commit -q -m spaced
+printf 'x = 2\n' >"${repo}/resource/with space.py"
+# shellcheck disable=SC2329 # reached by the pruner child through export -f
+mapfile() {
+  echo "mapfile: command not found" >&2
+  return 127
+}
+# shellcheck disable=SC2329 # reached by the pruner child through export -f
+readarray() {
+  echo "readarray: command not found" >&2
+  return 127
+}
+export -f mapfile readarray
 "${GATE}" --restore-tracked "${repo}/resource" >/dev/null
+unset -f mapfile readarray
+
+if [ "$(cat "${repo}/resource/with space.py")" = "x = 1" ]; then
+  ok=$((ok + 1))
+  printf '  ok    %-34s %s\n' "bash 3.2 builtins only" "restored"
+else
+  ng=$((ng + 1))
+  printf '  FAIL  %-34s pruner needs a bash-4 builtin or lost a spaced name\n' "bash 3.2 builtins only"
+fi
 
 if [ "$(cat "${repo}/resource/dataset.py")" = "enc_width = 1920" ]; then
   ok=$((ok + 1))

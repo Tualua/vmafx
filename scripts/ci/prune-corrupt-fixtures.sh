@@ -85,8 +85,13 @@ printf 'prune-corrupt-fixtures: scanned %d file(s), removed %d\n' "${scanned}" "
 # with --restore-tracked: on a developer's checkout the same command would
 # discard uncommitted edits. Outside a work tree there is nothing to restore.
 if [ "${restore_tracked}" -eq 1 ] && git -C "${root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  mapfile -t stale < <(git -C "${root}" ls-files --deleted --modified -- . | sort -u)
-  for f in "${stale[@]}"; do
+  # No mapfile/readarray: macOS ships bash 3.2. The NUL-delimited read loop
+  # also keeps odd file names intact.
+  stale=()
+  while IFS= read -r -d '' f; do
+    stale+=("${f}")
+  done < <(git -C "${root}" ls-files -z --deleted --modified -- . | sort -zu)
+  for f in ${stale[@]+"${stale[@]}"}; do
     printf 'prune-corrupt-fixtures: restoring tracked file %s from the checkout\n' "${root}/${f}"
   done
   if [ "${#stale[@]}" -gt 0 ]; then

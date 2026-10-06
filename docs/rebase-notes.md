@@ -13,6 +13,9 @@ search:
 ## CLI exit status is the libvmaf code modulo 256 on every platform (2026-10-06)
 
 `fix/cli-exit-status-modulo-256`. A sync or refactor of `vmaf_cli_main()` in `core/tools/vmaf.cpp` keeps the return of the run result through `vmaf_cli_exit_status()` (`core/tools/cli_exit_status.h`); Netflix's `main()` returns the raw code. `core/test/test_cli_exit_status_contract.py` and `test_cli_exit_status` guard it.
+## CI: prune-corrupt-fixtures runs on bash 3.2 (2026-10-06)
+
+`fix/prune-fixtures-bash32`. no rebase impact: one CI helper script and its fixture test; no source, build or public surface changes.
 
 ## ADR audit: status header forms (2026-10-06)
 
