@@ -4627,6 +4627,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   yet measured on an Apple GPU.
 
 
+- **The Linux self-test of the Metal IOSurface import no longer leaks its
+  fixtures.** `test_metal_selftest_iosurface_import` kept the planar pictures
+  it imported from, and the AddressSanitizer job aborted on the leak report;
+  the self-test now releases them as the device build does.
+
+
 - **The Metal `float_vif`, integer SSIM, `float_ssim` and `float_ms_ssim`
   twins refuse a frame whose moment planes pass their 32-bit index.** They
   index five planes of N samples in `uint`, which wraps from N = 858,993,460

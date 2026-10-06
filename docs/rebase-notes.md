@@ -33,6 +33,10 @@ after it, or a `restore-keys` hit brings back an older revision of a tracked `py
 
 `fix/hip-smoke-context-no-device`. no rebase impact: fork-only test (`core/test/test_hip_smoke.c`); the context case
 branches on `vmaf_hip_device_count()` like the state case.
+## Metal IOSurface import self-test releases its fixtures (2026-10-06)
+
+`fix/metal-iosurface-selftest-leak`. no rebase impact: fork-only test (`core/test/test_metal_iosurface_import_parity.c`);
+both builds of `imported_psnr()` consume the planar pair they are given.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 
