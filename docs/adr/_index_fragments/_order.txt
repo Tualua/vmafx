@@ -1252,3 +1252,4 @@
 1598-sycl-host-staging-to-shared-planes
 1599-sycl-float-motion-add-uv
 1769-sycl-zerocopy-throughput-a380
+1931-sycl-speed-covariance-fast-exact
