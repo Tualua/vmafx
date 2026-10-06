@@ -29,6 +29,7 @@ import (
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/modeleval"
+	"github.com/VMAFx/vmafx/pkg/scorebackend"
 )
 
 // ---------------------------------------------------------------------------
@@ -52,8 +53,11 @@ var (
 	probeCache = map[string]map[string]bool{}
 )
 
-// probeBackends returns the set of backends the vmaf binary advertises
-// (via --help flags). "cpu" is always included.
+// probeBackends returns the set of backends the vmaf binary can use on this
+// host. It reads `vmaf --list-backends` (ADR-1874) through pkg/scorebackend:
+// the help text names every backend on every build, so it says nothing about
+// the binary. "cpu" is always included; a binary that cannot print the report
+// is treated as CPU-only (scorebackend.Detect writes the reason to stderr).
 func probeBackends(vmafBin string) map[string]bool {
 	probeMu.Lock()
 	defer probeMu.Unlock()
@@ -63,21 +67,19 @@ func probeBackends(vmafBin string) map[string]bool {
 	}
 
 	advertised := map[string]bool{"cpu": true}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), backendProbeTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, vmafBin, "--help").CombinedOutput()
-	if err == nil {
-		blob := string(out)
-		for _, name := range []string{"cuda", "sycl", "hip", "metal"} {
-			if strings.Contains(blob, "--no_"+name) {
-				advertised[name] = true
-			}
-		}
+	for _, name := range scorebackend.Detect(ctx, scorebackend.Options{VMAFBin: vmafBin}) {
+		advertised[name] = true
 	}
 	probeCache[vmafBin] = advertised
 	return advertised
 }
+
+// backendProbeTimeout bounds one `vmaf --list-backends` run, which initialises
+// every compiled GPU backend once (scorebackend allows 60 s for the same run).
+const backendProbeTimeout = 60 * time.Second
 
 // ---------------------------------------------------------------------------
 // String arg helpers

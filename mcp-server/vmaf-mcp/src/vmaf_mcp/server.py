@@ -835,12 +835,37 @@ async def _get_or_create_probe_lock(key: str) -> asyncio.Lock:
         return _BACKEND_PROBE_LOCKS[key]
 
 
-def _probe_backends(vmaf: Path) -> frozenset[str]:
-    """Return the set of backends the local @p vmaf binary advertises.
+# `vmaf --list-backends` initialises every compiled GPU backend once; the CLI
+# side (pkg/scorebackend, vmaftune.score_backend) allows 60 s for the same run.
+_LIST_BACKENDS_TIMEOUT_S = 60
+_GPU_BACKENDS = ("cuda", "sycl", "hip", "metal")
 
-    Probes ``vmaf --help`` (which always lists every ``--no_<backend>``
-    flag) and matches the documented backend names. ``cpu`` is always
-    included — it has no driver dependency and is never gated.
+
+def _usable_backends_from_report(text: str) -> frozenset[str]:
+    """Parse a ``vmaf --list-backends`` document into the usable backend names.
+
+    ``cpu`` is always included. Raises ``ValueError`` when ``text`` is not a
+    report (a ``vmaf`` older than ADR-1874 rejects the option).
+    """
+    try:
+        rows = json.loads(text)["backends"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f"not a backend report: {exc}") from exc
+    usable: set[str] = {"cpu"}
+    for row in rows if isinstance(rows, list) else ():
+        if isinstance(row, dict) and row.get("name") in _GPU_BACKENDS and row.get("usable") is True:
+            usable.add(row["name"])
+    return frozenset(usable)
+
+
+def _probe_backends(vmaf: Path) -> frozenset[str]:
+    """Return the set of backends the local @p vmaf binary can use on this host.
+
+    Runs ``vmaf --list-backends`` (ADR-1874): per backend, whether it was
+    compiled in and whether its state initialises here. The ``--help`` text
+    names every ``--no_<backend>`` flag on every build, so it says nothing
+    about the binary. ``cpu`` is always included — it has no driver
+    dependency and is never gated.
 
     Result is cached for the lifetime of the server process so we don't
     fork a subprocess per `vmaf_score` call.
@@ -854,28 +879,26 @@ def _probe_backends(vmaf: Path) -> frozenset[str]:
     cached = _BACKEND_PROBE_CACHE.get(key)
     if cached is not None:
         return cached
-    advertised: set[str] = {"cpu"}
     try:
         result = subprocess.run(
-            [str(vmaf), "--help"], capture_output=True, text=True, timeout=5, check=False
+            [str(vmaf), "--list-backends"],
+            capture_output=True,
+            text=True,
+            timeout=_LIST_BACKENDS_TIMEOUT_S,
+            check=False,
         )
-    except (subprocess.TimeoutExpired, OSError):
+        if result.returncode != 0:
+            raise ValueError(f"exit status {result.returncode}")
+        probe = _usable_backends_from_report(result.stdout or "")
+    except (subprocess.TimeoutExpired, OSError, ValueError):
         # On probe failure we conservatively assume CPU-only — better to
         # over-reject and let the user override via env than to silently
         # fall back as bug #1 used to.
         _logger.warning(
-            "vmaf --help probe failed; assuming CPU-only backend support",
+            "vmaf --list-backends probe failed; assuming CPU-only backend support",
             exc_info=True,
         )
-        probe = frozenset(advertised)
-        _BACKEND_PROBE_CACHE[key] = probe
-        return probe
-    blob = (result.stdout or "") + (result.stderr or "")
-    # The CLI documents disable-flags as `--no_<backend>` (one per line).
-    for name in ("cuda", "sycl", "hip", "metal"):
-        if re.search(rf"--no_{name}\b", blob):
-            advertised.add(name)
-    probe = frozenset(advertised)
+        probe = frozenset({"cpu"})
     _BACKEND_PROBE_CACHE[key] = probe
     return probe
 
@@ -1141,20 +1164,14 @@ def _list_models() -> list[dict[str, Any]]:
 
 
 async def _list_backends() -> dict[str, bool]:
-    """Return which backends the local vmaf binary was compiled with.
+    """Return which backends the local vmaf binary can use on this host.
 
-    Delegates to :func:`_probe_backends_async`, which reads ``vmaf --help``
-    and looks for ``--no_<backend>`` flags (presence = compiled in).
-    This correctly identifies live CUDA/SYCL/HIP/Metal support
-    even on hosts where the ``--version`` banner does not mention GPU
-    backends — the historical ``--version`` grep approach (Bug A,
-    2026-05-18) missed CUDA on the ``vmaf-dev-mcp`` container because
-    the banner omits backend names.
-
-    Bug A fix: the old implementation searched the ``--version`` output
-    for keyword substrings which may be absent despite the backend being
-    compiled in (e.g. CUDA enabled but no "CUDA" token in the banner).
-    ``--help`` always lists ``--no_<backend>`` for every compiled backend.
+    Delegates to :func:`_probe_backends_async`, which reads
+    ``vmaf --list-backends`` (ADR-1874): a backend is true when it was
+    compiled in and its state initialises here. The ``--help`` text names
+    every ``--no_<backend>`` flag on every build, and the ``--version``
+    banner names no GPU backend, so neither says anything about the binary
+    (Bug A, 2026-05-18; ``T-MCP-BACKENDS-FROM-HELP-TEXT-2026-10-05``).
 
     ADR-1023: made async so the ``subprocess.run`` inside
     :func:`_probe_backends` does not stall the event loop.
@@ -2842,13 +2859,14 @@ def _read_vmaf_version_banner(vmaf: Path) -> str | None:
 async def _vmaf_version() -> dict[str, Any]:
     """Return the local vmaf binary's version string and compiled backends.
 
-    Runs ``vmaf --version`` (for the version string) and ``vmaf --help``
-    (for the backend compile-in flags, same probe used by ``_probe_backends``).
-    The ``--version`` banner does not reliably list backends (Bug A, ADR-0511),
-    so we derive ``build_flags`` from ``--help`` instead.
+    Runs ``vmaf --version`` (for the version string) and
+    ``vmaf --list-backends`` (for the backend flags, same probe used by
+    ``_probe_backends``). The ``--version`` banner does not list backends
+    (Bug A, ADR-0511) and ``--help`` names every backend on every build, so
+    ``build_flags`` come from the report (ADR-1874).
 
     ADR-1023: this function is async so the blocking ``subprocess.run``
-    (``--version``) and ``_probe_backends_async`` (``--help``) do not stall
+    (``--version``) and ``_probe_backends_async`` (``--list-backends``) do not stall
     the event loop when called from the async ``_call_tool`` handler.
     """
     vmaf = _vmaf_binary()
@@ -2871,7 +2889,7 @@ async def _vmaf_version() -> dict[str, Any]:
     # --- version string (blocking subprocess.run, run in thread) ---
     version_str = await asyncio.to_thread(_read_vmaf_version_banner, vmaf)
 
-    # --- build flags from --help (same as _probe_backends but we don't use the cache
+    # --- build flags from --list-backends (same as _probe_backends but we don't use the cache
     #     so callers always get a fresh view even when the binary changes after startup) ---
     advertised = await _probe_backends_async(vmaf)
     build_flags = {

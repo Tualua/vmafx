@@ -4591,6 +4591,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   bisect cap tests stub the scoring step the way their docstring says.
 
 
+- `list_backends`, `probe_backend` and `vmaf_version` of both MCP servers (Python
+  and Go) now take a GPU backend as available only when `vmaf --list-backends`
+  reports it usable. They read `vmaf --help` before, which names every backend
+  on every build, so a CPU-only `vmaf` was reported with CUDA, SYCL, HIP and
+  Metal and the backend allowlist admitted them. A `vmaf` that cannot print the
+  report is treated as CPU-only.
+
+
 - **The Go MCP server is checked against the Python server's own tool
   list.** Its parity tests compared it with 15 hand-copied tool names, so the
   four sidecar tools and every property type went unchecked. The Python server

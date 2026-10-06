@@ -170,15 +170,23 @@ def test_probe_backends_os_error_returns_cpu_only(monkeypatch, tmp_path):
     assert result == frozenset({"cpu"})
 
 
-def test_probe_backends_parses_hip_metal_flags(monkeypatch, tmp_path):
-    """When --help output contains '--no_hip' and '--no_metal', both are included.
+def test_probe_backends_parses_hip_metal_rows(monkeypatch, tmp_path):
+    """When the report lists hip and metal usable, both are included.
     Vulkan was removed per ADR-0726 and is no longer probed."""
     fake_vmaf = tmp_path / "vmaf"
     fake_vmaf.write_bytes(b"")
     fake_vmaf.chmod(0o755)
 
     r = MagicMock()
-    r.stdout = "--no_cuda\n--no_sycl\n--no_hip\n--no_metal\n"
+    r.returncode = 0
+    r.stdout = (
+        '{"backends": [{"name": "cpu", "compiled": true, "usable": true},'
+        ' {"name": "cuda", "compiled": true, "usable": true},'
+        ' {"name": "sycl", "compiled": true, "usable": true},'
+        ' {"name": "hip", "compiled": true, "usable": true},'
+        ' {"name": "metal", "compiled": true, "usable": true},'
+        ' {"name": "vulkan", "compiled": true, "usable": true}]}'
+    )
     r.stderr = ""
 
     monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_k: r)
@@ -200,7 +208,8 @@ def test_probe_backends_returns_cached_on_second_call(monkeypatch, tmp_path):
     def counting_run(*_a, **_k):
         call_count.append(1)
         r = MagicMock()
-        r.stdout = "--no_cuda\n"
+        r.returncode = 0
+        r.stdout = '{"backends": [{"name": "cuda", "compiled": true, "usable": true}]}'
         r.stderr = ""
         return r
 

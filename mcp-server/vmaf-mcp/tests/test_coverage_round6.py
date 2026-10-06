@@ -193,7 +193,7 @@ def test_probe_backends_async_double_check_cache(tmp_path: Path) -> None:
         call_count["n"] += 1
 
         class _R:
-            stdout = "--no_cuda    disable CUDA backend\n"
+            stdout = '{"backends": [{"name": "cuda", "compiled": true, "usable": true}]}'
             stderr = ""
             returncode = 0
 

@@ -11205,6 +11205,8 @@
     },
     "1874": {
       "sites": {
+        "cmd/vmafx-mcp/impl.go": 1,
+        "cmd/vmafx-mcp/impl_handlers_test.go": 1,
         "core/test/test_cli_parse.c": 1,
         "core/tools/cli_backends.cpp": 1,
         "core/tools/cli_backends.h": 1,
@@ -11212,6 +11214,8 @@
         "core/tools/cli_parse.h": 1,
         "core/tools/test/meson.build": 1,
         "core/tools/test/test_vmaf_list_backends.sh": 1,
+        "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py": 4,
+        "mcp-server/vmaf-mcp/tests/test_backend_probe_and_allowlist_0511.py": 2,
         "pkg/corpus/backend.go": 1,
         "pkg/corpus/backend_test.go": 1,
         "pkg/scorebackend/scorebackend.go": 3,

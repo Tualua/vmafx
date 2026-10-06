@@ -25,7 +25,7 @@ can `json.loads()` unconditionally and branch on the presence of
 | --- | --- | --- | --- |
 | [`vmaf_score`](#vmaf_score) | `ref`, `dis`, `width`, `height`, `pixfmt`, `bitdepth`, optional `model`, `backend`, `subsample`, `precision`, scoring extras | Python, Go | CLI subprocess; Go: optional cgo |
 | [`list_models`](#list_models) | none | Python, Go | filesystem |
-| [`list_backends`](#list_backends) | none | Python, Go | `vmaf --help` probe |
+| [`list_backends`](#list_backends) | none | Python, Go | `vmaf --list-backends` probe |
 | [`run_benchmark`](#run_benchmark) | none | Python, Go | `bench_all.sh` |
 | [`eval_model_on_split`](#eval_model_on_split) | `model`, `features`, `split`, `input_name` | Python, Go | native |
 | [`compare_models`](#compare_models) | `models`, `features`, `split` | Python, Go | native |
@@ -302,10 +302,10 @@ built with.
 }
 ```
 
-The server probes `vmaf --help` and looks for `--no_<backend>` flags;
-`cpu` is always reported `true` when the binary exists. Note: this tool
-reports **compiled-in** backends only — a backend may be compiled in but
-its driver missing or non-functional at runtime. Use `probe_backend` to
+The server runs `vmaf --list-backends` and reports a backend `true` when it
+was compiled in and its state initialises on this host; `cpu` is always
+reported `true` when the binary exists. A backend that initialises can still
+fail on a particular score (a driver fault mid-run). Use `probe_backend` to
 verify that a backend can actually run a score.
 
 ### Errors
@@ -647,8 +647,8 @@ misreported as `runtime_healthy: true`. A null or non-finite score now sets
 }
 ```
 
-- `compiled_in` — whether `vmaf --help` advertises `--no_<backend>` (same
-  as `list_backends`).
+- `compiled_in` — whether `vmaf --list-backends` reports the backend usable
+  (same as `list_backends`).
 - `runtime_healthy` — `true` iff the 1-frame score subprocess exits 0 and
   returns a finite score; `false` on driver errors, ICD missing, KFD ioctl
   failure, etc.
@@ -693,8 +693,8 @@ confirming which fork build is running before scoring. Added in
 
 - `version` — extracted from `vmaf --version` output; `null` if the banner
   cannot be parsed or the subprocess times out.
-- `build_flags` — derived from `vmaf --help` (`--no_<backend>` presence),
-  same probe as `list_backends`.
+- `build_flags` — derived from `vmaf --list-backends`, same probe as
+  `list_backends`.
 - `error` — set when the binary does not exist; `null` on success.
 
 ### Errors

@@ -102,11 +102,14 @@ call** (ADR-0517). `setvars.sh` references variables (`SETVARS_ARGS`,
   note naming cause; configured model that fails to load -> raise, never
   silent metadata. Per-family image tag table = `IMAGE_TAGS` (from
   onnxruntime-genai `examples/python/common.py`).
-- **`_probe_backends` reads `vmaf --help`, not `--version`** (ADR-0509,
-  Bug A). Compiled backends surface in `--help` as `--no_<backend>`.
-  `--version` banner does NOT list GPU backends (`vmaf-dev-mcp`). Results cached
-  per-binary-path for server lifetime. Switching to `--version`
-  re-introduces false-negative CUDA detection.
+- **`_probe_backends` reads `vmaf --list-backends`, not `--help` or `--version`**
+  (ADR-1874; ADR-0509 Bug A before it). The report says per backend whether it was
+  compiled in and whether its state initialises on this host; `usable` is the
+  answer. `--help` names every `--no_<backend>` on every build and `--version`
+  names no GPU backend, so a CPU-only build reported every GPU backend true.
+  A binary without the option or a report that does not parse = CPU-only, with a
+  warning. Results cached per-binary-path for server lifetime. The Go server
+  (`cmd/vmafx-mcp`) reads the same report through `pkg/scorebackend`.
 - **Auto-dispatch backend identity comes from CLI receipt, never metric
   counts.** `vmaf` CLI writes top-level `backend_used` in JSON.
   `_infer_backend_from_payload` accepts concrete names from field, returns
