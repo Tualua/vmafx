@@ -171,19 +171,26 @@ python-locks-check:
 python-locks-write:
 	@python3 scripts/ci/check_python_dependency_locks.py write
 
-# Go security scan (gosec). Skips generated files by default; surfaces every
-# G* finding outside the gen/ tree. Source of truth for the gate added by
-# the gosec-findings-fix sweep — keep the touched-file rule honest.
 # Symbol-level Go vulnerability scan with the OpenVEX statements of
 # security/vex/go.openvex.json (docs/development/dependency-advisories.md).
 # Needs network access; nothing is linked, so no libvmaf build.
 govulncheck:
 	python3 scripts/ci/govulncheck-gate.py
 
+# Go security scan (gosec): the one definition of the gate, run by `make lint`
+# and by the gosec step of .github/workflows/go-ci.yml. Every G* finding fails.
+# -exclude-generated: generated protobuf code (gen/) carries G103
+# (unsafe.Slice) and G115 (int -> uint32 cgo casts) by design.
+# -exclude-dir=.config/hiss/testdata: the HISS rule engine's own fixtures,
+# whose planted defects (HISS-07 drops an os.Remove error, HISS-09
+# reinterprets &b[0] through unsafe.Pointer) are the evidence the standards
+# gate replays. The Go tool skips them (a directory starting with "." and one
+# named testdata); gosec walks the filesystem and needs to be told
+# (T-LINT-SCOPE-HISS-FIXTURES-2026-09-22).
 lint-go:
 	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
 	@echo "--- gosec (exclude-generated) ---"
-	@gosec -exclude-generated -quiet ./...
+	@gosec -exclude-generated -exclude-dir=.config/hiss/testdata -quiet ./...
 
 # GitHub Actions lint. actionlint validates every workflow under
 # .github/workflows/ against .github/actionlint.yaml; actionlint cannot read a

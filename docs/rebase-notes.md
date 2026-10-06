@@ -17,6 +17,9 @@ member of `LIBVMAFContext`, and one call each in `do_vmaf()` and the software br
 without `vmaf_set_input_colorimetry()` (Netflix's) does not link it. Test:
 `core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py`,
 `ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh`.
+## Go CI: one gosec definition, G703 on the VMAF_BIN lookup (2026-10-06)
+
+`fix/go-vmaftest-gosec-g703`. The gosec flags live only in the Makefile's `lint-go`, and the `gosec (exclude generated)` step of `.github/workflows/go-ci.yml` runs `make lint-go`; a workflow edit that inlines the command again forks the gate. `internal/vmaftest/vmaftest.go` keeps its `#nosec G703` with the reason. No upstream file is involved.
 
 ## Port of Netflix/vmaf `ed61076b2`, `1ddf81607`, `a6c0ba6d5`, `130569c45`, `efe90c8b8`, `5c3f4fb90`, `4f3f71b68`: HDR-VMAF groundwork (2026-10-06)
 

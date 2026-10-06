@@ -4106,6 +4106,9 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   its own `HEAD`: on a pull request, master plus the PR's commits.
 
 
+The required Go job passes its gosec scan again: the `VMAF_BIN` lookup of the Go test helper carries a reasoned G703 exclusion, and `make lint-go` and the Go job now run the same scan, so `make lint` no longer reports the HISS rule fixtures.
+
+
 - **The Go package documentation says how `vmafx-mcp` and `vmafx-server`
   reach libvmaf.** `pkg/libvmaf` and the MCP server's tool comment claimed the
   binaries do not link `libvmaf.so` at run time; they do, through cgo

@@ -306,8 +306,10 @@ The `go vet + go test` job is required under
 security scan, runner smoke and tests run for Go or core and model inputs;
 unrelated documentation changes report success after an explicit impact notice.
 A failing `gosec` scan blocks merging even though it prevents later Go tests
-from running. The job also starts on ready-for-review events, so draft-era
-results cannot replace the current validation run.
+from running. The scan is `make lint-go`, the target `make lint` runs, so run
+it before pushing a Go change; its flags and the reason for each sit next to
+the target in the `Makefile`. The job also starts on ready-for-review events,
+so draft-era results cannot replace the current validation run.
 
 Before installing native build dependencies, the job runs `go fix -diff ./...`
 under the exact `go.mod` toolchain. Per
