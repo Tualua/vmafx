@@ -18,6 +18,16 @@ when conversion happens.
 
 ## Rebase-sensitive invariants
 
+- **Five-plane twins refuse a plane past the uint index**
+  (T-METAL-UINT-PLANE-INDEX-2026-10-05). `float_vif`, integer SSIM,
+  `float_ssim` and `float_ms_ssim` index five moment planes as `k * N + at`
+  in `uint`. Their hosts call `vmaf_mtl_plane_index_check()`
+  (`metal_plane_index.h`) with five planes in `init_geometry()` /
+  `configure()` / `validate_dimensions()`, before `vmaf_metal_context_new()`.
+  A new twin that keeps several planes in one `uint`-indexed buffer calls it
+  too. `core/test/test_metal_plane_index_contract.py` reads the kernels and
+  the hosts; `test_metal_plane_index` holds the limit (858,993,459 samples).
+
 - **Only wired `.mm` + `.metal` pairs exist** (ADR-0545). Metal
   feature directory carries exactly one wired `.mm` + `.metal` pair
   per registered extractor, each with meson entry and registry slot

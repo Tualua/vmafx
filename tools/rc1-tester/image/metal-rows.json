@@ -1169,6 +1169,42 @@
      "bound": 0
     }
    ]
+  },
+  {
+   "id": "T-METAL-UINT-PLANE-INDEX-2026-10-05",
+   "closes_when": "float_vif_metal, integer_ssim_metal, float_ssim_metal and float_ms_ssim_metal refuse at init() a frame whose five moment planes pass the 32-bit uint index (the four refusal cases pass on an Apple GPU), and their parity-gate cells stay exact",
+   "cases": [
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_float_ssim_parity",
+     "case": "test_float_ssim_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_refuses_uint_index_overflow"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ms_ssim"
+    }
+   ]
   }
  ]
 }

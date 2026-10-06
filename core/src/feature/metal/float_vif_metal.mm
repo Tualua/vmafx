@@ -56,6 +56,7 @@ extern "C" {
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
 #include "log.h"
+#include "metal/metal_plane_index.h"
 #include "mem.h"
 #include "picture_copy.h"
 #include "vif_options.h"
@@ -370,6 +371,12 @@ static int init_geometry(FloatVifStateMetal *s, unsigned w, unsigned h)
                  "four-scale VIF ladder (got %zux%zu)\n",
                  vif_min_dim, scaled_w, scaled_h);
         return -EINVAL;
+    }
+    /* The moment planes are indexed in uint (T-METAL-UINT-PLANE-INDEX-2026-10-05). */
+    const int index_err = vmaf_mtl_plane_index_check(
+        "float_vif_metal", (uint64_t)scaled_w * (uint64_t)scaled_h, VMAF_MTL_MOMENT_PLANES);
+    if (index_err) {
+        return index_err;
     }
     s->prescaled = scaled_w != (size_t)w || scaled_h != (size_t)h;
     s->float_stride = ALIGN_CEIL((size_t)w * sizeof(float));

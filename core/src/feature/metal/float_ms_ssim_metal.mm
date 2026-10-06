@@ -55,6 +55,7 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_name.h"
 #include "log.h"
+#include "metal/metal_plane_index.h"
 #include "libvmaf/picture.h"
 #include "feature/nonfinite_score.h"
 #include "float_ms_ssim_option_semantics.h"
@@ -341,6 +342,13 @@ static int validate_dimensions(VmafFeatureExtractor *fex, FloatMsSsimStateMetal 
                  "%d-tap MS-SSIM pyramid requires at least %ux%u (Netflix#1414)\n",
                  fex->name, w, h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN, min_dim, min_dim);
         return -EINVAL;
+    }
+    /* The scale-0 luma moment planes, (w - 10) x h, are the largest and are
+     * indexed in uint (T-METAL-UINT-PLANE-INDEX-2026-10-05). */
+    const int index_err = vmaf_mtl_plane_index_check(
+        fex->name, (uint64_t)(w - (unsigned)(MS_SSIM_K - 1)) * (uint64_t)h, VMAF_MTL_MOMENT_PLANES);
+    if (index_err) {
+        return index_err;
     }
 
     if (s->n_planes > 1u) {

@@ -2481,6 +2481,23 @@ test_ordered_sum = executable('test_ordered_sum',
 )
 test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
 
+# T-METAL-UINT-PLANE-INDEX-2026-10-05: the plane limit of the Metal twins'
+# uint indices (core/src/feature/metal/metal_plane_index.h, plain C), on every
+# platform.
+test_metal_plane_index = executable('test_metal_plane_index',
+    ['test.c', 'test_metal_plane_index.c'],
+    objects : log_cpp23_test_objects,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : [stdatomic_dependency, pthread_dependency, thread_lib],
+)
+test('test_metal_plane_index', test_metal_plane_index, suite : ['fast'])
+test('test_metal_plane_index_contract',
+    import('python').find_installation(),
+    args : files('test_metal_plane_index_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # float_bits.h: the bit-identity helper of the exact-twin and replay tests.
 test_float_bits = executable('test_float_bits',
     ['test.c', 'test_float_bits.c'],

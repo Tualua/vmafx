@@ -186,6 +186,25 @@ mapping with GPU completion/fence tracking) is deferred under
 7. **`enable_metal` default flip** from `auto` to `enabled`: only after a
    tester's report shows every Metal twin equal to the CPU.
 
+## Largest frame of the five-plane twins
+
+`float_vif_metal`, `integer_ssim_metal`, `float_ssim_metal` and
+`float_ms_ssim_metal` keep five moment planes in one buffer and index them in
+32 bits, so a plane may hold at most 858,993,459 samples (five planes fill the
+`uint` range). Each refuses a larger frame in `init()`, before it creates a
+Metal context, and names the limit:
+
+```text
+libvmaf ERROR integer_ssim_metal: 5 planes of 1073741824 samples pass the 32-bit index of the Metal kernels (at most 858993459 samples per plane)
+```
+
+16K (15360x8640) is accepted. The 32768x32768 picture cap is refused by all
+four, and `float_vif_metal` also refuses 16K with a `vif_prescale` above about
+2.544. A buffer of that size is beyond the memory of the Apple GPUs in any
+case. `core/test/test_metal_plane_index.c` checks the limit on every platform;
+the `*_refuses_uint_index_overflow` cases of the four Metal parity tests check
+each twin on a Mac.
+
 ## Feature extractor options
 
 ### `float_ssim_metal`

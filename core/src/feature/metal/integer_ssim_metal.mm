@@ -47,6 +47,7 @@ extern "C" {
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
 #include "log.h"
+#include "metal/metal_plane_index.h"
 #include "libvmaf/picture.h"
 
 #include "../../metal/common.h"
@@ -196,6 +197,12 @@ static int configure(IntegerSsimStateMetal *s, unsigned bpc, unsigned w, unsigne
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "integer_ssim_metal: invalid frame size %ux%u.\n", w, h);
         return -EINVAL;
+    }
+    /* The moment planes are indexed in uint (T-METAL-UINT-PLANE-INDEX-2026-10-05). */
+    const int index_err = vmaf_mtl_plane_index_check("integer_ssim_metal",
+                                                     (uint64_t)w * (uint64_t)h, ISSIM_MOMENT_PLANES);
+    if (index_err) {
+        return index_err;
     }
     s->frame_w = w;
     s->frame_h = h;

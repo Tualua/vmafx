@@ -6526,6 +6526,7 @@
         "core/test/test_metal_kernel_registration.c": 1,
         "core/test/test_metal_motion_v2_parity.c": 1,
         "core/test/test_metal_ms_ssim_option_semantics.c": 1,
+        "core/test/test_metal_plane_index.c": 1,
         "core/test/test_metal_portable.c": 1,
         "core/test/test_metal_psnr_hvs_math.c": 1,
         "core/test/test_metal_smoke.c": 1,

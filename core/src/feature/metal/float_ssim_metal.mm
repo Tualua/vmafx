@@ -51,6 +51,7 @@ extern "C" {
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
 #include "log.h"
+#include "metal/metal_plane_index.h"
 #include "libvmaf/picture.h"
 
 #include "../picture_copy.h"
@@ -214,6 +215,13 @@ static int configure(FloatSsimStateMetal *s, unsigned bpc, unsigned w, unsigned 
                  "float_ssim_metal: frame %ux%u smaller than 11x11 Gaussian footprint.\n",
                  w, h);
         return -EINVAL;
+    }
+    /* The (w - 10) x h moment planes are indexed in uint
+     * (T-METAL-UINT-PLANE-INDEX-2026-10-05). */
+    const int index_err = vmaf_mtl_plane_index_check(
+        "float_ssim_metal", (uint64_t)(w - 10u) * (uint64_t)h, VMAF_MTL_MOMENT_PLANES);
+    if (index_err) {
+        return index_err;
     }
     const VmafMtlSsimConstants c = vmaf_mtl_ssim_constants();
     s->frame_w = w;

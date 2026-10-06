@@ -71,7 +71,7 @@ it are named in the row.
 | PSNR-HVS prefix scan capped at 32,768 chunks | HIP, SYCL | 4:4:4 from 16384 x 8640 | `T-GPU-PSNR-HVS-SCAN-32768-CHUNKS-2026-10-05`, fixed |
 | SpEED covariance divided by the fp32-rounded count | CUDA, HIP, SYCL | `speed_prescale` above 2 past 16K | `T-GPU-SPEED-COV-COUNT-FP32-2026-10-05`, fixed |
 | `float_motion` tile load before the plane | CUDA | planes 3 to 9 or 17 samples wide or high (no score effect) | `T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05`, fixed |
-| `uint` moment-plane and term indices | Metal | `float_vif` with `vif_prescale` above 2.55 at 16K; four extractors past 16K | `T-METAL-UINT-PLANE-INDEX-2026-10-05`, open |
+| `uint` moment-plane and term indices | Metal | `float_vif` with `vif_prescale` above 2.55 at 16K; four extractors past 16K | `T-METAL-UINT-PLANE-INDEX-2026-10-05`, fixed in code (init refusal); open until the macOS tester re-run |
 | Samples above `2^bpc - 1` wrap integers the CPU keeps wide or truncates | CPU, CUDA, HIP, SYCL, Metal | any size, out-of-range input only | `T-OUT-OF-RANGE-SAMPLES-TWIN-DIVERGENCE-2026-10-05`, closed (contract and opt-in check, ADR-1918) |
 | Integer ADM scale-0 CSF magnitude `flt` stored in int16 | CPU and AVX-512 wrap, AVX2 saturates, so AVX2 differs from the scalar code | an h/v CSF weight from 43,900 to the ADR-1472 limit of 46,603 | `T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05`, fixed (ADR-1917) |
 | Full-mask warp shuffle in a divergent branch; left shift of a negative `long long` | CUDA | any size | `T-CUDA-WARP-REDUCE-UB-2026-10-05`, fixed |
