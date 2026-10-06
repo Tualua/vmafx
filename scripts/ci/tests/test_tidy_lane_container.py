@@ -308,9 +308,30 @@ class HostSide(unittest.TestCase):
         create = next(call for call in self._calls() if call.startswith("create "))
         self.assertTrue(create.endswith("--in-container --jobs 8 --write cpu"), create)
 
+    def test_write_never_copies_a_stale_baseline_from_the_report_directory(self) -> None:
+        """A baseline left in the shared report directory by an earlier run is not this run's."""
+        self.out.mkdir()
+        (self.out / "tidy-baseline-cpu.json").write_text("stale\n", encoding="utf-8")
+        (self.docker_dir / "out/tidy-ratchet-cpu.json").write_text("{}\n", encoding="utf-8")
+        result = self._run("--write", "cpu")
+        baseline = self.repo / "scripts/ci/tidy-baseline-cpu.json"
+        self.assertEqual(baseline.read_text(encoding="utf-8"), "old\n")
+        self.assertNotEqual(result.returncode, 0, "a write that produced no baseline must fail")
+        self.assertIn("produced no baseline for cpu", result.stderr)
+
+    def test_a_fresh_baseline_wins_over_a_stale_one(self) -> None:
+        self.out.mkdir()
+        (self.out / "tidy-baseline-cpu.json").write_text("stale\n", encoding="utf-8")
+        (self.docker_dir / "out/tidy-baseline-cpu.json").write_text("new\n", encoding="utf-8")
+        result = self._run("--write", "cpu")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        baseline = self.repo / "scripts/ci/tidy-baseline-cpu.json"
+        self.assertEqual(baseline.read_text(encoding="utf-8"), "new\n")
+
     def test_only_reaches_the_ratchet_for_a_scoped_measurement(self) -> None:
         (self.repo / "core/src").mkdir(parents=True)
         (self.repo / "core/src/a.c").write_text("int a;\n", encoding="utf-8")
+        (self.docker_dir / "out/tidy-baseline-hip.json").write_text("new\n", encoding="utf-8")
         result = self._run("--write", "--only", "core/src/a.c", "--only", "Makefile", "hip")
         self.assertEqual(result.returncode, 0, result.stderr)
         create = next(call for call in self._calls() if call.startswith("create "))

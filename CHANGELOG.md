@@ -6263,6 +6263,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   asks of a distributor.
 
 
+- `scripts/dev/tidy-lane.sh --write` takes the baseline only from the run's own results.
+  It copied `tidy-baseline-<lane>.json` from the shared report directory, so a run that
+  wrote none could overwrite the checkout's baseline with another run's. A write that
+  produces no baseline now leaves the file alone and exits non-zero.
+
+
 - **Feature-vector tiny models score the features the run computed.** A
   `--tiny-model` such as `vmaf_tiny_v2` or `fr_regressor_v1` read its input
   features from whatever the run happened to compute and took a missing one as
