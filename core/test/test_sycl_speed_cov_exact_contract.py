@@ -65,10 +65,16 @@ class TwinDesign(unittest.TestCase):
         for line in (
             "for (uint32_t i = 0; i < height; i++)",
             "for (uint32_t j = 0; j < width; j++)",
-            "const SoftSigned dx = signed_sub(signed_from_float(row_x[j]), mx);",
-            "const SoftSigned dy = signed_sub(signed_from_float(row_y[j]), my);",
-            "sum = signed_add(sum, signed_mul(dx, dy));",
-            "vmaf_sycl_soft::signed_div(sum, vmaf_sycl_soft::signed_from_exact(count))",
+            "const SoftSigned dx = covariance_difference(row_x[j], mx);",
+            "const SoftSigned dy = covariance_difference(row_y[j], my);",
+            "sum = signed_add(sum, covariance_term(dx, dy));",
+            "return covariance_store(sum, static_cast<uint64_t>(width) * height);",
+            # the shared helpers (ADR-1931): one implementation for A and the split chain
+            "return vmaf_sycl_soft::signed_sub(vmaf_sycl_soft::signed_from_float(value), mean);",
+            "return vmaf_sycl_soft::signed_mul(dx, dy);",
+            "return vmaf_sycl_soft::signed_add(sum, vmaf_sycl_soft::signed_from_bits(term_bits));",
+            "vmaf_sycl_soft::signed_div(sum, vmaf_sycl_soft::signed_from_exact(count));",
+            "return vmaf_sycl_soft::signed_make(0u, 0, false);",
         ):
             self.assertIn(line, text, f"sycl_speed_cov_math.h lost: {line}")
 

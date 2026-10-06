@@ -6269,6 +6269,7 @@
         "core/test/mu_table.h": 1,
         "core/test/psnr_hvs_twin_parity.h": 1,
         "core/test/speed_chroma_twin_parity.h": 1,
+        "core/test/speed_cov_cases.h": 1,
         "core/test/ssim_twin_parity.h": 1,
         "core/test/test_adm_angle_flag.c": 1,
         "core/test/test_adm_cm_row_rounding.c": 1,
@@ -6577,6 +6578,7 @@
         "core/test/test_sycl_psnr_parity.c": 1,
         "core/test/test_sycl_shared_planes.c": 1,
         "core/test/test_sycl_speed_chroma_parity.c": 1,
+        "core/test/test_sycl_speed_cov_chain.c": 1,
         "core/test/test_sycl_speed_cov_math.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_speed_temporal_parity.c": 1,
@@ -10443,6 +10445,16 @@
         "core/test/test_sycl_vif_parity.c": 2
       },
       "target": "1769-sycl-zerocopy-throughput-a380.md"
+    },
+    "1931": {
+      "sites": {
+        "core/src/feature/sycl/sycl_speed_cov_math.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_speed_cov_chain.c": 1,
+        "core/test/test_sycl_speed_cov_chain_probe.cpp": 1,
+        "core/test/test_sycl_speed_cov_exact_contract.py": 1
+      },
+      "target": "1931-sycl-speed-covariance-fast-exact.md"
     }
   },
   "retired": {
