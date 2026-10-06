@@ -50,8 +50,13 @@ belongs to a `pull_request` / `pull_request_target` workflow run on the commit
 (`pullRequestSuites()`, re-read every poll). The merge train fast-forwards, so
 a landed commit is also its pull request head and the train cancels those runs;
 counting them failed every master push
-(`T-CI-AGGREGATOR-READS-OTHER-EVENT-CHECKS-2026-10-06`). Do not widen the filter
-to workflow_dispatch or to suites no workflow run owns (code scanning).
+(`T-CI-AGGREGATOR-READS-OTHER-EVENT-CHECKS-2026-10-06`). Suites of workflow runs
+on another branch than the aggregator's own (`foreignRun()`, `context.ref`) are
+left out too: release-please's release-notes branch and verification branches
+sit on the master head, and their cancelled push runs were read as master's
+(`T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06`). Do not widen the filter
+to workflow_dispatch on the own branch or to suites no workflow run owns (code
+scanning).
 `scripts/ci/tests/test_aggregator_event_scope.py` runs the embedded script.
 
 ## CI job display names and aggregator parity

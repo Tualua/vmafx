@@ -508,7 +508,24 @@ jobs:
             // pull-request workflow run are left out. A pull-request
             // aggregator reads every run as before, and check runs of other
             // apps (code scanning) always count.
+            // The same commit is also pushed to other branches: release-please
+            // opens its release-notes branch at the master head, and a
+            // verification branch can sit there too. Their push runs of the
+            // workflows without a branch filter are cancelled as superseded,
+            // and the newest of them was read as master's verdict ("Go API
+            // Compatibility: cancelled" on 6275c6f1a,
+            // T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06). Outside a
+            // pull request, suites of workflow runs on another branch are
+            // left out as well.
             const pullRequestEvents = new Set(['pull_request', 'pull_request_target']);
+            const ownBranch = (context.ref || '').startsWith('refs/heads/')
+              ? context.ref.slice('refs/heads/'.length)
+              : '';
+
+            function foreignRun(run) {
+              if (pullRequestEvents.has(run.event)) return true;
+              return ownBranch !== '' && run.head_branch !== ownBranch;
+            }
 
             async function pullRequestSuites() {
               const suites = new Set();
@@ -522,7 +539,7 @@ jobs:
                   page,
                 });
                 for (const run of data.workflow_runs) {
-                  if (pullRequestEvents.has(run.event)) suites.add(run.check_suite_id);
+                  if (foreignRun(run)) suites.add(run.check_suite_id);
                 }
                 if (data.workflow_runs.length < 100) return suites;
               }

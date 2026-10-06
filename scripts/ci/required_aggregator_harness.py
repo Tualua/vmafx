@@ -40,6 +40,7 @@ const github = {rest: {
 const eventName = input.event || 'pull_request';
 const context = {
   eventName,
+  ref: input.ref || (eventName === 'pull_request' ? 'refs/pull/1/merge' : 'refs/heads/master'),
   sha: 'abc',
   repo: {owner: 'test', repo: 'test'},
   payload: eventName === 'pull_request'
@@ -119,10 +120,11 @@ def run_required_aggregator(
 ) -> list[str]:
     """Run the real Actions JavaScript with one selected check result or absence.
 
-    ``event`` is the triggering event the script sees (``pull_request`` or ``push``).
-    Every other required check succeeds in check suite 1; the selected one reports
-    from ``selected_suite``. ``workflow_runs`` are the workflow runs on the commit
-    (``event`` and ``check_suite_id`` each), as the Actions API lists them.
+    ``event`` is the triggering event the script sees (``pull_request`` or ``push``;
+    a push is to ``master``). Every other required check succeeds in check suite 1;
+    the selected one reports from ``selected_suite``. ``workflow_runs`` are the
+    workflow runs on the commit (``event``, ``head_branch`` and ``check_suite_id``
+    each), as the Actions API lists them.
     """
     workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
     script = _embedded_script(workflow_text)

@@ -24,11 +24,20 @@ from scripts.ci.required_aggregator_harness import run_required_aggregator
 PR_ONLY_GATE = "Deliverables Checklist"
 PUSH_SUITE = 1
 PR_SUITE = 7
+OTHER_BRANCH_SUITE = 8
 CODE_SCANNING_SUITE = 99
 RUNS_ON_LANDED_COMMIT = (
-    {"event": "push", "check_suite_id": PUSH_SUITE},
-    {"event": "pull_request", "check_suite_id": PR_SUITE},
+    {"event": "push", "head_branch": "master", "check_suite_id": PUSH_SUITE},
+    {"event": "pull_request", "head_branch": "fix/example", "check_suite_id": PR_SUITE},
 )
+# release-please opens its release-notes branch at the master head; its push
+# runs of the workflows without a branch filter sit on the same commit.
+RELEASE_NOTES_BRANCH = "release-please--branches--master--components--vmafx--release-notes"
+RUNS_WITH_ANOTHER_BRANCH = (
+    *RUNS_ON_LANDED_COMMIT,
+    {"event": "push", "head_branch": RELEASE_NOTES_BRANCH, "check_suite_id": OTHER_BRANCH_SUITE},
+)
+API_GATE = "Go API Compatibility"
 
 
 class AggregatorEventScope(unittest.TestCase):
@@ -75,6 +84,40 @@ class AggregatorEventScope(unittest.TestCase):
         )
         self.assertEqual(len(failures), 1)
         self.assertIn("CodeQL: failure", failures[0])
+
+    def test_push_ignores_cancelled_runs_on_another_branch(self) -> None:
+        """T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06 (master 6275c6f1a)."""
+        failures = run_required_aggregator(
+            API_GATE,
+            "cancelled",
+            event="push",
+            selected_suite=OTHER_BRANCH_SUITE,
+            workflow_runs=RUNS_WITH_ANOTHER_BRANCH,
+        )
+        self.assertEqual(failures, [])
+
+    def test_push_still_fails_its_own_cancelled_run_beside_another_branch(self) -> None:
+        failures = run_required_aggregator(
+            API_GATE,
+            "cancelled",
+            event="push",
+            selected_suite=PUSH_SUITE,
+            workflow_runs=RUNS_WITH_ANOTHER_BRANCH,
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn(f"{API_GATE}: cancelled", failures[0])
+
+    def test_pull_request_reads_runs_of_every_branch(self) -> None:
+        """Outside a push, nothing changes: a pull request reads every suite."""
+        failures = run_required_aggregator(
+            API_GATE,
+            "cancelled",
+            event="pull_request",
+            selected_suite=OTHER_BRANCH_SUITE,
+            workflow_runs=RUNS_WITH_ANOTHER_BRANCH,
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn(f"{API_GATE}: cancelled", failures[0])
 
 
 if __name__ == "__main__":

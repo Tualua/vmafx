@@ -3160,6 +3160,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ADR and tag page was still in the navigation of every page.
 
 
+The master push `Required Checks Aggregator` reads only its own branch's runs: runs of release-please's release-notes branch or a verification branch on the same commit no longer make it wait or fail.
+
+
 - **The master `Required Checks Aggregator` judges the push, not the pull
   request on the same commit.** A pull request the merge train lands by
   fast-forward shares its head commit with the master push, and its cancelled

@@ -273,10 +273,13 @@ is left out. The merge train lands by fast-forward, so a landed commit is also
 the head of its pull request, and the train cancels that pull request's runs
 once it lands; without the filter those cancelled runs of the pull-request-only
 gates (`Deliverables Checklist`, `docs/state.md Gate`, `Silent-Revert Guard`
-and others) read as failures of every master push. Check runs of other apps,
-such as code scanning, always count. A pull-request aggregator reads every
-check run on its head as before. `scripts/ci/tests/test_aggregator_event_scope.py`
-runs the embedded script on both events.
+and others) read as failures of every master push. A check run of a workflow
+run on another branch is left out too: release-please opens its release-notes
+branch at the master head, and the push runs there of the workflows without a
+branch filter are cancelled as superseded. Check runs of other apps, such as
+code scanning, always count. A pull-request aggregator reads every check run on
+its head as before. `scripts/ci/tests/test_aggregator_event_scope.py` runs the
+embedded script on both events.
 
 ### Release legs
 

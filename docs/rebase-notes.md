@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## CI: the push aggregator reads its own branch's runs (2026-10-06)
+
+`fix/aggregator-own-branch-runs`. no rebase impact: the fork's aggregator workflow and its test harness; no upstream file.
+
 ## Scorecard single-maintainer exceptions (2026-10-06)
 
 [ADR-2126](adr/2126-scorecard-single-maintainer-exceptions.md). Two files under
