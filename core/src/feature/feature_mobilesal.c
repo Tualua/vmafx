@@ -168,11 +168,11 @@ static int mobilesal_check_input(enum VmafPixelFormat pix_fmt, unsigned bpc)
         return -EINVAL;
     }
     if (bpc != 8) {
-        /* ADR-0613 / P1-3: early-reject non-8-bit input with an actionable
+        /* ADR-0639 / P1-3: early-reject non-8-bit input with an actionable
          * message that names this extractor as the blocker.  The saliency
          * ONNX model operates on 8-bit ImageNet-normalised RGB; downscaling
          * and clipping 10/12-bit input would require retraining (option b
-         * rejected in ADR-0613).  Use --bitdepth 8 or omit --feature mobilesal
+         * rejected in ADR-0639).  Use --bitdepth 8 or omit --feature mobilesal
          * when scoring HDR / 10-bit / 12-bit content.
          * See docs/metrics/mobilesal.md §Known limitations. */
         vmaf_log(VMAF_LOG_LEVEL_ERROR,

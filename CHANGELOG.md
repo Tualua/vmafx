@@ -546,6 +546,10 @@
   [features](docs/metrics/features.md)).
 
 
+- Code comments in `feature_mobilesal.c`, `hip/picture_hip.c` and `picture.h` cite ADR-0639
+  (the scaffold-audit P1 record) where they cited ADR-0613, the vmaf-tune dynamic optimizer.
+
+
 - **Eight deliberate differences from Netflix's libvmaf are recorded, each with
   its measured size and the upstream pull request that would end it**
   (ADR-1479 to ADR-1486): `ciede` on 4:2:2, `speed_temporal` with

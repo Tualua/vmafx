@@ -3950,9 +3950,6 @@
     },
     "0613": {
       "sites": {
-        "core/src/feature/feature_mobilesal.c": 2,
-        "core/src/hip/picture_hip.c": 2,
-        "core/src/picture.h": 2,
         "mcp-server/vmaf-mcp/tests/test_iserror_invariant.py": 1,
         "mcp-server/vmaf-mcp/tests/test_smoke_e2e.py": 1,
         "tools/vmaf-tune/tests/test_backend_precheck_0613.py": 8,
@@ -4046,6 +4043,9 @@
     },
     "0639": {
       "sites": {
+        "core/src/feature/feature_mobilesal.c": 2,
+        "core/src/hip/picture_hip.c": 2,
+        "core/src/picture.h": 2,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1
       },
       "target": "0639-scaffold-audit-p1-feature-plumbing-fixes.md"
