@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 433,
+  "tus": 434,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -226,6 +226,7 @@
     "core/test/test_feature_collector_coverage.c",
     "core/test/test_feature_extractor.c",
     "core/test/test_feature_isa_invariance.c",
+    "core/test/test_feature_score_fed_frame.c",
     "core/test/test_fex_ctx_vector.cpp",
     "core/test/test_fex_ctx_vector_public.cpp",
     "core/test/test_fex_pool_growth.c",
@@ -695,6 +696,21 @@
         "measured_sources": {
           "added": [
             "core/test/test_cli_exit_status.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e12b8f52ac3b668d1fb7cfc5415fbe6b137f1597af8a6a2d85d9f9a26b7413eb"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/test/test_feature_score_fed_frame.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_feature_score_fed_frame.c"
           ]
         }
       },

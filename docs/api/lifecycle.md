@@ -235,12 +235,18 @@ an error:
 - `-EINVAL`: invalid arguments, or a feature name no registered extractor
   writes.
 
-Before returning `-EAGAIN`, libvmaf waits for the worker threads and, on
-CUDA, collects every frame the device has already finished. A query a few
-frames behind the last picture therefore usually succeeds, and one for the
-newest picture does not. Treat `-EAGAIN` as "not yet": flush and ask again,
-or ask again after more pictures. `vmaf_score_pooled()` returns it when any
-picture of the interval is missing a score
+Before returning either code for a picture already read, libvmaf waits for
+the worker threads and, on CUDA, collects every frame the device has already
+finished, then reads once more. A score a worker thread is still computing is
+therefore returned, not refused, even for the newest picture: with worker
+threads the collector may have no slot for that picture yet, and before
+2026-10-06 `vmaf_feature_score_at_index()` and `vmaf_feature_score_pooled()`
+answered `-EINVAL` at once in that case
+(`core/test/test_feature_score_fed_frame.c`). What still needs a later
+picture stays `-EAGAIN`: `motion2` and `motion3` of the newest picture, and a
+CUDA batch the device has not finished. Treat `-EAGAIN` as "not yet": flush
+and ask again, or ask again after more pictures. `vmaf_score_pooled()`
+returns it when any picture of the interval is missing a score
 ([ADR-0154](../adr/0154-score-pooled-eagain-netflix-755.md)).
 
 An index that skips values is accepted, because single-picture features

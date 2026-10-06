@@ -6405,6 +6405,7 @@
         "core/test/test_feature_collector_coverage.c": 1,
         "core/test/test_feature_extractor.c": 1,
         "core/test/test_feature_isa_invariance.c": 1,
+        "core/test/test_feature_score_fed_frame.c": 1,
         "core/test/test_fex_pool_growth.c": 1,
         "core/test/test_float_adm_coverage.c": 1,
         "core/test/test_float_adm_csf_upstream.c": 1,

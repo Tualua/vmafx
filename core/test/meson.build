@@ -997,6 +997,17 @@ test_model_collection_score_repeat = executable('test_model_collection_score_rep
 )
 test('test_model_collection_score_repeat', test_model_collection_score_repeat, suite : ['fast'])
 
+# T-ENGINE-READ-FED-FRAME-EINVAL-2026-10-06: a feature score of a frame the
+# context was fed is read with worker threads before the flush; the collector's
+# -EINVAL for a slot not created yet fences instead of answering at once.
+test_feature_score_fed_frame = executable('test_feature_score_fed_frame',
+    ['test.c', 'test_feature_score_fed_frame.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_feature_score_fed_frame', test_feature_score_fed_frame, suite : ['fast'])
+
 test_pool_percentile = executable('test_pool_percentile',
     ['test.c', 'test_pool_percentile.c'],
     include_directories : [libvmaf_inc, test_inc],

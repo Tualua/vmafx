@@ -4318,9 +4318,14 @@ int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, dou
         return -EINVAL;
 
     int err = vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, score, index);
-    if (err == -EAGAIN) {
-        /* The slot exists but is unwritten: fence and read once more before
-         * telling the caller the frame is not ready (Netflix/vmaf#1305). */
+    /* A frame the context was fed may still be with a worker thread while the
+     * collector has no slot for it yet (no score of the feature written so
+     * far, or the vector not grown to `index`): -EINVAL then means "not yet",
+     * not an unknown name (T-ENGINE-READ-FED-FRAME-EINVAL-2026-10-06). */
+    const bool fed = vmaf->have_last_index && index <= vmaf->last_index;
+    if (err == -EAGAIN || (err == -EINVAL && fed)) {
+        /* The slot is unwritten: fence and read once more before telling the
+         * caller the frame is not ready (Netflix/vmaf#1305). */
         const int fence_err = fence_for_read(vmaf, index);
         if (fence_err)
             return fence_err;

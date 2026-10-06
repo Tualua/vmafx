@@ -520,6 +520,9 @@ VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
  *         means the feature has not been written at this index yet (see
  *         `vmaf_score_at_index()`); `-EINVAL` is returned for invalid
  *         arguments and for a feature name no registered extractor writes.
+ *         For a picture already read, both codes come after libvmaf has
+ *         waited for the worker threads, so neither stands for a score a
+ *         worker is still computing.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */

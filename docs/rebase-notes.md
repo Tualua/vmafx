@@ -62272,6 +62272,22 @@ No score, public API or FFmpeg patch impact.
   `tests-and-quality-gates.yml`; a conflict there takes the side without it. No score, public C
   API or FFmpeg patch impact.
 
+## A feature score of a picture read waits for the worker threads (2026-10-06)
+
+`fix/feature-score-fed-frame-einval` (T-ENGINE-READ-FED-FRAME-EINVAL-2026-10-06).
+
+- `core/src/libvmaf.c::vmaf_feature_score_at_index()` fences on `-EINVAL` as
+  well as `-EAGAIN` when the index is at most the last picture read
+  (`have_last_index` / `last_index`). Upstream Netflix/vmaf returns the
+  collector's answer with no fence; an upstream sync that touches this
+  function keeps the fork's body. On the RC4 branches the body lives in
+  `vmaf_engine_feature_score_at_index()` with the same condition
+  (`rc4/api-motion-incremental`); a merge keeps one copy of it.
+- New test `core/test/test_feature_score_fed_frame.c` and its block in
+  `core/test/meson.build`. No score or golden impact: a call that returned a
+  score before returns the same score; only `-EINVAL` for a picture still with
+  a worker becomes that picture's score.
+
 ## A model collection's per-frame score reads its stored values first
 
 `fix/model-set-score-idempotent` (T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05).
