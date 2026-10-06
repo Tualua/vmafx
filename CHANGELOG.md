@@ -3063,6 +3063,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   The two model cards describe what the generators write: the ONNX file only.
 
 
+- The four FR regressor trainers (`train_fr_regressor.py`, `_v2.py`,
+  `_v2_ensemble.py`, `_v3.py`) write `model/tiny/registry.json` through
+  `vmaf_train.registry.write_registry_json()`. A non-finite number in a registry
+  row is written as `null` instead of the non-standard `NaN` token no strict JSON
+  reader accepts; a registry of finite values is byte-identical to before.
+
+
 - **`libvmaf.h` and the API guide say what an index gap and an early query do.**
   `vmaf_read_pictures()` has always rejected a repeated or earlier index with
   `-EINVAL`; it also accepts an index that skips values, and then the motion
