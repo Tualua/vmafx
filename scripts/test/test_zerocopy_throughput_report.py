@@ -59,6 +59,12 @@ def test_parse_run_values(tmp_path: Path) -> None:
     assert row["rc"] == 0
 
 
+def test_engines_sum_over_clients(tmp_path: Path) -> None:
+    path = tmp_path / "fdinfo"
+    path.write_text(FDINFO.format(r=10, c=1) + "--\n" + FDINFO.format(r=5, c=7))
+    assert rep._engines(path) == {"drm-engine-render": 15, "drm-engine-copy": 8}
+
+
 def test_parse_run_without_fdinfo(tmp_path: Path) -> None:
     row = rep.parse_run(_write_run(tmp_path, fdinfo=False), {})
     assert "engine_ns" not in row

@@ -54,7 +54,12 @@ def _read(path: Path) -> str:
 
 
 def _engines(path: Path) -> dict[str, int]:
-    return {k: int(v) for k, v in ENGINE_RE.findall(_read(path))}
+    """Engine busy ns summed over every DRM client (fd) of the process."""
+
+    totals: dict[str, int] = {}
+    for key, val in ENGINE_RE.findall(_read(path)):
+        totals[key] = totals.get(key, 0) + int(val)
+    return totals
 
 
 def _frame_count(base: Path, meta: dict[str, str]) -> tuple[int, dict[str, Any]]:
