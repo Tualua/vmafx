@@ -30,6 +30,7 @@
  *  the Vulkan v1 contract before ADR-0251 ring back-pressure landed.
  */
 
+#include <bit>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -49,11 +50,15 @@ extern "C" {
 #include "state_priv.h"
 }
 
+#include "objc_handle.h"
+
 /* Ring depth — caller is typically consuming index N-1 while
  * preparing index N. Two slots is enough for the FFmpeg
  * libvmaf_metal filter's serial dispatch (matches the SYCL
  * preallocation pool depth and the Vulkan v1 default). */
 #define VMAF_METAL_IMPORT_RING 2u
+
+namespace {
 
 /* Per-slot state. `ref` / `dis` are allocated via vmaf_picture_alloc
  * on the first plane import for (slot, is_ref) and handed to
@@ -78,8 +83,11 @@ struct MetalImportRing {
     unsigned bpc; /* bits per component */
     enum VmafPixelFormat pix_fmt;
 };
+} // namespace
 
-static struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
+namespace {
+
+struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
 {
     if (w == 0u || h == 0u) {
         return nullptr;
@@ -103,7 +111,7 @@ static struct MetalImportRing *ring_alloc(unsigned w, unsigned h, unsigned bpc)
     return r;
 }
 
-static void slot_release(struct MetalImportSlot *s)
+void slot_release(struct MetalImportSlot *s)
 {
     if (s->ref_pending) {
         (void)vmaf_picture_unref(&s->ref);
@@ -124,7 +132,7 @@ static void slot_release(struct MetalImportSlot *s)
  * P010 surface is de-interleaved and an MSB-aligned sample shifted, and a
  * layout outside iosurface_layout.h's table is refused rather than copied
  * as if it were planar. */
-static int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned plane,
+int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned plane,
                            VmafMetalPlaneRead *rd)
 {
     const VmafMetalSurfaceFormat *fmt =
@@ -146,7 +154,7 @@ static int plan_plane_read(IOSurfaceRef surf, const VmafPicture *pic, unsigned p
 /* Copy one planned plane out of the locked surface into the VmafPicture.
  * Handles stride mismatches (IOSurface stride is typically page-aligned and
  * >= vmaf_picture_alloc's DATA_ALIGN-rounded stride). */
-static int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
+int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                       const VmafMetalPlaneRead *rd)
 {
     if (pic->data[plane] == nullptr) {
@@ -161,6 +169,48 @@ static int copy_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                           (const uint8_t *)src, src_stride, pic->w[plane], pic->h[plane], rd);
     return 0;
 }
+} // namespace
+
+namespace {
+
+/* The caller's device, or the system default one (an FFmpeg without an
+ * AVMetalDeviceContext relies on that path; once FFmpeg ships a device-context API the caller
+ * passes the VideoToolbox-rendering MTLDevice and the first branch is taken). nil with *rc set
+ * when there is none or it is not Apple GPU family 7. */
+id<MTLDevice> resolve_device(uintptr_t handle, int *rc)
+{
+    id<MTLDevice> device = nil;
+    if (handle != 0u) {
+        device = vmaf_metal::borrow<id<MTLDevice>>(handle);
+        if (device == nil) { *rc = -EINVAL; return nil; }
+    } else {
+        device = MTLCreateSystemDefaultDevice();
+        if (device == nil) { *rc = -ENODEV; return nil; }
+    }
+    if (![device supportsFamily:MTLGPUFamilyApple7]) {
+        *rc = -ENODEV;
+        return nil;
+    }
+    return device;
+}
+
+/* The caller's queue (it must belong to `device`), or a new one. */
+id<MTLCommandQueue> resolve_queue(uintptr_t handle, id<MTLDevice> device, int *rc)
+{
+    if (handle == 0u) {
+        id<MTLCommandQueue> const created = [device newCommandQueue];
+        if (created == nil) { *rc = -ENOMEM; }
+        return created;
+    }
+    id<MTLCommandQueue> const queue = vmaf_metal::borrow<id<MTLCommandQueue>>(handle);
+    if (queue == nil || queue.device != device) {
+        *rc = -EINVAL;
+        return nil;
+    }
+    return queue;
+}
+
+} // namespace
 
 /* ----------------------------------------------------------------- */
 /* Public C-API                                                       */
@@ -174,43 +224,11 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     }
     *out = nullptr;
 
-    id<MTLDevice> device = nil;
-    if (handles.device != 0u) {
-        device = (__bridge id<MTLDevice>)(void *)handles.device;
-        if (device == nil) {
-            return -EINVAL;
-        }
-    } else {
-        /* Fallback: pick the system default Metal device. FFmpeg
-         * n8.1.1 does not expose an AVMetalDeviceContext, so the
-         * libvmaf_metal filter relies on this path. Once FFmpeg
-         * ships a device-context API the caller passes the
-         * VideoToolbox-rendering MTLDevice explicitly and we hit
-         * the external-device branch. */
-        device = MTLCreateSystemDefaultDevice();
-        if (device == nil) {
-            return -ENODEV;
-        }
-    }
-    if (![device supportsFamily:MTLGPUFamilyApple7]) {
-        return -ENODEV;
-    }
-
-    id<MTLCommandQueue> queue = nil;
-    if (handles.command_queue != 0u) {
-        queue = (__bridge id<MTLCommandQueue>)(void *)handles.command_queue;
-        if (queue == nil) {
-            return -EINVAL;
-        }
-        if (queue.device != device) {
-            return -EINVAL;
-        }
-    } else {
-        queue = [device newCommandQueue];
-        if (queue == nil) {
-            return -ENOMEM;
-        }
-    }
+    int rc = 0;
+    id<MTLDevice> const device = resolve_device(handles.device, &rc);
+    if (device == nil) { return rc; }
+    id<MTLCommandQueue> const queue = resolve_queue(handles.command_queue, device, &rc);
+    if (queue == nil) { return rc; }
 
     VmafMetalState *state = (VmafMetalState *)calloc(1, sizeof(*state));
     if (state == nullptr) {
@@ -233,19 +251,20 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     return 0;
 }
 
+namespace {
+
 /* Lazy-allocate the ring on first import. Geometry is pinned to
  * the first frame's (w, h, bpc) — re-imports with different
  * dims surface as -EINVAL (caller must allocate a new state for
  * a resolution switch, same contract Vulkan enforces). */
-static int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsigned bpc,
+int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsigned bpc,
                            struct MetalImportRing **out)
 {
     if (state->import_ring == nullptr) {
-        struct MetalImportRing *const r = ring_alloc(w, h, bpc);
-        if (r == nullptr) {
+        state->import_ring = ring_alloc(w, h, bpc);
+        if (state->import_ring == nullptr) {
             return -ENOMEM;
         }
-        state->import_ring = r;
     }
     struct MetalImportRing *ring = (struct MetalImportRing *)state->import_ring;
     if (ring->w != w || ring->h != h || ring->bpc != bpc) {
@@ -258,7 +277,7 @@ static int import_ring_for(VmafMetalState *state, unsigned w, unsigned h, unsign
 /* The ref or dis picture of frame `index`, allocated on its first plane.
  * If the slot still holds an older frame's picture (caller didn't drain
  * via read_imported_pictures), it is discarded before the slot is reused. */
-static int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref,
+int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref,
                         VmafPicture **pic_out, unsigned **filled_out)
 {
     struct MetalImportSlot *slot = &ring->slots[index % VMAF_METAL_IMPORT_RING];
@@ -288,7 +307,7 @@ static int slot_picture(struct MetalImportRing *ring, unsigned index, int is_ref
 
 /* Lock the IOSurface read-only, copy the planned plane into the
  * VmafPicture's host buffer, unlock. */
-static int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
+int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane,
                              const VmafMetalPlaneRead *rd)
 {
     IOReturn const lock_ret = IOSurfaceLock(surf, kIOSurfaceLockReadOnly, nullptr);
@@ -302,6 +321,7 @@ static int read_locked_plane(IOSurfaceRef surf, VmafPicture *pic, unsigned plane
     }
     return (unlock_ret != kIOReturnSuccess) ? -EIO : 0;
 }
+} // namespace
 
 int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
                               unsigned plane, unsigned w, unsigned h,
@@ -313,7 +333,7 @@ int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
     if (w == 0u || h == 0u || (is_ref != 0 && is_ref != 1)) {
         return -EINVAL;
     }
-    IOSurfaceRef surf = (IOSurfaceRef)(uintptr_t)iosurface;
+    IOSurfaceRef surf = std::bit_cast<IOSurfaceRef>(iosurface);
 
     struct MetalImportRing *ring = nullptr;
     int err = import_ring_for(state, w, h, bpc, &ring);

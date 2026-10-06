@@ -56,13 +56,13 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 /* feature/ciede_ff_math.h on the host, for make_constants() (C++20). */
 #include "metal_ciede_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+
+namespace {
 
 using CiedeStateMetal = struct CiedeStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -79,33 +79,28 @@ using CiedeStateMetal = struct CiedeStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
+
+namespace {
 
 /* The CPU extractor has no options. */
 static const VmafOption options[] = {{0}};
 
-static int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
+int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_ciede_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_ciede_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"integer_ciede_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"integer_ciede_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
     if (pso8 == nil) { return -ENODEV; }
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso16 == nil) { return -ENODEV; }
 
@@ -114,7 +109,7 @@ static int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     if (pix_fmt == VMAF_PIX_FMT_YUV400P) { return -EINVAL; }
@@ -139,7 +134,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_lc; }
 
     {
-        void *const dh = vmaf_metal_context_device_handle(s->ctx);
+        const void *const dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
@@ -163,13 +158,16 @@ fail_ctx:
     s->ctx = nullptr;
     return err;
 }
+} // namespace
+
+namespace {
 
 /* Nearest-neighbour upscale of plane `p` of `pic` to luma resolution
  * (out_w × out_h), into `dst`, as ciede.c::scale_chroma_planes() does:
  * column j reads chroma column j / 2 when ss_hor, and the chroma row advances
  * after every odd output row when ss_ver. */
 template <typename T>
-static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigned out_w,
+void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigned out_w,
                           unsigned out_h, enum VmafPixelFormat pix_fmt)
 {
     const int ss_hor = (p > 0u) && (pix_fmt != VMAF_PIX_FMT_YUV444P);
@@ -187,9 +185,12 @@ static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigne
         out_buf += out_w;
     }
 }
+} // namespace
+
+namespace {
 
 /* The three planes of `pic` at luma resolution, packed, into `dst`. */
-static void upscale_picture(const CiedeStateMetal *s, const VmafPicture *pic, void *const dst[3])
+void upscale_picture(const CiedeStateMetal *s, const VmafPicture *pic, void *const dst[3])
 {
     for (unsigned p = 0; p < 3u; p++) {
         if (s->bpc <= 8u) {
@@ -202,7 +203,7 @@ static void upscale_picture(const CiedeStateMetal *s, const VmafPicture *pic, vo
 
 /* A grid of threadgroups the pipeline accepts that covers the frame; the
  * kernel has no threadgroup memory, so any shape works. */
-static void ciede_dispatch_shape(id<MTLComputePipelineState> pso, unsigned w, unsigned h,
+void ciede_dispatch_shape(id<MTLComputePipelineState> pso, unsigned w, unsigned h,
                                  MTLSize *tg, MTLSize *grid)
 {
     const NSUInteger tw = pso.threadExecutionWidth > 0 ? pso.threadExecutionWidth : 1;
@@ -212,7 +213,7 @@ static void ciede_dispatch_shape(id<MTLComputePipelineState> pso, unsigned w, un
     *grid = MTLSizeMake((w + tw - 1) / tw, (h + th - 1) / th, 1);
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -221,13 +222,13 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     /* The readback holds init()'s frame size. */
     if (ref_pic->w[0] != s->frame_w || ref_pic->h[0] != s->frame_h) { return -EINVAL; }
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
-    id<MTLDevice>       device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue>  queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLBuffer>    terms_buf = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
-    id<MTLComputePipelineState> pso = (s->bpc <= 8u)
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLBuffer> const terms_buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer);
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
@@ -243,9 +244,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     upscale_picture(s, ref_pic, planes);
     upscale_picture(s, dist_pic, planes + 3);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) { return -ENOMEM; }
     [enc setComputePipelineState:pso];
     for (int i = 0; i < 6; ++i) {
@@ -267,10 +268,10 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return [cmd status] == MTLCommandBufferStatusCompleted ? 0 : -EIO;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    CiedeStateMetal *const s = (CiedeStateMetal *)fex->priv;
+    const CiedeStateMetal *const s = (CiedeStateMetal *)fex->priv;
 
     const float *terms = (const float *)s->rb.host_view;
     if (terms == nullptr) { return -EINVAL; }
@@ -282,7 +283,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         feature_collector, s->feature_name_dict, "ciede2000", score, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     CiedeStateMetal *s = (CiedeStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -298,6 +299,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"ciede2000", nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

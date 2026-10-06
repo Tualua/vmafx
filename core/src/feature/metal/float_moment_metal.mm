@@ -45,12 +45,10 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal_float_moment_sum.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[] __asm("section$end$__TEXT$__metallib");
-}
 
 #define FM_PARTIAL_BUFFER_COUNT 8u
 
@@ -62,10 +60,15 @@ extern const unsigned char libvmaf_metallib_end[] __asm("section$end$__TEXT$__me
 #define FM_SUM_ROW_UNITS 2u  /* int64 [plane][row][2] */
 #define FM_SUM_FRAME 3u      /* uint64 [4]: ref1, dis1, ref2, dis2 */
 
-static const char *const fm_sum_kernel_names[FM_SUM_KERNEL_COUNT] = {
+namespace {
+
+const char *const fm_sum_kernel_names[FM_SUM_KERNEL_COUNT] = {
     "float_moment_plane_sums",  "float_moment_row_totals", "float_moment_row_plans",
     "float_moment_row_units",   "float_moment_ordered_totals",
 };
+} // namespace
+
+namespace {
 
 using FloatMomentStateMetal = struct FloatMomentStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -86,10 +89,13 @@ using FloatMomentStateMetal = struct FloatMomentStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
+
+namespace {
 
 static const VmafOption options[] = {{.name=nullptr}};
 
-static void release_sum_pipelines(FloatMomentStateMetal *s)
+void release_sum_pipelines(FloatMomentStateMetal *s)
 {
     for (auto & k : s->pso_sum) {
         if (k) {
@@ -102,17 +108,17 @@ static void release_sum_pipelines(FloatMomentStateMetal *s)
 /* The five kernels of the rounded-sum pass. Each runs one threadgroup of
  * VMAF_MTL_MSUM_LANES lanes, so a pipeline that cannot is refused (fail
  * closed, never a smaller group). */
-static int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, id<MTLLibrary> lib)
+int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, id<MTLLibrary> lib)
 {
     NSError *err = nil;
     for (unsigned k = 0u; k < FM_SUM_KERNEL_COUNT; ++k) {
-        NSString *name = [NSString stringWithUTF8String:fm_sum_kernel_names[k]];
-        id<MTLFunction> fn = [lib newFunctionWithName:name];
+        NSString *const name = [NSString stringWithUTF8String:fm_sum_kernel_names[k]];
+        id<MTLFunction> const fn = (name != nil) ? [lib newFunctionWithName:name] : nil;
         if (fn == nil) {
             release_sum_pipelines(s);
             return -ENODEV;
         }
-        id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn
+        id<MTLComputePipelineState> const pso = [device newComputePipelineStateWithFunction:fn
                                                                                 error:&err];
         if (pso == nil || [pso maxTotalThreadsPerThreadgroup] < VMAF_MTL_MSUM_LANES) {
             release_sum_pipelines(s);
@@ -123,28 +129,20 @@ static int build_sum_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device, i
     return 0;
 }
 
-static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
-    id<MTLFunction> fn8 = [lib newFunctionWithName:@"float_moment_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"float_moment_kernel_16bpc"];
+    id<MTLFunction> const fn8 = [lib newFunctionWithName:@"float_moment_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"float_moment_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso8 == nil || pso16 == nil) { return -ENODEV; }
 
@@ -160,14 +158,14 @@ static int build_pipelines(FloatMomentStateMetal *s, id<MTLDevice> device)
 
 /* Row arrays and the frame sums of the rounded-sum pass, for a frame that
  * can pass 2^53 units; none otherwise. */
-static void free_sum_buffers(FloatMomentStateMetal *s)
+void free_sum_buffers(FloatMomentStateMetal *s)
 {
     for (auto & b : s->sum_buf) {
         (void)vmaf_metal_kernel_buffer_free(&b, s->ctx);
     }
 }
 
-static int alloc_sum_buffers(FloatMomentStateMetal *s)
+int alloc_sum_buffers(FloatMomentStateMetal *s)
 {
     if (!s->rounds) { return 0; }
     const size_t rows = (size_t)VMAF_MTL_MSUM_PLANES * s->frame_h;
@@ -189,6 +187,32 @@ static int alloc_sum_buffers(FloatMomentStateMetal *s)
     return 0;
 }
 
+/* One threadgroup partial per 16x16 tile, double-buffered; frees what it took on failure. */
+int alloc_partial_buffers(FloatMomentStateMetal *s, unsigned w, unsigned h)
+{
+    const size_t grid_w = (w + 15) / 16;
+    const size_t grid_h = (h + 15) / 16;
+    s->partials_count = grid_w * grid_h;
+    const size_t par_size = s->partials_count * sizeof(uint32_t);
+    for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
+        const int err = vmaf_metal_kernel_buffer_alloc(&s->rb[b], s->ctx, par_size);
+        if (err != 0) {
+            for (unsigned q = 0u; q < b; ++q) {
+                (void)vmaf_metal_kernel_buffer_free(&s->rb[q], s->ctx);
+            }
+            return err;
+        }
+    }
+    return 0;
+}
+
+int build_device_pipelines(FloatMomentStateMetal *s)
+{
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { return -ENODEV; }
+    return build_pipelines(s, (__bridge id<MTLDevice>)dh);
+}
+
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
@@ -207,33 +231,13 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err != 0) { goto fail_ctx; }
 
-    {
-        const size_t grid_w = (w + 15) / 16;
-        const size_t grid_h = (h + 15) / 16;
-        s->partials_count = grid_w * grid_h;
-        const size_t par_size = s->partials_count * sizeof(uint32_t);
-        for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-            err = vmaf_metal_kernel_buffer_alloc(&s->rb[b], s->ctx, par_size);
-            if (err != 0) {
-                for (unsigned q = 0u; q < b; ++q) {
-                    (void)vmaf_metal_kernel_buffer_free(&s->rb[q], s->ctx);
-                }
-                goto fail_lc;
-            }
-        }
-    }
+    err = alloc_partial_buffers(s, w, h);
+    if (err != 0) { goto fail_lc; }
 
     err = alloc_sum_buffers(s);
     if (err != 0) { goto fail_rb; }
 
-    {
-        void *const dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == nullptr) {
-            err = -ENODEV;
-            goto fail_sum;
-        }
-        err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
-    }
+    err = build_device_pipelines(s);
     if (err != 0) { goto fail_sum; }
 
     s->feature_name_dict = vmaf_feature_name_dict_from_provided_features(
@@ -268,19 +272,19 @@ fail_ctx:
     return err;
 }
 
-static void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+void bind_sum_buffer(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
                             unsigned which, NSUInteger index)
 {
-    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->sum_buf[which].buffer;
+    id<MTLBuffer> const buf = vmaf_metal::borrow<id<MTLBuffer>>(s->sum_buf[which].buffer);
     [enc setBuffer:buf offset:0 atIndex:index];
 }
 
 /* Selects the pipeline of pass `kernel`; the caller then sets the pass's
  * bindings, in the order the kernel declares them, and dispatches it. */
-static void select_sum_pass(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+void select_sum_pass(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
                             unsigned kernel)
 {
-    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)s->pso_sum[kernel];
+    id<MTLComputePipelineState> const pso = (__bridge id<MTLComputePipelineState>)s->pso_sum[kernel];
     [enc setComputePipelineState:pso];
 }
 
@@ -299,7 +303,7 @@ static void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeComma
     /* 0: the four exact frame sums from the workgroup partials. */
     select_sum_pass(s, enc, 0u);
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->rb[b].buffer;
+        id<MTLBuffer> const buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb[b].buffer);
         [enc setBuffer:buf offset:0 atIndex:(NSUInteger)b];
     }
     bind_sum_buffer(s, enc, FM_SUM_FRAME, 8);
@@ -346,6 +350,40 @@ static void encode_sum_passes(const FloatMomentStateMetal *s, id<MTLComputeComma
     [enc dispatchThreadgroups:by_plane threadsPerThreadgroup:lanes];
 }
 
+/* Copies both luma planes into the shared-storage buffers, row by row. */
+void copy_planes(const FloatMomentStateMetal *s, const VmafPicture *ref_pic,
+                 const VmafPicture *dist_pic, id<MTLBuffer> ref_buf, id<MTLBuffer> dis_buf,
+                 size_t row_bytes)
+{
+    uint8_t *rd = (uint8_t *)[ref_buf contents];
+    uint8_t *dd = (uint8_t *)[dis_buf contents];
+    for (unsigned y = 0; y < s->frame_h; y++) {
+        memcpy(rd + y * row_bytes, (uint8_t *)ref_pic->data[0] + y * ref_pic->stride[0], row_bytes);
+        memcpy(dd + y * row_bytes, (uint8_t *)dist_pic->data[0] + y * dist_pic->stride[0],
+               row_bytes);
+    }
+}
+
+/* The strides, the dimensions and the dispatch of the first-moment kernel; the planes and the
+ * partial buffers are already bound at indices 0..(FM_PARTIAL_BUFFER_COUNT + 1). */
+void encode_main_pass(const FloatMomentStateMetal *s, id<MTLComputeCommandEncoder> enc,
+                      size_t row_bytes)
+{
+    if (s->bpc <= 8u) {
+        uint32_t st[2] = {(uint32_t)row_bytes, (uint32_t)row_bytes};
+        [enc setBytes:st length:sizeof(st) atIndex:10];
+    } else {
+        uint32_t st[4] = {(uint32_t)row_bytes, (uint32_t)row_bytes, (uint32_t)s->bpc, 0};
+        [enc setBytes:st length:sizeof(st) atIndex:10];
+    }
+    uint32_t dim[2] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h};
+    [enc setBytes:dim length:sizeof(dim) atIndex:11];
+
+    MTLSize const tg = MTLSizeMake(16, 16, 1);
+    MTLSize const grid = MTLSizeMake((s->frame_w + 15) / 16, (s->frame_h + 15) / 16, 1);
+    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+}
+
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
@@ -359,69 +397,43 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     s->frame_h = ref_pic->h[0];
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLComputePipelineState> pso = (s->bpc <= 8u)
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
-    id<MTLBuffer> ref_buf =
+    id<MTLBuffer> const ref_buf =
         [device newBufferWithLength:s->plane_bytes options:MTLResourceStorageModeShared];
-    id<MTLBuffer> dis_buf =
+    id<MTLBuffer> const dis_buf =
         [device newBufferWithLength:s->plane_bytes options:MTLResourceStorageModeShared];
     if (ref_buf == nil || dis_buf == nil) { return -ENOMEM; }
-    {
-        uint8_t *rd = (uint8_t *)[ref_buf contents];
-        uint8_t *dd = (uint8_t *)[dis_buf contents];
-        for (unsigned y = 0; y < s->frame_h; y++) {
-            memcpy(rd + y * row_bytes,
-                   (uint8_t *)ref_pic->data[0] + y * ref_pic->stride[0], row_bytes);
-            memcpy(dd + y * row_bytes,
-                   (uint8_t *)dist_pic->data[0] + y * dist_pic->stride[0], row_bytes);
-        }
-    }
+    copy_planes(s, ref_pic, dist_pic, ref_buf, dis_buf, row_bytes);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
     const size_t par_size = s->partials_count * sizeof(uint32_t);
-    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+    id<MTLBlitCommandEncoder> const blit = [cmd blitCommandEncoder];
     for (auto & b : s->rb) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)b.buffer;
+        id<MTLBuffer> const buf = vmaf_metal::borrow<id<MTLBuffer>>(b.buffer);
         [blit fillBuffer:buf range:NSMakeRange(0, par_size) value:0];
     }
     [blit endEncoding];
 
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
     for (unsigned b = 0u; b < FM_PARTIAL_BUFFER_COUNT; ++b) {
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>)(void *)s->rb[b].buffer;
+        id<MTLBuffer> const buf = vmaf_metal::borrow<id<MTLBuffer>>(s->rb[b].buffer);
         [enc setBuffer:buf offset:0 atIndex:(NSUInteger)(b + 2u)];
     }
-    if (s->bpc <= 8u) {
-        uint32_t st[2] = {(uint32_t)row_bytes, (uint32_t)row_bytes};
-        [enc setBytes:st length:sizeof(st) atIndex:10];
-    } else {
-        uint32_t st[4] = {
-            (uint32_t)row_bytes,
-            (uint32_t)row_bytes,
-            (uint32_t)s->bpc,
-            0,
-        };
-        [enc setBytes:st length:sizeof(st) atIndex:10];
-    }
-    uint32_t dim[2] = {(uint32_t)s->frame_w, (uint32_t)s->frame_h};
-    [enc setBytes:dim length:sizeof(dim) atIndex:11];
-
-    MTLSize const tg = MTLSizeMake(16, 16, 1);
-    MTLSize const grid = MTLSizeMake((s->frame_w + 15) / 16, (s->frame_h + 15) / 16, 1);
-    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
+    encode_main_pass(s, enc, row_bytes);
     if (s->rounds) { encode_sum_passes(s, enc, ref_buf, dis_buf, row_bytes); }
     [enc endEncoding];
 
@@ -430,7 +442,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
-static uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size_t i)
+uint64_t reconstruct_partial(const uint32_t *lo, const uint32_t *hi, size_t i)
 {
     return ((uint64_t)hi[i] << 32u) | (uint64_t)lo[i];
 }
@@ -473,7 +485,7 @@ static int apply_rounded_sums(const FloatMomentStateMetal *s, uint64_t sum[4])
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatMomentStateMetal *const s = (FloatMomentStateMetal *)fex->priv;
+    const FloatMomentStateMetal *const s = (FloatMomentStateMetal *)fex->priv;
     uint64_t sum[4] = {0u, 0u, 0u, 0u};
     accumulate_partials(s, sum);
     const int sum_err = apply_rounded_sums(s, sum);
@@ -505,7 +517,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         feature_collector, s->feature_name_dict, "float_moment_dis2nd", dis2, index);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatMomentStateMetal *s = (FloatMomentStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -540,6 +552,7 @@ static const char *provided_features[] = {
     "float_moment_dis2nd",
     nullptr,
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

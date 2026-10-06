@@ -71,13 +71,13 @@
  *  Feature name: cambi (provided feature "Cambi_feature_cambi_score").
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -101,10 +101,8 @@ extern "C" {
 #include "../cambi_internal.h"
 }
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+#include "../../metal/objc_handle.h"
+
 
 /* --- Constants matching cambi.c / integer_cambi_cuda.c --- */
 #define CAMBI_METAL_NUM_SCALES        VMAF_CAMBI_NUM_SCALES
@@ -123,6 +121,8 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
  * re-declare them here — a local copy is exactly how the twins drift. */
 #define CAMBI_METAL_BLOCK_X           16u
 #define CAMBI_METAL_BLOCK_Y           16u
+
+namespace {
 
 using IntegerCambiStateMetal = struct IntegerCambiStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -188,6 +188,9 @@ using IntegerCambiStateMetal = struct IntegerCambiStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
+
+namespace {
 
 /* --- Options: the CPU cambi.c table (names, aliases, defaults, ranges,
  * flags). --- */
@@ -331,7 +334,7 @@ static const VmafOption options[] = {
         .help        = "Path where heatmaps will be dumped.",
         .offset      = offsetof(IntegerCambiStateMetal, heatmaps_path),
         .type        = VMAF_OPT_TYPE_STRING,
-        .default_val = {.s = NULL},
+        .default_val = {.s = nullptr},
     },
     {
         .name        = "full_ref",
@@ -391,7 +394,7 @@ static const VmafOption options[] = {
  *
  * `vmaf_cambi_init_tvi_and_vlt()` is the same helper the SYCL twin calls; it
  * runs the CPU's own bisection, so the twins cannot drift again. */
-static int cambi_metal_init_tvi(IntegerCambiStateMetal *s)
+int cambi_metal_init_tvi(IntegerCambiStateMetal *s)
 {
     const int num_diffs = 1 << s->max_log_contrast;
     return vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
@@ -403,31 +406,23 @@ static int cambi_metal_init_tvi(IntegerCambiStateMetal *s)
 /* build_pipelines: load the three CAMBI kernels from the embedded     */
 /* metallib (same blob pattern as every other Metal feature kernel).   */
 /* ------------------------------------------------------------------ */
-static int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
+int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
-    id<MTLFunction> fn_mask = [lib newFunctionWithName:@"cambi_mask_kernel"];
-    id<MTLFunction> fn_dec  = [lib newFunctionWithName:@"cambi_decimate_kernel"];
-    id<MTLFunction> fn_fm   = [lib newFunctionWithName:@"cambi_filter_mode_kernel"];
+    id<MTLFunction> const fn_mask = [lib newFunctionWithName:@"cambi_mask_kernel"];
+    id<MTLFunction> const fn_dec  = [lib newFunctionWithName:@"cambi_decimate_kernel"];
+    id<MTLFunction> const fn_fm   = [lib newFunctionWithName:@"cambi_filter_mode_kernel"];
     if (fn_mask == nil || fn_dec == nil || fn_fm == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso_mask =
+    id<MTLComputePipelineState> const pso_mask =
         [device newComputePipelineStateWithFunction:fn_mask error:&err];
-    id<MTLComputePipelineState> pso_dec =
+    id<MTLComputePipelineState> const pso_dec =
         [device newComputePipelineStateWithFunction:fn_dec error:&err];
-    id<MTLComputePipelineState> pso_fm =
+    id<MTLComputePipelineState> const pso_fm =
         [device newComputePipelineStateWithFunction:fn_fm error:&err];
     if (pso_mask == nil || pso_dec == nil || pso_fm == nil) { return -ENODEV; }
 
@@ -437,7 +432,7 @@ static int build_pipelines(IntegerCambiStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static void release_host_buffers(IntegerCambiStateMetal *s)
+void release_host_buffers(IntegerCambiStateMetal *s)
 {
     free(s->buffers.diffs_to_consider);   s->buffers.diffs_to_consider   = nullptr;
     free(s->buffers.diff_weights);        s->buffers.diff_weights        = nullptr;
@@ -459,7 +454,7 @@ static void release_host_buffers(IntegerCambiStateMetal *s)
  * than the picture is not upscaled back, both sizes must reach the CAMBI
  * minimum, and an encode and a source that scale in opposite directions have
  * no defined CAMBI interpretation. */
-static int cambi_metal_resolve_dimensions(IntegerCambiStateMetal *s, unsigned bpc, unsigned w,
+int cambi_metal_resolve_dimensions(IntegerCambiStateMetal *s, unsigned bpc, unsigned w,
                                           unsigned h)
 {
     if (s->enc_bitdepth == 0) { s->enc_bitdepth = (int)bpc; }
@@ -520,7 +515,7 @@ static int cambi_metal_resolve_windows(IntegerCambiStateMetal *s)
 
 /* Contrast arrays (the CPU's contrast weights), the TVI table and the host
  * scratch of the CPU residual, sized for alloc_width. */
-static int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
+int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
 {
     const int num_diffs = 1 << s->max_log_contrast;
     s->buffers.diffs_to_consider = (uint16_t *)malloc(sizeof(uint16_t) * (size_t)num_diffs);
@@ -543,7 +538,7 @@ static int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
     if (err) { return err; }
 
     const size_t w = s->alloc_width;
-    const uint16_t num_bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[2 * num_diffs] -
+    const uint16_t num_bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[(size_t)2 * num_diffs] -
                                                             s->buffers.all_diffs[0]));
     const size_t pad_size  = CAMBI_METAL_MASK_FILTER_SIZE / 2;
     const size_t dp_width  = w + 2u * pad_size + 1u;
@@ -561,18 +556,18 @@ static int cambi_metal_alloc_host_buffers(IntegerCambiStateMetal *s)
 }
 
 /* The device planes and the pipelines. */
-static int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
+int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
 {
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
     if (dh == nullptr) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
     const size_t buf_bytes = (size_t)s->alloc_width * (size_t)s->alloc_height * sizeof(uint16_t);
-    id<MTLBuffer> b_image = [device newBufferWithLength:buf_bytes
+    id<MTLBuffer> const b_image = [device newBufferWithLength:buf_bytes
                                                options:MTLResourceStorageModeShared];
-    id<MTLBuffer> b_mask  = [device newBufferWithLength:buf_bytes
+    id<MTLBuffer> const b_mask  = [device newBufferWithLength:buf_bytes
                                                options:MTLResourceStorageModeShared];
-    id<MTLBuffer> b_tmp   = [device newBufferWithLength:buf_bytes
+    id<MTLBuffer> const b_tmp   = [device newBufferWithLength:buf_bytes
                                                options:MTLResourceStorageModeShared];
     if (b_image == nil || b_mask == nil || b_tmp == nil) { return -ENOMEM; }
     s->d_image = (__bridge_retained void *)b_image;
@@ -583,7 +578,7 @@ static int cambi_metal_alloc_device(IntegerCambiStateMetal *s)
 
 /* Tear down everything init() may have set up; every step tolerates a handle
  * that was never created, so this serves a failed init() and close(). */
-static int cambi_metal_release(IntegerCambiStateMetal *s)
+int cambi_metal_release(IntegerCambiStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
     void **const handles[] = {&s->pso_filter_mode, &s->pso_decimate, &s->pso_mask,
@@ -604,7 +599,7 @@ static int cambi_metal_release(IntegerCambiStateMetal *s)
     release_host_buffers(s);
     const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_files);
     if (heatmaps != 0 && rc == 0) { rc = heatmaps; }
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != nullptr) {
         const int e = vmaf_dictionary_free(&s->feature_name_dict);
         if (e != 0 && rc == 0) { rc = e; }
     }
@@ -617,7 +612,7 @@ static int cambi_metal_release(IntegerCambiStateMetal *s)
  * host pictures and scratch of the CPU residual, the device planes and
  * pipelines, and the heatmap files of the encode size (cambi.c::init's
  * open_heatmaps()). */
-static int cambi_metal_init_resources(IntegerCambiStateMetal *s)
+int cambi_metal_init_resources(IntegerCambiStateMetal *s)
 {
     /* cambi.c::init's alloc_w / alloc_h: the source size counts only under
      * full_ref, where the reference picture runs at it. */
@@ -652,7 +647,7 @@ static int cambi_metal_init_resources(IntegerCambiStateMetal *s)
     return err;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -665,7 +660,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
      * (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05). */
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) { return -ENOMEM; }
+    if (s->feature_name_dict == nullptr) { return -ENOMEM; }
 
     int err = cambi_metal_resolve_dimensions(s, bpc, w, h);
     if (err == 0) {
@@ -684,11 +679,11 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 /* ------------------------------------------------------------------ */
 /* encode_grid: dispatch one of the three GPU kernels over (w x h).     */
 /* ------------------------------------------------------------------ */
-static void encode_kernel(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
+void encode_kernel(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                           id<MTLBuffer> in_buf, id<MTLBuffer> out_buf, const uint32_t params[4],
                           unsigned w, unsigned h)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBuffer:in_buf  offset:0 atIndex:0];
     [enc setBuffer:out_buf offset:0 atIndex:1];
@@ -702,7 +697,7 @@ static void encode_kernel(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> 
 
 /* Copy a flat (scaled_w x scaled_h, stride scaled_w) uint16 device
  * buffer into a stride-aware VmafPicture plane. */
-static void copy_buf_to_pic(id<MTLBuffer> buf, VmafPicture *pic, unsigned scaled_w,
+void copy_buf_to_pic(id<MTLBuffer> buf, VmafPicture *pic, unsigned scaled_w,
                             unsigned scaled_h)
 {
     const uint16_t *src = (const uint16_t *)[buf contents];
@@ -714,12 +709,15 @@ static void copy_buf_to_pic(id<MTLBuffer> buf, VmafPicture *pic, unsigned scaled
     }
 }
 
-static int cambi_metal_commit(id<MTLCommandBuffer> cmd)
+int cambi_metal_commit(id<MTLCommandBuffer> cmd)
 {
     [cmd commit];
     [cmd waitUntilCompleted];
     return ([cmd status] == MTLCommandBufferStatusCompleted) ? 0 : -EIO;
 }
+} // namespace
+
+namespace {
 
 /* The three device planes of one picture's pipeline. They rotate through
  * local handles only: s->d_image / d_mask / d_tmp keep pointing at the
@@ -731,12 +729,15 @@ using CambiMetalPlanes = struct CambiMetalPlanes {
     unsigned width;
     unsigned height;
 };
+} // namespace
+
+namespace {
 
 /* pics[0] <- `pic` decimated or resized to width x height and shifted to 10
  * bits (the CPU's vmaf_cambi_preprocessing()), uploaded packed to d_image,
  * then the scale-0 spatial mask (d_image -> d_mask). Metal pictures are
  * host-resident (unified memory), so the host reads the plane directly. */
-static int cambi_metal_prepare(IntegerCambiStateMetal *s, id<MTLCommandQueue> queue,
+int cambi_metal_prepare(IntegerCambiStateMetal *s, id<MTLCommandQueue> queue,
                                const VmafPicture *pic, unsigned width, unsigned height)
 {
     const int err = vmaf_cambi_preprocessing(pic, &s->pics[0], (int)width, (int)height,
@@ -750,7 +751,7 @@ static int cambi_metal_prepare(IntegerCambiStateMetal *s, id<MTLCommandQueue> qu
                (size_t)width * sizeof(uint16_t));
     }
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
     const uint32_t p[4] = {width, height, width, vmaf_cambi_mask_index(width, height)};
     encode_kernel(cmd, (__bridge id<MTLComputePipelineState>)s->pso_mask,
@@ -759,7 +760,7 @@ static int cambi_metal_prepare(IntegerCambiStateMetal *s, id<MTLCommandQueue> qu
     return cambi_metal_commit(cmd);
 }
 
-static void cambi_metal_swap(void **a, void **b)
+void cambi_metal_swap(void **a, void **b)
 {
     void *t = *a;
     *a = *b;
@@ -770,13 +771,13 @@ static void cambi_metal_swap(void **a, void **b)
  * decimation of image and mask from scale 1 on, or at every scale under the
  * high-res speed-up, then the mode filter H (image -> tmp) and V (tmp ->
  * image). */
-static int cambi_metal_scale_gpu(IntegerCambiStateMetal *s, id<MTLCommandQueue> queue, int scale,
+int cambi_metal_scale_gpu(IntegerCambiStateMetal *s, id<MTLCommandQueue> queue, int scale,
                                  CambiMetalPlanes *pl)
 {
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-    id<MTLComputePipelineState> pso_dec = (__bridge id<MTLComputePipelineState>)s->pso_decimate;
-    id<MTLComputePipelineState> pso_fm  = (__bridge id<MTLComputePipelineState>)s->pso_filter_mode;
+    id<MTLComputePipelineState> const pso_dec = (__bridge id<MTLComputePipelineState>)s->pso_decimate;
+    id<MTLComputePipelineState> const pso_fm  = (__bridge id<MTLComputePipelineState>)s->pso_filter_mode;
 
     if (scale > 0 || s->high_res_speedup) {
         const unsigned new_w = (pl->width + 1u) >> 1;
@@ -805,7 +806,7 @@ static int cambi_metal_scale_gpu(IntegerCambiStateMetal *s, id<MTLCommandQueue> 
  * to the scale's heatmap as frame `*heatmap_frame` when that is not NULL
  * (before the pooling's quick-select reorders them, as cambi.c::cambi_score
  * does), then the top-K pooling into `*score`. */
-static int cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetalPlanes *pl,
+int cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetalPlanes *pl,
                                   uint16_t window, double topk, int scale,
                                   const unsigned *heatmap_frame, double *score)
 {
@@ -817,7 +818,7 @@ static int cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetalPla
                                   s->buffers.tvi_for_diff, s->vlt_luma, s->buffers.diff_weights,
                                   s->buffers.all_diffs, (int)pl->width, (int)pl->height,
                                   s->inc_range_callback, s->dec_range_callback);
-    if (heatmap_frame != NULL) {
+    if (heatmap_frame != nullptr) {
         const int err = vmaf_cambi_dump_c_values(s->heatmaps_files, s->buffers.c_values,
                                                  (int)pl->width, (int)pl->height, scale,
                                                  (int)window, (uint16_t)num_diffs,
@@ -832,13 +833,13 @@ static int cambi_metal_scale_host(IntegerCambiStateMetal *s, const CambiMetalPla
  * with the adjusted window `window`: the weighted score of the five scales,
  * before the cambi_max_val cap; the c-values go to the heatmaps as frame
  * `*heatmap_frame` when that is not NULL. */
-static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, unsigned width,
+int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, unsigned width,
                              unsigned height, uint16_t window, const unsigned *heatmap_frame,
                              double *score)
 {
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (qh == nullptr) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
     int err = cambi_metal_prepare(s, queue, pic, width, height);
     /* The original `topk` when it was set to a non-default value, else
@@ -864,7 +865,7 @@ static int cambi_metal_score(IntegerCambiStateMetal *s, const VmafPicture *pic, 
 /* submit: the distorted picture at the encode size and, with full_ref, */
 /* the reference at the source size (cambi.c::extract).                */
 /* ------------------------------------------------------------------ */
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -878,13 +879,13 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                                 s->adjusted_window, heatmap_frame, &s->dist_score);
     if (err == 0 && s->full_ref) {
         err = cambi_metal_score(s, ref_pic, (unsigned)s->src_width, (unsigned)s->src_height,
-                                s->src_window, NULL, &s->src_score);
+                                s->src_window, nullptr, &s->src_score);
     }
     return err;
 }
 
 /* MIN(score, cambi_max_val), as cambi.c's MIN() spells it. */
-static double cambi_metal_cap(const IntegerCambiStateMetal *s, double score)
+double cambi_metal_cap(const IntegerCambiStateMetal *s, double score)
 {
     return (score < s->cambi_max_val) ? score : s->cambi_max_val;
 }
@@ -892,10 +893,10 @@ static double cambi_metal_cap(const IntegerCambiStateMetal *s, double score)
 /* ------------------------------------------------------------------ */
 /* collect: emit the scores computed in submit(), as cambi.c::extract.  */
 /* ------------------------------------------------------------------ */
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    IntegerCambiStateMetal *const s = (IntegerCambiStateMetal *)fex->priv;
+    const IntegerCambiStateMetal *const s = (IntegerCambiStateMetal *)fex->priv;
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "Cambi_feature_cambi_score",
                                                       cambi_metal_cap(s, s->dist_score), index);
@@ -916,7 +917,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 /* ------------------------------------------------------------------ */
 /* close                                                                */
 /* ------------------------------------------------------------------ */
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     return cambi_metal_release((IntegerCambiStateMetal *)fex->priv);
 }
@@ -924,6 +925,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 static const char *provided_features[] = {
     "Cambi_feature_cambi_score", nullptr
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

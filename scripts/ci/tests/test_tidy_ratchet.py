@@ -276,6 +276,19 @@ class Compare(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("a.c: warnings 3 -> 1 (-2)", printed)
 
+    def test_committed_metal_baseline_is_zero_and_refuses_a_planted_finding(self) -> None:
+        committed = json.loads(
+            (Path(__file__).resolve().parents[1] / "tidy-baseline-metal.json").read_text()
+        )
+        base = ratchet.Measurement.from_json(committed)
+        self.assertEqual(base.warnings, {})
+        self.assertEqual(base.nolint_uncited, {})
+        self.assertGreater(len(base.sources), 20)
+        planted = self._m({"core/src/metal/common.mm": 1})
+        code, printed = _captured(ratchet.report, base, planted, False)
+        self.assertEqual(code, 2)
+        self.assertIn("core/src/metal/common.mm: warnings 0 -> 1 (+1)", printed)
+
     def test_verdict_is_a_workflow_command_only_under_github_actions(self) -> None:
         base, above = self._m({"a.c": 3}), self._m({"a.c": 5})
         with mock.patch.object(ratchet, "GITHUB_ACTIONS", True):
@@ -522,6 +535,21 @@ class RunClangTidy(unittest.TestCase):
             # A value that already carries the wrapper passes through once, not
             # twice: the lanes mix both spellings in TIDY_RATCHET_EXTRA_*.
             self.assertNotIn("--extra-arg=--extra-arg=-nocudalib", argv)
+
+    def test_header_filter_is_clang_tidys_own_option(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = _fake_clang_tidy(root)
+            _source, output, _rc = ratchet.run_one(
+                str(binary),
+                Path("build"),
+                ["--header-filter=^x$", "-nocudalib"],
+                (root / "a.c", root),
+            )
+            argv = output.split()
+            self.assertIn("--header-filter=^x$", argv)
+            self.assertNotIn("--extra-arg=--header-filter=^x$", argv)
+            self.assertIn("--extra-arg=-nocudalib", argv)
 
     def test_relative_wrapper_path_survives_the_tu_directory(self) -> None:
         # clang-tidy runs in each TU's directory; the SYCL lane names its wrapper

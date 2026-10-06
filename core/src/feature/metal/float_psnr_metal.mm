@@ -45,14 +45,15 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+#include "../../metal/objc_handle.h"
+
+
 
 /* Pixels per threadgroup: one segment of one row; FPSNR_THREADS_PER_GROUP
  * in float_psnr.metal. */
 #define FPSNR_SEGMENT 256u
+
+namespace {
 
 using FloatPsnrStateMetal = struct FloatPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
@@ -77,6 +78,9 @@ using FloatPsnrStateMetal = struct FloatPsnrStateMetal {
 
     VmafDictionary *feature_name_dict;
 };
+} // namespace
+
+namespace {
 
 static const VmafOption options[] = {
     {
@@ -91,27 +95,19 @@ static const VmafOption options[] = {
 
 static int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"float_psnr_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"float_psnr_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"float_psnr_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"float_psnr_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
     if (pso8 == nil) { return -ENODEV; }
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso16 == nil) { return -ENODEV; }
 
@@ -152,7 +148,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_lc; }
 
     {
-        void *const dh = vmaf_metal_context_device_handle(s->ctx);
+        const void *const dh = vmaf_metal_context_device_handle(s->ctx);
         if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
@@ -188,20 +184,20 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     s->frame_h = ref_pic->h[0];
     const size_t row_bytes = (size_t)s->frame_w * (s->bpc <= 8u ? 1u : 2u);
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
-    id<MTLDevice>      device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLBuffer>    par_buf  = (__bridge id<MTLBuffer>)(void *)s->rb.buffer;
-    id<MTLComputePipelineState> pso = (s->bpc <= 8u)
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLBuffer> const par_buf  = vmaf_metal::borrow<id<MTLBuffer>>(s->rb.buffer);
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8u)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
     /* Build ref/dis host-side staging and copy into MTLBuffers. */
-    id<MTLBuffer> ref_buf = [device newBufferWithLength:s->plane_bytes options:MTLResourceStorageModeShared];
-    id<MTLBuffer> dis_buf = [device newBufferWithLength:s->plane_bytes options:MTLResourceStorageModeShared];
+    id<MTLBuffer> const ref_buf = [device newBufferWithLength:s->plane_bytes options:MTLResourceStorageModeShared];
+    id<MTLBuffer> const dis_buf = [device newBufferWithLength:s->plane_bytes options:MTLResourceStorageModeShared];
     if (ref_buf == nil || dis_buf == nil) { return -ENOMEM; }
     {
         uint8_t *rd = (uint8_t *)[ref_buf contents];
@@ -212,14 +208,14 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         }
     }
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
-    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+    id<MTLBlitCommandEncoder> const blit = [cmd blitCommandEncoder];
     [blit fillBuffer:par_buf range:NSMakeRange(0, s->partials_count * sizeof(uint64_t)) value:0];
     [blit endEncoding];
 
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
@@ -264,7 +260,7 @@ static double float_psnr_noise(const FloatPsnrStateMetal *s)
 static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatPsnrStateMetal *const s = (FloatPsnrStateMetal *)fex->priv;
+    const FloatPsnrStateMetal *const s = (FloatPsnrStateMetal *)fex->priv;
 
     const double mse = float_psnr_noise(s);
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
@@ -302,6 +298,7 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"float_psnr", nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];

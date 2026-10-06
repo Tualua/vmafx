@@ -65,18 +65,18 @@ extern "C" {
 #include "../nonfinite_score.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal_float_adm_math.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 #define FADM_NUM_SCALES 4
 #define FADM_NUM_BANDS  3
 #define FADM_BX         16
 #define FADM_BY         16
 #define FADM_ROW_TG 64u
+
+namespace {
 
 /* Geometry uniform mirroring `FadmDims` in float_adm.metal. */
 using FadmDimsHost = struct FadmDimsHost {
@@ -173,6 +173,9 @@ using FloatAdmStateMetal = struct FloatAdmStateMetal {
     unsigned index;
     VmafDictionary *feature_name_dict;
 };
+} // namespace
+
+namespace {
 
 static const VmafOption options[] = {
     {.name = "debug",
@@ -407,30 +410,21 @@ static void compute_per_scale_dims(FloatAdmStateMetal *s)
     s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
 }
 
-static void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name)
+void *make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib, NSString *name)
 {
-    id<MTLFunction> fn = [lib newFunctionWithName:name];
+    id<MTLFunction> const fn = [lib newFunctionWithName:name];
     if (fn == nil) { return nullptr; }
     NSError *err = nil;
-    id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn error:&err];
+    id<MTLComputePipelineState> const pso = [device newComputePipelineStateWithFunction:fn error:&err];
     if (pso == nil) { return nullptr; }
     return (__bridge_retained void *)pso;
 }
 
-static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t const data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == nullptr) { return -ENOMEM; }
-
-    NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
 
     s->pso_dwt_vert_8 = make_pipeline(device, lib, @"float_adm_dwt_vert_8bpc");
     s->pso_dwt_vert_16 = make_pipeline(device, lib, @"float_adm_dwt_vert_16bpc");
@@ -446,7 +440,7 @@ static int build_pipelines(FloatAdmStateMetal *s, id<MTLDevice> device)
 }
 
 /* Release every retained PSO. Safe on a partially-built state. */
-static void release_psos(FloatAdmStateMetal *s)
+void release_psos(FloatAdmStateMetal *s)
 {
     void **const psos[] = {&s->pso_rows,        &s->pso_terms,       &s->pso_decouple,
                      &s->pso_dwt_hori,    &s->pso_dwt_vert_16, &s->pso_dwt_vert_8};
@@ -459,7 +453,7 @@ static void release_psos(FloatAdmStateMetal *s)
 }
 
 /* Release every retained MTLBuffer. Safe on a partially-allocated state. */
-static void release_buffers(FloatAdmStateMetal *s)
+void release_buffers(FloatAdmStateMetal *s)
 {
     for (int i = 0; i < FADM_NUM_SCALES; ++i) {
         if (s->ref_band[i]) {
@@ -481,7 +475,96 @@ static void release_buffers(FloatAdmStateMetal *s)
     }
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+/* One shared-storage buffer of `bytes` bytes into `*slot` (a +1 reference). */
+int new_shared_buffer(id<MTLDevice> device, size_t bytes, void **slot)
+{
+    id<MTLBuffer> const buf = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+    if (buf == nil) { return -ENOMEM; }
+    *slot = (__bridge_retained void *)buf;
+    return 0;
+}
+
+int new_shared_buffer_pair(id<MTLDevice> device, size_t bytes, void **first, void **second)
+{
+    const int err = new_shared_buffer(device, bytes, first);
+    return (err != 0) ? err : new_shared_buffer(device, bytes, second);
+}
+
+float scaler_for_bpc(unsigned bpc)
+{
+    if (bpc <= 8u) { return 1.0f; }
+    if (bpc == 10u) { return 4.0f; }
+    return (bpc == 12u) ? 16.0f : 256.0f;
+}
+
+/* The constants the reference derives per frame, taken from its own
+ * routines so they cannot drift from it (ADR-1420, ADR-1434). The CSF
+ * weights come from adm_csf_rfactor_s() with the options float_adm.c
+ * passes, the per-scale overrides adm_f1sN / adm_f2sN included; in the
+ * Watson-97 mode this twin supports they ignore adm_csf_scale /
+ * adm_csf_diag_scale, as on the CPU (ADR-1214). */
+void init_reference_constants(FloatAdmStateMetal *s)
+{
+    for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
+        adm_csf_rfactor_s(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                          s->adm_csf_mode, DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale,
+                          s->adm_csf_diag_scale, s->adm_f1s0, s->adm_f1s1, s->adm_f1s2,
+                          s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2, s->adm_f2s3,
+                          s->rfactor[scale]);
+    }
+    s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
+    s->gain_limit = vmaf_mtl_fadm_make_gain_limit(s->adm_enhn_gain_limit);
+}
+
+/* Every device buffer of the frame: raw planes, the first DWT's scratch, the
+ * per-scale bands, the CSF products, the term and row sums. */
+int alloc_device_buffers(FloatAdmStateMetal *s, id<MTLDevice> device)
+{
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    int err = new_shared_buffer_pair(device, (size_t)s->width * s->height * bpp, &s->src_ref,
+                                     &s->src_dis);
+    if (err != 0) { return err; }
+
+    const size_t dwt_bytes = (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
+    err = new_shared_buffer_pair(device, dwt_bytes, &s->dwt_tmp_ref, &s->dwt_tmp_dis);
+    if (err != 0) { return err; }
+
+    for (int scale = 0; scale < FADM_NUM_SCALES && err == 0; ++scale) {
+        const size_t band_bytes = (size_t)4u * s->buf_stride * s->scale_half_h[scale] * sizeof(float);
+        err = new_shared_buffer_pair(device, band_bytes, &s->ref_band[scale], &s->dis_band[scale]);
+    }
+    if (err != 0) { return err; }
+
+    const size_t csf_bytes =
+        (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
+    void **const csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
+    for (auto &csf_slot : csf_slots) {
+        err = new_shared_buffer(device, csf_bytes, csf_slot);
+        if (err != 0) { return err; }
+    }
+
+    err = new_shared_buffer(device, (s->term_floats > 0u ? s->term_floats : 1u) * sizeof(float),
+                            &s->terms);
+    return (err != 0) ? err
+                      : new_shared_buffer(device,
+                                          (s->row_floats > 0u ? s->row_floats : 1u) * sizeof(float),
+                                          &s->rows);
+}
+
+/* The device, its buffers and its pipelines; the caller unwinds on failure. */
+int init_device_resources(FloatAdmStateMetal *s, int *stage)
+{
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { *stage = 1; return -ENODEV; }
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    int err = alloc_device_buffers(s, device);
+    if (err != 0) { *stage = 2; return err; }
+    err = build_pipelines(s, device);
+    *stage = (err != 0) ? 3 : 0;
+    return err;
+}
+
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -502,27 +585,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->height = h;
     s->bpc = bpc;
     compute_per_scale_dims(s);
-
-    if (bpc <= 8u) { s->scaler = 1.0f; }
-    else if (bpc == 10u) { s->scaler = 4.0f; }
-    else if (bpc == 12u) { s->scaler = 16.0f; }
-    else { s->scaler = 256.0f; }
-
-    /* The constants the reference derives per frame, taken from its own
-     * routines so they cannot drift from it (ADR-1420, ADR-1434). The CSF
-     * weights come from adm_csf_rfactor_s() with the options float_adm.c
-     * passes, the per-scale overrides adm_f1sN / adm_f2sN included; in the
-     * Watson-97 mode this twin supports they ignore adm_csf_scale /
-     * adm_csf_diag_scale, as on the CPU (ADR-1214). */
-    for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-        adm_csf_rfactor_s(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                          s->adm_csf_mode, DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale,
-                          s->adm_csf_diag_scale, s->adm_f1s0, s->adm_f1s1, s->adm_f1s2,
-                          s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2, s->adm_f2s3,
-                          s->rfactor[scale]);
-    }
-    s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
-    s->gain_limit = vmaf_mtl_fadm_make_gain_limit(s->adm_enhn_gain_limit);
+    s->scaler = scaler_for_bpc(bpc);
+    init_reference_constants(s);
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -531,65 +595,12 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { goto fail_ctx; }
 
     {
-        void *const dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == nullptr) { err = -ENODEV; goto fail_lc; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-
-        const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-        const size_t raw_bytes = (size_t)w * h * bpp;
-        id<MTLBuffer> sr = [device newBufferWithLength:raw_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> sd = [device newBufferWithLength:raw_bytes
-                                               options:MTLResourceStorageModeShared];
-        if (sr == nil || sd == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->src_ref = (__bridge_retained void *)sr;
-        s->src_dis = (__bridge_retained void *)sd;
-
-        const size_t dwt_bytes =
-            (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
-        id<MTLBuffer> dr = [device newBufferWithLength:dwt_bytes
-                                               options:MTLResourceStorageModeShared];
-        id<MTLBuffer> dd = [device newBufferWithLength:dwt_bytes
-                                               options:MTLResourceStorageModeShared];
-        if (dr == nil || dd == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->dwt_tmp_ref = (__bridge_retained void *)dr;
-        s->dwt_tmp_dis = (__bridge_retained void *)dd;
-
-        for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
-            const size_t band_bytes =
-                (size_t)4u * s->buf_stride * s->scale_half_h[scale] * sizeof(float);
-            id<MTLBuffer> br = [device newBufferWithLength:band_bytes
-                                                   options:MTLResourceStorageModeShared];
-            id<MTLBuffer> bd = [device newBufferWithLength:band_bytes
-                                                   options:MTLResourceStorageModeShared];
-            if (br == nil || bd == nil) { err = -ENOMEM; goto fail_bufs; }
-            s->ref_band[scale] = (__bridge_retained void *)br;
-            s->dis_band[scale] = (__bridge_retained void *)bd;
-        }
-
-        const size_t csf_bytes =
-            (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
-        void **const csf_slots[] = {&s->csf_a, &s->csf_fa, &s->csf_r, &s->csf_fr};
-        for (auto & csf_slot : csf_slots) {
-            id<MTLBuffer> cb = [device newBufferWithLength:csf_bytes
-                                                   options:MTLResourceStorageModeShared];
-            if (cb == nil) { err = -ENOMEM; goto fail_bufs; }
-            *csf_slot = (__bridge_retained void *)cb;
-        }
-
-        const size_t term_bytes = (s->term_floats > 0u ? s->term_floats : 1u) * sizeof(float);
-        id<MTLBuffer> tb = [device newBufferWithLength:term_bytes
-                                               options:MTLResourceStorageModeShared];
-        const size_t row_bytes = (s->row_floats > 0u ? s->row_floats : 1u) * sizeof(float);
-        id<MTLBuffer> rb = [device newBufferWithLength:row_bytes
-                                               options:MTLResourceStorageModeShared];
-        if (tb == nil || rb == nil) { err = -ENOMEM; goto fail_bufs; }
-        s->terms = (__bridge_retained void *)tb;
-        s->rows = (__bridge_retained void *)rb;
-
-        err = build_pipelines(s, device);
+        int stage = 0;
+        err = init_device_resources(s, &stage);
+        if (stage == 1) { goto fail_lc; }
+        if (stage == 2) { goto fail_bufs; }
+        if (stage == 3) { goto fail_pso; }
     }
-    if (err != 0) { goto fail_pso; }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -609,7 +620,7 @@ fail_ctx:
 }
 
 /* Copy a Y plane (respecting source stride) into the packed src buffer. */
-static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
+void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h,
                            unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
@@ -623,12 +634,12 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
 
 /* Dispatch `grid` threadgroups of `tg` threads of `pso` with the buffers and
  * bytes of one stage: buffers[i] at index i, then `bytes` at the next index. */
-static void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
+void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
                            NSArray<id<MTLBuffer>> *buffers, const void *bytes,
                            size_t bytes_length, MTLSize grid, MTLSize tg)
 {
-    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)pso_handle;
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputePipelineState> const pso = (__bridge id<MTLComputePipelineState>)pso_handle;
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     for (NSUInteger i = 0; i < [buffers count]; ++i) {
         [enc setBuffer:buffers[i] offset:0 atIndex:i];
@@ -638,13 +649,13 @@ static void dispatch_stage(id<MTLCommandBuffer> cmd, void *pso_handle,
     [enc endEncoding];
 }
 
-static MTLSize grid_2d(unsigned w, unsigned h, unsigned z)
+MTLSize grid_2d(unsigned w, unsigned h, unsigned z)
 {
     return MTLSizeMake((w + FADM_BX - 1u) / FADM_BX, (h + FADM_BY - 1u) / FADM_BY, z);
 }
 
 /* Stages 0 and 1: the DWT of one scale, reference and distorted (z = 2). */
-static void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     const int cur_w = (int)s->scale_w[scale];
     const int cur_h = (int)s->scale_h[scale];
@@ -669,20 +680,20 @@ static void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scal
     c.scaler = s->scaler;
     c.pixel_offset = -128.0f;
 
-    id<MTLBuffer> ref_band = (__bridge id<MTLBuffer>)s->ref_band[scale];
-    id<MTLBuffer> dis_band = (__bridge id<MTLBuffer>)s->dis_band[scale];
-    id<MTLBuffer> parent_ref =
+    id<MTLBuffer> const ref_band = (__bridge id<MTLBuffer>)s->ref_band[scale];
+    id<MTLBuffer> const dis_band = (__bridge id<MTLBuffer>)s->dis_band[scale];
+    id<MTLBuffer> const parent_ref =
         (scale > 0) ? (__bridge id<MTLBuffer>)s->ref_band[scale - 1] : ref_band;
-    id<MTLBuffer> parent_dis =
+    id<MTLBuffer> const parent_dis =
         (scale > 0) ? (__bridge id<MTLBuffer>)s->dis_band[scale - 1] : dis_band;
-    id<MTLBuffer> src_ref = (__bridge id<MTLBuffer>)s->src_ref;
-    id<MTLBuffer> src_dis = (__bridge id<MTLBuffer>)s->src_dis;
-    id<MTLBuffer> dwt_ref = (__bridge id<MTLBuffer>)s->dwt_tmp_ref;
-    id<MTLBuffer> dwt_dis = (__bridge id<MTLBuffer>)s->dwt_tmp_dis;
+    id<MTLBuffer> const src_ref = (__bridge id<MTLBuffer>)s->src_ref;
+    id<MTLBuffer> const src_dis = (__bridge id<MTLBuffer>)s->src_dis;
+    id<MTLBuffer> const dwt_ref = (__bridge id<MTLBuffer>)s->dwt_tmp_ref;
+    id<MTLBuffer> const dwt_dis = (__bridge id<MTLBuffer>)s->dwt_tmp_dis;
     const MTLSize tg = MTLSizeMake(FADM_BX, FADM_BY, 1);
 
     /* Stage 0 -- DWT vertical (z=2 ref/dis). */
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)(
                                      (s->bpc <= 8u) ? s->pso_dwt_vert_8 : s->pso_dwt_vert_16)];
     [enc setBuffer:(scale == 0 ? src_ref : parent_ref) offset:0 atIndex:0];
@@ -703,7 +714,7 @@ static void encode_dwt(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scal
 }
 
 /* Stage 2: decouple + CSF of both signals. */
-static void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     VmafMtlFadmDecoupleArgs a;
     memset(&a, 0, sizeof(a));
@@ -716,7 +727,7 @@ static void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int
     a.rfactor_v = s->rfactor[scale][1];
     a.rfactor_d = s->rfactor[scale][2];
 
-    NSArray<id<MTLBuffer>> *buffers = @[
+    NSArray<id<MTLBuffer>> *const buffers = @[
         (__bridge id<MTLBuffer>)s->ref_band[scale], (__bridge id<MTLBuffer>)s->dis_band[scale],
         (__bridge id<MTLBuffer>)s->csf_a, (__bridge id<MTLBuffer>)s->csf_fa,
         (__bridge id<MTLBuffer>)s->csf_r, (__bridge id<MTLBuffer>)s->csf_fr
@@ -728,7 +739,7 @@ static void encode_decouple(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int
 
 /* Stages 3 and 4: the terms of the reduced region and their row sums. A
  * scale whose region is empty has no terms and no rows. */
-static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
+void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cmd, int scale)
 {
     const AdmBorderS *r = &s->region[scale];
     const int region_w = r->right - r->left;
@@ -753,8 +764,8 @@ static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cm
     t.rfactor_v = s->rfactor[scale][1];
     t.rfactor_d = s->rfactor[scale][2];
 
-    id<MTLBuffer> terms = (__bridge id<MTLBuffer>)s->terms;
-    NSArray<id<MTLBuffer>> *term_buffers = @[
+    id<MTLBuffer> const terms = (__bridge id<MTLBuffer>)s->terms;
+    NSArray<id<MTLBuffer>> *const term_buffers = @[
         (__bridge id<MTLBuffer>)s->ref_band[scale], (__bridge id<MTLBuffer>)s->csf_a,
         (__bridge id<MTLBuffer>)s->csf_fa, (__bridge id<MTLBuffer>)s->csf_r,
         (__bridge id<MTLBuffer>)s->csf_fr, terms
@@ -767,9 +778,9 @@ static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cm
     row_args.region_w = (uint32_t)region_w;
     row_args.region_h = (uint32_t)region_h;
     /* One work-item per (slot, row); each adds its row left to right. */
-    id<MTLBuffer> rows = (__bridge id<MTLBuffer>)s->rows;
+    id<MTLBuffer> const rows = (__bridge id<MTLBuffer>)s->rows;
     const NSUInteger rows_offset = (NSUInteger)(s->row_offset[scale] * sizeof(float));
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_rows];
     [enc setBuffer:terms offset:0 atIndex:0];
     [enc setBuffer:rows offset:rows_offset atIndex:1];
@@ -780,7 +791,7 @@ static void encode_terms_and_rows(FloatAdmStateMetal *s, id<MTLCommandBuffer> cm
     [enc endEncoding];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -789,15 +800,15 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
     if (dh == nullptr || qh == nullptr) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
     fill_raw_plane(ref_pic, (__bridge id<MTLBuffer>)s->src_ref, s->width, s->height, s->bpc);
     fill_raw_plane(dist_pic, (__bridge id<MTLBuffer>)s->src_dis, s->width, s->height, s->bpc);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
     for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
@@ -810,6 +821,9 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     [cmd waitUntilCompleted];
     return 0;
 }
+} // namespace
+
+namespace {
 
 /* One scale of compute_adm() past the kernels. The frame accumulators are the
  * reference's: one fp32 value per band that the row sums are added to top to
@@ -821,8 +835,11 @@ using FadmScaleSums = struct FadmScaleSums {
     float denominator;
     float aim_numerator;
 };
+} // namespace
 
-static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
+namespace {
+
+FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
 {
     FadmScaleSums sums = {.numerator=0.0f, .denominator=0.0f, .aim_numerator=0.0f};
     if (scale == 0 && s->adm_skip_scale0) {
@@ -851,26 +868,71 @@ static FadmScaleSums pool_scale(const FloatAdmStateMetal *s, int scale)
     return sums;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
-{
-    FloatAdmStateMetal *const s = (FloatAdmStateMetal *)fex->priv;
-
-    double score_num = 0.0;
-    double score_den = 0.0;
-    double aim_num = 0.0;
-    double aim_den = 0.0;
+/* The frame's sums over the four scales, as compute_adm() adds them. */
+struct FadmFrameSums {
+    double score_num;
+    double score_den;
+    double aim_num;
+    double aim_den;
     double scores[8];
+};
+
+FadmFrameSums pool_frame(const FloatAdmStateMetal *s)
+{
+    FadmFrameSums f = {};
     for (int scale = 0; scale < FADM_NUM_SCALES; ++scale) {
         const FadmScaleSums sums = pool_scale(s, scale);
-        scores[2 * scale + 0] = sums.numerator;
-        scores[2 * scale + 1] = sums.denominator;
-        score_num += sums.numerator;
-        score_den += sums.denominator;
+        f.scores[2 * scale + 0] = sums.numerator;
+        f.scores[2 * scale + 1] = sums.denominator;
+        f.score_num += sums.numerator;
+        f.score_den += sums.denominator;
         if (s->adm_skip_aim_scale != scale) {
-            aim_den += sums.denominator;
-            aim_num += sums.aim_numerator;
+            f.aim_den += sums.denominator;
+            f.aim_num += sums.aim_numerator;
         }
     }
+    return f;
+}
+
+/* The scores of one frame past the floor and the finalisation. */
+struct FadmFrameScores {
+    double score;
+    double score_aim;
+    double score_adm3;
+    double scale_scores[FADM_NUM_SCALES];
+};
+
+int emit_frame_scores(const FloatAdmStateMetal *s, VmafFeatureCollector *fc, unsigned index,
+                      const FadmFrameSums &f, const FadmFrameScores &r)
+{
+    VmafNamedScore values[18] = {
+        {.name="VMAF_feature_adm2_score", .value=r.score},
+        {.name="VMAF_feature_aim_score", .value=r.score_aim},
+        {.name="VMAF_feature_adm3_score", .value=r.score_adm3},
+        {.name="VMAF_feature_adm_scale0_score", .value=r.scale_scores[0]},
+        {.name="VMAF_feature_adm_scale1_score", .value=r.scale_scores[1]},
+        {.name="VMAF_feature_adm_scale2_score", .value=r.scale_scores[2]},
+        {.name="VMAF_feature_adm_scale3_score", .value=r.scale_scores[3]},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
+            "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3"};
+        values[value_count++] = VmafNamedScore{.name="adm", .value=r.score};
+        values[value_count++] = VmafNamedScore{.name="adm_num", .value=f.score_num};
+        values[value_count++] = VmafNamedScore{.name="adm_den", .value=f.score_den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = VmafNamedScore{.name=debug_names[i], .value=f.scores[i]};
+    }
+    return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_metal", values,
+                                           value_count, index);
+}
+
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+{
+    const FloatAdmStateMetal *const s = (FloatAdmStateMetal *)fex->priv;
+    FadmFrameSums f = pool_frame(s);
 
     /* compute_adm()'s floor of the frame sums, in its expression: 1e-10 of
      * the area relative to 1080p. The 1e-2 the twin used belonged to an
@@ -879,53 +941,28 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
-    double score = 0.0;
-    double score_aim = 0.0;
-    int err = vmaf_adm_floor_pair_named("float_adm_metal", index, score_num, score_den,
-                                        numden_limit, &score_num, &score_den);
+    FadmFrameScores r = {};
+    int err = vmaf_adm_floor_pair_named("float_adm_metal", index, f.score_num, f.score_den,
+                                        numden_limit, &f.score_num, &f.score_den);
     if (err)
         return err;
-    err = vmaf_adm_finalize_scores_named("float_adm_metal", index, score_num, score_den, aim_num,
-                                         aim_den, &score, &score_aim);
+    err = vmaf_adm_finalize_scores_named("float_adm_metal", index, f.score_num, f.score_den,
+                                         f.aim_num, f.aim_den, &r.score, &r.score_aim);
     if (err)
         return err;
-    double score_adm3 = 0.0;
-    err = vmaf_adm3_score_named("float_adm_metal", index, score, score_aim,
+    err = vmaf_adm3_score_named("float_adm_metal", index, r.score, r.score_aim,
                                 s->adm_adm3_apply_hm, s->adm_dlm_weight, s->adm_min_val,
-                                &score_adm3);
+                                &r.score_adm3);
     if (err)
         return err;
-    double scale_scores[FADM_NUM_SCALES];
-    err = vmaf_adm_scale_ratios_named("float_adm_metal", index, scores, FADM_NUM_SCALES,
-                                      scale_scores);
+    err = vmaf_adm_scale_ratios_named("float_adm_metal", index, f.scores, FADM_NUM_SCALES,
+                                      r.scale_scores);
     if (err)
         return err;
-
-    VmafNamedScore values[18] = {
-        {.name="VMAF_feature_adm2_score", .value=score},
-        {.name="VMAF_feature_aim_score", .value=score_aim},
-        {.name="VMAF_feature_adm3_score", .value=score_adm3},
-        {.name="VMAF_feature_adm_scale0_score", .value=scale_scores[0]},
-        {.name="VMAF_feature_adm_scale1_score", .value=scale_scores[1]},
-        {.name="VMAF_feature_adm_scale2_score", .value=scale_scores[2]},
-        {.name="VMAF_feature_adm_scale3_score", .value=scale_scores[3]},
-    };
-    size_t value_count = 7u;
-    if (s->debug) {
-        static const char *const debug_names[8] = {
-            "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
-            "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{.name="adm", .value=score};
-        values[value_count++] = VmafNamedScore{.name="adm_num", .value=score_num};
-        values[value_count++] = VmafNamedScore{.name="adm_den", .value=score_den};
-        for (size_t i = 0u; i < 8u; ++i)
-            values[value_count++] = VmafNamedScore{.name=debug_names[i], .value=scores[i]};
-    }
-    return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_metal", values,
-                                           value_count, index);
+    return emit_frame_scores(s, fc, index, f, r);
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatAdmStateMetal *s = (FloatAdmStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -965,6 +1002,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "adm_num_scale3",
                                           "adm_den_scale3",
                                           nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
