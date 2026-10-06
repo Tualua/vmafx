@@ -25,6 +25,10 @@ search:
 `--restore-tracked`, and the fixture-restore steps of `build.yml`, `libvmaf-build-matrix.yml` and
 `tests-and-quality-gates.yml` pass it; a workflow edit that moves or copies the restore keeps the flag on the step
 after it, or a `restore-keys` hit brings back an older revision of a tracked `python/test/resource` file.
+## `test_icx_system_libm` runs where `os` has no `confstr` (2026-10-06)
+
+`fix/icx-libm-test-no-confstr`. no rebase impact: fork-only test file (`core/test/test_icx_system_libm.py`); its
+`os.confstr` patches keep `create=True` so the Windows legs can run them.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 

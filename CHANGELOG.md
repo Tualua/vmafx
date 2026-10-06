@@ -4380,6 +4380,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 - Local hooks: a commit in a linked worktree no longer risks rewriting that worktree's index when the pre-commit framework installs a node hook environment. `lefthook.yml` now runs `pre-commit install-hooks` with the commit's git variables unset before `pre-commit run` and `hook-impl`.
 
 
+- **`test_icx_system_libm` passes on Windows.** Its glibc-probe cases patched
+  `os.confstr`, which Windows' `os` module does not have, and the patch raised
+  before the case ran (4 errors on the UCRT64 leg). The patches may now create
+  the attribute, and a new case runs them all without it.
+
+
 - **An Intel-compiler build returns a GCC build's CPU scores.** A build with
   `icx` / `icpx` (every SYCL build, the dev image's `vmaf`) linked Intel's math
   library `libimf`: the driver turns a `-lm` into `-limf -lm`, and the
