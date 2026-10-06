@@ -201,8 +201,8 @@ user guidance.
 | `n_subsample` | Run time of 200 input frames | Gain over 1 | Zero-copy vs CPU |
 | --- | --- | --- | --- |
 | 1 | 16.3 s | 0 | `IDENTICAL` |
-| 2 | 14.9 s | 9 % | `DIFF` (motion) |
-| 4 | 13.7 s | 16 % | `DIFF` (motion) |
+| 2 | 14.9 s | 9 % | `DIFF` (motion), `IDENTICAL` after the fix below |
+| 4 | 13.7 s | 16 % | `DIFF` (motion), `IDENTICAL` after the fix below |
 
 The gain is small because imports and the temporal `motion` run on every
 frame and the 12 s start-up is fixed; in steady state `n_subsample` 4 would
@@ -215,8 +215,16 @@ the zero-copy path at `n_subsample` 2 and 4 are about 55.7 on every frame where
 the CPU gives 0.2 to 0.4, so `vmaf` reads 100 on frames where the CPU reads
 85 to 89. The first scored frame is correct. Other features match. It is
 recorded as `T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06` in
-[state.md](../state.md) and is a precondition for any candidate that changes
-how the import slots are fenced (C3).
+[state.md](../state.md).
+
+The import slots were not the cause: the host-upload path
+(`vmaf --backend sycl --subsample 2`) fails the same way. The combined SYCL
+queue enqueued a frame only after every registered extractor had submitted,
+and on the frames `n_subsample` drops only the temporal `motion_sycl` submits,
+so its kernels never ran on those frames. With the fix (libvmaf reports each
+skipped extractor through `vmaf_sycl_graph_skip()`) the zero-copy runs of this
+segment at `n_subsample` 2 and 4 score `IDENTICAL` to the CPU leg (100 and 50
+scored frames), and `test_sycl_n_subsample_combined_graph` guards it.
 
 ## Bit-exact reference
 

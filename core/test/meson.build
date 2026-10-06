@@ -5636,6 +5636,32 @@ test('test_sycl_motion_five_frame_window', test_sycl_motion_five_frame_window,
     is_parallel : false,
     timeout : 120)
 
+# T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06: n_subsample with motion_sycl
+# next to float_moment_sycl, a non-TEMPORAL extractor of the same combined
+# graph. On the frames n_subsample drops only motion_sycl submits; the graph
+# used to wait for float_moment_sycl and enqueue nothing, so motion scored
+# stale SADs. Every motion output of every frame and float_moment_ref1st of
+# every scored frame, `==` against
+# the CPU, at n_subsample 1, 2 and 4. The second run replays the recorded
+# graph on the full frames (VMAF_SYCL_USE_GRAPH=1).
+test_sycl_n_subsample_combined_graph = executable('test_sycl_n_subsample_combined_graph',
+    ['test.c', 'test_sycl_n_subsample_combined_graph.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_sycl_n_subsample_combined_graph', test_sycl_n_subsample_combined_graph,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+test('test_sycl_n_subsample_combined_graph_replay', test_sycl_n_subsample_combined_graph,
+    env : ['VMAF_SYCL_USE_GRAPH=1'],
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and

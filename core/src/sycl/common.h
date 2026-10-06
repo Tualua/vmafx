@@ -598,14 +598,33 @@ void *vmaf_sycl_get_combined_queue(const VmafSyclState *state);
 
 /**
  * Submit all registered extractors' GPU work for the current frame.
- * Idempotent per frame: enqueues work only when the last extractor submits;
- * earlier calls for the same frame are no-ops.
+ * Idempotent per frame: enqueues work only when the last extractor submits
+ * (extractors libvmaf skipped this frame, vmaf_sycl_graph_skip(), count as
+ * done); earlier calls for the same frame are no-ops.
  *
  * @param state  The SYCL state.
  *
  * @return 0 on success, negative errno on failure.
  */
 int vmaf_sycl_graph_submit(VmafSyclState *state);
+
+/**
+ * Tell the combined graph that libvmaf skips this extractor on the current
+ * frame (n_subsample skips every extractor without the TEMPORAL or PREV_REF
+ * flag). The frame's work is enqueued once every registered extractor has
+ * either submitted or been skipped, and then runs only the callbacks of the
+ * extractors that submitted. Without the call, a frame on which a registered
+ * extractor never submits is never enqueued.
+ *
+ * @param state  The SYCL state.
+ * @param priv   The extractor private-state pointer (fex->priv). A pointer no
+ *               extractor registered with (an extractor on its own queue, or
+ *               one not initialised yet) is not an error.
+ *
+ * @return 0 on success, negative errno on failure (an enqueue this call
+ *         triggered failed, or state / priv is NULL).
+ */
+int vmaf_sycl_graph_skip(VmafSyclState *state, const void *priv);
 
 /**
  * Wait for all GPU work to complete.

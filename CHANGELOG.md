@@ -4508,6 +4508,21 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ([SYCL backend](docs/backends/sycl/overview.md#motion_sycl-matches-the-cpu-motion-exactly-2026-09-29)).
 
 
+- **SYCL: `n_subsample` above 1 no longer corrupts `integer_motion2` / `integer_motion3`.**
+  On the frames `n_subsample` drops, libvmaf skips every SYCL extractor
+  except the temporal `motion_sycl`, but the shared SYCL submit queue waited
+  for every registered extractor before it enqueued a frame. Those frames ran
+  no motion kernel: `motion_sycl` scored a stale SAD and the next frame
+  differenced against a stale plane, so `integer_motion2` / `integer_motion3`
+  went up to `motion_max_val` and `vmaf` read up to 100. Both the host-upload
+  path (`vmaf --backend sycl --subsample N`) and the QSV zero-copy path of the
+  FFmpeg `libvmaf_sycl` filter were affected. libvmaf now reports each
+  skipped SYCL extractor to the SYCL state, which enqueues the frame for the
+  extractors that did submit; scores at `n_subsample` 2 and 4 equal the
+  CPU's, and `n_subsample` 1 is unchanged
+  (`T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06`).
+
+
 - **SYCL: `psnr_hvs_sycl` scores 9- and 11-bit input like the CPU.** The twin
   multiplied 9- and 11-bit samples by 16 before scoring them, so through the C
   API a 9-bit clip that the CPU scored at 22.47 dB came out at -1.57 dB

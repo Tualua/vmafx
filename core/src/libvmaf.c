@@ -3513,6 +3513,26 @@ static bool read_pictures_should_skip(const VmafContext *vmaf,
     return vmaf->thread_pool && !fex_ctx_runs_on_caller_thread(fex_ctx);
 }
 
+/* An extractor read_pictures_should_skip() leaves out of this frame. A SYCL
+ * extractor in the combined graph is reported to the SYCL state, which
+ * otherwise waits for its submit and never enqueues the frame for the
+ * extractors that do run: n_subsample left motion_sycl scoring stale SADs
+ * (T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06). */
+static int read_pictures_note_skip(const VmafContext *vmaf,
+                                   const VmafFeatureExtractorContext *fex_ctx)
+{
+#ifdef HAVE_SYCL
+    if (vmaf->sycl.state && fex_ctx->is_initialized &&
+        (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
+        return vmaf_sycl_graph_skip(vmaf->sycl.state, fex_ctx->fex->priv);
+    }
+#else
+    (void)vmaf;
+    (void)fex_ctx;
+#endif
+    return 0;
+}
+
 /* GPU double-buffer dispatch for extractors that implement submit/collect:
  * collect the previous frame's results, then submit the current frame so GPU
  * compute of frame N-1 overlaps the CPU-side command recording of frame N.
@@ -3828,8 +3848,12 @@ static int read_pictures_dispatch_extractors(VmafContext *vmaf, ReadPicturesFram
 #endif
     for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
         VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
-        if (read_pictures_should_skip(vmaf, fex_ctx, index))
+        if (read_pictures_should_skip(vmaf, fex_ctx, index)) {
+            const int skip_err = read_pictures_note_skip(vmaf, fex_ctx);
+            if (skip_err)
+                return skip_err;
             continue;
+        }
 #ifdef HAVE_CUDA
         /* CUDA extractors with submit+collect were already handled
          * in the batched pass above. Skip them here so we don't
@@ -4115,8 +4139,10 @@ static int read_pictures_sycl_extractors(VmafContext *vmaf, unsigned index)
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
             continue;
         }
-        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) &&
-            (vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample)) {
+        if (fex_subsample_skip(fex_ctx->fex->flags, index, vmaf->cfg.n_subsample)) {
+            const int skip_err = read_pictures_note_skip(vmaf, fex_ctx);
+            if (skip_err)
+                return skip_err;
             continue;
         }
 

@@ -331,6 +331,24 @@ sycl/
   do not let area-threshold heuristic (tuned for host-upload) re-select
   graph for VA-import.
 
+- **Combined-graph gate counts skipped extractors
+  (`T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06`).** `vmaf_sycl_graph_submit`
+  enqueues a frame once `submit_count + skip_count == num_graph_extractors`.
+  `n_subsample` skips every non-TEMPORAL extractor on dropped frames, so
+  `libvmaf.c::read_pictures_note_skip()` calls `vmaf_sycl_graph_skip(state,
+  fex->priv)` for each skipped SYCL extractor, at both skip sites (host loop
+  `read_pictures_dispatch_extractors`, zero-copy
+  `read_pictures_sycl_extractors`). A frame with a skipped extractor runs
+  pre / enqueue / post of submitted extractors only (`skipped_frame` tag),
+  always DIRECT, never the recorded graph (it holds every extractor's
+  kernels). Before: gate never opened on dropped frames, `motion_sycl`
+  scored stale SADs (motion2 / motion3 up to `motion_max_val`).
+  **On rebase**: keep both skip calls, the `skip_count` term in
+  `sycl_graph_fire_when_complete()` and the DIRECT fallback in
+  `sycl_run_compute_phase()`; an unregistered `priv` is a no-op, not an
+  error. Guard: `test_sycl_n_subsample_combined_graph` (+ `_replay`,
+  `VMAF_SYCL_USE_GRAPH=1`).
+
 - **`common.cpp` cleanup + helper boundaries (HISS-21 burn-down).**
   `sycl_shared_frame_release()` is single cleanup owner for shared
   it replaced `fail:` label that `vmaf_sycl_shared_frame_init` used

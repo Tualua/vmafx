@@ -141,6 +141,9 @@ struct VmafSyclState {
         VmafSyclGraphConfigFn config_fn = nullptr;
         void *priv = nullptr;
         const char *name = "unknown";
+        // frame_counter of the frame libvmaf skipped this extractor on
+        // (n_subsample, vmaf_sycl_graph_skip()); UINT64_MAX when never.
+        uint64_t skipped_frame = UINT64_MAX;
     };
 
     // 8-byte members (queues, pointers, events, sizes, doubles, uint64_t, sub-structs)
@@ -187,6 +190,7 @@ struct VmafSyclState {
     unsigned frame_bpc = 0;
     int num_pending_imports = 0;
     int submit_count = 0; // submits received for submit_frame
+    int skip_count = 0;   // extractors libvmaf skipped on submit_frame
     int num_graph_extractors = 0;
 
     // 1-byte members (bools)
@@ -1464,15 +1468,16 @@ static bool sycl_any_extractor_wants_graph(VmafSyclState *state, uint64_t frame)
  * vmaf_sycl_graph_submit for HISS-04. The caller invokes this at the same
  * point in the same try block, so the enqueue order on the in-order queue is
  * unchanged. */
-static void sycl_run_compute_phase(sycl::queue &q, VmafSyclState *state)
+static void sycl_run_compute_phase(sycl::queue &q, VmafSyclState *state, uint64_t frame)
 {
-    if (!state->combined_graphs_recorded) {
+    if (!state->combined_graphs_recorded || state->skip_count > 0) {
         void *ref = state->shared_ref_buf[state->cur_compute];
         void *dis = state->shared_dis_buf[state->cur_compute];
 
         for (int i = 0; i < state->num_graph_extractors; i++) {
             auto &ge = state->graph_extractors[i];
-            ge.enqueue_fn(&q, ge.priv, ref, dis);
+            if (ge.skipped_frame != frame)
+                ge.enqueue_fn(&q, ge.priv, ref, dis);
         }
         return;
     }
@@ -1527,7 +1532,8 @@ extern "C" int vmaf_sycl_queue_after_upload(VmafSyclState *state, void *queue_pt
  * Extracted from vmaf_sycl_graph_submit for HISS-04. The caller invokes this
  * from inside its try block, so every SYCL exception still unwinds into the
  * same handlers and never escapes through the C dispatch frame. */
-static void sycl_enqueue_all_phases(sycl::queue &q, VmafSyclState *state, bool any_wants_graph)
+static void sycl_enqueue_all_phases(sycl::queue &q, VmafSyclState *state, bool any_wants_graph,
+                                    uint64_t frame)
 {
     // Graph recording issues SYCL graph APIs (begin_recording / finalize)
     // that can throw sycl::exception; keep it inside the try so the throw
@@ -1538,39 +1544,41 @@ static void sycl_enqueue_all_phases(sycl::queue &q, VmafSyclState *state, bool a
     // Phase 1: Pre-graph — memset operations (always direct, never in graph)
     for (int i = 0; i < state->num_graph_extractors; i++) {
         auto &ge = state->graph_extractors[i];
-        if (ge.pre_fn)
+        if (ge.pre_fn && ge.skipped_frame != frame)
             ge.pre_fn(&q, ge.priv);
     }
 
     // Phase 2: Compute kernels — graph replay when available, else direct
-    sycl_run_compute_phase(q, state);
+    sycl_run_compute_phase(q, state, frame);
 
     // Phase 3: Post-graph — D2H memcpy operations (always direct)
     for (int i = 0; i < state->num_graph_extractors; i++) {
         auto &ge = state->graph_extractors[i];
-        if (ge.post_fn)
+        if (ge.post_fn && ge.skipped_frame != frame)
             ge.post_fn(&q, ge.priv);
     }
 }
 
-extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
+/* Start counting a new frame's submits and skips. */
+static void sycl_graph_count_frame(VmafSyclState *state, uint64_t frame)
 {
-    if (!state || !state->combined_queue)
-        return -EINVAL;
-    assert(state->num_graph_extractors > 0);
-
-    uint64_t const frame = state->frame_counter;
-
-    // Count submits per frame — each extractor calls this once per frame.
-    // Reset counter on a new frame.
     if (state->submit_frame != frame) {
         state->submit_frame = frame;
         state->submit_count = 0;
+        state->skip_count = 0;
     }
-    state->submit_count++;
+}
 
-    // Only enqueue when ALL extractors have submitted.
-    if (state->submit_count < state->num_graph_extractors)
+/* Enqueue the frame once every registered extractor has either submitted or
+ * been skipped by libvmaf. A frame with a skipped extractor (n_subsample
+ * skips every non-TEMPORAL one) runs the callbacks of the extractors that
+ * submitted, by direct enqueue: the recorded combined graph holds every
+ * extractor's kernels. A frame nobody submitted enqueues nothing. */
+static int sycl_graph_fire_when_complete(VmafSyclState *state, uint64_t frame)
+{
+    if (state->submit_count + state->skip_count < state->num_graph_extractors)
+        return 0;
+    if (state->submit_count == 0)
         return 0;
 
     sycl::queue &q = *state->combined_queue;
@@ -1582,7 +1590,7 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
     state->t_submit_start = monotonic_ms();
 
     try {
-        sycl_enqueue_all_phases(q, state, any_wants_graph);
+        sycl_enqueue_all_phases(q, state, any_wants_graph, frame);
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "libvmaf SYCL exception in graph_submit: %s\n", e.what());
         return -EIO;
@@ -1598,6 +1606,42 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
     state->graph_waited_frame = UINT64_MAX;
     state->t_submit_done = monotonic_ms();
 
+    return 0;
+}
+
+extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
+{
+    if (!state || !state->combined_queue)
+        return -EINVAL;
+    assert(state->num_graph_extractors > 0);
+
+    uint64_t const frame = state->frame_counter;
+
+    // Count submits per frame — each extractor calls this once per frame.
+    sycl_graph_count_frame(state, frame);
+    state->submit_count++;
+
+    return sycl_graph_fire_when_complete(state, frame);
+}
+
+extern "C" int vmaf_sycl_graph_skip(VmafSyclState *state, const void *priv)
+{
+    if (!state || !priv)
+        return -EINVAL;
+
+    uint64_t const frame = state->frame_counter;
+    for (int i = 0; i < state->num_graph_extractors; i++) {
+        auto &ge = state->graph_extractors[i];
+        if (ge.priv != priv)
+            continue;
+        if (ge.skipped_frame == frame)
+            return 0;
+        sycl_graph_count_frame(state, frame);
+        ge.skipped_frame = frame;
+        state->skip_count++;
+        return sycl_graph_fire_when_complete(state, frame);
+    }
+    // Not a combined-graph extractor (own queue) or not initialised yet.
     return 0;
 }
 
