@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 476,
+  "tus": 477,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -247,6 +247,7 @@
     "core/test/test_cuda_float_adm_parity.c",
     "core/test/test_cuda_float_moment_parity.c",
     "core/test/test_cuda_float_motion_parity.c",
+    "core/test/test_cuda_float_ms_ssim_host_traffic.c",
     "core/test/test_cuda_float_ms_ssim_order.c",
     "core/test/test_cuda_float_ms_ssim_parity.c",
     "core/test/test_cuda_float_psnr_parity.c",
@@ -487,5 +488,23 @@
   "total_warnings": 0,
   "total_nolint_uncited": 0,
   "warnings": {},
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu",
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c",
+        "core/test/test_cuda_float_ms_ssim_host_traffic.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_cuda_float_ms_ssim_host_traffic.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "9f0d19fc22db79ab4bc42811e7b854c57ef928b337a0524bae25d4a8e144bc01"
+    }
+  ]
 }
