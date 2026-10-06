@@ -49,6 +49,25 @@ ISA estimate, AOT for `acm-g11` with the SYCL feature FP line, SIMD16 instructio
 
 The estimate scales the measured A cost (about 4.7 cycles per instruction: 82 SIMD16 threads cannot hide latency on 128 EUs).
 
+## Measured outcome
+
+Measured on the Arc A380 in plan 13-10 with QSV zero-copy on a 3840x1600 10-bit segment and `vmaf_v1.0.16_3d0h`. Three interleaved, rotated rounds of 600-frame and 20-frame runs, uninstrumented, with one unrecorded warm-up per round. The decision metric is the filter's GPU time per frame.
+
+| Build | GPU ms per frame, median (min-max) | Steady ms per frame, median | Covariance kernels per frame (VTune) |
+|---|---|---|---|
+| Before the fix (`bce532ce8`, pair sum, not exact) | 18.45 (18.41-18.50) | 20.35 | 0.38 ms |
+| A (`9b1985d6e`) | 28.56 (28.53-28.56) | 30.34 | 11.31 ms |
+| Split chain (`9f9d0ae64`) | 22.63 (22.58-22.65) | 24.55 | 5.17 ms (differences 0.10, products 0.83, chain 4.24) |
+
+- **Recovery:** the split chain recovers 5.93 of A's 10.11 ms, 58.7 %. That is about 60x the larger min-max range of the two rows (0.07 ms).
+- **Remaining cost:** +4.18 ms per frame over the pre-fix kernel. The sequential chain is 4.24 ms of it.
+- **Identity:**
+  - 200 frames of the segment, zero-copy against FFmpeg `libvmaf` on the CPU: `IDENTICAL frames=200`, for this build and for A.
+  - `vmaf --backend cpu` against `--backend sycl` on the dumped 142-frame clip: 0 differences in any feature on any frame. Frame 140 `speed_chroma_u` is 3.644730567932129 on both.
+- **Device tests:** `test_sycl_speed_cov_math` (host, device, and the split form on the device), the three SpEED parity tests, `test_sycl_exact_twins` and `test_sycl_kernel_scratch` (139 kernels, none with scratch) pass. So do the zero-copy e2e SpEED cases (`fail=0 nonexact=0`) and `speed_gpu_parity.py` on 576x324.
+
+**Decision:** the split chain is kept. The Status stays Proposed until the phase closes. The B2 composition is the follow-up for the remaining 4.2 ms.
+
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
@@ -64,7 +83,7 @@ The estimate scales the measured A cost (about 4.7 cycles per instruction: 82 SI
 ## Consequences
 
 - **Positive**:
-  - Expected recovery is about 60 % of the +10 ms. The real figure comes from the interleaved A/B in plan 13-10, and the design is kept only if it is faster than A beyond the spread.
+  - Measured recovery is 58.7 % of the +10 ms (see Measured outcome).
   - No new arithmetic: the chain is A's.
 - **Negative**:
   - Two more device buffers: the differences (25 x n x 8 bytes per channel) and the term slice (325 x slice x 8 bytes per channel).
