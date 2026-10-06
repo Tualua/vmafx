@@ -2795,6 +2795,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   gfx1036.
 
 
+- The HIP device sources of CAMBI, CIEDE, MS-SSIM and SpEED, the HIP CAMBI replay
+  test, the float ADM math probe and the SYCL fp-arith contract test now pass the
+  hip-lane clang-tidy profile with zero findings (ADR-1142). Scores are unchanged:
+  the HIP parity tests of the touched twins compare them with the CPU extractor
+  on gfx1036.
+
+
 - torch is installed only by the two training packages, `ai/` and
   `tools/ensemble-training-kit/` (ADR-1886). The vmaf-tune predictor trainer
   moved to `vmaf_train.predictor_train` (`python -m vmaf_train.predictor_train`

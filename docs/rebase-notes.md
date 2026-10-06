@@ -758,6 +758,20 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
   `test_sycl_zero_copy_model_gate` (`test_upload_plane_orders_compute`) fails on it.
 - The file's four `getenv()` calls read through `vmaf_gpu_dispatch_env_get()` (ADR-0488),
   which keeps `common.cpp` at zero clang-tidy findings.
+## Hip-lane clang-tidy debt, batch 3: CAMBI, CIEDE, MS-SSIM, SpEED and the HIP test sources (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-hip-3`. Lint refactor, no behaviour change.
+
+- `cambi_hip_device.h`, `ms_ssim_arith.h`, `speed_hip_device.h` and
+  `core/test/hip_float_adm_math_sample.h` are included by C translation units:
+  they keep `struct X {...};` with a C-only `typedef` and C++-only includes behind
+  `__cplusplus`. `speed_hd_block_statistics()` zeroes its array with `= {0.0f}`,
+  not a range-for.
+- `test_hip_cambi_device_math.c` splits the registered-extractor check into
+  `reference_score()` and `extractor_score()`; every assertion is kept.
+- `test_sycl_fp_arith_contract.c` computes `prod` / `prod_root` only inside
+  `#if FP_ARITH_HAS_PROD_ROOT`.
+
 ## Hip-lane clang-tidy debt, batch 2: ADM, moment, motion, PSNR and SSIM kernels (ADR-1142, 2026-10-05)
 
 `refactor/tidy-zero-hip-2`. Lint refactor, no behaviour change.
