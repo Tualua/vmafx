@@ -62494,3 +62494,16 @@ block), otherwise the newest toolset under the latest `vswhere` install, otherwi
 (`T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06`). Upstream master has no such block; a re-port keeps
 this order and `core/test/test_windows_cuda_compiler_discovery.py`. No score, public API or FFmpeg patch
 impact.
+
+## Option numbers parse in the C locale (`fix/numeric-options-c-locale`)
+
+`core/src/opt.cpp` `parse_double()`, `core/src/dict.cpp`
+`dict_normalize_numeric()` and `core/src/feature/feature_name.cpp`
+`format_double_c_locale()` read and write option numbers inside a thread C-locale
+scope (`vmaf_thread_locale_push_c()` / `_pop()`; `CLocaleScope` in `dict.cpp`)
+(`T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06`). Upstream's `opt.c`, `dict.c` and
+`feature_name.c` call `strtod()` and `snprintf("%g")` in the caller's locale; a sync that ports a change to
+either function keeps the scope. The test programs that compile `dict.cpp` or `opt.cpp`
+on their own (`test_dict`, `test_opt`, `test_feature`) link `thread_locale.cpp`.
+`test_locale_handling` fails when either scope is missing. No score, public API or
+FFmpeg patch impact.
