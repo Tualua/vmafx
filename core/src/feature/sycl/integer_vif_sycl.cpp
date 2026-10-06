@@ -1288,10 +1288,10 @@ static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width,
         return launch_vif_hori_tiled_impl<0, 32>(
             q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
             tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 1: /* ADR-1769 K1 */
-        return launch_vif_hori_tiled_impl<1, 32>(
-            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
-            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    case 1:
+        return launch_vif_hori_impl<1, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 2:
         return launch_vif_hori_impl<2, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
                                            tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
@@ -1319,10 +1319,10 @@ static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned w
         return launch_vif_hori_tiled_impl<0, 16>(
             q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
             tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 1: /* ADR-1769 K1 */
-        return launch_vif_hori_tiled_impl<1, 16>(
-            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
-            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    case 1:
+        return launch_vif_hori_impl<1, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
+                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
+                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 2:
         return launch_vif_hori_impl<2, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
                                            tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,

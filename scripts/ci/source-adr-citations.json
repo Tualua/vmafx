@@ -10437,7 +10437,7 @@
     },
     "1769": {
       "sites": {
-        "core/src/feature/sycl/integer_vif_sycl.cpp": 5,
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
         "core/test/meson.build": 2,
         "core/test/test_sycl_detile_tile4.c": 1,
         "core/test/test_sycl_vif_parity.c": 2
