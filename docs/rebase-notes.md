@@ -26,6 +26,12 @@ guards in the style of `motion.h`: an upstream sync that rewrites either file ke
 `const VMAF_MTL_FM_THR VmafMtlFmWindow *` (Metal-only fork code). `core/test/meson.build` renames two static helpers of the
 vendored Pelorus parser for `test_pelorus_interop` with `c_args`; keep them when the mirror is re-vendored (the names must
 stay private to that executable).
+## ADM twins: host test of the device decouple header (2026-10-06)
+
+`fix/codeql-adm-twin-header-tests`, `T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`. Keep the int64 sums in `iadm_angle_flag_s0()`
+(`metal/integer_adm.metal`); an upstream sync has no counterpart (Netflix has no GPU twin). `core/test/meson.build` renames
+`run_tests` per twin for `test_adm_decouple_recip_*`: keep the `c_args` and `cpp_args` pair together. The CUDA and HIP
+`decouple_angle_flag_s0()` stay int32 until the register budget is settled (see the state row).
 
 ## FFmpeg patch 0022: input colorimetry from the AVFrame (2026-10-06)
 

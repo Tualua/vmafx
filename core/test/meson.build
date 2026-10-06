@@ -3987,7 +3987,12 @@ foreach twin : [['cuda', 'cuh'], ['hip', 'hip']]
         ['test.c', 'test_adm_decouple_recip.cpp', 'test_adm_decouple_recip_cpu.c'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                                include_directories('../src/feature/')],
-        cpp_args : ['-DADM_TWIN_HEADER="feature/' + twin[0] + '/integer_adm/' +
+        # run_tests is renamed in every source of the executable, test.c included: CodeQL
+        # merges the two variants' `extern "C" run_tests` into one and then reports the
+        # other variant's static helpers unreachable (cpp/unused-static-function).
+        c_args : ['-Drun_tests=vmafx_test_adm_decouple_recip_' + twin[0] + '_run_tests'],
+        cpp_args : ['-Drun_tests=vmafx_test_adm_decouple_recip_' + twin[0] + '_run_tests',
+                    '-DADM_TWIN_HEADER="feature/' + twin[0] + '/integer_adm/' +
                     'adm_decouple_inline.' + twin[1] + '"'],
         dependencies : [pthread_dependency, math_lib],
     )

@@ -309,6 +309,10 @@ Entries today: ten files of the Pelorus mirror (`spdx`, until the line exists in
 Pelorus and the mirror is re-vendored), two praetor-managed files (`spdx`) and
 eight third-party MEX sources of the Netflix MATLAB harness (`copyright`).
 
+The `codeql-include-non-header` entries are not file standards: they name the two tests that compile a
+device source (the CUDA / HIP decouple header, the Metal kernels) for the host, where CodeQL's
+`cpp/include-non-header` finding is the test's purpose. The dismissal of its code-scanning alerts cites the entry.
+
 ## GitHub Actions workflow validation
 
 Workflow files under `.github/workflows/` are validated against

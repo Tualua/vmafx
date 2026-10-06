@@ -45,3 +45,15 @@ int adm_recip_cpu_sample(int o, int t, int angle_flag, double gain)
 {
     return adm_decouple_band(cpu_div_lookup(), gain, angle_flag, (int16_t)o, (int16_t)t);
 }
+
+/* The CPU's decoupled sample of the 32-bit pipeline for the band `o` / `t`. */
+int32_t adm_recip_cpu_sample_s123(int32_t o, int32_t t, int angle_flag, double gain)
+{
+    return adm_decouple_band_s123(cpu_div_lookup(), gain, angle_flag, o, t);
+}
+
+/* The CPU's 1-degree angle flag of the products of a band pair. */
+int adm_recip_cpu_angle_flag(int64_t ot_dp, int64_t o_mag_sq, int64_t t_mag_sq)
+{
+    return adm_angle_flag(ot_dp, o_mag_sq, t_mag_sq, adm_cos_1deg_sq());
+}
