@@ -14,8 +14,10 @@
  *  reference evaluates a few expressions in fp64 (the covariance sum, the
  *  EIGENVALUE_EPS comparisons, the prescale sample coordinates, the Givens
  *  rotation's `1.0 / sqrt(1 + t * t)`); those are reproduced with exact fp32
- *  pairs or, for the rotation, with feature/speed_givens.h, rather than fp64,
- *  which the device contract forbids (ADR-0220). This file must not mention
+ *  pairs, with feature/speed_givens.h for the rotation, and with the
+ *  reference's fp64 operations in 64-bit integers for the covariance sum
+ *  (sycl_speed_cov_math.h), rather than fp64, which the device contract
+ *  forbids (ADR-0220). This file must not mention
  *  the fp64 type at all: core/test/test_sycl_kernel_source_contract.py
  *  enforces that.
  *
@@ -45,6 +47,7 @@
 
 #include "log.h"
 #include "sycl_exact_fp.h"
+#include "sycl_speed_cov_math.h"
 
 using speed_sycl::ChannelBinding;
 using speed_sycl::FrameResult;
@@ -64,7 +67,6 @@ namespace
 constexpr uint32_t kN = kElements;                        /* 25 */
 constexpr uint32_t kMatrix = kN * kN;                     /* 625 */
 constexpr uint32_t kTriangle = kN * (kN + 1u) / 2u;       /* 325 */
-constexpr uint32_t kGroup = 256u;                         /* work-group size */
 constexpr uint32_t kLinalgGroup = 64u;                    /* 25x25 linear algebra */
 constexpr uint32_t kDecimation = 16u;                     /* 2^NUM_SCALES */
 constexpr uint32_t kLanczosTaps = SPEED_GPU_LANCZOS_TAPS; /* lanczos4 weights per axis sample */
@@ -78,9 +80,6 @@ constexpr float kEpsLo = 0x1.6bdb1ap-49f;                 /* EIGENVALUE_EPS - kE
  * the ssimulacra2 twin (sycl_exact_fp.h, ADR-1363). */
 using vmaf_sycl_exact::div_rn;
 using vmaf_sycl_exact::Ff;
-using vmaf_sycl_exact::ff_add;
-using vmaf_sycl_exact::ff_div_to_float;
-using vmaf_sycl_exact::quick_two_sum;
 using vmaf_sycl_exact::sqrt_rn;
 using vmaf_sycl_exact::two_prod;
 using vmaf_sycl_exact::two_sum;
@@ -702,9 +701,10 @@ void launch_means(sycl::queue &q, const MeansArgs &args, uint32_t channels)
 
 /* ------------------------------------------------------------------ */
 /* Covariance: compute_covariance_matrix()                             */
-/* The reference accumulates (x - mean_x) * (y - mean_y) in fp64. Here */
-/* each difference and product is exact as an fp32 pair and the sum is */
-/* carried in fp32 pairs; the quotient is rounded once to fp32.        */
+/* The reference adds (x - mean_x) * (y - mean_y) into one fp64 sum in */
+/* raster order, rounding every add; covariance_entry()                */
+/* (sycl_speed_cov_math.h) performs those operations in that order in  */
+/* soft fp64, one work-item per entry.                                 */
 /* ------------------------------------------------------------------ */
 
 } // namespace
@@ -720,7 +720,6 @@ struct CovArgs {
     uint32_t trunc_h;
     uint32_t sub_w;
     uint32_t sub_h;
-    uint32_t group; /* work-group size, a power of two <= kGroup */
 };
 
 inline void triangle_entry(uint32_t index, uint32_t &x, uint32_t &y)
@@ -737,112 +736,29 @@ inline void triangle_entry(uint32_t index, uint32_t &x, uint32_t &y)
     y = rest;
 }
 
-inline Ff centred_product(float vx, float mx, float vy, float my)
+/* compute_covariance_row() for entry (x, y), y <= x, of one channel: the
+ * submatrices start at (x / 5, x % 5) and (y / 5, y % 5) of the plane. */
+inline void covariance_item(const CovArgs &a, uint32_t ch, uint32_t index)
 {
-    const Ff dx = two_sum(vx, -mx);
-    const Ff dy = two_sum(vy, -my);
-    const Ff main = two_prod(dx.hi, dy.hi);
-    const float cross1 = dx.hi * dy.lo;
-    const float cross2 = dx.lo * dy.hi;
-    const float cross = cross1 + cross2;
-    return {.hi = main.hi, .lo = main.lo + cross};
-}
-
-/* Compensated accumulation of one term: the high parts are summed exactly,
- * every low-order part lands in `lo`; normalised once per work item. */
-inline Ff accumulate(Ff acc, Ff term)
-{
-    const Ff high = two_sum(acc.hi, term.hi);
-    const float low = term.lo + high.lo;
-    return {.hi = high.hi, .lo = acc.lo + low};
-}
-
-} // namespace
-
-namespace
-{
-
-inline Ff covariance_partial(const float *plane, const CovArgs &a, uint32_t x, uint32_t y, float mx,
-                             float my, uint32_t lid)
-{
-    const uint32_t xr = x / kBlock;
-    const uint32_t xc = x % kBlock;
-    const uint32_t yr = y / kBlock;
-    const uint32_t yc = y % kBlock;
-    const uint32_t total = a.sub_w * a.sub_h;
-    Ff acc{.hi = 0.0f, .lo = 0.0f};
-    for (uint32_t pos = lid; pos < total; pos += a.group) {
-        const uint32_t row = pos / a.sub_w;
-        const uint32_t col = pos % a.sub_w;
-        const float vx = plane[static_cast<size_t>(xr + row) * a.trunc_w + xc + col];
-        const float vy = plane[static_cast<size_t>(yr + row) * a.trunc_w + yc + col];
-        acc = accumulate(acc, centred_product(vx, mx, vy, my));
-    }
-    return quick_two_sum(acc.hi, acc.lo);
-}
-
-inline void covariance_group(sycl::nd_item<1> it, const CovArgs &a, float *hi, float *lo)
-{
-    const auto group = static_cast<uint32_t>(it.get_group(0));
-    const uint32_t ch = group / kTriangle;
     uint32_t x = 0u;
     uint32_t y = 0u;
-    triangle_entry(group % kTriangle, x, y);
-    const auto lid = static_cast<uint32_t>(it.get_local_id(0));
+    triangle_entry(index, x, y);
     const float *plane = a.centered + static_cast<size_t>(ch) * a.trunc_h * a.trunc_w;
-    const float mx = a.means[ch * kN + x];
-    const float my = a.means[ch * kN + y];
-    const Ff part = covariance_partial(plane, a, x, y, mx, my, lid);
-    hi[lid] = part.hi;
-    lo[lid] = part.lo;
-    sycl::group_barrier(it.get_group());
-    for (uint32_t span = a.group / 2u; span > 0u; span >>= 1u) {
-        if (lid < span) {
-            const Ff merged = ff_add({.hi = hi[lid], .lo = lo[lid]},
-                                     {.hi = hi[lid + span], .lo = lo[lid + span]});
-            hi[lid] = merged.hi;
-            lo[lid] = merged.lo;
-        }
-        sycl::group_barrier(it.get_group());
-    }
-    if (lid == 0u) {
-        const auto count = static_cast<float>(a.sub_w * a.sub_h);
-        const float value = ff_div_to_float({.hi = hi[0], .lo = lo[0]}, count);
-        float *matrix = a.cov + static_cast<size_t>(ch) * kMatrix;
-        matrix[x * kN + y] = value;
-        matrix[y * kN + x] = value;
-    }
+    const float *px = plane + static_cast<size_t>(x / kBlock) * a.trunc_w + x % kBlock;
+    const float *py = plane + static_cast<size_t>(y / kBlock) * a.trunc_w + y % kBlock;
+    const float value = vmaf_sycl_speed_cov::covariance_entry(
+        px, py, a.trunc_w, a.sub_w, a.sub_h, a.means[ch * kN + x], a.means[ch * kN + y]);
+    float *matrix = a.cov + static_cast<size_t>(ch) * kMatrix;
+    matrix[x * kN + y] = value;
+    matrix[y * kN + x] = value;
 }
-
-} // namespace
-
-namespace
-{
 
 void launch_covariance(sycl::queue &q, const CovArgs &args, uint32_t channels)
 {
-    const size_t groups = static_cast<size_t>(channels) * kTriangle;
-    q.submit([&](sycl::handler &h) {
-        const sycl::local_accessor<float, 1> hi(sycl::range<1>(args.group), h);
-        const sycl::local_accessor<float, 1> lo(sycl::range<1>(args.group), h);
-        h.parallel_for(
-            sycl::nd_range<1>(groups * args.group, args.group), [=](sycl::nd_item<1> it) {
-                covariance_group(it, args, hi.get_multi_ptr<sycl::access::decorated::no>().get(),
-                                 lo.get_multi_ptr<sycl::access::decorated::no>().get());
-            });
+    q.parallel_for(sycl::range<2>(channels, kTriangle), [=](sycl::item<2> it) {
+        covariance_item(args, static_cast<uint32_t>(it.get_id(0)),
+                        static_cast<uint32_t>(it.get_id(1)));
     });
-}
-
-/* Enough work items per covariance entry to cover the submatrix, no more:
- * a 256-wide group for an 11x6 submatrix is 190 idle items and a deeper
- * reduction tree. */
-uint32_t covariance_group_size(uint32_t terms)
-{
-    uint32_t group = 32u;
-    while (group < kGroup && group < terms / 8u) {
-        group *= 2u;
-    }
-    return group;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1877,8 +1793,7 @@ void enqueue_statistics(Pipeline &p)
                       .trunc_w = g.trunc_w,
                       .trunc_h = g.trunc_h,
                       .sub_w = g.sub_w,
-                      .sub_h = g.sub_h,
-                      .group = covariance_group_size(g.sub_w * g.sub_h)};
+                      .sub_h = g.sub_h};
     launch_covariance(q, cov, ch);
     const LinalgArgs linalg{
         .cov = p.cov, .eig = p.eig, .qmat = p.qmat, .rmat = p.rmat, .status = p.status};

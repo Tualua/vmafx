@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/speed_*_sycl.cpp
   - core/src/feature/sycl/speed_sycl_*
   - core/test/test_sycl_speed_*
+  - core/src/feature/sycl/sycl_speed_cov_math.h
 invariant: SpEED pipeline arithmetic contract and singular-covariance contract; device-resident twins.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -68,6 +69,27 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   that stays zero on a singular channel, so no device buffer is read
   before it is written. The host tail applies the one-sided rule and
   copies the flags into `FrameResult.singular`. ADR-1218, ADR-1477.
+
+- **SpEED covariance entry is the reference's sequential fp64 sum
+  (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`).**
+  `speed.c::compute_cov_kernel_scalar()` adds `(x - mean_x) * (y - mean_y)`
+  into one fp64 running sum in raster order, rounding every add, and
+  `compute_covariance_row()` stores `(float)(sum / (w * h))`. A parallel or
+  compensated sum rounded once is not that value: on a cancelling
+  off-diagonal entry it stores the neighbouring fp32 value (frame 140 of a
+  3840x1600 segment, `speed_chroma_u`, 1 ulp). `launch_covariance()` runs
+  one work-item per (channel, entry) calling `covariance_entry()` of
+  `sycl_speed_cov_math.h`, which replays the sub, sub, mul, add chain in
+  64-bit integers (`sycl_soft_signed.h`), the fp64 quotient and the fp32
+  conversion. On rebase: never bring back a pair accumulator, a group
+  reduction or an `ff_*` quotient for this sum, and never give the entry a
+  tolerance. An optimised kernel is allowed only if `test_sycl_speed_cov_math`
+  (`==` against `compute_cov_kernel_scalar()`, fixture blocks a near-exact sum
+  stores differently) still passes on a device
+  (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`).
+  `test_sycl_speed_cov_exact_contract.py` pins the source shape. The CUDA and
+  HIP twins have the old design (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
+  `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`).
 
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|

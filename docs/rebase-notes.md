@@ -7,6 +7,20 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## SYCL SpEED covariance is the reference's sequential fp64 sum (2026-10-06)
+
+`perf/sycl-zerocopy-throughput`. SYCL kernel, one new header, tests, docs.
+
+- `speed_sycl_pipeline.cpp` loses the pair-sum covariance kernel
+  (`centred_product`, `accumulate`, `covariance_partial`, `covariance_group`,
+  `covariance_group_size`, `kGroup`) and calls
+  `sycl_speed_cov_math.h::covariance_entry()` from `launch_covariance()`, one
+  work-item per (channel, entry). Upstream Netflix has no SYCL twin, so a sync
+  never conflicts here; a rebase onto a branch that still has the old kernel
+  keeps this side. `speed.c` is untouched.
+- `core/test/test_sycl_speed_cov_math` and `test_sycl_speed_cov_exact_contract.py`
+  are new. No rebase impact outside `core/src/feature/sycl/`.
+
 ## Tiny model cards quote their training data's terms (ADR-1570, 2026-10-04)
 
 `docs/model-dataset-terms`. Docs and one contract test.
