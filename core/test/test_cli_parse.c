@@ -225,6 +225,28 @@ static char *test_list_backends_needs_no_inputs()
     return NULL;
 }
 
+/* ADR-1918: --check-sample-range (and the underscore alias) sets the flag that
+ * vmaf.cpp hands to vmaf_set_sample_range_check_enabled(); off without it. */
+static char *check_sample_range_flag(char *flag, bool expect)
+{
+    char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", flag};
+    const int argc = flag ? 6 : 5;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --check-sample-range sets check_sample_range, nothing else does",
+              settings.check_sample_range == expect);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+static char *test_check_sample_range_flag()
+{
+    char *msg = check_sample_range_flag("--check-sample-range", true);
+    msg = msg ? msg : check_sample_range_flag("--check_sample_range", true);
+    return msg ? msg : check_sample_range_flag(NULL, false);
+}
+
 static char *test_backend_cpu()
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "cpu"};
@@ -480,6 +502,7 @@ static char *run_backend_device_tests(void)
     mu_run_test(test_metal_device_explicit);
     mu_run_test(test_no_hip_no_metal_flags);
     mu_run_test(test_cpumask_short_opt);
+    mu_run_test(test_check_sample_range_flag);
     return NULL;
 }
 

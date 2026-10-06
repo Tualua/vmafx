@@ -268,6 +268,7 @@ nav:
       - MCP C API: api/mcp.md
       - Pelorus interop ABI (vendored): api/pelorus-interop.md
       - Perceptual pooling weighting: api/perceptual-weight.md
+      - Sample range: api/sample-range.md
       - vmaftune.ladder: api/ladder.md
       - vmaftune.predictor: api/predictor.md
   - Metrics and models:

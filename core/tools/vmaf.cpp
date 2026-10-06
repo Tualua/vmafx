@@ -2178,9 +2178,14 @@ namespace
         .cpumask = state->c.cpumask,
         .gpumask = state->c.gpumask,
     };
-    const int err = vmaf_init(&state->vmaf, cfg);
-    if (err)
+    int err = vmaf_init(&state->vmaf, cfg);
+    if (err) {
         (void)fprintf(stderr, "problem initializing VMAF context\n");
+        return -1;
+    }
+    err = vmaf_set_sample_range_check_enabled(state->vmaf, state->c.check_sample_range ? 1 : 0);
+    if (err)
+        (void)fprintf(stderr, "problem enabling the sample range check\n");
     return err ? -1 : 0;
 }
 

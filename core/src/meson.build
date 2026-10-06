@@ -2747,6 +2747,7 @@ libvmaf_sources = [
     src_dir + 'model.c',
     src_dir + 'picture.c',
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
+    src_dir + 'picture_sample_range.c', # ADR-1918: opt-in sample range check of vmaf_read_pictures()
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',

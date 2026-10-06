@@ -97,6 +97,7 @@ enum : std::uint16_t {
     ARG_NETFLIX_COMPAT,
     /* ADR-1874 — report the compiled and usable scoring backends. */
     ARG_LIST_BACKENDS,
+    ARG_CHECK_SAMPLE_RANGE,
 };
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
@@ -205,6 +206,9 @@ const struct option long_opts[] = {
     {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
     {.name = "list-backends", .has_arg = 0, .flag = nullptr, .val = ARG_LIST_BACKENDS},
+    /* ADR-1918: refuse a frame with a sample above 2^bpc - 1. */
+    {.name = "check-sample-range", .has_arg = 0, .flag = nullptr, .val = ARG_CHECK_SAMPLE_RANGE},
+    {.name = "check_sample_range", .has_arg = 0, .flag = nullptr, .val = ARG_CHECK_SAMPLE_RANGE},
     {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
     {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
 };
@@ -318,6 +322,8 @@ void print_usage_options_part2(FILE *const out)
         "                                  %%.6f precision, v0.6.1 default model)\n"
         " --list-backends:             print the scoring backends this binary was built with\n"
         "                               and which of them initialise here, as JSON, and exit\n"
+        " --check-sample-range:        refuse a frame with a sample above 2^bpc - 1 (off by\n"
+        "                               default); names the plane, row, column and value\n"
         " --version/-v:                print version and exit\n");
 }
 
@@ -1454,6 +1460,9 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
         break;
     case ARG_LIST_BACKENDS:
         settings->list_backends = true;
+        break;
+    case ARG_CHECK_SAMPLE_RANGE:
+        settings->check_sample_range = true;
         break;
     default:
         break;

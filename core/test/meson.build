@@ -5378,6 +5378,15 @@ test_perceptual_weight = executable('test_perceptual_weight',
 )
 test('test_perceptual_weight', test_perceptual_weight, suite : ['fast'])
 
+# ADR-1918: the opt-in sample range check of vmaf_read_pictures().
+test_sample_range_check = executable('test_sample_range_check',
+    ['test.c', 'test_sample_range_check.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_sample_range_check', test_sample_range_check, suite : ['fast'])
+
 # ADR-0153 — float_ms_ssim init rejects <176x176 (Netflix#1414).
 test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
     ['test.c', 'test_float_ms_ssim_min_dim.c', '../src/mem.cpp', '../src/picture.c',

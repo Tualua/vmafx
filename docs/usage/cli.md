@@ -58,10 +58,16 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
 | `--height` | `-h` | unsigned | **yes for `.yuv`** | Ignored for `.y4m`. |
 | `--pixel_format` | `-p` | `420` \| `422` \| `444` | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content. |
 | `--bitdepth` | `-b` | `8` \| `10` \| `12` \| `16` | **yes for `.yuv`** | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). |
+| `--check-sample-range` | | none | no | Refuse a frame with a sample above 2^bitdepth - 1 (for example 1024 in a 10-bit `.yuv`) and stop with a non-zero exit status; the message names the picture, plane, row, column and value. Off by default. Underscore alias `--check_sample_range`. See [Sample range](../api/sample-range.md). |
 
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied,
 the input is treated as raw YUV and **all four** become mandatory. `vmaf` reads
 only `.y4m` and `.yuv`; decode other containers first.
+
+A raw `.yuv` file of 10 or 12 bits stores each sample in 16 bits, so it can
+hold values above 2^bitdepth - 1. Such input is invalid: the CPU extractors and
+their GPU twins may score it differently. `--check-sample-range` finds the
+first such sample.
 
 Odd frame dimensions (for example 1921x1081 or 19x19) are accepted for raw
 `.yuv` and `.y4m` inputs in 4:2:0 and 4:2:2. Chroma plane extents use ceiling

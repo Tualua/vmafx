@@ -30,6 +30,17 @@ The CPU extractor (`core/src/feature/integer_adm.c`) calls it from `extract()` w
 `"adm"`; GPU twins (`adm_cuda`, `adm_hip`, `adm_sycl`, `adm_metal`) call it during `init()`.
 An upstream sync that touches integer ADM option validation or CSF setup must preserve
 the named refusal and the contract where CPU fails in `extract()` and GPU twins fail in `init()`.
+## Opt-in sample range check of `vmaf_read_pictures()` (2026-10-06)
+
+`feat/sample-range-check` ([ADR-1918](adr/1918-sample-range-contract-opt-in-check.md)).
+Fork-only files: `core/src/picture_sample_range.{c,h}`, `core/test/test_sample_range_check.c`,
+`docs/api/sample-range.md`. Fork hunks in upstream-mirror files: `VmafContext::check_sample_range`,
+`vmaf_set_sample_range_check_enabled()` and the call in `read_pictures_validate_and_prep()` in
+`core/src/libvmaf.c`; the contract paragraph and the declaration in `core/include/libvmaf/libvmaf.h`;
+`--check-sample-range` in `core/tools/cli_parse.cpp` / `cli_parse.h` and the setter call in
+`init_cli_context()` (`core/tools/vmaf.cpp`). An upstream sync that touches `vmaf_read_pictures()` keeps
+the check after `validate_pic_params()` and before any extractor. See
+`core/AGENTS.d/sample-range-check.md`.
 
 ## Integer ADM: scale-0 contrast-masking rows summed unsigned; GPU gain product bounded before narrowing (2026-10-05)
 

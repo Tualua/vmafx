@@ -395,6 +395,13 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  * without a context or with only one of the two pictures returns `-EINVAL`
  * and takes nothing.
  *
+ * Every sample of a picture of bit depth `bpc` must be at most 2^bpc - 1 (a
+ * 10-bit picture in `uint16_t` storage holds values up to 1023). A picture with
+ * a sample above that is invalid input: nothing on the default path checks
+ * it, and the CPU extractors and their GPU twins may then give different
+ * scores. `vmaf_set_sample_range_check_enabled()` turns on a check that
+ * refuses such a picture with `-EINVAL`.
+ *
  * When you're done reading pictures call this function again with both `ref`
  * and `dist` set to NULL to flush all feature extractors.
  *
@@ -424,6 +431,30 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  */
 VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                    unsigned index);
+
+/**
+ * Turn the sample range check of `vmaf_read_pictures()` on or off. Off by
+ * default, and then `vmaf_read_pictures()` reads no sample for it.
+ *
+ * On, `vmaf_read_pictures()` scans both pictures of every call before it
+ * extracts anything and refuses a call in which a sample of a 9- to 15-bit
+ * picture is above 2^bpc - 1: it returns `-EINVAL` (the pictures are released
+ * as for any other error) and logs the picture (reference or distorted), the
+ * plane, row and column of the first such sample, its value and the limit.
+ * 8- and 16-bit pictures cannot hold such a sample. A picture in device memory
+ * cannot be scanned on the host: the call returns `-ENOTSUP`.
+ *
+ * The `vmaf` command line sets it with `--check-sample-range`. See
+ * docs/api/sample-range.md.
+ *
+ * @param vmaf    The VMAF context allocated with `vmaf_init()`.
+ * @param enabled Non-zero turns the check on, zero turns it off.
+ *
+ * @return 0 on success, or `-EINVAL` without a context.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled);
 
 /**
  * Predict VMAF score at specific index.

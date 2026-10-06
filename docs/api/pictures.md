@@ -88,6 +88,13 @@ if (err < 0)
 
 A complete program is on the [overview page](index.md#minimal-program).
 
+## Sample range
+
+Every sample of a picture of bit depth `bpc` must be at most 2^bpc - 1. The
+default path does not check it;
+`vmaf_set_sample_range_check_enabled()` turns on a check that refuses an
+out-of-range picture with `-EINVAL`. See [Sample range](sample-range.md).
+
 ## Index rules
 
 `index` must increase on every call to `vmaf_read_pictures()`. A repeated

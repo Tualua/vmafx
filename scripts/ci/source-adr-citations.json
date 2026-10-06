@@ -6260,6 +6260,7 @@
         "core/src/picture_convert.c": 1,
         "core/src/picture_pool.c": 4,
         "core/src/picture_pool.h": 2,
+        "core/src/picture_sample_range.c": 1,
         "core/src/predict.c": 1,
         "core/src/read_json_model.c": 1,
         "core/src/ref.h": 1,
@@ -6582,6 +6583,7 @@
         "core/test/test_read_pictures_failure_ownership.c": 1,
         "core/test/test_read_pictures_monotonic.c": 1,
         "core/test/test_ref.c": 1,
+        "core/test/test_sample_range_check.c": 1,
         "core/test/test_score_pooled_eagain.c": 1,
         "core/test/test_speed.c": 1,
         "core/test/test_speed_chroma.c": 1,
@@ -11229,6 +11231,19 @@
         "core/tools/vmaf_vpl_core.h": 2
       },
       "target": "1900-vpl-decode-ceiling-contract.md"
+    },
+    "1918": {
+      "sites": {
+        "core/src/libvmaf.c": 1,
+        "core/src/meson.build": 1,
+        "core/src/picture_sample_range.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_cli_parse.c": 1,
+        "core/test/test_sample_range_check.c": 1,
+        "core/tools/cli_parse.cpp": 1,
+        "core/tools/cli_parse.h": 1
+      },
+      "target": "1918-sample-range-contract-opt-in-check.md"
     }
   },
   "retired": {

@@ -145,6 +145,8 @@ typedef struct {
     bool netflix_compat;
     /* ADR-1874: --list-backends; print the backend report instead of scoring. */
     bool list_backends;
+    /* ADR-1918: --check-sample-range; vmaf_set_sample_range_check_enabled(). */
+    bool check_sample_range;
 } CLISettings;
 /* NOLINTEND(modernize-use-using) */
 

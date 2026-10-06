@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1289), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1290), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5167,3 +5167,7 @@ Every ADR, one heading each (1289), so the site search finds an ADR by its title
 ## ADR-1900: Deterministic verification and state contract for VPL decode retry ceiling
 
 [1900-vpl-decode-ceiling-contract](1900-vpl-decode-ceiling-contract.md)
+
+## ADR-1918: Samples above 2^bpc - 1 are invalid input; an opt-in check refuses them
+
+[1918-sample-range-contract-opt-in-check](1918-sample-range-contract-opt-in-check.md)

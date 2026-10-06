@@ -65,6 +65,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "output.h"
 #include "percentile.h"
 #include "picture.h"
+#include "picture_sample_range.h"
 #include "predict.h"
 #include "thread_pool.h"
 #include "vcs_version.h"
@@ -268,6 +269,9 @@ typedef struct VmafContext {
      * a build without this feature. Mutated only by the
      * vmaf_set_perceptual_* entry points; read only in the pooling path. */
     VmafPerceptualWeightStore perceptual;
+    /* vmaf_set_sample_range_check_enabled() (ADR-1918): off by default, and
+     * then vmaf_read_pictures() reads no sample for it. */
+    bool check_sample_range;
 } VmafContext;
 
 typedef struct BatchThreadData {
@@ -2196,6 +2200,15 @@ int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, doubl
  * weighting is enabled AND side-data is present for the frame. The Netflix
  * golden pairs carry no side-data and MUST score bit-exact. */
 
+int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled)
+{
+    if (!vmaf)
+        return -EINVAL;
+
+    vmaf->check_sample_range = (enabled != 0);
+    return 0;
+}
+
 int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
 {
     if (!vmaf)
@@ -3600,6 +3613,12 @@ static int read_pictures_validate_and_prep(VmafContext *vmaf, VmafPicture *ref, 
     int err = validate_pic_params(vmaf, ref, dist);
     if (err)
         return err;
+    if (vmaf->check_sample_range) {
+        err = vmaf_picture_check_sample_range(ref, "reference");
+        err = err ? err : vmaf_picture_check_sample_range(dist, "distorted");
+        if (err)
+            return err;
+    }
     err = check_picture_pool(vmaf);
     if (err)
         return err;

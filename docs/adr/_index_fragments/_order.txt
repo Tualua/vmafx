@@ -1288,3 +1288,4 @@
 1886-torch-training-environments-only
 1899-govulncheck-symbol-gate-openvex
 1900-vpl-decode-ceiling-contract
+1918-sample-range-contract-opt-in-check
