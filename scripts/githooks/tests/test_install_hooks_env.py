@@ -43,7 +43,12 @@ EXPECTED = [".pre-commit-config.yaml", "f1", "f2", "f3", "f4", "new.txt"]
 def framework_block(stage: str) -> str:
     """Return the shipped ``framework-hooks`` run script of a lefthook stage."""
     config = yaml.safe_load((ROOT / "lefthook.yml").read_text())
-    return str(config[stage]["commands"]["framework-hooks"]["run"])
+    run = str(config[stage]["commands"]["framework-hooks"]["run"]).strip()
+    match = re.match(r"^bash\s+([^\s]+)", run)
+    if match:
+        script = (ROOT / match.group(1)).read_text()
+        return f"stage={stage}\n" + script
+    return run
 
 
 class InstallHooksEnvTests(unittest.TestCase):
@@ -171,7 +176,7 @@ class InstallHooksEnvTests(unittest.TestCase):
     def test_both_stages_install_before_they_run_and_fail_closed(self) -> None:
         for stage, runner in (("pre-commit", '"$fw" run'), ("pre-push", '"$fw" hook-impl')):
             block = framework_block(stage)
-            install = f'{UNSET} "$fw" install-hooks || exit 1;'
+            install = f'{UNSET} "$fw" install-hooks || exit 1'
             self.assertIn(install, block, stage)
             self.assertLess(block.index(install), block.index(runner), stage)
             self.assertIn("pre-commit is missing", block, stage)

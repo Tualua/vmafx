@@ -270,6 +270,26 @@ class HookInstallTests(unittest.TestCase):
                 self.assertFalse((hooks / "pre-commit").exists())
                 path.unlink()
 
+    def test_install_leaves_lefthook_shims_in_place_and_installs_the_rest(self) -> None:
+        hooks = self.repo / ".git/hooks"
+        shim = '#!/bin/sh\ncall_lefthook()\n{\n  exit 0\n}\ncall_lefthook run "HOOK" "$@"\n'
+        for hook in ("pre-commit", "pre-push"):
+            self.write(f".git/hooks/{hook}", shim.replace("HOOK", hook), executable=True)
+        result = self.install()
+        self.assertIn("left lefthook's", result.stdout)
+        dispatcher = (self.repo / "scripts/githooks/dispatch.sh").read_bytes()
+        for hook in ("pre-commit", "pre-push"):
+            with self.subTest(hook=hook):
+                self.assertIn(f'call_lefthook run "{hook}"', (hooks / hook).read_text())
+                self.assertEqual(list(hooks.glob(f"{hook}.vmafx-backup-*")), [])
+        for hook in ("commit-msg", "pre-rebase"):
+            with self.subTest(hook=hook):
+                self.assertEqual((hooks / hook).read_bytes(), dispatcher)
+        self.assertNotEqual(
+            self.run_git("commit", "--allow-empty", "-m", "bad message", check=False).returncode, 0
+        )
+        self.run_git("commit", "--allow-empty", "-m", "test: accepted")
+
     def test_framework_migration_preserves_legacy_and_native_stages(self) -> None:
         self.run_command(
             "pre-commit", "install", "--hook-type", "pre-commit", "--hook-type", "commit-msg"
@@ -405,6 +425,156 @@ class HookInstallTests(unittest.TestCase):
             (canonical_state / "STATE.md").read_text(),
             "canonical:STATE.md\nsynced:state-sync-fixture\n",
         )
+
+
+BRIDGE_STUB = """#!/bin/sh
+printf '%s|%s|%s\\n' "$0" "$*" "$(command -v reuse || echo none)" >> "$BRIDGE_LOG"
+if [ "$1" = hook-impl ]; then cat >> "$BRIDGE_LOG"; fi
+"""
+
+
+class LefthookBridgeTests(unittest.TestCase):
+    """lefthook.yml hands its framework stages to framework-hooks.sh (ADR-1249, ADR-2012)."""
+
+    def test_run_values_survive_the_windows_command_line(self) -> None:
+        # lefthook on Windows starts `sh -c "<run>"` without escaping it, so a
+        # double quote ends the script early; framework-hooks.sh has the detail.
+        lefthook = (ROOT / "lefthook.yml").read_text(encoding="utf-8")
+        runs = re.findall(r"^ +run: (.*)$", lefthook, flags=re.MULTILINE)
+        self.assertGreaterEqual(len(runs), 10)
+        for value in runs:
+            with self.subTest(run=value):
+                self.assertFalse(value.startswith(("|", ">")), "a block scalar hides its quotes")
+                self.assertNotIn('"', value)
+        for stage in ("pre-commit\n", "pre-push {1} {2}\n"):
+            self.assertEqual(
+                lefthook.count(f"run: bash scripts/git-hooks/framework-hooks.sh {stage}"), 1
+            )
+
+    def test_agent_hook_files_are_in_the_form_lefthook_rewrites_them_to(self) -> None:
+        # `lefthook uninstall` (v2.1.14 internal/command/uninstall_ai.go) re-marshals
+        # both files with Go's json.MarshalIndent even when it removes nothing:
+        # sorted keys, two-space indent, and <, > and & escaped. Committed in that
+        # form, an uninstall leaves the checkout clean instead of dirtying both files.
+        for name in (".claude/settings.json", ".codex/hooks.json"):
+            with self.subTest(file=name):
+                raw = (ROOT / name).read_bytes()
+                parsed = json.loads(raw)
+                canonical = json.dumps(parsed, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+                self.assertEqual(
+                    raw.decode("utf-8"),
+                    canonical,
+                    f"rewrite {name} with json.dumps(indent=2, sort_keys=True) plus a newline",
+                )
+                self.assertFalse(set(canonical) & set("<>&"), "Go would escape these")
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="vmafx-bridge-")
+        self.addCleanup(temporary.cleanup)
+        self.repo = Path(temporary.name)
+        self.log = self.repo / "bridge.log"
+        self.bash = shutil.which("bash") or "/bin/bash"
+        self.git = shutil.which("git") or "/usr/bin/git"
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env["BRIDGE_LOG"] = str(self.log)
+        run_command(
+            (self.git, "init", "--quiet"),
+            allowed_executables=(self.git,),
+            cwd=self.repo,
+            env=self.env,
+            check=True,
+            timeout_seconds=60,
+        )
+
+    def stub(self, relative: str, *, with_reuse: bool = False) -> None:
+        target = self.repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(BRIDGE_STUB, encoding="utf-8", newline="\n")
+        target.chmod(0o755)
+        if with_reuse:
+            reuse = target.parent / "reuse"
+            reuse.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
+            reuse.chmod(0o755)
+
+    def bridge(self, *args: str, path: str | None = None, stdin: str = "") -> TextCommandResult:
+        # lefthook hands Git Bash a PWD of the C:/... form on Windows; the
+        # bridge must still build a working PATH entry from it.
+        env = dict(self.env, PWD=self.repo.as_posix())
+        if path is not None:
+            env["PATH"] = path
+        return run_command(
+            (self.bash, str(ROOT / "scripts/git-hooks/framework-hooks.sh"), *args),
+            allowed_executables=(self.bash,),
+            cwd=self.repo,
+            env=env,
+            input_data=stdin,
+            capture_output=True,
+            text=True,
+            timeout_seconds=60,
+        )
+
+    def calls(self) -> list[str]:
+        return self.log.read_text(encoding="utf-8").splitlines()
+
+    def test_repository_virtualenv_layouts_win_and_activate_their_tools(self) -> None:
+        for layout in (".venv/bin/pre-commit", ".venv/Scripts/pre-commit.exe"):
+            with self.subTest(layout=layout):
+                shutil.rmtree(self.repo / ".venv", ignore_errors=True)
+                self.log.unlink(missing_ok=True)
+                self.stub(layout, with_reuse=True)
+                result = self.bridge("pre-commit")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = self.calls()
+                self.assertEqual(len(calls), 2, calls)
+                self.assertEqual(calls[0].split("|")[1], "install-hooks")
+                program, arguments, reuse = calls[1].split("|")
+                self.assertTrue(program.endswith(layout), program)
+                self.assertEqual(arguments, "run")
+                self.assertTrue(reuse.endswith(f"{Path(layout).parent.as_posix()}/reuse"), reuse)
+
+    def test_pre_push_forwards_remote_arguments_and_push_refs(self) -> None:
+        self.stub(".venv/bin/pre-commit")
+        refs = "refs/heads/topic 1111 refs/heads/topic 0000\n"
+        result = self.bridge("pre-push", "origin", "https://example.invalid/x.git", stdin=refs)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual(calls[0].split("|")[1], "install-hooks")
+        self.assertIn(
+            "hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push "
+            "--hook-dir .git/hooks -- origin https://example.invalid/x.git",
+            calls[1],
+        )
+        self.assertEqual(calls[2] + "\n", refs)
+
+    def test_path_fallback_missing_framework_and_unknown_stage(self) -> None:
+        tools = self.repo / "tools"
+        self.stub("tools/pre-commit")
+        env_cmd = shutil.which("env")
+        sys_tools = self.repo / "sys_tools"
+        sys_tools.mkdir(parents=True, exist_ok=True)
+        if env_cmd:
+            env_target = sys_tools / Path(env_cmd).name
+            if not env_target.exists():
+                try:
+                    env_target.symlink_to(env_cmd)
+                except OSError:
+                    shutil.copy(env_cmd, env_target)
+        path = f"{tools}{os.pathsep}{sys_tools}"
+        result = self.bridge("pre-commit", path=path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual(calls[0].split("|")[1], "install-hooks")
+        program, arguments = calls[1].split("|")[:2]
+        self.assertTrue(program.endswith("/tools/pre-commit"), program)
+        self.assertEqual(arguments, "run")
+        (tools / "pre-commit").unlink()
+        missing = self.bridge("pre-commit", path=path)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("pre-commit is missing", missing.stderr)
+        self.stub(".venv/bin/pre-commit")
+        unknown = self.bridge("commit-msg")
+        self.assertEqual(unknown.returncode, 2)
+        self.assertIn("unknown stage", unknown.stderr)
 
 
 if __name__ == "__main__":

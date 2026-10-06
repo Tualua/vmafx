@@ -1295,3 +1295,4 @@
 2001-release-scope-1-0-and-roadmap-to-2-0
 2056-float-adm-debug-key-refusal
 2055-x86-avx2-gate-requires-fma
+2012-lefthook-windows-host

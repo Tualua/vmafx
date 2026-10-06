@@ -16,6 +16,30 @@ never writes the planes it reads; scale 1 writes the second pair (`d_rd_ref_alt`
 ## Release scope of 1.0.0 and the roadmap to 2.0 (2026-10-06)
 
 `docs/rc3-adr-roadmap-2026-10-06`. no rebase impact: ADR-2001, docs, changelog fragment and the candidate-map paragraph of `AGENTS.md` section 11 with its six compiled projections (edited by the same substitutions, as ADR-1868 and ADR-1880 did). A sync that touches `AGENTS.md` keeps the fork's section 11 and recompiles the projections from it.
+## Lefthook and the pre-commit framework run on Windows hosts (2026-10-06)
+
+`fix/hooks-windows-host`, [ADR-2012](adr/2012-lefthook-windows-host.md), `T-HOOKS-WINDOWS-LEFTHOOK-QUOTING-2026-09-30`, `T-LEFTHOOK-UNINSTALL-REWRITES-AGENT-HOOK-FILES-2026-09-30`.
+
+- `lefthook.yml`: `framework-hooks` in `pre-commit` and `pre-push` call
+  `scripts/git-hooks/framework-hooks.sh` from a one-line, quote-free `run:`.
+  Keep every `run:` in `lefthook.yml` on one line and free of double quotes:
+  lefthook passes them to `sh -c` unescaped on Windows, so a double quote ends
+  the script. Guarded by `LefthookBridgeTests` in
+  `scripts/githooks/tests/test_install.py`.
+- `scripts/githooks/install.py`: leaves hooks whose shim calls `call_lefthook run`
+  in place. Install order: `lefthook install`, then `make install-hooks`.
+- `.claude/settings.json`, `.codex/hooks.json`: keep sorted keys and two-space
+  indent (`json.dumps(..., indent=2, sort_keys=True)` plus newline), the form
+  `lefthook uninstall` writes them to.
+- `requirements/locks/pre-commit.txt`: `reuse[charset-normalizer]==6.2.0`; reuse
+  skips `python-magic` on Windows.
+- `cmd/vmafx-node/bpf/`: `//go:build linux` on the tracepoint-dependent loader
+  and test files, so `govulncheck ./...` and `go vet ./...` load the package on Windows.
+- Fork-only CI and hook files: `scripts/ci/check-container-image-references.py`
+  (uses POSIX path spelling for comparison), `scripts/ci/tests/test-dedupe-gate.sh`
+  and `test_envtest_single_source.py` (skip POSIX Makefile/shebang parts on Windows),
+  `scripts/ci/tests/test_research_digest_ids.py` and `scripts/docs/generate-adr-by-tag.sh`
+  (LF newlines). No upstream-mirror file changed.
 
 ## Licence provenance of the Metal integer ADM host files (2026-10-06)
 

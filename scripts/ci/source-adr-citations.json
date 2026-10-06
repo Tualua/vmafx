@@ -5500,6 +5500,12 @@
       },
       "target": "0992-mos-label-batch-runs.md"
     },
+    "0996": {
+      "sites": {
+        "cmd/vmafx-node/bpf/bypass_loader.go": 1
+      },
+      "target": "0996-ebpf-fuse-bypass-rclone.md"
+    },
     "0999": {
       "sites": {
         "scripts/ci/tests/test_check_adr_links.py": 2
@@ -7454,6 +7460,7 @@
       "sites": {
         "Makefile": 1,
         "lefthook.yml": 2,
+        "scripts/git-hooks/framework-hooks.sh": 1,
         "scripts/githooks/dispatch.sh": 1,
         "scripts/githooks/install.sh": 1
       },
@@ -7503,7 +7510,9 @@
         ".github/workflows/required-aggregator.yml": 1,
         ".github/workflows/standards-gate.yml": 2,
         "lefthook.yml": 3,
-        "scripts/dev/relicense_fork_files.py": 1
+        "scripts/dev/relicense_fork_files.py": 1,
+        "scripts/git-hooks/framework-hooks.sh": 1,
+        "scripts/githooks/tests/test_install.py": 1
       },
       "target": "1249-praetor-governance-adoption.md"
     },
@@ -11283,6 +11292,15 @@
         "core/tools/cli_parse.h": 1
       },
       "target": "1918-sample-range-contract-opt-in-check.md"
+    },
+    "2012": {
+      "sites": {
+        "lefthook.yml": 2,
+        "scripts/git-hooks/framework-hooks.sh": 1,
+        "scripts/githooks/install.py": 1,
+        "scripts/githooks/tests/test_install.py": 1
+      },
+      "target": "2012-lefthook-windows-host.md"
     },
     "2055": {
       "sites": {
