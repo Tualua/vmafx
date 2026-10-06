@@ -26,6 +26,12 @@ Device-free: reads core/src/sycl/ only.
    descriptors of the DMA-BUF import are initialised where they are declared,
    so a field a newer header adds is zero.
 
+4. The host phase timers (``VMAF_SYCL_TIMING``) stay opt-in and complete: the
+   ``[vmaf-sycl] phases:`` line prints only under ``state->extractor_timing``,
+   each of the three waits records its phase after the wait succeeded, the
+   import records around the whole VA import, and the phase enum has no
+   C++-only underlying type.
+
 Each planted regression below is the construct the cleanup introduced.
 """
 
@@ -51,6 +57,11 @@ DESCRIPTORS = (
     ".stype = ZE_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMPORT_FD,",
     "const ze_device_mem_alloc_desc_t alloc_desc = { "
     ".stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC,",
+)
+PHASE_WAITS = (
+    "vmaf_sycl_queue_wait",
+    "vmaf_sycl_combined_queue_wait",
+    "vmaf_sycl_graph_wait",
 )
 DETILE_CALLS = ("detile_linear(", "detile_tile4(", "detile_y_tiled(")
 
@@ -153,9 +164,29 @@ def _dmabuf_failures(dmabuf: str) -> list[str]:
     guarded = dispatch[dispatch.find("try {") : dispatch.find("} catch (const sycl::exception")]
     if not dispatch or any(call not in guarded for call in DETILE_CALLS):
         failures.append(f"{DMABUF}: a de-tile submit is outside the try of dispatch_detile()")
-    surface = _function_body(code, "vmaf_sycl_import_va_surface")
-    if any(call in surface for call in DETILE_CALLS) or "parallel_for" in surface:
-        failures.append(f"{DMABUF}: vmaf_sycl_import_va_surface() submits a kernel itself")
+    for name in ("vmaf_sycl_import_va_surface", "import_va_surface_body"):
+        surface = _function_body(code, name)
+        if any(call in surface for call in DETILE_CALLS) or "parallel_for" in surface:
+            failures.append(f"{DMABUF}: vmaf_sycl_import_va_surface() submits a kernel itself")
+    return failures
+
+
+def _phase_failures(sources: dict[str, str]) -> list[str]:
+    code = _flat(sources[COMMON])
+    failures = []
+    printer = _function_body(code, "vmaf_sycl_print_timing")
+    if not re.search(r"if \(state->extractor_timing\) \{ print_phase_timing\(state\);", printer):
+        failures.append(f"{COMMON}: the phases line is not printed only under extractor_timing")
+    for name in PHASE_WAITS:
+        body = _function_body(code, name)
+        wait = body.find("wait_and_throw()")
+        if wait < 0 or body.find("vmaf_sycl_phase_record(", wait) < 0:
+            failures.append(f"{COMMON}: {name}() does not record its phase after the wait")
+    entry = _function_body(_flat(sources[DMABUF]), "vmaf_sycl_import_va_surface")
+    if "VMAF_SYCL_PHASE_IMPORT" not in entry:
+        failures.append(f"{DMABUF}: the VA import does not record VMAF_SYCL_PHASE_IMPORT")
+    if "enum VmafSyclPhase {" not in _flat(sources["common.h"]):
+        failures.append("common.h: enum VmafSyclPhase is missing or has an underlying type")
     return failures
 
 
@@ -164,6 +195,7 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
         _state_failures(sources[COMMON])
         + _header_failures(sources)
         + _dmabuf_failures(sources[DMABUF])
+        + _phase_failures(sources)
     )
 
 
@@ -253,6 +285,47 @@ class SyclRuntimeContract(unittest.TestCase):
             "    return import_exported_surface(args, desc, &cplan);\n",
         )
         self._detected(failures, "submits a kernel itself")
+
+
+class PhaseTimers(unittest.TestCase):
+    """Host phase timers behind VMAF_SYCL_TIMING (Phase 13, PERF-01)."""
+
+    def _detected(self, failures: list[str], needle: str) -> None:
+        self.assertTrue(any(needle in f for f in failures), failures)
+
+    def test_phase_timers_satisfy_the_contract(self) -> None:
+        self.assertEqual(_phase_failures(_sources()), [])
+
+    def test_unconditional_phases_print_is_detected(self) -> None:
+        failures = _replaced(
+            COMMON,
+            "if (state->extractor_timing) {\n        print_phase_timing(state);",
+            "{\n        print_phase_timing(state);",
+        )
+        self._detected(failures, "only under extractor_timing")
+
+    def test_wait_without_record_is_detected(self) -> None:
+        failures = _drop_record(COMMON, "vmaf_sycl_graph_wait")
+        self._detected(failures, "vmaf_sycl_graph_wait() does not record")
+
+    def test_import_without_record_is_detected(self) -> None:
+        failures = _replaced(DMABUF, "VMAF_SYCL_PHASE_IMPORT", "VMAF_SYCL_PHASE_COUNT")
+        self._detected(failures, "does not record VMAF_SYCL_PHASE_IMPORT")
+
+    def test_fixed_underlying_phase_enum_is_detected(self) -> None:
+        failures = _replaced("common.h", "enum VmafSyclPhase {", "enum VmafSyclPhase : int {")
+        self._detected(failures, "enum VmafSyclPhase")
+
+
+def _drop_record(name: str, function: str) -> list[str]:
+    """Contract failures with the phase record removed from `function`."""
+    sources = _sources()
+    text = sources[name]
+    start = text.index(f'extern "C" int {function}(')
+    end = text.index("\n}\n", start)
+    body = text[start:end].replace("vmaf_sycl_phase_record(", "(void)sizeof(")
+    sources[name] = text[:start] + body + text[end:]
+    return _contract_failures(sources)
 
 
 if __name__ == "__main__":

@@ -681,6 +681,35 @@ void vmaf_sycl_flush_pending_imports(VmafSyclState *state);
 void vmaf_sycl_print_timing(VmafSyclState *state);
 
 /**
+ * Host phases timed under VMAF_SYCL_TIMING=1 (average host ms per frame in the
+ * `[vmaf-sycl] phases:` line). Plain C enum: no underlying type, C callers read it.
+ */
+enum VmafSyclPhase {
+    VMAF_SYCL_PHASE_QUEUE_WAIT,
+    VMAF_SYCL_PHASE_COMBINED_WAIT,
+    VMAF_SYCL_PHASE_GRAPH_WAIT,
+    VMAF_SYCL_PHASE_IMPORT,
+    VMAF_SYCL_PHASE_COUNT
+};
+
+/**
+ * Start a phase timer.
+ *
+ * @param state  The SYCL state.
+ * @return Monotonic milliseconds, or 0 when VMAF_SYCL_TIMING is off or state is null.
+ */
+double vmaf_sycl_phase_start(const VmafSyclState *state);
+
+/**
+ * Add the time since `start_ms` to `phase`. No-op when timing is off or `start_ms` is 0.
+ *
+ * @param state     The SYCL state.
+ * @param phase     The phase being closed.
+ * @param start_ms  Value returned by vmaf_sycl_phase_start().
+ */
+void vmaf_sycl_phase_record(VmafSyclState *state, enum VmafSyclPhase phase, double start_ms);
+
+/**
  * Defer a DMA-BUF import pointer for freeing on the next queue wait.
  * The pointer will be freed by vmaf_sycl_flush_pending_imports().
  *

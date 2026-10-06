@@ -167,6 +167,8 @@ struct VmafSyclState {
     double sum_cpu_ms = 0;       // accumulated CPU time (between frames)
     double sum_gpu_ms = 0;       // accumulated GPU time (submit to wait)
     uint64_t timing_frames = 0;  // frames with valid timing
+    double phase_sum_ms[VMAF_SYCL_PHASE_COUNT] = {};  // host ms per phase (VMAF_SYCL_TIMING)
+    uint64_t phase_count[VMAF_SYCL_PHASE_COUNT] = {}; // closed phases (VMAF_SYCL_TIMING)
 
     // Combined command graph — merges all extractors into one replay
     sycl::queue *combined_queue = nullptr;
@@ -617,6 +619,28 @@ extern "C" int vmaf_sycl_memcpy_h2d_async(VmafSyclState *state, void *dst, const
 }
 
 /* ------------------------------------------------------------------ */
+/* Host phase timers (VMAF_SYCL_TIMING)                                */
+/* ------------------------------------------------------------------ */
+
+extern "C" double vmaf_sycl_phase_start(const VmafSyclState *state)
+{
+    if (!state || !state->extractor_timing)
+        return 0;
+    return monotonic_ms();
+}
+
+extern "C" void vmaf_sycl_phase_record(VmafSyclState *state, enum VmafSyclPhase phase,
+                                       double start_ms)
+{
+    if (!state || !state->extractor_timing || start_ms == 0)
+        return;
+    if (phase < 0 || phase >= VMAF_SYCL_PHASE_COUNT)
+        return;
+    state->phase_sum_ms[phase] += monotonic_ms() - start_ms;
+    state->phase_count[phase]++;
+}
+
+/* ------------------------------------------------------------------ */
 /* Queue synchronization                                               */
 /* ------------------------------------------------------------------ */
 
@@ -625,7 +649,9 @@ extern "C" int vmaf_sycl_queue_wait(VmafSyclState *state)
     if (!state)
         return -EINVAL;
     try {
+        double const t_wait = vmaf_sycl_phase_start(state);
         state->queue.wait_and_throw();
+        vmaf_sycl_phase_record(state, VMAF_SYCL_PHASE_QUEUE_WAIT, t_wait);
 
         // After the primary queue is idle, it's safe to free DMA-BUF
         // imports from the previous frame (the de-tile kernel that reads
@@ -1625,7 +1651,9 @@ extern "C" int vmaf_sycl_graph_wait(VmafSyclState *state)
 
     try {
         double const t_before_wait = monotonic_ms();
+        double const t_phase = vmaf_sycl_phase_start(state);
         state->combined_queue->wait_and_throw();
+        vmaf_sycl_phase_record(state, VMAF_SYCL_PHASE_GRAPH_WAIT, t_phase);
         state->graph_waited_frame = frame;
         double const now = monotonic_ms();
 
@@ -1652,7 +1680,9 @@ extern "C" int vmaf_sycl_combined_queue_wait(VmafSyclState *state)
         return 0; // not yet initialised
 
     try {
+        double const t_wait = vmaf_sycl_phase_start(state);
         state->combined_queue->wait_and_throw();
+        vmaf_sycl_phase_record(state, VMAF_SYCL_PHASE_COMBINED_WAIT, t_wait);
         return 0;
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL combined queue wait: %s\n", e.what());
@@ -1758,6 +1788,22 @@ extern "C" void vmaf_sycl_flush_pending_imports(VmafSyclState *state)
     state->num_pending_imports = 0;
 }
 
+/* Average host ms per frame of each phase; one line, only under VMAF_SYCL_TIMING. */
+static void print_phase_timing(const VmafSyclState *state)
+{
+    double avg[VMAF_SYCL_PHASE_COUNT] = {};
+    for (int i = 0; i < VMAF_SYCL_PHASE_COUNT; i++)
+        avg[i] = state->phase_sum_ms[i] / static_cast<double>(state->timing_frames);
+    if (fprintf(stderr,
+                "[vmaf-sycl] phases: %" PRIu64 " frames, queue_wait=%.3fms combined_wait=%.3fms "
+                "graph_wait=%.3fms import=%.3fms (avg host ms per frame)\n",
+                state->timing_frames, avg[VMAF_SYCL_PHASE_QUEUE_WAIT],
+                avg[VMAF_SYCL_PHASE_COMBINED_WAIT], avg[VMAF_SYCL_PHASE_GRAPH_WAIT],
+                avg[VMAF_SYCL_PHASE_IMPORT]) < 0) {
+        // Ignore stderr write failures for summary timing output
+    }
+}
+
 extern "C" void vmaf_sycl_print_timing(VmafSyclState *state)
 {
     if (!state || state->timing_frames < 2)
@@ -1772,6 +1818,9 @@ extern "C" void vmaf_sycl_print_timing(VmafSyclState *state)
                 state->timing_frames, avg_cpu, avg_gpu, avg_total, fps,
                 100.0 * avg_gpu / avg_total) < 0) {
         // Ignore stderr write failures for summary timing output
+    }
+    if (state->extractor_timing) {
+        print_phase_timing(state);
     }
     if (fflush(stderr) != 0) {
         // Ignore fflush error on stderr

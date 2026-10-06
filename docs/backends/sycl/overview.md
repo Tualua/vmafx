@@ -200,7 +200,7 @@ not allow modifying them) and waits for a fixed oneAPI release
 | `VMAF_SYCL_NO_GRAPH` | Deprecated: `1` forces direct submission and prints a warning |
 | `VMAF_SYCL_IMPORT_DEBUG` | `1` logs shared frame-buffer addresses and each VA import at `INFO` |
 | `VMAF_SYCL_PROFILE` | `1` enables queue profiling events |
-| `VMAF_SYCL_TIMING` | `1` records per-extractor timing with a queue wait |
+| `VMAF_SYCL_TIMING` | `1` records per-extractor timing with a queue wait, and also prints a `[vmaf-sycl] phases:` line with the average host milliseconds per frame spent in queue waits, graph waits and the VA import |
 | `VMAF_SYCL_CHECKSUM` | `1` logs a CRC of the uploaded ref and dis frame buffers at `INFO` |
 | `VMAF_SYCL_SCRATCH_SELFTEST` | `0` skips the start-up scratch-memory probes ([below](#scratch-memory-on-intel-gpus-adr-1395)) |
 | `VMAF_SYCL_VIF_SUBGROUP_SIZE` | `16` or `32` forces the `vif_sycl` sub-group size |
@@ -397,6 +397,12 @@ SIMD-16. It takes 23.4 ms per frame against 23.2, and 67 ms per frame with
   its own event
   ([Research-1369](../../research/1369-sycl-shared-planes-light-twins.md)
   describes the event-timing build).
+- With `VMAF_SYCL_TIMING=1` the flush adds one line after `[vmaf-sycl] timing:`,
+  `[vmaf-sycl] phases: N frames, queue_wait=… combined_wait=… graph_wait=… import=…`,
+  the average host milliseconds per frame in `vmaf_sycl_queue_wait()`,
+  `vmaf_sycl_combined_queue_wait()`, `vmaf_sycl_graph_wait()` and the VA surface
+  import. It is for locating host stalls, not for throughput: the timed runs
+  also wait per extractor, so never quote an fps from an instrumented run.
 - For end-to-end wall-time comparisons against the CUDA and CPU paths, use
   `make test-netflix-golden`, which records per-backend scores and timings.
 - Programmatic profiling through `VmafSyclState.enable_profiling`; see

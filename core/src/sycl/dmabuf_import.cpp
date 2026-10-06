@@ -863,13 +863,11 @@ int import_exported_surface(const VaSurfaceArgs &a, const VADRMPRIMESurfaceDescr
 
 } // namespace
 
-extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display_handle,
-                                           unsigned int va_surface_id, int is_ref, unsigned w,
-                                           unsigned h, unsigned bpc)
+/* The import proper; vmaf_sycl_import_va_surface() times every return path of it. */
+static int import_va_surface_body(VmafSyclState *state, void *va_display_handle,
+                                  unsigned int va_surface_id, int is_ref, unsigned w, unsigned h,
+                                  unsigned bpc)
 {
-    if (!state || !va_display_handle)
-        return -EINVAL;
-
     const VaSurfaceArgs args = {.state = state,
                                 .va_display_handle = va_display_handle,
                                 .va_surface_id = va_surface_id,
@@ -901,6 +899,19 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     if (cplan_err)
         return cplan_err;
     return import_exported_surface(args, desc, &cplan);
+}
+
+extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display_handle,
+                                           unsigned int va_surface_id, int is_ref, unsigned w,
+                                           unsigned h, unsigned bpc)
+{
+    if (!state || !va_display_handle)
+        return -EINVAL;
+    double const t_import = vmaf_sycl_phase_start(state);
+    int const rc =
+        import_va_surface_body(state, va_display_handle, va_surface_id, is_ref, w, h, bpc);
+    vmaf_sycl_phase_record(state, VMAF_SYCL_PHASE_IMPORT, t_import);
+    return rc;
 }
 
 #else /* !HAVE_SYCL_DMABUF */
