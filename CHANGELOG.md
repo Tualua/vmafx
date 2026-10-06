@@ -4106,6 +4106,9 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   its own `HEAD`: on a pull request, master plus the PR's commits.
 
 
+The controller's `--version` test passes on hosts without an installed libvmaf: it runs the binary with the dynamic loader's search path the test itself runs with, instead of failing to load the build tree's library.
+
+
 The required Go job passes its gosec scan again: the `VMAF_BIN` lookup of the Go test helper carries a reasoned G703 exclusion, and `make lint-go` and the Go job now run the same scan, so `make lint` no longer reports the HISS rule fixtures.
 
 
