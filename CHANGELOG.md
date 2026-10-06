@@ -6269,6 +6269,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   working directory, so the suite no longer leaves a `-version` file behind.
 
 
+- The vmaf-tune Python tests no longer start the host's `vmaf` through the
+  backend probe (a suite-wide fixture keeps the default probe off `PATH`), and
+  `go test ./pkg/fast/` runs the vmaf CLI of the build under test
+  (`VMAF_BIN` or `core/build-cpu`) instead of `vmaf` on `PATH`.
+
+
 - **`vmaf-tune corpus --two-pass` encodes with `libx265`.** x265 refuses
   `-crf` in the second pass (exit 183), so every libx265 two-pass cell failed.
   A cell at a CRF now runs pass 1 at that CRF, measures the bitstream with
