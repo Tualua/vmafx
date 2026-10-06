@@ -62273,3 +62273,14 @@ instead. The `.mm` files keep their file-scope helpers and types in anonymous na
 reads only `.mm` / `.c` units and `objc_handle.h` (`--header-filter` in `tidy-metal.yml`); the other headers
 are the `cpu` lane's, read as C. A rebase takes master's side of a conflicting `.mm` hunk and re-runs the
 `Tidy Metal` workflow with `fix=true`; `tidy-baseline-metal.json` is generated.
+
+## `vmaf_cuda_picture_get_pix_fmt()` is a fork accessor (PR #1118)
+
+`vmaf_cuda_picture_get_pix_fmt()` (`core/src/cuda/picture_cuda.h`, defined in
+`picture_cuda.c` as `return pic->pix_fmt;`) sits next to
+`vmaf_cuda_picture_get_stream()` and the event accessors. The PR #1067 refactor
+dropped both the definition and the declaration, which broke the link of any CUDA
+extractor that calls it; PR #1118 restored them. Upstream Netflix has no such
+function, so a sync or a rebase of a branch that predates #1118 takes the fork's
+side of both hunks and keeps the accessor. No score, public API or FFmpeg patch
+impact.

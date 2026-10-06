@@ -22,6 +22,10 @@ python3 -m venv .venv-docs
 .venv-docs/bin/mkdocs serve
 ```
 
+With the toolchain on `PATH`, `make docs-serve` is the same preview and
+`make docs-build` the strict build the docs workflow runs (`mkdocs build
+--strict`, output in `build-docs/site`).
+
 The site switches between light and dark with the toggle in the header and
 follows the system setting on a first visit. Check a change in both, at a
 desktop width and at a phone width (390 px). Before pushing, the pre-push hook

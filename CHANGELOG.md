@@ -1193,6 +1193,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   off by default; the documented cache flags never existed).
 
 
+- `make docs-build` runs the strict MkDocs build the docs workflow and the
+  pre-push gate run, and `make docs-serve` starts the live preview. The Metal
+  lane comment of the build matrix no longer calls the build stub-only, ADR-0581
+  names ADR-0597 in its status line, and the rebase notes carry the
+  `vmaf_cuda_picture_get_pix_fmt()` accessor of PR #1118.
+
+
 - The CUDA / NVDEC path of the `libvmaf_cuda` FFmpeg filter is no longer called
   "zero-copy" in the documentation: no frame goes through host memory, but each
   decoded frame is copied device to device into libvmaf's picture pool

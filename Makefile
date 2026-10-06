@@ -902,6 +902,18 @@ hiss-coverage:
 dedupe-check:
 	@standardsctl dedupe scan .
 
+# Documentation site (mkdocs.yml writes build-docs/site). docs-build is the
+# strict build the docs workflow and the pre-push MkDocs gate run; docs-serve
+# is the live preview while editing under docs/.
+.PHONY: docs-build docs-serve
+docs-build:
+	@command -v mkdocs >/dev/null || { echo "mkdocs not found: pip install -r docs/requirements.txt"; exit 1; }
+	mkdocs build --strict
+
+docs-serve:
+	@command -v mkdocs >/dev/null || { echo "mkdocs not found: pip install -r docs/requirements.txt"; exit 1; }
+	mkdocs serve
+
 # BEGIN praetor documentation gate
 .PHONY: docs-lint docs-figures
 verify-all: docs-lint docs-figures

@@ -128,19 +128,18 @@ jobs:
             meson_extra: -Denable_hip=true
             name: Ubuntu HIP
 
-          # --- Metal T8-1 scaffold (ADR-0361) ---
-          # Stub-only build — every Metal entry point returns -ENOSYS
-          # until the runtime PR (T8-1b) lands. macos-latest ships the
-          # Metal SDK as part of the system framework set
-          # (`/System/Library/Frameworks/Metal.framework` is guaranteed
-          # to exist), so the scaffold's
+          # --- Metal backend (ADR-0361 scaffold, ADR-0420 runtime) ---
+          # Builds the Metal runtime and every `.metal` kernel with
+          # `-Denable_metal=enabled`. macos-latest ships the Metal SDK as part
+          # of the system framework set (`/System/Library/Frameworks/
+          # Metal.framework` is guaranteed to exist), so the
           # `dependency('Metal', required: false)` /
-          # `dependency('MetalKit', required: false)` probes resolve
-          # cleanly. The smoke test runs (no real GPU work needed —
-          # every assertion checks the -ENOSYS / -EINVAL contract).
+          # `dependency('MetalKit', required: false)` probes resolve. A hosted
+          # runner has no GPU worth scoring on: the tests that need a device
+          # skip, the rest check the -ENOSYS / -EINVAL / -ENODEV contracts.
           # Apple Silicon (M1+ / GPU Family Apple 7+) is the runtime
-          # target; the scaffold lane builds on whichever macos-latest
-          # arch GitHub provides today (Apple Silicon as of 2026).
+          # target; the lane builds on whichever macos-latest arch GitHub
+          # provides today (Apple Silicon as of 2026).
           # required-aggregator
           - os: macos-latest
             CC: ccache clang
