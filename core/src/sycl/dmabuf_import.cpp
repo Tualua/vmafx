@@ -488,107 +488,31 @@ sycl::event detile_linear(sycl::queue *q, void *target_buf, const void *imported
     return ev;
 }
 
-/* What one Tile4 de-tile work-item needs, captured by value. */
-struct Tile4Detile {
-    const uint8_t *src; /* the luma plane in the imported object */
-    uint8_t *dst;       /* the linear upload slot, row_bytes per row */
-    size_t row_bytes;
-    unsigned tiles_per_row;
-    unsigned shift; /* 16 - bpc for P010 / P012, else 0 */
-    bool do_shift;
-    bool src_v16; /* the plane is 16-byte aligned: one vector load per chunk */
-    bool dst_v16; /* every destination chunk is 16-byte aligned */
-};
-
-/* P010/P012 MSB→LSB normalization of the two samples in one word (ADR-1121 follow-up). */
-inline uint32_t tile4_shift_word(uint32_t v, const Tile4Detile &p)
-{
-    if (p.do_shift) {
-        uint16_t const s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> p.shift);
-        uint16_t const s1 = (uint16_t)((uint16_t)(v >> 16) >> p.shift);
-        v = (uint32_t)s0 | ((uint32_t)s1 << 16);
-    }
-    return v;
-}
-
-/* A chunk wholly inside the row: 16 source bytes, contiguous because Tile4
- * keeps x[3:0] in address bits [3:0], to 16 destination bytes. */
-inline void tile4_chunk16(const Tile4Detile &p, size_t src_off, size_t dst_off)
-{
-    using Word4 = sycl::vec<uint32_t, 4>;
-    Word4 v;
-    if (p.src_v16) {
-        v = *reinterpret_cast<const Word4 *>(p.src + src_off);
-    } else {
-        const auto *w = reinterpret_cast<const uint32_t *>(p.src + src_off);
-        v = Word4(w[0], w[1], w[2], w[3]);
-    }
-    if (p.do_shift)
-        v = ((v & 0xFFFFu) >> p.shift) | (((v >> 16u) >> p.shift) << 16u);
-    if (p.dst_v16) {
-        *reinterpret_cast<Word4 *>(p.dst + dst_off) = v;
-    } else {
-        auto *w = reinterpret_cast<uint32_t *>(p.dst + dst_off);
-        w[0] = v.x();
-        w[1] = v.y();
-        w[2] = v.z();
-        w[3] = v.w();
-    }
-}
-
-/* The chunk the row end cuts: whole 4-byte words, then the 1-3 byte tail
- * (the last tile column may exceed the frame width). */
-inline void tile4_chunk_tail(const Tile4Detile &p, size_t src_off, size_t dst_off, size_t row_end)
-{
-    for (unsigned k = 0u; k < 4u && dst_off + (size_t)k * 4u < row_end; k++) {
-        size_t const s = src_off + (size_t)k * 4u;
-        size_t const d = dst_off + (size_t)k * 4u;
-        if (d + 4 <= row_end) {
-            *(uint32_t *)(p.dst + d) = tile4_shift_word(*(const uint32_t *)(p.src + s), p);
-        } else if (p.do_shift && row_end - d == 2) {
-            uint16_t const raw =
-                (uint16_t)((uint16_t)p.src[s] | (uint16_t)((uint16_t)p.src[s + 1] << 8));
-            uint16_t const v = (uint16_t)(raw >> p.shift);
-            p.dst[d] = (uint8_t)(v & 0xFFu);
-            p.dst[d + 1] = (uint8_t)(v >> 8);
-        } else {
-            for (size_t b = 0; b < row_end - d; b++)
-                p.dst[d + b] = p.src[s + b];
-        }
-    }
-}
-
-/* One work-item per 16 bytes of a row (ADR-1769, K3); no work-item covers
- * columns past the pitch's tiles. */
 sycl::event detile_tile4(sycl::queue *q, void *target_buf, const void *imported_ptr,
                          uint32_t y_offset, uint32_t y_pitch, size_t row_bytes, unsigned h,
                          unsigned bpc)
 {
-    Tile4Detile p = {};
-    p.src = static_cast<const uint8_t *>(imported_ptr) + y_offset;
-    p.dst = static_cast<uint8_t *>(target_buf);
-    p.row_bytes = row_bytes;
-    p.tiles_per_row = y_pitch / 128;
+    const auto *src = static_cast<const uint8_t *>(imported_ptr) + y_offset;
+    auto *dst = static_cast<uint8_t *>(target_buf);
+    unsigned const tiles_per_row = y_pitch / 128;
+    unsigned const words_per_tile_row = 128 / 4; /* = 32 */
+    unsigned const words_per_row = tiles_per_row * words_per_tile_row;
     /* Fuse P010/P012 MSB→LSB normalization (ADR-1121 follow-up). */
-    p.do_shift = (bpc > 8);
-    p.shift = p.do_shift ? (16u - bpc) : 0u;
-    p.src_v16 = (reinterpret_cast<uintptr_t>(p.src) % 16u) == 0;
-    p.dst_v16 = (row_bytes % 16u) == 0 && (reinterpret_cast<uintptr_t>(p.dst) % 16u) == 0;
-    size_t const chunks_in_row = (row_bytes + 15u) / 16u;
-    size_t const chunks_in_pitch = (size_t)p.tiles_per_row * (128u / 16u);
-    size_t const chunks_per_row = chunks_in_row < chunks_in_pitch ? chunks_in_row : chunks_in_pitch;
+    const bool do_shift = (bpc > 8);
+    const unsigned shift = do_shift ? (16u - bpc) : 0u;
 
-    return q->parallel_for(sycl::range<2>(h, chunks_per_row), [=](sycl::id<2> id) {
+    return q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
         unsigned const py = id[0];
-        unsigned const chunk = id[1];
+        unsigned const word_x = id[1];
 
-        /* Tile address: 8 chunks of 16 bytes per 128-byte tile row */
-        unsigned const tc = chunk / 8u;
+        /* Tile address */
+        unsigned const tc = word_x / words_per_tile_row;
+        unsigned const wt = word_x % words_per_tile_row;
         unsigned const tr = py / 32;
         unsigned const ity = py % 32;
 
         /* Tile4 intra-tile swizzle */
-        unsigned const x_byte = (chunk % 8u) * 16u;
+        unsigned const x_byte = wt * 4;
         unsigned const swizzled = (x_byte & 0x0F)              /* [3:0]  = x[3:0] */
                                   | ((ity & 3) << 4)           /* [5:4]  = y[1:0] */
                                   | (((x_byte >> 4) & 3) << 6) /* [7:6]  = x[5:4] */
@@ -597,16 +521,34 @@ sycl::event detile_tile4(sycl::queue *q, void *target_buf, const void *imported_
                                   | (((ity >> 3) & 1) << 10)   /* [10]   = y[3]   */
                                   | (((ity >> 4) & 1) << 11);  /* [11]   = y[4]   */
 
-        size_t const src_off = (size_t)(tr * p.tiles_per_row + tc) * 4096 + swizzled;
+        size_t const src_off = (size_t)(tr * tiles_per_row + tc) * 4096 + swizzled;
 
         /* Linear destination */
-        size_t const dst_off = (size_t)py * p.row_bytes + (size_t)tc * 128 + x_byte;
-        size_t const row_end = (size_t)(py + 1) * p.row_bytes;
+        size_t const dst_off = (size_t)py * row_bytes + (size_t)tc * 128 + (size_t)wt * 4;
+        size_t const row_end = (size_t)(py + 1) * row_bytes;
 
-        if (dst_off + 16 <= row_end)
-            tile4_chunk16(p, src_off, dst_off);
-        else
-            tile4_chunk_tail(p, src_off, dst_off, row_end);
+        /* Bounds check — last tile column may exceed frame width */
+        if (dst_off + 4 <= row_end) {
+            uint32_t v = *(const uint32_t *)(src + src_off);
+            if (do_shift) {
+                uint16_t const s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
+                uint16_t const s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
+                v = (uint32_t)s0 | ((uint32_t)s1 << 16);
+            }
+            *(uint32_t *)(dst + dst_off) = v;
+        } else if (dst_off < row_end) {
+            size_t const remain = row_end - dst_off;
+            if (do_shift && remain == 2) {
+                uint16_t const raw = (uint16_t)((uint16_t)src[src_off] |
+                                                (uint16_t)((uint16_t)src[src_off + 1] << 8));
+                uint16_t const s = (uint16_t)(raw >> shift);
+                dst[dst_off] = (uint8_t)(s & 0xFFu);
+                dst[dst_off + 1] = (uint8_t)(s >> 8);
+            } else {
+                for (size_t b = 0; b < remain; b++)
+                    dst[dst_off + b] = src[src_off + b];
+            }
+        }
     });
 }
 
