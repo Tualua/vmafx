@@ -6566,6 +6566,7 @@
         "core/test/test_sycl_motion_tiny_frames.c": 1,
         "core/test/test_sycl_motion_v2_parity.c": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
+        "core/test/test_sycl_n_subsample_combined_graph.c": 1,
         "core/test/test_sycl_ordered_sum.c": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
         "core/test/test_sycl_psnr_parity.c": 1,
@@ -10426,6 +10427,16 @@
         "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1599-sycl-float-motion-add-uv.md"
+    },
+    "1769": {
+      "sites": {
+        "core/src/sycl/common.cpp": 3,
+        "core/src/sycl/common.h": 1,
+        "core/src/sycl/dmabuf_import.cpp": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_zerocopy_wait_contract.py": 1
+      },
+      "target": "1769-sycl-zerocopy-throughput-a380.md"
     }
   },
   "retired": {

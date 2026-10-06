@@ -137,6 +137,17 @@ test('test_sycl_runtime_contract',
     timeout : 30,
 )
 
+# ADR-1769 (C3): the VA import fences its upload slot on the primary queue
+# against the readers of every compute queue, once per frame and before any
+# write, so the libvmaf_sycl filter drops its frame-start host wait on QSV
+# input. Device-free.
+test('test_sycl_zerocopy_wait_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_zerocopy_wait_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1470: an enum that C and C++ translation units both see has one size.
 # No header a C translation unit includes may fix an enum's underlying type
 # narrower or wider than int (C on the required toolchains cannot spell it,
