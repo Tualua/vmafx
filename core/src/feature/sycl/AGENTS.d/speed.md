@@ -77,13 +77,22 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   `compute_covariance_row()` stores `(float)(sum / (w * h))`. A parallel or
   compensated sum rounded once is not that value: on a cancelling
   off-diagonal entry it stores the neighbouring fp32 value (frame 140 of a
-  3840x1600 segment, `speed_chroma_u`, 1 ulp). `launch_covariance()` runs
-  one work-item per (channel, entry) calling `covariance_entry()` of
-  `sycl_speed_cov_math.h`, which replays the sub, sub, mul, add chain in
-  64-bit integers (`sycl_soft_signed.h`), the fp64 quotient and the fp32
-  conversion. On rebase: never bring back a pair accumulator, a group
-  reduction or an `ff_*` quotient for this sum, and never give the entry a
-  tolerance. An optimised kernel is allowed only if `test_sycl_speed_cov_math`
+  3840x1600 segment, `speed_chroma_u`, 1 ulp). `sycl_speed_cov_math.h`
+  holds the reference's operations in 64-bit integers (`sycl_soft_signed.h`):
+  `covariance_difference()`, `covariance_term()`, `covariance_chain()` and
+  `covariance_store()` (the fp64 quotient and the fp32 conversion);
+  `covariance_entry()` is the whole entry in one function and calls the same
+  helpers. `launch_covariance()` runs them split across launches
+  ([ADR-1931](../../../../../docs/adr/1931-sycl-speed-covariance-fast-exact.md)):
+  the differences (25 per pixel) and the products in parallel, stored as fp64
+  bit patterns, term-major, then one sequential chain per (channel, entry)
+  over the stored terms in raster order, in slices of submatrix rows with the
+  running sum kept as bits. Only work that does not depend on the running
+  sum leaves the chain; the operations and their order stay the reference's.
+  `test_sycl_speed_cov_chain` (device-free) and the split device half of
+  `test_sycl_speed_cov_math` check it with `==`. On rebase: never bring back
+  a pair accumulator, a group reduction or an `ff_*` quotient for this sum,
+  and never give the entry a tolerance. An optimised kernel is allowed only if `test_sycl_speed_cov_math`
   (`==` against `compute_cov_kernel_scalar()`, fixture blocks a near-exact sum
   stores differently) still passes on a device
   (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`).

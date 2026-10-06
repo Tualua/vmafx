@@ -6,16 +6,21 @@
 ``speed.c::compute_cov_kernel_scalar()`` adds ``(x - mean_x) * (y - mean_y)``
 into one fp64 running sum in raster order, rounding every add, and
 ``compute_covariance_row()`` stores ``(float)(sum / (width * height))``. The
-SYCL twins have no fp64 type (ADR-0220), so ``speed_sycl_pipeline.cpp``:
+SYCL twins have no fp64 type (ADR-0220), so:
 
-- calls ``covariance_entry()`` of ``sycl_speed_cov_math.h``, which performs the
-  reference's operations in the reference's order on values held in 64-bit
-  integers (``sycl_soft_signed.h``): two differences, the product, the add,
-  then the quotient and the conversion to fp32;
-- runs one work-item per (channel, entry), so the sum is sequential;
-- carries no parallel pair sum rounded once (``accumulate`` / ``ff_add`` /
-  ``covariance_partial``): that design stored a neighbouring fp32 value on a
-  cancelling entry (frame 140 of a 3840x1600 10-bit segment).
+- ``sycl_speed_cov_math.h`` holds the reference's operations on values held
+  in 64-bit integers (``sycl_soft_signed.h``): ``covariance_difference()``,
+  ``covariance_term()``, ``covariance_chain_add()`` / ``covariance_chain()``
+  and ``covariance_store()``; ``covariance_entry()`` is the whole entry in one
+  function and calls the same helpers, one implementation of each operation;
+- ``speed_sycl_pipeline.cpp`` runs them split across launches (ADR-1931): the
+  differences and the products in parallel, stored as fp64 bit patterns, then
+  one sequential chain per (channel, entry) over the stored terms in raster
+  order, and the store; the operations and their order are the reference's;
+- neither carries a parallel pair sum rounded once (``accumulate`` /
+  ``ff_add`` / ``covariance_partial``) nor a group reduction of the terms:
+  that design stored a neighbouring fp32 value on a cancelling entry (frame
+  140 of a 3840x1600 10-bit segment).
 
 Device-free: reads the sources only. ``test_sycl_speed_cov_math`` checks the
 entry against ``compute_cov_kernel_scalar()`` on the host and on a device.
@@ -84,11 +89,38 @@ class TwinDesign(unittest.TestCase):
         for name in ("two_sum", "two_prod", "ff_add", "quick_two_sum"):
             self.assertNotIn(name, text, f"{name}: a pair sum returned to the covariance")
 
-    def test_pipeline_calls_the_entry_one_work_item_per_entry(self) -> None:
+    def test_math_header_chain_is_sequential(self) -> None:
+        text = squash(code(MATH))
+        for line in (
+            "for (uint32_t k = 0; k < count; k++)",
+            "sum = covariance_chain_add(sum, terms[static_cast<size_t>(k) * step]);",
+        ):
+            self.assertIn(line, text, f"sycl_speed_cov_math.h lost the sequential chain: {line}")
+
+    def test_pipeline_runs_the_split_operations(self) -> None:
         text = squash(code(PIPELINE))
-        self.assertIn("vmaf_sycl_speed_cov::covariance_entry(", text)
-        self.assertIn("q.parallel_for(sycl::range<2>(channels, kTriangle)", text)
+        for call in (
+            "vmaf_sycl_speed_cov::covariance_difference(value, mean)",
+            "vmaf_sycl_speed_cov::covariance_term(",
+            "vmaf_sycl_speed_cov::covariance_chain(start, a_.terms + index, chains, count_)",
+            "vmaf_sycl_speed_cov::covariance_store(sum, pixels)",
+            "vmaf_sycl_speed_cov::covariance_zero()",
+        ):
+            self.assertIn(call, text, f"the pipeline no longer calls {call}")
+        # one chain work-item per (channel, entry)
+        self.assertIn("const uint32_t chains = a_.channels * kTriangle;", text)
         self.assertIn('#include "sycl_speed_cov_math.h"', PIPELINE.read_text(encoding="utf-8"))
+
+    def test_pipeline_covariance_has_no_reduction(self) -> None:
+        raw = PIPELINE.read_text(encoding="utf-8")
+        start = raw.index("Covariance: compute_covariance_matrix()")
+        end = raw.index("Eigenvalues: compute_eigenvalues()")
+        section = COMMENT.sub("", raw[start:end])
+        for name in ("reduce_over_group", "atomic_ref", "fetch_add", "group_barrier", "shift_group"):
+            self.assertNotIn(name, section, f"{name}: a parallel reduction of the covariance terms")
+
+    def test_pipeline_has_no_fp64_type(self) -> None:
+        self.assertIsNone(re.search(r"\bdouble\b", code(PIPELINE)), "fp64 type in the pipeline")
 
     def test_pipeline_has_no_parallel_pair_covariance(self) -> None:
         text = code(PIPELINE)

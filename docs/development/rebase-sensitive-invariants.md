@@ -605,14 +605,17 @@ backend within it.
   `core/src/feature/sycl/sycl_speed_cov_math.h::covariance_entry()` adds
   `(x - mean_x) * (y - mean_y)` in `speed.c::compute_cov_kernel_scalar()`'s
   order, rounding as each fp64 add rounds (64-bit integers,
-  `sycl_soft_signed.h`), and `launch_covariance()` runs one work-item per
-  entry. A sync must not bring back the parallel fp32-pair sum rounded once:
+  `sycl_soft_signed.h`). `launch_covariance()` runs the same helpers split
+  across launches ([ADR-1931](../adr/1931-sycl-speed-covariance-fast-exact.md)):
+  differences and products in parallel, stored as fp64 bit patterns, then one
+  sequential add chain per entry over the stored terms in raster order. A
+  sync must not bring back the parallel fp32-pair sum rounded once:
   on a cancelling entry it stores the neighbouring fp32 value, 1 ulp of
   `speed_chroma_u` on frame 140 of a 3840x1600 segment. A change to
   `compute_cov_kernel_scalar()` or the store in `compute_covariance_row()`
   changes the header in the same PR. `test_sycl_speed_cov_math` (`==`, host
-  and device) and `test_sycl_speed_cov_exact_contract.py` (device-free) guard
-  it. The CUDA and HIP twins still sum in pairs and are unverified
+  and device), `test_sycl_speed_cov_chain` and
+  `test_sycl_speed_cov_exact_contract.py` (device-free) guard it. The CUDA and HIP twins still sum in pairs and are unverified
   (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
   `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`). See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).

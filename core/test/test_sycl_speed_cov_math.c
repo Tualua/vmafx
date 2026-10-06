@@ -22,7 +22,9 @@
  * the reference's value with `==` on every block, flat or cancelling:
  *
  *   - on the host;
- *   - in a kernel on the default GPU.
+ *   - in a kernel on the default GPU;
+ *   - split as the pipeline runs it (ADR-1931): differences, products and the
+ *     add chain in three kernels over stored fp64 bit patterns, on that GPU.
  *
  * It also requires that enough blocks discriminate: a fixture that the old
  * parallel design passes would test nothing.
@@ -50,6 +52,9 @@ void vmaf_test_sycl_cov_host(const float *x, const float *y, const float *mean_x
 int vmaf_test_sycl_cov_device(const float *x, const float *y, const float *mean_x,
                               const float *mean_y, size_t n, size_t stride, uint32_t width,
                               uint32_t height, float *out);
+int vmaf_test_sycl_cov_split_device(const float *x, const float *y, const float *mean_x,
+                                    const float *mean_y, size_t n, size_t stride, uint32_t width,
+                                    uint32_t height, float *out);
 
 #include "speed_cov_cases.h"
 
@@ -87,11 +92,29 @@ static char *test_device_entry_is_the_reference(void)
     return NULL;
 }
 
+/* The split form the pipeline runs (ADR-1931), in three kernels on the GPU. */
+static char *test_device_split_is_the_reference(void)
+{
+    build_cases();
+    const int err =
+        vmaf_test_sycl_cov_split_device(xs, ys, mxs, mys, CASES, STRIDE, WIDTH, HEIGHT, got);
+    if (err == -ENODEV) {
+        (void)fprintf(stderr, "[skip: no SYCL GPU] ");
+        mu_skipped = 1;
+        return NULL;
+    }
+    mu_assert("the device split covariance failed", err == 0);
+    mu_assert("the split covariance differs from compute_cov_kernel_scalar() on the device",
+              count_wrong("device split") == 0u);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_fixture_separates_the_two_sums);
     mu_run_test(test_host_entry_is_the_reference);
     mu_run_test(test_device_entry_is_the_reference);
+    mu_run_test(test_device_split_is_the_reference);
     return NULL;
 }
 

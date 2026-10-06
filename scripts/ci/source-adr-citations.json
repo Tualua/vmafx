@@ -10448,11 +10448,14 @@
     },
     "1931": {
       "sites": {
+        "core/src/feature/sycl/speed_sycl_pipeline.cpp": 4,
         "core/src/feature/sycl/sycl_speed_cov_math.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_sycl_speed_cov_chain.c": 1,
         "core/test/test_sycl_speed_cov_chain_probe.cpp": 1,
-        "core/test/test_sycl_speed_cov_exact_contract.py": 1
+        "core/test/test_sycl_speed_cov_exact_contract.py": 2,
+        "core/test/test_sycl_speed_cov_math.c": 2,
+        "core/test/test_sycl_speed_cov_math_probe.cpp": 2
       },
       "target": "1931-sycl-speed-covariance-fast-exact.md"
     }
