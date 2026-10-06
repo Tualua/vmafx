@@ -6211,8 +6211,10 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     c_args: ['-DHAVE_SYCL=1'],
     kwargs : test_link_kwargs,
 )
+# The 3840x1600 case (ADR-1769 K1) scores three 4K frames on the CPU too.
 test('test_sycl_vif_parity', test_sycl_vif_parity,
     suite : ['fast', 'gpu', 'sycl'],
+    timeout : 120,
     is_parallel : false)
 # ADR-1395: an Intel GPU runs the SIMD-32 VIF kernels only when told to; the
 # same parity test runs them here. They needed the 256-register file to stop
@@ -6221,6 +6223,7 @@ test('test_sycl_vif_parity', test_sycl_vif_parity,
 test('test_sycl_vif_parity_sg32', test_sycl_vif_parity,
     env : ['VMAF_SYCL_VIF_SUBGROUP_SIZE=32'],
     suite : ['fast', 'gpu', 'sycl'],
+    timeout : 120,
     is_parallel : false)
 
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.

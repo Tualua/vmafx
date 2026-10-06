@@ -1034,6 +1034,246 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
 }
 } // namespace
 
+/* ------------------------------------------------------------------ */
+/* SYCL Kernel: Scale-0 Horizontal Pass from a Local-Memory Tile       */
+/* ------------------------------------------------------------------ */
+
+/* ADR-1769 K1. The scale-0 horizontal pass was the largest kernel of a frame
+ * on an Arc A380 (6.3 of 22 ms at 3840x1600) and arithmetic-bound: every tap
+ * of the seven planes was a load through a 64-bit address of its own (the
+ * device has no 64-bit integer adder) and three of the planes took a 64-bit
+ * product per tap. This kernel computes the same integers with less work:
+ *
+ *   - a work-group copies its rows of the seven planes, with the filter's
+ *     columns on both sides, into local memory once; a tap reads local memory
+ *     through a 32-bit offset. Columns outside the plane are the reflections
+ *     dev_hori_convolve_border() reads, so border and interior pixels take
+ *     the same path;
+ *   - a 32-bit sample t of tmp_ref / tmp_dis / tmp_ref_dis is
+ *     hi * 2^16 + lo with hi, lo < 2^16, and the coefficients add up to 2^16,
+ *     so sum(c * lo) and sum(c * hi) are each below 2^32 for any sample: two
+ *     32-bit sums give the 64-bit sum exactly, as sum(c * hi) * 2^16 +
+ *     sum(c * lo). mu1, mu2 and the decimation sums stay the uint32 sums the
+ *     generic kernel forms (modulo 2^32, where the order of the terms does not
+ *     matter).
+ *
+ * The statistic, the int64 reduction and the decimated planes are the
+ * generic kernel's (dev_compute_vif_stats(), dev_reduce_and_accum(),
+ * dev_downsample_rd()). Integer sums only: the result is the generic
+ * kernel's on every input. No private array (ADR-1395), no fp64 (ADR-0220). */
+namespace
+{
+constexpr int VIF_TILE_WG_X = 64;
+constexpr int VIF_TILE_WG_Y = 4;
+
+constexpr uint32_t vif_filter_sum(int scale)
+{
+    uint32_t sum = 0U;
+    for (int i = 0; i < VIF_FILTER_TABLE_PAD; i++)
+        sum += vif_filter1d_table[scale][i];
+    return sum;
+}
+
+template <int SCALE> constexpr unsigned vif_tile_width()
+{
+    return VIF_TILE_WG_X + vif_fwidth[SCALE] - 1;
+}
+
+/* One plane of the tile per array; VIF_TILE_WG_Y rows of vif_tile_width(). */
+struct VifTileLocal {
+    sycl::local_accessor<uint32_t, 1> mu1;
+    sycl::local_accessor<uint32_t, 1> mu2;
+    sycl::local_accessor<uint32_t, 1> ref;
+    sycl::local_accessor<uint32_t, 1> dis;
+    sycl::local_accessor<uint32_t, 1> ref_dis;
+    sycl::local_accessor<uint32_t, 1> ref_convol;
+    sycl::local_accessor<uint32_t, 1> dis_convol;
+    sycl::local_accessor<int64_t, 1> reduce;
+};
+
+/* The tile of a work-group: rows gy0.., columns gx0 - HALF_FW.. of every
+ * plane, reflected at the left and right edges as dev_mirror() reflects a
+ * border tap. Rows below the plane and columns no valid pixel reads are
+ * clamped into the plane; only out-of-range work-items read them. */
+template <int SCALE>
+static inline void dev_tile_load(sycl::nd_item<2> item, const VifHoriLaunchParams &p,
+                                 const VifTileLocal &t)
+{
+    constexpr unsigned TW = vif_tile_width<SCALE>();
+    constexpr unsigned N = TW * VIF_TILE_WG_Y;
+    constexpr unsigned WG = VIF_TILE_WG_X * VIF_TILE_WG_Y;
+    const int x0 = (int)(item.get_group(1) * VIF_TILE_WG_X) - vif_fwidth[SCALE] / 2;
+    const int y0 = (int)(item.get_group(0) * VIF_TILE_WG_Y);
+    const int last_x = (int)p.width - 1;
+    const int last_y = (int)p.height - 1;
+
+    for (unsigned i = item.get_local_linear_id(); i < N; i += WG) {
+        const int y = sycl::min(y0 + (int)(i / TW), last_y);
+        const int x = sycl::clamp(dev_mirror(x0 + (int)(i % TW), (int)p.width), 0, last_x);
+        const size_t g = (size_t)y * p.width + (size_t)x;
+        t.mu1[i] = p.tmp_mu1[g];
+        t.mu2[i] = p.tmp_mu2[g];
+        t.ref[i] = p.tmp_ref[g];
+        t.dis[i] = p.tmp_dis[g];
+        t.ref_dis[i] = p.tmp_ref_dis[g];
+        if constexpr (vif_fwidth_rd[SCALE] > 0) {
+            t.ref_convol[i] = p.tmp_ref_convol[g];
+            t.dis_convol[i] = p.tmp_dis_convol[g];
+        }
+    }
+}
+
+/* The horizontal sums of one pixel. The 64-bit sums are split as described
+ * above; the uint32 ones are the generic kernel's. */
+struct VifTileSums {
+    uint32_t mu1;
+    uint32_t mu2;
+    uint32_t ref_lo;
+    uint32_t ref_hi;
+    uint32_t dis_lo;
+    uint32_t dis_hi;
+    uint32_t ref_dis_lo;
+    uint32_t ref_dis_hi;
+    uint32_t ref_rd;
+    uint32_t dis_rd;
+};
+
+static inline uint64_t vif_tile_wide(uint32_t lo, uint32_t hi)
+{
+    return ((uint64_t)hi << 16) + lo;
+}
+
+/* Taps k of the pixel whose leftmost tap is tile entry `base`. */
+template <int SCALE>
+static inline VifTileSums dev_tile_convolve(unsigned base, const VifTileLocal &t)
+{
+    constexpr int FW = vif_fwidth[SCALE];
+    constexpr int FW_RD = vif_fwidth_rd[SCALE];
+    constexpr int RD_START = (FW - FW_RD) / 2;
+    static_assert(vif_filter_sum(SCALE) == 65536U,
+                  "the split 64-bit sums need coefficients adding up to 2^16");
+    VifTileSums s = {};
+#pragma unroll
+    for (int k = 0; k < FW; k++) {
+        const uint32_t fc = vif_filter1d_table[SCALE][k];
+        const unsigned i = base + (unsigned)k;
+        s.mu1 += fc * t.mu1[i];
+        s.mu2 += fc * t.mu2[i];
+        const uint32_t r = t.ref[i];
+        const uint32_t d = t.dis[i];
+        const uint32_t rd = t.ref_dis[i];
+        s.ref_lo += fc * (r & 0xFFFFU);
+        s.ref_hi += fc * (r >> 16);
+        s.dis_lo += fc * (d & 0xFFFFU);
+        s.dis_hi += fc * (d >> 16);
+        s.ref_dis_lo += fc * (rd & 0xFFFFU);
+        s.ref_dis_hi += fc * (rd >> 16);
+        if constexpr (FW_RD > 0) {
+            if (k >= RD_START && k < RD_START + FW_RD) {
+                const uint32_t fc_rd = vif_filter1d_table[SCALE + 1][k - RD_START];
+                s.ref_rd += fc_rd * t.ref_convol[i];
+                s.dis_rd += fc_rd * t.dis_convol[i];
+            }
+        }
+    }
+    return s;
+}
+
+template <int SCALE, int MAX_SUBGROUPS>
+static inline void dev_hori_tiled_item_step(sycl::nd_item<2> item, const VifHoriLaunchParams &p,
+                                            const VifTileLocal &t)
+{
+    dev_tile_load<SCALE>(item, p, t);
+    item.barrier(sycl::access::fence_space::local_space);
+
+    const int gx = item.get_global_id(1);
+    const int gy = item.get_global_id(0);
+    vif_terms t_acc = {};
+    if (std::cmp_less(gx, p.width) && std::cmp_less(gy, p.height)) {
+        const unsigned base = item.get_local_id(0) * vif_tile_width<SCALE>() + item.get_local_id(1);
+        const VifTileSums s = dev_tile_convolve<SCALE>(base, t);
+        dev_downsample_rd<vif_fwidth_rd[SCALE]>(gx, gy, true, p.width, s.ref_rd, s.dis_rd, p.rd_ref,
+                                                p.rd_dis);
+        t_acc = dev_compute_vif_stats(
+            s.mu1, s.mu2, vif_tile_wide(s.ref_lo, s.ref_hi), vif_tile_wide(s.dis_lo, s.dis_hi),
+            vif_tile_wide(s.ref_dis_lo, s.ref_dis_hi), p.vif_enhn_gain_limit, p.log2_lut);
+    }
+    dev_reduce_and_accum<MAX_SUBGROUPS>(item, t_acc, t.reduce, p.accum);
+}
+
+template <int SCALE, int SG_SIZE>
+class IntegerVifHoriTiledKernel : public VmafSyclKernelShape<SG_SIZE, vif_grf_size(SG_SIZE)>
+{
+  public:
+    IntegerVifHoriTiledKernel(const VifHoriLaunchParams &p, VifTileLocal t)
+        : p_(p), t_(std::move(t))
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(SG_SIZE) void operator()(sycl::nd_item<2> item) const
+    {
+        dev_hori_tiled_item_step<SCALE, VIF_HORI_MAX_SUBGROUPS>(item, p_, t_);
+    }
+
+  private:
+    VifHoriLaunchParams p_;
+    VifTileLocal t_;
+};
+
+static VifTileLocal make_vif_tile_local(sycl::handler &cgh, unsigned tile_elems)
+{
+    const sycl::range<1> plane(tile_elems);
+    return {
+        .mu1 = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .mu2 = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .ref = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .dis = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .ref_dis = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .ref_convol = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .dis_convol = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .reduce = sycl::local_accessor<int64_t, 1>(
+            sycl::range<1>(static_cast<size_t>(ACCUM_FIELDS) * VIF_HORI_MAX_SUBGROUPS), cgh),
+    };
+}
+
+/* launch_vif_hori_impl()'s arguments and outputs, on the tiled kernel. */
+template <int SCALE, int SG_SIZE>
+static sycl::event launch_vif_hori_tiled_impl(
+    sycl::queue &q, unsigned width, unsigned height, const VifGainLimit &vif_enhn_gain_limit,
+    const uint32_t *tmp_mu1, const uint32_t *tmp_mu2, const uint32_t *tmp_ref,
+    const uint32_t *tmp_dis, const uint32_t *tmp_ref_dis, const uint32_t *tmp_ref_convol,
+    const uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis,
+    const uint32_t *log2_lut)
+{
+    const sycl::range<2> global(
+        ((static_cast<size_t>(height) + VIF_TILE_WG_Y - 1) / VIF_TILE_WG_Y) * VIF_TILE_WG_Y,
+        ((static_cast<size_t>(width) + VIF_TILE_WG_X - 1) / VIF_TILE_WG_X) * VIF_TILE_WG_X);
+    const sycl::range<2> local(VIF_TILE_WG_Y, VIF_TILE_WG_X);
+    const VifHoriLaunchParams p = {
+        .width = width,
+        .height = height,
+        .vif_enhn_gain_limit = vif_enhn_gain_limit,
+        .tmp_mu1 = tmp_mu1,
+        .tmp_mu2 = tmp_mu2,
+        .tmp_ref = tmp_ref,
+        .tmp_dis = tmp_dis,
+        .tmp_ref_dis = tmp_ref_dis,
+        .tmp_ref_convol = tmp_ref_convol,
+        .tmp_dis_convol = tmp_dis_convol,
+        .accum = accum,
+        .rd_ref = rd_ref,
+        .rd_dis = rd_dis,
+        .log2_lut = log2_lut,
+    };
+
+    return q.submit([&](sycl::handler &cgh) {
+        const IntegerVifHoriTiledKernel<SCALE, SG_SIZE> kernel(
+            p, make_vif_tile_local(cgh, vif_tile_width<SCALE>() * VIF_TILE_WG_Y));
+        cgh.parallel_for(sycl::nd_range<2>(global, local), kernel);
+    });
+}
+} // namespace
+
 namespace
 {
 static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width, unsigned height,
@@ -1044,10 +1284,10 @@ static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width,
                                       uint32_t *rd_dis, const uint32_t *log2_lut)
 {
     switch (scale) {
-    case 0:
-        return launch_vif_hori_impl<0, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    case 0: /* ADR-1769 K1 */
+        return launch_vif_hori_tiled_impl<0, 32>(
+            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
+            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 1:
         return launch_vif_hori_impl<1, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
                                            tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
@@ -1075,10 +1315,10 @@ static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned w
                                            const uint32_t *log2_lut)
 {
     switch (scale) {
-    case 0:
-        return launch_vif_hori_impl<0, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    case 0: /* ADR-1769 K1 */
+        return launch_vif_hori_tiled_impl<0, 16>(
+            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
+            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     case 1:
         return launch_vif_hori_impl<1, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
                                            tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,

@@ -29,6 +29,10 @@
  *   - with `vif_enhn_gain_limit=1.0`, the value the NEG models set, where a
  *     gain at the limit is the common case;
  *   - with `vif_skip_scale0=true`, where scale 0 is published as 0.
+ *   - at 3840x1600, 10 bits, on seeded noise over the texture, with `debug`:
+ *     the frame size of the zero-copy workload, where scale 0 runs the tiled
+ *     horizontal kernel of ADR-1769 K1 over many work-groups and a race
+ *     between them would show (the class vif_fused had at 4K only).
  *
  * It also pins the default set of outputs: without `debug` the twin emits the
  * four scores only, as the CPU extractor does.
@@ -71,6 +75,9 @@
 typedef struct VifCase {
     const char *name;
     unsigned bpc;
+    unsigned w; /* 0: FIXTURE_W x FIXTURE_H */
+    unsigned h;
+    uint32_t noise;     /* 0: none; else the seed of a per-sample noise term */
     const char *option; /* NULL, or an option set on both sides */
     const char *value;  /* its value; NULL means "true" */
     unsigned n_keys;
@@ -102,13 +109,25 @@ static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned 
     }
 }
 
+/* A hash of the sample position: the seeded noise of the large case. */
+static unsigned sample_noise(uint32_t seed, unsigned row, unsigned col, unsigned frame)
+{
+    uint32_t x = seed ^ (row * 0x9E3779B1u) ^ (col * 0x85EBCA77u) ^ (frame * 0xC2B2AE3Du);
+    x ^= x >> 15;
+    x *= 0x2C1B3C6Du;
+    x ^= x >> 12;
+    return x & 63u;
+}
+
 /* A gradient with texture and a frame-dependent phase for the reference; the
  * distorted frame adds a small periodic error. The left third is flat, so the
  * statistic takes its low-variance branch there and its logarithm branch in
- * the rest. */
-static int fill_picture(VmafPicture *pic, unsigned bpc, unsigned frame, bool distorted)
+ * the rest. A case with `noise` adds seeded noise to the textured part. */
+static int fill_picture(VmafPicture *pic, const VifCase *c, unsigned frame, bool distorted)
 {
-    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W, FIXTURE_H);
+    const unsigned bpc = c->bpc;
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, c->w ? c->w : FIXTURE_W,
+                                       c->h ? c->h : FIXTURE_H);
     if (err)
         return err;
     const unsigned gain = 1u << (bpc - 8u);
@@ -118,6 +137,8 @@ static int fill_picture(VmafPicture *pic, unsigned bpc, unsigned frame, bool dis
             if (col >= pic->w[0] / 3u) {
                 value = (row + col + frame * 7u + ((row * 5u) ^ (col * 3u)) % 23u) * gain +
                         (row * col) % gain;
+                if (c->noise)
+                    value += sample_noise(c->noise, row, col, frame) * gain;
                 if (distorted)
                     value += ((row * 2u + col + frame * 3u) % 13u) * gain;
             }
@@ -138,8 +159,8 @@ static char *feed(VmafContext *vmaf, const VifCase *c)
     for (unsigned frame = 0; frame < NUM_FRAMES; frame++) {
         VmafPicture ref;
         VmafPicture dist;
-        mu_assert("fill reference failed", !fill_picture(&ref, c->bpc, frame, false));
-        mu_assert("fill distorted failed", !fill_picture(&dist, c->bpc, frame, true));
+        mu_assert("fill reference failed", !fill_picture(&ref, c, frame, false));
+        mu_assert("fill distorted failed", !fill_picture(&dist, c, frame, true));
         mu_assert("vmaf_read_pictures failed", !vmaf_read_pictures(vmaf, &ref, &dist, frame));
     }
     mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
@@ -298,6 +319,21 @@ static char *test_vif_10bit_identical(void)
     return compare(&c, NULL);
 }
 
+/* ADR-1769 K1: the zero-copy workload's frame size, 10 bits, with every debug
+ * sum. Scale 0 runs the tiled horizontal kernel over 400 x 60 work-groups. */
+static char *test_vif_3840x1600_10bit_identical(void)
+{
+    static const VifCase c = {.name = "3840x1600 10-bit",
+                              .bpc = 10u,
+                              .w = 3840u,
+                              .h = 1600u,
+                              .noise = 0x13C5u,
+                              .option = "debug",
+                              .n_keys = 15u,
+                              .keys = {DEBUG_KEYS}};
+    return compare(&c, NULL);
+}
+
 /* vif_skip_scale0 must reach the emission site, not just the aggregate: the
  * CPU never computes scale 0 in this mode and publishes 0.0 for its score.
  * The score is filed under the derived key: the alias of
@@ -349,14 +385,21 @@ static char *test_vif_default_outputs_are_the_cpu_set(void)
     return NULL;
 }
 
-char *run_tests(void)
+static char *run_tests_identical(void)
 {
-    mu_run_test(test_vif_sycl_registered);
     mu_run_test(test_vif_scales_identical);
     mu_run_test(test_vif_debug_outputs_identical);
     mu_run_test(test_vif_gain_limit_identical);
     mu_run_test(test_vif_10bit_identical);
+    mu_run_test(test_vif_3840x1600_10bit_identical);
     mu_run_test(test_vif_skip_scale0_identical);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    mu_run_test(test_vif_sycl_registered);
+    mu_run_test(run_tests_identical);
     mu_run_test(test_vif_default_outputs_are_the_cpu_set);
     return NULL;
 }
