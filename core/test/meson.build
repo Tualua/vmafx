@@ -338,6 +338,15 @@ test('test_cuda_kernel_source_contract',
     timeout : 30,
 )
 
+# T-CUDA-WARP-REDUCE-UB-2026-10-05: every lane of a warp reaches the full-mask
+# warp reductions, which shift no signed word (device-free).
+test('test_cuda_warp_reduce_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_warp_reduce_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1377 / ADR-1381 / ADR-1382: device-free source guard for the HIP RC3
 # parity design (diff-first motion SAD, one host wait per frame, tile and ADM
 # row clamps, vif_hip CPU fallback, CPU option helpers), with a planted

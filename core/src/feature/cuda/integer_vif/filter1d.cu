@@ -432,7 +432,9 @@ __device__ __forceinline__ void vif_hori_statistics(const VifHoriSums<vpt> &s, i
 }
 
 /* Warp-reduce the thread's seven accumulators and add each warp's sums to the
- * frame accumulators. */
+ * frame accumulators. Every lane of the warp calls it, a lane past the plane
+ * edge with zeros: warp_reduce() shuffles with the full mask
+ * (T-CUDA-WARP-REDUCE-UB-2026-10-05). */
 __device__ __forceinline__ void vif_hori_flush_accums(int64_t *thread_accum_i64, vif_accums *accum)
 {
     for (int i = 0; i < 7; ++i) {
@@ -510,11 +512,11 @@ vif_hori_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift_round_HP, int
     }
     __syncthreads();
 
+    union {
+        vif_accums thread_accum;
+        int64_t thread_accum_i64[7] = {0};
+    };
     if (y < h && x_start < w) {
-        union {
-            vif_accums thread_accum;
-            int64_t thread_accum_i64[7] = {0};
-        };
         VifHoriSums<val_per_thread> sums = {};
         const uint16_t *filt = vif_filt.filter[filt_row];
         const uint16_t *filt_rd = vif_filt.filter[(fwidth_rd > 0) ? filt_row + 1 : filt_row];
@@ -532,8 +534,12 @@ vif_hori_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift_round_HP, int
         }
         vif_hori_statistics<val_per_thread>(sums, x_start, w, h, add_shift_round_HP, shift_HP,
                                             vif_enhn_gain_limit, thread_accum);
-        vif_hori_flush_accums(thread_accum_i64, accum);
         vif_hori_store_rd<val_per_thread>(buf, sums, y, x_start, w, h);
+    }
+    /* y is the same for the whole block; the lanes past the plane edge add
+     * zeros, so every lane of a warp reaches the full-mask shuffles. */
+    if (y < h) {
+        vif_hori_flush_accums(thread_accum_i64, accum);
     }
 }
 

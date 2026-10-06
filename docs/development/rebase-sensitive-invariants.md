@@ -1076,9 +1076,17 @@ backend within it.
   `vif_log2_table_generate()`'s values through
   `vmaf_cuda_vif_upload_log2_table()` before any frame is submitted. When
   upstream changes `vif_statistics.cuh` or `filter1d.cu`, keep the lookup and
-  do not bring `log_generate()` back; `filter1d.cu` itself is untouched by
-  the fork. `core/test/test_cuda_vif_log2_contract.py` guards it without a
-  device, `test_cuda_vif_log2_table` on one.
+  do not bring `log_generate()` back. `core/test/test_cuda_vif_log2_contract.py`
+  guards it without a device, `test_cuda_vif_log2_table` on one.
+
+- **Every lane of a warp reaches the CUDA warp reductions (T-CUDA-WARP-REDUCE-UB-2026-10-05)**:
+  `warp_reduce()` / `warp_reduce_u64()` (`core/src/cuda/cuda_helper.cuh`) shuffle
+  with the full mask, so `vif_hori_kernel()` in `cuda/integer_vif/filter1d.cu` calls
+  `vif_hori_flush_accums()` after the per-lane `y < h && x_start < w` branch, the
+  lanes past the plane edge adding zeros; upstream keeps the flush inside it. And
+  `warp_reduce(int64_t)` adds through `warp_reduce_u64()` on the unsigned bits: do not
+  bring back the two-halves form, which shifts a negative word left.
+  `core/test/test_cuda_warp_reduce_contract.py` guards both without a device.
 
 - **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
   the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default

@@ -59,6 +59,13 @@ invariant: vif_cuda: 16-pixel minimum, CPU log2 table, names before clearing ena
   verify on device: `test_cuda_exact_twins`, `test_cuda_vif_parity`, `vif`
   gate cell (tolerance 0).
 
+- **`vif_hori_flush_accums()` runs after the per-lane edge branch**
+  (T-CUDA-WARP-REDUCE-UB-2026-10-05): `warp_reduce()` shuffles with the full
+  mask, so every lane of the warp must reach it; a lane past the plane edge
+  flushes its zeroed accumulators. The union of accumulators is declared before
+  the branch. `core/test/test_cuda_warp_reduce_contract.py` reports a flush
+  inside the branch.
+
 - **Residual variance via `vif_sv_sq()` (ADR-1561).** Kernel defines
   `VMAF_IVIF_FUNC` as `static __device__ __forceinline__` and includes
   `feature/integer_vif_sv_sq.h`; `sv_sq` is `uint32_t`. No raw

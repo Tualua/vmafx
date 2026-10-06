@@ -41,6 +41,16 @@ Fork-only files: `core/src/picture_sample_range.{c,h}`, `core/test/test_sample_r
 `init_cli_context()` (`core/tools/vmaf.cpp`). An upstream sync that touches `vmaf_read_pictures()` keeps
 the check after `validate_pic_params()` and before any extractor. See
 `core/AGENTS.d/sample-range-check.md`.
+## CUDA warp reductions reached by every lane, on unsigned words (2026-10-06)
+
+`fix/cuda-warp-reduce-defined`. Upstream Netflix/vmaf calls the integer VIF horizontal flush
+(`warp_reduce()` of the seven accumulators) inside `if (y < h && x_start < w)` in
+`cuda/integer_vif/filter1d.cu`, and builds `warp_reduce(int64_t)` in `cuda_helper.cuh` from two
+shuffled halves with `(x >> 32) << 32`. The fork calls `vif_hori_flush_accums()` after the branch
+(every lane of a warp reaches the full-mask shuffles; the lanes past the edge add zeros) and adds
+the 64-bit words as unsigned values through `warp_reduce_u64()`. A sync that touches either file
+keeps the fork's form. Outputs are bit-identical (integer sums). See
+`docs/development/rebase-sensitive-invariants.md` and `core/src/feature/cuda/AGENTS.d/vif.md`.
 
 ## Integer ADM: scale-0 contrast-masking rows summed unsigned; GPU gain product bounded before narrowing (2026-10-05)
 

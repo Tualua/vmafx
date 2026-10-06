@@ -74,7 +74,7 @@ it are named in the row.
 | `uint` moment-plane and term indices | Metal | `float_vif` with `vif_prescale` above 2.55 at 16K; four extractors past 16K | `T-METAL-UINT-PLANE-INDEX-2026-10-05`, open |
 | Samples above `2^bpc - 1` wrap integers the CPU keeps wide or truncates | CPU, CUDA, HIP, SYCL, Metal | any size, out-of-range input only | `T-OUT-OF-RANGE-SAMPLES-TWIN-DIVERGENCE-2026-10-05`, closed (contract and opt-in check, ADR-1918) |
 | Integer ADM scale-0 CSF magnitude `flt` stored in int16 | CPU and AVX-512 wrap, AVX2 saturates, so AVX2 differs from the scalar code | an h/v CSF weight from 43,901 to the ADR-1472 limit of 46,603 | `T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05`, open |
-| Full-mask warp shuffle in a divergent branch; left shift of a negative `long long` | CUDA | any size | `T-CUDA-WARP-REDUCE-UB-2026-10-05`, open |
+| Full-mask warp shuffle in a divergent branch; left shift of a negative `long long` | CUDA | any size | `T-CUDA-WARP-REDUCE-UB-2026-10-05`, fixed |
 
 Not defects, recorded as DEPENDS: the CUDA motion batch counter narrows the
 frame index to `int` and needs 2^31 frames (414 days at 60 fps). Samples
