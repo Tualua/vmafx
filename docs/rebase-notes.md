@@ -788,6 +788,9 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
   `float_vif_gpu_common.h` use unsigned shift counts and `struct X {...};` with a C-only
   `typedef` (the CUDA, SYCL, Metal and C hosts include them). Keep both forms on a
   rebase.
+## rc.3 is cut without outside-hardware reports (ADR-1707, 2026-10-05)
+
+`docs/rc3-exit-without-outside-hardware`. no rebase impact: docs only (ADR, ledger disposition, changelog fragment).
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 

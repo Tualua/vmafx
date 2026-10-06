@@ -74,7 +74,7 @@ The user-facing version of this map is [the roadmap](../roadmap.md).
 | --- | --- | --- |
 | `v1.0.0-rc.1` (RC1) | Release-blocking correctness is closed or explicitly deferred, required checks pass on the exact head, and outside testers can run the bounded hardware-validation/report path | Final performance or production-trained model quality |
 | `v1.0.0-rc.2` (RC2) | The dependency and fix train since rc.1 meets the RC1 bar: no confirmed release blocker or untriaged `docs/state.md` row, required checks pass on the exact head, and the tester report path still works | Final performance or production-trained model quality |
-| `v1.0.0-rc.3` (RC3) | Twin exactness: every GPU and SIMD twin returns the CPU extractor's scores bit for bit or carries a measured tolerance recorded in an ADR, 8K cells included; no SYCL kernel uses scratch memory; no extractor or twin overflows at 8K or 16K with 16-bit samples (ADR-1880) | Performance, or production-trained model quality |
+| `v1.0.0-rc.3` (RC3) | Twin exactness: every GPU and SIMD twin returns the CPU extractor's scores bit for bit or carries a measured tolerance recorded in an ADR, 8K cells included; no SYCL kernel uses scratch memory; no extractor or twin overflows at 8K or 16K with 16-bit samples (ADR-1880). Rows that only a device the project does not own can close (unreached CUDA and HIP architectures, Xe-LP, the Windows GPU builds) are carried past rc.3 with a stated reason ([ADR-1707](../adr/1707-rc3-exit-without-outside-hardware.md)) | Performance, production-trained model quality, or exactness on a device the release notes list as not yet verified |
 | `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged; a device-resident frame is scored through the import API with fences and no host copy of pixel data ([ADR-1829](../adr/1829-rc4-zero-copy-import.md)); the new VMAFx API and its generated surfaces, the VMAFx-named FFmpeg filters and provenance on every score pass with the golden-data gate run through the compatibility library ([ADR-1868](../adr/1868-candidate-map-2026-10-05.md)) | Performance, or production-trained model quality |
 | `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins, host code and tools, with `libgpudispatch` extracted (it folds in the per-backend import code RC4 wrote); the new metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+, HDR-SSIM, HDR-MS-SSIM, XPSNR) and the Metal SpEED twins are written once on it, each twin exact or within a measured libm bound; device-targeted scoring (device profiles mapped onto `nvd` / `rdh`, one decode scored for many targets, ADR-1880) | Performance, or production-trained model quality |
 | `v1.0.0-rc.6` (RC6) | The checked-in GPU capability table matches the vendor toolchains (CI drift check), dispatch and kernel parameters read it, and every kernel, the RC5 twins included, passes the static audit for every target; the table declares each backend's and device's format envelope (up to 16K with measured memory limits, 8 to 16 bits, chroma layouts, odd and portrait sizes), every row test-backed (ADR-1880) | Measured performance on any device |
@@ -1200,6 +1200,13 @@ Two different surfaces, produced two different ways:
 | --- | --- | --- |
 | GitHub Release body | GitHub, from merged pull requests | Labels, via [`.github/release.yml`](../../.github/release.yml) |
 | `CHANGELOG.md` | `scripts/release/concat-changelog-fragments.sh`, from `changelog.d/` | `changelog.d/` subdirectory |
+
+The GitHub body has no slot for hand-written text. A statement the release
+must carry that no pull request title expresses, such as the rc.3 table of devices
+verified and not yet verified ([ADR-1707](../adr/1707-rc3-exit-without-outside-hardware.md)),
+lives in a `changelog.d/` fragment (so `CHANGELOG.md` has it) and the release
+publisher adds it to the release page with `gh release edit --notes-file`, keeping
+the generated body.
 
 Because GitHub groups the release body **by label**,
 [`.github/workflows/pr-type-label.yml`](../../.github/workflows/pr-type-label.yml)

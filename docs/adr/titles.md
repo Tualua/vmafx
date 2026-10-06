@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1291), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1292), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5091,6 +5091,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 ## ADR-1701: Build and test the tester image every night on master
 
 [1701-nightly-tester-image-build](1701-nightly-tester-image-build.md)
+
+## ADR-1707: Cut v1.0.0-rc.3 without waiting for outside-hardware reports
+
+[1707-rc3-exit-without-outside-hardware](1707-rc3-exit-without-outside-hardware.md)
 
 ## ADR-1755: The feature collector owns the models it mounts
 
