@@ -3326,6 +3326,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
 The `vmaf` command-line tool now exits with the same status on every platform: a libvmaf error code modulo 256 (`-EINVAL` is 234). On Windows the raw negative 32-bit code used to leak out and a POSIX shell read it as something else.
 
 
+- **`test_cli_exit_status` passes on Windows and macOS.** It expected Linux's
+  `ENOSYS` (38) in one case; the expected status is now computed from the
+  platform's value (`256 - ENOSYS`), so the Windows legs no longer fail on a
+  correct exit status.
+
+
 - **`--feature <name>` now runs on the GPU that `--backend` names.**
   `vmaf --backend sycl --feature ciede` used to initialise the SYCL device and
   compute `ciede2000` with the CPU extractor, one frame at a time, while the
