@@ -853,6 +853,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `docs/development/pre-commit-hooks.md`, "clang-format reads `.hip` and `.metal`".
 
 
+- `docs/state.md`: the two open Pelorus rows (the world-writable x265 fixture and the
+  narrow `fopen` of the qp-report reader on Windows) are closed. Both were fixed in
+  `VMAFx/pelorus` (issues #60 to #62) and are in the vendored mirror, which
+  `scripts/sync-pelorus-interop.sh` reports as free of drift against a fresh clone.
+
+
 - The ten products that CodeQL's `cpp/integer-multiplication-cast-to-long`
   reported after the upstream-parity reverts (ADR-1475, ADR-1476, ADR-1488) in
   `ciede.c`, `third_party/xiph/psnr_hvs.c`, `x86/psnr_hvs_avx2.c`,
