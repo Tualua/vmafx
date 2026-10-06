@@ -227,7 +227,8 @@ const target = 'Dev Container Build';
 const baseline = input.required.filter(name => name !== target).map(completed);
 const noise = Array.from({length: 100 - baseline.length}, (_, i) => completed(`noise-${i}`));
 const github = {rest: {
-  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(origin).toISOString()}})},
+  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(origin).toISOString()}}),
+    listWorkflowRunsForRepo: async () => ({data: {workflow_runs: []}})},
   checks: {listForRef: async ({page = 1}) => {
     if (input.mode === 'pagination') {
       return {data: {check_runs: page === 1 ? baseline.concat(noise) :

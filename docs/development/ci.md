@@ -267,6 +267,17 @@ for the named sibling check runs to reach a terminal state and accept
 `success`, `skipped` or `neutral` per check. Results predating the current run
 are excluded, so skipped draft-era checks cannot mask ready validation.
 
+On a master push the aggregator reads only the push's own check runs: a check
+run whose check suite belongs to a pull-request workflow run on the same commit
+is left out. The merge train lands by fast-forward, so a landed commit is also
+the head of its pull request, and the train cancels that pull request's runs
+once it lands; without the filter those cancelled runs of the pull-request-only
+gates (`Deliverables Checklist`, `docs/state.md Gate`, `Silent-Revert Guard`
+and others) read as failures of every master push. Check runs of other apps,
+such as code scanning, always count. A pull-request aggregator reads every
+check run on its head as before. `scripts/ci/tests/test_aggregator_event_scope.py`
+runs the embedded script on both events.
+
 ### Release legs
 
 Three contexts gate what the release and tester workflows build on a pull

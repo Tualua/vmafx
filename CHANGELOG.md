@@ -3112,6 +3112,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ADR and tag page was still in the navigation of every page.
 
 
+- **The master `Required Checks Aggregator` judges the push, not the pull
+  request on the same commit.** A pull request the merge train lands by
+  fast-forward shares its head commit with the master push, and its cancelled
+  runs of the pull-request-only gates counted as failures of every master push.
+  Outside a pull request the aggregator now leaves out check runs of
+  pull-request workflow runs (`docs/development/ci.md`).
+
+
 - **The `vmaf-train` (`ai/`) and `vmaf-dev-llm` wheels build again.** Their
   `force-include` repeated directories the packages already ship, which
   hatchling 1.32 refuses ("A second file is being added to the wheel

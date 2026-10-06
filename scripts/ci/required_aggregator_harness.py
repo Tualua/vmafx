@@ -9,7 +9,7 @@ import json
 import re
 import shutil
 import textwrap
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from scripts.lib.safe_subprocess import run as run_command
@@ -31,7 +31,10 @@ const checks = input.checks.map(c => ({
 }));
 const failures = [];
 const github = {rest: {
-  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}})},
+  actions: {
+    getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
+    listWorkflowRunsForRepo: async () => ({data: {workflow_runs: input.workflowRuns || []}}),
+  },
   checks: {listForRef: async () => ({data: {check_runs: checks}})},
 }};
 const eventName = input.event || 'pull_request';
@@ -77,47 +80,23 @@ def _required_names(script: str) -> list[str]:
     return re.findall(r"'([^']+)'", body)
 
 
-def run_required_aggregator(
-    check_name: str,
-    conclusion: str | None,
-    *,
-    env: Mapping[str, str] | None = None,
-    event: str = "pull_request",
-) -> list[str]:
-    """Run the real Actions JavaScript with one selected check result or absence.
-
-    ``event`` is the triggering event the script sees (``pull_request`` or ``push``).
-    """
-    workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
-    script = _embedded_script(workflow_text)
-    names = _required_names(script)
-    if check_name not in names:
-        raise AssertionError(f"required aggregator must declare {check_name!r}")
-
-    checks = [
+def _synthetic_checks(
+    names: list[str], check_name: str, conclusion: str | None, selected_suite: int
+) -> list[dict[str, object]]:
+    """Every required check succeeds in suite 1; the selected one reports as asked."""
+    return [
         {
             "name": name,
             "conclusion": conclusion if name == check_name else "success",
+            "check_suite": {"id": selected_suite if name == check_name else 1},
         }
         for name in names
         if name != check_name or conclusion is not None
     ]
-    node = shutil.which("node")
-    if node is None:
-        raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
 
-    result = run_command(
-        [node, "-e", _NODE_DRIVER],
-        allowed_executables=(node,),
-        input_data=json.dumps(
-            {"script": script, "checks": checks, "env": dict(env or {}), "event": event}
-        ),
-        text=True,
-        capture_output=True,
-        check=True,
-        timeout_seconds=SUBPROCESS_TIMEOUT_S,
-    )
-    payload: object = json.loads(result.stdout)
+
+def _failure_messages(stdout: str) -> list[str]:
+    payload: object = json.loads(stdout)
     if not isinstance(payload, list):
         raise AssertionError("aggregator driver must return a list of failure messages")
 
@@ -127,3 +106,50 @@ def run_required_aggregator(
             raise AssertionError("aggregator failure messages must be strings")
         failures.append(message)
     return failures
+
+
+def run_required_aggregator(
+    check_name: str,
+    conclusion: str | None,
+    *,
+    env: Mapping[str, str] | None = None,
+    event: str = "pull_request",
+    selected_suite: int = 1,
+    workflow_runs: Sequence[Mapping[str, object]] = (),
+) -> list[str]:
+    """Run the real Actions JavaScript with one selected check result or absence.
+
+    ``event`` is the triggering event the script sees (``pull_request`` or ``push``).
+    Every other required check succeeds in check suite 1; the selected one reports
+    from ``selected_suite``. ``workflow_runs`` are the workflow runs on the commit
+    (``event`` and ``check_suite_id`` each), as the Actions API lists them.
+    """
+    workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
+    script = _embedded_script(workflow_text)
+    names = _required_names(script)
+    if check_name not in names:
+        raise AssertionError(f"required aggregator must declare {check_name!r}")
+
+    checks = _synthetic_checks(names, check_name, conclusion, selected_suite)
+    node = shutil.which("node")
+    if node is None:
+        raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
+
+    result = run_command(
+        [node, "-e", _NODE_DRIVER],
+        allowed_executables=(node,),
+        input_data=json.dumps(
+            {
+                "script": script,
+                "checks": checks,
+                "env": dict(env or {}),
+                "event": event,
+                "workflowRuns": [dict(run) for run in workflow_runs],
+            }
+        ),
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout_seconds=SUBPROCESS_TIMEOUT_S,
+    )
+    return _failure_messages(result.stdout)

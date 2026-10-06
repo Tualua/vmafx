@@ -43,6 +43,17 @@ that mapping its two-minute missing-check grace can fail while legitimate work
 is still running. check-run query must remain paginated: converted
 workflows can put full run above API's 100-item page size.
 
+## A push judges its own check suites
+
+Outside a pull request the aggregator leaves out every check run whose suite
+belongs to a `pull_request` / `pull_request_target` workflow run on the commit
+(`pullRequestSuites()`, re-read every poll). The merge train fast-forwards, so
+a landed commit is also its pull request head and the train cancels those runs;
+counting them failed every master push
+(`T-CI-AGGREGATOR-READS-OTHER-EVENT-CHECKS-2026-10-06`). Do not widen the filter
+to workflow_dispatch or to suites no workflow run owns (code scanning).
+`scripts/ci/tests/test_aggregator_event_scope.py` runs the embedded script.
+
 ## CI job display names and aggregator parity
 
 All workflow job and matrix display names (`name:`) target $\le 30$ characters,

@@ -203,7 +203,8 @@ class VirtualDate extends Date { static now() { clock += 180000; return clock; }
 const failures = [];
 const checks = input.checks.map(c => ({...c, status: 'completed', started_at: new Date(now).toISOString()}));
 const github = {rest: {
- actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}})},
+ actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
+  listWorkflowRunsForRepo: async () => ({data: {workflow_runs: []}})},
  checks: {listForRef: async () => ({data: {check_runs: checks}})}
 }};
 const context = {eventName: input.event, sha: 'abc', repo: {owner:'test',repo:'test'},
