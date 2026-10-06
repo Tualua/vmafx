@@ -2950,6 +2950,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   every dispatch level ([features](docs/metrics/features.md)).
 
 
+- **`test_adm_decouple_recip_cuda` / `_hip` build with MSVC and finish on
+  MinGW.** The host build of the twin's header named `__builtin_clz`, which
+  cl.exe does not have, without the `compat_builtin.h` shim (C3861 on every
+  Windows MSVC leg), and its CPU helpers refilled the 65 537-entry
+  `div_lookup` table for every sample on Windows, past the 120 s timeout on
+  the UCRT64 leg. `check-msvc-clz-shim.sh` now requires the shim in every host
+  file that names `__builtin_clz`.
+
+
 - **Integer ADM gives one result for a non-integer `adm_enhn_gain_limit`,
   whichever code path computes it.** The scalar code bounds a restored sample
   with the double product of the sample and the limit, truncated toward zero.

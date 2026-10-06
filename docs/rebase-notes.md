@@ -41,6 +41,12 @@ branches on `vmaf_hip_device_count()` like the state case.
 
 `fix/metal-iosurface-selftest-leak`. no rebase impact: fork-only test (`core/test/test_metal_iosurface_import_parity.c`);
 both builds of `imported_psnr()` consume the planar pair they are given.
+## `test_adm_decouple_recip` builds and runs on Windows (2026-10-06)
+
+`fix/adm-decouple-recip-test-windows`. no rebase impact: fork-only test files and CI check. A host C or C++ file
+that names `__builtin_clz` keeps `#include "feature/compat_builtin.h"` (`scripts/ci/check-msvc-clz-shim.sh`
+enforces it), and a test helper fills `div_lookup` once: on `_WIN32` `div_lookup_generator()` refills the table on
+every call.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 

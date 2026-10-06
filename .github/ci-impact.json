@@ -65,6 +65,7 @@
     ".gitleaks.toml",
     ".gosec.json",
     ".iwyu.imp",
+    ".mailmap",
     ".markdownlint.json",
     ".nvim.lua",
     ".pre-commit-config.yaml",
