@@ -1658,6 +1658,7 @@ if is_cuda_enabled
         'cpu.h',
         'cuda/common.h',
         'cuda/cuda_helper.cuh',
+        'cuda/cuda_device_ptr.cuh',
         'dict.h',
         'feature/compat_builtin.h',
         'feature/feature_collector.h',

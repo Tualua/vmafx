@@ -862,6 +862,23 @@ Pelorus mirror entries mirror `scripts/ci/pelorus-mirror-paths.txt`
 ## rc.3 is cut without outside-hardware reports (ADR-1707, 2026-10-05)
 
 `docs/rc3-exit-without-outside-hardware`. no rebase impact: docs only (ADR, ledger disposition, changelog fragment).
+## CUDA lane clang-tidy cleanup (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-cuda-1`. Lint refactor of CUDA kernels; no behaviour change
+(scores identical, sm_89 SASS identical or differing by commutative operand order).
+
+- `core/src/cuda/cuda_device_ptr.cuh` is new: `VMAF_CUDA_DPTR(T, address)` replaces
+  `reinterpret_cast` of a `CUdeviceptr`. It is a macro because an inline function
+  loses `ld.global.nc` loads. An upstream sync that brings a kernel with a
+  `reinterpret_cast<T *>(a.field)` converts it.
+- No designated initializers in `.cu` / `.cuh` (nvcc MSVC host frontend,
+  `preflight.sh --stage msvcism`): aggregates are filled field by field.
+- `integer_vif/vif_statistics.cuh`: `vif_statistic_calculation()` is split into
+  `vif_sigmas()`, `vif_gain()`, `vif_accumulate_log()` and `vif_statistic_pixel()`
+  and loses its unused `h` parameter; `filter1d.cu` follows. A Netflix change to the
+  statistic is ported into the helpers.
+- Source-text contract tests (`test_cuda_*_contract.py`, `test_integer_vif_sv_sq_contract.py`)
+  follow the new spelling; their assertions are unchanged.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 

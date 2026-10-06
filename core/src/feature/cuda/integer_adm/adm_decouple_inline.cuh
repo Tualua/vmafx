@@ -177,7 +177,6 @@ __device__ __forceinline__ int decouple_angle_flag_s123(int32_t oh, int32_t ov, 
     const int64_t t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
     return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, COS_1DEG_SQ);
 }
-
 } // namespace
 
 #endif /* ADM_DECOUPLE_INLINE_CUH_ */

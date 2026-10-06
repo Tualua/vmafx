@@ -42,9 +42,9 @@ FIXTURE_SHA256 = "be2341f63ce741510d600479c78313b1331b4070a505e3ed0bb1bfc3f30fff
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 TERM_STORES = (
     "const size_t window = (size_t)y * w_final + x;",
-    "reinterpret_cast<double *>(l_terms.data)[window] = terms.l;",
-    "reinterpret_cast<double *>(c_terms.data)[window] = terms.c;",
-    "reinterpret_cast<float *>(s_terms.data)[window] = (float)terms.s;",
+    "VMAF_CUDA_DPTR(double, l_terms.data)[window] = terms.l;",
+    "VMAF_CUDA_DPTR(double, c_terms.data)[window] = terms.c;",
+    "VMAF_CUDA_DPTR(float, s_terms.data)[window] = (float)terms.s;",
 )
 # A shuffle of a double or a shared array of doubles: a device reduction.
 DOUBLE_REDUCTION = re.compile(r"__shfl_\w+\s*\(|__shared__\s+double\b")
@@ -183,7 +183,7 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
     def test_unstored_term_is_detected(self) -> None:
         sources = _sources()
         sources[KERNEL] = sources[KERNEL].replace(
-            "reinterpret_cast<double *>(c_terms.data)[window] = terms.c;", "(void)terms.c;", 1
+            "VMAF_CUDA_DPTR(double, c_terms.data)[window] = terms.c;", "(void)terms.c;", 1
         )
         self.assertTrue(any("raster position" in item for item in _contract_failures(sources)))
 

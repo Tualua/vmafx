@@ -23,7 +23,7 @@
 #ifdef HAVE_CUDA
 #ifdef DEVICE_CODE
 #include <cuda.h>
-typedef struct VmafCudaState VmafCudaState;
+struct VmafCudaState; /* C++ only (DEVICE_CODE): the tag is the type name */
 #else
 #include <ffnvcodec/dynlink_cuda.h>
 #include "libvmaf/libvmaf_cuda.h"

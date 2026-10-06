@@ -122,7 +122,7 @@ static inline int vmaf_cuda_result_to_errno(int cu_err_code)
 #ifdef DEVICE_CODE
 namespace
 {
-typedef unsigned long long int uint64_cu;
+using uint64_cu = unsigned long long int;
 
 /* Warp sum of non-negative 64-bit terms whose total may pass INT64_MAX. Every
  * lane of the warp must call it: the shuffles take the full mask. */

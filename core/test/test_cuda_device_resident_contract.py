@@ -267,8 +267,8 @@ class CudaKernelSourceContractTest(unittest.TestCase):
         # The kernels' own log2 before ADR-1477: fp32 pairs rounded to float.
         sources = _sources()
         sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
-            "    reinterpret_cast<float *>(a.var)[idx] = variance;",
-            "    reinterpret_cast<float *>(a.var)[idx] = speed_log2(variance);",
+            "    VMAF_CUDA_DPTR(float, a.var)[idx] = variance;",
+            "    VMAF_CUDA_DPTR(float, a.var)[idx] = speed_log2(variance);",
             1,
         )
         self.assertTrue(
@@ -458,9 +458,9 @@ class CudaKernelSourceContractTest(unittest.TestCase):
     def test_speed_device_sine_is_detected(self) -> None:
         sources = _sources()
         sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
-            "template <class Source>\nstatic __device__ float scale_lanczos(",
-            "static __device__ float lanczos_weight(float x)\n{\n    return sinpif(x);\n}\n\n"
-            "template <class Source>\nstatic __device__ float scale_lanczos(",
+            "template <class Source>\n__device__ float scale_lanczos(",
+            "__device__ float lanczos_weight(float x)\n{\n    return sinpif(x);\n}\n\n"
+            "template <class Source>\n__device__ float scale_lanczos(",
             1,
         )
         self.assertTrue(any("device sine" in item for item in _contract_failures(sources)))
