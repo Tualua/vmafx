@@ -1892,20 +1892,6 @@
       },
       "target": "0278-t7-5-nolint-sweep.md"
     },
-    "0279": {
-      "sites": {
-        "ai/scripts/calibrate_phase_f_recipes.py": 2,
-        "cmd/vmafx-tune/cmd/predict.go": 1,
-        "cmd/vmafx-tune/cmd/recommend.go": 2,
-        "pkg/conformal/conformal.go": 1,
-        "pkg/tune/auto/confidence.go": 1,
-        "pkg/uncertainty/uncertainty.go": 1,
-        "tools/vmaf-tune/tests/test_auto_confidence_aware.py": 1,
-        "tools/vmaf-tune/tests/test_ladder_uncertainty.py": 1,
-        "tools/vmaf-tune/tests/test_recommend_uncertainty.py": 2
-      },
-      "target": "0279-vmaf-tune-codec-adapter-libaom.md"
-    },
     "0281": {
       "sites": {
         "tools/vmaf-tune/tests/test_codec_adapter_qsv.py": 1
@@ -2787,13 +2773,22 @@
     },
     "0393": {
       "sites": {
+        "ai/scripts/calibrate_phase_f_recipes.py": 2,
+        "cmd/vmafx-tune/cmd/predict.go": 1,
+        "cmd/vmafx-tune/cmd/recommend.go": 2,
+        "pkg/conformal/conformal.go": 1,
         "pkg/recommend/recommend.go": 1,
+        "pkg/tune/auto/confidence.go": 1,
+        "pkg/uncertainty/uncertainty.go": 1,
         "tools/vmaf-tune/src/vmaftune/auto.py": 5,
         "tools/vmaf-tune/src/vmaftune/cli.py": 4,
         "tools/vmaf-tune/src/vmaftune/conformal.py": 1,
         "tools/vmaf-tune/src/vmaftune/ladder.py": 2,
         "tools/vmaf-tune/src/vmaftune/recommend.py": 3,
-        "tools/vmaf-tune/src/vmaftune/uncertainty.py": 2
+        "tools/vmaf-tune/src/vmaftune/uncertainty.py": 2,
+        "tools/vmaf-tune/tests/test_auto_confidence_aware.py": 1,
+        "tools/vmaf-tune/tests/test_ladder_uncertainty.py": 1,
+        "tools/vmaf-tune/tests/test_recommend_uncertainty.py": 2
       },
       "target": "0393-fr-regressor-v2-probabilistic.md"
     },

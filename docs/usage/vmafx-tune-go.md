@@ -311,7 +311,7 @@ and their corpora stay comparable. See
 
 ### recommend uncertainty flags
 
-These flags implement ADR-0279.
+These flags implement ADR-0393.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -1735,7 +1735,7 @@ The Go port landed in stages. Every row below is merged unless noted.
 | Encoder introspection | `benchmark` and `encode-profile`; `pkg/benchmark`, `pkg/codecadapter`, `pkg/encodeprofile`, `pkg/pyjson` | ADR-0643 (profile contract) |
 | Stage 5 (corpus, auto, sidecar) | `corpus`, `auto` and `sidecar`; `pkg/codecadapter`, `pkg/corpus`, `pkg/pyjson`, `pkg/tune/predictor`, `pkg/tune/sidecar`, `pkg/tune/auto`, `pkg/tune/executor` | ADR-1125 ([#1153](https://github.com/VMAFx/vmafx/pull/1153)) |
 | Stage 5 (per-shot) | `tune-per-shot`; `pkg/pershot`, `pkg/scorebackend`, the codec-adapter table, the raw-YUV scorer | ADR-1124 |
-| Stage 5b | `conformal` CLI wiring, shipped as `predict --with-uncertainty` and `recommend --with-uncertainty` | ADR-0279 |
+| Stage 5b | `conformal` CLI wiring, shipped as `predict --with-uncertainty` and `recommend --with-uncertainty` | ADR-0393 |
 | Stage 6 | `fast` subcommand, `pkg/fast`, `pkg/conformal`, `pkg/scorebackend`. The smoke path is complete; the production path is blocked on ONNX named inputs ([Production-mode blocker](#production-mode-blocker-onnx-named-inputs)). | ADR-0276 / ADR-0304 |
 | Stage N | Feature parity, then rename the binary to `vmafx-tune` | Planned |
 

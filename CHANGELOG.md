@@ -3340,6 +3340,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `docs/api/models-and-features.md` and `docs/api/rust-context-close.md`.
 
 
+- The help text of `vmafx-tune predict --with-uncertainty` and
+  `recommend --with-uncertainty`, and the docs, comments and test docstrings
+  around the conformal intervals, cite ADR-0393 (the probabilistic head and
+  conformal scaffold) instead of ADR-0279 (the libaom codec adapter), which an
+  earlier renumbering left behind.
+
+
 - **The controller evicts silent nodes after startup and returns their
   running jobs to the queue.** The node registry's reaper stopped about 15 s
   after startup, because it was tied to the fx start context, which fx lets
