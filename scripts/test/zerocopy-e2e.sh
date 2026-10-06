@@ -46,8 +46,8 @@ REPEAT=1
 CB_REPEAT="${CB_REPEAT:-20}"
 LEG_TIMEOUT="${LEG_TIMEOUT:-600}"
 SCORE_FMT="${SCORE_FMT:-%.17g}"
-QSV_INIT=(-init_hw_device vaapi=va0:/dev/dri/renderD128
-  -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0)
+# shellcheck source=/dev/null  # lib/qsv.sh (QSV_INIT)
+source "$HERE/lib/qsv.sh"
 
 usage() {
   cat >&2 <<'EOF'

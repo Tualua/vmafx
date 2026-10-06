@@ -420,6 +420,7 @@ sycl-zerocopy-contract:
 	$(call require-tool,pytest,install the hash-locked pytest of requirements/locks/pytest-timeout.txt into a venv)
 	bash ffmpeg-patches/test/check-sycl-feature-routing.sh
 	pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py
+	pytest -p no:cacheprovider -q scripts/test/test_zerocopy_throughput_report.py
 
 lint-sh: ffmpeg-input-contract
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)
