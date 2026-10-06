@@ -10,6 +10,14 @@ search:
 ## SYCL twin option cases proven on a device (2026-10-06)
 
 `test/rc3-sycl-twin-option-regression`. no rebase impact: ledger, changelog fragment and this note only; no source or test file changed.
+## SYCL device AddressSanitizer option (2026-10-06)
+
+`test/rc3-sycl-device-sanitizer`. Fork-only: `core/meson_options.txt` gains `sycl_device_asan` and
+`core/src/meson.build` defines `sycl_asan_args` between the SYCL toolchain selection and the MSVC
+device-link block, appends it to `sycl_toolchain_args` and `sycl_link_args`, and to the
+per-translation-unit AOT override (`tu_toolchain_args`). Upstream Netflix/vmaf has no SYCL build, so
+a sync cannot conflict; a rebase onto master keeps the three appends together with
+`core/test/test_sycl_device_asan_option_contract.py`. See [ADR-1930](adr/1930-sycl-device-asan-option.md).
 
 ## `float_vif` and SpEED refuse a prescaled plane past the `int` index (2026-10-05)
 

@@ -1975,6 +1975,23 @@ if is_sycl_enabled
         endif
     endif
 
+    # Device AddressSanitizer (opt-in, icpx, Linux). cpp_args never reach these
+    # custom-target compiles, so `-Dcpp_args=-Xarch_device -fsanitize=address`
+    # instruments nothing and still loads the sanitizer layer through the link
+    # line (T-SYCL-DEVICE-SANITIZER-UNPROVEN-2026-10-05): the flag has to be on
+    # every SYCL TU's own command line and on the link. -g alone drops icpx's
+    # default -O2 to -O0, and an -O0 instrumented kernel never completes on the
+    # Arc A380 (the run hangs), so -O2 is spelled out.
+    sycl_asan_args = []
+    if get_option('sycl_device_asan')
+        if is_sycl_acpp or cc.get_argument_syntax() == 'msvc'
+            error('sycl_device_asan needs the icpx driver on Linux (device AddressSanitizer of the DPC++ compiler).')
+        endif
+        sycl_asan_args = ['-Xarch_device', '-fsanitize=address', '-g', '-O2']
+        sycl_toolchain_args += sycl_asan_args
+        message('SYCL device AddressSanitizer: on (sycl_device_asan)')
+    endif
+
     # ADR-1364: with an MSVC-syntax toolchain (icx-cl on Windows) Meson links
     # every target with link.exe itself, never through the icpx driver. link.exe
     # ignores -fsycl (LNK4044), so nothing wraps or registers the device images
@@ -2178,6 +2195,7 @@ if is_sycl_enabled
     # build options. The MSVC build passes the pair to its explicit device link
     # instead, with the rest of sycl_strict_fp_args.
     sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : (['-fsycl'] + sycl_fp32_prec_args)
+    sycl_link_args += sycl_asan_args
     # ADR-1590: the link also compresses that SPIR-V image; the spir64_gen
     # images of the objects it links are compressed already. The MSVC build
     # compresses at its explicit device link instead.
@@ -2481,9 +2499,9 @@ if is_sycl_enabled
             if tu_aot_list.length() > 0
                 tu_toolchain_args = sycl_compress_args + sycl_icpx_aot_base_args + [
                     '-device ' + ','.join(tu_aot_list),
-                ]
+                ] + sycl_asan_args
             else
-                tu_toolchain_args = ['-fsycl']
+                tu_toolchain_args = ['-fsycl'] + sycl_asan_args
             endif
             message('SYCL AOT: ' + name + ' excludes ' +
                     ','.join(sycl_icpx_aot_igc_skip[name]) +

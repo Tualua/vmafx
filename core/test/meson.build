@@ -167,6 +167,15 @@ test('test_sycl_sub_group_size_contract',
     timeout : 30,
 )
 
+# The device AddressSanitizer option reaches every SYCL compile and the link
+# (T-SYCL-DEVICE-SANITIZER-UNPROVEN-2026-10-05). Device-free.
+test('test_sycl_device_asan_option_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_device_asan_option_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1364: the cross-backend gates read vmaf's JSON by the alias.c name.
 test('test_parity_gate_metric_names',
     import('python').find_installation(),
@@ -6749,6 +6758,19 @@ test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
 test('test_sycl_psnr_parity', test_sycl_psnr_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
+
+# The device AddressSanitizer probe: what the sanitizer reports on this device
+# and what it cannot see (docs/backends/sycl/device-sanitizer.md). Skips (77)
+# without icpx or a Level Zero GPU.
+bash_program = find_program('bash', required : false)
+if bash_program.found()
+    test('test_sycl_device_asan_probe',
+        bash_program,
+        args : [files('../../scripts/dev/sycl_device_asan_check.sh')],
+        suite : ['gpu', 'sycl'],
+        timeout : 300,
+        is_parallel : false)
+endif
 
 # CPU-option parity for the SYCL twins (T-BUG048-GPU-OPTION-PARITY-REMAINDER,
 # SYCL part): psnr_sycl enable_mse / enable_apsnr / reduced_hbd_peak / min_sse,

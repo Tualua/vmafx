@@ -187,6 +187,7 @@ nav:
       - SYCL / oneAPI:
           - Overview: backends/sycl/overview.md
           - AOT targets: backends/sycl/aot.md
+          - Device sanitizer: backends/sycl/device-sanitizer.md
           - Twin notes: backends/sycl/twins.md
           - Zero-copy imports: backends/sycl/zero-copy.md
           - Bundling: backends/sycl/bundling.md
