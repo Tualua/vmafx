@@ -10,6 +10,13 @@ search:
 ## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
 
 `fix/metal-f64-equal-no-libimf`. no rebase impact: fork-only Metal header (`core/src/feature/metal/metal_portable.h`); no upstream file.
+## Praetor pin 04cc813ff054 (2026-10-06)
+
+`chore/praetor-pin-04cc813`, [ADR-2153](adr/2153-praetor-pin-04cc813.md). Fork-only governance files. `PRAETOR_REF` in
+`.github/workflows/standards-gate.yml`, `tools/markdownlint/verify.mjs` and the DevContainer bundle are engine output: take
+master's side on a conflict and regenerate with `adopt --force --lock-source-root <praetor source at the pin>` in a throwaway copy.
+The `exceptions:` block of `.standards.yaml` and `.config/clang-tidy/measured-sources.txt` are generated: after a conflict run
+`python3 scripts/ci/praetor_tidy_coverage.py --write`.
 
 ## CI: the push aggregator reads its own branch's runs (2026-10-06)
 

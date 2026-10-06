@@ -5870,6 +5870,7 @@
         ".config/lint-exceptions.d/spdx.toml": 10,
         ".github/workflows/lint-and-format.yml": 1,
         ".pre-commit-config.yaml": 1,
+        ".standards.yaml": 6,
         "core/src/meson.build": 1,
         "core/test/meson.build": 2,
         "core/test/test_pelorus_interop.c": 1,
@@ -9267,8 +9268,10 @@
     "1428": {
       "sites": {
         ".pre-commit-config.yaml": 2,
+        ".standards.yaml": 24,
         "Makefile": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
+        "scripts/ci/praetor_tidy_coverage.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 2,
         "scripts/dev/relicense_fork_files.py": 1,
         "scripts/docs/generate-exact-twins.py": 1

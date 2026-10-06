@@ -215,6 +215,21 @@ missing tool or toolchain, and an expiry date. An entry fails the check once
 it has expired, when its file is gone, and when a lane reads the file after
 all; extend or delete it, never leave it.
 
+### Praetor's copy of the same facts
+
+Since the pin `04cc813ff054` ([ADR-2153](../adr/2153-praetor-pin-04cc813.md)) praetor's own
+translation-unit gate (`praetorctl audit`, `praetorctl ci tidy-coverage --dir=.`) reads a lane
+file list and the `exceptions` list of `.standards.yaml`. Neither is a second source of truth:
+`python3 scripts/ci/praetor_tidy_coverage.py --write` renders
+`.config/clang-tidy/measured-sources.txt` (the union of every baseline's `measured_sources`) and the
+block of `.standards.yaml` between its `BEGIN` / `END generated` markers (one entry per unit no
+lane measures, from the shared exception list, plus the exact-twin fragments and the included
+HIP header) from the baselines and the exception list above. The pre-commit hook
+`check-praetor-tidy-coverage` fails on a stale rendering. Praetor refuses an exception that
+expires more than 90 days out, so each rendered entry expires on the earlier of its own date and
+`PRAETOR_EXPIRY_CAP` in the script (2027-01-04); renew the cap with the entries. Edit the baselines
+and the exception list, never the generated block.
+
 | Group | Read by | Why the rest is excepted |
 | --- | --- | --- |
 | C, C++ and the device kernels | `cpu`, `clang`, `cuda`, `hip`, `sycl`, `arm64` (the six container lanes) | |

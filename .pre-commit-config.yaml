@@ -518,6 +518,24 @@ repos:
         files: '^(scripts/ci/(check-tidy-coverage\.py|tests/test_check_tidy_coverage\.py)|\.config/lint-exceptions\.d/clang-tidy-coverage\.toml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: check-praetor-tidy-coverage
+        # Praetor's clang-tidy coverage gate reads a lane file list and the exceptions of
+        # .standards.yaml. Both are rendered from the sources above (the baselines' measured_sources
+        # and clang-tidy-coverage.toml) by scripts/ci/praetor_tidy_coverage.py: one list, two
+        # renderings. `--write` repairs a stale one.
+        name: Praetor's tidy coverage inputs match the lanes and the exception list
+        entry: python3 scripts/ci/praetor_tidy_coverage.py --check
+        language: system
+        files: '(\.(c|cc|cpp|cxx|cu|hip|mm)|scripts/ci/(tidy-baseline-[a-z0-9]+\.json|praetor_tidy_coverage\.py)|\.config/(lint-exceptions\.d/clang-tidy-coverage\.toml|clang-tidy/measured-sources\.txt)|\.standards\.yaml)$'
+        pass_filenames: false
+
+      - id: test-praetor-tidy-coverage
+        name: The praetor tidy coverage renderer refuses a stale rendering
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_praetor_tidy_coverage.py
+        language: system
+        files: '^(scripts/ci/(praetor_tidy_coverage\.py|tests/test_praetor_tidy_coverage\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-tidy-lane-container
         # ADR-1471: the lanes are measured in the dev container. The lane
         # configuration lives in the Makefile, the hosted job repeats the cpu

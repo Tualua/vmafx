@@ -169,7 +169,15 @@ engine has the flag. CI and `make verify-all` keep the forge read.
 
 ### The current pin
 
-The pin is `0af07a733e65`
+The pin is `04cc813ff054`
+([ADR-2153](../adr/2153-praetor-pin-04cc813.md)): the documentation gate's
+lint time budget (`documentation.lint_timeout_seconds: 240` in
+`.standards.yaml`, measured maximum of a lint child 11.4 s on this
+repository), line-ending-neutral digests, and a clang-tidy translation-unit
+coverage gate whose inputs are rendered from the repository's own tidy lists
+([tidy-lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)).
+
+The previous pin was `0af07a733e65`
 ([ADR-1506](../adr/1506-praetor-pin-move-markdownlint-braces.md)).
 It dropped `markdownlint-cli2` and the `braces` chain from the gate's lock, and
 added praetor's `Go API Compatibility` workflow

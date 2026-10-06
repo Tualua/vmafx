@@ -2230,6 +2230,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ([CI guide](docs/development/ci.md#moving-the-praetor-pin)).
 
 
+- The praetor governance engine moves from `0af07a733e65` to `04cc813ff054` (ADR-2153). The documentation gate gets a lint time budget of 240 s (`documentation.lint_timeout_seconds`, measured maximum of a lint child 11.4 s), which ends the intermittent 120 s failures of `Praetor Documentation Governance`. Praetor's clang-tidy translation-unit coverage gate is fed from the repository's own baselines and exception list by `scripts/ci/praetor_tidy_coverage.py` (hook `check-praetor-tidy-coverage`); 770 of 822 units are read and 52 excused. Engine-written files regenerated: `tools/markdownlint/verify.mjs` and the DevContainer bundle. The HISS baseline stays at 0.
+
+
 - The praetor governance engine moves from `6c772713a133` to `0af07a733e65`
   (ADR-1506). The documentation gate's lock no longer contains `braces`
   (GHSA-vfj7-8cjw-p6xm), which clears the only finding of Scorecard's
