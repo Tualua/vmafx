@@ -262,6 +262,65 @@ so is not bit-exact. Realistic outcomes are well under half of the ceilings.
 The measured irreducibility write-up (success criterion 2) is a likely
 outcome and is cheap: it is this digest plus the user guidance.
 
+## A/B results (plan 13-06)
+
+Plan 13-06 measured every change of plans 13-03 to 13-05 on the same A380 and
+segment, against the pre-phase library, and kept only the measured ones. Each
+variant is a build snapshot: `base` (no phase-13 code), `wait` (C3, with the
+`n_subsample` fix), `c1k3` (plus K3; C1 was not coded), `kern` (plus K1). The
+runs were interleaved and rotated, six 600-frame and six 20-frame runs per
+variant for `vmaf_v0.6.1`. "gpu ms" is the filter's own time per frame over 599
+frames; "steady" uses the calibration formula above on the first, clean block
+of three repeats. Host-side stalls in the second block (GPU idle at 0 MHz while
+a run waited) made its rtime differences unusable; the gpu ms column did not
+move with them (spread at most 0.4 % per variant).
+
+| Variant | Steady ms/frame | Steady fps | gpu ms (6 runs) | Host CPU ms/frame |
+| --- | --- | --- | --- | --- |
+| `base` | 22.57 | 44.3 | 22.39 | 24.8 |
+| `wait` (C3) | 22.53 | 44.4 | 22.38 | 24.6 |
+| `c1k3` (+K3) | 22.69 | 44.1 | 22.33 | 24.8 |
+| `kern` (+K1) | 21.37 | 46.8 | 21.17 | 23.5 |
+
+VTune per frame (100 frames, xpu-offload): the scale-0 VIF horizontal pass went
+from 6.32 ms (`IntegerVifHoriKernel<0,16>`) to 5.33 ms
+(`IntegerVifHoriTiledKernel<0,16>`, SIMD16, no spill); `detile_tile4` from
+0.208 to 0.182 ms per call, two calls per frame. The hardware occupancy and
+local-memory counters (`gpu-hotspots`) need the Metrics Discovery library,
+which the toolchain image does not have.
+
+Verdicts (each with its numbers in the commit message of the revert):
+
+- **K1 kept.** -1.16 ms of gpu time per frame and +6 % steady fps against
+  `c1k3`; `vmaf_4k_v0.6.1` 22.38 to 21.16 ms. It is a third of the 13-05 ISA
+  estimate: the tile load and the unchanged statistic and reduction remain.
+  `vmaf_v1.0.16_3d0h` has no VIF feature and does not change (18.44 to 18.36 ms).
+- **K3 reverted.** -0.05 ms per frame, inside the spread of the rows, and no
+  steady-state gain. On the device its 16-byte stores also failed the new
+  byte-for-byte test on a row that is not a multiple of 4 bytes (67-pixel
+  NV12); the fix was reverted with it. The test stays and passes on the 4-byte
+  kernel.
+- **C3 reverted.** No fps gain and no host CPU drop. With `VMAF_SYCL_TIMING`
+  the frame-start wait (`combined_wait`, 19.4 ms) is gone but the VA import now
+  blocks for about 20.8 ms per frame: the libvmaf collect still waits for every
+  frame, so the host still waits one frame per frame. Lowering the host CPU
+  needs a different wait (C2, not selected), not a different place for it.
+- **K5** was abandoned before coding (no independent launch worth more than
+  about 0.1 ms per frame); C1, C2, K2 and K4 were not selected.
+
+All variants are bit-identical to the pre-phase library on the 200-frame
+segment for `vmaf_v0.6.1` and `vmaf_v1.0.16_3d0h`, and every variant after the
+`n_subsample` fix matches the CPU at `n_subsample` 2 and 4, in graph replay
+too. The SYCL device suite and the end-to-end harness (8 and 10 bit,
+`--repeat 3`; batched `--repeat 10`) pass at the final head.
+
+Result: at the final head (the `n_subsample` fix and K1, after the reverts)
+three more interleaved pairs give 21.21 ms of filter time per frame against
+22.36 ms for `base` (-5.1 %), and a steady state of 47.1 fps against 44.2 fps
+(+6.5 %); against the 45.3 fps calibration above that is +4 %. The 15 % target
+is not reached. The same tiled kernel compiles for VIF scales 1 to 3 (1.3 ms
+and 0.4 ms of the frame) and is the next measured candidate.
+
 ## References
 
 - [ADR-1769](../adr/1769-sycl-zerocopy-throughput-a380.md)

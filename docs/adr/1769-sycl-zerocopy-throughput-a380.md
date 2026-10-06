@@ -43,6 +43,13 @@ Design of C3:
 
 Acceptance uses the steady-state fps of 600 and 20 frame runs (45.3 fps baseline). The status stays Proposed until the code lands.
 
+Outcome of the device validation and A/B (plan 13-06, numbers in [Research-1769](../research/1769-sycl-zerocopy-throughput-a380.md#ab-results-plan-13-06)):
+
+- K1 is kept: the scale-0 VIF horizontal pass reads a local-memory tile; the frame is 1.16 ms shorter (22.33 to 21.17 ms of filter time) and bit-identical.
+- K3 is reverted: 0.05 ms per frame, inside the noise. Its byte-for-byte device test stays.
+- C3 is reverted with the device slot fence: the host wait moved from the frame start into the VA import and neither fps nor host CPU changed. The design above is therefore not in the tree; the filter keeps its frame-start `vmaf_sycl_wait_compute()`.
+- K5 was not coded: every scale-2/3 launch depends on the one before it.
+
 ## Alternatives considered
 
 Ceilings are upper bounds from the baseline, in ms of the 22.1 ms frame.
