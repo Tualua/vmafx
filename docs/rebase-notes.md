@@ -758,6 +758,22 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
   `test_sycl_zero_copy_model_gate` (`test_upload_plane_orders_compute`) fails on it.
 - The file's four `getenv()` calls read through `vmaf_gpu_dispatch_env_get()` (ADR-0488),
   which keeps `common.cpp` at zero clang-tidy findings.
+## Hip-lane clang-tidy debt, batch 1: VIF, SSIMULACRA 2, PSNR-HVS and the shared GPU headers (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-hip-1`. Lint refactor, no behaviour change.
+
+- `VifBufferHip.ref` and `.dis` in `core/src/feature/hip/integer_vif_hip.h` are
+  `uint16_t *`, assigned in `vif_hip_layout_planes()`; the kernels no longer cast an
+  integer to a pointer. A sync that restores `uintptr_t` fields brings back
+  `performance-no-int-to-ptr` in `vif_statistics.hip`.
+- `core/test/test_hip_ssimulacra2_exact_contract.py` matches the kernel's
+  `kChunkPixels` / `state.sum` spellings; the properties it pins (raster order
+  within a chunk, lane order, pixel-order fallback) are the same.
+- `core/src/feature/ordered_sum.h` has `vmaf_ordsum_is_odd()` in place of `x & 1` on a
+  signed value; `adm_angle_flag.h`, `float_adm_gpu_common.h` and
+  `float_vif_gpu_common.h` use unsigned shift counts and `struct X {...};` with a C-only
+  `typedef` (the CUDA, SYCL, Metal and C hosts include them). Keep both forms on a
+  rebase.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 
