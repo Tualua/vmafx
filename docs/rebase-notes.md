@@ -74,6 +74,17 @@ and hard error fail-fast without GPU hardware. Added automated hardware smoke te
 - Reproducer / smoke: `meson test -C build test_vmaf_vpl_decode_ceiling` and `meson test -C build test_vmaf_vpl_hardware_smoke`.
 - Changelog: `changelog.d/fixed/vpl-decode-ceiling-contract.md`.
 - FFmpeg impact: none; no public C header, exported libvmaf API, CLI flag, or FFmpeg patch touched.
+## Integer accumulator bounds; exact-twin matrix at 8K and 16K (2026-10-05)
+
+`fix/accumulator-bounds-audit`. Fork-only files: `docs/development/accumulator-bounds*.md`,
+`scripts/dev/adm_cm_row_bound.py`, `core/test/test_accumulator_bounds_16k.c` and its block in
+`core/test/meson.build`, the `--grid` option of `scripts/ci/exact_twin_matrix.py` and the 8K / 16K
+blocks of `docs/development/exact-twin-matrix.md`.
+
+- An upstream sync that changes an accumulator's type, its term or how many terms reach it
+  changes that row of the accumulator-bounds pages in the same PR.
+- A new exact twin needs an 8K row per backend and a 16K CPU row (`exact_twin_matrix.py --grid 8k`
+  / `--grid 16k --record`), or `test_exact_twin_matrix_contract` fails.
 
 ## MCP tool contract shared by both servers (2026-10-05)
 

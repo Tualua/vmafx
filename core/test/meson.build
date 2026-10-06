@@ -1959,6 +1959,29 @@ test_speed_lanczos4_weights = executable('test_speed_lanczos4_weights',
 )
 test('test_speed_lanczos4_weights', test_speed_lanczos4_weights, suite : ['fast'])
 
+# The size products, shifts and counts the accumulator bounds rest on
+# (docs/development/accumulator-bounds.md), from the library's own helpers at
+# 8K DCI, 16K and the 32768 cap, without a picture of that size: SpEED
+# submatrix counts and tail block, integer ADM row shifts, CAMBI windows.
+test_accumulator_bounds_16k = executable('test_accumulator_bounds_16k',
+    ['test.c', 'test_accumulator_bounds_16k.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_accumulator_bounds_16k', test_accumulator_bounds_16k, suite : ['fast'])
+
 # Netflix/vmaf 76ea5f03 (+ the checkasm sizes of cea2b4d8; the fork carries no
 # checkasm tree): vif_filter1d_dec16_s(), the fused anti-alias filter and
 # decimation SpEED runs on every target but x86, must leave the bits of

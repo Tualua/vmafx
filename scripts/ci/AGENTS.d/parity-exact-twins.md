@@ -92,3 +92,13 @@ twins registered `integer_ssim_<backend>`, mapped in
 `BACKEND_EXTRACTOR_ALIASES` (cuda, sycl, hip). CUDA host adds the
 per-pixel double terms in the CPU's raster order (fragment `ssim.cuda`).
 SYCL / HIP (> 4096 px) reduce per block -> places=4 default.
+
+Large grids (accumulator audit): `--grid 8k` = every exact CUDA / SYCL / HIP
+twin vs CPU at 8192x4320 4:4:4, 8 + 16 bit; `--grid 16k` = CPU extractor of
+every exact twin at 15360x8640 4:4:4, host SIMD vs `--cpumask 0xffffffff`.
+Worst-case content from SHAKE256 + constants (`worst_case_plane()`). Both
+recorded in `docs/development/exact-twin-matrix.md` (markers
+`exact-twin-matrix-8k:<backend>`, `exact-twin-matrix-16k:cpu`); contract
+requires a full row per twin in each. CPU refusal at a large size is `n/a`
+only for a `SIZE_REFUSED` feature (cambi) and only while the device refuses
+too. Fixtures 1.3-6.4 GB: `--workdir` on disk, not RAM `/tmp`.
