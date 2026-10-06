@@ -486,6 +486,7 @@ VmafFeatureExtractor vmaf_fex_float_adm = {
     .close = close_fex,
     .priv_size = sizeof(AdmState),
     .provided_features = provided_features,
+    .unsuffixed_debug_key = "adm",
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

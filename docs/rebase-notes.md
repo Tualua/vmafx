@@ -62289,3 +62289,10 @@ extractor that calls it; PR #1118 restored them. Upstream Netflix has no such
 function, so a sync or a rebase of a branch that predates #1118 takes the fork's
 side of both hunks and keeps the accessor. No score, public API or FFmpeg patch
 impact.
+## `float_adm` debug key and `unsuffixed_debug_key` (ADR-2056)
+
+`VmafFeatureExtractor` gains `unsuffixed_debug_key`; `float_adm.c` and the four twins set it to
+`adm`, and the twins list `adm_scale0` where they listed `adm`. `float_adm.c` is a Netflix file:
+the fork adds one line to its extractor table. A sync keeps that line and the
+`refuse_debug_key_collision()` call in `core/src/fex_ctx_vector.cpp`. No score, public API or FFmpeg
+patch impact.

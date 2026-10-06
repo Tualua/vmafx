@@ -802,6 +802,23 @@ bool vmaf_feature_extractor_reads_shared_luma_only(const VmafFeatureExtractor *f
     return fex->reads_shared_luma_only(fex);
 }
 
+const char *vmaf_feature_extractor_context_debug_key(const VmafFeatureExtractorContext *fex_ctx)
+{
+    if (!fex_ctx || !fex_ctx->fex || !fex_ctx->fex->unsuffixed_debug_key)
+        return nullptr;
+    const VmafFeatureExtractor *fex = fex_ctx->fex;
+    if (!fex->priv || !fex->options)
+        return nullptr;
+    for (const VmafOption *opt = fex->options; opt->name; ++opt) {
+        if (strcmp(opt->name, "debug") != 0 || opt->type != VMAF_OPT_TYPE_BOOL)
+            continue;
+        bool debug = false;
+        memcpy(&debug, static_cast<const uint8_t *>(fex->priv) + opt->offset, sizeof(debug));
+        return debug ? fex->unsuffixed_debug_key : nullptr;
+    }
+    return nullptr;
+}
+
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict)

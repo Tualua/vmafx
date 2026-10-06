@@ -88,6 +88,30 @@ int grow_context_vector(RegisteredFeatureExtractors *rfe)
     return 0;
 }
 
+/* ADR-2056: two contexts with `debug` set that claim the same unsuffixed key
+ * would write it twice ("cannot be overwritten" at the first frame). Refuse the
+ * second at registration, naming the key. */
+int refuse_debug_key_collision(const RegisteredFeatureExtractors *rfe,
+                               const VmafFeatureExtractorContext *fex_ctx)
+{
+    const char *key = vmaf_feature_extractor_context_debug_key(fex_ctx);
+    if (!key)
+        return 0;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        const char *other = vmaf_feature_extractor_context_debug_key(rfe->fex_ctx[i]);
+        if (!other || strcmp(other, key) != 0)
+            continue;
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature extractor \"%s\": a second instance with debug=true would file its "
+                 "ratio under the key \"%s\", which instance \"%s\" already uses. The key is "
+                 "never suffixed with the options (the Netflix tests read it), so only one "
+                 "debug instance can run; set debug=false on the other.\n",
+                 fex_ctx->fex->name, key, rfe->fex_ctx[i]->fex->name);
+        return -EINVAL;
+    }
+    return 0;
+}
+
 void log_registered_context(const VmafFeatureExtractorContext *fex_ctx)
 {
     const unsigned cnt = fex_ctx->opts_dict ? fex_ctx->opts_dict->cnt : 0u;
@@ -136,6 +160,10 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
             return vmaf_feature_extractor_context_destroy(fex_ctx);
         }
     }
+
+    const int collision = refuse_debug_key_collision(rfe, fex_ctx);
+    if (collision)
+        return collision;
 
     if (rfe->cnt >= rfe->capacity) {
         const int err = grow_context_vector(rfe);

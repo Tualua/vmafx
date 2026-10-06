@@ -5764,6 +5764,16 @@ test_float_adm_coverage = executable('test_float_adm_coverage',
 )
 test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
 
+# ADR-2056 — a second float_adm instance with debug=true is refused at
+# registration, naming the key both would file.
+test_float_adm_debug_key_refusal = executable('test_float_adm_debug_key_refusal',
+    ['test.c', 'test_float_adm_debug_key_refusal.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [stdatomic_dependency, pthread_dependency, gpu_all_deps],
+)
+test('test_float_adm_debug_key_refusal', test_float_adm_debug_key_refusal, suite : ['fast'])
+
 # ADR-1420 — the arithmetic float_adm_cuda's and float_adm_hip's kernels run
 # (src/feature/float_adm_gpu_common.h, through the CUDA spelling header
 # src/feature/cuda/float_adm/float_adm_device.h), compiled for the host and

@@ -1020,6 +1020,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_metal = {
     .options           = options,
     .priv_size         = sizeof(FloatAdmStateMetal),
     .provided_features = provided_features,
+    .unsuffixed_debug_key = "adm",
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
     .chars = {
         .n_dispatches_per_frame = 5 * FADM_NUM_SCALES,

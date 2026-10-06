@@ -154,6 +154,13 @@ typedef struct VmafFeatureExtractor {
     size_t priv_size;               ///< sizeof private data.
     uint64_t flags;                 ///< Feauture extraction flags, binary or'd.
     const char **provided_features; ///< Provided feature list, NULL terminated.
+    /**
+     * Name of a score the extractor files without the option suffix when its
+     * `debug` option is set, or NULL. Two contexts that claim the same name
+     * would write one key twice, so vmaf_use_feature() refuses the second
+     * (ADR-2056). The unsuffixed name is a contract the Netflix tests read.
+     */
+    const char *unsuffixed_debug_key;
 
 #ifdef HAVE_CUDA
     VmafCudaState *cu_state; ///< VmafCudaState, set by framework
@@ -356,6 +363,13 @@ typedef struct VmafFeatureExtractorContext {
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict);
+
+/**
+ * The unsuffixed debug key @p fex_ctx will write (VmafFeatureExtractor::
+ * unsuffixed_debug_key), or NULL when the extractor declares none or its
+ * `debug` option is off. Reads the options the context parsed at creation.
+ */
+const char *vmaf_feature_extractor_context_debug_key(const VmafFeatureExtractorContext *fex_ctx);
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
                                         enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,

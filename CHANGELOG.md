@@ -3886,6 +3886,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged.
 
 
+- A second `float_adm` instance with `debug=true` is refused when it is registered,
+  with a message naming the key `adm` both would write, instead of failing at the
+  first frame with "problem reading pictures". The unsuffixed `adm` key stays (the
+  Netflix tests read it); the CUDA, SYCL and HIP `float_adm` twins now file it
+  unsuffixed like the CPU, where they added the option suffix.
+
+
 - **`float_adm` refuses frames smaller than 17x17 instead of reading outside
   its buffers.** The float ADM extractor decomposes each frame into four
   wavelet levels. Below 17 pixels in width or height the coarsest level has a

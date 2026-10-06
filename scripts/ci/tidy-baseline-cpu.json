@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 418,
+  "tus": 419,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -218,6 +218,7 @@
     "core/test/test_fex_pool_growth.c",
     "core/test/test_float_adm_coverage.c",
     "core/test/test_float_adm_csf_upstream.c",
+    "core/test/test_float_adm_debug_key_refusal.c",
     "core/test/test_float_adm_device_math.c",
     "core/test/test_float_adm_x86.c",
     "core/test/test_float_bits.c",
@@ -608,6 +609,23 @@
         }
       },
       "previous_baseline_sha256": "e038be12733c0f2d76ca824ff54dc29206e476f17663181f6141bf162e5fb011"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/feature/float_adm.c",
+        "core/src/fex_ctx_vector.cpp",
+        "core/test/test_float_adm_debug_key_refusal.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_float_adm_debug_key_refusal.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "1ea579265fbc51727aae23fc5947e5d8cc1b4abc056d0931be42e4746d662042"
     }
   ]
 }

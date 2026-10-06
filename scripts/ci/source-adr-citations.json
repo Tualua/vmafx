@@ -6400,6 +6400,7 @@
         "core/test/test_fex_pool_growth.c": 1,
         "core/test/test_float_adm_coverage.c": 1,
         "core/test/test_float_adm_csf_upstream.c": 1,
+        "core/test/test_float_adm_debug_key_refusal.c": 1,
         "core/test/test_float_adm_device_math.c": 1,
         "core/test/test_float_adm_dwt2_neon.c": 1,
         "core/test/test_float_adm_neon.c": 1,
@@ -11281,6 +11282,17 @@
         "core/tools/cli_parse.h": 1
       },
       "target": "1918-sample-range-contract-opt-in-check.md"
+    },
+    "2056": {
+      "sites": {
+        "core/src/feature/feature_extractor.h": 1,
+        "core/src/fex_ctx_vector.cpp": 1,
+        "core/test/float_adm_twin_parity.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_cuda_float_adm_parity.c": 1,
+        "core/test/test_float_adm_debug_key_refusal.c": 1
+      },
+      "target": "2056-float-adm-debug-key-refusal.md"
     }
   },
   "retired": {

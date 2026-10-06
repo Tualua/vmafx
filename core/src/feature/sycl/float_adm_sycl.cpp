@@ -1093,7 +1093,7 @@ static const char *provided_features_float_adm_sycl[] = {"VMAF_feature_adm2_scor
                                                          "VMAF_feature_adm_scale3_score",
                                                          "VMAF_feature_aim_score",
                                                          "VMAF_feature_adm3_score",
-                                                         "adm",
+                                                         "adm_scale0",
                                                          "adm_num",
                                                          "adm_den",
                                                          "adm_num_scale0",
@@ -1120,6 +1120,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_adm_sycl = {
     .priv_size = sizeof(FloatAdmStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_float_adm_sycl,
+    .unsuffixed_debug_key = "adm",
 };
 
 } /* extern "C" */

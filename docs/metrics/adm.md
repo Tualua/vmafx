@@ -44,7 +44,12 @@ only. The smallest accepted frame is 17x17 ([Small frames](#small-frames)).
   `adm_min_val` in both cases. This is the ADM feature the default model
   consumes.
 - With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
-  numerator / denominator.
+  numerator / denominator. `adm` is never suffixed with the options (the
+  Netflix tests read it under every option set), so a run can hold only one
+  `float_adm` instance with `debug=true`: a second is refused when it is
+  registered, with a message naming the key
+  ([ADR-2056](../adr/2056-float-adm-debug-key-refusal.md)). Put `debug=true`
+  on one instance, or leave it off.
 
 **Output range** — `adm2` and the scale scores lie in `[0, 1]` unless the
 distorted picture has more of the reference's detail than the reference, which
@@ -314,10 +319,9 @@ as well. A 3840x2160 frame takes 12.3 ms, 15.1 ms before.
 - One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
   is within 1.8e-7 of the CPU, because the two sides raise each term with
   different `powf` implementations.
-- With `debug=true` and another option set, the CPU files the ratio under
-  `adm` and the twin under `adm` plus the option suffix (for example
-  `adm_egl_1.2`). The value is the same; every other output has the same
-  name on both.
+- With `debug=true` the ratio is filed under the same unsuffixed key `adm` on
+  the CPU and on every twin, whatever other option is set; every other output
+  carries the option suffix on both (for example `adm_num_egl_1.2`).
 - Frames smaller than 17x17 are refused by both; see the next section.
 - The twin uses 48 MB more device memory at 3840x2160.
 
