@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1295), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1296), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5187,6 +5187,10 @@ Every ADR, one heading each (1295), so the site search finds an ADR by its title
 ## ADR-2001: Release scope of 1.0.0 and the roadmap to 2.0
 
 [2001-release-scope-1-0-and-roadmap-to-2-0](2001-release-scope-1-0-and-roadmap-to-2-0.md)
+
+## ADR-2055: The x86 AVX2 level requires FMA
+
+[2055-x86-avx2-gate-requires-fma](2055-x86-avx2-gate-requires-fma.md)
 
 ## ADR-2056: `float_adm` files its debug ratio unsuffixed; a second debug instance is refused
 

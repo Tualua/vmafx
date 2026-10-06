@@ -8183,6 +8183,16 @@ test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
 
+# ADR-2055: the AVX2 level of vmaf_get_cpu_flags_x86() includes FMA. x86/cpu.c is
+# compiled into the test with a mock CPUID, so it links none of libvmaf.
+if host_machine.cpu_family() == 'x86_64'
+test_x86_cpu_gate = executable('test_x86_cpu_gate',
+    ['test.c', 'test_x86_cpu_gate.c', '../src/x86/cpu.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+)
+test('test_x86_cpu_gate', test_x86_cpu_gate, suite : ['fast'])
+endif
+
 # An inline-assembly statement that clobbers a ymm or zmm register names the
 # xmm register too: clang drops the wide register's clobber in a function not
 # compiled for it, and a link-time-optimised build then zeroes a caller's

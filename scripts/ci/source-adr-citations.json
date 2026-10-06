@@ -6678,6 +6678,7 @@
         "core/test/test_vif_tools.c": 2,
         "core/test/test_vmaf_roi.c": 1,
         "core/test/test_vmaf_roi_bounds.c": 2,
+        "core/test/test_x86_cpu_gate.c": 1,
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
@@ -11282,6 +11283,14 @@
         "core/tools/cli_parse.h": 1
       },
       "target": "1918-sample-range-contract-opt-in-check.md"
+    },
+    "2055": {
+      "sites": {
+        "core/src/x86/cpu.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_x86_cpu_gate.c": 5
+      },
+      "target": "2055-x86-avx2-gate-requires-fma.md"
     },
     "2056": {
       "sites": {

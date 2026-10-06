@@ -62296,3 +62296,10 @@ impact.
 the fork adds one line to its extractor table. A sync keeps that line and the
 `refuse_debug_key_collision()` call in `core/src/fex_ctx_vector.cpp`. No score, public API or FFmpeg
 patch impact.
+## x86 AVX2 level requires FMA (ADR-2055)
+
+`core/src/x86/cpu.c` is dav1d's CPU probe with one fork change: the AVX2 flag is set only when
+CPUID leaf 1 ECX bit 12 (FMA) is set as well as BMI1, BMI2 and AVX2, because two AVX2 kernels are
+built with `-mfma`. A sync that takes upstream's `cpu.c` keeps the `has_fma` test before the leaf 7
+read. `core/test/test_x86_cpu_gate.c` compiles the file with a mock CPUID and fails without it.
+No score, public API or FFmpeg patch impact.
