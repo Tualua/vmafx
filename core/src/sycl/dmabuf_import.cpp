@@ -498,6 +498,7 @@ struct Tile4Detile {
     bool do_shift;
     bool src_v16; /* the plane is 16-byte aligned: one vector load per chunk */
     bool dst_v16; /* every destination chunk is 16-byte aligned */
+    bool dst_w4;  /* every destination word is 4-byte aligned (row_bytes % 4 == 0) */
 };
 
 /* P010/P012 MSB→LSB normalization of the two samples in one word (ADR-1121 follow-up). */
@@ -509,6 +510,20 @@ inline uint32_t tile4_shift_word(uint32_t v, const Tile4Detile &p)
         v = (uint32_t)s0 | ((uint32_t)s1 << 16);
     }
     return v;
+}
+
+/* Store one word at dst + d. A row whose length is not a multiple of 4 bytes
+ * leaves the word unaligned; a 32-bit store there is undefined and on the A380
+ * the compiler's merged d32x4 store drops the low address bits, so such rows
+ * are written byte by byte (little-endian, as the word was loaded). */
+inline void tile4_store_word(const Tile4Detile &p, size_t d, uint32_t v)
+{
+    if (p.dst_w4) {
+        *(uint32_t *)(p.dst + d) = v;
+        return;
+    }
+    for (unsigned b = 0u; b < 4u; b++)
+        p.dst[d + b] = (uint8_t)((v >> (8u * b)) & 0xFFu);
 }
 
 /* A chunk wholly inside the row: 16 source bytes, contiguous because Tile4
@@ -528,11 +543,10 @@ inline void tile4_chunk16(const Tile4Detile &p, size_t src_off, size_t dst_off)
     if (p.dst_v16) {
         *reinterpret_cast<Word4 *>(p.dst + dst_off) = v;
     } else {
-        auto *w = reinterpret_cast<uint32_t *>(p.dst + dst_off);
-        w[0] = v.x();
-        w[1] = v.y();
-        w[2] = v.z();
-        w[3] = v.w();
+        tile4_store_word(p, dst_off, v.x());
+        tile4_store_word(p, dst_off + 4u, v.y());
+        tile4_store_word(p, dst_off + 8u, v.z());
+        tile4_store_word(p, dst_off + 12u, v.w());
     }
 }
 
@@ -544,7 +558,7 @@ inline void tile4_chunk_tail(const Tile4Detile &p, size_t src_off, size_t dst_of
         size_t const s = src_off + (size_t)k * 4u;
         size_t const d = dst_off + (size_t)k * 4u;
         if (d + 4 <= row_end) {
-            *(uint32_t *)(p.dst + d) = tile4_shift_word(*(const uint32_t *)(p.src + s), p);
+            tile4_store_word(p, d, tile4_shift_word(*(const uint32_t *)(p.src + s), p));
         } else if (p.do_shift && row_end - d == 2) {
             uint16_t const raw =
                 (uint16_t)((uint16_t)p.src[s] | (uint16_t)((uint16_t)p.src[s + 1] << 8));
@@ -574,6 +588,7 @@ sycl::event detile_tile4(sycl::queue *q, void *target_buf, const void *imported_
     p.shift = p.do_shift ? (16u - bpc) : 0u;
     p.src_v16 = (reinterpret_cast<uintptr_t>(p.src) % 16u) == 0;
     p.dst_v16 = (row_bytes % 16u) == 0 && (reinterpret_cast<uintptr_t>(p.dst) % 16u) == 0;
+    p.dst_w4 = (row_bytes % 4u) == 0 && (reinterpret_cast<uintptr_t>(p.dst) % 4u) == 0;
     size_t const chunks_in_row = (row_bytes + 15u) / 16u;
     size_t const chunks_in_pitch = (size_t)p.tiles_per_row * (128u / 16u);
     size_t const chunks_per_row = chunks_in_row < chunks_in_pitch ? chunks_in_row : chunks_in_pitch;
