@@ -19,7 +19,7 @@ libvmaf/include/libvmaf/libvmaf_sycl.h:
   - vmaf_sycl_state_init / vmaf_sycl_import_state
   - vmaf_sycl_import_va_surface
   - vmaf_sycl_dmabuf_import (used internally by import_va_surface)
-  - vmaf_sycl_wait_compute (per-frame synchronisation barrier)
+  - vmaf_sycl_wait_compute (per-frame barrier on the host-upload path)
   - vmaf_sycl_profiling_enable / _get_string (optional)
 
 Closes T7-28 in the fork backlog. Companion to the existing
@@ -37,8 +37,8 @@ baseline).
  configure                |   5 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 450 ++++++++++++++++++++++++++++++++++++++-
- 4 files changed, 456 insertions(+), 1 deletion(-)
+ libavfilter/vf_libvmaf.c | 455 ++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 461 insertions(+), 1 deletion(-)
 
 diff --git a/configure b/configure
 index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc51d79e3b0 100755
@@ -102,7 +102,7 @@ index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999b
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3529b485ac6b427e3d0b9e3de2462708a6846bff..d5b46c07a2a278c33715b25747dc6f3e2ec4c9bc 100644
+index 3529b485ac6b427e3d0b9e3de2462708a6846bff..9b897df22de1ca74be4624389463e4dadaf1770e 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -51,6 +51,11 @@
@@ -235,7 +235,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..d5b46c07a2a278c33715b25747dc6f3e
      }
  
      return VMAF_POOL_METHOD_MEAN;
-@@ -1015,3 +1104,362 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -1015,3 +1104,367 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -277,15 +277,12 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..d5b46c07a2a278c33715b25747dc6f3e
 +    if (ctx->is_disabled || !ref)
 +        return ff_filter_frame(ctx->outputs[0], dist);
 +
-+    // Wait for previous SYCL compute to finish before overwriting buffers
-+    ret = vmaf_sycl_wait_compute(s->vmaf);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_ERROR,
-+               "vmaf_sycl_wait_compute failed: %d\n", ret);
-+        return AVERROR_EXTERNAL;
-+    }
-+
 +    if (ref->format == AV_PIX_FMT_QSV) {
++        // No host wait here: vmaf_sycl_import_va_surface() orders its writes
++        // to the upload slot after that slot's previous readers on the device
++        // (libvmaf vmaf_sycl_fence_import_slot(), ADR-1769), and
++        // vmaf_read_pictures_sycl() still waits for the de-tile before the
++        // frames go back to FFmpeg.
 +        // Zero-copy path: extract VA surface handle from QSV frames via oneVPL.
 +        // data[3] -> mfxFrameSurface1*, Data.MemId -> mfxHDLPair*,
 +        // pair->first -> surface handle (unsigned int on Linux).
@@ -335,6 +332,14 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..d5b46c07a2a278c33715b25747dc6f3e
 +            return AVERROR_EXTERNAL;
 +        }
 +    } else {
++        // Wait for previous SYCL compute to finish before overwriting buffers
++        ret = vmaf_sycl_wait_compute(s->vmaf);
++        if (ret) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_sycl_wait_compute failed: %d\n", ret);
++            return AVERROR_EXTERNAL;
++        }
++
 +        // Software path: YUV420P / YUV420P10LE frames — copy via vmaf_picture_alloc.
 +        VmafPicture ref_pic = {0}, dist_pic = {0};
 +        ret = vmaf_picture_alloc(&ref_pic, VMAF_PIX_FMT_YUV420P,

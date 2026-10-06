@@ -1690,6 +1690,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [SSIMULACRA 2](docs/metrics/ssimulacra2.md).
 
 
+- **SYCL zero-copy: the `libvmaf_sycl` filter no longer waits on the host at the start of a QSV frame.**
+  The VA import now orders its writes to the upload slot after that slot's
+  previous readers on the device, across every SYCL queue, including an
+  extractor `n_subsample` skipped. The filter keeps
+  `vmaf_sycl_wait_compute()` on its host-upload path only, so the import of
+  a frame can overlap the compute of the previous one. Scores do not change;
+  the throughput gain on an Arc A380 is measured separately
+  ([ADR-1769](docs/adr/1769-sycl-zerocopy-throughput-a380.md)).
+
+
 - **Reuse caller-supplied `tmpbuf` in scalar VIF fallback filters (`vif_filter1d_s`, `_sq_s`, `_xy_s`) (ADR-0463 / BUG-048 B4).**
   The scalar VIF fallback paths in `core/src/feature/vif_tools.c` now reuse the
   scratch buffer already allocated by `compute_vif` instead of performing

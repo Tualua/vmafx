@@ -34,7 +34,7 @@ index 3534c87c9be9374db14189a28324cf95efc4b576..f3131824804ac8a1b21c864e9d0eca3a
  @item n_threads
  Set number of threads to be used when initializing libvmaf.
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index bd77f147838a537680018599b6c6bba47f10ee57..16342211d20be85cb28003882f4b70250310a30a 100644
+index 1da0989b75277561e55722c74c961c588e51a2b6..0e2109cfc52bba2e55cd13ddc5c8cd3ffa5e5df2 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -1027,6 +1027,7 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)

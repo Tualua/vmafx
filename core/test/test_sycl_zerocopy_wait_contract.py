@@ -21,6 +21,8 @@ else protected the slot. The import now orders its writes on the device:
    ``vmaf_sycl_import_va_surface()``, before any write on any path.
 4. ``vmaf_sycl_advance_frame()`` re-arms the fence outside its two
    load-bearing lines, and the deferred import frees keep room for a frame.
+5. Patch 0005's ``do_vmaf_sycl()`` calls ``vmaf_sycl_wait_compute()`` on the
+   host-upload branch only; the ``AV_PIX_FMT_QSV`` branch relies on the fence.
 
 Each planted regression below is the construct the contract must catch.
 """
@@ -36,6 +38,9 @@ SYCL = ROOT / "core" / "src" / "sycl"
 COMMON = "common.cpp"
 HEADER = "common.h"
 DMABUF = "dmabuf_import.cpp"
+PATCH = ROOT / "ffmpeg-patches" / "0005-libvmaf-add-libvmaf-sycl-filter.patch"
+QSV_BRANCH = "if (ref->format == AV_PIX_FMT_QSV) {"
+WAIT_CALL = "vmaf_sycl_wait_compute(s->vmaf)"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 LOAD_BEARING = "state->cur_compute = state->cur_upload; state->cur_upload = 1 - state->cur_upload;"
@@ -219,6 +224,73 @@ class SlotFence(unittest.TestCase):
             "static constexpr int MAX_PENDING_IMPORTS = 2;",
         )
         self._detected(failures, "MAX_PENDING_IMPORTS")
+
+
+def _added_lines(patch: str) -> str:
+    """The lines patch 0005 adds, without the leading `+`."""
+    return "\n".join(
+        line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++")
+    )
+
+
+def _filter_wait_failures(patch: str) -> list[str]:
+    """`vmaf_sycl_wait_compute()` on the host-upload branch of do_vmaf_sycl() only."""
+    code = _flat(_added_lines(patch))
+    func = _function_body(code, "do_vmaf_sycl")
+    start = func.find(QSV_BRANCH)
+    if start < 0:
+        return ["patch 0005: do_vmaf_sycl() has no AV_PIX_FMT_QSV branch"]
+    depth = 0
+    branch_end = -1
+    for index in range(start + len(QSV_BRANCH) - 1, len(func)):
+        if func[index] == "{":
+            depth += 1
+        elif func[index] == "}":
+            depth -= 1
+            if depth == 0:
+                branch_end = index
+                break
+    failures = []
+    if WAIT_CALL in func[:start]:
+        failures.append("patch 0005: do_vmaf_sycl() host-waits before the QSV branch")
+    if WAIT_CALL in func[start:branch_end]:
+        failures.append("patch 0005: the QSV branch of do_vmaf_sycl() host-waits")
+    rest = func[branch_end:]
+    if not rest.startswith("} else {") or rest.count(WAIT_CALL) != 1:
+        failures.append("patch 0005: the host-upload branch does not wait once for compute")
+    return failures
+
+
+class FilterWait(unittest.TestCase):
+    """C3, filter side: no frame-start host wait on QSV input."""
+
+    def _detected(self, failures: list[str], needle: str) -> None:
+        self.assertTrue(any(needle in item for item in failures), failures)
+
+    def test_patch_satisfies_the_contract(self) -> None:
+        self.assertEqual(_filter_wait_failures(PATCH.read_text(encoding="utf-8")), [])
+
+    def test_wait_before_the_branch_is_detected(self) -> None:
+        patch = PATCH.read_text(encoding="utf-8")
+        planted = patch.replace(
+            f"+    {QSV_BRANCH}\n", f"+    ret = {WAIT_CALL};\n+    {QSV_BRANCH}\n", 1
+        )
+        self.assertNotEqual(planted, patch)
+        self._detected(_filter_wait_failures(planted), "before the QSV branch")
+
+    def test_wait_on_the_qsv_branch_is_detected(self) -> None:
+        patch = PATCH.read_text(encoding="utf-8")
+        planted = patch.replace(
+            f"+    {QSV_BRANCH}\n", f"+    {QSV_BRANCH}\n+        ret = {WAIT_CALL};\n", 1
+        )
+        self.assertNotEqual(planted, patch)
+        self._detected(_filter_wait_failures(planted), "QSV branch of do_vmaf_sycl() host-waits")
+
+    def test_missing_host_upload_wait_is_detected(self) -> None:
+        patch = PATCH.read_text(encoding="utf-8")
+        planted = patch.replace(f"ret = {WAIT_CALL};", "ret = 0;", 1)
+        self.assertNotEqual(planted, patch)
+        self._detected(_filter_wait_failures(planted), "host-upload branch")
 
 
 if __name__ == "__main__":
