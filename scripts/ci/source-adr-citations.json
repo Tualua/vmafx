@@ -495,7 +495,7 @@
         "core/src/feature/metal/integer_adm_metal_host.h": 1,
         "core/src/feature/metal/ssimulacra2_metal.mm": 5,
         "core/src/feature/niqe.c": 2,
-        "core/src/feature/niqe_math.h": 3,
+        "core/src/feature/niqe_math.h": 2,
         "core/src/feature/offset.c": 2,
         "core/src/feature/psnr_tools.cpp": 1,
         "core/src/feature/speed_gpu_common.h": 1,

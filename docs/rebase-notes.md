@@ -62159,3 +62159,9 @@ that conflicts in them takes either side and re-runs the script, then the drift 
   golusoris module and brought `x/crypto/md4`, `x/crypto/argon2` and 59 otherwise unused
   modules into the build. A conflict in `go.mod` / `go.sum` takes this side and reruns
   `go mod tidy`. No upstream file is involved; no score, public API or FFmpeg patch impact.
+- **HISS native batch 1 (`refactor/hiss-zero-native-1`)**: `niqe_extract_aggd()` in
+  `core/src/feature/niqe_math.h` is now `niqe_aggd_moments()`,
+  `niqe_aggd_gamma_index()` and a short tail. An upstream or fork change to the
+  AGGD fit edits the helper that holds the changed line; the float operations and
+  their order are fixed by the NIQE snapshot. No score, public API or FFmpeg patch
+  impact.
