@@ -45,9 +45,9 @@ adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
  * reaches 1.044 / 1.021 INT64_MAX (0.52 of 2^64), and a horizontal or
  * vertical CSF weight above 38,400 does at 16K (37,600 at the cap). The row
  * (and the frame) are summed unsigned, which holds every row up to a
- * horizontal or vertical weight of about 45,200; the weights between that
- * and the ADR-1472 limit of 46,603 are
- * T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05. A row below 2^63
+ * horizontal or vertical weight of about 45,200; the limit of ADR-1917,
+ * 43,900, keeps every row below 0.92 of 2^64 (scripts/dev/adm_cm_row_bound.py;
+ * T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05). A row below 2^63
  * gives the bits the signed form gave. `shift` is the row shift (ceil(log2)
  * of the band height), so the result is far below 2^63.
  */

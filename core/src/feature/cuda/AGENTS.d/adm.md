@@ -44,7 +44,8 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   CPU (`adm_cm_accum_round()` / `i4_adm_cm_accum_round()`). It cannot wrap
   because `adm_csf_fixed_scale()` (`feature/adm_csf_fixed_point.h`) keeps
   every weight under excess budget / largest wavelet coefficient of the
-  scale: 46603.4 (scale 0 h, v), 65536 (scale 0 d), 279958309, 539893111,
+  scale: 43900 (scale 0 h, v: the int16 1/30 magnitude of the CSF stage,
+  ADR-1917; the cube alone allows 46603.4), 65536 (scale 0 d), 279958309, 539893111,
   546406567 (scales 1-3). Old limit 2^30 wrapped in Barten mode: NaN
   numerator (10 px checkerboard), `integer_adm2` 0.587 for 0.784 (1 px).
   Never convert a weight on the device or in this file; never widen or

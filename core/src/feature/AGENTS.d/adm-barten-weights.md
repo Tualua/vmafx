@@ -16,7 +16,8 @@ when rebasing or changing any integer-ADM twin:
 - choose one non-negative power-of-two exponent `k` for all three bands of a
   DWT scale; independent band shifts change the metric;
 - keep each normalized weight strictly below `adm_csf_fixed_limit(scale, band)`
-  (ADR-1472): 46603.4 for scale-0 h / v, 2^16 for scale-0 d, 279958309,
+  (ADR-1472, ADR-1917): 43900 for scale-0 h / v (the int16 1/30 magnitude
+  of the CSF stage binds before the cube's 46603.4), 2^16 for scale-0 d, 279958309,
   539893111, 546406567 at scales 1..3. Limit = contrast-masking excess budget
   (`(v * v + round) >> 29|30` must fit int32: 2^30 - 1 / 1518500249) divided
   by largest wavelet coefficient of the scale (`ADM_DWT_BAND_MAX_SCALE0..3`,

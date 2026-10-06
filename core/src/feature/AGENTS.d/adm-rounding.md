@@ -114,9 +114,8 @@ invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 maskin
   INT64_MAX at default weights on 31-32 / 63-64 px wide pictures (1.044 /
   1.021 INT64_MAX = 0.52 of 2^64, `core/test/adm_cm_row_overflow_frame.h`) and
   with an h/v CSF weight above 38,400 at 16K. Below 2^64 up to an h/v
-  weight of about 45,200; above that, up to the ADR-1472 limit of 46,603,
-  31-32 px rows still pass 2^64 (open:
-  T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05). So scale 0 =
+  weight of about 45,200; the scale-0 h/v limit of ADR-1917 (43,900) keeps
+  every row below 0.92 of 2^64 (`scripts/dev/adm_cm_row_bound.py`). So scale 0 =
   `uint64_t` row (`adm_cm_accum_px()`, `AdmCmRowFn`, `cm_row_avx2/512()`
   via `hsum_epu64`), `adm_cm_fold_s0()` + `adm_cm_round_row_total_s0()`,
   `uint64_t` frame accum into `adm_cm_result()`. Twins: CUDA

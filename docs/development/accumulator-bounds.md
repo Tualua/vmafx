@@ -63,7 +63,7 @@ it are named in the row.
 | Defect | Backends | Reach | State row |
 |---|---|---|---|
 | Integer ADM scale-0 contrast-masking row summed in `int64_t` | CPU, AVX2, AVX-512, CUDA, HIP, SYCL | a 31-32 or 63-64 pixel wide picture at the default options (1.044 INT64_MAX); 16K with a CSF weight above 38,400 | `T-ADM-CM-SCALE0-ROW-INT64-OVERFLOW-2026-10-05`, fixed |
-| The same row past 2^64 | every backend | a CSF weight between about 45,200 and the ADR-1472 limit of 46,603 | `T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05`, open |
+| The same row past 2^64 | every backend | a CSF weight between about 45,200 and the ADR-1472 limit of 46,603 | `T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05`, fixed (scale-0 limit 43,900, ADR-1917) |
 | Integer ADM scale 1-3 gain product narrowed to int32 before its bound | CUDA, HIP | any size (an undefined conversion the hardware's saturation hid) | `T-GPU-ADM-S123-GAIN-PRODUCT-NARROWING-2026-10-05`, fixed |
 | APSNR clip SSE in `uint64_t` | CPU, CUDA, HIP, SYCL, Metal | frame 33 of 16K, 122 of 8K, 2072 of 1080p at 16 bits and the maximum difference | `T-PSNR-APSNR-CLIP-SSE-UINT64-WRAP-2026-10-05`, fixed |
 | `sad_avx512()` took 16-bit differences in signed 16-bit lanes | AVX-512 (a function only its parity test calls) | any size, 16-bit samples that differ by more than 32,767 | `T-SIMD-SAD-AVX512-INT16-DIFFERENCE-2026-10-05`, fixed |
@@ -73,7 +73,7 @@ it are named in the row.
 | `float_motion` tile load before the plane | CUDA | planes 3 to 9 or 17 samples wide or high (no score effect) | `T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05`, fixed |
 | `uint` moment-plane and term indices | Metal | `float_vif` with `vif_prescale` above 2.55 at 16K; four extractors past 16K | `T-METAL-UINT-PLANE-INDEX-2026-10-05`, open |
 | Samples above `2^bpc - 1` wrap integers the CPU keeps wide or truncates | CPU, CUDA, HIP, SYCL, Metal | any size, out-of-range input only | `T-OUT-OF-RANGE-SAMPLES-TWIN-DIVERGENCE-2026-10-05`, closed (contract and opt-in check, ADR-1918) |
-| Integer ADM scale-0 CSF magnitude `flt` stored in int16 | CPU and AVX-512 wrap, AVX2 saturates, so AVX2 differs from the scalar code | an h/v CSF weight from 43,901 to the ADR-1472 limit of 46,603 | `T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05`, open |
+| Integer ADM scale-0 CSF magnitude `flt` stored in int16 | CPU and AVX-512 wrap, AVX2 saturates, so AVX2 differs from the scalar code | an h/v CSF weight from 43,900 to the ADR-1472 limit of 46,603 | `T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05`, fixed (ADR-1917) |
 | Full-mask warp shuffle in a divergent branch; left shift of a negative `long long` | CUDA | any size | `T-CUDA-WARP-REDUCE-UB-2026-10-05`, fixed |
 
 Not defects, recorded as DEPENDS: the CUDA motion batch counter narrows the
@@ -103,7 +103,10 @@ python3 scripts/dev/adm_cm_row_bound.py --pattern 64
 At the default Watson weights the largest row is 1.044 INT64_MAX at a band
 width of 16 (pictures 31 or 32 pixels wide) and 1.021 at 32 (63 or 64),
 0.86 at 16K and 0.91 at the cap: below 2^64 everywhere, about half of it.
-`core/test/adm_cm_row_overflow_frame.h` is the 64-pixel picture.
+`core/test/adm_cm_row_overflow_frame.h` is the 64-pixel picture. Under the scale-0 weight limit of 43,900
+([ADR-1917](../adr/1917-integer-adm-scale0-weight-limit-csf-magnitude.md))
+the largest row at any weight the options can choose is 0.912 of 2^64
+(`--weights 43899`, widths 28 to 32).
 
 ## How the bounds were checked
 

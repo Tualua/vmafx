@@ -605,7 +605,7 @@ finite weights computable instead.
 For each scale, `adm` chooses the smallest non-negative power-of-two exponent
 `k` that puts all three fixed-point bands inside their arithmetic budget:
 
-- scale 0: the horizontal and vertical weights stay below 46603.4, the
+- scale 0: the horizontal and vertical weights stay below 43900, the
   diagonal weight below 2^16;
 - scales 1, 2 and 3: every weight stays below 279958309, 539893111 and
   546406567.
@@ -618,6 +618,18 @@ only when the largest coefficient the wavelet can produce at that scale still
 has a square that fits. The largest coefficient follows from the filter taps
 and holds for every picture and bit depth
 ([ADR-1472](../adr/1472-integer-adm-cm-weight-budget.md)).
+
+At scale 0 one more stage binds the horizontal and vertical weight first
+([ADR-1917](../adr/1917-integer-adm-scale0-weight-limit-csf-magnitude.md)).
+The CSF stage keeps the 1/30 magnitude of the weighted band in 16 bits, and
+for the largest band the integer wavelet produces (22930) that holds only
+below a weight of 43900; the square would allow 46603.4. Between the two, the
+magnitude wrapped negative in the scalar code and on the GPUs and saturated
+in AVX2, and a 31-32 pixel wide masking row could pass 2^64. A weight in that
+range now takes one more halving. Watson97 at every viewing geometry, the
+default Barten configuration and both blend modes stay below 43900 and keep
+their bits; a Barten configuration that lands in the range (for example
+`adm_csf_scale=1.16:adm_csf_diag_scale=0.3`) moves by about 1e-6.
 
 With the earlier limit of 2^30 a high-contrast picture could wrap that square in
 Barten mode:

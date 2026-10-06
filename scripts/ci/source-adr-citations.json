@@ -9867,7 +9867,6 @@
     },
     "1472": {
       "sites": {
-        "core/src/feature/adm_cm_accumulator.h": 1,
         "core/src/feature/adm_csf_fixed_point.h": 3,
         "core/test/meson.build": 1,
         "core/test/test_adm_cm_row_rounding_contract.py": 1,
@@ -11235,6 +11234,14 @@
         "core/tools/vmaf_vpl_core.h": 2
       },
       "target": "1900-vpl-decode-ceiling-contract.md"
+    },
+    "1917": {
+      "sites": {
+        "core/src/feature/adm_cm_accumulator.h": 1,
+        "core/src/feature/adm_csf_fixed_point.h": 2,
+        "core/test/test_integer_adm_cm_budget.c": 1
+      },
+      "target": "1917-integer-adm-scale0-weight-limit-csf-magnitude.md"
     },
     "1918": {
       "sites": {
