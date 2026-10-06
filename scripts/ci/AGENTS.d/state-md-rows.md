@@ -2,12 +2,12 @@
 paths:
   - scripts/ci/check-state-md-rows.sh
   - scripts/ci/tests/test-check-state-md-rows.sh
-invariant: Four checks, none may narrow; a status token must agree with its section; a hit is fixed by moving the row.
+invariant: Five checks, none may narrow; status agrees with section; fix by moving the row; markup closes per line.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # check-state-md-rows.sh — the status token belongs to the section (ADR-0165)
 
-Four independent checks, all of them widened only after a narrower version
+Five independent checks, the first four widened only after a narrower version
 reported a dirty file as clean. Do not narrow any of them.
 
 1. Duplicate bug id. Matches four id shapes (`**T-ID**`, `T-ID`, `**T7-16**`,
@@ -24,6 +24,19 @@ reported a dirty file as clean. Do not narrow any of them.
    id "moved to Recently closed" is an explicit closed-state claim; the same id
    may not still have a table row in that section, even when the row has no
    parseable Status cell.
+5. Markup that closes on its line. Every line outside a fenced block pairs each
+   backtick run with a later run of the same length (a CommonMark code span)
+   and closes every `[` outside a code span (`markup_defect()`). Most of the
+   ledger is one paragraph of rows: a single stray backtick re-pairs every code
+   span after it, and the `[` it leaves outside a span made the GFM
+   autolink-literal parser of the markdown governance gate walk back to it from
+   every later URL candidate. One row with lldb's frame name in single
+   backticks took the lint of this file from 4 s to 140-250 s, past the gate's
+   fixed 120 s budget (`T-STATE-MD-UNPAIRED-CODE-SPAN-LINT-TIMEOUT-2026-10-06`,
+   cordanaLLM/praetor#783). A backtick that belongs to the text goes inside a
+   longer run (``` `` mod`close `` ```); a `[` with no `]` goes into a code span
+   or is escaped (`\[`). Do not exclude `docs/state.md` from the style lint
+   instead.
 
 Check 3 exists because checks 1 and 2 only see a *duplicate*. A resolved row
 left under `## Open bugs` with no second copy is invisible to both, and reads
