@@ -58,6 +58,7 @@ import argparse
 import dataclasses
 import datetime as _dt
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -466,20 +467,17 @@ class TrainResult:
 
 
 def _set_seed(seed: int) -> None:
+    """Seed every RNG that is installed; numpy and torch are optional here."""
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
-    try:
+    if importlib.util.find_spec("numpy") is not None:
         import numpy as np
 
         np.random.seed(seed)
-    except ImportError:
-        pass
-    try:
+    if importlib.util.find_spec("torch") is not None:
         import torch
 
         torch.manual_seed(seed)
-    except ImportError:
-        pass
 
 
 def _fit(

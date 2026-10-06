@@ -12,6 +12,13 @@ search:
 [ADR-2126](adr/2126-scorecard-single-maintainer-exceptions.md). Two files under
 `.config/lint-exceptions.d/` (`scorecard-code-review.toml`, `scorecard-branch-protection.toml`).
 Fork-only; no upstream counterpart. A rebase keeps both entries and their expiry.
+## Code-scanning sweep: SBOM wheel unpack, `_set_seed` (2026-10-06)
+
+`fix/code-scanning-pip-hash-and-seed`. The `Prepare the SBOM root` steps of `release-dry-run.yml` and
+`supply-chain.yml` unpack the built `vmaf_mcp` wheel with `python -m zipfile -e`; keep that, because
+`pip install` of an unhashed local wheel is a Scorecard Pinned-Dependencies finding and the repository's
+own lock check forbids a generated requirements file. `_set_seed()` in `ai/src/vmaf_train/predictor_train.py`
+uses `find_spec()`. Both are fork-only.
 
 ## FFmpeg patch 0022: input colorimetry from the AVFrame (2026-10-06)
 
