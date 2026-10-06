@@ -199,6 +199,24 @@ The filter publishes the final pooled score to FFmpeg's log as
 an error it publishes neither; see
 [When a frame cannot be scored](#when-a-frame-cannot-be-scored).
 
+### Input colour tags and HDR models
+
+A model file may declare a `conversion_target` (see
+[model files](../models/v1.md#model-declared-conversion-target)). For such a
+model the `libvmaf` filter (and the software path of `libvmaf_sycl`) reads the
+colour properties of the first frame of each input (range, primaries, transfer
+and matrix) and hands them to libvmaf, which converts both inputs to the
+model's colorspace before scoring. Tag untagged files with `setparams` or
+`-color_primaries`, `-color_trc`, `-colorspace` and `-color_range` on the
+input. An input whose four properties are not all ones libvmaf knows (range
+`tv` or `pc`; primaries `bt709`, `bt2020` or `smpte432`; transfer `bt709` or
+`smpte2084`; matrix `bt709`, `bt2020nc` or `ictcp`) is left unspecified: a model
+without a `conversion_target`, which is every shipped model, scores exactly as
+before, and a model with one fails with an error naming the missing
+attributes. The conversion needs a libvmaf built with `-Denable_zimg=true`, and
+it runs on host frames: the `libvmaf_cuda` and `libvmaf_metal` filters and the
+SYCL zero-copy path score device frames and refuse such a model.
+
 ### Pooling
 
 The four order-statistic values (`median`, `perc5`, `perc10`, `perc20`) come

@@ -30,3 +30,4 @@
 0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch
 0020-libvmaf-honor-retryable-close-ownership.patch
 0021-libvmaf-print-no-pooled-score-after-a-mid-run-error.patch
+0022-libvmaf-declare-the-input-colorimetry-from-the-AVFrame-properties.patch

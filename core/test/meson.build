@@ -2642,6 +2642,16 @@ test('test_ffmpeg_libvmaf_stop_contract',
     timeout : 30,
 )
 
+# ADR-2093 / FFmpeg patch 0022: the libvmaf filters declare the AVFrame colour to
+# libvmaf. Device-free: reads the series; the FFmpeg run is
+# ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh.
+test('test_ffmpeg_libvmaf_input_colorimetry_contract',
+    import('python').find_installation(),
+    args : files('test_ffmpeg_libvmaf_input_colorimetry_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Host tests and source contracts of the Metal ports (ADR-1498). Each group
 # of ports adds its blocks directly below its own marker line.
 

@@ -11346,11 +11346,13 @@
         "core/src/conversion_context.h": 1,
         "core/src/libvmaf.c": 2,
         "core/src/meson.build": 1,
-        "core/test/meson.build": 1,
+        "core/test/meson.build": 2,
         "core/test/test_cambi_enc_dimension_minimum_contract.py": 1,
+        "core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py": 1,
         "core/test/test_read_pictures_convert.c": 1,
         "core/tools/cli_parse.cpp": 1,
-        "core/tools/vmaf.cpp": 1
+        "core/tools/vmaf.cpp": 1,
+        "ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh": 1
       },
       "target": "2093-upstream-hdr-groundwork-input-colorimetry.md"
     }

@@ -113,6 +113,16 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   failed. Upstream FFmpeg pools the frames read before the error. The
   divergence is deliberate: keep it on every refresh
   ([ADR-1768](../docs/adr/1768-ffmpeg-libvmaf-no-score-after-error.md)).
+- **`0022-libvmaf-declare-the-input-colorimetry-from-the-AVFrame-properties.patch`** —
+  on the first frame pair, `do_vmaf()` and the software path of `do_vmaf_sycl()`
+  map the AVFrame range, primaries, transfer and matrix of each input to
+  libvmaf's enums and call `vmaf_set_input_colorimetry()`
+  ([ADR-2093](../docs/adr/2093-upstream-hdr-groundwork-input-colorimetry.md)).
+  An input with an attribute libvmaf does not name stays unspecified, so
+  models without a `conversion_target` score as before. The device-free
+  contract is `core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py`;
+  the run with an FFmpeg is `test/check-libvmaf-input-colorimetry.sh`.
+  `libvmaf_tune` and the device-frame paths do not set it.
 
 Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
 gracefully when libvmaf was built without the relevant feature

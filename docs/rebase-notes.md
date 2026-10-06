@@ -7,6 +7,17 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## FFmpeg patch 0022: input colorimetry from the AVFrame (2026-10-06)
+
+`port/ffmpeg-input-colorimetry`, [ADR-2093](adr/2093-upstream-hdr-groundwork-input-colorimetry.md).
+Fork-only patch, appended to the series: no upstream FFmpeg counterpart. It adds
+`vmaf_color_from_frame()` and `vmaf_declare_input_color()` before `do_vmaf()`, the `color_set`
+member of `LIBVMAFContext`, and one call each in `do_vmaf()` and the software branch of
+`do_vmaf_sycl()`. A refresh onto a new FFmpeg release must keep both call sites; a libvmaf
+without `vmaf_set_input_colorimetry()` (Netflix's) does not link it. Test:
+`core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py`,
+`ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh`.
+
 ## Port of Netflix/vmaf `ed61076b2`, `1ddf81607`, `a6c0ba6d5`, `130569c45`, `efe90c8b8`, `5c3f4fb90`, `4f3f71b68`: HDR-VMAF groundwork (2026-10-06)
 
 `port/upstream-hdr-groundwork`, [ADR-2093](adr/2093-upstream-hdr-groundwork-input-colorimetry.md).
