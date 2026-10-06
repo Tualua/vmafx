@@ -200,6 +200,7 @@ jobs:
           # exist on disk before clang-tidy parses the translation units.
           meson compile -C build
           python3 scripts/ci/write-compile-commands.py --build-dir build
+          python3 scripts/ci/gen-mex-compile-commands.py build
       - name: Run clang-tidy on changed files
         if: steps.cpp-changes.outputs.any == 'true'
         # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`
@@ -317,18 +318,12 @@ jobs:
           #     replay. `(^|/)testdata/` is already the tree-wide fixture
           #     exclusion in `.pre-commit-config.yaml`; this is the same rule
           #     applied to the changed-files tidy lane.
-          #   - compat/python-vmaf/matlab/ — upstream Netflix training-harness
-          #     MATLAB MEX sources. They include `mex.h` / `matrix.h` from the
-          #     proprietary MATLAB SDK, which does not exist on the runner, so
-          #     every one of them dies in the preprocessor
-          #     (`'mex.h' file not found`) and the diagnostics that follow are
-          #     artefacts of reading a `.c` file as C++ after the include
-          #     failed, not findings about the code. Same posture as the
-          #     CUDA/SYCL/HIP/eBPF families above, and the same exclusion these
-          #     files already carry in every hygiene hook in
-          #     `.pre-commit-config.yaml` (see the `check-copyright` entry).
-          #     The whole-tree ratchet does not measure them either — they have
-          #     no entry in `build/compile_commands.json`.
+          #   - compat/python-vmaf/matlab/ is NOT excluded: the MEX sources include the
+          #     MATLAB SDK's `mex.h` / `matrix.h`, which no runner has, so the step
+          #     `Generate compile_commands.json` appends entries that point at the
+          #     self-authored stubs in `scripts/ci/lint-stubs/matlab/`
+          #     (`scripts/ci/gen-mex-compile-commands.py`, the `cpu` lane does the
+          #     same; T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22).
           #
           # One filter shared by every trigger path below, so adding a family
           # is a single edit.
@@ -359,8 +354,7 @@ jobs:
               -e '^core/src/compat/win32/' \
               -e '^core/tools/test/test_vmaf_windows_utf8_argv\.cpp$' \
               -e '^cmd/vmafx-node/bpf/' \
-              -e '^\.config/hiss/testdata/' \
-              -e '^compat/python-vmaf/matlab/' |
+              -e '^\.config/hiss/testdata/' |
               python3 scripts/ci/pelorus_mirror.py filter
           }
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then

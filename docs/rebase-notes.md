@@ -62337,3 +62337,10 @@ CPUID leaf 1 ECX bit 12 (FMA) is set as well as BMI1, BMI2 and AVX2, because two
 built with `-mfma`. A sync that takes upstream's `cpu.c` keeps the `has_fma` test before the leaf 7
 read. `core/test/test_x86_cpu_gate.c` compiles the file with a mock CPUID and fails without it.
 No score, public API or FFmpeg patch impact.
+## MATLAB MEX sources are linted and edited (ADR-2062)
+
+The ten MEX sources of `compat/python-vmaf/matlab/` are Netflix training-harness files that the fork now
+edits for lint (braces, `static`, `const`, includes) and one defect (`ical_std.c` destroyed the data
+pointer of a matrix instead of the `mxArray`). An upstream sync takes upstream's text and re-applies
+`clang-tidy -fix` through `make tidy-ratchet LANE=cpu`. `edges-orig.c` also gets `FILTER` renamed to
+`REDUCE` (the name `convolve.h` defines). No score, public API or FFmpeg patch impact.

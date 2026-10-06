@@ -2826,6 +2826,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   scoped write under a clang-tidy other than the baseline's stops with exit 5.
 
 
+- The `cpu` clang-tidy lane and the changed-files job measure the ten MATLAB MEX
+  sources of `compat/python-vmaf/matlab/` against self-authored stub `mex.h` and
+  `matrix.h` (`scripts/ci/lint-stubs/matlab/`); their lint exceptions are removed.
+  The first measurement fixed the mechanical findings and a defect in `ical_std.c`
+  (`mxDestroyArray()` was called on a matrix's data pointer).
+
+
 - **The Metal host code is clean under clang-tidy.** The macOS `metal` lane measures 0 findings on its 27 translation units (it started at 1640 once `write-compile-commands.py` stopped dropping the `.mm` files). `core/src/metal/objc_handle.h` now holds the one `uintptr_t` slot to Metal object bridge and `vmaf_metal_library_load()` the one metallib loader, replacing 17 copies; file-scope helpers sit in anonymous namespaces; no score, public API or FFmpeg patch changes. See [tidy lanes](docs/development/tidy-lanes.md).
 
 

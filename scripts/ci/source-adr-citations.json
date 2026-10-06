@@ -11320,6 +11320,12 @@
         "core/test/test_float_adm_debug_key_refusal.c": 1
       },
       "target": "2056-float-adm-debug-key-refusal.md"
+    },
+    "2062": {
+      "sites": {
+        "scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py": 1
+      },
+      "target": "2062-matlab-mex-lint-stubs.md"
     }
   },
   "retired": {

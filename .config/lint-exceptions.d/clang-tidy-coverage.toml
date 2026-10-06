@@ -64,66 +64,6 @@ reason = "eBPF program: includes vmlinux.h, generated from the running kernel's 
 expires = 2027-03-31
 
 [[exception]]
-path = "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/convolve.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/corrDn.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges-orig.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/innerProd.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/pointOp.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/range2.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/upConv.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
-path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/wrap.c"
-reason = "MATLAB MEX source: includes mex.h / matrix.h from the proprietary MATLAB SDK, present on no runner or image, so clang-tidy stops in the preprocessor; meson never builds it (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22 in docs/state.md)."
-expires = 2027-03-31
-
-[[exception]]
 path = "core/src/feature/metal/float_adm.metal"
 reason = "Metal Shading Language kernel. clang-tidy reads the languages the clang front end accepts; clang has no Metal language mode (`clang -x metal` answers \"language not recognized\" on clang 23.1.1, and the -x language list in https://clang.llvm.org/docs/ClangCommandLineReference.html names none; clang-tidy, https://clang.llvm.org/extra/clang-tidy/, runs on that front end). The kernels are compiled by Apple's `metal` compiler (-std=metal3.1) in the macOS Metal build leg and their arithmetic headers are held against the CPU by the device-free host-replay tests. Revisit when upstream clang gains a Metal mode."
 expires = 2027-03-31

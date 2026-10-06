@@ -346,8 +346,11 @@ TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 # translation units out of compile_commands.json: write-compile-commands.py
 # exports only the native c/cpp_COMPILER rules, so without this second pass the
 # cuda and hip lanes measure the host files only and the sycl lane measures zero
-# SYCL feature TUs, recording an empty backend in its baseline.
-TIDY_RATCHET_COMPDB_cpu :=
+# SYCL feature TUs, recording an empty backend in its baseline. The `cpu` lane adds
+# the MATLAB MEX sources, which meson never builds and which need the stub headers
+# of scripts/ci/lint-stubs/matlab/ (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22).
+TIDY_RATCHET_COMPDB_cpu := $(PYTHON_INTERPRETER) scripts/ci/gen-mex-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_clang :=
 TIDY_RATCHET_COMPDB_cuda := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
 	"$(TIDY_RATCHET_BUILD_DIR)"

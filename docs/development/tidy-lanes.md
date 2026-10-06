@@ -154,6 +154,12 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 - `cpu` disables the DNN runtime because the hosted runner has no ONNX Runtime
   and the two must measure the same translation units. The GPU lanes enable
   it, so the DNN bodies are measured there.
+- `cpu` also measures the ten MATLAB MEX sources of `compat/python-vmaf/matlab/`. meson
+  never builds them and the MATLAB SDK is on no runner, so
+  `scripts/ci/gen-mex-compile-commands.py` appends compile-database entries whose include
+  path starts with the self-authored stub headers of `scripts/ci/lint-stubs/matlab/`
+  ([ADR-2062](../adr/2062-matlab-mex-lint-stubs.md)). The stubs are for clang-tidy only:
+  nothing builds or links against them.
 - `sycl` compiles SPIR-V only. The ahead-of-time device list changes backend
   arguments that `scripts/ci/gen-sycl-compile-commands.py` removes from the
   lint database anyway.

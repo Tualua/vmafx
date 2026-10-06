@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1297), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1298), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5199,3 +5199,7 @@ Every ADR, one heading each (1297), so the site search finds an ADR by its title
 ## ADR-2056: `float_adm` files its debug ratio unsuffixed; a second debug instance is refused
 
 [2056-float-adm-debug-key-refusal](2056-float-adm-debug-key-refusal.md)
+
+## ADR-2062: The `cpu` tidy lane measures the MATLAB MEX sources against self-authored stub headers
+
+[2062-matlab-mex-lint-stubs](2062-matlab-mex-lint-stubs.md)
