@@ -1035,7 +1035,7 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* SYCL Kernel: Scale-0 Horizontal Pass from a Local-Memory Tile       */
+/* SYCL Kernel: Horizontal Pass from a Local-Memory Tile              */
 /* ------------------------------------------------------------------ */
 
 /* ADR-1769 K1. The scale-0 horizontal pass was the largest kernel of a frame
@@ -1060,7 +1060,12 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
  * The statistic, the int64 reduction and the decimated planes are the
  * generic kernel's (dev_compute_vif_stats(), dev_reduce_and_accum(),
  * dev_downsample_rd()). Integer sums only: the result is the generic
- * kernel's on every input. No private array (ADR-1395), no fp64 (ADR-0220). */
+ * kernel's on every input. No private array (ADR-1395), no fp64 (ADR-0220).
+ *
+ * Every scale runs this kernel: the tables of scales 1 to 3 add up to 2^16 as
+ * well, which the static_assert in dev_tile_convolve() checks per scale.
+ * Scale 3 has no decimation filter (vif_fwidth_rd[3] == 0), so its tile holds
+ * no convolution planes and it writes no decimated plane. */
 namespace
 {
 constexpr int VIF_TILE_WG_X = 64;
@@ -1220,17 +1225,20 @@ class IntegerVifHoriTiledKernel : public VmafSyclKernelShape<SG_SIZE, vif_grf_si
     VifTileLocal t_;
 };
 
-static VifTileLocal make_vif_tile_local(sycl::handler &cgh, unsigned tile_elems)
+/* `rd_elems` sizes the two convolution planes: a scale without a decimation
+ * filter reads none of them. */
+static VifTileLocal make_vif_tile_local(sycl::handler &cgh, unsigned tile_elems, unsigned rd_elems)
 {
     const sycl::range<1> plane(tile_elems);
+    const sycl::range<1> rd_plane(rd_elems);
     return {
         .mu1 = sycl::local_accessor<uint32_t, 1>(plane, cgh),
         .mu2 = sycl::local_accessor<uint32_t, 1>(plane, cgh),
         .ref = sycl::local_accessor<uint32_t, 1>(plane, cgh),
         .dis = sycl::local_accessor<uint32_t, 1>(plane, cgh),
         .ref_dis = sycl::local_accessor<uint32_t, 1>(plane, cgh),
-        .ref_convol = sycl::local_accessor<uint32_t, 1>(plane, cgh),
-        .dis_convol = sycl::local_accessor<uint32_t, 1>(plane, cgh),
+        .ref_convol = sycl::local_accessor<uint32_t, 1>(rd_plane, cgh),
+        .dis_convol = sycl::local_accessor<uint32_t, 1>(rd_plane, cgh),
         .reduce = sycl::local_accessor<int64_t, 1>(
             sycl::range<1>(static_cast<size_t>(ACCUM_FIELDS) * VIF_HORI_MAX_SUBGROUPS), cgh),
     };
@@ -1266,9 +1274,11 @@ static sycl::event launch_vif_hori_tiled_impl(
         .log2_lut = log2_lut,
     };
 
+    constexpr unsigned TILE_ELEMS = vif_tile_width<SCALE>() * VIF_TILE_WG_Y;
+    constexpr unsigned RD_ELEMS = (vif_fwidth_rd[SCALE] > 0) ? TILE_ELEMS : 1U;
     return q.submit([&](sycl::handler &cgh) {
         const IntegerVifHoriTiledKernel<SCALE, SG_SIZE> kernel(
-            p, make_vif_tile_local(cgh, vif_tile_width<SCALE>() * VIF_TILE_WG_Y));
+            p, make_vif_tile_local(cgh, TILE_ELEMS, RD_ELEMS));
         cgh.parallel_for(sycl::nd_range<2>(global, local), kernel);
     });
 }
@@ -1292,14 +1302,14 @@ static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width,
         return launch_vif_hori_tiled_impl<1, 32>(
             q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
             tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 2:
-        return launch_vif_hori_impl<2, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    default:
-        return launch_vif_hori_impl<3, 32>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    case 2: /* ADR-1769 K1 */
+        return launch_vif_hori_tiled_impl<2, 32>(
+            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
+            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    default: /* ADR-1769 K1 */
+        return launch_vif_hori_tiled_impl<3, 32>(
+            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
+            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     }
 }
 } // namespace
@@ -1323,14 +1333,14 @@ static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned w
         return launch_vif_hori_tiled_impl<1, 16>(
             q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
             tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    case 2:
-        return launch_vif_hori_impl<2, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
-    default:
-        return launch_vif_hori_impl<3, 16>(q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2,
-                                           tmp_ref, tmp_dis, tmp_ref_dis, tmp_ref_convol,
-                                           tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    case 2: /* ADR-1769 K1 */
+        return launch_vif_hori_tiled_impl<2, 16>(
+            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
+            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
+    default: /* ADR-1769 K1 */
+        return launch_vif_hori_tiled_impl<3, 16>(
+            q, width, height, vif_enhn_gain_limit, tmp_mu1, tmp_mu2, tmp_ref, tmp_dis, tmp_ref_dis,
+            tmp_ref_convol, tmp_dis_convol, accum, rd_ref, rd_dis, log2_lut);
     }
 }
 } // namespace
