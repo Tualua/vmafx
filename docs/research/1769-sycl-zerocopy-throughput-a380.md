@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Research-1769: Where the SYCL zero-copy time goes on an Arc A380
 
-- **Status**: Active (baseline measured; candidate selection pending)
+- **Status**: Active (baseline measured; candidates selected)
 - **Workstream**: [ADR-1769](../adr/1769-sycl-zerocopy-throughput-a380.md), phase 13
 - **Last updated**: 2026-10-06
 
@@ -53,7 +53,7 @@ A 5-frame L1 run takes 11.8 s and 29 s of host CPU; the 200-frame L1 run takes
 13.2 s. So a 200-frame run is about 12 s of process start-up plus the frames.
 `fps = 200 / rtime` is therefore start-up-diluted: it reads 12.3 while the
 filter's own per-frame time reads 45 fps. Steady state is
-`(rtime - 11.8 s) / 200`. The remaining columns below use the steady state
+`(rtime(N) - rtime(20)) / (N - 20)` from two runs of one session (calibrated below). The remaining columns below use the steady state
 unless a column says "harness fps". Consequence for the phase: a 15 % gain of
 the frame shows as about 4 % on the 200-frame harness fps, so acceptance runs
 need a long segment (`--frames 0`) or the steady-state formula.
@@ -114,7 +114,8 @@ busy time, and the sum of compute and copy (38 ms) exceeds the 22 ms frame, so
 the two engines overlap. The filter's own GPU time (21.8 ms) equals the compute
 busy time, so the Blitter is not on the critical path. What issues the
 Blitter work inside a kernel launch sequence is not visible without a
-per-kernel profile (VTune was not approved). Reducing it frees no frame time
+per-kernel profile (the VTune list below shows only `zeCommandListAppendMemoryCopy`
+and `Fill` of the copy type, 0.2 ms per frame). Reducing it frees no frame time
 on this evidence.
 
 ## Host phases
@@ -131,25 +132,55 @@ The host spends 89 % of each frame waiting for the GPU and 4 % importing. With
 the harness's 171 ms/frame minus start-up that is one core spinning, as the
 phase goal states. The host is never the bottleneck: the wait is the compute.
 
-## Per-kernel breakdown
+## Steady-state calibration
 
-VTune was not run (the capabilities were not approved) and
-`VMAF_SYCL_PROFILE=1 VMAF_SYCL_NO_GRAPH=1` printed no per-kernel lines at the
-default log level, so the split comes from isolation runs (one extractor plus
-the import, R = 3):
+The harness fps cannot be compared across a change of the frame by itself, so
+later plans use two runs of the same row, `--frames 600` and `--frames 20`
+(`--repeat 3 --warmup 1` each), and
+`steady fps = (600 - 20) / (rtime600 - rtime20)`.
 
-| Part | Filter gpu ms (alone + import) | Derived ms/frame | Share of 21.82 ms |
+| Run | rtime (3 runs, s) | Filter gpu ms | Spread |
 | --- | --- | --- | --- |
-| `vif` | 14.65 | 12.1 | 55 % |
-| `adm` | 8.51 | 6.0 | 27 % |
-| `motion` | 3.73 | 1.2 | 5 % |
-| import + fixed per frame | n/a | 2.5 | 11 % |
+| 600 frames | 25.72, 25.88, 25.56 | 22.34 to 22.40 | 1.2 % |
+| 20 frames | 12.89, 12.91, 13.01 | 21.56 to 21.76 | 0.9 % |
 
-Derivation: the three isolation rows each contain the import `x`, so
-`x = (14.65 + 8.51 + 3.73 - 21.82) / 2 = 2.5 ms`, assuming the parts add. The
-kernel-level names inside `vif` and `adm` are not measured. `VMAF_SYCL_FORCE_READBACK`
-is no longer honoured (no occurrence in `core/src`), so the readback ladder
-step was not run.
+Medians 25.72 s and 12.91 s give 22.09 ms per frame, **45.3 fps steady**, with
+a start-up of 12.9 s at 20 frames. This agrees with the filter's own 21.8 to
+22.4 ms. The 15 % target is therefore a frame of 18.8 ms or less (53 fps).
+
+## Per-kernel breakdown (VTune xpu-offload)
+
+One un-quoted VTune run (`--frames 100`, `SYCL_DEV_PROFILE_CAPS=1`, the explicit
+PERFMON, SYS_PTRACE and SYS_ADMIN capabilities, no `--privileged`) gave the GPU
+task times below, divided by 100 frames. Their sum is 19.87 ms per frame
+against 21.8 ms of filter time (the rest is idle gaps and the wait). The run's
+fps is not quoted.
+
+| Task (instances per frame) | ms/frame | Share of 19.87 ms |
+| --- | --- | --- |
+| `IntegerVifHoriKernel<0>` (1; 3840x1600) | 6.33 | 31.8 % |
+| `launch_vif_vert_impl<0>` (1) | 2.41 | 12.1 % |
+| ADM `csf_den_cm`, scale 0 (1; plus 3 smaller) | 1.50 (2.33 in all) | 11.7 % |
+| `IntegerVifHoriKernel<1>` (1; 1920x800) | 1.32 | 6.6 % |
+| `motion` `submit_sad` (1) | 1.25 | 6.3 % |
+| ADM `dwt_vert_pair` (4 scales) | 1.46 | 7.3 % |
+| ADM `dwt_hori_pair` (4 scales) | 1.22 | 6.1 % |
+| ADM `decouple_csf` (4 scales) | 1.28 | 6.4 % |
+| chroma import + `detile_tile4` luma (2 each) | 0.69 + 0.42 | 5.6 % |
+| `launch_vif_vert_impl<1..3>` + `IntegerVifHoriKernel<2,3>` | 0.69 | 3.5 % |
+| `zeCommandListAppendMemoryCopy` and `Fill` | 0.21 | 1.1 % |
+
+Group totals: VIF 11.0 ms (55 %), ADM 6.3 ms (32 %), motion 1.25 ms, import 1.1
+ms, copies and fills 0.2 ms. The isolation estimate (VIF 12.1, ADM 6.0) is
+within 10 % of this. About 37 launches run per frame, so the 2.2 ms between the
+19.87 ms of GPU tasks and the 22.1 ms frame is about 60 microseconds per
+launch. Scale 2 and 3 tasks of VIF and ADM are 1.2 ms in 14 launches. Host
+side, `zeCommandQueueSynchronize` is 8.8 % of the 20 s run (the wait).
+`IntegerVifHoriKernel<0>` alone is 32 % of the frame; it reads the seven 24.6 MB
+planes (172 MB, 0.9 ms at 186 GB/s), so it runs at about 7 times its traffic
+roof and is arithmetic-bound. The full task list is the evidence file
+`13-02-vtune-tasks.csv`; `VMAF_SYCL_FORCE_READBACK` is no longer honoured (no
+occurrence in `core/src`), so the readback ladder step was not run.
 
 ## Env rows (v0.6.1, R = 3)
 
@@ -202,13 +233,13 @@ frame.
 | ID | Candidate | Measured ceiling | % fps | Bit risk | Reading |
 | --- | --- | --- | --- | --- | --- |
 | C2 | Low-power host wait | 0 ms; frees about one host core | 0 (may lose 1) | none | the wait is the compute; no fps to gain |
-| C3 | Device fence on VA import, drop frame-start wait | up to 2.4 ms (the compute idle gap); host import is 0.78 ms | 3 to 10 | none if every reader is fenced | bounded by idle compute; blocked by the `n_subsample` defect |
+| C3 | Device fence on VA import, drop frame-start wait | up to 2.2 ms (the gap between 19.87 ms of tasks and the frame); host import is 0.78 ms | 3 to 10 | none if every reader is fenced | bounded by idle compute; blocked by the `n_subsample` defect |
 | C1 | Skip chroma import for luma-only models | at most 0.3 ms (24 MB of traffic is 0.13 ms at 186 GB/s) | about 1 | none | inside the 2.5 ms import |
-| K3 | De-tile 16 bytes per work-item | at most the 2.5 ms import; luma traffic is 0.27 ms at the roof, so expect 0.1 to 0.5 | 0.5 to 2 | none | copy plus shift |
-| K1 | VIF scale-0 intermediates (7 planes of 24.6 MB, written and read) | traffic 344 MB = 1.9 ms at 186 GB/s; VIF is 12.1 ms, so it is not memory-bound | up to 9 | integer, needs `==` at 4K | the 10 ms above the roof is arithmetic, not traffic |
-| K2 | ADM hotspot | not rated: no per-kernel data (6.0 ms in total) | n/a | low | needs VTune or kernel events first |
+| K3 | De-tile 16 bytes per work-item | `detile_tile4` is 0.42 ms per frame (2 x 0.21); at most 0.2 saved | 1 | none | copy plus shift |
+| K1 | VIF scale-0 (7 planes of 24.6 MB, written and read) | vert 2.41 ms and hori 6.33 ms are 8.7 ms; traffic roof 1.9 ms for the planes, so up to about 2.4 ms from the vertical pass, more only if the horizontal arithmetic shrinks | up to 11 | integer, needs `==` at 4K | `IntegerVifHoriKernel<0>` (32 % of the frame) is arithmetic-bound |
+| K2 | ADM hotspot | 6.3 ms in 16 launches; the largest task `csf_den_cm` scale 0 is 1.5 ms; no task above 7 % of the frame | up to 7 | low | not selected |
 | K4 | Dispatch or env default | 0 (graph neutral; immediate and NEO keys slower) | 0 | none | rejected by the env rows |
-| K5 | Merge tiny scale-2/3 launches | at most the 2.4 ms idle gap; launch count not measured | up to 10 | none for integer | needs a launch count |
+| K5 | Merge tiny scale-2/3 launches | 14 launches at about 60 microseconds of gap = about 0.8 ms; their own GPU time is 1.2 ms | up to 4 | none for integer | 37 launches per frame in all |
 
 Excluded (research anti-candidates): per-surface import caching (ADR-1596 lost),
 delayed frees, any float accumulation reorder, copy-engine imports,
@@ -216,8 +247,8 @@ delayed frees, any float accumulation reorder, copy-engine imports,
 
 ## Consequences for the 15 % target
 
-Only K1, K5 and C3 reach more than 5 % in the ceiling column, and K5 and C3
-share the same 2.4 ms idle gap, so their gains do not add. K1's ceiling needs
+Only K1 and C3 reach more than 5 % in the ceiling column (K1 through its 8.7 ms of scale-0 tasks), and K5 and C3
+share the same 2.2 ms idle gap, so their gains do not add. K1's ceiling needs
 the whole intermediate traffic removed, and the `vif_fused` variant that does
 so is not bit-exact. Realistic outcomes are well under half of the ceilings.
 The measured irreducibility write-up (success criterion 2) is a likely
