@@ -10,6 +10,9 @@ search:
 ## Meson secret-env contract test spells paths with forward slashes (2026-10-06)
 
 `fix/meson-secret-env-test-posix-paths`. ADR-1333 entry preserved: only the path spelling in `core/test/test_meson_secret_env_sanitization.py` changed; the runner, the setup and the credential inventory are untouched. no other rebase impact.
+## CLI exit status is the libvmaf code modulo 256 on every platform (2026-10-06)
+
+`fix/cli-exit-status-modulo-256`. A sync or refactor of `vmaf_cli_main()` in `core/tools/vmaf.cpp` keeps the return of the run result through `vmaf_cli_exit_status()` (`core/tools/cli_exit_status.h`); Netflix's `main()` returns the raw code. `core/test/test_cli_exit_status_contract.py` and `test_cli_exit_status` guard it.
 
 ## ADR audit: status header forms (2026-10-06)
 

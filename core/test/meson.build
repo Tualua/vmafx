@@ -697,6 +697,15 @@ test('test_float_adm_divides_contract',
     timeout : 30,
 )
 
+# The CLI returns libvmaf's code modulo 256, never a negative status: Windows
+# keeps all 32 bits of main()'s result, POSIX only eight.
+test('test_cli_exit_status_contract',
+    import('python').find_installation(),
+    args : files('test_cli_exit_status_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # The CLI read-ahead's invariants are assert()s, not early returns: a lint
 # cleanup once replaced all seven after a host-toolchain false positive.
 test('test_cli_frame_reader_asserts_contract',
@@ -2121,6 +2130,12 @@ test_cli_parse = executable('test_cli_parse',
     c_args : [compat_cflags],
     cpp_args : [compat_cflags],
     dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
+)
+
+test_cli_exit_status = executable('test_cli_exit_status',
+    ['test.c', 'test_cli_exit_status.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../tools/')],
+    c_args : [compat_cflags],
 )
 
 # Netflix/vmaf#743 regression: the CLI progress spinner must fall back to an
@@ -8245,6 +8260,7 @@ test('test_speed_frame_buffers', test_speed_frame_buffers, suite : ['fast'])
 test('test_speed_qa', test_speed_qa, suite : ['fast'])
 test('test_luminance_tools', test_luminance_tools, suite : ['fast'])
 test('test_cli_parse', test_cli_parse, suite : ['fast'])
+test('test_cli_exit_status', test_cli_exit_status, suite : ['fast'])
 test('test_spinner', test_spinner, suite : ['fast'])
 if host_machine.system() != 'windows'
     test('test_y4m_411_oob', test_y4m_411_oob, suite : ['fast'])

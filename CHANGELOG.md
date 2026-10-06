@@ -3315,6 +3315,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   cleanly via `yuv_check_file_size()`.
 
 
+The `vmaf` command-line tool now exits with the same status on every platform: a libvmaf error code modulo 256 (`-EINVAL` is 234). On Windows the raw negative 32-bit code used to leak out and a POSIX shell read it as something else.
+
+
 - **`--feature <name>` now runs on the GPU that `--backend` names.**
   `vmaf --backend sycl --feature ciede` used to initialise the SYCL device and
   compute `ciede2000` with the CPU extractor, one frame at a time, while the

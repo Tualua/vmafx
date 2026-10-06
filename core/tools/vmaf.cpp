@@ -56,6 +56,7 @@
 #endif
 
 #include "cli_backends.h"
+#include "cli_exit_status.h"
 #include "cli_feature_backend.h"
 #include "cli_parse.h"
 #include "compat/path_utf8.h"
@@ -2477,7 +2478,8 @@ namespace
     }
     const int run_err = run_cli(&state, isatty(fileno(stderr)));
     const int cleanup_err = guard.close();
-    return run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS);
+    /* The status is the libvmaf code modulo 256 on every platform, never negative. */
+    return vmaf_cli_exit_status(run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS));
 }
 // NOLINTEND(clang-analyzer-unix.Malloc)
 

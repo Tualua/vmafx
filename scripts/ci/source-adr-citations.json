@@ -6343,6 +6343,7 @@
         "core/test/test_ciede_simd_parity.c": 1,
         "core/test/test_ciede_upstream_products.c": 1,
         "core/test/test_cjson.c": 1,
+        "core/test/test_cli_exit_status.c": 1,
         "core/test/test_cli_parse.c": 28,
         "core/test/test_cli_parse_long_only_args.c": 1,
         "core/test/test_collector_owns_mounted_model.c": 1,
