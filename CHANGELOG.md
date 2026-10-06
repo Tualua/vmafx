@@ -4291,6 +4291,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   (`T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30` in `docs/state.md`).
 
 
+- **`test_hip_smoke` passes on a host without an AMD GPU again.** Its context
+  case still expected `vmaf_hip_context_new()` to succeed without a device;
+  since the context selects its device first, the function returns `-ENODEV`
+  there, and the case now checks that contract (and a populated context when
+  a device is present).
+
+
 - **`speed_chroma_hip` and `speed_temporal_hip` match the CPU with
   `speed_prescale_method=lanczos4`.** Like the CUDA and SYCL twins before
   them, they evaluated the lanczos4 kernel weights on the device in fp32,

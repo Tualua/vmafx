@@ -29,6 +29,10 @@ after it, or a `restore-keys` hit brings back an older revision of a tracked `py
 
 `fix/icx-libm-test-no-confstr`. no rebase impact: fork-only test file (`core/test/test_icx_system_libm.py`); its
 `os.confstr` patches keep `create=True` so the Windows legs can run them.
+## HIP smoke test follows `vmaf_hip_context_new()`'s device contract (2026-10-06)
+
+`fix/hip-smoke-context-no-device`. no rebase impact: fork-only test (`core/test/test_hip_smoke.c`); the context case
+branches on `vmaf_hip_device_count()` like the state case.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 
