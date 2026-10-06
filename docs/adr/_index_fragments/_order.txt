@@ -1297,3 +1297,7 @@
 2055-x86-avx2-gate-requires-fma
 2012-lefthook-windows-host
 2062-matlab-mex-lint-stubs
+0228-y4m-411-422jpeg-heap-overflow-fix
+0636-allocator-claim-released-without-record
+0867-precommit-semgrep-serial-execution
+0979-markdownlint-narrow-to-five-rules

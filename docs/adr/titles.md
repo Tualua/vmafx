@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1298), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1302), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -667,6 +667,10 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 ## ADR-0223 TransNet V2 shot-boundary detector — 100-frame window, placeholder weights
 
 [0223-transnet-v2-shot-detector](0223-transnet-v2-shot-detector.md)
+
+## ADR-0228: Tombstone: heap-buffer-overflow fix in the Y4M 411 to 422jpeg conversion
+
+[0228-y4m-411-422jpeg-heap-overflow-fix](0228-y4m-411-422jpeg-heap-overflow-fix.md)
 
 ## ADR-0234: GPU-generation-aware ULP calibration head
 
@@ -2076,6 +2080,10 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 
 [0635-ci-warning-omnibus-2026-05-19](0635-ci-warning-omnibus-2026-05-19.md)
 
+## ADR-0636: Tombstone: ADR number claimed from the allocator and never used
+
+[0636-allocator-claim-released-without-record](0636-allocator-claim-released-without-record.md)
+
 ## ADR-0637: Fix 5 master CI failures — MCP smoke syntax, coverage floor, and job timeouts
 
 [0637-ci-test-failures-omnibus](0637-ci-test-failures-omnibus.md)
@@ -2100,7 +2108,7 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 
 [0642-ai-refresh-full-feature-defaults](0642-ai-refresh-full-feature-defaults.md)
 
-## ADR-0643: &lt;fill in title&gt;
+## ADR-0643: vmaf-tune Reports Carry Encoder Profiles
 
 [0643-vmaf-tune-encoder-profile-contract](0643-vmaf-tune-encoder-profile-contract.md)
 
@@ -2188,11 +2196,11 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 
 [0664-windows-cuda-toolkit-installer](0664-windows-cuda-toolkit-installer.md)
 
-## ADR-0665: &lt;fill in title&gt;
+## ADR-0665: Fast-NR calibration quality guard
 
 [0665-fast-nr-calibration-quality-guard](0665-fast-nr-calibration-quality-guard.md)
 
-## ADR-0666: &lt;fill in title&gt;
+## ADR-0666: vmaf-tune report quick takeaways
 
 [0666-tune-report-quick-takeaways](0666-tune-report-quick-takeaways.md)
 
@@ -2220,7 +2228,7 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 
 [0672-saliency-materializer-temporal-controls](0672-saliency-materializer-temporal-controls.md)
 
-## ADR-0673: &lt;fill in title&gt;
+## ADR-0673: Saliency Materializer Batch Manifest
 
 [0673-saliency-materializer-batch-manifest](0673-saliency-materializer-batch-manifest.md)
 
@@ -2704,6 +2712,10 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 
 [0866-wire-markdownlint-into-lint-pipeline](0866-wire-markdownlint-into-lint-pipeline.md)
 
+## ADR-0867: Tombstone: run the semgrep-local pre-commit hook serially
+
+[0867-precommit-semgrep-serial-execution](0867-precommit-semgrep-serial-execution.md)
+
 ## ADR-0868: GPU backend kernel parity-test coverage gap-fill
 
 [0868-gpu-backend-kernel-coverage](0868-gpu-backend-kernel-coverage.md)
@@ -3071,6 +3083,10 @@ Every ADR, one heading each (1298), so the site search finds an ADR by its title
 ## ADR-0978: vmafx-server + pkg/score bug-audit — shutdown leak, gRPC Send-EOF surfacing, HTTP body cap, panic recovery
 
 [0978-vmafx-server-bug-audit](0978-vmafx-server-bug-audit.md)
+
+## ADR-0979: Tombstone: narrowing markdownlint to five rules, rejected
+
+[0979-markdownlint-narrow-to-five-rules](0979-markdownlint-narrow-to-five-rules.md)
 
 ## ADR-0980: Markdown-lint full-ruleset discharge — content fixes + per-file scoped disables
 

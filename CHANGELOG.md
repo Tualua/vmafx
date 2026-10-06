@@ -550,6 +550,9 @@
   (the scaffold-audit P1 record) where they cited ADR-0613, the vmaf-tune dynamic optimizer.
 
 
+- ADR-0643, ADR-0665, ADR-0666 and ADR-0673 lose the unfilled allocator template block that preceded their real text (their first heading read `<fill in title>`); a status update records it. Four ADR numbers that other ADRs cite and that had no file (ADR-0228, 0636, 0867, 0979) get a short record each, written from the commits and ADRs that name them.
+
+
 - 34 ADR status headers read in the one form the drift gate parses (`- **Status**: Accepted`): 12 bullet variants and 22 table or heading headers (no value changed; empty `Supersedes` rows dropped). ADR-0003 and ADR-0019 link their successor ADR-1277. ADR-1129, ADR-1225 and ADR-0954 gain a dated status update: the pins they quote have moved (`build-config.env` is the authority) and the HIP dispatch strategy file was removed by #2030. `docs/state.md` cites ADR-0639 (scaffold-audit P1) where it said ADR-0613.
 
 

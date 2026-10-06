@@ -16,6 +16,9 @@ search:
 ## ADR audit: partial supersession in status lines (2026-10-06)
 
 `docs/adr-audit-partial`. no rebase impact: 45 ADR status lines; no source, build or test file changes.
+## ADR audit: unfilled template blocks and tombstone records (2026-10-06)
+
+`docs/adr-audit-backfill`. no rebase impact: four ADR files lose a template block, four short ADR files are added; no source, build or test file changes.
 
 ## SYCL fused VIF reads and writes different downsampled planes (2026-10-06)
 
