@@ -57,14 +57,21 @@ The native MSVC CUDA build compiles, links and installs in CI; the hosted
 Windows runner has no GPU, so it runs no GPU scoring tests.
 
 CUDA needs Visual Studio Build Tools and the Windows SDK, even when the host
-library is built with MinGW. Meson looks for `cl.exe` in two places:
+library is built with MinGW. NVCC's host compiler (`-ccbin`) is chosen in this
+order:
 
-1. through `vswhere`;
-2. if that finds nothing, on `PATH`, as in an x64 Native Tools Command Prompt.
+1. when the build compiles C++ with MSVC (a Native Tools Command Prompt or
+   `vcvarsall.bat`), that same `cl.exe`, so the host half of every `.cu` file
+   uses the same toolset and standard library as the rest of the build;
+2. otherwise the newest MSVC toolset of the latest Visual Studio install that
+   `vswhere` reports (an install can carry older toolsets beside the current
+   one, such as 14.29 in Visual Studio 2026, whose library cannot compile the
+   C++20 headers the CUDA kernels use);
+3. if that finds nothing, `cl.exe` on `PATH`.
 
-The compiler it finds is passed to NVCC as `-ccbin` and used for MSVC header
-discovery. If neither place has a compiler, configuration stops and says that
-Visual Studio Build Tools are required.
+The compiler it picks is also used for MSVC header discovery; configuration
+prints which one. If no place has a compiler, configuration stops and says
+that Visual Studio Build Tools are required.
 
 A regression test checks this lookup on any POSIX host, without a Windows SDK
 or a GPU, using stubbed compiler responses:

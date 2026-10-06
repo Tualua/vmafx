@@ -1393,23 +1393,47 @@ if is_cuda_enabled
         # On Windows, nvcc requires MSVC's cl.exe as host compiler for preprocessing.
         # We avoid adding cl.exe to PATH as that causes meson to pick MSVC as the
         # default C compiler. Use vswhere + powershell to find cl.exe automatically.
+        #
+        # When the build itself compiles C++ with MSVC, nvcc's host compiler is that
+        # same cl.exe: a second toolset compiles the host half of every .cu against
+        # another STL than the objects it links with, and a Visual Studio install
+        # carries older toolsets beside the current one. The search used to take
+        # the first cl.exe of a recursive walk, the v142 toolset (14.29) of VS 18,
+        # whose STL hides <numbers> from nvcc's C++20 host passes, so
+        # ciede_score.cu stopped compiling (T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06).
+        # Without an MSVC build compiler the search takes the newest toolset of
+        # the latest install. test_windows_cuda_compiler_discovery.py runs this block.
+        nvcc_build_msvc = ''
+        if is_variable('cxx')
+            if cxx.get_id() == 'msvc'
+                nvcc_build_msvc = find_program(cxx.cmd_array()[0]).full_path()
+            endif
+        endif
         if host_machine.system() == 'windows'
-            cl_find_result = run_command('powershell', '-NoProfile', '-Command',
-                '(Get-ChildItem -Path (& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath) -Recurse -Filter cl.exe -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*HostX64*x64*" } | Select-Object -First 1).FullName',
-                check: false)
-            if cl_find_result.returncode() == 0 and cl_find_result.stdout().strip() != ''
-                cl_path = cl_find_result.stdout().strip()
-                message('Found MSVC cl.exe at: ' + cl_path)
-                nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
+            if nvcc_build_msvc != ''
+                cl_path = nvcc_build_msvc
+                message('nvcc host compiler: the build MSVC at ' + cl_path)
             else
-                cl_exe = find_program('cl', required: false)
-                if cl_exe.found()
-                    cl_path = cl_exe.full_path()
-                    nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
+                cl_find_result = run_command('powershell', '-NoProfile', '-Command',
+                    '$vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath; ' +
+                    '(Get-ChildItem -Path "$vs/VC/Tools/MSVC" -Directory -ErrorAction SilentlyContinue | ' +
+                    'Sort-Object { [version]$_.Name } -Descending | ' +
+                    'ForEach-Object { Join-Path $_.FullName "bin/HostX64/x64/cl.exe" } | ' +
+                    'Where-Object { Test-Path $_ } | Select-Object -First 1)',
+                    check: false)
+                if cl_find_result.returncode() == 0 and cl_find_result.stdout().strip() != ''
+                    cl_path = cl_find_result.stdout().strip()
+                    message('Found MSVC cl.exe at: ' + cl_path)
                 else
-                    error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
+                    cl_exe = find_program('cl', required: false)
+                    if cl_exe.found()
+                        cl_path = cl_exe.full_path()
+                    else
+                        error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
+                    endif
                 endif
             endif
+            nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
 
             # Find MSVC and Windows SDK include dirs so cl.exe can find system
             # headers when invoked by nvcc outside a vcvars environment.

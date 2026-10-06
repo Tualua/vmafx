@@ -62404,3 +62404,12 @@ persona sources under `.agents/` and their four projections
 paths; a sync keeps the block where it is (the managed block must stay at the tail).
 `scripts/ci/tests/test_praetor_hashed_files_lf.py` fails when a rule is missing. No score, public
 API or FFmpeg patch impact.
+
+## nvcc on Windows uses the build's MSVC (`fix/nvcc-ccbin-build-msvc`)
+
+The Windows discovery block of `core/src/meson.build` (ported from the unmerged Netflix PR #1472, ADR-0150)
+now gives nvcc the build's own `cl.exe` when `cxx` is MSVC (`nvcc_build_msvc`, assigned just before the
+block), otherwise the newest toolset under the latest `vswhere` install, otherwise `cl` on `PATH`
+(`T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06`). Upstream master has no such block; a re-port keeps
+this order and `core/test/test_windows_cuda_compiler_discovery.py`. No score, public API or FFmpeg patch
+impact.
