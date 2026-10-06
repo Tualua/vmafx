@@ -918,6 +918,30 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     return rc;
 }
 
+/* Internal test entry (core/test/test_sycl_detile_tile4.c): run the Tile4
+ * de-tile of one plane at offset 0 and wait for it. */
+extern "C" int vmaf_sycl_detile_tile4_for_test(VmafSyclState *state, void *dst,
+                                               const void *src_tiled, size_t pitch,
+                                               size_t row_bytes, unsigned h, unsigned bpc)
+{
+    if (!state || !dst || !src_tiled || h == 0 || row_bytes == 0 || pitch % 128 != 0 ||
+        pitch > UINT32_MAX || row_bytes > pitch || bpc < 8 || bpc > 16)
+        return -EINVAL;
+    auto *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
+    if (!q)
+        return -EINVAL;
+    try {
+        detile_tile4(q, dst, src_tiled, 0, (uint32_t)pitch, row_bytes, h, bpc).wait_and_throw();
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_sycl de-tile test run failed: %s\n", e.what());
+        return -EIO;
+    } catch (const std::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_sycl de-tile test run failed: %s\n", e.what());
+        return -EIO;
+    }
+    return 0;
+}
+
 #else /* !HAVE_SYCL_DMABUF */
 
 extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display_handle,
@@ -932,6 +956,20 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     (void)h;
     (void)bpc;
     return -ENOTSUP;
+}
+
+extern "C" int vmaf_sycl_detile_tile4_for_test(VmafSyclState *state, void *dst,
+                                               const void *src_tiled, size_t pitch,
+                                               size_t row_bytes, unsigned h, unsigned bpc)
+{
+    (void)state;
+    (void)dst;
+    (void)src_tiled;
+    (void)pitch;
+    (void)row_bytes;
+    (void)h;
+    (void)bpc;
+    return -ENOSYS;
 }
 
 #endif /* HAVE_SYCL_DMABUF */
@@ -984,6 +1022,20 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     vmaf_log(VMAF_LOG_LEVEL_ERROR,
              "libvmaf: SYCL VA surface import is not supported on Windows "
              "(VA-API is a Linux primitive; Windows zero-copy requires DXGI NT handles)\n");
+    return -ENOSYS;
+}
+
+extern "C" int vmaf_sycl_detile_tile4_for_test(VmafSyclState *state, void *dst,
+                                               const void *src_tiled, size_t pitch,
+                                               size_t row_bytes, unsigned h, unsigned bpc)
+{
+    (void)state;
+    (void)dst;
+    (void)src_tiled;
+    (void)pitch;
+    (void)row_bytes;
+    (void)h;
+    (void)bpc;
     return -ENOSYS;
 }
 

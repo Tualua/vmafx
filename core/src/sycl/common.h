@@ -764,6 +764,26 @@ void vmaf_sycl_defer_import_free(VmafSyclState *state, void *ptr);
  */
 void vmaf_sycl_set_detile_event(VmafSyclState *state, void *event_ptr);
 
+/**
+ * Internal, used by core/test only; not part of the public API. Run the Tile4
+ * luma de-tile kernel of the zero-copy import on one plane at offset 0 of
+ * `src_tiled` and wait for it.
+ *
+ * @param state      The SYCL state.
+ * @param dst        Device buffer of `row_bytes * h` bytes (linear output).
+ * @param src_tiled  Device buffer holding the Tile4 plane.
+ * @param pitch      Tiled pitch in bytes, a multiple of 128.
+ * @param row_bytes  Bytes of one output row, at most `pitch`.
+ * @param h          Rows.
+ * @param bpc        Bits per component; above 8 the samples are shifted
+ *                   right by 16 - bpc as the import does for P010 / P012.
+ *
+ * @return 0, -EINVAL on a bad argument, -EIO when the kernel failed, -ENOSYS
+ *         on a build without the DMA-BUF import.
+ */
+int vmaf_sycl_detile_tile4_for_test(VmafSyclState *state, void *dst, const void *src_tiled,
+                                    size_t pitch, size_t row_bytes, unsigned h, unsigned bpc);
+
 /* ---- Profiling ---- */
 
 /**

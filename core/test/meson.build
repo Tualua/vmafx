@@ -5946,6 +5946,23 @@ test('test_sycl_chroma_import', test_sycl_chroma_import,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# ADR-1769 (K3): the Tile4 luma de-tile kernel of the zero-copy import, 16 bytes
+# per work-item. Host-synthesised Tile4 planes (forward address function
+# independent of the kernel, random bytes in every padding byte) must come back
+# as the exact linear plane, P010 / P012 shift included, on rows that are and
+# are not a multiple of 16 bytes. Skips without a SYCL device.
+test_sycl_detile_tile4 = executable('test_sycl_detile_tile4',
+    ['test.c', 'test_sycl_detile_tile4.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_sycl_detile_tile4', test_sycl_detile_tile4,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 # ADR-1595: zero-copy input has no host pictures; vmaf_read_pictures_sycl must
 # refuse a registered CPU extractor with -ENOTSUP before any state change, and a
 # luma-only SYCL twin must still score on directly written upload slots.
