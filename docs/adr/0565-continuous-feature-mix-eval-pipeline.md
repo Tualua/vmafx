@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0565: Continuous Feature-Mix Evaluation Pipeline (predictor-bench)
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: ai, vmaf-tune, predictor, eval, corpus, fork-local, ci
@@ -104,3 +104,13 @@ The full design is in
 - Upstream-feature-additions agent (a8472e67e6286c976) — enumerates Netflix
   HDR model inputs; informs the `vmaf_hdr_v1` pending cell.
 - Source: `req` — per task brief, 2026-05-18.
+
+## Status update 2026-10-06: Proposed, scheduled for 1.5
+
+The decision is not implemented and stays Proposed. It is scheduled for the
+1.5 milestone ("Next model generation") as the predictor-bench evaluation
+pipeline; the tracking issue is
+[#2262](https://github.com/VMAFx/vmafx/issues/2262). The code this record
+names does not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

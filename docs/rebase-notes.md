@@ -10,6 +10,9 @@ search:
 ## ADR audit: status header forms (2026-10-06)
 
 `docs/adr-audit-mechanical`. no rebase impact: ADR status headers and dated status updates, plus one ADR number in docs/state.md; no source, build or test file changes.
+## ADR audit: Proposed ADR statuses (2026-10-06)
+
+`docs/adr-audit-status`. no rebase impact: ADR status lines, dated status updates, one drift-gate exception list and one docs/state.md Deferred row; no source, build or test file changes.
 
 ## SYCL fused VIF reads and writes different downsampled planes (2026-10-06)
 

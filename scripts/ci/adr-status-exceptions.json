@@ -5,8 +5,8 @@
       "adr": 613,
       "file": "docs/adr/0613-dynamic-optimizer.md",
       "rule": "proposed-with-implementing-commit",
-      "reason": "Only the roadmap plan landed; tools/vmaf-tune/src/vmaftune/dynamic_optimizer.py does not exist. The commits that cite the number are unrelated closeouts.",
-      "expires": "2027-01-05"
+      "reason": "Scheduled for 1.4 (tracking issue #2261); only the roadmap plan landed and tools/vmaf-tune/src/vmaftune/dynamic_optimizer.py does not exist. The commits that cite the number are unrelated closeouts.",
+      "expires": "2027-04-06"
     },
     {
       "adr": 781,
@@ -27,13 +27,6 @@
       "file": "docs/adr/0907-perf-regression-gate-wall-clock.md",
       "rule": "proposed-with-implementing-commit",
       "reason": "scripts/perf/check-regression.py and its baseline exist, but no workflow on master invokes the gate, so the decided CI wiring is missing.",
-      "expires": "2027-01-05"
-    },
-    {
-      "adr": 1202,
-      "file": "docs/adr/1202-cuda-speed-chroma-4k-launch-bounds.md",
-      "rule": "proposed-with-implementing-commit",
-      "reason": "PR #1360 shipped the singular_out out-parameter and the eight-warp launch, but device-resident pipelines replaced that code; the decision text no longer matches the tree and needs a superseding or rewriting ADR.",
       "expires": "2027-01-05"
     }
   ]

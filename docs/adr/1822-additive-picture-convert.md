@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1822: `vmaf_picture_convert` ships additively, with the source colour as an argument
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-10-05
 - **Deciders**: lusoris (maintainer popup answer, 2026-10-05)
 - **Tags**: api, abi, build, upstream-port, zimg, fork-local
@@ -105,3 +105,15 @@ removed without the deprecation window of `docs/api/index.md`.
 - Netflix/vmaf `0497a0f29` "libvmaf: add vmaf_picture_convert api".
 - [ADR-0928](0928-vmaf-picture-v2-explicit-backend-state.md),
   [ADR-1487](1487-upstream-parity-policy-and-guard.md), `docs/api/index.md` "ABI stability".
+
+## Status update 2026-10-06: Accepted
+
+The decision was applied while this record still said Proposed. Checked on
+`origin/master` `fd8b8c93b`: #2140 (`3a51be3a6`, 2026-10-05) added
+`core/src/picture_convert.c` as its own translation unit, the `enable_zimg`
+option in `core/meson_options.txt` (default off),
+`vmaf_picture_convert_context_init_with_color()` in
+`core/include/libvmaf/picture.h` and the test
+`core/test/test_picture_convert_api.c`. `VmafPicture` keeps its layout.
+
+The body above is unchanged.
