@@ -10,6 +10,9 @@ search:
 ## CI: the push aggregator reads its own branch's runs (2026-10-06)
 
 `fix/aggregator-own-branch-runs`. no rebase impact: the fork's aggregator workflow and its test harness; no upstream file.
+## vmaf-tune: the backend probe skips the PATH lookup with a runner (2026-10-06)
+
+`fix/vmaftune-probe-runner-no-path`. no rebase impact: one fork-only vmaf-tune function (`backend_report()`) and its test; no upstream file, build or public surface.
 
 ## Scorecard single-maintainer exceptions (2026-10-06)
 

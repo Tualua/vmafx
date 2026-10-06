@@ -6599,6 +6599,9 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   (ADR-1565).
 
 
+The vmaf-tune backend probe reads an injected runner's report whether or not the host has a `vmaf` on `PATH`; the test of that seam passes on the hosted runner again.
+
+
 - **`vmafx-tune-go ladder` scores each rung with the VMAF model its height selects.**
   It passed no `--model`, so a 2160p rung was scored with the default 1080p model;
   the Python `vmaf-tune ladder` uses `vmaf_v1.0.16_1d5h_2160` from 2160 lines up

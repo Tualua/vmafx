@@ -109,8 +109,13 @@ def backend_report(vmaf_bin: str = "vmaf", runner: object | None = None) -> dict
     Raises `BackendReportError` naming the binary and the reason when the
     binary is missing, fails (a ``vmaf`` older than ADR-1874 rejects the
     option) or prints something that is not a report.
+
+    A *runner* decides how the command runs, so the ``PATH`` lookup that names
+    a missing binary applies only without one: with it, the answer depended on
+    whether the host had a ``vmaf`` installed
+    (``T-VMAFTUNE-PROBE-RUNNER-READS-PATH-2026-10-06``).
     """
-    if "/" not in vmaf_bin and shutil.which(vmaf_bin) is None:
+    if runner is None and "/" not in vmaf_bin and shutil.which(vmaf_bin) is None:
         raise BackendReportError(f"{vmaf_bin!r} is not on PATH")
     runner_fn = runner or subprocess.run
     try:

@@ -6,7 +6,8 @@
 bare name ``vmaf``; the suite-wide fixture in ``conftest.py`` keeps it off the
 host's binary. Positive: a bare name sees a CPU-only build. Negative: a
 ``vmaf`` placed on ``PATH`` is never run. Boundary: an explicit path, or a
-runner, still reaches the real probe.
+runner, still reaches the real probe, and a runner does so on a host with no
+``vmaf`` on ``PATH`` (``T-VMAFTUNE-PROBE-RUNNER-READS-PATH-2026-10-06``).
 """
 
 from __future__ import annotations
@@ -59,12 +60,19 @@ def test_explicit_path_still_runs_the_probe(tmp_path: Path) -> None:
     assert marker.exists()
 
 
-def test_runner_still_reaches_the_probe() -> None:
+def test_runner_still_reaches_the_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class _Done:
         returncode = 0
         stdout = json.dumps(_CUDA_REPORT)
 
-    def runner(*_args: object, **_kwargs: object) -> _Done:
+    calls: list[object] = []
+
+    def runner(argv: object, **_kwargs: object) -> _Done:
+        calls.append(argv)
         return _Done()
 
+    # The hosted runner has no vmaf on PATH; this host may. The runner's
+    # answer must not depend on it.
+    monkeypatch.setenv("PATH", str(tmp_path))
     assert score_backend.detect_available_backends(runner=runner) == ["cpu", "cuda"]
+    assert calls == [["vmaf", "--list-backends"]]
