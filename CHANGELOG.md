@@ -5462,6 +5462,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   now avoids intervals; CI's Ubuntu runner was not affected.
 
 
+- **The post-commit state sync works in linked worktrees again.** The hook
+  (`scripts/githooks/state-sync.sh`, ADR-1280) mirrored the private ledgers
+  into a worktree without `questions.meta.json`, and Praetor's state sync
+  reads it for every `QUESTIONS.md` entry, so every commit in a linked
+  worktree ended its post-commit hook with `state sync list questions:
+  QUESTIONS.md line 7: Q-001 metadata missing from questions.meta.json` and
+  the worktree's state was not synchronised. The file is now mirrored with the
+  others.
+
+
 - **`vmaf_read_json_model_collection` rejects sub-model name truncation with `-EINVAL`.**
   Port of the sub-model name truncation check from upstream Netflix/vmaf commit
   `15f1447c6` ([Netflix/vmaf#1428](https://github.com/Netflix/vmaf/pull/1428)).

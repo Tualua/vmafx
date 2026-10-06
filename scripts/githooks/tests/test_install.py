@@ -376,6 +376,7 @@ class HookInstallTests(unittest.TestCase):
             "QUESTIONS.md",
             "STATE.md",
             "bugs.meta.json",
+            "questions.meta.json",
         )
         for name in ledger_names:
             (canonical_state / name).write_text(f"canonical:{name}\n")
@@ -385,22 +386,7 @@ class HookInstallTests(unittest.TestCase):
         local_state = worktree / ".workingdir"
         (local_state / "cache").mkdir(parents=True)
         (local_state / "cache/keep.txt").write_text("preserve me\n")
-        self.write_bin(
-            "praetorctl",
-            "#!/bin/sh\n"
-            "set -eu\n"
-            '[ "$1" = state ]\n'
-            '[ "$2" = sync ]\n'
-            "root=$3\n"
-            '[ "$root" = "$PWD" ]\n'
-            '[ -d "$root/.workingdir" ]\n'
-            '[ ! -L "$root/.workingdir" ]\n'
-            "for name in OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json; do\n"
-            '  grep -qx "canonical:$name" "$root/.workingdir/$name"\n'
-            "done\n"
-            'branch=$(git -C "$root" branch --show-current)\n'
-            'printf \'synced:%s\\n\' "$branch" >> "$root/.workingdir/STATE.md"\n',
-        )
+        self.write_bin("praetorctl", STATE_SYNC_PRAETORCTL)
 
         self.run_command("bash", "scripts/githooks/state-sync.sh", cwd=worktree)
 
@@ -425,6 +411,27 @@ class HookInstallTests(unittest.TestCase):
             (canonical_state / "STATE.md").read_text(),
             "canonical:STATE.md\nsynced:state-sync-fixture\n",
         )
+
+
+# A stand-in for `praetorctl state sync <root>`: it requires a regular
+# mirror holding every canonical ledger and its metadata, then records the
+# committing branch in STATE.md.
+STATE_SYNC_PRAETORCTL = (
+    "#!/bin/sh\n"
+    "set -eu\n"
+    '[ "$1" = state ]\n'
+    '[ "$2" = sync ]\n'
+    "root=$3\n"
+    '[ "$root" = "$PWD" ]\n'
+    '[ -d "$root/.workingdir" ]\n'
+    '[ ! -L "$root/.workingdir" ]\n'
+    "for name in OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json \\\n"
+    "    questions.meta.json; do\n"
+    '  grep -qx "canonical:$name" "$root/.workingdir/$name"\n'
+    "done\n"
+    'branch=$(git -C "$root" branch --show-current)\n'
+    'printf \'synced:%s\\n\' "$branch" >> "$root/.workingdir/STATE.md"\n'
+)
 
 
 BRIDGE_STUB = """#!/bin/sh

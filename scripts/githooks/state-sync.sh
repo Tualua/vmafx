@@ -37,7 +37,10 @@ if ! mkdir "$lock_dir" 2>/dev/null; then
 fi
 lock_acquired=1
 
-ledger_names=(OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json)
+# questions.meta.json carries the metadata praetor's state sync reads for every
+# QUESTIONS.md entry; without it a linked worktree's sync fails
+# ("Q-001 metadata missing from questions.meta.json").
+ledger_names=(OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json questions.meta.json)
 for name in "${ledger_names[@]}"; do
   source_path="$canonical_state/$name"
   if [ ! -f "$source_path" ] || [ -L "$source_path" ]; then

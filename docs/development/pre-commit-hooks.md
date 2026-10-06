@@ -157,8 +157,11 @@ when `npm` or `pre-commit` is absent.
 ## Post-commit private-state synchronization
 
 The post-commit state hook resolves both the active worktree and Git's common
-directory. In a linked worktree it mirrors the six canonical ledgers into a
-regular ignored `.workingdir`, runs Praetor against the committing worktree,
+directory. In a linked worktree it mirrors the canonical ledgers (`OPEN.md`,
+`BACKLOG.md`, `BUGS.md`, `QUESTIONS.md`, `STATE.md`) and their metadata
+(`bugs.meta.json`, `questions.meta.json`, which Praetor reads for every bug and
+question entry) into a regular ignored `.workingdir`, runs Praetor against the
+committing worktree,
 and atomically publishes the resulting `STATE.md` to the canonical checkout.
 The mirror preserves worktree-local caches and evidence; those directories are
 not public documentation and are never copied back.
