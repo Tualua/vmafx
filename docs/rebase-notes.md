@@ -19,6 +19,12 @@ search:
 ## go fix and cargo fmt applied (2026-10-06)
 
 `fix/master-red-go-rust-fmt`. Formatting and fixer output only, in Go files under `cmd/` and `pkg/` and one Rust example; no upstream-mirror file. no rebase impact.
+## CI fixture cache: tracked fixtures put back after the restore (2026-10-06)
+
+`fix/fixture-cache-tracked-files`. no rebase impact: fork-only CI files. `scripts/ci/prune-corrupt-fixtures.sh` takes
+`--restore-tracked`, and the fixture-restore steps of `build.yml`, `libvmaf-build-matrix.yml` and
+`tests-and-quality-gates.yml` pass it; a workflow edit that moves or copies the restore keeps the flag on the step
+after it, or a `restore-keys` hit brings back an older revision of a tracked `python/test/resource` file.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 

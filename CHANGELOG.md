@@ -3139,6 +3139,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   ([CAMBI frame sizes](docs/metrics/cambi.md#frame-sizes)).
 
 
+- **The CI fixture cache no longer replaces tracked test fixtures with an
+  older revision.** The `python/test/resource` cache of the Builds, Build and
+  Tests workflows also held the files git tracks there; a `restore-keys` hit
+  wrote the revision of the run that saved the cache over the checkout, so a
+  dataset fixture changed by a later commit came back without its new fields
+  and every Ubuntu tox leg failed (`KeyError: 'dis_enc_width'`). The step that
+  prunes unusable restored fixtures now takes `--restore-tracked` and puts
+  every tracked file back to the checked-out revision.
+
+
 - **`test_cuda_parity_gate_default_run` no longer times out on a build
   without CUDA while another job holds the CUDA device lock.** The test takes
   the per-device lock before it runs the gate, and it learned that the binary
