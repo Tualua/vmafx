@@ -553,6 +553,14 @@
 - ADR-0643, ADR-0665, ADR-0666 and ADR-0673 lose the unfilled allocator template block that preceded their real text (their first heading read `<fill in title>`); a status update records it. Four ADR numbers that other ADRs cite and that had no file (ADR-0228, 0636, 0867, 0979) get a short record each, written from the commits and ADRs that name them.
 
 
+- 101 ADRs gain a generated `## Errata 2026-10-06` block (118 corrections:
+  ADR numbers that point at an unrelated record, paths that moved or never
+  existed, links with the wrong label, and ADR numbers that never had a file,
+  with a pointer to the real record, or to the retired-number registry, or to a
+  tombstone record). ADR bodies and status lines are unchanged; ADR-0767 gets
+  its block in the status pull request.
+
+
 - 34 ADR status headers read in the one form the drift gate parses (`- **Status**: Accepted`): 12 bullet variants and 22 table or heading headers (no value changed; empty `Supersedes` rows dropped). ADR-0003 and ADR-0019 link their successor ADR-1277. ADR-1129, ADR-1225 and ADR-0954 gain a dated status update: the pins they quote have moved (`build-config.env` is the authority) and the HIP dispatch strategy file was removed by #2030. `docs/state.md` cites ADR-0639 (scaffold-audit P1) where it said ADR-0613.
 
 

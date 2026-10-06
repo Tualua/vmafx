@@ -110,3 +110,14 @@ importable.
 - ADR-0368 (YouTube UGC)
 - ADR-0369 (Waterloo IVC 4K-VQA)
 - ADR-0370 (LIVE-VQC)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 111: `- ADR-0333 / ADR-0367 (LSVQ)`: Cites ADR-0333 alongside
+  ADR-0367 for LSVQ, but ADR-0333 is multi-pass encoding.
+- About line 112: `- ADR-0368 (YouTube UGC)`: Cites ADR-0368 for YouTube UGC,
+  but ADR-0368 is external-competitor benchmark harness; YouTube UGC is
+  ADR-0413.

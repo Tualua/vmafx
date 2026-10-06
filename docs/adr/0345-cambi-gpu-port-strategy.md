@@ -197,3 +197,13 @@ oneAPI's. The SYCL port PR carries that empirical step.
   lint` before push); memory `feedback_no_guessing` (LOC + risk
   estimates cite in-tree comparables); memory
   `feedback_no_test_weakening` (places=4 is non-negotiable).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 124: `SYCL port runs through both oneAPI and AdaptiveCpp
+  toolchains per ADR-0335 — the SYCL port PR adds smoke fixtu`: Cites ADR-0335
+  for AdaptiveCpp toolchain, but ADR-0335 is hardware capability priors;
+  AdaptiveCpp toolchain is ADR-0407.

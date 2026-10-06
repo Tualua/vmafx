@@ -111,3 +111,13 @@ Replace the per-thread `atomicAdd` pattern in both horizontal-pass kernels
   `core/src/feature/cuda/integer_vif/filter1d.cu` lines 424–432, 765–772.
 - AMD wavefront size: GCN/RDNA default = 64 lanes. RDNA2+ supports wave32 via
   kernel attribute but this kernel does not request it.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 109: `- ADR-0554: Supersedes ADR-0537's per-feature tolerance;
+  mandates places=4.`: Cites nonexistent ADR-0554. (the ADR mandating places=4
+  for HIP VIF is ADR-0566). See ADR-0566 (HIP VIF per-feature parity gate,
+  places=4).

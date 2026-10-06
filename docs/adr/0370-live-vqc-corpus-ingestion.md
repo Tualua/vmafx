@@ -103,3 +103,12 @@ Waterloo IVC (ADR-0369):
 - [ADR-0413](0413-youtube-ugc-corpus-ingestion.md) — YouTube UGC ingestion
 - [ADR-0369](0369-waterloo-ivc-4k-corpus-ingestion.md) — Waterloo IVC ingestion
 - [ADR-0340](0340-multi-corpus-aggregation.md) — aggregation / normalisation
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 16: `YouTube UGC (ADR-0368)`: Cites ADR-0368 for YouTube UGC
+  ingestion, but ADR-0368 is external-competitor benchmark harness; YouTube
+  UGC is ADR-0413.

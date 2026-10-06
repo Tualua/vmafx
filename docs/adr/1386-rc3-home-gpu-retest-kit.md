@@ -42,3 +42,13 @@ Every device run holds that device's `flock` (`cuda-4090.lock`, `hip-gfx1036.loc
 - [ADR-1185](1185-backend-perf-baseline-methodology.md): median-of-N timing and recording the load, which the kit follows.
 - [ADR-0165](0165-state-md-bug-tracking.md): `docs/state.md` as the bug ledger the entries point at.
 - [Research-1386](../research/1386-rc3-home-gpu-retest-master-baseline.md): the first `master` run on `ryzen-4090-arc`.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 44: `-
+  [Research-1386](./research/1386-rc3-home-gpu-retest-master-baseline.md): the
+  first master run on ryzen-4090`: Markdown link targets non-existent file
+  docs/research/1386-rc3-home-gpu-retest-master-baseline.md on origin/master.
