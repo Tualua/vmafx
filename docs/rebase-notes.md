@@ -758,6 +758,20 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
   `test_sycl_zero_copy_model_gate` (`test_upload_plane_orders_compute`) fails on it.
 - The file's four `getenv()` calls read through `vmaf_gpu_dispatch_env_get()` (ADR-0488),
   which keeps `common.cpp` at zero clang-tidy findings.
+## Hip-lane clang-tidy debt, batch 2: ADM, moment, motion, PSNR and SSIM kernels (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-hip-2`. Lint refactor, no behaviour change.
+
+- `core/test/test_hip_float_psnr_exact_contract.py` matches `>> 16u` / `<< 16u`
+  in `float_psnr_score.hip`; the pinned property is unchanged.
+- `adm_dwt2.hip` forms every signed arithmetic shift through `adm_dwt_asr()`
+  (one cited NOLINT, ADR-1423); `float_adm_score.hip` takes device addresses
+  through `fadm_device_ptr<T>()` (one cited NOLINT, ADR-1458). A sync that
+  inlines either brings the findings back.
+- `float_motion_rows.h` and `ssim_decimate.h` stay valid C (C++-only includes
+  behind `__cplusplus`, `struct X` plus a C-only `typedef`); `motion_v2_score.hip`
+  keeps two cited signed-shift NOLINTs (ADR-0138, ADR-0139).
+
 ## Hip-lane clang-tidy debt, batch 1: VIF, SSIMULACRA 2, PSNR-HVS and the shared GPU headers (ADR-1142, 2026-10-05)
 
 `refactor/tidy-zero-hip-1`. Lint refactor, no behaviour change.

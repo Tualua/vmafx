@@ -2749,6 +2749,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `uintptr_t`; the struct layout is the same.
 
 
+- The HIP kernels of float and integer ADM, float moment, float and integer
+  motion, float and integer PSNR, motion v2 and float SSIM now pass the hip-lane
+  clang-tidy profile with zero findings (ADR-1142). Scores are unchanged: the
+  HIP parity tests of the touched twins compare them with the CPU extractor on
+  gfx1036.
+
+
 - torch is installed only by the two training packages, `ai/` and
   `tools/ensemble-training-kit/` (ADR-1886). The vmaf-tune predictor trainer
   moved to `vmaf_train.predictor_train` (`python -m vmaf_train.predictor_train`
