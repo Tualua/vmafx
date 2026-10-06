@@ -1,11 +1,9 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0370 — LIVE-VQC MOS-corpus ingestion for `nr_metric_v1`
 
-| Field | Value |
-|-------|-------|
-| **Status** | Accepted |
-| **Date** | 2026-05-09 |
-| **Tags** | ai, training, corpus, license, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-09
+- **Tags**: ai, training, corpus, license, fork-local
 
 ## Context
 

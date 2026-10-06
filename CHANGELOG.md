@@ -550,6 +550,9 @@
   (the scaffold-audit P1 record) where they cited ADR-0613, the vmaf-tune dynamic optimizer.
 
 
+- 34 ADR status headers read in the one form the drift gate parses (`- **Status**: Accepted`): 12 bullet variants and 22 table or heading headers (no value changed; empty `Supersedes` rows dropped). ADR-0003 and ADR-0019 link their successor ADR-1277. ADR-1129, ADR-1225 and ADR-0954 gain a dated status update: the pins they quote have moved (`build-config.env` is the authority) and the HIP dispatch strategy file was removed by #2030. `docs/state.md` cites ADR-0639 (scaffold-audit P1) where it said ADR-0613.
+
+
 - **Eight deliberate differences from Netflix's libvmaf are recorded, each with
   its measured size and the upstream pull request that would end it**
   (ADR-1479 to ADR-1486): `ciede` on 4:2:2, `speed_temporal` with

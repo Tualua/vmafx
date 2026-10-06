@@ -1,11 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0362 — K150K-A corpus integration: FR-from-NR extraction of FULL_FEATURES
 
-| Field   | Value                            |
-|---------|----------------------------------|
-| Status  | Accepted                         |
-| Date    | 2026-05-09                       |
-| Tags    | ai, training-data, corpus, k150k, full-features, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-09
+- **Tags**: ai, training-data, corpus, k150k, full-features, fork-local
 
 ## Context
 

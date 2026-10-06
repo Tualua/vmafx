@@ -1,6 +1,6 @@
 # ADR-0747 — CUDA `extern "C"` invariant for host-looked-up kernels
 
-**Status:** Accepted
+- **Status**: Accepted
 **Date:** 2026-05-28
 **Deciders:** lusoris
 **Related:** [Research-0747](../research/research-0747-cuda-extern-c-sweep.md)

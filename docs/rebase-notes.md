@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## ADR audit: status header forms (2026-10-06)
+
+`docs/adr-audit-mechanical`. no rebase impact: ADR status headers and dated status updates, plus one ADR number in docs/state.md; no source, build or test file changes.
+
 ## SYCL fused VIF reads and writes different downsampled planes (2026-10-06)
 
 `fix/sycl-vif-fused-rd-pingpong`. no rebase impact: fork-only SYCL twin (`core/src/feature/sycl/integer_vif_sycl.cpp`) and

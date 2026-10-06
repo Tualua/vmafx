@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1177: Containerised self-hosted GitHub Actions runner for Intel Arc SYCL parity CI
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-04
 - **Deciders:** Lusoris
 - **Supersedes:** none

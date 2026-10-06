@@ -1,11 +1,9 @@
 # ADR-0371 — Shared `CorpusIngestBase` for MOS-corpus ingestion adapters
 
-| Field       | Value                                |
-|-------------|--------------------------------------|
-| Status      | Accepted                             |
-| Date        | 2026-05-10                           |
-| Scope       | ai, corpus, refactor, fork-local     |
-| PR          | (this PR)                            |
+- **Status**: Accepted
+- **Date**: 2026-05-10
+- **Scope**: ai, corpus, refactor, fork-local
+- **PR**: (this PR)
 
 ## Context
 

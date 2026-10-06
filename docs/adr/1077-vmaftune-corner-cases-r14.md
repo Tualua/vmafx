@@ -1,11 +1,9 @@
 # ADR-1077 — vmaf-tune corner cases: parse_versions + compare preset
 
-| Field      | Value                             |
-|------------|-----------------------------------|
-| ADR number | 1077                              |
-| Status     | Accepted                          |
-| Date       | 2026-06-06                        |
-| Author     | r14 parallel investigation agent  |
+- **Status**: Accepted
+- **ADR number**: 1077
+- **Date**: 2026-06-06
+- **Author**: r14 parallel investigation agent
 
 ## Context
 

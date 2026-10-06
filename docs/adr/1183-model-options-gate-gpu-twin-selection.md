@@ -1,6 +1,6 @@
 # ADR-1183: Model options gate GPU twin selection
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-05
 - **Deciders:** Lusoris
 - **Supersedes:** none

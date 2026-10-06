@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0352: Vulkan submit-pool migration — PR A (adm, motion, psnr)
 
-- Status: Accepted
+- **Status**: Accepted
 - Date: 2026-05-09
 - Tags: vulkan, perf, kernel-template
 - Supersedes: —

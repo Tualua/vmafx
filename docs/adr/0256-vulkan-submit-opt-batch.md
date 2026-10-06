@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD018 -->
 # ADR-0256: Vulkan submit-side template + fence pool + descriptor pre-alloc
 
-- Status: Accepted
+- **Status**: Accepted
 - Date: 2026-05-02
 - Tags: vulkan, perf, kernel-template
 - Supersedes: —
