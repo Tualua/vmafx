@@ -352,6 +352,20 @@ upstream counterpart.
   with the SPDX line and `black`.
 - On a sync: take Netflix's changes to the two classes into the helpers, not
   as a copy of the long methods.
+## Metal twins declared exact; 2026-10-05 hardware reports (2026-10-05)
+
+`docs/hardware-reports-lawrence-2026-10-05`. Report files, exact-twin fragments,
+gate tests and documentation; no library change.
+
+- `scripts/ci/exact_twins.d/*.metal` (18 files) declare the Metal twins the M4 Pro
+  report of 2026-10-05 measured exact. A sync must not drop them, and a Metal
+  twin that drifts from the CPU is fixed, never given a tolerance (ADR-1428).
+- `scripts/ci/test_cross_backend_parity_gate.py` no longer names `metal` as the
+  backend outside the gate (`_OFF_GATE_BACKEND = "off_gate"`) and picks its
+  held-exact Metal examples from the fragment set (`_metal_unlisted()`). Keep it
+  free of hard-coded fragment-free features or backends.
+- `docs/hardware-reports/2026-10-05-*.json` are the testers' files as submitted;
+  never reformat them: `report_sha256` covers their content.
 
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 

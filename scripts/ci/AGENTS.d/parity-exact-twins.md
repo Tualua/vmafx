@@ -57,7 +57,12 @@ Converting an open PR that edits the old literal (one conflict, once):
 2. Add `scripts/ci/exact_twins.d/<feature>.<backend>` per twin:
    `adr: ADR-NNNN` and `evidence: <fixtures and result>`.
 3. `make docs-fragments-write`; commit the regenerated table.
-Tests need no edit: they hold for any fragment set.
+Tests need no edit: they hold for any fragment set. A test that needs a
+backend no fragment lists uses `_OFF_GATE_BACKEND` (no real backend name),
+and a test that needs a Metal cell without a fragment picks one from the
+fragment set (`_metal_unlisted()`); never hard-code a backend or feature as
+fragment-free. Metal fragments cite a macOS tester bundle report
+(ADR-1496): the first are from the M4 Pro report of 2026-10-05.
 
 **Math-library twins (ADR-1426, ADR-1436, ADR-1448).** `LIBM_TWINS` in
 `cross_backend_calibration.py` (`ciede`: `cuda` = 1e-9, `sycl` = 1e-9,

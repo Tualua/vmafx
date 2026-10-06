@@ -175,7 +175,14 @@ mapping with GPU completion/fence tracking) is deferred under
    return the CPU's scores bit for bit (see
    [What a ported twin computes](#what-a-ported-twin-computes)), measured on
    an Apple device by the macOS tester bundle
-   ([ADR-1496](../../adr/1496-metal-gate-in-tester-bundle.md)).
+   ([ADR-1496](../../adr/1496-metal-gate-in-tester-bundle.md)). The first
+   device report (an Apple M4 Pro, 2026-10-05, listed under
+   [hardware reports](../../hardware-reports/index.md)) held 18 gate
+   features exact on all four fixtures; their twins are in the
+   [exact twins table](../../development/cross-backend-exact-twins.md), and
+   the gate compares them with tolerance 0. `adm`, `cambi`, `psnr_hvs` and
+   `vif` differed from the CPU in that report; their causes and fixes are
+   rows of the [bug ledger](../../state.md) and wait for the next report.
 7. **`enable_metal` default flip** from `auto` to `enabled`: only after a
    tester's report shows every Metal twin equal to the CPU.
 
