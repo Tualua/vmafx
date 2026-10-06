@@ -59,6 +59,33 @@ docs/adr/_index_fragments/_order.txt merge=union
 docs/adr/README.md merge=union
 CHANGELOG.md merge=union
 
+# Files praetorctl hashes or compares byte for byte, beside the managed block
+# below: the archetype sources whose sha256 .standards.lock pins, the policy
+# files the effective-policy digest reads, and the agent context that
+# `praetorctl compile-context --verify` checks (AGENTS.md, its six compiled
+# targets, the persona sources under .agents/ and their four projections).
+# `* text=auto` checks a text file out with core.eol, which defaults to the
+# platform's ending, so a Windows checkout gets CRLF here even with
+# core.autocrlf=false and both checks fail on files nobody edited
+# (T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06).
+# scripts/ci/tests/test_praetor_hashed_files_lf.py keeps every such file LF.
+AGENTS.md text eol=lf
+CLAUDE.md text eol=lf
+.windsurfrules text eol=lf
+.cursor/rules/*.mdc text eol=lf
+.github/copilot-instructions.md text eol=lf
+.gemini/GEMINI.md text eol=lf
+.codex/rules.md text eol=lf
+.agents/** text eol=lf
+.claude/agents/** text eol=lf
+.github/agents/** text eol=lf
+.gemini/agents/** text eol=lf
+.codex/agents/** text eol=lf
+.config/archetypes/** text eol=lf
+.standards.yaml text eol=lf
+.standards.lock text eol=lf
+.standards-baseline.json text eol=lf
+
 # BEGIN praetor managed attributes (praetorctl adopt)
 # praetorctl audit hashes these files; keep their checkout bytes the same on every platform.
 .devcontainer/Dockerfile.praetor text eol=lf

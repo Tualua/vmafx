@@ -6504,6 +6504,16 @@ The Meson test secret-environment contract test reports repository paths with fo
   contract test rejects pthread calls the shim lacks.
 
 
+- **A Windows checkout passes the governance hooks on unmodified files.** The
+  archetypes `.standards.lock` pins, `.standards.*`, `AGENTS.md`, its compiled
+  agent-context files and the agent personas are now checked out with LF on
+  every platform (`.gitattributes`). `* text=auto` had given them CRLF on
+  Windows even with `core.autocrlf=false`, so the `hiss-audit` hook failed the
+  lockfile digest and `context-check` reported `CLAUDE.md` out of sync. The
+  Windows setup guide in `docs/development/pre-commit-hooks.md` now clones with
+  `core.eol=lf` as well.
+
+
 - **Windows MSVC+SYCL compiles the exact-arithmetic SYCL headers again, and two
   contract tests pass on Windows.** A `max()` macro from `<windows.h>` broke
   `std::numeric_limits<float>::max()` in a SYCL header, and two Python tests

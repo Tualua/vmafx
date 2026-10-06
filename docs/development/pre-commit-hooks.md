@@ -71,10 +71,17 @@ instead. The same test rejects both.
 
 The hooks run in Git for Windows' Bash. Set up a checkout once:
 
-1. Clone with `core.autocrlf=false`
-   (`git clone -c core.autocrlf=false ...`). Several gates compare generated
-   files byte for byte against their LF form, and Git for Windows' default of
-   `true` checks them out with CRLF.
+1. Clone with `core.autocrlf=false` and `core.eol=lf`
+   (`git clone -c core.autocrlf=false -c core.eol=lf ...`). Several gates
+   compare generated files byte for byte against their LF form. Git for
+   Windows' default `core.autocrlf=true` checks them out with CRLF, and so does
+   `core.autocrlf=false` alone: `* text=auto` in `.gitattributes` then uses
+   `core.eol`, whose default is the platform's CRLF. The files `praetorctl`
+   hashes or compares byte for byte (the archetypes `.standards.lock` pins,
+   `.standards.*`, `AGENTS.md`, its compiled targets and the agent personas)
+   carry `eol=lf` rules, so `hiss-audit` and `context-check` pass whatever the
+   clone's settings; `scripts/ci/tests/test_praetor_hashed_files_lf.py` keeps
+   the list complete.
 2. Create a Python 3.14 virtualenv from the hash lock:
 
    ```bash

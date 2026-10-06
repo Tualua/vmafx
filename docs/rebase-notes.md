@@ -62368,3 +62368,13 @@ the MS-SSIM CUDA twin keeps the device conversion and must not bring back
 `test_cuda_float_ms_ssim_exact_contract.py` (device-free) and
 `test_cuda_float_ms_ssim_host_traffic` (on a device) fail on the host staging. No score,
 public API or FFmpeg patch impact.
+
+## `.gitattributes` pins the files praetorctl hashes to LF (`fix/gitattributes-praetor-hashed-lf`)
+
+`.gitattributes` holds a fork block of `eol=lf` rules above the praetor managed block: the
+archetypes `.standards.lock` pins, `.standards.*`, `AGENTS.md`, its six compiled targets, the
+persona sources under `.agents/` and their four projections
+(`T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06`). Upstream's `.gitattributes` has none of these
+paths; a sync keeps the block where it is (the managed block must stay at the tail).
+`scripts/ci/tests/test_praetor_hashed_files_lf.py` fails when a rule is missing. No score, public
+API or FFmpeg patch impact.
