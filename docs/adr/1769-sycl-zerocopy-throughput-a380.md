@@ -23,7 +23,25 @@ Constraint: no score bit may move ([ADR-1121](1121-sycl-qsv-zerocopy-p010-normal
 
 ## Decision
 
-Selected for implementation (user, plan 13-02): K1 (VIF scale-0), K5 (merge scale-2/3 launches), K3 (16-byte de-tile) and C3 (device fence on the VA import, dropping the frame-start wait), in the order K1, K5, K3. C3 starts only after the zero-copy `n_subsample` motion defect (`T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06`) is fixed, which the user chose to do first. Not pursued by decision: C1, C2, K4 (K2 is not selected). Acceptance uses the steady-state fps of 600 and 20 frame runs (45.3 fps baseline). The status stays Proposed until the code lands.
+The user selected the candidates in plan 13-02. The kernel ranks give the order of work.
+
+Selected for implementation: K1 (VIF scale-0, rank 1), K5 (merge scale-2/3 launches, rank 2), K3 (16-byte de-tile, rank 3), C3 (device fence on the VA import, dropping the frame-start wait).
+
+Not pursued: C1, C2, K4 (by decision); K2 (not selected).
+
+C3 starts only after the zero-copy `n_subsample` motion defect (`T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06`) is fixed, which the user chose to do first. The fix is in: `vmaf_sycl_graph_skip()` lets a frame with skipped extractors run the extractors that submitted.
+
+Design of C3:
+
+- Today the filter calls `vmaf_sycl_wait_compute()` at the start of every frame. That host wait drains the primary and the combined queue before the VA import overwrites the upload slot, and it is the only thing that protects the slot on the import path.
+- The import instead orders its writes on the device. `sycl_fence_slot_readers()`, the slot fence the host upload already uses ([ADR-1369](1369-sycl-shared-planes-light-twins.md)), takes the queue to barrier as a parameter. The host upload passes the copy queue, as before. The VA import passes the primary queue, where the de-tile, the chroma de-interleave and the readback copies run, so the import of frame N waits on the device for every reader of frame N-2's slot.
+- The markers of a retiring slot cover the primary queue, the combined queue and every per-extractor compute queue. `vmaf_sycl_create_compute_queue()` keeps a copy of each queue it creates in the state; a `sycl::queue` is a counted handle, so the copy stays valid after the extractor deletes its own. An extractor that `n_subsample` skipped and that nothing collected is still covered.
+- `vmaf_sycl_fence_import_slot()` runs the fence once per frame, at the start of `vmaf_sycl_import_va_surface()`, before any write to the slot on any path (DMA-BUF import or readback).
+- The barrier is only submitted when a marker is still pending, so a frame whose readers finished costs one status query per marker.
+- Patch 0005 calls `vmaf_sycl_wait_compute()` on the host-upload branch only. The QSV branch relies on the fence. `vmaf_read_pictures_sycl()` still waits on the primary queue before the frames go back to FFmpeg, so the surfaces and the deferred import frees keep their order ([ADR-1596](1596-sycl-va-import-immediate-cmdlist.md)). The public `vmaf_sycl_wait_compute()` keeps its documented meaning.
+- No data path changes, so no score bit moves. Validation on the device (CPU identity at `n_subsample` 1, 2 and 4, graph replay, `--repeat 10` batched) and the A/B timing come in plan 13-06.
+
+Acceptance uses the steady-state fps of 600 and 20 frame runs (45.3 fps baseline). The status stays Proposed until the code lands.
 
 ## Alternatives considered
 
