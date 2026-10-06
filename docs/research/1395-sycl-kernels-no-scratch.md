@@ -142,7 +142,9 @@ took 0.42 s.
   the next scale's input into the same buffers in the same kernel. At 4K scales
   1 to 3 are up to 6.6e-4 from the CPU on both sub-group sizes, and SIMD-32 runs
   differ from each other: this looks like a read/write race between work-groups.
-  It is outside this change.
+  It is outside this change. Resolved on 2026-10-06: it was that race
+  (`T-SYCL-VIF-FUSED-RD-RACE-2026-10-01` in `docs/state.md`); the fused scales
+  now alternate between two pairs of planes and equal the CPU.
 - The defect has not been reported to Intel; a reduced reproducer is the
   private-array probe above.
 

@@ -7,6 +7,12 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## SYCL fused VIF reads and writes different downsampled planes (2026-10-06)
+
+`fix/sycl-vif-fused-rd-pingpong`. no rebase impact: fork-only SYCL twin (`core/src/feature/sycl/integer_vif_sycl.cpp`) and
+test (`core/test/test_sycl_vif_parity.c`). A sync or refactor of the fused path keeps `vif_rd_output()`: a fused scale
+never writes the planes it reads; scale 1 writes the second pair (`d_rd_ref_alt` / `d_rd_dis_alt`, fused mode only).
+
 ## Release scope of 1.0.0 and the roadmap to 2.0 (2026-10-06)
 
 `docs/rc3-adr-roadmap-2026-10-06`. no rebase impact: ADR-2001, docs, changelog fragment and the candidate-map paragraph of `AGENTS.md` section 11 with its six compiled projections (edited by the same substitutions, as ADR-1868 and ADR-1880 did). A sync that touches `AGENTS.md` keeps the fork's section 11 and recompiles the projections from it.

@@ -11,8 +11,8 @@ invariant: integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling d
 - **`integer_vif_sycl.cpp` rd_stride uses ceiling division for odd widths** (ADR-1034).
   Both `launch_vif_hori_impl` and `launch_vif_fused_impl` (SIMD-16 only, ADR-1830)
   compute downsampled row stride as `(e_w + 1U) / 2U`, not `e_w / 2U`.
-  `rd_ref`/`rd_dis` allocation in `init_fex_sycl` uses `((w+1U)/2U) * ((h+1U)/2U)`
-  elements. Must stay in sync. On rebase: if future PR modifies
+  `rd_ref`/`rd_dis` allocation uses `vif_rd_plane_size()` =
+  `((w+1U)/2U) * ((h+1U)/2U)` elements. Keep in sync. On rebase: if future PR modifies
   downsampling path, ensure all three sites (two kernel variants + allocation) use
   same ceiling formula. For even widths/heights result identical to
   truncating division.
@@ -22,6 +22,20 @@ invariant: integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling d
   at `cur_w` skewed scales 1-3 on any odd-width scale (17x17 scale1 0.0962 vs
   CPU 0.0765; 854x480 scale3 9.3e-4 off). Guard: `test_sycl_vif_min_dim`
   (17x17, 853x480 at places=4).
+- **`vif_fused=true` alternates two pairs of rd planes
+  (T-SYCL-VIF-FUSED-RD-RACE-2026-10-01).** One fused launch reads own scale
+  from rd planes AND writes next scale's rd planes; work-groups never wait
+  for each other -> read buffer != write buffer, always.
+  `vif_rd_output(s, scale)`: scales 0 / 2 write `d_rd_ref` / `d_rd_dis`,
+  scale 1 writes `d_rd_ref_alt` / `d_rd_dis_alt` (fused only, sized for
+  scale 1's output: `vif_rd_plane_size(w / 2, h / 2)`), scale 3 writes
+  nothing; scale s reads `vif_rd_output(s, s - 1)`. Scale 2 overwrites
+  pair scale 1 read: safe only because queue in order. Separate
+  passes keep one pair (vertical kernel reads, horizontal kernel writes).
+  One shared pair again -> scales 1-3 off on every frame from 1920x1080 up
+  (BBB 4K 4.9e-4, 200 / 200 frames). Guard: `test_sycl_vif_parity` fused
+  cases (fixture, 1920x1080, 1919x1079, 3840x2160 at 8 / 10 bit; `==` CPU
+  and separate passes).
 - **`integer_vif_sycl.cpp` = CPU `vif`, bit for bit (ADR-1432).** Two parts.
   (1) Host tail = `integer_vif.c` rounding points: `vif_store_residuals()`
   stores each scale's num / den in `float`, `write_scores()` adds the
@@ -62,19 +76,19 @@ invariant: integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling d
   -> model dispatch (and CLI twin selection) runs the CPU `vif`; direct
   `vif_sycl` fails `init()` with -EINVAL before touching device state. On
   rebase: filter-table change -> update the `static_assert`, keep both guards.
-- **`integer_vif_sycl.cpp` warning-clean phase boundaries are load-bearing.**
+- **`integer_vif_sycl.cpp` warning-clean phase boundaries load-bearing.**
   Keep `dev_vert_accumulate`, `dev_hori_item_step`, `vif_init_resources`,
-  `vif_configure_device`, and `vif_register_graph` as bounded phases. The
-  strict C++ profile requires private declarations in anonymous namespaces,
-  while HISS-04 applies its 60-line limit to each namespace block as well as
-  each function; do not collapse these blocks or replace them with `NOLINT`.
-  The tap loops deliberately have no forced-unroll pragma: oneAPI 2026 emits a
-  failed-unroll diagnostic for supported target instances and remains free to
-  unroll them when profitable. Preserve the `float` device gain in
-  `VifHoriLaunchParams`, the arithmetic order inside each phase, and the
-  cleanup points in the three init helpers. Base-vs-refactor proof covers
-  default and fused modes on 8-bit and 10-bit inputs at zero full-precision
-  delta; rerun both modes after an upstream conflict.
+  `vif_configure_device`, `vif_register_graph` as bounded phases. Strict
+  C++ profile requires private declarations in anonymous namespaces, while
+  HISS-04 applies 60-line limit to each namespace block as well as each
+  function; never collapse these blocks or replace with `NOLINT`. Tap loops
+  deliberately carry no forced-unroll pragma: oneAPI 2026 emits failed-unroll
+  diagnostic for supported target instances and stays free to unroll when
+  profitable. Preserve `float` device gain in `VifHoriLaunchParams`,
+  arithmetic order inside each phase, cleanup points in three init helpers.
+  Base-vs-refactor proof covers default and fused modes on 8-bit and 10-bit
+  inputs at zero full-precision delta; rerun both modes after upstream
+  conflict.
 
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|

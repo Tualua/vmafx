@@ -73,6 +73,7 @@ prefix):
 | `vif_enhn_gain_limit` | `egl` | both | double | `100.0` | `1.0–100.0` | Cap the per-pixel enhancement-gain ratio so over-sharpened content cannot saturate the score. Set to `1.0` to disable enhancement gain entirely. |
 | `vif_skip_scale0` | `ssclz` | both | bool | `false` | n/a | Skip scale-0 (finest pyramid level) calculations; scale-0 outputs are forced to `0.0` and excluded from the fused score. Matches the CPU path for GPU backends. |
 | `debug` | none | both | bool | `false` | n/a | Emit additional per-scale numerator/denominator debug metrics. |
+| `vif_fused` | none | `vif_sycl` only | bool | `false` | n/a | Run each scale's vertical and horizontal filter passes in one kernel launch. It needs about 230 MB less device memory at 3840x2160 and took about the same time per frame on an Arc A380. The scores are the CPU's either way; they are reported as `integer_vif_scale0_vif_fused` to `integer_vif_scale3_vif_fused`. |
 | `vif_kernelscale` | `ks` | `float_vif` | double | `1.0` | `0.1` to `4.0` | Scale of the Gaussian kernel (2.0 doubles the standard deviation and lengthens the kernel). |
 | `vif_prescale` | `ps` | `float_vif` | double | `1.0` | `0.1` to `4.0` | Scaling factor for the frame (2.0 doubles width and height). |
 | `vif_prescale_method` | `pm` | `float_vif` | string | `nearest` | `nearest`, `bilinear`, `bicubic`, `lanczos4` | Scaling method for the prescale. |
@@ -245,6 +246,11 @@ enhancement-gain-enabled VIF. Fixed per
   computes a pixel's gain in `double` and truncates two results to integers,
   where `vif_sycl` used `float`, which put a share of those integers one off.
   It now computes both integers exactly, in integer arithmetic.
+- **`vif_sycl`, `vif_fused=true`.** Until October 2026 scales 1 to 3 differed
+  from the CPU on every frame from 1920x1080 up (by up to 4.9e-4 at
+  3840x2160): one launch read a scale from the buffers it was writing the
+  next scale into. The fused scales now alternate between two buffers, and
+  the scores equal the CPU's and the separate passes'.
 - **`vif_sycl`, `debug`.** The option defaulted to `true` until October 2026,
   which added the eleven debug outputs to every run; request them with
   `--feature vif_sycl=debug=true`.
