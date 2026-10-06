@@ -320,8 +320,7 @@ static char *test_vif_10bit_identical(void)
 }
 
 /* ADR-1769 K1: the zero-copy workload's frame size, 10 bits, with every debug
- * sum. Every scale runs the tiled horizontal kernel, scale 0 over 400 x 60
- * work-groups of 64 x 4. */
+ * sum. Scale 0 runs the tiled horizontal kernel over 400 x 60 work-groups. */
 static char *test_vif_3840x1600_10bit_identical(void)
 {
     static const VifCase c = {.name = "3840x1600 10-bit",
