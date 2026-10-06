@@ -95,9 +95,7 @@ using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;
  *
  * Slot fence: readers_done[s] holds device markers on every compute queue,
  * taken when slot s stopped being the compute slot; the upload that next
- * overwrites s waits on them. The host upload waits on the copy queue, the VA
- * import on the primary queue (vmaf_sycl_fence_import_slot(), ADR-1769);
- * `import_slot_fenced` makes that once per frame. */
+ * overwrites s waits on them. */
 struct SyclPlaneState {
     void *ref[2][2] = {};
     void *dis[2][2] = {};
@@ -114,9 +112,6 @@ struct SyclPlaneState {
     /* Which sides of the upload slot's chroma were imported this frame. */
     bool chroma_ref_imported = false;
     bool chroma_dis_imported = false;
-    /* The VA import fenced the upload slot this frame (ADR-1769).
-     * vmaf_sycl_advance_frame() re-arms it. */
-    bool import_slot_fenced = false;
 };
 
 /* An aggregate: vmaf_sycl_state_init() initialises `queue` and `copy_queue`
@@ -163,10 +158,6 @@ struct VmafSyclState {
     SyclPlaneState planes; // opt-in chroma planes + slot fence, ADR-1369
 
     sycl::event last_detile_event; // event from last de-tile kernel
-    // Copies of every queue vmaf_sycl_create_compute_queue() made (the
-    // combined queue among them): the slot fence marks them all. A queue is a
-    // counted handle, so a copy stays valid after its creator deletes its own.
-    std::vector<sycl::queue> compute_queues;
     void *pending_import_ptrs[MAX_PENDING_IMPORTS] = {};
 
     std::mutex profiling_lock;
@@ -480,7 +471,6 @@ extern "C" void vmaf_sycl_state_free(VmafSyclState **sycl_state)
     }
 
     vmaf_sycl_shared_frame_close(s);
-    s->compute_queues.clear();
 
     delete s;
     *sycl_state = nullptr;
@@ -505,7 +495,6 @@ extern "C" void *vmaf_sycl_create_compute_queue(VmafSyclState *state)
         }
         // Same context+device so USM allocations are valid across queues
         auto *q = new sycl::queue(state->queue.get_context(), state->queue.get_device(), props);
-        state->compute_queues.push_back(*q);
         return q;
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL create_compute_queue: %s\n", e.what());
@@ -731,7 +720,6 @@ static void sycl_shared_chroma_release(VmafSyclState *state)
     chroma.chroma_import_pending = false;
     chroma.chroma_ref_imported = false;
     chroma.chroma_dis_imported = false;
-    chroma.import_slot_fenced = false;
 }
 
 static int sycl_shared_frame_reinit_unwind(VmafSyclState *state)
@@ -880,48 +868,24 @@ static bool sycl_events_pending(const std::vector<sycl::event> &events)
     });
 }
 
-/* The last command of the primary queue and of every compute queue (the
- * combined queue is one of them). In-order queues: the last command's event
- * completes after every earlier one. An empty queue has none and nothing to
- * wait for. */
-static void sycl_collect_last_events(VmafSyclState *state, std::vector<sycl::event> &done)
-{
-    done.clear();
-    std::optional<sycl::event> last = state->queue.ext_oneapi_get_last_event();
-    if (last)
-        done.push_back(*last);
-    for (sycl::queue &q : state->compute_queues) {
-        last = q.ext_oneapi_get_last_event();
-        if (last)
-            done.push_back(*last);
-    }
-}
-
-/* `barrier_q` is the queue that writes slot `ui`: the copy queue for the host
- * upload, the primary queue for the VA import (ADR-1769). */
-static void sycl_fence_slot_readers(VmafSyclState *state, int ui, sycl::queue &barrier_q)
+static void sycl_fence_slot_readers(VmafSyclState *state, int ui)
 {
     // Normally the readers were already waited for by the previous frame's
     // collect; a barrier is only submitted when one is still running.
     if (sycl_events_pending(state->planes.readers_done[ui]))
-        barrier_q.ext_oneapi_submit_barrier(state->planes.readers_done[ui]);
-    sycl_collect_last_events(state, state->planes.readers_done[state->cur_compute]);
-}
-
-extern "C" int vmaf_sycl_fence_import_slot(VmafSyclState *state)
-{
-    if (!state)
-        return -EINVAL;
-    if (state->planes.import_slot_fenced)
-        return 0;
-    try {
-        sycl_fence_slot_readers(state, state->cur_upload, state->queue);
-    } catch (const sycl::exception &e) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL import slot fence: %s\n", e.what());
-        return -EIO;
+        state->copy_queue.ext_oneapi_submit_barrier(state->planes.readers_done[ui]);
+    std::vector<sycl::event> &done = state->planes.readers_done[state->cur_compute];
+    done.clear();
+    // In-order queues: the last command's event completes after every
+    // earlier one. An empty queue has none and nothing to wait for.
+    std::optional<sycl::event> last = state->queue.ext_oneapi_get_last_event();
+    if (last)
+        done.push_back(*last);
+    if (state->combined_queue) {
+        last = state->combined_queue->ext_oneapi_get_last_event();
+        if (last)
+            done.push_back(*last);
     }
-    state->planes.import_slot_fenced = true;
-    return 0;
 }
 
 static void update_picture_ready_event(VmafPicture *pic, const sycl::event &ev)
@@ -960,7 +924,7 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
     size_t const row_bytes = static_cast<size_t>(state->frame_w) * bytes_per_pixel;
 
     try {
-        sycl_fence_slot_readers(state, ui, state->copy_queue);
+        sycl_fence_slot_readers(state, ui);
         (void)sycl_enqueue_plane_upload(state, state->shared_ref_buf[ui], ref->data[0],
                                         ref->stride[0], row_bytes);
 
@@ -1786,7 +1750,6 @@ extern "C" void vmaf_sycl_advance_frame(VmafSyclState *state)
     }
     state->planes.chroma_ref_imported = false;
     state->planes.chroma_dis_imported = false;
-    state->planes.import_slot_fenced = false;
 }
 
 /* ------------------------------------------------------------------ */

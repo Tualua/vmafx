@@ -683,24 +683,6 @@ int vmaf_sycl_combined_queue_wait(VmafSyclState *state);
  */
 void vmaf_sycl_advance_frame(VmafSyclState *state);
 
-/**
- * Order the VA import's writes to the upload slot after every reader of that
- * slot's previous frame, on the device (ADR-1769). Barriers the primary queue,
- * where the de-tile, the chroma de-interleave and the readback copies run, on
- * the markers taken when the slot last left compute: the last command of the
- * primary queue and of every queue vmaf_sycl_create_compute_queue() made (the
- * combined queue among them), so an extractor n_subsample skipped is covered.
- * Then marks the readers of the slot compute is leaving. Runs once per frame;
- * vmaf_sycl_advance_frame() re-arms it. Called by vmaf_sycl_import_va_surface()
- * before it writes the slot, so the caller needs no host wait for the slot.
- *
- * @param state  The SYCL state.
- *
- * @return 0 on success, -EINVAL for a NULL state, -EIO when the barrier
- *         submit throws.
- */
-int vmaf_sycl_fence_import_slot(VmafSyclState *state);
-
 /* ---- VA import deferred DMA-BUF free ---- */
 
 /**

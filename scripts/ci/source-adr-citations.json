@@ -1331,6 +1331,7 @@
         "core/src/feature/sycl/integer_moment_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.h": 1,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
@@ -6547,6 +6548,7 @@
         "core/test/test_sycl_ciede_math.c": 1,
         "core/test/test_sycl_ciede_parity.c": 1,
         "core/test/test_sycl_cuda_serial_upload_lifetime.c": 1,
+        "core/test/test_sycl_detile_tile4.c": 1,
         "core/test/test_sycl_exact_twins.c": 1,
         "core/test/test_sycl_float_adm_math.c": 1,
         "core/test/test_sycl_float_adm_parity.c": 1,
@@ -8587,7 +8589,7 @@
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 2,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 3,
-        "core/src/feature/sycl/integer_vif_sycl.cpp": 4,
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 5,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/sycl_compat.h": 4,
         "core/src/feature/sycl/sycl_ff_math.h": 1,
@@ -10430,11 +10432,10 @@
     },
     "1769": {
       "sites": {
-        "core/src/sycl/common.cpp": 3,
-        "core/src/sycl/common.h": 1,
-        "core/src/sycl/dmabuf_import.cpp": 1,
-        "core/test/meson.build": 1,
-        "core/test/test_sycl_zerocopy_wait_contract.py": 1
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_detile_tile4.c": 1,
+        "core/test/test_sycl_vif_parity.c": 2
       },
       "target": "1769-sycl-zerocopy-throughput-a380.md"
     }

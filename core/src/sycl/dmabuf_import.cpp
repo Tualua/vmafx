@@ -908,12 +908,8 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     if (!state || !va_display_handle)
         return -EINVAL;
     double const t_import = vmaf_sycl_phase_start(state);
-    /* Every path below (DMA-BUF de-tile, readback copy) writes the upload slot
-     * on the primary queue; order it after the slot's previous readers on the
-     * device, so the caller needs no host wait at frame start (ADR-1769). */
-    int rc = vmaf_sycl_fence_import_slot(state);
-    if (!rc)
-        rc = import_va_surface_body(state, va_display_handle, va_surface_id, is_ref, w, h, bpc);
+    int const rc =
+        import_va_surface_body(state, va_display_handle, va_surface_id, is_ref, w, h, bpc);
     vmaf_sycl_phase_record(state, VMAF_SYCL_PHASE_IMPORT, t_import);
     return rc;
 }
