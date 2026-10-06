@@ -4766,6 +4766,10 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   macOS tester bundle runs `test_metal_iosurface_import_parity` for that.
 
 
+- `test_metal_float_motion_parity.c` sizes its key buffers for the longest key it formats, so a
+  gcc build no longer reports `-Wformat-truncation` for it.
+
+
 - **`integer_adm_metal` returns the CPU's `adm` scores again
   ([ADR-1806](docs/adr/1806-metal-kernels-host-replay.md)).** The first
   report of the macOS tester bundle on an Apple M4 Pro (issue #2118) showed
