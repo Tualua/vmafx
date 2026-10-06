@@ -11355,6 +11355,13 @@
         "ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh": 1
       },
       "target": "2093-upstream-hdr-groundwork-input-colorimetry.md"
+    },
+    "2126": {
+      "sites": {
+        ".config/lint-exceptions.d/scorecard-branch-protection.toml": 2,
+        ".config/lint-exceptions.d/scorecard-code-review.toml": 2
+      },
+      "target": "2126-scorecard-single-maintainer-exceptions.md"
     }
   },
   "retired": {

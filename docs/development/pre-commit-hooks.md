@@ -299,6 +299,12 @@ python3 scripts/ci/lint_exceptions.py check
 pre-commit run check-copyright --all-files
 ```
 
+Two entries of the list are not file standards: `scorecard-code-review` and
+`scorecard-branch-protection` ([ADR-2126](../adr/2126-scorecard-single-maintainer-exceptions.md))
+declare the single-maintainer gaps that OpenSSF Scorecard reports (alerts 1 and
+1054). Their path is the file that owns the policy, and the code-scanning
+dismissal cites the entry.
+
 Entries today: ten files of the Pelorus mirror (`spdx`, until the line exists in
 Pelorus and the mirror is re-vendored), two praetor-managed files (`spdx`) and
 eight third-party MEX sources of the Netflix MATLAB harness (`copyright`).

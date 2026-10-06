@@ -7,6 +7,12 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Scorecard single-maintainer exceptions (2026-10-06)
+
+[ADR-2126](adr/2126-scorecard-single-maintainer-exceptions.md). Two files under
+`.config/lint-exceptions.d/` (`scorecard-code-review.toml`, `scorecard-branch-protection.toml`).
+Fork-only; no upstream counterpart. A rebase keeps both entries and their expiry.
+
 ## FFmpeg patch 0022: input colorimetry from the AVFrame (2026-10-06)
 
 `port/ffmpeg-input-colorimetry`, [ADR-2093](adr/2093-upstream-hdr-groundwork-input-colorimetry.md).
