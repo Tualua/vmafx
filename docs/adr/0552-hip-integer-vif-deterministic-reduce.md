@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0552: Deterministic wavefront reduction for `integer_vif_hip` horizontal kernels
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0563](0563-hip-extractor-audit-verification.md) for the wavefront reduction (carry-bit defect))
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `hip`, `gpu`, `kernel`, `vif`, `parity`, `correctness`, `fork-local`

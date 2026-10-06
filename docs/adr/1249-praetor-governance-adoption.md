@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1249: Adopt praetor governance, with lefthook owning the git hooks
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1504](1504-decline-praetor-branch-ruleset.md) for the follow-up on the rendered .github/rulesets/main.json)
 - **Date**: 2026-09-15
 - **Deciders**: lusoris
 - **Tags**: ci, process, agents, tooling, governance, docs, workspace

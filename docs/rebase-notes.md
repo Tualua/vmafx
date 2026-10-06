@@ -13,6 +13,9 @@ search:
 ## ADR audit: Proposed ADR statuses (2026-10-06)
 
 `docs/adr-audit-status`. no rebase impact: ADR status lines, dated status updates, one drift-gate exception list and one docs/state.md Deferred row; no source, build or test file changes.
+## ADR audit: partial supersession in status lines (2026-10-06)
+
+`docs/adr-audit-partial`. no rebase impact: 45 ADR status lines; no source, build or test file changes.
 
 ## SYCL fused VIF reads and writes different downsampled planes (2026-10-06)
 

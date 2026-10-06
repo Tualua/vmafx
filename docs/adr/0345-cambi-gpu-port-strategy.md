@@ -1,6 +1,7 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0345: cambi × {CUDA, SYCL, HIP} GPU port strategy
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1357](1357-sycl-cambi-device-resident.md) for the SYCL host-residual provisions)
 - **Status update 2026-05-15**: CUDA + SYCL ports implemented;
   `core/src/feature/cuda/integer_cambi_cuda.c` and
   `core/src/feature/sycl/integer_cambi_sycl.cpp` present on

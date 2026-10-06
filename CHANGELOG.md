@@ -553,6 +553,9 @@
 - 34 ADR status headers read in the one form the drift gate parses (`- **Status**: Accepted`): 12 bullet variants and 22 table or heading headers (no value changed; empty `Supersedes` rows dropped). ADR-0003 and ADR-0019 link their successor ADR-1277. ADR-1129, ADR-1225 and ADR-0954 gain a dated status update: the pins they quote have moved (`build-config.env` is the authority) and the HIP dispatch strategy file was removed by #2030. `docs/state.md` cites ADR-0639 (scaffold-audit P1) where it said ADR-0613.
 
 
+- 44 ADRs that a later record supersedes in part carry that in their status line, in the form `Accepted (Superseded-in-part 2026-10-06 by [ADR-N] for <scope>)` (the form of ADR-0667, ADR-1166, ADR-1591 and ADR-1685), and ADR-0272, which ADR-0291 replaces whole, reads `Superseded by [ADR-0291]`. ADR-0566 and ADR-0584 also move from a table header to the bullet header. Bodies are unchanged.
+
+
 - Accepted with a dated status update: ADR-1762, ADR-1822 and ADR-1828 (implemented by #2101, #2140, #2141), ADR-1202 (singularity is reported separately; the mechanism changed to `SpeedInternalSingularTally`), ADR-0686 (what stands and what ADR-1127, ADR-1151, ADR-1250, ADR-1699, ADR-1852 replaced) and ADR-0709 (implemented except the kuttl breadth, which RC5 finishes). ADR-0767 is Superseded by ADR-1852 and ADR-0780 by ADR-1142. ADR-0613, ADR-0614, ADR-0617 and ADR-0618 stay Proposed for 1.4 (#2261), ADR-0565 and ADR-0459 for 1.5 (#2262), ADR-0401 for 1.2 (#2248); ADR-0388 is a Deferred row in `docs/state.md` (#2241). ADR-1127 reads Accepted (Superseded-in-part by ADR-1151). The drift-gate exception of ADR-1202 is removed and the one of ADR-0613 is renewed to 2027-04-06.
 
 
