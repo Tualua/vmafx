@@ -58,6 +58,12 @@ fi
 SH
 chmod +x "$tmp_dir/standardsctl"
 
+cat >"$tmp_dir/node" <<'SH'
+#!/bin/sh
+exit 0
+SH
+chmod +x "$tmp_dir/node"
+
 export PATH="$tmp_dir:$PATH"
 export DEDUPE_INVOCATION_LOG="$tmp_dir/invocations.log"
 unset MAKEFLAGS

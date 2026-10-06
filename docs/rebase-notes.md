@@ -53,6 +53,16 @@ both builds of `imported_psnr()` consume the planar pair they are given.
 that names `__builtin_clz` keeps `#include "feature/compat_builtin.h"` (`scripts/ci/check-msvc-clz-shim.sh`
 enforces it), and a test helper fills `div_lookup` once: on `_WIN32` `div_lookup_generator()` refills the table on
 every call.
+## CPU extractor close callbacks are `close_fex` (2026-10-06)
+
+`fix/darwin-lto-static-close`. Upstream-mirror files touched: `ciede.c`, `float_adm.c`, `float_moment.c`,
+`float_motion.c`, `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`, `integer_adm.c`,
+`integer_ssim.c`, `integer_vif.c`, `speed.c`, `ssimulacra2.c` (and the fork's `brisque.c`, `delta_e_itp.c`,
+`niqe.c`, `pu21.c`): the `static int close(VmafFeatureExtractor *fex)` callback and its `.close =` initialiser are
+named `close_fex`. A sync that brings an upstream change to one of these functions keeps the fork's name; a
+conflict on the definition line or the initialiser takes the fork's side. Upstream's name collides with the C
+library's labelled `close()` in a macOS full-LTO link. `core/test/test_libc_named_internal_functions.py` fails if
+a `static close` comes back. See `core/src/feature/AGENTS.d/libc-named-statics.md`.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 
