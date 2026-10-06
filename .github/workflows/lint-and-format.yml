@@ -71,6 +71,10 @@ jobs:
             pre-commit-${{ runner.os }}-py3.14-
       - name: Install pre-commit
         run: python -m pip install --require-hashes -r requirements/locks/pre-commit.txt
+      - name: Install jsonschema
+        # The generated-docs hook validates docs/hardware-reports against
+        # their schema and exits 2 without it (check-hardware-reports.py).
+        run: python -m pip install --require-hashes -r requirements/locks/jsonschema.txt
       - name: Name the hooks that only run tooling tests
         # Tooling Tests runs those tests on every pull request and push; a test
         # runs once in CI (ADR-1568). The hooks stay active at commit time.
@@ -283,6 +287,17 @@ jobs:
           #     fork-local lint fixes without breaking the sync guard. The
           #     shared filter is exact-path based, so an unmanifested
           #     pelorus_*.cpp remains lint-owned. Fix upstream and re-sync.
+          #   - core/src/metal/objc_handle.h — Objective-C++ only: it stops at
+          #     `#error` unless __cplusplus is defined and includes `<bit>`
+          #     and <Metal/Metal.h>, so a C parse of it fails by construction.
+          #     The macOS Metal lane reads it (tidy-baseline-metal.json,
+          #     docs/development/tidy-lanes.md); this CPU-only job cannot.
+          #   - core/src/feature/ff_math.h + core/src/feature/ciede_ff_math.h —
+          #     C++ headers (`<cstddef>`, `namespace vmaf_ciede_ff`) that only
+          #     the SYCL, HIP and Metal ciede twins include. With no compile
+          #     command of their own, clang-tidy reads them with the command of
+          #     a neighbouring C file and stops at `'cstddef' file not found`.
+          #     The lanes that compile their includers read them.
           #   - core/test/test_adm_small_border.c +
           #     core/test/test_adm_wide_rounding.c — backend-neutral source
           #     names, but meson builds them only as test_cuda_adm_* and
@@ -320,6 +335,9 @@ jobs:
           exclude_untidyable() {
             grep -v \
               -e '^core/src/feature/arm64/' \
+              -e '^core/src/metal/objc_handle\.h$' \
+              -e '^core/src/feature/ff_math\.h$' \
+              -e '^core/src/feature/ciede_ff_math\.h$' \
               -e '^core/src/cuda/' \
               -e '^core/src/feature/cuda/' \
               -e '^core/test/test_cuda_' \
@@ -834,6 +852,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"
+      - name: Install jsonschema
+        # make docs-fragments-check validates docs/hardware-reports against
+        # their schema and exits 2 without it (check-hardware-reports.py).
+        run: pip install --require-hashes -r requirements/locks/jsonschema.txt
       - name: Check generated documentation freshness
         run: make docs-fragments-check
       - name: Install MkDocs Material

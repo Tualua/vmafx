@@ -95,6 +95,11 @@ ENTRYPOINT_GLOBS = (
 )
 
 MAKEFILE_NAMES = frozenset(("Makefile", "GNUmakefile", "makefile"))
+# `.ci/` holds checkouts of other repositories that a workflow makes inside the
+# workspace (`.ci/pelorus`, lint-and-format.yml). Their files are not this
+# repository's entry points and are never edited here, so the contract does not
+# govern them; the Pelorus mirror inside this tree stays governed.
+EXTERNAL_CHECKOUT_ROOTS = frozenset((".ci",))
 WORKFLOW_YAML_PREFIXES = ((".github", "workflows"), (".github", "actions"))
 YAML_RUN_KEY = re.compile(
     r"^(?P<indent>\s*)(?P<sequence_item>-\s+)?(?:run|'run'|\"run\")\s*:\s*(?P<value>.*)$"
@@ -446,6 +451,8 @@ def _read_entrypoint_sources() -> dict[Path, str]:
             for absolute_path in ROOT.glob(pattern):
                 if absolute_path.is_file():
                     relative_path = absolute_path.relative_to(ROOT)
+                    if relative_path.parts[0] in EXTERNAL_CHECKOUT_ROOTS:
+                        continue
                     if relative_path.name in MAKEFILE_NAMES:
                         stat = absolute_path.stat()
                         identity = (stat.st_dev, stat.st_ino)
@@ -761,6 +768,24 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
 
     def test_supported_entrypoints_use_repository_runner(self) -> None:
         self.assertEqual(_entrypoint_contract_errors(_read_entrypoint_sources()), [])
+
+    def test_external_checkout_root_is_not_governed(self) -> None:
+        """A workflow's `.ci/<repo>` checkout is skipped; the same file under scripts/ is not."""
+        raw = "test:\n\tmeson test -C build\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".ci" / "other").mkdir(parents=True)
+            (root / ".ci" / "other" / "Makefile").write_text(raw, encoding="utf-8")
+            (root / "scripts").mkdir()
+            (root / "scripts" / "Makefile").write_text(raw, encoding="utf-8")
+            with mock.patch.dict(_ENTRYPOINT_SOURCES_CACHE, clear=True):
+                with mock.patch(f"{__name__}.ROOT", root):
+                    sources = _read_entrypoint_sources()
+            self.assertEqual(sorted(str(path) for path in sources), ["scripts/Makefile"])
+            self.assertEqual(
+                _raw_entrypoint_errors(Path("scripts/Makefile"), raw),
+                ["raw Meson test entry point at scripts/Makefile:2"],
+            )
 
     def test_precommit_hook_covers_every_contract_input_scope(self) -> None:
         pattern = _precommit_contract_pattern()

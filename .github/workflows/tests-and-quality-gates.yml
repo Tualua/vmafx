@@ -540,6 +540,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # Full history: check-source-adr-citations.py verifies the commits
+          # that its retired-ADR records name (`git cat-file -e`), and
+          # test_repository_registry_is_current runs it on this tree. A
+          # shallow clone fails that test and skips the silent-revert history
+          # test.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:

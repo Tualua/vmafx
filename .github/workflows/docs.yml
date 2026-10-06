@@ -94,6 +94,11 @@ jobs:
         run: |
           pip install --require-hashes -r requirements/locks/package-build.txt
           pip install --no-build-isolation --require-hashes -r docs/requirements-lock.txt
+      - name: Install jsonschema
+        if: steps.impact.outputs.docs == 'true'
+        # make docs-fragments-check validates docs/hardware-reports against
+        # their schema and exits 2 without it (check-hardware-reports.py).
+        run: pip install --require-hashes -r requirements/locks/jsonschema.txt
       - name: Check generated documentation freshness
         if: steps.impact.outputs.docs == 'true'
         run: make docs-fragments-check

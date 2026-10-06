@@ -53,6 +53,10 @@ expect() { # $1=label $2=expected-exit $3=dir
     printf '%s\n' "$out" | sed 's/^/      /'
     fails=$((fails + 1))
   fi
+  # Each case owns one scratch copy of the tracked tree (about 270 MB with its
+  # .git); keeping all of them filled a hosted runner's disk, and the next
+  # `git commit` failed with exit 128. Remove the copy once its verdict is in.
+  rm -rf "$3"
 }
 
 # 1. the tree as it stands must pass

@@ -13,6 +13,9 @@ search:
 ## Cppcheck on the Metal host tests (2026-10-06)
 
 `fix/master-red-cppcheck-metal`. `metal_float_motion_math.h` and `metal_float_vif_math.h` carry a `cppcheck-suppress-begin` / `-end passedByValue` block (ADR-1498: the headers are shared with MSL); a sync must keep the block and the `{0}` initialiser in `vmaf_mtl_fvif_statistic_args()`. Six test files changed in place. No upstream-mirror file; no other rebase impact.
+## CI gates read the right inputs (2026-10-06)
+
+`fix/master-red-ci-gates`. Fork-only CI and test files: `core/test/test_meson_secret_env_sanitization.py` (`EXTERNAL_CHECKOUT_ROOTS`), three workflow files (`docs.yml`, `lint-and-format.yml`, `tests-and-quality-gates.yml`), `scripts/ci/tests/test-default-model-single-source.sh` and a new `scripts/ci/tests/test_tidy_changed_exclusions.py`. No upstream-mirror file changed; no rebase impact beyond keeping the `.ci/` skip and the three `exclude_untidyable()` entries.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 
