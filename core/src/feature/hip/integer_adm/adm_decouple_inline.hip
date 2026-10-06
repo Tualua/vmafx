@@ -119,9 +119,18 @@ __device__ __forceinline__ int16_t decouple_r_s0(int16_t oh, int16_t ov, int16_t
 __device__ __forceinline__ int decouple_angle_flag_s0(int16_t oh, int16_t ov, int16_t th,
                                                       int16_t tv)
 {
-    const int32_t ot_dp = (int32_t)oh * th + (int32_t)ov * tv;
-    const int32_t o_mag_sq = (int32_t)oh * oh + (int32_t)ov * ov;
-    const int32_t t_mag_sq = (int32_t)th * th + (int32_t)tv * tv;
+    /* Each product of two int16 values fits int32 (at most 2^30). The dot product reaches 2^31 only
+     * with every band at -32768: it is formed as an unsigned sum, and `- 1` then `+ 1` in 64 bits
+     * restores that one value an int32 cannot hold without a select (the CPU's sum is int64:
+     * adm_angle_flag() in integer_adm_kernels.h). The squared magnitudes are never negative and
+     * fit uint32. T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06; register budget: ADR-1226 and
+     * its amendment. test_adm_decouple_recip_* holds the flag to the CPU's at every int16 corner. */
+    const uint32_t ot_sum = (uint32_t)((int32_t)oh * th) + (uint32_t)((int32_t)ov * tv);
+    const int64_t ot_dp = (int64_t)(int32_t)(ot_sum - 1u) + 1;
+    const uint32_t o_sq32 = (uint32_t)((int32_t)oh * oh) + (uint32_t)((int32_t)ov * ov);
+    const uint32_t t_sq32 = (uint32_t)((int32_t)th * th) + (uint32_t)((int32_t)tv * tv);
+    const int64_t o_mag_sq = o_sq32;
+    const int64_t t_mag_sq = t_sq32;
     return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, COS_1DEG_SQ);
 }
 

@@ -13,6 +13,11 @@ search:
 ## vmaf-tune: the backend probe skips the PATH lookup with a runner (2026-10-06)
 
 `fix/vmaftune-probe-runner-no-path`. no rebase impact: one fork-only vmaf-tune function (`backend_report()`) and its test; no upstream file, build or public surface.
+## ADM twins: exact scale-0 angle flag, per-kernel register budget (2026-10-06)
+
+`fix/adm-angle-flag-s0-int64`, [ADR-2134](adr/2134-cuda-adm-cm-aim-register-budget-angle-flag.md). Keep the unsigned-sum form in
+`decouple_angle_flag_s0()` of `cuda/integer_adm/adm_decouple_inline.cuh` and `hip/integer_adm/adm_decouple_inline.hip`; Netflix has no GPU
+twin, so a sync has no counterpart. `KERNEL_BUDGETS` in `core/test/test_cuda_adm_cm_register_pressure.py` holds the one kernel above 208.
 
 ## Scorecard single-maintainer exceptions (2026-10-06)
 

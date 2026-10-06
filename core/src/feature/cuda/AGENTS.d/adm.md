@@ -153,10 +153,12 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   `(int32_t)(...) * gain` narrowed first is an undefined conversion (the
   saturating device cvt hid it). Guard: `test_gpu_adm_gain_product_contract.py`.
 
-- **`decouple_angle_flag_s0()` adds in int32 (`T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`, open).**
-  `integer_adm/adm_decouple_inline.cuh` wraps a sum of 2^31 (every band at -32768) where the CPU's int64
-  sum does not; a 64-bit form puts `adm_cm_aim_line_kernel_4` past the ADR-1226 register budget (209 to 216
-  measured). Do not "fix" it without re-running `test_cuda_adm_cm_register_pressure`; do not remove the
-  recorded count in `test_adm_decouple_recip_cuda`, which flips to 0 with the fix.
-  The same test holds `decouple_r_s123()`, `get_best15_from32()` and the scale 1-3 flag to the CPU's, so
-  no function of the header is unused in a host build (CodeQL `cpp/unused-static-function`).
+- **`decouple_angle_flag_s0()` sums in 64 bits (`T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`, [ADR-2134](../../../../../docs/adr/2134-cuda-adm-cm-aim-register-budget-angle-flag.md)).**
+  `integer_adm/adm_decouple_inline.cuh` forms the dot product as an unsigned sum restored by
+  `(int64_t)(int32_t)(sum - 1u) + 1` (the one value an int32 cannot hold is 2^31, every band at -32768) and the
+  squared magnitudes as unsigned sums widened to int64, as the CPU's int64 `adm_angle_flag()` sums are. Do not
+  narrow it back to int32. The form costs `adm_cm_aim_line_kernel_4` 209 registers (plain int64: 216), which
+  is that kernel's own budget in `test_cuda_adm_cm_register_pressure` (every other kernel 208, zero spill);
+  an RC7 row wins the register back. `test_adm_decouple_recip_cuda` holds the flag to the CPU's at every int16
+  corner and expects 0 mismatches. It also holds `decouple_r_s123()`, `get_best15_from32()` and the scale 1-3 flag to the CPU's,
+  so no function of the header is unused in a host build (CodeQL `cpp/unused-static-function`).

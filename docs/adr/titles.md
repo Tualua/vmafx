@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1304), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1305), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5227,3 +5227,7 @@ Every ADR, one heading each (1304), so the site search finds an ADR by its title
 ## ADR-2126: Declare the single-maintainer gaps of OpenSSF Scorecard's Code-Review and Branch-Protection checks as exceptions
 
 [2126-scorecard-single-maintainer-exceptions](2126-scorecard-single-maintainer-exceptions.md)
+
+## ADR-2134: `adm_cm_aim_line_kernel_4` gets its own register budget of 209 for the exact scale-0 angle flag
+
+[2134-cuda-adm-cm-aim-register-budget-angle-flag](2134-cuda-adm-cm-aim-register-budget-angle-flag.md)

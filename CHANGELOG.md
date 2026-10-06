@@ -3036,13 +3036,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   host.
 
 
-- **The ADM twins' decouple header is tested more, the Metal scale-0 angle flag sums in 64 bits, and a CUDA/HIP corner is recorded (`T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`).**
+- **The ADM twins' decouple header is tested more, the Metal scale-0 angle flag sums in 64 bits, and a CUDA/HIP corner is found (`T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`).**
   `test_adm_decouple_recip_{cuda,hip}` (the twins' own header compiled for the host) now also holds `decouple_r_s123()`, `get_best15_from32()`
   and both angle flags to the CPU's over 800 000 random draws and the corners of the int16 range, and each executable has its own
   `run_tests` root. That clears CodeQL `cpp/unused-static-function` alerts 1464-1479 (the header's functions are all used by a host
   build now) and exposes a real corner: with every band at -32768 the CUDA and HIP angle flag adds in int32 and wraps where the CPU's
-  int64 sum does not (17 of 256 corner combinations; the fix costs `adm_cm_aim_line_kernel_4` registers past its budget, so the row is
-  open). Metal's `iadm_angle_flag_s0()` had the same sums and is fixed. The two `cpp/include-non-header` findings of the
+  int64 sum does not (17 of 256 corner combinations; fixed in the same stack, ADR-2134). Metal's `iadm_angle_flag_s0()` had the same sums and is fixed. The two `cpp/include-non-header` findings of the
   device-source tests (1463, 1488) are declared exceptions (`codeql-include-non-header.toml`).
 
 
@@ -3079,6 +3078,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   path, which every aarch64 run uses, now computes the expression modulo 2^32,
   as the AVX2 and AVX-512 vector code already did. Scores are unchanged on
   every dispatch level ([features](docs/metrics/features.md)).
+
+
+- **The CUDA and HIP scale-0 ADM angle flag equals the CPU's at every int16 corner (`T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`, ADR-2134).**
+  `decouple_angle_flag_s0()` summed int16 products in int32, which wraps when every band is -32768 (17 of 256 corner combinations gave another
+  flag than the CPU's, and with it another gain-limited decouple branch). It now sums in unsigned 32 bits restored to int64, as the CPU's int64 sums.
+  The form costs `adm_cm_aim_line_kernel_4` 209 registers (ADR-1226's budget was 208; plain int64 is 216), so that kernel has its own budget in
+  `test_cuda_adm_cm_register_pressure`; the other kernels keep 208 and spill is zero. An RC7 row wins the register back.
 
 
 - **`test_adm_decouple_recip_cuda` / `_hip` build with MSVC and finish on

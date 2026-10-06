@@ -212,12 +212,10 @@ const char *test_angle_flags()
 }
 
 /* The corners of the int16 range for the four bands. The twins' scale-0 angle flag adds two
- * int32 products: a sum reaches 2^31 only with every band at -32768, which an int32 holds as
- * INT32_MIN (T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06). The CPU's sums are int64. A
- * 64-bit sum in the kernel costs adm_cm_aim_line_kernel_4 one to eight registers, past the
- * budget of ADR-1226 (216, 209 and 210 measured for three forms), so the twins keep int32 and
- * the corners whose sums wrap are held to the count measured on master, not to the CPU. */
-constexpr unsigned kWrapCornerMismatches = 17u;
+ * int32 products; a sum reaches 2^31 only with every band at -32768, and the CPU's sums are int64
+ * (T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06: 17 of 256 corners differed with int32 sums).
+ * The twins form them so that the flag equals the CPU's at every corner. */
+constexpr unsigned kWrapCornerMismatches = 0u;
 
 /* One corner: whether the twin's flag differs from the CPU's, and whether a sum of the corner
  * is 2^31 (the value an int32 cannot hold). */
@@ -261,8 +259,7 @@ const char *test_angle_flag_corners()
                            bad, wrap_bad, kWrapCornerMismatches);
     }
     mu_assert("the scale-0 angle flag is not the CPU's at the int16 corners", bad == 0u);
-    mu_assert("the 2^31-sum corners no longer match the recorded count: update the state row "
-              "T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06",
+    mu_assert("the scale-0 angle flag is not the CPU's at the corners whose sums are 2^31",
               wrap_bad == kWrapCornerMismatches);
     return nullptr;
 }
