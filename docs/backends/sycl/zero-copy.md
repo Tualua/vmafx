@@ -33,21 +33,6 @@ so the caller falls back to the D3D11 staging path. DMA-BUF is a Linux kernel
 interface (`ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF`); Level Zero on Windows uses
 NT handles instead.
 
-The import writes one of two upload slots, and the slot it writes was read by
-the extractors two frames earlier. `vmaf_sycl_import_va_surface()` orders its
-writes after those readers on the device, so a caller needs no host wait
-before it imports the next frame
-([ADR-1769](../../adr/1769-sycl-zerocopy-throughput-a380.md)). The fence
-covers every queue the readers run on, including an extractor that
-`n_subsample` skipped. The FFmpeg `libvmaf_sycl` filter therefore no longer
-calls `vmaf_sycl_wait_compute()` at the start of a QSV frame; it still calls
-it before a host-upload frame. A caller that writes the buffers of
-`vmaf_sycl_get_frame_buffers()` itself is not fenced and still calls
-`vmaf_sycl_wait_compute()` before it reuses them
-([API reference](../../api/gpu.md)). `vmaf_read_pictures_sycl()` waits for
-the import's kernels before it returns, so the decoder may reuse the surface
-afterwards. Scores do not change.
-
 The zero-copy import (FFmpeg `libvmaf_sycl` with QSV surfaces, or any
 caller of `vmaf_read_pictures_sycl()`) imports luma and, for 4:2:0 NV12 and
 P010 surfaces, the Cb and Cr planes on every frame

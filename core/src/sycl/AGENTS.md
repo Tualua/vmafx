@@ -349,25 +349,6 @@ sycl/
   error. Guard: `test_sycl_n_subsample_combined_graph` (+ `_replay`,
   `VMAF_SYCL_USE_GRAPH=1`).
 
-- **VA import fences upload slot on device
-  ([ADR-1769](../../../docs/adr/1769-sycl-zerocopy-throughput-a380.md), C3).**
-  `vmaf_sycl_import_va_surface()` calls `vmaf_sycl_fence_import_slot()`
-  first, before `import_va_surface_body()` (covers DMA-BUF de-tile and
-  readback paths). Fence = `sycl_fence_slot_readers(state, cur_upload,
-  state->queue)`: barrier on PRIMARY queue (writer of slot), markers =
-  last event of `queue` + every `compute_queues` entry
-  (`vmaf_sycl_create_compute_queue()` pushes copy; combined queue
-  included). Once per frame (`planes.import_slot_fenced`, re-armed in
-  `vmaf_sycl_advance_frame()` after load-bearing pair). Host upload
-  passes `copy_queue`. Patch 0005 `do_vmaf_sycl()` calls
-  `vmaf_sycl_wait_compute()` on host-upload branch only; QSV branch relies
-  on fence. `vmaf_read_pictures_sycl()` primary-queue wait stays (surface
-  reuse + deferred import frees, ADR-1596).
-  **On rebase**: keep fence before body, barrier on `state->queue` for VA,
-  `compute_queues` loop in `sycl_collect_last_events()`, no wait on QSV
-  branch of 0005. Guard: `test_sycl_zerocopy_wait_contract` (fast,
-  device-free).
-
 - **`common.cpp` cleanup + helper boundaries (HISS-21 burn-down).**
   `sycl_shared_frame_release()` is single cleanup owner for shared
   it replaced `fail:` label that `vmaf_sycl_shared_frame_init` used
