@@ -245,8 +245,15 @@ class UncitedNolints(unittest.TestCase):
 
 
 class Compare(unittest.TestCase):
-    def _m(self, warnings: dict[str, int], nolint: dict[str, int] | None = None) -> Any:
-        return ratchet.Measurement(lane="cpu", warnings=warnings, nolint_uncited=nolint or {})
+    def _m(
+        self,
+        warnings: dict[str, int],
+        nolint: dict[str, int] | None = None,
+        sources: list[str] | None = None,
+    ) -> Any:
+        return ratchet.Measurement(
+            lane="cpu", warnings=warnings, nolint_uncited=nolint or {}, sources=sources or []
+        )
 
     def test_regression_and_slack(self) -> None:
         base = self._m({"a.c": 3, "b.c": 2}, {"a.c": 1})
@@ -284,10 +291,45 @@ class Compare(unittest.TestCase):
         self.assertEqual(base.warnings, {})
         self.assertEqual(base.nolint_uncited, {})
         self.assertGreater(len(base.sources), 20)
-        planted = self._m({"core/src/metal/common.mm": 1})
+        planted = self._m({"core/src/metal/common.mm": 1}, sources=list(base.sources))
         code, printed = _captured(ratchet.report, base, planted, False)
         self.assertEqual(code, 2)
         self.assertIn("core/src/metal/common.mm: warnings 0 -> 1 (+1)", printed)
+
+    def test_a_baseline_tu_missing_from_the_measurement_fails_by_name(self) -> None:
+        """T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06: absent is not clean."""
+        base = self._m({"a.c": 1, "mex/edges.c": 6}, sources=["a.c", "mex/edges.c"])
+        now = self._m({"a.c": 1}, sources=["a.c"])
+        code, printed = _captured(ratchet.report, base, now, False)
+        self.assertEqual(code, 4)
+        self.assertIn("mex/edges.c: not measured", printed)
+        self.assertIn("1 baseline TUs not measured", printed)
+        self.assertNotIn("tighten the baseline", printed)
+        self.assertNotIn("baseline matches measurement", printed)
+        # --allow-slack is about files that improved; it never excuses a gap.
+        code, _printed = _captured(ratchet.report, base, now, True)
+        self.assertEqual(code, 4)
+
+    def test_an_unmeasured_tu_without_findings_fails_too(self) -> None:
+        base = self._m({}, sources=["a.c", "tools/vpl_core.c"])
+        code, printed = _captured(ratchet.report, base, self._m({}, sources=["a.c"]), False)
+        self.assertEqual(code, 4)
+        self.assertIn("tools/vpl_core.c: not measured", printed)
+
+    def test_a_gap_is_reported_with_a_regression_elsewhere(self) -> None:
+        base = self._m({"a.c": 1}, sources=["a.c", "b.c"])
+        code, printed = _captured(ratchet.report, base, self._m({"a.c": 2}, sources=["a.c"]), False)
+        self.assertEqual(code, 4)
+        self.assertIn("a.c: warnings 1 -> 2 (+1)", printed)
+        self.assertIn("b.c: not measured", printed)
+
+    def test_the_full_set_and_a_new_tu_still_match(self) -> None:
+        """Boundary: every baseline TU measured; a TU new to the lane is no gap."""
+        base = self._m({"a.c": 1}, sources=["a.c", "b.c"])
+        now = self._m({"a.c": 1}, sources=["a.c", "b.c", "c.c"])
+        code, printed = _captured(ratchet.report, base, now, False)
+        self.assertEqual(code, 0)
+        self.assertIn("0 baseline TUs not measured", printed)
 
     def test_verdict_is_a_workflow_command_only_under_github_actions(self) -> None:
         base, above = self._m({"a.c": 3}), self._m({"a.c": 5})

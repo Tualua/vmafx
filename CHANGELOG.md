@@ -6435,6 +6435,9 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   produces no baseline now leaves the file alone and exits non-zero.
 
 
+The clang-tidy ratchet fails, naming the file, when a translation unit of the baseline was not measured, instead of counting it as clean; the hosted `cpu` lane runs the same Makefile targets as the dev container, so both measure the same translation units.
+
+
 - **Feature-vector tiny models score the features the run computed.** A
   `--tiny-model` such as `vmaf_tiny_v2` or `fr_regressor_v1` read its input
   features from whatever the run happened to compute and took a missing one as

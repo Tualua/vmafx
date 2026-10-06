@@ -144,10 +144,17 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("https://apt.llvm.org/llvm.sh", tidy_job)
         self.assertIn("sudo /tmp/llvm.sh 22", tidy_job)
         self.assertIn("sudo apt-get install -y clang-tidy-22", tidy_job)
-        self.assertIn("--require-hashes", tidy_job)
-        self.assertIn("CC=gcc-15 CXX=g++-15", tidy_job)
-        self.assertIn("-Db_lto=false", tidy_job)
-        self.assertIn("--clang-tidy /usr/bin/clang-tidy-22", tidy_job)
+        # The job runs the cpu lane's Makefile targets, as the required job and
+        # the dev container do (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06):
+        # gcc-15, no LTO and the hashed build requirements come from there.
+        self.assertIn("make tidy-ratchet-build LANE=cpu", tidy_job)
+        self.assertIn("make tidy-ratchet LANE=cpu", tidy_job)
+        self.assertIn("CLANG_TIDY_BIN=/usr/bin/clang-tidy-22", tidy_job)
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("TIDY_RATCHET_COMPILERS_cpu := CC=gcc-15 CXX=g++-15", makefile)
+        setup_cpu = makefile.split("TIDY_RATCHET_SETUP_cpu :=", 1)[1].split("\nTIDY_", 1)[0]
+        self.assertIn("-Db_lto=false", setup_cpu)
+        self.assertIn("install --require-hashes -r requirements/locks/build.txt", makefile)
 
     def test_changed_tidy_excludes_windows_only_translation_unit(self) -> None:
         workflow = (WORKFLOWS / "lint-and-format.yml").read_text(encoding="utf-8")
@@ -161,9 +168,9 @@ class FailClosedCIContract(unittest.TestCase):
         run_step = workflow_step(
             ratchet_job, "Ratchet — whole-tree clang-tidy vs committed baseline"
         )
-        self.assertIn('TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', build_step)
-        self.assertIn('meson setup "$TIDY_BUILD_DIR" core', build_step)
-        self.assertIn('--build-dir "$RUNNER_TEMP/vmafx-tidy-cpu"', run_step)
+        self.assertIn('TIDY_RATCHET_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', build_step)
+        self.assertIn("make tidy-ratchet-build LANE=cpu", build_step)
+        self.assertIn('TIDY_RATCHET_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', run_step)
         self.assertNotIn("meson setup build core", executable_body(build_step))
 
     def test_fuzz_workflows_have_adequate_timeout_budget(self) -> None:

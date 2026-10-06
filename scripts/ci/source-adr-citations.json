@@ -6946,8 +6946,8 @@
     },
     "1172": {
       "sites": {
-        ".github/workflows/lint-and-format.yml": 2,
-        "Makefile": 1,
+        ".github/workflows/lint-and-format.yml": 1,
+        "Makefile": 2,
         "core/meson.build": 1,
         "core/src/percentile.h": 1
       },
@@ -9892,6 +9892,7 @@
     "1471": {
       "sites": {
         ".github/workflows/lint-and-format.yml": 1,
+        ".github/workflows/nightly.yml": 1,
         ".pre-commit-config.yaml": 3,
         "Makefile": 2,
         "build-aux/aarch64-linux-gnu-qemu-user.ini": 1,

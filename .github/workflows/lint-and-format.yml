@@ -448,50 +448,34 @@ jobs:
           # forward with clang and meson rather than staying at the distro's.
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
-          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm jq
+          # libvpl-dev: the dev container that writes the baseline has it, and
+          # with it Meson builds test_vmaf_vpl_decode_ceiling and vmaf_vpl_core.c,
+          # two translation units of the baseline. The ratchet fails on a
+          # baseline translation unit this build does not measure.
+          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm jq libvpl-dev
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
           sudo apt-get install -y clang-tidy-22
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
-            -r requirements/locks/build.txt
           /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
       - name: Build (compile_commands.json + generated headers)
         if: steps.impact.outputs.c_core == 'true'
         run: |
-          # -Db_lto=false: the project default carries b_lto_threads=4
-          # (ADR-1172), which meson renders as GCC's -flto=4. gcc accepts it;
-          # clang does not ("unsupported argument '4' to option '-flto='"), so
-          # clang-tidy — which parses these very compile_commands with clang —
-          # errored on EVERY translation unit and this gate failed on every
-          # C/C++ PR. This build exists only to produce compile_commands.json
-          # and the generated headers, so LTO buys nothing here. The SYCL tidy
-          # lane below already configures with -Db_lto=false for its own
-          # toolchain reason.
-          # Keep generated model/embed translation units outside the repository.
-          # The ratchet measures checked-in sources; generated build products have
-          # no stable source path or committed debt allowance.
-          # The cpu lane's configuration is defined once, in the Makefile
-          # (TIDY_RATCHET_COMPILERS_cpu / TIDY_RATCHET_SETUP_cpu, ADR-1471), and
-          # the baseline is written from it in the dev container.
-          # -Denable_dnn=disabled says what this runner does anyway (it has no
-          # ONNX Runtime), so the container, which has one, measures the same
-          # translation units. test_tidy_lane_container.py keeps the two lines
-          # identical.
-          TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"
-          CC=gcc-15 CXX=g++-15 meson setup "$TIDY_BUILD_DIR" core \
-            -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled \
-            -Denable_mcp=true -Denable_mcp_sse=enabled -Denable_mcp_uds=true \
-            -Denable_mcp_stdio=true -Db_lto=false
-          meson compile -C "$TIDY_BUILD_DIR"
-          python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
+          # The cpu lane is defined once, in the Makefile (ADR-1471): its
+          # compilers and options (TIDY_RATCHET_COMPILERS_cpu,
+          # TIDY_RATCHET_SETUP_cpu, gcc-15, -Db_lto=false, -Denable_dnn=disabled)
+          # and its extra compile commands (TIDY_RATCHET_COMPDB_cpu, the MATLAB
+          # MEX sources). This job runs the same two targets
+          # scripts/dev/tidy-lane.sh runs in the dev container, so both measure
+          # the same translation units (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06).
+          make tidy-ratchet-build LANE=cpu \
+            TIDY_RATCHET_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu" TIDY_RATCHET_JOBS="$(nproc)"
       - name: Ratchet — whole-tree clang-tidy vs committed baseline
         if: steps.impact.outputs.c_core == 'true'
         run: |
-          python3 scripts/ci/tidy-ratchet.py --lane cpu \
-            --build-dir "$RUNNER_TEMP/vmafx-tidy-cpu" \
-            --clang-tidy /usr/bin/clang-tidy-22 --jobs "$(nproc)" \
-            --report tidy-ratchet-cpu.json
+          make tidy-ratchet LANE=cpu TIDY_RATCHET_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu" \
+            CLANG_TIDY_BIN=/usr/bin/clang-tidy-22 \
+            TIDY_RATCHET_ARGS="--jobs $(nproc) --report tidy-ratchet-cpu.json"
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

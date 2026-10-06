@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Add the MATLAB MEX sources to compile_commands.json for the `cpu` lane.
 
-The ten MEX sources under ``compat/python-vmaf/matlab/`` include ``mex.h`` and
+The twelve MEX sources under ``compat/python-vmaf/matlab/`` include ``mex.h`` and
 ``matrix.h`` from the MATLAB SDK, which exists on no runner or image, and meson
 never builds them, so the lane could not measure them (T-TIDY-MATLAB-MEX-
 UNMEASURED-2026-09-22). This script appends one entry per source whose include

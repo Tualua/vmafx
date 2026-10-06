@@ -13,8 +13,10 @@ tightened in the same change (``--write``), so the committed numbers are the
 measured numbers at every commit.
 
 Exit codes: 0 baseline matches, 2 regression, 3 baseline is stale-high (ratchet
-must be tightened), 4 a translation unit failed to compile under clang-tidy
-(the measurement is unusable — fail closed), 5 usage / IO error.
+must be tightened), 4 the measurement is unusable — fail closed: a translation
+unit failed to compile under clang-tidy, or a translation unit the baseline
+measured is missing from the compile database, so its count is unknown, not 0
+— 5 usage / IO error.
 """
 
 from __future__ import annotations
@@ -543,14 +545,28 @@ class Delta:
         return self.measured - self.baseline
 
 
-def compare(baseline: Measurement, measured: Measurement) -> tuple[list[Delta], list[Delta]]:
-    """Return ``(regressions, slack)`` per file and metric."""
+def unmeasured_sources(baseline: Measurement, measured: Measurement) -> list[str]:
+    """Translation units the baseline measured that this measurement did not.
+
+    A file with no compile-database entry has no count at all. Read as 0 it
+    looked clean: the hosted cpu lane, built without the MEX compile commands
+    the container adds, reported five MEX sources as "tighten the baseline"
+    (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06).
+    """
+    return sorted(set(baseline.sources) - set(measured.sources))
+
+
+def compare(
+    baseline: Measurement, measured: Measurement, skip: Iterable[str] = ()
+) -> tuple[list[Delta], list[Delta]]:
+    """Return ``(regressions, slack)`` per file and metric, leaving out *skip*."""
     regressions: list[Delta] = []
     slack: list[Delta] = []
+    skipped = set(skip)
     for metric in ("warnings", "nolint_uncited"):
         before: dict[str, int] = getattr(baseline, metric)
         after: dict[str, int] = getattr(measured, metric)
-        for path in sorted(set(before) | set(after)):
+        for path in sorted((set(before) | set(after)) - skipped):
             delta = Delta(metric, path, before.get(path, 0), after.get(path, 0))
             if delta.change > 0:
                 regressions.append(delta)
@@ -566,12 +582,14 @@ def annotate(level: str, message: str) -> None:
 
 def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> int:
     """Print the comparison and return the process exit code."""
-    regressions, slack = compare(baseline, measured)
+    unmeasured = unmeasured_sources(baseline, measured)
+    regressions, slack = compare(baseline, measured, unmeasured)
     print(
         f"tidy-ratchet[{measured.lane}]: {measured.tus} TUs, "
         f"{measured.total_warnings} warnings (baseline {baseline.total_warnings}), "
         f"{measured.total_nolint_uncited} uncited NOLINTs "
-        f"(baseline {baseline.total_nolint_uncited})"
+        f"(baseline {baseline.total_nolint_uncited}), "
+        f"{len(unmeasured)} baseline TUs not measured"
     )
     if baseline.clang_tidy_version and measured.clang_tidy_version != baseline.clang_tidy_version:
         annotate(
@@ -598,6 +616,15 @@ def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> i
             f"{delta.path}: {delta.metric} {delta.baseline} -> {delta.measured} "
             f"({delta.change}) — tighten the baseline: tidy-ratchet.py --write",
         )
+    for path in unmeasured:
+        annotate(
+            "error",
+            f"{path}: not measured — the baseline measured it, this compile database has "
+            f"no entry for it, so its count is unknown, not 0; build the lane's "
+            f"configuration (make tidy-ratchet-build LANE={baseline.lane or measured.lane})",
+        )
+    if unmeasured:
+        return 4
     if regressions:
         return 2
     if slack and not allow_slack:

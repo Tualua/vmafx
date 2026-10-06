@@ -38,7 +38,7 @@ The rule is *baseline equals measurement*:
 | `0` | Every file matches its baseline. | Nothing. |
 | `2` | A file is above its baseline. | Fix the code; never raise the baseline. |
 | `3` | A file is below its baseline. | Tighten it with `make tidy-ratchet-write` and commit the JSON in the same PR. |
-| `4` | A compilation, tool or diagnostic-parse failure made the measurement unusable. | Fix the build; the ratchet fails closed. |
+| `4` | A compilation, tool or diagnostic-parse failure made the measurement unusable, or a translation unit of the baseline's `measured_sources` was not measured (named as `not measured`): its count is unknown, not 0. | Fix the build, or build the lane's configuration (`make tidy-ratchet-build LANE=<lane>`); the ratchet fails closed. |
 | `5` | Usage or I/O error, or a scoped-validation error. | Read the message. |
 
 ## Lanes
@@ -82,8 +82,9 @@ Write the baseline in the dev container:
 make tidy-lane-write LANE=cpu
 ```
 
-This configures what the job configures and reproduces its report byte for
-byte ([ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md)). A baseline
+The job and the container run the same `make tidy-ratchet-build` and
+`make tidy-ratchet` targets, so this measures what the job measures and
+reproduces its report byte for byte ([ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md)). A baseline
 written on a workstation outside the container records that machine's C
 library and compilers and fails in CI.
 

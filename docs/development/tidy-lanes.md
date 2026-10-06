@@ -154,7 +154,7 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 - `cpu` disables the DNN runtime because the hosted runner has no ONNX Runtime
   and the two must measure the same translation units. The GPU lanes enable
   it, so the DNN bodies are measured there.
-- `cpu` also measures the ten MATLAB MEX sources of `compat/python-vmaf/matlab/`. meson
+- `cpu` also measures the twelve MATLAB MEX sources of `compat/python-vmaf/matlab/`. meson
   never builds them and the MATLAB SDK is on no runner, so
   `scripts/ci/gen-mex-compile-commands.py` appends compile-database entries whose include
   path starts with the self-authored stub headers of `scripts/ci/lint-stubs/matlab/`
@@ -192,8 +192,10 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
   `clang-22` and `libclang-rt-22-dev` from the same apt.llvm.org archive as
   clang-tidy.
 - `cpu` configures the embedded MCP server (`-Denable_mcp=true` and its three
-  transports), so `core/src/mcp/` and `core/test/test_mcp_*.c` are read. The
-  hosted `Tidy Ratchet` job repeats the same options.
+  transports), so `core/src/mcp/` and `core/test/test_mcp_*.c` are read.
+- `cpu` builds `core/tools/vmaf_vpl_core.c` and its test when the `vpl`
+  pkg-config module is found: the container has `libvpl-dev`, so the hosted
+  jobs install it too.
 
 ## What every translation unit is read by
 
@@ -266,10 +268,16 @@ to build and compare with the baseline.
 
 The required check `Tidy Ratchet` (`.github/workflows/lint-and-format.yml`)
 measures the `cpu` lane on every change to the C core and fails when a file
-differs from `scripts/ci/tidy-baseline-cpu.json`. It configures exactly what
-`TIDY_RATCHET_SETUP_cpu` says; `scripts/ci/tests/test_tidy_lane_container.py`
-compares the two lines and the clang-tidy major, and runs in the job's first
-step. The container reproduces the hosted measurement byte for byte: for
+differs from `scripts/ci/tidy-baseline-cpu.json`. It runs the same two targets
+as the container, `make tidy-ratchet-build LANE=cpu` and
+`make tidy-ratchet LANE=cpu`, so it configures, builds and extends the compile
+database (the MATLAB MEX sources) exactly as the lane's `Makefile` variables
+say; so does the nightly full scan. `scripts/ci/tests/test_tidy_lane_container.py`
+pins both jobs to those targets and to the clang-tidy major. A translation unit
+the baseline measured and the job did not is reported by name as not measured
+and fails the job (exit 4); before 2026-10-06 it counted as 0 and the job asked
+to tighten the baseline of five MEX files it had never read
+(`T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06`). The container reproduces the hosted measurement byte for byte: for
 master `513d2a6fc` the report of `scripts/dev/tidy-lane.sh cpu` and the
 `tidy-ratchet-cpu` artifact of hosted run 37011276599 are the same file
 (SHA-256 `ffb5ca1819a3…`, 327 translation units, 322 findings).

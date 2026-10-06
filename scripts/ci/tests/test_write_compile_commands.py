@@ -173,9 +173,15 @@ class CompileCommandsExportTest(unittest.TestCase):
         metal = (ROOT / ".github/workflows/tidy-metal.yml").read_text(encoding="utf-8")
         invocation = "scripts/ci/write-compile-commands.py"
         self.assertEqual(makefile.count(invocation), 3)
-        self.assertEqual(workflow.count(invocation), 4)
-        self.assertEqual(nightly.count(invocation), 1)
+        self.assertEqual(workflow.count(invocation), 3)
+        self.assertEqual(nightly.count(invocation), 0)
         self.assertEqual(metal.count(invocation), 1)
+        # The hosted cpu ratchet jobs reach the exporter through the Makefile's
+        # tidy-ratchet target (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06).
+        tidy_ratchet_target = makefile.split("\ntidy-ratchet:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn(invocation, tidy_ratchet_target)
+        for text in (workflow, nightly):
+            self.assertIn("make tidy-ratchet LANE=cpu", text)
         lint_target = makefile.split("lint-c:", 1)[1].split("# ADR-1142", 1)[0]
         self.assertLess(
             lint_target.index(invocation), lint_target.index("scripts/ci/lint-configured.py")

@@ -32,6 +32,11 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   `paths:` filter or custom early-skip probe to job.
 - `clang-diagnostic-error` in any TU = measurement failure (exit 4), never
   zero. Build (generated headers) before measuring.
+- Baseline `measured_sources` TU missing from measurement = "not measured"
+  (exit 4, file named), never 0 and never "tighten"
+  (`T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06`: hosted job lacked MEX
+  compile commands + libvpl, measured 424 of 438, asked to tighten 5 MEX
+  files). New TU outside baseline = fine.
 - **cpu / cuda / hip / sycl / arm64 measured in dev container only (ADR-1471).**
   `make tidy-lane LANE=<lane|all>` checks, `make tidy-lane-write` rewrites
   baseline (`scripts/dev/tidy-lane.sh`: checkout tar-streamed into throwaway
@@ -51,10 +56,12 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   lower header counts and never extends `measured_sources`; header cleanup
   or new TU -> full `make tidy-lane-write`.
 - Lane configuration = one definition: `TIDY_RATCHET_COMPILERS_<lane>` +
-  `TIDY_RATCHET_SETUP_<lane>` in `Makefile`, consumed by
-  `make tidy-ratchet-build`. cpu == hosted job's `meson setup` line
-  (`-Denable_dnn=disabled`: runner has no ORT, container has);
-  `tests/test_tidy_lane_container.py` compares both lines and clang-tidy
+  `TIDY_RATCHET_SETUP_<lane>` + `TIDY_RATCHET_COMPDB_<lane>` in `Makefile`,
+  consumed by `make tidy-ratchet-build` / `make tidy-ratchet`. Hosted cpu
+  jobs (`Tidy Ratchet`, nightly `clang-tidy-full`) run those two targets, never
+  own `meson setup` or direct `tidy-ratchet.py`; both install `libvpl-dev`
+  (dev container: same package). `-Denable_dnn=disabled`: runner lacks ORT,
+  container ships ORT. `tests/test_tidy_lane_container.py` pins both jobs and clang-tidy
   major (`CLANG_TIDY_MAJOR` in `tidy-lane.sh` vs `llvm.sh 22`). GPU lanes keep
   device compiler on (`-Denable_nvcc=true`, `-Denable_hipcc=true`,
   `-Denable_sycl=true`) and `-Denable_dnn=enabled`; never back to stubs.

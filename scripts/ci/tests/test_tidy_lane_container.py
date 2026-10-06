@@ -34,6 +34,8 @@ MAKEFILE = ROOT / "Makefile"
 SCRIPT = ROOT / "scripts/dev/tidy-lane.sh"
 HIP_WRAPPER = ROOT / "scripts/ci/clang-tidy-hip.sh"
 WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
+NIGHTLY = ROOT / ".github/workflows/nightly.yml"
+CONTAINERFILE = ROOT / "dev/Containerfile"
 CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64")
 
 # The entry point is a bash script that drives docker and GNU tar: it runs on
@@ -75,23 +77,48 @@ def variable(name: str) -> list[str]:
     return match.group(1).split()
 
 
-def hosted_cpu_setup() -> tuple[list[str], list[str]]:
-    """``(compilers, options)`` of the hosted job's ``meson setup`` command."""
-    text = WORKFLOW.read_text(encoding="utf-8")
-    job = text[text.index("  clang-tidy-ratchet:") :].replace("\\\n", " ")
-    match = re.search(
-        r'^\s*((?:[A-Z]+=\S+\s+)*)meson setup "\$TIDY_BUILD_DIR" core(.*)$', job, re.MULTILINE
-    )
-    if match is None:
-        raise AssertionError("the Tidy Ratchet job has no `meson setup` command")
-    return match.group(1).split(), match.group(2).split()
+def job_text(workflow: Path, job_id: str) -> str:
+    """One job of a workflow file, line continuations joined."""
+    text = workflow.read_text(encoding="utf-8")
+    start = text.index(f"\n  {job_id}:\n")
+    following = re.search(r"\n  [A-Za-z0-9_-]+:\n", text[start + 1 :])
+    end = start + 1 + following.start() if following else len(text)
+    return text[start:end].replace("\\\n", " ")
+
+
+# The hosted jobs that measure the cpu lane: the required `Tidy Ratchet` and the
+# nightly full scan.
+HOSTED_CPU_JOBS = ((WORKFLOW, "clang-tidy-ratchet"), (NIGHTLY, "clang-tidy-full"))
 
 
 class LaneConfiguration(unittest.TestCase):
-    def test_cpu_is_the_hosted_configuration(self) -> None:
-        compilers, options = hosted_cpu_setup()
-        self.assertEqual(compilers, variable("TIDY_RATCHET_COMPILERS_cpu"))
-        self.assertEqual(sorted(options), sorted(variable("TIDY_RATCHET_SETUP_cpu")))
+    def test_hosted_cpu_jobs_run_the_makefile_lane(self) -> None:
+        """T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06: one definition of the cpu lane.
+
+        A hosted job that repeated the lane's `meson setup` line still built
+        another set of translation units: it left out the MATLAB MEX compile
+        commands (TIDY_RATCHET_COMPDB_cpu) the container adds.
+        """
+        for workflow, job_id in HOSTED_CPU_JOBS:
+            with self.subTest(job=job_id):
+                job = job_text(workflow, job_id)
+                self.assertRegex(job, r"make tidy-ratchet-build LANE=cpu ")
+                self.assertRegex(job, r"make tidy-ratchet LANE=cpu ")
+                self.assertNotIn("meson setup", job)
+                self.assertNotIn("scripts/ci/tidy-ratchet.py --lane", job)
+                self.assertNotIn("write-compile-commands.py", job)
+
+    def test_hosted_cpu_jobs_install_the_containers_vpl(self) -> None:
+        """The container has libvpl-dev, so its cpu build has the VPL translation units."""
+        self.assertIn("libvpl-dev", CONTAINERFILE.read_text(encoding="utf-8"))
+        for workflow, job_id in HOSTED_CPU_JOBS:
+            with self.subTest(job=job_id):
+                self.assertRegex(
+                    job_text(workflow, job_id), r"apt-get install -y [^\n]*\blibvpl-dev\b"
+                )
+
+    def test_cpu_lane_adds_the_mex_compile_commands(self) -> None:
+        self.assertIn("scripts/ci/gen-mex-compile-commands.py", variable("TIDY_RATCHET_COMPDB_cpu"))
 
     def test_cpu_measures_no_optional_runtime(self) -> None:
         """The hosted runner has no ONNX Runtime; the container does."""
@@ -172,10 +199,11 @@ class LaneConfiguration(unittest.TestCase):
         match = re.search(r"^CLANG_TIDY_MAJOR=(\d+)$", script, re.MULTILINE)
         self.assertIsNotNone(match)
         assert match is not None
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        job = workflow[workflow.index("  clang-tidy-ratchet:") :]
-        self.assertIn(f"sudo /tmp/llvm.sh {match.group(1)}", job)
-        self.assertIn(f"--clang-tidy /usr/bin/clang-tidy-{match.group(1)}", job)
+        for workflow, job_id in HOSTED_CPU_JOBS:
+            with self.subTest(job=job_id):
+                job = job_text(workflow, job_id)
+                self.assertIn(f"sudo /tmp/llvm.sh {match.group(1)}", job)
+                self.assertIn(f"CLANG_TIDY_BIN=/usr/bin/clang-tidy-{match.group(1)}", job)
 
     def test_make_targets_run_the_entry_point(self) -> None:
         text = MAKEFILE.read_text(encoding="utf-8")

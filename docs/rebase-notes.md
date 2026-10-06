@@ -18,6 +18,9 @@ search:
 `fix/adm-angle-flag-s0-int64`, [ADR-2134](adr/2134-cuda-adm-cm-aim-register-budget-angle-flag.md). Keep the unsigned-sum form in
 `decouple_angle_flag_s0()` of `cuda/integer_adm/adm_decouple_inline.cuh` and `hip/integer_adm/adm_decouple_inline.hip`; Netflix has no GPU
 twin, so a sync has no counterpart. `KERNEL_BUDGETS` in `core/test/test_cuda_adm_cm_register_pressure.py` holds the one kernel above 208.
+## CI: the hosted cpu tidy lane runs the Makefile targets (2026-10-06)
+
+`fix/tidy-ratchet-unmeasured-baseline-files`. The `Tidy Ratchet` job (`.github/workflows/lint-and-format.yml`) and nightly `clang-tidy-full` run `make tidy-ratchet-build LANE=cpu` and `make tidy-ratchet LANE=cpu` and install `libvpl-dev`; a workflow sync must not bring back a job-local `meson setup` or direct `tidy-ratchet.py` call (`scripts/ci/tests/test_tidy_lane_container.py`). `tidy-ratchet.py` exits 4 on a baseline translation unit it did not measure. No upstream file.
 
 ## Scorecard single-maintainer exceptions (2026-10-06)
 

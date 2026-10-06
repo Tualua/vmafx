@@ -303,10 +303,13 @@ CLANG_TIDY_BIN ?= clang-tidy
 export CLANG_TIDY_BIN
 
 # What each lane configures (ADR-1471): one definition, used by
-# `tidy-ratchet-build` in the container and repeated for cpu by the hosted
-# `Tidy Ratchet` job (scripts/ci/tests/test_tidy_lane_container.py keeps the two
-# the same). cpu is the hosted configuration: gcc-15, no GPU backend and no
-# ONNX Runtime (the hosted runner has none, the container does). The GPU lanes
+# `tidy-ratchet-build` and `tidy-ratchet` in the container and, for cpu, by the
+# hosted `Tidy Ratchet` job and the nightly full scan, which run the same two
+# targets (scripts/ci/tests/test_tidy_lane_container.py pins them). cpu is the
+# hosted configuration: gcc-15, no GPU backend and no ONNX Runtime (the hosted
+# runner has none, the container does); both install libvpl-dev.
+# -Db_lto=false everywhere: the project default renders as GCC's -flto=4
+# (ADR-1172), which clang, and so clang-tidy, rejects. The GPU lanes
 # turn their compiler on (nvcc, hipcc, icpx) so the device bodies are parsed,
 # not the -ENOSYS stubs, and enable ONNX Runtime so the DNN bodies are too. sycl
 # compiles SPIR-V only (no ahead-of-time targets): the device list changes
