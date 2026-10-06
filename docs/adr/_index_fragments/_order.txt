@@ -1251,3 +1251,4 @@
 1597-sycl-zerocopy-planar-chroma-import
 1598-sycl-host-staging-to-shared-planes
 1599-sycl-float-motion-add-uv
+1769-sycl-zerocopy-throughput-a380

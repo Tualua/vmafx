@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1252), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1253), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5019,3 +5019,7 @@ Every ADR, one heading each (1252), so the site search finds an ADR by its title
 ## ADR-1599: `float_motion_sycl` implements `motion_add_uv`, chroma SAD in the CPU's order
 
 [1599-sycl-float-motion-add-uv](1599-sycl-float-motion-add-uv.md)
+
+## ADR-1769: Throughput of the SYCL zero-copy path on Arc A380: measured limits and candidate scope
+
+[1769-sycl-zerocopy-throughput-a380](1769-sycl-zerocopy-throughput-a380.md)
