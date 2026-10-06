@@ -14,6 +14,13 @@ feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched file
 ends the PR at zero" is unchanged. The ratchet adds the bound on untouched
 files.
 
+`cert-err33-c` (an ignored return value of a standard-library call) is in
+`WarningsAsErrors` since 2026-10-06 ([ADR-0694](../adr/0694-vmafx-lint-sanitizer-gates.md)
+asked for it): the `cpu`, `cuda`, `hip`, `sycl` and `arm64` lanes measure zero
+such findings, so a new unchecked `fclose()` or `fputs()` fails `Tidy Changed`
+instead of joining the baseline. Handle the result; casting it to `void` is not
+handling it ([principles](../principles.md)).
+
 ## The rule
 
 `scripts/ci/tidy-ratchet.py` runs clang-tidy over every translation unit in a

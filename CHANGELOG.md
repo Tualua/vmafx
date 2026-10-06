@@ -2751,6 +2751,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `docs/development/release-workflow-verification.md`.
 
 
+- `cert-err33-c` (an ignored return value of a standard-library call) is in the
+  `WarningsAsErrors` list of `.clang-tidy`. Every clang-tidy lane already measured
+  zero findings of it, so the promotion ADR-0694 asked for changes no count; a new
+  unchecked `fclose()` or `fputs()` now fails `Tidy Changed`.
+
+
 - `scripts/ci/check-tidy-coverage.py` (pre-commit hook `check-tidy-coverage`) fails when a tracked C, C++, CUDA, HIP, Objective-C++ or Metal translation unit is in no clang-tidy lane's measured sources and not in `.config/lint-exceptions.d/clang-tidy-coverage.toml`; the Metal kernels, the Pelorus mirror and the other files no tool can read are listed there with a reason and an expiry. `write-compile-commands.py` now exports the Objective-C and Objective-C++ rules, so the macOS lane reads the `.mm` files. Details: [tidy lanes](docs/development/tidy-lanes.md). The macOS lane's baseline (`scripts/ci/tidy-baseline-metal.json`) records 939 findings in the Metal host code; `Tidy Metal` takes a `fix` dispatch input that uploads clang-tidy's own fixes as a patch.
 
 
