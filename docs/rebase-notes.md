@@ -119,6 +119,10 @@ a `static close` comes back. See `core/src/feature/AGENTS.d/libc-named-statics.m
 `fix/sanitizer-heavy-test-timeouts`. no rebase impact: fork-only test files. `test_integer_psnr_coverage` carries
 `timeout : 480` for its 5e9-sample APSNR wrap case, and `test_metal_psnr_hvs_math` forms each masking table's
 terms once for both summations.
+## Metal host files balance their anonymous namespaces (2026-10-06)
+
+`fix/metal-float-motion-anon-namespace`. no rebase impact: fork-only Metal host code (`core/src/feature/metal/float_motion_metal.mm`)
+and a new device-free test, `core/test/test_metal_host_source_balance.py`.
 
 ## SYCL twin option cases proven on a device (2026-10-06)
 

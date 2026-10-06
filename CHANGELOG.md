@@ -4788,6 +4788,12 @@ The Meson test secret-environment contract test reports repository paths with fo
   macOS tester bundle runs `test_metal_iosurface_import_parity` for that.
 
 
+- **The macOS Metal build compiles again.** `float_motion_metal.mm` opened an
+  anonymous namespace it never closed, and every macOS Metal build stopped
+  there. A new device-free test checks the braces and namespaces of every
+  Metal host file on every platform.
+
+
 - `test_metal_float_motion_parity.c` sizes its key buffers for the longest key it formats, so a
   gcc build no longer reports `-Wformat-truncation` for it.
 
