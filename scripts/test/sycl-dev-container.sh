@@ -17,6 +17,10 @@
 #   SYCL_DEV_CC        C compiler for the libvmaf build (default: icx)
 #   SYCL_DEV_TIMEOUT   per-run wall-clock cap in seconds (default: 5400)
 #   YUV_DIR            fixture directory mounted read-only at /yuv
+#   SYCL_DEV_MEDIA_DIR host directory of real media, mounted read-only at /media
+#                      (opt-in: unset or empty adds no mount)
+#   SYCL_DEV_PROFILE_CAPS  1 adds the PERFMON, SYS_PTRACE and SYS_ADMIN capabilities
+#                      for an explicit VTune run (explicit caps only, no privileged mode; opt-in)
 #   HOST_REPO          host path of the main checkout when running in a devcontainer
 #                      (the runtime is the host's, so -v sources must be host paths)
 
@@ -132,8 +136,17 @@ esac
 EOS
 )"
 
+EXTRA_ARGS=()
+if [ -n "${SYCL_DEV_MEDIA_DIR:-}" ]; then
+  EXTRA_ARGS+=(-v "$(host_path "$SYCL_DEV_MEDIA_DIR"):/media:ro")
+fi
+if [ "${SYCL_DEV_PROFILE_CAPS:-}" = 1 ]; then
+  EXTRA_ARGS+=(--cap-add=PERFMON --cap-add=SYS_PTRACE --cap-add=SYS_ADMIN)
+fi
+
 exec timeout --signal=KILL "$TIMEOUT" "$RT" run --rm \
   --device /dev/dri --security-opt label=disable \
+  "${EXTRA_ARGS[@]}" \
   -e UR_L0_USE_IMMEDIATE_COMMANDLISTS=0 \
   -e SYCL_DEV_CC="${SYCL_DEV_CC:-icx}" \
   -v "$(host_path "$WORKTREE"):/work" \
