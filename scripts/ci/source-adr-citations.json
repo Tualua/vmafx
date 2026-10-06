@@ -7596,6 +7596,7 @@
       "sites": {
         "core/tools/test/meson.build": 1,
         "core/tools/test/test_vmaf_read_error_exit.sh": 2,
+        "core/tools/test/test_vmaf_score_error_message.sh": 1,
         "core/tools/vmaf.cpp": 3
       },
       "target": "1262-cli-input-read-error-exit-code.md"

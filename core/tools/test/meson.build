@@ -173,6 +173,19 @@ test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
 
+# T-CLI-EXTRACTOR-ERROR-PROPAGATION-2026-10-05 — a frame libvmaf fails to score
+# says "problem scoring picture", never the read-failure wording. Pure CPU,
+# 16x16 x 2 frames: fast suite.
+test_vmaf_score_error_message = find_program('test_vmaf_score_error_message.sh')
+test('test_vmaf_score_error_message', test_vmaf_score_error_message,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])
+
 # T-CLI-PRE-REGISTRATION-OPTS-DICT-LEAK-2026-09-30 — every way a run stops
 # releases the --feature and --model overload option dictionaries exactly once.
 # Pure CPU, 64x64 x 2 frames: fast suite. The leak half of each check needs a

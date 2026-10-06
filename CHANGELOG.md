@@ -3265,6 +3265,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   unchanged.
 
 
+- `vmaf` prints `problem scoring picture N: libvmaf returned E` when libvmaf
+  fails to score a frame it has read (a feature extractor refused the frame or
+  its options), where it printed `problem reading pictures`, which read like
+  the input read failure `problem while reading pictures` (exit 102). The exit
+  status is unchanged. `docs/usage/cli.md` lists the case in the exit-code
+  table.
+
+
 - **CodeQL include-non-header alert #1309 resolved with internal test accessors and CI guard.**
   `core/test/test_feature_backend_twin.c` linked directly against `libvmaf` instead
   of unity-including `core/src/libvmaf.c`. Narrow internal accessors

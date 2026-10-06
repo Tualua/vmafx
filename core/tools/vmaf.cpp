@@ -1811,6 +1811,17 @@ void release_unpaired_pictures(int ret1, int ret2, VmafPicture *pic_ref, VmafPic
 namespace
 {
 
+/* vmaf_read_pictures() failed: the pictures were read, libvmaf could not score
+ * them. A feature extractor that refuses the frame or its options is named by
+ * the libvmaf warning printed before this line. Input read failures keep
+ * their own "problem while reading pictures" (classify_frame_fetch), so the
+ * two never read alike (T-CLI-EXTRACTOR-ERROR-PROPAGATION-2026-10-05). */
+void report_score_failure(unsigned picture_index, int err)
+{
+    (void)fprintf(stderr, "\nproblem scoring picture %u: libvmaf returned %d\n", picture_index,
+                  err);
+}
+
 FrameLoopResult score_frames(VmafContext *vmaf, FrameReader *ref, FrameReader *dist,
                              const CLISettings *c, unsigned limit, int istty)
 {
@@ -1846,7 +1857,7 @@ FrameLoopResult score_frames(VmafContext *vmaf, FrameReader *ref, FrameReader *d
 
         const int err = vmaf_read_pictures(vmaf, &pic_ref, &pic_dist, picture_index);
         if (err) {
-            (void)fprintf(stderr, "\nproblem reading pictures\n");
+            report_score_failure(picture_index, err);
             /* Handing the pictures to the library failed, so this frame never
              * entered the score. Same reasoning as a failed read: do not let
              * the run report success over the frames that came before. */
