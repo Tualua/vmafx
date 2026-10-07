@@ -62629,3 +62629,10 @@ options are merged"). No score or C API impact.
 Fork-only: `ai/src/vmaf_train/cross_backend.py` (`CrossBackendReport.ok`, `unbound`), the new
 `scripts/ci/tiny_ai_cross_device_parity_gate.py` and its tests. Keep the empty-list guard in `ok` on a sync; no
 upstream file is involved and no score, public API or FFmpeg patch changes.
+## Mini retrain, stage runner and the `motion` metric alias (2026-10-05)
+
+Fork-only: `ai/src/aiutils/pipeline.py`, `mini_corpus.py`, `retrain_checks.py`, `ai/scripts/mini_retrain.py`,
+`ai/e2e/`, `.github/workflows/mini-retrain.yml` are new. `ai/data/feature_extractor.py` gains
+`_METRIC_KEY_ALIASES` and a branch in `_lookup()`; `ai/scripts/extract_full_features.py` gains
+`--assume-dims`. On an upstream sync that touches either file keep both additions. `.github/test-suites.json`
+gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep both sides.

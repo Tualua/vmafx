@@ -121,6 +121,7 @@ $(NINJA): $(VENV_PIP)
 RUFF_VERSION  := 0.16.10
 BLACK_VERSION := 26.10.0
 
+.PHONY: mini-retrain mini-retrain-test
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
 	$(VENV_PIP) install --quiet --require-hashes -r requirements/locks/dev-linters.txt
@@ -553,6 +554,17 @@ test-netflix-golden: build-golden
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
 	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    $(GOLDEN_PYTEST_ARGS)
+
+# The retrain tooling end to end on a generated corpus (docs/ai/retrain-runbook-1246.md, ADR-1898).
+# Needs a built vmaf CLI (VMAF_BIN or build/tools/vmaf) and the ai/ venv (torch, onnxruntime).
+#   make mini-retrain [MINI_RETRAIN_DIR=runs/mini] [VMAF_BIN=build/tools/vmaf]
+MINI_RETRAIN_DIR ?= runs/mini
+mini-retrain:
+	python3 ai/scripts/mini_retrain.py run --run-dir "$(MINI_RETRAIN_DIR)" \
+	    --vmaf-bin "$(or $(VMAF_BIN),build/tools/vmaf)"
+
+mini-retrain-test:
+	python3 -m pytest ai/e2e -v --timeout=900
 
 # The test suites a change affects, in cached hash-locked venvs (docs/development/test-suites.md).
 #   make test-affected BASE=origin/master HEAD=HEAD [VMAF_BIN=build/tools/vmaf]

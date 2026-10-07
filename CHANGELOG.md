@@ -6,6 +6,15 @@
 ## [Unreleased]
 ### Added
 
+- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
+  `make mini-retrain` runs extraction, feature checks, combination, training and export of
+  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
+  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
+  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
+  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
+  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
+
+
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
@@ -59,6 +68,14 @@
   now pass `-qpfile`, which stock FFmpeg refuses. The saliency tests'
   encode-runner stub no longer records the `ffmpeg -version` probe as the
   encode (two tests failed on that, depending on the order they ran in).
+
+
+- **`motion` was NaN in every row of every extracted feature table.** libvmaf emits no
+  `integer_motion` key; the first-order motion score is `VMAF_integer_feature_motion_sad_score`.
+  `ai/data/feature_extractor.py` now reads it, so the `motion` column of `FULL_FEATURES` holds values.
+  Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
+  the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
+  that are not 1920x1080.
 
 
 - The last MSVC warnings of the first Windows run after the zero-warning series
@@ -363,6 +380,15 @@ They are recorded in full, unedited, in
   as self-tests with the CPU extractor in the twin's place (suite
   `metal-selftest`). Guides: `docs/usage/tester-image.md`,
   `docs/backends/metal/index.md`, `docs/development/cross-backend-gate.md`.
+
+
+- **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
+  `make mini-retrain` runs extraction, feature checks, combination, training and export of
+  `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
+  gate on a generated 144-row corpus in about 40 seconds. Every stage writes a manifest with seed,
+  digests, library versions, lock digest, container id and resource use; a killed run resumes from the
+  manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
+  Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
 - **`motion_five_frame_window` works, and the four `vmaf_v1.0.16_hfr_*` models
@@ -4266,6 +4292,14 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   libvmaf cannot reproduce refuses the model. With v3, `--tiny-preset` has no
   effect and the run says so
   ([ADR-1558](docs/adr/1558-codec-block-encoding-from-sidecar.md)).
+
+
+- **`motion` was NaN in every row of every extracted feature table.** libvmaf emits no
+  `integer_motion` key; the first-order motion score is `VMAF_integer_feature_motion_sad_score`.
+  `ai/data/feature_extractor.py` now reads it, so the `motion` column of `FULL_FEATURES` holds values.
+  Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
+  the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
+  that are not 1920x1080.
 
 
 - **The Gitleaks check scans only the commit it checked out.** It ran

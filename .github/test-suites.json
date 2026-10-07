@@ -52,6 +52,16 @@
       "runs": "pytest ai/tests/ ai/sidecar/tests/ with ai/requirements-dev-lock.txt"
     },
     {
+      "name": "mini-retrain",
+      "paths": ["ai/e2e/"],
+      "checks": ["Tiny AI"],
+      "source_paths": ["ai/", "model/tiny/registry.schema.json", "testdata/ref_576x324_48f.yuv", "testdata/dis_576x324_48f.yuv"],
+      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
+      "pytest": {"timeout": 900, "method": "signal"},
+      "fail_on_skip": ".*",
+      "runs": "pytest ai/e2e/ (the mini retrain end to end) in the Tiny AI job (which builds the vmaf CLI the test runs) and nightly in mini-retrain.yml (ADR-1898)"
+    },
+    {
       "name": "mcp",
       "paths": ["mcp-server/vmaf-mcp/tests/"],
       "checks": ["MCP Smoke"],

@@ -11290,6 +11290,18 @@
       },
       "target": "1886-torch-training-environments-only.md"
     },
+    "1898": {
+      "sites": {
+        ".github/workflows/mini-retrain.yml": 1,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
+        "Makefile": 1,
+        "ai/data/feature_extractor.py": 1,
+        "ai/src/aiutils/mini_corpus.py": 1,
+        "ai/src/aiutils/pipeline.py": 1,
+        "ai/src/aiutils/retrain_checks.py": 1
+      },
+      "target": "1898-mini-retrain-pipeline.md"
+    },
     "1900": {
       "sites": {
         "core/tools/test/meson.build": 1,

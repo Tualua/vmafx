@@ -368,7 +368,7 @@ jobs:
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -484,6 +484,17 @@ jobs:
           VMAF_BIN_FOR_TESTS: ${{ github.workspace }}/core/build/tools/vmaf
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v -rs --timeout=60 --timeout-method=signal
+      # Suite mini-retrain (ADR-1898): the retrain tooling end to end on a generated
+      # corpus, with the vmaf CLI this job built. Any skip fails the step.
+      - name: Run the mini retrain end to end
+        if: steps.impact.outputs.tiny_ai == 'true'
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
+          VMAFX_CONTAINER_IMAGE_ID: github-hosted-ubuntu-26.04
+        run: |
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/e2e/ -v -rs \
+            --timeout=900 --timeout-method=signal \
+            --basetemp="${RUNNER_TEMP}/mini-retrain-runs"
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
       # entries whose `quant_mode == "fp32"` (nothing to gate).
