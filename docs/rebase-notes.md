@@ -7,6 +7,10 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## MSVC zero warnings: residual sites (2026-10-07)
+
+`fix/msvc-zero-warnings-residuals`. no rebase impact beyond the series notes above: the same conversion-only edits in files the earlier notes already list (`adm_tools.c`, `float_vif.c`, `x86/motion_avx*.c`, the CUDA / HIP `adm_decouple_inline` helpers, `cli_parse.cpp`); the shifts are `((int64_t)1 << n)` with n below 31.
+
 ## Tests: MSVC zero-warning conversions (2026-10-07)
 
 `fix/msvc-zero-warnings-tests`. Netflix-mirror tests (`test_speed_chroma.c`, `test_vif_tools.c`, `test_ciede.c`, `test_cambi.c`,

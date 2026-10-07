@@ -980,7 +980,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     if (!optarg_copy)
         usage(app, "error while parsing feature option: %s", optarg);
     (void)memset(optarg_copy, 0, optarg_sz + 1);
-    (void)strncpy(optarg_copy, optarg, optarg_sz);
+    (void)memcpy(optarg_copy, optarg, optarg_sz);
     void *buf = optarg_copy;
 
     char *const feature_name = cli_split(&optarg_copy, '=');
