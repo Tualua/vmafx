@@ -62556,3 +62556,12 @@ RC4 (#2378) lands, remove the families it fixes from the list in the same PR, wi
 the twin matrix at those depths. `test_read_pictures_bpc` fails without the guard
 and checks that `psnr_hvs` still scores 9 and 11 bits. No score at 8, 10, 12 or
 16 bits changes.
+## The SYCL dma-buf import keeps the caller's descriptor (`fix/sycl-dmabuf-fd-ownership`)
+
+`core/src/sycl/dmabuf_import.cpp` gives Level Zero a private duplicate of the
+caller's descriptor (`driver_fd()` / `driver_fd_done()`), because compute
+runtime 26.35 closes the descriptor of a re-import. A rebase keeps the
+duplicate on every `zeMemAllocDevice()` import path; the RC4 integration
+branch carries the same change in `vmaf_sycl_dmabuf_import_queue()`.
+`core/test/test_sycl_dmabuf_fd_ownership.c` (GBM, Intel render node, skipped
+without them) guards it. No ABI, golden-data or FFmpeg patch impact.

@@ -56,7 +56,12 @@ sycl/
   initialised with designated initialisers (valid `stype` from the start,
   unnamed fields zero); `= {}` + assignments trips
   `bugprone-invalid-enum-default-initialization`, bare declarations leave a
-  future field uninitialised.
+  future field uninitialised. Level Zero gets a private duplicate of the
+  caller's dma-buf descriptor (`driver_fd()`, from a high floor), closed
+  afterwards unless the driver closed it: compute runtime 26.35 closes the
+  descriptor of an import that finds the buffer already imported, and the
+  caller keeps its own (`libvmaf_sycl.h`). Never hand the caller's descriptor
+  to `zeMemAllocDevice()`; `test_sycl_dmabuf_fd_ownership` guards it.
 - **Required sub-group size = 16 or 32, never 8
   ([ADR-1468](../../../docs/adr/1468-sycl-sub-group-sizes-every-aot-target.md)).**
   Default build AOT-compiles every kernel for 19 targets

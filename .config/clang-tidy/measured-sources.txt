@@ -687,6 +687,7 @@ core/test/test_sycl_cambi_parity.c
 core/test/test_sycl_ciede_math.c
 core/test/test_sycl_ciede_math_probe.cpp
 core/test/test_sycl_ciede_parity.c
+core/test/test_sycl_dmabuf_fd_ownership.c
 core/test/test_sycl_exact_twins.c
 core/test/test_sycl_float_adm_math.c
 core/test/test_sycl_float_adm_math_probe.cpp

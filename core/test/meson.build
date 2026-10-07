@@ -6044,6 +6044,23 @@ test('test_sycl_pic_preallocation', test_sycl_pic_preallocation,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# vmaf_sycl_dmabuf_import() leaves the caller's descriptor open on a Level
+# Zero driver that closes the descriptor it is given (libvmaf_sycl.h). The
+# dma-buf comes from libgbm, loaded at run time, on an Intel render node;
+# skipped (77) without either. Linux only: dma-bufs and GBM are Linux objects.
+if host_machine.system() == 'linux'
+test_sycl_dmabuf_fd_ownership = executable('test_sycl_dmabuf_fd_ownership',
+    ['test.c', 'test_sycl_dmabuf_fd_ownership.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, cc.find_library('dl', required : false)],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_dmabuf_fd_ownership', test_sycl_dmabuf_fd_ownership,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+endif
+
 # ADR-1364: the device images must be registered in a program that links
 # libvmaf. Needs no GPU, so it runs on the device-less Windows MSVC+SYCL lane.
 test_sycl_kernel_registration = executable('test_sycl_kernel_registration',

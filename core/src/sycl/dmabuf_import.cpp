@@ -56,6 +56,10 @@
 #include <cassert>
 #include <cerrno>
 #include <cinttypes>
+
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #include <cstdio>
 #include <cstring>
 
@@ -80,58 +84,100 @@
 /* DMA-BUF → Level Zero → SYCL device pointer                         */
 /* ------------------------------------------------------------------ */
 
+namespace
+{
+
+/* Level Zero's dma-buf import closes the descriptor it is given on some
+ * drivers (compute runtime 26.35 on an Arc A380, measured: when the buffer is
+ * imported again while its first import is alive), and the specification
+ * does not say who owns it. libvmaf_sycl.h leaves the descriptor to the
+ * caller, so the driver gets a private duplicate taken from a high floor,
+ * which this file closes afterwards unless the driver did. The floor makes
+ * that check safe: a descriptor opened meanwhile by another thread takes the
+ * lowest free number, never one above the floor while lower ones are free. */
+int driver_fd(int fd)
+{
+    int floor = 512;
+    struct rlimit lim = {};
+    if (getrlimit(RLIMIT_NOFILE, &lim) == 0 && lim.rlim_cur != RLIM_INFINITY &&
+        lim.rlim_cur / 2u < (rlim_t)floor) {
+        floor = (int)(lim.rlim_cur / 2u);
+    }
+    return fcntl(fd, F_DUPFD_CLOEXEC, floor);
+}
+
+void driver_fd_done(int fd)
+{
+    if (fcntl(fd, F_GETFD) >= 0) {
+        (void)close(fd);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+/* Import dma-buf `fd` (the driver's to close) into the queue's Level Zero
+ * context as device memory: 0, or -EIO naming the driver's result. */
+int ze_import(const sycl::queue *q, int fd, size_t size, void **ptr)
+{
+    assert(q != nullptr && fd >= 0 && size > 0u && ptr != nullptr);
+    ze_context_handle_t ze_ctx =
+        sycl::get_native<sycl::backend::ext_oneapi_level_zero>(q->get_context());
+    ze_device_handle_t ze_dev =
+        sycl::get_native<sycl::backend::ext_oneapi_level_zero>(q->get_device());
+
+    /* DMA-BUF import descriptor, chained into the device allocation
+     * descriptor. Designated initialisers: the structure type is valid from
+     * the first moment and every field not named here is zero, also one a
+     * newer Level Zero header adds. */
+    const ze_external_memory_import_fd_t import_desc = {
+        .stype = ZE_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMPORT_FD,
+        .pNext = nullptr,
+        .flags = ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF,
+        .fd = fd,
+    };
+    const ze_device_mem_alloc_desc_t alloc_desc = {
+        .stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC,
+        .pNext = &import_desc,
+        .flags = 0,
+        .ordinal = 0,
+    };
+    void *ze_ptr = nullptr;
+    const ze_result_t res =
+        zeMemAllocDevice(ze_ctx, &alloc_desc, size, 0 /* alignment */, ze_dev, &ze_ptr);
+    if (res != ZE_RESULT_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Level Zero DMA-BUF import failed: 0x%x\n", res);
+        return -EIO;
+    }
+    *ptr = ze_ptr;
+    return 0;
+}
+
+} // namespace
+
 extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size, void **ptr)
 {
     if (!state || fd < 0 || !size || !ptr)
         return -EINVAL;
     *ptr = nullptr;
-
+    const auto *q = static_cast<const sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
+    if (!q)
+        return -EINVAL;
+    const int own = driver_fd(fd);
+    if (own < 0)
+        return errno ? -errno : -EBADF;
+    int err = -EIO;
     try {
-        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
-        if (!q)
-            return -EINVAL;
-
-        /* Extract Level Zero native handles from the SYCL queue */
-        ze_context_handle_t ze_ctx =
-            sycl::get_native<sycl::backend::ext_oneapi_level_zero>(q->get_context());
-        ze_device_handle_t ze_dev =
-            sycl::get_native<sycl::backend::ext_oneapi_level_zero>(q->get_device());
-
-        /* DMA-BUF import descriptor, chained into the device allocation
-         * descriptor. Designated initialisers: the structure type is valid
-         * from the first moment and every field not named here is zero, also
-         * one a newer Level Zero header adds. */
-        const ze_external_memory_import_fd_t import_desc = {
-            .stype = ZE_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMPORT_FD,
-            .pNext = nullptr,
-            .flags = ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF,
-            .fd = fd,
-        };
-        const ze_device_mem_alloc_desc_t alloc_desc = {
-            .stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC,
-            .pNext = &import_desc,
-            .flags = 0,
-            .ordinal = 0,
-        };
-
-        void *ze_ptr = nullptr;
-        const ze_result_t res =
-            zeMemAllocDevice(ze_ctx, &alloc_desc, size, 0 /* alignment */, ze_dev, &ze_ptr);
-        if (res != ZE_RESULT_SUCCESS) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "Level Zero DMA-BUF import failed: 0x%x\n", res);
-            return -EIO;
-        }
-
-        *ptr = ze_ptr;
-        return 0;
-
+        err = ze_import(q, own, size, ptr);
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL DMA-BUF import exception: %s\n", e.what());
-        return -EIO;
     } catch (const std::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "DMA-BUF import error: %s\n", e.what());
-        return -EIO;
     }
+    driver_fd_done(own);
+    return err;
 }
 
 extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
