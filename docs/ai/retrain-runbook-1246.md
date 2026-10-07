@@ -60,6 +60,13 @@ and architectural records:
   rows remain parked at `smoke: true` until this run executes
   `train_fr_regressor_v2_ensemble_loso.py` and `export_ensemble_v2_seeds.py` against
   the retrained corpus at `codec_vocab = 6`.
+- **Feature mode (ADR-2343)**: the extractors' default is reference-exact and
+  Netflix's behaviour is a named compatibility mode. The shipped
+  `vmaf_v1.0.16*` models read compatibility-mode features, their training
+  inputs, until this run; the retrain extracts and trains on reference-exact
+  features. The RC7 conformance results
+  ([#2286](https://github.com/VMAFx/vmafx/issues/2286)) are accepted before
+  this run starts.
 - **Golden Data Invariant (ADR-0024)**: Netflix golden-data assertions in `python/test/`
   (`assertAlmostEqual` values) are never modified.
 

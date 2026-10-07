@@ -259,7 +259,12 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   the golden gate on each. The CPU format envelope
   (resolution up to 16K with measured memory limits, bit depths 8 to 16, chroma
   layouts, odd and portrait sizes) in the same table, each row test-backed
-  ([ADR-1880](adr/1880-format-envelope-device-targets.md))
+  ([ADR-1880](adr/1880-format-envelope-device-targets.md)). A reference
+  conformance column: every extractor with an original implementation is
+  proven against it, the default becomes reference-exact and Netflix's
+  behaviour a named compatibility mode that the golden gate runs in
+  ([ADR-2343](adr/2343-reference-exact-default-compat-mode.md),
+  [#2286](https://github.com/VMAFx/vmafx/issues/2286))
 - **Exit boundary:** Drift check green; audit finds no instruction outside the
   feature set a gate guarantees; parity green under Intel SDE (AVX2-only model,
   Skylake-X, Ice Lake, Sapphire Rapids, the AMD AVX-512 set) and qemu (aarch64
@@ -291,7 +296,9 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 - **In scope:** The locked one-shot model retraining programme on the clean,
   tuned tree, started only when every precondition of
   [#1246](https://github.com/VMAFx/vmafx/issues/1246) holds (the RC4 to RC8
-  items above included)
+  items above included). The shipped v1 models read compatibility-mode
+  features until this run; the retrain trains on reference-exact features
+  ([ADR-2343](adr/2343-reference-exact-default-compat-mode.md))
 - **Exit boundary:** Model-quality gates, model cards, registry/signing
   metadata, and unchanged Netflix golden assertions pass
 
