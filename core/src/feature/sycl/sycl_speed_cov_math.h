@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2025 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  *
  *  One entry of SpEED's 25x25 covariance matrix as speed.c computes it, for
  *  the SYCL twin, which has no fp64 type (ADR-0220).
