@@ -11687,6 +11687,12 @@
         "scripts/release/tests/test_check_candidate_legs.py": 1
       },
       "target": "2198-windows-sycl-leg-and-cut-check.md"
+    },
+    "2321": {
+      "sites": {
+        ".config/lint-exceptions.d/HISS-11.toml": 1
+      },
+      "target": "2321-praetor-pin-afb739ed.md"
     }
   },
   "retired": {

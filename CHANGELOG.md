@@ -153,6 +153,18 @@
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 
+- **The praetor governance engine moves from `04cc813ff054` to `afb739ed81f3`
+  ([ADR-2321](docs/adr/2321-praetor-pin-afb739ed.md)).** Praetor now lints every tracked
+  nested `AGENTS.md` in the internal register; the 19 nested files and 195 `AGENTS.d/` pages
+  that failed `praetorctl caveman check --kind=context` are rewritten, and the generated index
+  header follows. The audit compares the declared SLSA Build Level (3) with the one the
+  workflows reach (2): the gap is declared in `.config/lint-exceptions.d/HISS-11.toml`, which
+  `scripts/ci/praetor_tidy_coverage.py` renders into `.standards.yaml` (expires 2027-01-04).
+  Engine-written files regenerated: the Markdown gate lock (katex 0.19.0), the DevContainer
+  bundle, `.paperclip/harness.json` and `rules.md`, the agent evasion hook; the register block
+  no longer names skills the repository does not carry. The HISS baseline stays at 0.
+
+
 - **The roadmap and release pages list the full RC4 and RC5 scope.**
   [ADR-2342](docs/adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of 2026-10-06 and
   2026-10-07 (RC4 work packages for bindings, the FFmpeg series redesign, input formats, engineering
