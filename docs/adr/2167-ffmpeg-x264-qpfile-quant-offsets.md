@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2167: `-qpfile` on libx264 applies its offsets through `quant_offsets`
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-10-07; shipped in #2385, decision Q-131)
 - **Date**: 2026-10-07
 - **Deciders**: maintainer (FFmpeg audit request, RC4 WP15); RC4 WP15
 - **Tags**: rc4, ffmpeg, vmaf-tune, correctness
