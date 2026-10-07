@@ -4606,6 +4606,11 @@ test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'],
         # intentional huge-alloc that exercises the alloc-failure UAF path.
         # No data race is present; this is purely the allocator-abort behaviour.
         'TSAN_OPTIONS=allocator_may_return_null=1',
+        # Meson fills every allocation with a random MALLOC_PERTURB_ byte. On a
+        # host that overcommits (vm.overcommit_memory = 1) the ~192 GB request
+        # succeeds and glibc then writes every byte of it: the test takes all
+        # RAM and swap. "0" turns the fill off; the failure path is unchanged.
+        'MALLOC_PERTURB_=0',
     ])
 
 # ADR-0982 round-26 audit — regression for gpu_picture_pool_init partial-
