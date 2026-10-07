@@ -98,6 +98,9 @@
   `libvmaf_cuda` recipes convert NVDEC's NV12 with `scale_cuda` (the filter
   accepts `yuv420p` and `yuv444p16` only).
 
+
+- **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.
+
 ## [1.0.0-rc.3] - 2026-10-07
 
 This release collects 585 changelog entries.

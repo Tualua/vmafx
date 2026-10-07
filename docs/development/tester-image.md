@@ -278,7 +278,9 @@ the C and C++ runtime, and everything they load lies in their own directory
 
 `check-windows-bundle-imports.py --runtime md` holds that layout: every import beside
 a program resolves to Windows or to a file in the same directory, and every DLL there is
-imported or named by `--loaded-at-run-time`. The scratch audit reads its ratchet list
+imported or named by `--loaded-at-run-time`. "Windows" is the `SYSTEM_DLLS` list of the
+script (the Level Zero loader imports `cfgmgr32.dll`, a System32 DLL, so it is listed).
+The scratch audit reads its ratchet list
 from `VMAF_SYCL_SCRATCH_RATCHET_FILE`, which the build writes into the audit's
 `image/gpu-tests.json` entry (`{root}/image/scratch_ratchet.txt`): the path compiled
 into the test names the runner's checkout. The oneAPI installer is pinned by URL, size
