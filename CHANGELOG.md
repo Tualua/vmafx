@@ -174,6 +174,27 @@
   `docs/development/release.md` follow it. No candidate number or milestone changes.
 
 
+- **The plan for reference-exact extractors is written down.**
+  [ADR-2343](docs/adr/2343-reference-exact-default-compat-mode.md) records that RC7 proves every
+  extractor against its original implementation, that the default becomes reference-exact with
+  Netflix's behaviour as a named compatibility mode the golden gate runs in, and that the RC9
+  retrain trains on reference-exact features. The roadmap, the release page and the retrain
+  runbook say so. No extractor or score changes yet.
+
+
+- **A pull request no longer carries the rendered changelog, ADR index or rebase
+  notes ([ADR-2197](docs/adr/2197-render-generated-docs-at-landing.md)).** It
+  adds fragments: `changelog.d/<section>/*.md`,
+  `docs/adr/_index_fragments/<slug>.md` and the new
+  `docs/rebase-notes.d/<slug>.md`. `CHANGELOG.md`, `docs/adr/README.md`, the
+  ADR by-tag and title pages and `docs/rebase-notes.md` are written by
+  `make docs-render` when pull requests land (the merge train per batch, the
+  release cut); `scripts/ci/deliverables-check.sh` refuses a pull request that
+  edits one. `docs/adr/_index_fragments/_order.txt` is frozen: later rows follow
+  in the order they landed. GitHub no longer reports such a pull request as
+  conflicting after master moves.
+
+
 - `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
   requests #1631 to #1668, whether the fork already carries the fix, covers it
   by another route or is not affected, with the file, test or ADR that shows it,
@@ -281,6 +302,15 @@
 
 
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
+
+
+- **The MCP tools advertise and use the library's default model.** `vmaf_score`, `vmaf_score_encoded`
+  and `describe_worst_frames` of both MCP servers declared `version=vmaf_v0.6.1` as the default of
+  `model` and scored with it when the argument was omitted; they now use `vmaf_v1.0.16_3d0h`, the
+  default of the library, the CLI and the server (ADR-1169). Pass `model` to keep scoring with
+  another model. The controller's gRPC contract documented the same stale default and says
+  `vmaf_v1.0.16_3d0h` now. The default-model gate reads the `version=` spelling and the controller
+  contract, so the drift cannot return unnoticed.
 
 
 - The last MSVC warnings of the first Windows run after the zero-warning series

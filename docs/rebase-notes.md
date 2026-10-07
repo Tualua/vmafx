@@ -7,6 +7,18 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+<!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Rendered docs: pull requests carry fragments only (2026-10-07)
+
+`ci/render-at-release`, [ADR-2197](adr/2197-render-generated-docs-at-landing.md). Fork-only tooling. `docs/rebase-notes.md` has a
+fragment block at its top (between two marker comments) rendered from `docs/rebase-notes.d/`; the entries below the block are the
+history and stay as they are. `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/by-tag/`, `docs/adr/titles.md` and
+`docs/research/titles.md` are outputs of `make docs-render`: on a conflict in one, take master's side and re-render, and never
+add them back to a branch (`deliverables-check.sh` refuses them). `_order.txt` is frozen; a rebased branch drops any line it added.
+`.gitattributes` no longer lists `merge=union` for these files.
+
+<!-- rebase-notes:fragments:end -->
+
 ## Praetor pin afb739ed81f3 (2026-10-07)
 
 `chore/praetor-pin-afb739ed`, [ADR-2321](adr/2321-praetor-pin-afb739ed.md). Fork-only governance files; no upstream file. Engine output
