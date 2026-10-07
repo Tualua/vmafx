@@ -260,6 +260,22 @@ rebuilt each time master moves. Security updates (`vulnerabilityAlerts`) are
 opened at any time and are not grouped. Renovate pull requests come from this
 repository and run the light tier.
 
+## Gates judge their own matrix leg
+
+A matrix job's `needs.<job>.result` is the aggregate of every leg, so a gate
+that reads it fails for a leg it does not name. The gates that share a matrix
+(`Linux Intel LLVM`, `macOS Clang+Metal` and `Windows MSVC+CUDA (full)` in
+`build.yml`; `FFmpeg Ubuntu gcc` and `FFmpeg macOS clang` in
+`ffmpeg-integration.yml`) therefore run
+[`scripts/ci/gate_leg_result.py`](../../scripts/ci/gate_leg_result.py) with the
+name of their own `<check name> work` job. It reads the run's jobs
+(`gh api repos/<repo>/actions/runs/<id>/jobs --paginate`, which needs
+`actions: read`) and passes when the planner succeeded and either the leg was
+selected and concluded `success`, or it was not selected and is absent or
+`skipped`. A missing, unfinished or ambiguous own job fails. A new gate on a
+shared matrix does the same; `scripts/ci/tests/test_gate_leg_result.py` fails
+on two gates that read one matrix job's aggregate.
+
 ## CI impact routing (ADR-1140)
 
 Required checks do not decide whether they apply from a workflow-level `paths:`
