@@ -10,6 +10,9 @@ search:
 ## Windows: _wsopen_s permission mask (2026-10-07)
 
 `fix/msvc-wsopen-pmode`. no rebase impact: fork-only `compat/path_utf8.c`; in `svm.cpp` the `vmaf_open_bin_crt()` helper (fork edit of the vendored libsvm open call) masks `pmode`; keep the mask when re-syncing.
+## DNN session test: invalid pointer literal (2026-10-07)
+
+`fix/msvc-int-to-ptr`. no rebase impact: fork test file, two literals.
 
 ## MSVC zero warnings: residual sites (2026-10-07)
 

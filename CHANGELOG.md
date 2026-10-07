@@ -31,6 +31,9 @@
   still open at any time. See "Which jobs run when" in `docs/development/ci.md`.
 
 
+- `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.
+
+
 - The Windows MSVC builds no longer print the C runtime, declaration and
   command-line warnings: `strdup`, `close`, `sscanf`, `getenv`, `_wfopen`,
   `_wopen` and `_open` are called through the CRT's own non-deprecated
