@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1313), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1314), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5111,6 +5111,10 @@ Every ADR, one heading each (1313), so the site search finds an ADR by its title
 ## ADR-1707: Cut v1.0.0-rc.3 without waiting for outside-hardware reports
 
 [1707-rc3-exit-without-outside-hardware](1707-rc3-exit-without-outside-hardware.md)
+
+## ADR-1713: Rust feature-extractor twins behind the unchanged C ABI (RC4 framework)
+
+[1713-rc4-rust-extractor-framework](1713-rc4-rust-extractor-framework.md)
 
 ## ADR-1755: The feature collector owns the models it mounts
 

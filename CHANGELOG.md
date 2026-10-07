@@ -18,6 +18,24 @@
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
+- **Rust twins of C feature extractors, selectable at run time (RC4
+  framework, [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).**
+  A build with `-Denable_rust_features=true` links one Rust archive into
+  `libvmaf` and registers each Rust twin as `<name>_rust` next to its C
+  extractor, with the C extractor's options, feature names and flags.
+  `VMAF_FEATURE_IMPL=rust` makes every registration path use the twin where
+  one exists and logs the C fallback where none does; `--feature psnr_rust`
+  picks a twin directly; the JSON report's `feature_backends` names the
+  extractor that ran. The C extractors stay the default. The first twin,
+  `psnr_rust`, returns the C scores bit for bit on the Netflix pair, both
+  checkerboard pairs, a 10-bit pair and 200 frames of 4K.
+  `scripts/ci/rust_twin_diff.py` proves a twin equal to its C extractor (same
+  binary, equal doubles on every metric of every frame), the `Rust` workflow
+  runs clippy on every workspace crate, checks the cbindgen header and runs the
+  new `rust` Meson suite. See
+  [Rust extractor framework](docs/development/rust-extractor-framework.md).
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
@@ -197,6 +215,17 @@
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
   conversions in `get_noise_constant()`, the scaled frame size passed to
   `vif_scale_frame_s()` and the second `--feature` option copy are written out.
+
+
+- **A build with `-Denable_rust_features=true` registers TAD and no longer
+  exports the Rust standard library from `libvmaf.so`
+  ([ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).** The TAD
+  pilot was compiled but never registered (`--feature tad` failed with
+  "problem loading feature extractor"), because the define that gated it never
+  reached `feature_extractor.cpp`. The Rust archive's symbols are now kept out
+  of the dynamic symbol table with `--exclude-libs` (GNU ld, lld). The Rust
+  build also needs no network any more: TAD's unused build-time cbindgen
+  dependency is gone and cargo runs `--offline --locked`.
 
 
 - **The SYCL dma-buf import no longer closes the caller's descriptor.**
@@ -671,6 +700,22 @@ They are recorded in full, unedited, in
   default, at the cost of one flag test per frame
   ([ADR-1918](docs/adr/1918-sample-range-contract-opt-in-check.md),
   [Sample range](docs/api/sample-range.md)).
+- **Rust twins of C feature extractors, selectable at run time (RC4
+  framework, [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).**
+  A build with `-Denable_rust_features=true` links one Rust archive into
+  `libvmaf` and registers each Rust twin as `<name>_rust` next to its C
+  extractor, with the C extractor's options, feature names and flags.
+  `VMAF_FEATURE_IMPL=rust` makes every registration path use the twin where
+  one exists and logs the C fallback where none does; `--feature psnr_rust`
+  picks a twin directly; the JSON report's `feature_backends` names the
+  extractor that ran. The C extractors stay the default. The first twin,
+  `psnr_rust`, returns the C scores bit for bit on the Netflix pair, both
+  checkerboard pairs, a 10-bit pair and 200 frames of 4K.
+  `scripts/ci/rust_twin_diff.py` proves a twin equal to its C extractor (same
+  binary, equal doubles on every metric of every frame), the `Rust` workflow
+  runs clippy on every workspace crate, checks the cbindgen header and runs the
+  new `rust` Meson suite. See
+  [Rust extractor framework](docs/development/rust-extractor-framework.md).
 
 
 - **actionlint pre-commit hook and Makefile target**: Wired `actionlint`
@@ -5765,6 +5810,17 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   archived repository's path, so the documented install started nothing; it
   names `%h/dev/vmafx/vmafx/...` and the install guide says so. ADR-0931 (MCP
   direct cgo path) is `Accepted` for its implemented Phase 1.
+
+
+- **A build with `-Denable_rust_features=true` registers TAD and no longer
+  exports the Rust standard library from `libvmaf.so`
+  ([ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).** The TAD
+  pilot was compiled but never registered (`--feature tad` failed with
+  "problem loading feature extractor"), because the define that gated it never
+  reached `feature_extractor.cpp`. The Rust archive's symbols are now kept out
+  of the dynamic symbol table with `--exclude-libs` (GNU ld, lld). The Rust
+  build also needs no network any more: TAD's unused build-time cbindgen
+  dependency is gone and cargo runs `--offline --locked`.
 
 
 - **`--feature mobilesal` scores frames whose sides are not multiples of 8

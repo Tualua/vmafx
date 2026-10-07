@@ -1135,6 +1135,44 @@ Pelorus mirror entries mirror `scripts/ci/pelorus-mirror-paths.txt`
   statistic is ported into the helpers.
 - Source-text contract tests (`test_cuda_*_contract.py`, `test_integer_vif_sv_sq_contract.py`)
   follow the new spelling; their assertions are unchanged.
+## RC4 Rust extractor framework (ADR-1713, 2026-10-05)
+
+`rc4/rust-extractor-framework` (draft, label `rc4`, lands after the
+`v1.0.0-rc.3` tag). Build system, registry, libvmaf registration paths, Rust
+workspace, CI. No score changes; the C extractors stay the default.
+
+- `core/src/meson.build`: `is_rust_enabled` and `cdata.set10('HAVE_RUST_FEATURES', ...)`
+  sit directly above `config_h_target`; the old TAD block
+  (`rust_tad_dep`, `rust_tad_direct_sources`, `HAVE_RUST_TAD`) is replaced by
+  `rust_core_dep` / `rust_shim_sources`. A sync that brings back the TAD block
+  or a `HAVE_RUST_TAD` define reintroduces the unregistered-TAD defect.
+- `core/src/feature/feature_extractor.cpp`: every registry walk goes through
+  `registry_at()`; the `HAVE_RUST_TAD` extern and list entry are gone.
+  `vmaf_get_feature_extractor_by_feature_name()` is split into
+  `first_pass_eligible()` / `fallback_eligible()` / `provides_feature()`; an
+  upstream change to that lookup is re-applied on the helpers, keeping the
+  Rust-twin skip. `device_twin_flags` includes `VMAF_FEATURE_EXTRACTOR_RUST`.
+- `core/src/feature/feature_extractor.h`: flag `VMAF_FEATURE_EXTRACTOR_RUST =
+  1 << 8` and three functions (`vmaf_feature_extractor_install_rust_registry`,
+  `vmaf_feature_extractor_impl_select`, `vmaf_feature_impl_rust_requested`).
+  An upstream flag at bit 8 must move, not this one.
+- `core/src/libvmaf.c`: `vmaf_rust_twins_install()` before the registry audit
+  in `vmaf_ctx_subsystems_init()`, and `vmaf_feature_extractor_impl_select()`
+  in `vmaf_use_feature()`, `vmaf_use_features_from_model()` and
+  `create_context_fallback()`. Keep all four on a conflict.
+- `core/src/feature/tad_rust.c` is gated on `HAVE_RUST_FEATURES`; the TAD crate
+  is an rlib without `build.rs`.
+- Two Cargo workspaces: the root one (bindings) `exclude`s `core/src/rust` and
+  `core/src/feature/rust/tad`; `core/src/rust/Cargo.toml` holds the
+  libvmaf-linked crates and the TAD crate (`package.workspace`). A sync that
+  adds those crates back to the root members breaks the offline build.
+  `rust-ci.yml` lost the "Rebuild vmafx-tad after a source edit" step with
+  TAD's `build.rs` (the code it guarded is gone) and gained the
+  empty-CARGO_HOME offline build.
+- Generated files: `core/src/rust/include/vmafx_rs.h` (take either side, run
+  `scripts/dev/rust-abi-header.sh`). Lockfiles: take master's side, then
+  `cargo metadata --offline --format-version 1` in the affected workspace
+  re-adds its members; no version may move.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 

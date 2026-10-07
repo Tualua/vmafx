@@ -98,6 +98,7 @@
     "SECURITY.md",
     "SUPPORT.md",
     "buf.gen.yaml",
+    "clippy.toml",
     "deny.toml",
     "go.mod",
     "go.sum",
@@ -254,7 +255,17 @@
         "core/src/feature/rust/**",
         "Cargo.toml",
         "Cargo.lock",
-        "deny.toml"
+        "deny.toml",
+        "core/src/rust/*",
+        "core/src/rust/**",
+        "clippy.toml",
+        "scripts/ci/rust_twin_diff.py",
+        "scripts/dev/rust-abi-header.sh",
+        "core/src/feature/feature_extractor.h",
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/feature/tad_rust.c",
+        "core/src/feature/integer_psnr.c",
+        "core/src/feature/psnr_score.h"
       ]
     },
     "docs": {
