@@ -19,7 +19,7 @@ WORKFLOWS = ROOT / ".github/workflows"
 
 # The legs that stay ungated, with the reason ci.md gives. A row not named here must carry
 # `werror: true`, so a new leg cannot be added without deciding.
-UNGATED_ROWS = {"macOS Metal"}
+UNGATED_ROWS: set[str] = set()
 
 
 def run_script(*args: str, os_name: str | None = None) -> subprocess.CompletedProcess[str]:

@@ -32,14 +32,14 @@ Two spellings change so that a clean build is possible without suppression, each
 | `-Werror` for every build from `core/meson.build` | one switch | breaks release and distro builds on the first diagnostic of a newer compiler; hides which leg is clean | A leg gates itself in CI; release builds stay unaffected |
 | Per-warning `-Wno-*` / `#pragma` suppression | fast | the debt stays; contradicts HISS-10 and Q-061 | Fix each site |
 | `-ffp-model=strict` for icx | no override warning | adds strict exception behaviour and rounding-mode assumptions; changes code | Not value-preserving |
-| `-Wl,-no_warn_duplicate_libraries` for the macOS Metal leg | silences ld64 | suppression; the cause is Meson's standard-library flag for Objective-C++ links | The Metal leg stays ungated and listed |
+| `link_language` on each Metal target | fixes the cause per target | several hundred executables; Meson 1.12 still names `-lc++` twice for mixed Objective-C++ links | `-Wl,-no_warn_duplicate_libraries` on the Metal links, with the reason beside it (maintainer decision 2026-10-07) |
 | One gate PR for all legs at once | simple | a leg that is not at zero blocks the rest | Legs gate as they reach zero |
 
 ## Consequences
 
 - **Positive**: a new warning on a gated leg fails the pull request that introduces it; the list in `docs/development/ci.md` shows what is left.
 - **Negative**: a compiler upgrade on a gated leg can fail the leg until the diagnostic is fixed; the pin of that leg's compiler is part of the gate.
-- **Neutral / follow-ups**: the Windows MSVC and icx-cl legs follow the MSVC lane; the macOS Metal leg waits for a Meson fix of the duplicate `-lc++` or an exception.
+- **Neutral / follow-ups**: the Windows MSVC and icx-cl legs follow the MSVC lane; the macOS Metal leg is gated with ld64's duplicate-library warning switched off for its links (Meson 1.12 emits the duplicate); the deliberate spill probe of the SYCL self-test compiles through `core/src/sycl/run_captured.py`.
 
 ## References
 

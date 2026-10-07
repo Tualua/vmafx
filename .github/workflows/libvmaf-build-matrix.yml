@@ -170,6 +170,7 @@ jobs:
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=enabled
+            werror: true
             name: macOS Metal
             tier: full
 

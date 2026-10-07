@@ -15,6 +15,16 @@
 # declared" otherwise (CI run 25686136776 / job 75410354618).
 add_languages('objcpp', native: false, required: true)
 
+# ADR-2170: every link that carries an Objective-C++ object names -lc++ twice. Meson 1.12
+# links such a target with the objcpp compiler and adds the C++ standard library flag for the
+# cpp objects it also holds (build.py get_used_stdlib_args(): (cpp, objcpp) is not masked),
+# while the clang++ driver adds it on its own. A target's `link_language` would only move the
+# flag, and the project has several hundred executables. Duplicate libraries on an ld64
+# command line are harmless, and the warning would make every Metal link fail under
+# -Wl,-fatal_warnings, so the linker is told the duplicates are expected.
+metal_ld_dup_args = cc.get_supported_link_arguments(['-Wl,-no_warn_duplicate_libraries'])
+add_project_link_arguments(metal_ld_dup_args, language : ['c', 'cpp', 'objcpp'])
+
 # Apple framework linkage.
 foundation_dep = dependency('Foundation', required: true)
 metal_dep      = dependency('Metal', required: true)

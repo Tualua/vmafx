@@ -41,6 +41,12 @@ definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_pa
 `VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
 the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
 fork's `crt_portable.h` spelling.
+## Zero warnings: Metal links and the spill probe (2026-10-07)
+
+`ci/zero-warnings-metal-and-probe`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `core/src/metal/meson.build`
+(project link argument after `add_languages('objcpp')`), `core/src/sycl/run_captured.py` and the `sycl_quiet_launcher` of
+`sycl_common_*` in `core/src/meson.build`. no upstream file.
+
 ## Warnings are errors per leg (2026-10-07)
 
 `ci/warnings-are-errors-per-leg`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `scripts/ci/werror-args.sh`, its test, and the

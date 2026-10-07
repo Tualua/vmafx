@@ -71,6 +71,16 @@
   keeps integer AIM unclipped. Documentation only.
 
 
+- **The macOS Metal leg is gated, and the SYCL spill probe no longer fills the build log.** Meson
+  1.12 names `-lc++` twice on every link that carries an Objective-C++ object (224 ld64
+  warnings per run); the Metal links now tell ld64 duplicate libraries are expected
+  (`-Wl,-no_warn_duplicate_libraries`, reason in `core/src/metal/meson.build`), so the leg takes
+  `werror: true`. The AOT compile of `scratch_check.cpp`, whose deliberate register-spill kernel
+  makes the device compiler warn on every target, runs through `core/src/sycl/run_captured.py`,
+  which prints that output only when the compile fails
+  ([ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
+
+
 - **A compiler or linker warning now fails the CI leg that prints none today.** The gated legs of the
   build matrix (gcc, clang, Apple clang, icx / icpx, MinGW, CUDA and HIP builds), the ASan, UBSan and
   TSan builds, and the libvmaf builds of the Go, Rust and FFmpeg jobs pass `-Dwerror=true` and the
@@ -3209,6 +3219,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `bitrate_kbps` is now an error for these picks. Migration: results that read
   the old pick change; rerun `recommend` and the ladder, and pin a CRF
   explicitly where the higher-quality encode is wanted. See ADR-1562.
+
+
+- **The macOS Metal leg is gated, and the SYCL spill probe no longer fills the build log.** Meson
+  1.12 names `-lc++` twice on every link that carries an Objective-C++ object (224 ld64
+  warnings per run); the Metal links now tell ld64 duplicate libraries are expected
+  (`-Wl,-no_warn_duplicate_libraries`, reason in `core/src/metal/meson.build`), so the leg takes
+  `werror: true`. The AOT compile of `scratch_check.cpp`, whose deliberate register-spill kernel
+  makes the device compiler warn on every target, runs through `core/src/sycl/run_captured.py`,
+  which prints that output only when the compile fails
+  ([ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
 
 
 - **A compiler or linker warning now fails the CI leg that prints none today.** The gated legs of the

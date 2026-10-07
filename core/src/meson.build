@@ -2176,13 +2176,17 @@ if is_sycl_enabled
     sycl_depfile_args = sycl_tracks_headers ? ['-MD', '-MF', '@DEPFILE@'] : []
 
     # Compile each SYCL common source with icpx
+    # scratch_check.cpp holds the deliberate spill probe whose AOT compile prints the spill as
+    # a device-compiler warning on every target: that compile alone keeps its output out of the
+    # build log unless it fails (sycl/run_captured.py, ADR-2170).
+    sycl_quiet_launcher = [import('python').find_installation(), files('sycl/run_captured.py'), '--']
     foreach src : sycl_sources
         name = fs.stem(src)
         common_sycl_objects += custom_target('sycl_common_' + name,
             output : name + '.o',
             input : src,
             depfile : sycl_tracks_headers ? name + '.o.d' : '',
-            command : [icpx] + sycl_common_args + sycl_inc_flags
+            command : (name == 'scratch_check' ? sycl_quiet_launcher : []) + [icpx] + sycl_common_args + sycl_inc_flags
                       + sycl_surface_args + sycl_depfile_args
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )

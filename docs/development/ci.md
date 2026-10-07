@@ -582,7 +582,7 @@ one rule, a reason, an expiry).
 | Workflow | Legs | Toolchain family |
 | --- | --- | --- |
 | `libvmaf-build-matrix.yml` | Ubuntu gcc, gcc static, gcc+DNN, CUDA, CUDA static, HIP | gcc 14, nvcc |
-| `libvmaf-build-matrix.yml` | Ubuntu clang, clang+DNN, ARM clang, macOS clang, macOS clang+DNN | clang 22, Apple clang |
+| `libvmaf-build-matrix.yml` | Ubuntu clang, clang+DNN, ARM clang, macOS clang, macOS clang+DNN, macOS Metal | clang 22, Apple clang |
 | `libvmaf-build-matrix.yml` | Ubuntu SYCL, SYCL+CUDA | icx / icpx |
 | `libvmaf-build-matrix.yml` | Windows UCRT64 | MinGW gcc |
 | `sanitizers.yml` | ASan+UBSan, TSan | clang 22, lld |
@@ -595,10 +595,8 @@ one rule, a reason, an expiry).
 | --- | --- | --- |
 | Windows MSVC+CUDA (full), MSVC+CUDA, ARM64 MSVC | about 71,000 each | the MSVC lane (C4305, C4244, C4996) |
 | Windows MSVC+SYCL (icx-cl) | 139 | CRT `-Wdeprecated-declarations` (follows the MSVC lane's C4996 fixes), `-experimental:c11atomics` unused argument, `-Woverriding-option` of the icx-cl SYCL line |
-| macOS Metal | 515 | after the train 224 of ld64's "ignoring duplicate libraries: '-lc++'": Meson adds `-lc++` to every Objective-C++ link and the clang++ driver adds it again |
 | Dev Container Build | 204 | third-party sources built in the image (vpl-gpu-rt `-Wstringop-overflow`, FFmpeg) and gcc's LTO "serial compilation" note |
 | Docker Image Build, Tidy Ratchet, Cppcheck, CodeQL, Coverage Gate and the other jobs that compile libvmaf for analysis | 1 to 12 | the same sites as the gated legs; they gate once the train has landed and a master run shows 0 |
-| SYCL AOT device build (every SYCL leg) | 58 lines | ocloc prints the deliberate register spill of the `VmafSyclScratchProbeSpill` test kernel; compiler warnings of these legs are gated, ocloc output is not |
 
 ### What has been proven
 
@@ -613,6 +611,15 @@ only on the CI run of the pull request that gates them: Apple clang and ld64
 (`-fatal_warnings`), and lld (`--fatal-warnings`, the sanitizer legs: the
 compiler half is proven by clang, no default-on lld warning was found to
 plant).
+
+The macOS Metal leg links every target with the Objective-C++ compiler, and
+Meson 1.12 then names `-lc++` twice (224 ld64 warnings per run). The clang++
+driver adds the library itself, so duplicates are harmless;
+`core/src/metal/meson.build` passes `-Wl,-no_warn_duplicate_libraries` to
+those links, with the reason beside it, and the leg is gated. The deliberate
+register spill of the SYCL self-test kernel is compiled through
+`core/src/sycl/run_captured.py`, which prints the device compiler's output
+only when the compile fails.
 
 ### Adding a leg
 
