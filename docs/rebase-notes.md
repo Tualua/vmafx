@@ -8,6 +8,75 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## RC4: `speed_chroma` Rust twin keeps Netflix's double-form statements
+
+- `core/src/rust/feature/speed/src/` is `speed.c` and `vif_tools.c` ported
+  statement by statement (`BSD-2-Clause-Patent`). A change to `create_givens()`,
+  `update_entropy()`, `get_speed_score()` (ADR-1477's double `sqrt()` / `log2()`
+  form), `EIGENVALUE_EPS` (a double), the prescale methods, the Gaussian taps or
+  `picture_copy()` changes the matching Rust function in the same PR;
+  `scripts/ci/rust_twin_diff.py --feature speed_chroma` and the golden tests in
+  `core/src/rust/feature/speed/src/lib.rs` fail on a one-ulp drift. An upstream
+  sync that touches `speed.c` re-runs both. No score, public API or FFmpeg patch
+  impact: the twin is opt-in.
+
+## Rust `cambi` twin follows `cambi.c` (RC4, ADR-1713)
+
+- `core/src/rust/feature/cambi/` is a statement-by-statement port of the scalar
+  path of `core/src/feature/cambi.c`, `cambi.h` (`reciprocal_lut`, the
+  `update_histogram_*` / `uh_slide*` helpers) and `luminance_tools.cpp`, and must
+  return the C extractor's bits. An upstream sync that changes any of them
+  (option table, init post-processing, preprocessing, spatial mask, mode filter,
+  c-values, quick-select pooling, EOTFs) changes the matching Rust module in the
+  same PR; `reciprocal_lut` is copied as literal text, never recomputed.
+  `core/test/test_rust_cambi_kernels.c` (suite `rust`) holds the table, the
+  TVI / visibility tables, the adjusted window, the mask index and the resize
+  walk to the C functions; `scripts/ci/rust_twin_diff.py --feature cambi`
+  re-checks the scores. No public C API or FFmpeg patch impact.
+
+## VMAFx device frames and fences: shared contract on the CPU device (2026-10-07)
+
+`rc4/api-wp3-common`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- `core/src/vmafx/` gains `device_context.c`, `fence.c`, `frame_import.c`,
+  `frame_import_admit.c`, `frame_import_hooks.{c,h}` and `frame_pool.c`;
+  `device.c` grows enumeration, information and the checks of
+  `VmafxDeviceDesc`'s new `flags` and `external` fields. The backend lanes
+  (CUDA, SYCL, HIP, Metal) add their device creation, memory kinds, fence
+  kinds and per-extractor admission behind these functions.
+- `frame_host.c`: the release of a non-pool frame is the shared
+  `vmafx_frame_release()` and signals the frame's release fence after the
+  last read; `vmafx_frame_read_desc()`, `vmafx_frame_host_device()` and
+  `vmafx_frame_bind()` are shared with the import and the pool.
+  `submit.c` checks admission before the engine counts a frame.
+  `context.c` drops the context's device after a successful close, and reads
+  and checks `VmafxContextConfig.import_retry_wait_ns` (ABI 0.1.3; the
+  `vmaf_init` compat glue sets it to 0, the default).
+  `error.c` keeps 1023 bytes of subject and message.
+- `frame_import.c` includes `core/src/metal/iosurface_layout.h` for the
+  NV12 / P010 / P016 row readers. A change to those readers changes the CPU
+  import and the Metal import together (`test_vmafx_import_bitexact` and
+  `test_metal_iosurface_layout`).
+- `scripts/codegen/vmafx_api/ctext.py` spells an `out` string parameter
+  `const char **` (it printed `const char * *`).
+- `core/src/compat/gcc/stdatomic.h` (the fallback for a compiler without
+  `<stdatomic.h>`, from dav1d) gains `atomic_uintptr_t`,
+  `atomic_uint_fast64_t`, `atomic_store_explicit`, `atomic_exchange`,
+  `atomic_compare_exchange_strong` / `_weak` and two memory orders, the C11
+  atomics `core/src/vmafx/` uses. A re-sync of that file from dav1d keeps
+  them.
+- `core/test/vmafx_fixture_util.h` holds the fixture pairs and the reader
+  both `test_vmafx_bitexact.c` and `test_vmafx_import_bitexact.c` use.
+- No `libvmaf.h`, score, golden-data or FFmpeg patch impact.
+
+## Source ADR citations: live bindings derived, registry keeps retired and fixtures (2026-10-07)
+
+`ci/citations-derived`, [ADR-2200](adr/2200-source-adr-citations-derived.md). Fork-only gate. `scripts/ci/source-adr-citations.json` is
+schema 2 with `retired` and `fixtures` only; on a conflict in it take master's side and keep only the hand-governed records your
+branch changed (a retired or fixture site count). A `live` key is an error: delete it, never re-add `--write`. An upstream sync
+that cites an ADR number needs no registry edit.
+
 ## icx-cl and the Windows icpx: strict FP without the override warning (2026-10-07)
 
 `build/icx-cl-strict-fp-spelling`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md),

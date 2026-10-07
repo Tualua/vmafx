@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1322), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1324), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5212,6 +5212,10 @@ Every ADR, one heading each (1322), so the site search finds an ADR by its title
 
 [1918-sample-range-contract-opt-in-check](1918-sample-range-contract-opt-in-check.md)
 
+## ADR-1929: VMAFx device frames, fences and the import rule: the shared contract the backend lanes implement
+
+[1929-vmafx-device-frames-fences](1929-vmafx-device-frames-fences.md)
+
 ## ADR-1930: `sycl_device_asan` puts the device sanitizer on every SYCL compile and the link
 
 [1930-sycl-device-asan-option](1930-sycl-device-asan-option.md)
@@ -5275,6 +5279,10 @@ Every ADR, one heading each (1322), so the site search finds an ADR by its title
 ## ADR-2198: A tester leg builds where its inputs change, and no release is cut on a leg nobody saw green
 
 [2198-windows-sycl-leg-and-cut-check](2198-windows-sycl-leg-and-cut-check.md)
+
+## ADR-2200: The live source ADR-citation bindings are derived from the tree, not recorded
+
+[2200-source-adr-citations-derived](2200-source-adr-citations-derived.md)
 
 ## ADR-2321: Move the praetor pin to afb739ed81f3 and meet its nested-context, supply-chain and harness checks
 

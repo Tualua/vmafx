@@ -33,6 +33,31 @@
   [the VMAFx API page](docs/api/vmafx/index.md).
 
 
+- **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
+  The VMAFx API gains the shared contract of zero-copy frame import:
+  device enumeration and information (`vmafx_device_count`,
+  `vmafx_device_info`, `vmafx_device_describe`, `vmafx_device_profile`; the
+  size-prefixed `VmafxDeviceInfo` grows by the format envelope later),
+  devices from external handles and profiling flags (`VmafxDeviceDesc`),
+  attaching a device to a context (`vmafx_context_use_device`), fences of
+  every kind (`VmafxFence`; `vmafx_fence_create`, `vmafx_fence_signal`,
+  `vmafx_fence_wait`, `vmafx_fence_destroy`; the new status
+  `VMAFX_E_TIMEOUT`), frame import with an acquire fence
+  (`vmafx_frame_import`, `VmafxFrameImport`; NV12, P010 and P016 converted
+  to planar, never through a host copy), release fences signalled after the
+  last reader of a frame (`vmafx_frame_release_fence`), frame pools
+  (`vmafx_frame_pool_create`, `vmafx_frame_pool_acquire`,
+  `vmafx_frame_pool_destroy`), admission that names every refusing extractor
+  (`vmafx_context_admit`) and the import rule of decision D8
+  (`vmafx_context_import_frame`: one retry after a host wait of at most
+  `VmafxContextConfig.import_retry_wait_ns`, 10 seconds by default, then a
+  failure that names the import). This build implements host memory and host fences
+  on the CPU device; the CUDA, SYCL, HIP and Metal imports follow behind the
+  same functions. An imported frame scores bit for bit as the same frame
+  created on the host. ABI 0.1.3. See
+  [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -61,6 +86,30 @@
   five of whose seven queries named series nothing emits, and a test fails
   any shipped panel that queries a series nothing emits. See
   [observability](docs/development/observability.md#metrics).
+
+
+- **`cambi` runs in Rust, bit-identical to the C extractor (`cambi_rust`).**
+  A build with `-Denable_rust_features=true` registers `cambi_rust`, a
+  statement-by-statement port of the scalar `cambi.c` path (preprocessing,
+  spatial mask, mode filter, sliding-histogram c-values, top-K pooling and the
+  luminance model). It reads the C extractor's option table and implements
+  every option except `heatmaps_path`, which it refuses at init. Its per-frame
+  scores equal the C extractor's at `--precision max` on the Netflix 576x324
+  pair, both 1080p checkerboard pairs, the 10-bit sparks pair and BBB
+  3840x2160, for the default options and the `vmaf_v1.0.16` models' options.
+  Select it with `--feature cambi_rust` or `VMAF_FEATURE_IMPL=rust`; the C
+  extractor stays the default. See
+  [the CAMBI page](docs/metrics/cambi.md#rust-twin) and
+  [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md).
+
+
+- **`speed_chroma` has a Rust implementation that returns the C extractor's
+  scores bit for bit.** Build with `-Denable_rust_features=true`, then select it
+  with `--feature speed_chroma_rust` or `VMAF_FEATURE_IMPL=rust`; C stays the
+  default. It covers every option the `vmaf_v1.0.16*` models set (prescale 1.0,
+  0.5 and 0.6) and all four prescale methods. See
+  [the SpEED page](docs/metrics/speed.md#rust-twin) and
+  [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md).
 
 
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
@@ -254,6 +303,12 @@
   conflicting after master moves.
 
 
+- **Citing an ADR in source no longer edits a shared registry
+  ([ADR-2200](docs/adr/2200-source-adr-citations-derived.md)).** The source
+  ADR-citation gate derives each binding from the tree; `scripts/ci/source-adr-citations.json`
+  keeps only the retired and fixture records and `--write` is gone.
+
+
 - `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
   requests #1631 to #1668, whether the fork already carries the fix, covers it
   by another route or is not affected, with the file, test or ADR that shows it,
@@ -342,6 +397,14 @@
   controller refuses to start and names `VMAFX_DB_PATH`. The image and the Helm
   chart set `/data/vmafx-controller.db` and are unchanged. The committed files
   are removed and ignored. See [the controller guide](docs/server/controller.md#configuration).
+
+
+- **The dev container runs the command it is given and exits.** `dev/scripts/dev-mcp-entrypoint.sh`
+  ignored its arguments and always kept the container running, so every
+  `docker run vmaf-dev-mcp:local <command>` left a container (and its healthcheck) up. A start with
+  a command now runs it and exits with its status; a start without one still stays up for
+  `docker exec`. The `smoke-probe-cron` compose service now runs its probe loop.
+  `docs/development/dev-mcp.md` shows the one-shot forms.
 
 
 - **Float extractors report their errors through the log (ADR-1906).** The
@@ -437,6 +500,11 @@
   saliency check keys on the ROI keys instead of any `-x265-params`. The
   `libvmaf_cuda` recipes convert NVDEC's NV12 with `scale_cuda` (the filter
   accepts `yuv420p` and `yuv444p16` only).
+
+
+- **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
+  its subject, so a model file whose path was longer was named by a cut-off
+  path; subjects now keep 1023 bytes and messages 1023.
 
 
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.
