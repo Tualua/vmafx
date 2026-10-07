@@ -147,6 +147,9 @@
   changed.
 
 
+- **The vendored Pelorus conformance fixture reads its files back with `_fsopen(..., _SH_DENYNO)` on Windows.** `scripts/sync-pelorus-interop.sh` pins `11e183ec0aed` (VMAFx/pelorus #91, fixing #90): `fixture_equals()` and `fixture_path_exists()` of `core/test/test_pelorus_interop.c` no longer call the deprecated `fopen()` there, which icx-cl reported. No behaviour or ABI change (ABI 1.3).
+
+
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 

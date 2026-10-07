@@ -62840,3 +62840,9 @@ is now pelorus's own code, so the mirror carries only the banner and the include
 - No score impact (`test_vmafx_bitexact` compares every score with the
   `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
   values are unchanged.
+## Pelorus re-vendor at the fixture `_fsopen` commit (2026-10-07)
+
+`refactor/pelorus-revendor-fsopen-fixture`, [ADR-1113](adr/1113-vendor-pelorus-interop-abi.md). `PELORUS_VENDOR_SHA` moves to
+`11e183ec0aed` (VMAFx/pelorus #91): the conformance fixture body of `core/test/test_pelorus_interop.c` opens its files for reading through
+`fixture_open_read()` (`_fsopen` on Windows). Rendered by `scripts/sync-pelorus-interop.sh --update`; a sync takes pelorus's side and re-runs the
+script, then the drift check. no upstream file.
