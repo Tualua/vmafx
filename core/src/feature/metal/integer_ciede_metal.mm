@@ -84,7 +84,7 @@ using CiedeStateMetal = struct CiedeStateMetal {
 namespace {
 
 /* The CPU extractor has no options. */
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {{}};
 
 int build_pipelines(CiedeStateMetal *s, id<MTLDevice> device)
 {
@@ -310,14 +310,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_integer_ciede_metal = {
     .name                = "integer_ciede_metal",
     .init                = init_fex_metal,
-    .submit              = submit_fex_metal,
-    .collect             = collect_fex_metal,
     .flush               = nullptr,
     .close               = close_fex_metal,
+    .submit              = submit_fex_metal,
+    .collect             = collect_fex_metal,
     .options             = options,
     .priv_size           = sizeof(CiedeStateMetal),
-    .provided_features   = provided_features,
     .flags               = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features   = provided_features,
     .chars = {
         .n_dispatches_per_frame = 1,
         .is_reduction_only      = false,

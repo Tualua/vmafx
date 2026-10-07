@@ -100,8 +100,8 @@ namespace {
 static const VmafOption options[] = {
     {
         .name = "motion_force_zero",
-        .alias = "force_0",
         .help = "forcing motion score to zero",
+        .alias = "force_0",
         .offset = offsetof(IntegerMotionStateMetal, motion_force_zero),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -109,8 +109,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_blend_factor",
-        .alias = "mbf",
         .help = "blend motion score given an offset",
+        .alias = "mbf",
         .offset = offsetof(IntegerMotionStateMetal, motion_blend_factor),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
@@ -120,8 +120,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_blend_offset",
-        .alias = "mbo",
         .help = "blend motion score starting from this offset",
+        .alias = "mbo",
         .offset = offsetof(IntegerMotionStateMetal, motion_blend_offset),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 40.0},
@@ -131,8 +131,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_fps_weight",
-        .alias = "mfw",
         .help = "fps-aware multiplicative weight/correction",
+        .alias = "mfw",
         .offset = offsetof(IntegerMotionStateMetal, motion_fps_weight),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
@@ -142,8 +142,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_max_val",
-        .alias = "mmxv",
         .help = "maximum value allowed; larger values will be clipped to this value",
+        .alias = "mmxv",
         .offset = offsetof(IntegerMotionStateMetal, motion_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = DEFAULT_MOTION_MAX_VAL},
@@ -153,8 +153,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_five_frame_window",
-        .alias = "mffw",
         .help = "use five-frame temporal window",
+        .alias = "mffw",
         .offset = offsetof(IntegerMotionStateMetal, motion_five_frame_window),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -162,8 +162,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_moving_average",
-        .alias = "mma",
         .help = "use moving average for motion scores after first frame",
+        .alias = "mma",
         .offset = offsetof(IntegerMotionStateMetal, motion_moving_average),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -176,7 +176,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
-    {nullptr}};
+    {}};
 
 int build_pipelines(IntegerMotionStateMetal *s, id<MTLDevice> device)
 {
@@ -429,14 +429,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_integer_motion_metal = {
     .name              = "integer_motion_metal",
     .init              = init_fex_metal,
-    .submit            = submit_fex_metal,
-    .collect           = collect_fex_metal,
     .flush             = flush_fex_metal,
     .close             = close_fex_metal,
+    .submit            = submit_fex_metal,
+    .collect           = collect_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerMotionStateMetal),
-    .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features = provided_features,
     .chars = {
         .n_dispatches_per_frame = 1,
         .is_reduction_only      = true,

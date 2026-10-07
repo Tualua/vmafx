@@ -6,6 +6,7 @@
 #define VMAF_FEX_CTX_VECTOR_INTERNAL_H
 
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 
 struct VmafFeatureExtractorContext;
@@ -15,7 +16,8 @@ struct VmafFeatureExtractorContext;
 constexpr unsigned vmaf_next_fex_capacity(unsigned capacity) noexcept
 {
     if (capacity == 0 || capacity > UINT_MAX / 2u ||
-        capacity > (SIZE_MAX / sizeof(VmafFeatureExtractorContext *)) / 2u)
+        static_cast<std::size_t>(capacity) >
+            (SIZE_MAX / sizeof(VmafFeatureExtractorContext *)) / 2u)
         return 0;
     return capacity * 2u;
 }

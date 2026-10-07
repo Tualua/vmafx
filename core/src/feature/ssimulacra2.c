@@ -489,7 +489,7 @@ static Ssimu2YuvCoeffs yuv_matrix_coeffs(int yuv_matrix)
     switch (yuv_matrix) {
     case YUV_MATRIX_BT709_FULL:
         limited = 0;
-        /* fall through */
+        [[fallthrough]];
     case YUV_MATRIX_BT709_LIMITED:
         kr = 0.2126f;
         kg = 0.7152f;

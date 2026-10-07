@@ -763,6 +763,9 @@ static inline float ref_read_plane(const simd_plane_t *p, unsigned lw, unsigned 
     return (float)row[sx];
 }
 
+/* The Windows build skips the picture_to_linear_rgb parity test, so the reference and the
+ * dispatcher it needs are not built there either. */
+#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* The YUV->RGB matrix and range constants one `yuv_matrix` selects. Each field
  * is the same `float` expression the reference used to compute inline, so the
  * rounding of every constant is unchanged. */
@@ -785,8 +788,8 @@ static ref_yuv_consts_t ref_yuv_consts(int yuv_matrix)
     int limited = 1;
     switch (yuv_matrix) {
     case 2:
-        limited = 0; /* fall through */
-        /* fall through */
+        limited = 0;
+        [[fallthrough]];
     case 0:
         kr = 0.2126f;
         kg = 0.7152f;
@@ -895,7 +898,6 @@ static ptlr_fn_t pick_ptlr(void)
     return NULL;
 }
 
-#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* Fill `count` samples of `buf` with pseudo-random values in [0, maxv],
  * carrying the xorshift state across planes so each plane gets its own
  * sequence -- exactly the order the three inline copies produced. */

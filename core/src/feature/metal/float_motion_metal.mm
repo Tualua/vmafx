@@ -232,7 +232,7 @@ static const VmafOption options[] = {
         .max         = 10000.0,
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {0},
+    {},
 };
 
 int fm_metal_append(const FloatMotionStateMetal *s, VmafFeatureCollector *feature_collector,

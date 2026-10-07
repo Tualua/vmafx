@@ -89,7 +89,7 @@ static const VmafOption options[] = {
                 "(a zero-noise pair still reports psnr_max)",
         .offset = offsetof(FloatPsnrStateMetal, uncapped),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {.name=nullptr}};
 
@@ -309,14 +309,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_float_psnr_metal = {
     .name                = "float_psnr_metal",
     .init                = init_fex_metal,
-    .submit              = submit_fex_metal,
-    .collect             = collect_fex_metal,
     .flush               = nullptr,
     .close               = close_fex_metal,
+    .submit              = submit_fex_metal,
+    .collect             = collect_fex_metal,
     .options             = options,
     .priv_size           = sizeof(FloatPsnrStateMetal),
-    .provided_features   = provided_features,
     .flags               = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features   = provided_features,
     .chars = {
         .n_dispatches_per_frame = 1,
         .is_reduction_only      = true,

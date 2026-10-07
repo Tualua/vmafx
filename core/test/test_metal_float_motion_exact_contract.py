@@ -189,7 +189,9 @@ def host_failures(src: dict[str, str]) -> list[str]:
 
 def option_names(source: str) -> list[str]:
     """The names of an extractor's option table, in its order."""
-    block = re.search(r"static const VmafOption options\[\] = \{(.*?)\{\s*0\s*\}", source, re.S)
+    block = re.search(
+        r"static const VmafOption options\[\] = \{(.*?)\{\s*(?:0|nullptr)?\s*\}", source, re.S
+    )
     return re.findall(r'\.name\s*=\s*"(\w+)"', block.group(1)) if block else []
 
 

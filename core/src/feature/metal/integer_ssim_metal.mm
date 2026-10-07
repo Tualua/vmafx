@@ -390,14 +390,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_integer_ssim_metal = {
     .name              = "integer_ssim_metal",
     .init              = init_fex_metal,
-    .submit            = submit_fex_metal,
-    .collect           = collect_fex_metal,
     .flush             = nullptr,
     .close             = close_fex_metal,
+    .submit            = submit_fex_metal,
+    .collect           = collect_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerSsimStateMetal),
-    .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features = provided_features,
     .chars = {
         .n_dispatches_per_frame = 2,
         .is_reduction_only      = false,

@@ -150,7 +150,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {NULL}};
+    {0}};
 
 static inline int mirror(int idx, int size)
 {

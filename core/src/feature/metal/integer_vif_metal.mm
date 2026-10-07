@@ -164,9 +164,9 @@ static const VmafOption options[] = {
     },
     {
         .name        = "vif_enhn_gain_limit",
-        .alias       = "egl",
         .help        = "enhancement gain imposed on vif, must be >= 1.0, "
                        "where 1.0 means the gain is completely disabled",
+        .alias       = "egl",
         .offset      = offsetof(IntegerVifStateMetal, vif_enhn_gain_limit),
         .type        = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 100.0},
@@ -176,8 +176,8 @@ static const VmafOption options[] = {
     },
     {
         .name        = "vif_skip_scale0",
-        .alias       = "ssclz",
         .help        = "when set, skip scale 0 calculations",
+        .alias       = "ssclz",
         .offset      = offsetof(IntegerVifStateMetal, vif_skip_scale0),
         .type        = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},

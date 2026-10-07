@@ -50,6 +50,19 @@
   changed.
 
 
+- **Option tables, extractor tables and tag declarations no longer print compiler warnings.**
+  The clang, gcc, icpx and Apple clang legs reported `-Wmissing-field-initializers`
+  (`{NULL}` / `{0}` option terminators, positional test tables), `-Wreorder-init-list` and
+  `-Wc99-designator` (the Metal option and extractor tables), `-Wmismatched-tags`
+  (`VmafThreadLocaleState`, declared `struct` in the C header and `class` in the C++ file),
+  `-Wimplicit-fallthrough`, `-Wkeyword-macro` (vendored cJSON redefining `true` / `false` in
+  C23), `-Wtautological-constant-out-of-range-compare` (`vmaf_next_fex_capacity()` on 64-bit
+  hosts) and `-Wmacro-redefined` (`DIV_ROUND_UP` in the HIP ADM twin). Every fix is
+  value-preserving: initialisers are reordered or completed, `[[fallthrough]]` replaces
+  comments, the capacity check compares in `size_t`. No score, option default or exported
+  symbol changes.
+
+
 ### Fixed
 
 - **`-qpfile` works on libx264, and the saliency tools no longer run a libx264
@@ -3137,6 +3150,19 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `bitrate_kbps` is now an error for these picks. Migration: results that read
   the old pick change; rerun `recommend` and the ladder, and pin a CRF
   explicitly where the higher-quality encode is wanted. See ADR-1562.
+
+
+- **Option tables, extractor tables and tag declarations no longer print compiler warnings.**
+  The clang, gcc, icpx and Apple clang legs reported `-Wmissing-field-initializers`
+  (`{NULL}` / `{0}` option terminators, positional test tables), `-Wreorder-init-list` and
+  `-Wc99-designator` (the Metal option and extractor tables), `-Wmismatched-tags`
+  (`VmafThreadLocaleState`, declared `struct` in the C header and `class` in the C++ file),
+  `-Wimplicit-fallthrough`, `-Wkeyword-macro` (vendored cJSON redefining `true` / `false` in
+  C23), `-Wtautological-constant-out-of-range-compare` (`vmaf_next_fex_capacity()` on 64-bit
+  hosts) and `-Wmacro-redefined` (`DIV_ROUND_UP` in the HIP ADM twin). Every fix is
+  value-preserving: initialisers are reordered or completed, `[[fallthrough]]` replaces
+  comments, the capacity check compares in `size_t`. No score, option default or exported
+  symbol changes.
 
 
 - **zimg picture conversion allows approximate gamma (port of Netflix/vmaf `5c3f4fb90`).**

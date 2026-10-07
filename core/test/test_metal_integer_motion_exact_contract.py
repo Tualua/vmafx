@@ -282,10 +282,10 @@ class IntegerMotionMetalExactContract(unittest.TestCase):
     def test_option_outside_the_cpu_table_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    {nullptr}};",
+            "    {}};",
             '    {.name = "motion_add_uv", .alias = "mau", .type = VMAF_OPT_TYPE_BOOL,\n'
             "     .default_val = {.b = false}, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},\n"
-            "    {nullptr}};",
+            "    {}};",
         )
         self._assert_detected(failures, "option table is not integer_motion.c's")
 

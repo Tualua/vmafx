@@ -771,6 +771,7 @@ namespace
 {
     const VmafSyclConfiguration cfg = {
         .device_index = c->sycl_device >= 0 ? c->sycl_device : 0,
+        .enable_profiling = 0,
     };
     if ((c->sycl_device < 0 && !c->use_gpumask) || c->no_sycl)
         return 0;

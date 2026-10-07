@@ -34,6 +34,15 @@ definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_pa
 `VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
 the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
 fork's `crt_portable.h` spelling.
+## Zero warnings: initialisers, tags, fallthrough (2026-10-07)
+
+`fix/zero-warnings-initialisers`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Upstream-mirror files touched:
+`core/src/feature/integer_motion.c` (option terminator `{0}`), `core/src/feature/ssimulacra2.c` (`[[fallthrough]];` in
+`yuv_matrix_coeffs()`), vendored `core/src/mcp/3rdparty/cJSON/cJSON.c` (`true` / `false` are not redefined when `<stdbool.h>`
+leaves them keywords; hunk 7 of its `AGENTS.md`). On a sync keep the fork's side of each hunk. The Metal `.mm` option tables
+list their designators in the declaration order of `VmafOption` (`name, help, alias, offset, type, default_val, min, max,
+flags`) and of `VmafFeatureExtractor`; a rebase that brings a table from a branch keeps that order. The device-free Metal
+contract tests accept `{}` as the terminator.
 
 ## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
 

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1309), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1310), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5243,6 +5243,10 @@ Every ADR, one heading each (1309), so the site search finds an ADR by its title
 ## ADR-2167: `-qpfile` on libx264 applies its offsets through `quant_offsets`
 
 [2167-ffmpeg-x264-qpfile-quant-offsets](2167-ffmpeg-x264-qpfile-quant-offsets.md)
+
+## ADR-2170: A CI leg that prints no warnings turns them into errors, one leg at a time
+
+[2170-warnings-are-errors-per-leg](2170-warnings-are-errors-per-leg.md)
 
 ## ADR-2171: A weekly research radar over public video-quality sources
 

@@ -594,7 +594,9 @@ static int hip_rc(hipError_t rc)
 /* Device-dispatch helpers (mirror integer_adm_cuda.c functions)      */
 /* ------------------------------------------------------------------ */
 
+#ifndef DIV_ROUND_UP /* cuda_helper.cuh defines the same expression when it is on the path */
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
+#endif
 
 static int dwt2_8_device_hip(AdmStateHip *s, const uint8_t *d_picture, hip_adm_dwt_band_t *d_dst,
                              hip_i4_adm_dwt_band_t i4_dwt_dst, int w, int h, int src_stride,

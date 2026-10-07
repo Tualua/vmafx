@@ -936,14 +936,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_integer_cambi_metal = {
     .name              = "integer_cambi_metal",
     .init              = init_fex_metal,
-    .submit            = submit_fex_metal,
-    .collect           = collect_fex_metal,
     .flush             = nullptr,
     .close             = close_fex_metal,
+    .submit            = submit_fex_metal,
+    .collect           = collect_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerCambiStateMetal),
-    .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features = provided_features,
     .chars = {
         .n_dispatches_per_frame = 15, /* 5 scales x (mask once + filter_H + filter_V) + decimate */
         .is_reduction_only      = false,

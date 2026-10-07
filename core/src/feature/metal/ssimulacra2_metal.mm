@@ -1048,14 +1048,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_ssimulacra2_metal = {
     .name              = "ssimulacra2_metal",
     .init              = init_fex_metal,
-    .submit            = submit_fex_metal,
-    .collect           = collect_fex_metal,
     .flush             = nullptr,
     .close             = close_fex_metal,
+    .submit            = submit_fex_metal,
+    .collect           = collect_fex_metal,
     .options           = options,
     .priv_size         = sizeof(Ssimu2StateMetal),
-    .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features = provided_features,
     .chars = {
         /* Per scale: 3 mul + 5 blur*(H+V) = 3 + 10 = 13 dispatches;
          * worst-case 6 scales = 78. */
