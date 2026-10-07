@@ -81,7 +81,7 @@
 static inline int vmaf_open_bin_crt(const char *path, int oflag, int pmode)
 {
     int fd = -1;
-    const errno_t err = _sopen_s(&fd, path, oflag, _SH_DENYNO, pmode);
+    const errno_t err = _sopen_s(&fd, path, oflag, _SH_DENYNO, pmode & (_S_IREAD | _S_IWRITE));
     if (err != 0) {
         errno = err;
         return -1;

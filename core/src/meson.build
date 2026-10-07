@@ -104,11 +104,12 @@ endif
 # END VMAF strict FP compiler-argument policy
 add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])
 
-# The x86 SIMD instruction-set options. cl.exe and the Windows Intel driver do
-# not take the Unix spellings (D9002: they warn and ignore them), and their
-# intrinsics need no option, so the MSVC-syntax drivers get none; clang-cl takes
-# the Unix spellings through its Clang front end.
-vmaf_x86_isa_unix_flags_ok = cc.get_argument_syntax() != 'msvc' or _strict_fp_compiler_id == 'clang-cl'
+# The x86 SIMD instruction-set options. cl.exe does not take the Unix spellings
+# (D9002: it warns and ignores them) and its intrinsics need no option, so it
+# gets none; clang-cl and the Windows Intel driver (icx-cl) take them through
+# their Clang front end and need them for the target-feature checks of the
+# intrinsics headers.
+vmaf_x86_isa_unix_flags_ok = _strict_fp_compiler_id != 'msvc'
 vmaf_x86_avx2_isa_args = []
 vmaf_x86_avx512_isa_args = []
 if vmaf_x86_isa_unix_flags_ok

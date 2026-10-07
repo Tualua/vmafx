@@ -61,6 +61,7 @@ static double monotonic_ms()
     return duration<double, std::milli>(now).count();
 }
 
+#include "compat/crt_portable.h"
 #include "picture.h"
 #include "common.h"
 #include "dispatch_strategy.h"
@@ -1811,7 +1812,7 @@ extern "C" int vmaf_sycl_profiling_get_string(VmafSyclState *state, char **outpu
     if (len > 0)
         result.append(line, (size_t)len < sizeof(line) ? (size_t)len : sizeof(line) - 1);
 
-    *output = strdup(result.c_str());
+    *output = VMAF_STRDUP(result.c_str());
     return *output ? 0 : -ENOMEM;
 }
 

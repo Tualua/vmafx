@@ -6334,6 +6334,7 @@
         "core/test/test_barten_csf_coverage.c": 1,
         "core/test/test_brisque.c": 1,
         "core/test/test_c_cxx_enum_definition_contract.py": 1,
+        "core/test/test_cambi.c": 1,
         "core/test/test_cambi_dispatch_invariance.c": 1,
         "core/test/test_cambi_full_ref_wide_source.c": 1,
         "core/test/test_cambi_heatmap_writers.c": 1,

@@ -130,8 +130,11 @@ int vmaf_open_utf8(const char *path, int flags, int mode)
         return -1;
     }
 
+    /* _wsopen_s rejects (and aborts on) permission bits other than _S_IREAD and
+     * _S_IWRITE; _wopen ignored them, and callers pass POSIX modes such as 0644. */
     int fd = -1;
-    const errno_t open_err = _wsopen_s(&fd, wpath, flags, _SH_DENYNO, mode);
+    const errno_t open_err =
+        _wsopen_s(&fd, wpath, flags, _SH_DENYNO, mode & (_S_IREAD | _S_IWRITE));
     if (open_err != 0) {
         errno = open_err;
         return -1;
