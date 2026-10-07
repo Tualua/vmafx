@@ -34,6 +34,13 @@ definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_pa
 `VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
 the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
 fork's `crt_portable.h` spelling.
+## Warnings are errors per leg (2026-10-07)
+
+`ci/warnings-are-errors-per-leg`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `scripts/ci/werror-args.sh`, its test, and the
+`werror` row key and `$(scripts/ci/werror-args.sh ...)` call in the fork's workflows (`libvmaf-build-matrix.yml`, `sanitizers.yml`,
+`go-ci.yml`, `rust-ci.yml`, `ffmpeg-integration.yml`). `core/src/meson.build` gained `nvcc_werror_flags` and `hip_werror_args`, both empty
+unless `-Dwerror=true`. no upstream file.
+
 ## Zero warnings: icx and clang-cl driver flags (2026-10-07)
 
 `build/zero-warnings-driver-flags`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). `core/src/meson.build` is a fork file: the

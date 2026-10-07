@@ -51,22 +51,26 @@ jobs:
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
+            werror: true
             name: Ubuntu gcc
           # required-aggregator
           - os: ubuntu-latest
             CC: ccache clang-22
             CXX: ccache clang++-22
+            werror: true
             name: Ubuntu clang
           # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=disabled
+            werror: true
             name: macOS clang
           # required-aggregator
           - os: ubuntu-26.04-arm
             CC: ccache clang-22
             CXX: ccache clang++-22
+            werror: true
             name: Ubuntu ARM clang
 
           # --- DNN-enabled builds (ADR-0120) ---
@@ -87,6 +91,7 @@ jobs:
             CXX: ccache g++-14
             dnn: true
             meson_extra: -Denable_dnn=enabled
+            werror: true
             name: Ubuntu gcc+DNN
           # required-aggregator
           - os: ubuntu-latest
@@ -94,6 +99,7 @@ jobs:
             CXX: ccache clang++-22
             dnn: true
             meson_extra: -Denable_dnn=enabled
+            werror: true
             name: Ubuntu clang+DNN
           # required-aggregator
           - os: macos-latest
@@ -101,6 +107,7 @@ jobs:
             CXX: ccache clang++
             dnn: true
             meson_extra: -Denable_dnn=enabled -Denable_metal=disabled
+            werror: true
             name: macOS clang+DNN
 
           # --- Vulkan backend removed (ADR-0726) ---
@@ -126,6 +133,7 @@ jobs:
             CXX: ccache g++-14
             hip: true
             meson_extra: -Denable_hip=true
+            werror: true
             name: Ubuntu HIP
 
           # --- Metal backend (ADR-0361 scaffold, ADR-0420 runtime) ---
@@ -153,6 +161,7 @@ jobs:
             CC: ccache gcc-14
             CXX: ccache g++-14
             meson_extra: --default-library static
+            werror: true
             name: Ubuntu gcc static
           # T7-CI-DEDUP — `Build — Ubuntu SYCL Static` removed. The
           # dynamic-link `Build — Ubuntu SYCL` lane below already
@@ -168,6 +177,7 @@ jobs:
             CXX: ccache g++-14
             cuda: true
             meson_extra: --default-library static -Denable_cuda=true -Denable_nvcc=true
+            werror: true
             name: Ubuntu CUDA static
 
           # --- SYCL build (icpx for both host + SYCL sources so the device
@@ -179,6 +189,7 @@ jobs:
             CXX: icpx
             sycl: true
             meson_extra: -Denable_sycl=true -Db_lto=false
+            werror: true
             name: Ubuntu SYCL
 
           # --- CUDA build (gcc + nvcc) ---
@@ -188,6 +199,7 @@ jobs:
             CXX: ccache g++-14
             cuda: true
             meson_extra: -Denable_cuda=true -Denable_nvcc=true
+            werror: true
             name: Ubuntu CUDA
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
@@ -199,6 +211,7 @@ jobs:
             sycl: true
             cuda: true
             meson_extra: -Denable_sycl=true -Denable_cuda=true -Denable_nvcc=true -Db_lto=false
+            werror: true
             name: Ubuntu SYCL+CUDA
 
     name: ${{ matrix.name }}
@@ -522,10 +535,13 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
+          # ADR-2170: a leg that prints no warnings (`werror: true` in its row) makes them errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
             -Denable_float=true \
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} \
+            $(scripts/ci/werror-args.sh "${{ matrix.werror }}")
 
       - name: Build libvmaf
         if: steps.impact.outputs.c_core == 'true'
@@ -809,9 +825,12 @@ jobs:
 
       - name: Configure vmaf
         run: |
+          # ADR-2170: this leg prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
-            -Denable_cuda=false -Denable_sycl=false -Denable_float=true
+            -Denable_cuda=false -Denable_sycl=false -Denable_float=true \
+            $(bash scripts/ci/werror-args.sh true)
 
       - name: Build vmaf
         run: meson install -C core/build

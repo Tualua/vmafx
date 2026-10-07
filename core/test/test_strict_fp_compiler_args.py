@@ -76,9 +76,7 @@ CUDA_DEVICE_MATRIX = {
     "clang": (False, ["-Xcompiler=-ffp-contract=off"], ["-ffp-contract=off"]),
 }
 # The fatbin custom_target appends the shared list to every kernel's command.
-CUDA_FATBIN_COMMAND = (
-    "] + nvcc_thread_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags"
-)
+CUDA_FATBIN_COMMAND = "] + nvcc_thread_flags + nvcc_werror_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags"
 CUDA_FP_FLAG_WORDS = ("fmad", "ffp-contract", "fp:", "fast_math", "fast-math", "ffast")
 
 # ADR-1367: toolchain -> (is_sycl_acpp, sycl_strict_fp_args, sycl_fp32_prec_args).

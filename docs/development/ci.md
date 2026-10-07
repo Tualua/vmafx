@@ -443,6 +443,76 @@ A `fix:` PR, a `bug` title or a close keyword must touch `docs/state.md` (rule
 `no state delta: REASON` in the body. See
 [state.md gates](state-md-gates.md#bug-status-hygiene-gate-adr-0165-adr-0334).
 
+## Warnings are errors (ADR-2170)
+
+HISS-10 asks for zero warnings. A leg that prints none turns warnings into
+errors, so the pull request that adds one fails that leg. The switch is one
+script, [`scripts/ci/werror-args.sh`](../../scripts/ci/werror-args.sh), called
+from the leg's `meson setup` line (`$(scripts/ci/werror-args.sh "${{
+matrix.werror }}")` in the build matrix, `werror: true` on the matrix row).
+With `true` it prints `-Dwerror=true`, which is `-Werror` on every C and C++
+compile, and the linker's own switch in `-Dc_link_args` / `-Dcpp_link_args`
+(`-Wl,--fatal-warnings` for GNU ld, lld and MinGW; `-Wl,-fatal_warnings` for
+Apple's ld64). Any other value prints nothing, except a typo, which exits 2.
+Rust has its own gate (`cargo clippy -- -D warnings`). Release and container
+image builds do not use the script: a compiler newer than the one a leg pins
+must not stop a release over a new diagnostic.
+
+A fix for a warning changes no computed value and suppresses nothing: no
+`-Wno-*`, no `#pragma ... ignored`, no flag removed to hide a class. A
+diagnostic that is a defect of the tool needs a declared exception (one file,
+one rule, a reason, an expiry).
+
+### Legs that are gated
+
+| Workflow | Legs | Toolchain family |
+| --- | --- | --- |
+| `libvmaf-build-matrix.yml` | Ubuntu gcc, gcc static, gcc+DNN, CUDA, CUDA static, HIP | gcc 14, nvcc |
+| `libvmaf-build-matrix.yml` | Ubuntu clang, clang+DNN, ARM clang, macOS clang, macOS clang+DNN | clang 22, Apple clang |
+| `libvmaf-build-matrix.yml` | Ubuntu SYCL, SYCL+CUDA | icx / icpx |
+| `libvmaf-build-matrix.yml` | Windows UCRT64 | MinGW gcc |
+| `sanitizers.yml` | ASan+UBSan, TSan | clang 22, lld |
+| `go-ci.yml`, `rust-ci.yml` | the libvmaf build the Go and Rust jobs link | gcc |
+| `ffmpeg-integration.yml` | the libvmaf build of the Ubuntu gcc, macOS clang and SYCL legs | gcc, clang, icpx |
+
+### Legs that are not gated yet
+
+| Leg | Warnings at master `70d6dd0a5` | What is left |
+| --- | --- | --- |
+| Windows MSVC+CUDA (full), MSVC+CUDA, ARM64 MSVC | about 71,000 each | the MSVC lane (C4305, C4244, C4996) |
+| Windows MSVC+SYCL (icx-cl) | 139 | CRT `-Wdeprecated-declarations` (follows the MSVC lane's C4996 fixes), `-experimental:c11atomics` unused argument, `-Woverriding-option` of the icx-cl SYCL line |
+| macOS Metal | 515 | after the train 224 of ld64's "ignoring duplicate libraries: '-lc++'": Meson adds `-lc++` to every Objective-C++ link and the clang++ driver adds it again |
+| Dev Container Build | 204 | third-party sources built in the image (vpl-gpu-rt `-Wstringop-overflow`, FFmpeg) and gcc's LTO "serial compilation" note |
+| Docker Image Build, Tidy Ratchet, Cppcheck, CodeQL, Coverage Gate and the other jobs that compile libvmaf for analysis | 1 to 12 | the same sites as the gated legs; they gate once the train has landed and a master run shows 0 |
+| SYCL AOT device build (every SYCL leg) | 58 lines | ocloc prints the deliberate register spill of the `VmafSyclScratchProbeSpill` test kernel; compiler warnings of these legs are gated, ocloc output is not |
+
+### What has been proven
+
+Each toolchain family failed a planted warning once and passed again once it
+was removed (2026-10-07, the same build directories configured with the gate's
+arguments): gcc, clang, the MinGW cross compiler, clang for aarch64 and icx /
+icpx for `-Wunused-variable` and `-Wunused-function` in a C and a C++
+translation unit; nvcc (`--Werror all-warnings`, diagnostic `#177-D`) and
+hipcc (`-Werror`, `-Wreturn-type`) in a device kernel; GNU ld
+(`--fatal-warnings`, "requires executable stack"). Not proven on this host,
+only on the CI run of the pull request that gates them: Apple clang and ld64
+(`-fatal_warnings`), and lld (`--fatal-warnings`, the sanitizer legs: the
+compiler half is proven by clang, no default-on lld warning was found to
+plant).
+
+### Adding a leg
+
+1. Build the leg's configuration on a clean tree and count the warnings by
+   unique (file, line, flag), not by lines of log (a header diagnostic repeats
+   once per translation unit that includes it).
+2. Fix every site; run the Netflix golden gate and the fast suite.
+3. Put `werror: true` on its matrix row (or add `$(scripts/ci/werror-args.sh
+   true)` to its `meson setup`), move its row from the second table to the
+   first, and run `python3 -m unittest scripts/ci/tests/test_werror_args.py`.
+4. Prove the gate once: plant `int planted(void) { int unused; return 0; }` in
+   a throwaway branch and see the leg fail; record the run in the pull
+   request.
+
 ## Flaky legs (2026-09-04 audit)
 
 An audit of CI runs on `master` across all workflows found two leg reliability

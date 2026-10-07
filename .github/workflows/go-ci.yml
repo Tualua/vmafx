@@ -131,13 +131,16 @@ jobs:
         # source dir must be passed explicitly (or run from core/). Pre-rename
         # `meson setup core/build-cpu` worked because root had meson.build.
         run: |
+          # ADR-2170: this build prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core/build-cpu core \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
             -Denable_metal=disabled \
             -Denable_avx512=false \
-            -Denable_dnn=enabled
+            -Denable_dnn=enabled \
+            $(scripts/ci/werror-args.sh true)
           ninja -C core/build-cpu
 
       - name: go vet

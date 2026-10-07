@@ -455,6 +455,9 @@ if is_hipcc_enabled and is_hip_enabled
     # flags, not intrinsics, carry the policy. core/test/meson.build compiles
     # the device probe of test_hip_fp_arith_contract with this list.
     hip_strict_fp_args = ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']
+    # ADR-2170: `-Dwerror=true` (scripts/ci/werror-args.sh) reaches the device compilers too.
+    # Meson applies it to C and C++ targets only, and the HSACOs are custom targets.
+    hip_werror_args = get_option('werror') ? ['-Werror'] : []
     # END VMAF HIP strict FP policy
     # BEGIN VMAF HIP device code compression policy
     # ADR-1590: the code object bundle of every HIP kernel is stored as a
@@ -562,7 +565,7 @@ if is_hipcc_enabled and is_hip_enabled
             depfile: name + '.hsaco.d',
             depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
-                     hip_include_flags + hip_strict_fp_args + hip_compress_args +
+                     hip_include_flags + hip_strict_fp_args + hip_werror_args + hip_compress_args +
                      hip_kernel_extra_args.get(name, []) +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
@@ -1598,6 +1601,10 @@ if is_cuda_enabled
     # redeclaration conflict even if a future CUDA patch re-introduces the
     # mismatch. ADR-0603.
     cuda_flags = ['-D_USE_MATH_DEFINES', '-D__MATH_NO_INLINES', '--std', 'c++20']
+    # ADR-2170: `-Dwerror=true` (scripts/ci/werror-args.sh) makes every nvcc diagnostic of the
+    # fatbin targets fatal; Meson's own switch reaches C and C++ targets only. nvcc only: the
+    # clang CUDA driver (enable_nvcc=false) takes -Werror from Meson like any clang compile.
+    nvcc_werror_flags = get_option('werror') ? ['--Werror', 'all-warnings'] : []
 
     # BEGIN VMAF CUDA device strict FP policy
     # ADR-1403: no CUDA feature kernel contracts `a * b + c` into an FMA.
@@ -1786,7 +1793,7 @@ if is_cuda_enabled
                 cuda_inc_flags,
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
-            ] + nvcc_thread_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags
+            ] + nvcc_thread_flags + nvcc_werror_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags
               + nvcc_host_includes + per_kernel_flags + cuda_compress_args + nvcc_dep_flags
         )
         ptx_files += {name : [t]}

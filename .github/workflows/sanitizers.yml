@@ -129,13 +129,16 @@ jobs:
           CXX: ccache clang++-22
           LDFLAGS: -fuse-ld=lld-22
         run: |
+          # ADR-2170: this leg prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build \
             -Db_sanitize=address \
             -Dc_args="-fsanitize=undefined -fno-sanitize=function" \
             -Dcpp_args="-fsanitize=undefined -fno-sanitize=function" \
             -Denable_cuda=false -Denable_sycl=false \
             --buildtype=debug \
-            -Db_lto=false -Db_lundef=false
+            -Db_lto=false -Db_lundef=false \
+            $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Report ccache statistics
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
@@ -252,11 +255,14 @@ jobs:
           CXX: ccache clang++-22
           LDFLAGS: -fuse-ld=lld-22
         run: |
+          # ADR-2170: this leg prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build \
             -Db_sanitize=thread \
             -Denable_cuda=false -Denable_sycl=false \
             --buildtype=debug \
-            -Db_lto=false -Db_lundef=false
+            -Db_lto=false -Db_lundef=false \
+            $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Report ccache statistics
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}

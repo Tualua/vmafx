@@ -50,6 +50,16 @@
   changed.
 
 
+- **A compiler or linker warning now fails the CI leg that prints none today.** The gated legs of the
+  build matrix (gcc, clang, Apple clang, icx / icpx, MinGW, CUDA and HIP builds), the ASan, UBSan and
+  TSan builds, and the libvmaf builds of the Go, Rust and FFmpeg jobs pass `-Dwerror=true` and the
+  linker's fatal-warnings switch through `scripts/ci/werror-args.sh`; with it `-Dwerror=true` also
+  reaches the nvcc (`--Werror all-warnings`) and hipcc (`-Werror`) device compiles. Legs that are not
+  at zero yet stay as they were and are listed with their cause in
+  [the CI overview](docs/development/ci.md#warnings-are-errors-adr-2170). Release builds and container
+  images do not use the switch. See [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md).
+
+
 - **icx and the clang-cl style drivers stop warning about our own compile flags.** `icx` and `icpx`
   reported `-ffp-contract=off` after `-fp-model=precise` as `-Woverriding-option` on every compile
   (7,300 times in one CI leg). The strict policy now spells `-fp-model=precise -fno-fast-math
@@ -3171,6 +3181,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `bitrate_kbps` is now an error for these picks. Migration: results that read
   the old pick change; rerun `recommend` and the ladder, and pin a CRF
   explicitly where the higher-quality encode is wanted. See ADR-1562.
+
+
+- **A compiler or linker warning now fails the CI leg that prints none today.** The gated legs of the
+  build matrix (gcc, clang, Apple clang, icx / icpx, MinGW, CUDA and HIP builds), the ASan, UBSan and
+  TSan builds, and the libvmaf builds of the Go, Rust and FFmpeg jobs pass `-Dwerror=true` and the
+  linker's fatal-warnings switch through `scripts/ci/werror-args.sh`; with it `-Dwerror=true` also
+  reaches the nvcc (`--Werror all-warnings`) and hipcc (`-Werror`) device compiles. Legs that are not
+  at zero yet stay as they were and are listed with their cause in
+  [the CI overview](docs/development/ci.md#warnings-are-errors-adr-2170). Release builds and container
+  images do not use the switch. See [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md).
 
 
 - **icx and the clang-cl style drivers stop warning about our own compile flags.** `icx` and `icpx`

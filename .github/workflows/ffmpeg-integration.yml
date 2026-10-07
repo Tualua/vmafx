@@ -87,7 +87,10 @@ jobs:
 
       - name: Build vmaf
         run: |
-          meson setup core core/build --buildtype release -Denable_metal=disabled
+          # ADR-2170: this libvmaf build prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup core core/build --buildtype release -Denable_metal=disabled \
+            $(scripts/ci/werror-args.sh true)
           sudo ninja -vC core/build install
 
       - name: Build FFmpeg
@@ -222,8 +225,11 @@ jobs:
           # b_lto=false: see libvmaf-build-matrix.yml note; icx + meson's
           # -flto=auto leaves the static archive without LTO bitcode and
           # breaks the .so link.
+          # ADR-2170: this libvmaf build prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
-            -Denable_float=true -Denable_sycl=true -Db_lto=false
+            -Denable_float=true -Denable_sycl=true -Db_lto=false \
+            $(scripts/ci/werror-args.sh true)
           sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
             ninja -vC core/build install
 
