@@ -92,9 +92,9 @@ static uint32_t float_bits(float v)
 static int add_differs(double a, double b)
 {
     const volatile double sum = a + b;
-    const uint64_t got = vmaf_test_cov_soft_add(bits_of(a), bits_of(b));
-    if (got != bits_of(sum)) {
-        (void)fprintf(stderr, "[add %a + %a: got %a want %a] ", a, b, from_bits(got), sum);
+    const uint64_t chain = vmaf_test_cov_soft_add(bits_of(a), bits_of(b));
+    if (chain != bits_of(sum)) {
+        (void)fprintf(stderr, "[add %a + %a: got %a want %a] ", a, b, from_bits(chain), sum);
         return 1;
     }
     return 0;
@@ -201,7 +201,8 @@ static char *test_cases_blocks(void)
 static float frame140_mean(uint32_t element)
 {
     const float *base = speed_cov_frame140_plane +
-                        (element / F140_BLOCK) * SPEED_COV_FRAME140_WIDTH + element % F140_BLOCK;
+                        ((size_t)(element / F140_BLOCK) * SPEED_COV_FRAME140_WIDTH) +
+                        (element % F140_BLOCK);
     float result = 0.0f;
     for (size_t i = 0; i < F140_SUB_H; i++) {
         for (size_t j = 0; j < F140_SUB_W; j++) {
@@ -213,8 +214,8 @@ static float frame140_mean(uint32_t element)
 
 static const float *frame140_block(uint32_t element)
 {
-    return speed_cov_frame140_plane + (element / F140_BLOCK) * SPEED_COV_FRAME140_WIDTH +
-           element % F140_BLOCK;
+    return speed_cov_frame140_plane + ((size_t)(element / F140_BLOCK) * SPEED_COV_FRAME140_WIDTH) +
+           (element % F140_BLOCK);
 }
 
 static unsigned frame140_entry(uint32_t x, uint32_t y, const float *means, uint32_t slice_rows)

@@ -863,10 +863,13 @@ int import_exported_surface(const VaSurfaceArgs &a, const VADRMPRIMESurfaceDescr
 
 } // namespace
 
+namespace
+{
+
 /* The import proper; vmaf_sycl_import_va_surface() times every return path of it. */
-static int import_va_surface_body(VmafSyclState *state, void *va_display_handle,
-                                  unsigned int va_surface_id, int is_ref, unsigned w, unsigned h,
-                                  unsigned bpc)
+int import_va_surface_body(VmafSyclState *state, void *va_display_handle,
+                           unsigned int va_surface_id, int is_ref, unsigned w, unsigned h,
+                           unsigned bpc)
 {
     const VaSurfaceArgs args = {.state = state,
                                 .va_display_handle = va_display_handle,
@@ -900,6 +903,8 @@ static int import_va_surface_body(VmafSyclState *state, void *va_display_handle,
         return cplan_err;
     return import_exported_surface(args, desc, &cplan);
 }
+
+} // namespace
 
 extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display_handle,
                                            unsigned int va_surface_id, int is_ref, unsigned w,

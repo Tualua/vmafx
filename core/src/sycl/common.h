@@ -703,6 +703,7 @@ void vmaf_sycl_print_timing(VmafSyclState *state);
  * Host phases timed under VMAF_SYCL_TIMING=1 (average host ms per frame in the
  * `[vmaf-sycl] phases:` line). Plain C enum: no underlying type, C callers read it.
  */
+/* NOLINTNEXTLINE(performance-enum-size): C header included by C and C++ translation units; C has no fixed underlying enum type across the required toolchains. ADR-1138. */
 enum VmafSyclPhase {
     VMAF_SYCL_PHASE_QUEUE_WAIT,
     VMAF_SYCL_PHASE_COMBINED_WAIT,

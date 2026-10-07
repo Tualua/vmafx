@@ -6243,6 +6243,7 @@
         "core/src/model.c": 1,
         "core/src/pdjson.c": 1,
         "core/src/predict.c": 1,
+        "core/src/sycl/common.h": 1,
         "core/src/sycl/picture_sycl.h": 1,
         "core/src/thread_pool.c": 1,
         "core/src/x86/avx512_warm_up.h": 1,

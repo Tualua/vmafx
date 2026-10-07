@@ -234,7 +234,14 @@ extern "C" void vmaf_test_sycl_cov_host(const float *x, const float *y, const fl
                                         const float *mean_y, size_t n, size_t stride,
                                         uint32_t width, uint32_t height, float *out)
 {
-    const CaseArgs a{x, y, mean_x, mean_y, out, stride, width, height};
+    const CaseArgs a{.x = x,
+                     .y = y,
+                     .mean_x = mean_x,
+                     .mean_y = mean_y,
+                     .out = out,
+                     .stride = stride,
+                     .width = width,
+                     .height = height};
     for (size_t i = 0; i < n; i++) {
         out[i] = one_case(a, i);
     }
@@ -260,7 +267,14 @@ extern "C" int vmaf_test_sycl_cov_device(const float *x, const float *y, const f
     }
     try {
         sycl::queue q(*device);
-        const CaseArgs a{x, y, mean_x, mean_y, out, stride, width, height};
+        const CaseArgs a{.x = x,
+                         .y = y,
+                         .mean_x = mean_x,
+                         .mean_y = mean_y,
+                         .out = out,
+                         .stride = stride,
+                         .width = width,
+                         .height = height};
         run_cases(q, a, n);
     } catch (const std::exception &) {
         return -EIO;
@@ -288,7 +302,14 @@ extern "C" int vmaf_test_sycl_cov_split_device(const float *x, const float *y, c
     }
     try {
         sycl::queue q(*device);
-        const CaseArgs a{x, y, mean_x, mean_y, out, stride, width, height};
+        const CaseArgs a{.x = x,
+                         .y = y,
+                         .mean_x = mean_x,
+                         .mean_y = mean_y,
+                         .out = out,
+                         .stride = stride,
+                         .width = width,
+                         .height = height};
         run_split_cases(q, a, n);
     } catch (const std::exception &) {
         return -EIO;

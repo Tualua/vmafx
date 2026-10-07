@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "feature/speed_cov.h"
+#include "float_bits.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
@@ -177,7 +178,8 @@ static unsigned count_wrong(const char *where)
 {
     unsigned wrong = 0u;
     for (size_t c = 0; c < CASES; c++) {
-        if (memcmp(&got[c], &want[c], sizeof(float)) != 0 && !(got[c] == 0.0f && want[c] == 0.0f)) {
+        if (vmaf_test_bits_f32(got[c]) != vmaf_test_bits_f32(want[c]) &&
+            !(got[c] == 0.0f && want[c] == 0.0f)) {
             if (wrong < 4u) {
                 (void)fprintf(stderr, "[%s case %zu: got %a want %a] ", where, c, (double)got[c],
                               (double)want[c]);
