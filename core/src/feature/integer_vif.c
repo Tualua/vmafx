@@ -336,9 +336,9 @@ static FORCE_INLINE void vif_accumulate_pixel(VifResiduals *acc, const uint16_t 
 
 static void vif_store_residuals(const VifResiduals *acc, float *num, float *den)
 {
-    num[0] = acc->accum_num_log / 2048.0 +
-             (acc->accum_den_non_log - ((acc->accum_num_non_log) / 16384.0) / (65025.0));
-    den[0] = acc->accum_den_log / 2048.0 + acc->accum_den_non_log;
+    num[0] = (float)(acc->accum_num_log / 2048.0 +
+                     (acc->accum_den_non_log - ((acc->accum_num_non_log) / 16384.0) / (65025.0)));
+    den[0] = (float)(acc->accum_den_log / 2048.0 + acc->accum_den_non_log);
 }
 
 /* Vertical filter pass of source row i for the 8-bit scale-0 statistic. */

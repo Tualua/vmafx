@@ -3449,7 +3449,7 @@ bool SVMModelParser<TSource>::parse_header_scalar(std::string &buffer, svm_param
         param.svm_type = -1;
         for (size_t i = 0; svm_type_table[i]; ++i) {
             if (buffer == svm_type_table[i]) {
-                param.svm_type = i;
+                param.svm_type = (int)i;
                 break;
             }
         }
@@ -3459,7 +3459,7 @@ bool SVMModelParser<TSource>::parse_header_scalar(std::string &buffer, svm_param
         exceptAssert(model_source.read_next(buffer), "Failed to read kernel_type.");
         for (size_t i = 0; kernel_type_table[i]; ++i) {
             if (buffer == kernel_type_table[i]) {
-                param.kernel_type = i;
+                param.kernel_type = (int)i;
                 break;
             }
         }

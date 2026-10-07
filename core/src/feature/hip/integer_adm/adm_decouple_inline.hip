@@ -96,7 +96,7 @@ __device__ __forceinline__ int16_t decouple_r_s0(int16_t oh, int16_t ov, int16_t
     if (!angle_flag)
         adm_enhn_gain_limit = 1;
 
-    int32_t rst = (int32_t)(((k * (int32_t)o_val) + 16384) >> 15) * adm_enhn_gain_limit;
+    int32_t rst = (int32_t)((int32_t)(((k * (int32_t)o_val) + 16384) >> 15) * adm_enhn_gain_limit);
     const int32_t rst_s = k * (int32_t)o_val;
 
     if (angle_flag) {
@@ -161,7 +161,7 @@ __device__ __forceinline__ int32_t decouple_r_s123(int32_t oh, int32_t ov, int32
     const int64_t tmp_k =
         (o_val == 0) ?
             32768 :
-            (((int64_t)(div_Q_factor / o_msb) * t_val) * sign_o + (1 << (14 + kh_shift))) >>
+            (((int64_t)(div_Q_factor / o_msb) * t_val) * sign_o + (int64_t)(1 << (14 + kh_shift))) >>
                 (15 + kh_shift);
 
     const int64_t k = tmp_k < 0 ? 0 : (tmp_k > 32768 ? 32768 : tmp_k);

@@ -12,6 +12,16 @@ search:
 `fix/msvc-zero-warnings-tests`. Netflix-mirror tests (`test_speed_chroma.c`, `test_vif_tools.c`, `test_ciede.c`, `test_cambi.c`,
 `test_barten_csf.c`, `test_adm_csf_tools_coverage.c`, `test_float_adm_csf_upstream.c`) keep upstream's values; the fork adds `f` suffixes to
 float tables and explicit `(float)` / `(int)` conversions. On a sync conflict keep upstream's numbers and re-apply the suffix/cast.
+## Feature sources: MSVC zero-warning conversions (2026-10-07)
+
+`fix/msvc-zero-warnings-feature`. Upstream-mirror files (`adm_tools.[ch]`, `adm_csf_tools.h`, `barten_csf_tools.h`, `integer_adm*.[ch]`,
+`integer_vif.c`, `vif*.c`, `vif_tools.c`, `speed*.c`, `ciede.c`, `cambi.c`, `motion_tools.h`, `iqa/ssim_tools.c`, `third_party/xiph/psnr_hvs.c`, the
+`x86/` and `arm64/` twins) gain explicit `(float)` / `(int)` / `(double)` conversions where the compiler converted implicitly, and `f` on float
+table literals. On a sync conflict keep upstream's expression and re-apply the cast on the statement the conversion belongs to; two forms
+need care: `x += double` is `x = (float)(x + double)` (never `x += (float)double`, which rounds twice), and `speed*.c`'s entropy update keeps
+the increment in a `double` so the load of `entropy[i]` stays after the `log2()` calls. The twin contract tests
+(`test_*_exact_contract.py`, `test_sycl_vif_float_sums_contract.py`) quote the new statements. A statement-for-statement mirror in a GPU twin needs no
+change: the value is the same.
 
 ## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
 

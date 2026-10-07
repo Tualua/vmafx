@@ -50,19 +50,19 @@ FORCE_INLINE float adm_native_csf(int lambda, double adm_norm_view_dist, int adm
                                   int theta)
 {
     /* This is the display visual resolution (DVR), in pixels/degree of visual angle. It should be ~56.55. */
-    float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
+    float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
     /* This is the nominal spatial frequency for each DWT level; first level (level = 0) is half of the DVR. */
-    float spatial_frequency = r / pow(2, lambda + 1);
+    float spatial_frequency = (float)(r / pow(2, lambda + 1));
 
     /*
      * Oblique effect: the HVS is more sensitive to the horizontal and vertical
      * channels than the diagonal channels.
      */
     if (theta == 45) {
-        spatial_frequency /= 0.7;
+        spatial_frequency = (float)(spatial_frequency / (0.7));
     }
 
-    return (0.31 + 0.69 * spatial_frequency) * exp(-0.29 * spatial_frequency);
+    return (float)((0.31 + 0.69 * spatial_frequency) * exp(-0.29 * spatial_frequency));
 }
 
 #endif /* ADM_CSF_TOOLS_H_ */

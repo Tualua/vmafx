@@ -410,7 +410,7 @@ int parse_libsvm_model(json_stream *s, VmafModel *model)
      * file; the pair is not in scripts/ci/twin-drift-allowlist.txt.
      * svm_free_and_destroy_model is null-safe and clears the pointer. */
     svm_free_and_destroy_model(&model->svm);
-    model->svm = svm_parse_model_from_buffer(libsvm_model, sz);
+    model->svm = svm_parse_model_from_buffer(libsvm_model, (unsigned int)sz);
     if (!model->svm)
         return -ENOMEM;
 

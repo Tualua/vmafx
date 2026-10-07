@@ -68,18 +68,18 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
 {
     // Formula (1), page 1165 - display visual resolution (DVR), in pixels/degree
     // of visual angle. This should be 56.55
-    float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
+    float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
 
     // Formula (9), page 1171
-    float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
+    float temp = (float)log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
     /* Upstream's expression (Netflix/vmaf libvmaf/src/feature/integer_adm.c,
      * dwt_quant_step()): the exponent k * temp * temp is a float product, and
      * only its result is promoted for pow(). Widening an operand changes
      * every CSF weight in the last digits and with it every integer ADM
      * score. The cast widens the product's result, as upstream's implicit
      * promotion does (ADR-1475). */
-    float Q = 2.0 * params->a * pow(10.0, (double)(params->k * temp * temp)) /
-              dwt_7_9_basis_function_amplitudes[lambda][theta];
+    float Q = (float)(2.0 * params->a * pow(10.0, (double)(params->k * temp * temp)) /
+                      dwt_7_9_basis_function_amplitudes[lambda][theta]);
 
     return Q;
 }
@@ -258,7 +258,7 @@ static inline int adm_angle_flag(int64_t ot_dp, int64_t o_mag_sq, int64_t t_mag_
 /* cos(1 degree)^2, narrowed to float as every decouple stage uses it. */
 static inline float adm_cos_1deg_sq(void)
 {
-    return cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
+    return (float)(cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0));
 }
 
 /**
@@ -282,10 +282,10 @@ static inline int16_t adm_decouple_band(const int32_t *lut, double gain, int ang
     const float rst_f = ((float)k / 32768) * ((float)o / 64);
 
     if (angle_flag && (rst_f > 0.)) {
-        rst = ADM_KERNEL_MIN((rst * gain), t);
+        rst = (int16_t)(ADM_KERNEL_MIN((rst * gain), t));
     }
     if (angle_flag && (rst_f < 0.)) {
-        rst = ADM_KERNEL_MAX((rst * gain), t);
+        rst = (int16_t)(ADM_KERNEL_MAX((rst * gain), t));
     }
     return rst;
 }
@@ -373,14 +373,14 @@ static inline int32_t adm_decouple_band_s123(const int32_t *lut, double gain, in
                 (15 + k_shift);
     const int64_t k = tmp_k < 0 ? 0 : (tmp_k > 32768 ? 32768 : tmp_k);
 
-    int32_t rst = ((k * o) + 16384) >> 15;
+    int32_t rst = (int32_t)(((k * o) + 16384) >> 15);
     const float rst_f = ((float)k / 32768) * ((float)o / 64);
 
     if (angle_flag && (rst_f > 0.)) {
-        rst = ADM_KERNEL_MIN((rst * gain), t);
+        rst = (int32_t)(ADM_KERNEL_MIN((rst * gain), t));
     }
     if (angle_flag && (rst_f < 0.)) {
-        rst = ADM_KERNEL_MAX((rst * gain), t);
+        rst = (int32_t)(ADM_KERNEL_MAX((rst * gain), t));
     }
     return rst;
 }
@@ -600,10 +600,10 @@ static inline void i4_adm_csf_cols(const I4AdmCsfCtx *c, int theta, ptrdiff_t of
  * of the reduced area. */
 static inline float adm_den_scale_finalise(const double csf[3], int area, double adm_noise_weight)
 {
-    const float powf_add = powf(area * adm_noise_weight, 1.0f / 3.0f);
-    const float den_scale_h = powf(csf[0], 1.0f / 3.0f) + powf_add;
-    const float den_scale_v = powf(csf[1], 1.0f / 3.0f) + powf_add;
-    const float den_scale_d = powf(csf[2], 1.0f / 3.0f) + powf_add;
+    const float powf_add = powf((float)(area * adm_noise_weight), 1.0f / 3.0f);
+    const float den_scale_h = powf((float)csf[0], 1.0f / 3.0f) + powf_add;
+    const float den_scale_v = powf((float)csf[1], 1.0f / 3.0f) + powf_add;
+    const float den_scale_d = powf((float)csf[2], 1.0f / 3.0f) + powf_add;
 
     return (den_scale_h + den_scale_v + den_scale_d);
 }
@@ -910,7 +910,7 @@ static inline void adm_cm_fold_s0(uint64_t inner[3], uint64_t accum[3],
 static inline float adm_num_scale(float f_accum, int area, double adm_noise_weight,
                                   float p_norm_exp)
 {
-    return powf(f_accum, p_norm_exp) + powf(area * adm_noise_weight, p_norm_exp);
+    return powf(f_accum, p_norm_exp) + powf((float)(area * adm_noise_weight), p_norm_exp);
 }
 
 /* Rows and columns a contrast-masking reduction visits. The border is
@@ -1225,9 +1225,9 @@ static inline float i4_adm_cm_result(const I4AdmCmCtx *c, const AdmCmBounds *bd,
 {
     const int restored_bits = 3 * (int)c->normalization_shift;
     const float final_shift[3] = {
-        pow(2, (45 - restored_bits - (int)c->band.shift_cub - (int)c->shift_inner_accum)),
-        pow(2, (39 - restored_bits - (int)c->band.shift_cub - (int)c->shift_inner_accum)),
-        pow(2, (36 - restored_bits - (int)c->band.shift_cub - (int)c->shift_inner_accum))};
+        (float)pow(2, (45 - restored_bits - (int)c->band.shift_cub - (int)c->shift_inner_accum)),
+        (float)pow(2, (39 - restored_bits - (int)c->band.shift_cub - (int)c->shift_inner_accum)),
+        (float)pow(2, (36 - restored_bits - (int)c->band.shift_cub - (int)c->shift_inner_accum))};
     const unsigned slot = i4_scale_slot(c->scale);
     const float f_accum_h = (float)(accum[0] / final_shift[slot]);
     const float f_accum_v = (float)(accum[1] / final_shift[slot]);

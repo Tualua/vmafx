@@ -62,9 +62,8 @@ TAIL_LINES = (
 )
 # The same two lines in the CPU's own spelling.
 CPU_TAIL_LINES = (
-    "num[0] = acc->accum_num_log / 2048.0 + (acc->accum_den_non_log - "
-    "((acc->accum_num_non_log) / 16384.0) / (65025.0));",
-    "den[0] = acc->accum_den_log / 2048.0 + acc->accum_den_non_log;",
+    "num[0] = (float)(acc->accum_num_log / 2048.0 + (acc->accum_den_non_log - ((acc->accum_num_non_log) / 16384.0) / (65025.0)));",
+    "den[0] = (float)(acc->accum_den_log / 2048.0 + acc->accum_den_non_log);",
 )
 # 65536 * 1.0e-10 as an fp64 significand and exponent.
 EPS_MANT = "0x1b7cdfd9d7bdbb"

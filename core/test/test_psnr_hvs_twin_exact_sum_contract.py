@@ -58,8 +58,8 @@ NEON = "arm64/psnr_hvs_neon.c"
 # PR #552 added.
 CPU_THRESHOLDS = {
     SCALAR: (
-        "s_mask = sqrt((double)(s_mask * s_gvar)) / 32.f;",
-        "d_mask = sqrt((double)(d_mask * d_gvar)) / 32.f;",
+        "s_mask = (float)(sqrt((double)(s_mask * s_gvar)) / 32.f);",
+        "d_mask = (float)(sqrt((double)(d_mask * d_gvar)) / 32.f);",
     ),
     AVX2: (
         "b->s_mask = (float)(sqrt((double)(b->s_mask * b->s_gvar)) / 32.0);",

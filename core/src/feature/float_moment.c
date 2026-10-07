@@ -128,16 +128,16 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     picture_copy(s->dist, s->float_stride, dist_pic, 0, dist_pic->bpc, 0);
 
     double score[4];
-    err = s->moment1(s->ref, ref_pic->w[0], ref_pic->h[0], s->float_stride, &score[0]);
+    err = s->moment1(s->ref, ref_pic->w[0], ref_pic->h[0], (int)s->float_stride, &score[0]);
     if (err)
         return err;
-    err = s->moment1(s->dist, dist_pic->w[0], dist_pic->h[0], s->float_stride, &score[1]);
+    err = s->moment1(s->dist, dist_pic->w[0], dist_pic->h[0], (int)s->float_stride, &score[1]);
     if (err)
         return err;
-    err = s->moment2(s->ref, ref_pic->w[0], ref_pic->h[0], s->float_stride, &score[2]);
+    err = s->moment2(s->ref, ref_pic->w[0], ref_pic->h[0], (int)s->float_stride, &score[2]);
     if (err)
         return err;
-    err = s->moment2(s->dist, dist_pic->w[0], dist_pic->h[0], s->float_stride, &score[3]);
+    err = s->moment2(s->dist, dist_pic->w[0], dist_pic->h[0], (int)s->float_stride, &score[3]);
     if (err)
         return err;
 

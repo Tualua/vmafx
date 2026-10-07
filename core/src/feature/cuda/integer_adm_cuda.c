@@ -286,8 +286,8 @@ static int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int
 
     /* The computation of the score is not required for the regions
        which lie outside the frame borders */
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f - 1; // -1 for filter tap
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f - 1;
+    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f - 1); // -1 for filter tap
+    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f - 1);
     int right = w - left + 2; // +2 for filter tap
     int bottom = h - top + 2;
 
@@ -335,8 +335,8 @@ static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int
 
     /* The computation of the score is not required for the regions
        which lie outside the frame borders */
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f - 1; // -1 for filter tap
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f - 1;
+    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f - 1); // -1 for filter tap
+    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f - 1);
     int right = w - left + 2; // +2 for filter tap
     int bottom = h - top + 2;
 
@@ -420,8 +420,8 @@ static int i4_adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, i
                             int csf_a_stride, int scale, AdmFixedParametersCuda *p,
                             CudaFunctions *cu_f, CUstream c_stream)
 {
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
+    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
+    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
     int right = w - left;
     int bottom = h - top;
 
@@ -477,8 +477,8 @@ typedef struct AdmCmRegion {
 static AdmCmRegion adm_cm_region_scale0(int w, int h)
 {
     AdmCmRegion r;
-    r.left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    r.top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
+    r.left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
+    r.top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
     r.right = w - r.left;
     r.bottom = h - r.top;
 
@@ -500,7 +500,7 @@ static WarpShift adm_cm_warp_shift_scale0(int w)
 
     WarpShift ws;
     for (int band = 0; band < NUM_BANDS; ++band) {
-        ws.shift_cub[band] = (uint32_t)(ceilf(log2f(w)));
+        ws.shift_cub[band] = (uint32_t)(ceilf(log2f((float)w)));
         ws.shift_cub[band] -= fixed_shift[band];
         ws.shift_sq[band] = shift_xsq[band];
         ws.add_shift_sq[band] = add_shift_xsq[band];
@@ -522,7 +522,7 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
     WarpShift ws = adm_cm_warp_shift_scale0(w);
 
     // precompute global shift
-    uint32_t shift_inner_accum = (uint32_t)(ceilf(log2f(h)));
+    uint32_t shift_inner_accum = (uint32_t)(ceilf(log2f((float)h)));
     uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     // fused
@@ -568,8 +568,8 @@ static int i4_adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int 
                                 int csf_a_stride, int scale, AdmFixedParametersCuda *p,
                                 CudaFunctions *cu_f, CUstream c_stream)
 {
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
+    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
+    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
     int right = w - left;
     int bottom = h - top;
     int start_col = (left > 1) ? left : ((left <= 0) ? 0 : 1);
@@ -640,7 +640,7 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     int buffer_h = r.end_row - r.start_row;
 
     WarpShift ws = adm_cm_warp_shift_scale0(w);
-    uint32_t shift_inner_accum = (uint32_t)(ceilf(log2f(h)));
+    uint32_t shift_inner_accum = (uint32_t)(ceilf(log2f((float)h)));
     uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     const int BLOCKX = 32;
@@ -1029,8 +1029,8 @@ static AdmFixedParametersCuda adm_fixed_parameters(const AdmStateCuda *s, int w,
         .dwt2_db2_coeffs_hi = {-4240, -7345, 27411, -15826},
         .dwt2_db2_coeffs_lo_sum = 46342,
         .dwt2_db2_coeffs_hi_sum = 0,
-        .log2_w = log2(w),
-        .log2_h = log2(h),
+        .log2_w = (float)(log2(w)),
+        .log2_h = (float)(log2(h)),
         .adm_ref_display_height = adm_ref_display_height,
         .adm_norm_view_dist = adm_norm_view_dist,
         .adm_enhn_gain_limit = adm_enhn_gain_limit,
@@ -1069,23 +1069,23 @@ static int adm_dwt2_scale0(AdmStateCuda *s, AdmBufferCuda *buf, VmafPicture *ref
     int err;
     if (ref_pic->bpc == 8) {
         err = dwt2_8_device(s, (const uint8_t *)ref_pic->data[0], &buf->ref_dwt2, buf->i4_ref_dwt2,
-                            w, h, ref_stride, buf_stride, p, cu_f,
+                            w, h, (int)ref_stride, (int)buf_stride, p, cu_f,
                             vmaf_cuda_picture_get_stream(ref_pic));
         if (err) {
             return err;
         }
         err = dwt2_8_device(s, (const uint8_t *)dis_pic->data[0], &buf->dis_dwt2, buf->i4_dis_dwt2,
-                            w, h, dis_stride, buf_stride, p, cu_f,
+                            w, h, (int)dis_stride, (int)buf_stride, p, cu_f,
                             vmaf_cuda_picture_get_stream(dis_pic));
     } else {
         err = adm_dwt2_16_device(s, (uint16_t *)ref_pic->data[0], &buf->ref_dwt2, buf->i4_ref_dwt2,
-                                 w, h, ref_stride, buf_stride, ref_pic->bpc, p, cu_f,
+                                 w, h, (int)ref_stride, (int)buf_stride, ref_pic->bpc, p, cu_f,
                                  vmaf_cuda_picture_get_stream(ref_pic));
         if (err) {
             return err;
         }
         err = adm_dwt2_16_device(s, (uint16_t *)dis_pic->data[0], &buf->dis_dwt2, buf->i4_dis_dwt2,
-                                 w, h, dis_stride, buf_stride, dis_pic->bpc, p, cu_f,
+                                 w, h, (int)dis_stride, (int)buf_stride, dis_pic->bpc, p, cu_f,
                                  vmaf_cuda_picture_get_stream(dis_pic));
     }
     return err;
@@ -1143,21 +1143,21 @@ static int adm_scale0_device(VmafFeatureExtractor *fex, AdmStateCuda *s, VmafPic
 
     // consumes buf->ref_dwt2
     // produces buf->adm_csf_den[0]
-    err = adm_csf_den_scale_device(s, buf, w, h, buf_stride, cu_f, s->str);
+    err = adm_csf_den_scale_device(s, buf, w, h, (int)buf_stride, cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->ref_dwt2 , buf->dis_dwt2 (inline decouple)
     // produces buf->csf_f
-    err = adm_csf_device(s, buf, w, h, buf_stride, p, cu_f, s->str);
+    err = adm_csf_device(s, buf, w, h, (int)buf_stride, p, cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->ref_dwt2, buf->dis_dwt2, buf->csf_f (inline decouple + csf_a)
     // produces buf->adm_cm[0]
-    err = adm_cm_device(s, buf, w, h, buf_stride, buf_stride, p, cu_f, s->str);
+    err = adm_cm_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, p, cu_f, s->str);
     if (err) {
         return err;
     }
@@ -1165,7 +1165,7 @@ static int adm_scale0_device(VmafFeatureExtractor *fex, AdmStateCuda *s, VmafPic
     // AIM CM scale 0: consumes ref_dwt2, dis_dwt2 (inline decouple, no csf_f)
     // produces buf->adm_aim_cm[0]
     if (!s->adm_skip_aim) {
-        err = adm_cm_aim_device(s, buf, w, h, buf_stride, buf_stride, p, cu_f, s->str);
+        err = adm_cm_aim_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, p, cu_f, s->str);
     }
     return err;
 }
@@ -1178,15 +1178,15 @@ static int adm_scale123_device(AdmStateCuda *s, AdmBufferCuda *buf, AdmFixedPara
     // consumes buf->i4_ref_dwt2.band_a , buf->i4_dis_dwt2.band_a
     // produces buf->i4_ref_dwt2.band_[ahvd] , buf->i4_dis_dwt2.band_[ahvd]
     // uses buf->tmp_ref
-    int err = adm_dwt2_s123_combined_device(s, buf->i4_ref_dwt2.band_a,
-                                            adm_device_ptr(buf->tmp_ref->data), buf->i4_ref_dwt2, w,
-                                            h, buf_stride, buf_stride, scale, p, cu_f, s->str);
+    int err = adm_dwt2_s123_combined_device(
+        s, buf->i4_ref_dwt2.band_a, adm_device_ptr(buf->tmp_ref->data), buf->i4_ref_dwt2, w, h,
+        (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
     if (err) {
         return err;
     }
     err = adm_dwt2_s123_combined_device(s, buf->i4_dis_dwt2.band_a,
                                         adm_device_ptr(buf->tmp_dis->data), buf->i4_dis_dwt2, w, h,
-                                        buf_stride, buf_stride, scale, p, cu_f, s->str);
+                                        (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
     if (err) {
         return err;
     }
@@ -1196,21 +1196,21 @@ static int adm_scale123_device(AdmStateCuda *s, AdmBufferCuda *buf, AdmFixedPara
 
     // consumes buf->i4_ref_dwt2
     // produces buf->adm_csf_den[1,2,3]
-    err = adm_csf_den_s123_device(s, buf, scale, w, h, buf_stride, cu_f, s->str);
+    err = adm_csf_den_s123_device(s, buf, scale, w, h, (int)buf_stride, cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->i4_ref_dwt2 , buf->i4_dis_dwt2 (inline decouple)
     // produces buf->i4_csf_f
-    err = i4_adm_csf_device(s, buf, scale, w, h, buf_stride, p, cu_f, s->str);
+    err = i4_adm_csf_device(s, buf, scale, w, h, (int)buf_stride, p, cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->i4_ref_dwt2, buf->i4_dis_dwt2, buf->i4_csf_f (inline decouple + csf_a)
     // produces buf->adm_cm[1,2,3]
-    err = i4_adm_cm_device(s, buf, w, h, buf_stride, buf_stride, scale, p, cu_f, s->str);
+    err = i4_adm_cm_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
     if (err) {
         return err;
     }
@@ -1218,7 +1218,8 @@ static int adm_scale123_device(AdmStateCuda *s, AdmBufferCuda *buf, AdmFixedPara
     // AIM CM scales 1-3: consumes i4_ref_dwt2, i4_dis_dwt2 (fully inline)
     // produces buf->adm_aim_cm[1,2,3]
     if (!s->adm_skip_aim) {
-        err = i4_adm_cm_aim_device(s, buf, w, h, buf_stride, buf_stride, scale, p, cu_f, s->str);
+        err = i4_adm_cm_aim_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, scale, p, cu_f,
+                                   s->str);
     }
     return err;
 }

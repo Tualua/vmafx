@@ -6,6 +6,16 @@
 ## [Unreleased]
 ### Changed
 
+- The scoring sources compile without an MSVC warning (about 8,000 C4305 / C4244 /
+  C4267 / C4334 sites across the CPU extractors, their SIMD twins and the CUDA
+  host code): every implicit double-to-float, 64-to-32-bit and size_t-to-int
+  conversion is written out, and a float table carries the `f` suffix only where
+  the literal converts to the same bits. No score changes: each touched
+  translation unit compiles to the same machine code as before (checked with
+  GCC on x86-64, clang on aarch64 and the CUDA host objects), and the Netflix
+  golden gate is unchanged.
+
+
 - The unit tests compile without an MSVC warning (about 71,000 per Windows job
   before): float tables carry the `f` suffix (every literal checked to equal the
   value the implicit double-to-float conversion gave), narrowing conversions are
@@ -1823,6 +1833,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   value the implicit double-to-float conversion gave), narrowing conversions are
   explicit, and C test cases are declared `(void)`. No test value or tolerance
   changed.
+- The scoring sources compile without an MSVC warning (about 8,000 C4305 / C4244 /
+  C4267 / C4334 sites across the CPU extractors, their SIMD twins and the CUDA
+  host code): every implicit double-to-float, 64-to-32-bit and size_t-to-int
+  conversion is written out, and a float table carries the `f` suffix only where
+  the literal converts to the same bits. No score changes: each touched
+  translation unit compiles to the same machine code as before (checked with
+  GCC on x86-64, clang on aarch64 and the CUDA host objects), and the Netflix
+  golden gate is unchanged.
 
 
 - **Building `vmafx-node` now generates its eBPF object; none is committed
@@ -5346,6 +5364,16 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   where the fork returns the error instead of asserting).
 
 
+- **The float extractors refuse 9, 11, 13, 14 and 15-bit pictures instead of
+  scoring them wrongly.** `float_ssim`, `float_ms_ssim`, `float_adm`,
+  `float_vif` and `float_motion`, on the CPU and on every GPU backend, scaled
+  10, 12 and 16-bit samples only and read every other depth above 8 as 8-bit
+  bytes, so they returned wrong scores for those depths without an error. They
+  now fail at initialisation with `-EINVAL` and a log line naming the extractor
+  and the depth. Other extractors keep their odd-depth support. The CLI and the
+  FFmpeg filters never passed these depths; programs using the C API could.
+
+
 - **The model-registry schema tests run in the Python harness suite.** `python/test/model_registry_schema_test.py`
   skipped its whole module when `jsonschema` was not installed. `jsonschema` is now in
   `python/requirements-test.in` and its hash lock, and a missing install is an error, not a skip.
@@ -5382,6 +5410,14 @@ The `--restore-tracked` step that drops unusable restored CI fixtures no longer 
   files in the PR diff belong strictly to the approved release file set
   (`.release-please-manifest.json`, `release-please-config.json`, `CHANGELOG.md`,
   `changelog.d/*`, `docs/changelog-archive/*`, and coordinated version markers).
+
+
+- **The release-PR exemption test no longer fails on every release pull
+  request.** Its "without diff" cases ran the gate inside the CI checkout, and
+  without a diff file the gate diffs that checkout against `origin/master`. In
+  the release pull request's own run that diff is release-shaped, so the test
+  saw an exemption it did not expect. The test now runs the gate outside any
+  Git checkout.
 
 
 - Release provenance for the native Linux files and the `vmaf-mcp` wheel and

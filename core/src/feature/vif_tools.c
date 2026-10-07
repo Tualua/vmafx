@@ -43,9 +43,9 @@
 
 #ifdef VIF_OPT_FAST_LOG2 // option to replace log2 calculation with faster speed
 
-static const float log2_poly_s[9] = {-0.012671635276421, 0.064841182402670,  -0.157048836463065,
-                                     0.257167726303123,  -0.353800560300520, 0.480131410397451,
-                                     -0.721314327952201, 1.442694803896991,  0};
+static const float log2_poly_s[9] = {-0.012671635276421f, 0.064841182402670f,  -0.157048836463065f,
+                                     0.257167726303123f,  -0.353800560300520f, 0.480131410397451f,
+                                     -0.721314327952201f, 1.442694803896991f,  0};
 
 static float horner_s(const float *poly, float x, int n)
 {
@@ -86,7 +86,7 @@ static float log2f_approx(float x)
 
     memcpy(&remain, &u32remain, sizeof(float));
 
-    log_base = (int32_t)exponent - 127;
+    log_base = (float)((int32_t)exponent - 127);
     log_remain = horner_s(log2_poly_s, (remain - 1.0f), sizeof(log2_poly_s) / sizeof(float));
 
     return log_base + log_remain;
@@ -98,7 +98,7 @@ static float log2f_approx(float x)
 
 static int round_up_to_odd(float f)
 {
-    int ceiling = ceilf(f);
+    int ceiling = (int)ceilf(f);
     if (ceiling % 2 == 0) {
         return ceiling + 1;
     } else {
@@ -108,8 +108,8 @@ static int round_up_to_odd(float f)
 
 static float get_gaussian_pdf(float x, float mean, float stdev)
 {
-    float num = exp(-0.5 * (x - mean) / stdev * (x - mean) / stdev);
-    float den = 1 / (stdev * sqrt(2 * M_PI));
+    float num = (float)exp(-0.5 * (x - mean) / stdev * (x - mean) / stdev);
+    float den = (float)(1 / (stdev * sqrt(2 * M_PI)));
     return num / den;
 }
 
@@ -121,7 +121,7 @@ static void get_1d_gaussian_kernel(float *out, int size, float stdev)
     int k = (size - 1) / 2;
     for (int i = 0; i < size; i++) {
         int curr = i - k;
-        out[i] = get_gaussian_pdf(curr, 0, stdev);
+        out[i] = get_gaussian_pdf((float)curr, 0, stdev);
         sum += out[i];
     }
     for (int i = 0; i < size; i++) {
@@ -179,7 +179,7 @@ void speed_get_antialias_filter(float *out, int scale, float kernelscale)
 {
     // sigma_trick logic replication: antialias filter always has the size of scale 1 filter
     int window_size = vif_get_filter_size(1, kernelscale);
-    get_1d_gaussian_kernel(out, window_size, sqrt(scale) * window_size / 5.0f);
+    get_1d_gaussian_kernel(out, window_size, (float)(sqrt(scale) * window_size / 5.0f));
 }
 
 void vif_dec2_s(const float *src, float *dst, int src_w, int src_h, int src_stride, int dst_stride)
@@ -288,8 +288,8 @@ static void vif_pixel_statistic_s(float mu1_val, float mu2_val, float xx_filt_va
 
     g = MIN(g, vif_enhn_gain_limit_f);
 
-    *num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + vif_sigma_nsq));
-    *den_val = log2f(1.0f + (sigma1_sq) / (vif_sigma_nsq));
+    *num_val = log2f((float)(1.0f + (g * g * sigma1_sq) / (sv_sq + vif_sigma_nsq)));
+    *den_val = log2f((float)(1.0f + (sigma1_sq) / (vif_sigma_nsq)));
 
     if (sigma12 < 0.0f) {
         *num_val = 0.0f;
@@ -306,7 +306,7 @@ void vif_statistic_s(const float *mu1, const float *mu2, const float *xx_filt, c
                      int mu2_stride, int xx_filt_stride, int yy_filt_stride, int xy_filt_stride,
                      double vif_enhn_gain_limit, double vif_sigma_nsq)
 {
-    const float sigma_max_inv = powf(vif_sigma_nsq, 2.0f) / (255.0 * 255.0);
+    const float sigma_max_inv = (float)(powf((float)vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
 
     const int mu1_px_stride = mu1_stride / sizeof(float);
     const int mu2_px_stride = mu2_stride / sizeof(float);
@@ -603,8 +603,8 @@ static float mirror(float i, float left, float right)
 static float bicubic_interpolation(const float *src, int width, int height, int src_stride, float x,
                                    float y)
 {
-    int x0 = floorf(x);
-    int y0 = floorf(y);
+    int x0 = (int)floorf(x);
+    int y0 = (int)floorf(y);
 
     float dx = x - x0;
     float dy = y - y0;
@@ -620,8 +620,8 @@ static float bicubic_interpolation(const float *src, int width, int height, int 
     float interp_val = 0.0;
     for (int j = -1; j <= 2; j++) {
         for (int i = -1; i <= 2; i++) {
-            int x_index = (int)mirror(x0 + i, 0, width - 1);
-            int y_index = (int)mirror(y0 + j, 0, height - 1);
+            int x_index = (int)mirror((float)(x0 + i), 0, (float)(width - 1));
+            int y_index = (int)mirror((float)(y0 + j), 0, (float)(height - 1));
             float weight = weights_x[i + 1] * weights_y[j + 1];
             interp_val += src[y_index * src_stride + x_index] * weight;
         }
@@ -643,9 +643,9 @@ static void vif_scale_frame_bicubic_s(const float *src, float *dst, int src_w, i
     float ratio_y = (float)src_h / dst_h;
 
     for (int y = 0; y < dst_h; y++) {
-        float yy = (y + 0.5) * ratio_y - 0.5;
+        float yy = (float)((y + 0.5) * ratio_y - 0.5);
         for (int x = 0; x < dst_w; x++) {
-            float xx = (x + 0.5) * ratio_x - 0.5;
+            float xx = (float)((x + 0.5) * ratio_x - 0.5);
             dst[y * dst_stride + x] = bicubic_interpolation(src, src_w, src_h, src_stride, xx, yy);
         }
     }
@@ -656,7 +656,7 @@ static float lanczos4_kernel(float x, float a)
     if (x == 0.0)
         return 1.0;
     if (x > -a && x < a) {
-        return a * sin(M_PI * x) * sin(M_PI * x / a) / (M_PI * M_PI * x * x);
+        return (float)(a * sin(M_PI * x) * sin(M_PI * x / a) / (M_PI * M_PI * x * x));
     }
     return 0.0;
 }
@@ -686,8 +686,8 @@ static float lanczos4_interpolation(const float *src, int width, int height, int
                                     float x, float y)
 {
     int a = 4;
-    int x0 = floorf(x);
-    int y0 = floorf(y);
+    int x0 = (int)floorf(x);
+    int y0 = (int)floorf(y);
 
     float dx = x - x0;
     float dy = y - y0;
@@ -705,8 +705,8 @@ static float lanczos4_interpolation(const float *src, int width, int height, int
             float weight = weights_x[ix + a] * weights_y[iy + a];
             weight_sum += weight;
 
-            int x_index = (int)mirror(x0 + ix, 0, width - 1);
-            int y_index = (int)mirror(y0 + iy, 0, height - 1);
+            int x_index = (int)mirror((float)(x0 + ix), 0, (float)(width - 1));
+            int y_index = (int)mirror((float)(y0 + iy), 0, (float)(height - 1));
             value += src[y_index * src_stride + x_index] * weight;
         }
     }
@@ -727,9 +727,9 @@ static void vif_scale_frame_lanczos4_s(const float *src, float *dst, int src_w, 
     float ratio_y = (float)src_h / dst_h;
 
     for (int y = 0; y < dst_h; y++) {
-        float yy = (y + 0.5) * ratio_y - 0.5;
+        float yy = (float)((y + 0.5) * ratio_y - 0.5);
         for (int x = 0; x < dst_w; x++) {
-            float xx = (x + 0.5) * ratio_x - 0.5;
+            float xx = (float)((x + 0.5) * ratio_x - 0.5);
             dst[y * dst_stride + x] = lanczos4_interpolation(src, src_w, src_h, src_stride, xx, yy);
         }
     }
@@ -746,7 +746,7 @@ static void vif_bilinear_columns(int src_w, int dst_w, int x0, int n, int *x1a, 
 {
     const float ratio_x = (float)src_w / dst_w;
     for (int i = 0; i < n; i++) {
-        const float xx = (x0 + i + 0.5) * ratio_x - 0.5;
+        const float xx = (float)((x0 + i + 0.5) * ratio_x - 0.5);
         x1a[i] = (int)mirror(floorf(xx), 0, (float)(src_w - 1));
         x2a[i] = (int)mirror(ceilf(xx), 0, (float)(src_w - 1));
         dxa[i] = xx - x1a[i];
@@ -760,7 +760,7 @@ static void vif_bilinear_rows(const float *src, float *dst, int src_h, int src_s
 {
     const float ratio_y = (float)src_h / dst_h;
     for (int y = 0; y < dst_h; y++) {
-        const float yy = (y + 0.5) * ratio_y - 0.5;
+        const float yy = (float)((y + 0.5) * ratio_y - 0.5);
         const int y1 = (int)mirror(floorf(yy), 0, (float)(src_h - 1));
         const int y2 = (int)mirror(ceilf(yy), 0, (float)(src_h - 1));
         const float dy = yy - y1;

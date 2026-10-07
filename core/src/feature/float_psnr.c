@@ -170,7 +170,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     int w = ref_pic->w[0];
     int h = ref_pic->h[0];
-    int stride = s->float_stride / sizeof(float);
+    int stride = (int)(s->float_stride / sizeof(float));
 
     double noise_ = 0;
     for (int i = 0; i < h; i++)

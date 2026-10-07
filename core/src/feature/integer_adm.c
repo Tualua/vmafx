@@ -682,7 +682,7 @@ static void integer_adm_scale0(const AdmState *s, const VmafPicture *ref_pic,
         }
         i16_to_i32(&buf->ref_dwt2, &buf->i4_ref_dwt2, w, h, (int)buf_stride);
         i16_to_i32(&buf->dis_dwt2, &buf->i4_dis_dwt2, w, h, (int)buf_stride);
-        sc->den = 1e-10; // avoid divide by zero
+        sc->den = 1e-10f; // avoid divide by zero
         return;
     }
 

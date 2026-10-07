@@ -392,22 +392,22 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     vif_get_scaling_method(s->vif_prescale_method, &scaling_method);
 
     vif_scale_frame_s(scaling_method, s->ref, s->ref_scaled, ref_pic->w[0], ref_pic->h[0],
-                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride / sizeof(float));
+                      (int)(s->float_stride / sizeof(float)), s->scaled_w, s->scaled_h,
+                      (int)(s->scaled_float_stride / sizeof(float)));
 
     vif_scale_frame_s(scaling_method, s->dist, s->dist_scaled, dist_pic->w[0], dist_pic->h[0],
-                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride / sizeof(float));
+                      (int)(s->float_stride / sizeof(float)), s->scaled_w, s->scaled_h,
+                      (int)(s->scaled_float_stride / sizeof(float)));
 
     double score;
     double score_num;
     double score_den;
     double scores[8];
-    err =
-        compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
-                    s->scaled_float_stride, &score, &score_num, &score_den, scores,
-                    s->vif_enhn_gain_limit, s->vif_kernelscale, s->vif_skip_scale0,
-                    s->vif_sigma_nsq, (const float (*)[128])s->filter_cache, s->filter_width_cache);
+    err = compute_vif(s->ref_scaled, s->dist_scaled, (int)s->scaled_w, (int)s->scaled_h,
+                      (int)s->scaled_float_stride, (int)s->scaled_float_stride, &score, &score_num,
+                      &score_den, scores, s->vif_enhn_gain_limit, s->vif_kernelscale,
+                      s->vif_skip_scale0, s->vif_sigma_nsq, (const float (*)[128])s->filter_cache,
+                      s->filter_width_cache);
     if (err) {
         return err;
     }

@@ -117,8 +117,8 @@ HOST_FORBIDDEN = (
 REFERENCE_LINES = (
     "ref_sigma_sqd[offset] -= ref_mu[offset] * ref_mu[offset];",
     "cmp_sigma_sqd[offset] -= cmp_mu[offset] * cmp_mu[offset];",
-    "ref_sigma_sqd[offset] = MAX(0.0, ref_sigma_sqd[offset]);",
-    "cmp_sigma_sqd[offset] = MAX(0.0, cmp_sigma_sqd[offset]);",
+    "ref_sigma_sqd[offset] = (float)(MAX(0.0, ref_sigma_sqd[offset]));",
+    "cmp_sigma_sqd[offset] = (float)(MAX(0.0, cmp_sigma_sqd[offset]));",
     "sigma_both[offset] -= ref_mu[offset] * cmp_mu[offset];",
     "const float sigma_ref_sigma_cmp = sqrtf(ref_sigma_sqd[offset] * cmp_sigma_sqd[offset]);",
     "(2.0 * ref_mu[offset] * cmp_mu[offset] + C1) / "

@@ -124,8 +124,10 @@ HOST_PIECES = {
 }
 REFERENCE_LINES = (
     "const int32_t tmp_k = (o == 0) ? 32768 : (((int64_t)lut[o + 32768] * t) + 16384) >> 15;",
-    "rst = ADM_KERNEL_MIN((rst * gain), t);",
-    "rst = ADM_KERNEL_MAX((rst * gain), t);",
+    "rst = (int16_t)(ADM_KERNEL_MIN((rst * gain), t));",
+    "rst = (int16_t)(ADM_KERNEL_MAX((rst * gain), t));",
+    "rst = (int32_t)(ADM_KERNEL_MIN((rst * gain), t));",
+    "rst = (int32_t)(ADM_KERNEL_MAX((rst * gain), t));",
     "add_bef_shift_flt[idx] = (int32_t)(1u << (i4_shift_flt[idx] - 1));",
     "const uint32_t add_shift_sq[3] = {1u << shift_sq[0], 1u << shift_sq[1], 1u << shift_sq[2]};",
 )
@@ -446,8 +448,8 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
     def test_changed_reference_gain_limit_is_detected(self) -> None:
         failures = self._edited(
             REFERENCE,
-            "        rst = ADM_KERNEL_MIN((rst * gain), t);",
-            "        rst = ADM_KERNEL_MIN((int32_t)(rst * (float)gain), t);",
+            "        rst = (int32_t)(ADM_KERNEL_MIN((rst * gain), t));",
+            "        rst = (int32_t)(ADM_KERNEL_MIN((int32_t)(rst * (float)gain), t));",
         )
         self._assert_detected(failures, "the twin mirrors it")
 

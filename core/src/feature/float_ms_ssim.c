@@ -273,9 +273,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         picture_copy(s->ref, plane_float_stride, ref_pic, 0, ref_pic->bpc, p);
         picture_copy(s->dist, plane_float_stride, dist_pic, 0, dist_pic->bpc, p);
 
-        err = compute_ms_ssim(s->ref, s->dist, ref_pic->w[p], ref_pic->h[p], plane_float_stride,
-                              plane_float_stride, &plane_scores[p], l_scores[p], c_scores[p],
-                              structure_scores[p]);
+        err = compute_ms_ssim(s->ref, s->dist, ref_pic->w[p], ref_pic->h[p],
+                              (int)plane_float_stride, (int)plane_float_stride, &plane_scores[p],
+                              l_scores[p], c_scores[p], structure_scores[p]);
         if (err)
             return err;
 
