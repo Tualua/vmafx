@@ -153,6 +153,15 @@
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 
+- **The roadmap and release pages list the full RC4 and RC5 scope.**
+  [ADR-2342](docs/adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of 2026-10-06 and
+  2026-10-07 (RC4 work packages for bindings, the FFmpeg series redesign, input formats, engineering
+  principles, the observability package and the cloud-native platform; RC5 live alignment,
+  interlaced video, region masks, container input, bits per pixel, HandBrake and the run-result
+  timeline; the 1.1 to 1.3 placement of the newer issues), and `docs/roadmap.md` and
+  `docs/development/release.md` follow it. No candidate number or milestone changes.
+
+
 - `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
   requests #1631 to #1668, whether the fork already carries the fix, covers it
   by another route or is not affected, with the file, test or ADR that shows it,

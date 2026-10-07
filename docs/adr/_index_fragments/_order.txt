@@ -1314,3 +1314,4 @@
 2198-windows-sycl-leg-and-cut-check
 1713-rc4-rust-extractor-framework
 1906-vmafx-core-api-semantics
+2342-rc-map-amendment-2026-10

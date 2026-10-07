@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1315), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1316), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5271,3 +5271,7 @@ Every ADR, one heading each (1315), so the site search finds an ADR by its title
 ## ADR-2198: A tester leg builds where its inputs change, and no release is cut on a leg nobody saw green
 
 [2198-windows-sycl-leg-and-cut-check](2198-windows-sycl-leg-and-cut-check.md)
+
+## ADR-2342: Record the scope decisions of 2026-10-06 and 2026-10-07 in the candidate map
+
+[2342-rc-map-amendment-2026-10](2342-rc-map-amendment-2026-10.md)
