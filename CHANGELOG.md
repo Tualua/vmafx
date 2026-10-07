@@ -112,6 +112,9 @@
   changed.
 
 
+- **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
+
+
 - `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
   requests #1631 to #1668, whether the fork already carries the fix, covers it
   by another route or is not affected, with the file, test or ADR that shows it,

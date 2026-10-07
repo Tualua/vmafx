@@ -62770,3 +62770,9 @@ Fork-only CI: `windows_tester_zip_sycl` in `.github/ci-impact.json`, `own_input_
 (read by `scripts/ci/ci_tier.py`), the `light` gate of `windows-tester-bundle.yml`, `run-name` on the three tester
 workflows and `scripts/release/check-candidate-legs.py`. Keep the lane's `impact` and gate on `outputs.light` and the
 SYCL selector a superset of the x64 one on a sync. No upstream file, score, public API or FFmpeg patch is involved.
+## Pelorus re-vendor at the `_wfsopen` commit (2026-10-07)
+
+`refactor/pelorus-revendor-wfsopen`, [ADR-1113](adr/1113-vendor-pelorus-interop-abi.md). `PELORUS_VENDOR_SHA` moves to `4aae30711c65`
+(VMAFx/pelorus #89). The second local edit of `core/src/interop/pelorus_qp_report_csv.c` (`_wfsopen`, added by `fix/msvc-zero-warnings-crt`)
+is now pelorus's own code, so the mirror carries only the banner and the include rewrite again and
+`scripts/sync-pelorus-interop.sh` reports no drift. A sync takes pelorus's side of every vendored file. no upstream file.
