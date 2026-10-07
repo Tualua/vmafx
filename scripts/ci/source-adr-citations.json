@@ -5957,7 +5957,7 @@
         "cmd/vmafx-controller/app_test.go": 3,
         "cmd/vmafx-controller/grpc_server.go": 1,
         "cmd/vmafx-controller/http_server.go": 1,
-        "cmd/vmafx-controller/main.go": 5,
+        "cmd/vmafx-controller/main.go": 4,
         "cmd/vmafx-controller/main_extra_test.go": 1,
         "cmd/vmafx-controller/nodes/registry.go": 4,
         "cmd/vmafx-controller/nodes/registry_test.go": 3,
@@ -5989,8 +5989,6 @@
         "cmd/vmafx-tune/cmd/otel_test.go": 1,
         "cmd/vmafx-tune/cmd/root.go": 1,
         "cmd/vmafx-tune/cmd/root_test.go": 1,
-        "deploy/helm/vmafx/templates/controller.yaml": 1,
-        "deploy/helm/vmafx/values.yaml": 1,
         "docker/Dockerfile.controller": 2,
         "internal/app/bootstrap/bootstrap.go": 3,
         "internal/app/bootstrap/bootstrap_test.go": 2,
@@ -11717,6 +11715,15 @@
         ".config/lint-exceptions.d/HISS-11.toml": 1
       },
       "target": "2321-praetor-pin-afb739ed.md"
+    },
+    "2350": {
+      "sites": {
+        "cmd/vmafx-controller/main.go": 4,
+        "deploy/helm/vmafx/templates/controller.yaml": 2,
+        "deploy/helm/vmafx/values.yaml": 2,
+        "docker/Dockerfile.controller": 1
+      },
+      "target": "2350-cloud-native-platform.md"
     }
   },
   "retired": {
