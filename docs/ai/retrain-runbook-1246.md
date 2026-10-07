@@ -262,6 +262,9 @@ mkdir -p runs/logs runs/shards
   - *Basis*: Measured throughput of 0.36–0.40 clip/s with 8 outer workers on RTX 4090.
     $152{,}265 \text{ clips} \div 0.38 \text{ clip/s} \approx 400{,}700 \text{ s} \approx 111.3 \text{ h}$.
 - **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
+- **Identity pairs (maintainer decision Q-013)**: K150K rows whose reference
+  equals the distorted clip (VMAF about 99) are excluded from the
+  full-reference teacher fit; K150K MOS labels feed the NR/MOS head only.
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \

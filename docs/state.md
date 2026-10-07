@@ -2796,5 +2796,15 @@ When a PR closes / opens / rules out a bug:
 4. For "Confirmed not-affected" rows, cite the file path + reasoning
    that proves the fork is not in scope.
 
+**Defect-row cap (decisions of 2026-10-05 and 2026-10-06).** The cap of 80
+counts open *defect* rows only: wrong output, crash, leak, flaky or stale
+test, broken tooling or docs. Scope rows (planned RC work, performance,
+device-only evidence) are tracked per candidate in the dispositions table and
+do not count. Feature lanes run while the open defect rows stay under 80; above
+80, new feature lanes pause for a burn round. A standing low-cost bug-burn lane
+fixes defect rows of any phase that need no new scope, and every row carries a
+label (no unlabelled rows). Caps per category are fleet policy owned by praetor
+(cordanaLLM/praetor#792).
+
 Older "Recently closed" rows roll off after ~90 days; the audit
 trail then lives in `git log` and the closing ADR.
