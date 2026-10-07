@@ -116,6 +116,15 @@ backend within it.
   `scripts/ci/tests/test_zed_project_config.py`. The scoped mechanics live in
   [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
 
+- **`-qpfile` on libx264 goes through `quant_offsets` ([ADR-2167](../adr/2167-ffmpeg-x264-qpfile-quant-offsets.md))**:
+  patch `0007`'s libx264 hunks load the file with `ff_qpfile_load()` in
+  `X264_init()` (refusing `aq-mode=0` and a grid that is not the video's
+  macroblock grid) and add the deltas of input frame `n` to the picture's
+  `quant_offsets` in `setup_frame()`; libx264 has no `qpfile` parameter, so
+  `x264_param_parse(.., "qpfile", ..)` must not return.
+  `ffmpeg-patches/test/qpfile_check.py` guards it, and the saliency code of
+  `pkg/saliency` and `tools/vmaf-tune` passes `-qpfile`, not
+  `-x264-params qpfile=`.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`
