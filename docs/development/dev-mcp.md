@@ -105,6 +105,23 @@ The defaults baked into `docker-compose.yml` (`44` for `video`, `109` for
 ./dev/scripts/dev-mcp-shell.sh vmaf-dev-mcp vmaf --help
 ```
 
+### One-shot commands
+
+Started without a command, the image stays up so you can `docker exec` into it.
+Started with a command, it runs that command and exits with its status:
+
+```bash
+# A throwaway probe: runs, prints, exits, and the container is removed
+docker run --rm vmaf-dev-mcp:local pkg-config --modversion vpl
+
+# The same against the running dev-mcp container
+docker exec vmaf-dev-mcp clang-tidy --version
+```
+
+Use `docker run --rm` (or `docker exec vmaf-dev-mcp`, agent hard rule 12) for
+one-shot work. Before this behaviour every one-shot `docker run` left a running
+container with its healthcheck, because the entrypoint ignored its arguments.
+
 Inside the container the full environment is initialised:
 
 - `vmaf` CLI - `/usr/local/bin/vmaf`
