@@ -3113,7 +3113,7 @@
     "0488": {
       "sites": {
         "core/src/compat/crt_portable.h": 1,
-        "core/src/dnn/model_loader.c": 4,
+        "core/src/dnn/model_loader.c": 3,
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
         "core/src/mcp/compute_vmaf.c": 2,
@@ -9827,7 +9827,7 @@
         "core/src/feature/speed_givens.h": 1,
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
-        "core/test/meson.build": 6,
+        "core/test/meson.build": 7,
         "core/test/test_strict_fp_compiler_args.py": 4,
         "scripts/ci/clang-tidy-sycl.sh": 1,
         "scripts/ci/golden-arm64-preflight.sh": 1,

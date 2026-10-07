@@ -938,9 +938,10 @@ jobs:
   # `intel-oneapi-basekit` (not on the community feed); neither
   # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
   # lag the Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE.
-  # Both legs additionally inject `/experimental:c11atomics` into
+  # The CUDA leg additionally injects `/experimental:c11atomics` into
   # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
-  # MSVC's `<stdatomic.h>` refuses without that flag.
+  # MSVC's `<stdatomic.h>` refuses without that flag; icx-cl (SYCL leg)
+  # uses its own `<stdatomic.h>` and does not take it.
   #
   # The two job names are pinned to required status checks on master
   # immediately after merge (see ADR-0121 §Consequences).
@@ -1113,13 +1114,12 @@ jobs:
 
       # Pin `c++latest` because the fork's C++ sources require C++23
       # `std::expected`, while icx-cl under MSVC ABI mode advertises the
-      # Microsoft-style c++14/c++17/c++20/c++latest option set.
+      # Microsoft-style c++14/c++17/c++20/c++latest option set. No
+      # `/experimental:c11atomics` here: icx-cl compiles C11 atomics with its
+      # own <stdatomic.h> and reported the option as unused on every compile.
       - name: Configure libvmaf (SYCL)
         if: matrix.backend == 'sycl'
         shell: cmd
-        env:
-          CFLAGS: /experimental:c11atomics
-          CXXFLAGS: /experimental:c11atomics
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           set CC=icx-cl

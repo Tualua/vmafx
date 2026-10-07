@@ -1804,7 +1804,7 @@ int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelS
         return -ENOTSUP;
     }
 
-    char *name = strdup(feature_name);
+    char *name = VMAF_STRDUP(feature_name);
     if (!name)
         return -ENOMEM;
 

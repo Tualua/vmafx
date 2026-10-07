@@ -62846,3 +62846,12 @@ is now pelorus's own code, so the mirror carries only the banner and the include
 `11e183ec0aed` (VMAFx/pelorus #91): the conformance fixture body of `core/test/test_pelorus_interop.c` opens its files for reading through
 `fixture_open_read()` (`_fsopen` on Windows). Rendered by `scripts/sync-pelorus-interop.sh --update`; a sync takes pelorus's side and re-runs the
 script, then the drift check. no upstream file.
+## icx-cl: the CRT's deprecated calls (2026-10-07)
+
+`fix/icx-cl-crt-residuals`. Upstream-mirror files touched: `core/src/libvmaf.c` (`VMAF_STRDUP` in the tiny-model attach), `core/test/test_model.c`
+and `core/test/test_output.c` (`vmaf_fopen_utf8()`, `vmaf_tmpfile_portable()`). A sync that brings a plain `strdup` / `fopen` / `tmpfile` /
+`getenv` back into a file the Windows builds compile keeps the fork's spelling (`compat/crt_portable.h`, `compat/path_utf8.h`). Fork files:
+`compat/crt_portable.h` gains `vmaf_tmpfile_portable()`; `vmaf_tiny_ai_resolve_model_path()` takes a caller-owned buffer for the environment
+value (`VMAF_TINY_AI_ENV_PATH_MAX`), and its five callers pass one. `core/src/feature/common/macros.h` (upstream-mirror)
+defines `UNUSED_FUNCTION` as the GNU attribute for every GCC or Clang front end, clang-cl and icx-cl included (they define `_MSC_VER`); a
+sync keeps that condition. The SYCL leg's configure step no longer sets `/experimental:c11atomics`.

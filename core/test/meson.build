@@ -1106,7 +1106,7 @@ test('test_conversion_policy', test_conversion_policy, suite : ['fast'])
 test_read_pictures_convert_args = [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'] + zimg_defines
 test_read_pictures_convert = executable('test_read_pictures_convert',
     ['test.c', 'test_read_pictures_convert.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     c_args : test_read_pictures_convert_args,
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, thread_lib],
@@ -1219,8 +1219,8 @@ test('test_log_level_threads', test_log_level_threads, suite : ['fast'])
 # ABI rather than through static compilation of internals.
 # Keeps the public ABI entry points covered by a linked-library test.
 test_public_api_score = executable('test_public_api_score',
-    ['test.c', 'test_public_api_score.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    ['test.c', 'test_public_api_score.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : libvmaf_public_link,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
@@ -1616,7 +1616,7 @@ endif
 # via vmaf_import_feature_score() — no YUV frames required.
 test_model_collection_api = executable('test_model_collection_api',
     ['test.c', 'test_model_collection_api.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
     dependencies : [math_lib, pthread_dependency, thread_lib],
@@ -1640,7 +1640,7 @@ test_predict = executable('test_predict',
 # svm.cpp coverage past the parser-only floor.
 # Observation-only: vendored source is not modified (ADR-0889, core/src/AGENTS.md §10).
 test_svm_api = executable('test_svm_api',
-    ['test.c', 'test_svm_api.c', '../src/thread_locale.cpp'],
+    ['test.c', 'test_svm_api.c', '../src/thread_locale.cpp', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
@@ -5536,7 +5536,7 @@ test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
 # Exercise the production private ROI reader and placeholder, not copied math.
 test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
     ['test.c', 'test_vmaf_roi_bounds.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     dependencies : [test_vmaf_roi_libm],
 )
 test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
@@ -7333,11 +7333,12 @@ test('test_psnr_hvs_gpu_scan_contract',
 # not by the count rounded to fp32 (wrong above 2^24 elements, beyond 16K with
 # speed_prescale above 2). The HIP device header is compiled for the host, as
 # the kernel build compiles it (no contraction); the contract test holds the
-# CUDA, HIP and SYCL sources to the same division. Both device-free.
+# CUDA, HIP and SYCL sources to the same division. Both device-free. No
+# contraction comes from the project-wide strict FP arguments (ADR-1461), in
+# each compiler's own spelling; icx-cl ignores a bare -ffp-contract=off.
 test_speed_cov_count_division = executable('test_speed_cov_count_division',
     ['test.c', 'test_speed_cov_count_division.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    c_args : cc.get_supported_arguments(['-ffp-contract=off']),
     dependencies : [math_lib],
 )
 test('test_speed_cov_count_division', test_speed_cov_count_division, suite : ['fast'])
