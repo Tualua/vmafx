@@ -21,7 +21,10 @@
 # Attribution ladder: L0 decodes both inputs through the same trims into a null
 # sink (no libvmaf); L1 runs libvmaf_sycl with no model and one feature; L2 runs
 # the model. --dry-run prints each ffmpeg command as "CMD ..." and runs nothing.
-# Segments use trim=end_frame=N on both inputs, never -frames:v.
+# Segments use trim=end_frame=N on both inputs, never -frames:v. Every leg is
+# video only (-an -sn -dn, or explicit -map on L0): without it ffmpeg auto-maps
+# an audio track and decodes the whole file's audio, about 11.5 s per process on
+# a 53-minute episode, whatever N is (Research-1769, "Start-up for short scenes").
 
 set -euo pipefail
 
@@ -148,11 +151,11 @@ build_cmd() {
   if [ "$kind" = cpu ]; then
     dl="${d/\[d\]/,hwdownload,format=p010le[d]}"
     rl="${r/\[r\]/,hwdownload,format=p010le[r]}"
-    CMD+=(-lavfi "$dl;$rl;[d][r]libvmaf=$(filter_options "$base")" -f null -)
+    CMD+=(-lavfi "$dl;$rl;[d][r]libvmaf=$(filter_options "$base")" -an -sn -dn -f null -)
   elif [ "$LADDER" = L0 ]; then
     CMD+=(-filter_complex "$d;$r" -map "[d]" -f null - -map "[r]" -f null -)
   else
-    CMD+=(-lavfi "$d;$r;[d][r]libvmaf_sycl=$(filter_options "$base")" -f null -)
+    CMD+=(-lavfi "$d;$r;[d][r]libvmaf_sycl=$(filter_options "$base")" -an -sn -dn -f null -)
   fi
 }
 
