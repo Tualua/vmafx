@@ -7398,6 +7398,7 @@
         ".github/workflows/ffmpeg-integration.yml": 1,
         ".github/workflows/fuzz.yml": 1,
         ".github/workflows/libvmaf-build-matrix.yml": 1,
+        ".github/workflows/research-radar.yml": 1,
         ".github/workflows/security-scans.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
         ".github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml": 1,
@@ -11379,6 +11380,13 @@
         "core/test/test_cuda_adm_cm_register_pressure.py": 1
       },
       "target": "2134-cuda-adm-cm-aim-register-budget-angle-flag.md"
+    },
+    "2171": {
+      "sites": {
+        ".github/workflows/research-radar.yml": 1,
+        "scripts/research/tests/test_radar_collect.py": 1
+      },
+      "target": "2171-research-radar.md"
     }
   },
   "retired": {

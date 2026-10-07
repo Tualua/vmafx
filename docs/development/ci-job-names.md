@@ -190,6 +190,7 @@ column mirrors that array.
 | `docker-publish-production.yml` | `Build + push MCP server image (amd64 + arm64)` | `Publish MCP server image` | 24 | No |
 | `docker-publish-production.yml` | `All production images published` | `Images published` | 16 | No |
 | `upstream-watcher.yml` | `FFmpeg av1_videotoolbox encoder` | `FFmpeg av1_videotoolbox` | 23 | No |
+| `research-radar.yml` | new in ADR-2171 | `Weekly digest` | 13 | No |
 | `dev-container-build.yml` | `Dev Container Build + Smoke Test` | `Dev Container Build` | 19 | Yes |
 | `docker-publish-tester.yml` | new in ADR-1687 | `Tester Image` | 12 | Yes |
 | `docker-publish-tester.yml` | `Validate source` (renamed in ADR-1687) | `Validate tester image source` | 28 | No |

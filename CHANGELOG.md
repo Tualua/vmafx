@@ -4,6 +4,11 @@
 > entries and Conventional Commits into ordinary SemVer releases.
 
 ## [Unreleased]
+### Added
+
+- A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
+
+
 ### Changed
 
 - The Windows MSVC builds no longer print the C runtime, declaration and
