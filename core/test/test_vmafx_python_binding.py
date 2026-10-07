@@ -101,5 +101,27 @@ class BindingTest(unittest.TestCase):
             vmafx.LAYOUT[vmafx.VmafxScore] = (size, offsets)
 
 
+def sanitizer_skip_reason() -> str | None:
+    """Why the binding cannot be loaded here, or None.
+
+    A library built with -Db_sanitize needs its sanitizer runtime in the
+    process; ctypes loads it into an uninstrumented interpreter, which fails
+    with an undefined `__tsan_*` / `__asan_*` symbol. Meson passes the option
+    in $VMAFX_SANITIZE.
+    """
+    sanitize = os.environ.get("VMAFX_SANITIZE", "none")
+    if sanitize in ("", "none"):
+        return None
+    return (
+        f"SKIP: the library is built with -Db_sanitize={sanitize}; ctypes cannot load a "
+        "sanitizer-instrumented library into the uninstrumented interpreter. The test runs "
+        "in every build without a sanitizer."
+    )
+
+
 if __name__ == "__main__":
+    REASON = sanitizer_skip_reason()
+    if REASON is not None:
+        print(REASON)
+        raise SystemExit(77)
     unittest.main()

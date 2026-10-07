@@ -1280,6 +1280,11 @@ if get_option('default_library') != 'static'
         env : {
             'VMAFX_LIBRARY' : libvmaf_public_link.full_path(),
             'PYTHONPATH' : meson.project_source_root() / '..' / 'bindings' / 'python',
+            # ctypes cannot load a sanitizer-instrumented library into the
+            # uninstrumented interpreter (the sanitizer runtime is not in the
+            # process): with -Db_sanitize the test skips (77) and says why;
+            # every other build runs it.
+            'VMAFX_SANITIZE' : get_option('b_sanitize'),
         },
         depends : libvmaf_public_link,
         suite : ['fast'],
