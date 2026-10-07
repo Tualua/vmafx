@@ -50,6 +50,13 @@
   changed.
 
 
+- `docs/state.md` records, for each of the fork's open Netflix/vmaf pull
+  requests #1631 to #1668, whether the fork already carries the fix, covers it
+  by another route or is not affected, with the file, test or ADR that shows it,
+  and notes that #1634 (clip the integer AIM score) was closed because the fork
+  keeps integer AIM unclipped. Documentation only.
+
+
 - **A compiler or linker warning now fails the CI leg that prints none today.** The gated legs of the
   build matrix (gcc, clang, Apple clang, icx / icpx, MinGW, CUDA and HIP builds), the ASan, UBSan and
   TSan builds, and the libvmaf builds of the Go, Rust and FFmpeg jobs pass `-Dwerror=true` and the
