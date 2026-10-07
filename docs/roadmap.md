@@ -165,7 +165,9 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   incremental `motion2` / `motion3` for live windows; Vulkan frame import;
   engineering principles per language with warnings as errors in every one;
   the observability package
-  ([#2430](https://github.com/VMAFx/vmafx/issues/2430)); the cloud-native
+  ([#2430](https://github.com/VMAFx/vmafx/issues/2430)); Linux arm64 and
+  older-glibc binaries and the package-manager channels
+  ([#2437](https://github.com/VMAFx/vmafx/issues/2437)); the cloud-native
   platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)): state out of
   the processes (PostgreSQL, a job queue, a two-tier cache, object storage, OCI
   artifacts), scaling on queue depth, and CRDs, proto, OpenAPI and the Helm

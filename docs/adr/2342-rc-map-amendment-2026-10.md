@@ -43,15 +43,10 @@ recorded as decided.
 | WP14, engineering principles | `docs/principles.md` is rewritten per language with an applicability matrix; warnings are errors in every language; missing gates land in RC4, each proven with a planted defect. | Q-060, Q-061 |
 | WP15, FFmpeg audit | A measured audit of the patch series and of every FFmpeg use in tools, AI scripts, containers and docs; RC4 implements cleanup, zero warnings, no deprecated API and correctness fixes; tuning findings become RC7 rows (PRs #2380, #2381). | Q-064 |
 | WP16, observability | The observability package of [#2430](https://github.com/VMAFx/vmafx/issues/2430): metrics on every long-running binary, generated dashboards, alerts with runbooks, logs and traces. | Q-109, Q-110, Q-111 |
-| WP17, cloud-native platform | The core cloud-native features of [#2431](https://github.com/VMAFx/vmafx/issues/2431): state out of the processes (PostgreSQL through CloudNativePG, a River queue, a two-tier cache, S3-compatible object storage, OCI artifact export, a time-series store), disposable horizontally scalable services, queue-driven scaling, an outbox with CloudEvents, CRDs, proto, OpenAPI and the Helm schema generated from the RC4 definition, workload identity and mTLS, a standalone SQLite profile kept. It supersedes the queue decision of [ADR-1119](1119-golusoris-go-framework-adoption.md). The line between this package and [#1252](https://github.com/VMAFx/vmafx/issues/1252) / [#1253](https://github.com/VMAFx/vmafx/issues/1253) is drawn by its architecture ADR; until that ADR is accepted those two issues keep their phase from ADR-2001. | Q-112 |
+| WP17, cloud-native platform | The core cloud-native features of [#2431](https://github.com/VMAFx/vmafx/issues/2431): state out of the processes (PostgreSQL through CloudNativePG, a River queue, a two-tier cache, S3-compatible object storage, OCI artifact export, a time-series store), disposable horizontally scalable services, queue-driven scaling, an outbox with CloudEvents, CRDs, proto, OpenAPI and the Helm schema generated from the RC4 definition, workload identity and mTLS, a standalone SQLite profile kept. It supersedes the queue decision of [ADR-1119](1119-golusoris-go-framework-adoption.md). The line between this package and [#1252](https://github.com/VMAFx/vmafx/issues/1252) / [#1253](https://github.com/VMAFx/vmafx/issues/1253) is drawn by its architecture ADR; until that ADR is accepted those two issues keep their phase from ADR-2001. rclone stays as an opt-in mover for outputs and artifacts (backends without S3 or OCI) besides opt-in input mounts. | Q-112, Q-136 |
 | Incremental motion | `motion2` and `motion3` are derived frame by frame, every twin kept exact, so live window scores ([#2138](https://github.com/VMAFx/vmafx/issues/2138), [#2238](https://github.com/VMAFx/vmafx/issues/2238)) complete before the flush (ADR-2090, PR #2290). The Rust twin implements the same hook. | Q-038, Q-088, Q-093 |
 | Colour on the API | Input colorimetry is a per-context function on the library; the RC4 API carries colour per frame; `VmafPicture` is unchanged (ADR-2093). | Q-040 |
-| WP12, packaging | Linux arm64 assets and an older glibc floor follow in RC4 (WP12), on top of the assets rc.3 ships. | Q-042 |
-
-Not decided here: Q-042 also names package managers for WP12, while the
-2026-10-06 comment on #1723 and the issues [#2314](https://github.com/VMAFx/vmafx/issues/2314)
-and [#2319](https://github.com/VMAFx/vmafx/issues/2319) place them in 1.1.
-The issues keep their milestones until the maintainer rules on it.
+| WP12, packaging | Linux arm64 assets, an older glibc floor and the package-manager channels (PyPI, Homebrew, crates, conda and the others of [#2314](https://github.com/VMAFx/vmafx/issues/2314) and [#2319](https://github.com/VMAFx/vmafx/issues/2319), both moved to 1.0.0) follow in RC4 (WP12, [#2437](https://github.com/VMAFx/vmafx/issues/2437)), on top of the assets rc.3 ships. | Q-042, Q-130 |
 
 ### RC5 adds
 
@@ -104,8 +99,7 @@ it.
 - **Positive**: `docs/roadmap.md`, `docs/development/release.md` and the RC
   epics state the same scope; the RC4 work packages WP7 and WP10 to WP17 and
   the RC5 additions each name the decision behind them.
-- **Negative**: RC4 and RC5 carry more work and more exit evidence. The
-  package-manager placement stays open (above).
+- **Negative**: RC4 and RC5 carry more work and more exit evidence.
 - **Neutral / follow-ups**: the architecture ADR of WP17 states the split with
   #1252 / #1253 and carries a status note on ADR-1119. ADR-2343 records the
   reference-exact default for RC7. The milestone map of ADR-2001 is unchanged.
@@ -116,7 +110,7 @@ it.
   Q-022, Q-023, Q-029, Q-031, Q-038, Q-040, Q-042, Q-047, Q-048, Q-049, Q-050,
   Q-051, Q-052, Q-053, Q-054, Q-055, Q-056, Q-057, Q-058, Q-059, Q-060, Q-061,
   Q-063, Q-064, Q-087, Q-088, Q-089, Q-092, Q-093, Q-095, Q-096, Q-104,
-  Q-105, Q-106, Q-107, Q-109, Q-110, Q-111, Q-112, Q-114, Q-116.
+  Q-105, Q-106, Q-107, Q-109, Q-110, Q-111, Q-112, Q-114, Q-116, Q-130, Q-136.
 - `Q-112`: "Re-plan + build in RC4"
 - `Q-095`: "Redesign in WP10, one PR"
 - `Q-116`: "Minimal timeline into RC5"
