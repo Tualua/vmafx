@@ -159,8 +159,8 @@ static int device_upload(VmafSyclState *state, const Plane *p, DevicePlane *d)
 
 static const char *detile_and_compare(VmafSyclState *state, Plane *p, const DevicePlane *d)
 {
-    const int err = vmaf_sycl_detile_tile4_for_test(state, d->dst, d->src, p->pitch,
-                                                    p->row_bytes, p->h, p->bpc);
+    const int err = vmaf_sycl_detile_tile4_for_test(state, d->dst, d->src, p->pitch, p->row_bytes,
+                                                    p->h, p->bpc);
     mu_assert("de-tile run failed", !err);
     mu_assert("readback", !vmaf_sycl_memcpy_d2h(state, p->got, d->dst, p->row_bytes * p->h));
     mu_assert("de-tiled plane differs from the host Tile4 reference",
@@ -179,7 +179,7 @@ static const char *run_case(VmafSyclState *state, const Geometry *g)
     } else {
         plane_fill(&p);
         msg = device_upload(state, &p, &d) ? "device allocation or upload failed" :
-                                              detile_and_compare(state, &p, &d);
+                                             detile_and_compare(state, &p, &d);
     }
     if (msg)
         (void)fprintf(stderr, "\n%ux%u bpc=%u widen=%u: ", g->w, g->h, g->bpc, g->widen);
