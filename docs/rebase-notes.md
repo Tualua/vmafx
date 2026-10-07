@@ -62620,3 +62620,8 @@ and drop `-master_display` / `-max_cll` for `hevc_nvenc`; `pkg/hdr/testdata/pyth
 is the Python dump the Go test replays and lost the two options. Invariants:
 see `docs/development/rebase-sensitive-invariants.md` ("Encoder-parameter
 options are merged"). No score or C API impact.
+## Cross-device parity report fails closed (2026-10-05)
+
+Fork-only: `ai/src/vmaf_train/cross_backend.py` (`CrossBackendReport.ok`, `unbound`), the new
+`scripts/ci/tiny_ai_cross_device_parity_gate.py` and its tests. Keep the empty-list guard in `ok` on a sync; no
+upstream file is involved and no score, public API or FFmpeg patch changes.
