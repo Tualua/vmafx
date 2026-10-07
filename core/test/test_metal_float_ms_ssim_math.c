@@ -45,6 +45,7 @@
 #include "test.h"
 
 #include "float_ms_ssim_order_frame.h"
+#include "float_bits.h"
 #include "ssim_order_noise.h"
 
 #include "feature/metal/metal_ms_ssim_math.h"
@@ -380,15 +381,15 @@ static int frame_mismatches(const Case *c, const FrameScores *cpu, const FrameSc
 {
     int bad = 0;
     for (int i = 0; i < SCALES; i++) {
-        if (cpu->l[i] != twin->l[i]) {
+        if (!vmaf_test_identical_f64(cpu->l[i], twin->l[i])) {
             report_frame(c, "l", i, cpu->l[i], twin->l[i]);
             bad = 1;
         }
-        if (cpu->c[i] != twin->c[i]) {
+        if (!vmaf_test_identical_f64(cpu->c[i], twin->c[i])) {
             report_frame(c, "c", i, cpu->c[i], twin->c[i]);
             bad = 1;
         }
-        if (cpu->s[i] != twin->s[i]) {
+        if (!vmaf_test_identical_f64(cpu->s[i], twin->s[i])) {
             report_frame(c, "s", i, cpu->s[i], twin->s[i]);
             bad = 1;
         }

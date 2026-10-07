@@ -27,6 +27,7 @@
 
 #include "mu_table.h"
 #include "test.h"
+#include "float_bits.h"
 
 #include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
@@ -1889,7 +1890,7 @@ static char *test_codec_block_fill_encoded_edges(void)
     rc = vmaf_dnn_codec_block_fill_encoded(buf, 4u, VOCAB, 2u, "libx264", "slow", 30, NULL);
     unsigned same = 0u;
     for (size_t i = 0; i < 4u; ++i)
-        same += buf[i] == ref[i];
+        same += vmaf_test_identical_f32(buf[i], ref[i]) ? 1u : 0u;
     mu_assert("NULL encoding == v2 fill", rc == 0 && same == 4u);
     return NULL;
 }

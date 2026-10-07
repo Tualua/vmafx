@@ -37,6 +37,7 @@
 
 #include "mu_table.h"
 #include "test.h"
+#include "float_bits.h"
 
 #include "libvmaf/dnn.h"
 #include "libvmaf/libvmaf.h"
@@ -554,7 +555,7 @@ static char *expect_tiny_score_from_features(VmafContext *ctx, VmafDnnSession *s
     mu_assert("tiny score recorded",
               vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, index) == 0);
     mu_assert("ADR-1520: tiny score is the model applied to the computed features",
-              (float)tiny == expect);
+              vmaf_test_identical_f32((float)tiny, expect));
     return NULL;
 }
 
@@ -684,7 +685,8 @@ static char *test_fr_v3_preset_slot_is_the_trained_constant(void)
     if (err)
         return err;
     mu_assert("ADR-1558: the preset does not reach the v3 codec block",
-              medium[0] == veryslow[0] && medium[1] == veryslow[1]);
+              vmaf_test_identical_f64(medium[0], veryslow[0]) &&
+                  vmaf_test_identical_f64(medium[1], veryslow[1]));
     return NULL;
 }
 

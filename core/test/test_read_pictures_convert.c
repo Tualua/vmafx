@@ -23,8 +23,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "test.h"
+#include "float_bits.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 #include "libvmaf/picture.h"
@@ -88,11 +98,28 @@ static char *read_whole_file(const char *path, size_t *len)
     return buf;
 }
 
+/* The fixture file, created owner-only (mode 0600; the Windows C runtime has no wider mode). */
+static FILE *open_owner_only(const char *path)
+{
+#ifdef _WIN32
+    const int fd = _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
+    return fd < 0 ? NULL : _fdopen(fd, "wb");
+#else
+    const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0)
+        return NULL;
+    FILE *out = fdopen(fd, "wb");
+    if (!out)
+        (void)close(fd);
+    return out;
+#endif
+}
+
 /* Write `head` bytes of `buf`, then `block`, then the rest of `buf` to `path`. */
 static int write_spliced(const char *path, const char *buf, size_t head, size_t n,
                          const char *block)
 {
-    FILE *out = vmaf_fopen_utf8(path, "wb");
+    FILE *out = open_owner_only(path);
     if (!out)
         return -EIO;
     bool ok = fwrite(buf, 1, head, out) == head;
@@ -241,7 +268,7 @@ static char *test_no_model_target_never_converts(void)
     mu_assert("tagged run failed", !run(NULL, &pq_bt2020nc_color, &pq_bt2020nc_color, &tagged));
     mu_assert("a model without a conversion target should ignore picture "
               "colors",
-              untagged == tagged);
+              vmaf_test_identical_f64(untagged, tagged));
 
     return NULL;
 }
@@ -302,7 +329,7 @@ static char *test_source_matching_target_is_not_converted(void)
               !run(target_color_only, &pq_ictcp_color, &pq_ictcp_color, &matching));
     mu_assert("a source already in the target colorspace should be left "
               "untouched",
-              unconverted == matching);
+              vmaf_test_identical_f64(unconverted, matching));
 
     return NULL;
 }
@@ -328,7 +355,7 @@ static char *test_source_matching_pinned_format_is_not_converted(void)
               !run(target_420_10bit, &pq_ictcp_color, &pq_ictcp_color, &pinned));
     mu_assert("a source already in the pinned format and colorspace should "
               "be left untouched",
-              unconverted == pinned);
+              vmaf_test_identical_f64(unconverted, pinned));
 
     return NULL;
 }

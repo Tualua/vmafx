@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/hip/speed/speed_hip_device.h"
 
@@ -81,14 +82,6 @@ static float one_float_division(SpeedHdFf sum, float divisor)
     return quotient + correction;
 }
 
-/* The IEEE-754 bits of `x`: equal bits, not merely equal values (-0 and +0). */
-static uint32_t float_bits(float x)
-{
-    uint32_t bits = 0;
-    memcpy(&bits, &x, sizeof(bits));
-    return bits;
-}
-
 /* The twin's store: the covariance entry (x, y) of channel 0. */
 static float twin_covariance(SpeedHdFf sum, uint32_t sub_w, uint32_t sub_h)
 {
@@ -131,8 +124,9 @@ static char *test_counts_above_two_pow_24_match_the_cpu(void)
             const SpeedHdFf sum = random_sum(&state);
             const float cpu = cpu_covariance(sum, count);
             mu_assert("covariance above 2^24 equals speed.c's",
-                      twin_covariance(sum, dims[d][0], dims[d][1]) == cpu);
-            before_fix += one_float_division(sum, (float)count) != cpu;
+                      vmaf_test_identical_f32(twin_covariance(sum, dims[d][0], dims[d][1]), cpu));
+            before_fix +=
+                vmaf_test_identical_f32(one_float_division(sum, (float)count), cpu) ? 0u : 1u;
         }
     }
     /* The one-float division misses about a quarter of these. */
@@ -153,7 +147,7 @@ static char *test_counts_up_to_two_pow_24_are_unchanged(void)
             const SpeedHdFf sum = random_sum(&state);
             const float before = one_float_division(sum, (float)count);
             const float after = twin_covariance(sum, dims[d][0], dims[d][1]);
-            mu_assert("division up to 2^24 is unchanged", float_bits(before) == float_bits(after));
+            mu_assert("division up to 2^24 is unchanged", vmaf_test_identical_f32(before, after));
         }
     }
     return NULL;

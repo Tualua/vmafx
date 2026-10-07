@@ -889,6 +889,9 @@ static char *read_model_json(size_t *len)
 /* Upper bound on the model file the tests read (it is about 100 KiB). */
 #define MODEL_JSON_MAX ((size_t)1 << 22)
 
+/* Model and block together: the largest result splice_model_json() builds. */
+#define SPLICE_TOTAL_MAX (MODEL_JSON_MAX + MODEL_JSON_MAX / 2u)
+
 /* `buf` (the model file, `n` bytes, NUL terminated) with `block` spliced in after
  * the `"model_dict": {` key; NULL when the key is missing or memory runs out. */
 static char *splice_model_json(const char *buf, size_t n, const char *block)
@@ -896,13 +899,17 @@ static char *splice_model_json(const char *buf, size_t n, const char *block)
     const char *key = "\"model_dict\": {";
     const char *at = strstr(buf, key);
     const size_t block_len = strlen(block);
+    /* Each addend is bounded alone, and so is their sum (a bound below the two bounds added, so
+     * the last check is not always false: CodeQL cpp/constant-comparison). The sum bound is
+     * what clang-analyzer's TaintedAlloc looks for before the allocation below.
+     * test_splice_model_json_bounds holds all three. */
     if (!at || n > MODEL_JSON_MAX || block_len > MODEL_JSON_MAX)
         return NULL;
     at += strlen(key);
 
     const size_t head = (size_t)(at - buf);
     const size_t total = n + block_len;
-    if (total > 2 * MODEL_JSON_MAX)
+    if (total > SPLICE_TOTAL_MAX)
         return NULL;
     char *res = calloc(total + 1, 1);
     if (!res)
@@ -913,6 +920,59 @@ static char *splice_model_json(const char *buf, size_t n, const char *block)
         return NULL;
     }
     return res;
+}
+
+/* A model of `size` bytes: the `"model_dict": {` key, then blanks. NULL when out of memory. */
+static char *model_json_of_size(size_t size)
+{
+    static const char key[] = "\"model_dict\": {";
+    char *buf = calloc(size + 1u, 1);
+    if (!buf)
+        return NULL;
+    (void)memset(buf, ' ', size);
+    (void)memcpy(buf, key, sizeof(key) - 1u);
+    return buf;
+}
+
+/* 1 when splice_model_json() accepts a model of `size` bytes and a block of `block_len`
+ * bytes, 0 when it refuses them, -1 when memory ran out. */
+static int splice_accepts(size_t size, size_t block_len)
+{
+    char *model = model_json_of_size(size);
+    char *block = calloc(block_len + 1u, 1);
+    int verdict = -1;
+    if (model && block) {
+        (void)memset(block, 'a', block_len);
+        char *res = splice_model_json(model, size, block);
+        verdict = res != NULL;
+        free(res);
+    }
+    free(block);
+    free(model);
+    return verdict;
+}
+
+static char *test_splice_model_json_bounds(void)
+{
+    static const char small[] = "\"model_dict\": {   ";
+    char *spliced = splice_model_json(small, sizeof(small) - 1u, "\"x\": 1,");
+    const bool small_ok = spliced && strstr(spliced, "{\"x\": 1,") != NULL;
+    free(spliced);
+    mu_assert("a small model is spliced", small_ok);
+
+    mu_assert("a model of MODEL_JSON_MAX bytes is spliced",
+              splice_accepts(MODEL_JSON_MAX, 0u) == 1);
+    mu_assert("a model past MODEL_JSON_MAX is refused",
+              splice_accepts(MODEL_JSON_MAX + 1u, 0u) == 0);
+    mu_assert("a block of MODEL_JSON_MAX bytes is spliced",
+              splice_accepts(32u, MODEL_JSON_MAX) == 1);
+    mu_assert("a block past MODEL_JSON_MAX is refused",
+              splice_accepts(32u, MODEL_JSON_MAX + 1u) == 0);
+    mu_assert("model and block that fill SPLICE_TOTAL_MAX are spliced",
+              splice_accepts(MODEL_JSON_MAX, SPLICE_TOTAL_MAX - MODEL_JSON_MAX) == 1);
+    mu_assert("model and block past SPLICE_TOTAL_MAX are refused",
+              splice_accepts(MODEL_JSON_MAX, SPLICE_TOTAL_MAX - MODEL_JSON_MAX + 1u) == 0);
+    return NULL;
 }
 
 static char *read_model_json_with_block(char **out, const char *block)
@@ -1784,6 +1844,7 @@ static const MuTest json_reject_tests[] = {
     MU_TEST(test_json_model_slopes_longer_than_feature_names_rejects),
     MU_TEST(test_json_model_malformed_after_model_dict_rejects),
     MU_TEST(test_version_next),
+    MU_TEST(test_splice_model_json_bounds),
 };
 
 mu_message_t run_tests(void)

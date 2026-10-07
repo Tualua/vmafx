@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "psnr_hvs_twin_parity.h"
 
@@ -128,8 +129,11 @@ static char *test_mask_table_is_the_cpus(void)
     for (unsigned plane = 0u; plane < VMAF_MTL_HVS_PLANES; plane++) {
         for (int k = 0; k < TERMS; k++) {
             const float csf = vmaf_mtl_hvs_csf[plane][k];
-            wrong += vmaf_psnr_hvs_mask_value(csf) != cpu_mask_entry(csf) ? 1u : 0u;
-            fp32_differs += fp32_mask_entry(csf) != cpu_mask_entry(csf) ? 1u : 0u;
+            wrong += vmaf_test_identical_f32(vmaf_psnr_hvs_mask_value(csf), cpu_mask_entry(csf)) ?
+                         0u :
+                         1u;
+            fp32_differs +=
+                vmaf_test_identical_f32(fp32_mask_entry(csf), cpu_mask_entry(csf)) ? 0u : 1u;
         }
     }
     (void)fprintf(stderr, "\n  fp32 masking table: %u of 192 entries differ from the CPU's\n",

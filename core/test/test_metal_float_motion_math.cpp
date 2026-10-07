@@ -41,6 +41,7 @@
 #include <cstring>
 
 #include "test.h"
+#include "float_bits.h"
 
 extern "C" {
 #include "feature/common/convolution.h"
@@ -442,7 +443,7 @@ int fm_rows_case(unsigned w, unsigned h, bool scale1, unsigned seed)
     if (err != 0 || !(cpu > 0.0)) {
         return -1;
     }
-    if (cpu == twin) {
+    if (vmaf_test_identical_f64(cpu, twin)) {
         return 0;
     }
     (void)fprintf(stderr, "\n%ux%u scale1=%d: cpu=%.17g twin=%.17g", w, h, (int)scale1, cpu, twin);
@@ -549,7 +550,7 @@ int fm_frame_case(const FmCase *k)
         (void)fprintf(stderr, "\n%s %ux%u %u-bit: a run failed", k->key, k->w, k->h, k->bpc);
         return -1;
     }
-    if (cpu == twin) {
+    if (vmaf_test_identical_f64(cpu, twin)) {
         return 0;
     }
     (void)fprintf(stderr, "\n%s %ux%u %u-bit: cpu=%.17g twin=%.17g", k->key, k->w, k->h, k->bpc,
@@ -761,7 +762,7 @@ mu_message_t test_block_reduction_is_detected()
     free(prev);
     mu_assert("compute_motion() failed", err == 0);
     mu_assert("a per-block sum gives the CPU's score: the fixture cannot tell the orders apart",
-              blocks != cpu);
+              !vmaf_test_identical_f64(blocks, cpu));
     return nullptr;
 }
 
