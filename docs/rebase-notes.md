@@ -62725,3 +62725,10 @@ gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep bot
 - `core/test/check_exported_symbols.py` takes a third argument (the symbol
   list) and judges `vmafx_` exports by it, not by the header regex.
 - No score, FFmpeg patch or `libvmaf.h` impact.
+
+## Tester legs build where their inputs change; the cut checks them (2026-10-07, ADR-2198)
+
+Fork-only CI: `windows_tester_zip_sycl` in `.github/ci-impact.json`, `own_input_lanes` in `.github/ci-tier.json`
+(read by `scripts/ci/ci_tier.py`), the `light` gate of `windows-tester-bundle.yml`, `run-name` on the three tester
+workflows and `scripts/release/check-candidate-legs.py`. Keep the lane's `impact` and gate on `outputs.light` and the
+SYCL selector a superset of the x64 one on a sync. No upstream file, score, public API or FFmpeg patch is involved.

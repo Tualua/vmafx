@@ -377,6 +377,25 @@
         "tools/rc1-tester/image/sycl-runtime-windows.json"
       ]
     },
+    "windows_tester_zip_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        ".github/workflows/windows-tester-bundle.yml",
+        "scripts/ci/build-windows-tester-bundle.py",
+        "requirements/locks/windows-tester-zip.txt",
+        "scripts/ci/check-windows-bundle-imports.py",
+        "tools/rc1-tester/image/windows/*",
+        "tools/rc1-tester/image/windows/**",
+        "tools/rc1-tester/image/unit-tests-windows.txt",
+        "tools/rc1-tester/image/cuda-tests.txt",
+        "tools/rc1-tester/image/sycl-tests.txt",
+        "tools/rc1-tester/image/sycl-runtime-windows.json",
+        "tools/rc1-tester/image/sycl-rows.json",
+        "tools/rc1-tester/image/prepare_build.py",
+        "build-config.env",
+        "core/src/sycl/scratch_ratchet.txt"
+      ]
+    },
     "golden_harness": {
       "inherits": [
         "c_core",

@@ -11525,6 +11525,21 @@
         "scripts/research/tests/test_radar_collect.py": 1
       },
       "target": "2171-research-radar.md"
+    },
+    "2198": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 1,
+        ".github/workflows/macos-tester-bundle.yml": 1,
+        ".github/workflows/rule-enforcement.yml": 3,
+        ".github/workflows/windows-tester-bundle.yml": 4,
+        "scripts/ci/ci_tier.py": 1,
+        "scripts/ci/tests/test_ci_routing_contract.py": 3,
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 1,
+        "scripts/ci/tests/test_required_release_legs.py": 3,
+        "scripts/release/check-candidate-legs.py": 1,
+        "scripts/release/tests/test_check_candidate_legs.py": 1
+      },
+      "target": "2198-windows-sycl-leg-and-cut-check.md"
     }
   },
   "retired": {

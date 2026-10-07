@@ -47,6 +47,10 @@
 # ADR-1492: tester image. ADR-1102: published artifacts are built in a container.
 
 name: Publish Tester Image
+# A dispatch names the source it builds in the run's title (ADR-2198): the cut check
+# (scripts/release/check-candidate-legs.py) accepts a dispatched run for a candidate only when
+# the title carries the candidate's full SHA. Other events keep GitHub's usual title.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Tester image, source {0}', github.event.inputs.ref || github.event.inputs.tag) || github.event.pull_request.title || github.event.head_commit.message || github.workflow }}
 
 on:
   # No paths filter: `Tester Image` is a required context (ADR-1687), so the
