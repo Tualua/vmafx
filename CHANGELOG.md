@@ -267,6 +267,12 @@
 
 ### Fixed
 
+- CI: the required gates that share a matrix (`Linux Intel LLVM`, `macOS Clang+Metal`,
+  `Windows MSVC+CUDA (full)`, `FFmpeg Ubuntu gcc`, `FFmpeg macOS clang`) judge their own
+  leg's job instead of the matrix aggregate, so one failing leg no longer turns the other
+  legs' required checks red (`scripts/ci/gate_leg_result.py`).
+
+
 - **Float extractors report their errors through the log (ADR-1906).** The
   allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
   code (`error: ...` lines) went to standard output, where they mixed with
