@@ -961,9 +961,12 @@ jobs:
           # static` at line 387. Also lets the vmaf CLI pick the static
           # archive via core/tools/meson.build:26 without the
           # get_shared_lib() branch.
+          # ADR-2170: this leg prints no warnings, so cl.exe, link.exe and nvcc make them
+          # errors. The SYCL row (icx-cl) is not at zero yet: docs/development/ci.md.
           # required-aggregator
           - backend: cuda
             meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
+            werror: msvc
             name: Windows MSVC+CUDA
           # required-aggregator
           - backend: sycl
@@ -1055,6 +1058,16 @@ jobs:
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
 
+      # ADR-2170: the configure steps run under cmd, so the one helper that turns warnings
+      # into errors runs here and hands its arguments over. A row without `werror` gets none.
+      - name: Warnings-as-errors arguments
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh "${{ matrix.werror }}")"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
       # ---------- Build ----------
       # CFLAGS/CXXFLAGS carry `/experimental:c11atomics` — without
       # that flag MSVC's `<stdatomic.h>` errors with "C atomic
@@ -1071,7 +1084,7 @@ jobs:
             --prefix %CD%\install ^
             -Dc_std=none ^
             -Denable_float=true ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       # ---------- Level Zero loader (SYCL leg only) ----------
       # core/src/meson.build:492 calls
@@ -1115,7 +1128,7 @@ jobs:
             --prefix %CD%\install ^
             -Denable_float=true ^
             -Dcpp_std=c++latest ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       - name: Build libvmaf (CUDA)
         if: matrix.backend == 'cuda'
@@ -1222,6 +1235,16 @@ jobs:
           where cl.exe
           cl.exe 2>&1 | findstr /i /C:"for ARM64"
 
+      # ADR-2170: this leg prints no warnings, so cl.exe and link.exe make
+      # them errors. The configure step runs under cmd; the helper runs here.
+      - name: Warnings-as-errors arguments
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh msvc)"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
       # `/experimental:c11atomics` as on every MSVC leg (see the
       # windows-gpu-build comment). `enable_asm` stays at its default,
       # which on aarch64 means the NEON translation units.
@@ -1236,7 +1259,7 @@ jobs:
             --default-library=static ^
             -Dc_std=none ^
             -Denable_cuda=false -Denable_sycl=false ^
-            -Denable_float=true
+            -Denable_float=true ${{ steps.werror.outputs.args }}
 
       - name: Build libvmaf
         shell: cmd

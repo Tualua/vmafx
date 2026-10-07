@@ -120,10 +120,13 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
+          # ADR-2170: the leg prints no warnings, so cl.exe, link.exe and
+          # nvcc make them errors (scripts/ci/werror-args.sh msvc).
           - os: windows-2025
             check_name: Windows MSVC+CUDA (full)
             cuda: true
             windows: true
+            werror: msvc
             meson_extra: >-
               --default-library=static -Dc_std=none
               -Denable_cuda=true -Denable_nvcc=true
@@ -421,6 +424,17 @@ jobs:
             --prefix "$PWD/install" \
             ${{ matrix.meson_extra }}
 
+      # ADR-2170: the Windows steps run under cmd, so the one helper that
+      # turns warnings into errors runs here and hands its arguments over.
+      - name: Warnings-as-errors arguments (Windows)
+        if: matrix.windows
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh "${{ matrix.werror }}")"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
       - name: Configure libvmaf (Windows)
         if: matrix.windows
         shell: cmd
@@ -430,7 +444,7 @@ jobs:
         run: |
           meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       # ── Build ────────────────────────────────────────────────────────
       - name: Build libvmaf (Linux)

@@ -47,6 +47,13 @@ fork's `crt_portable.h` spelling.
 (project link argument after `add_languages('objcpp')`), `core/src/sycl/run_captured.py` and the `sycl_quiet_launcher` of
 `sycl_common_*` in `core/src/meson.build`. no upstream file.
 
+## Warnings are errors on the MSVC legs (2026-10-07)
+
+`ci/msvc-werror-gate`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: the `msvc` mode of `scripts/ci/werror-args.sh`,
+its cases and the MSVC leg contract in `scripts/ci/tests/test_werror_args.py`, the `werror: msvc` row key, the `Warnings-as-errors
+arguments` bash step (`id: werror`) and `${{ steps.werror.outputs.args }}` on the cmd configure lines of `libvmaf-build-matrix.yml`
+(`windows-gpu-build`, `windows-arm64`) and `build.yml` (`build-work`). no upstream file.
+
 ## Warnings are errors per leg (2026-10-07)
 
 `ci/warnings-are-errors-per-leg`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `scripts/ci/werror-args.sh`, its test, and the
