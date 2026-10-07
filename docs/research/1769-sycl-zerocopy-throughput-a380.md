@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Research-1769: Where the SYCL zero-copy time goes on an Arc A380
 
-- **Status**: Active (baseline measured; candidates selected)
-- **Workstream**: [ADR-1769](../adr/1769-sycl-zerocopy-throughput-a380.md), phase 13
-- **Last updated**: 2026-10-06
+- **Status**: Complete (phase 13 closed; the 15 % target was not met, see [Final acceptance](#final-acceptance-plan-13-07))
+- **Workstream**: [ADR-1769](../adr/1769-sycl-zerocopy-throughput-a380.md), [ADR-1931](../adr/1931-sycl-speed-covariance-fast-exact.md), phase 13
+- **Last updated**: 2026-10-07
 
 ## Question
 
@@ -321,9 +321,132 @@ three more interleaved pairs give 21.21 ms of filter time per frame against
 is not reached. The same tiled kernel compiles for VIF scales 1 to 3 (1.3 ms
 and 0.4 ms of the frame) and is the next measured candidate.
 
+## K1 on VIF scales 1-3 (plan 13-09)
+
+The tiled horizontal kernel of K1 was extended from scale 0 to scale 1
+(`73c5545f7`) and to scales 2 and 3 (`d259332f4`). Both commits were
+bit-identical on the SYCL CPU device (random 32-bit planes at every scale, SG16
+and SG32) and on the A380 (`test_sycl_vif_parity` and `_sg32` including the 4K
+case, e2e, 200 frames against the base and against the CPU). The A/B used six
+interleaved rounds against the build with the exact SpEED fix (`covfix`);
+rounds 1 and 4 had a 3.7 s stall inside the tiled runs and are left out.
+
+| Variant | GPU ms per frame | Steady ms per frame | Steady fps | Host CPU ms per frame |
+| --- | --- | --- | --- | --- |
+| `covfix` (K1 at scale 0 only) | 21.27 (21.24-21.29) | 21.24 | 47.1 | 24.2 |
+| `k1s1` (+ scale 1) | 21.19 (21.10-21.25) | 21.12 | 47.4 | 23.3 |
+| `k1s123` (+ scales 2 and 3) | 21.16 (21.15-21.21) | 20.91 | 47.8 | 22.9 |
+
+VTune shows the scale-1 horizontal kernel 0.11 ms faster on its own (1.276 to
+1.165 ms per frame); scales 2 and 3 (0.306 and 0.071 ms) do not move. The
+frame-level differences (-0.08 and -0.03 ms of GPU time) are inside the
+0.15 ms range of the rows, so both commits were reverted (`aebcf69bb`,
+`46e1f72fb`). K1 stays at scale 0.
+
+## SpEED covariance: exact fix and its cost (plans 13-10 and 13-07)
+
+The A/B of plan 13-06 found one difference between the zero-copy filter and
+the CPU: on frame 140 of the segment, `vmaf_v1.0.16_3d0h` gave
+`speed_chroma_u` 3.64473032951355 on SYCL and 3.644730567932129 on the CPU, one
+fp32 step. It was not the import: `vmaf --backend sycl` on the dumped planes
+reproduced it, on every build. `speed.c::compute_cov_kernel_scalar()` adds the
+fp64 terms of each covariance entry one after the other and rounds every add;
+the SYCL kernel summed them near-exactly in parallel and rounded once, so a
+cancelling entry (14, 11) stored the neighbouring fp32 value and moved R, Q and
+13 of 240 block variances (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`).
+
+Fix A (`9b1985d6e`) replays the reference's operations in order in 64-bit
+integers, one work-item per entry: exact, but +9.70 ms per frame. Design B of
+[ADR-1931](../adr/1931-sycl-speed-covariance-fast-exact.md) (`9f9d0ae64`)
+keeps A's operations and order and moves the work that does not depend on the
+running sum (the differences and the products) into parallel launches; one
+sequential `signed_add()` chain per entry adds the stored fp64 terms. The
+exactness argument is the ADR's: the same helpers, the same order, values that
+round-trip through their stored bit patterns. Plan 13-10 measured 58.7 %
+recovery (harness GPU ms 18.45 / 28.56 / 22.63 before the fix, with A, with
+B). Plan 13-07 measured it again on the final head, video only:
+
+| Build | GPU ms per frame (min-max) | Steady ms per frame |
+| --- | --- | --- |
+| before the fix (`bce532ce8`) | 18.83 (18.82-18.83) | 19.74 |
+| A (`9b1985d6e`) | 28.53 (28.53-28.53) | 29.44 |
+| B, final head (`4ebd77e15`) | 23.06 (23.04-23.08) | 23.91 |
+
+A costs +9.70 ms (+51.5 %), the final head +4.23 ms (+22.5 %); 5.47 ms
+(56.4 %) is recovered, 58.9 % with the harness command. The sequential chain
+is 4.24 ms of the remainder; a binade-segmented composition (ADR-1931, option
+c) is the next step (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`). The
+200-frame segment is `IDENTICAL` to the CPU with A and with B. The CUDA and HIP
+twins keep the old pair sum and are not verified on a device.
+
+## Final acceptance (plan 13-07)
+
+Final head `4ebd77e15` against the pre-phase library (`41efb8a10`). The code
+difference is K1 at scale 0, the `n_subsample` fix and the exact SpEED
+covariance with its split chain. Every gate passes: the SYCL suite (74 of 74),
+the e2e harness (`pass=100 fail=0 nonexact=0`), the batched run (`pass=12`),
+and 200-frame identity for `vmaf_v0.6.1` and `vmaf_4k_v0.6.1` against the base
+and for `vmaf_v0.6.1` and `vmaf_v1.0.16_3d0h` against CPU libvmaf.
+
+Steady numbers are video-only runs (the harness command plus `-an -sn -dn`,
+see [Start-up for short scenes](#start-up-for-short-scenes)); medians of three
+interleaved rounds.
+
+| Model | Steady fps base / final | GPU ms base / final | Host CPU ms per frame base / final |
+| --- | --- | --- | --- |
+| `vmaf_v0.6.1` | 43.9 / 45.9 (+4.5 %) | 22.60 / 21.58 (-4.5 %) | 24.6 / 23.6 |
+| `vmaf_4k_v0.6.1` | 43.6 / 46.2 (+5.9 %) | 22.66 / 21.44 (-5.4 %) | 24.7 / 23.4 |
+| `vmaf_v1.0.16_3d0h` | 50.9 / 41.8 (-17.8 %) | 18.77 / 22.97 (+22.4 %) | 21.5 / 25.8 |
+
+The whole episode (76378 frames, `vmaf_4k_v0.6.1`, video only) ran at 44.99 fps
+before and 47.44 fps after (+5.4 %; GPU time 22.01 to 20.87 ms per frame).
+Every metric of every frame is `IDENTICAL` between the two builds, and the
+pooled VMAF is 95.454927 on both, the Phase 12 value.
+
+`n_subsample` at the final head (`vmaf_v0.6.1`, video only): 45.8, 76.9 and
+117.0 input frames per second at 1, 2 and 4 (21.66, 12.84 and 8.34 ms of GPU
+time per input frame); 2 and 4 are `IDENTICAL` to the CPU. About 2.0 ms (2)
+and 2.9 ms (4) of each input frame is spent whether the frame is scored or
+not.
+
+**Target verdict: not met.** A 15 % gain over the 43.9 fps base needs 50.5 fps,
+19.8 ms per frame; the final head runs at 21.8 ms (steady) and 21.6 ms (GPU),
+about 2.0 ms short. The compute engine is busy 96 % of the steady frame
+(harness, `vmaf_v0.6.1`), so the frame is GPU-bound. Against the
+[roofline](#roofline-and-measured-ceilings): the idle-gap candidates (C3, K5,
+2.2 to 2.4 ms of gaps at the baseline) have nothing left to fill, C3 measured
+no gain, and K1 at scales 1-3 measured none either. The ceilings that remain
+are kernel arithmetic: ADM (K2, up to 7 %) and launch merging (K5, up to 4 %),
+neither attempted. That remainder is the measured irreducibility for this
+phase; more throughput needs ADM or VIF arithmetic work, not overlap.
+
+## Start-up for short scenes
+
+The 12 s "start-up" of the 200-frame harness runs was not GPU or SYCL
+start-up. The harness command mapped no streams, so ffmpeg auto-selected one
+audio track and decoded the whole 53-minute episode's audio into the null
+muxer (596704 KiB in every run), 11.5 s per process whatever the segment
+length. Medians of three, N = 1:
+
+| Part | Seconds |
+| --- | --- |
+| Container start (`podman run` with the device and two mounts) | 0.38 |
+| QSV device init and the first decoded frame | 0.22 |
+| `libvmaf_sycl` init, ahead-of-time image (device, queue, model, buffers, first frame) | 0.25 |
+| JIT compilation of the SYCL kernels (dev build only; a warm persistent cache removes it) | 7.06 |
+| Whole-episode audio decode (no `-an`) | 11.54 |
+| Each frame after start-up | 0.020 |
+
+Video only, the ahead-of-time image scores 1 frame in 0.47 s and 20 in 0.85 s.
+The harness now passes `-an -sn -dn` (`scripts/test/zerocopy-throughput.sh`),
+and the user guidance is on the
+[zero-copy page](../backends/sycl/zero-copy.md#start-up-for-short-scenes).
+Parallel scenes were not measured.
+
 ## References
 
 - [ADR-1769](../adr/1769-sycl-zerocopy-throughput-a380.md)
+- [ADR-1931](../adr/1931-sycl-speed-covariance-fast-exact.md)
 - [ADR-1121](../adr/1121-sycl-qsv-zerocopy-p010-normalization.md), [ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md), [ADR-1596](../adr/1596-sycl-va-import-immediate-cmdlist.md), [ADR-1597](../adr/1597-sycl-zerocopy-planar-chroma-import.md)
 - [Research-1395](1395-sycl-kernels-no-scratch.md), [Research-1595](1595-sycl-zerocopy-feature-correctness.md)
 - [SYCL backend overview](../backends/sycl/overview.md)

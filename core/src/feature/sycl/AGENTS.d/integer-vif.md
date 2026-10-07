@@ -75,6 +75,25 @@ invariant: integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling d
   cleanup points in the three init helpers. Base-vs-refactor proof covers
   default and fused modes on 8-bit and 10-bit inputs at zero full-precision
   delta; rerun both modes after an upstream conflict.
+- **Scale-0 horizontal pass is the local-memory tiled kernel (ADR-1769, K1).**
+  `IntegerVifHoriTiledKernel<0, SG>` replaces `IntegerVifHoriKernel<0, SG>` in
+  `launch_vif_hori_v2()` and `launch_vif_hori_v2_sg16()` (`case 0` only); a
+  4x64 work-group copies 4 rows x 80 columns of the 7 tmp planes into
+  `sycl::local_accessor` tiles, mirrored with `dev_mirror()` so border and
+  interior pixels take one path. The 64-bit `ref` / `dis` / `ref_dis` sums are
+  split as `sum(c*hi) << 16 + sum(c*lo)`, which is exact only because the
+  scale's taps add up to 2^16: `dev_tile_convolve()` holds
+  `static_assert(vif_filter_sum(SCALE) == 65536U)`. Every scale that ever takes
+  the tiled pass needs that assert; scales 1-3 were tiled, measured and
+  reverted (plan 13-09, no frame-level gain), so they keep
+  `IntegerVifHoriKernel`. The tiled pass reuses `dev_compute_vif_stats()`,
+  `dev_reduce_and_accum()` and `dev_downsample_rd()`, so scale 0 still writes
+  the `rd_ref` / `rd_dis` planes scale 1 reads. No private array, no fp64, no
+  raw sub-group attribute; `VmafSyclKernelShape<SG, vif_grf_size(SG)>` keeps
+  the 256-entry register file at SG32. Guards:
+  `test_vif_3840x1600_10bit_identical` in `test_sycl_vif_parity` and `_sg32`
+  (all 15 debug keys, num and den of every scale, `==` at 4K 10-bit),
+  `test_sycl_kernel_scratch`, `test_sycl_kernel_source_contract.py`.
 
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|

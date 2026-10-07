@@ -2193,6 +2193,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [the SYCL backend guide](docs/backends/sycl/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins-2026-09-29).
 
 
+- **SYCL: `libvmaf_sycl` on QSV zero-copy input is 4.5 % faster with
+  `vmaf_v0.6.1` on an Arc A380 (43.9 to 45.9 fps at 3840x1600 10-bit), with
+  every score bit unchanged.** The scale-0 VIF horizontal pass reads its inputs
+  from a local-memory tile, which cuts the filter's GPU time by about 1.2 ms per
+  frame. `vmaf_4k_v0.6.1` gains 5.9 %, and a whole 76378-frame episode went
+  from 44.99 to 47.44 fps with identical per-frame scores.
+  `VMAF_SYCL_TIMING=1` now also prints a `[vmaf-sycl] phases:` line with the
+  host milliseconds per frame spent in queue waits and the VA import.
+  `scripts/test/zerocopy-throughput.sh` measures the zero-copy path on a real
+  pair. The SYCL zero-copy page now covers what limits the frame, start-up for
+  short scenes (pass `-an -sn -dn`), and the `n_subsample` and model trade-offs.
+  See ADR-1769.
+
+
 - **Regression test for model-collection growth failure.** When the array of a
   model collection cannot grow, `libvmaf` returns `-ENOMEM` and keeps the
   collection and its models intact; upstream Netflix/vmaf loses them
@@ -4579,11 +4593,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `vmaf_v1.0.16_3d0h` that moved `speed_chroma_u_mxv_45_nnf_0.1_snn_0.19_wvm_5`
   by 2.384e-07 (host-upload and QSV zero-copy alike). The twin now performs the
   reference's fp64 operations in the reference's order, one work-item per
-  entry, and the 200-frame segment scores identical to the CPU. Costs about
-  +10 ms per 3840x1600 frame on an Arc A380 until the optimised exact kernel
-  lands (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`,
+  entry, and the 200-frame segment scores identical to the CPU. That first
+  exact kernel cost +9.70 ms per 3840x1600 frame on an Arc A380 with
+  `vmaf_v1.0.16_3d0h` (18.83 to 28.53 ms of GPU time). With the split
+  covariance chain of ADR-1931 the exact path takes 23.06 ms, +4.23 ms over the
+  inexact kernel (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`,
   `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`). The CUDA and HIP twins
-  share the old design and are not verified.
+  share the old design and are not verified. See ADR-1931.
 
 
 - **`speed_chroma_sycl` and `speed_temporal_sycl` match the CPU with

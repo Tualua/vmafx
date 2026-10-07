@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1769: Throughput of the SYCL zero-copy path on Arc A380: measured limits and candidate scope
 
-- **Status**: Proposed
-- **Date**: 2026-10-06
+- **Status**: Accepted
+- **Date**: 2026-10-06 (accepted 2026-10-07)
 - **Deciders**: Lusoris Dev (selected by user, 2026-10-06)
 - **Tags**: sycl, zero-copy, performance, arc-a380, profiling, fork-local
 
@@ -41,7 +41,7 @@ Design of C3:
 - Patch 0005 calls `vmaf_sycl_wait_compute()` on the host-upload branch only. The QSV branch relies on the fence. `vmaf_read_pictures_sycl()` still waits on the primary queue before the frames go back to FFmpeg, so the surfaces and the deferred import frees keep their order ([ADR-1596](1596-sycl-va-import-immediate-cmdlist.md)). The public `vmaf_sycl_wait_compute()` keeps its documented meaning.
 - No data path changes, so no score bit moves. Validation on the device (CPU identity at `n_subsample` 1, 2 and 4, graph replay, `--repeat 10` batched) and the A/B timing come in plan 13-06.
 
-Acceptance uses the steady-state fps of 600 and 20 frame runs (45.3 fps baseline). The status stays Proposed until the code lands.
+Acceptance uses the steady-state fps of 600 and 20 frame runs (45.3 fps baseline).
 
 Outcome of the device validation and A/B (plan 13-06, numbers in [Research-1769](../research/1769-sycl-zerocopy-throughput-a380.md#ab-results-plan-13-06)):
 
@@ -49,6 +49,23 @@ Outcome of the device validation and A/B (plan 13-06, numbers in [Research-1769]
 - K3 is reverted: 0.05 ms per frame, inside the noise. Its byte-for-byte device test stays.
 - C3 is reverted with the device slot fence: the host wait moved from the frame start into the VA import and neither fps nor host CPU changed. The design above is therefore not in the tree; the filter keeps its frame-start `vmaf_sycl_wait_compute()`.
 - K5 was not coded: every scale-2/3 launch depends on the one before it.
+
+Final outcome (plans 13-09 and 13-07, numbers in [Research-1769](../research/1769-sycl-zerocopy-throughput-a380.md#final-acceptance-plan-13-07)):
+
+| Candidate | Outcome | Measurement |
+| --- | --- | --- |
+| K1, VIF scale 0 | Kept (`4969caff5`) | Kernel 6.32 to 5.33 ms per frame (VTune); filter GPU time -1.16 ms per frame; bit-identical |
+| K1-s1, VIF scale 1 | Rejected, reverted (`aebcf69bb`) | GPU ms 21.27 to 21.19, inside the 0.15 ms range of the rows; kernel 1.276 to 1.165 ms (VTune) |
+| K1-s23, VIF scales 2 and 3 | Rejected, reverted (`46e1f72fb`) | GPU ms 21.16 against 21.19, inside the range; kernels unchanged (0.306 and 0.071 ms) |
+| K3, 16-byte de-tile | Rejected, reverted | -0.05 ms per frame, inside the spread; failed its own device test before a fix |
+| C3, device slot fence | Rejected, reverted | No fps gain, host CPU 24.8 to 24.6 ms per frame; the host wait moved into the VA import |
+| K5, merged launches | Abandoned before coding | No independent launch worth more than about 0.1 ms |
+| C1, C2, K4 | Skipped by decision | Not coded |
+| K2, ADM | Not selected | Not coded |
+
+At the final head against the pre-phase library, video only: `vmaf_v0.6.1` 43.9 to 45.9 steady fps (+4.5 %, GPU time 22.60 to 21.58 ms), `vmaf_4k_v0.6.1` 43.6 to 46.2 fps (+5.9 %, 22.66 to 21.44 ms), the whole 76378-frame episode with `vmaf_4k_v0.6.1` 44.99 to 47.44 fps (+5.4 %), every frame identical and the pooled score 95.454927 on both. `vmaf_v1.0.16_3d0h` went from 50.9 to 41.8 fps (-17.8 %) because its SpEED covariance is now exact ([ADR-1931](1931-sycl-speed-covariance-fast-exact.md)).
+
+The 15 % target is not met: 15 % needs 19.8 ms per frame and the final head runs at 21.8 ms. The compute engine is busy 96 % of the frame, so the overlap candidates have no idle time left to use; the remaining ceilings are ADM arithmetic (K2, up to 7 %) and launch merging (K5, up to 4 %), neither attempted. The digest's final section is the measured irreducibility record. User guidance is in [Throughput on Arc A-series](../backends/sycl/zero-copy.md#throughput-on-arc-a-series-adr-1769) and [speed against accuracy](../usage/ffmpeg.md#speed-against-accuracy-with-libvmaf_sycl).
 
 ## Alternatives considered
 
@@ -60,7 +77,8 @@ Ceilings are upper bounds from the baseline, in ms of the 22.1 ms frame.
 | C3 device slot fence on the VA import, drop the frame-start wait | import overlaps compute; one spin fewer | bounded by the 2.2 ms gap; patch 0005 edit; every reader queue must be fenced; needs the `n_subsample` defect fixed first | 2.2 ms (3 to 10 %) | selected, after the `n_subsample` fix |
 | C1 skip chroma import for luma-only models | removes chroma de-interleave | new extractor callback; amends ADR-1597 D-01 | 0.3 ms (about 1 %) | not selected |
 | K3 de-tile 16 bytes per work-item | fewer work-items for a copy plus shift | small | 0.2 ms (1 %) | selected, rank 3 |
-| K1 VIF scale-0 intermediates (SLM-tiled vertical plus horizontal) | largest possible kernel gain | large effort; must be `==` at 4K and scratch-free; the horizontal kernel is arithmetic-bound | about 2.4 ms (up to 11 %) | selected, rank 1 |
+| K1 VIF scale-0 intermediates (SLM-tiled vertical plus horizontal) | largest possible kernel gain | large effort; must be `==` at 4K and scratch-free; the horizontal kernel is arithmetic-bound | about 2.4 ms (up to 11 %) | selected, rank 1; kept (-1.16 ms) |
+| K1 extended to VIF scales 1-3 (plan 13-09) | same kernel, no new arithmetic | the scales are small (1.3 ms and 0.4 ms of the frame) | about 0.2-0.3 ms | tried; no frame-level gain beyond the range, reverted |
 | K2 ADM hotspot | targets 6.3 ms | no hotspot above 7 % of the frame; row rounding must stay whole (ADR-1167) | 6.3 ms, no task above 7 % | not selected |
 | K4 dispatch or env default | zero code | measured neutral or slower | 0 ms | rejected by the env rows |
 | K5 merge tiny scale-2/3 launches | integer, order-free | 37 launches per frame; shares the idle gap with C3 | about 0.8 ms (up to 4 %) | selected, rank 2 |
@@ -72,7 +90,7 @@ Excluded: import caching, delayed frees, float reorder, copy-engine imports, `vi
 
 - **Positive**: later plans act on measured costs; the start-up artifact of the 200-frame benchmark and the `n_subsample` defect are found before code lands.
 - **Negative**: the 15 % target may be out of reach; acceptance numbers need a long segment or the steady-state formula.
-- **Neutral / follow-ups**: fix `T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06`; amend this ADR after the selection; document user guidance (`n_subsample`, model choice, start-up) under `docs/backends/sycl/`.
+- **Neutral / follow-ups**: `T-SYCL-ZEROCOPY-NSUBSAMPLE-MOTION-2026-10-06` is fixed; the user guidance (`n_subsample`, model choice, start-up) is on the zero-copy and FFmpeg pages; the next throughput work is ADM arithmetic (K2) or launch merging (K5), and the remaining cost of the exact SpEED covariance (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`).
 
 ## References
 

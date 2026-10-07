@@ -7,8 +7,10 @@
   `vmaf_v1.0.16_3d0h` that moved `speed_chroma_u_mxv_45_nnf_0.1_snn_0.19_wvm_5`
   by 2.384e-07 (host-upload and QSV zero-copy alike). The twin now performs the
   reference's fp64 operations in the reference's order, one work-item per
-  entry, and the 200-frame segment scores identical to the CPU. Costs about
-  +10 ms per 3840x1600 frame on an Arc A380 until the optimised exact kernel
-  lands (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`,
+  entry, and the 200-frame segment scores identical to the CPU. That first
+  exact kernel cost +9.70 ms per 3840x1600 frame on an Arc A380 with
+  `vmaf_v1.0.16_3d0h` (18.83 to 28.53 ms of GPU time). With the split
+  covariance chain of ADR-1931 the exact path takes 23.06 ms, +4.23 ms over the
+  inexact kernel (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`,
   `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`). The CUDA and HIP twins
-  share the old design and are not verified.
+  share the old design and are not verified. See ADR-1931.

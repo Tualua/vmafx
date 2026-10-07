@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1931: The SYCL SpEED covariance forms its fp64 terms in parallel and adds them in one sequential chain
 
-- **Status**: Proposed
-- **Date**: 2026-10-06
+- **Status**: Accepted
+- **Date**: 2026-10-06 (accepted 2026-10-07)
 - **Deciders**: Lusoris Dev (direction chosen by the user, 2026-10-06)
 - **Tags**: sycl, speed, bit-exactness, performance, arc-a380, fork-local
 
@@ -66,7 +66,9 @@ Measured on the Arc A380 in plan 13-10 with QSV zero-copy on a 3840x1600 10-bit 
   - `vmaf --backend cpu` against `--backend sycl` on the dumped 142-frame clip: 0 differences in any feature on any frame. Frame 140 `speed_chroma_u` is 3.644730567932129 on both.
 - **Device tests:** `test_sycl_speed_cov_math` (host, device, and the split form on the device), the three SpEED parity tests, `test_sycl_exact_twins` and `test_sycl_kernel_scratch` (139 kernels, none with scratch) pass. So do the zero-copy e2e SpEED cases (`fail=0 nonexact=0`) and `speed_gpu_parity.py` on 576x324.
 
-**Decision:** the split chain is kept. The Status stays Proposed until the phase closes. The B2 composition is the follow-up for the remaining 4.2 ms.
+**Decision:** the split chain is kept. The B2 composition is the follow-up for the remaining 4.2 ms.
+
+Plan 13-07 measured it again on the final head `4ebd77e15`, video only (the harness command plus `-an -sn -dn`), three rounds: GPU time 18.83 ms per frame before the fix (`bce532ce8`), 28.53 ms with A, 23.06 ms with the split chain. A costs +9.70 ms (+51.5 %); the final head costs +4.23 ms (+22.5 %) and recovers 5.47 ms, 56.4 % of A's cost (58.9 % with the harness command, reproducing the 58.7 % above). On the final head `vmaf_v1.0.16_3d0h` scores `IDENTICAL` to CPU libvmaf over 200 frames.
 
 ## Alternatives considered
 

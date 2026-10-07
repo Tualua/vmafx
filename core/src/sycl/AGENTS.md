@@ -349,6 +349,23 @@ sycl/
   error. Guard: `test_sycl_n_subsample_combined_graph` (+ `_replay`,
   `VMAF_SYCL_USE_GRAPH=1`).
 
+- **The filter's frame-start wait protects the VA import slot (ADR-1769).**
+  Patch 0005 calls `vmaf_sycl_wait_compute()` at the start of every
+  `libvmaf_sycl` frame, QSV branch included; it drains the primary and
+  combined queues before `vmaf_sycl_import_va_surface()` overwrites the upload
+  slot that frame N-2's kernels read. Nothing else orders those writes on the
+  import path. Phase 13 replaced it with a device slot fence (C3) and reverted
+  it: the host wait moved into the VA import (no fps, no host CPU gain), because
+  `vmaf_read_pictures_sycl()` still waits on the primary queue every frame.
+  **On rebase**: do not drop the frame-start wait without a device fence that
+  covers the primary queue, the combined queue and every compute queue, and a
+  measured gain.
+- **`VMAF_SYCL_TIMING` phase timers stay off the default path.**
+  `vmaf_sycl_phase_start()` / `vmaf_sycl_phase_record()` accumulate host ms
+  for `queue_wait`, `combined_wait`, `graph_wait` and the VA import; only
+  `VMAF_SYCL_TIMING=1` prints the `[vmaf-sycl] phases:` line. The import is
+  timed around the static `import_va_surface_body()`, so the `extern "C"`
+  entry stays kernel-free. Guard: `test_sycl_runtime_contract.py`.
 - **`common.cpp` cleanup + helper boundaries (HISS-21 burn-down).**
   `sycl_shared_frame_release()` is single cleanup owner for shared
   it replaced `fail:` label that `vmaf_sycl_shared_frame_init` used

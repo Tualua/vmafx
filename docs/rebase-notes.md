@@ -7,6 +7,47 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## SYCL zero-copy throughput on Arc A380 (ADR-1769, 2026-10)
+
+`perf/sycl-zerocopy-throughput`. SYCL kernels and runtime, `libvmaf.c`, tests,
+a benchmark harness, docs. Upstream Netflix has no SYCL code, so a sync never
+conflicts in `core/src/sycl/` or `core/src/feature/sycl/`; a rebase onto a
+branch that predates this one keeps this side. Files whose fork side must
+survive, with the tests that guard them:
+
+- `core/src/feature/sycl/integer_vif_sycl.cpp`: `IntegerVifHoriTiledKernel`
+  is the scale-0 horizontal pass in both selectors (`launch_vif_hori_v2`,
+  `launch_vif_hori_v2_sg16`); scales 1 to 3 keep `IntegerVifHoriKernel` (tiling them was measured
+  and reverted, ADR-1769). The split 64-bit sums rely on the
+  `vif_filter_sum(SCALE) == 65536U` `static_assert`. Guards:
+  `test_sycl_vif_parity` and `_sg32` (`test_vif_3840x1600_10bit_identical`,
+  every scale's num and den with `==`), `test_sycl_kernel_scratch`.
+- `core/src/feature/sycl/sycl_speed_cov_math.h` and `speed_sycl_pipeline.cpp`:
+  the covariance is ADR-1931's split chain (differences and products in
+  parallel, one sequential `signed_add()` chain per entry), which supersedes
+  the one-work-item-per-entry `covariance_entry()` launch of the entry below;
+  `covariance_entry()` stays as the single-function form. Guards:
+  `test_sycl_speed_cov_chain`, `test_sycl_speed_cov_math`,
+  `test_sycl_speed_cov_exact_contract.py`, the SpEED parity tests.
+- `core/src/libvmaf.c` (`read_pictures_note_skip()` at both SYCL skip sites)
+  and `core/src/sycl/common.cpp` (`vmaf_sycl_graph_skip()`, the `skip_count`
+  term of the graph gate, the DIRECT fallback): the `n_subsample` fix. Guard:
+  `test_sycl_n_subsample_combined_graph` and `_replay`.
+- `core/src/sycl/common.cpp` / `common.h` / `dmabuf_import.cpp`: the
+  `VMAF_SYCL_TIMING` phase timers (`vmaf_sycl_phase_start()` /
+  `_record()`, the VA import timed around the static
+  `import_va_surface_body()`) and the internal
+  `vmaf_sycl_detile_tile4_for_test()` hook. Guards:
+  `test_sycl_runtime_contract.py`, `test_sycl_detile_tile4`.
+- `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch` is unchanged:
+  C3 (no frame-start wait on the QSV branch, a device slot fence on the VA
+  import) was reverted, so the filter's `vmaf_sycl_wait_compute()` at the
+  start of every frame still protects the import slot. Do not drop it
+  without a device fence. No `reads_chroma` callback exists (C1 was not
+  coded).
+- `scripts/test/zerocopy-throughput.sh`, `zerocopy_throughput_report.py`,
+  `lib/qsv.sh`: test tooling only; every leg is video only (`-an -sn -dn`).
+
 ## SYCL SpEED covariance is the reference's sequential fp64 sum (2026-10-06)
 
 `perf/sycl-zerocopy-throughput`. SYCL kernel, one new header, tests, docs.

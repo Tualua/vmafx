@@ -296,6 +296,20 @@ backend within it.
   [ADR-0010](../adr/0010-sigstore-keyless-signing.md) (release
   signing).
 
+- **SYCL zero-copy throughput pieces ([ADR-1769](../adr/1769-sycl-zerocopy-throughput-a380.md))**:
+  three pieces cross packages. Patch 0005 keeps `vmaf_sycl_wait_compute()` at
+  the start of every `libvmaf_sycl` frame: it is what protects the VA import
+  slot, and the device fence that replaced it (C3) was measured and reverted.
+  `core/src/libvmaf.c::read_pictures_note_skip()` calls
+  `vmaf_sycl_graph_skip()` for each SYCL extractor `n_subsample` skips, at both
+  skip sites, and `core/src/sycl/common.cpp` counts it toward the graph gate;
+  without it `integer_motion2` / `integer_motion3` go wrong above
+  `n_subsample` 1 (`test_sycl_n_subsample_combined_graph`). The scale-0 VIF
+  horizontal pass is the local-memory tiled kernel
+  (`test_vif_3840x1600_10bit_identical`). See
+  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
 - **CPU extractors declare the features they write ([ADR-1359](../adr/1359-cli-feature-backend-twin.md))**:
   the twin lookup pairs a CPU extractor with a device twin through
   `provided_features`. `core/src/feature/float_moment.c` is an upstream-mirror

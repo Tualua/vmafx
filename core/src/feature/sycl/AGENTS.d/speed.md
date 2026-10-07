@@ -96,7 +96,12 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   (`==` against `compute_cov_kernel_scalar()`, fixture blocks a near-exact sum
   stores differently) still passes on a device
   (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`).
-  `test_sycl_speed_cov_exact_contract.py` pins the source shape. The CUDA and
+  `test_sycl_speed_cov_exact_contract.py` pins the source shape, and
+  `test_sycl_speed_chroma_parity`, `test_sycl_speed_temporal_parity` and
+  `test_sycl_speed_singular_parity` compare every output with `==`. Measured
+  cost on the A380 (`vmaf_v1.0.16_3d0h`, 3840x1600): 18.83 ms per frame before
+  the fix, 28.53 ms with the one-work-item entry, 23.06 ms with the split
+  chain; the chain is the remaining 4.2 ms. The CUDA and
   HIP twins have the old design (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
   `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`).
 

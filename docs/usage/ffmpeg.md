@@ -189,7 +189,7 @@ These options exist on every vmaf filter (`libvmaf`, `libvmaf_sycl`,
 | `feature` | string (pipe-separated `name=` entries) | (only model features) | Attach extra feature extractors; see [Feature option syntax](#feature-option-syntax). |
 | `pool` | `mean` / `min` / `max` / `harmonic_mean` / `median` / `perc5` / `perc10` / `perc20` | `mean` | Pooling method for the per-frame scores; see [Pooling](#pooling). |
 | `n_threads` | integer | `0` (library default) | Number of worker threads libvmaf may spawn. |
-| `n_subsample` | integer `>= 1` | `1` | Compute VMAF on every Nth frame only; useful for long-clip QC. |
+| `n_subsample` | integer `>= 1` | `1` | Compute VMAF on every Nth frame only; useful for long-clip QC. For the measured gain on `libvmaf_sycl`, see [speed against accuracy](#speed-against-accuracy-with-libvmaf_sycl). |
 | `score_fmt` | printf format string | unset (`%.6f`) | Format of the scores in the `log_path` report (patch `0016`); see [Score precision](#score-precision). |
 | `cpumask` | integer bitmask | `0` (all enabled) | Disable SIMD ISAs: 1 = SSE2/NEON, 2 = SSE3, 4 = SSE4.1, 8 = AVX2, 16 = AVX-512, 32 = AVX-512ICL (patch `0014`). |
 | `gpumask` | integer bitmask | `0` (all enabled) | Disable GPU dispatch: `1` disables CUDA (patch `0014`). |
@@ -346,6 +346,49 @@ Two more zero-copy rules:
   (ref|dist) failed: <n>; aborting because a skipped frame would change the
   pooled score`). The filter no longer skips the frame, because a skipped
   frame silently changes the pooled score.
+
+#### Speed against accuracy with `libvmaf_sycl`
+
+On an Intel Arc A380 scoring a 3840x1600 10-bit pair on QSV zero-copy input,
+`libvmaf_sycl` is limited by the GPU's compute time, not by decode or the host.
+Two choices change that time: `n_subsample` and the model. The measurements and
+what limits the frame are in
+[Throughput on Arc A-series](../backends/sycl/zero-copy.md#throughput-on-arc-a-series-adr-1769).
+
+`n_subsample=N` scores every Nth frame. Every input frame is still decoded and
+imported, and the temporal motion feature still runs on every frame, so the
+gain is smaller than N (`vmaf_v0.6.1`, video only, median of three runs):
+
+| `n_subsample` | Input frames per second | Scored frames per second | GPU ms per input frame |
+| --- | --- | --- | --- |
+| 1 | 45.8 | 45.8 | 21.66 |
+| 2 | 76.9 | 38.4 | 12.84 |
+| 4 | 117.0 | 29.2 | 8.34 |
+
+The pooled score changes with `n_subsample`, because fewer frames are scored.
+Each scored frame is bit-identical to CPU libvmaf at the same `n_subsample`.
+SYCL builds before the `n_subsample` fix reported wrong `integer_motion2` /
+`integer_motion3` (and `vmaf` up to 100) above 1.
+
+Model choice and its cost on the same pair:
+
+- `vmaf_v0.6.1` and `vmaf_4k_v0.6.1` compute the same features and cost the
+  same on the GPU (21.58 and 21.44 ms per frame). Choose between them by
+  viewing condition, not by speed.
+- `vmaf_v1.0.16_3d0h` takes 23.06 ms of GPU time per frame. Its SpEED features
+  (`speed_chroma`, `speed_temporal`) are now bit-identical to the CPU. SYCL
+  builds before that fix could differ by one fp32 step on rare frames and took
+  18.83 ms per frame; the first exact version took 28.53 ms
+  ([ADR-1931](../adr/1931-sycl-speed-covariance-fast-exact.md)).
+- `vmaf_v1.0.16_3d0h_2160` sets `speed_prescale: 0.5`. Its cost was not
+  measured here.
+
+Each input needs its own QSV device (`-init_hw_device qsv=...@va0` once per
+input, then `-hwaccel_device` per input). A shared device mixes the two
+decoders' surfaces; see
+[Give each decoder its own QSV session](../backends/sycl/zero-copy.md#give-each-decoder-its-own-qsv-session-required).
+Add `-an -sn -dn` so that ffmpeg does not decode the audio track, which costs
+whole seconds per process on a long file even when `trim` keeps a few frames.
 
 ### `libvmaf_cuda`
 
