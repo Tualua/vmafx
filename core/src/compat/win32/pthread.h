@@ -47,6 +47,17 @@ typedef void *pthread_condattr_t;
 #define PTHREAD_MUTEX_INITIALIZER SRWLOCK_INIT
 #define PTHREAD_COND_INITIALIZER CONDITION_VARIABLE_INIT
 
+/* The SYCL device pass compiles this header for a SPIR-V target, which has no calling
+ * conventions: clang ignores __stdcall there and warns (-Wignored-attributes). The host pass
+ * keeps the Win32 convention the OS entry points need. */
+#if defined(__SYCL_DEVICE_ONLY__)
+#define VMAF_W32_CALLBACK
+#define VMAF_W32_STDCALL
+#else
+#define VMAF_W32_CALLBACK CALLBACK
+#define VMAF_W32_STDCALL __stdcall
+#endif
+
 /* pthread_once — maps to Win32 INIT_ONCE / InitOnceExecuteOnce.
  * Used by iqa/ssim_tools.c (ADR-0871), float_ssim.c / float_ms_ssim.c,
  * cuda/dispatch_strategy.c (ADR-0181), and feature/integer_adm.h.
@@ -61,7 +72,7 @@ typedef struct vmaf_w32_pthread_once_ctx {
     void (*fn)(void);
 } vmaf_w32_pthread_once_ctx_t;
 
-static BOOL CALLBACK vmaf_w32_pthread_once_cb(PINIT_ONCE once, PVOID param, PVOID *ctx)
+static BOOL VMAF_W32_CALLBACK vmaf_w32_pthread_once_cb(PINIT_ONCE once, PVOID param, PVOID *ctx)
 {
     (void)once;
     (void)ctx;
@@ -80,7 +91,7 @@ typedef struct vmaf_w32_pthread_trampoline {
     void *arg;
 } vmaf_w32_pthread_trampoline_t;
 
-static unsigned __stdcall vmaf_w32_pthread_runner(void *raw)
+static unsigned VMAF_W32_STDCALL vmaf_w32_pthread_runner(void *raw)
 {
     vmaf_w32_pthread_trampoline_t local = *(vmaf_w32_pthread_trampoline_t *)raw;
     free(raw);

@@ -188,7 +188,7 @@ struct VmafSyclState {
 /* Device-image registration                                           */
 /* ------------------------------------------------------------------ */
 
-#if defined(_WIN32) && defined(VMAF_SYCL_MSVC_DEVICE_LINK)
+#if defined(_WIN32) && defined(VMAF_SYCL_MSVC_DEVICE_LINK) && !defined(__SYCL_DEVICE_ONLY__)
 /* ADR-1364: link.exe never runs the SYCL device-image wrapper, so the build
  * wraps every image of libvmaf into one object (sycl_device_link.obj) whose
  * only external symbol is this anchor. Asking for it here pulls that object

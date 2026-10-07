@@ -65,11 +65,6 @@ static const char *target_420_10bit =
     "\"conversion_target\": {" COLORSPACE_ICTCP ", \"pixel_format\": \"420\", "
     "\"bit_depth\": 10}, ";
 
-/* the target also pins 4:2:0 at 16 bits */
-static const char *target_420_16bit =
-    "\"conversion_target\": {" COLORSPACE_ICTCP ", \"pixel_format\": \"420\", "
-    "\"bit_depth\": 16}, ";
-
 /* The bytes of the file at `path`, NUL terminated; NULL on any I/O error. */
 static char *read_whole_file(const char *path, size_t *len)
 {
@@ -338,6 +333,11 @@ static char *test_source_matching_pinned_format_is_not_converted(void)
 }
 
 #ifdef HAVE_ZIMG
+/* the target also pins 4:2:0 at 16 bits; only the zimg conversion tests use it */
+static const char *target_420_16bit =
+    "\"conversion_target\": {" COLORSPACE_ICTCP ", \"pixel_format\": \"420\", "
+    "\"bit_depth\": 16}, ";
+
 static char *test_target_pixel_format_is_applied(void)
 {
     /* same colorspace as the target, so only the chroma subsampling differs */

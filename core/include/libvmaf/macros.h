@@ -34,6 +34,11 @@
  */
 #if defined(_MSC_VER)
 #define VMAF_EXPORT __declspec(dllexport)
+#elif defined(__MINGW32__) && !defined(__clang__)
+/* GCC's PE targets have no ELF visibility: the attribute is ignored, and under LTO each use
+ * draws "visibility attribute not supported in this configuration" (-Wattributes). Leaving
+ * the macro empty keeps the symbols exactly as exported before. */
+#define VMAF_EXPORT
 #elif defined(__GNUC__) || defined(__clang__)
 #define VMAF_EXPORT __attribute__((visibility("default")))
 #else

@@ -1123,6 +1123,7 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
 extern char **environ;
 #endif
 
+#ifndef _WIN32 /* only the POSIX vmaf_dnn_verify_signature() below uses the two registry helpers */
 /* Find the sigstore_bundle path for the model entry whose onnx basename
  * matches `onnx_basename`. Writes a registry-relative path into `out`
  * (size `out_sz`) on success, or returns -ENOENT when no match. The
@@ -1223,6 +1224,7 @@ static int slurp_registry(const char *registry_path, char **out_buf)
     *out_buf = buf;
     return 0;
 }
+#endif /* !_WIN32 */
 
 #ifdef _WIN32
 int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)

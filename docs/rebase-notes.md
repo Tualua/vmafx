@@ -34,6 +34,14 @@ definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_pa
 `VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
 the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
 fork's `crt_portable.h` spelling.
+## Zero warnings: unused code, attributes, deprecated calls (2026-10-07)
+
+`fix/zero-warnings-unused-and-attributes`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Upstream-mirror files touched:
+`core/include/libvmaf/macros.h` (`VMAF_EXPORT` is empty when `__MINGW32__` is defined and the compiler is not clang; keep the
+fork's branch order: MSVC, MinGW GCC, GNU / clang, empty) and `core/src/dnn/meson.build` (`include_type: 'system'` on the ONNX
+Runtime dependency). A sync keeps both. The Win32 pthread shim names `VMAF_W32_CALLBACK` / `VMAF_W32_STDCALL` instead of
+`CALLBACK` / `__stdcall`.
+
 ## Zero warnings: initialisers, tags, fallthrough (2026-10-07)
 
 `fix/zero-warnings-initialisers`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Upstream-mirror files touched:

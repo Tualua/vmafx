@@ -2992,7 +2992,6 @@ test_metal_float_vif_math = executable('test_metal_float_vif_math',
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
-    link_language : 'cpp',
 )
 test('test_metal_float_vif_math', test_metal_float_vif_math, suite : ['fast'], timeout : 300)
 
