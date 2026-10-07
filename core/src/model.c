@@ -355,7 +355,7 @@ static int model_collection_new(VmafModelCollection **out, const VmafModel *mode
         return -ENOMEM;
     }
     memset((char *)mc->name, 0, name_sz);
-    strncpy((char *)mc->name, model->name, name_sz - 1);
+    memcpy((char *)mc->name, model->name, name_sz - 1);
 
     *out = mc;
     return 0;

@@ -74,8 +74,21 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #ifdef _WIN32
+#include <errno.h>
 #include <io.h>
-#define VMAF_OPEN_BIN _open
+#include <share.h>
+/* _sopen_s with _SH_DENYNO is the CRT's non-deprecated spelling of _open() (same sharing). */
+static inline int vmaf_open_bin_crt(const char *path, int oflag, int pmode)
+{
+    int fd = -1;
+    const errno_t err = _sopen_s(&fd, path, oflag, _SH_DENYNO, pmode);
+    if (err != 0) {
+        errno = err;
+        return -1;
+    }
+    return fd;
+}
+#define VMAF_OPEN_BIN vmaf_open_bin_crt
 #define VMAF_FDOPEN_FN _fdopen
 #else
 #include <unistd.h>

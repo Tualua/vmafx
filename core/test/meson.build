@@ -1272,8 +1272,8 @@ endif
 # API and whole-program analyzers see one truthful external symbol graph.
 pdjson_static_symbols = [
     'json_begin_error',
-    'push',
-    'pop',
+    'json_push',
+    'json_pop',
     'buffer_peek',
     'buffer_get',
     'stream_get',
@@ -3872,7 +3872,9 @@ if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 # aarch64 does not need this — Clang's fmaf() is already vfmla on NEON.
 _ssimulacra2_test_x86_fma_args = []
 if host_machine.cpu_family() in ['x86_64', 'x86']
-    _ssimulacra2_test_x86_fma_args = ['-mavx2', '-mfma']
+    if vmaf_x86_isa_unix_flags_ok
+        _ssimulacra2_test_x86_fma_args = ['-mavx2', '-mfma']
+    endif
 endif
 # ADR-1207 — a score must not depend on the host instruction set.
 # Drives the public API twice over one fixture, once with the host ISA and

@@ -892,7 +892,7 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
     if (!optarg_copy)
         usage(app, "error while parsing model option: %s", optarg);
     (void)memset(optarg_copy, 0, optarg_sz + 1);
-    (void)strncpy(optarg_copy, optarg, optarg_sz);
+    (void)memcpy(optarg_copy, optarg, optarg_sz);
 
     CLIModelConfig model_cfg = {
         .path = nullptr,

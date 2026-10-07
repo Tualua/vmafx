@@ -117,7 +117,7 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
     if (fstat(yuv_fileno(fin), &st) != 0 || !S_ISREG(st.st_mode))
         return; /* pipe or fstat failure — skip, let reader hit EOF */
 
-    off_t file_sz = st.st_size;
+    off_t file_sz = (off_t)st.st_size;
     size_t frame_sz = yuv->dst_buf_sz;
     unsigned bpp = yuv->bitdepth > 8u ? 2u : 1u;
     const char *fmt_name = yuv->pix_fmt == VMAF_PIX_FMT_YUV420P ? "yuv420p" :
@@ -280,15 +280,15 @@ static int yuv_input_fetch_frame(yuv_input *yuv, FILE *fin, video_input_ycbcr _y
 
     _ycbcr[0].width = yuv->width;
     _ycbcr[0].height = yuv->height;
-    _ycbcr[0].stride = yuv->width * xstride;
+    _ycbcr[0].stride = (int)(yuv->width * xstride);
     _ycbcr[0].data = yuv->dst_buf;
     _ycbcr[1].width = frame_c_w;
     _ycbcr[1].height = frame_c_h;
-    _ycbcr[1].stride = c_w * xstride;
+    _ycbcr[1].stride = (int)(c_w * xstride);
     _ycbcr[1].data = yuv->dst_buf + pic_sz;
     _ycbcr[2].width = frame_c_w;
     _ycbcr[2].height = frame_c_h;
-    _ycbcr[2].stride = c_w * xstride;
+    _ycbcr[2].stride = (int)(c_w * xstride);
     _ycbcr[2].data = _ycbcr[1].data + c_sz;
 
     return 1;

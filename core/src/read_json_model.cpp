@@ -17,6 +17,7 @@
  *
  */
 
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "libvmaf/model.h"
 #include "log.h"
@@ -148,7 +149,7 @@ int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned i)
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
-        char *key = strdup(json_get_string(s, nullptr));
+        char *key = VMAF_STRDUP(json_get_string(s, nullptr));
         if (!key)
             return -ENOMEM;
         const int err = parse_feature_opts_entry(s, model, i, key);
@@ -276,7 +277,7 @@ int append_feature_name(VmafModel *model, const char *name, unsigned index)
      * occupants — the orphan is unreachable and leaks. Caught by the
      * nightly fuzz_json_model LeakSanitizer lane. */
     free(model->feature[index].name);
-    model->feature[index].name = strdup(name);
+    model->feature[index].name = VMAF_STRDUP(name);
     if (!model->feature[index].name)
         return -ENOMEM;
     return 0;

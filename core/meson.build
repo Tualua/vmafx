@@ -57,10 +57,12 @@ if not cxx.compiles(cxx_std_probe, name: 'std::expected in selected C++ standard
 endif
 
 # Platform feature macros used by individual compiler checks below. Meson's
-# MSVC-like C compiler backend validates c_std but currently emits no
-# corresponding /std flag, so keep that platform spelling narrowly scoped to
-# that backend, feature probes included; non-MSVC compilers use Meson's
-# built-in c_std/cpp_std options exclusively.
+# MSVC-like C compiler backend stops at /std:c17, so keep the newest-C
+# spelling narrowly scoped to that backend, feature probes included;
+# non-MSVC compilers use Meson's built-in c_std/cpp_std options exclusively.
+# On cl.exe configure with -Dc_std=none: Meson then emits no /std flag of its
+# own and cl does not print D9025 ("overriding /std:c17 with /std:clatest") for
+# every C translation unit. The Windows CI legs do.
 test_args = []
 if cc.get_argument_syntax() == 'msvc'
     add_project_arguments('/std:clatest', language: 'c')

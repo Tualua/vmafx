@@ -28,7 +28,7 @@
  * before the include; provide a fallback that mirrors the convention used
  * in adm_tools.h, integer_adm.h, ciede.c, etc. */
 #ifndef M_PI
-#define M_PI 3.14159265358979323846264338327
+#define M_PI 3.14159265358979323846
 #endif
 
 static float linear_interpolate(float left_position, float left_value, float right_position,

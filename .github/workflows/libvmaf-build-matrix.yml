@@ -1006,6 +1006,7 @@ jobs:
         run: |
           meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
+            -Dc_std=none ^
             -Denable_float=true ^
             ${{ matrix.meson_extra }}
 
@@ -1169,6 +1170,7 @@ jobs:
           meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
             --default-library=static ^
+            -Dc_std=none ^
             -Denable_cuda=false -Denable_sycl=false ^
             -Denable_float=true
 

@@ -60,6 +60,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "metadata_handler.h"
 #include "fex_ctx_vector.h"
 #include "libvmaf_priv.h"
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "log.h"
 #include "model.h"
@@ -1234,7 +1235,7 @@ static char *dnn_make_output_feature_name(const char *base, const char *suffix, 
     if (!base)
         return NULL;
     if (!multi_output)
-        return strdup(base);
+        return VMAF_STRDUP(base);
 
     char fallback[VMAF_DNN_NAME_FALLBACK_BUF];
     const char *raw = suffix;

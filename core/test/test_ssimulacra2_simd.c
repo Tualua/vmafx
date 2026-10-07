@@ -49,7 +49,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #endif
+#if !defined(_MSC_VER) /* cl.exe has no contraction pragma; /fp:precise does not contract */
 #pragma clang fp contract(off)
+#endif
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif

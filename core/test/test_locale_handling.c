@@ -52,7 +52,9 @@ static int locale_available(const char *locale_name)
     char old_locale_buf[256];
     const char *old_locale = setlocale(LC_ALL, NULL);
     if (old_locale) {
-        strncpy(old_locale_buf, old_locale, sizeof(old_locale_buf) - 1);
+        const size_t old_len = strnlen(old_locale, sizeof(old_locale_buf) - 1);
+        memcpy(old_locale_buf, old_locale, old_len);
+        old_locale_buf[old_len] = '\0';
         old_locale_buf[sizeof(old_locale_buf) - 1] = '\0';
     } else {
         old_locale_buf[0] = '\0';

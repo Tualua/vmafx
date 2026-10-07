@@ -89,6 +89,18 @@ endif
 # END VMAF strict FP compiler-argument policy
 add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])
 
+# The x86 SIMD instruction-set options. cl.exe and the Windows Intel driver do
+# not take the Unix spellings (D9002: they warn and ignore them), and their
+# intrinsics need no option, so the MSVC-syntax drivers get none; clang-cl takes
+# the Unix spellings through its Clang front end.
+vmaf_x86_isa_unix_flags_ok = cc.get_argument_syntax() != 'msvc' or _strict_fp_compiler_id == 'clang-cl'
+vmaf_x86_avx2_isa_args = []
+vmaf_x86_avx512_isa_args = []
+if vmaf_x86_isa_unix_flags_ok
+    vmaf_x86_avx2_isa_args = ['-mavx', '-mavx2', '-mfma']
+    vmaf_x86_avx512_isa_args = ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd', '-mavx512vl']
+endif
+
 # ADR-1495: the host math functions (log10, pow, powf, log2f, exp, log and
 # the others libvmaf calls) come from the C library's libm in every build, so
 # an icx build returns a GCC build's scores. The Intel driver links its own
@@ -1116,7 +1128,7 @@ if is_asm_enabled
           'x86_avx2',
           x86_avx2_sources,
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       # ssim_avx2 carve-out (mirror of psnr_hvs_avx2 / ms_ssim_decimate_avx2
@@ -1130,7 +1142,7 @@ if is_asm_enabled
           'x86_ssim_avx2',
           feature_src_dir + 'x86/ssim_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
 
@@ -1145,13 +1157,13 @@ if is_asm_enabled
           'x86_psnr_hvs_avx2',
           feature_src_dir + 'x86/psnr_hvs_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       x86_ms_ssim_decimate_avx2_lib = static_library(
           'x86_ms_ssim_decimate_avx2',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -1169,7 +1181,7 @@ if is_asm_enabled
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
@@ -1189,7 +1201,7 @@ if is_asm_enabled
           'x86_float_adm_avx2',
           feature_src_dir + 'x86/float_adm_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1204,7 +1216,7 @@ if is_asm_enabled
           'x86_speed_matmul_avx2',
           feature_src_dir + 'x86/speed_matmul_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_speed_matmul_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1232,8 +1244,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             # ADR-1415: strict FP like every x86 SIMD library; see
             # x86_avx2_static_lib above.
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] +
+            c_args : vmaf_x86_avx512_isa_args +
                      vmaf_strict_fp_args +
                      vmaf_cflags_common,
             # b_lto=false: with b_lto=true at meson.build top, LTO over
@@ -1252,8 +1263,7 @@ if is_asm_enabled
             'x86_ssimulacra2_avx512',
             feature_src_dir + 'x86/ssimulacra2_avx512.c',
             include_directories : vmaf_base_include,
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
+            c_args : vmaf_x86_avx512_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
         )
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
@@ -1265,8 +1275,7 @@ if is_asm_enabled
             'x86_float_adm_avx512',
             feature_src_dir + 'x86/float_adm_avx512.c',
             include_directories : vmaf_base_include,
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
+            c_args : vmaf_x86_avx512_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
 
@@ -1276,8 +1285,7 @@ if is_asm_enabled
             'x86_speed_matmul_avx512',
             feature_src_dir + 'x86/speed_matmul_avx512.c',
             include_directories : vmaf_base_include,
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
+            c_args : vmaf_x86_avx512_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_speed_matmul_avx512_lib.extract_all_objects(recursive: true)
       endif

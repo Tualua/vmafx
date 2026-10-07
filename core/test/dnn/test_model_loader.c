@@ -28,6 +28,7 @@
 #include "mu_table.h"
 #include "test.h"
 
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "dnn/model_loader.h"
 
@@ -230,7 +231,7 @@ static FILE *fopen_w_600(const char *path)
          * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
          * second free.  2.21 no longer does. */
         /* cppcheck-suppress doubleFree ; see the note above */
-        (void)close(fd);
+        (void)VMAF_CLOSE(fd);
     }
     return fp;
 }

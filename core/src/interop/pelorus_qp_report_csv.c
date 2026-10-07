@@ -24,7 +24,10 @@
  *
  * Local edit vs the pelorus original: the intra-pelorus #include below is
  * rewritten from "pelorus/interop.h" to "libvmaf/pelorus/interop.h" so it resolves
- * under core/include/. Nothing else is changed.
+ * under core/include/. The second local edit is the Windows file open in
+ * open_utf8(): _wfsopen(..., _SH_DENYNO) replaces the deprecated _wfopen()
+ * (same sharing, no C4996). Both edits belong in pelorus; re-vendoring before
+ * pelorus carries the second one brings the warning back.
  */
 
 /*
@@ -66,6 +69,7 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <share.h>
 #include <wchar.h>
 #include <windows.h>
 #endif
@@ -413,7 +417,7 @@ static pel_result open_utf8(const char *path, const char *mode, FILE **out)
     if (rc != PEL_OK) {
         return rc; /* nothing was allocated: utf8_to_wide frees on its failures */
     }
-    *out = _wfopen(wpath, wmode);
+    *out = _wfsopen(wpath, wmode, _SH_DENYNO);
     open_errno = errno;
     free(wpath); /* the one allocation, released before any return below */
     errno = open_errno;

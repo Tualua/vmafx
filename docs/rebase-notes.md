@@ -22,6 +22,14 @@ need care: `x += double` is `x = (float)(x + double)` (never `x += (float)double
 the increment in a `double` so the load of `entropy[i]` stays after the `log2()` calls. The twin contract tests
 (`test_*_exact_contract.py`, `test_sycl_vif_float_sums_contract.py`) quote the new statements. A statement-for-statement mirror in a GPU twin needs no
 change: the value is the same.
+## MSVC zero warnings: CRT calls, pragmas, declarations (2026-10-07)
+
+`fix/msvc-zero-warnings-crt`. Upstream-mirror files touched: `pdjson.c` (`push` / `pop` renamed `json_push` / `json_pop`, with the matching
+`core/test/meson.build` symbol list), `adm_tools.c` and `barten_csf_tools.h` (the `M_PI` fallback now spells UCRT's own literal so a second
+definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_parse.cpp`, `y4m_input.c`, `yuv_input.c` (bounded `memcpy`,
+`VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
+the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
+fork's `crt_portable.h` spelling.
 
 ## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
 

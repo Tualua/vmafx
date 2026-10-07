@@ -142,7 +142,8 @@ void append_option_names(char *buf, size_t buf_sz, const VmafOption *opts,
         malloc(dst_sz)); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0729 C ABI owner
     if (!dst)
         return nullptr;
-    strncpy(dst, buf, dst_sz);
+    memcpy(dst, buf, dst_sz - 1U);
+    dst[dst_sz - 1U] = '\0';
     return dst;
 }
 

@@ -59,7 +59,7 @@ int vmaf_ref_init(VmafRef **ref)
         return -ENOMEM;
     new (r) VmafRef{}; /* value-init: zero-initialises atomic_int cnt */
 
-    atomic_init(&r->cnt, 1);
+    atomic_store(&r->cnt, 1);
     *ref = r;
     return 0;
 }

@@ -3110,6 +3110,7 @@
     },
     "0488": {
       "sites": {
+        "core/src/compat/crt_portable.h": 1,
         "core/src/dnn/model_loader.c": 4,
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
@@ -6872,6 +6873,7 @@
     "1155": {
       "sites": {
         ".semgrep.yml": 1,
+        "core/src/compat/crt_portable.h": 1,
         "core/tools/cli_parse.cpp": 4,
         "core/tools/vmaf_bench.c": 2,
         "core/tools/y4m_input.c": 3,

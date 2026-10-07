@@ -50,6 +50,7 @@
 #include <optional>
 #include <string_view>
 
+#include "compat/crt_portable.h"
 #include "dict.h"
 #include "thread_locale.h"
 #include "libvmaf/feature.h"
@@ -176,7 +177,7 @@ class CLocaleScope
     if (existing->val && std::strcmp(existing->val, val) == 0)
         return {};
 
-    const char *val_copy = ::strdup(val);
+    const char *val_copy = VMAF_STRDUP(val);
     if (!val_copy)
         return std::unexpected(-ENOMEM);
     std::free(const_cast<char *>(existing->val));
@@ -195,10 +196,10 @@ class CLocaleScope
     if (auto r = dict_grow_entries(d); !r)
         return r;
 
-    auto *val_copy = ::strdup(val);
+    auto *val_copy = VMAF_STRDUP(val);
     if (!val_copy)
         return std::unexpected(-ENOMEM);
-    auto *key_copy = ::strdup(key);
+    auto *key_copy = VMAF_STRDUP(key);
     if (!key_copy) {
         std::free(val_copy);
         return std::unexpected(-ENOMEM);

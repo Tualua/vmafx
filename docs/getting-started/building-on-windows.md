@@ -108,6 +108,7 @@ set CXXFLAGS=/experimental:c11atomics
 meson setup build core --buildtype release ^
   --prefix %CD%\install ^
   --default-library=static ^
+  -Dc_std=none ^
   -Denable_cuda=false -Denable_sycl=false ^
   -Denable_float=true
 ninja -C build install

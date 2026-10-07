@@ -115,7 +115,7 @@ jobs:
             cuda: true
             windows: true
             meson_extra: >-
-              --default-library=static
+              --default-library=static -Dc_std=none
               -Denable_cuda=true -Denable_nvcc=true
               -Denable_sycl=false
               -Denable_float=true
