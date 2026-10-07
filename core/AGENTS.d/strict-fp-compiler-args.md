@@ -21,3 +21,14 @@ invariant: Strict FP is a project argument; every C and C++ translation unit bui
   `core/test/test_strict_fp_compiler_args.py` (reads build's own
   `compile_commands.json` under `meson test`). aarch64 check:
   `make test-netflix-golden-arm64`.
+- **icx spells the model reset (ADR-2170)**: the `intel-llvm` strict line is
+  `-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full
+  -ffp-contract=off` (SYCL: the same, then the fp32 precision pair, except for
+  the MSVC-syntax driver, which keeps `-fp-model=precise -ffp-contract=off`).
+  The two-flag spelling compiles to the same objects but icx reports
+  `-ffp-contract=off` after `-fp-model=precise` as `-Woverriding-option` on every
+  compile, which a gated leg cannot carry. On rebase keep `-fno-fast-math
+  -fcomplex-arithmetic=full` between the model and the contraction flag; the
+  contraction flag stays last. Guard: `test_icx_strict_policy_draws_no_overriding_option_warning`
+  (compiles with `-Werror`; the old spelling must fail) and the matrix in
+  `core/test/test_strict_fp_compiler_args.py`.

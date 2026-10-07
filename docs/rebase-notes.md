@@ -34,6 +34,12 @@ definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_pa
 `VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
 the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
 fork's `crt_portable.h` spelling.
+## Zero warnings: icx and clang-cl driver flags (2026-10-07)
+
+`build/zero-warnings-driver-flags`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). `core/src/meson.build` is a fork file: the
+icx strict line gained `-fno-fast-math -fcomplex-arithmetic=full` before `-ffp-contract=off` (see the page `core/AGENTS.d/strict-fp-compiler-args.md`),
+and `-pedantic` / `-fvisibility=*` are offered only to non-MSVC-syntax drivers. no upstream file.
+
 ## Zero warnings: unused code, attributes, deprecated calls (2026-10-07)
 
 `fix/zero-warnings-unused-and-attributes`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Upstream-mirror files touched:

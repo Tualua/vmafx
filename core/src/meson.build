@@ -9,8 +9,14 @@ sycl_dir = './sycl/'
 
 vmaf_base_include = include_directories('./', './feature', './feature/common', '../include')
 
-vmaf_cflags_common = cc.get_supported_arguments([
-    '-pedantic',
+# clang-cl and icx-cl take an option they do not know with a -Wunknown-argument
+# warning, not an error, so get_supported_arguments() keeps it and every
+# compile prints "unknown argument ignored in clang-cl". -pedantic and
+# -fvisibility=hidden mean nothing to them (PE has no ELF visibility), so the
+# MSVC-syntax drivers are not offered them.
+_gnu_driver_only_args = cc.get_argument_syntax() == 'msvc' ? [] : ['-pedantic', '-fvisibility=hidden']
+
+vmaf_cflags_common = cc.get_supported_arguments(_gnu_driver_only_args + [
     # ADR-0692: enforce the JPL Rule-24 fallthrough annotation at compile time.
     # C23 provides the standard [[fallthrough]] spelling.
     '-Wimplicit-fallthrough',
@@ -18,9 +24,9 @@ vmaf_cflags_common = cc.get_supported_arguments([
     # no C consumer exists anywhere in the tree.
     # ADR-0379: hide all symbols by default; only vmaf_*-prefixed entry
     # points annotated with VMAF_EXPORT in the public headers are visible
-    # in the final libvmaf.so. This eliminates the 207-symbol leak
-    # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
-    '-fvisibility=hidden',
+    # in the final libvmaf.so (-fvisibility=hidden above). This eliminates the
+    # 207-symbol leak found by Research-0092 (libsvm C API, pdjson, SIMD
+    # internals, etc.)
 ]) + [
     # Suppresses the VMAF_POOL_METHOD_NB deprecation attribute for internal
     # translation units that legitimately iterate over all pool methods (e.g.
@@ -72,7 +78,16 @@ endif
 if _strict_fp_compiler_id == 'intel-llvm'
     vmaf_fp_model_args = ['-fp-model=precise']
     # ORDER IS LOAD-BEARING: precise first, contraction-off last.
-    vmaf_strict_fp_args = vmaf_fp_model_args + ['-ffp-contract=off']
+    # `-fno-fast-math -fcomplex-arithmetic=full` between them (ADR-2170): a
+    # `-ffp-contract=off` straight after `-fp-model=precise` is the override
+    # icx reports as -Woverriding-option on every compile. Passed after the
+    # model, `-fno-fast-math` leaves nothing to override and removes the
+    # diagnostic, but it also drops the complex-arithmetic mode the model had
+    # set to full, so that is spelled again. Measured on 182 translation units
+    # of this tree: the objects of the two spellings are byte-identical, and
+    # the frontend arguments differ only by the `-fcomplex-arithmetic=full`
+    # token itself.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['-fno-fast-math', '-fcomplex-arithmetic=full', '-ffp-contract=off']
 elif _strict_fp_compiler_id == 'intel-llvm-cl'
     vmaf_fp_model_args = ['/fp:precise']
     # Intel's Windows driver has no -ffp-contract option. /Qfma- is the
@@ -1337,7 +1352,7 @@ endif
 # public vmaf_* API and, of C++ symbols, only libstdc++ template members, which
 # namespace std declares with default visibility.
 # ADR-1337: hide inline C++ placement new/delete symbols with -fvisibility-inlines-hidden.
-vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + ['-fvisibility-inlines-hidden'])
+vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + (cxx.get_argument_syntax() == 'msvc' ? [] : ['-fvisibility-inlines-hidden']))
 
 if is_cuda_enabled
     # Check for required CUDA headers
@@ -2097,7 +2112,10 @@ if is_sycl_enabled
     if is_sycl_acpp
         sycl_strict_fp_args = ['-ffp-contract=off']
     else
-        sycl_strict_fp_args = ['-fp-model=precise', '-ffp-contract=off'] + sycl_fp32_prec_args
+        # The icx-cl driver (MSVC syntax) keeps the two-flag spelling: its handling of
+        # `-fno-fast-math` is not measured, and the Windows SYCL leg is not gated yet.
+        sycl_fast_math_reset = sycl_msvc_device_link ? [] : ['-fno-fast-math', '-fcomplex-arithmetic=full']
+        sycl_strict_fp_args = ['-fp-model=precise'] + sycl_fast_math_reset + ['-ffp-contract=off'] + sycl_fp32_prec_args
     endif
     # END VMAF SYCL strict FP policy
 

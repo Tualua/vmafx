@@ -11393,6 +11393,13 @@
       },
       "target": "2134-cuda-adm-cm-aim-register-budget-angle-flag.md"
     },
+    "2170": {
+      "sites": {
+        "core/src/meson.build": 1,
+        "core/test/test_strict_fp_compiler_args.py": 2
+      },
+      "target": "2170-warnings-are-errors-per-leg.md"
+    },
     "2171": {
       "sites": {
         ".github/workflows/research-radar.yml": 1,

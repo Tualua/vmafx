@@ -86,9 +86,17 @@ CUDA_FP_FLAG_WORDS = ("fmad", "ffp-contract", "fp:", "fast_math", "fast-math", "
 # -fp-model=precise implies -ffp-contract=on), then correctly rounded fp32
 # division and square root. AdaptiveCpp accepts only contraction-off.
 SYCL_PREC = ["-foffload-fp32-prec-div", "-foffload-fp32-prec-sqrt"]
+# ADR-2170: `-fno-fast-math -fcomplex-arithmetic=full` sit between the model and the contraction
+# flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
+ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
 SYCL_MATRIX = {
-    "icpx": (False, ["-fp-model=precise", "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
+    "icpx": (False, ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
     "acpp": (True, ["-ffp-contract=off"], []),
+}
+# The MSVC-syntax driver (icx-cl) keeps the two-flag spelling: its handling of
+# `-fno-fast-math` is not measured. Toolchain -> sycl_strict_fp_args.
+SYCL_MSVC_DRIVER = {
+    "icx-cl": ["-fp-model=precise", "-ffp-contract=off", *SYCL_PREC],
 }
 # The icpx driver link carries the precision pair for the SPIR-V JIT image. The
 # MSVC build (ADR-1364) links with link.exe, and its explicit device link, which
@@ -115,7 +123,7 @@ COMPILER_MATRIX = {
     "intel-llvm": (
         "linux",
         ["-fp-model=precise"],
-        ["-fp-model=precise", "-ffp-contract=off"],
+        ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off"],
         ["-Xcompiler=-ffp-contract=off"],
     ),
     "msvc": ("windows", [], ["/fp:precise"], ["-Xcompiler=/fp:precise"]),
@@ -463,7 +471,10 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         for compiler_id, flags in (
             ("gcc", "-ffp-contract=off"),
             ("clang", "-ffp-contract=off -mavx2 -mfma -ffp-contract=off"),
-            ("intel-llvm", "-fp-model=precise -ffp-contract=off"),
+            (
+                "intel-llvm",
+                "-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full -ffp-contract=off",
+            ),
             ("msvc", "/fp:precise"),
             ("intel-llvm-cl", "/fp:precise /Qfma-"),
             ("clang-cl", "/clang:-ffp-contract=off"),
@@ -624,11 +635,26 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                     (
                         f"project('sycl-strict-fp-{toolchain}', 'c')",
                         f"is_sycl_acpp = {'true' if is_acpp else 'false'}",
+                        "sycl_msvc_device_link = false",
                         policy,
                         f"assert(sycl_strict_fp_args == {_meson_list(strict_args)},",
                         f"       'wrong SYCL strict FP arguments for {toolchain}')",
                         f"assert(sycl_fp32_prec_args == {_meson_list(prec_args)},",
                         f"       'wrong SYCL fp32 precision arguments for {toolchain}')",
+                        "",
+                    )
+                )
+                _meson_setup(self, toolchain, fixture)
+        for toolchain, strict_args in SYCL_MSVC_DRIVER.items():
+            with self.subTest(toolchain=toolchain):
+                fixture = "\n".join(
+                    (
+                        f"project('sycl-strict-fp-{toolchain}', 'c')",
+                        "is_sycl_acpp = false",
+                        "sycl_msvc_device_link = true",
+                        policy,
+                        f"assert(sycl_strict_fp_args == {_meson_list(strict_args)},",
+                        f"       'wrong SYCL strict FP arguments for {toolchain}')",
                         "",
                     )
                 )
@@ -656,6 +682,42 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         # No subset list beside it (ADR-1358 / ADR-1363 names folded into it).
         for retired in ("sycl_exact_fp_args", "sycl_exact_fp_sources", "sycl_speed_strict_fp_args"):
             self.assertNotIn(retired, source)
+
+    @unittest.skipUnless(shutil.which("icx"), "icx is not on PATH (source oneAPI setvars.sh)")
+    def test_icx_strict_policy_draws_no_overriding_option_warning(self) -> None:
+        """ADR-2170: the strict spelling compiles clean under -Werror; the old one does not."""
+        icx = shutil.which("icx")
+        assert icx is not None
+        strict = COMPILER_MATRIX["intel-llvm"][2]
+        old = ["-fp-model=precise", "-ffp-contract=off"]
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "probe.c"
+            src.write_text("float f(float a, float b, float c) { return a * b + c; }\n")
+            obj = Path(tmp) / "probe.o"
+
+            def compile_with(flags: list[str]) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+                    [icx, "-O2", "-Werror", *flags, "-c", str(src), "-o", str(obj)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+            ok = compile_with(strict)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            # Negative case: the check can fail. The two-flag spelling is reported as an override.
+            bad = compile_with(old)
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn("-Woverriding-option", bad.stderr)
+            # No contraction: a * b + c is two instructions with the strict spelling.
+            disasm = subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+                [icx, "-O2", "-mavx2", "-mfma", *strict, "-S", "-o", "-", str(src)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(disasm.returncode, 0, disasm.stderr)
+            self.assertNotIn("vfmadd", disasm.stdout)
 
 
 if __name__ == "__main__":
