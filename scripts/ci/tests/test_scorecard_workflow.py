@@ -101,7 +101,8 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn(": write", workflow)
         self.assertNotIn("secrets.", workflow)
-        self.assertNotIn("needs:", workflow)
+        # ADR-2169: the only dependency is the tier decision, never the master aggregate.
+        self.assertEqual(re.findall(r"(?m)^\s+needs:.*$", workflow), ["    needs: tier"])
         self.assertNotIn("download-artifact", workflow)
         self.assertIn('run: test "$IS_DRAFT" = false', workflow)
         self.assertIn(

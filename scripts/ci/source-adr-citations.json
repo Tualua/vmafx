@@ -6838,8 +6838,10 @@
         "docker/Dockerfile.node": 1,
         "pkg/version/version.go": 1,
         "pyproject.toml": 1,
+        "scripts/ci/ci_tier.py": 1,
         "scripts/ci/release-pr-exempt.sh": 5,
         "scripts/ci/tests/test-release-pr-exempt.sh": 2,
+        "scripts/ci/tests/test_ci_routing_contract.py": 1,
         "scripts/git-hooks/pre-push-pr-body-lint.sh": 6,
         "scripts/git-hooks/test-pre-push-pr-body-lint.py": 2,
         "scripts/release/check-release-bot-secrets.sh": 2,
@@ -6988,7 +6990,8 @@
         "dev/scripts/runner-entrypoint.sh": 1,
         "dev/scripts/runner-supervisor.sh": 1,
         "scripts/ci/check-runner-available.sh": 1,
-        "scripts/ci/tests/test-runner-available.sh": 1
+        "scripts/ci/tests/test-runner-available.sh": 1,
+        "scripts/ci/tests/test_ci_routing_contract.py": 1
       },
       "target": "1177-sycl-arc-self-hosted-runner.md"
     },
@@ -7911,6 +7914,7 @@
         ".github/workflows/tests-and-quality-gates.yml": 1,
         "scripts/ci/check-runner-available.sh": 1,
         "scripts/ci/tests/test-runner-available.sh": 1,
+        "scripts/ci/tests/test_ci_routing_contract.py": 1,
         "scripts/ci/tests/test_hiss_replay_contract.py": 1
       },
       "target": "1319-fail-closed-self-hosted-gpu-admission.md"
@@ -8680,8 +8684,10 @@
     "1388": {
       "sites": {
         ".github/workflows/rule-enforcement.yml": 5,
+        "scripts/ci/ci_tier.py": 1,
         "scripts/ci/release-pr-exempt.sh": 5,
         "scripts/ci/tests/test-release-pr-exempt.sh": 2,
+        "scripts/ci/tests/test_ci_routing_contract.py": 1,
         "scripts/git-hooks/pre-push-pr-body-lint.sh": 1
       },
       "target": "1388-release-pat-mode-gate-exemption.md"
@@ -11393,6 +11399,33 @@
         "core/test/test_cuda_adm_cm_register_pressure.py": 1
       },
       "target": "2134-cuda-adm-cm-aim-register-budget-angle-flag.md"
+    },
+    "2169": {
+      "sites": {
+        ".github/workflows/ci-escalate.yml": 2,
+        ".github/workflows/ci-tier.yml": 2,
+        ".github/workflows/e2e-k8s.yml": 1,
+        ".github/workflows/libvmaf-build-matrix.yml": 3,
+        ".github/workflows/pr-type-label.yml": 1,
+        ".github/workflows/required-aggregator.yml": 7,
+        ".github/workflows/tidy-metal.yml": 1,
+        "scripts/ci/ci_escalate.py": 1,
+        "scripts/ci/ci_router.py": 1,
+        "scripts/ci/ci_tier.py": 1,
+        "scripts/ci/test_ffmpeg_patch_workflow_contract.py": 1,
+        "scripts/ci/test_sycl_tidy_workflow_contract.py": 1,
+        "scripts/ci/tests/test_ci_aggregator_tier.py": 1,
+        "scripts/ci/tests/test_ci_escalate.py": 1,
+        "scripts/ci/tests/test_ci_expressions.py": 1,
+        "scripts/ci/tests/test_ci_impact.py": 1,
+        "scripts/ci/tests/test_ci_routing_contract.py": 2,
+        "scripts/ci/tests/test_ci_tier.py": 1,
+        "scripts/ci/tests/test_pr_time_verify_workflows.py": 2,
+        "scripts/ci/tests/test_required_release_legs.py": 1,
+        "scripts/ci/tests/test_rust_ci_workflow_contract.py": 1,
+        "scripts/ci/tests/test_scorecard_workflow.py": 1
+      },
+      "target": "2169-ci-fewer-runs.md"
     },
     "2170": {
       "sites": {

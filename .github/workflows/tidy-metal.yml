@@ -24,6 +24,8 @@ on:
         default: false
   pull_request:
     branches: [master]
+    # ADR-2169: draft pull requests do not run; promoting one to ready does.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "core/src/metal/**"
       - "core/src/feature/metal/**"
@@ -43,7 +45,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  tier:
+    name: CI tier (Tidy Metal)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   clang-tidy-metal:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     # RC3 coverage: the Objective-C++ Metal host code and the Metal-only C tests
     # are in no Linux lane's compile database. Homebrew's clang-tidy of the same
     # major as the Linux lanes reads them against the Xcode SDK. The lane

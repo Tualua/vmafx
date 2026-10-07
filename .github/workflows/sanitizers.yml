@@ -45,6 +45,14 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  tier:
+    name: CI tier (Sanitizers)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   # ── ASan + UBSan combined (every PR) ─────────────────────────────────
   # Single job: `-fsanitize=address,undefined` in one clang build, next to
   # the separate address + undefined rows in tests-and-quality-gates.yml,
@@ -52,15 +60,14 @@ jobs:
   # check is suppressed because ~50 K&R-prototype test harness files
   # trip it unconditionally (rewrite tracked separately).
   asan-ubsan:
+    needs: tier
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     # ADR-1297 — required. `-fsanitize=address,undefined` in one build is a
     # distinct configuration from the separate `Sanitizers (address)` and
     # `Sanitizers (undefined)` rows that were already required: interaction
     # bugs between the two instrumentations only appear when both are live.
     # NOT in `strictMustReport` — the `if:` below excludes `push`, and the
     # aggregator also runs on pushes to master, where this job never reports.
-    if: |
-      github.event_name == 'pull_request' && github.event.pull_request.draft == false
-      || github.event_name == 'workflow_dispatch'
     # required-aggregator
     name: Sanitizers ASan+UBSan
     runs-on: ubuntu-26.04

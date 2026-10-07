@@ -92,9 +92,10 @@ class FFmpegWorkflowContract(unittest.TestCase):
         header = self.check.split("    steps:\n", maxsplit=1)[0]
         self.assertIn("    name: FFmpeg Patch Stack\n", header)
         self.assertIn("    # required-aggregator\n", header)
-        self.assertIn("github.event.pull_request.draft == false", header)
+        # ADR-2169: the tier job owns the draft gate and the light tier owns this check.
+        self.assertIn("needs.tier.outputs.light == 'true'", header)
         self.assertNotIn("steps.impact", header)
-        self.assertNotIn("needs:", header)
+        self.assertIn("    needs: tier\n", header)
 
     def test_publication_uses_generated_release_default(self) -> None:
         publication = (ROOT / ".github/workflows/docker-publish-operator-node.yml").read_text()

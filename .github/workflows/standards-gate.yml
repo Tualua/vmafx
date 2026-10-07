@@ -35,7 +35,17 @@ env:
 # required-aggregator-job: Go API Compatibility
 
 jobs:
+  tier:
+    name: CI tier (Standards)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   standards:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator: Standards & Invariant Verification Gate
     name: Standards & Invariant Verification Gate
     runs-on: ubuntu-26.04
@@ -103,6 +113,8 @@ jobs:
   # required-aggregator: HISS Replay Evidence (macOS)
   # required-aggregator: HISS Replay Evidence (Windows)
   hiss-replay-platforms:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     name: HISS Replay Evidence (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -139,6 +151,8 @@ jobs:
         run: standardsctl hiss coverage --verify
 
   windows-hooks:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Windows Lefthook Pre-Commit
     runs-on: windows-2025
     timeout-minutes: 15

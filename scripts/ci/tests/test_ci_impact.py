@@ -712,8 +712,13 @@ class WorkflowContract(unittest.TestCase):
         for gate_job, check_name, work_job in gates:
             block = self._job_block(text, gate_job)
             with self.subTest(workflow=filename, job=gate_job):
-                self.assertIn(f"needs: [impact, {work_job}]", block)
-                self.assertIn("if: always()", block)
+                # ADR-2169: the gate also needs the tier, and a tier that does not own
+                # the gate leaves it skipped (a skipped required context is accepted
+                # by the aggregator only for a tier that does not owe it).
+                self.assertIn(f"needs: [tier, impact, {work_job}]", block)
+                self.assertRegex(
+                    block, r"if: always\(\) && needs\.tier\.outputs\.(light|full) == 'true'"
+                )
                 self.assertIn(f"name: {check_name}", block)
                 self.assertIn('if [ "$PLAN_RESULT" != success ]', block)
                 self.assertIn("true:success|false:skipped", block)

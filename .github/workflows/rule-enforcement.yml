@@ -22,8 +22,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deep-dive-checklist:
+  tier:
+    name: CI tier (Rules)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  deep-dive-checklist:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0108
     # required-aggregator
     name: Deliverables Checklist
@@ -126,7 +135,8 @@ jobs:
         run: bash scripts/ci/deliverables-check.sh
 
   doc-substance-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0100 / ADR-0167
     # required-aggregator
     name: Doc-Substance Gate
@@ -297,7 +307,8 @@ jobs:
           echo "Doc-Substance: every touched user-discoverable surface has a matching docs/ edit."
 
   state-md-touch-check:
-    if: github.event.pull_request.draft == false || github.event_name != 'pull_request'
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0165
     # required-aggregator
     name: docs/state.md Gate
@@ -347,7 +358,8 @@ jobs:
         run: bash scripts/ci/state-md-touch-check.sh
 
   silent-revert-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1284
     # required-aggregator
     name: Silent-Revert Guard
@@ -419,7 +431,8 @@ jobs:
         run: python3 scripts/ci/check-silent-revert.py
 
   ffmpeg-patches-surface-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # CLAUDE.md §12 r14, ADR-0356
     # required-aggregator
     name: FFmpeg-Patches Surface Sync
@@ -465,7 +478,8 @@ jobs:
         run: bash scripts/ci/ffmpeg-patches-surface-check.sh
 
   adr-backfill-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0106
     name: ADR-Backfill Advisory
     runs-on: ubuntu-26.04
@@ -514,7 +528,8 @@ jobs:
           fi
 
   adr-collision-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0386 / ADR-0628
     # required-aggregator
     name: ADR Collision Guard

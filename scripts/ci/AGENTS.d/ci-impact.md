@@ -2,8 +2,11 @@
 paths:
   - scripts/ci/plan-ci-impact.py
   - .github/ci-impact.json
-  - scripts/ci/tests/test_ci_impact.py
-invariant: Planner fails closed to `mode=full` except declared `own_paths_only`; required contexts use planner, work, gate.
+  - scripts/ci/tests/test_ci_*.py
+  - .github/ci-tier.json
+  - .github/workflows/ci-*.yml
+  - scripts/ci/ci_*.py
+invariant: Planner fails closed to `mode=full`; planner/work/gate; one tier file.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CI impact planner (ADR-1140)
@@ -44,3 +47,31 @@ invariant: Planner fails closed to `mode=full` except declared `own_paths_only`;
 - **Inheritance is resolved without recursion (HISS-01).** `inheritance_order()`
   sorts the selectors topologically (and raises on a cycle) and
   `impact_selectors()` resolves them in that order in one pass.
+
+- Tier = `ci_tier.py` decision. Fork PR, `ci: full`, master push, dispatch, schedule, release PR
+  with `autorelease: cut` = full. Own PR (Renovate incl.) = light. Release PR without cut label
+  = release-light (`always` contexts only). Release PR = bot author, or maintainer account with
+  release-only diff (`release-pr-exempt.sh`, reused): head ref alone never trusted.
+- Required context neither in `always` nor `full_only` = light. New required context: aggregator
+  `required`, marker comment, and `full_only` or `always` when not light. Routing contract fails
+  when workflows and file disagree.
+- Aggregator: `CI_TIER`, `CI_TIER_ALWAYS`, `CI_TIER_FULL_ONLY` from `ci_tier.py` outputs; no tier
+  env = full = old behaviour. Not-owed context: absent or skipped OK, ran and failed = fail.
+  Failed `Decide the CI tier` check = aggregator failure; queued or running one = aggregator
+  keeps waiting (jobs behind `needs: tier` have no check run before it completes). Never add `labeled` to aggregator
+  types: skipped aggregator run on same SHA reads as pass.
+- Only `ci-escalate.yml` listens for `labeled` (job `if` = two labels). Flow: cancel, await
+  (bounded), re-run each latest PR run. Re-run reads live labels (`GH_TOKEN`, API): payload
+  labels of re-run stale. Never put `labeled` in another workflow.
+- Light-tier job: `needs: tier`, `if: needs.tier.outputs.light == 'true'`. Full: `.full`. Gate of
+  planner workflow: `needs: [tier, impact, <work>]`, `if: always() && needs.tier.outputs.<t> == 'true'`
+  Pinned by `test_ci_impact.py`, `test_required_release_legs.py`, `test_rust_ci_workflow_contract.py`.
+  `libvmaf-build-matrix.yml` legs: matrix key `tier` = `light`/`full` per `full_only`; step
+  `leg` skips work; checkout stays unconditional (checkout-ordering gate), shallow when skipped.
+- Untiered job or non-master push trigger = entry in `ci-tier.json` with reason and expiry; test
+  fails after expiry. `praetor-api.yml`, `praetor-docs.yml` byte-locked by `praetorctl audit`:
+  fix upstream, never edit here.
+- `gha_expressions.py` evaluates `if:` per Actions docs (null == false, case-insensitive strings,
+  `&&`/`||` return operands); unsupported syntax raises. `workflow_router.py` simulates routing
+  only, not steps. `CI_ROUTING_WORKFLOWS_DIR` points contract at another tree (proof vs master).
+- ci-tier.json = CI-authority file: planner plans `mode=full` on change.

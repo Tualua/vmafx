@@ -46,10 +46,45 @@ jobs:
           echo "Mark the PR ready for review so this workflow reruns and waits for the real gates."
           exit 1
 
+      # ADR-2169 — the tier of this event decides which required contexts it
+      # owes: a pull request from this repository owes the light tier, the
+      # release pull request without the cut label owes the release contract
+      # only, everything else owes the whole list. The decision and the lists
+      # come from the same definition the workflows read (.github/ci-tier.json).
+      - name: Check out the tier definition (ADR-2169)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/ci-tier.json
+            release-please-config.json
+            scripts/ci/ci_tier.py
+            scripts/ci/release-pr-exempt.sh
+            scripts/lib
+          sparse-checkout-cone-mode: false
+
+      - name: Decide the tier (ADR-2169)
+        id: tier
+        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/ci_tier.py --github-output "$GITHUB_OUTPUT"
+
       - name: Wait for sibling workflows + verify required-check outcomes
         if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
+          # ADR-2169 — see scripts/ci/ci_tier.py; empty means the full tier.
+          CI_TIER: ${{ steps.tier.outputs.tier }}
+          CI_TIER_ALWAYS: ${{ steps.tier.outputs.always_json }}
+          CI_TIER_FULL_ONLY: ${{ steps.tier.outputs.full_only_json }}
           # ADR-1177 — operator switch for the Arc A380 self-hosted lane.
           SYCL_ARC_RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
           # ADR-1319 — distinct switch for the unprovisioned multi-vendor lane.
@@ -467,6 +502,21 @@ jobs:
                 if (index !== -1) required.splice(index, 1);
               }
             }
+            // ADR-2169 — contexts the tier of this event does not owe. A tier
+            // that is not named (a push, a fork pull request, a labelled own
+            // pull request) owes the whole list, which is the behaviour before
+            // the tiers existed. A context that did not run is accepted; one
+            // that ran must still pass.
+            const tier = (process.env.CI_TIER || 'full').trim();
+            const tierAlways = JSON.parse(process.env.CI_TIER_ALWAYS || '[]');
+            const tierFullOnly = JSON.parse(process.env.CI_TIER_FULL_ONLY || '[]');
+            let notOwed = new Set();
+            if (tier === 'light') {
+              notOwed = new Set(required.filter(name => tierFullOnly.includes(name)));
+            } else if (tier === 'release-light') {
+              notOwed = new Set(required.filter(name => !tierAlways.includes(name)));
+            }
+            core.info(`CI tier ${tier}: ${notOwed.size} required contexts not owed`);
             const headRef = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.ref
               : '';
@@ -575,6 +625,21 @@ jobs:
               throw new Error('more than 2000 check runs reported for one SHA');
             }
 
+            // ADR-2169 — every pull-request workflow starts with a `tier` job and
+            // GitHub creates the check runs of the jobs that need it only when it has
+            // completed. While a tier decision is queued, running or only just done,
+            // a required context that has not appeared yet is not absent, it is
+            // pending, whatever the registration grace says.
+            function tierDecisionPending(nowMs) {
+              return Object.values(byName).some(run => {
+                if (!run.name.includes('Decide the CI tier')) return false;
+                if (activeStatuses.has(run.status)) return true;
+                const completedMs = Date.parse(run.completed_at || 0);
+                return Number.isFinite(completedMs) &&
+                  nowMs - completedMs <= registrationPropagationMs;
+              });
+            }
+
             function delayedRegistrationStillExpected(name, nowMs) {
               return (delayedStrictDependencies[name] || []).some(dependency => {
                 const run = byName[dependency];
@@ -622,7 +687,7 @@ jobs:
             while (Date.now() < deadline) {
               const check_runs = await listAllCheckRuns();
               byName = newestByName(check_runs, await pullRequestSuites());
-              const missing = required.filter(n => !byName[n]);
+              const missing = required.filter(n => !byName[n] && !notOwed.has(n));
               const stillRunning = required.filter(n => {
                 const run = byName[n];
                 return run && activeStatuses.has(run.status);
@@ -630,10 +695,12 @@ jobs:
               const nowMs = Date.now();
               const delayedMissing = missing.filter(name =>
                 delayedRegistrationStillExpected(name, nowMs));
-              if (stillRunning.length === 0 && delayedMissing.length === 0 &&
+              const tierPending = tierDecisionPending(nowMs);
+              if (stillRunning.length === 0 && delayedMissing.length === 0 && !tierPending &&
                   (missing.length === 0 || nowMs > registrationGraceDeadline)) {
                 break;
               }
+              if (tierPending) core.info('Waiting for the CI tier decisions of the workflows');
               core.info(`Waiting on: ${stillRunning.slice(0, 3).join(', ')}` +
                         (stillRunning.length > 3 ? ` (+${stillRunning.length - 3} more)` : ''));
               if (delayedMissing.length > 0) {
@@ -671,6 +738,14 @@ jobs:
             const accepted = ['success', 'skipped', 'neutral'];
             for (const name of required) {
               const run = byName[name];
+              if (notOwed.has(name)) {
+                if (run && !accepted.includes(run.conclusion)) {
+                  failed.push(`${name}: ${run.conclusion ?? run.status} (ran, although the ${tier} tier does not owe it)`);
+                } else {
+                  core.info(`OK (not owed by the ${tier} tier): ${name}`);
+                }
+                continue;
+              }
               if (strictMustReport.includes(name)) {
                 if (!run) {
                   failed.push(`${name}: never reported (strict required context)`);
@@ -724,6 +799,15 @@ jobs:
                 failed.push(`${name}: ${run.conclusion ?? run.status}`);
               } else {
                 core.info(`OK (${run.conclusion}): ${name}`);
+              }
+            }
+
+            // ADR-2169 — a tier job that failed leaves its workflow with no
+            // jobs, and a context that never appeared reads as not applicable.
+            // The tier decision is therefore itself a check.
+            for (const [name, run] of Object.entries(byName)) {
+              if (name.includes('Decide the CI tier') && !accepted.includes(run.conclusion)) {
+                failed.push(`${name}: ${run.conclusion ?? run.status} (the tier decision of a workflow failed, so its jobs did not run)`);
               }
             }
 

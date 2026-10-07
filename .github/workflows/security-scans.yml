@@ -31,8 +31,17 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
-  semgrep:
+  tier:
+    name: CI tier (Security)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  semgrep:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Semgrep
     runs-on: ubuntu-latest
@@ -120,7 +129,8 @@ jobs:
   # both duplicates queries and trips the CodeQL setup UI's "ambiguous
   # configuration" detector. Pick one suite per job.
   codeql-cpp:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (C/C++)
     runs-on: ubuntu-latest
@@ -179,7 +189,8 @@ jobs:
           category: "/language:cpp"
 
   codeql-python:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (Python)
     runs-on: ubuntu-latest
@@ -225,7 +236,8 @@ jobs:
   # so that OSSF Scorecard's SAST check detects a SAST tool run on 100% of commits
   # (including docs-only PRs) cheaply (~15-20s) without weakening any gate.
   codeql-actions:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (Actions)
     runs-on: ubuntu-latest
@@ -247,7 +259,8 @@ jobs:
           category: "/language:actions"
 
   secret-scan:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Gitleaks
     runs-on: ubuntu-latest
@@ -294,9 +307,10 @@ jobs:
           category: gitleaks
 
   dependency-review:
+    needs: tier
+    if: needs.tier.outputs.light == 'true' && github.event_name == 'pull_request'
     # required-aggregator
     name: Dependency Review
-    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

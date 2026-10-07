@@ -52,6 +52,8 @@ required and which ADR owns it, see
 | File | Purpose |
 | --- | --- |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
+| [`ci-tier.yml`](../../.github/workflows/ci-tier.yml) | Reusable workflow every pull-request workflow calls first: decides the tier ([ADR-2169](../adr/2169-ci-fewer-runs.md)); no trigger of its own. |
+| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied. |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
@@ -71,7 +73,7 @@ required and which ADR owns it, see
 | [`dev-container-build.yml`](../../.github/workflows/dev-container-build.yml) | PR-time build gate for `dev/Containerfile` (ADR-0819). |
 | [`helm-chart.yml`](../../.github/workflows/helm-chart.yml) | `helm lint` of the chart. |
 | [`rust-ci.yml`](../../.github/workflows/rust-ci.yml) | Rust crates: `cargo fmt --all` and `clippy --workspace`, `cargo test --workspace`, the golden smoke example and `cargo-deny`; the planner may skip the work, the gates `vmafx-sys CI` and `cargo-deny` are required. |
-| [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan and UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
+| [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan and UBSan on full-tier pull requests and master pushes, TSan on master pushes, nightly fuzzing. |
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
 | [`scorecard-policy.yml`](../../.github/workflows/scorecard-policy.yml) | OpenSSF Scorecard PR policy (ADR-1247). |
@@ -130,8 +132,12 @@ explicitly fails drafts:
 
 - each workflow's `pull_request:` block lists
   `types: [opened, synchronize, reopened, ready_for_review]`;
-- each top-level job carries an `if:` clause of the form
-  `github.event_name != 'pull_request' || github.event.pull_request.draft == false`.
+- the first job of the workflow, `tier`, carries an `if:` clause of the form
+  `github.event_name != 'pull_request' || github.event.pull_request.draft == false`
+  and every other job needs it ([ADR-2169](../adr/2169-ci-fewer-runs.md); before
+  that each job carried the clause itself). The workflows that cannot carry it
+  are the two praetor-locked ones, listed under
+  [Which jobs run when](#which-jobs-run-when-adr-2169).
 
 What this means for contributors:
 
@@ -148,6 +154,111 @@ What this means for contributors:
 
 To preview CI status before merging, mark the PR ready-for-review. You can flip
 back to draft afterwards; the next `ready_for_review` fires a fresh matrix.
+
+## Which jobs run when (ADR-2169)
+
+A pull request does not owe the whole suite. The tier of an event decides which
+required contexts run; one file, [`.github/ci-tier.json`](../../.github/ci-tier.json),
+defines the tiers, and the workflows and the aggregator both read it.
+
+| Event | Tier | What runs |
+| --- | --- | --- |
+| Pull request from a fork | full | everything |
+| Pull request from this repository (Renovate included) | light | lint, format, the fast suite and the governance gates |
+| Own pull request with the label `ci: full` | full | everything |
+| Release pull request (`release-please--` branch, bot author or the maintainer account with a release-only diff) | release-light | `Release Script Contract` |
+| Release pull request with the label `autorelease: cut` | full | everything |
+| Draft pull request | none | nothing, but the aggregator, which fails it |
+| Push to `master`, dispatch, schedule | full | everything |
+| Push to another branch, push of a tag | none | nothing |
+
+The light tier is every required context except the `full_only` list of
+`ci-tier.json`: the platform legs of the build matrix (the Ubuntu `gcc+DNN` and
+`clang+DNN` legs stay), the all-backend `Build` lanes, Windows and macOS legs,
+GPU builds, coverage, sanitizers, the dev container, docker image, FFmpeg
+integration, tester and release dry-run lanes, and the self-hosted hardware lanes.
+Those run on the master push, so a break in them is found there, after the merge
+train landed the change. To see one on a pull request, add the label `ci: full`.
+
+What a contributor sees:
+
+- Every workflow shows a job `CI tier (<workflow>) / Decide the CI tier` first;
+  the other jobs of the workflow appear when it completes (GitHub creates a job
+  that needs another only then), and the aggregator waits for the tier decisions
+  before it judges which contexts are missing.
+
+- A job the tier does not run shows as skipped. The aggregator accepts a skipped
+  or absent context the tier does not owe, and still fails one that ran and
+  failed. The matrix legs of `libvmaf-build-matrix.yml` are the one place a job
+  starts and stops: a matrix cannot be filtered per leg, so a full-tier leg on a
+  light-tier pull request ends after a shallow checkout with a notice.
+- Adding the label `ci: full` (or `autorelease: cut` to the release pull request)
+  starts `ci-escalate.yml`, which re-runs the latest run of each workflow on the
+  head commit. Every re-run decides its tier again from the live labels, so the
+  skipped jobs now run and the aggregator waits for them. Removing the label does
+  not cancel anything; the next push is light again.
+- The release pull request is refreshed on every merge to master. Without the
+  cut label it runs `Release Script Contract` only, which is the check that proves
+  the cut ran. The maintainer applies `autorelease: cut` when the release is
+  to be cut, and the full suite runs once on the exact head.
+- A pull request from a fork always runs the full tier: the head repository is
+  compared with `github.repository` in `scripts/ci/ci_tier.py`.
+- A branch named `release-please--...` is not enough to be the release pull
+  request: `scripts/ci/release-pr-exempt.sh` checks the author and, for the
+  maintainer account, that the diff touches only release files (ADR-1151,
+  ADR-1388). Anything else is an ordinary own pull request.
+
+How a workflow takes part: its first job is `tier`, a call of
+[`ci-tier.yml`](../../.github/workflows/ci-tier.yml). Light-tier jobs gate on
+`needs.tier.outputs.light == 'true'`, full-tier jobs on
+`needs.tier.outputs.full == 'true'`; a planner workflow gates its `impact` job and
+its gate job, and a gate job is `always() && needs.tier.outputs.<tier> == 'true'`.
+The `tier` job also carries the draft gate of the previous section. The
+exceptions (jobs without the tier, each with a reason and an expiry) are the
+`untiered_jobs` of `ci-tier.json`: the aggregator, `Release Script Contract`, the
+label and escalation workflows, the opt-in e2e gate, and the praetor-managed
+`praetor-api.yml` and `praetor-docs.yml`. The last two are locked byte for
+byte by `praetorctl audit`; they carry an unfiltered `push:` trigger and no
+draft gate, so they start on every push to every branch and on every draft.
+That needs a change in praetor.
+
+Adding a required context: add it to the aggregator `required` list and the
+`# required-aggregator` marker as before, and to `full_only` or `always` in
+`ci-tier.json` if it is not a light-tier context. The routing contract fails
+when the workflows and the file disagree.
+
+### The routing contract
+
+`scripts/ci/tests/test_ci_routing_contract.py` is the proof. It builds synthetic
+events (own, fork, Renovate, release with and without the cut label, a person on
+a release branch name, draft, master push, a push to a feature branch, a tag, an
+unrelated label, an escalation label), works out with
+`scripts/ci/ci_router.py` which jobs of the real workflow files run
+(`scripts/ci/ci_expressions.py` evaluates the `if:` expressions as the Actions
+documentation defines them, and the tier decision is the real `ci_tier.py`),
+and compares that with `ci-tier.json`. Six more cases plant a defect in a copy
+of the workflows and require the contract to fail. To see what the contract
+checks against another tree, point it at a workflow directory:
+
+```bash
+CI_ROUTING_WORKFLOWS_DIR=<tree>/.github/workflows \
+  python3 -m unittest scripts.ci.tests.test_ci_routing_contract
+```
+
+The aggregator side is `test_ci_aggregator_tier.py`, the decision is
+`test_ci_tier.py`, and the escalation is `test_ci_escalate.py`, all in
+`scripts/ci/tests/`.
+
+### Renovate
+
+[`renovate.json`](../../renovate.json) runs in a weekly window (Monday before 6am,
+Europe/Vienna). A first catch-all rule puts every minor, patch, digest and pin
+update that no other rule groups into one pull request; the existing ecosystem
+rules keep their own groups, automerge and review settings; major updates stay
+individual and manual; `rebaseWhen` is `conflicted`, so a Renovate branch is not
+rebuilt each time master moves. Security updates (`vulnerabilityAlerts`) are
+opened at any time and are not grouped. Renovate pull requests come from this
+repository and run the light tier.
 
 ## CI impact routing (ADR-1140)
 
@@ -294,7 +405,10 @@ must report `success`; a missing or skipped one fails the aggregator.
 | `Windows Tester Zip` | `windows-tester-bundle.yml` | the planner selects `windows_tester_zip` | pull requests and master pushes |
 | `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; the aggregator list `pullRequestOnly` drops it from other runs) |
 
-An unselected tester run passes in about a minute. Which inputs select them and
+These are full-tier contexts: a pull request from this repository runs them
+only with the label `ci: full` (see [Which jobs run when](#which-jobs-run-when-adr-2169)),
+and the master push is where they run for every change. An unselected tester
+run passes in about a minute. Which inputs select them and
 how to reproduce a failure: [verifying the release and tester workflows](release-workflow-verification.md).
 
 On a push to `master` the two tester gates need the whole push run of their

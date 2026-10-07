@@ -48,9 +48,14 @@ BASH = shutil.which("bash") or "/bin/bash"
 
 # workflow -> (gate job id, required context, jobs the gate needs)
 GATES = {
-    "docker-publish-tester.yml": ("tester-image", "Tester Image", ("impact", "build")),
-    "windows-tester-bundle.yml": ("windows-tester-zip", "Windows Tester Zip", ("impact", "verify")),
-    "release-dry-run.yml": ("gate", "Release Dry Run", ("plan", "images", "gpu", "mcp")),
+    # ADR-2169: every gate also needs the tier and runs only in the full tier.
+    "docker-publish-tester.yml": ("tester-image", "Tester Image", ("tier", "impact", "build")),
+    "windows-tester-bundle.yml": (
+        "windows-tester-zip",
+        "Windows Tester Zip",
+        ("tier", "impact", "verify"),
+    ),
+    "release-dry-run.yml": ("gate", "Release Dry Run", ("tier", "plan", "images", "gpu", "mcp")),
 }
 PULL_REQUEST_ONLY = {"Release Dry Run"}
 
@@ -129,8 +134,8 @@ def _gate_problems(workflow: str, text: str) -> list[str]:
     problems = []
     if gate.get("name") != context:
         problems.append(f"{workflow}: gate {gate_id} is not named {context!r}")
-    if gate.get("if") != "always()":
-        problems.append(f"{workflow}: gate {gate_id} does not run always()")
+    if gate.get("if") != "always() && needs.tier.outputs.full == 'true'":
+        problems.append(f"{workflow}: gate {gate_id} does not run always() in the full tier")
     if tuple(gate.get("needs") or ()) != needs:
         problems.append(f"{workflow}: gate {gate_id} needs {gate.get('needs')}, not {list(needs)}")
     block = re.search(rf"(?ms)^  {re.escape(gate_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text)
@@ -209,8 +214,8 @@ def aggregator_mutations(aggregator: str) -> dict[str, str]:
 WORKFLOW_MUTATIONS = {
     "tester gate waits only for the plan": (
         "docker-publish-tester.yml",
-        "needs: [impact, build]",
-        "needs: [impact]",
+        "needs: [tier, impact, build]",
+        "needs: [tier, impact]",
     ),
     "tester gate renamed": (
         "docker-publish-tester.yml",
@@ -224,8 +229,8 @@ WORKFLOW_MUTATIONS = {
     ),
     "dry-run gate skips on failure": (
         "release-dry-run.yml",
-        "needs: [plan, images, gpu, mcp]\n    if: always()",
-        "needs: [plan, images, gpu, mcp]\n    if: success()",
+        "needs: [tier, plan, images, gpu, mcp]\n    if: always() && needs.tier.outputs.full == 'true'",
+        "needs: [tier, plan, images, gpu, mcp]\n    if: success()",
     ),
 }
 

@@ -22,7 +22,17 @@ env:
   LD_LIBRARY_PATH: /usr/local/lib/x86_64-linux-gnu
 
 jobs:
+  tier:
+    name: CI tier (FFmpeg)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Plan FFmpeg impact
     runs-on: ubuntu-26.04
     outputs:
@@ -273,8 +283,8 @@ jobs:
           echo "FFmpeg with SYCL support built successfully"
 
   ffmpeg-ubuntu-gate:
-    needs: [impact, ffmpeg-work]
-    if: always()
+    needs: [tier, impact, ffmpeg-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: FFmpeg Ubuntu gcc
     runs-on: ubuntu-26.04
@@ -295,8 +305,8 @@ jobs:
           esac
 
   ffmpeg-macos-gate:
-    needs: [impact, ffmpeg-work]
-    if: always()
+    needs: [tier, impact, ffmpeg-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: FFmpeg macOS clang
     runs-on: ubuntu-26.04
@@ -317,8 +327,8 @@ jobs:
           esac
 
   ffmpeg-sycl-gate:
-    needs: [impact, ffmpeg-sycl-work]
-    if: always()
+    needs: [tier, impact, ffmpeg-sycl-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: FFmpeg SYCL
     runs-on: ubuntu-26.04

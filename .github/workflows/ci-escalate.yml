@@ -1,0 +1,56 @@
+name: CI escalate
+
+# ADR-2169 — applying `ci: full` (any pull request from this repository) or
+# `autorelease: cut` (the generated release pull request) re-runs the suite at
+# the full tier. This is the only workflow that listens for `labeled`: a
+# listener in every workflow would start one run per workflow for each label
+# anybody applies, and a skipped Required Checks Aggregator run on the same
+# commit would read as a pass. Every other label starts nothing here.
+on:
+  pull_request:
+    branches: [master]
+    types: [labeled]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-escalate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  escalate:
+    name: Start the full suite
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false &&
+      (github.event.label.name == 'ci: full' || github.event.label.name == 'autorelease: cut')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/ci-tier.json
+            release-please-config.json
+            scripts/ci/ci_tier.py
+            scripts/ci/ci_escalate.py
+            scripts/ci/release-pr-exempt.sh
+            scripts/lib
+          sparse-checkout-cone-mode: false
+      - name: Re-run the pull-request workflows at the full tier (ADR-2169)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: python3 scripts/ci/ci_escalate.py

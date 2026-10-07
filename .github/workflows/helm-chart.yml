@@ -28,7 +28,17 @@ env:
   HELM_SHA256: "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3"
 
 jobs:
+  tier:
+    name: CI tier (Helm Chart)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     name: Plan Helm impact
     runs-on: ubuntu-26.04
     outputs:
@@ -243,8 +253,8 @@ jobs:
           PY
 
   helm-chart:
-    needs: [impact, helm-chart-work]
-    if: always()
+    needs: [tier, impact, helm-chart-work]
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: helm lint + template
     runs-on: ubuntu-26.04

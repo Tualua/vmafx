@@ -38,11 +38,20 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  tier:
+    name: CI tier (Tests)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   # ===== Netflix golden-data gate (ADR-0024) =====
   # The 3 Netflix CPU test pairs (1 normal + 2 checkerboard) are the source of
   # truth for VMAF correctness. They MUST pass on every PR. No skips, no excuses.
   netflix-golden:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # D24
     # required-aggregator
     name: Netflix CPU Golden
@@ -191,7 +200,8 @@ jobs:
   # required-aggregator: Sanitizers (thread)
   # required-aggregator: Sanitizers (undefined)
   sanitizers:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: "Sanitizers (${{ matrix.sanitizer }})"
     # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
     # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
@@ -364,7 +374,8 @@ jobs:
   # NOT require ORT at configure time — stub branch is exercised when the
   # ubuntu runner doesn't have onnxruntime available via pkg-config.
   dnn:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
@@ -508,7 +519,8 @@ jobs:
 
   # ===== RC1 external tester report package =====
   rc1-tester-report:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1342: this shipped tester surface has no path-filtered or optional
     # branch, so its regression lane must report to the required aggregator.
     # required-aggregator
@@ -545,7 +557,8 @@ jobs:
   # well as the scripts under test, so no path routing could prove a change
   # irrelevant: the job always runs.
   tooling-tests:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1528 — required and in strictMustReport: no path filter and no
     # conditional skip.
     # required-aggregator
@@ -593,7 +606,8 @@ jobs:
   # required-aggregator: Python Package Tests (dev-llm)
   # required-aggregator: Python Package Tests (vmaf-roi-score)
   python-package-tests:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1528 — required and in strictMustReport: the impact plan may skip
     # the work, but every leg runs and reports.
     name: Python Package Tests (${{ matrix.name }})
@@ -677,8 +691,8 @@ jobs:
   # takes the CLI MCP Smoke builds (artifact `vmaf-cli-mcp`, uploaded right
   # after its build, so a failing MCP test does not withhold it).
   vmaf-tune-tests:
-    needs: [mcp-smoke]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    needs: [tier, mcp-smoke]
+    if: ${{ !cancelled() && needs.tier.outputs.light == 'true' }}
     # ADR-1528 — required and in strictMustReport; the plan may skip the work.
     # required-aggregator
     name: Python Package Tests (vmaf-tune)
@@ -788,7 +802,8 @@ jobs:
   #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
   #   ~/.cache/mcp-venv/bin/pytest tests/ -v
   mcp-smoke:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1297 — required, and in `strictMustReport`: it builds all four
     # enable_mcp* transports and runs the MCP server suite, a shipped
     # user-discoverable surface, and it has no path filter or conditional
@@ -912,7 +927,8 @@ jobs:
   # ≥70% overall line coverage, ≥85% on security-critical files
   # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     # ADR-1297 — required, and in `strictMustReport`. This job enforces the
     # principles.md §3 line-coverage floors and the per-PR delta tolerance
     # (ADR-0922). It self-skips in-job via plan-ci-impact.py (ADR-1140)
@@ -1281,9 +1297,10 @@ jobs:
   # runner inventory on hosted compute first so a stale true variable cannot
   # leave a job queued forever on an impossible label set.
   gpu-full-runner-available:
+    needs: tier
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Probe GPU Full Runner
     runs-on: ubuntu-26.04
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     timeout-minutes: 5
     outputs:
       available: ${{ steps.probe.outputs.available }}
@@ -1433,7 +1450,8 @@ jobs:
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().
   assertion-density:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # Power of 10 §5
     # required-aggregator
     name: Assertion Density

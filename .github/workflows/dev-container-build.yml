@@ -34,7 +34,17 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  tier:
+    name: CI tier (Dev Container)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Plan dev-container impact
     runs-on: ubuntu-26.04
     outputs:
@@ -233,8 +243,8 @@ jobs:
           done
 
   dev-container-build:
-    needs: [impact, dev-container-build-work]
-    if: always()
+    needs: [tier, impact, dev-container-build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Dev Container Build
     runs-on: ubuntu-26.04

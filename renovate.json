@@ -9,8 +9,9 @@
     "helpers:disableTypesNodeMajor"
   ],
   "schedule": [
-    "before 6am every weekday"
+    "before 6am on Monday"
   ],
+  "rebaseWhen": "conflicted",
   "timezone": "Europe/Vienna",
   "prHourlyLimit": 0,
   "prConcurrentLimit": 3,
@@ -45,6 +46,18 @@
     ]
   },
   "packageRules": [
+    {
+      "description": "ADR-2169: every minor, patch, digest and pin update that no rule below groups opens one pull request in the weekly window (Monday, Europe/Vienna), not one pull request per dependency. A pull request from this repository runs the light tier of CI, and a Renovate fan-out of a dozen pull requests used to be a dozen full CI runs. This rule comes first, so the specific rules below (their own group, automerge and review settings) still win. Major updates stay one pull request each and stay manual. Security updates are not in this rule: vulnerabilityAlerts opens them at any time.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "groupName": "Other dependencies (minor + patch)",
+      "automerge": false
+    },
     {
       "description": "ADR-1354: the Verify Linux runtime job in supply-chain.yml stays on ubuntu-24.04, the oldest hosted image whose glibc (2.39) loads the native bundle. Moving it to a newer image would stop proving the documented glibc floor, so only this pin is frozen; other runner labels in the file still update.",
       "matchManagers": [

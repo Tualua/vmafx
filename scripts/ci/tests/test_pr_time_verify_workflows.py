@@ -209,7 +209,9 @@ class TesterImage(unittest.TestCase):
             if "publish == 'true'" not in str(job.get("if", ""))
             and "!= 'schedule'" not in str(job.get("if", ""))
         }
-        self.assertEqual(set(reached), {"impact", "validate", "refs-x86", "build", "tester-image"})
+        self.assertEqual(
+            set(reached), {"tier", "impact", "validate", "refs-x86", "build", "tester-image"}
+        )
         for name, job in reached.items():
             for step in job.get("steps", []):
                 text = json.dumps(step)
@@ -318,8 +320,14 @@ class ReleaseDryRun(unittest.TestCase):
 
     def test_is_a_dry_run(self) -> None:
         self.assertEqual(self.wf["permissions"], {"contents": "read"})
-        for job in self.wf["jobs"].values():
-            self.assertEqual(job.get("permissions"), {"contents": "read"})
+        for name, job in self.wf["jobs"].items():
+            # ADR-2169: the tier call reads the pull request's labels and nothing more.
+            expected = (
+                {"contents": "read", "pull-requests": "read"}
+                if name == "tier"
+                else {"contents": "read"}
+            )
+            self.assertEqual(job.get("permissions"), expected, name)
             self.assertNotIn("environment", job)
         for forbidden in (
             "docker/login-action",
@@ -336,20 +344,20 @@ class ReleaseDryRun(unittest.TestCase):
 
     def test_every_action_is_pinned_to_a_commit(self) -> None:
         for job in self.wf["jobs"].values():
-            for step in job["steps"]:
+            for step in job.get("steps", []):  # the tier call (ADR-2169) is a local workflow
                 if "uses" in step:
                     self.assertRegex(step["uses"], SHA_PIN)
 
     def test_every_job_but_the_plan_and_the_gate_is_routed_by_it(self) -> None:
         for name, job in self.wf["jobs"].items():
-            if name in {"plan", "gate"}:
+            if name in {"plan", "gate", "tier"}:
                 continue
             self.assertEqual(job["needs"], "plan", name)
             self.assertRegex(job["if"], r"needs\.plan\.outputs\.\w+ == 'true'", name)
         # ADR-1687: the required context waits for every routed job.
         gate = self.wf["jobs"]["gate"]
         self.assertEqual(gate["name"], "Release Dry Run")
-        self.assertEqual(gate["if"], "always()")
+        self.assertEqual(gate["if"], "always() && needs.tier.outputs.full == 'true'")
         self.assertEqual(set(gate["needs"]), set(self.wf["jobs"]) - {"gate"})
 
     def test_the_images_it_builds_are_the_images_the_release_builds(self) -> None:

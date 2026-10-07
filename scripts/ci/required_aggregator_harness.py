@@ -24,18 +24,24 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const now = Date.now();
 let clock = now;
 class VirtualDate extends Date { static now() { clock += 180000; return clock; } }
-const checks = input.checks.map(c => ({
-  ...c,
+const withDefaults = c => ({
   status: 'completed',
   started_at: new Date(now).toISOString(),
-}));
+  ...c,
+});
+const checks = input.checks.map(withDefaults);
+const laterChecks = (input.laterChecks || []).map(withDefaults);
+let listings = 0;
 const failures = [];
 const github = {rest: {
   actions: {
     getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
     listWorkflowRunsForRepo: async () => ({data: {workflow_runs: input.workflowRuns || []}}),
   },
-  checks: {listForRef: async () => ({data: {check_runs: checks}})},
+  checks: {listForRef: async () => {
+    listings += 1;
+    return {data: {check_runs: listings > 1 && laterChecks.length ? laterChecks : checks}};
+  }},
 }};
 const eventName = input.event || 'pull_request';
 const context = {
@@ -44,7 +50,7 @@ const context = {
   sha: 'abc',
   repo: {owner: 'test', repo: 'test'},
   payload: eventName === 'pull_request'
-    ? {pull_request: {head: {ref: 'fix/example', sha: 'abc'}}}
+    ? {pull_request: {head: {ref: input.headRef || 'fix/example', sha: 'abc'}}}
     : {},
 };
 const core = {info: () => {}, setFailed: message => failures.push(message)};
@@ -117,6 +123,9 @@ def run_required_aggregator(
     event: str = "pull_request",
     selected_suite: int = 1,
     workflow_runs: Sequence[Mapping[str, object]] = (),
+    head_ref: str = "fix/example",
+    extra_checks: Sequence[Mapping[str, object]] = (),
+    later_checks: Sequence[Mapping[str, object]] = (),
 ) -> list[str]:
     """Run the real Actions JavaScript with one selected check result or absence.
 
@@ -124,7 +133,11 @@ def run_required_aggregator(
     a push is to ``master``). Every other required check succeeds in check suite 1;
     the selected one reports from ``selected_suite``. ``workflow_runs`` are the
     workflow runs on the commit (``event``, ``head_branch`` and ``check_suite_id``
-    each), as the Actions API lists them.
+    each), as the Actions API lists them. ``head_ref`` is the pull request's head branch
+    (a ``release-please--`` ref arms the release must-report list). ``extra_checks`` are
+    further check runs on the commit (``name``, ``conclusion``, ``check_suite``, and
+    optionally ``status``). ``later_checks``, when given, replace every check run from the
+    second listing on, as the Actions API shows a commit later.
     """
     workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
     script = _embedded_script(workflow_text)
@@ -133,6 +146,7 @@ def run_required_aggregator(
         raise AssertionError(f"required aggregator must declare {check_name!r}")
 
     checks = _synthetic_checks(names, check_name, conclusion, selected_suite)
+    checks.extend(dict(check) for check in extra_checks)
     node = shutil.which("node")
     if node is None:
         raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
@@ -147,6 +161,8 @@ def run_required_aggregator(
                 "env": dict(env or {}),
                 "event": event,
                 "workflowRuns": [dict(run) for run in workflow_runs],
+                "headRef": head_ref,
+                "laterChecks": [dict(check) for check in later_checks],
             }
         ),
         text=True,

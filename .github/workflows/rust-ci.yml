@@ -17,7 +17,17 @@ permissions:
   contents: read
 
 jobs:
+  tier:
+    name: CI tier (Rust)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     name: Plan Rust impact
     runs-on: ubuntu-26.04
     outputs:
@@ -170,8 +180,8 @@ jobs:
           arguments: --all-features
 
   vmafx-sys-gate:
-    needs: [impact, rust-vmafx-sys-work]
-    if: always()
+    needs: [tier, impact, rust-vmafx-sys-work]
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: vmafx-sys CI
     runs-on: ubuntu-26.04
@@ -192,8 +202,8 @@ jobs:
           esac
 
   cargo-deny-gate:
-    needs: [impact, cargo-deny-work]
-    if: always()
+    needs: [tier, impact, cargo-deny-work]
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: cargo-deny
     runs-on: ubuntu-26.04

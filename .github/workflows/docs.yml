@@ -33,7 +33,17 @@ permissions:
 #
 
 jobs:
+  tier:
+    name: CI tier (docs)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   build:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1297 — required check. The job id `build` was the reported check
     # name, because the job had no `name:`; that name is ambiguous (build.yml's
     # job id is also `build`, saved only by its `name: ${{ matrix.name }}`) and

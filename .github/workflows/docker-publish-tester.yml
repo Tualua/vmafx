@@ -94,7 +94,17 @@ env:
   IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
 
 jobs:
+  tier:
+    name: CI tier (Publish Tester Image)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Plan tester image impact
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -448,8 +458,8 @@ jobs:
   # The GPU images and the publish jobs never run on a pull request and are not
   # part of it.
   tester-image:
-    needs: [impact, build]
-    if: always()
+    needs: [tier, impact, build]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Tester Image
     runs-on: ubuntu-26.04

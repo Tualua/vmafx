@@ -10,7 +10,9 @@ name: PR type label
 
 on:
   pull_request_target:
-    types: [opened, edited, reopened, synchronize]
+    # ADR-2169: no `synchronize`. The label comes from the pull request title,
+    # which a push does not change; `edited` covers a title change.
+    types: [opened, edited, reopened]
 
 permissions:
   pull-requests: write

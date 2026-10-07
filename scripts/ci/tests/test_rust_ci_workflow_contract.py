@@ -227,8 +227,9 @@ class RustCIWorkflowContractTest(unittest.TestCase):
             with self.subTest(gate_job=gate_job):
                 gate = jobs[gate_job]
                 self.assertEqual(gate["name"], check_name)
-                self.assertEqual(gate["needs"], ["impact", work_job])
-                self.assertEqual(gate["if"], "always()")
+                # ADR-2169: the gate needs the tier and runs only in the tier that owns it.
+                self.assertEqual(gate["needs"], ["tier", "impact", work_job])
+                self.assertEqual(gate["if"], "always() && needs.tier.outputs.light == 'true'")
                 script = gate["steps"][0]["run"]
                 self.assertIn('if [ "$PLAN_RESULT" != success ]', script)
                 self.assertIn("true:success|false:skipped", script)

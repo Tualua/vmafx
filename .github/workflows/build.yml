@@ -40,7 +40,17 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  tier:
+    name: CI tier (Build)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Plan build impact
     runs-on: ubuntu-26.04
     outputs:
@@ -603,8 +613,8 @@ jobs:
           if-no-files-found: warn
 
   linux-intel-llvm-gate:
-    needs: [impact, build-work]
-    if: always()
+    needs: [tier, impact, build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Linux Intel LLVM
     runs-on: ubuntu-26.04
@@ -625,8 +635,8 @@ jobs:
           esac
 
   macos-clang-metal-gate:
-    needs: [impact, build-work]
-    if: always()
+    needs: [tier, impact, build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: macOS Clang+Metal
     runs-on: ubuntu-26.04
@@ -647,8 +657,8 @@ jobs:
           esac
 
   windows-msvc-cuda-full-gate:
-    needs: [impact, build-work]
-    if: always()
+    needs: [tier, impact, build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Windows MSVC+CUDA (full)
     runs-on: ubuntu-26.04

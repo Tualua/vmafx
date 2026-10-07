@@ -28,9 +28,12 @@ on:
 
   pull_request:
     branches: [master]
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
     # Only run on PRs that explicitly opt in — keeps normal CI fast.
     # The required-aggregator treats "not reported due to label gate" as skipped/OK.
+    # ADR-2169: the gate job starts only for a ready pull request that carries
+    # the opt-in label (and, on a `labeled` event, only for that label), so a
+    # draft or an unrelated label starts no job.
 
   workflow_dispatch:
     inputs:
@@ -71,6 +74,11 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: "Gate — check label / trigger"
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'run-e2e-k8s') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e-k8s'))
     runs-on: ubuntu-26.04
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}

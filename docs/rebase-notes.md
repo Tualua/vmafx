@@ -68,6 +68,14 @@ leaves them keywords; hunk 7 of its `AGENTS.md`). On a sync keep the fork's side
 list their designators in the declaration order of `VmafOption` (`name, help, alias, offset, type, default_val, min, max,
 flags`) and of `VmafFeatureExtractor`; a rebase that brings a table from a branch keeps that order. The device-free Metal
 contract tests accept `{}` as the terminator.
+## CI tiers: one definition, a `tier` job in every pull-request workflow (2026-10-07)
+
+`ci/fewer-runs`, [ADR-2169](adr/2169-ci-fewer-runs.md). Fork-only CI; no upstream file. Every workflow with a `pull_request` trigger
+starts with a `tier` job (a call of `.github/workflows/ci-tier.yml`) and its other jobs need it. On a conflict in a workflow keep
+both: master's change to the job and the `needs: tier` / `if: needs.tier.outputs.<light|full> == 'true'` pair of this branch (a
+planner gate is `always() && needs.tier.outputs.<tier> == 'true'`). A job added since belongs to the light or the full tier:
+`.github/ci-tier.json` (`full_only`, `always`) and `test_ci_routing_contract.py` say which. `renovate.json`: the catch-all group
+is the first `packageRules` entry (the later rules win); keep it first.
 
 ## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
 

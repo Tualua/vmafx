@@ -44,9 +44,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  plan:
-    name: Plan release dry run
+  tier:
+    name: CI tier (Release Dry Run)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  plan:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
+    name: Plan release dry run
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -302,8 +311,8 @@ jobs:
   # The required context (ADR-1687). Each group must be selected and pass, or be
   # unselected and skipped; a failed or skipped plan fails the gate.
   gate:
-    needs: [plan, images, gpu, mcp]
-    if: always()
+    needs: [tier, plan, images, gpu, mcp]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Release Dry Run
     runs-on: ubuntu-latest
