@@ -1108,7 +1108,7 @@ static inline void dev_tile_load(sycl::nd_item<2> item, const VifHoriLaunchParam
     const int last_y = (int)p.height - 1;
 
     for (unsigned i = item.get_local_linear_id(); i < N; i += WG) {
-        const int y = sycl::min(y0 + (int)(i / TW), last_y);
+        const int y = (sycl::min)(y0 + (int)(i / TW), last_y);
         const int x = sycl::clamp(dev_mirror(x0 + (int)(i % TW), (int)p.width), 0, last_x);
         const size_t g = (size_t)y * p.width + (size_t)x;
         t.mu1[i] = p.tmp_mu1[g];
