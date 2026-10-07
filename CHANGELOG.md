@@ -6,6 +6,33 @@
 ## [Unreleased]
 ### Added
 
+- **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
+  ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
+  contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
+  context options (`vmafx_context_set_option`), feature option sets
+  (`vmafx_options_set`), extractor, model and model-set registration
+  (`vmafx_context_use_feature`, `vmafx_context_use_model`,
+  `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
+  resolution (`vmafx_feature_resolve`), refcounted models and model sets with
+  the SHA-256 of the bytes as loaded (`vmafx_model_load`,
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
+  the CPU device (`vmafx_device_create`), host frames allocated or borrowed
+  without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
+  submission (`vmafx_submit`, `vmafx_flush`), frame retention
+  (`vmafx_context_frame_retention`) and synchronous per-frame and pooled
+  scores for features, models and model sets (`vmafx_score_frame`,
+  `vmafx_score_pooled`, `vmafx_feature_score_pooled`,
+  `vmafx_score_frame_model_set`, `vmafx_score_pooled_model_set`), equal bit for
+  bit to the `libvmaf.h` calls. One frame can be scored by several contexts
+  without a copy. Errors also name what kind of subject failed and the
+  function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
+  struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
+  [the VMAFx API page](docs/api/vmafx/index.md).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -195,6 +222,14 @@
 
 ### Fixed
 
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
+
+
 - **`-qpfile` works on libx264, and the saliency tools no longer run a libx264
   encode without the ROI they asked for
   ([ADR-2167](docs/adr/2167-ffmpeg-x264-qpfile-quant-offsets.md)).** Patch
@@ -305,6 +340,33 @@ They are recorded in full, unedited, in
   source of the LGPL libraries among them. See
   [the tester guide](docs/usage/tester-image.md#e-amd-gpu-image-linux)
   and [ADR-1511](docs/adr/1511-amd-gpu-tester-image.md).
+
+
+- **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
+  ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
+  contexts with their own log callback (`VmafxContextConfig.log_callback`),
+  which receives every message raised for the context, worker threads
+  included, while nothing of it reaches the process log,
+  context options (`vmafx_context_set_option`), feature option sets
+  (`vmafx_options_set`), extractor, model and model-set registration
+  (`vmafx_context_use_feature`, `vmafx_context_use_model`,
+  `vmafx_context_use_model_set`, `vmafx_context_import_score`), feature
+  resolution (`vmafx_feature_resolve`), refcounted models and model sets with
+  the SHA-256 of the bytes as loaded (`vmafx_model_load`,
+  `vmafx_model_load_file`, `vmafx_model_hash`, `vmafx_model_set_load`, ...;
+  a model load logs to the callback of its `VmafxModelConfig`),
+  the CPU device (`vmafx_device_create`), host frames allocated or borrowed
+  without a copy (`vmafx_frame_create_host`, `vmafx_frame_wrap_host`),
+  submission (`vmafx_submit`, `vmafx_flush`), frame retention
+  (`vmafx_context_frame_retention`) and synchronous per-frame and pooled
+  scores for features, models and model sets (`vmafx_score_frame`,
+  `vmafx_score_pooled`, `vmafx_feature_score_pooled`,
+  `vmafx_score_frame_model_set`, `vmafx_score_pooled_model_set`), equal bit for
+  bit to the `libvmaf.h` calls. One frame can be scored by several contexts
+  without a copy. Errors also name what kind of subject failed and the
+  function (`vmafx_error_subject_kind`, `vmafx_error_function`); an input
+  struct below its introduction size is the new `VMAFX_E_ABI`. ABI 0.1.1. See
+  [the VMAFx API page](docs/api/vmafx/index.md).
 
 
 - **vmafx-controller reads and enforces its tenant configuration
@@ -4398,6 +4460,12 @@ The `vmaf` command-line tool now exits with the same status on every platform: a
   a failed pooled score prints no score line either. This differs from
   upstream FFmpeg on purpose
   ([ADR-1768](docs/adr/1768-ffmpeg-libvmaf-no-score-after-error.md)).
+- **Float extractors report their errors through the log (ADR-1906).** The
+  allocation and stride errors of the float ADM, SSIM, MS-SSIM, motion and VIF
+  code (`error: ...` lines) went to standard output, where they mixed with
+  anything a program writes there and ignored the log level. They are now
+  `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
+  the CLI, and in the context's log callback for the VMAFx API.
 
 
 - **The FFmpeg `libvmaf_sycl` filter no longer scores fewer frames than it

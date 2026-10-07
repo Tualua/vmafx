@@ -1286,6 +1286,91 @@ if get_option('default_library') != 'static'
     )
 endif
 
+# ADR-1852 RC4 WP2: the core VMAFx API (contexts, options, errors, logging,
+# models and model sets, devices, host frames, submission, synchronous scores).
+# White-box tests (context, bitexact, lifetime) link the static library for
+# libvmaf_priv.h / log.h; the others use only the public headers.
+vmafx_static_link = get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf
+vmafx_test_dirs = [
+    '-DVMAFX_TEST_MODEL_DIR="' + (meson.project_source_root() / '..' / 'model') + '"',
+    '-DVMAFX_TEST_YUV_DIR="' + (meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv') + '"',
+]
+test_vmafx_sha256 = executable('test_vmafx_sha256',
+    ['test.c', 'test_vmafx_sha256.c', '../src/vmafx/sha256.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+)
+test('test_vmafx_sha256', test_vmafx_sha256, suite : ['fast'])
+
+test_vmafx_context = executable('test_vmafx_context',
+    ['test.c', 'test_vmafx_context.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_context', test_vmafx_context, suite : ['fast'])
+
+# VMAFx scores equal libvmaf scores bit for bit on the golden pair, both 1080p
+# checkerboards and the 10-bit sparks pair (fixtures in python/test/resource/yuv;
+# skipped with 77 when they are missing).
+test_vmafx_bitexact = executable('test_vmafx_bitexact',
+    ['test.c', 'test_vmafx_bitexact.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_bitexact', test_vmafx_bitexact, suite : ['fast'], timeout : 300)
+
+# Lifetimes under ASan / UBSan: a model released before the context, a failed
+# destroy retried (`-Wl,--wrap=vmaf_thread_pool_destroy`, the constraints of
+# test_collector_owns_mounted_model), planes freed by their release callback.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_vmafx_lifetime = executable('test_vmafx_lifetime',
+        ['test.c', 'test_vmafx_lifetime.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        link_args : ['-Wl,--wrap=vmaf_thread_pool_destroy'],
+        c_args : [vmaf_cflags_common],
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_lifetime', test_vmafx_lifetime, suite : ['fast'])
+endif
+
+# Full log routing (ADR-1906): worker-thread messages, two contexts on two
+# threads, the process log of a context without a callback, model loads.
+# POSIX descriptors and threads: Linux only.
+if host_machine.system() == 'linux'
+    test_vmafx_log_routing = executable('test_vmafx_log_routing',
+        ['test.c', 'test_vmafx_log_routing.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmafx_static_link,
+        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_vmafx_log_routing', test_vmafx_log_routing, suite : ['fast'], timeout : 120)
+endif
+
+# Engine messages go through vmaf_log(), so a context's sink sees them: no
+# direct stdout / stderr write in core/src outside the declared exceptions.
+test('test_engine_log_routing_contract',
+    import('python').find_installation(),
+    args : files('test_engine_log_routing_contract.py'),
+    suite : ['fast'],
+)
+
+foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score']
+    vmafx_public_exe = executable(vmafx_public_test,
+        ['test.c', vmafx_public_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        link_with : libvmaf_public_link,
+        c_args : vmafx_test_dirs,
+        dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
+endforeach
+
 # Linux static-link fault control for output_file_open(). The project's
 # large-file flags redirect open(2) to open64(2), so GNU ld wraps that symbol
 # and injects EINTR once for the target path.
