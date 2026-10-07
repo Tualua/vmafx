@@ -87,7 +87,7 @@ static VmafPictureConvertTarget color_target(const VmafColor *color)
     return target;
 }
 
-static char *test_no_model_target_is_pass_through()
+static char *test_no_model_target_is_pass_through(void)
 {
     /* a model without a target never converts, however pictures are tagged */
     const VmafColor unset = {0};
@@ -106,7 +106,7 @@ static char *test_no_model_target_is_pass_through()
     return NULL;
 }
 
-static char *test_target_picks_model_colorspace()
+static char *test_target_picks_model_colorspace(void)
 {
     TaggedPic pic = make_pic(&pq_bt2020nc_color, VMAF_PIX_FMT_YUV420P, 10);
     const VmafPictureConvertTarget model = color_target(&pq_ictcp_color);
@@ -125,7 +125,7 @@ static char *test_target_picks_model_colorspace()
     return NULL;
 }
 
-static char *test_source_already_matching_target_skips_conversion()
+static char *test_source_already_matching_target_skips_conversion(void)
 {
     TaggedPic pic = make_pic(&pq_ictcp_color, VMAF_PIX_FMT_YUV420P, 10);
     const VmafPictureConvertTarget model = color_target(&pq_ictcp_color);
@@ -148,7 +148,7 @@ static VmafPictureConvertTarget pinned_target(void)
     return model;
 }
 
-static char *test_pinned_bit_depth_is_part_of_the_target()
+static char *test_pinned_bit_depth_is_part_of_the_target(void)
 {
     const VmafPictureConvertTarget model = pinned_target();
     bool needs_conversion = false;
@@ -167,7 +167,7 @@ static char *test_pinned_bit_depth_is_part_of_the_target()
     return NULL;
 }
 
-static char *test_pinned_pixel_format_is_part_of_the_target()
+static char *test_pinned_pixel_format_is_part_of_the_target(void)
 {
     const VmafPictureConvertTarget model = pinned_target();
     bool needs_conversion = false;
@@ -183,7 +183,7 @@ static char *test_pinned_pixel_format_is_part_of_the_target()
     return NULL;
 }
 
-static char *test_pinned_target_matching_pictures_are_not_converted()
+static char *test_pinned_target_matching_pictures_are_not_converted(void)
 {
     const VmafPictureConvertTarget model = pinned_target();
     bool needs_conversion = true;
@@ -201,7 +201,7 @@ static char *test_pinned_target_matching_pictures_are_not_converted()
     return NULL;
 }
 
-static char *test_unpinned_format_and_depth_follow_the_source()
+static char *test_unpinned_format_and_depth_follow_the_source(void)
 {
     const VmafPictureConvertTarget model = color_target(&pq_ictcp_color);
     bool needs_conversion = false;
@@ -227,7 +227,7 @@ static char *test_unpinned_format_and_depth_follow_the_source()
     return NULL;
 }
 
-static char *test_one_side_differing_still_needs_conversion()
+static char *test_one_side_differing_still_needs_conversion(void)
 {
     TaggedPic matching = make_pic(&pq_ictcp_color, VMAF_PIX_FMT_YUV420P, 10);
     TaggedPic other = make_pic(&pq_bt2020nc_color, VMAF_PIX_FMT_YUV420P, 10);
@@ -242,7 +242,7 @@ static char *test_one_side_differing_still_needs_conversion()
     return NULL;
 }
 
-static char *test_ref_and_dist_may_differ_from_each_other()
+static char *test_ref_and_dist_may_differ_from_each_other(void)
 {
     TaggedPic sdr = make_pic(&bt709_color, VMAF_PIX_FMT_YUV420P, 10);
     TaggedPic hdr = make_pic(&pq_bt2020nc_color, VMAF_PIX_FMT_YUV420P, 10);
@@ -259,7 +259,7 @@ static char *test_ref_and_dist_may_differ_from_each_other()
     return NULL;
 }
 
-static char *test_unspecified_source_with_target_is_an_error()
+static char *test_unspecified_source_with_target_is_an_error(void)
 {
     const VmafColor unset = {0};
     VmafColor partial_color = pq_bt2020nc_color;
@@ -289,7 +289,7 @@ static char *test_unspecified_source_with_target_is_an_error()
     return NULL;
 }
 
-static char *test_target_equal_compares_format_and_depth()
+static char *test_target_equal_compares_format_and_depth(void)
 {
     VmafPictureConvertTarget a = color_target(&pq_ictcp_color);
     VmafPictureConvertTarget b = color_target(&pq_ictcp_color);
@@ -309,7 +309,7 @@ static char *test_target_equal_compares_format_and_depth()
     return NULL;
 }
 
-static char *test_null_arguments_are_rejected()
+static char *test_null_arguments_are_rejected(void)
 {
     TaggedPic pic = make_pic(&bt709_color, VMAF_PIX_FMT_YUV420P, 10);
     bool needs_conversion;

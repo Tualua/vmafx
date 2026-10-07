@@ -150,8 +150,8 @@ LANE_LINES = (
 TEST_LINES = (
     "ref_sigma_sqd -= m.ref_mu * m.ref_mu;",
     "cmp_sigma_sqd -= m.cmp_mu * m.cmp_mu;",
-    "ref_sigma_sqd = MAX(0.0, ref_sigma_sqd);",
-    "cmp_sigma_sqd = MAX(0.0, cmp_sigma_sqd);",
+    "ref_sigma_sqd = (float)MAX(0.0, ref_sigma_sqd);",
+    "cmp_sigma_sqd = (float)MAX(0.0, cmp_sigma_sqd);",
     "sigma_both -= m.ref_mu * m.cmp_mu;",
     "const float sigma_ref_sigma_cmp = sqrtf(ref_sigma_sqd * cmp_sigma_sqd);",
     "(2.0 * m.ref_mu * m.cmp_mu + C1) / (m.ref_mu * m.ref_mu + m.cmp_mu * m.cmp_mu + C1);",

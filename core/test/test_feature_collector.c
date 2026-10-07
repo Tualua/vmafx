@@ -245,7 +245,7 @@ static char *test_cuda_state_import_rejects_duplicate_owners(void)
 }
 #endif
 
-static char *test_model_mount_with_use_features()
+static char *test_model_mount_with_use_features(void)
 {
     int err = 0;
 
@@ -452,7 +452,7 @@ static void destroy_three_test_models(VmafModel *models[3])
         vmaf_model_destroy(models[k]);
 }
 
-static char *test_model_mount()
+static char *test_model_mount(void)
 {
     VmafFeatureCollector *feature_collector;
     int err = vmaf_feature_collector_init(&feature_collector);
@@ -479,7 +479,7 @@ static char *test_model_mount()
     return NULL;
 }
 
-static char *test_model_unmount()
+static char *test_model_unmount(void)
 {
     VmafFeatureCollector *feature_collector;
     int err = vmaf_feature_collector_init(&feature_collector);
@@ -534,7 +534,7 @@ static char *prepare_aggregate_vector(AggregateVector *aggregate_vector)
     return NULL;
 }
 
-static char *test_aggregate_vector_init_append_and_destroy()
+static char *test_aggregate_vector_init_append_and_destroy(void)
 {
     AggregateVector aggregate_vector;
     mu_assert_msg(prepare_aggregate_vector(&aggregate_vector));
@@ -551,7 +551,7 @@ static char *test_aggregate_vector_init_append_and_destroy()
     return NULL;
 }
 
-static char *test_feature_vector_init_append_and_destroy()
+static char *test_feature_vector_init_append_and_destroy(void)
 {
     int err;
 
@@ -585,7 +585,7 @@ static char *test_feature_vector_init_append_and_destroy()
  * before that it tries multi-gigabyte allocations).  This test passes a huge
  * index and asserts a clean error return; without the guard it would hang or
  * OOM rather than return. */
-static char *test_feature_vector_append_rejects_huge_index()
+static char *test_feature_vector_append_rejects_huge_index(void)
 {
     int err;
 
@@ -674,7 +674,7 @@ static char *check_feature_collector_aggregates(VmafFeatureCollector *feature_co
     return NULL;
 }
 
-static char *test_feature_collector_init_append_get_and_destroy()
+static char *test_feature_collector_init_append_get_and_destroy(void)
 {
     VmafFeatureCollector *feature_collector;
     mu_assert_msg(prepare_feature_collector(&feature_collector));
@@ -694,7 +694,7 @@ static char *run_model_option_capability_tests(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     static const MuTest tests[] = {
         MU_TEST(test_vmaf_close_retains_context_for_retry),

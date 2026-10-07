@@ -7,6 +7,12 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Tests: MSVC zero-warning conversions (2026-10-07)
+
+`fix/msvc-zero-warnings-tests`. Netflix-mirror tests (`test_speed_chroma.c`, `test_vif_tools.c`, `test_ciede.c`, `test_cambi.c`,
+`test_barten_csf.c`, `test_adm_csf_tools_coverage.c`, `test_float_adm_csf_upstream.c`) keep upstream's values; the fork adds `f` suffixes to
+float tables and explicit `(float)` / `(int)` conversions. On a sync conflict keep upstream's numbers and re-apply the suffix/cast.
+
 ## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
 
 `fix/metal-f64-equal-no-libimf`. no rebase impact: fork-only Metal header (`core/src/feature/metal/metal_portable.h`); no upstream file.

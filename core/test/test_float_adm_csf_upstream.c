@@ -186,8 +186,8 @@ static float quant_step_form(int lambda, int theta, double view_dist, int displa
         const double temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
         return (float)(2.0 * params->a * pow(10.0, params->k * temp * temp) / amplitude);
     }
-    const float r = view_dist * display_height * M_PI / 180.0;
-    const float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
+    const float r = (float)(view_dist * display_height * M_PI / 180.0);
+    const float temp = (float)log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
     const float exponent = params->k * temp * temp;
     return (float)(2.0 * params->a * pow(10.0, (double)exponent) / amplitude);
 }

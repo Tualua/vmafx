@@ -237,7 +237,7 @@ static int run(const char *target_block, const VmafColor *ref_color, const VmafC
     return run_fmt(target_block, VMAF_PIX_FMT_YUV420P, ref_color, dist_color, score, NULL);
 }
 
-static char *test_no_model_target_never_converts()
+static char *test_no_model_target_never_converts(void)
 {
     double untagged;
     double tagged;
@@ -251,7 +251,7 @@ static char *test_no_model_target_never_converts()
 }
 
 #ifdef HAVE_ZIMG
-static char *test_model_target_converts_source()
+static char *test_model_target_converts_source(void)
 {
     double unconverted;
     double converted;
@@ -265,7 +265,7 @@ static char *test_model_target_converts_source()
     return NULL;
 }
 
-static char *test_ref_and_dist_are_converted_independently()
+static char *test_ref_and_dist_are_converted_independently(void)
 {
     double both_converted;
     double both_matching;
@@ -297,7 +297,7 @@ static char *test_ref_and_dist_are_converted_independently()
 }
 #endif
 
-static char *test_source_matching_target_is_not_converted()
+static char *test_source_matching_target_is_not_converted(void)
 {
     double unconverted;
     double matching;
@@ -312,7 +312,7 @@ static char *test_source_matching_target_is_not_converted()
 }
 
 #ifndef HAVE_ZIMG
-static char *test_conversion_without_zimg_is_an_error()
+static char *test_conversion_without_zimg_is_an_error(void)
 {
     double score;
     int err = run(target_color_only, &pq_bt2020nc_color, &pq_bt2020nc_color, &score);
@@ -322,7 +322,7 @@ static char *test_conversion_without_zimg_is_an_error()
 }
 #endif
 
-static char *test_source_matching_pinned_format_is_not_converted()
+static char *test_source_matching_pinned_format_is_not_converted(void)
 {
     /* the synthetic frames are 4:2:0 at 10 bits, which this target pins */
     double unconverted;
@@ -338,7 +338,7 @@ static char *test_source_matching_pinned_format_is_not_converted()
 }
 
 #ifdef HAVE_ZIMG
-static char *test_target_pixel_format_is_applied()
+static char *test_target_pixel_format_is_applied(void)
 {
     /* same colorspace as the target, so only the chroma subsampling differs */
     double score;
@@ -356,7 +356,7 @@ static char *test_target_pixel_format_is_applied()
     return NULL;
 }
 
-static char *test_target_bit_depth_converts_without_error()
+static char *test_target_bit_depth_converts_without_error(void)
 {
     /*
      * Widening 10 to 16 bits is an exact scale that the integer features
@@ -370,7 +370,7 @@ static char *test_target_bit_depth_converts_without_error()
     return NULL;
 }
 
-static char *test_models_with_different_formats_cannot_share_a_run()
+static char *test_models_with_different_formats_cannot_share_a_run(void)
 {
     VmafContext *vmaf;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -394,7 +394,7 @@ static char *test_models_with_different_formats_cannot_share_a_run()
 }
 #endif
 
-static char *test_untagged_source_with_target_is_rejected()
+static char *test_untagged_source_with_target_is_rejected(void)
 {
     double score;
     mu_assert("untagged source should be rejected when the model has a "
@@ -413,7 +413,7 @@ static char *test_untagged_source_with_target_is_rejected()
     return NULL;
 }
 
-static char *test_models_must_share_a_conversion_target()
+static char *test_models_must_share_a_conversion_target(void)
 {
     VmafContext *vmaf;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -440,7 +440,7 @@ static char *test_models_must_share_a_conversion_target()
 /* Fork-only (ADR-2093): vmaf_set_input_colorimetry() replaces upstream's
  * VmafPicture::color. NULL context is rejected, NULL colours mean unspecified,
  * and once a picture has been converted the colour can no longer change. */
-static char *test_set_input_colorimetry_contract()
+static char *test_set_input_colorimetry_contract(void)
 {
     mu_assert("a NULL context should be rejected",
               vmaf_set_input_colorimetry(NULL, &pq_ictcp_color, &pq_ictcp_color) == -EINVAL);
@@ -457,7 +457,7 @@ static char *test_set_input_colorimetry_contract()
 }
 
 #ifdef HAVE_ZIMG
-static char *test_set_input_colorimetry_is_busy_after_conversion()
+static char *test_set_input_colorimetry_is_busy_after_conversion(void)
 {
     VmafContext *vmaf;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -484,7 +484,7 @@ static char *test_set_input_colorimetry_is_busy_after_conversion()
 }
 #endif
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_set_input_colorimetry_contract);
 #ifdef HAVE_ZIMG

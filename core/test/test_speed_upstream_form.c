@@ -307,12 +307,12 @@ static void uf_upstream_create_givens(const float a, const float b, float *c, fl
         *s = 0;
     } else if (fabsf(b) > fabsf(a)) {
         float t = -a / b;
-        float s1 = 1.0 / sqrt(1 + t * t);
+        float s1 = (float)(1.0 / sqrt(1 + t * t));
         *s = s1;
         *c = s1 * t;
     } else {
         float t = -b / a;
-        float c1 = 1.0 / sqrt(1 + t * t);
+        float c1 = (float)(1.0 / sqrt(1 + t * t));
         *c = c1;
         *s = c1 * t;
     }
@@ -322,7 +322,7 @@ static void uf_upstream_create_givens(const float a, const float b, float *c, fl
  * passed in as `u`. */
 static float uf_upstream_givens_unit(float u)
 {
-    float s1 = 1.0 / sqrt(u);
+    float s1 = (float)(1.0 / sqrt(u));
     return s1;
 }
 
@@ -332,8 +332,10 @@ static void uf_upstream_update_entropy(SpeedDimensions dim, float *entropy, cons
 {
     for (size_t i = 0; i < dim.num_blocks_vertical; i++) {
         for (size_t j = 0; j < dim.num_blocks_horizontal; j++) {
-            entropy[i * dim.num_blocks_horizontal + j] +=
-                log2(L * S[i * dim.num_blocks_horizontal + j] + sigma_nn) + log2(2 * M_PI * M_E);
+            entropy[i * dim.num_blocks_horizontal + j] =
+                (float)(entropy[i * dim.num_blocks_horizontal + j] +
+                        (log2(L * S[i * dim.num_blocks_horizontal + j] + sigma_nn) +
+                         log2(2 * M_PI * M_E)));
         }
     }
 }
@@ -347,31 +349,36 @@ static void uf_upstream_spatial(SpeedResultBuffers ref_results, SpeedResultBuffe
     float spatial_ref = 0.0;
     float spatial_dis = 0.0;
     if (speed_weight_var_mode == 0) {
-        spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        spatial_dis = (float)(dis_results.entropies[i] * log2(1 + dis_results.variances[i]));
     } else if (speed_weight_var_mode == 1) {
-        spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        spatial_dis = dis_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        spatial_dis = (float)(dis_results.entropies[i] * log2(1 + ref_results.variances[i]));
     } else if (speed_weight_var_mode == 2) {
-        spatial_ref = ref_results.entropies[i] * log2(1 + dis_results.variances[i]);
-        spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        spatial_ref = (float)(ref_results.entropies[i] * log2(1 + dis_results.variances[i]));
+        spatial_dis = (float)(dis_results.entropies[i] * log2(1 + dis_results.variances[i]));
     } else if (speed_weight_var_mode == 3) {
-        spatial_ref = ref_results.entropies[i] *
-                      log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
-        spatial_dis = dis_results.entropies[i] *
-                      log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        spatial_ref =
+            (float)(ref_results.entropies[i] *
+                    log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0));
+        spatial_dis =
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0));
     } else if (speed_weight_var_mode == 4) {
-        spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        spatial_dis = dis_results.entropies[i] *
-                      log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        spatial_dis =
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0));
     } else if (speed_weight_var_mode == 5) {
-        spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        spatial_dis = dis_results.entropies[i] *
-                      log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i]));
+        spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        spatial_dis =
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i])));
     } else {
-        spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        spatial_dis = dis_results.entropies[i] *
-                      log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i]));
+        spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        spatial_dis =
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i])));
     }
     *ref = spatial_ref;
     *dis = spatial_dis;
@@ -385,7 +392,8 @@ static float uf_upstream_speed_score(SpeedDimensions dim, SpeedResultBuffers ref
 {
     float score = 0;
     float base_entropy =
-        dim.elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E));
+        (float)(dim.elements_in_block *
+                (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E)));
     for (size_t i = 0; i < dim.num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {

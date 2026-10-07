@@ -57,7 +57,7 @@ static int release_parsed(CLISettings *settings)
     return 0;
 }
 
-static char *test_aom_ctc_v1_0()
+static char *test_aom_ctc_v1_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v1.0"};
     int argc = 7;
@@ -75,7 +75,7 @@ static char *test_aom_ctc_v1_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v2_0()
+static char *test_aom_ctc_v2_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v2.0"};
     int argc = 7;
@@ -93,7 +93,7 @@ static char *test_aom_ctc_v2_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v3_0()
+static char *test_aom_ctc_v3_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v3.0"};
     int argc = 7;
@@ -111,7 +111,7 @@ static char *test_aom_ctc_v3_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v4_0()
+static char *test_aom_ctc_v4_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v4.0"};
     int argc = 7;
@@ -129,7 +129,7 @@ static char *test_aom_ctc_v4_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v5_0()
+static char *test_aom_ctc_v5_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v5.0"};
     int argc = 7;
@@ -147,7 +147,7 @@ static char *test_aom_ctc_v5_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v6_0()
+static char *test_aom_ctc_v6_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v6.0"};
     int argc = 7;
@@ -165,7 +165,7 @@ static char *test_aom_ctc_v6_0()
     return NULL;
 }
 
-static char *test_nflx_ctc_v1_0()
+static char *test_nflx_ctc_v1_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--nflx_ctc", "v1.0"};
     int argc = 7;
@@ -190,7 +190,7 @@ static char *test_nflx_ctc_v1_0()
  * picks the CUDA extractors because gpumask is 0. Earlier revisions
  * set gpumask = 1 here, which silently routed every "CUDA" run
  * through the CPU path. */
-static char *test_backend_cuda_engages_cuda()
+static char *test_backend_cuda_engages_cuda(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "cuda"};
     int argc = 7;
@@ -212,7 +212,7 @@ static char *test_backend_cuda_engages_cuda()
 /* ADR-1874: `--list-backends` needs no inputs. cli_parse() must return with
  * the flag set instead of exiting on the missing reference and distorted
  * paths, so vmaf.cpp can print the report. */
-static char *test_list_backends_needs_no_inputs()
+static char *test_list_backends_needs_no_inputs(void)
 {
     char *argv[2] = {"vmaf", "--list-backends"};
     int argc = 2;
@@ -240,14 +240,14 @@ static char *check_sample_range_flag(char *flag, bool expect)
     return NULL;
 }
 
-static char *test_check_sample_range_flag()
+static char *test_check_sample_range_flag(void)
 {
     char *msg = check_sample_range_flag("--check-sample-range", true);
     msg = msg ? msg : check_sample_range_flag("--check_sample_range", true);
     return msg ? msg : check_sample_range_flag(NULL, false);
 }
 
-static char *test_backend_cpu()
+static char *test_backend_cpu(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "cpu"};
     int argc = 7;
@@ -262,7 +262,7 @@ static char *test_backend_cpu()
     return NULL;
 }
 
-static char *test_backend_sycl()
+static char *test_backend_sycl(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "sycl"};
     int argc = 7;
@@ -279,7 +279,7 @@ static char *test_backend_sycl()
 
 /* test_backend_vulkan removed — ADR-0726: Vulkan backend dropped. */
 
-static char *test_backend_hip()
+static char *test_backend_hip(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "hip"};
     int argc = 7;
@@ -295,7 +295,7 @@ static char *test_backend_hip()
     return NULL;
 }
 
-static char *test_backend_metal()
+static char *test_backend_metal(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "metal"};
     int argc = 7;
@@ -312,7 +312,7 @@ static char *test_backend_metal()
     return NULL;
 }
 
-static char *test_hip_device_explicit()
+static char *test_hip_device_explicit(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--hip_device", "2"};
     int argc = 7;
@@ -325,7 +325,7 @@ static char *test_hip_device_explicit()
     return NULL;
 }
 
-static char *test_metal_device_explicit()
+static char *test_metal_device_explicit(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--metal_device", "1"};
     int argc = 7;
@@ -351,7 +351,7 @@ static char *test_sycl_device_explicit(void)
     return NULL;
 }
 
-static char *test_no_hip_no_metal_flags()
+static char *test_no_hip_no_metal_flags(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--no_hip", "--no_metal"};
     int argc = 7;
@@ -372,7 +372,7 @@ static char *test_no_hip_no_metal_flags()
  * getopt_long consumed the option value and the switch fell into
  * default:, silently discarding the cpumask.  The fix adds a
  * 'case 'c':' fall-through before ARG_CPUMASK. */
-static char *test_cpumask_short_opt()
+static char *test_cpumask_short_opt(void)
 {
     /* -c 0xff must set settings.cpumask = 255, same as --cpumask 0xff. */
     char *argv[9] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "-c", "0xff"};
@@ -398,7 +398,7 @@ static char *test_cpumask_short_opt()
 
 /* Explicit `--gpumask=N --backend cuda` must preserve the user's gpumask,
  * NOT clobber it. Multi-GPU rigs need fine-grained disable bits. */
-static char *test_backend_cuda_preserves_explicit_gpumask()
+static char *test_backend_cuda_preserves_explicit_gpumask(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--gpumask=2", "--backend", "cuda"};
     int argc = 8;
@@ -1013,7 +1013,7 @@ static char *run_feature_delimiter_tests(void)
     return NULL;
 }
 
-static char *test_color_metadata_defaults_to_unknown()
+static char *test_color_metadata_defaults_to_unknown(void)
 {
     char *argv[13] = {"vmaf", "-r", "ref.yuv", "-d",  "dis.yuv", "-w", "16",
                       "-h",   "16", "-p",      "420", "-b",      "8"};
@@ -1039,7 +1039,7 @@ static char *test_color_metadata_defaults_to_unknown()
     return NULL;
 }
 
-static char *test_color_metadata_parses()
+static char *test_color_metadata_parses(void)
 {
     char *argv[29] = {"vmaf",      "-r",
                       "ref.yuv",   "-d",
@@ -1069,7 +1069,7 @@ static char *test_color_metadata_parses()
     return NULL;
 }
 
-static char *test_color_trc_and_matrix_parse()
+static char *test_color_trc_and_matrix_parse(void)
 {
     char *argv[29] = {"vmaf",     "-r",
                       "ref.yuv",  "-d",
@@ -1099,7 +1099,7 @@ static char *test_color_trc_and_matrix_parse()
     return NULL;
 }
 
-static char *test_color_trc_and_matrix_aliases_parse()
+static char *test_color_trc_and_matrix_aliases_parse(void)
 {
     char *argv[29] = {"vmaf",    "-r",
                       "ref.yuv", "-d",
@@ -1136,7 +1136,7 @@ static bool color_is(const VmafColor *c, enum VmafColorRange range,
     return c->range == range && c->primaries == primaries && c->trc == trc && c->matrix == matrix;
 }
 
-static char *test_per_side_color_flags_differ()
+static char *test_per_side_color_flags_differ(void)
 {
     char *argv[29] = {"vmaf",     "-r",
                       "ref.yuv",  "-d",
@@ -1168,7 +1168,7 @@ static char *test_per_side_color_flags_differ()
     return NULL;
 }
 
-static char *test_one_input_can_be_left_unspecified()
+static char *test_one_input_can_be_left_unspecified(void)
 {
     char *argv[21] = {"vmaf",    "-r",
                       "ref.yuv", "-d",
@@ -1197,7 +1197,7 @@ static char *test_one_input_can_be_left_unspecified()
 }
 
 #if VMAF_BUILT_IN_MODELS
-static char *test_default_model_is_sdr_without_color_metadata()
+static char *test_default_model_is_sdr_without_color_metadata(void)
 {
     char *argv[13] = {"vmaf", "-r", "ref.yuv", "-d",  "dis.yuv", "-w", "16",
                       "-h",   "16", "-p",      "420", "-b",      "8"};
@@ -1215,7 +1215,7 @@ static char *test_default_model_is_sdr_without_color_metadata()
     return NULL;
 }
 
-static char *test_default_model_is_sdr_for_bt709_source()
+static char *test_default_model_is_sdr_for_bt709_source(void)
 {
     char *argv[29] = {"vmaf",    "-r",
                       "ref.yuv", "-d",
@@ -1262,7 +1262,7 @@ static char *run_color_tests(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     char *result = run_aom_ctc_tests();
     if (result)

@@ -121,7 +121,7 @@ static int get_sample_image(VmafPicture *pic, int pic_index)
     if (err)
         return err;
     uint16_t *data = (uint16_t *)pic->data[0];
-    int stride = pic->stride[0] >> 1;
+    int stride = (int)(pic->stride[0] >> 1);
     for (unsigned i = 0; i < pic->h[0]; i++) {
         for (unsigned j = 0; j < pic->w[0]; j++) {
             data[i * stride + j] = sample_pic[pic_index][count++];
@@ -138,7 +138,7 @@ static int get_sample_image_8b(VmafPicture *pic)
     if (err)
         return err;
     uint8_t *data = (uint8_t *)pic->data[0];
-    int stride = pic->stride[0];
+    int stride = (int)pic->stride[0];
     for (unsigned i = 0; i < pic->h[0]; i++) {
         for (unsigned j = 0; j < pic->w[0]; j++) {
             data[i * stride + j] = sample_pic[count++];
@@ -162,7 +162,7 @@ static int get_sample_image_8x8(VmafPicture *pic, int pic_index)
     if (err)
         return err;
     uint16_t *data = (uint16_t *)pic->data[0];
-    int stride = pic->stride[0] >> 1;
+    int stride = (int)(pic->stride[0] >> 1);
     for (unsigned i = 0; i < pic->h[0]; i++) {
         for (unsigned j = 0; j < pic->w[0]; j++) {
             data[i * stride + j] = sample_pic[pic_index][count++];
@@ -185,7 +185,7 @@ static char *unref_picture_if_allocated(VmafPicture *pic, bool allocated, char *
 }
 
 /* Preprocessing functions */
-static char *test_anti_dithering_filter()
+static char *test_anti_dithering_filter(void)
 {
     VmafPicture pic = {0};
     VmafPicture filtered_pic = {0};
@@ -211,7 +211,7 @@ static char *test_anti_dithering_filter()
 }
 
 /* Banding detection functions */
-static char *test_decimate()
+static char *test_decimate(void)
 {
     VmafPicture pic = {0};
     const int err = get_sample_image(&pic, 0);
@@ -353,7 +353,7 @@ static char *check_decimate_additional_inputs(VmafPicture pic, VmafPicture out_p
     return error;
 }
 
-static char *test_decimate_generic()
+static char *test_decimate_generic(void)
 {
     VmafPicture pic = {0};
     VmafPicture out_pic = {0};
@@ -445,7 +445,7 @@ static char *check_filter_mode_cases(VmafPicture *image, VmafPicture *filtered_i
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_filter_mode()
+static char *test_filter_mode(void)
 {
     enum { w = 5, h = 5 };
     uint16_t buffer[3 * w];
@@ -484,7 +484,7 @@ static char *check_large_mask_indices(void)
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_get_mask_index()
+static char *test_get_mask_index(void)
 {
     char *error = check_large_mask_indices();
     if (error)
@@ -552,7 +552,7 @@ static char *check_spatial_mask_second_image(const VmafPicture *image, VmafPictu
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_get_spatial_mask_for_index()
+static char *test_get_spatial_mask_for_index(void)
 {
     VmafPicture image = {0};
     VmafPicture mask = {0};
@@ -659,15 +659,15 @@ static char *calculate_c_values_8x8_phase(const uint16_t *tvi_for_diff, uint16_t
     return error;
 }
 
-static char *test_calculate_c_values()
+static char *test_calculate_c_values(void)
 {
     VmafPicture input = {0};
     VmafPicture mask = {0};
     bool have_input = false;
     bool have_mask = false;
     float combined_c_values[16];
-    const float expected_values[16] = {0.6666667, 2.0,  0.0, 0.0, 2.4, 3.4285715, 2.4, 0.0,
-                                       2.6666667, 3.75, 3.0, 0.0, 2.0, 2.4,       2.0, 0.0};
+    const float expected_values[16] = {0.6666667f, 2.0f,  0.0f, 0.0f, 2.4f, 3.4285715f, 2.4f, 0.0f,
+                                       2.6666667f, 3.75f, 3.0f, 0.0f, 2.0f, 2.4f,       2.0f, 0.0f};
     const uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
     const uint16_t vlt_luma = 0;
     const uint16_t window_size = 3;
@@ -924,7 +924,7 @@ static char *check_c_values_short_frame_simd(const ShortFrameFixture *f)
     return error;
 }
 
-static char *test_calculate_c_values_short_frame()
+static char *test_calculate_c_values_short_frame(void)
 {
     ShortFrameFixture f = {0};
     char *error = short_frame_setup(&f);
@@ -1045,7 +1045,7 @@ static char *check_c_values_narrow_frame_simd(const ShortFrameFixture *f)
     return error;
 }
 
-static char *test_calculate_c_values_narrow_frame()
+static char *test_calculate_c_values_narrow_frame(void)
 {
     ShortFrameFixture f = {0};
     char *error = short_frame_setup(&f);
@@ -1059,7 +1059,7 @@ static char *test_calculate_c_values_narrow_frame()
     return short_frame_teardown(&f, error);
 }
 
-static char *test_c_value_pixel()
+static char *test_c_value_pixel(void)
 {
     const uint16_t histogram[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     uint16_t value = 2;
@@ -1103,7 +1103,7 @@ static char *check_incremented_range(const uint16_t *arr)
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_update_range()
+static char *test_update_range(void)
 {
     uint16_t arr[15] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
     vmaf_cambi_test_increment_range(arr, 5, 10);
@@ -1122,7 +1122,7 @@ static char *test_update_range()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_spatial_pooling()
+static char *test_spatial_pooling(void)
 {
     float arr[12] = {0, 1, 2, 3, 4, 5, 10, 7, 8, 9, 6, 11};
 
@@ -1146,7 +1146,7 @@ static char *test_spatial_pooling()
  * the same as computing 1.0f / i: 42 of its 4226 decimal literals parse one
  * ulp away from the correctly rounded reciprocal (i = 82, 83, 244, ...),
  * which is why a GPU twin must copy it rather than divide. */
-static char *test_reciprocal_lut_accessor()
+static char *test_reciprocal_lut_accessor(void)
 {
     unsigned size = 0;
     const float *lut = vmaf_cambi_reciprocal_lut(&size);
@@ -1164,7 +1164,7 @@ static char *test_reciprocal_lut_accessor()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_reciprocal_lut_values()
+static char *test_reciprocal_lut_values(void)
 {
     const float *lut = vmaf_cambi_reciprocal_lut(CAMBI_TEST_NULL_POINTER);
     int within_ulp = 1;
@@ -1181,7 +1181,7 @@ static char *test_reciprocal_lut_values()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_quick_select()
+static char *test_quick_select(void)
 {
     float arr[12] = {0, 1, 2, 3, 4, 5, 10, 7, 8, 9, 6, 11};
     int kth = 5;
@@ -1198,7 +1198,7 @@ static char *test_quick_select()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_quick_select_duplicate_extrema()
+static char *test_quick_select_duplicate_extrema(void)
 {
     float duplicate_values[9] = {4, 4, 4, 4, 4, 4, 4, 4, 4};
     vmaf_cambi_test_quick_select(duplicate_values, 9, 4);
@@ -1221,7 +1221,7 @@ static char *test_quick_select_duplicate_extrema()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_average_topk_elements()
+static char *test_average_topk_elements(void)
 {
     const float arr[12] = {11, 10, 9, 8, 7, 6, 1, 2, 3, 4, 5, 0};
     double average;
@@ -1238,7 +1238,7 @@ static char *test_average_topk_elements()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_get_pixels_in_window()
+static char *test_get_pixels_in_window(void)
 {
     uint16_t pixels_in_window;
     pixels_in_window = vmaf_cambi_get_pixels_in_window(62);
@@ -1250,7 +1250,7 @@ static char *test_get_pixels_in_window()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_weight_scores_per_scale()
+static char *test_weight_scores_per_scale(void)
 {
     const double scores_per_scale[VMAF_CAMBI_NUM_SCALES] = {10000, 1000, 100, 10, 1};
     double score = vmaf_cambi_weight_scores_per_scale(scores_per_scale, (uint16_t)10);
@@ -1292,7 +1292,7 @@ static char *check_standard_window_sizes(void)
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_adjust_window_size()
+static char *test_adjust_window_size(void)
 {
     char *error = check_standard_window_sizes();
     if (error)
@@ -1335,7 +1335,7 @@ static char *test_adjust_window_size()
 }
 
 /* Visibility threshold functions */
-static char *test_get_tvi_for_diff()
+static char *test_get_tvi_for_diff(void)
 {
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
@@ -1371,7 +1371,7 @@ static char *check_tvi_search_bound(int diff, double threshold, VmafLumaRange ra
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_get_tvi_for_diff_search_bounds()
+static char *test_get_tvi_for_diff_search_bounds(void)
 {
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
@@ -1391,7 +1391,7 @@ static char *test_get_tvi_for_diff_search_bounds()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_tvi_condition()
+static char *test_tvi_condition(void)
 {
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
@@ -1453,7 +1453,7 @@ static char *check_contrast_arrays_four(void)
     return error;
 }
 
-static char *test_set_contrast_arrays()
+static char *test_set_contrast_arrays(void)
 {
     char *error = check_contrast_arrays_four();
     if (error)
@@ -1496,7 +1496,7 @@ static char *test_set_contrast_arrays()
     return array_error;
 }
 
-static char *test_tvi_hard_threshold_condition()
+static char *test_tvi_hard_threshold_condition(void)
 {
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
@@ -1517,7 +1517,7 @@ static char *test_tvi_hard_threshold_condition()
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_get_vlt_luma()
+static char *test_get_vlt_luma(void)
 {
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
@@ -1568,7 +1568,7 @@ static char *check_valid_dp_row(const uint32_t *dp_curr)
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_compute_dp_row()
+static char *test_compute_dp_row(void)
 {
     /* 4-pixel-wide image: dp_width = width + 2*pad_size + 1 = 7 with pad_size=1 */
     enum { WIDTH = 4, PAD = 1 };
@@ -1627,7 +1627,7 @@ static char *test_compute_dp_row()
  * square-sum values, verify the comparator fires (1) and stays quiet (0)
  * at the expected output columns.
  */
-static char *test_compute_mask_row()
+static char *test_compute_mask_row(void)
 {
     /* 4-pixel output, pad_size=1 → delta = 2*PAD+1 = 3, array positions [0..6] needed */
     enum { WIDTH = 4, PAD = 1 };
@@ -1767,7 +1767,7 @@ static char *cleanup_parity_pictures(ParityPictures *pics, char *msg)
     return msg;
 }
 
-static char *test_calculate_c_values_scalar_avx2_parity()
+static char *test_calculate_c_values_scalar_avx2_parity(void)
 {
     ParityPictures pics = {0};
     char *msg = alloc_parity_pictures(&pics);

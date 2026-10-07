@@ -104,7 +104,7 @@ static int make_vmaf_ctx_with_scores(VmafContext **vmaf_out, VmafModel **model_o
 /* -------------------------------------------------------------------------
  * Test: vmaf_score_at_index() — public entry point
  * ---------------------------------------------------------------------- */
-static char *test_vmaf_score_at_index()
+static char *test_vmaf_score_at_index(void)
 {
     int err;
     VmafContext *vmaf = NULL;
@@ -135,7 +135,7 @@ static char *test_vmaf_score_at_index()
 /* -------------------------------------------------------------------------
  * Test: vmaf_model_collection_load() — public entry point
  * ---------------------------------------------------------------------- */
-static char *test_vmaf_model_collection_load()
+static char *test_vmaf_model_collection_load(void)
 {
     int err;
 
@@ -218,7 +218,7 @@ static int make_temp_output_path(char *out, size_t out_len)
 /* -------------------------------------------------------------------------
  * Test: vmaf_write_output() dispatcher — public entry point
  * ---------------------------------------------------------------------- */
-static char *test_vmaf_write_output()
+static char *test_vmaf_write_output(void)
 {
     int err;
     VmafContext *vmaf = NULL;
@@ -260,7 +260,7 @@ static char *test_vmaf_write_output()
 /* -------------------------------------------------------------------------
  * Runner
  * ---------------------------------------------------------------------- */
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_vmaf_score_at_index);
     mu_run_test(test_vmaf_model_collection_load);

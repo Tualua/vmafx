@@ -49,7 +49,7 @@ static int get_picture_16b(VmafPicture *pic, int pic_index)
         return err;
     for (int c = 0; c < 3; c++) {
         uint16_t *data = (uint16_t *)pic->data[c];
-        int stride = pic->stride[c] >> 1;
+        int stride = (int)(pic->stride[c] >> 1);
         for (unsigned i = 0; i < pic->h[c]; i++) {
             for (unsigned j = 0; j < pic->w[c]; j++) {
                 data[i * stride + j] = sample_pic[pic_index][count++];

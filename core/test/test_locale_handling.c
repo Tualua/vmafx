@@ -347,7 +347,7 @@ static char *test_model_parse_with_comma_locale(void)
         .flags = VMAF_MODEL_FLAGS_DEFAULT,
     };
 
-    int err = vmaf_read_json_model_from_buffer(&model, &cfg, model_json, strlen(model_json));
+    int err = vmaf_read_json_model_from_buffer(&model, &cfg, model_json, (int)strlen(model_json));
     mu_assert("vmaf_read_json_model_from_buffer should succeed", !err);
     mu_assert("model should not be NULL", model != NULL);
 

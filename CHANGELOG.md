@@ -4,6 +4,15 @@
 > entries and Conventional Commits into ordinary SemVer releases.
 
 ## [Unreleased]
+### Changed
+
+- The unit tests compile without an MSVC warning (about 71,000 per Windows job
+  before): float tables carry the `f` suffix (every literal checked to equal the
+  value the implicit double-to-float conversion gave), narrowing conversions are
+  explicit, and C test cases are declared `(void)`. No test value or tolerance
+  changed.
+
+
 ### Fixed
 
 - **`-qpfile` works on libx264, and the saliency tools no longer run a libx264
@@ -1807,6 +1816,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   them on data cleared for redistribution
   ([ADR-1570](docs/adr/1570-tiny-model-dataset-terms-retrain-rc9.md),
   [dataset terms](docs/ai/training-data.md#dataset-terms)).
+
+
+- The unit tests compile without an MSVC warning (about 71,000 per Windows job
+  before): float tables carry the `f` suffix (every literal checked to equal the
+  value the implicit double-to-float conversion gave), narrowing conversions are
+  explicit, and C test cases are declared `(void)`. No test value or tolerance
+  changed.
 
 
 - **Building `vmafx-node` now generates its eBPF object; none is committed

@@ -937,7 +937,7 @@ static int load_model_with_block(VmafModel **model, const char *block)
     return err;
 }
 
-static char *test_model_without_conversion_target()
+static char *test_model_without_conversion_target(void)
 {
     VmafModel *model;
     int err = load_model_with_block(&model, "");
@@ -949,7 +949,7 @@ static char *test_model_without_conversion_target()
     return NULL;
 }
 
-static char *test_model_conversion_target()
+static char *test_model_conversion_target(void)
 {
     VmafModel *model;
     int err = load_model_with_block(
@@ -968,7 +968,7 @@ static char *test_model_conversion_target()
     return NULL;
 }
 
-static char *test_model_conversion_target_rejects_bad_input()
+static char *test_model_conversion_target_rejects_bad_input(void)
 {
     const char *bad[] = {
         /* unknown name */
@@ -998,7 +998,7 @@ static char *test_model_conversion_target_rejects_bad_input()
     return NULL;
 }
 
-static char *test_model_conversion_target_format_and_depth()
+static char *test_model_conversion_target_format_and_depth(void)
 {
     VmafModel *model;
     int err = load_model_with_block(
@@ -1026,7 +1026,7 @@ static char *test_model_conversion_target_format_and_depth()
     return NULL;
 }
 
-static char *test_model_conversion_target_rejects_bad_format_and_depth()
+static char *test_model_conversion_target_rejects_bad_format_and_depth(void)
 {
     const char *colorspace = "\"colorspace\": {\"range\": \"limited\", \"primaries\": \"bt2020\", "
                              "\"trc\": \"smpte2084\", \"matrix\": \"ictcp\"}";

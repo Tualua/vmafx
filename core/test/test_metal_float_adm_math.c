@@ -132,7 +132,7 @@ static float reference_flt(float csf)
 static float reference_centre(float sum, float centre)
 {
     float s = sum;
-    s += REFERENCE_ONE_BY_15 * fabsf(centre);
+    s = (float)(s + REFERENCE_ONE_BY_15 * fabsf(centre));
     return s;
 }
 

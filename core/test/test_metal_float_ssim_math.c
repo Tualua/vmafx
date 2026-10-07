@@ -93,8 +93,8 @@ static void reference_terms(window_moments m, float C1, float C2, double *l_out,
     float sigma_both = m.both;
     ref_sigma_sqd -= m.ref_mu * m.ref_mu;
     cmp_sigma_sqd -= m.cmp_mu * m.cmp_mu;
-    ref_sigma_sqd = MAX(0.0, ref_sigma_sqd);
-    cmp_sigma_sqd = MAX(0.0, cmp_sigma_sqd);
+    ref_sigma_sqd = (float)MAX(0.0, ref_sigma_sqd);
+    cmp_sigma_sqd = (float)MAX(0.0, cmp_sigma_sqd);
     sigma_both -= m.ref_mu * m.cmp_mu;
 
     const float sigma_ref_sigma_cmp = sqrtf(ref_sigma_sqd * cmp_sigma_sqd);

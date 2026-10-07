@@ -102,7 +102,7 @@ static const HvsFixture FIXTURES[] = {
 static float cpu_mask_entry(float csf)
 {
     float mask;
-    mask = (csf * 0.3885746225901003) * (csf * 0.3885746225901003);
+    mask = (float)((csf * 0.3885746225901003) * (csf * 0.3885746225901003));
     return mask;
 }
 

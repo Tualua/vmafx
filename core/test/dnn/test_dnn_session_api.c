@@ -165,9 +165,9 @@ static char *test_run_rejects_zero_n_inputs(void)
     int64_t shape[1] = {1};
     VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 1};
     VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 1, .written = 0};
-    int rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeef, &in, 0u, &out, 1u);
+    int rc = vmaf_dnn_session_run((VmafDnnSession *)(uintptr_t)0xdeadbeefu, &in, 0u, &out, 1u);
     mu_assert("zero n_inputs rejected", rc < 0);
-    rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeef, &in, 1u, &out, 0u);
+    rc = vmaf_dnn_session_run((VmafDnnSession *)(uintptr_t)0xdeadbeefu, &in, 1u, &out, 0u);
     mu_assert("zero n_outputs rejected", rc < 0);
     return NULL;
 }
