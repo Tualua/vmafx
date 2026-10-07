@@ -8,6 +8,44 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## icx-cl and the Windows icpx: strict FP without the override warning (2026-10-07)
+
+`build/icx-cl-strict-fp-spelling`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md),
+[Research-2170](research/2170-windows-strict-fp-spelling-2026-10-07.md). Fork-only: the `intel-llvm-cl` branch of the strict FP policy in
+`core/src/meson.build` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` (it was `/fp:precise
+/Qfma-`), and the SYCL policy gives `sycl_msvc_device_link` builds the same `-fno-fast-math -fcomplex-arithmetic=full` reset as Linux. A sync
+keeps the order (model first, contraction-off last). no upstream file.
+
+## Cloud-native platform decision (2026-10-07, ADR-2350)
+
+`rc4/api-wp17-adr`, [ADR-2350](adr/2350-cloud-native-platform.md). Records the decision and marks ADR-1119, ADR-0711,
+ADR-1589, ADR-0719, ADR-1526 and ADR-2001 as partially superseded; comments and AGENTS notes of
+`cmd/vmafx-controller/`, `cmd/vmafx-operator/` and `deploy/helm/vmafx/` now call the SQLite queue transitional. No
+code path changes. no upstream file.
+
+## Observability: one metric definition and the generated Overview dashboard (2026-10-07)
+
+`rc4/obs-1-metric-definitions`, [ADR-2349](adr/2349-observability-package.md), #2430.
+
+- Every Prometheus family is defined in `pkg/observability/metricdef`; the
+  services register it through `pkg/observability`'s `NewCounter`,
+  `NewGauge`, `NewHistogram` and `RegisterScraped`. A sync that brings back a
+  `prometheus.New*Vec`, a GaugeFunc or `promauto` in a service bypasses the
+  label bounds and fails the per-binary contract tests.
+- `pkg/observability.NewMetrics` returns `(*Metrics, error)` and
+  `SetControllerSources` is gone (the controller's queue families are in
+  `cmd/vmafx-controller/metrics.go`). The controller queue's `Cancel` and
+  `ReportResult` return `(bool, error)`; the bool feeds the job counters.
+- `deploy/grafana/vmafx-overview.json` moved to
+  `deploy/grafana/dashboards/vmafx-overview.json` and is generated, as is
+  `docs/observability/metrics.md`: on a conflict take either side and run
+  `go run ./tools/obsgen -write`, never merge by hand.
+- `vmafx-node` composes `bootstrap.HTTP` (`nodeServerOptions`), listens on
+  `VMAFX_HTTP_ADDR` (default `:9090`) and its Dockerfile stages expose 9090.
+- No score, FFmpeg patch or C API impact.
+
+<!-- markdownlint-disable-file MD013 MD041 -->
+
 ## Rendered docs: pull requests carry fragments only (2026-10-07)
 
 `ci/render-at-release`, [ADR-2197](adr/2197-render-generated-docs-at-landing.md). Fork-only tooling. `docs/rebase-notes.md` has a

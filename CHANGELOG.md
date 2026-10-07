@@ -42,6 +42,27 @@
   Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
+- **Observability: one metric definition, node `/metrics`, queue and quality
+  metrics, a generated Overview dashboard (RC4, ADR-2349, #2430).** Every
+  Prometheus family the services serve is defined once in
+  `pkg/observability/metricdef`, with its labels and their cardinality bound;
+  the services build their collectors from it, and
+  [the metric reference](docs/observability/metrics.md) is generated from it.
+  `vmafx-node` serves `/metrics`, `/livez`, `/readyz` and `/startupz` on
+  `VMAFX_HTTP_ADDR` (default `:9090`): backend and vendor, slots, running
+  jobs, jobs by backend and outcome, job run time. The controller adds
+  cancelled and requeued jobs (by reason), the age of each tenant's oldest
+  pending job, queue wait and time to result; the server and controller add
+  the quality family `vmafx_quality_score` per tenant, model and profile (the
+  profile reads `none` until requests carry one); every
+  component serves `vmafx_build_info`. The Overview dashboard is generated
+  with the Grafana Foundation SDK (`go run ./tools/obsgen -write`) under
+  `deploy/grafana/dashboards/`; it replaces `deploy/grafana/vmafx-overview.json`,
+  five of whose seven queries named series nothing emits, and a test fails
+  any shipped panel that queries a series nothing emits. See
+  [observability](docs/development/observability.md#metrics).
+
+
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
@@ -95,6 +116,11 @@
 
 ### Changed
 
+- **ADR-2167 is Accepted.** The `-qpfile` handling of libx264 (offsets applied through `quant_offsets`)
+  shipped in #2385 and the maintainer accepted the decision on 2026-10-07; the ADR status and index
+  say so. No code changes.
+
+
 - **CI runs the tier a pull request owes, not the whole suite on every push
   ([ADR-2169](docs/adr/2169-ci-fewer-runs.md)).** A pull request from this repository
   (Renovate included) runs lint, format, the fast suite and the governance gates; the
@@ -104,6 +130,39 @@
   `autorelease: cut`. Draft pull requests start no job. Renovate groups minor and patch
   updates into one weekly pull request and rebases only on conflict; security updates
   still open at any time. See "Which jobs run when" in `docs/development/ci.md`.
+
+
+- **The distributed platform has an architecture for running without local state
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** Job state and node
+  sessions move from the controller's embedded SQLite queue to PostgreSQL, so
+  several controller replicas can serve any node; nodes keep the gRPC protocol
+  and claim work through leases; River runs retries and follow-up steps; node
+  pools scale on queue depth with KEDA; results become signed OCI artifacts; job
+  events go out as CloudEvents; and the protobuf, CRDs, OpenAPI and Helm values
+  schema are generated from a platform definition. A standalone profile keeps
+  SQLite. This change only records the decision: the chart, the controller and
+  the documentation pages say that the single-replica SQLite queue is
+  transitional. Nothing in a running installation changes.
+
+
+- **Controller job metrics are per tenant (RC4, ADR-2349).**
+  `vmafx_controller_jobs_submitted_total`, `_completed_total`,
+  `_failed_total`, `vmafx_controller_jobs_pending` and `_jobs_running` carry
+  a `tenant` label, so a query on the bare series returns one series per
+  tenant: wrap it in `sum()` for the total. A repeated result report of a
+  finished job is no longer counted again, and `vmafx_server_score_duration_seconds`
+  buckets reach 30 minutes (0.05 s to 1800 s) so long clips land in a bucket.
+  `vmafx-server` no longer serves the controller's job counters, which it
+  never incremented.
+
+
+- **The route for Go saliency inference is decided.** [ADR-2377](docs/adr/2377-go-saliency-through-mobilesal-binding.md)
+  records that `vmafx-tune` runs the saliency model through the core's MobileSal extractor and the
+  generated Go binding, with no second ONNX Runtime integration. No code changes yet; RC5 implements
+  `--use-saliency` and `--saliency-aware` on it before the Python `vmaf-tune` is deleted.
+
+
+- **The Windows icx-cl and icpx builds no longer print an override warning on every compile.** The strict floating-point line of `intel-llvm-cl` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` instead of `/fp:precise /Qfma-`, and the SYCL compiles and device link of the MSVC build take the `-fno-fast-math -fcomplex-arithmetic=full` reset the Linux icpx already has. Same arithmetic: equal compiler front-end arguments apart from the complex-arithmetic token, equal predefined macros, byte-identical objects and device bitcode ([Research-2170](docs/research/2170-windows-strict-fp-spelling-2026-10-07.md), [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
 
 
 - `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.

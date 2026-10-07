@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1319), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1322), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5287,3 +5287,15 @@ Every ADR, one heading each (1319), so the site search finds an ADR by its title
 ## ADR-2343: Reference-exact extractors by default, with a named Netflix compatibility mode
 
 [2343-reference-exact-default-compat-mode](2343-reference-exact-default-compat-mode.md)
+
+## ADR-2349: One metric definition drives the services, the generated dashboards and the observability package
+
+[2349-observability-package](2349-observability-package.md)
+
+## ADR-2350: The VMAFx platform keeps its state in PostgreSQL, scales on queue depth and generates its platform surfaces from a definition
+
+[2350-cloud-native-platform](2350-cloud-native-platform.md)
+
+## ADR-2377: Go saliency inference runs through the core's MobileSal extractor and the RC4 Go binding
+
+[2377-go-saliency-through-mobilesal-binding](2377-go-saliency-through-mobilesal-binding.md)
