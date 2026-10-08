@@ -571,6 +571,20 @@
   `--use-saliency` and `--saliency-aware` on it before the Python `vmaf-tune` is deleted.
 
 
+- **The chart no longer sets `VMAFX_BACKEND` on the scoring server.** The
+  server's Deployment, StatefulSet and Job carried it, but `vmafx-server`
+  never read it: it takes its backend from each request's `backend` score
+  option. The install notes no longer print a `BACKEND` line, and the server
+  container has an `env` list only when `env` holds values. Nodes keep
+  `VMAFX_BACKEND` from `gpu.vendor`. The unused named templates
+  `vmafx.podSpec`, `vmafx.containerSpec`, `vmafx.volumes` and
+  `vmafx.sidecarContainer` are removed; no chart template included them.
+  `vmafx-mcp` no longer copies `VMAFX_LOG_LEVEL` and `VMAFX_LOG_FORMAT` into
+  `LOG_LEVEL` and `LOG_FORMAT`, which nothing read. The upgrade notes are in
+  `docs/development/k8s-deployment.md`
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).
+
+
 - **The Helm chart's values schema checks Kubernetes fields with the
   Kubernetes 1.26 types, and the values file and schema are generated
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** `values.yaml` and
@@ -865,6 +879,16 @@
   at zero yet stay as they were and are listed with their cause in
   [the CI overview](docs/development/ci.md#warnings-are-errors-adr-2170). Release builds and container
   images do not use the switch. See [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md).
+
+
+- **Host fences wait on a condition variable, and the MSVC builds have a timed
+  wait.** `vmafx_fence_wait()` on a host fence, and `vmafx_window_wait()`,
+  sleep until the fence is signalled instead of polling every 50 µs (1 ms on
+  Windows); on Linux the deadline is kept on `CLOCK_MONOTONIC`. The Win32
+  pthread shim of the MSVC, clang-cl and icx-cl builds gains
+  `pthread_cond_timedwait()`, so `test_thread_pool_backpressure` now builds and
+  runs on the MSVC lanes too
+  ([Threads on MSVC](docs/getting-started/building-on-windows.md#threads-on-msvc)).
 
 
 - **A Windows SYCL zip regression is seen before it merges, and a cut needs every tester leg green.**

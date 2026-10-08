@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1343), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1344), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5383,3 +5383,7 @@ Every ADR, one heading each (1343), so the site search finds an ADR by its title
 ## ADR-2705: formulas are TeX rendered by self-hosted KaTeX, checked at build time
 
 [2705-docs-math-katex](2705-docs-math-katex.md)
+
+## ADR-2751: MSVC threads stay on the Win32 shim, which gains a timed wait
+
+[2751-win32-pthread-shim-timed-wait](2751-win32-pthread-shim-timed-wait.md)

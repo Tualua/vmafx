@@ -8,6 +8,73 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Win32 pthread shim: timed wait; host fences on a condition variable (2026-10-08)
+
+- `core/src/compat/win32/pthread.h` gains `pthread_cond_timedwait()` over
+  `SleepConditionVariableSRW()`. Its deadline arithmetic is
+  `core/src/compat/win32/pthread_timeout.h` (`vmaf_w32_timeout_ms()`), tested
+  on every host by `test_win32_pthread_timeout`. Upstream's bundled
+  pthread-win32 (Netflix/vmaf `bcd6e6159`, `-Dbundled_winpthreads`, and the
+  pthread parts of `a2660554e`, `8618ba5cd`, `5079124ea`, `e2f8b24ab`) is not
+  taken (Q-302). **On sync**: do not add the `libvmaf/subprojects/pthread-win32`
+  submodule, the CMake subproject or the option.
+- `core/src/vmafx/fence.c`: a host fence carries a mutex and a condition
+  variable (`CLOCK_MONOTONIC` on Linux); `vmafx_host_fence_signal()`
+  broadcasts, `vmafx_host_fence_wait()` (now non-const) waits in chunks of at
+  most 1 s against the monotonic deadline. The virtual test clock keeps the
+  poll path. Backend lanes that add fence kinds keep `vmafx_fence_poll()`.
+- `core/test/test_thread_pool_backpressure.c` reads `timespec_get(TIME_UTC)`
+  on MSVC; the Meson probe `has_cond_timedwait` now finds the shim's function,
+  so the test builds on the MSVC lanes.
+- `core/test/test_win32_pthread_shim_contract.py`: `PROBED` is empty; Linux-only
+  `pthread_condattr_*` calls in `fence.c` are allowed inside their guard
+  (`PLATFORM_ONLY`).
+
+## Upstream reconcile: arm64 ADM port hazards, #1551 closed (2026-10-08)
+
+`docs/upstream-reconcile-2026-10-08`, [ADR-1402](adr/1402-adm-cm-centre-tap-int32.md),
+[ADR-1413](adr/1413-adm-gain-limit-truncated-double-product.md),
+[ADR-1417](adr/1417-integer-aim-unclipped-upstream-parity.md),
+[ADR-0155](adr/0155-adm-i4-rounding-deferred-netflix-955.md). Documentation
+only; no fork code changes.
+
+**arm64 ADM contrast masking and scales 1-3 (upstream 8bc5a5c6a, b41d2340a):
+port hazards.** Port this code only if it is bit-exact with the fork's scalar
+kernels (ADR-1402, ADR-1413, ADR-1417), checked under `qemu-aarch64` with GCC
+and clang. Three places to check before taking it:
+
+1. `adm_cm_threshold_neon()` (`arm64/adm_neon.c:364-380`) narrows the scale-0
+   centre tap with `vmovn_s32`, and `adm_cm_accum_neon()` shifts the threshold
+   in 32 bits (`:401`). The fork's scalar keeps the tap in 32 bits and forms the
+   excess in 64 bits with a clamp (ADR-1402); a port must not copy these two
+   lines.
+2. `i4_adm_cm_threshold_neon()` (`:760-761`) uses `vdupq_n_s64(INT32_MIN)` as
+   the rounding term to match upstream's scalar (Netflix/vmaf#955). The fork's
+   scalar keeps that behaviour (ADR-0155), so this one is correct to keep.
+3. `adm_decouple_neon()` falls back to the scalar kernel for non-integral gain
+   limits (`:273`), which agrees with ADR-1413.
+
+`adm_cm_neon()` only runs for widths of 32 and above and falls back to the
+scalar kernel below.
+
+**Update to the `core/src/feature/compat_builtin.h` entry (Netflix/vmaf#1551,
+retracting #1422) further down this page.** Do not adopt Netflix/vmaf#1422's
+`__lzcnt` form. Upstream's #1551 retracted it and was closed on 2026-10-02
+without merging; its algorithm is now upstream's own: 7388bd6fc (in the MSVC
+compat header) and 7437f3d9a.
+
+## Server workloads without VMAFX_BACKEND, unused chart helpers removed (2026-10-08)
+
+`rc4/api-wp17-cleanup`, [ADR-2350](adr/2350-cloud-native-platform.md) D13.
+The server's Deployment, StatefulSet and Job render `env` only from
+`.Values.env`; no `[[chart_env]]` entry targets them, and the `unread`
+escape of `[[chart_env]]` is gone, so the generator refuses an entry the
+workload's binary does not read. `vmafx.podSpec`, `vmafx.containerSpec`,
+`vmafx.volumes` and `templates/sidecar-trainer.yaml` are deleted;
+`cmd/vmafx-mcp/main.go` has no `LOG_LEVEL` / `LOG_FORMAT` copy. A sync that
+brings any of them back drops it again. `test_helm_config_env.py` guards the
+server containers. no upstream file.
+
 ## Netflix/vmaf ad42c532 + 9cb9479f: SpEED fused anti-alias filter on x86, AVX2 vertical pass (2026-10-08)
 
 - `core/src/feature/speed.c` `filter_and_downscale()` and its mirror
