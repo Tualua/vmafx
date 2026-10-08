@@ -25,10 +25,10 @@
 #include <cstring>
 
 #include "dict.h"
+#include "feature_collector.h"
 #include "metadata_handler.h"
 
 extern "C" {
-#include "feature_collector.h"
 #include "feature_collector_internal.h"
 #include "feature_name.h"
 #include "libvmaf/libvmaf.h"

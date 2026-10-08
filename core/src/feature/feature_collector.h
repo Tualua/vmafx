@@ -20,10 +20,10 @@
 #ifndef VMAF_FEATURE_COLLECTOR_INCLUDED
 #define VMAF_FEATURE_COLLECTOR_INCLUDED
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+/* The includes stay outside the extern "C" block: model.h includes <cstddef>
+ * in C++ translation units, and libc++ (the Xcode SDK) rejects the std::byte
+ * templates that header declares when they land inside C linkage ("templates
+ * must have C++ linkage"). Every included header carries its own guard. */
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -32,6 +32,10 @@ extern "C" {
 #include "dict.h"
 #include "model.h"
 #include "metadata_handler.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /** Initial allocation size for FeatureVector::score[], AggregateVector::metric[],
  *  and VmafFeatureCollector::feature_vector[].  All three grow by doubling so

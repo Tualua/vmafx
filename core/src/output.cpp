@@ -53,13 +53,16 @@
 #include <cstdlib>
 #include <string_view>
 
-/* These internal headers have no extern "C" guards of their own; wrap them
- * here so the C++ compiler generates un-mangled call sites that link against
- * the C translation units in libvmaf_feature.a. */
+/* feature_collector.h carries its own extern "C" guard and includes C++
+ * standard headers through model.h, which libc++ refuses inside C linkage, so
+ * it stays outside the block. The other internal headers have no extern "C"
+ * guards of their own; wrap them here so the C++ compiler generates un-mangled
+ * call sites that link against the C translation units in libvmaf_feature.a. */
+#include "feature/feature_collector.h"
+
 extern "C" {
 #include "feature/alias.h"
 #include "log.h"
-#include "feature/feature_collector.h"
 #include "thread_locale.h"
 }
 
