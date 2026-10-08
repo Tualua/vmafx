@@ -245,6 +245,18 @@ The rules of a scoped write:
 - The separate report records the actual measured sources and failures; it
   must not alias the baseline. Replacement is atomic after validation, and
   repeating an unchanged scoped measurement leaves the baseline byte-identical.
+- It also drops, from every file it writes, each baseline entry
+  (`warnings`, `nolint_uncited`, `measured_sources`) whose file no longer
+  exists in the tree, prints each dropped path and records the list under
+  `dropped_deleted_files` in `scoped_updates`. A change that deletes a source
+  therefore needs no full re-measure of the lane. An entry for a file that
+  still exists but was not measured stays: the gate then fails with exit 4
+  ("not measured"), because a file the baseline cannot see is unknown, not
+  clean. A renamed file drops its old path; the new path enters the lane only
+  by being measured, with `--only <new path>`. Run
+  `python3 scripts/ci/praetor_tidy_coverage.py --write` afterwards to
+  regenerate `.config/clang-tidy/measured-sources.txt`, which is derived
+  from the baselines.
 - `--only` without `--write` remains diagnostic-only and skips comparison.
 
 Required CI continues to measure the full configured tree; a successful scoped

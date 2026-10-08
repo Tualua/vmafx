@@ -119,6 +119,13 @@ area: tidy
   around measurement/replacement, fail on unreadable NOLINT inputs. Diagnostic
   `--only` run is not full comparison. Keep failure/zero-tightening cases in
   `tests/test_tidy_scoped_write.py`; never make CI's full lane use `--only`.
+  Scoped write also drops entries (`warnings`, `nolint_uncited`,
+  `measured_sources`) of files absent from the tree (Q-309), prints each,
+  records `dropped_deleted_files`; an existing-but-unmeasured file keeps its
+  entry and fails closed (exit 4). Never make the drop depend on the
+  measurement or on existence-by-name guess; rename = old dropped, new
+  measured via `--only`. `measured-sources.txt` follows via
+  `praetor_tidy_coverage.py --write`.
 - Promoted clang-tidy checks (`-warnings-as-errors`) remain counted debt. Only
   recognized promotion exit/summary may bypass nonzero-tool-exit guard;
   parse/compile failures still invalidate that measurement. Reports retain

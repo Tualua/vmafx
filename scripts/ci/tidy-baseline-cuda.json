@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 487,
+  "tus": 486,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -170,7 +170,6 @@
     "core/src/framesync.c",
     "core/src/gpu_dispatch_env.cpp",
     "core/src/gpu_picture_pool.cpp",
-    "core/src/hip/dispatch_strategy.c",
     "core/src/hip/stubs.c",
     "core/src/libvmaf.c",
     "core/src/log.c",
@@ -550,6 +549,20 @@
         }
       },
       "previous_baseline_sha256": "a091c4e194cfe479856112d2aa4725eaa1cbeb4a4ced008da34e2a904b2380f6"
+    },
+    {
+      "sources": [
+        "core/tools/vmaf_close_retry.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "dropped_deleted_files": {
+          "paths": [
+            "core/src/hip/dispatch_strategy.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "4a6754f69c3017a1eb105cece909bdb2e8791844292cb09f308fde31360888bf"
     }
   ]
 }

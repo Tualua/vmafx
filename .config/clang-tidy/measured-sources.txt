@@ -290,7 +290,6 @@ core/src/framesync.c
 core/src/gpu_dispatch_env.cpp
 core/src/gpu_picture_pool.cpp
 core/src/hip/common.c
-core/src/hip/dispatch_strategy.c
 core/src/hip/kernel_template.c
 core/src/hip/picture_hip.c
 core/src/hip/shared_frame.c

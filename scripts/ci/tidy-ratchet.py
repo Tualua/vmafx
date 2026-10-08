@@ -659,8 +659,78 @@ def record_measured_sources(
         changes.setdefault("measured_sources", {})["added"] = added
 
 
+def drop_deleted_entries(
+    result: dict[str, Any], repo_root: Path, changes: dict[str, dict[str, list[Any]]]
+) -> list[str]:
+    """Remove baseline entries whose file is gone from the tree (Q-309).
+
+    A scoped write measures only the touched files, so it could never remove
+    the entry of a file the change deleted; only a full re-measure did, and
+    the gate then failed closed on "not measured". A file that still exists
+    but was not measured keeps its entry: the gate must not forget it.
+    """
+    dropped: set[str] = set()
+    for key in ("warnings", "nolint_uncited"):
+        gone = [p for p in result.get(key, {}) if not (repo_root / p).exists()]
+        for path in gone:
+            del result[key][path]
+        dropped.update(gone)
+        result[f"total_{key}"] = sum(result.get(key, {}).values())
+    sources = result.get("measured_sources")
+    if sources is not None:
+        gone = [p for p in sources if not (repo_root / p).exists()]
+        if gone:
+            result["measured_sources"] = [p for p in sources if p not in set(gone)]
+            result["tus"] = max(0, int(result.get("tus", 0)) - len(gone))
+            dropped.update(gone)
+    if dropped:
+        changes.setdefault("dropped_deleted_files", {})["paths"] = sorted(dropped)
+    return sorted(dropped)
+
+
+def tighten_metric(
+    metric: str,
+    original: dict[str, Any],
+    baseline: Measurement,
+    measured: Measurement,
+    wanted: set[str],
+    result: dict[str, Any],
+    changes: dict[str, dict[str, list[Any]]],
+) -> None:
+    """Lower one debt metric for the selected TUs of a scoped write."""
+    before: dict[str, int] = getattr(baseline, metric)
+    after: dict[str, int] = getattr(measured, metric)
+    raw_before = original.get(metric, {})
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in (*raw_before.values(), *after.values())
+    ):
+        raise ValueError("debt counts must be nonnegative integers")
+    for path, count in after.items():
+        if count > before.get(path, 0):
+            raise ScopedRegressionError(f"{path}: {metric} would increase to {count}")
+    # Preserve historical exact-vendor entries byte-for-byte during a
+    # scoped write. They are normalized out of comparisons above, but a
+    # scoped update must never rewrite unselected baseline scope (ADR-1243).
+    # The next full generated write drops them naturally.
+    merged = dict(raw_before)
+    for path in sorted(wanted):
+        count = after.get(path, 0)
+        if count != before.get(path, 0):
+            changes.setdefault(path, {})[metric] = [before.get(path, 0), count]
+        if count:
+            merged[path] = count
+        else:
+            merged.pop(path, None)
+    result[metric] = dict(sorted(merged.items()))
+    result[f"total_{metric}"] = sum(merged.values())
+
+
 def merge_scoped_baseline(
-    original: dict[str, Any], measured: Measurement, requested: list[str]
+    original: dict[str, Any],
+    measured: Measurement,
+    requested: list[str],
+    repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Tighten selected TUs only; preserve the last full measurement (ADR-1243)."""
     wanted = set(requested)
@@ -680,33 +750,11 @@ def merge_scoped_baseline(
     result = copy.deepcopy(original)
     changes: dict[str, dict[str, list[Any]]] = {}
     for metric in ("warnings", "nolint_uncited"):
-        before: dict[str, int] = getattr(baseline, metric)
-        after: dict[str, int] = getattr(measured, metric)
-        raw_before = original.get(metric, {})
-        if any(
-            not isinstance(value, int) or isinstance(value, bool) or value < 0
-            for value in (*raw_before.values(), *after.values())
-        ):
-            raise ValueError("debt counts must be nonnegative integers")
-        for path, count in after.items():
-            if count > before.get(path, 0):
-                raise ScopedRegressionError(f"{path}: {metric} would increase to {count}")
-        # Preserve historical exact-vendor entries byte-for-byte during a
-        # scoped write. They are normalized out of comparisons above, but a
-        # scoped update must never rewrite unselected baseline scope (ADR-1243).
-        # The next full generated write drops them naturally.
-        merged = dict(raw_before)
-        for path in sorted(wanted):
-            count = after.get(path, 0)
-            if count != before.get(path, 0):
-                changes.setdefault(path, {})[metric] = [before.get(path, 0), count]
-            if count:
-                merged[path] = count
-            else:
-                merged.pop(path, None)
-        result[metric] = dict(sorted(merged.items()))
-        result[f"total_{metric}"] = sum(merged.values())
+        tighten_metric(metric, original, baseline, measured, wanted, result, changes)
     record_measured_sources(result, original, wanted, changes)
+    if repo_root is not None:
+        for path in drop_deleted_entries(result, repo_root, changes):
+            annotate("notice", f"{path}: file no longer exists; baseline entry dropped")
     if changes:
         provenance = {
             "sources": sorted(wanted),
@@ -761,7 +809,11 @@ def atomic_write_baseline(path: Path, result: dict[str, Any], expected: bytes | 
 
 
 def write_scoped_baseline(
-    path: Path, measured: Measurement, requested: list[str], expected: bytes | None = None
+    path: Path,
+    measured: Measurement,
+    requested: list[str],
+    expected: bytes | None = None,
+    repo_root: Path | None = None,
 ) -> int:
     """Validate every guard before writing any byte of the existing baseline."""
     try:
@@ -771,7 +823,7 @@ def write_scoped_baseline(
             if expected is not None and original_bytes != expected:
                 raise ValueError("baseline changed during measurement; rerun measurement")
             original = json.loads(original_bytes)
-            result = merge_scoped_baseline(original, measured, requested)
+            result = merge_scoped_baseline(original, measured, requested, repo_root)
             if result != original:
                 atomic_write_baseline(path, result, original_bytes)
     except ScopedRegressionError as exc:
@@ -876,7 +928,9 @@ def finish_measurement(
             requested = [
                 Path(path).resolve().relative_to(repo_root).as_posix() for path in args.only
             ]
-            return write_scoped_baseline(baseline_path, measured, requested, baseline_before)
+            return write_scoped_baseline(
+                baseline_path, measured, requested, baseline_before, repo_root
+            )
         annotate("notice", "--only given: comparison against the baseline skipped")
         return 0
     if args.write:
