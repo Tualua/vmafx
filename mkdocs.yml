@@ -407,6 +407,7 @@ nav:
       - Operator image and publishing: backends/operator.md
       - Observability (OpenTelemetry): observability/otel.md
       - Metric reference: observability/metrics.md
+      - Monitoring on Kubernetes: observability/kubernetes.md
       - Alert runbooks:
           - observability/runbooks/index.md
           - Component down: observability/runbooks/vmafx-component-down.md

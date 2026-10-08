@@ -96,6 +96,19 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    promtool, `scripts/ci/pinned-tool.sh` shared with dashboard-linter; one
    fetcher, HISS-19).
 
+10. **Rule settings = chart values** (ADR-2399; `obsgen/settings.go`,
+    `helm.go`): objectives, burn windows / factors, alert thresholds live in
+    `Settings`. One rule builder, two renderings via `params`:
+    `plainParams` (rule file, `-render-rules`), `helmParams`
+    (`$.Values.monitoring`, chart template). Burn threshold = PromQL
+    `(factor * (1 - objective))`, never number computed in Go or Helm
+    (Sprig decimal vs Go float drift). Floats print `fmt.Sprint` (Helm
+    float64 print), ints `strconv.Itoa` vs `| int`. Template reads `$.`
+    (inside window range). `Settings.Validate` + `ApplyValues` tag check
+    refuse what `values.schema.json` refuses
+    (`TestValidateAgreesWithTheChartSchema`); new setting -> schema entry
+    in same change.
+
 ## Test requirements
 
 ```bash

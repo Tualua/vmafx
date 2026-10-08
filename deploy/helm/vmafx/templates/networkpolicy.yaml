@@ -457,6 +457,59 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: Prometheus -> every component's metrics port while monitoring is
+# on (ADR-2349): the server's and the controller's HTTP port, the node's
+# metrics port and the operator's 8080, from the pods (and, with
+# fromNamespaceSelector, the namespaces) networkPolicy.allow.metricsScrape
+# names. Without a namespace selector only pods of the release namespace.
+# ----------------------------------------------------------------------------
+{{- $scrape := .Values.networkPolicy.allow.metricsScrape }}
+{{- if and .Values.monitoring.enabled $scrape.enabled }}
+{{- $ports := list (toString .Values.service.targetPort) }}
+{{- if .Values.controller.enabled }}
+{{- $ports = append $ports (toString .Values.controller.httpPort) }}
+{{- end }}
+{{- if .Values.node.enabled }}
+{{- $ports = append $ports (toString (.Values.node.metricsPort | default 9090)) }}
+{{- end }}
+{{- if .Values.operator.enabled }}
+{{- $ports = append $ports "8080" }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-metrics-scrape
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            {{- with $scrape.fromPodSelector }}
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+            {{- else }} {}
+            {{- end }}
+          {{- with $scrape.fromNamespaceSelector }}
+          namespaceSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+      ports:
+        {{- range uniq $ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: DNS egress.  Every VMAFX pod must be able to resolve names
 # via the cluster DNS service (CoreDNS / kube-dns in `kube-system`).
 # ----------------------------------------------------------------------------

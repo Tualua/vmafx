@@ -450,3 +450,49 @@ process has no effective capabilities) with BPF, PERFMON and SYS_ADMIN only.
 {{- end -}}
 {{- toYaml $sc -}}
 {{- end }}
+
+{{/*
+A ServiceMonitor or PodMonitor of one component, with the scrape settings of
+monitoring.serviceMonitor (templates/servicemonitor.yaml). Arguments: root,
+kind (ServiceMonitor or PodMonitor), name, component, port. A monitor in
+another namespace than the release selects the release namespace; a
+ServiceMonitor skips the StatefulSet's headless Service.
+*/}}
+{{- define "vmafx.monitor" -}}
+{{- $root := .root -}}
+{{- $sm := $root.Values.monitoring.serviceMonitor -}}
+apiVersion: monitoring.coreos.com/v1
+kind: {{ .kind }}
+metadata:
+  name: {{ .name }}
+  namespace: {{ $sm.namespace | default $root.Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ .component }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if and $sm.namespace (ne $sm.namespace $root.Release.Namespace) }}
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ .component }}
+    {{- if eq .kind "ServiceMonitor" }}
+    # A StatefulSet's headless Service selects the same pods.
+    matchExpressions:
+      - key: vmafx.dev/headless
+        operator: DoesNotExist
+    {{- end }}
+  {{ if eq .kind "PodMonitor" }}podMetricsEndpoints{{ else }}endpoints{{ end }}:
+    - port: {{ .port }}
+      path: {{ $sm.path }}
+      scheme: {{ $sm.scheme }}
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      honorLabels: {{ $sm.honorLabels }}
+{{- end }}

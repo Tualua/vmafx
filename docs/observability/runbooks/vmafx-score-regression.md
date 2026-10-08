@@ -1,8 +1,10 @@
 # VMAFxScoreRegression
 
 **Meaning.** For an hour, the median pooled score of the tenant and model in
-the labels has been more than 5 VMAF points below the median of the previous
-day's hourly medians, with at least 20 scores in that hour. Recorded series:
+the labels has been more than `monitoring.alerts.scoreRegressionPoints` (by
+default 5) VMAF points below the median of the previous day's hourly medians,
+with at least `monitoring.alerts.scoreRegressionMinScores` (by default 20)
+scores in that hour. Recorded series:
 `vmafx:quality_score:p50_1h`, `vmafx:quality_score:count_1h`.
 
 **Impact.** The encodes being scored got worse, or the scoring changed. The

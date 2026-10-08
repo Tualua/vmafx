@@ -237,6 +237,84 @@
             "scheme": { "type": "string", "enum": ["http", "https"] },
             "honorLabels": { "type": "boolean" }
           }
+        },
+        "components": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Which components get a monitor: server, controller and node a ServiceMonitor on their Service, operator a PodMonitor. A component that is not deployed gets none.",
+          "properties": {
+            "server": { "type": "boolean" },
+            "controller": { "type": "boolean" },
+            "node": { "type": "boolean" },
+            "operator": { "type": "boolean" }
+          }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The PrometheusRule of the generated alert and recording rules (templates/prometheusrule.yaml).",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespace": { "type": "string" },
+            "labels": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        },
+        "dashboards": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "One ConfigMap per generated Grafana dashboard (files/dashboards), labelled for the Grafana dashboard sidecar.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespace": { "type": "string" },
+            "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+            "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+            "gpuExporters": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Ship the dashboard of a vendor GPU exporter: NVIDIA DCGM (dcgm), AMD device metrics exporter (amd), Intel XPU Manager (intel).",
+              "properties": {
+                "dcgm": { "type": "boolean" },
+                "amd": { "type": "boolean" },
+                "intel": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "slo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jobSuccess", "scoreSuccess", "scoreLatency", "scoreLatencySeconds"],
+          "description": "SLO objectives: the share of events that must be good over 30 days. The error budget is 1 - objective.",
+          "properties": {
+            "jobSuccess": { "$ref": "#/$defs/sloObjective" },
+            "scoreSuccess": { "$ref": "#/$defs/sloObjective" },
+            "scoreLatency": { "$ref": "#/$defs/sloObjective" },
+            "scoreLatencySeconds": {
+              "type": "string",
+              "enum": ["0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "30", "60", "120", "300", "600", "1800"],
+              "description": "The latency objective's bound: a bucket bound of vmafx_server_score_duration_seconds, as a string. The enum is checked against metricdef.RequestSecondsBuckets by TestChartSchemaMatchesSettings."
+            }
+          }
+        },
+        "burnRates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fast", "slow"],
+          "description": "Multi-window, multi-burn-rate alerting: fast (critical) and slow (warning).",
+          "properties": {
+            "fast": { "$ref": "#/$defs/burnRate" },
+            "slow": { "$ref": "#/$defs/burnRate" }
+          }
+        },
+        "alerts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["queueAgeSeconds", "scoreRegressionPoints", "scoreRegressionMinScores"],
+          "properties": {
+            "queueAgeSeconds": { "type": "integer", "minimum": 1, "description": "VMAFxQueueAging: how old, in seconds, a tenant's oldest pending job may get." },
+            "scoreRegressionPoints": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "VMAFxScoreRegression: the drop, in score points, of an hour's median below the median of the previous day's hourly medians." },
+            "scoreRegressionMinScores": { "type": "integer", "minimum": 1, "description": "VMAFxScoreRegression: the scores an hour needs to be compared." }
+          }
         }
       }
     },
@@ -460,6 +538,16 @@
                 "fromPodSelector": { "type": "object", "additionalProperties": true }
               }
             },
+            "metricsScrape": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Allow Prometheus to scrape every component's metrics port while monitoring.enabled (ADR-2349): server and controller HTTP, node metrics, operator 8080. fromNamespaceSelector admits a Prometheus in another namespace.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "fromNamespaceSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+                "fromPodSelector": { "type": "object", "additionalProperties": { "type": "string" } }
+              }
+            },
             "dns": {
               "type": "object",
               "additionalProperties": false,
@@ -509,6 +597,29 @@
     }
   },
   "$defs": {
+    "sloObjective": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 1,
+      "description": "An SLO objective: the share of good events, strictly between 0 and 1 (0.99 = 99 %)."
+    },
+    "promDuration": {
+      "type": "string",
+      "pattern": "^([0-9]+(ms|s|m|h|d|w|y))+$",
+      "description": "A Prometheus duration such as 5m, 1h or 1h30m."
+    },
+    "burnRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["longWindow", "shortWindow", "factor", "for"],
+      "description": "One burn-rate rule: the ratio of bad events over longWindow and over shortWindow both above factor * (1 - objective), for the for duration.",
+      "properties": {
+        "longWindow": { "$ref": "#/$defs/promDuration" },
+        "shortWindow": { "$ref": "#/$defs/promDuration" },
+        "factor": { "type": "number", "exclusiveMinimum": 0 },
+        "for": { "$ref": "#/$defs/promDuration" }
+      }
+    },
     "imageSpec": {
       "type": "object",
       "additionalProperties": false,

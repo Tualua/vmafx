@@ -106,7 +106,7 @@
     },
     {
       "name": "go",
-      "paths": ["api/", "cmd/", "internal/", "pkg/"],
+      "paths": ["api/", "cmd/", "internal/", "pkg/", "tools/obsgen/"],
       "checks": ["go vet + go test"],
       "not_local": "needs the CPU + ONNX Runtime libvmaf build; the go vet + go test job runs it",
       "runs": "go test ./... against the CPU + ONNX Runtime libvmaf build"
@@ -126,6 +126,7 @@
         "scripts/ci/tests/test_helm_controller_workload.py",
         "scripts/ci/tests/test_helm_node_contract.py",
         "scripts/ci/tests/test_helm_node_fuse_ebpf.py",
+        "scripts/ci/tests/test_helm_observability.py",
         "scripts/ci/tests/test_helm_service_accounts.py"
       ],
       "checks": ["helm lint + template"],

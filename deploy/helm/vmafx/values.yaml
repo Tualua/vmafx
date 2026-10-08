@@ -439,6 +439,16 @@ networkPolicy:
       #   fromPodSelector:
       #     app.kubernetes.io/name: prometheus
       fromPodSelector: {}
+    # Prometheus scraping of every component's metrics port while
+    # monitoring.enabled: the server's and the controller's HTTP port, the
+    # node's metrics port and the operator's 8080. Empty selectors allow any
+    # pod of the release namespace; a Prometheus in another namespace needs
+    # fromNamespaceSelector (for example kubernetes.io/metadata.name:
+    # monitoring) and, to narrow it, fromPodSelector.
+    metricsScrape:
+      enabled: true
+      fromNamespaceSelector: {}
+      fromPodSelector: {}
     # DNS egress for every VMAFX pod (CoreDNS by default).
     dns:
       enabled: true
@@ -493,12 +503,16 @@ readinessProbe:
   failureThreshold: 3
 
 # ---------------------------------------------------------------------------
-# Monitoring — Prometheus ServiceMonitor
+# Monitoring — scrape targets, alert rules and Grafana dashboards for the
+# Prometheus operator and the Grafana dashboard sidecar
+# (docs/observability/kubernetes.md). Nothing renders while enabled is false.
 # ---------------------------------------------------------------------------
 monitoring:
   enabled: false
+  # Scrape settings shared by every component's ServiceMonitor / PodMonitor.
   serviceMonitor:
-    # Prometheus operator namespace selector.
+    # Namespace of the monitors and of the PrometheusRule's default; empty is
+    # the release namespace.
     namespace: ""
     # Additional labels so Prometheus picks up the ServiceMonitor.
     labels: {}
@@ -508,6 +522,85 @@ monitoring:
     scheme: http
     # Honor labels from the target (useful when job labels are in metrics).
     honorLabels: false
+  # Which components get a monitor. A component that is not deployed
+  # (controller.enabled, node.enabled, operator.enabled) gets none. The
+  # server, controller and node are scraped through their Services
+  # (ServiceMonitor), the operator through its pods (PodMonitor).
+  components:
+    server: true
+    controller: true
+    node: true
+    operator: true
+  # The PrometheusRule of the generated alert and recording rules, with the
+  # objectives and thresholds below.
+  prometheusRule:
+    enabled: true
+    # Empty is the release namespace.
+    namespace: ""
+    # Additional labels so Prometheus selects the rule (ruleSelector).
+    labels: {}
+  # One ConfigMap per generated dashboard, labelled for the Grafana sidecar
+  # (kube-prometheus-stack: grafana.sidecar.dashboards).
+  dashboards:
+    enabled: true
+    # Empty is the release namespace; set the sidecar's namespace when it
+    # watches only its own.
+    namespace: ""
+    # The label the sidecar selects ConfigMaps with.
+    labels:
+      grafana_dashboard: "1"
+    # For example grafana_folder: VMAFx, when the sidecar reads folders from
+    # an annotation.
+    annotations: {}
+    # The dashboards of the vendor GPU exporters, each for clusters that run
+    # that exporter (NVIDIA DCGM, AMD device metrics exporter, Intel XPU
+    # Manager).
+    gpuExporters:
+      dcgm: false
+      amd: false
+      intel: false
+  # BEGIN obsgen monitoring settings
+  # Generated from obsgen.DefaultSettings by go run ./tools/obsgen -write;
+  # change the defaults in pkg/observability/obsgen/settings.go. Override them
+  # in your own values file: the PrometheusRule (prometheusRule.enabled) is
+  # rendered from them, and the Compose example reads the same keys.
+  # slo: the share of events that must be good over 30 days; the error
+  # budget is 1 - objective. Each lies strictly between 0 and 1.
+  slo:
+    # Controller jobs that complete rather than fail.
+    jobSuccess: 0.99
+    # Score requests that return no error.
+    scoreSuccess: 0.99
+    # Score requests that finish within scoreLatencySeconds.
+    scoreLatency: 0.99
+    # A bucket bound of vmafx_server_score_duration_seconds, quoted.
+    scoreLatencySeconds: "30"
+  # burnRates: multi-window, multi-burn-rate alerting. A rule fires when the
+  # ratio of bad events over longWindow and over shortWindow both exceed
+  # factor * (1 - objective) for the for duration. fast is critical, slow a
+  # warning. Windows and for are Prometheus durations.
+  burnRates:
+    fast:
+      longWindow: 1h
+      shortWindow: 5m
+      factor: 14.4
+      for: 2m
+    slow:
+      longWindow: 6h
+      shortWindow: 30m
+      factor: 6
+      for: 15m
+  # alerts: thresholds of the alerts that are not burn rates.
+  alerts:
+    # VMAFxQueueAging: how old, in seconds, a tenant's oldest pending job
+    # may get.
+    queueAgeSeconds: 1800
+    # VMAFxScoreRegression: the drop, in score points, of an hour's median
+    # below the median of the previous day's hourly medians.
+    scoreRegressionPoints: 5
+    # VMAFxScoreRegression: the scores an hour needs to be compared.
+    scoreRegressionMinScores: 20
+  # END obsgen monitoring settings
 
 # ---------------------------------------------------------------------------
 # Prometheus Pushgateway (for Job workloads)

@@ -175,6 +175,26 @@ Pod template.
   (`vmafx.nodeMountRootVolume`).
 - Guard: `scripts/ci/tests/test_helm_node_fuse_ebpf.py` (`helm-chart.yml`).
 
+## Monitoring (ADR-2399)
+
+- Generated, never hand-edited: `templates/prometheusrule.yaml`,
+  `files/dashboards/*.json`, `values.yaml` block between
+  `# BEGIN obsgen monitoring settings` / `# END ...`. Source:
+  `pkg/observability/obsgen`; run `go run ./tools/obsgen -write`. Conflict:
+  take either side, regenerate.
+- Monitors only via `vmafx.monitor` (`_helpers.tpl`): ServiceMonitor for
+  server, controller, node; PodMonitor for operator (no Service). Every
+  ServiceMonitor excludes `vmafx.dev/headless` (StatefulSet headless Service
+  = double scrape); other namespace -> `namespaceSelector` on release
+  namespace. Server monitor keeps name `<fullname>`.
+- Node env `VMAFX_HTTP_ADDR` = `:node.metricsPort`; container port, Service,
+  NetworkPolicy, monitor follow same port.
+- `monitoring.slo` / `burnRates` / `alerts` schema entries mirror
+  `obsgen.Settings.Validate`; enum of `scoreLatencySeconds` =
+  `metricdef.RequestSecondsBuckets` (`TestChartSchemaMatchesSettings`).
+- Guard: `scripts/ci/tests/test_helm_observability.py` (`helm-chart.yml`,
+  needs helm + go + pinned promtool).
+
 ## Active GPU backends
 
 Chart maps NVIDIA, AMD, Intel device-plugin resources to CUDA, HIP, SYCL.

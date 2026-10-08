@@ -42,14 +42,23 @@ func annotations(a alert, r alertRule) map[string]string {
 	}
 }
 
-// rulesYAML renders the rule file: the recording rules, then the alerts.
-func rulesYAML() ([]byte, error) {
-	rec := make([]any, 0, len(recordingRules()))
-	for _, r := range recordingRules() {
+// RenderRules renders the rule file for s: the recording rules, then the
+// alerts. The committed RulesFile is RenderRules(DefaultSettings()).
+func RenderRules(s Settings) ([]byte, error) {
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	return marshalYAML(ruleFile{Groups: ruleGroups(plainParams(s))})
+}
+
+// ruleGroups are the recording rules, then the alerts, rendered with p.
+func ruleGroups(p params) []ruleGroup {
+	var rec []any
+	for _, r := range append(sloRecordingRules(p), qualityRecordingRules()...) {
 		rec = append(rec, r)
 	}
 	var al []any
-	for _, a := range alerts() {
+	for _, a := range alerts(p) {
 		for _, r := range a.rules {
 			al = append(al, alertingRule{
 				Alert: a.name, Expr: r.expr, For: r.forDur,
@@ -57,10 +66,10 @@ func rulesYAML() ([]byte, error) {
 			})
 		}
 	}
-	return marshalYAML(ruleFile{Groups: []ruleGroup{
+	return []ruleGroup{
 		{Name: "vmafx.recording", Rules: rec},
 		{Name: "vmafx.alerts", Rules: al},
-	}})
+	}
 }
 
 type ruleTestFile struct {
@@ -92,7 +101,7 @@ type expAlert struct {
 // must carry, the others with none.
 func rulesTestYAML() ([]byte, error) {
 	f := ruleTestFile{RuleFiles: []string{path.Base(RulesFile)}, EvaluationInterval: "1m"}
-	for _, a := range alerts() {
+	for _, a := range alerts(plainParams(DefaultSettings())) {
 		for i, c := range a.cases {
 			exp, err := expectedAlerts(a, c)
 			if err != nil {
@@ -143,9 +152,18 @@ func renderLabels(tmpl string, labels map[string]string) string {
 	return tmpl
 }
 
+// marshalYAML encodes v after the generated-file header.
 func marshalYAML(v any) ([]byte, error) {
+	body, err := encodeYAML(v)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(generatedHeader), body...), nil
+}
+
+// encodeYAML encodes v with two-space indentation.
+func encodeYAML(v any) ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(generatedHeader)
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(v); err != nil {

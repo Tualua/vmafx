@@ -9,20 +9,6 @@ import (
 	m "github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
-// Thresholds of the alerts that are not SLO burn rates.
-const (
-	// QueueAgeLimit is how old, in seconds, a tenant's oldest pending job
-	// may get before VMAFxQueueAging fires.
-	QueueAgeLimit = "1800"
-	// ScoreRegressionPoints is the drop of an hour's median score below the
-	// median of the previous day's hourly medians that VMAFxScoreRegression
-	// reports.
-	ScoreRegressionPoints = "5"
-	// ScoreRegressionMinScores is the number of scores an hour needs before
-	// its median is compared.
-	ScoreRegressionMinScores = "20"
-)
-
 // storedBound is a bucket bound as Prometheus 3 stores its le label: a whole
 // number in float form ("30.0"). The promtool input series use it, so the
 // tests read the buckets as a Prometheus 3 server holds them.
@@ -38,25 +24,26 @@ func series(name, labels, values string) inputSeries {
 	return inputSeries{Series: name + "{" + labels + "}", Values: values}
 }
 
-// alerts lists every alert, in the order of the rule file.
-func alerts() []alert {
-	ratios := sloRatios()
+// alerts lists every alert, in the order of the rule file. The promtool
+// cases assume the default settings.
+func alerts(p params) []alert {
+	ratios := sloRatios(p)
 	return []alert{
-		componentDown(), noLiveNodes(), queueAging(),
+		componentDown(p), noLiveNodes(), queueAging(p),
 		{name: "VMAFxJobErrorBudgetBurn", runbook: "vmafx-job-error-budget-burn",
-			rules: burnRules("Controller job failure", ratios[0]),
+			rules: burnRules(p, "Controller job failure", ratios[0]),
 			cases: burnCases(m.ControllerJobsFailed.Name, m.ControllerJobsCompleted.Name, `tenant="a"`)},
 		{name: "VMAFxScoreErrorBudgetBurn", runbook: "vmafx-score-error-budget-burn",
-			rules: burnRules("Score request error", ratios[1]),
+			rules: burnRules(p, "Score request error", ratios[1]),
 			cases: errorBudgetCases(m.ServerScoreErrors.Name, m.ServerScoreRequests.Name)},
 		{name: "VMAFxScoreLatencyBudgetBurn", runbook: "vmafx-score-latency-budget-burn",
-			rules: burnRules("Slow Score request", ratios[2]),
+			rules: burnRules(p, "Slow Score request", ratios[2]),
 			cases: latencyBudgetCases()},
-		scoreRegression(), metricsReadErrors(),
+		scoreRegression(p), metricsReadErrors(p),
 	}
 }
 
-func componentDown() alert {
+func componentDown(p params) alert {
 	up := series("up", `job="vmafx-node",instance="n1:9090"`, "1x10 0x20")
 	info := series(m.BuildInfo.Name, `job="vmafx-node",instance="n1:9090",version="1.0.0"`, "1x10")
 	other := series("up", `job="other",instance="x:80"`, "0x30")
@@ -66,8 +53,8 @@ func componentDown() alert {
 			expr:        "up == 0 and on (job, instance) max_over_time(" + m.BuildInfo.Name + "[1h])",
 			forDur:      "5m",
 			severity:    "critical",
-			summary:     "VMAFx target {{ $labels.instance }} of {{ $labels.job }} is down.",
-			description: "Prometheus has not scraped {{ $labels.instance }} ({{ $labels.job }}) for 5 minutes; it served vmafx_build_info within the last hour.",
+			summary:     "VMAFx target " + p.label("instance") + " of " + p.label("job") + " is down.",
+			description: "Prometheus has not scraped " + p.label("instance") + " (" + p.label("job") + ") for 5 minutes; it served vmafx_build_info within the last hour.",
 		}},
 		cases: []alertCase{
 			{interval: "1m", series: []inputSeries{up, info}, evalTime: "30m",
@@ -96,15 +83,15 @@ func noLiveNodes() alert {
 	}
 }
 
-func queueAging() alert {
+func queueAging(p params) alert {
 	return alert{
 		name: "VMAFxQueueAging", runbook: "vmafx-queue-aging",
 		rules: []alertRule{{
-			expr:        "max by (tenant) (" + m.ControllerQueueOldestAge.Name + ") > " + QueueAgeLimit,
+			expr:        "max by (tenant) (" + m.ControllerQueueOldestAge.Name + ") > " + p.queueAge,
 			forDur:      "15m",
 			severity:    "warning",
-			summary:     "Jobs of tenant {{ $labels.tenant }} wait longer than 30 minutes.",
-			description: "The oldest pending job of tenant {{ $labels.tenant }} has waited more than 30 minutes for 15 minutes: no node takes its work.",
+			summary:     "Jobs of tenant " + p.label("tenant") + " wait longer than " + p.queueAge + " seconds.",
+			description: "The oldest pending job of tenant " + p.label("tenant") + " has waited more than " + p.queueAge + " seconds for 15 minutes: no node takes its work.",
 		}},
 		cases: []alertCase{
 			{interval: "1m", series: []inputSeries{series(m.ControllerQueueOldestAge.Name, `tenant="a"`, "0+60x60")}, evalTime: "50m",
@@ -142,7 +129,7 @@ func errorBudgetCases(errors, requests string) []alertCase {
 func latencyBudgetCases() []alertCase {
 	fast := m.ServerScoreDuration.Name + "_bucket"
 	all := m.ServerScoreDuration.Name + "_count"
-	le := `le="` + storedBound(ScoreLatencyThreshold) + `"`
+	le := `le="` + storedBound(DefaultSettings().SLO.ScoreLatencySeconds) + `"`
 	return []alertCase{
 		{interval: "1m", evalTime: "1h", firing: bothBurns,
 			series: []inputSeries{series(fast, le, "0+5x60"), series(all, "", "0+10x60")}},
@@ -151,15 +138,15 @@ func latencyBudgetCases() []alertCase {
 	}
 }
 
-func scoreRegression() alert {
+func scoreRegression(p params) alert {
 	expr := "vmafx:quality_score:p50_1h < quantile_over_time(0.5, vmafx:quality_score:p50_1h[1d] offset 1h) - " +
-		ScoreRegressionPoints + " and vmafx:quality_score:count_1h >= " + ScoreRegressionMinScores
+		p.regressionPoints + " and vmafx:quality_score:count_1h >= " + p.regressionMin
 	return alert{
 		name: "VMAFxScoreRegression", runbook: "vmafx-score-regression",
 		rules: []alertRule{{
 			expr: expr, forDur: "1h", severity: "warning",
-			summary:     "Median score of {{ $labels.model }} for tenant {{ $labels.tenant }} dropped.",
-			description: "For an hour the median pooled score of tenant {{ $labels.tenant }} on model {{ $labels.model }} has been more than 5 points below the median of the previous day's hourly medians.",
+			summary:     "Median score of " + p.label("model") + " for tenant " + p.label("tenant") + " dropped.",
+			description: "For an hour the median pooled score of tenant " + p.label("tenant") + " on model " + p.label("model") + " has been more than " + p.regressionPoints + " points below the median of the previous day's hourly medians.",
 		}},
 		cases: []alertCase{
 			{interval: "10m", evalTime: "26h", series: regressionSeries(true),
@@ -190,7 +177,7 @@ func regressionSeries(drop bool) []inputSeries {
 	}
 }
 
-func metricsReadErrors() alert {
+func metricsReadErrors(p params) alert {
 	labels := `job="vmafx-node",instance="n1:9090",source="device_memory"`
 	return alert{
 		name: "VMAFxMetricsReadErrors", runbook: "vmafx-metrics-read-errors",
@@ -198,8 +185,8 @@ func metricsReadErrors() alert {
 			expr:        "sum by (job, instance, source) (rate(" + m.MetricsReadErrors.Name + "[10m])) > 0",
 			forDur:      "15m",
 			severity:    "warning",
-			summary:     "{{ $labels.instance }} cannot read its {{ $labels.source }} metrics.",
-			description: "Every scrape of {{ $labels.instance }} ({{ $labels.job }}) for 15 minutes failed to read {{ $labels.source }}; those series are missing from its /metrics page.",
+			summary:     p.label("instance") + " cannot read its " + p.label("source") + " metrics.",
+			description: "Every scrape of " + p.label("instance") + " (" + p.label("job") + ") for 15 minutes failed to read " + p.label("source") + "; those series are missing from its /metrics page.",
 		}},
 		cases: []alertCase{
 			{interval: "1m", evalTime: "30m", series: []inputSeries{series(m.MetricsReadErrors.Name, labels, "0+1x40")},

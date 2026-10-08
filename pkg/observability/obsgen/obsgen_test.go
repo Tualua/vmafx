@@ -35,7 +35,12 @@ func TestGeneratedFilesAreCurrent(t *testing.T) {
 			t.Errorf("%s: %v; run go run ./tools/obsgen -write", f.Path, err)
 			continue
 		}
-		if !bytes.Equal(got, f.Content) {
+		want, err := f.Merge(got)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		if !bytes.Equal(got, want) {
 			t.Errorf("%s is stale; run go run ./tools/obsgen -write", f.Path)
 		}
 	}
@@ -274,7 +279,7 @@ func TestEveryAlertHasARunbook(t *testing.T) {
 			pages[name] = true
 		}
 	}
-	for _, a := range alerts() {
+	for _, a := range alerts(plainParams(DefaultSettings())) {
 		if !pages[a.runbook] {
 			t.Errorf("%s: no runbook page %s.md", a.name, a.runbook)
 		}

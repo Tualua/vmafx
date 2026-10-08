@@ -13,15 +13,55 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
 )
 
 // File is one generated file: its path from the repository root and its
-// content.
+// content. When Region is set, Content is only the block of the file between
+// the lines "# BEGIN <Region>" and "# END <Region>"; the rest of the file is
+// written by hand (Merge).
 type File struct {
 	Path    string
 	Content []byte
+	Region  string
+}
+
+// Merge returns the file f writes over old: Content, or for a region old with
+// the lines between its markers replaced by Content, indented as the BEGIN
+// marker is.
+func (f File) Merge(old []byte) ([]byte, error) {
+	if f.Region == "" {
+		return f.Content, nil
+	}
+	lines := strings.SplitAfter(string(old), "\n")
+	begin, end := -1, -1
+	for i, l := range lines {
+		switch strings.TrimSpace(l) {
+		case "# BEGIN " + f.Region:
+			begin = i
+		case "# END " + f.Region:
+			end = i
+		}
+	}
+	if begin < 0 || end < begin {
+		return nil, fmt.Errorf("obsgen: %s has no \"# BEGIN %s\" ... \"# END %s\" block", f.Path, f.Region, f.Region)
+	}
+	indent := lines[begin][:len(lines[begin])-len(strings.TrimLeft(lines[begin], " "))]
+	var b strings.Builder
+	for _, l := range lines[:begin+1] {
+		b.WriteString(l)
+	}
+	for _, l := range strings.SplitAfter(string(f.Content), "\n") {
+		if l != "" {
+			b.WriteString(indent + l)
+		}
+	}
+	for _, l := range lines[end:] {
+		b.WriteString(l)
+	}
+	return []byte(b.String()), nil
 }
 
 // DashboardDir holds the generated dashboards, one JSON file each.
@@ -59,9 +99,11 @@ func Generate() ([]File, error) {
 		if err != nil {
 			return nil, fmt.Errorf("obsgen: %s: %w", d.file, err)
 		}
-		out = append(out, File{Path: DashboardDir + "/" + d.file, Content: content})
+		out = append(out,
+			File{Path: DashboardDir + "/" + d.file, Content: content},
+			File{Path: HelmDashboardDir + "/" + d.file, Content: content})
 	}
-	rules, err := rulesYAML()
+	rules, err := RenderRules(DefaultSettings())
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +111,15 @@ func Generate() ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
+	chartRules, err := helmRuleTemplate()
+	if err != nil {
+		return nil, err
+	}
 	return append(out,
 		File{Path: RulesFile, Content: rules},
 		File{Path: RulesTestFile, Content: tests},
+		File{Path: HelmRuleTemplate, Content: chartRules},
+		File{Path: HelmValuesFile, Content: settingsValues(DefaultSettings()), Region: SettingsRegion},
 		File{Path: MetricsReference, Content: metricsReference()},
 	), nil
 }

@@ -1,9 +1,11 @@
 # VMAFxScoreLatencyBudgetBurn
 
-**Meaning.** Too many synchronous Score requests take longer than 30
-seconds: the objective is 99 % within 30 seconds over 30 days. Critical when
-more than 14.4 % of the requests of the last hour and its last 5 minutes were
-slower, warning above 6 % over 6 hours and 30 minutes. Recorded ratio:
+**Meaning.** Too many synchronous Score requests take longer than the
+latency bound (`monitoring.slo.scoreLatencySeconds`, by default 30 seconds):
+the default objective (`monitoring.slo.scoreLatency`) is 99 % within the bound
+over 30 days. With the default settings: critical when more than 14.4 % of the
+requests of the last hour and its last 5 minutes were slower, warning above
+6 % over 6 hours and 30 minutes. Recorded ratio:
 `vmafx:score_slow_ratio:rate<window>`.
 
 **Impact.** Callers wait longer than they expect; clients with deadlines turn

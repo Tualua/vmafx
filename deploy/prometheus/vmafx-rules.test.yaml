@@ -73,9 +73,9 @@ tests:
               severity: warning
               tenant: a
             exp_annotations:
-              description: 'The oldest pending job of tenant a has waited more than 30 minutes for 15 minutes: no node takes its work.'
+              description: 'The oldest pending job of tenant a has waited more than 1800 seconds for 15 minutes: no node takes its work.'
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-queue-aging/
-              summary: Jobs of tenant a wait longer than 30 minutes.
+              summary: Jobs of tenant a wait longer than 1800 seconds.
   - name: VMAFxQueueAging case 2
     interval: 1m
     input_series:
@@ -99,13 +99,13 @@ tests:
           - exp_labels:
               severity: critical
             exp_annotations:
-              description: Over the last 1h and 5m the controller job failure ratio exceeded 0.144 (SLO 99 %, burn rate 14.4).
+              description: Over the last 1h and 5m the controller job failure ratio exceeded 14.4 times the error budget of the objective 0.99.
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-job-error-budget-burn/
               summary: Controller job failure is spending the error budget 14.4 times faster than the SLO allows.
           - exp_labels:
               severity: warning
             exp_annotations:
-              description: Over the last 6h and 30m the controller job failure ratio exceeded 0.06 (SLO 99 %, burn rate 6).
+              description: Over the last 6h and 30m the controller job failure ratio exceeded 6 times the error budget of the objective 0.99.
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-job-error-budget-burn/
               summary: Controller job failure is spending the error budget 6 times faster than the SLO allows.
   - name: VMAFxJobErrorBudgetBurn case 2
@@ -133,13 +133,13 @@ tests:
           - exp_labels:
               severity: critical
             exp_annotations:
-              description: Over the last 1h and 5m the score request error ratio exceeded 0.144 (SLO 99 %, burn rate 14.4).
+              description: Over the last 1h and 5m the score request error ratio exceeded 14.4 times the error budget of the objective 0.99.
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-error-budget-burn/
               summary: Score request error is spending the error budget 14.4 times faster than the SLO allows.
           - exp_labels:
               severity: warning
             exp_annotations:
-              description: Over the last 6h and 30m the score request error ratio exceeded 0.06 (SLO 99 %, burn rate 6).
+              description: Over the last 6h and 30m the score request error ratio exceeded 6 times the error budget of the objective 0.99.
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-error-budget-burn/
               summary: Score request error is spending the error budget 6 times faster than the SLO allows.
   - name: VMAFxScoreErrorBudgetBurn case 2
@@ -167,13 +167,13 @@ tests:
           - exp_labels:
               severity: critical
             exp_annotations:
-              description: Over the last 1h and 5m the slow score request ratio exceeded 0.144 (SLO 99 %, burn rate 14.4).
+              description: Over the last 1h and 5m the slow score request ratio exceeded 14.4 times the error budget of the objective 0.99.
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-latency-budget-burn/
               summary: Slow Score request is spending the error budget 14.4 times faster than the SLO allows.
           - exp_labels:
               severity: warning
             exp_annotations:
-              description: Over the last 6h and 30m the slow score request ratio exceeded 0.06 (SLO 99 %, burn rate 6).
+              description: Over the last 6h and 30m the slow score request ratio exceeded 6 times the error budget of the objective 0.99.
               runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-latency-budget-burn/
               summary: Slow Score request is spending the error budget 6 times faster than the SLO allows.
   - name: VMAFxScoreLatencyBudgetBurn case 2

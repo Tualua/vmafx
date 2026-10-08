@@ -365,9 +365,11 @@ The version and the checksum of its linux_amd64 release live in
 
 `deploy/prometheus/vmafx-rules.yaml` holds the recording rules and alerts,
 generated from the same definitions as the dashboards
-(`go run ./tools/obsgen -write`). Load it into Prometheus as a rule file
-(`rule_files:` in `prometheus.yml`), or let the Helm chart install it as a
-PrometheusRule.
+(`go run ./tools/obsgen -write`), with the default settings. Load it into
+Prometheus as a rule file (`rule_files:` in `prometheus.yml`), or let the Helm
+chart install it as a PrometheusRule
+([monitoring on Kubernetes](../observability/kubernetes.md)). The thresholds
+below are the defaults.
 
 | Alert | Severity | Fires when | Runbook |
 |-------|----------|------------|---------|
@@ -383,7 +385,8 @@ PrometheusRule.
 Every alert carries a `runbook_url` annotation pointing at its page under
 [alert runbooks](../observability/runbooks/index.md). The recording rules
 (`vmafx:job_failure_ratio:rate<window>`, `vmafx:score_error_ratio:...`,
-`vmafx:score_slow_ratio:...` for 5m, 30m, 1h and 6h;
+`vmafx:score_slow_ratio:...` for each window of the burn rates, by default
+1h, 5m, 6h and 30m;
 `vmafx:quality_score:p50_1h`, `vmafx:quality_score:count_1h`) feed the
 alerts and may be queried like any other series.
 
@@ -395,10 +398,30 @@ one where it does not.
 make check-prometheus-rules   # promtool check rules + promtool test rules, pinned release
 ```
 
-The objectives (99 % for jobs, Score errors and Score latency within 30
-seconds) and the thresholds above are constants of
-`pkg/observability/obsgen` (`alerts.go`, `rules.go`); change them there and
-regenerate.
+The objectives (by default 99 % for jobs, Score errors and Score latency
+within 30 seconds), the burn-rate windows and factors and the other alerts'
+thresholds are settings ([ADR-2399](../adr/2399-observability-slo-settings-as-values.md)):
+`monitoring.slo`, `monitoring.burnRates` and `monitoring.alerts` in the Helm
+chart's values, whose PrometheusRule template `obsgen` generates from the
+same rule code. A burn threshold is the PromQL expression
+`(factor * (1 - objective))` of the values, so the chart and a rule file
+rendered from the same values agree to the character. For Prometheus without
+the operator, render the rule file from a values file:
+
+```bash
+go run ./tools/obsgen -render-rules -values monitoring.yaml -out vmafx-rules.yaml
+```
+
+`obsgen.DefaultSettings` (`pkg/observability/obsgen/settings.go`) holds the
+defaults; `go run ./tools/obsgen -write` writes them into the block between
+the `# BEGIN obsgen monitoring settings` and `# END obsgen monitoring
+settings` markers of `deploy/helm/vmafx/values.yaml`. The chart's
+`values.schema.json` and `Settings.Validate` refuse the same values
+(`TestValidateAgreesWithTheChartSchema`), and
+`scripts/ci/tests/test_helm_observability.py` checks that the chart rendered
+with the defaults has the groups of the rule file, that a chart rendered with
+an override has the groups `-render-rules` writes for it, and that promtool
+accepts both.
 
 ## Logs
 

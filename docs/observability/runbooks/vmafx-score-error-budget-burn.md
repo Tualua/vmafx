@@ -2,8 +2,9 @@
 
 **Meaning.** Synchronous Score requests (gRPC `Score` and `ScoreStream`,
 `POST /v1/score`) on vmafx-server and vmafx-controller fail faster than the
-objective (99 % succeed over 30 days) allows: critical above 14.4 % over the
-last hour and 5 minutes, warning above 6 % over 6 hours and 30 minutes.
+objective (`monitoring.slo.scoreSuccess`, by default 99 % succeed over 30
+days) allows. With the default settings: critical above 14.4 % over the last
+hour and 5 minutes, warning above 6 % over 6 hours and 30 minutes.
 Recorded ratio: `vmafx:score_error_ratio:rate<window>`.
 
 **Impact.** Callers receive errors instead of scores.

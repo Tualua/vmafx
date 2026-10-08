@@ -298,8 +298,11 @@ terminationGracePeriodSeconds: 300
 
 ## Monitoring
 
-Enable Prometheus scraping via ServiceMonitor (requires
-[prometheus-operator](https://github.com/prometheus-operator/prometheus-operator)):
+`monitoring.enabled` renders a ServiceMonitor for the server, the controller
+and the nodes, a PodMonitor for the operator, a PrometheusRule with the alerts
+and recording rules, and a ConfigMap per Grafana dashboard (requires the
+[prometheus-operator](https://github.com/prometheus-operator/prometheus-operator)
+CRDs):
 
 ```yaml
 monitoring:
@@ -309,6 +312,10 @@ monitoring:
       release: prometheus    # match your Prometheus operator selector
     interval: 30s
 ```
+
+[Monitoring on Kubernetes](../observability/kubernetes.md) covers the
+component switches, the SLO objectives and alert thresholds, the dashboard
+sidecar labels and the scrape NetworkPolicy.
 
 For Job workloads that cannot expose a scrape endpoint, use the
 Prometheus Pushgateway dependency:

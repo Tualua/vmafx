@@ -1,10 +1,12 @@
 # VMAFxJobErrorBudgetBurn
 
-**Meaning.** Controller jobs fail faster than the objective (99 % of jobs
-complete over 30 days) allows. The critical rule fires on a fast burn (more
-than 14.4 % of the jobs of the last hour and of its last 5 minutes failed),
-the warning rule on a slow one (more than 6 % over 6 hours and their last 30
-minutes). Recorded ratio: `vmafx:job_failure_ratio:rate<window>`.
+**Meaning.** Controller jobs fail faster than the objective
+(`monitoring.slo.jobSuccess`, by default 99 % of jobs complete over 30 days)
+allows. With the default settings the critical rule fires on a fast burn
+(more than 14.4 % of the jobs of the last hour and of its last 5 minutes
+failed), the warning rule on a slow one (more than 6 % over 6 hours and their
+last 30 minutes); the alert's description states the values in force.
+Recorded ratio: `vmafx:job_failure_ratio:rate<window>`.
 
 **Impact.** Callers get failed jobs instead of scores; at this rate the
 month's error budget runs out early.

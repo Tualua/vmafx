@@ -121,7 +121,8 @@ jobs:
       - name: helm template (all optional components enabled)
         run: |
           helm template vmafx deploy/helm/vmafx \
-            --set pushgateway.enabled=true > /dev/null
+            --set pushgateway.enabled=true \
+            --set monitoring.enabled=true > /dev/null
 
       # The node contract on real renders: the controller address the node's
       # controller client reads and the NetworkPolicy egress it needs (ADR-1524).
@@ -149,6 +150,19 @@ jobs:
       # PERFMON / SYS_ADMIN, tracefs), and the combinations the chart refuses.
       - name: Node FUSE and eBPF renders
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_node_fuse_ebpf.py' -v
+
+      # ADR-2349: the monitors, the PrometheusRule (the default render is the
+      # generated rule file, an override is what obsgen -render-rules writes
+      # for it, promtool accepts both), the dashboard ConfigMaps and the
+      # scrape NetworkPolicy. Go runs the obsgen renderer; the test downloads
+      # the promtool release pinned in build-config.env.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Monitoring renders
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_observability.py' -v
 
       # ADR-1353: the server Deployment selected every Pod of the release, the
       # operator's and node's included. Render each server workload with every
