@@ -82,7 +82,7 @@ func testTenant() *VmafxTenant {
 	enabled := true
 	stamp := metav1.NewTime(time.Unix(1_700_000_000, 0).UTC())
 	return &VmafxTenant{
-		TypeMeta:   metav1.TypeMeta{Kind: "VmafxTenant", APIVersion: "vmafx.dev/v1"},
+		Kind: "VmafxTenant", APIVersion: "vmafx.dev/v1",
 		ObjectMeta: testObjectMeta(),
 		Spec: VmafxTenantSpec{
 			TenantID: "acme",
