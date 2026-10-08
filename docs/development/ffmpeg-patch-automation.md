@@ -1,10 +1,10 @@
 # FFmpeg patch automation
 
 The FFmpeg integration follows stable upstream release tags. The root
-`build-config.env` owns `FFMPEG_REMOTE` and `FFMPEG_TAG`; the patch tooling
-reads
-both values from that file. Container ARG defaults are generated mirrors, and
-publication uses those defaults without a separate release override.
+`build-config.env` owns `FFMPEG_REMOTE`, `FFMPEG_TAG` and `FFMPEG_COMMIT`
+(the commit the tag names); the patch tooling reads all three from that
+file. Container ARG defaults are generated mirrors, and publication uses
+those defaults without a separate release override.
 Development branches, snapshots and prerelease tags are outside this channel.
 
 A change to a libvmaf public surface that affects the integration updates the
@@ -45,6 +45,35 @@ An ordinary documentation edit does not select the hook. Install the hooks
 with `make install-hooks`; see
 [Automated rule enforcement](automated-rule-enforcement.md) for what the
 installed hooks do.
+
+## The local FFmpeg source cache
+
+The tool does not download FFmpeg on every run. It keeps one bare Git
+repository per remote and stores each fetched release commit in it under the
+tag's name, so the hook at every commit and push reads the commit from disk.
+
+- **Location:** `$XDG_CACHE_HOME/vmafx/ffmpeg-patch-stack/<remote hash>/source.git`.
+  Without `XDG_CACHE_HOME` it is `~/.cache/...`, on macOS
+  `~/Library/Caches/...` and on Windows `%LOCALAPPDATA%\...`.
+  `--cache-dir <dir>` selects another root.
+- **What is verified:** the commit of the configured tag must equal
+  `FFMPEG_COMMIT`. A cache entry or a network fetch that names another commit
+  fails with both commits in the message; the wrong commit is never stored or
+  used. After a deliberate pin bump the first run fetches the new tag, and the
+  old entry stays unused.
+- **Which path ran:** the command output and `receipt.json` (`source`,
+  `target_source`, `cache`) say `cache hit`, `fetched into cache` or, for a
+  newer release found by `--latest`, `fetched (unpinned)`. A newer release has
+  no pin yet: it is always fetched, and `--refresh --latest` writes its commit
+  to `FFMPEG_COMMIT` together with the tag.
+- **Concurrency:** writers hold a lock file next to the repository (waiting at
+  most ten minutes), and a ref moves only after its commit was fetched and
+  verified, so parallel hooks share one entry.
+- **Self-repair:** an empty or corrupt cache directory, or a ref whose objects
+  are gone, is dropped and fetched again. A cached commit that differs from the
+  pin is not repaired silently; delete the directory below to discard it.
+
+To clear the cache, remove `<cache root>/vmafx/ffmpeg-patch-stack/`.
 
 ## Refresh the configured release
 

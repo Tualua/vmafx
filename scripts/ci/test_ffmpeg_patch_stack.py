@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -86,22 +87,32 @@ class RealReplay(unittest.TestCase):
         self.git(self.upstream, "tag", "n9.0.1")
         (self.upstream / "sample").write_text("patched\n")
         self.git(self.upstream, "commit", "-qam", "add integration")
-        patch = self.git(self.upstream, "format-patch", "-1", "--stdout")
+        series_patch = self.git(self.upstream, "format-patch", "-1", "--stdout")
         self.repo = self.root / "repo"
         (self.repo / "ffmpeg-patches").mkdir(parents=True)
         self.patch = self.repo / "ffmpeg-patches/0001-integration.patch"
-        self.patch.write_text(patch)
+        self.patch.write_text(series_patch)
         (self.repo / "ffmpeg-patches/series.txt").write_text(
             "# Full stack\n0001-integration.patch\n"
         )
+        self.pin = self.git(self.upstream, "rev-parse", "n9.0.1^{commit}").strip()
+        self.head = self.git(self.upstream, "rev-parse", "HEAD").strip()
         (self.repo / "build-config.env").write_text(
-            f'FFMPEG_REMOTE="{self.upstream}"\nFFMPEG_TAG="n9.0.1"\n'
+            f'FFMPEG_REMOTE="{self.upstream}"\nFFMPEG_TAG="n9.0.1"\nFFMPEG_COMMIT="{self.pin}"\n'
         )
+        # The source cache lives under the user cache dir: keep every test off the real one.
+        self.cache_home = self.root / "cache-home"
+        environment = patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.cache_home)})
+        environment.start()
+        self.addCleanup(environment.stop)
         for name in STACK.MIRRORS:
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"ARG FFMPEG_TAG=n9.0.1\nARG FFMPEG_REMOTE={self.upstream}\n")
         self.output = self.root / "report"
+
+    def cache_repos(self) -> list[Path]:
+        return sorted(self.cache_home.glob("vmafx/ffmpeg-patch-stack/*/source.git"))
 
     def contents(self) -> dict[str, bytes]:
         return {
@@ -152,7 +163,11 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(result["tag"], "n9.1")
         for name in STACK.MIRRORS:
             self.assertIn("ARG FFMPEG_TAG=n9.1\n", (self.repo / name).read_text())
-        self.assertIn('FFMPEG_TAG="n9.1"', (self.repo / "build-config.env").read_text())
+        config = (self.repo / "build-config.env").read_text()
+        self.assertIn('FFMPEG_TAG="n9.1"', config)
+        self.assertIn(f'FFMPEG_COMMIT="{result["upstream_commit"]}"', config)
+        self.assertNotIn(self.pin, config)
+        self.assertEqual(result["target_source"], "fetched (unpinned)")
         STACK.maintain(self.repo, self.output, False, False)
 
     def test_conflicting_release_preserves_every_input(self) -> None:
@@ -169,11 +184,100 @@ class RealReplay(unittest.TestCase):
 
     def test_network_failure_is_failure_and_preserves_files(self) -> None:
         config = self.repo / "build-config.env"
-        config.write_text(f'FFMPEG_REMOTE="{self.root / "missing"}"\nFFMPEG_TAG="n9.0.1"\n')
+        config.write_text(
+            f'FFMPEG_REMOTE="{self.root / "missing"}"\nFFMPEG_TAG="n9.0.1"\nFFMPEG_COMMIT="{self.pin}"\n'
+        )
         before = self.contents()
         with self.assertRaises(RuntimeError):
             STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
+
+    def test_second_run_uses_the_cache_without_the_network(self) -> None:
+        first = STACK.maintain(self.repo, self.output, True, False)
+        self.assertEqual(first["source"], "fetched into cache")
+        self.assertEqual(len(self.cache_repos()), 1)
+        moved = self.root / "upstream-offline"
+        self.upstream.rename(moved)  # the configured remote no longer exists
+        second = STACK.maintain(self.repo, self.output, False, False)
+        self.assertEqual(second["source"], "cache hit")
+        self.assertEqual(second["upstream_commit"], self.pin)
+        self.assertEqual(second["changed"], [])
+
+    def test_cache_origin_is_named_in_the_command_output(self) -> None:
+        argv = ["ffmpeg_patch_stack.py", "--refresh", "--cache-dir", str(self.root / "c")]
+        for expected in ("fetched into cache", "cache hit"):
+            with (
+                patch.object(STACK, "__file__", str(self.repo / "scripts/ci/x.py")),
+                patch.object(STACK.sys, "argv", argv),
+                patch("builtins.print") as printed,
+            ):
+                self.assertEqual(STACK.main(), 0)
+            self.assertIn(f"source: {expected}", printed.call_args_list[0].args[0])
+
+    def test_planted_wrong_commit_in_the_cache_fails_naming_both(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        (cache,) = self.cache_repos()
+        self.git(cache, "fetch", "--depth=1", str(self.upstream), self.head)
+        self.git(cache, "update-ref", "refs/vmafx/tags/n9.0.1", self.head)
+        with self.assertRaises(ValueError) as caught:
+            STACK.maintain(self.repo, self.output, False, False)
+        self.assertIn(self.head, str(caught.exception))
+        self.assertIn(self.pin, str(caught.exception))
+        self.assertEqual(json.loads((self.output / "receipt.json").read_text())["status"], "failed")
+
+    def test_tag_moved_upstream_fails_naming_both(self) -> None:
+        self.git(self.upstream, "tag", "-f", "n9.0.1", self.head)
+        with self.assertRaises(ValueError) as caught:
+            STACK.maintain(self.repo, self.output, False, False)
+        self.assertIn(self.head, str(caught.exception))
+        self.assertIn(self.pin, str(caught.exception))
+        # The wrong commit never became a cache entry.
+        for cache in self.cache_repos():
+            self.assertEqual(self.git(cache, "for-each-ref", "refs/vmafx/").strip(), "")
+
+    def test_empty_or_corrupt_cache_is_refetched(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        (cache,) = self.cache_repos()
+        shutil.rmtree(cache)
+        cache.mkdir()  # empty directory
+        self.assertEqual(
+            STACK.maintain(self.repo, self.output, False, False)["source"], "fetched into cache"
+        )
+        (cache / "HEAD").write_text("garbage\n")  # corrupt metadata
+        shutil.rmtree(cache / "objects")
+        self.assertEqual(
+            STACK.maintain(self.repo, self.output, False, False)["source"], "fetched into cache"
+        )
+        for pack in (cache / "objects").rglob("*"):  # ref kept, objects gone
+            if pack.is_file():
+                pack.unlink()
+        result = STACK.maintain(self.repo, self.output, False, False)
+        self.assertIn("fetched into cache", result["source"])
+        self.assertEqual(
+            STACK.maintain(self.repo, self.output, False, False)["source"], "cache hit"
+        )
+
+    def test_missing_or_malformed_pin_is_rejected(self) -> None:
+        config = self.repo / "build-config.env"
+        text = config.read_text()
+        config.write_text(text.replace(f'FFMPEG_COMMIT="{self.pin}"\n', ""))
+        with self.assertRaises(KeyError):
+            STACK.maintain(self.repo, self.output, False, False)
+        config.write_text(text.replace(self.pin, "n9.0.1"))
+        with self.assertRaisesRegex(ValueError, "FFMPEG_COMMIT"):
+            STACK.maintain(self.repo, self.output, False, False)
+
+    def test_concurrent_runs_share_one_cache(self) -> None:
+        STACK.maintain(self.repo, self.root / "prime", True, False, self.root / "other-cache")
+
+        def run(index: int) -> str:
+            result = STACK.maintain(self.repo, self.root / f"report-{index}", False, False)
+            return str(result["source"])
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            sources = list(pool.map(run, range(4)))
+        self.assertEqual(sources.count("fetched into cache"), 1)
+        self.assertEqual(sources.count("cache hit"), 3)
 
     def test_hook_git_environment_cannot_redirect_replay(self) -> None:
         before = self.git(self.upstream, "rev-parse", "HEAD")
