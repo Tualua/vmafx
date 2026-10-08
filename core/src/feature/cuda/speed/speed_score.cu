@@ -473,7 +473,7 @@ __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &g,
 
 /* ------------------------------------------------------------------ */
 /* Anti-alias filter at the decimated sample points                    */
-/* x86: vif_filter1d_s() + vif_dec16_s(); else vif_filter1d_dec16_s()   */
+/* vif_filter1d_dec16_s() on every target (Netflix/vmaf ad42c532)       */
 /* ------------------------------------------------------------------ */
 
 template <class Source>

@@ -171,7 +171,11 @@ on SpEED:
 | `15297286` | `arm64`: NEON covariance kernel for SpEED | **Not ported: SIMD not bit-exact.** Eight partial sums with fused multiply-adds against the scalar kernel's one running sum: 4061 of 18480 sums differ in the last bits, by up to 3.5e-12 relative (upstream tests it to 1e-10). Not an upstream defect; the fork's SIMD kernels have to return the scalar's bits. The fork has its own NEON kernel instead, which keeps one lane per covariance sum and is bit-identical ([ADR-1459](../adr/1459-speed-cov-kernel-exact.md)); upstream's AVX2 and AVX-512 kernels (`30f472b14`) left the tree with the same decision |
 
 `docs/rebase-notes.md` has the mechanics and the measurements. Upstream branch
-`speed-fused-avx2` (not merged) moves x86 to the fused filter too.
+`speed-fused-avx2` landed on 2026-10-07 as `ad42c532` (the fused filter on x86
+too) and `9cb9479f` (its AVX2 vertical pass); both are ported, with x86 scores
+byte-identical before and after at every dispatch level. The heading above
+stays at `9e48141b` until the upstream commits between it and `9cb9479f` are
+all in.
 
 `9e48141b` ("adm: add NEON scale-zero decoupling",
 [Netflix/vmaf#1656](https://github.com/Netflix/vmaf/pull/1656)) followed on

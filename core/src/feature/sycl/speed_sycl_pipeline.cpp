@@ -508,7 +508,7 @@ void launch_scale(sycl::queue &q, const Source &src, const ScaleArgs &args, uint
 
 /* ------------------------------------------------------------------ */
 /* Anti-alias filter at the decimated sample points                    */
-/* x86: vif_filter1d_s() + vif_dec16_s(); else vif_filter1d_dec16_s()   */
+/* vif_filter1d_dec16_s() on every target (Netflix/vmaf ad42c532)       */
 /* ------------------------------------------------------------------ */
 
 struct DecimateArgs {

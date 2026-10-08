@@ -2529,12 +2529,13 @@ test_accumulator_bounds_16k = executable('test_accumulator_bounds_16k',
 )
 test('test_accumulator_bounds_16k', test_accumulator_bounds_16k, suite : ['fast'])
 
-# Netflix/vmaf 76ea5f03 (+ the checkasm sizes of cea2b4d8; the fork carries no
-# checkasm tree): vif_filter1d_dec16_s(), the fused anti-alias filter and
-# decimation SpEED runs on every target but x86, must leave the bits of
-# vif_filter1d_s() + vif_dec16_s(). Device-free; the aarch64 cross build runs
-# it under qemu, where the extractor takes the fused path. Same link recipe
-# and fp model as test_speed_lanczos4_weights.
+# Netflix/vmaf 76ea5f03, ad42c532, 9cb9479f (+ the checkasm sizes of cea2b4d8
+# and 9cb9479f; the fork carries no checkasm tree): vif_filter1d_dec16_s(), the
+# fused anti-alias filter and decimation SpEED runs on every target, must leave
+# the bits of vif_filter1d_s() + vif_dec16_s() at every dispatch level (scalar
+# and the AVX2 vertical pass). Device-free; run it on x86 and on the aarch64
+# cross build under qemu. Same link recipe and fp model as
+# test_speed_lanczos4_weights.
 test_speed_filter = executable('test_speed_filter',
     ['test.c', 'test_speed_filter.c', '../src/mem.cpp', '../src/picture.c',
      '../src/ref.cpp', '../src/dict.cpp',

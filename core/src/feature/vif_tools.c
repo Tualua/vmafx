@@ -487,15 +487,35 @@ static void vif_filter1d_horizontal_dec16_s(const float *f, int fwidth, const fl
     }
 }
 
-/* Netflix/vmaf 76ea5f03: the scalar vif_filter1d_s() followed by
+/* Vertical pass at source row i into tmp[0..w): the AVX2 row combination
+ * where vif_filter1d_s() would take the AVX2 convolution (Netflix/vmaf
+ * 9cb9479f), else the scalar pass. Both add the same products in the same
+ * order, so tmp holds the same bits either way (test_speed_filter). */
+static void vif_filter1d_vertical_dispatch_s(const float *f, int fwidth, const float *src,
+                                             int src_px_stride, int w, int h, int i, float *tmp)
+{
+#if ARCH_X86
+    if (vif_use_avx2_convolution(fwidth)) {
+        const float *rows[MAX_FWIDTH_AVX_CONV];
+        for (int fi = 0; fi < fwidth; ++fi) {
+            const int ii = vif_mirror_index(i - fwidth / 2 + fi, h);
+            rows[fi] = src + (ptrdiff_t)ii * src_px_stride;
+        }
+        convolution_f32_avx_rows_s(f, fwidth, rows, tmp, w);
+        return;
+    }
+#endif
+    vif_filter1d_vertical_s(f, fwidth, src, src_px_stride, w, h, i, tmp);
+}
+
+/* Netflix/vmaf 76ea5f03 and 9cb9479f: vif_filter1d_s() followed by
  * vif_dec16_s(), computed at the retained samples only. The vertical pass
- * runs for every 16th row, the horizontal pass for every 16th column of it,
- * each with the two-step path's taps, mirror and accumulation order, so
- * dst[i][j] holds the bits the scalar vif_filter1d_s() leaves at
- * [i * 16][j * 16] (test_speed_filter). src and dst must not overlap; tmp
- * holds at least w floats. SpEED calls this on every target but x86, where
- * vif_filter1d_s() dispatches to the AVX2 convolution and the two calls stay,
- * as upstream. */
+ * runs for every 16th row (AVX2 where dispatched), the horizontal pass for
+ * every 16th column of it, each with the two-step path's taps, mirror and
+ * accumulation order, so dst[i][j] holds the bits vif_filter1d_s() leaves at
+ * [i * 16][j * 16] on every dispatch level (test_speed_filter). src and dst
+ * must not overlap; tmp holds at least w floats. SpEED calls this on every
+ * target (Netflix/vmaf ad42c532). */
 void vif_filter1d_dec16_s(const float *f, const float *src, float *dst, float *tmp, int w, int h,
                           int src_stride, int dst_stride, int fwidth)
 {
@@ -503,7 +523,7 @@ void vif_filter1d_dec16_s(const float *f, const float *src, float *dst, float *t
     const int dst_px_stride = dst_stride / sizeof(float);
 
     for (int i = 0; i < h / 16; ++i) {
-        vif_filter1d_vertical_s(f, fwidth, src, src_px_stride, w, h, i * 16, tmp);
+        vif_filter1d_vertical_dispatch_s(f, fwidth, src, src_px_stride, w, h, i * 16, tmp);
         vif_filter1d_horizontal_dec16_s(f, fwidth, tmp, w, dst + (ptrdiff_t)i * dst_px_stride);
     }
 }

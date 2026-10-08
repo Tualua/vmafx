@@ -1249,14 +1249,9 @@ static void filter_and_downscale(const SpeedDimensions *dim, SpeedOptions *opt, 
     size_t downscaled_w = dim->scaled_width >> NUM_SCALES;
     size_t downscaled_h = dim->scaled_height >> NUM_SCALES;
 
-#if ARCH_X86
-    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
-                   (int)dim->scaled_height, (int)float_stride, (int)float_stride,
-                   filter_width_antialias);
-
-    vif_dec16_s(curr_scale, frame_buffer, (int)dim->scaled_width, (int)dim->scaled_height,
-                (int)float_stride, (int)float_stride);
-#else
+    /* Netflix/vmaf ad42c532: the fused filter on every target, x86 included
+     * (AVX2 vertical pass where dispatched, 9cb9479f); same bits as
+     * vif_filter1d_s() + vif_dec16_s() at every dispatch level. */
     vif_filter1d_dec16_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
                          (int)dim->scaled_height, (int)float_stride, (int)float_stride,
                          filter_width_antialias);
@@ -1264,7 +1259,6 @@ static void filter_and_downscale(const SpeedDimensions *dim, SpeedOptions *opt, 
         memcpy(frame_buffer + i * stride_px, curr_scale + i * stride_px,
                downscaled_w * sizeof(float));
     }
-#endif
 
     int filter_width = vif_get_filter_size(NUM_SCALES, (float)opt->speed_kernelscale);
     float filter[128];

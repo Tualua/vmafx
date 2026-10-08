@@ -106,35 +106,48 @@ and `speed_chroma_hip.c` must derive chroma extents via
 `speed_chroma_dimensions()`, not integer `/ 2`, so that buffers match
 ceiling dimensions allocated by `picture.c` and copied by `picture_copy()`.
 
-## SpEED anti-alias + decimation: fused off x86 (Netflix/vmaf 76ea5f03)
+## SpEED anti-alias + decimation: fused on every target (Netflix/vmaf 76ea5f03, ad42c532, 9cb9479f)
 
 `filter_and_downscale()` in [`speed.c`](../speed.c) + mirror
 `speed_internal_filter_and_downscale()` in [`speed_internal.c`](../speed_internal.c):
+`vif_filter1d_dec16_s()` ([`vif_tools.c`](../vif_tools.c)) into scratch
+plane, then row-wise copy of `downscaled_w` floats back into frame buffer, on
+every target (x86 included since ad42c532). Vertical pass at every 16th row,
+horizontal pass at every 16th column via `vif_filter1d_horizontal_dec16_s()`.
 
-- `#if ARCH_X86`: `vif_filter1d_s()` (AVX2 convolution when dispatched) +
-  `vif_dec16_s()`, unchanged. x86 output: no bit moves.
-- every other target: `vif_filter1d_dec16_s()` ([`vif_tools.c`](../vif_tools.c))
-  into scratch plane, then row-wise copy of `downscaled_w` floats back into
-  frame buffer. Vertical pass at every 16th row via
-  `vif_filter1d_vertical_s()` (shared with `vif_filter1d_s()`), horizontal
-  pass at every 16th column via `vif_filter1d_horizontal_dec16_s()`.
+- Vertical pass: `vif_filter1d_vertical_dispatch_s()`. x86 + AVX2 +
+  `fwidth <= MAX_FWIDTH_AVX_CONV` (same gate as `vif_filter1d_s()`'s AVX2
+  convolution): mirrored row pointers from `vif_mirror_index()`, then
+  `convolution_f32_avx_rows_s()` ([`common/convolution_avx.c`](../common/convolution_avx.c));
+  else scalar `vif_filter1d_vertical_s()`. One lane = one column, products
+  added in tap order to sum starting at 0 = scalar order. AVX-512 host runs
+  AVX2 kernel.
+- Horizontal decimated pass: scalar only, one implementation for every
+  target. Upstream's `convolution_f32_avx_dec16_s()` carries its own scalar
+  copy of it; fork does not (HISS-19). Upstream's `VMAF_NO_FUSE` asm barrier
+  not taken: every TU builds with contraction off (ADR-1461).
+- Upstream's `vif_filter1d_dec16_scalar_s()` split not taken: CPU mask
+  selects scalar (`vmaf_set_cpu_flags_mask(0)`), tests use that.
 
 Invariant: `vif_filter1d_dec16_s()` output == scalar `vif_filter1d_s()` +
-`vif_dec16_s()` bit for bit (same taps, mirror, accumulation order).
-`test_speed_filter` compares with `memcmp` (1620 size / layout / pattern /
-filter-width cases, plus `speed_internal_filter_and_downscale()` whole-frame).
-After any edit to scalar passes in `vif_tools.c`: run `test_speed_filter` on
-aarch64 cross build under qemu. Change `vif_filter1d_horizontal_s()` or mirror
--> change `vif_filter1d_horizontal_dec16_s()` in same PR. Change one of
-`speed.c` / `speed_internal.c` here -> change other one too.
+`vif_dec16_s()` bit for bit (same taps, mirror, accumulation order) at every
+dispatch level. `test_speed_filter` (`memcmp`): fused scalar, fused with host
+flags, and old x86 two-call path with host flags (AVX2 convolution, aligned
+layout only: it loads aligned) against scalar two calls; whole-frame
+`speed_internal_filter_and_downscale()` at both masks; `test_avx_rows`
+holds `convolution_f32_avx_rows_s()` to scalar sum on every column of widths
+1..41 (decimated pass never reads row's last columns, so masked tail only
+seen there). After any edit to scalar passes in `vif_tools.c`: run
+`test_speed_filter` on aarch64 cross build under qemu. Change
+`vif_filter1d_horizontal_s()` or mirror -> change
+`vif_filter1d_horizontal_dec16_s()` in same PR. Change one of `speed.c` /
+`speed_internal.c` here -> change other one too. Change to the vertical tap
+order -> change `convolution_f32_avx_rows_s()` in same PR.
 
 GPU twins (`cuda/speed/speed_score.cu`, `hip/speed/speed_hip_device.h`,
-`sycl/speed_sycl_pipeline.cpp`) already evaluate filter at decimated samples
-only, in scalar arithmetic; port needed comment edits only.
-
-**On upstream sync**: upstream branch `speed-fused-avx2` moves x86 to fused
-AVX2 path. Port only with x86 before/after JSON identity at `--precision max`
-(scalar, AVX2, AVX-512 dispatch).
+`sycl/speed_sycl_pipeline.cpp`) and Rust twin (`rust/feature/speed`,
+`filter_dec16`) evaluate filter at decimated samples only, in scalar
+arithmetic; x86 port needed comment edits only.
 
 Test entries `speed_internal_cpu_est_params()` and
 `speed_internal_cpu_compute_eigenvalues()` (after `get_speed_score()` in

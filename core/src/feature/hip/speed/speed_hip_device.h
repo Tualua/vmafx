@@ -487,8 +487,8 @@ static inline SPEED_HD float speed_hd_scale_sample(const SpeedHipParams *p, uint
 }
 
 /* ------------------------------------------------------------------ */
-/* Anti-alias filter at the decimated sample points: vif_filter1d_s()  */
-/* + vif_dec16_s() on x86, vif_filter1d_dec16_s() elsewhere; then the  */
+/* Anti-alias filter at the decimated sample points:                   */
+/* vif_filter1d_dec16_s() on every target (ad42c532); then the         */
 /* local mean subtraction and independent term of                      */
 /* filter_and_downscale() / compute_independent_term().                */
 /* ------------------------------------------------------------------ */

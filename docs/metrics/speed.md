@@ -187,13 +187,21 @@ setting. The tracked fixture `testdata/ref_576x324_48f.yuv` against
 
 ## CPU SIMD dispatch
 
-Two parts of the CPU SpEED path pick a vector kernel at runtime from the
+Three parts of the CPU SpEED path pick a vector kernel at runtime from the
 instruction sets the host reports:
 
 | Kernel | Scalar | AVX2 | AVX-512 |
 | --- | --- | --- | --- |
+| Anti-alias filter, vertical pass at the decimated rows | yes | yes | AVX2 kernel |
 | Block covariance sum | yes | yes | yes |
 | Dense matrix product (QR factorisation and the `QᵀB` solve) | yes | yes | yes |
+
+The anti-alias filter runs only at the samples the 16x decimation keeps, on
+every target (Netflix/vmaf `ad42c532`). Its vertical pass is vectorised for
+AVX2 (Netflix/vmaf `9cb9479f`) and adds each sample's products in the scalar
+order, so an AVX-512 host runs the AVX2 kernel and every setting returns the
+same bits. Filters wider than 17 taps (`speed_kernelscale` 2 and above) stay
+scalar.
 
 Nothing has to be enabled: the widest supported kernel is chosen when the
 extractor initialises. `--cpumask` restricts the choice, because its bits name

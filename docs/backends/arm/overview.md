@@ -94,8 +94,9 @@ explanations are in the notes below the table.
    (`speed_cov_row_neon`) uses one lane per covariance sum and is
    bit-identical to scalar
    ([ADR-1459](../../adr/1459-speed-cov-kernel-exact.md)). The anti-alias
-   filter stays scalar C and is evaluated only at the samples the 16x
-   decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`).
+   filter stays scalar C on aarch64 and is evaluated only at the samples the
+   16x decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`;
+   x86 runs the same function with an AVX2 vertical pass, `9cb9479f`).
    Upstream's NEON covariance kernel (`15297286`) is not used: it splits one
    sum over eight lanes and does not return the scalar's bits.
 
