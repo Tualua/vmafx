@@ -11,10 +11,12 @@ on:
     branches: [master]
     types: [labeled]
 
+# Read-only at the top: OpenSSF Scorecard's Token-Permissions check scores any
+# top-level write permission 0, which drops the master Scorecard gate below 8.5
+# (scripts/ci/scorecard_gate.py). The one job that dispatches runs asks for
+# `actions: write` itself.
 permissions:
-  actions: write
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ci-escalate-${{ github.event.pull_request.number }}
@@ -29,6 +31,10 @@ jobs:
       (github.event.label.name == 'ci: full' || github.event.label.name == 'autorelease: cut')
     runs-on: ubuntu-26.04
     timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
