@@ -430,6 +430,67 @@ jobs:
         # `make silent-revert-check`.
         run: python3 scripts/ci/check-silent-revert.py
 
+  dco-sign-off:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # ADR-2462
+    # required-aggregator
+    name: DCO Sign-off
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    # ADR-2462: every non-merge commit of the pull request carries a
+    # `Signed-off-by:` trailer whose address is the commit's author or
+    # committer (what `git commit -s` writes). Exempt: commits of an
+    # allow-listed bot (scripts/ci/check-dco.py BOT_LOGINS) inside a pull
+    # request GitHub reports as opened by that bot, and the machine-generated
+    # release pull request. The range is the live target tip..head, as in the
+    # Silent-Revert Guard, so a branch behind master is not charged for
+    # master's commits.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect a machine-generated release PR
+        id: release_pr
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci/release-pr-exempt.sh
+
+      - name: Resolve the live target tip and the branch head
+        id: refs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "${BASE_REF}"
+          base="$(git rev-parse FETCH_HEAD)"
+          git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags --quiet origin "${HEAD_SHA}"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+          echo "head=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Require a DCO sign-off on every commit
+        env:
+          BASE_SHA: ${{ steps.refs.outputs.base }}
+          HEAD_SHA: ${{ steps.refs.outputs.head }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          DCO_RELEASE_PR: ${{ steps.release_pr.outputs.exempt }}
+          # ADR-2462 rollout: older pull requests are grandfathered by the
+          # cutoff in scripts/ci/dco-cutoff.txt.
+          PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+        # Single source of truth lives in scripts/ci/check-dco.py so a
+        # developer can run the identical gate before `gh pr create`:
+        # `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`.
+        run: python3 scripts/ci/check-dco.py
+
   ffmpeg-patches-surface-check:
     needs: tier
     if: needs.tier.outputs.light == 'true'

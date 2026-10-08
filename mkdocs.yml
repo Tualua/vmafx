@@ -484,6 +484,7 @@ nav:
       - Performance benchmarking: development/perf.md
       - Merge train: development/merge-train.md
       - Silent-revert gate: development/silent-revert-gate.md
+      - DCO sign-off: development/dco.md
       - Coverage gate: development/coverage-gate.md
       - Perf gate: development/perf-gate.md
       - Pre-commit hooks: development/pre-commit-hooks.md

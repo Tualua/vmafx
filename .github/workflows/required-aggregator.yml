@@ -166,6 +166,9 @@ jobs:
               // to remove is invisible in the PR diff, so the gate has to be
               // required rather than advisory.
               'Silent-Revert Guard',
+              // ADR-2462 — pull-request only, like the gates above: absent on a
+              // master push, where there is no pull request to sign off.
+              'DCO Sign-off',
               'FFmpeg Patch Stack',
               'ADR Collision Guard',
               'Release Script Contract',

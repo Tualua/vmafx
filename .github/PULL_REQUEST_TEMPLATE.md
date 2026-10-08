@@ -24,6 +24,7 @@
 ## Checklist
 
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (the commit-msg hook enforces this).
+- [ ] Every commit is signed off (`git commit -s`; fix a branch with `git rebase --signoff origin/master`). See [DCO sign-off](../docs/development/dco.md).
 - [ ] `make format && make lint` is green locally.
 - [ ] Unit tests pass: `python3 scripts/ci/run_meson_test.py -- -C build`.
 - [ ] If I touched **any** SIMD/GPU code path, I ran `/cross-backend-diff` and the worst ULP is ≤ 2.

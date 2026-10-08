@@ -6,6 +6,7 @@
     "helpers:pinGitHubActionDigests",
     ":dependencyDashboard",
     ":semanticCommits",
+    ":gitSignOff",
     "helpers:disableTypesNodeMajor"
   ],
   "schedule": [

@@ -55,8 +55,10 @@ A maintainer is responsible for:
 ### 2.3 Contributors
 
 Anyone who opens an issue or PR is a contributor. Contributors do not
-need to sign a CLA — by submitting code, they agree to license that
-contribution under the licence governing the file they touch: EUPL-1.2
+need to sign a CLA. Each commit carries a Developer Certificate of Origin
+sign-off ([ADR-2462](docs/adr/2462-dco-sign-off-required.md)), and by
+submitting code they agree to license that contribution under the licence
+governing the file they touch: EUPL-1.2
 for new and fork-authored files, and the inherited licence for files
 that carry someone else's code (see [`LICENSE`](LICENSE) for the EUPL-1.2,
 [`NOTICE`](NOTICE) for Netflix's terms,

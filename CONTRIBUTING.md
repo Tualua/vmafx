@@ -68,6 +68,21 @@ from machines the project does not own, and
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.
   `master` is merge-via-squash-or-ff-only via branch protection.
 
+## Developer Certificate of Origin
+
+Every commit carries a sign-off: `git commit -s` appends
+`Signed-off-by: Your Name <you@example.org>`. It states, under the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/), that
+you wrote the change or have the right to submit it under the licence of the
+files it touches. There is no contributor licence agreement. The required
+check **DCO Sign-off** fails a pull request with an unsigned commit; fix a
+branch with `git rebase --signoff origin/master`, then
+`git push --force-with-lease`. Bot commits (Renovate, release automation) are
+exempt. The check applies to pull requests created on or after
+2026-10-09 (the cutoff in `scripts/ci/dco-cutoff.txt`); earlier pull requests
+are grandfathered. Details, the check command and the exact exemptions:
+[DCO sign-off](docs/development/dco.md).
+
 ## Branch naming
 
 Use a short, kebab-case prefix that mirrors the Conventional-Commits
