@@ -92,6 +92,12 @@ var Base = fx.Options(
 	otel.Module,
 	fx.Supply(version.Get()),
 	fx.Decorate(withServiceIdentity),
+	// fx builds a provider only when something depends on it, and the
+	// services take nothing from otel.Module: without this invoke the OTLP
+	// exporters were never built and no span, metric or log left a binary
+	// (T-OTEL-PROVIDERS-NEVER-CONSTRUCTED-2026-10-07). The providers install
+	// themselves globally; the invoke only makes fx construct them.
+	fx.Invoke(func(*otel.Providers) {}),
 )
 
 // withServiceIdentity is the root-scope fx decorator that completes golusoris's

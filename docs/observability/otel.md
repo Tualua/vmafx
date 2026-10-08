@@ -23,12 +23,12 @@ This page keeps the schema.
 docker run -p 4317:4317 -p 16686:16686 jaegertracing/all-in-one:latest
 
 # Export is off until an endpoint is set; plaintext gRPC by default.
-OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 ./vmafx-controller
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 ./vmafx-controller
 ```
 
 Open `http://localhost:16686` to view traces. In Kubernetes, pass the
 same variable through the chart's `env` map
-(`--set env.OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317`);
+(`--set env.OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`);
 `--set otelCollector.enabled=true` renders a collector ConfigMap you can
 mount into a collector sidecar or DaemonSet.
 
@@ -36,8 +36,8 @@ mount into a collector sidecar or DaemonSet.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → no-op providers)_ | OTLP/gRPC collector endpoint (`host:4317`). Unset means no exporter, no network, no spans. |
-| `VMAFX_OTEL_ENDPOINT` | _(unset)_ | Same, through the vmafx config key. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → no-op providers)_ | OTLP/gRPC collector endpoint as a URL (`http://host:4317`). Without a scheme the SDK finds no host and sends to `localhost:4317`. Unset means no exporter, no network, no spans. |
+| `VMAFX_OTEL_ENDPOINT` | _(unset)_ | Same, as `host:port` (`otel-collector:4317`), through the vmafx config key; it wins over the standard variable. |
 | `OTEL_SERVICE_NAME` / `VMAFX_OTEL_SERVICE_NAME` | _binary name_ | `service.name` resource attribute (the vmafx key wins). |
 | `VMAFX_OTEL_SERVICE_VERSION` | `pkg/version` | `service.version` resource attribute. |
 | `VMAFX_OTEL_SAMPLE_RATIO` | `1.0` | Parent-based trace sample ratio. |

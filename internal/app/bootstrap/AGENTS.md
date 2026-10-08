@@ -7,9 +7,12 @@ Fleet-wide invariants: [cmd/AGENTS.md](../../../cmd/AGENTS.md).
 
 ## Rebase-sensitive invariants
 
-1. **`Base` is `Core + otel.Module + fx.Supply(version.Get()) +
-   fx.Decorate(withServiceIdentity)`, in that shape.** `otel.Module` =
-   only OTel initialiser in tree. `withServiceIdentity` = root-scope
+1. **`Base` = `Core + otel.Module + fx.Supply(version.Get()) +
+   fx.Decorate(withServiceIdentity) + fx.Invoke(func(*otel.Providers) {})`,
+   in that shape.** Invoke builds providers: fx builds provider only for
+   dependant; no service takes `*otel.Providers`; without invoke no binary
+   exported anything (`TestBase_ConstructsProvidersNobodyRequests`).
+   `otel.Module` = only OTel initialiser in tree. `withServiceIdentity` = root-scope
    decorator of golusoris's `otel.Options` (service.version from
    `pkg/version`; `OTEL_SERVICE_NAME` honored behind
    `VMAFX_OTEL_SERVICE_NAME` config key). Must stay decorator, never

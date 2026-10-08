@@ -71,7 +71,7 @@ never prevents a binary from starting or serving.
    through:
 
     ```bash
-    export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
     ./vmafx-server
     ```
 
@@ -98,7 +98,7 @@ workload, so the endpoint is one value:
 
 ```bash
 helm upgrade --install vmafx ./deploy/helm/vmafx \
-  --set env.OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector.observability:4317
+  --set env.OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability:4317
 ```
 
 `otelCollector.enabled=true` renders the collector **ConfigMap**
@@ -119,21 +119,21 @@ keys under the `VMAFX_` prefix (`VMAFX_OTEL_SAMPLE_RATIO` → `otel.sample.ratio
 the standard `OTEL_*` variables are read by the OTel SDK / exporter
 itself, or by `bootstrap.Base` where noted.
 
-| Variable                                             | Default                          | Meaning                                                                                                                                        |
-|------------------------------------------------------|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                        | _(unset → no-op)_                | OTLP/gRPC collector target (`host:4317`). Per-signal variants `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` also count as "configured". |
-| `VMAFX_OTEL_ENDPOINT`                                | _(unset)_                        | Same target through the vmafx config key. Either variable switches export on.                                                                  |
-| `VMAFX_OTEL_INSECURE`                                | `true`                           | Plaintext gRPC to the collector. `false` dials with TLS.                                                                                       |
-| `VMAFX_OTEL_ENABLED`                                 | `true`                           | Master switch. `false` is a no-op even with an endpoint.                                                                                      |
-| `OTEL_SDK_DISABLED`                                  | `false`                          | OTel-standard kill switch; `true` forces the no-op providers.                                                                                  |
-| `OTEL_SERVICE_NAME`                                  | _(binary name)_                  | `service.name` resource attribute (honoured by `bootstrap.Base`).                                                                              |
-| `VMAFX_OTEL_SERVICE_NAME`                            | _(binary name)_                  | Same attribute through the vmafx key; wins over `OTEL_SERVICE_NAME`.                                                                           |
-| `VMAFX_OTEL_SERVICE_VERSION`                         | `pkg/version` (`--version` text) | `service.version` resource attribute.                                                                                                          |
-| `VMAFX_OTEL_SERVICE_NAMESPACE`                       | _(unset)_                        | `service.namespace` resource attribute.                                                                                                        |
-| `VMAFX_OTEL_SAMPLE_RATIO`                            | `1.0`                            | Head-based, parent-respecting trace sample ratio in `[0.0, 1.0]`. **`OTEL_TRACES_SAMPLER_ARG` is not read** — golusoris installs its own sampler. |
-| `VMAFX_OTEL_EXPORT_TRACES` / `_METRICS` / `_LOGS`    | `true`                           | Per-signal export toggles, e.g. `VMAFX_OTEL_EXPORT_LOGS=false` when the collector rejects the logs signal.                                    |
-| `OTEL_RESOURCE_ATTRIBUTES`                           | _(unset)_                        | Extra `key=value` resource attributes (OTel standard).                                                                                          |
-| `POD_NAME`, `POD_NAMESPACE`, `POD_IP`, `NODE_NAME`, `SERVICE_ACCOUNT` | _(unset)_       | Mapped to `k8s.*` resource attributes when present (Kubernetes downward API).                                                                  |
+| Variable                                                              | Default                          | Meaning                                                                                                                                                                                                           |
+|-----------------------------------------------------------------------|----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                         | _(unset → no-op)_                | OTLP/gRPC collector target as a URL (`http://host:4317`); without a scheme the SDK sends to `localhost:4317`. Per-signal variants `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` also count as "configured". |
+| `VMAFX_OTEL_ENDPOINT`                                                 | _(unset)_                        | Same target as `host:port` (`otel-collector:4317`) through the vmafx config key. Either variable switches export on.                                                                                              |
+| `VMAFX_OTEL_INSECURE`                                                 | `true`                           | Plaintext gRPC to the collector. `false` dials with TLS.                                                                                                                                                          |
+| `VMAFX_OTEL_ENABLED`                                                  | `true`                           | Master switch. `false` is a no-op even with an endpoint.                                                                                                                                                          |
+| `OTEL_SDK_DISABLED`                                                   | `false`                          | OTel-standard kill switch; `true` forces the no-op providers.                                                                                                                                                     |
+| `OTEL_SERVICE_NAME`                                                   | _(binary name)_                  | `service.name` resource attribute (honoured by `bootstrap.Base`).                                                                                                                                                 |
+| `VMAFX_OTEL_SERVICE_NAME`                                             | _(binary name)_                  | Same attribute through the vmafx key; wins over `OTEL_SERVICE_NAME`.                                                                                                                                              |
+| `VMAFX_OTEL_SERVICE_VERSION`                                          | `pkg/version` (`--version` text) | `service.version` resource attribute.                                                                                                                                                                             |
+| `VMAFX_OTEL_SERVICE_NAMESPACE`                                        | _(unset)_                        | `service.namespace` resource attribute.                                                                                                                                                                           |
+| `VMAFX_OTEL_SAMPLE_RATIO`                                             | `1.0`                            | Head-based, parent-respecting trace sample ratio in `[0.0, 1.0]`. **`OTEL_TRACES_SAMPLER_ARG` is not read** — golusoris installs its own sampler.                                                                 |
+| `VMAFX_OTEL_EXPORT_TRACES` / `_METRICS` / `_LOGS`                     | `true`                           | Per-signal export toggles, e.g. `VMAFX_OTEL_EXPORT_LOGS=false` when the collector rejects the logs signal.                                                                                                        |
+| `OTEL_RESOURCE_ATTRIBUTES`                                            | _(unset)_                        | Extra `key=value` resource attributes (OTel standard).                                                                                                                                                            |
+| `POD_NAME`, `POD_NAMESPACE`, `POD_IP`, `NODE_NAME`, `SERVICE_ACCOUNT` | _(unset)_                        | Mapped to `k8s.*` resource attributes when present (Kubernetes downward API).                                                                                                                                     |
 
 Fixed by the module (not configurable): 5 s trace batch timeout, 15 s
 metric export interval, `ParentBased(TraceIDRatioBased(ratio))` sampler.

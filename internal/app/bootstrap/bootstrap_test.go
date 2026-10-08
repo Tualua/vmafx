@@ -27,6 +27,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
+	otelapi "go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
@@ -233,5 +236,30 @@ func TestBase_ShutdownFlushesProviders(t *testing.T) {
 	app.RequireStop()
 	if err := providers.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown on no-op providers returned %v", err)
+	}
+}
+
+// TestBase_ConstructsProvidersNobodyRequests is the regression test of
+// T-OTEL-PROVIDERS-NEVER-CONSTRUCTED-2026-10-07: fx builds a provider only
+// when something depends on it, and no service binary takes *otel.Providers,
+// so with an OTLP endpoint set the exporters were never built and no span left
+// any binary. The graph here requests nothing from otel.Module; starting it
+// must still install the SDK tracer provider globally.
+func TestBase_ConstructsProvidersNobodyRequests(t *testing.T) {
+	quietEnv(t)
+	// A closed port: the gRPC exporter dials lazily, so nothing connects.
+	// Metrics and logs stay off: their shutdown flush would try to upload.
+	t.Setenv("VMAFX_OTEL_ENDPOINT", "127.0.0.1:1")
+	t.Setenv("VMAFX_OTEL_EXPORT_METRICS", "false")
+	t.Setenv("VMAFX_OTEL_EXPORT_LOGS", "false")
+	t.Cleanup(func() { otelapi.SetTracerProvider(tracenoop.NewTracerProvider()) })
+	otelapi.SetTracerProvider(tracenoop.NewTracerProvider())
+
+	app := fxtest.New(t, Base, fx.Replace(testEnvOptions()), fx.NopLogger)
+	app.RequireStart()
+	defer app.RequireStop()
+
+	if _, ok := otelapi.GetTracerProvider().(*sdktrace.TracerProvider); !ok {
+		t.Fatalf("global TracerProvider is %T; Base did not build the OTel providers", otelapi.GetTracerProvider())
 	}
 }
