@@ -41,9 +41,11 @@ if [[ "$lefthook_count" -ne 2 ]]; then
 fi
 
 # A test runs once in CI (ADR-1568): the required Tooling Tests job runs this
-# file because the registry puts it in the tooling suite.
-python3 "$repo_root/scripts/ci/suite_registry.py" --root "$repo_root" list tooling |
-  grep -Fqx 'scripts/ci/tests/test-dedupe-gate.sh' ||
+# file because the registry puts it in the tooling suite. The listing is read
+# whole before it is searched: piped into `grep -q` under pipefail, the writer
+# could die of SIGPIPE once grep had its match, and the check failed at random.
+tooling_suite=$(python3 "$repo_root/scripts/ci/suite_registry.py" --root "$repo_root" list tooling)
+grep -Fqx 'scripts/ci/tests/test-dedupe-gate.sh' <<<"$tooling_suite" ||
   report_failure "contract test is not in the tooling suite that Tooling Tests runs"
 grep -Fq 'id: dedupe-gate-contract' "$repo_root/.pre-commit-config.yaml" ||
   report_failure "contract test is not wired into local hooks"
