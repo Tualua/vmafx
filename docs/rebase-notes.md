@@ -8,6 +8,54 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Rust model prediction (RC4 lane P, #1723)
+
+- `core/src/predict.c` splits `vmaf_predict_score_at_index()` into the score
+  gather (unchanged), `predict_compute_c()` (the former body, statement for
+  statement) and `predict_compute_rust()`; an upstream sync keeps the C body in
+  `predict_compute_c()` and any arithmetic change to `normalize()`, `transform()`,
+  `clip()`, `post_process_feature_from_another()`, `piecewise_*` or `svm_predict()`
+  is mirrored in `core/src/rust/predict/src/` in the same PR
+  (`scripts/ci/rust_twin_diff.py --models`). `struct VmafModel` carries three
+  trailing fields (`rust_predict_state`, `rust_predict`, `predict_raw`).
+- `predict.c` reaches Rust only through the `struct VmafRustPredictOps` table
+  declared at the end of `core/src/predict.h`; `vmaf_model_destroy()`
+  (`core/src/model_lifetime.c`) calls `vmaf_rust_predict_destroy()` and frees
+  `predict_raw`. Keep both on a sync that touches those files. No score, public
+  API or FFmpeg patch impact while `VMAF_FEATURE_IMPL` is unset.
+- `core/src/rust/include/*.h` are cbindgen 0.29.4 output, committed byte for
+  byte (`scripts/dev/rust-abi-header.sh`); the clang-format hooks and
+  `make format` skip that directory. Regenerate them, never format or merge
+  them by hand (`scripts/ci/tests/test_rust_abi_header_verbatim.py`).
+
+## Rust integer ADM twin (`core/src/rust/feature/adm/`, RC4) (2026-10-07)
+
+`rc4/adm-twin`, [ADR-1713](adr/1713-rc4-rust-extractor-framework.md).
+
+- The crate `vmafx-fex-adm` ports the scalar path of
+  `core/src/feature/integer_adm.c`, `integer_adm.h`, `integer_adm_kernels.h`,
+  `adm_csf_fixed_point.h`, `adm_cm_accumulator.h`, `adm_angle_flag.h`,
+  `adm_score.h` and `barten_csf_tools.h` statement by statement and registers
+  it as `adm_rust` (ADR-1713). An upstream sync or rebase that changes the
+  arithmetic, the option table or the emitted names of `adm` changes the crate
+  in the same change and re-runs `scripts/ci/rust_twin_diff.py --feature adm`
+  on every fixture (`core/src/feature/AGENTS.d/adm-rust-twin.md`). A change to
+  a float table of `integer_adm.h` or `barten_csf_tools.h` also regenerates
+  `core/src/rust/feature/adm/src/tables_c.rs`. No score, public C API or
+  FFmpeg patch impact.
+
+## Rust `motion` twin mirrors `integer_motion.c` (2026-10-07)
+
+`rc4/motion-twin`, #2096.
+
+- `core/src/rust/feature/motion/src/{sad,window,extractor}.rs` port
+  `motion_score_pipeline_8/16`, `motion_flush_one` / `vmaf_motion_window_flush`
+  and `extract()` of `core/src/feature/integer_motion.c` (and `motion_blend()`)
+  statement by statement. A sync that changes any of them changes the twin in the
+  same PR; `scripts/ci/rust_twin_diff.py --feature motion` and the `sad`
+  table test in `sad.rs` (values from the C pipelines) guard it. No score,
+  public API or FFmpeg patch impact.
+
 ## Observability: dashboards, GPU exporters and scraped read errors (2026-10-07)
 
 `rc4/obs-2-dashboards`, [ADR-2349](adr/2349-observability-package.md), #2430.
@@ -56,7 +104,6 @@ builds report other model hashes again (`test_praetor_hashed_files_lf.py`
 fails). `scripts/codegen/tests/support.py::pinned_clang_format()` ties the
 format test to the `clang-format` hook's major in `.pre-commit-config.yaml`;
 bump the hook rev and `requirements/locks/tooling-tests.in` together.
-`core/test/meson.build` gives `test_gpu_picture_pool_uaf` `MALLOC_PERTURB_=0`.
 No upstream file besides `.gitattributes`.
 
 ## RC4: `speed_chroma` Rust twin keeps Netflix's double-form statements

@@ -106,6 +106,14 @@
   [observability](docs/development/observability.md#metrics).
 
 
+- **Rust integer ADM extractor (`adm_rust`)**: builds configured with
+  `-Denable_rust_features=true` contain a Rust port of the fixed-point `adm`
+  extractor. It takes every option of `adm` and returns its `adm2`, `aim`,
+  `adm3`, scale and debug scores bit for bit; select it with
+  `VMAF_FEATURE_IMPL=rust` or `--feature adm_rust`
+  ([ADM](docs/metrics/adm.md#rust-implementation-adm_rust), #1723, ADR-1713).
+
+
 - **`cambi` runs in Rust, bit-identical to the C extractor (`cambi_rust`).**
   A build with `-Denable_rust_features=true` registers `cambi_rust`, a
   statement-by-statement port of the scalar `cambi.c` path (preprocessing,
@@ -151,6 +159,22 @@
   [Rust extractor framework](docs/development/rust-extractor-framework.md).
 
 
+- **The prediction step of the `vmaf_v1.0.16*` models can run in Rust.** A build
+  with `-Denable_rust_features=true` and `VMAF_FEATURE_IMPL=rust` evaluates the
+  feature normalisation, chroma correction, nu-SVR, score transform and clip in
+  the new `vmafx-predict` crate. The score is bit-identical to the C predictor
+  at `--precision max`; the C predictor stays the default. See
+  [Models](docs/models/overview.md#rust-prediction-experimental).
+
+
+- **The integer `motion` extractor has a Rust twin, `motion_rust`, that returns the C
+  extractor's scores bit for bit.**
+  With `-Denable_rust_features=true`, `VMAF_FEATURE_IMPL=rust` (or
+  `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
+  including the five-frame window and the moving average, in Rust; the default
+  stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
@@ -183,9 +207,24 @@
 
 ### Changed
 
+- **The `actionlint` hook and `make lint-actions` cannot hang
+  ([ADR-2199](docs/adr/2199-actionlint-bounded-run.md)).** They run actionlint
+  through `scripts/ci/run_actionlint.py`, which gives it 90 seconds
+  (`ACTIONLINT_TIMEOUT_S`) and fails with exit 124 and the cause named instead
+  of hanging a commit or a push when a `run:` script is larger than the pipe
+  actionlint writes it to (a user over `fs.pipe-user-pages-soft`).
+
+
 - **ADR-2167 is Accepted.** The `-qpfile` handling of libx264 (offsets applied through `quant_offsets`)
   shipped in #2385 and the maintainer accepted the decision on 2026-10-07; the ADR status and index
   say so. No code changes.
+
+
+- **`scripts/ci/AGENTS.md` is split into four area indexes.** The generated index sat at 15,982 of
+  16,000 bytes. `scripts/docs/agents_index.py` now supports areas: `AGENTS.d/_area-<slug>.md` and an
+  `area:` key on each page. `AGENTS.md` lists the areas and `AGENTS-<slug>.md` holds the pages of
+  each (gates, release, tidy, tests), every file well under the unchanged limit. Other directories
+  render as before. `docs/development/agents-index.md` describes it.
 
 
 - **CI runs the tier a pull request owes, not the whole suite on every push
@@ -419,8 +458,7 @@
   the 23.1.2 the repository pins, so the test failed on every hosted leg. It
   now uses only the pinned major (`VMAFX_CLANG_FORMAT` names one explicitly)
   and skips, naming the version it found, otherwise; the Tooling Tests job
-  installs the pinned release. `test_gpu_picture_pool_uaf` no longer writes
-  its deliberately huge allocation on hosts that overcommit memory.
+  installs the pinned release.
 
 
 - CI: the required gates that share a matrix (`Linux Intel LLVM`, `macOS Clang+Metal`,
