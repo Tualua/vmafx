@@ -69,6 +69,17 @@
    "pattern": "include/vcs_version.h",
    "licence": "NONE",
    "why": "the version string written by vcs_tag()"
+  },
+  {
+   "pattern": "src/vmafx_build_info.h",
+   "licence": "NONE",
+   "why": "build settings written by the Meson configure step (core/src/meson.build vmafx_build_info_h)"
+  },
+  {
+   "pattern": "src/vmafx_build_commit.h",
+   "suffix": ".h",
+   "compiled_from": "core/src/vmafx/build_commit.h.in",
+   "why": "vcs_tag() of the template with the source commit (core/src/meson.build vmafx_build_commit_h, ADR-2073)"
   }
  ],
  "grafted_libraries": [

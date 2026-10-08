@@ -345,6 +345,28 @@ def test_scan_build_refuses_an_unruled_generated_file(tmp_path: Path, monkeypatc
         lic.scan_build(build, repo, manifest())
 
 
+# The headers Meson writes into the build tree (configure_file, vcs_tag): the
+# image builds scan every file a compile reads, so each needs a rule in the
+# real manifest, or every container build stops at its licence scan.
+GENERATED_HEADER = re.compile(r"""output\s*:\s*'([\w.]+\.(?:h|asm))'""")
+
+
+def meson_generated_headers() -> list[str]:
+    found = []
+    for subdir in ("src", "include"):
+        text = (REPO / "core" / subdir / "meson.build").read_text(encoding="utf-8")
+        found += [f"{subdir}/{name}" for name in GENERATED_HEADER.findall(text)]
+    return sorted(found)
+
+
+def test_every_meson_generated_header_has_a_licensing_rule() -> None:
+    headers = meson_generated_headers()
+    assert "src/config.h" in headers and "include/vcs_version.h" in headers
+    rules = json.loads(lic.MANIFEST.read_text(encoding="utf-8"))["generated_build_files"]
+    for rel in headers:
+        lic.generated_rule(rules, rel)
+
+
 def test_scan_build_refuses_a_compiled_file_without_licence(tmp_path: Path, monkeypatch) -> None:
     build, repo = fake_build(tmp_path, monkeypatch)
     write(repo / "core/a.c", "int a;\n")
