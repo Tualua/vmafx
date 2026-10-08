@@ -86,6 +86,20 @@
   pull requests.
 
 
+- **vmafx-controller can keep its jobs in PostgreSQL and run as several
+  replicas ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).**
+  `VMAFX_STORE_BACKEND=postgres` with `VMAFX_DB_DSN` stores jobs, attempts and
+  node sessions in PostgreSQL: any replica serves any node, a node keeps
+  working through a controller restart without registering again, a pulled
+  job is leased and returns to the queue when its node stops renewing it, and
+  a late report from a node that lost its lease is refused, so a job keeps one
+  result. `vmafx-controller migrate` applies the schema and
+  `vmafx-controller import-sqlite --from <file>` copies the jobs of the SQLite
+  queue. `/readyz` answers not ready while the database is unreachable or its
+  schema is older than the controller needs. The SQLite queue stays the
+  default.
+
+
 - Added the credits page `docs/credits.md`, rendered from the curated list
   `docs/credits.yaml`: every third-party project, vendored file, model, dataset,
   paper, tool, action, image and font VMAFx ships, adapts or uses, with its
@@ -125,6 +139,20 @@
   test (`deploy/prometheus/vmafx-rules.test.yaml`) has a firing and a
   non-firing case; `make check-prometheus-rules` runs them with a pinned
   promtool. See [alerts](docs/development/observability.md#alerts-and-recording-rules).
+
+
+- **Observability stack with Docker Compose (RC4, ADR-2349, ADR-2399,
+  #2430).** `deploy/compose/observability/` runs `vmafx-server`,
+  `vmafx-controller` and a CPU `vmafx-node` with Prometheus (the generated
+  rules, rendered at start from `monitoring-values.yaml`, the Helm chart's
+  `monitoring.slo` / `burnRates` / `alerts` keys), an OpenTelemetry Collector,
+  Tempo, Loki and Grafana (the generated dashboards and linked data sources).
+  The VMAFx images build from the checkout on the first `up`.
+  `scripts/ci/observability-compose-smoke.sh` (`make
+  observability-compose-smoke`) sends traffic and checks every component is
+  scraped, the rules are healthy, every dashboard query returns data, Grafana
+  is provisioned and traces reach Tempo. See
+  [the guide](docs/observability/compose.md).
 
 
 - **Observability: Quality, Nodes and devices, Live sessions and GPU exporter

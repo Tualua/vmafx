@@ -8,6 +8,26 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Observability: Compose example and smoke test (2026-10-08)
+
+`rc4/obs-5b-compose`, [ADR-2399](adr/2399-observability-slo-settings-as-values.md), #2430. Fork-only.
+`deploy/grafana/provisioning/datasources/vmafx.yaml` is generated (`go run ./tools/obsgen -write`): on a conflict take either side and
+regenerate. Its URLs are the service names of `deploy/compose/observability/compose.yaml`; renaming a service there changes
+`obsgen/datasources.go` too. `tools/obssmoke` reads dashboards through `obsgen.DashboardQueries`, the parser `CheckDashboard` uses.
+
+## vmafx-controller job backends (2026-10-07)
+
+`rc4/api-wp17-controller`, [ADR-2350](adr/2350-cloud-native-platform.md). The
+gRPC handlers talk to `cmd/vmafx-controller/backend` (`Backend`), never to
+`queue`, `nodes` or `scheduler` directly; the SQLite queue sits behind
+`backend.Legacy` and the PostgreSQL store behind `backend.Postgres`. The
+store's generated `pgdb/` takes either side on a conflict and is regenerated
+with `python3 scripts/codegen/sqlc_generate.py --write`. A sync that touches
+`grpc_server.go` keeps the handlers on the interface and the tenant contract
+(another tenant's job is `PERMISSION_DENIED`, an unknown one `NOT_FOUND`) on
+both backends: `replicas_test.go` and `grpc_tenant_test.go` guard it. no
+upstream file.
+
 ## The provenance record moves into the library (2026-10-06)
 
 `rc4/api-wp5-provenance` (RC4 work package 5, ADR-2073), on top of
