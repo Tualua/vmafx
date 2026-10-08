@@ -86,7 +86,10 @@ repos:
         # Pelorus interop sources, headers, and shared conformance fixture are
         # a vendored read-only mirror (ADR-1113). The wrapper exempts only paths
         # in the shared exact-path manifest; an added pelorus_*.cpp stays linted.
-        exclude: '^subprojects/|^core/test/data/'
+        # core/src/rust/include/ holds the cbindgen output, committed byte for byte
+        # as cbindgen 0.29.4 writes it (ADR-1713); scripts/dev/rust-abi-header.sh
+        # --check compares it with a fresh run, so a formatter must not touch it.
+        exclude: '^subprojects/|^core/test/data/|^core/src/rust/include/'
       # `.hip` and `.metal` have no identify tag, so `types_or` above never selects them;
       # this second entry reads them by extension, with the same wrapper, the same
       # `.clang-format` and the same pin. `scripts/ci/exact_twins.d/*.hip` are parity-gate

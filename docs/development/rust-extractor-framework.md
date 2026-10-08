@@ -57,6 +57,7 @@ which implementation produced its scores.
 | `motion_rust` | `motion` (`core/src/feature/integer_motion.c`) | RC4 lane; empty crate until it lands |
 | `adm_rust` | `adm` (`core/src/feature/integer_adm.c`) | RC4 lane; empty crate until it lands |
 | `cambi_rust` | `cambi` (`core/src/feature/cambi.c`) | RC4 lane; empty crate until it lands |
+| `vmafx-predict` (no twin name) | the prediction of `vmaf_predict_score_at_index()` (`core/src/predict.c`) | RC4 lane P; equal to C on every `vmaf_v1.0.16*` model (`--models`); `predict.c` reaches it through the `VmafRustPredictOps` table `core/src/rust/shim/rust_predict.c` installs ([Models](../models/overview.md#rust-prediction-experimental)) |
 
 The TAD pilot ([ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md),
 [TAD](../metrics/tad.md)) is a Rust extractor without a C counterpart and is

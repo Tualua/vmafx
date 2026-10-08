@@ -657,6 +657,7 @@ core/test/test_picture_v2.c
 core/test/test_pixel_format_edge_coverage.c
 core/test/test_pool_percentile.c
 core/test/test_predict.c
+core/test/test_predict_rust_ops.c
 core/test/test_prescaled_plane_int_index.c
 core/test/test_propagate_metadata.c
 core/test/test_psnr.c

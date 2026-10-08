@@ -73,6 +73,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "vcs_version.h"
 #include "vmafx/engine.h"
 #if HAVE_RUST_FEATURES
+#include "rust/shim/rust_predict.h"
 #include "rust/shim/rust_twins.h"
 #endif
 
@@ -361,6 +362,7 @@ static int vmaf_ctx_subsystems_init(VmafContext *v)
      * registry first, so the audit covers them too. */
 #if HAVE_RUST_FEATURES
     vmaf_rust_twins_install();
+    vmaf_rust_predict_install();
 #endif
     int err = vmaf_feature_extractor_list_audit();
     if (err)

@@ -132,6 +132,15 @@ struct VmafModel {
      * one owner, the caller). vmaf_model_destroy() drops one owner and frees the
      * model with the last. */
     struct VmafRef *owners;
+    /* Rust predictor (RC4 lane P, ADR-1713): state 0 = not decided, 1 =
+     * `rust_predict` ready, 2 = the C predictor runs (VMAF_FEATURE_IMPL is not
+     * `rust`, or a WARNING said why). `rust_predict` is the handle the installed
+     * `VmafRustPredictOps` table (predict.h) created; `predict_raw` is the
+     * `n_features` raw-score scratch of the Rust path. All three are set under
+     * predict_cache_lock; the pointers stay NULL unless VMAF_FEATURE_IMPL=rust. */
+    int rust_predict_state;
+    void *rust_predict;
+    double *predict_raw;
 };
 
 struct VmafModelCollection {

@@ -2352,6 +2352,7 @@ if is_rust_enabled
     rust_shim_sources = [
         src_dir + 'rust/shim/rust_twins.cpp',
         feature_src_dir + 'tad_rust.c',
+        src_dir + 'rust/shim/rust_predict.c',
     ]
 endif
 

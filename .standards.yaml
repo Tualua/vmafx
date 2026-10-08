@@ -139,6 +139,10 @@ exceptions:
     reason: "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
     expires: "2027-01-04"
   - rule: clang-tidy-coverage
+    path: "core/src/rust/shim/rust_predict.c"
+    reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+    expires: "2026-12-31"
+  - rule: clang-tidy-coverage
     path: "core/src/rust/shim/rust_twins.cpp"
     reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
     expires: "2026-12-31"
@@ -156,6 +160,10 @@ exceptions:
     expires: "2026-12-31"
   - rule: clang-tidy-coverage
     path: "core/test/test_rust_cambi_kernels.c"
+    reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+    expires: "2026-12-31"
+  - rule: clang-tidy-coverage
+    path: "core/test/test_rust_predict.c"
     reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
     expires: "2026-12-31"
   - rule: clang-tidy-coverage

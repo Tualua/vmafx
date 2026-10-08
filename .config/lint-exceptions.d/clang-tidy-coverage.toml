@@ -154,6 +154,11 @@ reason = "Built only with -Denable_rust_features=true, which needs cargo and cbi
 expires = 2026-12-31
 
 [[exception]]
+path = "core/src/rust/shim/rust_predict.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
 path = "core/src/rust/shim/rust_twins.cpp"
 reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
 expires = 2026-12-31
@@ -170,6 +175,11 @@ expires = 2026-12-31
 
 [[exception]]
 path = "core/test/test_rust_abi_layout.c"
+reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+expires = 2026-12-31
+
+[[exception]]
+path = "core/test/test_rust_predict.c"
 reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
 expires = 2026-12-31
 

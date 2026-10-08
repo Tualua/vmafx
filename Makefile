@@ -534,6 +534,7 @@ lint-md:
 # fragments only borrow the `.hip` extension; the Pelorus mirror is filtered out.
 CLANG_FORMAT_FILES = git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.hip' '*.metal' \
 	| grep -v '^subprojects/' | grep -v '^core/test/data/' | grep -v '^scripts/ci/exact_twins\.d/' \
+	| grep -v '^core/src/rust/include/' \
 	| python3 scripts/ci/pelorus_mirror.py filter
 
 # Formatters — writes changes.

@@ -17,6 +17,7 @@
 
 #include "dict.h"
 #include "model.h"
+#include "predict.h"
 #include "ref.h"
 #include "svm.h"
 
@@ -72,6 +73,8 @@ void vmaf_model_destroy(VmafModel *model)
     free(model->feature);
     free(model->score_transform.knots.list);
     free(model->predict_nodes);
+    vmaf_rust_predict_destroy(model);
+    free(model->predict_raw);
     if (model->predict_feature_names) {
         for (unsigned i = 0; i < model->n_features; i++) {
             free(model->predict_feature_names[i]);

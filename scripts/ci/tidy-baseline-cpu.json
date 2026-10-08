@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 475,
+  "tus": 476,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -388,6 +388,7 @@
     "core/test/test_pixel_format_edge_coverage.c",
     "core/test/test_pool_percentile.c",
     "core/test/test_predict.c",
+    "core/test/test_predict_rust_ops.c",
     "core/test/test_prescaled_plane_int_index.c",
     "core/test/test_propagate_metadata.c",
     "core/test/test_psnr.c",
@@ -917,6 +918,23 @@
             "core/test/test_vmafx_import_api.c",
             "core/test/test_vmafx_import_bitexact.c",
             "core/test/test_vmafx_import_fence.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b00a715e504297cb496a6444da752fc5e7bfe4761e1df8f0f527db70a5fb8eaa"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/model_lifetime.c",
+        "core/src/predict.c",
+        "core/test/test_predict_rust_ops.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_predict_rust_ops.c"
           ]
         }
       },

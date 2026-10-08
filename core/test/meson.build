@@ -8693,6 +8693,40 @@ if is_rust_enabled
     test('test_tad_rust', test_tad_rust, suite : ['fast'])
 endif
 
+# RC4 lane P (#1723, ADR-1713): predict.c reaches the Rust predictor only
+# through the table vmaf_predict_install_rust_ops() installs. Built in every
+# configuration, against a counting stand-in table.
+test_predict_rust_ops = executable('test_predict_rust_ops',
+    ['test.c', 'test_predict_rust_ops.c', '../src/dict.cpp', '../src/metadata_handler.cpp',
+     '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c',
+     json_model_c_sources, '../src/feature/feature_name.cpp',
+     '../src/feature/feature_extractor.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    c_args : vmaf_cflags_common,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true),
+               read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+)
+test('test_predict_rust_ops', test_predict_rust_ops, suite : ['fast'],
+     env : ['VMAF_FEATURE_IMPL=rust'])
+
+# RC4 lane P (#1723): the Rust predictor against the C predictor, bit for bit.
+# Links the static libvmaf (shim included) and the Rust archive, like the
+# suite `rust` framework tests.
+if is_rust_enabled
+    test_rust_predict = executable('test_rust_predict',
+        ['test.c', 'test_rust_predict.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        c_args : [vmaf_cflags_common,
+                  '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
+        dependencies : [pthread_dependency, thread_lib, math_lib, rust_core_dep],
+    )
+    test('test_rust_predict', test_rust_predict, suite : ['fast', 'rust'],
+         env : ['VMAF_FEATURE_IMPL=rust'])
+endif
+
 # Coverage round 3 — core/src/feature/integer_motion.h `edge_16` mirror
 # extension (5-tap filter, both axes).  Pushes line coverage from 58 %
 # towards 100 % by driving the four mirror branches directly.

@@ -108,122 +108,122 @@
  One parsed option of the C extractor's table, read back from its priv.
  */
 typedef struct VmafxRsOption {
-    /*
+  /*
    Option name as in the C table (never the alias).
    */
-    const char *name;
-    /*
+  const char *name;
+  /*
    `VMAFX_RS_OPT_*`.
    */
-    uint32_t kind;
-    /*
+  uint32_t kind;
+  /*
    Bool value (0 / 1) when `kind` is bool.
    */
-    int32_t b;
-    /*
+  int32_t b;
+  /*
    Int value when `kind` is int.
    */
-    int32_t i;
-    /*
+  int32_t i;
+  /*
    Double value when `kind` is double.
    */
-    double d;
-    /*
+  double d;
+  /*
    String value when `kind` is string; may be NULL.
    */
-    const char *s;
+  const char *s;
 } VmafxRsOption;
 
 /*
  The geometry `init` receives (`VmafFeatureExtractor.init` arguments).
  */
 typedef struct VmafxRsGeometry {
-    /*
+  /*
    `VmafPixelFormat` value.
    */
-    uint32_t pix_fmt;
-    /*
+  uint32_t pix_fmt;
+  /*
    Bits per component.
    */
-    uint32_t bpc;
-    /*
+  uint32_t bpc;
+  /*
    Luma width.
    */
-    uint32_t w;
-    /*
+  uint32_t w;
+  /*
    Luma height.
    */
-    uint32_t h;
+  uint32_t h;
 } VmafxRsGeometry;
 
 /*
  One plane of a picture, borrowed for one call.
  */
 typedef struct VmafxRsPlane {
-    /*
+  /*
    First sample; `uint8_t` when bpc <= 8, `uint16_t` otherwise.
    */
-    const void *data;
-    /*
+  const void *data;
+  /*
    Row stride in bytes.
    */
-    ptrdiff_t stride;
-    /*
+  ptrdiff_t stride;
+  /*
    Width in samples.
    */
-    uint32_t w;
-    /*
+  uint32_t w;
+  /*
    Height in rows.
    */
-    uint32_t h;
+  uint32_t h;
 } VmafxRsPlane;
 
 /*
  A picture, borrowed for one call (`VmafPicture` without its internals).
  */
 typedef struct VmafxRsPicture {
-    /*
+  /*
    `VmafPixelFormat` value.
    */
-    uint32_t pix_fmt;
-    /*
+  uint32_t pix_fmt;
+  /*
    Bits per component.
    */
-    uint32_t bpc;
-    /*
+  uint32_t bpc;
+  /*
    Number of valid entries in `plane` (1 for YUV400P, else 3).
    */
-    uint32_t n_planes;
-    /*
+  uint32_t n_planes;
+  /*
    Planes; index 0 = Y, 1 = U, 2 = V.
    */
-    struct VmafxRsPlane plane[3];
+  struct VmafxRsPlane plane[3];
 } VmafxRsPicture;
 
 /*
  The pictures of one `extract` call.
  */
 typedef struct VmafxRsFrame {
-    /*
+  /*
    Frame index.
    */
-    uint32_t index;
-    /*
+  uint32_t index;
+  /*
    Reference picture.
    */
-    const struct VmafxRsPicture *ref_pic;
-    /*
+  const struct VmafxRsPicture *ref_pic;
+  /*
    Distorted picture.
    */
-    const struct VmafxRsPicture *dist_pic;
-    /*
+  const struct VmafxRsPicture *dist_pic;
+  /*
    Reference of frame n-1 (`fex->prev_ref`); NULL when empty.
    */
-    const struct VmafxRsPicture *prev_ref;
-    /*
+  const struct VmafxRsPicture *prev_ref;
+  /*
    Reference of frame n-2 (`fex->prev_prev_ref`); NULL when empty.
    */
-    const struct VmafxRsPicture *prev_prev_ref;
+  const struct VmafxRsPicture *prev_prev_ref;
 } VmafxRsFrame;
 
 /*
@@ -231,69 +231,67 @@ typedef struct VmafxRsFrame {
  extractor's `provided_features`.
  */
 typedef struct VmafxRsHost {
-    /*
+  /*
    Shim context passed back to every callback.
    */
-    void *ctx;
-    /*
+  void *ctx;
+  /*
    `vmaf_feature_collector_append_with_dict` (option-decorated name).
    */
-    int32_t (*emit)(void *, const char *, uint32_t, double);
-    /*
+  int32_t (*emit)(void*, const char*, uint32_t, double);
+  /*
    `vmaf_feature_collector_append` (name as given).
    */
-    int32_t (*emit_raw)(void *, const char *, uint32_t, double);
-    /*
+  int32_t (*emit_raw)(void*, const char*, uint32_t, double);
+  /*
    `vmaf_feature_collector_get_score` on the decorated name; 0 = found.
    */
-    int32_t (*get)(void *, const char *, uint32_t, double *);
-    /*
+  int32_t (*get)(void*, const char*, uint32_t, double*);
+  /*
    `vmaf_feature_collector_set_aggregate` (name as given).
    */
-    int32_t (*set_aggregate)(void *, const char *, double);
-    /*
+  int32_t (*set_aggregate)(void*, const char*, double);
+  /*
    `vmaf_log(level, "%s\n", message)`; `level` is a `VMAFX_RS_LOG_*`
    value (`VmafLogLevel`). Also valid in the host `close` receives.
    */
-    void (*log)(void *, int32_t, const char *);
+  void (*log)(void*, int32_t, const char*);
 } VmafxRsHost;
 
 /*
  One Rust twin of a C feature extractor.
  */
 typedef struct VmafxRsTwin {
-    /*
+  /*
    `VMAFX_RS_ABI_VERSION` the twin was built against.
    */
-    uint32_t abi_version;
-    /*
+  uint32_t abi_version;
+  /*
    Name of the C extractor it replaces (`"cambi"`).
    */
-    const char *c_name;
-    /*
+  const char *c_name;
+  /*
    Name of the twin (`"cambi_rust"`).
    */
-    const char *rust_name;
-    /*
+  const char *rust_name;
+  /*
    Create the state from the options and the geometry; on error store a
    static NUL-terminated message in the last argument.
    */
-    int32_t (*init)(void **, const struct VmafxRsOption *, size_t, const struct VmafxRsGeometry *,
-                    const char **);
-    /*
+  int32_t (*init)(void**, const struct VmafxRsOption*, size_t, const struct VmafxRsGeometry*, const char**);
+  /*
    Extract one frame.
    */
-    int32_t (*extract)(void *, const struct VmafxRsFrame *, const struct VmafxRsHost *,
-                       const char **);
-    /*
+  int32_t (*extract)(void*, const struct VmafxRsFrame*, const struct VmafxRsHost*, const char**);
+  /*
    Flush; `VMAFX_RS_OK` = call again, `VMAFX_RS_DONE` = finished.
    */
-    int32_t (*flush)(void *, const struct VmafxRsHost *, const char **);
-    /*
+  int32_t (*flush)(void*, const struct VmafxRsHost*, const char**);
+  /*
    Free the state. The host is log-only: its collector callbacks fail,
    because the collector may be gone when a context closes.
    */
-    void (*close)(void *, const struct VmafxRsHost *);
+  void (*close)(void*, const struct VmafxRsHost*);
 } VmafxRsTwin;
 
 #ifdef __cplusplus
@@ -316,10 +314,10 @@ uint32_t vmafx_rs_abi_version(void);
 size_t vmafx_rs_abi_layout(size_t *out, size_t n);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif /* VMAFX_RS_H */
+#endif  /* VMAFX_RS_H */
 
 #ifdef __cplusplus
 extern "C" {
