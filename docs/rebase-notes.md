@@ -8,6 +8,40 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Helm values and schema generated from the platform definition (2026-10-08)
+
+`rc4/api-wp17-helm`, [ADR-2350](adr/2350-cloud-native-platform.md) D13.
+`deploy/helm/vmafx/values.yaml` and `values.schema.json` are written by
+`scripts/codegen/vmafx-api.py` from the `[[chart]]`, `[chart_root]` and
+`[[chart_defs]]` tables of `api/vmafx-platform.toml`; the Kubernetes types of
+the schema come from `api/kubernetes/openapi-subset.json`
+(`scripts/codegen/k8s_openapi.py`, release and digests in `build-config.env`).
+A change that edits either chart file by hand moves into the definition
+instead; on a conflict in a generated file take either side and run the
+generator. A new values key is a new `[[chart]]` entry at its place in the
+file. `test_vmafx_api_generated_current` guards both files,
+`test_k8s_openapi_subset_current` the subset. no upstream file.
+
+## POSIX-only build parts off Windows, msvcism POSIX-header check (2026-10-08)
+
+`fix/msvcism-posix-headers`, [ADR-2646](adr/2646-posix-only-build-options.md).
+
+- `core/src/meson.build`: `enable_mcp=true` on Windows is a configure `error()`;
+  `subdir('mcp')` and `compat/libvmaf/mcp.c` carry
+  `host_machine.system() != 'windows'`. `core/test/meson.build`: the MCP tests
+  carry the same gate, and `subdir('fuzz')` runs only off Windows (`fuzz=true` on
+  Windows is an `error()`). `core/tools/meson.build`: the `vmaf_vpl` block carries
+  the gate and prints a disabled message on Windows. An upstream sync that
+  touches these blocks keeps the gates: the `msvcism` scan reads them to decide
+  which sources the Windows build compiles.
+- `scripts/dev/preflight.sh` resolves its scanners next to itself
+  (`PREFLIGHT_DIR`) and fails the stage when `find-posix-only-headers.py` or
+  `lint_exceptions.py filter` cannot run.
+- Exceptions: `.config/lint-exceptions.d/msvcism-posix-headers.toml` (two files,
+  expiry 2027-06-30).
+- Reproducer: `bash scripts/ci/tests/test-preflight-msvcism.sh`;
+  `scripts/dev/preflight.sh --full --stage msvcism`.
+
 ## VMAFx window scores and the window clock
 
 `rc4/api-wp4-windows`, [ADR-1852](adr/1852-vmafx-api-redesign.md),

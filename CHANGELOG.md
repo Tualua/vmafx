@@ -559,6 +559,28 @@
   `--use-saliency` and `--saliency-aware` on it before the Python `vmaf-tune` is deleted.
 
 
+- **The Helm chart's values schema checks Kubernetes fields with the
+  Kubernetes 1.26 types, and the values file and schema are generated
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** `values.yaml` and
+  `values.schema.json` are written from `api/vmafx-platform.toml`;
+  `values.yaml` is unchanged and the schema keeps its rules in a uniform
+  layout. The values the chart copies into pod specs now have the types the
+  oldest supported Kubernetes release gives them: `tolerations`, `affinity`,
+  `topologySpreadConstraints`, `podSecurityContext`, `securityContext`, the
+  probes, `node.volumes` and `node.volumeMounts`, the update strategies,
+  `envFrom`, `ingress.tls`, node selectors, labels and annotations. `helm
+  install`, `helm upgrade` and `helm lint` now refuse a value Kubernetes would
+  refuse, such as `tolerationSeconds: "60"`, a spread constraint without
+  `topologyKey` or a node selector value `1`, and name the key; they check it
+  even when the workload that uses it is disabled. The upgrade notes in
+  `docs/development/k8s-deployment.md` list what each key refuses. Resource
+  quantities may now be decimal numbers. The chart now declares
+  `artifacthub.io/license: EUPL-1.2 AND Apache-2.0`, because the schema
+  carries the Apache-2.0 Kubernetes type schemas, and ships
+  `THIRD-PARTY-NOTICES.txt` with their attribution and the Apache-2.0 text
+  ([ADR-2673](docs/adr/2673-chart-licence-kubernetes-schemas.md)).
+
+
 - **The Windows icx-cl and icpx builds no longer print an override warning on every compile.** The strict floating-point line of `intel-llvm-cl` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` instead of `/fp:precise /Qfma-`, and the SYCL compiles and device link of the MSVC build take the `-fno-fast-math -fcomplex-arithmetic=full` reset the Linux icpx already has. Same arithmetic: equal compiler front-end arguments apart from the complex-arithmetic token, equal predefined macros, byte-identical objects and device bitcode ([Research-2170](docs/research/2170-windows-strict-fp-spelling-2026-10-07.md), [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
 
 
@@ -601,6 +623,17 @@
   value the implicit double-to-float conversion gave), narrowing conversions are
   explicit, and C test cases are declared `(void)`. No test value or tolerance
   changed.
+
+
+- **POSIX-only build parts stay off Windows, and `preflight.sh --stage msvcism`
+  refuses an unguarded POSIX header
+  ([ADR-2646](docs/adr/2646-posix-only-build-options.md)).** On Windows,
+  `-Denable_mcp=true` and `-Dfuzz=true` now stop configure with an error that
+  names the POSIX dependency instead of failing in the compiler, and the
+  `vmaf_vpl` tool is not looked for (configure prints why). The `msvcism` stage
+  fails on a `<unistd.h>`, `<dlfcn.h>`, `<sys/socket.h>` or other POSIX-only
+  include outside a platform conditional in a source the Windows build compiles
+  (`scripts/dev/find-posix-only-headers.py`), and fails when that scan cannot run.
 
 
 - **Packaging**: ADR-2383 lets the macOS and Windows package channels (Homebrew, winget and the others in the distribution manifest) take their artifacts from the attested native release pipelines, as a bounded exception to the container-only rule; Linux artifacts stay container-built.
