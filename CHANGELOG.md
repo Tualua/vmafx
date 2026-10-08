@@ -891,6 +891,17 @@
   `persistence.models.enabled` and `/usr/local/share/vmafx/model` otherwise.
 
 
+- **The operator's events reach every namespace it reconciles
+  ([ADR-2647](docs/adr/2647-operator-events-cluster-wide.md)).** The chart
+  allowed the operator to create events only in the release namespace, but
+  Kubernetes stores an event in the namespace of the resource it describes,
+  so the `CheckpointWritten` event of a `VmafxModelTraining` in another
+  namespace was refused and lost. A new `<release>-operator-events`
+  `ClusterRole` grants `create` and `patch` on events in every namespace and
+  nothing else; pods and the leader-election lease stay in the release
+  namespace's `Role`.
+
+
 - **Helm: the server's ServiceMonitor no longer scrapes StatefulSet pods
   twice, and finds the release from another namespace.** With
   `workload: StatefulSet` it also matched the headless Service, so every
@@ -946,6 +957,15 @@
   `localhost:4317`: the standard variable takes a URL
   (`http://otel-collector:4317`), `VMAFX_OTEL_ENDPOINT` takes `host:port`. See
   [OpenTelemetry](docs/observability/otel.md#environment-variables).
+
+
+- **The GPU container images, the tester images and the Linux release download
+  carry `libvmafx.so.1` next to `libvmaf.so.3` (ADR-2094).** Since the library
+  split the `vmaf` CLI and the compat `libvmaf.so.3` both load the VMAFx engine
+  library, but these builds copied only the `libvmaf.so*` files: their library
+  checks refused the result, or the CLI could not start. The release download
+  now has six library files; see
+  [Release download](docs/getting-started/index.md#release-download).
 
 
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1336), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1337), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5355,3 +5355,7 @@ Every ADR, one heading each (1336), so the site search finds an ADR by its title
 ## ADR-2485: VMAFx keeps its own credits page, generated from a curated list and held to the tree
 
 [2485-vmafx-credits-page](2485-vmafx-credits-page.md)
+
+## ADR-2647: the operator records events in every namespace through a write-only ClusterRole
+
+[2647-operator-events-cluster-wide](2647-operator-events-cluster-wide.md)
