@@ -33,6 +33,27 @@
   [the VMAFx API page](docs/api/vmafx/index.md).
 
 
+- **VMAFx device frames on CUDA (RC4, ADR-1929, ADR-2023).** In a build with
+  the CUDA backend the VMAFx API creates CUDA devices by index or from your
+  context and stream (`vmafx_device_create` with `VMAFX_BACKEND_CUDA`,
+  `vmafx_device_count`, `vmafx_device_info`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  CUDA twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): CUDA device pointers are read where they are, NV12,
+  P010 and P016 are planarised on the device, CUDA arrays and OpenGL textures
+  (the new `VMAFX_MEMORY_GL_TEXTURE`) are read out on the device. Acquire
+  fences of kind `VMAFX_FENCE_CUDA_EVENT` are waited on by the device's
+  stream, and the new `VMAFX_FENCE_GL_SYNC` orders a GL producer's rendering;
+  release fences (`VMAFX_FENCE_HOST`, `VMAFX_FENCE_CUDA_EVENT`) are signalled
+  after the last reader in every context, and the new release callback of
+  `VmafxFrameImport` (`release`, `user`) lets a producer make its stream wait
+  on the release event before it reuses its memory. CUDA frame pools
+  (`vmafx_frame_pool_create` with a CUDA device) hand out device frames.
+  Imported frames score bit for bit as the same frames uploaded from the
+  host. ABI 0.1.4. See
+  [CUDA devices](docs/api/vmafx/index.md#cuda-devices).
+
+
 - **VMAFx device frames, fences and frame pools (RC4, ADR-1852, ADR-1929).**
   The VMAFx API gains the shared contract of zero-copy frame import:
   device enumeration and information (`vmafx_device_count`,
@@ -570,6 +591,21 @@
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 
+- **The custom resources are generated from the platform definition
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** `api/vmafx-platform.toml`
+  now also declares the `vmafx.dev/v1` resources `VmafxJob`, `VmafxNode`,
+  `VmafxModelTraining` and `VmafxTenant`; `scripts/codegen/vmafx-api.py` writes
+  their Go types under `api/vmafx/v1`, and `scripts/codegen/crd_generate.py`
+  runs controller-gen (pinned in `go.mod`) for the deepcopy code, the CRDs and
+  the operator's RBAC role. `deploy/helm/vmafx/crds/` is the only CRD tree:
+  `config/crd/bases/` and the per-kind roles under `config/rbac/` are gone, and
+  `VmafxTenant` has a Go type. The installed schemas are unchanged apart from
+  descriptions; within `v1` a resource now only grows, which a compatibility
+  check enforces. `VmafxJobSpec.Priority` is an `int32` in Go, as the schema
+  already was, and the generated role includes the leader-election lease the
+  chart already granted.
+
+
 - **The gRPC services are generated from one platform definition
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** The scoring service
   and the controller are described in `api/vmafx-platform.toml`, from which
@@ -788,6 +824,13 @@
   controller refuses to start and names `VMAFX_DB_PATH`. The image and the Helm
   chart set `/data/vmafx-controller.db` and are unchanged. The committed files
   are removed and ignored. See [the controller guide](docs/server/controller.md#configuration).
+
+
+- **The CUDA VIF twin reads each picture with its own row pitch.** `vif_cuda`
+  read both input pictures with the pitch of the engine's own device
+  pictures, so a CUDA picture with another pitch (a frame imported where its
+  producer holds it) scored wrong VIF values; it now uses each picture's
+  stride.
 
 
 - **The dev container runs the command it is given and exits.** `dev/scripts/dev-mcp-entrypoint.sh`
