@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
 // repoRoot is the repository root, relative to this package.
@@ -104,6 +106,56 @@ func TestCheckRefusesTheDeadPanels(t *testing.T) {
 	}
 }
 
+// TestCheckRefusesWholeNumberBucketMatchers: a dashboard matching le="70"
+// shows no data on Prometheus 3 (which stores le="70.0"); the check reports
+// it and accepts LeMatcher and a fractional bound.
+func TestCheckRefusesWholeNumberBucketMatchers(t *testing.T) {
+	t.Parallel()
+	for expr, want := range map[string]int{
+		`rate(vmafx_quality_score_bucket{le="70"}[5m])`:                   1,
+		`rate(x_bucket{le = "30", job="a"}[5m]) + y{quantile!="1"}`:       2,
+		`rate(vmafx_quality_score_bucket{` + LeMatcher("70") + `}[5m])`:   0,
+		`rate(vmafx_server_score_duration_seconds_bucket{le="0.05"}[5m])`: 0,
+		`rate(x_bucket{le="+Inf"}[5m])`:                                   0,
+	} {
+		if got := CheckBucketMatchers(expr); len(got) != want {
+			t.Errorf("CheckBucketMatchers(%q) = %v, want %d problems", expr, got, want)
+		}
+	}
+	planted := []byte(`{"title":"T","panels":[{"title":"P","targets":[{"expr":"rate(vmafx_quality_score_bucket{le=\"70\"}[5m])"}]}]}`)
+	if problems, err := CheckDashboard(planted); err != nil || len(problems) != 1 {
+		t.Errorf("CheckDashboard(le=\"70\") = %v, %v; want one problem", problems, err)
+	}
+}
+
+// TestLeMatcherSelectsOneBucket: for every bucket of every histogram family,
+// LeMatcher's regular expression (as PromQL unquotes it) matches the bound in
+// both stored forms and no other bucket's bound in either form.
+func TestLeMatcherSelectsOneBucket(t *testing.T) {
+	t.Parallel()
+	stored := func(b float64) []string {
+		s := bucketBound(b)
+		if strings.ContainsAny(s, ".e") {
+			return []string{s}
+		}
+		return []string{s, s + ".0"}
+	}
+	for _, f := range metricdef.All() {
+		for _, b := range f.Buckets {
+			matcher := LeMatcher(bucketBound(b))
+			pattern := strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(matcher, `le=~"`), `"`), `\\`, `\`)
+			re := regexp.MustCompile("^(?:" + pattern + ")$")
+			for _, other := range f.Buckets {
+				for _, v := range stored(other) {
+					if re.MatchString(v) != (other == b) {
+						t.Errorf("%s: %s on le=%q: match %v", f.Name, matcher, v, re.MatchString(v))
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestMetricNames(t *testing.T) {
 	t.Parallel()
 	cases := map[string][]string{
@@ -131,6 +183,27 @@ func TestCheckExprAcceptsDefinedAndExternalSeries(t *testing.T) {
 	if dead := CheckExpr(`vmafx_controller_job_queue_wait_seconds + nothing_emits_this`); !slices.Equal(dead,
 		[]string{"vmafx_controller_job_queue_wait_seconds", "nothing_emits_this"}) {
 		t.Errorf("CheckExpr = %v; a histogram's bare name and an unknown series are dead", dead)
+	}
+}
+
+// TestExporterSeriesOnlyOnTheirDashboard: a vendor exporter's series is dead on
+// a VMAFx dashboard and on another exporter's dashboard, and allowed on its own
+// (tagged) one.
+func TestExporterSeriesOnlyOnTheirDashboard(t *testing.T) {
+	t.Parallel()
+	expr := `avg(DCGM_FI_DEV_GPU_UTIL{job=~"$job"})`
+	if dead := CheckExpr(expr); !slices.Equal(dead, []string{"DCGM_FI_DEV_GPU_UTIL"}) {
+		t.Errorf("untagged: %v", dead)
+	}
+	if dead := CheckExpr(expr, "amd"); len(dead) != 1 {
+		t.Errorf("another exporter's tag allowed it: %v", dead)
+	}
+	if dead := CheckExpr(expr, "dcgm"); len(dead) != 0 {
+		t.Errorf("its own tag refused it: %v", dead)
+	}
+	raw := []byte(`{"title":"x","tags":["vmafx"],"panels":[{"title":"p","targets":[{"expr":"DCGM_FI_DEV_FB_USED"}]}]}`)
+	if problems, err := CheckDashboard(raw); err != nil || len(problems) != 1 {
+		t.Errorf("an exporter series on a VMAFx dashboard: %v, %v", problems, err)
 	}
 }
 
