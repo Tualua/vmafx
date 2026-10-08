@@ -83,6 +83,11 @@ or from the presence of a workflow file.
   untrusted; optional network services and model verification have their own
   security-relevant behavior. Reports involving external codec libraries are
   coordinated with their projects when appropriate.
+- File paths given on the command line of the `vmaf` tool and its test
+  programs (inputs, models, outputs, `--verify-provenance <report>`) are chosen
+  by the invoking user and opened with that user's rights. They are not a trust
+  boundary: opening the file a user names is the intended behaviour, not path
+  injection.
 - Backend numerical tolerances vary by feature; the
   [cross-backend gate](docs/development/cross-backend-gate.md) is the reference.
   A score difference alone does not establish a security defect. Describe the

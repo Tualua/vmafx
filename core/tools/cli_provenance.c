@@ -83,10 +83,16 @@ int cli_annotate_run(VmafContext *vmaf, int argc, char *const *argv)
         (void)fprintf(stderr, "vmaf: the context has no provenance record\n");
         return -1;
     }
+    /* An output option and the value it takes stay out of the record. */
+    bool skip_value = false;
     for (int i = 1; i < argc; i++) {
+        if (skip_value) {
+            skip_value = false;
+            continue;
+        }
         bool takes_value = false;
         if (cli_arg_is_output(argv[i], &takes_value)) {
-            i += takes_value ? 1 : 0;
+            skip_value = takes_value;
             continue;
         }
         VmafxError *error = NULL;

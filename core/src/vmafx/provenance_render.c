@@ -375,7 +375,7 @@ char *vmafx_report_json_members(VmafContext *vmaf)
  * characters XML allows as references; the others become U+FFFD. */
 static void xml_value(VmafxJsonText *out, const char *text)
 {
-    for (size_t i = 0; text[i] && i < ((size_t)1u << 20); i++) {
+    for (size_t i = 0; i < ((size_t)1u << 20) && text[i]; i++) {
         const unsigned char c = (unsigned char)text[i];
         char ref[8];
         switch (c) {

@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "mu_table.h"
+#include "owner_only_file.h"
 #include "test.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
@@ -95,9 +96,10 @@ static char *read_text(const char *path)
     return text;
 }
 
+/* `text` written to `path`, created owner-only (owner_only_file.h). */
 static bool write_text(const char *path, const char *text)
 {
-    FILE *const file = fopen(path, "wb");
+    FILE *const file = vmaf_test_open_owner_only(path);
     if (!file) {
         return false;
     }

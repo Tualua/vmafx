@@ -23,18 +23,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef _WIN32
-#include <fcntl.h>
-#include <io.h>
-#include <sys/stat.h>
-#else
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 #include "test.h"
 #include "float_bits.h"
+#include "owner_only_file.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 #include "libvmaf/picture.h"
@@ -98,28 +90,11 @@ static char *read_whole_file(const char *path, size_t *len)
     return buf;
 }
 
-/* The fixture file, created owner-only (mode 0600; the Windows C runtime has no wider mode). */
-static FILE *open_owner_only(const char *path)
-{
-#ifdef _WIN32
-    const int fd = _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
-    return fd < 0 ? NULL : _fdopen(fd, "wb");
-#else
-    const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (fd < 0)
-        return NULL;
-    FILE *out = fdopen(fd, "wb");
-    if (!out)
-        (void)close(fd);
-    return out;
-#endif
-}
-
 /* Write `head` bytes of `buf`, then `block`, then the rest of `buf` to `path`. */
 static int write_spliced(const char *path, const char *buf, size_t head, size_t n,
                          const char *block)
 {
-    FILE *out = open_owner_only(path);
+    FILE *out = vmaf_test_open_owner_only(path);
     if (!out)
         return -EIO;
     bool ok = fwrite(buf, 1, head, out) == head;

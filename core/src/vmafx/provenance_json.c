@@ -223,7 +223,7 @@ void vmafx_json_object_u64(VmafxJsonObject *object, const char *key, uint64_t va
 
 static bool skipped(const char *key, const char *const *skip)
 {
-    for (size_t i = 0; skip && skip[i] && i < VMAFX_JSON_MEMBERS_MAX; i++) {
+    for (size_t i = 0; skip && i < VMAFX_JSON_MEMBERS_MAX && skip[i]; i++) {
         if (strcmp(key, skip[i]) == 0) {
             return true;
         }
