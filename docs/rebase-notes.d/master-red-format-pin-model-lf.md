@@ -7,5 +7,4 @@ builds report other model hashes again (`test_praetor_hashed_files_lf.py`
 fails). `scripts/codegen/tests/support.py::pinned_clang_format()` ties the
 format test to the `clang-format` hook's major in `.pre-commit-config.yaml`;
 bump the hook rev and `requirements/locks/tooling-tests.in` together.
-`core/test/meson.build` gives `test_gpu_picture_pool_uaf` `MALLOC_PERTURB_=0`.
 No upstream file besides `.gitattributes`.

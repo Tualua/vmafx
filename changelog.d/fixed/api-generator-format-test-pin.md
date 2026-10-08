@@ -4,5 +4,4 @@
   the 23.1.2 the repository pins, so the test failed on every hosted leg. It
   now uses only the pinned major (`VMAFX_CLANG_FORMAT` names one explicitly)
   and skips, naming the version it found, otherwise; the Tooling Tests job
-  installs the pinned release. `test_gpu_picture_pool_uaf` no longer writes
-  its deliberately huge allocation on hosts that overcommit memory.
+  installs the pinned release.

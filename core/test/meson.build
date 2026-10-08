@@ -4645,12 +4645,6 @@ test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'],
         # succeeds and glibc then writes every byte of it: the test takes all
         # RAM and swap. "0" turns the fill off; the failure path is unchanged.
         'MALLOC_PERTURB_=0',
-        # Meson otherwise exports a random MALLOC_PERTURB_, and glibc then fills
-        # each block it hands out: on a host that overcommits
-        # (vm.overcommit_memory=1, as a kubelet sets it) the ~192 GB request
-        # succeeds and the fill wrote all of it (23 GB resident, 90 s timeout,
-        # T-TEST-GPU-POOL-UAF-PERTURB-OVERCOMMIT-2026-10-08). 0 turns it off.
-        'MALLOC_PERTURB_=0',
     ])
 
 # ADR-0982 round-26 audit — regression for gpu_picture_pool_init partial-
