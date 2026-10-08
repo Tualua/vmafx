@@ -3,6 +3,7 @@ version: 1
 repository:
   owner: vmafx
   name: vmafx
+  forge: github
   default_branch: master
   visibility: public
   description: ""
