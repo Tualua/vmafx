@@ -25,6 +25,8 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <limits.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -200,6 +202,21 @@ typedef struct VmafContext {
     } pic_params;
     unsigned pic_cnt;
     bool flushed;
+    /* RC4 WP5 (#2142, ADR-2073): what the provenance record reads of the
+     * run. The submitting thread writes it and a record query may read it
+     * from any thread while frames are submitted (design section 2.5), so it
+     * is atomic and separate from pic_cnt / pic_params, which stay the
+     * submitting thread's own. `size` (w << 32 | h) and `format`
+     * (bpc << 8 | pix_fmt) are stored before `frames` leaves 0 (release), so
+     * a reader that loads a nonzero count (acquire) sees them; the times are
+     * monotonic nanoseconds, 0 until the first frame / the flush. */
+    struct {
+        _Atomic uint64_t frames;
+        _Atomic uint64_t size;
+        _Atomic uint32_t format;
+        _Atomic uint64_t first_ns;
+        _Atomic uint64_t flush_ns;
+    } run;
     /* Active compute backend — set by vmaf_<backend>_import_state().
      * Zero-initialised (VMAF_BACKEND_UNKNOWN) for CPU-only contexts. */
     enum VmafBackend active_backend;
@@ -286,6 +303,20 @@ typedef struct VmafContext {
      * vmafx_context_create() (core/src/vmafx/compat_libvmaf_gen.c). */
     struct VmafxContext *api_owner;
 } VmafContext;
+
+/* RC4 WP5: count one accepted frame for the provenance record (see `run`). */
+static void run_note_frame(VmafContext *vmaf)
+{
+    if (atomic_load_explicit(&vmaf->run.frames, memory_order_relaxed) == 0u) {
+        const uint64_t size = ((uint64_t)vmaf->pic_params.w << 32) | vmaf->pic_params.h;
+        const uint32_t format =
+            ((uint32_t)vmaf->pic_params.bpc << 8) | ((uint32_t)vmaf->pic_params.pix_fmt & 0xffu);
+        atomic_store_explicit(&vmaf->run.size, size, memory_order_relaxed);
+        atomic_store_explicit(&vmaf->run.format, format, memory_order_relaxed);
+        atomic_store_explicit(&vmaf->run.first_ns, vmafx_monotonic_ns(), memory_order_relaxed);
+    }
+    atomic_fetch_add_explicit(&vmaf->run.frames, 1u, memory_order_release);
+}
 
 typedef struct BatchThreadData {
     VmafFeatureExtractorContext **fex_ctx;
@@ -1396,9 +1427,9 @@ static int dnn_append_scalar_outputs(VmafContext *vmaf, const VmafOrtTensorOut *
             return -EINVAL;
     }
     for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
-        int rc = vmaf_feature_collector_append(vmaf->feature_collector,
-                                               vmaf->dnn.output_feature_names[i],
-                                               (double)outputs[i].data[0], index);
+        int rc = vmaf_feature_collector_append_from(
+            vmaf->feature_collector, vmaf->dnn.output_feature_names[i], (double)outputs[i].data[0],
+            index, VMAF_FEATURE_SOURCE_MODEL, "tiny_model");
         if (rc < 0)
             return rc;
     }
@@ -2211,7 +2242,8 @@ int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name
     if (!feature_name)
         return -EINVAL;
 
-    return vmaf_feature_collector_append(vmaf->feature_collector, feature_name, value, index);
+    return vmaf_feature_collector_append_from(vmaf->feature_collector, feature_name, value, index,
+                                              VMAF_FEATURE_SOURCE_IMPORTED, NULL);
 }
 
 /* ---- Pelorus perceptual spatial-pooling weighting (ADR-1118) ------------- *
@@ -3109,8 +3141,12 @@ static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
         }
         fex_ctx->is_initialized = true;
         int flush_err = 0;
+        /* RC4 WP5: scores the flush writes are this extractor's. */
+        const VmafFeatureProducer previous = vmaf_feature_producer_swap(
+            (VmafFeatureProducer){VMAF_FEATURE_SOURCE_EXTRACTOR, fex->name, fex_ctx->opts_dict});
         while (!(flush_err = fex->flush(fex, vmaf->feature_collector)))
             ;
+        (void)vmaf_feature_producer_swap(previous);
         if (flush_err < 0)
             err |= flush_err;
     }
@@ -3319,8 +3355,10 @@ static int flush_context(VmafContext *vmaf)
     /* Only mark the context terminally flushed once every backend flush
      * succeeded.  On any error the caller may retry vmaf_read_pictures(NULL,
      * NULL) to re-run the flush pass. */
-    if (!err)
+    if (!err) {
         vmaf->flushed = true;
+        atomic_store_explicit(&vmaf->run.flush_ns, vmafx_monotonic_ns(), memory_order_release);
+    }
     return err;
 }
 
@@ -4137,6 +4175,7 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
     /* Increment only after successful validation so a retry on transient
      * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
     vmaf->pic_cnt++;
+    run_note_frame(vmaf);
 
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
@@ -4258,6 +4297,7 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* Increment only after queue_wait succeeds so a retry on error does not
      * double-count the frame (mirrors the fix to vmaf_read_pictures, ADR-1008). */
     vmaf->pic_cnt++;
+    run_note_frame(vmaf);
 
     // Advance double-buffer slot and frame counter for the zero-copy VA import path.
     // Mirrors shared_frame_upload:597-599: cur_compute = cur_upload; cur_upload = 1-cur_upload.
@@ -4315,8 +4355,10 @@ int vmaf_flush_sycl(VmafContext *vmaf)
         vmaf_sycl_print_timing(vmaf->sycl.state);
     }
 
-    if (!err)
+    if (!err) {
         vmaf->flushed = true;
+        atomic_store_explicit(&vmaf->run.flush_ns, vmafx_monotonic_ns(), memory_order_release);
+    }
     return err;
 }
 #endif
@@ -4855,6 +4897,16 @@ int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
         return -EINVAL;
     *extractor = NULL;
     *backend = VMAF_BACKEND_UNKNOWN;
+    /* RC4 WP5: the collector recorded who wrote the vector (option-decorated
+     * names included); model and imported scores have no extractor. */
+    const FeatureVector *const fv = vmaf_feature_collector_find(vmaf->feature_collector, feature);
+    if (fv && fv->source == VMAF_FEATURE_SOURCE_EXTRACTOR && fv->producer) {
+        *extractor = fv->producer;
+        *backend = vmaf_engine_extractor_backend(fv->producer);
+        return 0;
+    }
+    if (fv && fv->source != VMAF_FEATURE_SOURCE_UNKNOWN)
+        return -ENOENT;
     const RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
     for (unsigned i = 0; i < rfe->cnt; i++) {
         const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
@@ -4882,6 +4934,30 @@ enum VmafBackend vmaf_engine_extractor_backend(const char *extractor)
     const VmafFeatureExtractor *fex =
         extractor ? vmaf_get_feature_extractor_by_name(extractor) : NULL;
     return fex ? fex_flags_backend(fex->flags) : VMAF_BACKEND_UNKNOWN;
+}
+
+int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out)
+{
+    if (!vmaf || !out)
+        return -EINVAL;
+    memset(out, 0, sizeof(*out));
+    /* cfg is set once by vmaf_engine_init(); the rest is `run` (atomic). */
+    out->cfg = vmaf->cfg;
+    const uint64_t frames = atomic_load_explicit(&vmaf->run.frames, memory_order_acquire);
+    if (!frames)
+        return 0;
+    const uint64_t size = atomic_load_explicit(&vmaf->run.size, memory_order_relaxed);
+    const uint32_t format = atomic_load_explicit(&vmaf->run.format, memory_order_relaxed);
+    out->w = (unsigned)(size >> 32);
+    out->h = (unsigned)(size & 0xffffffffu);
+    out->bpc = format >> 8;
+    out->pix_fmt = (enum VmafPixelFormat)(format & 0xffu);
+    out->pic_cnt = frames > UINT_MAX ? UINT_MAX : (unsigned)frames;
+    const uint64_t first = atomic_load_explicit(&vmaf->run.first_ns, memory_order_relaxed);
+    const uint64_t flush = atomic_load_explicit(&vmaf->run.flush_ns, memory_order_acquire);
+    const uint64_t end = flush ? flush : vmafx_monotonic_ns();
+    out->elapsed_ns = end > first ? end - first : 0u;
+    return 0;
 }
 
 bool vmaf_engine_is_flushed(const VmafContext *vmaf)

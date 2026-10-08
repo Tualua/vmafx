@@ -262,6 +262,8 @@ docs-fragments-check:
 	@bash scripts/docs/concat-rebase-notes.sh --lint
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
+	@echo "--- scripts/ci/exact_twins.d/ vs core/src/vmafx/exactness_gen.c (ADR-2073) ---"
+	@python3 scripts/codegen/vmafx_exactness.py --check
 	@echo "--- scripts/ci/upstream_parity.d/ vs docs/development/upstream-parity-allowlist.md ---"
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --check
 	@echo "--- */AGENTS.d/ vs */AGENTS.md ---"
@@ -279,6 +281,7 @@ docs-fragments-check:
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write: docs-render
 	@python3 scripts/docs/generate-exact-twins.py --write
+	@python3 scripts/codegen/vmafx_exactness.py --write
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write
 	@python3 scripts/docs/generate-hardware-reports.py --write

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import tomllib
 
-from .entries import Entry, deprecation, need, since_of, version, where_of
+from .entries import Entry, deprecation, need, python_name, since_of, version, where_of
 from .model import (
     VERSION_PARTS,
     Api,
@@ -29,6 +29,7 @@ from .model import (
     Handle,
     Header,
     Param,
+    ProtoRepeated,
     Status,
     Struct,
 )
@@ -193,9 +194,22 @@ def _structs(raw: list[Entry]) -> tuple[Struct, ...]:
                 deprecated=deprecation(entry, where),
                 fields=tuple(fields),
                 proto=str(entry.get("proto", "")),
+                proto_repeated=_proto_repeated(entry, where),
             )
         )
     return tuple(out)
+
+
+def _proto_repeated(entry: Entry, where: str) -> tuple[ProtoRepeated, ...]:
+    return tuple(
+        ProtoRepeated(
+            name=need(raw, "name", where),
+            struct=need(raw, "struct", where),
+            number=int(need(raw, "number", where)),
+            doc=str(raw.get("doc", "")),
+        )
+        for raw in entry.get("proto_repeated", [])
+    )
 
 
 def _params(entry: Entry, where: str) -> tuple[Param, ...]:
@@ -241,6 +255,7 @@ def _functions(raw: list[Entry]) -> tuple[Function, ...]:
                 doc=need(entry, "doc", where),
                 params=_params(entry, where),
                 deprecated=deprecation(entry, where),
+                python=python_name(entry, where),
             )
         )
     return tuple(out)
