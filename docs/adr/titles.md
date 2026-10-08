@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1344), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1345), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5387,3 +5387,7 @@ Every ADR, one heading each (1344), so the site search finds an ADR by its title
 ## ADR-2751: MSVC threads stay on the Win32 shim, which gains a timed wait
 
 [2751-win32-pthread-shim-timed-wait](2751-win32-pthread-shim-timed-wait.md)
+
+## ADR-2784: Move the praetor pin to 3a766f2d56ad, take its REUSE workflow and declare the build-warnings lanes it cannot read
+
+[2784-praetor-pin-3a766f2d](2784-praetor-pin-3a766f2d.md)
