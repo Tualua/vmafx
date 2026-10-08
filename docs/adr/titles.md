@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1332), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1333), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5319,6 +5319,10 @@ Every ADR, one heading each (1332), so the site search finds an ADR by its title
 ## ADR-2383: macOS and Windows package channels are fed by the verified native release pipelines
 
 [2383-package-channels-native-pipelines](2383-package-channels-native-pipelines.md)
+
+## ADR-2399: SLO objectives, burn-rate windows and alert thresholds are chart values, rendered from one rule builder
+
+[2399-observability-slo-settings-as-values](2399-observability-slo-settings-as-values.md)
 
 ## ADR-2440: Move the praetor pin to 7458a220e1c9 and drop the exceptions for the managed workflows
 

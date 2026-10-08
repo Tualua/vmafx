@@ -145,6 +145,23 @@
   [dashboards](docs/development/observability.md#dashboards).
 
 
+- **Monitoring in the Helm chart: a monitor per component, the alert rules
+  with your SLOs, the dashboards (RC4, ADR-2399, #2430).** With
+  `monitoring.enabled` the chart renders a ServiceMonitor for the server,
+  the controller and the nodes and a PodMonitor for the operator
+  (`monitoring.components` switches each), a PrometheusRule with the
+  generated alerts and recording rules, and one ConfigMap per Grafana
+  dashboard for the dashboard sidecar (`monitoring.dashboards`, vendor GPU
+  dashboards opt-in). The SLO objectives, burn-rate windows and factors and
+  the queue-age and score-regression thresholds are values
+  (`monitoring.slo`, `monitoring.burnRates`, `monitoring.alerts`), checked by
+  the chart's schema; `go run ./tools/obsgen -render-rules -values <file>`
+  writes the same rules as a plain rule file. With `networkPolicy.enabled`,
+  `networkPolicy.allow.metricsScrape` admits the scrape. The burn-rate alerts
+  state their threshold as `(factor * (1 - objective))`. See
+  [monitoring on Kubernetes](docs/observability/kubernetes.md).
+
+
 - **Observability: one metric definition, node `/metrics`, queue and quality
   metrics, a generated Overview dashboard (RC4, ADR-2349, #2430).** Every
   Prometheus family the services serve is defined once in
@@ -653,6 +670,16 @@
   even when no models volume was mounted (the default), so every job failed
   with "model not found". It now uses the mount path only with
   `persistence.models.enabled` and `/usr/local/share/vmafx/model` otherwise.
+
+
+- **Helm: the server's ServiceMonitor no longer scrapes StatefulSet pods
+  twice, and finds the release from another namespace.** With
+  `workload: StatefulSet` it also matched the headless Service, so every
+  server pod was a second target and sums over the server's series doubled;
+  it now skips Services labelled `vmafx.dev/headless`. With
+  `monitoring.serviceMonitor.namespace` set to another namespace it selected
+  nothing; it now selects the release namespace. The node's HTTP listener
+  follows `node.metricsPort` (`VMAFX_HTTP_ADDR`).
 
 
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
