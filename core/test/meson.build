@@ -7599,7 +7599,8 @@ endif
 # (ADR-0209 § "Status update 2026-05-08") flipped init/start_stdio/
 # close to a working dispatcher; the test now drives a real JSON-RPC
 # round-trip over pipes. SSE/UDS expectations remain pinned at -ENOSYS.
-if get_option('enable_mcp')
+# POSIX-only, as the server is (configure refuses enable_mcp on Windows).
+if get_option('enable_mcp') and host_machine.system() != 'windows'
 test_mcp_smoke = executable('test_mcp_smoke',
     ['test.c', 'test_mcp_smoke.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -8989,7 +8990,15 @@ endif
 test('test_locale_handling', test_locale_handling, suite : ['fast'])
 
 subdir('dnn')
-subdir('fuzz')
+# The libFuzzer harnesses are POSIX code (<unistd.h>): a Windows build that
+# asks for them fails here, and their sources stay off the Windows build (the
+# msvcism stage of scripts/dev/preflight.sh reads this gate).
+if host_machine.system() != 'windows'
+    subdir('fuzz')
+elif get_option('fuzz')
+    error('fuzz=true: the libFuzzer harnesses of core/test/fuzz/ are POSIX-only ' +
+          '(<unistd.h>) and cannot be built for Windows')
+endif
 
 # Only wired in when enable_rust_features=true (same gate as the extractor).
 if is_rust_enabled

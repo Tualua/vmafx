@@ -180,8 +180,11 @@ vmaf_bench = executable(
 vmaf_vpl_ok = false
 
 # VPL decode → SYCL pipeline tool
-# Requires SYCL + VA-API + Level Zero + VPL
-if get_option('enable_sycl')
+# Requires SYCL + VA-API + Level Zero + VPL. Linux only: VA-API, libva-drm and
+# <unistd.h>; no option requests it, it is built when its dependencies are
+# found, and on Windows it is not looked for (the msvcism stage of
+# scripts/dev/preflight.sh reads this gate).
+if get_option('enable_sycl') and host_machine.system() != 'windows'
     vpl_dep = dependency('vpl', required : false)
 
     vmaf_vpl_deps = [stdatomic_dependency, vpl_dep]
@@ -208,6 +211,8 @@ if get_option('enable_sycl')
     else
         message('vmaf_vpl tool: disabled (missing VPL or platform surface deps)')
     endif
+elif get_option('enable_sycl')
+    message('vmaf_vpl tool: disabled (Linux only: VA-API, libva-drm and <unistd.h>)')
 endif
 
 subdir('test')

@@ -327,6 +327,10 @@ into libvmaf and enables the `vmaf_mcp_*` symbols. At run time it serves
 that mutate the measurement thread are future work. Usage is in
 [`docs/mcp/embedded.md`](../mcp/embedded.md).
 
+The server is POSIX code (Unix-domain and TCP sockets, `<unistd.h>`). On
+Windows, `enable_mcp=true` stops configure with an error that says so
+([ADR-2646](../adr/2646-posix-only-build-options.md)).
+
 Each transport has its own flag and needs `enable_mcp=true`:
 
 | Flag | Transport | Notes |
@@ -340,7 +344,9 @@ Each transport has its own flag and needs `enable_mcp=true`:
 Builds the libFuzzer harnesses under `core/test/fuzz/`
 ([ADR-0270](../adr/0270-fuzzing-scaffold.md), OSSF Scorecard `Fuzzing`
 remediation). It needs `clang`; pair it with `-Db_sanitize=address` for heap
-coverage. Opt-in only.
+coverage. Opt-in only. The harnesses are POSIX code (`<unistd.h>`): on Windows,
+`fuzz=true` stops configure with an error that says so
+([ADR-2646](../adr/2646-posix-only-build-options.md)).
 
 ### `enable_rust_features`
 
@@ -365,6 +371,9 @@ workflow builds it. See
 | `sycl_compiler=acpp` | AdaptiveCpp has no device image compression. | Pair it with `-Dcompress_device_code=false`, or configure stops. |
 | `enable_float` | Adds float twins on top of the integer path. | Turning it off never removes an integer extractor. |
 | `enable_dnn=auto` | Skips DNN tests when ONNX Runtime fails to link. | The gap is not reported as a failure; use `enabled` in CI. |
+| `enable_mcp=true` on Windows | The embedded MCP server is POSIX code (sockets, `<unistd.h>`). | Configure stops with an error that names the dependency ([ADR-2646](../adr/2646-posix-only-build-options.md)). |
+| `fuzz=true` on Windows | The libFuzzer harnesses include `<unistd.h>`. | Configure stops with an error that names the dependency. |
+| `enable_sycl=true` on Windows | The `vmaf_vpl` tool needs VA-API, libva-drm and `<unistd.h>`. | The tool is not looked for; configure prints `vmaf_vpl tool: disabled (Linux only: ...)`. |
 
 ## Standard Meson options that matter
 

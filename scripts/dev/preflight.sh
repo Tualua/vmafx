@@ -34,6 +34,8 @@
 set -euo pipefail
 export LC_ALL=C
 
+# The scanners next to this script, also when it checks another checkout.
+PREFLIGHT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 2
 REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 2
 cd "$REPO_ROOT" || exit 2
 
@@ -356,6 +358,37 @@ EOF_INC
     printf '%s\n' "$c_static_init" | sed 's/^/       /'
     msvc_fail=1
   fi
+  # MSVC ships no <unistd.h>, <dlfcn.h>, <poll.h>, <sys/socket.h> and the rest
+  # of the POSIX-only headers, so a source the Windows build compiles must
+  # include one only under a platform conditional. Every Linux and macOS lane
+  # accepts the unguarded include; only the required Windows MSVC lanes, which
+  # neither the local gates nor the merge train build, refuse it (2026-10-08:
+  # cuda/import_vulkan.c and <unistd.h>). Sources a meson.build keeps off
+  # Windows are skipped; a file that cannot be either is a named exception
+  # (.config/lint-exceptions.d/msvcism-posix-headers.toml). A scan that cannot
+  # run fails the stage: it must never pass for want of a result.
+  posix_files=$({
+    changed_sources
+    changed_cuda
+  } | sort -u)
+  posix_hits=""
+  if [ -n "$posix_files" ]; then
+    if ! posix_kept=$(printf '%s\n' "$posix_files" |
+      xargs python3 "$PREFLIGHT_DIR/../ci/lint_exceptions.py" filter msvcism-posix-headers --) ||
+      ! posix_hits=$(printf '%s\n' "$posix_kept" |
+        xargs -r python3 "$PREFLIGHT_DIR/find-posix-only-headers.py"); then
+      printf '     %s\n' 'POSIX-only header scan did not run (scripts/dev/find-posix-only-headers.py)'
+      msvc_fail=1
+    fi
+  fi
+  if [ -n "$posix_hits" ]; then
+    printf '     %s\n' 'POSIX-only header outside a platform conditional in a source the Windows build compiles — MSVC C1083'
+    printf '     %s\n' '  (guard it with #ifndef _WIN32 / #ifdef __linux__, use compat/crt_portable.h, or keep the'
+    printf '     %s\n' '   file off Windows in its meson.build: host_machine.system() != '"'"'windows'"'"')'
+    printf '%s\n' "$posix_hits" | head -20 | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
   if [ "$msvc_fail" -eq 0 ]; then
     ok msvcism
   else

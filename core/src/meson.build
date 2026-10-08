@@ -266,7 +266,15 @@ endif
 is_mcp_enabled = get_option('enable_mcp')
 mcp_sources = []
 mcp_defines = []
-if is_mcp_enabled
+# The MCP server is POSIX code (Unix-domain and TCP sockets, <unistd.h>,
+# <sys/socket.h>): a Windows build that asks for it fails here instead of in
+# the compiler, and its sources stay off the Windows build (the msvcism stage
+# of scripts/dev/preflight.sh reads this gate).
+if is_mcp_enabled and host_machine.system() == 'windows'
+    error('enable_mcp=true: the embedded MCP server is POSIX-only (Unix-domain and TCP ' +
+          'sockets through <sys/socket.h> and <unistd.h>) and cannot be built for Windows')
+endif
+if is_mcp_enabled and host_machine.system() != 'windows'
     subdir('mcp')
     vmaf_cflags_common += mcp_defines
 endif
@@ -3130,7 +3138,7 @@ libvmaf_compat_sources = files(
 # Build-dependent members, as libvmaf exported them: the MCP functions with
 # the server; the HIP / Metal functions of a build without that backend (with
 # it, the engine keeps its own, a declared exception until its WP3 lane).
-if is_mcp_enabled
+if is_mcp_enabled and host_machine.system() != 'windows'
     libvmaf_compat_sources += files('compat/libvmaf/mcp.c')
 endif
 if not is_hip_enabled

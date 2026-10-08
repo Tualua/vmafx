@@ -70,9 +70,18 @@ stage that cries wolf is a stage people learn to ignore.
 ## What it does not cover
 
 `Windows UCRT64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no
-local equivalent here. `msvcism` is a set of pattern matches plus one small
-scanner (`scripts/dev/find-nonconst-static-init.py`) over known rejection
-classes, not a compiler — `Windows MSVC+*` remains the authority. For HIP and
+local equivalent here. `msvcism` is a set of pattern matches plus two small
+scanners over known rejection classes, not a compiler — `Windows MSVC+*`
+remains the authority. `scripts/dev/find-nonconst-static-init.py` finds a
+`static` aggregate initialised from a `const` object (MSVC C2099).
+`scripts/dev/find-posix-only-headers.py` finds a POSIX-only header
+(`<unistd.h>`, `<dlfcn.h>`, `<sys/socket.h>`, ...) outside a platform
+conditional in a source the Windows build compiles (MSVC C1083); it reads the
+`meson.build` files to skip sources kept off Windows
+(`host_machine.system() != 'windows'`), and a scan that cannot run fails the
+stage. A file that is POSIX-only by design and built by no `meson.build` is a
+named exception in `.config/lint-exceptions.d/msvcism-posix-headers.toml`
+([ADR-2646](../adr/2646-posix-only-build-options.md)). For HIP and
 the other GPU backends use the dev container
 ([dev-mcp.md](dev-mcp.md), ADR-0451).
 

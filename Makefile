@@ -509,6 +509,7 @@ lint-sh: ffmpeg-input-contract
 	@scripts/ci/check-default-model-single-source.sh
 	@scripts/ci/check-vcs-version-not-bare-sha.sh
 	@bash scripts/ci/tests/test-check-vcs-version-not-bare-sha.sh
+	@bash scripts/ci/tests/test-preflight-msvcism.sh
 	@scripts/ci/test-prune-corrupt-fixtures.sh
 	@bash scripts/dev/test-cleanup-agent-state.sh
 	@scripts/ci/check-no-tracked-venv.sh

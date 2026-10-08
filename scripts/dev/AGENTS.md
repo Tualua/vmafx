@@ -86,3 +86,14 @@ counter, exit 1 on any wrong slot or lost dispatch. Its value is that it
 reproduces gfx1036 command loss without libvmaf; do not route it through
 vmafx code or relax its checks. State row names command that closes
 row.
+
+`preflight.sh --stage msvcism` runs `find-posix-only-headers.py` (ADR-2646):
+POSIX-only header outside platform conditional, in source Windows build
+compiles, fails stage. Scanner reads `meson.build` gates
+(`host_machine.system() != 'windows'`, `elif` / `else`, `foreach` lists,
+`subdir()`), counts header through its includers. Scan that cannot run fails
+stage; never swallow its exit status. Exceptions only in
+`.config/lint-exceptions.d/msvcism-posix-headers.toml` (file, reason, expiry).
+Keep mcp / fuzz / `vmaf_vpl` Meson gates; Windows request for mcp or fuzz
+errors at configure, never silent skip. Planted cases:
+`scripts/ci/tests/test-preflight-msvcism.sh`.
