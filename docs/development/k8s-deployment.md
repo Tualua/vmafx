@@ -95,9 +95,12 @@ helm upgrade --install vmafx deploy/helm/vmafx/ \
 sharing resource or an NVIDIA MIG slice); see the
 [GPU scheduling guide](gpu-scheduling.md#how-gpu-device-plugins-work).
 
-The chart automatically sets the `VMAFX_BACKEND` environment variable inside
-the container based on `gpu.vendor`, so the VMAFX runtime picks the correct
-backend without further configuration.
+The chart sets the node's `VMAFX_BACKEND` environment variable from
+`gpu.vendor`, so a node runs and advertises the matching backend without
+further configuration. The scoring server (`workload`) takes its backend per
+request, from the `backend` score option
+([score options](../server/api-contract.md)); the chart sets no backend
+variable on it.
 
 The Vulkan backend was removed in
 [ADR-0726](../adr/0726-drop-vulkan-backend.md). Supported backends are `cuda`,
@@ -591,6 +594,17 @@ The `resources` keys accept more than before: a quantity may be a decimal
 number (`cpu: 1.5`), and `claims` is accepted as Kubernetes 1.26 defines it.
 `imagePullSecrets` keeps the chart's stricter rule that every entry names a
 Secret.
+
+## Upgrading to the generated workload environment {#upgrading-to-the-generated-workload-environment}
+
+The chart writes every `VMAFX_*` variable of its workloads from the platform
+definition ([ADR-2350](../adr/2350-cloud-native-platform.md) D13). The
+scoring server's Deployment, StatefulSet and Job no longer get
+`VMAFX_BACKEND`: `vmafx-server` never read it and takes its backend from each
+request's `backend` score option. The install notes no longer print a
+`BACKEND` line. The server container has an `env` list only when `env` holds
+values. Nodes keep `VMAFX_BACKEND`, set from `gpu.vendor` as before. A script
+that read the variable from the server pod reads it from a node pod instead.
 
 ## Pod security {#pod-security}
 

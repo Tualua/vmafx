@@ -261,7 +261,8 @@ ingress:
 # ADR-0726: Vulkan backend removed. See docs/backends/README.md.
 # See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
 #
-# The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
+# The chart sets the node's VMAFX_BACKEND from vendor; the scoring server
+# takes its backend per request (the `backend` score option).
 gpu:
   enabled: true
   vendor: nvidia    # nvidia | amd | intel | cpu
@@ -285,8 +286,7 @@ resources:
 # ---------------------------------------------------------------------------
 # Environment variables
 # ---------------------------------------------------------------------------
-# VMAFX_BACKEND is set automatically from gpu.vendor.
-# Override individual variables here.
+# Extra environment variables of the scoring server container.
 env: {}
   # VMAFX_LOG_LEVEL: info
   # VMAFX_THREADS: "4"

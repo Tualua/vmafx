@@ -60,11 +60,12 @@ spec:
           args:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with .Values.env }}
           env:
-            {{- include "vmafx.env.job" . }}
-          {{- range $k, $v := .Values.env }}
+          {{- range $k, $v := . }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}
+          {{- end }}
           {{- end }}
           envFrom:
             - configMapRef:

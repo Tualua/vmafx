@@ -329,8 +329,6 @@ Every variable the Go binary reads, from the
 | `VMAF_VPL_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_vpl` tool. |
 | `VMAF_ROOT` | read directly | path | the repository root when it holds the fixtures, else `/workspace` |  | Data root of the fixture clips `run_benchmark` uses. |
 | `VMAF_TUNE_BIN` | read directly | path | `vmaf-tune` on `PATH`, else the repository's |  | `vmaf-tune` binary of the tuning tools. |
-| `LOG_LEVEL` | read directly | string | _(unset)_ |  | Set by the server from `VMAFX_LOG_LEVEL` when unset; nothing reads it (no effect). |
-| `LOG_FORMAT` | read directly | string | _(unset)_ |  | Set by the server from `VMAFX_LOG_FORMAT` when unset; nothing reads it (no effect). |
 | `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
 | `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
 | `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |

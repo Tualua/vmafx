@@ -6,14 +6,12 @@
 Every VMAFX_* entry of every workload is rendered by a `vmafx.env.<workload>`
 helper of templates/_config.gen.tpl, which scripts/codegen/vmafx-api.py writes
 from the [[chart_env]] entries of api/vmafx-platform.toml. Positive: no other
-template names a VMAFX_* entry. Planted change: an edited definition entry
-changes the render, and only that entry. Migration (self-retiring): while the
-chart at the merge base with origin/master still writes the lists by hand, the
-generated helpers render every values set below byte for byte as it does;
-once the merge base has _config.gen.tpl, or in a shallow clone without
-origin/master (the helm-chart job's), the comparison is skipped. Boundary: the
-values sets switch every condition of the entries on and off. The helm-chart
-workflow runs this file and needs ``helm`` on PATH.
+template names a VMAFX_* entry; the scoring server's container carries the
+`env` values and nothing else. Planted change: an edited definition entry
+changes the render, and only that entry. Negative: the server workloads set no
+VMAFX_BACKEND, which vmafx-server does not read. Boundary: no `env` values
+render no `env` list. The helm-chart workflow runs this file and needs
+``helm`` on PATH.
 """
 
 from __future__ import annotations
@@ -25,8 +23,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 import tomllib
+import yaml  # type: ignore[import-untyped]
 
 ROOT = Path(__file__).resolve().parents[3]
 CHART = ROOT / "deploy" / "helm" / "vmafx"
@@ -38,44 +38,18 @@ TIMEOUT_S = 120
 ENTRY = re.compile(r"^\s*- name: VMAFX_", re.MULTILINE)
 
 sys.path.insert(0, str(ROOT / "scripts" / "codegen"))
-from vmafx_api import emit_config, gitref  # noqa: E402 -- path set above
+from vmafx_api import emit_config  # noqa: E402 -- path set above
 from vmafx_api.config import parse_config  # noqa: E402
 
 API = ["--api-versions", "postgresql.cnpg.io/v1"]
-FULL = ["--set", "operator.enabled=true", "--set", "node.enabled=true", "--set", "controller.enabled=true",
-        "--set", "auth.enabled=true", "--set", "auth.disabled=true", "--set", "podDisruptionBudget.enabled=true"]  # fmt: skip
-SETS: dict[str, tuple[list[str], str]] = {
-    "defaults": ([], ""),
-    **{f"ci-{w}": (["--set", f"workload={w}", *FULL], "") for w in ("Deployment", "Job", "StatefulSet")},
-    **{f"vendor-{v}": (["--set", f"gpu.vendor={v}", "--set", "node.enabled=true"], "") for v in ("nvidia", "amd", "intel", "cpu")},
-    "kuttl-01": (["--set", "operator.enabled=true", "--set", "gpu.vendor=cpu"], ""),
-    "provider-auth": ([], """
+PROVIDER_AUTH = """
 controller: {enabled: true}
 node: {enabled: true, controllerToken: {secretName: node-token}}
 operator: {enabled: true, leaderElect: true, logLevel: debug, controllerToken: {secretName: op-token}}
 auth: {enabled: true, issuer: "https://idp.example.com/", jwksEndpoint: "https://idp.example.com/keys",
        audience: vmafx, tenantClaim: org, rolesClaim: roles, scoringRoots: ["/data/{tenant}"]}
-"""),
-    "tenant-registry": ([], """
-controller: {enabled: true}
-auth: {enabled: true, tenants: [{tenantId: acme, oidc: {issuer: "https://i.example.com/", jwksEndpoint: "https://i.example.com/k"}}]}
-"""),
-    "postgres-external": ([], """
-controller: {enabled: true, replicas: 2, store: {backend: postgres, leaseTTL: 45s, sessionTTL: 2m, sweepInterval: 10s,
-  backoffBase: 1s, backoffMax: 1m, postgresql: {mode: external, external: {secretName: pg-dsn, secretKey: dsn}}}}
-auth: {enabled: true, disabled: true}
-"""),
-    "postgres-cnpg": ([], """
-controller: {enabled: true, store: {backend: postgres, postgresql: {mode: cnpg}}}
-auth: {enabled: true, disabled: true}
-"""),
-    "node-storage": ([], """
-node: {enabled: true, grpcPort: 50060, metricsPort: 9100, ebpf: {enabled: true, mountPrefix: /rclone-mount/},
-       fuse: {enabled: true, resourceName: devic.es/fuse}}
-storage: {mode: mount, mountRoot: /rclone-mount/jobs, rclone: {config: "[r]\\ntype = s3\\n"}}
-persistence: {models: {enabled: true, mountPath: /models}}
-"""),
-}  # fmt: skip
+"""  # fmt: skip
+WORKLOADS = ("Deployment", "Job", "StatefulSet")
 
 
 def render(chart: Path, args: list[str], values: str) -> str:
@@ -90,6 +64,17 @@ def render(chart: Path, args: list[str], values: str) -> str:
             timeout=TIMEOUT_S,
         )
     return done.stdout + done.stderr
+
+
+def server_container(workload: str, values: str) -> dict[str, Any]:
+    """The vmafx-server container of `workload` rendered with `values`."""
+    text = render(CHART, ["--set", f"workload={workload}"], values)
+    for doc in yaml.safe_load_all(text):
+        if doc and doc.get("kind") == workload and doc["metadata"]["name"] == "vmafx":
+            pod = doc["spec"]["template"]["spec"]
+            container: dict[str, Any] = pod["containers"][0]
+            return container
+    raise AssertionError(f"no {workload} in the render: {text[-400:]}")
 
 
 class GeneratedEnvTest(unittest.TestCase):
@@ -113,30 +98,26 @@ class RenderTest(unittest.TestCase):
         entry["value"] = '":{{ .Values.node.grpcPort | default 50052 }}0"'
         config = parse_config(data)
         assert config is not None
-        args, values = SETS["provider-auth"]
         with tempfile.TemporaryDirectory() as tmp:
             chart = Path(tmp) / "vmafx"
             shutil.copytree(CHART, chart)
             (chart / "templates" / GENERATED.name).write_text(emit_config.template_text(config))
-            edited = render(chart, args, values).splitlines()
-        before = render(CHART, args, values).splitlines()
+            edited = render(chart, [], PROVIDER_AUTH).splitlines()
+        before = render(CHART, [], PROVIDER_AUTH).splitlines()
         changed = [(a, b) for a, b in zip(before, edited, strict=True) if a != b]
         self.assertEqual(
             changed, [('              value: ":50052"', '              value: ":500520"')]
         )
 
-    def test_the_render_matches_the_hand_written_lists(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            try:
-                ref = gitref.merge_base(ROOT, "origin/master")
-                base = gitref.tree_at(ROOT, ref, "deploy/helm/vmafx", Path(tmp))
-            except gitref.Unavailable as exc:
-                self.skipTest(f"no chart at the merge base with origin/master: {exc}")
-            if (base / "templates" / GENERATED.name).exists():
-                self.skipTest("the merge base already generates the environment")
-            for name, (args, values) in SETS.items():
-                with self.subTest(name):
-                    self.assertEqual(render(CHART, args, values), render(base, args, values))
+    def test_the_server_container_carries_only_the_env_values(self) -> None:
+        for workload in WORKLOADS:
+            with self.subTest(workload):
+                bare = server_container(workload, "")
+                self.assertNotIn("env", bare)
+                given = server_container(workload, "env: {VMAFX_LOG_LEVEL: debug}")
+                self.assertEqual(given["env"], [{"name": "VMAFX_LOG_LEVEL", "value": "debug"}])
+                vendor = server_container(workload, "gpu: {vendor: amd}")
+                self.assertNotIn("env", vendor)
 
 
 if __name__ == "__main__":

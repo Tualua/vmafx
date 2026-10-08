@@ -71,7 +71,10 @@ Update note on merge: final UID + container-scope seccompProfile set.
 - `VMAFX_*` env of every workload generated: `templates/_config.gen.tpl`
   (`vmafx.env.<workload>`, `vmafx.backendEnvValue`) from `[[chart_env]]`,
   `[[chart_workloads]]`, `[[chart_maps]]`. No other template or helper writes
-  any `VMAFX_*` entry; new entry / condition -> definition, regenerate. Guard:
+  any `VMAFX_*` entry; new entry / condition -> definition, regenerate. Entry
+  for binary that reads no such var refused (no escape). Server
+  Deployment / StatefulSet / Job: no generated entry, `env` only from
+  `.Values.env` (vmafx-server takes backend per request). Guard:
   `scripts/ci/tests/test_helm_config_env.py`.
 - Licence (ADR-2673): embedded Kubernetes types = Apache-2.0 ->
   `artifacthub.io/license: EUPL-1.2 AND Apache-2.0`;

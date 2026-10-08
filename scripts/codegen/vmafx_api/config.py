@@ -17,8 +17,7 @@ entry of those lists, in order: the workloads it belongs to, the YAML comment
 lines above it, an optional condition (`when`, a template expression), and the
 value: a template expression (`value`), a field reference (`field_ref`) or a
 Secret key (`secret_ref`, with template expressions for `name` and `key`).
-`unread` states why the chart sets a variable the workload's binary does not
-read; without it such an entry is refused.
+An entry the workload's binary does not read is refused.
 `[[chart_maps]]` are named value maps (the backend of each GPU vendor) the
 generator writes as template helpers.
 """
@@ -37,9 +36,7 @@ KEY = re.compile(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*")
 VALUES_REF = re.compile(r"\.Values\.([A-Za-z0-9_.]+)")
 OVERRIDABLE = ("key", "type", "default", "doc")
 CONFIG_KEYS = frozenset({"env", "key", "binaries", "type", "default", "doc", "secret"})
-ENV_KEYS = frozenset(
-    {"env", "workloads", "comment", "when", "value", "field_ref", "secret_ref", "unread"}
-)
+ENV_KEYS = frozenset({"env", "workloads", "comment", "when", "value", "field_ref", "secret_ref"})
 
 
 @dataclass(frozen=True)
@@ -93,7 +90,6 @@ class ChartEnv:
     value: str
     field_ref: str
     secret_ref: tuple[str, str] | None
-    unread: str
 
 
 @dataclass(frozen=True)
@@ -209,7 +205,6 @@ def _env(raw: Entry) -> ChartEnv:
         value=_text(raw, "value", where, required=False),
         field_ref=_text(raw, "field_ref", where, required=False),
         secret_ref=_secret_ref(raw, where),
-        unread=_text(raw, "unread", where, required=False),
     )
     sources = [bool(entry.value), bool(entry.field_ref), entry.secret_ref is not None]
     if sources.count(True) != 1:
@@ -281,11 +276,8 @@ def _check_env(config: Config) -> None:
             if workload not in workloads:
                 raise DefinitionError(f"{where}: workload {workload} is not in [[chart_workloads]]")
             binary = owners.get(workload)
-            read = binary is None or (entry.env, binary) in readers
-            if not read and not entry.unread:
+            if binary is not None and (entry.env, binary) not in readers:
                 raise DefinitionError(f"{where}: vmafx-{binary} reads no {entry.env}")
-            if read and entry.unread and binary is not None:
-                raise DefinitionError(f"{where}: `unread`, but vmafx-{binary} reads {entry.env}")
         for line in entry.comment.splitlines():
             if not line.startswith("#"):
                 raise DefinitionError(f"{where}: `comment` lines start with #")

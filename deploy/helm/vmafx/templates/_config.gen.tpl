@@ -10,7 +10,7 @@
 */}}
 
 {{/*
-vmafx.backendEnvValue — the VMAFX_BACKEND value of the GPU vendor (gpu.vendor): the backend a server, job or node activates.
+vmafx.backendEnvValue — the VMAFX_BACKEND value of the GPU vendor (gpu.vendor): the backend a node runs.
 */}}
 {{- define "vmafx.backendEnvValue" -}}
 {{- if eq .Values.gpu.vendor "nvidia" -}}
@@ -219,64 +219,4 @@ vmafx.env.node — the vmafx-node container (templates/node.yaml).
             # image ships (persistence.models.mountPath always has a value).
             - name: VMAFX_MODEL_DIR
               value: {{ ternary .Values.persistence.models.mountPath "/usr/local/share/vmafx/model" .Values.persistence.models.enabled | quote }}
-{{- end }}
-
-{{/*
-vmafx.env.deployment — the vmafx-server container of workload Deployment (templates/deployment.yaml).
-*/}}
-{{- define "vmafx.env.deployment" }}
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-{{- end }}
-
-{{/*
-vmafx.env.statefulset — the vmafx-server container of workload StatefulSet (templates/statefulset.yaml).
-*/}}
-{{- define "vmafx.env.statefulset" }}
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-{{- end }}
-
-{{/*
-vmafx.env.job — the vmafx-server container of workload Job (templates/job.yaml).
-*/}}
-{{- define "vmafx.env.job" }}
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-{{- end }}
-
-{{/*
-vmafx.env.container-spec — the server container of the vmafx.containerSpec helper (vmafx.podSpec; no template includes it today).
-*/}}
-{{- define "vmafx.env.container-spec" }}
-    - name: VMAFX_BACKEND
-      value: {{ include "vmafx.backendEnvValue" . | quote }}
-{{- end }}
-
-{{/*
-vmafx.env.sidecar — the online-training sidecar (vmafx.sidecarContainer; no template includes it today, and the values schema refuses sidecar.*).
-*/}}
-{{- define "vmafx.env.sidecar" }}
-    - name: VMAFX_SIDECAR_SOCKET
-      value: "/tmp/vmafx-sidecar.sock"
-    - name: VMAFX_BASE_MODEL_PATH
-      value: {{ .Values.sidecar.trainer.baseModelPath | default "/mnt/vmafx-models/base/model.onnx" | quote }}
-    - name: VMAFX_SIDECAR_CHECKPOINT_DIR
-      value: {{ .Values.sidecar.trainer.checkpointDir | default "/mnt/vmafx-models/online" | quote }}
-    - name: VMAFX_SIDECAR_REPLAY_CAPACITY
-      value: {{ .Values.sidecar.trainer.replayBufferSize | default 10000 | quote }}
-    - name: VMAFX_SIDECAR_BATCH_SIZE
-      value: {{ .Values.sidecar.trainer.batchSize | default 32 | quote }}
-    - name: VMAFX_SIDECAR_REPLAY_MIX
-      value: {{ .Values.sidecar.trainer.replayMixRatio | default "0.5" | quote }}
-    - name: VMAFX_SIDECAR_LR
-      value: {{ .Values.sidecar.trainer.learningRate | default "0.0001" | quote }}
-    - name: VMAFX_SIDECAR_EMA_DECAY
-      value: {{ .Values.sidecar.trainer.emaDecay | default "0.999" | quote }}
-    - name: VMAFX_SIDECAR_CKPT_INTERVAL_S
-      value: {{ .Values.sidecar.trainer.checkpointIntervalSeconds | default 600 | quote }}
-    - name: VMAFX_SIDECAR_MIN_SAMPLES_CKPT
-      value: {{ .Values.sidecar.trainer.minSamplesPerCheckpoint | default 1000 | quote }}
-    - name: VMAFX_SIDECAR_N_FEATURES
-      value: {{ .Values.sidecar.trainer.nFeatures | default 80 | quote }}
 {{- end }}

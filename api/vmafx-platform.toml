@@ -1663,7 +1663,8 @@ lead = '''
 # ADR-0726: Vulkan backend removed. See docs/backends/README.md.
 # See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
 #
-# The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
+# The chart sets the node's VMAFX_BACKEND from vendor; the scoring server
+# takes its backend per request (the `backend` score option).
 '''
 schema_order = ["enabled", "vendor", "intelDriver", "resourceName", "count"]
 
@@ -1764,8 +1765,7 @@ lead = '''
 # ---------------------------------------------------------------------------
 # Environment variables
 # ---------------------------------------------------------------------------
-# VMAFX_BACKEND is set automatically from gpu.vendor.
-# Override individual variables here.
+# Extra environment variables of the scoring server container.
 '''
 value = {}
 
@@ -3941,7 +3941,6 @@ workloads = ["controller", "migrate"]
 name = "server"
 dir = "cmd/vmafx-server"
 page = "docs/server/grpc.md"
-workloads = ["deployment", "statefulset", "job", "container-spec"]
 
 [[config_binaries]]
 name = "node"
@@ -4667,20 +4666,6 @@ default = "`vmaf-tune` on `PATH`, else the repository's"
 doc = "`vmaf-tune` binary of the tuning tools."
 
 [[config]]
-env = "LOG_LEVEL"
-binaries = ["mcp"]
-type = "string"
-default = "_(unset)_"
-doc = "Set by the server from `VMAFX_LOG_LEVEL` when unset; nothing reads it (no effect)."
-
-[[config]]
-env = "LOG_FORMAT"
-binaries = ["mcp"]
-type = "string"
-default = "_(unset)_"
-doc = "Set by the server from `VMAFX_LOG_FORMAT` when unset; nothing reads it (no effect)."
-
-[[config]]
 env = "VMAFX_TUNE_ENCODE_TIMEOUT"
 binaries = ["tune"]
 type = "duration"
@@ -4921,7 +4906,7 @@ name = "vmafx.backendEnvValue"
 source = ".Values.gpu.vendor"
 cases = { nvidia = "cuda", amd = "hip", intel = "sycl" }
 default = "cpu"
-doc = "the VMAFX_BACKEND value of the GPU vendor (gpu.vendor): the backend a server, job or node activates."
+doc = "the VMAFX_BACKEND value of the GPU vendor (gpu.vendor): the backend a node runs."
 
 [[chart_workloads]]
 name = "controller"
@@ -4942,31 +4927,6 @@ doc = "the vmafx-operator container (templates/operator-deployment.yaml)."
 name = "node"
 indent = 12
 doc = "the vmafx-node container (templates/node.yaml)."
-
-[[chart_workloads]]
-name = "deployment"
-indent = 12
-doc = "the vmafx-server container of workload Deployment (templates/deployment.yaml)."
-
-[[chart_workloads]]
-name = "statefulset"
-indent = 12
-doc = "the vmafx-server container of workload StatefulSet (templates/statefulset.yaml)."
-
-[[chart_workloads]]
-name = "job"
-indent = 12
-doc = "the vmafx-server container of workload Job (templates/job.yaml)."
-
-[[chart_workloads]]
-name = "container-spec"
-indent = 4
-doc = "the server container of the vmafx.containerSpec helper (vmafx.podSpec; no template includes it today)."
-
-[[chart_workloads]]
-name = "sidecar"
-indent = 4
-doc = "the online-training sidecar (vmafx.sidecarContainer; no template includes it today, and the values schema refuses sidecar.*)."
 
 [[chart_env]]
 env = "VMAFX_HTTP_ADDR"
@@ -5170,12 +5130,6 @@ workloads = ["node"]
 value = '{{ include "vmafx.backendEnvValue" . | quote }}'
 
 [[chart_env]]
-env = "VMAFX_BACKEND"
-workloads = ["deployment", "statefulset", "job", "container-spec"]
-unread = "vmafx-server takes the backend per request (the score option `backend`) and does not read VMAFX_BACKEND; kept so the render does not change (see the WP4b report)."
-value = '{{ include "vmafx.backendEnvValue" . | quote }}'
-
-[[chart_env]]
 env = "VMAFX_STORAGE_MODE"
 workloads = ["node"]
 comment = '''
@@ -5225,58 +5179,3 @@ comment = '''
 # The models volume when it is mounted, else the models the node
 # image ships (persistence.models.mountPath always has a value).'''
 value = '{{ ternary .Values.persistence.models.mountPath "/usr/local/share/vmafx/model" .Values.persistence.models.enabled | quote }}'
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_SOCKET"
-workloads = ["sidecar"]
-value = '"/tmp/vmafx-sidecar.sock"'
-
-[[chart_env]]
-env = "VMAFX_BASE_MODEL_PATH"
-workloads = ["sidecar"]
-value = '{{ .Values.sidecar.trainer.baseModelPath | default "/mnt/vmafx-models/base/model.onnx" | quote }}'
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_CHECKPOINT_DIR"
-workloads = ["sidecar"]
-value = '{{ .Values.sidecar.trainer.checkpointDir | default "/mnt/vmafx-models/online" | quote }}'
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_REPLAY_CAPACITY"
-workloads = ["sidecar"]
-value = "{{ .Values.sidecar.trainer.replayBufferSize | default 10000 | quote }}"
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_BATCH_SIZE"
-workloads = ["sidecar"]
-value = "{{ .Values.sidecar.trainer.batchSize | default 32 | quote }}"
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_REPLAY_MIX"
-workloads = ["sidecar"]
-value = '{{ .Values.sidecar.trainer.replayMixRatio | default "0.5" | quote }}'
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_LR"
-workloads = ["sidecar"]
-value = '{{ .Values.sidecar.trainer.learningRate | default "0.0001" | quote }}'
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_EMA_DECAY"
-workloads = ["sidecar"]
-value = '{{ .Values.sidecar.trainer.emaDecay | default "0.999" | quote }}'
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_CKPT_INTERVAL_S"
-workloads = ["sidecar"]
-value = "{{ .Values.sidecar.trainer.checkpointIntervalSeconds | default 600 | quote }}"
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_MIN_SAMPLES_CKPT"
-workloads = ["sidecar"]
-value = "{{ .Values.sidecar.trainer.minSamplesPerCheckpoint | default 1000 | quote }}"
-
-[[chart_env]]
-env = "VMAFX_SIDECAR_N_FEATURES"
-workloads = ["sidecar"]
-value = "{{ .Values.sidecar.trainer.nFeatures | default 80 | quote }}"
