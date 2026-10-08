@@ -6,9 +6,9 @@
 config/rbac/role.yaml is what controller-gen derives from the operator's
 +kubebuilder:rbac markers (scripts/codegen/crd_generate.py). Every (API group,
 resource, verb) it lists must be granted to the operator's service account by
-a Role or ClusterRole the chart binds to it. The chart scopes the core
-resources (events, leases) to the release namespace with a Role (ADR-1058), so
-a namespaced grant counts. Positive (the real chart), negative (a dropped
+a Role or ClusterRole the chart binds to it. The chart grants events
+cluster-wide (ADR-2647) and scopes leases to the release namespace with a Role
+(ADR-1058), so a namespaced grant counts. Positive (the real chart), negative (a dropped
 chart rule, a marker the chart lacks) and boundary (wildcards, operator off)
 cases; the helm-chart workflow runs this file and needs ``helm`` on PATH.
 """

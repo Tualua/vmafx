@@ -293,9 +293,13 @@ it from the `+kubebuilder:rbac` markers of the reconcilers and of `main.go`
 | `leases` (`coordination.k8s.io`) | get, list, watch, create, update, patch, delete | `main.go` (leader election) |
 
 The Helm chart does not apply that file. `templates/operator-rbac.yaml`
-renders a `ClusterRole` for the three resources and a `Role` in the release
-namespace for pods, events and leases, and binds both to the operator's
-service account. It grants at least every rule of `config/rbac/role.yaml`;
+renders a `ClusterRole` for the three resources, a `ClusterRole` that may only
+create and patch events, in every namespace, because an event lands in the
+namespace of the resource it describes
+([ADR-2647](../adr/2647-operator-events-cluster-wide.md)), and a `Role` in
+the release namespace for pods and leases, and binds all three to the
+operator's service account. Together they grant at least every rule of
+`config/rbac/role.yaml`;
 `scripts/ci/tests/test_helm_operator_rbac.py` fails when a rule is missing,
 so a new marker needs a chart rule in the same change. A reconciler that
 needs another verb gets a marker first, never a chart rule alone.
