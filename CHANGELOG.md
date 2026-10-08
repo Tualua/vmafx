@@ -252,6 +252,31 @@
   stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
 
 
+- Every score now carries a full provenance record (#2142, ADR-2073): library,
+  ABI and build (commit, compilers, build options, the strict floating-point
+  policy, backends, a `build_id` digest), the SIMD level and device, the
+  context options, the frames, every model with the SHA-256 of its bytes and
+  its overrides, the extractor, options, backend and exactness class of every
+  feature (option-decorated names included), the command line, and a digest
+  over the record and every score's bits. The C API reads it with
+  `vmafx_context_provenance()`, `vmafx_context_model_provenance()`,
+  `vmafx_context_feature_provenance()`, `vmafx_feature_provenance()`,
+  `vmafx_context_annotation()` and `vmafx_context_provenance_json()`, and adds
+  to it with `vmafx_context_annotate()` and `vmafx_context_set_encode_record()`
+  (the digest of a VMAFx/pelorus#81 encode record). ABI 0.1.5.
+- `vmafx_report_write()` writes a report with the record: a `provenance`
+  object and `score_format` in JSON, a `<provenance>` element in XML, CSV and
+  SUB unchanged with an optional `<path>.provenance.json` sidecar
+  (`vmaf --provenance-sidecar`). Every `vmaf` report and every report an API
+  user writes through `vmaf_write_output()` carries it; the scoring server and
+  both MCP servers return it.
+- `vmaf --verify-provenance <report>` re-runs the command line a JSON report
+  recorded and compares every configuration field and score bit for bit,
+  naming the first difference (exit 0 match, 1 difference, 2 cannot check);
+  `vmafx_report_open()`, `vmafx_report_field()` and `vmafx_report_verify()`
+  do the same for API users. Documented in `docs/usage/provenance.md`.
+
+
 - `vmafx-server` raises two framework defaults that did not fit scoring: the
   gRPC receive limit is now 64 MiB (a 1080p `ScoreStream` frame pair is 6.2 MB
   and the old 4 MiB limit rejected it) and the HTTP write timeout is 15 minutes
@@ -445,6 +470,12 @@
   no longer names skills the repository does not carry. The HISS baseline stays at 0.
 
 
+- **Praetor's text-register skills are installed and tracked.** `social-text`, `caveman` and
+  `adhd-format` live under `.agents/skills/` (no longer ignored) with their projections in
+  `.claude/skills/`, byte-identical to the praetor pin; the register block of `AGENTS.md` and the
+  vendor context files name them again. No code changes.
+
+
 - **The roadmap and release pages list the full RC4 and RC5 scope.**
   [ADR-2342](docs/adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of 2026-10-06 and
   2026-10-07 (RC4 work packages for bindings, the FFmpeg series redesign, input formats, engineering
@@ -473,6 +504,14 @@
   edits one. `docs/adr/_index_fragments/_order.txt` is frozen: later rows follow
   in the order they landed. GitHub no longer reports such a pull request as
   conflicting after master moves.
+
+
+- The backend receipt of the JSON report (`backend_used`, `feature_backends`)
+  is written by the library's report writer instead of being spliced into the
+  file by the `vmaf` CLI, so reports written through the API carry it too;
+  `feature_backends` now comes before `backend_used` in the file. The
+  `provenance` object of WP8 keeps its six members and gains the full record
+  (#2142, ADR-2073).
 
 
 - **Rust replaces the host-side C and C++ by 3.0 ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** The public C ABI stays and is exported from Rust; the C implementation of each layer is the differential oracle until it is deleted; native GPU device sources and C-only host glue stay on an exception list. The C++23 core item of the 2.0 plan is superseded. Phases, milestones 2.1 to 2.5 and 3.0, and the epic [#2567](https://github.com/VMAFx/vmafx/issues/2567) are in the [roadmap](docs/roadmap.md). No code path changes.
