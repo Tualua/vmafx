@@ -302,6 +302,10 @@ jobs:
               // the praetor pin 7458a220e1c9 (ADR-2440): the locked workflow
               // runs on ready_for_review, so a ready draft is re-run.
               'Go API Compatibility',
+              // ADR-2784 — the REUSE lint job of reuse.yml, which praetor writes
+              // since the pin 3a766f2d56ad. It is the one CI run of `reuse lint`
+              // (the Pre-Commit job skips its hook) and has no path filter.
+              'REUSE lint',
               // ADR-1687 — the pull-request legs that ADR-1595 gave the tester
               // image, Windows zip and release workflows. The two tester gates
               // pass without work when the impact planner selects nothing for
@@ -363,6 +367,8 @@ jobs:
               // ADR-2440 — the locked praetor workflow reports on every pull request
               // and master push; absence means broken registration.
               'Go API Compatibility',
+              // ADR-2784 — the same shape for the praetor REUSE workflow.
+              'REUSE lint',
               // BUG-098 — these workflows now start for every pull request
               // and master push. The planner may skip their expensive work,
               // but an exact-name gate still reports. Absence therefore means

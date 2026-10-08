@@ -232,9 +232,11 @@ and the exception list, never the generated block.
 
 Praetor reads that one `exceptions` key for its other rules too. Since the pin `afb739ed81f3`
 ([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)) the script also copies the exception list's
-entries for the rules in `PRAETOR_RULES`, today only `HISS-11`
-(`.config/lint-exceptions.d/HISS-11.toml`, a declared supply-chain gap), into the block, with the
-same expiry cap.
+entries for the rules in `PRAETOR_RULES` into the block, with the same expiry cap: `HISS-11`
+(`.config/lint-exceptions.d/HISS-11.toml`, a declared supply-chain gap) and, since the pin
+`3a766f2d56ad` ([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)), `HISS-10`
+(`.config/lint-exceptions.d/HISS-10.toml`, the workflows whose lanes praetor's build-warnings gate
+reads as compiling without warnings as errors).
 
 | Group | Read by | Why the rest is excepted |
 | --- | --- | --- |

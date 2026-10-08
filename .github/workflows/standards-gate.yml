@@ -28,11 +28,14 @@ permissions:
 
 env:
   # Exact engine used to record the baseline and replay HISS evidence.
-  PRAETOR_REF: 7458a220e1c99d136cda3287d0e57afba7a2668b
+  PRAETOR_REF: 3a766f2d56ad59ac757826a76bb37d0fbbc87bf3
 
 # ADR-1506 — `Go API Compatibility` is the job of praetor-api.yml, a file
 # praetor locks byte for byte, so its required-aggregator marker lives here.
 # required-aggregator-job: Go API Compatibility
+# ADR-2784 — `REUSE lint` is the job of reuse.yml, which praetor writes; its
+# marker lives here beside the other praetor job's.
+# required-aggregator-job: REUSE lint
 
 jobs:
   tier:

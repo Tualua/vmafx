@@ -74,7 +74,9 @@ area: gates
   regenerate with the engine, never edit here. Push only on `master` (praetor#815), so
   `push_branch_exceptions` empty. Draft: first step fails closed, later steps skipped; job still
   starts, so both stay in `untiered_jobs`. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work`
-  pins step shape.
+  pins step shape. `reuse.yml` (ADR-2784): praetor-written, not locked; edited only to pin
+  actions to commits (praetor#899). Same draft shape, so `untiered_jobs` + `PRAETOR_MANAGED`;
+  `REUSE lint` in `always`.
 - `gha_expressions.py` evaluates `if:` per Actions docs (null == false, case-insensitive strings,
   `&&`/`||` return operands); unsupported syntax raises. `workflow_router.py` simulates routing
   only, not steps. `CI_ROUTING_WORKFLOWS_DIR` points contract at another tree (proof vs master).

@@ -7,8 +7,3 @@
 path = ".config/hiss/testdata/HISS-02/python/positive/spaced-while-true.py"
 reason = "HISS scanner fixture, a defect by design: its line positions are the replay evidence of the HISS-02 scanner claim (`praetorctl hiss coverage --verify`), so a formatter run would move them. Renew only while the fixture is still a planted defect."
 expires = 2027-03-31
-
-[[exception]]
-path = "tools/figures/mkdocs_hook.py"
-reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes, so a formatter run breaks the Standards gate (ADR-1351). Fix: praetor ships the formatted file."
-expires = 2026-12-31

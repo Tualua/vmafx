@@ -77,6 +77,7 @@ required and which ADR owns it, see
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan and UBSan on full-tier pull requests and master pushes, TSan on master pushes, nightly fuzzing. |
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
+| [`reuse.yml`](../../.github/workflows/reuse.yml) | Praetor's `REUSE lint` gate (`reuse lint` over the whole tree; no path filter), the one CI run of `reuse lint`. Written by praetor, its actions pinned to commits here; required through the aggregator (ADR-2784), its marker sits in `standards-gate.yml`. See [Praetor gate](praetor-gate.md#the-current-pin). |
 | [`scorecard-policy.yml`](../../.github/workflows/scorecard-policy.yml) | OpenSSF Scorecard PR policy (ADR-1247). |
 | [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. |
 
@@ -626,6 +627,14 @@ nothing, except a typo, which exits 2.
 Rust has its own gate (`cargo clippy -- -D warnings`). Release and container
 image builds do not use the script: a compiler newer than the one a leg pins
 must not stop a release over a new diagnostic.
+
+Praetor's build-warnings gate (HISS-10, `praetorctl audit`) reads the same
+requirement from the workflow files, but only as a literal on the build
+command: it cannot see what `werror-args.sh` prints, so it reads the gated legs
+as ungated too. Each workflow with a lane it reads that way is declared in
+`.config/lint-exceptions.d/HISS-10.toml` with a reason and an expiry
+([Praetor gate](praetor-gate.md#the-current-pin)); spelling the switch where
+the gate reads it and gating the legs below remove those entries.
 
 A fix for a warning changes no computed value and suppresses nothing: no
 `-Wno-*`, no `#pragma ... ignored`, no flag removed to hide a class. A

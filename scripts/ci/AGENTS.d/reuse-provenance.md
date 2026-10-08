@@ -2,6 +2,7 @@
 paths:
   - REUSE.toml
   - scripts/ci/tests/test_reuse_compliance.py
+  - .github/workflows/reuse.yml
 invariant: `reuse lint` green is not provenance: keep exact overrides for inherited, ported, no-CLA and FFmpeg-patch files.
 area: gates
 ---
@@ -23,3 +24,8 @@ exact configured upstream tag and every source unit it changes. Re-run
 rename-aware history audit described in
 [`docs/research/bug-003-reuse-provenance-audit-2026-09-24.md`](../../../docs/research/bug-003-reuse-provenance-audit-2026-09-24.md);
 zero missing metadata is necessary but not sufficient evidence.
+
+CI runs `reuse lint` once: `REUSE lint` job of `.github/workflows/reuse.yml`
+(praetor-written, actions pinned to commits, ADR-2784). Pre-Commit job skips
+`reuse-lint` hook; commit hook and `make lint-reuse` keep local run. Never
+add second CI step.

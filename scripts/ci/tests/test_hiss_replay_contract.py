@@ -160,6 +160,8 @@ ADR_1528_STRICT_CONTEXTS = {
 ADR_1687_STRICT_CONTEXTS = {"Tester Image", "Windows Tester Zip", "Release Dry Run"}
 # ADR-2440: praetor's locked workflow listens for ready_for_review since the pin 7458a220e1c9.
 ADR_2440_STRICT_CONTEXTS = {"Go API Compatibility"}
+# ADR-2784: praetor's REUSE workflow (reuse.yml) has the same shape since the pin 3a766f2d56ad.
+ADR_2784_STRICT_CONTEXTS = {"REUSE lint"}
 
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
@@ -314,7 +316,8 @@ class HissReplayContractTests(unittest.TestCase):
             | ADR_1474_STRICT_CONTEXTS
             | ADR_1528_STRICT_CONTEXTS
             | ADR_1687_STRICT_CONTEXTS
-            | ADR_2440_STRICT_CONTEXTS,
+            | ADR_2440_STRICT_CONTEXTS
+            | ADR_2784_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

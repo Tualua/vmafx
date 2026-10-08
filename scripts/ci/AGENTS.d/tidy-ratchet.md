@@ -12,6 +12,7 @@ paths:
   - .clang-tidy
   - scripts/ci/praetor_tidy_coverage.py
   - scripts/ci/tests/test_praetor_tidy_coverage.py
+  - .config/lint-exceptions.d/HISS-10.toml
   - .config/lint-exceptions.d/HISS-11.toml
 invariant: Baselines only via `make tidy-lane-write` (dev container); counts only decrease; `HeaderFilterRegex` starts `(^|/)`.
 area: tidy
@@ -167,11 +168,16 @@ workstation ([measuring lanes](../../../docs/development/tidy-lanes.md)).
 - Sources, one each (HISS-19): tidy coverage entries from baselines'
   `measured_sources` + `.config/lint-exceptions.d/clang-tidy-coverage.toml`;
   HISS-11 entries (declared SLSA gap) from
-  `.config/lint-exceptions.d/HISS-11.toml` (`PRAETOR_RULES`). New praetor
+  `.config/lint-exceptions.d/HISS-11.toml`, HISS-10 entries (workflows
+  whose lanes build-warnings gate reads as ungated, ADR-2784) from
+  `HISS-10.toml` (`PRAETOR_RULES`). New praetor
   rule = add it to `PRAETOR_RULES` + case in
   `scripts/ci/tests/test_praetor_tidy_coverage.py`.
 - Rendered expiry = earlier of entry's date and `PRAETOR_EXPIRY_CAP`
   (praetor refuses more than 90 days out). Renew cap with entries.
+- HISS-10 entry path = one workflow; entry excuses every failing lane of it.
+  Gate reads werror only as literal on command, never `werror-args.sh`
+  output. Remove entry when workflow's lanes pass; stale entry fails audit.
 - HISS-11 entry path = workflow `praetorctl audit` failure line names. Entry
   for other workflow, or with no gap left, fails audit as stale: remove it
   when release workflows reach declared level.

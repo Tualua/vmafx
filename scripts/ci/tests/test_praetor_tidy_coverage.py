@@ -106,17 +106,20 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         workflow = self.repo.root / ".github/workflows/publish.yml"
         workflow.parent.mkdir(parents=True)
         workflow.write_text("on: push\n")
-        (self.repo.root / ".config/lint-exceptions.d/HISS-11.toml").write_text(
-            '[[exception]]\npath = ".github/workflows/publish.yml"\n'
-            'reason = "provenance at Level 2"\nexpires = 2027-03-31\n'
-        )
-        self.repo.run("--write")
-        manifest = (self.repo.root / ".standards.yaml").read_text()
-        self.assertIn(
-            '  - rule: HISS-11\n    path: ".github/workflows/publish.yml"\n'
-            '    reason: "provenance at Level 2"\n    expires: "2027-01-04"\n',
-            manifest,
-        )
+        # HISS-11: a supply-chain gap; HISS-10: lanes the build-warnings gate reads as ungated.
+        for rule, reason in (("HISS-11", "provenance at Level 2"), ("HISS-10", "werror unread")):
+            with self.subTest(rule=rule):
+                (self.repo.root / f".config/lint-exceptions.d/{rule}.toml").write_text(
+                    '[[exception]]\npath = ".github/workflows/publish.yml"\n'
+                    f'reason = "{reason}"\nexpires = 2027-03-31\n'
+                )
+                self.repo.run("--write")
+                manifest = (self.repo.root / ".standards.yaml").read_text()
+                self.assertIn(
+                    f'  - rule: {rule}\n    path: ".github/workflows/publish.yml"\n'
+                    f'    reason: "{reason}"\n    expires: "2027-01-04"\n',
+                    manifest,
+                )
 
     def test_an_entry_of_another_rule_stays_out_of_the_block(self) -> None:
         (self.repo.root / ".config/lint-exceptions.d/black.toml").write_text(

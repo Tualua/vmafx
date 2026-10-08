@@ -126,5 +126,6 @@ and in `strictMustReport`, so a run in which it never reported fails too.
 - A licence grant below a file's own header (the first 60 lines), for example
   the header template a sync script embeds as a string.
 
-`reuse lint` (`make lint-reuse`) covers these files' licence metadata through
-[`REUSE.toml`](../../REUSE.toml).
+`reuse lint` (`make lint-reuse` locally, the `REUSE lint` job of
+[`reuse.yml`](../../.github/workflows/reuse.yml) in CI) covers these files'
+licence metadata through [`REUSE.toml`](../../REUSE.toml).

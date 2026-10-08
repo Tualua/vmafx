@@ -13,7 +13,8 @@
   },
   "always": [
     "Release Script Contract",
-    "Go API Compatibility"
+    "Go API Compatibility",
+    "REUSE lint"
   ],
   "full_only": [
     "Windows UCRT64",
@@ -109,6 +110,12 @@
       "workflow": "praetor-docs.yml",
       "job": "documentation",
       "reason": "Praetor-managed, byte-locked by `praetorctl audit`. Since praetor#815 its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check, which the tier's job-level gate cannot express. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "reuse.yml",
+      "job": "reuse",
+      "reason": "Written by praetor (ADR-2784) and kept in its hosted gate shape, edited only to pin the actions to commits: its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check. A job-level skip would report success on a draft, which praetor's audit warns against. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
       "expires": "2027-12-31"
     }
   ],

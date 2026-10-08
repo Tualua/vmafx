@@ -1,5 +1,12 @@
 ---
-name: Praetor Documentation Governance
+# REUSE licensing gate, written by praetorctl adopt because the repository
+# carries REUSE.toml or LICENSES/. It runs reuse lint at the release line the
+# reuse-lint pre-commit job of lefthook.yml requires.
+#
+# Edited here (praetor keeps an edited copy, --force included): both actions
+# are pinned to a commit like every other workflow of this repository, where
+# praetor renders release tags (cordanaLLM/praetor#899; ADR-2784).
+name: REUSE
 
 'on':
   pull_request:
@@ -11,8 +18,8 @@ permissions:
   contents: read
 
 jobs:
-  documentation:
-    name: Documentation Governance
+  reuse:
+    name: REUSE lint
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -28,25 +35,11 @@ jobs:
           echo "::error title=$TITLE::$MESSAGE"
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
-      - name: Checkout source
+      - name: Check out the source
         if: github.event.pull_request.draft != true
-        # yamllint disable-line rule:line-length
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0
-      - name: Setup Node.js
+          persist-credentials: false
+      - name: reuse lint
         if: github.event.pull_request.draft != true
-        # yamllint disable-line rule:line-length
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: tools/markdownlint/package-lock.json
-      - name: Verify public Markdown
-        if: github.event.pull_request.draft != true
-        run: node tools/markdownlint/verify.mjs
-      - name: Verify figures
-        if: github.event.pull_request.draft != true
-        run: |
-          node tools/figures/build.mjs check
-          node tools/figures/build.mjs sources
+        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5  # v6.0.0

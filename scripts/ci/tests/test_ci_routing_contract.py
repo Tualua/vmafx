@@ -220,7 +220,11 @@ def expect_nothing_but_exceptions(contract: Contract, event: wr.SyntheticEvent) 
         raise AssertionError(f"draft pull request ran {sorted(extra)}")
 
 
-PRAETOR_MANAGED = (("praetor-api.yml", "api-compatibility"), ("praetor-docs.yml", "documentation"))
+PRAETOR_MANAGED = (
+    ("praetor-api.yml", "api-compatibility"),
+    ("praetor-docs.yml", "documentation"),
+    ("reuse.yml", "reuse"),
+)
 DRAFT_STOP = "github.event.pull_request.draft == true"
 DRAFT_SKIP = "github.event.pull_request.draft != true"
 

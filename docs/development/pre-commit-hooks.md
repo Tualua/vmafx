@@ -454,7 +454,9 @@ files left out are the **declared exceptions**,
 `.config/lint-exceptions.d/black.toml` and `.config/lint-exceptions.d/ruff.toml`:
 one tracked file per entry, with a reason and an expiry (format and rules:
 `scripts/ci/lint_exceptions.py`). Today these are the praetor-managed
-`tools/figures/mkdocs_hook.py` and `.config/agent/hooks/block_evasion.py`
+`tools/figures/mkdocs_hook.py` (ruff only: praetor ships it black-formatted
+since the pin `3a766f2d56ad`, and its two lazy imports still fail this
+repository's `PLC0415`) and `.config/agent/hooks/block_evasion.py`
 (`praetorctl audit` compares them with praetor's own bytes) and five HISS scanner
 fixtures that are a defect by design.
 

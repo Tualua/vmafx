@@ -36,7 +36,6 @@ extend-exclude = '''
   | subprojects
 )/
   | \.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py
-  | tools/figures/mkdocs_hook\.py
 '''
 
 [tool.ruff]

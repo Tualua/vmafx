@@ -112,7 +112,7 @@ repos:
         # .config/lint-exceptions.d/black.toml (a reason and an expiry each);
         # scripts/ci/tests/test_python_format_scope.py keeps this regex, the list and
         # pyproject.toml's extend-exclude equal.
-        exclude: '^(\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py|tools/figures/mkdocs_hook\.py)$'
+        exclude: '^\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.10
