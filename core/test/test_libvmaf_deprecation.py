@@ -11,7 +11,8 @@
   clean under -Werror, as upstream FFmpeg must; the library itself
   (VMAF_BUILDING_LIBVMAF) never warns.
 
-Usage: test_libvmaf_deprecation.py <cc> <public include dir> <definition>
+Usage: test_libvmaf_deprecation.py --cc=<word>... <public include dir> <definition>
+(--cc: the compiler command as Meson runs it, launcher included; meson_cc.py)
 """
 
 from __future__ import annotations
@@ -24,10 +25,12 @@ import unittest
 from pathlib import Path
 
 import tomllib
+from meson_cc import take_cc
 
 TIMEOUT = 120  # seconds per compile (HISS-02)
-CC, INCLUDE, DEFINITION = (Path(a) for a in sys.argv[1:4])
-del sys.argv[1:4]
+CC = take_cc(sys.argv)
+INCLUDE, DEFINITION = (Path(a) for a in sys.argv[1:3])
+del sys.argv[1:3]
 DECLARATION = re.compile(
     r'(?:VMAF_DEPRECATED\("(?P<msg>[^"]*)"\)\s*)?VMAF_EXPORT\b[^;(]*?\b(?P<name>vmaf_\w+)\s*\(',
     re.S,
@@ -62,7 +65,7 @@ def compile_consumer(*defines: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as raw:
         source = Path(raw) / "consumer.c"
         source.write_text(CONSUMER, encoding="utf-8")
-        argv = [str(CC), "-c", "-Wall", "-Werror", f"-I{INCLUDE}", *defines, str(source)]
+        argv = [*CC, "-c", "-Wall", "-Werror", f"-I{INCLUDE}", *defines, str(source)]
         argv += ["-o", str(Path(raw) / "consumer.o")]
         # The build's compiler and a source this test wrote; no shell.
         return subprocess.run(  # noqa: S603

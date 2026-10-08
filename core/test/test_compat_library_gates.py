@@ -12,7 +12,9 @@
    fails on libvmaf.so.3 when the compat list loses a row and on libvmafx.so.1
    when the VMAFx list loses one.
 
-Usage: test_compat_library_gates.py <cc> <libvmafx.so> <libvmaf.so> <src dir> <backends> <features>
+Usage: test_compat_library_gates.py --cc=<word>... <libvmafx.so> <libvmaf.so> <src dir> <backends>
+       <features>
+(--cc: the compiler command as Meson runs it, launcher included; meson_cc.py)
 ELF only; exits 77 (skipped) with the reason without nm or a working compiler.
 """
 
@@ -25,10 +27,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from meson_cc import take_cc
+
 TIMEOUT = 120  # seconds per compiler or checker run (HISS-02)
-CC, LIBVMAFX, LIBVMAF, SRC = (Path(a) for a in sys.argv[1:5])
-BUILD = ["--backends", sys.argv[5], "--features", sys.argv[6]]
-del sys.argv[1:7]
+CC = take_cc(sys.argv)
+LIBVMAFX, LIBVMAF, SRC = (Path(a) for a in sys.argv[1:4])
+BUILD = ["--backends", sys.argv[4], "--features", sys.argv[5]]
+del sys.argv[1:6]
 CHECKER = Path(__file__).resolve().parent / "check_exported_symbols.py"
 
 
@@ -37,7 +42,7 @@ def link(tmp: Path, call: str) -> subprocess.CompletedProcess[str]:
     source = tmp / "probe.c"
     source.write_text(f"extern int {call}(void);\nint probe(void) {{ return {call}(); }}\n")
     argv = [
-        str(CC),
+        *CC,
         "-shared",
         "-fPIC",
         str(source),

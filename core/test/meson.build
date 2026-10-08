@@ -895,6 +895,14 @@ test('test_gpu_public_header_docs',
     timeout : 120,
 )
 
+# The C compiler as Meson runs it, one word per argument (`--cc=<word>`, read by
+# core/test/meson_cc.py): with a launcher (ccache, sccache) cmd_array() starts
+# with the launcher, so its first word alone is not a compiler.
+vmaf_test_cc_args = []
+foreach word : cc.cmd_array()
+    vmaf_test_cc_args += '--cc=' + word
+endforeach
+
 # ADR-0379 / ADR-1852 decision D3 (RC4 WP6): libvmafx.so.1 exports the vmafx_*
 # functions of core/src/vmafx_symbols.txt, each in its version node, plus the
 # libvmaf functions a built backend still keeps in the engine (declared
@@ -929,9 +937,9 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'static
     # does not link), and both export checks refuse a planted missing symbol.
     test('test_compat_library_gates',
         import('python').find_installation(),
-        args : [files('test_compat_library_gates.py'), cc.cmd_array()[0], libvmafx_shared_lib,
-                libvmaf_shared_lib, meson.project_source_root() / 'src',
-                ','.join(exported_backends), is_mcp_enabled ? 'mcp' : ''],
+        args : [files('test_compat_library_gates.py')] + vmaf_test_cc_args
+               + [libvmafx_shared_lib, libvmaf_shared_lib, meson.project_source_root() / 'src',
+                  ','.join(exported_backends), is_mcp_enabled ? 'mcp' : ''],
         suite : ['fast'],
         timeout : 300,
     )
@@ -1335,7 +1343,7 @@ test('test_vmafx_api_generator',
 # VMAF_ENABLE_DEPRECATION_WARNINGS (opt-in in 1.0; upstream FFmpeg builds clean).
 test('test_libvmaf_deprecation',
     import('python').find_installation(),
-    args : [files('test_libvmaf_deprecation.py'), cc.cmd_array()[0],
+    args : [files('test_libvmaf_deprecation.py')] + vmaf_test_cc_args + [
             meson.project_source_root() / 'include',
             meson.project_source_root() / 'api' / 'vmafx.toml'],
     suite : ['fast'],
