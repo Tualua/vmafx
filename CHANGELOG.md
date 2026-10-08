@@ -281,6 +281,15 @@
   [observability](docs/development/observability.md#metrics).
 
 
+- **Observability operator guide (RC4, ADR-2349, #2430).**
+  [docs/observability/](docs/observability/index.md) starts with what VMAFx
+  reports and ships, the three ways to install it (Helm, Compose, your own
+  Prometheus and Grafana) and a first-hour checklist, and continues with a
+  [tour of every dashboard](docs/observability/dashboards.md): the question
+  each row answers, how to read it, and the runbook to open when an alert
+  fires.
+
+
 - **SLO report, usage and cost, and capacity dashboards (RC4, ADR-2349,
   #2430).** `VMAFx SLO report` shows each SLO's compliance, objective, error
   budget left and burn rate over its time range (30 days by default), from
@@ -294,7 +303,7 @@
   the headroom, the demand's growth and linear forecasts of the queue and the
   demand. The Helm chart ships them like the other dashboards; the Compose
   smoke test checks them. See
-  [observability](docs/development/observability.md#slo-report).
+  [the dashboard tour](docs/observability/dashboards.md#slo-report).
 
 
 - **Rust integer ADM extractor (`adm_rust`)**: builds configured with
