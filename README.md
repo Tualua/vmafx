@@ -127,6 +127,10 @@ cover coding and numerical-correctness standards; the
 [repository guide](docs/architecture/index.md) explains the source layout.
 
 - [Report a bug or request a feature](https://github.com/VMAFx/vmafx/issues)
+- [Ask a question](https://github.com/VMAFx/vmafx/discussions) or read
+  [how to get support](SUPPORT.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Accessibility](ACCESSIBILITY.md)
 - [Security reporting policy](SECURITY.md)
 - [Support development](https://ko-fi.com/lusoris)
 

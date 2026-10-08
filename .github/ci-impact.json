@@ -76,6 +76,7 @@
     ".standards.lock",
     ".standards.yaml",
     ".windsurfrules",
+    "ACCESSIBILITY.md",
     "AGENTS.md",
     "CHANGELOG.md",
     "CLAUDE.md",

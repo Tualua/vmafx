@@ -21,6 +21,30 @@ extractors, quality runners, models).
 5. Test: `python3 scripts/ci/run_meson_test.py -- -C build`
 6. Format + lint before pushing: `make format && make lint`
 
+## Your first contribution
+
+New here? You do not need to understand the whole tree.
+
+1. Pick an issue labelled
+   [`good first issue`](https://github.com/VMAFx/vmafx/labels/good%20first%20issue)
+   (small, self-contained, with the files named) or
+   [`help wanted`](https://github.com/VMAFx/vmafx/labels/help%20wanted)
+   (larger, but wanted). Comment on the issue that you are taking it, so two
+   people do not do the same work.
+2. Follow the [Quickstart](#quickstart) to build and run the tests.
+3. Keep the change small and focused: one issue, one pull request.
+4. Open the pull request and fill in the template. For a small change the
+   [lighter deliverables track](#lighter-track-for-small-pull-requests)
+   below applies.
+5. Ask in the issue or the pull request if you are stuck; questions are
+   welcome there. Open-ended questions go to
+   [Discussions](https://github.com/VMAFx/vmafx/discussions).
+
+Contributions that are not code count too: documentation fixes, bug
+reproductions, [hardware reports](.github/ISSUE_TEMPLATE/hardware_report.yml)
+from machines the project does not own, and
+[accessibility reports](.github/ISSUE_TEMPLATE/accessibility.yml).
+
 ## Core rules
 
 - **Conventional Commits** — every commit. Enforced by commit-msg hook and
@@ -97,6 +121,20 @@ for the exact sentinel forms.
 **Upstream-port PRs are exempt** — pure `/port-upstream-commit` and
 `/sync-upstream` PRs skip this gate.
 
+### Lighter track for small pull requests
+
+The six deliverables fit a feature. For a small change they are mostly
+"no ... needed" lines. [ADR-2461](docs/adr/2461-small-pr-deliverables-track.md)
+gives small pull requests a lighter track. A pull request is small when it
+changes at most 100 lines in one subtree, adds no user-discoverable surface,
+needs no ADR, and leaves SIMD/GPU twins, numeric results and the Netflix golden
+assertions alone. Such a pull request puts `small PR (ADR-2461)` in its
+description and waives the research digest, decision matrix, `AGENTS.md` note
+and rebase note without a further reason. It still carries a reproducer, a
+changelog fragment when users can see the change, and documentation for any
+surface it touches. Until the checking script recognises the marker, the
+one-line opt-out form in the template is what the script accepts.
+
 ## Architecture Decision Records
 
 Every non-trivial architectural, policy, or scope decision lands as
@@ -145,6 +183,24 @@ not a public issue.
   opened.
 - Performance-claiming PRs must include before/after numbers produced by
   `/profile-hotpath` or equivalent (no eyeballed claims).
+
+## What to expect
+
+VMAFx is maintained by one person alongside other work, so everything below is
+best effort and carries no guaranteed response time.
+
+- **Issues and pull requests** are read and triaged as time allows, and
+  availability varies. A short wait, or a longer one, is not a judgement of
+  your contribution. If a pull request has had no reply for a while, a polite
+  comment on it is fine.
+- **Review** checks the points under "Review expectations" above. You may be
+  asked to change things, to split a pull request, or told that a change does
+  not fit the project; the reason is given.
+- **Security reports** are the exception: they follow the timelines in
+  [SECURITY.md](SECURITY.md).
+- **Conduct reports** follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Support questions** are answered when someone can; see
+  [SUPPORT.md](SUPPORT.md) for where to ask.
 
 ## Upstream sync
 
