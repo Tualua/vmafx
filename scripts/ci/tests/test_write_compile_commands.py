@@ -78,14 +78,14 @@ class CompileCommandsExportTest(unittest.TestCase):
         self.ninja.write_text(source, encoding="utf-8")
         self.ninja.chmod(0o755)
 
-    def run_export(self) -> ExportResult:
+    def run_export(self, *extra: str) -> ExportResult:
         stdout = io.StringIO()
         stderr = io.StringIO()
         main = EXPORT_MAIN
         if not callable(main):
             self.fail("exporter main is not callable")
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            returncode = main(["--build-dir", str(self.build), "--ninja", str(self.ninja)])
+            returncode = main(["--build-dir", str(self.build), "--ninja", str(self.ninja), *extra])
         return ExportResult(returncode, stdout.getvalue(), stderr.getvalue())
 
     def calls(self) -> list[list[str]]:
@@ -124,6 +124,39 @@ class CompileCommandsExportTest(unittest.TestCase):
             self.calls()[1][-6:],
             ["-t", "compdb", "c_COMPILER", "cpp_COMPILER", "objc_COMPILER", "objcpp_COMPILER"],
         )
+
+    def test_arguments_export_removes_shell_quoting_once(self) -> None:
+        quoted = "cc '-DDIR=\"/abs/model dir\"' -c ../source.c -o source.c.o"
+        self.entries[0]["command"] = quoted  # type: ignore[index]
+        self.write_ninja()
+        result = self.run_export("--arguments")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        written = json.loads((self.build / "compile_commands.json").read_text())
+        self.assertNotIn("command", written[0])
+        self.assertEqual(
+            written[0]["arguments"],
+            ["cc", '-DDIR="/abs/model dir"', "-c", "../source.c", "-o", "source.c.o"],
+        )
+        self.assertEqual(written[0]["output"], "source.c.o")
+        # An entry Ninja already wrote as argv passes through unchanged.
+        self.assertEqual(written[1], self.entries[1])  # type: ignore[index]
+
+    def test_default_export_keeps_the_shell_command(self) -> None:
+        self.assertEqual(self.run_export().returncode, 0)
+        written = json.loads((self.build / "compile_commands.json").read_text())
+        self.assertEqual(written[0]["command"], "cc -c ../source.c -o source.c.o")
+        self.assertNotIn("arguments", written[0])
+
+    def test_unsplittable_command_preserves_existing_database(self) -> None:
+        self.entries[0]["command"] = "cc '-DDIR=unterminated -c ../source.c"  # type: ignore[index]
+        self.write_ninja()
+        database = self.build / "compile_commands.json"
+        original = b'[{"existing": "valid"}]\n'
+        database.write_bytes(original)
+        result = self.run_export("--arguments")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("compile entry 0 command is not shell-splittable", result.stderr)
+        self.assertEqual(database.read_bytes(), original)
 
     def test_missing_manifest_preserves_existing_database(self) -> None:
         (self.build / "build.ninja").unlink()

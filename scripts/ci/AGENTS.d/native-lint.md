@@ -39,6 +39,15 @@ to failure. Do not replace this with log parsing, baseline, touched-file
 selection, or upstream-origin exemption.
 Does not replace lane-specific ratchet measurements or their baselines.
 
+Hosted Cppcheck job exports with `--arguments`: each entry becomes `arguments`
+argv array, shell quoting removed once by `shlex.split`. Cppcheck 2.19 (Ubuntu
+package) reads `command` without undoing Meson's single quotes and drops quoted
+string defines (`'-DVMAFX_TEST_MODEL_DIR="..."'`, `JSON_MODEL_PATH`), so tests
+guarding them with `#error` fail analysis. Unsplittable command stays fatal and
+keeps last-valid database. Default export stays `command`: tidy lanes and
+`lint-configured.py` (own argv copy) unchanged. Do not answer with suppression
+or by deleting `#error` guards.
+
 Real-Make fixtures create failing/recording pip sentinel before fake
 Meson and Ninja, satisfying recursive build dependency graph without tool
 bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`

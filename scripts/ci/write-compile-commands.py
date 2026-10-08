@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import sys
 import tempfile
@@ -115,6 +116,30 @@ def parse_database(raw: str) -> list[dict[str, Any]]:
     return entries
 
 
+def as_arguments(entry: dict[str, Any], index: int) -> dict[str, Any]:
+    """Replace a shell ``command`` with the argv it runs.
+
+    An exported ``command`` keeps POSIX shell quoting, so a quoted string
+    define such as ``'-DDIR="/abs/path"'`` keeps its single quotes. Cppcheck
+    2.19 does not undo that quoting and drops the define; a source that
+    requires it then hits its own ``#error``. An ``arguments`` array carries
+    the argv the compiler receives.
+    """
+    if "arguments" in entry:
+        return entry
+    try:
+        argv = shlex.split(entry["command"])
+    except ValueError as error:
+        raise ValueError(
+            f"compile entry {index} command is not shell-splittable: {error}"
+        ) from error
+    if not argv:
+        raise ValueError(f"compile entry {index} command splits to no arguments")
+    converted = {key: value for key, value in entry.items() if key != "command"}
+    converted["arguments"] = argv
+    return converted
+
+
 def atomic_write(path: Path, entries: list[dict[str, Any]]) -> None:
     temporary: Path | None = None
     try:
@@ -144,6 +169,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--ninja", default="ninja")
+    parser.add_argument(
+        "--arguments",
+        action="store_true",
+        help="write each entry as an `arguments` argv array instead of a shell `command`",
+    )
     return parser.parse_args(argv)
 
 
@@ -156,6 +186,8 @@ def main(argv: list[str]) -> int:
         ninja = resolved_tool(args.ninja)
         rules = compiler_rules(ninja, build)
         entries = parse_database(run_ninja(ninja, build, "-t", "compdb", *rules))
+        if args.arguments:
+            entries = [as_arguments(entry, index) for index, entry in enumerate(entries)]
         destination = build / "compile_commands.json"
         atomic_write(destination, entries)
     except (OSError, ValueError) as error:

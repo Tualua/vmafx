@@ -737,7 +737,10 @@ jobs:
           # cppcheck parses compile_commands.json literally and errors on
           # any missing translation-unit file.
           meson compile -C build
-          python3 scripts/ci/write-compile-commands.py --build-dir build
+          # argv arrays: cppcheck 2.19 does not undo the shell quoting of a
+          # `command` entry and drops meson's quoted string defines
+          # (VMAFX_TEST_MODEL_DIR and friends), which the tests require.
+          python3 scripts/ci/write-compile-commands.py --build-dir build --arguments
       - name: Run cppcheck
         if: steps.impact.outputs.c_core == 'true'
         run: |
