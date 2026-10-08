@@ -267,6 +267,11 @@ name = "rust-cambi"
 match = '^core/src/rust/feature/cambi/src/(cvalues|filter|lib|luminance|lut|mask|options|pooling|preprocess)\.rs$'
 from = ["netflix-cambi"]
 
+[[families]]
+name = "rust-integer-adm"
+match = '^core/src/rust/feature/adm/src/(cm|csf|csf_weights|decouple|den|dwt|lib|region|score|tables)\.rs$'
+from = ["netflix-integer-adm"]
+
 # ---------------------------------------------------------------------------
 # Individually reviewed
 # ---------------------------------------------------------------------------

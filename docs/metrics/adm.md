@@ -161,6 +161,9 @@ parity gate compares them with tolerance 0
 ([generated table](../development/cross-backend-exact-twins.md)). The Metal
 twins are not declared exact. The sections below give the measurements.
 
+On the CPU, a build with Rust features also has `adm_rust`, a Rust port of
+`adm` with the same scores ([Rust implementation](#rust-implementation-adm_rust)).
+
 ## Behaviour you can rely on
 
 Each subsection states what a twin or path returns relative to the CPU
@@ -695,6 +698,62 @@ commits [`8a289703`](https://github.com/Netflix/vmaf/commit/8a289703) and
 [`1b6c3886`](https://github.com/Netflix/vmaf/commit/1b6c3886) and completed
 in ADR-1258, so they compile for 32-bit x86. Nothing builds or tests 32-bit in
 CI, so that is portability hygiene, not a supported configuration.
+
+## Rust implementation (`adm_rust`)
+
+A build configured with `-Denable_rust_features=true` also contains `adm_rust`,
+a Rust port of the fixed-point `adm` extractor
+(`core/src/rust/feature/adm/`). It reads the options of `adm` from the C
+option table, so every option above works, with the same defaults, aliases and
+ranges. It emits the same features under the same names (`adm2`, `aim`,
+`adm3`, the four scale scores, and with `debug=true` the numerators and
+denominators) and returns the C extractor's values bit for bit.
+
+Run it:
+
+- `VMAF_FEATURE_IMPL=rust` replaces `adm` by `adm_rust` wherever `adm` is
+  requested, by `--feature adm` or by a model such as `vmaf_v1.0.16`. The log
+  line `feature extractor adm: Rust implementation adm_rust` and the
+  `feature_backends` entry of the JSON output name what ran.
+- `--feature adm_rust` runs the Rust extractor directly, with or without the
+  variable.
+- Without the variable, or with `VMAF_FEATURE_IMPL=c`, the C extractor runs.
+
+The build option, the selection rules and the fallback are in the
+[Rust extractor framework](../development/rust-extractor-framework.md#build-and-run-the-rust-path)
+guide.
+
+The Rust extractor refuses what `adm` refuses, at the same point: frames below
+17x17 at initialisation, a viewing geometry below 1080p at 3H, and a blended
+CSF (`adm_csf_mode` 2 or 3) at a geometry it has no table for, on every frame.
+It reads 8-, 10-, 12- and 16-bit input, Y plane only.
+
+**What "bit for bit" was measured on.** `scripts/ci/rust_twin_diff.py
+--feature adm` runs the same `vmaf` binary once with each implementation at
+`--precision max` and compares every metric of every frame as IEEE doubles.
+Zero differences on the Netflix 576x324 pair (48 frames), both 1080p
+checkerboard pairs, the 10-bit 480x270 `sparks` pair and the 3840x2160 `bbb`
+pair (200 frames), for the default options and for the four option sets of the
+`vmaf_v1.0.16` models (`adm_csf_mode=2` at 1.5H and 3H for 2160 lines, 3H and
+5H for 1080 lines). The options the Netflix golden tests set (Barten CSF,
+`adm_skip_aim`, `adm_skip_scale0`, `adm_p_norm`, `debug`, fractional
+`adm_enhn_gain_limit`) were compared on the 576x324 pair with the same result.
+The Netflix golden tests (the test list of `make test-netflix-golden`) pass
+unchanged with `VMAF_FEATURE_IMPL=rust` set.
+
+**Speed.** The Rust extractor is scalar and runs as fast as the C extractor's
+scalar path; the C extractor is faster where it can use its AVX2 or AVX-512
+kernels. Processor time of a single-threaded `vmaf --feature adm
+--no_prediction` run per frame, default options, median of three runs, on an
+AMD Ryzen 9 9950X3D (AVX-512) under load:
+
+| Input | `adm`, AVX-512 | `adm`, scalar (`--cpumask 4294967295`) | `adm_rust` |
+| --- | --- | --- | --- |
+| 576x324, 48 frames | 0.6 ms | 3.4 ms | 3.2 ms |
+| 3840x2160, 50 frames | 30.7 ms | 128.4 ms | 133.7 ms |
+
+The same runs with `--feature null` take 0.1 ms and 4.2 ms per frame, the cost
+of reading the input.
 
 ## Reference
 
