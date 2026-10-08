@@ -104,7 +104,11 @@ class CliEmitterTest(unittest.TestCase):
         if compiler is None:
             self.skipTest("no C++ compiler on PATH")
         source = "#include <cstdint>\n#include <getopt.h>\n" + emit_cli.include_text(api())
-        source += "int main() { return long_opts[0].name ? 0 : 1; }\n"
+        # Every table is used: clang warns (-Wunused-const-variable) about a header constant
+        # a translation unit leaves unread.
+        source += (
+            "int main() { return long_opts[0].name && short_opts[0] && usage_lines[0] ? 0 : 1; }\n"
+        )
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "t.cpp"
             path.write_text(source)
