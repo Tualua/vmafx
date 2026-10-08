@@ -665,6 +665,23 @@
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 
+- **The Go binaries' environment, its documentation and the chart's
+  `VMAFX_*` entries are generated from one definition
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** The `[[config]]`
+  entries of `api/vmafx-platform.toml` list every environment variable
+  `vmafx-controller`, `vmafx-server`, `vmafx-node`, `vmafx-operator`,
+  `vmafx-mcp` and `vmafx-tune` read, the framework's `VMAFX_LOG_*` and
+  `VMAFX_OTEL_*` keys included. They generate each binary's golusoris
+  CompoundKeys, one environment table per binary (on its page and in
+  `docs/usage/env-vars.md`, with the chart values that set each variable),
+  and `deploy/helm/vmafx/templates/_config.gen.tpl`, which writes every
+  `VMAFX_*` entry of every chart workload, conditions and Secret references
+  included. `helm template` output is unchanged for the CI, end-to-end and
+  documented values sets; topic pages link to the generated tables instead of
+  repeating rows. `controllerclient.CompoundKeys` is deprecated: the binaries
+  no longer read it.
+
+
 - **The custom resources are generated from the platform definition
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** `api/vmafx-platform.toml`
   now also declares the `vmafx.dev/v1` resources `VmafxJob`, `VmafxNode`,
@@ -908,6 +925,16 @@
   controller refuses to start and names `VMAFX_DB_PATH`. The image and the Helm
   chart set `/data/vmafx-controller.db` and are unchanged. The committed files
   are removed and ignored. See [the controller guide](docs/server/controller.md#configuration).
+
+
+- **`VMAFX_GRPC_CERT_FILE`, `VMAFX_GRPC_KEY_FILE`,
+  `VMAFX_GRPC_MAX_RECV_SIZE` and `VMAFX_GRPC_MAX_SEND_SIZE` reach the
+  controller's gRPC server.** `vmafx-controller` did not declare these keys
+  as golusoris CompoundKeys, so the variables became `grpc.cert.file` and
+  similar keys nothing reads: the size limits stayed at the framework's
+  4 MiB, and `VMAFX_GRPC_TLS=true` stopped the controller at startup with an
+  empty certificate path. The controller's list is now generated with the
+  other binaries' ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).
 
 
 - **The CUDA VIF twin reads each picture with its own row pitch.** `vif_cuda`
