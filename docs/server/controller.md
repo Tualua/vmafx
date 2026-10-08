@@ -54,29 +54,77 @@ All settings are environment variables (12-factor); the controller has no CLI
 flags beyond `--version` since ADR-1119. Listen addresses are full addresses
 (`:8080`), not bare ports.
 
-| Env var | Default | Description |
-| --- | --- | --- |
-| `VMAFX_HTTP_ADDR` | `:8080` | HTTP listen address |
-| `VMAFX_GRPC_LISTEN` | `:9090` | gRPC listen address |
-| `VMAFX_LOG_LEVEL` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
-| `VMAFX_VMAF_BINARY` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
-| `VMAFX_MODEL_DIR` | _(none)_ | Directory containing VMAF `.json` model files |
-| `VMAFX_DB_PATH` | `vmafx/vmafx-controller.db` under the user's state directory | Path to the SQLite job-persistence database. Unset, the controller uses `$XDG_STATE_HOME` (else `~/.local/state`) on Linux and the BSDs, the user configuration directory on macOS and Windows, and refuses to start when neither is known; it never writes to the working directory. The container image and the Helm chart set `/data/vmafx-controller.db`. |
-| `VMAFX_STORE_BACKEND` | `sqlite` | Where jobs and node sessions live: `sqlite` or `postgres` ([job persistence](#job-persistence)) |
-| `VMAFX_DB_DSN` | _(none)_ | PostgreSQL connection string; required with `postgres` |
-| `VMAFX_STORE_LEASE_TTL` | `60s` | Lease of a pulled job (`postgres`) |
-| `VMAFX_STORE_SESSION_TTL` | `60s` | Lifetime of a node session without a heartbeat (`postgres`) |
-| `VMAFX_STORE_SWEEP_INTERVAL` | `5s` | Period of the lease sweep (`postgres`) |
-| `VMAFX_STORE_BACKOFF_BASE`, `VMAFX_STORE_BACKOFF_MAX` | `5s`, `5m` | Delay before a job whose lease expired is handed out again, doubling up to the cap (`postgres`) |
-| `VMAFX_SCORING_ROOTS` | _(none: every input refused)_ | Scoring roots of every caller without a tenant registry, comma-separated, `{tenant}` expanded ([scoring roots](auth.md#scoring-roots)) |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-controller (scripts/codegen/vmafx-api.py) -->
 
-The authentication variables (`VMAFX_AUTH_DISABLED`, `VMAFX_JWKS_ENDPOINT`,
-`VMAFX_AUTH_ISSUER`, `VMAFX_AUTH_AUDIENCE`, `VMAFX_AUTH_TENANT_CLAIM`,
-`VMAFX_AUTH_ROLES_CLAIM`, and `VMAFX_AUTH_TENANTS_SOURCE`, `_FILE`,
-`_NAMESPACE`, `_REFRESH` for a tenant registry) are listed in
-[auth.md](auth.md#environment-variables). The controller does not start when
-they are inconsistent or a configured tenant is invalid
-([tenant registry](auth.md#tenant-registry)).
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_HTTP_ADDR` | `http.addr` | `host:port` | `:8080` | `controller.httpPort` | HTTP listen address of `/healthz`, `/readyz`, `/metrics` and `POST /v1/score`, a full address. |
+| `VMAFX_HTTP_TIMEOUTS_READ` | `http.timeouts.read` | duration | `30s` |  | Deadline for reading a whole request; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_HEADER` | `http.timeouts.header` | duration | `5s` |  | Deadline for reading the request headers (slow-client guard); `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_WRITE` | `http.timeouts.write` | duration | `60s` |  | Deadline for writing a response; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_IDLE` | `http.timeouts.idle` | duration | `120s` |  | Keep-alive idle timeout; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_SHUTDOWN` | `http.timeouts.shutdown` | duration | `30s` |  | Drain time of the HTTP server at shutdown; `0` keeps the framework default. |
+| `VMAFX_HTTP_LIMITS_HEADER` | `http.limits.header` | bytes | `1048576` |  | Largest request header block; `0` keeps the default. |
+| `VMAFX_HTTP_LIMITS_BODY` | `http.limits.body` | bytes | `10485760` |  | Largest request body; `0` disables the cap. |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:9090` | `controller.grpcPort` | gRPC listen address of `VmafxScoring` and `VmafxController`, a full address. |
+| `VMAFX_GRPC_TLS` | `grpc.tls` | bool | `false` |  | Serve gRPC over TLS; needs `VMAFX_GRPC_CERT_FILE` and `VMAFX_GRPC_KEY_FILE`. |
+| `VMAFX_GRPC_CERT_FILE` | `grpc.cert_file` | path | _(unset)_ |  | PEM certificate of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_KEY_FILE` | `grpc.key_file` | path | _(unset)_ |  | PEM private key of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_MAX_RECV_SIZE` | `grpc.max_recv_size` | bytes | `4194304` |  | Largest gRPC message received; `0` keeps the gRPC default. |
+| `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.max_send_size` | bytes | `4194304` |  | Largest gRPC message sent; `0` keeps the gRPC default. |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | `vmaf` on `PATH` |  | Path of the `vmaf` CLI behind the scorer; a missing binary stops the program at startup. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(unset)_ |  | Directory of the VMAF `.json` models the scorer loads. |
+| `VMAFX_STORE_BACKEND` | `store.backend` | string | `sqlite` | set by the chart | Where jobs and node sessions live: `sqlite` or `postgres` ([job persistence](controller.md#job-persistence)); anything else stops the controller. |
+| `VMAFX_DB_PATH` | `db.path` | path | `vmafx/vmafx-controller.db` under the user state directory | set by the chart | SQLite job database (`sqlite`). Unset, the controller uses `$XDG_STATE_HOME` (else `~/.local/state`) on Linux and the BSDs and the user configuration directory on macOS and Windows; it never writes to the working directory. The image and the chart set `/data/vmafx-controller.db`. |
+| `XDG_STATE_HOME` | read directly | path | `~/.local/state` |  | Base of the default `VMAFX_DB_PATH` on Linux and the BSDs; a relative value is ignored. |
+| `VMAFX_DB_DSN` | `db.dsn` | string | _(unset)_ | `controller.store.postgresql.mode`, `controller.store.postgresql.external.secretName`, `controller.store.postgresql.external.secretKey` | Secret. PostgreSQL connection string; required with `postgres` and by `vmafx-controller migrate` and `import-sqlite`. The standard `PG*` variables fill what it leaves out. |
+| `VMAFX_STORE_LEASE_TTL` | `store.lease_ttl` | duration | `60s` | `controller.store.leaseTTL` | Lease of a pulled job (`postgres`); a negative value stops the controller. |
+| `VMAFX_STORE_SESSION_TTL` | `store.session_ttl` | duration | `60s` | `controller.store.sessionTTL` | Lifetime of a node session without a heartbeat (`postgres`). |
+| `VMAFX_STORE_SWEEP_INTERVAL` | `store.sweep_interval` | duration | `5s` | `controller.store.sweepInterval` | Period of the lease sweep (`postgres`). |
+| `VMAFX_STORE_BACKOFF_BASE` | `store.backoff_base` | duration | `5s` | `controller.store.backoffBase` | Delay before a job whose lease expired is handed out again (`postgres`); doubles up to `VMAFX_STORE_BACKOFF_MAX`. |
+| `VMAFX_STORE_BACKOFF_MAX` | `store.backoff_max` | duration | `5m` | `controller.store.backoffMax` | Cap of that delay (`postgres`). |
+| `VMAFX_AUTH_DISABLED` | `auth.disabled` | bool | `false` | `auth.disabled` | Turn token verification off (development only): every call acts as tenant `dev` with the admin role. Refused with a tenant source. |
+| `VMAFX_JWKS_ENDPOINT` | `jwks.endpoint` | URL | _(unset)_ | `auth.jwksEndpoint` | JWKS endpoint of the identity provider. Required unless auth is disabled or a tenant source is set (then refused) ([auth](auth.md)). |
+| `VMAFX_AUTH_ISSUER` | `auth.issuer` | string | _(unset)_ | `auth.issuer` | Expected `iss` claim; required like `VMAFX_JWKS_ENDPOINT`. |
+| `VMAFX_AUTH_AUDIENCE` | `auth.audience` | string | _(unset)_ | `auth.audience` | Expected `aud` claim; empty skips the check. Refused with a tenant source. |
+| `VMAFX_AUTH_TENANT_CLAIM` | `auth.tenant_claim` | string | `tid` | `auth.tenantClaim` | Claim that carries the tenant ID. Refused with a tenant source. |
+| `VMAFX_AUTH_ROLES_CLAIM` | `auth.roles_claim` | string | `vmafx_roles` | `auth.rolesClaim` | Claim that carries the list of roles. Refused with a tenant source. |
+| `VMAFX_AUTH_TENANTS_SOURCE` | `auth.tenants.source` | string | _(unset)_ | set by the chart | `kubernetes` (the namespace's `VmafxTenant` resources) or `file`: verify each token against its tenant's provider ([tenant registry](auth.md#tenant-registry)). Excludes the provider variables above and `VMAFX_AUTH_DISABLED`. |
+| `VMAFX_AUTH_TENANTS_FILE` | `auth.tenants.file` | path | _(unset)_ |  | YAML or JSON file of `VmafxTenant` documents (source `file`). |
+| `VMAFX_AUTH_TENANTS_NAMESPACE` | `auth.tenants.namespace` | string | the pod's namespace | set by the chart | Namespace of the `VmafxTenant` resources (source `kubernetes`). |
+| `VMAFX_AUTH_TENANTS_REFRESH` | `auth.tenants.refresh` | duration | `30s` |  | Re-read interval of the tenant source, `1s` to `1h`; the tenant set is refused after ten intervals without a successful read. |
+| `VMAFX_SCORING_ROOTS` | `scoring.roots` | list | _(unset: every input refused)_ | `auth.scoringRoots` | Comma-separated scoring roots of every caller without a tenant registry; `{tenant}` becomes the caller's tenant ID ([scoring roots](auth.md#scoring-roots)). Refused with a tenant registry. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-controller -->
+
+The table is generated from `api/vmafx-platform.toml`
+([API generation](../development/api-generation.md#environment-of-the-go-binaries)).
+How the authentication variables combine is on [auth.md](auth.md); the
+controller does not start when they are inconsistent or a configured tenant is
+invalid ([tenant registry](auth.md#tenant-registry)).
 
 ## VmafxScoring service (direct scoring)
 

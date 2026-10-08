@@ -54,30 +54,30 @@ Two consequences matter when you add or migrate a setting:
 - A key whose last segment contains an underscore (`grpc.max_recv_size`) cannot
   be reached by the plain transform, because `VMAFX_GRPC_MAX_RECV_SIZE` would
   become `grpc.max.recv.size`. The binary must declare such a key as a
-  *compound key* in its `config.Options`. `vmafx-server` declares
-  `grpc.cert_file`, `grpc.key_file`, `grpc.max_recv_size` and
-  `grpc.max_send_size`; `TestServerEnvOptionsContract` fails when the list
-  drifts. Prefer single-word leaf names (`http.timeouts.write`) for new keys so
-  no declaration is needed.
+  *compound key* in its `config.Options`. Each binary's list is generated
+  (`config_keys.gen.go` in its package) from the `[[config]]` entries of
+  `api/vmafx-platform.toml`, so a new key is an entry there, not a line of Go;
+  see [API generation](../development/api-generation.md#environment-of-the-go-binaries).
+  `TestServerEnvOptionsContract` pins the server's four `grpc.*` keys and
+  `TestControllerEnvReachesGrpcKeys` the controller's. Prefer single-word leaf
+  names (`http.timeouts.write`) for new keys so no declaration is needed.
 
 ## Limits and timeouts
 
-The HTTP server and the gRPC server are hardened by default. Every value below
-is overridable through the environment.
+The HTTP server and the gRPC server are hardened by default, and every limit is
+overridable through the environment. The variables and their defaults are in
+the [server's environment table](grpc.md#configuration). Two defaults are the
+server's own rather than the golusoris framework's
+(`cmd/vmafx-server/hardening.go`):
 
-| Setting | Environment variable | Default | Notes |
-| --- | --- | --- | --- |
-| HTTP read timeout | `VMAFX_HTTP_TIMEOUTS_READ` | `30s` | Whole request. |
-| HTTP header timeout | `VMAFX_HTTP_TIMEOUTS_HEADER` | `5s` | Slow-header guard. |
-| HTTP write timeout | `VMAFX_HTTP_TIMEOUTS_WRITE` | `15m` | vmafx default; the framework default of `60s` closes the connection under any clip that scores for longer than a minute. |
-| HTTP idle timeout | `VMAFX_HTTP_TIMEOUTS_IDLE` | `120s` | Keep-alive. |
-| HTTP shutdown grace | `VMAFX_HTTP_TIMEOUTS_SHUTDOWN` | `30s` | In-flight requests drain this long. |
-| HTTP header size | `VMAFX_HTTP_LIMITS_HEADER` | `1 MiB` | |
-| HTTP body size | `VMAFX_HTTP_LIMITS_BODY` | `10 MiB` | `POST /v1/score` additionally caps its own body at 1 MiB and answers `413`. |
-| gRPC receive size | `VMAFX_GRPC_MAX_RECV_SIZE` | `64 MiB` | vmafx default; the framework default of 4 MiB rejects a 1080p `FramePair` (6.2 MB). 64 MiB holds a 4K 16-bit pair. |
-| gRPC send size | `VMAFX_GRPC_MAX_SEND_SIZE` | `4 MiB` | |
-| Concurrent scores | `VMAFX_MAX_CONCURRENT_SCORES` | number of CPUs | Shared by HTTP and gRPC; over the cap, HTTP answers `429`. |
+- `VMAFX_HTTP_TIMEOUTS_WRITE` is `15m`. The framework default of `60s` closes
+  the connection under any clip that scores for longer than a minute.
+- `VMAFX_GRPC_MAX_RECV_SIZE` is 64 MiB. The framework default of 4 MiB rejects
+  a 1080p `FramePair` (6.2 MB); 64 MiB holds a 4K 16-bit pair.
 
+`POST /v1/score` caps its own body at 1 MiB and answers `413` above it, below
+the server-wide `VMAFX_HTTP_LIMITS_BODY`. `VMAFX_MAX_CONCURRENT_SCORES` is
+shared by HTTP and gRPC; over the cap, HTTP answers `429`.
 `TestServerDefaultsFitScoring` and `TestServerDefaultsYieldToOperator` pin the
 effective values of the production graph.
 

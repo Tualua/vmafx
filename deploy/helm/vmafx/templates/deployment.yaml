@@ -58,8 +58,7 @@ spec:
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
           env:
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
+            {{- include "vmafx.env.deployment" . }}
           {{- range $k, $v := .Values.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}

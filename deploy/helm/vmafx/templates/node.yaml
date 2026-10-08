@@ -100,61 +100,7 @@ spec:
               containerPort: {{ .Values.node.metricsPort | default 9090 }}
               protocol: TCP
           env:
-            {{- with include "vmafx.nodeControllerAddr" . }}
-            # The node's controller client registers here and pulls jobs; unset
-            # (no controller) the node serves direct scoring only.
-            - name: VMAFX_CONTROLLER_ADDR
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if .Values.node.controllerToken.secretName }}
-            # Bearer token (vmafx:node), re-read on every call (ADR-1524).
-            - name: VMAFX_CONTROLLER_TOKEN_FILE
-              value: {{ include "vmafx.controllerTokenPath" . | quote }}
-            {{- end }}
-            # The binary defaults grpc.listen to :50052 for standalone use.
-            # Pin it explicitly to deploy's configurable grpcPort so the
-            # ClusterIP Service and tcpSocket probes always follow chart values.
-            - name: VMAFX_GRPC_LISTEN
-              value: ":{{ .Values.node.grpcPort | default 50052 }}"
-            # The HTTP listener of /metrics and the probe endpoints; pinned to
-            # node.metricsPort so the container port, the Service port, the
-            # NetworkPolicy and the node's ServiceMonitor follow chart values.
-            - name: VMAFX_HTTP_ADDR
-              value: ":{{ .Values.node.metricsPort | default 9090 }}"
-            - name: VMAFX_NODE_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-            # Storage / scoring env vars folded in from the legacy
-            # templates/node-deployment.yaml (ADR-0719 rclone integration).
-            - name: VMAFX_STORAGE_MODE
-              value: {{ .Values.storage.mode | default "http-serve" | quote }}
-            {{- with include "vmafx.nodeMountRoot" . }}
-            - name: VMAFX_STORAGE_MOUNT_ROOT
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if .Values.node.ebpf.enabled }}
-            # eBPF descriptor tracker (ADR-1539); the node stops at startup
-            # when the host cannot run it.
-            - name: VMAFX_EBPF_BYPASS
-              value: "1"
-            - name: VMAFX_EBPF_MOUNT_PREFIX
-              value: {{ .Values.node.ebpf.mountPrefix | quote }}
-            {{- end }}
-            {{- if .Values.storage.rclone.config }}
-            # Only with the rclone Secret mounted below; without it rclone uses
-            # its own defaults (on-the-fly remotes such as :s3,env_auth:).
-            - name: VMAFX_RCLONE_CONFIG
-              value: "/etc/vmafx/rclone.conf"
-            {{- end }}
-            - name: VMAFX_VMAF_BINARY
-              value: "/usr/local/bin/vmaf"
-            # The models volume when it is mounted, else the models the node
-            # image ships (persistence.models.mountPath always has a value).
-            - name: VMAFX_MODEL_DIR
-              value: {{ ternary .Values.persistence.models.mountPath "/usr/local/share/vmafx/model" .Values.persistence.models.enabled | quote }}
+            {{- include "vmafx.env.node" . }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}

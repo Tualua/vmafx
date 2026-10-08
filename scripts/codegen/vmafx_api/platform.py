@@ -24,6 +24,7 @@ from typing import Any
 import tomllib
 
 from .chart import Chart, parse_chart
+from .config import Config, parse_config
 from .entries import Entry, need, where_of
 from .kube import Kube, parse_kube
 from .model import Api, DefinitionError
@@ -142,6 +143,7 @@ class Platform:
     external: tuple[External, ...]
     kube: Kube
     chart: Chart | None = None
+    config: Config | None = None
     kubernetes: dict[str, Any] = field(default_factory=dict)
 
     def file(self, name: str) -> ProtoFile:
@@ -299,6 +301,7 @@ def parse(
         external=external,
         kube=parse_kube(data),
         chart=parse_chart(data),
+        config=parse_config(data),
         kubernetes=dict(kubernetes or {}),
     )
     validate_platform(platform)

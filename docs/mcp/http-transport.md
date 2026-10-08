@@ -218,7 +218,8 @@ defaults.
 
 These variables harden the HTTP transport and are honoured **identically** by
 both the Python (`vmaf-mcp`) and the Go (`vmafx-mcp`) servers, so a single
-deployment config secures either implementation:
+deployment config secures either implementation. Every variable the Go server
+reads is in its [environment table](index.md#environment-vmafx-mcp).
 
 | Variable | Default | Description |
 | --- | --- | --- |

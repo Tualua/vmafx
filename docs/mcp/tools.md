@@ -1178,12 +1178,13 @@ Connection targets are **environment-only** — a tool argument naming a host
 would
 turn the MCP server into an SSRF pivot.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `VMAFX_CONTROLLER_ADDR` | `localhost:9090` | `vmafx-controller` gRPC address. |
-| `VMAFX_SERVER_ADDR` | `localhost:9090` | `vmafx-server` gRPC address (used by `vmaf_score_remote`). |
-| `VMAFX_CONTROLLER_TOKEN` | — | Optional bearer token; sent as `authorization: Bearer <token>` on every controller RPC. Omit it against a controller started with `VMAFX_AUTH_DISABLED=true`. With auth enabled the token needs `vmafx:reader` for `get_job` and `list_jobs`, and `vmafx:writer` for `submit_job` and `cancel_job` ([roles](../server/auth.md#roles-and-rbac)). |
-| `VMAFX_GRPC_TIMEOUT` | `30` | Per-RPC deadline in seconds. A malformed or non-positive value falls back to the default rather than disabling the deadline. |
+The addresses, the bearer token and the RPC deadline (`VMAFX_CONTROLLER_ADDR`,
+`VMAFX_SERVER_ADDR`, `VMAFX_CONTROLLER_TOKEN`, `VMAFX_GRPC_TIMEOUT`) are rows of
+the Go server's [environment table](index.md#environment-vmafx-mcp). With auth
+enabled the token needs `vmafx:reader` for `get_job` and `list_jobs`, and
+`vmafx:writer` for `submit_job` and `cancel_job`
+([roles](../server/auth.md#roles-and-rbac)); omit it against a controller
+started with `VMAFX_AUTH_DISABLED=true`.
 
 The transport is insecure by default, matching `pkg/score.Dial`: the control
 plane is expected to run inside the cluster mesh.

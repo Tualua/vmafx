@@ -7,8 +7,7 @@ file and schema; the real definition reproduces values.yaml and a schema whose
 text is the uniform layout of its value. Negative: every planted definition
 defect is refused, a `k8s:` type missing from the subset is named. Boundary:
 plain-scalar rules against PyYAML, the layout width, quoted path keys, the
-default note column. The migration test compares the schema with the one at the
-merge base with origin/master while that one predates the Kubernetes types.
+default note column.
 """
 
 from __future__ import annotations
@@ -20,44 +19,38 @@ from typing import Any
 import tomllib
 import yaml  # type: ignore[import-untyped]
 from support import ROOT
-from vmafx_api import emit_chart, gitref
+from vmafx_api import emit_chart
 from vmafx_api.chart import NO_VALUE, parse_chart, split_path
 from vmafx_api.model import DefinitionError
 from vmafx_api.platform import DEFINITION, KUBERNETES_SUBSET
 
-# The keys whose schema is a Kubernetes type, with the schema they had before
-# (docs/development/k8s-deployment.md lists them under the upgrade notes).
-UNTYPED = {"type": "array"}
-OBJECT = {"type": "object"}
+# The keys whose schema is a Kubernetes type (docs/development/k8s-deployment.md
+# lists them under the upgrade notes).
 KUBERNETES_TYPED = {
-    "tolerations": UNTYPED,
-    "controller.tolerations": UNTYPED,
-    "node.tolerations": UNTYPED,
-    "nodeSelector": OBJECT,
-    "controller.nodeSelector": OBJECT,
-    "node.nodeSelector": OBJECT,
-    "affinity": OBJECT,
-    "topologySpreadConstraints": UNTYPED,
-    "controller.topologySpreadConstraints": UNTYPED,
-    "podSecurityContext": OBJECT,
-    "securityContext": OBJECT,
-    "livenessProbe": OBJECT,
-    "readinessProbe": OBJECT,
-    "node.volumes": UNTYPED,
-    "node.volumeMounts": UNTYPED,
-    "deployment.strategy": OBJECT,
-    "node.strategy": {
-        "type": "object",
-        "description": "Rolling-update strategy for the node Deployment. Default: "
-        "maxUnavailable:0, maxSurge:1 (zero-disruption, GPU-safe).",
-    },
-    "statefulSet.updateStrategy": OBJECT,
-    "envFrom": UNTYPED,
-    "podAnnotations": OBJECT,
-    "serviceAccount.annotations": OBJECT,
-    "ingress.annotations": OBJECT,
-    "ingress.tls": UNTYPED,
-    "monitoring.serviceMonitor.labels": OBJECT,
+    "tolerations",
+    "controller.tolerations",
+    "node.tolerations",
+    "nodeSelector",
+    "controller.nodeSelector",
+    "node.nodeSelector",
+    "affinity",
+    "topologySpreadConstraints",
+    "controller.topologySpreadConstraints",
+    "podSecurityContext",
+    "securityContext",
+    "livenessProbe",
+    "readinessProbe",
+    "node.volumes",
+    "node.volumeMounts",
+    "deployment.strategy",
+    "node.strategy",
+    "statefulSet.updateStrategy",
+    "envFrom",
+    "podAnnotations",
+    "serviceAccount.annotations",
+    "ingress.annotations",
+    "ingress.tls",
+    "monitoring.serviceMonitor.labels",
 }
 
 # Label and annotation maps and node selectors: string values, as the
@@ -369,33 +362,6 @@ class ChartScalarTest(unittest.TestCase):
         assert chart is not None
         only = next(e for e in chart.entries if e.name == "a.only")
         self.assertIs(only.value, NO_VALUE)
-
-
-class ChartMigrationTest(unittest.TestCase):
-    """While origin/master's schema has no Kubernetes types, this one differs
-    from it only at KUBERNETES_TYPED, where it had the untyped forms."""
-
-    def test_schema_differs_from_the_base_only_at_the_typed_keys(self) -> None:
-        try:
-            base_ref = gitref.merge_base(ROOT, "origin/master")
-            files = gitref.files_at(ROOT, base_ref, "deploy/helm/vmafx", ".json")
-        except gitref.Unavailable as exc:
-            self.skipTest(f"no merge base with origin/master: {exc}")
-        base_text = files.get(emit_chart.SCHEMA)
-        if base_text is None or "io.k8s.api" in base_text:
-            self.skipTest("the merge base already has the Kubernetes types")
-        base = json.loads(base_text)
-        ours = json.loads((ROOT / emit_chart.SCHEMA).read_text(encoding="utf-8"))
-        for path, old in KUBERNETES_TYPED.items():
-            keys = path.split(".")
-            node, mine = base, ours
-            for key in keys[:-1]:
-                node, mine = node["properties"][key], mine["properties"][key]
-            self.assertEqual(node["properties"][keys[-1]], old, path)
-            mine["properties"][keys[-1]] = old
-        base["$defs"]["resourceSpec"] = ours["$defs"]["resourceSpec"] = None
-        ours["$defs"] = {k: v for k, v in ours["$defs"].items() if not k.startswith("io.k8s.")}
-        self.assertEqual(json.dumps(ours), json.dumps(base))
 
 
 if __name__ == "__main__":

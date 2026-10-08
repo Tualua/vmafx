@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,9 +29,9 @@ CHART = ROOT / "deploy" / "helm" / "vmafx"
 BEFORE = "5d1ea07d9131bda8dd469d5156f1bf1ee9a66eb5"
 HELM_TIMEOUT_S = 120
 HELM = shutil.which("helm") or "helm"
-GIT = shutil.which("git") or "git"
-TAR = shutil.which("tar") or "tar"
-GIT_TIMEOUT_S = 60
+
+sys.path.insert(0, str(ROOT / "scripts" / "codegen"))
+from vmafx_api import gitref  # noqa: E402 -- path set above
 
 # (label, values YAML, the path the refusal names)
 REFUSED = [
@@ -86,22 +87,6 @@ def render(chart: Path, values: str) -> subprocess.CompletedProcess[str]:
         )
 
 
-def chart_at(commit: str, dest: Path) -> Path | None:
-    """The chart directory of `commit`, or None when the clone lacks it."""
-    archive = subprocess.run(  # noqa: S603 -- fixed git executable; argv built here
-        [GIT, "-C", str(ROOT), "archive", commit, "deploy/helm/vmafx"],
-        capture_output=True,
-        check=False,
-        timeout=GIT_TIMEOUT_S,
-    )
-    if archive.returncode != 0 or shutil.which("tar") is None:
-        return None
-    subprocess.run(  # noqa: S603 -- fixed tar executable; argv built here
-        [TAR, "-x", "-C", str(dest)], input=archive.stdout, check=True, timeout=GIT_TIMEOUT_S
-    )
-    return dest / "deploy" / "helm" / "vmafx"
-
-
 @unittest.skipIf(shutil.which("helm") is None, "helm is not on PATH")
 class ValuesSchemaTest(unittest.TestCase):
     def test_planted_kubernetes_values_are_refused(self) -> None:
@@ -113,9 +98,10 @@ class ValuesSchemaTest(unittest.TestCase):
 
     def test_the_schema_before_accepted_them(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            before = chart_at(BEFORE, Path(tmp))
-            if before is None:
-                self.skipTest(f"the clone has no commit {BEFORE}")
+            try:
+                before = gitref.tree_at(ROOT, BEFORE, "deploy/helm/vmafx", Path(tmp))
+            except gitref.Unavailable as exc:
+                self.skipTest(f"the clone has no commit {BEFORE}: {exc}")
             for label, values, _ in REFUSED:
                 with self.subTest(label):
                     result = render(before, values)

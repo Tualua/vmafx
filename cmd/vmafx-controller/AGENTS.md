@@ -54,8 +54,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    `postgres` = `store` + River lease sweep behind `backend.Postgres`, any
    replica count, no DB credentials on nodes (Q-122). Standalone profile =
    same store on SQLite + `riversqlite` (waits golusoris#620/#621). Store
-   keys: `storeConfigKeys` join `controllerEnvOptions` CompoundKeys; tests
-   build from `controllerEnvOptions()` (no second key list).
+   keys: generated `compoundKeys` (`config_keys.gen.go`, from `[[config]]`
+   of `api/vmafx-platform.toml`, ADR-2350 D13) feed `controllerEnvOptions`;
+   tests build from `controllerEnvOptions()` (no second key list). New key ->
+   `[[config]]` entry, regenerate; no hand list here.
 3. **JWT auth injected via golusoris#269 (`ProvideServerOptionFn`).** Interceptors
    wired via `grpc.ProvideServerOptionFn(func(mw *auth.Middleware) grpc.ServerOption{...})`
    into `group:"grpc.serveropts"`. fx injects `*auth.Middleware`. Do NOT reintroduce

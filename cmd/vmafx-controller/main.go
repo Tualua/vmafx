@@ -123,10 +123,10 @@ func controllerEnvOptions() config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     true,
-		CompoundKeys: append([]string{
-			"auth.tenant_claim",
-			"auth.roles_claim",
-		}, storeConfigKeys...),
+		// The keys with an underscore in their own name (auth.tenant_claim,
+		// store.lease_ttl, grpc.max_recv_size, ...); compoundKeys is generated
+		// from the [[config]] entries of api/vmafx-platform.toml (ADR-2350 D13).
+		CompoundKeys: compoundKeys,
 	}
 }
 

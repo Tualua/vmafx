@@ -38,15 +38,14 @@ mount into a collector sidecar or DaemonSet.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → no-op providers)_ | OTLP/gRPC collector endpoint as a URL (`http://host:4317`). Without a scheme the SDK finds no host and sends to `localhost:4317`. Unset means no exporter, no network, no spans. |
-| `VMAFX_OTEL_ENDPOINT` | _(unset)_ | Same, as `host:port` (`otel-collector:4317`), through the vmafx config key; it wins over the standard variable. |
-| `OTEL_SERVICE_NAME` / `VMAFX_OTEL_SERVICE_NAME` | _binary name_ | `service.name` resource attribute (the vmafx key wins). |
-| `VMAFX_OTEL_SERVICE_VERSION` | `pkg/version` | `service.version` resource attribute. |
-| `VMAFX_OTEL_SAMPLE_RATIO` | `1.0` | Parent-based trace sample ratio. |
+| `OTEL_SERVICE_NAME` | _binary name_ | `service.name` resource attribute; `VMAFX_OTEL_SERVICE_NAME` wins. |
 | `OTEL_SDK_DISABLED` | `false` | `true` forces no-op providers. |
 
-The full table, including TLS, per-signal toggles and the Kubernetes
-downward-API attributes, is in the
-[configuration reference](../development/observability.md#configuration-reference).
+The `VMAFX_OTEL_*` variables (endpoint, TLS, service name and version, sample
+ratio, per-signal export) are rows of every Go binary's generated
+[environment table](../usage/env-vars.md#go-services-golusoris); the
+[configuration reference](../development/observability.md#configuration-reference)
+explains the library behaviour behind them.
 
 ## Span names
 

@@ -33,6 +33,7 @@ from . import (
     emit_chart,
     emit_cli,
     emit_compat,
+    emit_config,
     emit_conformance,
     emit_docs,
     emit_ffmpeg_options,
@@ -126,6 +127,10 @@ def render(api: Api, root: Path | None = None, platform: Platform | None = None)
         files.update(emit_kube_types.files(platform.kube))
         if platform.chart is not None:
             files.update(emit_chart.files(platform.chart, platform.kubernetes))
+        if platform.config is not None:
+            files.update(emit_config.files(platform.config))
+            if root is not None:
+                files.update(emit_config.pages(platform.config, root))
     return files
 
 

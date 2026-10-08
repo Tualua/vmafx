@@ -91,12 +91,9 @@ func serverEnvOptions(watch bool) config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     watch,
-		CompoundKeys: []string{
-			"grpc.cert_file",
-			"grpc.key_file",
-			"grpc.max_recv_size",
-			"grpc.max_send_size",
-		},
+		// compoundKeys is generated from the [[config]] entries of
+		// api/vmafx-platform.toml (config_keys.gen.go, ADR-2350 D13).
+		CompoundKeys: compoundKeys,
 	}
 }
 

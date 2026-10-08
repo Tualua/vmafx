@@ -112,22 +112,6 @@ gpu.intel.com/{{ .Values.gpu.intelDriver | default "i915" }}
 {{- end }}
 
 {{/*
-Resolve the VMAFX_BACKEND env-var value for the requested GPU vendor.
-This tells the vmafx-server which backend to activate on startup.
-*/}}
-{{- define "vmafx.backendEnvValue" -}}
-{{- if eq .Values.gpu.vendor "nvidia" -}}
-cuda
-{{- else if eq .Values.gpu.vendor "amd" -}}
-hip
-{{- else if eq .Values.gpu.vendor "intel" -}}
-sycl
-{{- else -}}
-cpu
-{{- end }}
-{{- end }}
-
-{{/*
 Render the Go server container image reference (repository:tag).
 Falls back to the canonical published release tag when .Values.image.tag is empty.
 */}}
@@ -180,8 +164,7 @@ Extracted here to avoid triplicating the container spec.
       containerPort: {{ .Values.service.targetPort }}
       protocol: TCP
   env:
-    - name: VMAFX_BACKEND
-      value: {{ include "vmafx.backendEnvValue" . | quote }}
+    {{- include "vmafx.env.container-spec" . }}
   {{- range $k, $v := .Values.env }}
     - name: {{ $k | quote }}
       value: {{ $v | quote }}
@@ -359,48 +342,6 @@ names a Secret; call with (dict "token" .Values.node.controllerToken).
 {{- end }}
 
 {{/*
-Auth environment of the controller (ADR-0794, ADR-1519, ADR-1577). With a
-tenant registry the controller reads VmafxTenants and gets no global provider
-setting (it refuses them next to a registry); otherwise the single provider and
-the scoring roots.
-*/}}
-{{- define "vmafx.controllerAuthEnv" -}}
-- name: VMAFX_AUTH_DISABLED
-  value: {{ .Values.auth.disabled | toString | quote }}
-{{- if eq (include "vmafx.tenantSource" .) "kubernetes" }}
-- name: VMAFX_AUTH_TENANTS_SOURCE
-  value: "kubernetes"
-- name: VMAFX_AUTH_TENANTS_NAMESPACE
-  value: {{ .Release.Namespace | quote }}
-{{- else }}
-{{- with .Values.auth.jwksEndpoint }}
-- name: VMAFX_JWKS_ENDPOINT
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.issuer }}
-- name: VMAFX_AUTH_ISSUER
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.audience }}
-- name: VMAFX_AUTH_AUDIENCE
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.tenantClaim }}
-- name: VMAFX_AUTH_TENANT_CLAIM
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.rolesClaim }}
-- name: VMAFX_AUTH_ROLES_CLAIM
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.scoringRoots }}
-- name: VMAFX_SCORING_ROOTS
-  value: {{ join "," . | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-
-{{/*
 vmafx.nodeMountRoot — VMAFX_STORAGE_MOUNT_ROOT of the node pods: storage.mountRoot,
 or with the eBPF tracker on its mount prefix without the trailing slash
 (ADR-1593). Empty: the node's temp dir.
@@ -533,48 +474,6 @@ renders in cnpg mode.
 {{- end }}
 
 {{/*
-vmafx.controllerDatabaseDSN — the env entry VMAFX_DB_DSN, read from the
-CloudNativePG application Secret (<cluster>-app, key uri) or from the external
-Secret. Shared by the controller and its migration Job.
-*/}}
-{{- define "vmafx.controllerDatabaseDSN" -}}
-{{- $pg := .Values.controller.store.postgresql -}}
-- name: VMAFX_DB_DSN
-  valueFrom:
-    secretKeyRef:
-      {{- if eq $pg.mode "external" }}
-      name: {{ $pg.external.secretName | quote }}
-      key: {{ $pg.external.secretKey | default "uri" | quote }}
-      {{- else }}
-      name: {{ printf "%s-app" (include "vmafx.controllerDatabaseCluster" .) | quote }}
-      key: uri
-      {{- end }}
-{{- end }}
-
-{{/*
-vmafx.controllerStoreEnv — the controller's store environment: the SQLite
-queue path, or the backend, the connection string and the lifetimes that are
-set (unset ones keep the controller's defaults).
-*/}}
-{{- define "vmafx.controllerStoreEnv" -}}
-{{- if eq (include "vmafx.controllerStoreBackend" .) "postgres" -}}
-{{- $store := .Values.controller.store -}}
-- name: VMAFX_STORE_BACKEND
-  value: postgres
-{{ include "vmafx.controllerDatabaseDSN" . }}
-{{- range $key, $env := dict "leaseTTL" "VMAFX_STORE_LEASE_TTL" "sessionTTL" "VMAFX_STORE_SESSION_TTL" "sweepInterval" "VMAFX_STORE_SWEEP_INTERVAL" "backoffBase" "VMAFX_STORE_BACKOFF_BASE" "backoffMax" "VMAFX_STORE_BACKOFF_MAX" }}
-{{- with index $store $key }}
-- name: {{ $env }}
-  value: {{ . | quote }}
-{{- end }}
-{{- end }}
-{{- else -}}
-- name: VMAFX_DB_PATH
-  value: /data/vmafx-controller.db
-{{- end -}}
-{{- end }}
-
-{{/*
 vmafx.controllerTopologySpread — controller.topologySpreadConstraints, or with
 more than one replica and none set a soft spread over Kubernetes nodes.
 */}}
@@ -619,7 +518,7 @@ spec:
       imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
       args: ["migrate"]
       env:
-        {{- include "vmafx.controllerDatabaseDSN" . | nindent 8 }}
+        {{- include "vmafx.env.migrate" . }}
       resources:
         {{- toYaml .Values.controller.resources | nindent 8 }}
       securityContext:

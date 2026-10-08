@@ -97,9 +97,10 @@
     operator leaf keys (`metrics_addr`, `health_probe_addr`, `leader_election`,
     `leader_election_id`, `graceful_shutdown`, `webhook_port`, `webhook_host`)
     mis-map (`VMAFX_OPERATOR_METRICS_ADDR` -> `operator.metrics.addr`, not
-    `operator.metrics_addr`). `operatorEnvOptions()` declares each leaf as
-    CompoundKey; `TestEnvOptionsContract` fails if upstream adds new operator
-    option without registering here.
+    `operator.metrics_addr`). `operatorEnvOptions()` takes generated
+    `compoundKeys` (`config_keys.gen.go`, `[[config]]` of
+    `api/vmafx-platform.toml`, ADR-2350 D13); `TestEnvOptionsContract` fails
+    if upstream adds new operator option without `[[config]]` entry.
 
 14. **`--version` exits before fx startup** (`main.go`, ADR-1129): release
     images inject `pkg/version.version` via Go ldflags; container smoke runs
@@ -120,8 +121,9 @@
 16. **GetJob carries controller credentials** (`main.go`
     `provideControllerCredentials`, `VmafxJobReconciler.ControllerCredentials`,
     ADR-1569): `controllerclient.Load` reads `controller.tls/ca_file/
-    server_name/token_file/token` (CompoundKeys from
-    `controllerclient.CompoundKeys`); bad combination = startup error.
+    server_name/token_file/token` (in generated `compoundKeys`;
+    `controllerclient.CompoundKeys` deprecated, kept for API compatibility);
+    bad combination = startup error.
     `DialOptions()` passed to `ConnFactory.Dial` (TLS replaces plaintext,
     bearer per RPC, file re-read every call, expired JWT never sent). One
     implementation with the node (HISS-19): never copy bearer/TLS code into

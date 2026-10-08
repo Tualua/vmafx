@@ -1526,19 +1526,43 @@ Configuration is read from environment variables under the `VMAFX_` prefix.
 golusoris maps each underscore in the variable name to a config-path delimiter
 (`VMAFX_LOG_LEVEL` → `log.level`).
 
-| Environment variable | Config key | Effect | Default |
-|----------------------|------------|--------|---------|
-| `VMAFX_LOG_LEVEL` | `log.level` | Minimum log level: `debug`, `info`, `warn`, `error` | `info` |
-| `VMAFX_LOG_FORMAT` | `log.format` | Log handler: `auto` (tint on a TTY, JSON otherwise), `tint`, `json` | `auto` |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-tune (scripts/codegen/vmafx-api.py) -->
 
-Other environment variables read by the Go binary:
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_MODEL_DIR` | read directly | path | `/usr/local/share/vmafx/model` |  | Directory searched for `<name>.onnx` when `--model` names no file (`predict`, `sidecar`, `auto`). |
+| `VMAFX_TUNE_ENCODE_TIMEOUT` | read directly | duration | `60m` |  | Deadline of each `ffmpeg` encode; a value that does not parse keeps the default. |
+| `VMAFX_TUNE_PROBE_TIMEOUT` | read directly | duration | `30s` |  | Deadline of each `ffprobe` call; a value that does not parse keeps the default. |
+| `VMAFX_TUNE_SCORE_TIMEOUT` | read directly | duration | `30m` |  | Deadline of each `vmaf` run; a value that does not parse keeps the default. |
+| `VMAFTUNE_WORKDIR` | read directly | path | OS temp directory |  | Scratch parent of `tune-per-shot` when `--workdir` is not given; used only when it can be created and written. |
+| `VMAFTUNE_VAAPI_DEVICE` | read directly | path | first Intel render node, else `/dev/dri/renderD128` |  | VAAPI render node of QSV encodes; `auto` means unset. |
+| `VMAFTUNE_SALIENCY_FALLBACK_OK` | read directly | `1` | off |  | `1` lets `recommend-saliency` run a plain encode on an encoder without ROI support instead of exiting 2. |
+| `XDG_CACHE_HOME` | read directly | path | `~/.cache` |  | Parent of the `vmaf-tune/sidecar` cache when `--cache-dir` is not given. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
 
-| Environment variable | Used by | Effect |
-|----------------------|---------|--------|
-| `VMAFX_MODEL_DIR` | `--model` on `predict`, `sidecar`, `auto` | Model directory searched for `<name>.onnx`; default `/usr/local/share/vmafx/model`. |
-| `VMAFTUNE_WORKDIR` | `tune-per-shot` | Scratch directory when `--workdir` is not given and the path is writable. |
-| `VMAFTUNE_SALIENCY_FALLBACK_OK` | `recommend-saliency` | Set to `1` to accept a plain encode on an encoder without ROI dispatch. |
-| `XDG_CACHE_HOME` | `sidecar` | Parent of the `vmaf-tune/sidecar` cache root. |
+<!-- END GENERATED: vmafx-api environment vmafx-tune -->
 
 ```bash
 # Quiet the per-run INFO diagnostics; keep warnings and errors.

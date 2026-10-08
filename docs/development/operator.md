@@ -167,20 +167,9 @@ framework and is configured purely through environment variables (the previous
 CLI flags are removed; fx owns signals and the run loop). Config is read from
 the `operator.*` koanf subtree under the `VMAFX_` prefix.
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus metrics endpoint (`0` disables) |
-| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | Health probe endpoint |
-| `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election |
-| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled |
-| `VMAFX_OPERATOR_WEBHOOK_PORT` | `0` | Admission-webhook port; `0` disables webhooks |
-| `VMAFX_OPERATOR_WEBHOOK_HOST` | _(all interfaces)_ | Admission-webhook bind host |
-| `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | `30s` | Manager graceful-shutdown timeout |
-| `VMAFX_LOG_LEVEL` | `info` | Log verbosity (golusoris log module: `debug\|info\|warn\|error`) |
-| `VMAFX_CONTROLLER_GRPC_ADDR` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller |
-| `VMAFX_CONTROLLER_HTTP_ADDR` | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller |
-| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | _(none)_ | Bearer token `GetJob` sends; the file is re-read on every call ([server guide](../server/operator.md#authenticating-to-the-controller)) |
-| `VMAFX_CONTROLLER_TLS` / `_CA_FILE` / `_SERVER_NAME` | `false` / _(none)_ | TLS to the controller (`pkg/controllerclient`, shared with `vmafx-node`) |
+Every variable the operator reads, with its key, default and the chart value
+that sets it, is in the generated table of the
+[operator guide](../server/operator.md#configuration-12-factor-env-vars).
 
 !!! warning "Migrating from the pre-fx binary (ADR-1119)"
     The CLI flags (`--metrics-bind-address`, `--health-probe-bind-address`,

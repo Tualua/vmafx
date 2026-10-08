@@ -37,13 +37,6 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store"
 )
 
-// storeConfigKeys are the underscore-bearing leaf keys of this file; they are
-// declared as CompoundKeys so the env transform keeps their underscores.
-var storeConfigKeys = []string{
-	"store.lease_ttl", "store.session_ttl", "store.sweep_interval",
-	"store.backoff_base", "store.backoff_max",
-}
-
 // Backend names of store.backend.
 const (
 	backendSQLite   = "sqlite"

@@ -142,8 +142,9 @@ ADR-1539), fail closed.
     and `executeScoring` passes `jobBackend()` to `Scorer.ScoreOnBackend` as
     `--backend`; do not drop the flag or advertise backends the CLI does not
     run. Interrupted job at stop deadline -> reported failed, never left
-    RUNNING. Controller-key underscore leaves live in `controllerConfigKeys`
-    (CompoundKeys); `env_test.go` pins the set. E2E guard:
+    RUNNING. Underscore leaves = generated `compoundKeys`
+    (`config_keys.gen.go`, `[[config]]` of `api/vmafx-platform.toml`,
+    ADR-2350 D13); `env_test.go` pins the set. E2E guard:
     `TestEndToEndControllerNodeJob` (real controller binary + real vmaf).
     TLS + bearer = `pkg/controllerclient` (`controllerConfig.Creds`, shared
     with the operator, ADR-1569); no node-local copy.

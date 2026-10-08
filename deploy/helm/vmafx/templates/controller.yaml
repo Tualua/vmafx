@@ -8,9 +8,10 @@ HTTP and gRPC ports the nodes, the operator and the clients use, and with the
 sqlite store the queue's PersistentVolumeClaim. controller.store.backend
 sqlite: one replica, Recreate, the queue on the claim (ADR-1119). postgres:
 controller.replicas pods with a rolling update and no claim, the connection
-string from vmafx.controllerDatabaseDSN (ADR-2350; the database and the
-migration Job are in controller-database.yaml). The auth settings of auth.*
-configure this workload only (vmafx.controllerAuthEnv).
+string from a Secret (ADR-2350; the database and the migration Job are in
+controller-database.yaml). The auth settings of auth.* configure this workload
+only. Its VMAFX_* environment is vmafx.env.controller (_config.gen.tpl,
+generated from api/vmafx-platform.toml, ADR-2350 D13).
 
 ADR-0711: vmafx-controller. ADR-0794: auth gateway. ADR-1519: tenant registry.
 */ -}}
@@ -95,12 +96,7 @@ spec:
               containerPort: {{ .Values.controller.grpcPort }}
               protocol: TCP
           env:
-            - name: VMAFX_HTTP_ADDR
-              value: ":{{ .Values.controller.httpPort }}"
-            - name: VMAFX_GRPC_LISTEN
-              value: ":{{ .Values.controller.grpcPort }}"
-            {{- include "vmafx.controllerStoreEnv" . | nindent 12 }}
-            {{- include "vmafx.controllerAuthEnv" . | nindent 12 }}
+            {{- include "vmafx.env.controller" . }}
             {{- range $k, $v := .Values.controller.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}

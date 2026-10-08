@@ -96,15 +96,9 @@ func operatorEnvOptions() config.Options {
 	return config.Options{
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
-		CompoundKeys: append([]string{
-			"operator.metrics_addr",
-			"operator.health_probe_addr",
-			"operator.leader_election",
-			"operator.leader_election_id",
-			"operator.graceful_shutdown",
-			"operator.webhook_port",
-			"operator.webhook_host",
-		}, controllerclient.CompoundKeys...),
+		// compoundKeys is generated from the [[config]] entries of
+		// api/vmafx-platform.toml (config_keys.gen.go, ADR-2350 D13).
+		CompoundKeys: compoundKeys,
 	}
 }
 

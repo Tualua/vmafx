@@ -328,20 +328,24 @@ anonymous pulls can fail.
 
 ## Environment variable reference
 
-| Variable | Set by | Description |
-|---|---|---|
-| `VMAFX_BACKEND` | Chart (from `gpu.vendor`) | Backend selector: `cuda`, `hip`, `sycl`, `cpu` |
-| `VMAFX_MODEL_DIR` | Server: ConfigMap (`config.VMAFX_MODEL_DIR`). Nodes: chart, `persistence.models.mountPath` with `persistence.models.enabled`, else the image's `/usr/local/share/vmafx/model` | Path to VMAF model JSON files |
-| `VMAFX_OUTPUT_DIR` | ConfigMap (`config.VMAFX_OUTPUT_DIR`) | Path for scored output |
-| Any `VMAFX_*` | `values.yaml` `env:` block | Override arbitrary env vars |
+Every variable a binary reads, and the chart value that sets it, is in the
+binary's generated table: [controller](../server/controller.md#configuration),
+[server](../server/grpc.md#configuration),
+[node](../server/node.md#configuration-12-factor-env-vars) and
+[operator](../server/operator.md#configuration-12-factor-env-vars). The chart
+writes those entries from `templates/_config.gen.tpl`, generated from
+`api/vmafx-platform.toml`
+([API generation](api-generation.md#environment-of-the-go-binaries)).
 
-To add extra variables:
+The server also reads the keys of the `config:` map, which the chart renders
+into a ConfigMap (`config.VMAFX_MODEL_DIR`, for example), and every workload
+takes the `env:` map as extra variables:
 
 ```yaml
 # values.yaml override
 env:
   VMAFX_LOG_LEVEL: debug
-  VMAFX_THREADS: "8"
+  VMAFX_HTTP_TIMEOUTS_WRITE: "30m"
 ```
 
 ## Persistence

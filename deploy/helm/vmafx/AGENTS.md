@@ -68,6 +68,11 @@ Update note on merge: final UID + container-scope seccompProfile set.
   minor -> bump pin + digests, regenerate subset and schema, rerun
   `scripts/ci/tests/test_helm_values_schema.py`, update upgrade notes in
   `docs/development/k8s-deployment.md`.
+- `VMAFX_*` env of every workload generated: `templates/_config.gen.tpl`
+  (`vmafx.env.<workload>`, `vmafx.backendEnvValue`) from `[[chart_env]]`,
+  `[[chart_workloads]]`, `[[chart_maps]]`. No other template or helper writes
+  any `VMAFX_*` entry; new entry / condition -> definition, regenerate. Guard:
+  `scripts/ci/tests/test_helm_config_env.py`.
 - Licence (ADR-2673): embedded Kubernetes types = Apache-2.0 ->
   `artifacthub.io/license: EUPL-1.2 AND Apache-2.0`;
   `THIRD-PARTY-NOTICES.txt` (attribution + Apache-2.0 text) written by
@@ -180,8 +185,8 @@ Pod template.
   `Recreate`, `/data` claim (`controller.persistence`). `postgres`:
   `controller.replicas`, RollingUpdate 0/1, no claim, no `/data`. Selector +
   Service carry `component: controller` (selector isolation check).
-- Auth env only via `vmafx.controllerAuthEnv`; server `deployment.yaml` gets
-  none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
+- Auth env only in generated `vmafx.env.controller` (`[[chart_env]]` with
+  `when`); server `deployment.yaml` gets none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
   `*vmafx-controller` `image.repository` refused; `controller.env` auth keys
   refused.
 - Nodes: `vmafx.nodeControllerAddr` (node.controllerAddr, else chart Service).
@@ -193,9 +198,9 @@ Pod template.
 
 - Store values: one key per setting, no derived copy (`values.yaml` +
   `values.schema.json` generated from `[[chart]]`, see below).
-  Store env only via `vmafx.controllerStoreEnv`; lifetimes rendered only
-  when set (controller owns defaults). DSN only via
-  `vmafx.controllerDatabaseDSN`: cnpg -> `<fullname>-db-app` key `uri`,
+  Store env + DSN only in generated `vmafx.env.controller` /
+  `vmafx.env.migrate` (`[[chart_env]]`); lifetimes rendered only when set
+  (controller owns defaults). DSN: cnpg -> `<fullname>-db-app` key `uri`,
   external -> `external.secretName` / `secretKey`.
 - `controller-database.yaml`: cnpg `Cluster` `<fullname>-db` fails render
   without `postgresql.cnpg.io/v1` (operator = prerequisite, chart installs

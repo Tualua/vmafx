@@ -139,6 +139,7 @@ its C output.
 | `proto/vmafx/v1/vmafx_api.proto` | `ScoreOptions` and the messages of structs that name `proto` (`Provenance`) |
 | `api/vmafx/v1/groupversion_info.go`, `api/vmafx/v1/<kind>_types.go` | From `api/vmafx-platform.toml`: the Go types of the custom resources with their kubebuilder markers ([Kubernetes resources](#kubernetes-resources)) |
 | `deploy/helm/vmafx/values.yaml`, `deploy/helm/vmafx/values.schema.json` | From `api/vmafx-platform.toml`: the chart's default values with their comments, and their JSON schema ([Helm chart values](#helm-chart-values)) |
+| `cmd/<binary>/config_keys.gen.go`, `deploy/helm/vmafx/templates/_config.gen.tpl`, the environment tables of the binaries' pages and `docs/usage/env-vars.md` | From `api/vmafx-platform.toml`: the Go binaries' CompoundKeys, their environment tables and the chart's `VMAFX_*` entries ([Environment of the Go binaries](#environment-of-the-go-binaries)) |
 | `api/openapi/components.gen.yaml` | The same messages as OpenAPI 3.0 schemas; also spliced into `api/openapi/vmafx-server-v1.yaml` |
 | `ffmpeg-patches/src/vf_vmafx_options.h` | The `vmafx` filter's context fields, AVOption table and value-name lists |
 | Regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/mcp/tools.md`, `docs/server/api-contract.md` | Option tables between `BEGIN GENERATED` / `END GENERATED` markers |
@@ -398,6 +399,40 @@ To change a value or its schema:
 2. If the entry names a Kubernetes type the subset does not hold yet, run
    `python3 scripts/codegen/k8s_openapi.py --write`.
 3. Regenerate: `python3 scripts/codegen/vmafx-api.py --write`.
+
+### Environment of the Go binaries
+
+The same file lists every environment variable the Go binaries read and how
+the chart sets it.
+
+| Table | What it holds |
+| --- | --- |
+| `[[config_binaries]]` | A Go binary: `name`, package `dir`, the `page` with its environment table, and the chart `workloads` that run it |
+| `[[config]]` | One variable: `env` (its name), `key` (the golusoris configuration key it maps to; none for a variable the binary reads directly), `binaries`, `type`, `default`, `doc`, `secret`; `[config.<binary>]` overrides `type`, `default` or `doc` for one binary |
+| `[[chart_workloads]]` | An environment list in the chart's templates: `name` and the `indent` of its entries |
+| `[[chart_env]]` | One `VMAFX_*` entry of those lists, in order: `env`, `workloads`, the YAML `comment` lines above it, a `when` condition (a template expression), and one value source: `value` (a template expression), `field_ref` or `secret_ref` (`name` and `key` expressions) |
+| `[[chart_maps]]` | A value helper: `source` compared with each of `cases`, `default` otherwise (the backend of each GPU vendor, `vmafx.backendEnvValue`) |
+
+The generator writes:
+
+- `cmd/<binary>/config_keys.gen.go`: the binary's golusoris CompoundKeys, every
+  `key` with an underscore inside a segment. golusoris turns each underscore of
+  a `VMAFX_` name into the key delimiter except in these keys.
+- One table per binary, with the same columns everywhere, into the binary's
+  page and into the Go services section of the
+  [environment reference](../usage/env-vars.md#go-services-golusoris). The
+  chart value column lists the values the chart's entries read.
+- `deploy/helm/vmafx/templates/_config.gen.tpl`: a helper `vmafx.env.<workload>`
+  per workload holding its `VMAFX_*` entries with their comments and
+  conditions at the list's indentation, and the value helpers. A template
+  includes the helper where its environment list holds them; no other template
+  writes a `VMAFX_*` entry.
+
+To add or change a variable: edit its `[[config]]` entry (and the `[[chart_env]]`
+entry when the chart sets it), then run `python3 scripts/codegen/vmafx-api.py
+--write`. A variable a binary reads but the definition lacks is a missing row
+in every table; the binary's environment tests (`env_test.go`,
+`main_test.go`) read the generated `compoundKeys`.
 
 ## Gates
 
