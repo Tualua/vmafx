@@ -570,6 +570,20 @@
 - **The vendored Pelorus interop sources are re-vendored at the pelorus commit that opens the qp-report CSV with `_wfsopen`.** `scripts/sync-pelorus-interop.sh` pins `4aae30711c65` (VMAFx/pelorus #89, fixing #88): `open_utf8()` calls `_wfsopen(..., _SH_DENYNO)` instead of the deprecated `_wfopen()` on Windows, with the same sharing. The mirror's local `_wfsopen` edit is gone; every vendored file is byte-identical to pelorus again apart from the banner and the include rewrite. No behaviour or ABI change (ABI 1.3).
 
 
+- **The gRPC services are generated from one platform definition
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** The scoring service
+  and the controller are described in `api/vmafx-platform.toml`, from which
+  `scripts/codegen/vmafx-api.py` writes `proto/vmafx/v1/vmafx.proto` and
+  `proto/vmafx/controller/v1/controller.proto`; `vmafx_api.proto` moves to
+  `proto/vmafx/v1/`. One buf configuration (`buf.yaml`, `buf.gen.yaml`, run by
+  `scripts/codegen/proto_generate.py`) generates the Go bindings at their
+  existing import paths, and `cmd/vmafx-controller/proto/` with its protoc
+  script is gone. The wire format is unchanged: every message, field number,
+  enum value and RPC is the same, and `buf breaking` with the wire and JSON
+  rules guards it from now on. gRPC reflection reports the new file names
+  (`vmafx/v1/vmafx.proto`, `vmafx/controller/v1/controller.proto`).
+
+
 - **The praetor governance engine moves from `afb739ed81f3` to `7458a220e1c9`
   ([ADR-2440](docs/adr/2440-praetor-pin-7458a220.md)).** The emitted `praetor-api.yml` and
   `praetor-docs.yml` now push only on `master`, listen for `ready_for_review` and stop a draft
