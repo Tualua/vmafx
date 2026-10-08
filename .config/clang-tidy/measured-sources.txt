@@ -812,6 +812,7 @@ core/test/test_vmafx_context.c
 core/test/test_vmafx_exactness.c
 core/test/test_vmafx_frame.c
 core/test/test_vmafx_frame_input.c
+core/test/test_vmafx_host_fence_wait.c
 core/test/test_vmafx_import_api.c
 core/test/test_vmafx_import_bitexact.c
 core/test/test_vmafx_import_cuda.c
@@ -831,6 +832,7 @@ core/test/test_vmafx_sha256.c
 core/test/test_vmafx_window.c
 core/test/test_vmafx_window_clock.c
 core/test/test_vmafx_window_live.c
+core/test/test_win32_pthread_timeout.c
 core/test/test_x86_cpu_gate.c
 core/test/test_y4m_411_oob.c
 core/test/test_y4m_alloc_failure.c

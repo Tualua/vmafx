@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 514,
+  "tus": 516,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -481,6 +481,7 @@
     "core/test/test_vmafx_exactness.c",
     "core/test/test_vmafx_frame.c",
     "core/test/test_vmafx_frame_input.c",
+    "core/test/test_vmafx_host_fence_wait.c",
     "core/test/test_vmafx_import_api.c",
     "core/test/test_vmafx_import_bitexact.c",
     "core/test/test_vmafx_import_fence.c",
@@ -496,6 +497,7 @@
     "core/test/test_vmafx_window.c",
     "core/test/test_vmafx_window_clock.c",
     "core/test/test_vmafx_window_live.c",
+    "core/test/test_win32_pthread_timeout.c",
     "core/test/test_x86_cpu_gate.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
@@ -1179,6 +1181,22 @@
         }
       },
       "previous_baseline_sha256": "fc6ba26ac23913e8ff1b15ea4902d8305cf9478a1ff728dc0e5ba0b9d2699bb3"
+    },
+    {
+      "sources": [
+        "core/test/test_vmafx_host_fence_wait.c",
+        "core/test/test_win32_pthread_timeout.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_host_fence_wait.c",
+            "core/test/test_win32_pthread_timeout.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "acb40a23b25fc568b2d991a044014ad56ed7ef2055283e87f3459505bfa03ab2"
     }
   ]
 }

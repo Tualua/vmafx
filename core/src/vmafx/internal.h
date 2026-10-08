@@ -337,8 +337,9 @@ VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const Vma
 const char *vmafx_import_plane_field(uint32_t i, const char *field);
 
 /* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no
- * limit): true when signalled. Polls a monotonic clock (fence.c). */
-bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns);
+ * limit): true when signalled. Waits on the fence's condition variable
+ * against a monotonic deadline (fence.c). */
+bool vmafx_host_fence_wait(VmafxHostFence *fence, uint64_t timeout_ns);
 
 /* ---- Pooling and windows (score.c, window.c; RC4 WP4, ADR-2074) ---------- */
 

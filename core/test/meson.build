@@ -1526,6 +1526,17 @@ test_vmafx_provenance_json = executable('test_vmafx_provenance_json',
 )
 test('test_vmafx_provenance_json', test_vmafx_provenance_json, suite : ['fast'])
 
+# Host fence waits on the real clock: a timed condition wait on every
+# platform, the MSVC builds through the Win32 shim's pthread_cond_timedwait().
+test_vmafx_host_fence_wait = executable('test_vmafx_host_fence_wait',
+    ['test.c', 'test_vmafx_host_fence_wait.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_host_fence_wait', test_vmafx_host_fence_wait, suite : ['fast'], timeout : 120)
+
 # VMAFx scores equal libvmaf scores bit for bit on the golden pair, both 1080p
 # checkerboards and the 10-bit sparks pair (fixtures in python/test/resource/yuv;
 # skipped with 77 when they are missing).
@@ -1714,12 +1725,10 @@ test_thread_pool = executable('test_thread_pool',
 #
 # Needs a real `pthread_cond_timedwait`: the test bounds every wait so a broken
 # gate fails instead of hanging the suite. Linux and MinGW-w64's winpthreads
-# both have it. MSVC does not, and neither does this repo's Win32 shim
-# (`core/src/compat/win32/pthread.h` implements init/destroy/wait/signal/
-# broadcast over CONDITION_VARIABLE, but no timed wait), so on the MSVC lanes
-# the call was only ever an implicit declaration. Probe for it rather than
-# matching on a platform name, so the target reappears by itself if the shim
-# grows one.
+# both have it, and so does this repo's Win32 shim for MSVC
+# (`core/src/compat/win32/pthread.h`, over SleepConditionVariableSRW). Probe
+# for it rather than matching on a platform name, so a platform whose
+# pthread.h lacks it drops the target instead of failing to link.
 has_cond_timedwait = cc.has_header_symbol('pthread.h', 'pthread_cond_timedwait',
                                           dependencies : [pthread_dependency, thread_lib])
 if has_cond_timedwait
@@ -6197,6 +6206,15 @@ test_compat_clz = executable('test_compat_clz',
     dependencies : [pthread_dependency],
 )
 test('test_compat_clz', test_compat_clz, suite : ['fast'])
+
+# The deadline arithmetic of the Win32 pthread shim's pthread_cond_timedwait()
+# (core/src/compat/win32/pthread_timeout.h). The shim compiles on Windows only;
+# its arithmetic is tested on every host.
+test_win32_pthread_timeout = executable('test_win32_pthread_timeout',
+    ['test.c', 'test_win32_pthread_timeout.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+)
+test('test_win32_pthread_timeout', test_win32_pthread_timeout, suite : ['fast'])
 
 # Static source-content check, so one platform is enough — and on Windows it
 # cannot run at all. meson invokes the script through its shebang interpreter,

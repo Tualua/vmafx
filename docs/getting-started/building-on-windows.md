@@ -118,6 +118,20 @@ python scripts\ci\run_meson_test.py -- -C build --suite fast
 `/experimental:c11atomics` is required on every MSVC build: libvmaf uses C11
 atomics, and MSVC's `<stdatomic.h>` refuses them without it.
 
+### Threads on MSVC
+
+MSVC ships no `pthread.h`, so an MSVC, clang-cl or icx-cl build takes its
+threads from a small header in the repository,
+`core/src/compat/win32/pthread.h`, which maps the POSIX calls libvmaf makes
+onto Windows primitives (slim reader/writer locks, condition variables,
+one-time initialisation and `_beginthreadex`). Nothing has to be installed or
+configured: Meson selects it whenever the compiler has no `pthread.h`. MinGW-w64
+builds use MinGW's own winpthreads instead. Timed waits are supported:
+`pthread_cond_timedwait()` takes the usual absolute `CLOCK_REALTIME` deadline
+and returns `ETIMEDOUT` once it has passed, and the VMAFx API's host fences
+(`vmafx_fence_wait()`) wait on it rather than polling. Upstream's bundled
+pthread-win32 and its `-Dbundled_winpthreads` option are not used.
+
 To confirm the toolset:
 
 - `cl.exe` prints `for ARM64` in its banner when the ARM64-hosted toolset is

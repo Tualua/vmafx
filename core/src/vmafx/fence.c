@@ -18,22 +18,28 @@
  * Windows shared fences) are refused naming the kind until a backend lane
  * implements them behind these same functions.
  *
- * Waiting polls the flag with short sleeps against a monotonic clock: the
- * portable pthread subset (core/src/compat/win32/pthread.h) has no timed
- * condition wait. Tests can make that clock virtual (frame_import_hooks.h),
- * so a long wait bound is measured without sleeping through it.
+ * A host fence is waited for on a condition variable that its signal
+ * broadcasts, with the deadline kept on a monotonic clock and each timed wait
+ * at most VMAFX_HOST_FENCE_WAIT_CHUNK_NS long. The
+ * Win32 pthread shim of the MSVC builds has the timed wait too
+ * (core/src/compat/win32/pthread.h). The other fences (the backend lanes',
+ * vmafx_window_wait()'s) poll through vmafx_fence_poll() with short sleeps.
+ * Tests can make the monotonic clock virtual (frame_import_hooks.h); a host
+ * fence then polls as well, so a long wait bound is measured without
+ * sleeping through it.
  */
 
 #include <assert.h>
+#include <errno.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <time.h>
 #ifdef _WIN32
 #include <windows.h>
-#else
-#include <time.h>
 #endif
 
 #include "error_internal.h"
@@ -57,13 +63,68 @@
 /* Nanoseconds per second. */
 #define VMAFX_NS_PER_S 1000000000u
 
+/* Longest single timed wait of a host fence: 1 s. A signal ends a wait at
+ * once (the broadcast); the chunk only bounds how long a wait without a limit
+ * goes without looking at the clock, and how far a wall-clock step can move
+ * one timeout where the condition variable measures CLOCK_REALTIME. */
+#define VMAFX_HOST_FENCE_WAIT_CHUNK_NS 1000000000u
+
+/* The clock a host fence's condition variable measures its deadline against.
+ * Linux selects CLOCK_MONOTONIC for it (pthread_condattr_setclock()), so a
+ * wall-clock step cannot stretch a wait. Elsewhere it is CLOCK_REALTIME, the
+ * default: the MSVC shim turns the deadline into a relative timeout at once,
+ * and on the remaining platforms a backward step can stretch one chunk's
+ * timeout (never a signalled wake). */
+#if defined(__linux__)
+#define VMAFX_HOST_FENCE_COND_CLOCK CLOCK_MONOTONIC
+#endif
+
 struct VmafxHostFence {
     uint32_t magic;
     VmafRef *refs;
     atomic_int signalled;
+    /* `signalled` is set under `lock` and `cond` broadcast with it, so a
+     * waiter that saw it clear under `lock` cannot miss the signal. */
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
 };
 
 /* ---- Host fence objects ---------------------------------------------------- */
+
+/* The fence's condition variable, on VMAFX_HOST_FENCE_COND_CLOCK where one is
+ * selected. */
+static int host_fence_cond_init(pthread_cond_t *cond)
+{
+#ifdef VMAFX_HOST_FENCE_COND_CLOCK
+    pthread_condattr_t attr;
+    int err = pthread_condattr_init(&attr);
+    if (err == 0) {
+        err = pthread_condattr_setclock(&attr, VMAFX_HOST_FENCE_COND_CLOCK);
+        if (err == 0) {
+            err = pthread_cond_init(cond, &attr);
+        }
+        (void)pthread_condattr_destroy(&attr);
+    }
+    return err;
+#else
+    return pthread_cond_init(cond, NULL);
+#endif
+}
+
+/* The fence's mutex and condition variable: 0, or the error with neither
+ * left initialised. */
+static int host_fence_sync_init(VmafxHostFence *fence)
+{
+    int err = pthread_mutex_init(&fence->lock, NULL);
+    if (err != 0) {
+        return err;
+    }
+    err = host_fence_cond_init(&fence->cond);
+    if (err != 0) {
+        (void)pthread_mutex_destroy(&fence->lock);
+    }
+    return err;
+}
 
 VmafxHostFence *vmafx_host_fence_new(void)
 {
@@ -72,6 +133,11 @@ VmafxHostFence *vmafx_host_fence_new(void)
         return NULL;
     }
     if (vmaf_ref_init(&fence->refs) != 0) {
+        free(fence);
+        return NULL;
+    }
+    if (host_fence_sync_init(fence) != 0) {
+        (void)vmaf_ref_close(fence->refs);
         free(fence);
         return NULL;
     }
@@ -97,6 +163,8 @@ void vmafx_host_fence_unref(VmafxHostFence *fence)
         return;
     }
     fence->magic = 0u;
+    (void)pthread_cond_destroy(&fence->cond);
+    (void)pthread_mutex_destroy(&fence->lock);
     (void)vmaf_ref_close(fence->refs);
     free(fence);
 }
@@ -104,7 +172,10 @@ void vmafx_host_fence_unref(VmafxHostFence *fence)
 void vmafx_host_fence_signal(VmafxHostFence *fence)
 {
     assert(fence && fence->magic == VMAFX_HOST_FENCE_MAGIC);
+    (void)pthread_mutex_lock(&fence->lock);
     atomic_store_explicit(&fence->signalled, 1, memory_order_release);
+    (void)pthread_cond_broadcast(&fence->cond);
+    (void)pthread_mutex_unlock(&fence->lock);
 }
 
 bool vmafx_host_fence_signalled(const VmafxHostFence *fence)
@@ -215,9 +286,93 @@ static int host_fence_done(const void *arg)
     return vmafx_host_fence_signalled(arg) ? 1 : 0;
 }
 
-bool vmafx_host_fence_wait(const VmafxHostFence *fence, uint64_t timeout_ns)
+/* The time `ns` from now on the clock of the fence's condition variable, the
+ * deadline pthread_cond_timedwait() takes. MSVC has no clock_gettime();
+ * TIME_UTC is CLOCK_REALTIME there, and the clock the Win32 shim's timed wait
+ * reads. */
+static int cond_deadline_after(struct timespec *at, uint64_t ns)
 {
-    return vmafx_fence_poll(host_fence_done, fence, timeout_ns) == 1;
+#if defined(_MSC_VER)
+    if (timespec_get(at, TIME_UTC) != TIME_UTC) {
+        return EINVAL;
+    }
+#elif defined(VMAFX_HOST_FENCE_COND_CLOCK)
+    if (clock_gettime(VMAFX_HOST_FENCE_COND_CLOCK, at) != 0) {
+        return EINVAL;
+    }
+#else
+    if (clock_gettime(CLOCK_REALTIME, at) != 0) {
+        return EINVAL;
+    }
+#endif
+    const uint64_t nsec = (uint64_t)at->tv_nsec + (ns % VMAFX_NS_PER_S);
+    at->tv_sec += (time_t)(ns / VMAFX_NS_PER_S) + (time_t)(nsec / VMAFX_NS_PER_S);
+    at->tv_nsec = (long)(nsec % VMAFX_NS_PER_S);
+    return 0;
+}
+
+/* The next timed wait of a host-fence wait that started at `start`: at most
+ * one chunk, and none (false) once a limited wait has run out. */
+static bool next_chunk(uint64_t start, uint64_t timeout_ns, uint64_t *chunk_ns)
+{
+    if (timeout_ns >= VMAFX_FENCE_WAIT_FOREVER_NS) {
+        *chunk_ns = VMAFX_HOST_FENCE_WAIT_CHUNK_NS;
+        return true;
+    }
+    const uint64_t elapsed = vmafx_monotonic_ns() - start;
+    if (elapsed >= timeout_ns) {
+        return false;
+    }
+    const uint64_t left = timeout_ns - elapsed;
+    *chunk_ns = (left < VMAFX_HOST_FENCE_WAIT_CHUNK_NS) ? left : VMAFX_HOST_FENCE_WAIT_CHUNK_NS;
+    return true;
+}
+
+/* Waits on the fence's condition variable in chunks against the monotonic
+ * deadline. A wake, spurious or not, ends a round; the round count has the
+ * bound of vmafx_fence_poll() (HISS-02), and a wait that used it up without
+ * reaching its deadline polls for the rest. */
+static bool host_fence_cond_wait(VmafxHostFence *fence, uint64_t timeout_ns)
+{
+    const uint64_t start = vmafx_monotonic_ns();
+    const uint64_t rounds = timeout_ns < VMAFX_FENCE_WAIT_FOREVER_NS ?
+                                timeout_ns / VMAFX_FENCE_POLL_NS + 1u :
+                                UINT64_MAX;
+    uint64_t chunk_ns = 0;
+    int err = 0;
+
+    (void)pthread_mutex_lock(&fence->lock);
+    for (uint64_t round = 0; round < rounds && err == 0; round++) {
+        struct timespec at;
+        if (vmafx_host_fence_signalled(fence) || !next_chunk(start, timeout_ns, &chunk_ns) ||
+            cond_deadline_after(&at, chunk_ns) != 0) {
+            break;
+        }
+        err = pthread_cond_timedwait(&fence->cond, &fence->lock, &at);
+        err = (err == ETIMEDOUT) ? 0 : err;
+    }
+    const bool signalled = vmafx_host_fence_signalled(fence);
+    (void)pthread_mutex_unlock(&fence->lock);
+    if (signalled || !next_chunk(start, timeout_ns, &chunk_ns)) {
+        return signalled;
+    }
+    /* Rounds used up by wakes, or a failed wait: poll for what is left. */
+    const uint64_t elapsed = vmafx_monotonic_ns() - start;
+    uint64_t left = 0;
+    if (timeout_ns >= VMAFX_FENCE_WAIT_FOREVER_NS) {
+        left = timeout_ns;
+    } else if (elapsed < timeout_ns) {
+        left = timeout_ns - elapsed;
+    }
+    return vmafx_fence_poll(host_fence_done, fence, left) == 1;
+}
+
+bool vmafx_host_fence_wait(VmafxHostFence *fence, uint64_t timeout_ns)
+{
+    if (timeout_ns == 0u || vmafx_test_clock_is_virtual()) {
+        return vmafx_fence_poll(host_fence_done, fence, timeout_ns) == 1;
+    }
+    return vmafx_host_fence_signalled(fence) || host_fence_cond_wait(fence, timeout_ns);
 }
 
 /* ---- Public functions ----------------------------------------------------------- */
