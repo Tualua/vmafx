@@ -32,10 +32,11 @@ const (
 	completedJobs = 2
 )
 
-// settle is how long the checks wait after the traffic: six scrapes of the
-// example's 5 s interval, so every rate() window holds samples on both sides
-// of the traffic.
-const settle = 30 * time.Second
+// settle is how long the checks wait after the traffic: every rate() window
+// holds samples on both sides of it (5 s scrapes), and the capacity
+// forecasts' 1-minute subqueries hold the two points predict_linear and deriv
+// need.
+const settle = 150 * time.Second
 
 // generateTraffic makes every family the dashboards read move: passing and
 // failing Score requests on both front doors, a stream session that

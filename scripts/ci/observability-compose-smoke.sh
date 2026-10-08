@@ -45,6 +45,10 @@ chmod 755 "$media"
 project="vmafx-obs-smoke-$$"
 compose=(docker compose -p "$project" -f "$root/deploy/compose/observability/compose.yaml")
 export VMAFX_MEDIA_DIR="$media"
+# Test prices in XTS, the ISO 4217 code reserved for testing, so the cost
+# panels have data; they are inputs of this test, not prices.
+export VMAFX_MONITORING_VALUES="$media/monitoring-values.yaml"
+printf 'monitoring:\n  cost: {perJobSecond: 0.001, perJob: 0.01, currency: XTS}\n' >"$VMAFX_MONITORING_VALUES"
 export PROMETHEUS_PORT=0 GRAFANA_PORT=0 VMAFX_SERVER_PORT=0 VMAFX_CONTROLLER_GRPC_PORT=0
 
 cleanup() {

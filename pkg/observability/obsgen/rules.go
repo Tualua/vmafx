@@ -42,6 +42,8 @@ type params struct {
 	queueAge, regressionPoints, regressionMin string
 	// label references a Prometheus label in an annotation.
 	label func(name string) string
+	// The prices and the currency of the cost dashboard.
+	pricePerJobSecond, pricePerJob, currency string
 }
 
 // burnParams is one burn-rate rule of params.
@@ -57,13 +59,16 @@ func plainParams(s Settings) params {
 		return burnParams{b.LongWindow, b.ShortWindow, b.For, severity, fmt.Sprint(b.Factor)}
 	}
 	p := params{
-		burns:            []burnParams{burn("critical", s.BurnRates.Fast), burn("warning", s.BurnRates.Slow)},
-		objective:        func(key string) string { return fmt.Sprint(objectives[key]) },
-		latencyLE:        s.SLO.ScoreLatencySeconds,
-		queueAge:         strconv.Itoa(s.Alerts.QueueAgeSeconds),
-		regressionPoints: fmt.Sprint(s.Alerts.ScoreRegressionPoints),
-		regressionMin:    strconv.Itoa(s.Alerts.ScoreRegressionMinScores),
-		label:            func(name string) string { return "{{ $labels." + name + " }}" },
+		burns:             []burnParams{burn("critical", s.BurnRates.Fast), burn("warning", s.BurnRates.Slow)},
+		objective:         func(key string) string { return fmt.Sprint(objectives[key]) },
+		latencyLE:         s.SLO.ScoreLatencySeconds,
+		queueAge:          strconv.Itoa(s.Alerts.QueueAgeSeconds),
+		regressionPoints:  fmt.Sprint(s.Alerts.ScoreRegressionPoints),
+		regressionMin:     strconv.Itoa(s.Alerts.ScoreRegressionMinScores),
+		label:             func(name string) string { return "{{ $labels." + name + " }}" },
+		pricePerJobSecond: fmt.Sprint(s.Cost.PerJobSecond),
+		pricePerJob:       fmt.Sprint(s.Cost.PerJob),
+		currency:          s.Cost.Currency,
 	}
 	for _, b := range p.burns {
 		for _, w := range []string{b.long, b.short} {
@@ -97,14 +102,17 @@ func helmParams() params {
 		return burnParams{value(v + ".longWindow"), value(v + ".shortWindow"), value(v + ".for"), severity, value(v + ".factor")}
 	}
 	return params{
-		windows:          []string{helmWindow},
-		burns:            []burnParams{burn("fast", "critical"), burn("slow", "warning")},
-		objective:        func(key string) string { return value("slo." + key) },
-		latencyLE:        value("slo.scoreLatencySeconds"),
-		queueAge:         "{{ " + helmValues + ".alerts.queueAgeSeconds | int }}",
-		regressionPoints: value("alerts.scoreRegressionPoints"),
-		regressionMin:    "{{ " + helmValues + ".alerts.scoreRegressionMinScores | int }}",
-		label:            func(name string) string { return "{{`{{ $labels." + name + " }}`}}" },
+		windows:           []string{helmWindow},
+		burns:             []burnParams{burn("fast", "critical"), burn("slow", "warning")},
+		objective:         func(key string) string { return value("slo." + key) },
+		latencyLE:         value("slo.scoreLatencySeconds"),
+		queueAge:          "{{ " + helmValues + ".alerts.queueAgeSeconds | int }}",
+		regressionPoints:  value("alerts.scoreRegressionPoints"),
+		regressionMin:     "{{ " + helmValues + ".alerts.scoreRegressionMinScores | int }}",
+		label:             func(name string) string { return "{{`{{ $labels." + name + " }}`}}" },
+		pricePerJobSecond: value("cost.perJobSecond"),
+		pricePerJob:       value("cost.perJob"),
+		currency:          value("cost.currency"),
 	}
 }
 
@@ -135,8 +143,9 @@ func sloRatios(p params) []sloRatio {
 
 // recordingRule is one Prometheus recording rule.
 type recordingRule struct {
-	Record string `yaml:"record"`
-	Expr   string `yaml:"expr"`
+	Record string            `yaml:"record"`
+	Expr   string            `yaml:"expr"`
+	Labels map[string]string `yaml:"labels,omitempty"`
 }
 
 // sloRecordingRules are the SLO ratios over every window of p.
@@ -144,7 +153,7 @@ func sloRecordingRules(p params) []recordingRule {
 	var out []recordingRule
 	for _, r := range sloRatios(p) {
 		for _, w := range p.windows {
-			out = append(out, recordingRule{r.record + ":rate" + w, r.expr(w)})
+			out = append(out, recordingRule{Record: r.record + ":rate" + w, Expr: r.expr(w)})
 		}
 	}
 	return out
@@ -154,19 +163,28 @@ func sloRecordingRules(p params) []recordingRule {
 // regression alert reads; they take no settings.
 func qualityRecordingRules() []recordingRule {
 	return []recordingRule{
-		{"vmafx:quality_score:p50_1h",
-			"histogram_quantile(0.5, sum by (tenant, model, le) (rate(" + m.QualityScore.Name + "_bucket[1h])))"},
-		{"vmafx:quality_score:count_1h",
-			"sum by (tenant, model) (increase(" + m.QualityScore.Name + "_count[1h]))"},
+		{Record: "vmafx:quality_score:p50_1h",
+			Expr: "histogram_quantile(0.5, sum by (tenant, model, le) (rate(" + m.QualityScore.Name + "_bucket[1h])))"},
+		{Record: "vmafx:quality_score:count_1h",
+			Expr: "sum by (tenant, model) (increase(" + m.QualityScore.Name + "_count[1h]))"},
 	}
+}
+
+// recordingRules are every recording rule, in the order of the rule file:
+// the SLO ratios, the quality summaries, then the settings.
+func recordingRules(p params) []recordingRule {
+	out := append(sloRecordingRules(p), qualityRecordingRules()...)
+	return append(out, settingRecordingRules(p)...)
 }
 
 // RecordedSeries are the series the rule file records with the default
 // settings; a dashboard may query them like the families of metricdef.
 func RecordedSeries() []string {
 	var out []string
-	for _, r := range append(sloRecordingRules(plainParams(DefaultSettings())), qualityRecordingRules()...) {
-		out = append(out, r.Record)
+	for _, r := range recordingRules(plainParams(DefaultSettings())) {
+		if !slices.Contains(out, r.Record) {
+			out = append(out, r.Record)
+		}
 	}
 	return out
 }

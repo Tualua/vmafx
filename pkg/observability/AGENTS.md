@@ -119,6 +119,16 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
     mounts as other users). Smoke never in parallel with another heavy job;
     stack torn down after (`down -v`).
 
+12. **Settings series** (`obsgen/settingrules.go`, Q-193 / Q-195): SLO
+    objectives, SLO event rates, prices = recording rules from `Settings`,
+    one sample per scraped instance (`perScrapedInstance`, `job` +
+    `instance` kept: dashboard-linter needs both matchers). Price rule
+    `... > 0`: unset price records nothing, cost panels empty; never assume
+    price. One price per job-second (every outcome) + one per completed or
+    failed job (`chargedOutcomes`, Q-208; cancelled never charged, promtool
+    case in rules test file), every backend. Smoke sets test prices in `XTS`
+    only.
+
 ## Test requirements
 
 ```bash

@@ -42,7 +42,7 @@ That renders:
 | `ServiceMonitor` | `<release>-vmafx-node` | the nodes' `/metrics` on `node.metricsPort` (with `node.enabled`) |
 | `PodMonitor` | `<release>-vmafx-operator` | the operator's pods on port 8080; it has no Service (with `operator.enabled`) |
 | `PrometheusRule` | `<release>-vmafx` | the alerts and recording rules of `deploy/prometheus/vmafx-rules.yaml` |
-| `ConfigMap` | `<release>-vmafx-dashboard-<name>` | one per dashboard: Overview, Quality, Nodes and devices, Live sessions |
+| `ConfigMap` | `<release>-vmafx-dashboard-<name>` | one per dashboard: Overview, Quality, Nodes and devices, Live sessions, SLO report, Usage and cost, Capacity |
 | `NetworkPolicy` | `<release>-vmafx-allow-metrics-scrape` | with `networkPolicy.enabled`: Prometheus may reach every metrics port |
 
 Check it:
@@ -110,6 +110,12 @@ monitoring:
 | `alerts.queueAgeSeconds` | `1800` | `VMAFxQueueAging`: how old a tenant's oldest pending job may get |
 | `alerts.scoreRegressionPoints` | `5` | `VMAFxScoreRegression`: the drop of an hour's median score below the previous day's |
 | `alerts.scoreRegressionMinScores` | `20` | `VMAFxScoreRegression`: scores an hour needs to be compared |
+| `cost.perJobSecond` | `0` (unset) | price of one second of job run time, for the Usage and cost dashboard |
+| `cost.perJob` | `0` (unset) | price of one completed or failed job; cancelled jobs are not charged |
+| `cost.currency` | `""` | ISO 4217 code shown with the costs |
+
+The prices are yours: VMAFx assumes none, and an unset price leaves its cost
+panels empty. One price per job-second and one per job apply to every backend.
 
 A burn rule fires when the ratio of bad events over its long window and over
 its short window both exceed `factor * (1 - objective)`; the rule states that

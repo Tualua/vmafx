@@ -155,21 +155,25 @@ func TestValidateAgreesWithTheChartSchema(t *testing.T) {
 	schema := chartSchema(t)
 	cases := map[string]bool{
 		"monitoring: {}": true,
-		"monitoring: {slo: {jobSuccess: 0.5, scoreLatencySeconds: '0.25'}}": true,
-		"monitoring: {slo: {jobSuccess: 1}}":                                false,
-		"monitoring: {slo: {scoreSuccess: 0}}":                              false,
-		"monitoring: {slo: {scoreLatencySeconds: '31'}}":                    false,
-		"monitoring: {slo: {scoreLatencySeconds: 30}}":                      false,
-		"monitoring: {slo: {objective: 0.9}}":                               false,
-		"monitoring: {burnRates: {fast: {factor: 0}}}":                      false,
-		"monitoring: {burnRates: {fast: {longWindow: 1h30m}}}":              true,
-		"monitoring: {burnRates: {slow: {shortWindow: 1x}}}":                false,
-		"monitoring: {burnRates: {slow: {for: ''}}}":                        false,
-		"monitoring: {alerts: {queueAgeSeconds: 0}}":                        false,
-		"monitoring: {alerts: {queueAgeSeconds: 1.5}}":                      false,
-		"monitoring: {alerts: {scoreRegressionPoints: 100}}":                true,
-		"monitoring: {alerts: {scoreRegressionPoints: 101}}":                false,
-		"monitoring: {alerts: {scoreRegressionMinScores: 1}}":               true,
+		"monitoring: {slo: {jobSuccess: 0.5, scoreLatencySeconds: '0.25'}}":     true,
+		"monitoring: {slo: {jobSuccess: 1}}":                                    false,
+		"monitoring: {slo: {scoreSuccess: 0}}":                                  false,
+		"monitoring: {slo: {scoreLatencySeconds: '31'}}":                        false,
+		"monitoring: {slo: {scoreLatencySeconds: 30}}":                          false,
+		"monitoring: {slo: {objective: 0.9}}":                                   false,
+		"monitoring: {burnRates: {fast: {factor: 0}}}":                          false,
+		"monitoring: {burnRates: {fast: {longWindow: 1h30m}}}":                  true,
+		"monitoring: {burnRates: {slow: {shortWindow: 1x}}}":                    false,
+		"monitoring: {burnRates: {slow: {for: ''}}}":                            false,
+		"monitoring: {alerts: {queueAgeSeconds: 0}}":                            false,
+		"monitoring: {alerts: {queueAgeSeconds: 1.5}}":                          false,
+		"monitoring: {alerts: {scoreRegressionPoints: 100}}":                    true,
+		"monitoring: {alerts: {scoreRegressionPoints: 101}}":                    false,
+		"monitoring: {alerts: {scoreRegressionMinScores: 1}}":                   true,
+		"monitoring: {cost: {perJobSecond: 0.002, perJob: 0.1, currency: EUR}}": true,
+		"monitoring: {cost: {perJobSecond: -1}}":                                false,
+		"monitoring: {cost: {currency: euro}}":                                  false,
+		"monitoring: {cost: {perJob: '1'}}":                                     false,
 	}
 	for doc, valid := range cases {
 		schemaErr := schema.Validate(chartValuesWith(t, doc))
@@ -225,6 +229,7 @@ func TestHelmTemplateUsesEverySetting(t *testing.T) {
 		"burnRates.fast.longWindow", "burnRates.fast.shortWindow", "burnRates.fast.factor", "burnRates.fast.for",
 		"burnRates.slow.longWindow", "burnRates.slow.shortWindow", "burnRates.slow.factor", "burnRates.slow.for",
 		"alerts.queueAgeSeconds", "alerts.scoreRegressionPoints", "alerts.scoreRegressionMinScores",
+		"cost.perJobSecond", "cost.perJob", "cost.currency",
 	} {
 		if !strings.Contains(tmpl, helmValues+"."+key) {
 			t.Errorf("%s does not read %s.%s", HelmRuleTemplate, helmValues, key)

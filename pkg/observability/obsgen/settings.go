@@ -26,6 +26,21 @@ type Settings struct {
 	SLO       SLOSettings   `yaml:"slo"`
 	BurnRates BurnRates     `yaml:"burnRates"`
 	Alerts    AlertSettings `yaml:"alerts"`
+	Cost      CostSettings  `yaml:"cost"`
+}
+
+// CostSettings are the prices of the usage and cost dashboard (decision
+// Q-193): one price per second of job run time and one per job, the same for
+// every backend, in Currency. A price of 0 (the default) is unset: its cost
+// panels stay empty, never filled with an assumed price.
+type CostSettings struct {
+	// PerJobSecond is the price of one second a node spends on a job.
+	PerJobSecond float64 `yaml:"perJobSecond"`
+	// PerJob is the price of one completed or failed job; a cancelled job is
+	// not charged (Q-208).
+	PerJob float64 `yaml:"perJob"`
+	// Currency is the ISO 4217 code the panels show, or empty.
+	Currency string `yaml:"currency"`
 }
 
 // SLOSettings are the objectives: the share of events that must be good
@@ -207,6 +222,21 @@ func (s Settings) Validate() error {
 	a := s.Alerts
 	if a.QueueAgeSeconds < 1 || a.ScoreRegressionMinScores < 1 || a.ScoreRegressionPoints <= 0 || a.ScoreRegressionPoints > 100 {
 		return fmt.Errorf("obsgen: alerts %+v: queueAgeSeconds and scoreRegressionMinScores must be at least 1, scoreRegressionPoints in (0, 100]", a)
+	}
+	return s.Cost.validate()
+}
+
+// currencyCode is the form the chart's schema accepts for cost.currency: an
+// ISO 4217 code or nothing.
+var currencyCode = regexp.MustCompile(`^([A-Z]{3})?$`)
+
+// validate refuses a negative price and a currency that is no ISO 4217 code.
+func (c CostSettings) validate() error {
+	if c.PerJobSecond < 0 || c.PerJob < 0 {
+		return fmt.Errorf("obsgen: cost prices %g, %g must not be negative", c.PerJobSecond, c.PerJob)
+	}
+	if !currencyCode.MatchString(c.Currency) {
+		return fmt.Errorf("obsgen: cost.currency=%q is no ISO 4217 code such as EUR", c.Currency)
 	}
 	return nil
 }

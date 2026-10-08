@@ -84,6 +84,9 @@ func dashboards() []generatedDashboard {
 		{"vmafx-quality.json", quality()},
 		{"vmafx-nodes.json", nodes()},
 		{"vmafx-live.json", live()},
+		{"vmafx-slo.json", sloDashboard()},
+		{"vmafx-usage.json", usage()},
+		{"vmafx-capacity.json", capacity()},
 	}
 	for _, e := range gpuExporters() {
 		out = append(out, generatedDashboard{"vmafx-gpu-" + e.key + ".json", exporterDashboard(e)})

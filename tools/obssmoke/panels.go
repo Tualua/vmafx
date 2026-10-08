@@ -10,19 +10,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/VMAFx/vmafx/pkg/observability/obsgen"
-)
-
-// The Grafana variables a query may hold. The time-range ones become a
-// window the traffic of this run falls in; every other variable selects all
-// values, as the dashboards' "All" does.
-var (
-	rangeVariable = regexp.MustCompile(`\$(?:\{(?:__rate_interval|__interval|__range)\}|(?:__rate_interval|__interval|__range)\b)`)
-	otherVariable = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
 )
 
 // queryWindow is what the time-range variables become.
@@ -31,7 +22,7 @@ const queryWindow = "10m"
 // instantiate turns a dashboard query into the query Grafana sends with
 // every variable set to "All".
 func instantiate(expr string) string {
-	return otherVariable.ReplaceAllString(rangeVariable.ReplaceAllString(expr, queryWindow), ".*")
+	return obsgen.Instantiate(expr, queryWindow)
 }
 
 // panelResult is one query's outcome.

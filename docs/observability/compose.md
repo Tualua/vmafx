@@ -64,8 +64,9 @@ request's trace in Tempo (`service.name` `vmafx-server`).
 
 ## Change the alert settings
 
-`monitoring-values.yaml` holds the SLO objectives, burn-rate windows and alert
-thresholds, in the same keys as the Helm chart's values
+`monitoring-values.yaml` holds the SLO objectives, burn-rate windows, alert
+thresholds and the prices of the usage and cost dashboard, in the same keys as
+the Helm chart's values
 ([the table](kubernetes.md#set-the-objectives-and-thresholds)); keys left out
 keep their defaults. When the stack starts, the `rules` service renders
 Prometheus's rule file from it with `go run ./tools/obsgen -render-rules`,
@@ -105,14 +106,18 @@ The data source provisioning is generated (`deploy/grafana/provisioning/`,
 
 `scripts/ci/observability-compose-smoke.sh` starts the stack on ephemeral
 ports with the 576x324 pair of `testdata/` as media, and runs
-`tools/obssmoke` inside the network. It sends Score requests that pass and
+`tools/obssmoke` inside the network, with test prices in `XTS` (the ISO 4217
+code reserved for testing) so the cost panels have data. It sends Score
+requests that pass and
 fail to the server and the controller, a ScoreStream session, and controller
 jobs that complete, fail and are cancelled; then it checks that Prometheus
 scrapes all three components, that the rendered rules evaluate without an
 error, that every Prometheus query of every dashboard returns data, that
 Grafana provisioned every dashboard and data source, and that traces of the
-server and the controller reached Tempo. A query that cannot return data in
-this stack (it needs a GPU, or a node that dies) is listed with its reason in
+server and the controller reached Tempo. It waits 150 seconds after the
+traffic, so the capacity forecasts have two 1-minute points to fit. A query
+that cannot return data in this stack (it needs a GPU) is listed with its
+reason in
 `tools/obssmoke/exemptions.go`, and an exempted query that does return data
 fails the run.
 

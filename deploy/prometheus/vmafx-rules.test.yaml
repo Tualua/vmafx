@@ -260,3 +260,20 @@ tests:
       - eval_time: 30m
         alertname: VMAFxMetricsReadErrors
         exp_alerts: []
+  - name: per-job cost charges completed and failed jobs, not cancelled ones
+    interval: 1m
+    input_series:
+      - series: vmafx_controller_job_duration_seconds_count{job="vmafx-controller",instance="c:8080",tenant="a",outcome="completed"}
+        values: 0+1x60
+      - series: vmafx_controller_job_duration_seconds_count{job="vmafx-controller",instance="c:8080",tenant="a",outcome="failed"}
+        values: 0+1x60
+      - series: vmafx_controller_job_duration_seconds_count{job="vmafx-controller",instance="c:8080",tenant="a",outcome="cancelled"}
+        values: 0+5x60
+      - series: vmafx:price_job{job="vmafx-controller",instance="c:8080",currency="XTS"}
+        values: 2x60
+    promql_expr_test:
+      - expr: sum by (tenant) (increase(vmafx_controller_job_duration_seconds_count{job=~".*",instance=~".*",tenant=~".*",outcome=~"completed|failed"}[1h])) * on () group_left (currency) max by (currency) (vmafx:price_job{job=~".*",instance=~".*"})
+        eval_time: 1h
+        exp_samples:
+          - labels: '{currency="XTS", tenant="a"}'
+            value: 240

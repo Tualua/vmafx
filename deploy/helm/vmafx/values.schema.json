@@ -315,6 +315,17 @@
             "scoreRegressionPoints": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "VMAFxScoreRegression: the drop, in score points, of an hour's median below the median of the previous day's hourly medians." },
             "scoreRegressionMinScores": { "type": "integer", "minimum": 1, "description": "VMAFxScoreRegression: the scores an hour needs to be compared." }
           }
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["perJobSecond", "perJob", "currency"],
+          "description": "Prices of the VMAFx Usage and cost dashboard, the same for every backend (Q-193). 0 is unset: its cost panels stay empty.",
+          "properties": {
+            "perJobSecond": { "type": "number", "minimum": 0, "description": "Price of one second a node spends on a job." },
+            "perJob": { "type": "number", "minimum": 0, "description": "Price of one completed or failed job; cancelled jobs are not charged." },
+            "currency": { "type": "string", "pattern": "^([A-Z]{3})?$", "description": "ISO 4217 code shown with the costs, or empty." }
+          }
         }
       }
     },

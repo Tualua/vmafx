@@ -46,7 +46,7 @@ services:
       GOFLAGS: -p=4
     volumes:
       - ../../..:/src:ro
-      - ./monitoring-values.yaml:/config/monitoring-values.yaml:ro
+      - ${VMAFX_MONITORING_VALUES:-./monitoring-values.yaml}:/config/monitoring-values.yaml:ro
       - go-cache:/cache
       - rules:/rules
 

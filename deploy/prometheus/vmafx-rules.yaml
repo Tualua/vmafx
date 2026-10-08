@@ -31,6 +31,50 @@ groups:
         expr: histogram_quantile(0.5, sum by (tenant, model, le) (rate(vmafx_quality_score_bucket[1h])))
       - record: vmafx:quality_score:count_1h
         expr: sum by (tenant, model) (increase(vmafx_quality_score_count[1h]))
+      - record: vmafx:slo_events:rate5m
+        expr: (sum by (job, instance) (rate(vmafx_controller_jobs_failed_total[5m])) + sum by (job, instance) (rate(vmafx_controller_jobs_completed_total[5m]))) or sum by (job, instance) (rate(vmafx_controller_jobs_completed_total[5m])) or sum by (job, instance) (rate(vmafx_controller_jobs_failed_total[5m]))
+        labels:
+          slo: job_success
+      - record: vmafx:slo_bad_events:rate5m
+        expr: sum by (job, instance) (rate(vmafx_controller_jobs_failed_total[5m]))
+        labels:
+          slo: job_success
+      - record: vmafx:slo_events:rate5m
+        expr: sum by (job, instance) (rate(vmafx_server_score_requests_total[5m]))
+        labels:
+          slo: score_success
+      - record: vmafx:slo_bad_events:rate5m
+        expr: sum by (job, instance) (rate(vmafx_server_score_errors_total[5m]))
+        labels:
+          slo: score_success
+      - record: vmafx:slo_events:rate5m
+        expr: sum by (job, instance) (rate(vmafx_server_score_duration_seconds_count[5m]))
+        labels:
+          slo: score_latency
+      - record: vmafx:slo_bad_events:rate5m
+        expr: sum by (job, instance) (rate(vmafx_server_score_duration_seconds_count[5m])) - sum by (job, instance) (rate(vmafx_server_score_duration_seconds_bucket{le=~"30(\\.0)?"}[5m]))
+        labels:
+          slo: score_latency
+      - record: vmafx:slo_objective
+        expr: max by (job, instance) (vmafx_build_info) * 0 + 0.99
+        labels:
+          slo: job_success
+      - record: vmafx:slo_objective
+        expr: max by (job, instance) (vmafx_build_info) * 0 + 0.99
+        labels:
+          slo: score_success
+      - record: vmafx:slo_objective
+        expr: max by (job, instance) (vmafx_build_info) * 0 + 0.99
+        labels:
+          slo: score_latency
+      - record: vmafx:price_job_second
+        expr: (max by (job, instance) (vmafx_build_info) * 0 + 0) > 0
+        labels:
+          currency: ""
+      - record: vmafx:price_job
+        expr: (max by (job, instance) (vmafx_build_info) * 0 + 0) > 0
+        labels:
+          currency: ""
   - name: vmafx.alerts
     rules:
       - alert: VMAFxComponentDown

@@ -43,6 +43,7 @@ monitoring:
     fast: {longWindow: 2h, shortWindow: 10m, factor: 13.37}
     slow: {longWindow: 1d, shortWindow: 2h, factor: 3, for: 1h30m}
   alerts: {queueAgeSeconds: 1000000, scoreRegressionPoints: 2.5}
+  cost: {perJobSecond: 0.002, perJob: 0.1, currency: EUR}
 """
 GO = shutil.which("go") or "go"
 BASH = shutil.which("bash") or "/bin/bash"
@@ -168,6 +169,13 @@ class HelmObservabilityTest(unittest.TestCase):
         self.assertTrue(any('le=~"0.25(\\\\.0)?"' in e for e in exprs))
         records = [r["record"] for r in plain["groups"][0]["rules"] if "record" in r]
         self.assertEqual(records.count("vmafx:job_failure_ratio:rate2h"), 1)
+        prices = {
+            r["record"]: r
+            for r in plain["groups"][0]["rules"]
+            if r.get("record", "").startswith("vmafx:price_")
+        }
+        self.assertEqual(prices["vmafx:price_job"]["labels"], {"currency": "EUR"})
+        self.assertIn("+ 0.002) > 0", prices["vmafx:price_job_second"]["expr"])
         promtool_accepts(rule["spec"])
 
     def test_rule_switches_and_labels(self) -> None:

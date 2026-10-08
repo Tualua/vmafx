@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	m "github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
 
 // generatedHeader starts every generated YAML file.
@@ -54,7 +56,7 @@ func RenderRules(s Settings) ([]byte, error) {
 // ruleGroups are the recording rules, then the alerts, rendered with p.
 func ruleGroups(p params) []ruleGroup {
 	var rec []any
-	for _, r := range append(sloRecordingRules(p), qualityRecordingRules()...) {
+	for _, r := range recordingRules(p) {
 		rec = append(rec, r)
 	}
 	var al []any
@@ -79,10 +81,24 @@ type ruleTestFile struct {
 }
 
 type ruleTest struct {
-	Name          string          `yaml:"name"`
-	Interval      string          `yaml:"interval"`
-	InputSeries   []inputSeries   `yaml:"input_series"`
-	AlertRuleTest []alertRuleTest `yaml:"alert_rule_test"`
+	Name           string           `yaml:"name"`
+	Interval       string           `yaml:"interval"`
+	InputSeries    []inputSeries    `yaml:"input_series"`
+	AlertRuleTest  []alertRuleTest  `yaml:"alert_rule_test,omitempty"`
+	PromQLExprTest []promQLExprTest `yaml:"promql_expr_test,omitempty"`
+}
+
+// promQLExprTest evaluates one expression, here a dashboard query, against
+// the input series.
+type promQLExprTest struct {
+	Expr       string      `yaml:"expr"`
+	EvalTime   string      `yaml:"eval_time"`
+	ExpSamples []expSample `yaml:"exp_samples"`
+}
+
+type expSample struct {
+	Labels string  `yaml:"labels"`
+	Value  float64 `yaml:"value"`
 }
 
 type alertRuleTest struct {
@@ -113,7 +129,30 @@ func rulesTestYAML() ([]byte, error) {
 			})
 		}
 	}
+	f.Tests = append(f.Tests, dashboardQueryTests()...)
 	return marshalYAML(f)
+}
+
+// dashboardQueryTests evaluate dashboard queries whose arithmetic a decision
+// fixes. The per-job cost charges completed and failed jobs, never cancelled
+// ones (Q-208): over an hour a tenant completes 60 jobs, fails 60 and cancels
+// 300 at a price of 2, which costs 240, not 840.
+func dashboardQueryTests() []ruleTest {
+	jobs := func(outcome, values string) inputSeries {
+		return series(m.ControllerJobDuration.Name+"_count",
+			`job="vmafx-controller",instance="c:8080",tenant="a",outcome="`+outcome+`"`, values)
+	}
+	return []ruleTest{{
+		Name: "per-job cost charges completed and failed jobs, not cancelled ones", Interval: "1m",
+		InputSeries: []inputSeries{
+			jobs("completed", "0+1x60"), jobs("failed", "0+1x60"), jobs("cancelled", "0+5x60"),
+			series(PricePerJob, `job="vmafx-controller",instance="c:8080",currency="XTS"`, "2x60"),
+		},
+		PromQLExprTest: []promQLExprTest{{
+			Expr: Instantiate(PerJobCostQuery("1h"), "1h"), EvalTime: "1h",
+			ExpSamples: []expSample{{Labels: `{currency="XTS", tenant="a"}`, Value: 240}},
+		}},
+	}}
 }
 
 // expectedAlerts are the alerts case c expects, the annotations rendered from

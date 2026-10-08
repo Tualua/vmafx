@@ -74,6 +74,21 @@ func CheckBucketMatchers(expr string) []string {
 	return out
 }
 
+// The Grafana variables a dashboard query may hold: the time-range ones, and
+// every other (template variables, whose "All" Instantiate selects).
+var (
+	rangeVariable = regexp.MustCompile(`\$(?:\{(?:__rate_interval|__interval|__range)\}|(?:__rate_interval|__interval|__range)\b)`)
+	otherVariable = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+)
+
+// Instantiate turns a dashboard query into the query Grafana sends with every
+// template variable set to "All" (".*") and the time-range variables set to
+// window. The Compose smoke test and the promtool cases of the dashboards'
+// queries evaluate dashboard queries through it.
+func Instantiate(expr, window string) string {
+	return otherVariable.ReplaceAllString(rangeVariable.ReplaceAllString(expr, window), ".*")
+}
+
 // LeMatcher selects the bucket with upper bound bound (as the client writes
 // it, "70" or "0.05") whether Prometheus stored it as written (Prometheus 2,
 // text format) or in float form (Prometheus 3: "70.0").

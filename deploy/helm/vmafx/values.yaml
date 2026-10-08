@@ -600,6 +600,15 @@ monitoring:
     scoreRegressionPoints: 5
     # VMAFxScoreRegression: the scores an hour needs to be compared.
     scoreRegressionMinScores: 20
+  # cost: the prices of the VMAFx Usage and cost dashboard, the same for
+  # every backend. 0 is unset: its cost panels stay empty.
+  cost:
+    # Price of one second a node spends on a job.
+    perJobSecond: 0
+    # Price of one completed or failed job; cancelled jobs are not charged.
+    perJob: 0
+    # ISO 4217 code shown with the costs, or empty.
+    currency: ""
   # END obsgen monitoring settings
 
 # ---------------------------------------------------------------------------

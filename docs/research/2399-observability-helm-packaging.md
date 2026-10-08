@@ -90,6 +90,21 @@ actually scraped once?
     counter child created at zero (device-memory read errors, requeues)
     returns data too.
 
+12. **Settings in dashboards (2026-10-08).** dashboard-linter v0.3.0 requires
+    `job=~"$job"` and `instance=~"$instance"` on every selector
+    (`rule_target_job_instance.go`), and a recorded series loses both labels
+    when its expression aggregates them away. The settings series are
+    therefore recorded per scraped instance
+    (`max by (job, instance) (vmafx_build_info) * 0 + value`). The linter's
+    `$__rate_interval` rule applies to `rate` and `irate` only, so the reports
+    use `increase` and `sum_over_time` over `$__range`.
+13. **Counters that start with a value.** Prometheus does not count a
+    counter's first sample: a burst of submits before the series' first
+    scrape reads as an increase of 0. A panel that needs growth to have data
+    (time until demand meets capacity, `deriv(...) > 0`) is empty or not by
+    the scrape timing; the capacity dashboard shows the demand's growth
+    instead, which always has data once two points exist.
+
 ## Alternatives explored
 
 - A hand-written Helm template beside the generated rule file: two copies of
