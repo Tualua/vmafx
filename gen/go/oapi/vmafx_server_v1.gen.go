@@ -59,10 +59,310 @@ func (e ReadyResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for ScoreOptionsAomCtc.
+const (
+	ScoreOptionsAomCtcV10 ScoreOptionsAomCtc = "v1.0"
+	ScoreOptionsAomCtcV20 ScoreOptionsAomCtc = "v2.0"
+	ScoreOptionsAomCtcV30 ScoreOptionsAomCtc = "v3.0"
+	ScoreOptionsAomCtcV40 ScoreOptionsAomCtc = "v4.0"
+	ScoreOptionsAomCtcV50 ScoreOptionsAomCtc = "v5.0"
+	ScoreOptionsAomCtcV60 ScoreOptionsAomCtc = "v6.0"
+	ScoreOptionsAomCtcV70 ScoreOptionsAomCtc = "v7.0"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsAomCtc enum.
+func (e ScoreOptionsAomCtc) Valid() bool {
+	switch e {
+	case ScoreOptionsAomCtcV10:
+		return true
+	case ScoreOptionsAomCtcV20:
+		return true
+	case ScoreOptionsAomCtcV30:
+		return true
+	case ScoreOptionsAomCtcV40:
+		return true
+	case ScoreOptionsAomCtcV50:
+		return true
+	case ScoreOptionsAomCtcV60:
+		return true
+	case ScoreOptionsAomCtcV70:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsBackend.
+const (
+	ScoreOptionsBackendAuto  ScoreOptionsBackend = "auto"
+	ScoreOptionsBackendCpu   ScoreOptionsBackend = "cpu"
+	ScoreOptionsBackendCuda  ScoreOptionsBackend = "cuda"
+	ScoreOptionsBackendHip   ScoreOptionsBackend = "hip"
+	ScoreOptionsBackendMetal ScoreOptionsBackend = "metal"
+	ScoreOptionsBackendSycl  ScoreOptionsBackend = "sycl"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsBackend enum.
+func (e ScoreOptionsBackend) Valid() bool {
+	switch e {
+	case ScoreOptionsBackendAuto:
+		return true
+	case ScoreOptionsBackendCpu:
+		return true
+	case ScoreOptionsBackendCuda:
+		return true
+	case ScoreOptionsBackendHip:
+		return true
+	case ScoreOptionsBackendMetal:
+		return true
+	case ScoreOptionsBackendSycl:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsBitdepth.
+const (
+	ScoreOptionsBitdepthN10 ScoreOptionsBitdepth = 10
+	ScoreOptionsBitdepthN12 ScoreOptionsBitdepth = 12
+	ScoreOptionsBitdepthN16 ScoreOptionsBitdepth = 16
+	ScoreOptionsBitdepthN8  ScoreOptionsBitdepth = 8
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsBitdepth enum.
+func (e ScoreOptionsBitdepth) Valid() bool {
+	switch e {
+	case ScoreOptionsBitdepthN10:
+		return true
+	case ScoreOptionsBitdepthN12:
+		return true
+	case ScoreOptionsBitdepthN16:
+		return true
+	case ScoreOptionsBitdepthN8:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsNflxCtc.
+const (
+	ScoreOptionsNflxCtcV10 ScoreOptionsNflxCtc = "v1.0"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsNflxCtc enum.
+func (e ScoreOptionsNflxCtc) Valid() bool {
+	switch e {
+	case ScoreOptionsNflxCtcV10:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsPixelFormat.
+const (
+	N420 ScoreOptionsPixelFormat = "420"
+	N422 ScoreOptionsPixelFormat = "422"
+	N444 ScoreOptionsPixelFormat = "444"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsPixelFormat enum.
+func (e ScoreOptionsPixelFormat) Valid() bool {
+	switch e {
+	case N420:
+		return true
+	case N422:
+		return true
+	case N444:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsPrecision.
+const (
+	ScoreOptionsPrecisionFull   ScoreOptionsPrecision = "full"
+	ScoreOptionsPrecisionLegacy ScoreOptionsPrecision = "legacy"
+	ScoreOptionsPrecisionMax    ScoreOptionsPrecision = "max"
+	ScoreOptionsPrecisionN1     ScoreOptionsPrecision = "1"
+	ScoreOptionsPrecisionN10    ScoreOptionsPrecision = "10"
+	ScoreOptionsPrecisionN11    ScoreOptionsPrecision = "11"
+	ScoreOptionsPrecisionN12    ScoreOptionsPrecision = "12"
+	ScoreOptionsPrecisionN13    ScoreOptionsPrecision = "13"
+	ScoreOptionsPrecisionN14    ScoreOptionsPrecision = "14"
+	ScoreOptionsPrecisionN15    ScoreOptionsPrecision = "15"
+	ScoreOptionsPrecisionN16    ScoreOptionsPrecision = "16"
+	ScoreOptionsPrecisionN17    ScoreOptionsPrecision = "17"
+	ScoreOptionsPrecisionN2     ScoreOptionsPrecision = "2"
+	ScoreOptionsPrecisionN3     ScoreOptionsPrecision = "3"
+	ScoreOptionsPrecisionN4     ScoreOptionsPrecision = "4"
+	ScoreOptionsPrecisionN5     ScoreOptionsPrecision = "5"
+	ScoreOptionsPrecisionN6     ScoreOptionsPrecision = "6"
+	ScoreOptionsPrecisionN7     ScoreOptionsPrecision = "7"
+	ScoreOptionsPrecisionN8     ScoreOptionsPrecision = "8"
+	ScoreOptionsPrecisionN9     ScoreOptionsPrecision = "9"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsPrecision enum.
+func (e ScoreOptionsPrecision) Valid() bool {
+	switch e {
+	case ScoreOptionsPrecisionFull:
+		return true
+	case ScoreOptionsPrecisionLegacy:
+		return true
+	case ScoreOptionsPrecisionMax:
+		return true
+	case ScoreOptionsPrecisionN1:
+		return true
+	case ScoreOptionsPrecisionN10:
+		return true
+	case ScoreOptionsPrecisionN11:
+		return true
+	case ScoreOptionsPrecisionN12:
+		return true
+	case ScoreOptionsPrecisionN13:
+		return true
+	case ScoreOptionsPrecisionN14:
+		return true
+	case ScoreOptionsPrecisionN15:
+		return true
+	case ScoreOptionsPrecisionN16:
+		return true
+	case ScoreOptionsPrecisionN17:
+		return true
+	case ScoreOptionsPrecisionN2:
+		return true
+	case ScoreOptionsPrecisionN3:
+		return true
+	case ScoreOptionsPrecisionN4:
+		return true
+	case ScoreOptionsPrecisionN5:
+		return true
+	case ScoreOptionsPrecisionN6:
+		return true
+	case ScoreOptionsPrecisionN7:
+		return true
+	case ScoreOptionsPrecisionN8:
+		return true
+	case ScoreOptionsPrecisionN9:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsTargetScaling.
+const (
+	ScoreOptionsTargetScalingBicubic  ScoreOptionsTargetScaling = "bicubic"
+	ScoreOptionsTargetScalingBilinear ScoreOptionsTargetScaling = "bilinear"
+	ScoreOptionsTargetScalingLanczos  ScoreOptionsTargetScaling = "lanczos"
+	ScoreOptionsTargetScalingNone     ScoreOptionsTargetScaling = "none"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsTargetScaling enum.
+func (e ScoreOptionsTargetScaling) Valid() bool {
+	switch e {
+	case ScoreOptionsTargetScalingBicubic:
+		return true
+	case ScoreOptionsTargetScalingBilinear:
+		return true
+	case ScoreOptionsTargetScalingLanczos:
+		return true
+	case ScoreOptionsTargetScalingNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsTinyDevice.
+const (
+	ScoreOptionsTinyDeviceAuto        ScoreOptionsTinyDevice = "auto"
+	ScoreOptionsTinyDeviceCoreml      ScoreOptionsTinyDevice = "coreml"
+	ScoreOptionsTinyDeviceCoremlAne   ScoreOptionsTinyDevice = "coreml-ane"
+	ScoreOptionsTinyDeviceCoremlCpu   ScoreOptionsTinyDevice = "coreml-cpu"
+	ScoreOptionsTinyDeviceCoremlGpu   ScoreOptionsTinyDevice = "coreml-gpu"
+	ScoreOptionsTinyDeviceCpu         ScoreOptionsTinyDevice = "cpu"
+	ScoreOptionsTinyDeviceCuda        ScoreOptionsTinyDevice = "cuda"
+	ScoreOptionsTinyDeviceOpenvino    ScoreOptionsTinyDevice = "openvino"
+	ScoreOptionsTinyDeviceOpenvinoCpu ScoreOptionsTinyDevice = "openvino-cpu"
+	ScoreOptionsTinyDeviceOpenvinoGpu ScoreOptionsTinyDevice = "openvino-gpu"
+	ScoreOptionsTinyDeviceOpenvinoNpu ScoreOptionsTinyDevice = "openvino-npu"
+	ScoreOptionsTinyDeviceRocm        ScoreOptionsTinyDevice = "rocm"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsTinyDevice enum.
+func (e ScoreOptionsTinyDevice) Valid() bool {
+	switch e {
+	case ScoreOptionsTinyDeviceAuto:
+		return true
+	case ScoreOptionsTinyDeviceCoreml:
+		return true
+	case ScoreOptionsTinyDeviceCoremlAne:
+		return true
+	case ScoreOptionsTinyDeviceCoremlCpu:
+		return true
+	case ScoreOptionsTinyDeviceCoremlGpu:
+		return true
+	case ScoreOptionsTinyDeviceCpu:
+		return true
+	case ScoreOptionsTinyDeviceCuda:
+		return true
+	case ScoreOptionsTinyDeviceOpenvino:
+		return true
+	case ScoreOptionsTinyDeviceOpenvinoCpu:
+		return true
+	case ScoreOptionsTinyDeviceOpenvinoGpu:
+		return true
+	case ScoreOptionsTinyDeviceOpenvinoNpu:
+		return true
+	case ScoreOptionsTinyDeviceRocm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScoreOptionsTinyResize.
+const (
+	ScoreOptionsTinyResizeBicubic  ScoreOptionsTinyResize = "bicubic"
+	ScoreOptionsTinyResizeBilinear ScoreOptionsTinyResize = "bilinear"
+	ScoreOptionsTinyResizeDisabled ScoreOptionsTinyResize = "disabled"
+	ScoreOptionsTinyResizeNearest  ScoreOptionsTinyResize = "nearest"
+)
+
+// Valid indicates whether the value is a known member of the ScoreOptionsTinyResize enum.
+func (e ScoreOptionsTinyResize) Valid() bool {
+	switch e {
+	case ScoreOptionsTinyResizeBicubic:
+		return true
+	case ScoreOptionsTinyResizeBilinear:
+		return true
+	case ScoreOptionsTinyResizeDisabled:
+		return true
+	case ScoreOptionsTinyResizeNearest:
+		return true
+	default:
+		return false
+	}
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	// Error Human-readable error message.
 	Error string `json:"error"`
+}
+
+// FeatureBackend One entry of the backend receipt.
+type FeatureBackend struct {
+	// Backend Backend it ran on (`cpu`, `cuda`, `sycl`, `hip`, `metal`).
+	Backend *string `json:"backend,omitempty"`
+
+	// Extractor Extractor name (e.g. `adm`, `motion`).
+	Extractor *string `json:"extractor,omitempty"`
 }
 
 // HealthResponse defines model for HealthResponse.
@@ -73,6 +373,27 @@ type HealthResponse struct {
 
 // HealthResponseStatus Always "ok" for a live server.
 type HealthResponseStatus string
+
+// Provenance How the scores of a context are made (#2142). Strings live as long as the context. (from VmafxProvenance).
+type Provenance struct {
+	// AbiMajor ABI major version of the library that ran.
+	AbiMajor *int32 `json:"abi_major,omitempty"`
+
+	// AbiMinor ABI minor version.
+	AbiMinor *int32 `json:"abi_minor,omitempty"`
+
+	// AbiPatch ABI patch version.
+	AbiPatch *int32 `json:"abi_patch,omitempty"`
+
+	// ActiveBackend Backend imported into the context. Value name of VmafxBackend without the VMAFX_BACKEND_ prefix, lower case.
+	ActiveBackend *string `json:"active_backend,omitempty"`
+
+	// NExtractors Registered feature extractors; see vmafx_context_extractor_info().
+	NExtractors *int32 `json:"n_extractors,omitempty"`
+
+	// Version Build version (git describe).
+	Version *string `json:"version,omitempty"`
+}
 
 // ReadyResponse defines model for ReadyResponse.
 type ReadyResponse struct {
@@ -86,6 +407,161 @@ type ReadyResponse struct {
 // ReadyResponseStatus "ready" when the scorer is initialised; "not ready" otherwise.
 type ReadyResponseStatus string
 
+// ScoreOptions Scoring options.
+type ScoreOptions struct {
+	// AomCtc AOM common test conditions preset: a fixed model and feature set. One of: v1.0, v2.0, v3.0, v4.0, v5.0, v6.0, v7.0.
+	AomCtc *ScoreOptionsAomCtc `json:"aom_ctc,omitempty"`
+
+	// Backend Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. One of: auto, cpu, cuda, sycl, hip, metal. Unset: auto.
+	Backend *ScoreOptionsBackend `json:"backend,omitempty"`
+
+	// Bitdepth Bits per sample of raw .yuv input. One of: 8, 10, 12, 16.
+	Bitdepth *ScoreOptionsBitdepth `json:"bitdepth,omitempty"`
+
+	// Cpumask Bitmask of CPU instruction sets the extractors must not use.
+	Cpumask *int32 `json:"cpumask,omitempty"`
+
+	// Device GPU of the selected backend: auto, or a device index. Needs a GPU backend that selects devices by index (sycl, hip, metal). Unset: auto.
+	Device *string `json:"device,omitempty"`
+
+	// DisableClip Do not clip the model score to [0, 100] (the model's disable_clip). Unset: false.
+	DisableClip *bool `json:"disable_clip,omitempty"`
+
+	// DisplayHeight Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value.
+	DisplayHeight *int32 `json:"display_height,omitempty"`
+
+	// EnableTransform Apply the model's score transform (the model's enable_transform). Unset: false.
+	EnableTransform *bool `json:"enable_transform,omitempty"`
+
+	// Feature Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with |). Mutually exclusive with the CTC presets.
+	Feature *[]string `json:"feature,omitempty"`
+
+	// FrameCnt Score at most this many frames.
+	FrameCnt *int32 `json:"frame_cnt,omitempty"`
+
+	// FrameSkipDist Skip this many frames at the start of the distorted video.
+	FrameSkipDist *int32 `json:"frame_skip_dist,omitempty"`
+
+	// FrameSkipRef Skip this many frames at the start of the reference.
+	FrameSkipRef *int32 `json:"frame_skip_ref,omitempty"`
+
+	// Gpumask Bitmask of GPU operations the extractors must not use.
+	Gpumask *int32 `json:"gpumask,omitempty"`
+
+	// Height Height of raw .yuv input in pixels.
+	Height *int32 `json:"height,omitempty"`
+
+	// NflxCtc Netflix common test conditions preset: a fixed model and feature set. One of: v1.0.
+	NflxCtc *ScoreOptionsNflxCtc `json:"nflx_ctc,omitempty"`
+
+	// NoPrediction Extract features only; no model score. Unset: false.
+	NoPrediction *bool `json:"no_prediction,omitempty"`
+
+	// NoReference No-reference mode; needs a no-reference tiny model. The reference becomes a formality: only the distorted picture is scored. Unset: false.
+	NoReference *bool `json:"no_reference,omitempty"`
+
+	// PixelFormat Chroma subsampling of raw .yuv input. One of: 420, 422, 444.
+	PixelFormat *ScoreOptionsPixelFormat `json:"pixel_format,omitempty"`
+
+	// Precision Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17. Unset: max.
+	Precision *ScoreOptionsPrecision `json:"precision,omitempty"`
+
+	// Subsample Score every n-th frame (1: every frame). Unset: 1.
+	Subsample *int32 `json:"subsample,omitempty"`
+
+	// TargetHeight Height of the target display the distorted video is scaled to (0: no scaling). Unset: 0. Reserved: device-targeted scoring lands in RC5; only the default is accepted.
+	TargetHeight *int32 `json:"target_height,omitempty"`
+
+	// TargetScaling Scaling filter towards the target display. One of: none, bilinear, bicubic, lanczos. Unset: none. Reserved: device-targeted scoring lands in RC5; only the default is accepted.
+	TargetScaling *ScoreOptionsTargetScaling `json:"target_scaling,omitempty"`
+
+	// TargetWidth Width of the target display the distorted video is scaled to (0: no scaling). Unset: 0. Reserved: device-targeted scoring lands in RC5; only the default is accepted.
+	TargetWidth *int32 `json:"target_width,omitempty"`
+
+	// Threads Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread).
+	Threads *int32 `json:"threads,omitempty"`
+
+	// TinyCodec Encoder of the distorted clip, required by codec-aware tiny models (fr_regressor_v2/v3), which refuse to score without it. Must be in the model sidecar's encoder_vocab; the ffprobe names h264, hevc, av1, vp9 and vvc are accepted.
+	TinyCodec *string `json:"tiny_codec,omitempty"`
+
+	// TinyCrf CRF or QP used for the encode, normalised as the model sidecar declares. Required with the codec and preset.
+	TinyCrf *int32 `json:"tiny_crf,omitempty"`
+
+	// TinyDevice ONNX Runtime execution provider of the tiny model. One of: auto, cpu, cuda, openvino, openvino-npu, openvino-cpu, openvino-gpu, coreml, coreml-ane, coreml-gpu, coreml-cpu, rocm. Unset: auto.
+	TinyDevice *ScoreOptionsTinyDevice `json:"tiny_device,omitempty"`
+
+	// TinyFp16 Request fp16 input and output where the execution provider supports it. Unset: false.
+	TinyFp16 *bool `json:"tiny_fp16,omitempty"`
+
+	// TinyModel Tiny ONNX model to load alongside the classic models.
+	TinyModel *string `json:"tiny_model,omitempty"`
+
+	// TinyModelVerify Require a Sigstore bundle verification of the tiny model (cosign verify-blob) before it loads; a missing bundle, a missing cosign or a failed verification refuses the model. Unset: false.
+	TinyModelVerify *bool `json:"tiny_model_verify,omitempty"`
+
+	// TinyPreset Encoder preset (medium, slow, p4, 5, ...), read as the encoder defines it. Unset: ordinal 5 (medium). A model trained with one preset (fr_regressor_v3) ignores it and warns.
+	TinyPreset *string `json:"tiny_preset,omitempty"`
+
+	// TinyResize Resize filter for NCHW tiny models whose input size differs from the frame; disabled refuses the mismatch (-ERANGE). The three filters give scores about 2% apart: record the filter with the model. One of: bilinear, nearest, bicubic, disabled. Unset: disabled.
+	TinyResize *ScoreOptionsTinyResize `json:"tiny_resize,omitempty"`
+
+	// TinyThreads Intra-op threads of the CPU execution provider (0: the runtime's default).
+	TinyThreads *int32 `json:"tiny_threads,omitempty"`
+
+	// ViewDistance Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set).
+	ViewDistance *float64 `json:"view_distance,omitempty"`
+
+	// Width Width of raw .yuv input in pixels.
+	Width *int32 `json:"width,omitempty"`
+}
+
+// ScoreOptionsAomCtc AOM common test conditions preset: a fixed model and feature set. One of: v1.0, v2.0, v3.0, v4.0, v5.0, v6.0, v7.0.
+type ScoreOptionsAomCtc string
+
+// ScoreOptionsBackend Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. One of: auto, cpu, cuda, sycl, hip, metal. Unset: auto.
+type ScoreOptionsBackend string
+
+// ScoreOptionsBitdepth Bits per sample of raw .yuv input. One of: 8, 10, 12, 16.
+type ScoreOptionsBitdepth int32
+
+// ScoreOptionsNflxCtc Netflix common test conditions preset: a fixed model and feature set. One of: v1.0.
+type ScoreOptionsNflxCtc string
+
+// ScoreOptionsPixelFormat Chroma subsampling of raw .yuv input. One of: 420, 422, 444.
+type ScoreOptionsPixelFormat string
+
+// ScoreOptionsPrecision Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. One of: legacy, max, full, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17. Unset: max.
+type ScoreOptionsPrecision string
+
+// ScoreOptionsTargetScaling Scaling filter towards the target display. One of: none, bilinear, bicubic, lanczos. Unset: none. Reserved: device-targeted scoring lands in RC5; only the default is accepted.
+type ScoreOptionsTargetScaling string
+
+// ScoreOptionsTinyDevice ONNX Runtime execution provider of the tiny model. One of: auto, cpu, cuda, openvino, openvino-npu, openvino-cpu, openvino-gpu, coreml, coreml-ane, coreml-gpu, coreml-cpu, rocm. Unset: auto.
+type ScoreOptionsTinyDevice string
+
+// ScoreOptionsTinyResize Resize filter for NCHW tiny models whose input size differs from the frame; disabled refuses the mismatch (-ERANGE). The three filters give scores about 2% apart: record the filter with the model. One of: bilinear, nearest, bicubic, disabled. Unset: disabled.
+type ScoreOptionsTinyResize string
+
+// ScoreProvenance How a score was made (#2142, #2155): the library record, the model the
+// server loaded and the backend receipt. Every scoring response carries it.
+type ScoreProvenance struct {
+	// BackendUsed Backend the extractors ran on (`cpu` when all ran on the CPU).
+	BackendUsed     *string           `json:"backend_used,omitempty"`
+	FeatureBackends *[]FeatureBackend `json:"feature_backends,omitempty"`
+
+	// Library How the scores of a context are made (#2142). Strings live as long as the context. (from VmafxProvenance).
+	Library *Provenance `json:"library,omitempty"`
+
+	// Model Model the server resolved the request's model name to.
+	Model *string `json:"model,omitempty"`
+
+	// ModelSha256 SHA-256 (lower-case hex) of the model file the server loaded.
+	ModelSha256 *string `json:"model_sha256,omitempty"`
+
+	// Precision Precision the scores were computed with (`max` is lossless).
+	Precision *string `json:"precision,omitempty"`
+}
+
 // ScoreRequest defines model for ScoreRequest.
 type ScoreRequest struct {
 	// Distorted Path to the distorted (compressed) video file.  Must be the same
@@ -96,6 +572,9 @@ type ScoreRequest struct {
 	// extension) in the server's `VMAFX_MODEL_DIR`.  Defaults to
 	// `vmaf_v1.0.16_3d0h`, the library default, when omitted.
 	Model *string `json:"model,omitempty"`
+
+	// Options Scoring options.
+	Options *ScoreOptions `json:"options,omitempty"`
 
 	// Reference Path to the reference (pristine) video file.  YUV 4:2:0, Y4M,
 	// and common container formats supported by the backing vmaf binary.
@@ -108,6 +587,10 @@ type ScoreResponse struct {
 	// on the selected model; common keys include `adm2`, `motion2`,
 	// `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`.
 	Features map[string]float64 `json:"features"`
+
+	// Provenance How a score was made (#2142, #2155): the library record, the model the
+	// server loaded and the backend receipt. Every scoring response carries it.
+	Provenance *ScoreProvenance `json:"provenance,omitempty"`
 
 	// Score Aggregate VMAF score (0–100 typical range).
 	Score float64 `json:"score"`
@@ -312,41 +795,89 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"1NF/K5JqLRAiqY8fPv5vAAAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

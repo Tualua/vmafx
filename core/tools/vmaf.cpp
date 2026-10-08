@@ -58,6 +58,7 @@
 #include "cli_backends.h"
 #include "cli_exit_status.h"
 #include "cli_feature_backend.h"
+#include "cli_provenance.h"
 #include "cli_parse.h"
 #include "compat/path_utf8.h"
 #include "spinner.h"
@@ -2380,6 +2381,22 @@ namespace
 /* ADR-1359: `backend_used` names the backend the registered extractors ran on,
  * not the backend that was initialised, and `feature_backends` lists each
  * extractor so a run that mixes device twins and CPU extractors says so. */
+/* #2155: the provenance record of the run (the VMAFx context the libvmaf
+ * handle is bound to), so a report says which library build, ABI and backend
+ * made its scores; the scoring server copies it into every response. Empty
+ * when the record cannot be read; the reason goes to stderr. */
+std::string provenance_receipt_member(VmafContext *vmaf)
+{
+    const size_t len = cli_format_provenance_member(vmaf, nullptr, 0);
+    if (len == 0) {
+        (void)fprintf(stderr, "vmaf: could not read the provenance record\n");
+        return {};
+    }
+    std::string member(len, '\0');
+    (void)cli_format_provenance_member(vmaf, member.data(), member.size() + 1);
+    return ", " + member;
+}
+
 void amend_cli_backend_receipt(const CliRunState *state)
 {
     if (state->c.output_fmt != VMAF_OUTPUT_FORMAT_JSON)
@@ -2392,6 +2409,7 @@ void amend_cli_backend_receipt(const CliRunState *state)
     }
     std::string members(cli_format_backend_members(&report, nullptr, 0), '\0');
     (void)cli_format_backend_members(&report, members.data(), members.size() + 1);
+    members += provenance_receipt_member(state->vmaf);
     amend_json_with_backend_receipt(state->c.output_path, state->c.output_fmt, members.c_str());
 }
 

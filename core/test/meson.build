@@ -1284,6 +1284,30 @@ test('test_vmafx_api_generator',
     timeout : 120,
 )
 
+# RC4 WP8 / #2155: the scoring contract. vmafx_score_contract is the C API leg
+# (not a test itself); run_score_contract.py runs the Go contract test of
+# cmd/vmafx-server against this build: the same requests through the CLI, the
+# C API and the server must give the same score bit for bit. Skips (77, reason
+# printed) without Go or without the fixtures; a skipped Go test never passes.
+vmafx_score_contract = executable('vmafx_score_contract',
+    ['vmafx_score_contract.c'],
+    include_directories : [libvmaf_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, thread_lib],
+)
+if get_option('default_library') != 'static'
+    test('test_vmafx_score_contract',
+        import('python').find_installation(),
+        args : [files('run_score_contract.py'), meson.project_source_root() / '..',
+                vmaf.full_path(), vmafx_score_contract.full_path(),
+                meson.project_build_root() / 'src'],
+        depends : [vmaf, vmafx_score_contract, libvmaf_public_link],
+        suite : ['contract'],
+        is_parallel : false,
+        timeout : 1500,
+    )
+endif
+
 if get_option('default_library') != 'static'
     test('test_vmafx_python_binding',
         import('python').find_installation(),
@@ -2372,6 +2396,15 @@ test_luminance_tools = executable('test_luminance_tools',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
 )
+
+# Every spelling of the hand-written CLI option table survives its generation
+# from the option groups of core/api/vmafx.toml (RC4 WP8, ADR-1852, HISS-14).
+test_cli_option_table = executable('test_cli_option_table',
+    ['test.c', 'test_cli_option_table.cpp'],
+    include_directories : [test_inc, include_directories('../tools/'), include_directories('../src/')],
+    dependencies: [getopt_dependency],
+)
+test('test_cli_option_table', test_cli_option_table, suite : ['fast'])
 
 test_cli_parse = executable('test_cli_parse',
     ['test.c', 'test_cli_parse.c', '../tools/cli_parse.cpp'],
