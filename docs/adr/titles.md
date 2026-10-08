@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1340), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1341), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5371,3 +5371,7 @@ Every ADR, one heading each (1340), so the site search finds an ADR by its title
 ## ADR-2673: the Helm chart declares EUPL-1.2 AND Apache-2.0 because its values schema embeds Kubernetes type schemas
 
 [2673-chart-licence-kubernetes-schemas](2673-chart-licence-kubernetes-schemas.md)
+
+## ADR-2689: sponsorship is recognition only, in four monthly tiers, with one source file for the list
+
+[2689-sponsorship-tiers-recognition-only](2689-sponsorship-tiers-recognition-only.md)

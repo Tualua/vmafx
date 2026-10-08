@@ -466,6 +466,9 @@
   the C API, gRPC and REST give the same score bit for bit (#2155).
 
 
+- **GitHub Sponsors is live (ADR-2689).** `SPONSORS.md` lists the four monthly tiers ($5, $25, $100, $500), the one-time amounts and the sponsors by tier, and the new documentation page "Support VMAFx" explains what sponsorship pays for (CI time, cloud GPU test time, an AI workstation). Sponsorship buys recognition only; there is no paid support or paywall. Euro routes: Ko-fi now, Patreon coming.
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
