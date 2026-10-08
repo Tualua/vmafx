@@ -177,6 +177,7 @@ nav:
       - Docker: usage/docker.md
       - Releases and roadmap: roadmap.md
       - Licensing: licensing.md
+      - Credits: credits.md
   - Choose a backend:
       - backends/index.md
       - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md

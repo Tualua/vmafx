@@ -161,7 +161,8 @@ distributed under EUPL-1.2. If you need permissive terms, use
 The per-file tags are authoritative; this section is a summary, not legal
 advice. [Licensing](docs/licensing.md) lists what each published package
 carries, and [Embedding VMAFx in another product](docs/licensing.md#embedding-vmafx-in-another-product)
-goes through linking, modification and network use.
+goes through linking, modification and network use. [Credits](docs/credits.md)
+names every third-party project, model, dataset, paper and tool VMAFx builds on.
 
 ## Standards & Governance
 

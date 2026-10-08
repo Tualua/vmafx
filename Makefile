@@ -264,6 +264,9 @@ docs-fragments-check:
 	@python3 scripts/ci/check-hardware-reports.py
 	@echo "--- docs/charts/ vs their renders and data (ADR-1508) ---"
 	@python3 scripts/docs/generate-charts.py --check
+	@echo "--- docs/credits.yaml vs docs/credits.md and the repository (ADR-2485) ---"
+	@python3 scripts/docs/generate-credits.py --check
+	@python3 scripts/docs/check-credits.py
 	@echo "--- docs/**/vendor.json (vendored fonts and scripts vs their hashes) ---"
 	@python3 scripts/docs/check_vendored_assets.py
 
@@ -274,6 +277,7 @@ docs-fragments-write: docs-render
 	@python3 scripts/docs/agents_index.py --write
 	@python3 scripts/docs/generate-hardware-reports.py --write
 	@python3 scripts/docs/generate-charts.py --write
+	@python3 scripts/docs/generate-credits.py --write
 
 # Analyze only this Meson profile, retaining all configured command variants.
 # Backend-specific clang-tidy options can be supplied with repeated

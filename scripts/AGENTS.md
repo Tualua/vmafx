@@ -397,6 +397,21 @@ Script = part of original Netflix Python test harness
 Keep byte-identical on rebase. Fork's CI uses meson +
 pytest paths; file ships unchanged for upstream-sync hygiene.
 
+## Credits page (ADR-2485)
+
+`docs/credits.yaml` is the curated list; `docs/credits.md` keeps hand-written prose
+and renders its tables between `<!-- credits:table ID -->` markers.
+`scripts/docs/credits_lib.py` loads, validates and renders (one implementation);
+`generate-credits.py` writes / checks the page; `check-credits.py` holds the list
+to the tree through `credits_checks.py`: page drift, uncredited third-party path
+(REUSE.toml non-project licences, `third_party` / `3rdparty` / `vendor` dirs, notice
+and font files, foreign copyright headers), unused `LICENSES/*.txt`, skill or agent
+file with `derived_from` / "Adapted from" and no entry, entry path missing. An
+`exceptions:` item in the list names one file, one rule, a reason and an expiry;
+expired or idle items fail. Add an entry, never an ignore. Tests:
+`scripts/docs/tests/test_credits.py` (planted defect per check). Wired into
+`make docs-fragments-check` / `-write`. Do not hand-edit tables.
+
 ## Twin-update awareness
 
 - **Renaming any script** here referenced from
@@ -409,6 +424,8 @@ pytest paths; file ships unchanged for upstream-sync hygiene.
 
 ## Governing ADRs
 
+- [ADR-2485](../docs/adr/2485-vmafx-credits-page.md) —
+  credits list, generated page and gate.
 - [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md) —
   dual-copyright policy.
 - [ADR-0218](../docs/adr/0218-mobilesal-saliency-extractor.md) —
