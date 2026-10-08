@@ -11,4 +11,4 @@
   the headroom, the demand's growth and linear forecasts of the queue and the
   demand. The Helm chart ships them like the other dashboards; the Compose
   smoke test checks them. See
-  [observability](docs/development/observability.md#slo-report).
+  [the dashboard tour](docs/observability/dashboards.md#slo-report).

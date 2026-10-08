@@ -407,10 +407,13 @@ nav:
       - REST API: server/rest.md
       - Scoring API contract: server/api-contract.md
       - Operator image and publishing: backends/operator.md
-      - Observability (OpenTelemetry): observability/otel.md
-      - Metric reference: observability/metrics.md
-      - Monitoring on Kubernetes: observability/kubernetes.md
-      - Observability stack with Docker Compose: observability/compose.md
+      - Observability:
+          - observability/index.md
+          - Dashboard tour: observability/dashboards.md
+          - Monitoring on Kubernetes: observability/kubernetes.md
+          - Observability stack with Docker Compose: observability/compose.md
+          - Metric reference: observability/metrics.md
+          - OpenTelemetry: observability/otel.md
       - Alert runbooks:
           - observability/runbooks/index.md
           - Component down: observability/runbooks/vmafx-component-down.md

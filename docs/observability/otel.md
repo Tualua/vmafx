@@ -11,9 +11,10 @@ through the shared `internal/app/bootstrap.Base` composition
 ([ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md)); its caller emits
 the inference span.
 
-The operator guide — every environment variable, how to point the
+The configuration reference — every environment variable, how to point the
 binaries at a collector, and the per-binary span table — is
-[docs/development/observability.md](../development/observability.md).
+[docs/development/observability.md](../development/observability.md); the
+[observability operator guide](index.md) covers installing the monitoring.
 This page keeps the schema.
 
 ## Quick start
@@ -44,7 +45,8 @@ mount into a collector sidecar or DaemonSet.
 | `OTEL_SDK_DISABLED` | `false` | `true` forces no-op providers. |
 
 The full table, including TLS, per-signal toggles and the Kubernetes
-downward-API attributes, is in the operator guide.
+downward-API attributes, is in the
+[configuration reference](../development/observability.md#configuration-reference).
 
 ## Span names
 
