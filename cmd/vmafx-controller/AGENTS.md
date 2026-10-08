@@ -264,7 +264,11 @@ lands. Wire protocol unchanged.
 5. **Sources** (`tenants/`): `FileSource` (YAML/JSON docs, lists) and
    `KubernetesSource` (dynamic client, namespace-scoped list, timeout).
    Strict spec decode (`DisallowUnknownFields`). `Refresher` Start/Close like
-   `nodes.Registry`.
+   `nodes.Registry`. Spec type = generated `vmafxv1.VmafxTenantSpec`
+   (`api/vmafx/v1`, ADR-2350 D13); `auth/tenants.go` aliases `TenantSpec`,
+   `TenantOIDC`, `TenantRBAC`, `TenantScoring` to it. New field ->
+   `api/vmafx-platform.toml`, regenerate; never re-declare struct here. Guard:
+   `auth/tenants_generated_type_test.go`.
 6. **Guards**: `auth/tenants_internal_test.go` (once-per-cache, key age,
    redirect, prune), `auth/tenants_test.go` (mutation-checked: tenant-claim match,
    suspension, allowedRoles, staleness, defaultRole-in-allowed),

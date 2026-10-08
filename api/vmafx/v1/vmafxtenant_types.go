@@ -35,11 +35,11 @@ type VmafxTenantSpec struct {
 
 	// RBAC is the tenant's role policy. The defaults enforce least privilege.
 	// +optional
-	RBAC VmafxTenantRBAC `json:"rbac,omitempty"`
+	RBAC *VmafxTenantRBAC `json:"rbac,omitempty"`
 
 	// Scoring names the inputs the tenant's callers may score (ADR-1577).
 	// +optional
-	Scoring VmafxTenantScoring `json:"scoring,omitempty"`
+	Scoring *VmafxTenantScoring `json:"scoring,omitempty"`
 }
 
 // VmafxTenantStatus defines the observed state of a VmafxTenant.

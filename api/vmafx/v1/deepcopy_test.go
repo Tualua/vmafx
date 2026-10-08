@@ -76,8 +76,8 @@ func testObjectMeta() metav1.ObjectMeta {
 }
 
 // testTenant is a tenant with a value in every field kind deepCopyResource and
-// the generated copies handle: type metadata, a pointer, slices, a nested
-// pointer in a slice element.
+// the generated copies handle: type metadata, pointers to a value and to a
+// struct, slices, a nested pointer in a slice element.
 func testTenant() *VmafxTenant {
 	enabled := true
 	stamp := metav1.NewTime(time.Unix(1_700_000_000, 0).UTC())
@@ -87,8 +87,8 @@ func testTenant() *VmafxTenant {
 		Spec: VmafxTenantSpec{
 			TenantID: "acme",
 			Enabled:  &enabled,
-			RBAC:     VmafxTenantRBAC{AllowedRoles: []string{"viewer"}},
-			Scoring:  VmafxTenantScoring{Roots: []string{"/data"}},
+			RBAC:     &VmafxTenantRBAC{DefaultRole: "viewer", AllowedRoles: []string{"viewer"}},
+			Scoring:  &VmafxTenantScoring{Roots: []string{"/data"}},
 		},
 		Status: VmafxTenantStatus{
 			Conditions:         []VmafxTenantCondition{{Type: "Ready", LastTransitionTime: &stamp}},
@@ -110,6 +110,7 @@ func TestResourceDeepCopyCopiesEveryField(t *testing.T) {
 	}
 	*duplicate.Spec.Enabled = false
 	duplicate.Spec.RBAC.AllowedRoles[0] = "admin"
+	duplicate.Spec.RBAC.DefaultRole = "admin"
 	duplicate.Spec.Scoring.Roots[0] = "/"
 	duplicate.Status.Conditions[0].LastTransitionTime.Time = time.Time{}
 	if !reflect.DeepEqual(original, testTenant()) {

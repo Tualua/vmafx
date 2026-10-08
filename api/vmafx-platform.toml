@@ -585,8 +585,8 @@ fields = [
   { name = "tenantId", type = "string", pattern = "^[a-z0-9][a-z0-9\\-]{0,62}[a-z0-9]$", doc = "TenantID is the unique, stable identifier of the tenant. It must match the \"tid\" (or configured tenant claim) in the OIDC tokens issued to this tenant's users." },
   { name = "enabled", type = "bool", optional = true, pointer = true, default = true, doc = "Enabled false rejects every request of the tenant with 403, even with an otherwise valid token: emergency suspension without revoking certificates." },
   { name = "oidc", type = "VmafxTenantOIDC", doc = "OIDC configures the tenant's identity provider." },
-  { name = "rbac", type = "VmafxTenantRBAC", optional = true, doc = "RBAC is the tenant's role policy. The defaults enforce least privilege." },
-  { name = "scoring", type = "VmafxTenantScoring", optional = true, doc = "Scoring names the inputs the tenant's callers may score (ADR-1577)." },
+  { name = "rbac", type = "VmafxTenantRBAC", optional = true, pointer = true, doc = "RBAC is the tenant's role policy. The defaults enforce least privilege." },
+  { name = "scoring", type = "VmafxTenantScoring", optional = true, pointer = true, doc = "Scoring names the inputs the tenant's callers may score (ADR-1577)." },
 ]
 
 [[messages]]
