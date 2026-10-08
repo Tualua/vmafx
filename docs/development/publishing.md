@@ -292,7 +292,7 @@ writes the same bytes. The gate accepts no other identity.
 `ubuntu-24.04` (glibc 2.39, the oldest GitHub-hosted image that can load it)
 and starts the CLI on the release runtime image `RELEASE_RUNTIME_CC`
 (distroless `cc-debian13`), each time with no `LD_LIBRARY_PATH`, so the
-CLI must find `libvmaf.so.3` through its RUNPATH `$ORIGIN`. See
+CLI must find `libvmaf.so.3` and `libvmafx.so.1` through its RUNPATH `$ORIGIN`. See
 [the release guide](release.md#native-linux-release-layout) for the runtime
 requirements.
 

@@ -106,7 +106,8 @@ RUN meson setup /build core --buildtype=release --strip -Db_lto=false \
         --out /licence-inputs/vmafx-sources.json
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src \
     && cp /build/tools/vmaf /opt/vmafx/build/tools/ \
-    && cp -a /build/src/libvmaf.so* /opt/vmafx/build/src/ \
+    && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
+        -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage /build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && mkdir -p /opt/vmafx/model \
@@ -243,7 +244,7 @@ RUN CC=icx CXX=icpx meson setup build core --buildtype=release --strip -Db_lto=f
         --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
-    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
@@ -498,7 +499,7 @@ RUN meson setup build core --buildtype=release --strip -Db_lto=false \
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
         /opt/vmafx/licenses/nvidia \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
-    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
@@ -507,7 +508,8 @@ RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
     && python3 tools/rc1-tester/image/prepare_build.py gate /opt/vmafx/src /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py twins /opt/vmafx cuda \
     && python3 tools/rc1-tester/image/prepare_build.py cuda-targets build /opt/vmafx \
-    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/*; do \
+    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* \
+        /opt/vmafx/build/src/libvmafx.so.* /opt/vmafx/tests/*; do \
         if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] \
             && readelf -d "${binary}" | grep -E 'NEEDED.*lib(cuda|nv)'; then \
             echo "${binary} links an NVIDIA library" >&2; exit 1; \
@@ -589,7 +591,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
 RUN nvidia="$(find / -xdev \( -name 'libcuda*' -o -name 'libcudart*' -o -name 'libnvidia-*' \
             -o -name 'libnvrtc*' -o -name 'libnvJitLink*' -o -name 'libdevice*' \) -print)" \
     && if [ -n "${nvidia}" ]; then echo "NVIDIA files in the image: ${nvidia}" >&2; exit 1; fi \
-    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/*; do \
+    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* \
+        /opt/vmafx/build/src/libvmafx.so.* /opt/vmafx/tests/*; do \
         if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \
             echo "unresolved dependency in ${binary}" >&2; exit 1; \
         fi; \
@@ -726,7 +729,7 @@ RUN python3 -c 'import json, sys; dist = json.load(open(sys.argv[1]))["dist_amdg
 # RPATHs ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib) resolve without patching.
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
-    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
@@ -804,7 +807,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
     python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact hip-image --root / \
         --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
         --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
-RUN for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/* \
+RUN for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* \
+        /opt/vmafx/build/src/libvmafx.so.* /opt/vmafx/tests/* \
         /opt/vmafx/lib/rocm/*.so.* /opt/vmafx/lib/rocm/llvm/lib/*.so.* \
         /opt/vmafx/lib/rocm/rocm_sysdeps/lib/*.so*; do \
         if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \

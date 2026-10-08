@@ -871,6 +871,7 @@ jobs:
           shopt -s nullglob
           required=(
             dist/release-artifacts/libvmaf.so
+            dist/release-artifacts/libvmafx.so
             dist/release-artifacts/vmaf
             dist/release-artifacts/models.tar.gz
             dist/release-artifacts/container-build-provenance.txt

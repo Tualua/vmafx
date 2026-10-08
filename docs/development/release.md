@@ -392,29 +392,34 @@ Release ([ADR-1356](../adr/1356-release-provenance-attest.md)).
 
 ### Native Linux release layout
 
-Download the CLI and the whole `libvmaf.so*` chain into one directory; the
-CLI finds its library next to itself. The native files attached by
-`supply-chain.yml` are currently Linux ELF artefacts.
+Download the CLI and the whole `libvmaf.so*` and `libvmafx.so*` chains into
+one directory; the CLI finds both libraries next to itself. The native files
+attached by `supply-chain.yml` are currently Linux ELF artefacts.
 
 #### Download
 
-Meson builds a three-name dynamic-library chain: `libvmaf.so`, its
-ABI SONAME such as `libvmaf.so.3`, and its ABI real name such as
-`libvmaf.so.3.0.0`. GitHub artifact and release downloads do not preserve
-symlinks, so the workflow publishes all three names as identical regular-file
-assets. Each name is hashed, inventoried in both native SBOMs, signed, and
-listed as a subject of the native build-provenance attestation.
+Meson builds a three-name dynamic-library chain for each of the two
+libraries: `libvmaf.so`, its ABI SONAME such as `libvmaf.so.3`, and its ABI
+real name such as `libvmaf.so.3.0.0`; and the same for `libvmafx`
+(`libvmafx.so`, `libvmafx.so.1`, `libvmafx.so.1.0.0`). Since the library split
+([ADR-2094](../adr/2094-libvmaf-compat-library-split.md)) the CLI and the
+compat `libvmaf.so.3` both need `libvmafx.so.1`. GitHub artifact and release
+downloads do not preserve symlinks, so the workflow publishes all six names as
+regular-file assets, identical within each chain. Each name is hashed,
+inventoried in both native SBOMs, signed, and listed as a subject of the
+native build-provenance attestation.
 
 Restore the raw CLI asset's executable bit after the download. The CLI's
 only RUNPATH entry is `$ORIGIN`,
-the directory the CLI itself sits in, so it loads `libvmaf.so.3` from there
+the directory the CLI itself sits in, so it loads `libvmaf.so.3` and
+`libvmafx.so.1` from there
 without `LD_LIBRARY_PATH`, from any working directory, as long as the files
 stay together:
 
 ```bash
 mkdir vmafx-linux && cd vmafx-linux
 gh release download v1.0.0 --repo VMAFx/vmafx \
-  --pattern vmaf --pattern 'libvmaf.so*'
+  --pattern vmaf --pattern 'libvmaf.so*' --pattern 'libvmafx.so*'
 chmod +x vmaf
 ./vmaf --version
 readelf -d vmaf | grep RUNPATH   # Library runpath: [$ORIGIN]
@@ -672,7 +677,7 @@ repo or in CI secrets.
 
 ### What is signed
 
-- **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`,
+- **Release blobs** (`libvmaf.so*`, `libvmafx.so*`, `vmaf`, `models.tar.gz`,
   `container-build-provenance.txt`, `THIRD_PARTY_NOTICES.txt`,
   `licenses.tar.gz`, optional `u2netp_mirror.{onnx,pth}`):
   cosign sign-blob bundles attached to the GitHub Release, plus one GitHub
@@ -732,7 +737,7 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 # slsa-verifier recipe further down.
 tag=v1.0.0
 
-# Release blob. Every vmaf/libvmaf.so* asset has a matching FILE.bundle.
+# Release blob. Every vmaf/libvmaf.so*/libvmafx.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
   --certificate-identity \
     "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@refs/tags/${tag}" \

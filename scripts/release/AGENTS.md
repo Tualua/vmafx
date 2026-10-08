@@ -218,10 +218,13 @@ Test coverage:
 ## verify-native-release-artifacts.sh
 
 Native GitHub Release payload currently Linux ELF. Meson's
-`libvmaf.so` -> SONAME -> real-name symlink chain must be staged under
+`libvmaf.so` -> SONAME -> real-name symlink chain, and since library
+split (ADR-2094) same chain of `libvmafx.so`, must be staged under
 every name as identical regular-file bytes — GitHub artifact downloads
-do not preserve symlinks. Verifier parses both library SONAME and
-CLI's `DT_NEEDED`, rejects missing or divergent chain member.
+do not preserve symlinks. CLI and compat `libvmaf.so.3` both NEED
+`libvmafx.so.1`: staging one chain alone ships CLI that cannot start.
+Verifier checks each chain (`verify_chain`): SONAME, real name, bytes,
+CLI's `DT_NEEDED`; rejects missing or divergent chain member.
 Requires `ldd` to resolve dependency from staged directory before
 running exact CLI version under `env -i`.
 
