@@ -2,7 +2,7 @@
 
 - **Status**: Active
 - **Workstream**: ADR-2399, ADR-2349
-- **Last updated**: 2026-10-07
+- **Last updated**: 2026-10-08
 
 ## Question
 
@@ -68,6 +68,28 @@ actually scraped once?
    PrometheusRule pass `kubeconform -strict` against the operator's CRD
    schemas.
 
+9. **Compose example (2026-10-08).** Checked against each component's own
+   release: the OpenTelemetry Collector 0.162 names its exporters
+   `otlp_grpc` and `otlp_http` (`otelcol validate` refuses an unknown type);
+   Loki 3.7 takes OTLP logs at `http://loki:3100/otlp`; Tempo 3.1's
+   single-binary example needs only `distributor.receivers` and local
+   storage; Prometheus 3.15 still enables exemplars with
+   `--enable-feature=exemplar-storage`. Grafana (uid 472) could not read
+   provisioning files `obsgen -write` had created with mode `0600`; it now
+   writes `0644`.
+10. **No service exported anything.** The smoke test found no trace in Tempo
+    and no span at the collector: fx builds golusoris's `*otel.Providers`
+    only for a dependant, and no service had one (#2545). With that fixed,
+    `VMAFX_OTEL_ENDPOINT=otel-collector:4317` and
+    `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317` deliver traces;
+    the documented `OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317` sends to
+    `localhost:4317`, because the SDK reads that variable as a URL.
+11. **Panels need settled scrapes.** Queried right after the traffic, the
+    rate panels returned nothing (one sample in the window); after six scrapes
+    (30 s at 5 s) every query but the GPU memory panel returns data. A
+    counter child created at zero (device-memory read errors, requeues)
+    returns data too.
+
 ## Alternatives explored
 
 - A hand-written Helm template beside the generated rule file: two copies of
@@ -77,6 +99,9 @@ actually scraped once?
   PrometheusRule's `spec`: needs Helm and an extraction step in the Compose
   stack, where `go run ./tools/obsgen -render-rules` writes the file from the
   same rule code.
+- Driving the Compose smoke from the host on published ports: the host's own
+  services collide with fixed ports. The smoke runs as a Compose service in
+  the example's network, and the published ports are ephemeral in the run.
 
 ## Open questions
 

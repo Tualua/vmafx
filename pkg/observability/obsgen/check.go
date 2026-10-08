@@ -106,36 +106,70 @@ func emitted(name string, exporters []string) bool {
 	return false
 }
 
-// CheckDashboard returns one problem per Prometheus query of a Grafana
-// dashboard (panels, nested row panels, annotations and template variables)
-// that names a series nothing emits.
-func CheckDashboard(raw []byte) ([]string, error) {
+// Query is one query of a dashboard: where it sits (a panel, an annotation or
+// a query variable, with its title or name), its expression, and the type of
+// its data source ("prometheus", "loki"; empty for the panel's default).
+type Query struct {
+	Where, Expr, Datasource string
+}
+
+// Dashboard is what DashboardQueries reads from a dashboard's JSON.
+type Dashboard struct {
+	Title string
+	// Exporters are the exporter keys the dashboard's tags name.
+	Exporters []string
+	Queries   []Query
+}
+
+// DashboardQueries parses a Grafana dashboard: its title, the exporter keys
+// its tags name, and every non-empty query of its panels (the panels of
+// collapsed rows included), annotations and query variables. CheckDashboard
+// and the Compose smoke test (tools/obssmoke) read dashboards through it.
+func DashboardQueries(raw []byte) (Dashboard, error) {
 	var d dashboardQueries
 	if err := json.Unmarshal(raw, &d); err != nil {
-		return nil, fmt.Errorf("obsgen: parse dashboard: %w", err)
+		return Dashboard{}, fmt.Errorf("obsgen: parse dashboard: %w", err)
 	}
-	var problems []string
-	exporters := d.exporters()
-	report := func(where, expr string) {
-		for _, name := range CheckExpr(expr, exporters...) {
-			problems = append(problems, fmt.Sprintf("%s: %q queries %s, which nothing emits", d.Title, where, name))
-		}
-		for _, p := range CheckBucketMatchers(expr) {
-			problems = append(problems, fmt.Sprintf("%s: %q: %s", d.Title, where, p))
+	out := Dashboard{Title: d.Title, Exporters: d.exporters()}
+	add := func(where, expr, ds string) {
+		if expr != "" {
+			out.Queries = append(out.Queries, Query{Where: where, Expr: expr, Datasource: ds})
 		}
 	}
 	for _, p := range flattenPanels(d.Panels) {
 		for _, t := range p.Targets {
-			if t.Expr != "" {
-				report("panel "+p.Title, t.Expr)
-			}
+			add("panel "+p.Title, t.Expr, t.Datasource.Type)
 		}
 	}
 	for _, a := range d.Annotations.List {
-		report("annotation "+a.Name, a.Expr)
+		add("annotation "+a.Name, a.Expr, "")
 	}
 	for _, v := range d.Templating.List {
-		report("variable "+v.Name, variableExpr(v.Query))
+		add("variable "+v.Name, variableExpr(v.Query), v.Datasource.Type)
+	}
+	return out, nil
+}
+
+// CheckDashboard returns one problem per Prometheus query of a Grafana
+// dashboard (panels, nested row panels, annotations and template variables)
+// that names a series nothing emits.
+func CheckDashboard(raw []byte) ([]string, error) {
+	d, err := DashboardQueries(raw)
+	if err != nil {
+		return nil, err
+	}
+	var problems []string
+	for _, q := range d.Queries {
+		// Only Prometheus queries name metric series; a Loki query is LogQL.
+		if q.Datasource == "loki" {
+			continue
+		}
+		for _, name := range CheckExpr(q.Expr, d.Exporters...) {
+			problems = append(problems, fmt.Sprintf("%s: %q queries %s, which nothing emits", d.Title, q.Where, name))
+		}
+		for _, p := range CheckBucketMatchers(q.Expr) {
+			problems = append(problems, fmt.Sprintf("%s: %q: %s", d.Title, q.Where, p))
+		}
 	}
 	return problems, nil
 }
@@ -183,8 +217,11 @@ type dashboardQueries struct {
 	} `json:"annotations"`
 	Templating struct {
 		List []struct {
-			Name  string          `json:"name"`
-			Query json.RawMessage `json:"query"`
+			Name       string          `json:"name"`
+			Query      json.RawMessage `json:"query"`
+			Datasource struct {
+				Type string `json:"type"`
+			} `json:"datasource"`
 		} `json:"list"`
 	} `json:"templating"`
 }
@@ -203,7 +240,10 @@ func (d dashboardQueries) exporters() []string {
 type panelQuery struct {
 	Title   string `json:"title"`
 	Targets []struct {
-		Expr string `json:"expr"`
+		Expr       string `json:"expr"`
+		Datasource struct {
+			Type string `json:"type"`
+		} `json:"datasource"`
 	} `json:"targets"`
 	Panels []panelQuery `json:"panels"`
 }

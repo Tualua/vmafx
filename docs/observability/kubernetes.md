@@ -183,6 +183,8 @@ The file has the same groups as the PrometheusRule the chart renders from
 
 ## Reference
 
+- [Observability stack with Docker Compose](compose.md): the same rules,
+  dashboards and settings on one machine, with Tempo and Loki.
 - [Metric reference](metrics.md): every series the components serve.
 - [Observability](../development/observability.md): how the metrics, the
   dashboards and the rules are generated, and the alert table.

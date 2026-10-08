@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# The alert settings of the Compose example, in the keys of the Helm chart's
+# values (monitoring.slo, .burnRates, .alerts; docs/observability/kubernetes.md
+# lists them). Keys left out keep the defaults the chart's values.yaml shows.
+# The rules service renders the rule file from this file when the stack
+# starts; after an edit run `docker compose up -d --force-recreate rules
+# prometheus`. The same file works as a Helm values file.
+monitoring:
+  slo: {}
+    # jobSuccess: 0.995
+    # scoreLatencySeconds: "60"
+  burnRates: {}
+    # slow: {longWindow: 1d, shortWindow: 2h, factor: 3}
+  alerts: {}
+    # queueAgeSeconds: 3600

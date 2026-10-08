@@ -423,6 +423,35 @@ with the defaults has the groups of the rule file, that a chart rendered with
 an override has the groups `-render-rules` writes for it, and that promtool
 accepts both.
 
+## Compose example and smoke test
+
+`deploy/compose/observability/` runs the three components with Prometheus,
+the OpenTelemetry Collector, Tempo, Loki and Grafana
+([operator guide](../observability/compose.md)). Its `rules` service renders
+the rule file from `monitoring-values.yaml` with
+`go run ./tools/obsgen -render-rules`; Grafana reads the generated dashboards
+and the generated data source provisioning
+(`deploy/grafana/provisioning/datasources/vmafx.yaml`, `obsgen.PrometheusUID`,
+`TempoUID`, `LokiUID`).
+
+```bash
+scripts/ci/observability-compose-smoke.sh --build   # images from the checkout, then the smoke test
+make observability-compose-smoke                    # images already built
+```
+
+CI runs it in the non-required workflow _Observability Smoke_
+(`.github/workflows/observability-compose.yml`): nightly, on dispatch, and on
+a ready pull request labelled `run-observability-smoke`.
+
+The smoke test (`tools/obssmoke`) runs in the Compose network. It reads every
+dashboard through `obsgen.DashboardQueries`, the parser the dashboard check
+uses, sets every variable to "All" and the time-range variables to `10m`, and
+requires data from each Prometheus query after its traffic; the queries that
+cannot have data on a CPU-only stack are listed with their reason in
+`tools/obssmoke/exemptions.go`, and an exempted query that returns data fails
+the run. `obsgen -write` writes world-readable files (`0644`), because the
+example mounts them into containers that run as other users.
+
 ## Logs
 
 Logs stay on the golusoris slog stream (stderr for `vmafx-mcp` on stdio,

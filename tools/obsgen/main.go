@@ -124,8 +124,11 @@ func apply(f obsgen.File, write bool) (bool, error) {
 	if !write {
 		return true, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	// World-readable, as a checkout writes them: the Compose example mounts
+	// the generated dashboards and provisioning into containers that run as
+	// another user.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- repository directory, read by containers
 		return false, err
 	}
-	return true, os.WriteFile(path, content, 0o600)
+	return true, os.WriteFile(path, content, 0o644) // #nosec G306 -- repository file, read by containers
 }

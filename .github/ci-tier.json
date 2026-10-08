@@ -94,6 +94,12 @@
       "expires": "2027-12-31"
     },
     {
+      "workflow": "observability-compose.yml",
+      "job": "gate",
+      "reason": "Opt-in lane, not required (Q-194): the gate job starts only for a ready pull request that carries the label `run-observability-smoke`; the smoke job follows it. Nightly and dispatch runs are the full tier.",
+      "expires": "2027-12-31"
+    },
+    {
       "workflow": "praetor-api.yml",
       "job": "api-compatibility",
       "reason": "Praetor-managed, byte-locked by `praetorctl audit`. Since praetor#815 its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check, which the tier's job-level gate cannot express. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",

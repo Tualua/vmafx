@@ -192,6 +192,15 @@ lint-dashboards:
 check-prometheus-rules:
 	bash scripts/ci/check-prometheus-rules.sh
 
+# Compose observability example: start the stack, send traffic, check every
+# component is scraped, the rules are healthy, every dashboard query returns
+# data, Grafana is provisioned and traces reach Tempo (ADR-2349). Needs docker
+# and the VMAFx images (scripts/ci/observability-compose-smoke.sh --build
+# builds them from the checkout).
+.PHONY: observability-compose-smoke
+observability-compose-smoke:
+	bash scripts/ci/observability-compose-smoke.sh
+
 # Go security scan (gosec): the one definition of the gate, run by `make lint`
 # and by the gosec step of .github/workflows/go-ci.yml. Every G* finding fails.
 # -exclude-generated: generated protobuf code (gen/) carries G103

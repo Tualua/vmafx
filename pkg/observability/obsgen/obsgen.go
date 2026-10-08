@@ -115,7 +115,12 @@ func Generate() ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
+	datasources, err := datasourcesYAML()
+	if err != nil {
+		return nil, err
+	}
 	return append(out,
+		File{Path: DatasourcesFile, Content: datasources},
 		File{Path: RulesFile, Content: rules},
 		File{Path: RulesTestFile, Content: tests},
 		File{Path: HelmRuleTemplate, Content: chartRules},

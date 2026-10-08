@@ -106,7 +106,7 @@
     },
     {
       "name": "go",
-      "paths": ["api/", "cmd/", "internal/", "pkg/", "tools/obsgen/"],
+      "paths": ["api/", "cmd/", "internal/", "pkg/", "tools/obsgen/", "tools/obssmoke/"],
       "checks": ["go vet + go test"],
       "not_local": "needs the CPU + ONNX Runtime libvmaf build; the go vet + go test job runs it",
       "runs": "go test ./... against the CPU + ONNX Runtime libvmaf build"

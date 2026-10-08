@@ -109,6 +109,16 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
     (`TestValidateAgreesWithTheChartSchema`); new setting -> schema entry
     in same change.
 
+11. **Compose example + smoke** (`deploy/compose/observability`,
+    `tools/obssmoke`, `obsgen/datasources.go`): data source provisioning
+    generated, URLs = compose service names, uids = `PrometheusUID` /
+    `TempoUID` / `LokiUID`. Smoke parses dashboards only via
+    `obsgen.DashboardQueries` (one parser with `CheckDashboard`). Exemption =
+    query without data on CPU stack + reason; exempted query with data
+    fails run. `tools/obsgen` writes 0644 / dirs 0755 (containers read
+    mounts as other users). Smoke never in parallel with another heavy job;
+    stack torn down after (`down -v`).
+
 ## Test requirements
 
 ```bash
