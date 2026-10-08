@@ -67,6 +67,13 @@
      "no <item> needed: <reason>" justification (e.g. "no rebase impact: docs-only").
      Upstream-port PRs (see /port-upstream-commit) and pure upstream syncs are exempt. -->
 
+> **Small pull request?** If it changes at most 100 lines in one top-level directory, adds no
+> user-discoverable surface, needs no ADR, and does not touch `core/src/`, `core/include/`,
+> `core/tools/`, `core/meson_options.txt`, `python/test/` or `ffmpeg-patches/`, write
+> `small PR (ADR-2461)` anywhere in the description. That waives the research digest, decision
+> matrix, `AGENTS.md` note and rebase note; the reproducer and the changelog fragment stay.
+> The gate checks the diff and refuses the marker when the change does not qualify.
+>
 > **IMPORTANT for automated agents:** This section MUST use `- [x]` checkbox syntax.
 > NOT numbered lists (`1. **Research digest**`) or prose bullets (`- Research digest: foo.md`).
 > To opt out, KEEP the `- [ ]` checkbox and add the opt-out text inline:

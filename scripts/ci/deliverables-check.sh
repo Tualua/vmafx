@@ -147,6 +147,68 @@ if grep -nE "${rendered_paths}" "$tmp_diff" >/dev/null; then
   exit 1
 fi
 
+# ---------- 2c. Small-PR track (ADR-2461) ----------
+#
+# A pull request that carries the marker `small PR (ADR-2461)` waives the
+# research digest, decision matrix, AGENTS.md note and rebase note, but only if
+# the diff shows it qualifies: at most 100 changed lines (changelog and
+# rebase-note fragments, ADR index fragments and lock files not counted), one
+# top-level directory (docs/ and changelog.d/ do not count beside another), and
+# no path that signals a surface, a numeric change or an ADR. The reproducer and
+# the changelog fragment stay required. A marker on a pull request that does not
+# qualify is refused, never ignored. Without the marker nothing here runs.
+small_marker='small PR (ADR-2461)'
+small_max_lines=100
+small_uncounted='^(changelog\.d/|docs/rebase-notes\.d/|docs/adr/_index_fragments/|requirements/locks/)|(^|/)(go\.sum|Cargo\.lock|package-lock\.json|pnpm-lock\.yaml|poetry\.lock|uv\.lock)$|\.lock$'
+small_forbidden='^(core/src/|core/include/|core/tools/|core/meson_options\.txt$|python/test/|ffmpeg-patches/)'
+small_ok=0
+
+small_pr_problems() {
+  local added removed path total=0 dirs="" top
+  while IFS=$'\t' read -r added removed path; do
+    [ -n "$path" ] || continue
+    if printf '%s\n' "$path" | grep -qE "${small_forbidden}"; then
+      echo "touches ${path}, which signals a surface or numeric change"
+    fi
+    if printf '%s\n' "$path" | grep -qE "${small_uncounted}"; then
+      continue
+    fi
+    if [ "$added" = "-" ] || [ "$removed" = "-" ]; then
+      echo "changes a binary file (${path}), which cannot be counted"
+      continue
+    fi
+    total=$((total + added + removed))
+    top="${path%%/*}"
+    case "$top" in docs | changelog.d) ;; *) dirs="${dirs}${top}"$'\n' ;; esac
+  done < <(git diff --no-renames --numstat "${diff_base}..${diff_head}")
+  if [ "$total" -gt "$small_max_lines" ]; then
+    echo "changes ${total} lines, more than ${small_max_lines}"
+  fi
+  if [ "$(printf '%s' "$dirs" | sort -u | grep -c .)" -gt 1 ]; then
+    echo "touches more than one top-level directory ($(printf '%s' "$dirs" | sort -u | paste -sd, -))"
+  fi
+  while IFS= read -r path; do
+    case "$path" in
+      docs/adr/[0-9][0-9][0-9][0-9]-*.md) echo "${path} adds an ADR" ;;
+    esac
+  done < <(git diff --no-renames --diff-filter=A --name-only "${diff_base}..${diff_head}")
+}
+
+if grep -qiF -- "${small_marker}" "$tmp_body"; then
+  small_problems="$(small_pr_problems)"
+  if [ -n "$small_problems" ]; then
+    while IFS= read -r problem; do
+      echo "::error title=ADR-2461 small PR::${problem}; the small PR (ADR-2461) marker does not apply."
+    done <<<"$small_problems"
+    echo "  Drop the marker and address all six deliverables, or shrink the change."
+    echo "  See docs/adr/2461-small-pr-deliverables-track.md."
+    exit 1
+  fi
+  small_ok=1
+  echo "deliverables-check: small PR track (ADR-2461): the diff qualifies; digest, decision matrix, AGENTS.md note and rebase note are waived."
+  echo ""
+fi
+
 # ---------- 2b. Anti-pattern detection (prose bullet form) ----------
 #
 # Agents occasionally write deliverable lines as prose bullets:
@@ -186,6 +248,14 @@ items=(
 
 fail=0
 for item in "${items[@]}"; do
+  if [ "$small_ok" -eq 1 ]; then
+    case "${item}" in
+      "Research digest" | "Decision matrix" | "AGENTS.md invariant note" | "Rebase note")
+        echo "OK (small PR track): ${item}"
+        continue
+        ;;
+    esac
+  fi
   # Look for either a ticked checkbox mentioning the item, or
   # an "opt-out" line per ADR-0108. Checkboxes use `- [x]`.
   # Opt-outs take the form `no <thing> needed: <reason>` or

@@ -132,8 +132,11 @@ assertions alone. Such a pull request puts `small PR (ADR-2461)` in its
 description and waives the research digest, decision matrix, `AGENTS.md` note
 and rebase note without a further reason. It still carries a reproducer, a
 changelog fragment when users can see the change, and documentation for any
-surface it touches. Until the checking script recognises the marker, the
-one-line opt-out form in the template is what the script accepts.
+surface it touches. The checking script reads the diff and refuses the marker
+when the pull request is larger than 100 lines, spans more than one top-level
+directory, touches `core/src/`, `core/include/`, `core/tools/`,
+`core/meson_options.txt`, `python/test/` or `ffmpeg-patches/`, or adds an ADR
+([details](docs/development/pr-body-sentinel-guide.md#small-pull-requests-adr-2461)).
 
 ## Architecture Decision Records
 

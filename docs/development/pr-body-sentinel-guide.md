@@ -62,6 +62,26 @@ are exempt from the entire section.
 | CHANGELOG fragment | `CHANGELOG fragment` | `changelog` | `no changelog needed: internal refactor` |
 | Rebase note | `Rebase note` | `rebase` | `no rebase impact: docs-only` |
 
+### Small pull requests (ADR-2461)
+
+A small pull request may put the marker `small PR (ADR-2461)` anywhere in the
+body instead of addressing four of the six items. The marker waives the
+research digest, decision matrix, `AGENTS.md` note and rebase note; the
+reproducer and the changelog fragment are still required in the forms above.
+The gate reads the diff and refuses the marker, with an `ADR-2461 small PR`
+error per reason, when the pull request:
+
+- changes more than 100 lines (changelog and rebase-note fragments, ADR index
+  fragments and lock files are not counted);
+- touches more than one top-level directory (`docs/` and `changelog.d/` do not
+  count beside another one);
+- touches `core/src/`, `core/include/`, `core/tools/`,
+  `core/meson_options.txt`, `python/test/` or `ffmpeg-patches/`;
+- adds a file under `docs/adr/`.
+
+Whether a change adds a user-discoverable surface elsewhere stays a reviewer's
+judgement. A body without the marker is parsed exactly as before.
+
 ### Exact syntax
 
 **Ticked checkbox (item addressed):**
