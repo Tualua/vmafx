@@ -69,6 +69,10 @@ import (
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
+// Leader election reads and renews its lease (config/rbac/role.yaml is
+// generated from this marker and those of the reconcilers).
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+
 // defaultLeaderElectionID is the controller-runtime lease name used when leader
 // election is enabled and no explicit ID is configured — a stable
 // vmafx-specific lease (golusoris does not default LeaderElectionID).

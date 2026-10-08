@@ -59,6 +59,11 @@ Update note on merge: final UID + container-scope seccompProfile set.
 - **RBAC split**: ClusterRole (`*-operator-crds`) covers CRD resources only.
   Namespaced resources (pods, events, leases) sit in namespace Role
   (`*-operator-ns`). Never merge into single ClusterRole.
+- **Operator rules >= generated role (ADR-2350 D13)**: both operator roles
+  together grant every rule of `config/rbac/role.yaml` (controller-gen output
+  of operator markers). Guard: `scripts/ci/tests/test_helm_operator_rbac.py`.
+- **`crds/` generated**: `crd_generate.py --write` from
+  `api/vmafx-platform.toml`; only CRD tree. Never hand-edit.
 - **VmafxTenant only for the controller (ADR-1592, replaces ADR-1058's
   rule)**: no `vmafxtenants` rule in the operator ClusterRole (no tenant
   reconciler exists). Tenant-reader RoleBinding binds only

@@ -391,3 +391,250 @@ doc = "ReportResultResponse is the answer of ReportResult."
 fields = [
   { name = "ok", type = "bool", number = 1, doc = "ok is true when the controller recorded the result." },
 ]
+
+# ---------------------------------------------------------------------------
+# Kubernetes resources (vmafx.dev/v1)
+#
+# A message or enum with `group` instead of `file` is a Kubernetes type: the
+# generator writes it as a Go type with kubebuilder markers into the group's
+# package, and controller-gen turns those into the CRDs under
+# deploy/helm/vmafx/crds/ (scripts/codegen/crd_generate.py). Field names are
+# the JSON names; `go` overrides the derived Go name. Within v1 a resource only
+# grows: no removed field, no new required field, no narrower validation.
+# ---------------------------------------------------------------------------
+
+[[groups]]
+name = "vmafx"
+group = "vmafx.dev"
+version = "v1"
+path = "api/vmafx/v1"
+go_package = "github.com/VMAFx/vmafx/api/vmafx/v1"
+doc = "Package v1 contains API schema definitions for the vmafx.dev/v1 API group."
+
+[[resources]]
+kind = "VmafxJob"
+group = "vmafx"
+doc = "VmafxJob is the Schema for the vmafxjobs API: one reference/distorted pair scored against a chosen model on a chosen backend."
+short_names = ["vmjob"]
+spec = "VmafxJobSpec"
+status = "VmafxJobStatus"
+printer_columns = [
+  { name = "Phase", type = "string", json_path = ".status.phase" },
+  { name = "Score", type = "number", json_path = ".status.score" },
+  { name = "Node", type = "string", json_path = ".status.assignedNode" },
+  { name = "Age", type = "date", json_path = ".metadata.creationTimestamp" },
+]
+
+[[enums]]
+name = "VmafxJobPhase"
+group = "vmafx"
+doc = "VmafxJobPhase enumerates the lifecycle phases of a VmafxJob."
+values = [
+  { name = "Pending", doc = "The job has been accepted but not yet assigned to a node." },
+  { name = "Running", doc = "The job runs on a node." },
+  { name = "Succeeded", doc = "The job completed successfully and a score is available." },
+  { name = "Failed", doc = "The job terminated with an error; see Message for details." },
+]
+
+[[messages]]
+name = "VmafxJobSpec"
+group = "vmafx"
+doc = "VmafxJobSpec defines the desired state of a VmafxJob."
+fields = [
+  { name = "reference", type = "string", min_length = 1, doc = "Reference is the URI of the reference video. Supported schemes: file://, s3://, rclone://." },
+  { name = "distorted", type = "string", min_length = 1, doc = "Distorted is the URI of the distorted video to compare against Reference." },
+  { name = "model", type = "string", optional = true, doc = "Model is the VMAF model to use (e.g. \"vmaf_v0.6.1\"). Defaults to the node's default model when omitted." },
+  { name = "backend", type = "string", optional = true, enum = ["cpu", "cuda", "sycl", "hip", "metal"], default = "cpu", doc = "Backend selects the compute backend: cpu, cuda, sycl, hip, or metal." },
+  { name = "priority", type = "int32", optional = true, minimum = 0, default = 0, doc = "Priority is a non-negative scheduling priority; higher values are dispatched first." },
+]
+
+[[messages]]
+name = "VmafxJobStatus"
+group = "vmafx"
+doc = "VmafxJobStatus defines the observed state of a VmafxJob."
+fields = [
+  { name = "phase", type = "VmafxJobPhase", optional = true, doc = "Phase is the current lifecycle phase of the job." },
+  { name = "score", type = "float64", optional = true, doc = "Score is the VMAF score produced by the job. Set only when Phase == Succeeded." },
+  { name = "assignedNode", type = "string", optional = true, doc = "AssignedNode is the name of the VmafxNode that is executing (or executed) this job." },
+  { name = "controllerJobID", go = "ControllerJobID", type = "string", optional = true, doc = "ControllerJobID is the ID the vmafx-controller assigned to the job; the reconciler polls GetJob with it. Empty until a controller accepted the job." },
+  { name = "startedAt", type = "Time", optional = true, doc = "StartedAt records when the job began running." },
+  { name = "finishedAt", type = "Time", optional = true, doc = "FinishedAt records when the job reached a terminal phase (Succeeded or Failed)." },
+  { name = "message", type = "string", optional = true, doc = "Message is a human-readable explanation of the current phase; populated on failure." },
+]
+
+[[resources]]
+kind = "VmafxNode"
+group = "vmafx"
+doc = "VmafxNode is the Schema for the vmafxnodes API: a worker node of the platform and the device it scores on."
+short_names = ["vmnode"]
+spec = "VmafxNodeSpec"
+status = "VmafxNodeStatus"
+printer_columns = [
+  { name = "Vendor", type = "string", json_path = ".spec.gpuVendor" },
+  { name = "Healthy", type = "boolean", json_path = ".status.healthy" },
+  { name = "Jobs", type = "integer", json_path = ".status.assignedJobs" },
+  { name = "Device", type = "string", json_path = ".status.detectedDevice" },
+  { name = "Age", type = "date", json_path = ".metadata.creationTimestamp" },
+]
+
+[[messages]]
+name = "VmafxNodeSpec"
+group = "vmafx"
+doc = "VmafxNodeSpec defines the desired state of a VmafxNode."
+fields = [
+  { name = "gpuVendor", type = "string", enum = ["nvidia", "amd", "intel", "cpu"], doc = "GPUVendor is the device vendor of the node: nvidia, amd, intel or cpu." },
+  { name = "capacity", type = "int32", optional = true, minimum = 1, default = 1, doc = "Capacity is the number of jobs the node runs at once." },
+  { name = "image", type = "string", optional = true, doc = "Image overrides the node container image." },
+]
+
+[[messages]]
+name = "VmafxNodeStatus"
+group = "vmafx"
+doc = "VmafxNodeStatus defines the observed state of a VmafxNode."
+fields = [
+  { name = "healthy", type = "bool", optional = true, doc = "Healthy is true while the node sends heartbeats." },
+  { name = "lastHeartbeat", type = "Time", optional = true, doc = "LastHeartbeat records the node's last heartbeat." },
+  { name = "assignedJobs", type = "int32", optional = true, doc = "AssignedJobs is the number of jobs the node runs." },
+  { name = "detectedDevice", type = "string", optional = true, doc = "DetectedDevice names the device the node found." },
+]
+
+[[resources]]
+kind = "VmafxModelTraining"
+group = "vmafx"
+doc = "VmafxModelTraining is the Schema for the vmafxmodeltrainings API: an online training run that refines a base model from scored samples."
+short_names = ["vmtrain"]
+spec = "VmafxModelTrainingSpec"
+status = "VmafxModelTrainingStatus"
+printer_columns = [
+  { name = "Phase", type = "string", json_path = ".status.phase" },
+  { name = "Samples", type = "integer", json_path = ".status.currentSamples" },
+  { name = "ModelVersion", type = "string", json_path = ".status.modelVersion" },
+  { name = "Age", type = "date", json_path = ".metadata.creationTimestamp" },
+]
+
+[[enums]]
+name = "VmafxModelTrainingPhase"
+group = "vmafx"
+doc = "VmafxModelTrainingPhase enumerates the lifecycle phases of a VmafxModelTraining."
+values = [
+  { name = "Initializing", doc = "The trainer is starting." },
+  { name = "Running", doc = "The trainer consumes samples." },
+  { name = "Paused", doc = "Training is paused." },
+  { name = "Failed", doc = "Training stopped with an error." },
+]
+
+[[messages]]
+name = "VmafxModelTrainingDataSource"
+group = "vmafx"
+doc = "VmafxModelTrainingDataSource selects the nodes whose scored samples feed the training."
+fields = [
+  { name = "nodeSelector", type = "map<string, string>", optional = true, doc = "NodeSelector selects the VmafxNodes by label." },
+]
+
+[[messages]]
+name = "VmafxModelTrainingCheckpoint"
+group = "vmafx"
+doc = "VmafxModelTrainingCheckpoint sets when the trainer writes a checkpoint."
+fields = [
+  { name = "interval", type = "string", optional = true, default = "10m", doc = "Interval is the time between checkpoints." },
+  { name = "minSamples", type = "int32", optional = true, minimum = 1, default = 1000, doc = "MinSamples is the number of samples a checkpoint needs." },
+]
+
+[[messages]]
+name = "VmafxModelTrainingSpec"
+group = "vmafx"
+doc = "VmafxModelTrainingSpec defines the desired state of a VmafxModelTraining."
+fields = [
+  { name = "baseModel", type = "string", min_length = 1, doc = "BaseModel is the model the training starts from." },
+  { name = "dataSource", type = "VmafxModelTrainingDataSource", optional = true, doc = "DataSource selects the samples." },
+  { name = "algorithm", type = "string", enum = ["online-sgd-ema"], doc = "Algorithm is the training algorithm." },
+  { name = "checkpoint", type = "VmafxModelTrainingCheckpoint", optional = true, doc = "Checkpoint sets when checkpoints are written." },
+  { name = "outputRegistry", type = "string", min_length = 1, doc = "OutputRegistry is the registry the trained models are pushed to." },
+]
+
+[[messages]]
+name = "VmafxModelTrainingStatus"
+group = "vmafx"
+doc = "VmafxModelTrainingStatus defines the observed state of a VmafxModelTraining."
+fields = [
+  { name = "currentSamples", type = "int32", optional = true, doc = "CurrentSamples is the number of samples consumed so far." },
+  { name = "lastCheckpoint", type = "Time", optional = true, doc = "LastCheckpoint records the last checkpoint." },
+  { name = "modelVersion", type = "string", optional = true, doc = "ModelVersion names the newest trained model." },
+  { name = "phase", type = "VmafxModelTrainingPhase", optional = true, doc = "Phase is the current lifecycle phase of the training." },
+]
+
+[[resources]]
+kind = "VmafxTenant"
+group = "vmafx"
+doc = "VmafxTenant configures a named tenant's OIDC provider and RBAC policy for the vmafx-controller multi-tenant auth gateway (ADR-0794)."
+short_names = ["vmtenant"]
+spec = "VmafxTenantSpec"
+status = "VmafxTenantStatus"
+spec_required = true
+printer_columns = [
+  { name = "Issuer", type = "string", json_path = ".spec.oidc.issuer" },
+  { name = "Enabled", type = "boolean", json_path = ".spec.enabled" },
+  { name = "Age", type = "date", json_path = ".metadata.creationTimestamp" },
+]
+
+[[messages]]
+name = "VmafxTenantSpec"
+group = "vmafx"
+doc = "VmafxTenantSpec defines a tenant: its identity provider, its role policy and the inputs it may score."
+fields = [
+  { name = "tenantId", type = "string", pattern = "^[a-z0-9][a-z0-9\\-]{0,62}[a-z0-9]$", doc = "TenantID is the unique, stable identifier of the tenant. It must match the \"tid\" (or configured tenant claim) in the OIDC tokens issued to this tenant's users." },
+  { name = "enabled", type = "bool", optional = true, pointer = true, default = true, doc = "Enabled false rejects every request of the tenant with 403, even with an otherwise valid token: emergency suspension without revoking certificates." },
+  { name = "oidc", type = "VmafxTenantOIDC", doc = "OIDC configures the tenant's identity provider." },
+  { name = "rbac", type = "VmafxTenantRBAC", optional = true, doc = "RBAC is the tenant's role policy. The defaults enforce least privilege." },
+  { name = "scoring", type = "VmafxTenantScoring", optional = true, doc = "Scoring names the inputs the tenant's callers may score (ADR-1577)." },
+]
+
+[[messages]]
+name = "VmafxTenantOIDC"
+group = "vmafx"
+doc = "VmafxTenantOIDC is the OIDC provider configuration of a tenant."
+fields = [
+  { name = "issuer", type = "string", format = "uri", doc = "Issuer is the expected \"iss\" claim: the canonical base URL of the identity provider." },
+  { name = "jwksEndpoint", go = "JWKSEndpoint", type = "string", format = "uri", doc = "JWKSEndpoint is the URL of the provider's JWKS endpoint, from which the RS256 public keys are fetched." },
+  { name = "audience", type = "string", optional = true, doc = "Audience is the expected \"aud\" claim. Empty skips the audience check (not recommended in production)." },
+  { name = "tenantClaim", type = "string", optional = true, default = "tid", doc = "TenantClaim is the JWT claim that holds the tenant identifier." },
+  { name = "rolesClaim", type = "string", optional = true, default = "vmafx_roles", doc = "RolesClaim is the JWT claim that holds the list of vmafx roles (vmafx:reader, vmafx:writer, vmafx:admin, vmafx:node)." },
+]
+
+[[messages]]
+name = "VmafxTenantRBAC"
+group = "vmafx"
+doc = "VmafxTenantRBAC is the role policy of a tenant."
+fields = [
+  { name = "defaultRole", type = "string", optional = true, enum = ["vmafx:reader", "vmafx:writer", "vmafx:admin"], default = "vmafx:reader", doc = "DefaultRole is the role of an authenticated user whose token names no vmafx role. vmafx:node is not offered: a compute node needs the role in its token." },
+  { name = "allowedRoles", type = "string", repeated = true, optional = true, items_enum = ["vmafx:reader", "vmafx:writer", "vmafx:admin", "vmafx:node"], default = ["vmafx:reader", "vmafx:writer"], doc = "AllowedRoles lists the roles the tenant's users may hold; other roles in a token are dropped. vmafx:node is the compute node's role: it calls the node API and nothing else. List it for a tenant that runs its own nodes." },
+]
+
+[[messages]]
+name = "VmafxTenantScoring"
+group = "vmafx"
+doc = "VmafxTenantScoring names the inputs a tenant's callers may score (ADR-1577)."
+fields = [
+  { name = "roots", type = "string", repeated = true, optional = true, max_items = 32, items_min_length = 1, doc = "Roots are absolute directories (/data/acme), http(s) URL prefixes (https://media.example.com/acme/) and rclone remote prefixes (s3:bucket/acme, s3://bucket/acme). \"..\" is refused. Empty or absent: the tenant may score nothing (deny by default)." },
+]
+
+[[messages]]
+name = "VmafxTenantCondition"
+group = "vmafx"
+doc = "VmafxTenantCondition is one observation about a tenant."
+fields = [
+  { name = "type", type = "string", doc = "Type is the condition type." },
+  { name = "status", type = "string", enum = ["True", "False", "Unknown"], doc = "Status is True, False or Unknown." },
+  { name = "reason", type = "string", optional = true, doc = "Reason is a machine-readable reason for the status." },
+  { name = "message", type = "string", optional = true, doc = "Message is a human-readable explanation." },
+  { name = "lastTransitionTime", type = "Time", optional = true, doc = "LastTransitionTime is when the status last changed." },
+]
+
+[[messages]]
+name = "VmafxTenantStatus"
+group = "vmafx"
+doc = "VmafxTenantStatus defines the observed state of a VmafxTenant."
+fields = [
+  { name = "conditions", type = "VmafxTenantCondition", repeated = true, optional = true, doc = "Conditions are the latest observations of the tenant." },
+  { name = "observedGeneration", type = "int64", optional = true, doc = "ObservedGeneration is the generation the conditions describe." },
+]

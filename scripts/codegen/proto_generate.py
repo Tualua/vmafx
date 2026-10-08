@@ -36,6 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sqlc_generate import build_config
+from tree_sync import collect, differences, write
 
 REPO = Path(__file__).resolve().parents[2]
 SKIP = 77
@@ -82,35 +83,14 @@ def generate(buf: list[str], root: Path, scratch: Path) -> dict[str, str]:
     proofs = run([sys.executable, str(root / POSTPROCESS), "--root", str(scratch)], root)
     if proofs.returncode != 0:
         raise SystemExit(f"proto_generate: {POSTPROCESS} failed:\n{proofs.stderr}")
-    return {
-        p.relative_to(scratch).as_posix(): p.read_text(encoding="utf-8")
-        for p in sorted((scratch / GENERATED).rglob("*.pb.go"))
-    }
+    files: dict[str, str] = collect(scratch, scratch / GENERATED, "**/*.pb.go")
+    return files
 
 
 def committed(root: Path) -> dict[str, str]:
     """The *.pb.go files the tree holds."""
-    return {
-        p.relative_to(root).as_posix(): p.read_text(encoding="utf-8")
-        for p in sorted((root / GENERATED).rglob("*.pb.go"))
-    }
-
-
-def differences(want: dict[str, str], have: dict[str, str]) -> list[str]:
-    """Paths that are missing, stale or different."""
-    out = [f"missing: {p}" for p in sorted(want.keys() - have.keys())]
-    out += [f"stale: {p}" for p in sorted(have.keys() - want.keys())]
-    out += [f"differs: {p}" for p in sorted(want.keys() & have.keys()) if want[p] != have[p]]
-    return out
-
-
-def write(root: Path, want: dict[str, str], have: dict[str, str]) -> None:
-    """Make gen/go hold exactly the generated *.pb.go files."""
-    for path in have.keys() - want.keys():
-        (root / path).unlink()
-    for path, text in want.items():
-        (root / path).parent.mkdir(parents=True, exist_ok=True)
-        (root / path).write_text(text, encoding="utf-8")
+    files: dict[str, str] = collect(root, root / GENERATED, "**/*.pb.go")
+    return files
 
 
 def lint(buf: list[str], root: Path) -> list[str]:

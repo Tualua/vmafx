@@ -10,9 +10,12 @@ definition produces, so a hand edit of a generated file fails the build's
 tests.
 
 A second definition, `api/vmafx-platform.toml`, describes the gRPC services and
-messages of the controller and the scoring server
+messages of the controller and the scoring server, and the Kubernetes custom
+resources of the platform
 ([ADR-2350](../adr/2350-cloud-native-platform.md) D13); the same generator
-writes their protobuf files ([Platform definition](#platform-definition)).
+writes their protobuf files and Go types
+([Platform definition](#platform-definition),
+[Kubernetes resources](#kubernetes-resources)).
 
 ## Change the API
 
@@ -133,6 +136,7 @@ its C output.
 | `core/tools/cli_options.gen.inc` | The `vmaf` short option string, long-only identifiers, `long_opts[]` and usage lines |
 | `pkg/scoreopts/options.gen.json`, `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json` | MCP tool input schemas, server-side options, argument-vector spec, command-line flags, library defaults (one text, two packages) |
 | `proto/vmafx/v1/vmafx_api.proto` | `ScoreOptions` and the messages of structs that name `proto` (`Provenance`) |
+| `api/vmafx/v1/groupversion_info.go`, `api/vmafx/v1/<kind>_types.go` | From `api/vmafx-platform.toml`: the Go types of the custom resources with their kubebuilder markers ([Kubernetes resources](#kubernetes-resources)) |
 | `api/openapi/components.gen.yaml` | The same messages as OpenAPI 3.0 schemas; also spliced into `api/openapi/vmafx-server-v1.yaml` |
 | `ffmpeg-patches/src/vf_vmafx_options.h` | The `vmafx` filter's context fields, AVOption table and value-name lists |
 | Regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/mcp/tools.md`, `docs/server/api-contract.md` | Option tables between `BEGIN GENERATED` / `END GENERATED` markers |
@@ -227,8 +231,10 @@ must stay clean.
 
 `api/vmafx-platform.toml` holds the services of the platform: the scoring
 service `VmafxScoring` (package `vmafx.v1`) and the controller `VmafxController`
-(package `vmafx.controller.v1`). The generator writes one protobuf file per
-`[[files]]` entry, and buf turns those into the Go bindings under `gen/go`:
+(package `vmafx.controller.v1`), and the custom resources of the operator
+([Kubernetes resources](#kubernetes-resources)). The generator writes one
+protobuf file per `[[files]]` entry, and buf turns those into the Go bindings
+under `gen/go`:
 
 | Table | What it declares |
 | --- | --- |
@@ -285,6 +291,67 @@ in `buf.yaml` and stay as they are.
     package is not a break; a removed or renumbered field, a changed type or a
     renamed enum value is.
 
+### Kubernetes resources
+
+The same file declares the custom resources of the `vmafx.dev/v1` API group:
+`VmafxJob`, `VmafxNode`, `VmafxModelTraining` and `VmafxTenant`. A `[[messages]]`
+or `[[enums]]` entry that names a `group` instead of a protobuf `file` is a
+Kubernetes type.
+
+| Table | What it declares |
+| --- | --- |
+| `[[groups]]` | An API group version: `name` (what entries refer to), `group`, `version`, `path` (the Go package directory), `go_package`, `doc` |
+| `[[resources]]` | A custom resource: `kind`, `group`, `doc`, `spec` and `status` (message names), `short_names`, `scope` (`Namespaced`, the default, or `Cluster`), `status_subresource` (default true), `spec_required` (default false), `printer_columns` with `name`, `type` (`string`, `number`, `integer`, `boolean`, `date`) and `json_path` |
+| `[[enums]]` with `group` | A string enum: `values` with `name` and an optional `doc` |
+| `[[messages]]` with `group` | A struct: `fields` with `name` (the JSON name, lowerCamelCase), `type`, `doc`, and optionally `go`, `optional`, `repeated`, `pointer`, `default` and validation keys |
+
+A field's `type` is `string`, `bool`, `int`, `int32`, `int64`, `float64`,
+`Time` (`*metav1.Time`), `map<string, string>`, or an enum or message of the
+same group. The Go name is derived from the JSON name (`tenantId` becomes
+`TenantID`; `id`, `gpu`, `uri`, `url`, `oidc` and `rbac` are written in
+capitals); `go` overrides it. `pointer = true` makes a single value a pointer,
+so that an explicit `false` or `0` survives a default. A field with a
+`default` must be `optional`. The validation keys become kubebuilder markers
+and from those the CRD schema: `enum`, `items_enum`, `minimum`, `min_length`,
+`items_min_length`, `max_items`, `pattern`, `format`. An enum type carries its
+own values, so a field of that type takes no `enum`.
+
+Within `v1` a resource only grows. Adding a resource, an optional field, an
+enum value or a short name, or widening a bound, is compatible; removing a
+field, version, short name or the status subresource, adding a required
+field, narrowing an enum, a bound, a type or a format, or changing a pattern
+or a default is not, and needs a new version.
+
+### Change a custom resource
+
+1. Edit `api/vmafx-platform.toml`.
+2. Regenerate the Go types, then the deepcopy code, the CRDs and the RBAC
+   role:
+
+    ```bash
+    python3 scripts/codegen/vmafx-api.py --write
+    python3 scripts/codegen/crd_generate.py --write
+    ```
+
+    `vmafx-api.py` writes `api/vmafx/v1/groupversion_info.go` and one
+    `<kind>_types.go` per resource, gofmt-clean. `crd_generate.py` runs
+    controller-gen, the version `go.mod` pins as a tool, three times: `object`
+    writes `api/vmafx/v1/zz_generated.deepcopy.go`, `crd` writes
+    `deploy/helm/vmafx/crds/vmafx.dev_<plural>.yaml` (the only CRD tree: the
+    chart installs it and the operator's envtest suite loads it), and `rbac`
+    writes `config/rbac/role.yaml` from the `+kubebuilder:rbac` markers of
+    `cmd/vmafx-operator`. It adds the SPDX header and removes stale files.
+
+3. Check compatibility against the branch you started from:
+
+    ```bash
+    python3 scripts/codegen/crd_generate.py --check --compat-against origin/master
+    ```
+
+4. A new RBAC marker on a reconciler changes `config/rbac/role.yaml`; the
+   chart's `deploy/helm/vmafx/templates/operator-rbac.yaml` must then grant it
+   too, which `scripts/ci/tests/test_helm_operator_rbac.py` checks.
+
 ## Gates
 
 | Gate | Fails when | Shown failing by |
@@ -303,6 +370,10 @@ in `buf.yaml` and stay as they are.
 | `test_proto_generated_current` (Meson, `fast`) | `buf lint` reports a protobuf file, or a `*.pb.go` under `gen/go` differs from what `buf generate` and the proofs produce; skipped (exit 77, reason printed) without Go or the module proxy | A hand edit of `gen/go/vmafx.pb.go`, and a `buf.yaml` without the exemption of the service names |
 | `proto_generate.py --breaking-against REF` | `buf breaking` (`WIRE_JSON`) finds an incompatible change against REF | A renumbered field in a copy |
 | Platform validation (every run) | A duplicate name or number, an unknown type or file, a field number outside 1 to 536870911 or in 19000 to 19999, an enum without value 0, a map key that is not an integer, `bool` or `string`, a repeated oneof member, a path outside its package directory | `scripts/codegen/tests/test_vmafx_platform.py` |
+| Kubernetes validation (every run) | An unknown type or group, a duplicate type, field or Go name, a default on a required field, a pointer to a list or map, `enum` on an enum-typed field, a scope other than `Namespaced` or `Cluster`, a spec or status that is not a message, an unknown printer column type, a name that is both a protobuf and a Kubernetes type | `scripts/codegen/tests/test_vmafx_platform_kube.py` |
+| `test_crd_generated_current` (Meson, `fast`) | `zz_generated.deepcopy.go`, a CRD under `deploy/helm/vmafx/crds` or `config/rbac/role.yaml` differs from what controller-gen writes, or a generated file is missing or left over; skipped (exit 77, reason printed) without Go | A hand edit of a CRD, an extra and a missing file, in `scripts/codegen/tests/test_crd_generate.py` |
+| `test_crd_compat` (Meson, `fast`) | A generated CRD narrows the one at the merge base with `origin/master` (see [Kubernetes resources](#kubernetes-resources)); skipped (exit 77, reason printed) without Go, git or that ref | Every narrowing planted in `test_crd_generate.py`, and `max_items = 16` for the tenant roots in the definition |
+| `test_helm_operator_rbac.py` (Helm Chart workflow) | The chart does not bind the operator's service account to every rule of `config/rbac/role.yaml` | A chart without the lease rule, and a marker for a resource the chart does not grant |
 
 The compiler, `clang-format` and linker cases of the generator tests skip,
 with the reason, when the tool is not installed.

@@ -59,3 +59,10 @@ def definition_at(root: Path, ref: str, path: Path) -> Api:
     except Unavailable as err:
         raise Unavailable(f"no {path.as_posix()} at {ref}: {err}") from err
     return parse(tomllib.loads(text))
+
+
+def files_at(root: Path, ref: str, directory: str, suffix: str) -> dict[str, str]:
+    """{path: text} of the files directly under `directory` at `ref` ending in `suffix`."""
+    listing = _git(root, "ls-tree", "--name-only", ref, "--", directory.rstrip("/") + "/")
+    paths = [p for p in listing.splitlines() if p.endswith(suffix)]
+    return {path: _git(root, "show", f"{ref}:{path}") for path in paths}

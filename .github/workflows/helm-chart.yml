@@ -145,6 +145,11 @@ jobs:
       - name: Service accounts and tenant RBAC
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_service_accounts.py' -v
 
+      # ADR-2350 D13: the chart grants the operator every rule controller-gen
+      # derives from its +kubebuilder:rbac markers (config/rbac/role.yaml).
+      - name: Operator RBAC covers the generated role
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_operator_rbac.py' -v
+
       # ADR-1593: node.fuse (FUSE device resource, the setuid helper's
       # capability bounding set) and node.ebpf (tracker env, UID 0 with BPF /
       # PERFMON / SYS_ADMIN, tracefs), and the combinations the chart refuses.

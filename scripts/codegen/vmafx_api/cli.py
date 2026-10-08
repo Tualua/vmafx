@@ -35,6 +35,7 @@ from . import (
     emit_conformance,
     emit_docs,
     emit_ffmpeg_options,
+    emit_kube_types,
     emit_layout_test,
     emit_mcp,
     emit_openapi,
@@ -121,6 +122,7 @@ def render(api: Api, root: Path | None = None, platform: Platform | None = None)
             files.update(regions(api, root))
     if platform is not None:
         files.update(emit_platform_proto.files(platform))
+        files.update(emit_kube_types.files(platform.kube))
     return files
 
 

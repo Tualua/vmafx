@@ -37,6 +37,9 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from tree_sync import differences, write  # noqa: E402  (shared with proto/crd generation)
 
 # sqlc configuration (relative to the repository) -> its output directories
 # (relative to the configuration's directory).
@@ -165,23 +168,6 @@ def committed(root: Path, config: str, outputs: tuple[str, ...]) -> dict[str, st
         for path in sorted((base / out).glob("*.go")):
             files[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8")
     return files
-
-
-def differences(want: dict[str, str], have: dict[str, str]) -> list[str]:
-    """Paths that are missing, stale or different."""
-    out = [f"missing: {p}" for p in sorted(want.keys() - have.keys())]
-    out += [f"stale: {p}" for p in sorted(have.keys() - want.keys())]
-    out += [f"differs: {p}" for p in sorted(want.keys() & have.keys()) if want[p] != have[p]]
-    return out
-
-
-def write(root: Path, want: dict[str, str], have: dict[str, str]) -> None:
-    """Make the tree hold exactly want."""
-    for path in have.keys() - want.keys():
-        (root / path).unlink()
-    for path, text in want.items():
-        (root / path).parent.mkdir(parents=True, exist_ok=True)
-        (root / path).write_text(text, encoding="utf-8")
 
 
 def run(root: Path, mode: str) -> int:

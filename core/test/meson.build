@@ -1328,6 +1328,29 @@ test('test_proto_generated_current',
     timeout : 900,
 )
 
+# The deepcopy code, the CRDs under deploy/helm/vmafx/crds (the only CRD tree)
+# and config/rbac/role.yaml match what controller-gen, pinned as a go.mod tool,
+# writes from api/vmafx/v1 and the operator's RBAC markers (ADR-2350 D13).
+# Exits 77 (skipped, reason printed) without Go.
+crd_generator = meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'crd_generate.py'
+test('test_crd_generated_current',
+    import('python').find_installation(),
+    args : [crd_generator, '--check', '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+    timeout : 900,
+)
+
+# Within v1 a custom resource only grows: the generated CRDs against those at
+# the merge base with origin/master (vmafx_api/crd_compat.py). Exits 77 without
+# Go, git or that ref (shallow CI clones).
+test('test_crd_compat',
+    import('python').find_installation(),
+    args : [crd_generator, '--check', '--compat-against-merge-base', 'origin/master',
+            '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+    timeout : 900,
+)
+
 # Generator unit tests: every emitter and gate, each refusing its planted defects.
 test('test_vmafx_api_generator',
     import('python').find_installation(),

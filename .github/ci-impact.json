@@ -351,9 +351,11 @@
       "patterns": [
         "deploy/helm/*",
         "deploy/helm/**",
+        "config/rbac/*",
         "scripts/ci/tests/test_check_helm_selector_isolation.py",
         "scripts/ci/tests/test_helm_controller_auth.py",
-        "scripts/ci/tests/test_helm_node_contract.py"
+        "scripts/ci/tests/test_helm_node_contract.py",
+        "scripts/ci/tests/test_helm_operator_rbac.py"
       ]
     },
     "tester_image": {

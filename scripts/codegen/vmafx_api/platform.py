@@ -23,6 +23,7 @@ from typing import Any
 import tomllib
 
 from .entries import Entry, need, where_of
+from .kube import Kube, parse_kube
 from .model import Api, DefinitionError
 
 DEFINITION = Path("api/vmafx-platform.toml")
@@ -136,6 +137,7 @@ class Platform:
     messages: tuple[Message, ...]
     services: tuple[Service, ...]
     external: tuple[External, ...]
+    kube: Kube
 
     def file(self, name: str) -> ProtoFile:
         return next(f for f in self.files if f.name == name)
@@ -281,12 +283,18 @@ def parse(data: dict[str, Any], external: tuple[External, ...]) -> Platform:
         raise DefinitionError(f"[platform] version must be {FORMAT_VERSION}")
     platform = Platform(
         files=_files(data.get("files", [])),
-        enums=_enums(data.get("enums", [])),
-        messages=_messages(data.get("messages", [])),
+        enums=_enums([e for e in data.get("enums", []) if "group" not in e]),
+        messages=_messages([m for m in data.get("messages", []) if "group" not in m]),
         services=_services(data.get("services", [])),
         external=external,
+        kube=parse_kube(data),
     )
     validate_platform(platform)
+    kube_names = {e.name for e in platform.kube.enums} | {m.name for m in platform.kube.messages}
+    proto_names = {e.name for e in platform.enums} | {m.name for m in platform.messages}
+    clash = kube_names & proto_names
+    if clash:
+        raise DefinitionError(f"{sorted(clash)[0]} is both a protobuf and a Kubernetes type")
     return platform
 
 

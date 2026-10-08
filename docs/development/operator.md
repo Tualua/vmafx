@@ -202,7 +202,8 @@ Set a port such as `9443` to enable webhooks; `0` or unset disables them.
 
 ### Controller envtest suite
 
-The envtest suite installs the CRDs into an embedded etcd + API server and
+The envtest suite installs the chart's CRDs (`deploy/helm/vmafx/crds/`, the
+generated ones the cluster gets) into an embedded etcd + API server and
 verifies each reconciler's Stage 2 behaviour (14 specs).
 
 ```bash
@@ -278,17 +279,26 @@ Install
 
 ## RBAC
 
-Three minimum-permission `ClusterRole` manifests are provided:
+`config/rbac/role.yaml` is the operator's minimum role: controller-gen writes
+it from the `+kubebuilder:rbac` markers of the reconcilers and of `main.go`
+(`scripts/codegen/crd_generate.py`, see
+[API generation](api-generation.md#change-a-custom-resource)). It holds:
 
-| File | Controller | Key verbs |
+| Resources | Verbs | Marker |
 | --- | --- | --- |
-| `config/rbac/role_vmafxjob.yaml` | VmafxJob | get/list/watch/update/patch vmafxjobs + status |
-| `config/rbac/role_vmafxnode.yaml` | VmafxNode | get/list/watch/update/patch vmafxnodes + status |
-| `config/rbac/role_vmafxmodeltraining.yaml` | VmafxModelTraining | get/list/watch/update/patch vmafxmodeltrainings + status |
+| `vmafxjobs`, `vmafxnodes`, `vmafxmodeltrainings` | get, list, watch, update, patch | each reconciler |
+| their `/status` | get, update, patch | each reconciler |
+| their `/finalizers` | update | each reconciler |
+| `events` | create, patch | the VmafxModelTraining reconciler (checkpoint events) |
+| `leases` (`coordination.k8s.io`) | get, list, watch, create, update, patch, delete | `main.go` (leader election) |
 
-All three roles include `events: create/patch` (for event emission) and
-`leases: *` (for leader election).  The `config/rbac/role.yaml` is the combined
-aggregate used by the Helm operator RBAC template.
+The Helm chart does not apply that file. `templates/operator-rbac.yaml`
+renders a `ClusterRole` for the three resources and a `Role` in the release
+namespace for pods, events and leases, and binds both to the operator's
+service account. It grants at least every rule of `config/rbac/role.yaml`;
+`scripts/ci/tests/test_helm_operator_rbac.py` fails when a rule is missing,
+so a new marker needs a chart rule in the same change. A reconciler that
+needs another verb gets a marker first, never a chart rule alone.
 
 ---
 
@@ -314,7 +324,7 @@ Helm values are in [server/auth.md](../server/auth.md#tenant-registry).
 | --- | --- | --- |
 | Stage 1 | Shipped (ADR-0714) | Skeleton, CRDs, stub reconcilers, Helm integration, envtest |
 | Stage 2 | Shipped (ADR-0786) | gRPC poll loop, stale-heartbeat gate, checkpoint events, webhook validation, per-controller RBAC |
-| Stage 3 | Planned | VmafxJob Pod lifecycle (create/watch/delete), controller-gen codegen CI job |
+| Stage 3 | Partly shipped (ADR-2350 D13) | Types, deepcopy, CRDs and RBAC role generated from `api/vmafx-platform.toml` with drift and compatibility tests; VmafxJob Pod lifecycle (create/watch/delete) planned |
 | Stage 4 | Planned | VmafxModelTraining SGD-EMA controller, checkpoint OCI push |
 
 ---
