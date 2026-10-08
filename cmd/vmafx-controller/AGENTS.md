@@ -24,8 +24,9 @@ Per-package invariants for subtree.
 ## Protobuf bindings (ADR-1119) — GENERATED, never hand-written
 
 `controllerv1` Go bindings at `gen/go/controller/{controller,controller_grpc}.pb.go`
-generated from `cmd/vmafx-controller/proto/controller.proto` via
-`cmd/vmafx-controller/proto/generate.sh` (`//go:generate ./generate.sh`).
+generated from `proto/vmafx/controller/v1/controller.proto`, itself generated
+from `api/vmafx-platform.toml` (ADR-2350 D13): `scripts/codegen/vmafx-api.py
+--write`, then `scripts/codegen/proto_generate.py --write` (one `buf generate`).
 
 - **NEVER hand-edit `.pb.go` files.** Hand-written stubs lacked `proto.Message`
   implementation (no `protoimpl`/`ProtoReflect`); `VmafxController` RPCs
@@ -67,10 +68,11 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    registered AHEAD of gRPC registration; backend OnStop hooks (SQLite:
    queue `Close` + reaper stop; Postgres: River `Stop` + pool `Close`) run
    after gRPC `GracefulStop`, scorer `Close` last. Guard: `TestStopOrder`.
-6. **gen/go/controller = protoc output** (`protoc-gen-go`, `protoimpl`
-   present; `generate.sh`). Never hand-edit. Guard: `wire_test.go`
-   (`TestControllerProtoMarshalsOverWire`, `VmafxController` over `bufconn`).
-   ADR-2350 D13: proto moves to platform definition + one `buf generate`.
+6. **gen/go/controller = buf output** (`protoc-gen-go`, `protoimpl`
+   present) from `api/vmafx-platform.toml` (ADR-2350 D13). Never hand-edit
+   proto or `.pb.go`; change the definition, run both generators. Guards:
+   `wire_test.go` (`TestControllerProtoMarshalsOverWire`, `VmafxController`
+   over `bufconn`), `test_proto_generated_current`, `buf breaking` (WIRE_JSON).
 
 ## Invariants
 

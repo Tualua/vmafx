@@ -240,14 +240,19 @@ expect "missing authoritative macro is caught" 1 "$d"
 # proto, OpenAPI and server-page forms are each checked. The OpenAPI phrase
 # wraps across lines, as YAML descriptions do.
 d=$(clone protodoc)
-printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx.proto"
+printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx/v1/vmafx.proto"
 git -C "$d" commit -aqm protodoc >/dev/null 2>&1
 expect "proto documenting another default is caught" 1 "$d"
 
 d=$(clone controllerprotodoc)
-printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/cmd/vmafx-controller/proto/controller.proto"
+printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx/controller/v1/controller.proto"
 git -C "$d" commit -aqm controllerprotodoc >/dev/null 2>&1
 expect "controller proto documenting another default is caught" 1 "$d"
+
+d=$(clone platformdoc)
+printf '\n# Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/api/vmafx-platform.toml"
+git -C "$d" commit -aqm platformdoc >/dev/null 2>&1
+expect "platform definition documenting another default is caught" 1 "$d"
 
 d=$(clone openapidoc)
 # shellcheck disable=SC2016 # the backticks are planted Markdown, not an expansion

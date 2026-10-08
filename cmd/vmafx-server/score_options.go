@@ -5,7 +5,7 @@
 // the provenance every scoring response carries (#2155, RC4 WP8).
 //
 // The options message and every flag come from the option groups of
-// core/api/vmafx.toml (proto/vmafx_api.proto, pkg/scoreopts): this file names
+// core/api/vmafx.toml (proto/vmafx/v1/vmafx_api.proto, pkg/scoreopts): this file names
 // no scoring flag. The server returns lossless scores (precision "max", the
 // proto surface's default) unless the request asks otherwise, so a score it
 // returns is the score the CLI and the C API compute, bit for bit.

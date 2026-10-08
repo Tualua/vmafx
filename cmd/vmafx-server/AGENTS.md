@@ -5,14 +5,15 @@ Go gRPC + HTTP scoring service. See
 
 ## Rebase-sensitive invariants
 
-1. **Proto-package stability** (`proto/vmafx.proto`): proto stays in package
+1. **Proto-package stability** (`proto/vmafx/v1/vmafx.proto`, generated from
+   `api/vmafx-platform.toml`): proto stays in package
    `vmafx.v1`. Unary `Score` and `Health` RPCs frozen for compatibility;
    never rename or remove request / response fields. Additive surfaces (new
    RPCs, new messages, new enum variants) only. Breaking change -> bump proto
    package to `vmafx.v2`, ship side-by-side until v1 deprecation closes; never
    edit `vmafx.v1` in-place.
 
-2. **`ScoreStream` opening message** (`proto/vmafx.proto` + `grpc_server.go`):
+2. **`ScoreStream` opening message** (`api/vmafx-platform.toml` + `grpc_server.go`):
    first `ScoreStreamRequest` on bidirectional stream MUST set `config` oneof
    (`StreamConfig`); every subsequent request MUST set `frame_pair`. Server
    validates in `grpcServer.ScoreStream`, rejects malformed sequences with

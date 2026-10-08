@@ -4,7 +4,7 @@
 // cmd/vmafx-node/scoring_handler.go — the node's VmafxScoring gRPC service
 // implementation.
 //
-// The node exposes the VmafxScoring service (proto/vmafx.proto) so a controller
+// The node exposes the VmafxScoring service (proto/vmafx/v1/vmafx.proto) so a controller
 // — or any gRPC client — can dispatch scoring work directly to the node (push
 // model): Score for file-path unary scoring, ScoreStream for in-memory per-frame
 // streaming (ADR-0933), and Health for liveness probes. The node binary connects

@@ -47,7 +47,7 @@ lets the check recompute the score digest from the report alone.
 | CSV, SUB | Unchanged. Pass `--provenance-sidecar` to also write the record to `<output>.provenance.json`. |
 
 The JSON record is the proto JSON mapping of the `Provenance` message
-(`proto/vmafx_api.proto`): field names as keys, 64-bit integers as strings,
+(`proto/vmafx/v1/vmafx_api.proto`): field names as keys, 64-bit integers as strings,
 enumerations by their lower-case value names. An abbreviated example:
 
 ```json

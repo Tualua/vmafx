@@ -1308,6 +1308,18 @@ test('test_sqlc_generated_current',
     timeout : 300,
 )
 
+# The Go bindings under gen/go match the protobuf files under proto/, and those
+# pass `buf lint` (ADR-2350 D13). buf is BUF_VERSION of build-config.env, run
+# through `go run`; exits 77 (skipped, reason printed) without Go or the module
+# proxy. The proto files themselves are checked by test_vmafx_api_generated_current.
+test('test_proto_generated_current',
+    import('python').find_installation(),
+    args : [meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'proto_generate.py',
+            '--check', '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+    timeout : 900,
+)
+
 # Generator unit tests: every emitter and gate, each refusing its planted defects.
 test('test_vmafx_api_generator',
     import('python').find_installation(),

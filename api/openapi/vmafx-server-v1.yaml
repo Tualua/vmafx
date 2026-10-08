@@ -5,7 +5,7 @@ info:
     REST API for VMAFX perceptual video quality scoring.
 
     The HTTP transport delegates internally to the same libvmaf scorer that
-    backs the gRPC service defined in `proto/vmafx.proto`.  All REST endpoints
+    backs the gRPC service defined in `proto/vmafx/v1/vmafx.proto`.  All REST endpoints
     are additive: existing gRPC clients are unaffected.
 
     **Versioning**: this spec tracks the `v1` resource prefix.  Breaking

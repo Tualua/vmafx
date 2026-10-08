@@ -83,7 +83,8 @@ check_mirror mcp-server/vmaf-mcp/src/vmaf_mcp/defaultmodel.py \
 
 # --------------------------------------- documented defaults in API contracts --
 # The server's contracts tell clients which model an omitted `model` field
-# selects: the gRPC protos (scoring and controller), the OpenAPI document and
+# selects: the gRPC protos (scoring and controller, generated from
+# api/vmafx-platform.toml, which is checked too), the OpenAPI document and
 # the server pages. They
 # cannot read the header, and they drifted once (all of them documented
 # vmaf_v0.6.1 while the server used the header's default). Every "defaults
@@ -101,7 +102,7 @@ while IFS= read -r contract; do
       bad "$contract documents the default model as \"$documented\"; the server uses \"$authoritative\" ($header)"
     fi
   done <<<"$hits"
-done < <(git ls-files -- 'proto/*.proto' 'cmd/*/proto/*.proto' 'api/openapi/*.yaml' 'docs/server/*.md')
+done < <(git ls-files -- 'proto/*.proto' 'api/vmafx-platform.toml' 'api/openapi/*.yaml' 'docs/server/*.md')
 
 # ------------------------------------------------- unapproved hardcoded uses --
 # A default is "hardcoded" when a component substitutes a literal model name

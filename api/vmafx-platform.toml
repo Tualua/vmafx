@@ -1,0 +1,393 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# The VMAFx platform definition (ADR-2350 D13): the gRPC services and messages
+# of the controller and of the scoring server. scripts/codegen/vmafx-api.py
+# reads it next to core/api/vmafx.toml and writes the protobuf files under
+# proto/vmafx/; scripts/codegen/proto_generate.py then runs buf for the Go
+# bindings in gen/go. See docs/development/api-generation.md.
+#
+# Wire contract: field, value and RPC names and every number below are what
+# clients send. Within a v1 package a change only adds (a message, a field
+# with a new number, an enum value, an RPC); `buf breaking` against master
+# refuses anything else. A field may name a message or enum of this file, a
+# protobuf scalar, `map<K, V>`, or a message the core definition generates
+# (ScoreOptions, Provenance).
+
+[platform]
+version = 1
+
+[[files]]
+name = "scoring"
+path = "proto/vmafx/v1/vmafx.proto"
+package = "vmafx.v1"
+go_package = "github.com/VMAFx/vmafx/gen/go;vmafxv1"
+doc = """
+VMAFx scoring service: the server's direct scoring RPCs (ADR-0703) and the
+bidirectional frame stream (ADR-0933). ScoreOptions and Provenance come from
+vmafx_api.proto, generated from the option groups and structs of
+core/api/vmafx.toml. Compatibility policy (additive within vmafx.v1):
+docs/server/api-contract.md."""
+
+[[files]]
+name = "controller"
+path = "proto/vmafx/controller/v1/controller.proto"
+package = "vmafx.controller.v1"
+go_package = "github.com/VMAFx/vmafx/gen/go/controller;controllerv1"
+doc = """
+VMAFx controller service (ADR-0711): the client API (SubmitJob, GetJob,
+CancelJob, StreamJobs) used by the CLI, the MCP server and the operator, and
+the node API (RegisterNode, Heartbeat, PullWork, ReportResult) used by
+vmafx-node. It is served on the same gRPC port as the scoring service."""
+
+# ---------------------------------------------------------------------------
+# Scoring service (vmafx.v1)
+# ---------------------------------------------------------------------------
+
+[[services]]
+name = "VmafxScoring"
+file = "scoring"
+doc = """
+VmafxScoring is the primary scoring service.
+
+The service exposes two complementary surfaces:
+
+  * Unary RPCs (Score, Health): v1 API, frozen for compatibility.
+  * Bidirectional streaming (ScoreStream): the multi-frame surface of
+    ADR-0933."""
+rpcs = [
+  { name = "Score", request = "ScoreRequest", response = "ScoreResponse", doc = "Score computes VMAF and per-feature scores for a reference/distorted pair.\n\nUnary; one RPC per (ref, dist) clip. Suitable for batch / file-path inputs." },
+  { name = "ScoreStream", request = "ScoreStreamRequest", response = "ScoreStreamResponse", client_stream = true, server_stream = true, doc = "ScoreStream computes per-frame VMAF and per-feature scores over a live pair of frame streams.\n\nThe client opens a single bidirectional stream and pushes a StreamConfig followed by FramePair messages (one reference + one distorted plane set per FramePair, matched by frame_index). The server emits a FrameScore per processed frame, plus a terminal AggregateScore at EOF, all multiplexed on the ScoreStreamResponse oneof. Backpressure is handled by gRPC flow control.\n\nADR-0933." },
+  { name = "Health", request = "HealthRequest", response = "HealthResponse", doc = "Health returns server liveness status." },
+]
+
+[[messages]]
+name = "ScoreRequest"
+file = "scoring"
+doc = "ScoreRequest carries the paths to the reference and distorted video files."
+fields = [
+  { name = "reference", type = "string", number = 1, doc = "Absolute path to the reference YUV / Y4M / video file." },
+  { name = "distorted", type = "string", number = 2, doc = "Absolute path to the distorted YUV / Y4M / video file." },
+  { name = "model", type = "string", number = 3, doc = "Optional VMAF model name (e.g. \"vmaf_v0.6.1\"). Defaults to vmaf_v1.0.16_3d0h, the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h)." },
+  { name = "options", type = "ScoreOptions", number = 4, doc = "Optional scoring options (raw .yuv geometry, backend, device, threads, subsample, precision, features, tiny model, ...), generated from the option groups of core/api/vmafx.toml. Unset fields keep their documented defaults; the server returns lossless scores (precision \"max\") unless options.precision asks otherwise." },
+]
+
+[[messages]]
+name = "ScoreResponse"
+file = "scoring"
+doc = "ScoreResponse carries the aggregate VMAF score and per-feature values."
+fields = [
+  { name = "score", type = "double", number = 1, doc = "Aggregate VMAF score (e.g. 76.6683)." },
+  { name = "features", type = "map<string, double>", number = 2, doc = "Per-feature scores keyed by feature name." },
+  { name = "provenance", type = "ScoreProvenance", number = 3, doc = "How the score was made (#2142, #2155); present in every response." },
+]
+
+[[messages]]
+name = "FeatureBackend"
+file = "scoring"
+doc = "FeatureBackend is one entry of the backend receipt: the backend a registered feature extractor ran on."
+fields = [
+  { name = "extractor", type = "string", number = 1, doc = "Extractor name (e.g. \"adm\", \"motion\")." },
+  { name = "backend", type = "string", number = 2, doc = "Backend it ran on: \"cpu\", \"cuda\", \"sycl\", \"hip\" or \"metal\"." },
+]
+
+[[messages]]
+name = "ScoreProvenance"
+file = "scoring"
+doc = "ScoreProvenance says how a score was made: which library build and ABI ran, which model (and the SHA-256 of the model file the server loaded), and which backend ran each extractor. Every scoring response carries it (#2155)."
+fields = [
+  { name = "library", type = "Provenance", number = 1, doc = "The library's provenance record (generated from VmafxProvenance)." },
+  { name = "model", type = "string", number = 2, doc = "Model the server resolved the request's model name to." },
+  { name = "model_sha256", type = "string", number = 3, doc = "SHA-256 (lower-case hex) of the model file the server loaded." },
+  { name = "backend_used", type = "string", number = 4, doc = "Backend the extractors ran on (\"cpu\" when every extractor ran on the CPU)." },
+  { name = "feature_backends", type = "FeatureBackend", number = 5, repeated = true, doc = "Backend of every registered extractor." },
+  { name = "precision", type = "string", number = 6, doc = "Precision the scores were computed and returned with (\"max\": lossless)." },
+]
+
+[[enums]]
+name = "PixelFormat"
+file = "scoring"
+doc = "PixelFormat enumerates the supported planar pixel layouts for raw frames pushed over ScoreStream. Mirrors a subset of FFmpeg's AVPixelFormat values that libvmaf already accepts on its picture-import path."
+values = [
+  { name = "PIXEL_FORMAT_UNSPECIFIED", number = 0 },
+  { name = "PIXEL_FORMAT_YUV420P", number = 1, doc = "8-bit 4:2:0 planar (most common SDR input)." },
+  { name = "PIXEL_FORMAT_YUV422P", number = 2, doc = "8-bit 4:2:2 planar." },
+  { name = "PIXEL_FORMAT_YUV444P", number = 3, doc = "8-bit 4:4:4 planar." },
+  { name = "PIXEL_FORMAT_YUV420P10LE", number = 4, doc = "10-bit 4:2:0 planar little-endian (HDR)." },
+  { name = "PIXEL_FORMAT_YUV422P10LE", number = 5, doc = "10-bit 4:2:2 planar little-endian." },
+  { name = "PIXEL_FORMAT_YUV444P10LE", number = 6, doc = "10-bit 4:4:4 planar little-endian." },
+]
+
+[[messages]]
+name = "StreamConfig"
+file = "scoring"
+doc = "StreamConfig is sent exactly once as the first message on a ScoreStream. All FramePair messages that follow MUST agree with these dimensions."
+fields = [
+  { name = "width", type = "uint32", number = 1, doc = "Luma width in pixels." },
+  { name = "height", type = "uint32", number = 2, doc = "Luma height in pixels." },
+  { name = "pixel_format", type = "PixelFormat", number = 3, doc = "Pixel layout for both reference and distorted streams (they must match)." },
+  { name = "model", type = "string", number = 4, doc = "Optional VMAF model name (e.g. \"vmaf_v0.6.1\"). Defaults to vmaf_v1.0.16_3d0h, the library default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h)." },
+  { name = "frame_count_hint", type = "uint32", number = 5, doc = "Optional declared frame count; 0 means unknown / open-ended stream. When non-zero the server may pre-size internal buffers." },
+]
+
+[[messages]]
+name = "FramePair"
+file = "scoring"
+doc = "FramePair carries a matched (reference, distorted) frame pair.\n\nframe_index is monotonically increasing from 0; gaps are an error. The raw_reference / raw_distorted byte buffers are planar pixel data in the pixel format declared by StreamConfig, planes concatenated in canonical Y-U-V order with no padding between planes."
+fields = [
+  { name = "frame_index", type = "uint32", number = 1, doc = "Zero-based monotonically increasing frame index." },
+  { name = "raw_reference", type = "bytes", number = 2, doc = "Raw planar reference pixels (Y, then U, then V)." },
+  { name = "raw_distorted", type = "bytes", number = 3, doc = "Raw planar distorted pixels (Y, then U, then V)." },
+]
+
+[[messages]]
+name = "ScoreStreamRequest"
+file = "scoring"
+doc = "ScoreStreamRequest is the client-to-server message on the bidirectional ScoreStream RPC. The first message MUST set `config`; every subsequent message MUST set `frame_pair`."
+fields = [
+  { name = "config", type = "StreamConfig", number = 1, oneof = "payload" },
+  { name = "frame_pair", type = "FramePair", number = 2, oneof = "payload" },
+]
+
+[[messages]]
+name = "FrameScore"
+file = "scoring"
+doc = "FrameScore is emitted by the server once per processed frame."
+fields = [
+  { name = "frame_index", type = "uint32", number = 1, doc = "Zero-based frame index matching the request FramePair.frame_index." },
+  { name = "score", type = "double", number = 2, doc = "Per-frame VMAF score." },
+  { name = "features", type = "map<string, double>", number = 3, doc = "Per-feature per-frame scores (e.g. \"vif_scale0\", \"motion2\", \"adm2\")." },
+]
+
+[[messages]]
+name = "AggregateScore"
+file = "scoring"
+doc = "AggregateScore is emitted by the server exactly once as the terminal message on the stream, after the client half-closes (EOF)."
+fields = [
+  { name = "frames_processed", type = "uint32", number = 1, doc = "Number of frames the server actually processed." },
+  { name = "score", type = "double", number = 2, doc = "Pooled VMAF score (default: arithmetic mean)." },
+  { name = "features", type = "map<string, double>", number = 3, doc = "Pooled per-feature scores." },
+  { name = "elapsed_ms", type = "uint64", number = 4, doc = "Aggregate wall-clock processing time in milliseconds." },
+  { name = "provenance", type = "ScoreProvenance", number = 5, doc = "How the scores were made (#2155); present on every aggregate." },
+]
+
+[[messages]]
+name = "ScoreStreamResponse"
+file = "scoring"
+doc = "ScoreStreamResponse is the server-to-client message. Exactly one of `frame_score` or `aggregate` is set per response."
+fields = [
+  { name = "frame_score", type = "FrameScore", number = 1, oneof = "payload" },
+  { name = "aggregate", type = "AggregateScore", number = 2, oneof = "payload" },
+]
+
+[[messages]]
+name = "HealthRequest"
+file = "scoring"
+doc = "HealthRequest is intentionally empty, reserved for future extensions."
+fields = []
+
+[[messages]]
+name = "HealthResponse"
+file = "scoring"
+doc = "HealthResponse indicates liveness and readiness."
+fields = [
+  { name = "ok", type = "bool", number = 1, doc = "ok is true when the service is live and ready to accept requests." },
+  { name = "message", type = "string", number = 2, doc = "message provides a human-readable status note." },
+]
+
+# ---------------------------------------------------------------------------
+# Controller service (vmafx.controller.v1)
+# ---------------------------------------------------------------------------
+
+[[services]]
+name = "VmafxController"
+file = "controller"
+doc = "VmafxController queues scoring jobs for callers and hands them to nodes."
+rpcs = [
+  { name = "SubmitJob", request = "SubmitJobRequest", response = "SubmitJobResponse", doc = "SubmitJob enqueues a new scoring job and returns its ID." },
+  { name = "GetJob", request = "GetJobRequest", response = "Job", doc = "GetJob retrieves the current state of a job by ID." },
+  { name = "CancelJob", request = "CancelJobRequest", response = "CancelJobResponse", doc = "CancelJob cancels a pending or running job. A running job's node learns of it from its next Heartbeat (cancel_job_ids) and stops the job." },
+  { name = "StreamJobs", request = "StreamJobsRequest", response = "Job", server_stream = true, doc = "StreamJobs opens a server-streaming RPC that pushes Job updates to the caller. An empty filter streams all jobs; a non-empty status filter restricts updates to jobs in those states." },
+  { name = "RegisterNode", request = "RegisterNodeRequest", response = "RegisterNodeResponse", doc = "RegisterNode is called by a vmafx-node on startup to announce its capabilities. Returns an opaque session token the node includes in subsequent calls." },
+  { name = "Heartbeat", request = "HeartbeatRequest", response = "HeartbeatResponse", doc = "Heartbeat is called by a vmafx-node every ~10 s. A node that misses heartbeats for its session lifetime (60 s by default) loses its session, and its in-flight jobs return to the queue. The response names the node's running jobs that were cancelled." },
+  { name = "PullWork", request = "PullWorkRequest", response = "PullWorkResponse", doc = "PullWork is called by a vmafx-node when it has capacity. Returns the next matching PENDING job (if any), or an empty response if the queue is empty or no job matches the node's capabilities." },
+  { name = "ReportResult", request = "ReportResultRequest", response = "ReportResultResponse", doc = "ReportResult is called by a vmafx-node when a job finishes (success or failure) or when partial per-frame results are available." },
+]
+
+[[messages]]
+name = "ScoringParams"
+file = "controller"
+doc = "ScoringParams mirrors the scoring service's ScoreRequest, carried inside a Job."
+fields = [
+  { name = "reference", type = "string", number = 1, doc = "Reference video: an absolute path, an http(s) URL or an rclone remote. It must lie under one of the caller tenant's scoring roots (ADR-1577)." },
+  { name = "distorted", type = "string", number = 2, doc = "Distorted video, under the same rule as reference." },
+  { name = "model", type = "string", number = 3, doc = "Optional VMAF model name (e.g. \"vmaf_v0.6.1\"). Defaults to vmaf_v1.0.16_3d0h." },
+  { name = "backend", type = "string", number = 4, doc = "Optional backend hint: \"cuda\", \"sycl\", \"hip\", \"cpu\". The scheduler uses this to match a node with the required capability. Empty string means the scheduler may assign any available node." },
+]
+
+[[enums]]
+name = "JobStatus"
+file = "controller"
+doc = "JobStatus encodes the job lifecycle state machine: PENDING, then RUNNING, then COMPLETED, FAILED or CANCELLED."
+values = [
+  { name = "PENDING", number = 0 },
+  { name = "RUNNING", number = 1 },
+  { name = "COMPLETED", number = 2 },
+  { name = "FAILED", number = 3 },
+  { name = "CANCELLED", number = 4 },
+]
+
+[[messages]]
+name = "Job"
+file = "controller"
+doc = "Job represents a scoring work item managed by the controller."
+fields = [
+  { name = "id", type = "string", number = 1, doc = "Unique job identifier (UUID)." },
+  { name = "status", type = "JobStatus", number = 2, doc = "status is the current lifecycle state of the job." },
+  { name = "scoring", type = "ScoringParams", number = 3, doc = "scoring holds the scoring parameters for this job." },
+  { name = "partial_results", type = "double", number = 4, repeated = true, doc = "partial_results accumulates per-frame partial scores streamed by the node." },
+  { name = "assigned_node", type = "string", number = 5, doc = "assigned_node is the node ID currently executing this job, or empty." },
+  { name = "error", type = "string", number = 6, doc = "error is set when status == FAILED; empty otherwise." },
+  { name = "created_at", type = "int64", number = 7, doc = "created_at is a Unix timestamp (seconds) when the job was submitted." },
+  { name = "updated_at", type = "int64", number = 8, doc = "updated_at is a Unix timestamp (seconds) of the last status change." },
+  { name = "final_score", type = "double", number = 9, doc = "final_score is the aggregate VMAF score written by the controller when the job reaches COMPLETED. The vmafx-operator copies it into the VmafxJob CR status. Zero until the job completes successfully." },
+  { name = "scoring_roots", type = "string", number = 10, repeated = true, doc = "scoring_roots are the scoring roots of the job's tenant, set only in a PullWork answer: the node scores the inputs only when they resolve under one of them, and refuses the job when the list is empty (ADR-1577)." },
+]
+
+[[messages]]
+name = "NodeCapability"
+file = "controller"
+doc = "NodeCapability encodes what a vmafx-node instance can run."
+fields = [
+  { name = "gpu_vendor", type = "string", number = 1, doc = "GPU vendor: \"nvidia\", \"amd\", \"intel\", \"cpu\"." },
+  { name = "backends", type = "string", number = 2, repeated = true, doc = "Available backends on this node (e.g. [\"cuda\", \"cpu\"])." },
+  { name = "concurrency", type = "int32", number = 3, doc = "Number of concurrent scoring slots this node can handle." },
+]
+
+[[messages]]
+name = "SubmitJobRequest"
+file = "controller"
+doc = "SubmitJobRequest is the argument of SubmitJob."
+fields = [
+  { name = "scoring", type = "ScoringParams", number = 1, doc = "The job to queue." },
+]
+
+[[messages]]
+name = "SubmitJobResponse"
+file = "controller"
+doc = "SubmitJobResponse is the answer of SubmitJob."
+fields = [
+  { name = "job_id", type = "string", number = 1, doc = "ID of the queued job." },
+]
+
+[[messages]]
+name = "GetJobRequest"
+file = "controller"
+doc = "GetJobRequest is the argument of GetJob."
+fields = [
+  { name = "job_id", type = "string", number = 1, doc = "ID of the job to read." },
+]
+
+[[messages]]
+name = "CancelJobRequest"
+file = "controller"
+doc = "CancelJobRequest is the argument of CancelJob."
+fields = [
+  { name = "job_id", type = "string", number = 1, doc = "ID of the job to cancel." },
+]
+
+[[messages]]
+name = "CancelJobResponse"
+file = "controller"
+doc = "CancelJobResponse is the answer of CancelJob."
+fields = [
+  { name = "ok", type = "bool", number = 1, doc = "ok is true if the job was found and a cancellation was requested." },
+  { name = "message", type = "string", number = 2, doc = "Human-readable status note." },
+]
+
+[[messages]]
+name = "StreamJobsRequest"
+file = "controller"
+doc = "StreamJobsRequest is the argument of StreamJobs."
+fields = [
+  { name = "status_filter", type = "JobStatus", number = 1, repeated = true, doc = "status_filter restricts the stream to jobs in these states. Empty = stream all jobs." },
+]
+
+[[messages]]
+name = "RegisterNodeRequest"
+file = "controller"
+doc = "RegisterNodeRequest is the argument of RegisterNode."
+fields = [
+  { name = "name", type = "string", number = 1, doc = "Human-readable node name (e.g. hostname)." },
+  { name = "capability", type = "NodeCapability", number = 2, doc = "What the node can run." },
+]
+
+[[messages]]
+name = "RegisterNodeResponse"
+file = "controller"
+doc = "RegisterNodeResponse is the answer of RegisterNode."
+fields = [
+  { name = "node_id", type = "string", number = 1, doc = "node_id is the controller-assigned identifier for this node session." },
+  { name = "session_token", type = "string", number = 2, doc = "session_token is an opaque bearer token the node includes in all subsequent Node API calls." },
+]
+
+[[messages]]
+name = "HeartbeatRequest"
+file = "controller"
+doc = "HeartbeatRequest is the argument of Heartbeat."
+fields = [
+  { name = "node_id", type = "string", number = 1, doc = "The node's session ID from RegisterNode." },
+  { name = "session_token", type = "string", number = 2, doc = "The session token from RegisterNode." },
+  { name = "jobs_running", type = "int32", number = 3, doc = "jobs_running is the count of jobs the node is currently executing." },
+  { name = "running_job_ids", type = "string", number = 4, repeated = true, doc = "running_job_ids lists the IDs of the jobs the node is executing now, at most 64 (the node's slot limit); the controller refuses a longer list." },
+]
+
+[[messages]]
+name = "HeartbeatResponse"
+file = "controller"
+doc = "HeartbeatResponse is the answer of Heartbeat."
+fields = [
+  { name = "ok", type = "bool", number = 1, doc = "ok is false if the controller no longer recognises this session. The node should re-register when ok == false." },
+  { name = "cancel_job_ids", type = "string", number = 2, repeated = true, doc = "cancel_job_ids lists the entries of running_job_ids that belong to the caller's tenant and were cancelled (CancelJob) while the node ran them. The node stops each one, which kills its vmaf process, and reports it as failed; the job stays CANCELLED. Empty when ok is false." },
+]
+
+[[messages]]
+name = "PullWorkRequest"
+file = "controller"
+doc = "PullWorkRequest is the argument of PullWork."
+fields = [
+  { name = "node_id", type = "string", number = 1, doc = "The node's session ID from RegisterNode." },
+  { name = "session_token", type = "string", number = 2, doc = "The session token from RegisterNode." },
+  { name = "capability", type = "NodeCapability", number = 3, doc = "What the node can run now." },
+]
+
+[[messages]]
+name = "PullWorkResponse"
+file = "controller"
+doc = "PullWorkResponse is the answer of PullWork."
+fields = [
+  { name = "job", type = "Job", number = 1, doc = "job is set when a matching job was found; nil when the queue is empty." },
+]
+
+[[messages]]
+name = "ReportResultRequest"
+file = "controller"
+doc = "ReportResultRequest is the argument of ReportResult."
+fields = [
+  { name = "node_id", type = "string", number = 1, doc = "The node's session ID from RegisterNode." },
+  { name = "session_token", type = "string", number = 2, doc = "The session token from RegisterNode." },
+  { name = "job_id", type = "string", number = 3, doc = "ID of the job the result belongs to." },
+  { name = "final", type = "bool", number = 4, doc = "final indicates this is the terminal result (success or failure)." },
+  { name = "score", type = "double", number = 5, doc = "score is the aggregate VMAF score (populated when final == true, success)." },
+  { name = "features", type = "map<string, double>", number = 6, doc = "features is the per-feature score map (populated when final == true)." },
+  { name = "partial_scores", type = "double", number = 7, repeated = true, doc = "partial_scores carries per-frame partial results (populated when final == false)." },
+  { name = "error", type = "string", number = 8, doc = "error is set when the job failed." },
+]
+
+[[messages]]
+name = "ReportResultResponse"
+file = "controller"
+doc = "ReportResultResponse is the answer of ReportResult."
+fields = [
+  { name = "ok", type = "bool", number = 1, doc = "ok is true when the controller recorded the result." },
+]

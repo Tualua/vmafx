@@ -99,6 +99,7 @@
     "SECURITY.md",
     "SUPPORT.md",
     "buf.gen.yaml",
+    "buf.yaml",
     "clippy.toml",
     "deny.toml",
     "go.mod",
@@ -242,6 +243,7 @@
         "go.mod",
         "go.sum",
         "buf.gen.yaml",
+        "buf.yaml",
         "*.go",
         "**/*.go"
       ]

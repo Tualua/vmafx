@@ -250,12 +250,12 @@ class ProtoEmitterTest(unittest.TestCase):
             old, new = Path(tmp) / "old", Path(tmp) / "new"
             for target in (old, new):
                 shutil.copytree(ROOT / "proto", target)
-            planted = (
-                (new / "vmafx.proto")
-                .read_text()
-                .replace("ScoreOptions options = 4;", "ScoreOptions options = 9;")
+            scoring = new / "vmafx" / "v1" / "vmafx.proto"
+            planted = scoring.read_text().replace(
+                "ScoreOptions options = 4;", "ScoreOptions options = 9;"
             )
-            (new / "vmafx.proto").write_text(planted)
+            self.assertNotEqual(planted, scoring.read_text(), "the planted change did not apply")
+            scoring.write_text(planted)
             clean = run([buf, "breaking", str(old), "--against", str(old)])
             broken = run([buf, "breaking", str(new), "--against", str(old)])
         self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)

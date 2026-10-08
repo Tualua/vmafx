@@ -3,7 +3,8 @@
 //
 // cmd/vmafx-server/grpc_server.go — gRPC server implementation for VMAFX.
 //
-// Implements the VmafxScoring service defined in proto/vmafx.proto.
+// Implements the VmafxScoring service defined in proto/vmafx/v1/vmafx.proto
+// (generated from api/vmafx-platform.toml, ADR-2350).
 // The server delegates to pkg/libvmaf for actual scoring and pkg/observability
 // for Prometheus instrumentation.
 //
@@ -132,7 +133,7 @@ func (s *grpcServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vmafx
 
 // ScoreStream implements VmafxScoring.ScoreStream (ADR-0933 Phase 2).
 //
-// The bidirectional contract (proto/vmafx.proto):
+// The bidirectional contract (proto/vmafx/v1/vmafx.proto):
 //
 //   - The client sends exactly one StreamConfig as the opening message, then a
 //     sequence of FramePair messages with strictly increasing frame_index from

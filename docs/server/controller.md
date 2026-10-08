@@ -92,7 +92,8 @@ service VmafxScoring {
 }
 ```
 
-Proto source: `proto/vmafx.proto`.  Generated stubs: `gen/go/vmafxv1/`.
+Proto: `proto/vmafx/v1/vmafx.proto`, generated from `api/vmafx-platform.toml`.
+Generated stubs: `gen/go/` (package `vmafxv1`).
 
 ### Example: direct score
 
@@ -104,14 +105,14 @@ grpcurl -plaintext \
 
 ## VmafxController service (job queue + node API)
 
-Phase 4b.1 distributed orchestration surface.  Proto source:
-`cmd/vmafx-controller/proto/controller.proto`. Generated stubs:
-`gen/go/controller/`.
+Phase 4b.1 distributed orchestration surface. Proto:
+`proto/vmafx/controller/v1/controller.proto`, generated from
+`api/vmafx-platform.toml`. Generated stubs: `gen/go/controller/`.
 
 ### Client API
 
 Used by the CLI, MCP server, and future Web UI to submit and track jobs. The
-full service definition is in `cmd/vmafx-controller/proto/controller.proto`.
+full service definition is in `api/vmafx-platform.toml`.
 
 | RPC | Caller | Purpose |
 | --- | --- | --- |

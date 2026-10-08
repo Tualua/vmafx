@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2350: The VMAFx platform keeps its state in PostgreSQL, scales on queue depth and generates its platform surfaces from a definition
 
-- **Status**: Accepted (maintainer answers Q-122 to Q-129 and Q-136, 2026-10-07)
+- **Status**: Accepted (maintainer answers Q-122 to Q-129 and Q-136, 2026-10-07; scope note 2026-10-08, maintainer: the CloudNativePG backups of work package 7 move to work package 9, with object storage)
 - **Date**: 2026-10-07
 - **Deciders**: maintainer
 - **Tags**: cloud, k8s, controller, node, operator, helm, codegen, rc4, supply-chain, security

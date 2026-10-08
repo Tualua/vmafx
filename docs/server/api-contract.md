@@ -124,7 +124,7 @@ and structs of `core/api/vmafx.toml`, and generated into every surface
 
 | Generated file | Surface |
 | --- | --- |
-| `proto/vmafx_api.proto` | `ScoreOptions` and `Provenance` messages; the services in `proto/vmafx.proto` import them |
+| `proto/vmafx/v1/vmafx_api.proto` | `ScoreOptions` and `Provenance` messages; the services in `proto/vmafx/v1/vmafx.proto` (generated from `api/vmafx-platform.toml`) import them |
 | `api/openapi/components.gen.yaml` | The same schemas for OpenAPI clients; spliced into `api/openapi/vmafx-server-v1.yaml` |
 | `pkg/scoreopts/options.gen.json` | The flags the server passes to `vmaf` for each option |
 | `core/tools/cli_options.gen.inc` | The `vmaf` option table and usage text |

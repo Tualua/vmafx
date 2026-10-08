@@ -9,6 +9,11 @@ files are committed; a test fails when any of them differs from what the
 definition produces, so a hand edit of a generated file fails the build's
 tests.
 
+A second definition, `api/vmafx-platform.toml`, describes the gRPC services and
+messages of the controller and the scoring server
+([ADR-2350](../adr/2350-cloud-native-platform.md) D13); the same generator
+writes their protobuf files ([Platform definition](#platform-definition)).
+
 ## Change the API
 
 1. Edit `core/api/vmafx.toml`. A new entry names its header (`header`) and the
@@ -127,7 +132,7 @@ its C output.
 | `docs/api/vmafx/reference.md` and one page per header | [Reference index](../api/vmafx/reference.md) |
 | `core/tools/cli_options.gen.inc` | The `vmaf` short option string, long-only identifiers, `long_opts[]` and usage lines |
 | `pkg/scoreopts/options.gen.json`, `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json` | MCP tool input schemas, server-side options, argument-vector spec, command-line flags, library defaults (one text, two packages) |
-| `proto/vmafx_api.proto` | `ScoreOptions` and the messages of structs that name `proto` (`Provenance`) |
+| `proto/vmafx/v1/vmafx_api.proto` | `ScoreOptions` and the messages of structs that name `proto` (`Provenance`) |
 | `api/openapi/components.gen.yaml` | The same messages as OpenAPI 3.0 schemas; also spliced into `api/openapi/vmafx-server-v1.yaml` |
 | `ffmpeg-patches/src/vf_vmafx_options.h` | The `vmafx` filter's context fields, AVOption table and value-name lists |
 | Regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/mcp/tools.md`, `docs/server/api-contract.md` | Option tables between `BEGIN GENERATED` / `END GENERATED` markers |
@@ -218,6 +223,68 @@ OpenAPI change needs the server stubs regenerated
 (`gen/go/AGENTS.md`). `buf breaking proto --against '.git#ref=refs/remotes/origin/master,subdir=proto'`
 must stay clean.
 
+## Platform definition
+
+`api/vmafx-platform.toml` holds the services of the platform: the scoring
+service `VmafxScoring` (package `vmafx.v1`) and the controller `VmafxController`
+(package `vmafx.controller.v1`). The generator writes one protobuf file per
+`[[files]]` entry, and buf turns those into the Go bindings under `gen/go`:
+
+| Table | What it declares |
+| --- | --- |
+| `[platform]` | `version = 1`, the format of the definition |
+| `[[files]]` | A protobuf file: `name`, `path` (`proto/<package as directories>/<file>.proto`), `package`, `go_package` (the import path the bindings live under, then `;` and the Go package name), `doc` |
+| `[[services]]` | A gRPC service in a file: `rpcs` with `name`, `request`, `response`, `doc` and `client_stream` / `server_stream` for streaming RPCs |
+| `[[enums]]` | An enum: `values` with `name`, `number` and an optional `doc`; the first value is number 0 |
+| `[[messages]]` | A message: `fields` with `name`, `type`, `number`, `doc`, and `repeated = true` or `oneof = "<group>"` |
+
+A field's `type` is a protobuf scalar (`string`, `double`, `int64`, `bytes`,
+...), `map<K, V>` (K an integer, `bool` or `string`), a message or enum of the
+platform definition, or a message the core definition generates: an option
+group's `proto_message` (`ScoreOptions`) or a struct's `proto` (`Provenance`).
+A type from another file is imported, a type from another package is written
+with its package. Documentation keeps its own line breaks and is wrapped at 96
+columns.
+
+Names and numbers are the wire contract. Within a `v1` package a change only
+adds: a message, an RPC, a field or an enum value with a new number. Renaming or
+renumbering is a break, which `buf breaking` refuses (see below); a break needs
+a `v2` package beside `v1`. Names that predate these rules and do not follow
+buf's style (the service names without `Service`, `JobStatus` values without
+the `JOB_STATUS_` prefix, `Job` as the answer of two RPCs) are exempted by name
+in `buf.yaml` and stay as they are.
+
+### Change a service or message
+
+1. Edit `api/vmafx-platform.toml`.
+2. Regenerate the protobuf files, then the Go bindings:
+
+    ```bash
+    python3 scripts/codegen/vmafx-api.py --write
+    python3 scripts/codegen/proto_generate.py --write
+    ```
+
+    `proto_generate.py` runs one `buf generate` with the repository's
+    `buf.yaml` and `buf.gen.yaml`. buf is the release `BUF_VERSION` in
+    `build-config.env`, run through `go run` so the Go module checksum database
+    verifies it; the `protoc-gen-go` and `protoc-gen-go-grpc` plugins are the
+    versions `go.mod` pins as tools. It then adds the `// SAFETY:` proofs
+    (`scripts/proto/postprocess_gen_go.py`) and writes every `*.pb.go` under
+    `gen/go`, removing stale ones. The `module=` option puts each binding
+    under the path of its `go_package`: `gen/go` for `vmafx.v1`,
+    `gen/go/controller` for `vmafx.controller.v1`.
+
+3. Check wire compatibility against the branch you started from:
+
+    ```bash
+    python3 scripts/codegen/proto_generate.py --check --breaking-against origin/master
+    ```
+
+    `buf breaking` runs with the `WIRE_JSON` rules: what clients send and
+    receive in binary and JSON form must stay readable. Moving a file or its Go
+    package is not a break; a removed or renumbered field, a changed type or a
+    renamed enum value is.
+
 ## Gates
 
 | Gate | Fails when | Shown failing by |
@@ -233,6 +300,9 @@ must stay clean.
 | `test_cli_option_table` (Meson, `fast`) | A long spelling or short option the hand-written CLI table accepted is gone, takes or drops an argument, or no longer reaches its short option | Removing `--tiny_model` from the definition |
 | `test_vmafx_score_contract` (Meson, `contract`) | The CLI, the C API, gRPC `Score` and `POST /v1/score` disagree on a score or on the library build | A server mapping that drops `subsample` |
 | `TestEmbeddedFileEqualsThePythonServerCopy` (`go test ./pkg/scoreopts`) | The two copies of `options.gen.json` differ | An edited copy |
+| `test_proto_generated_current` (Meson, `fast`) | `buf lint` reports a protobuf file, or a `*.pb.go` under `gen/go` differs from what `buf generate` and the proofs produce; skipped (exit 77, reason printed) without Go or the module proxy | A hand edit of `gen/go/vmafx.pb.go`, and a `buf.yaml` without the exemption of the service names |
+| `proto_generate.py --breaking-against REF` | `buf breaking` (`WIRE_JSON`) finds an incompatible change against REF | A renumbered field in a copy |
+| Platform validation (every run) | A duplicate name or number, an unknown type or file, a field number outside 1 to 536870911 or in 19000 to 19999, an enum without value 0, a map key that is not an integer, `bool` or `string`, a repeated oneof member, a path outside its package directory | `scripts/codegen/tests/test_vmafx_platform.py` |
 
 The compiler, `clang-format` and linker cases of the generator tests skip,
 with the reason, when the tool is not installed.

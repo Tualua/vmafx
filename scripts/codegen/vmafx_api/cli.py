@@ -39,6 +39,7 @@ from . import (
     emit_mcp,
     emit_openapi,
     emit_option_docs,
+    emit_platform_proto,
     emit_proto,
     emit_python,
     emit_symbols,
@@ -47,6 +48,8 @@ from . import (
 from .headers import plan
 from .loader import load
 from .model import Api, DefinitionError
+from .platform import DEFINITION as PLATFORM_DEFINITION
+from .platform import Platform, external_messages, load_platform
 from .splice import spliced
 
 DEFINITION = Path("core/api/vmafx.toml")
@@ -89,10 +92,22 @@ def regions(api: Api, root: Path) -> dict[str, str]:
     return files
 
 
-def render(api: Api, root: Path | None = None) -> dict[str, str]:
+def platform_of(api: Api, root: Path) -> Platform | None:
+    """The platform definition under `root` (ADR-2350), None when it has none."""
+    path = root / PLATFORM_DEFINITION
+    if not path.exists():
+        return None
+    external = external_messages(
+        api, emit_proto.IMPORT_PATH, emit_proto.PACKAGE, emit_proto.GO_PACKAGE
+    )
+    return load_platform(path, external)
+
+
+def render(api: Api, root: Path | None = None, platform: Platform | None = None) -> dict[str, str]:
     """Every generated file: path -> text. With `root`, also the generated
     regions of the hand-written files under it; option-group outputs only when
-    the definition has option groups."""
+    the definition has option groups; the platform's protobuf files with a
+    platform definition."""
     files = {f"core/include/{p.header.path}": emit_c.header_text(api, p) for p in plan(api)}
     files.update({path: renderer(api) for path, renderer in FIXED_OUTPUTS})
     for backend in emit_symbols.legacy_backends(api):
@@ -104,6 +119,8 @@ def render(api: Api, root: Path | None = None) -> dict[str, str]:
         files.update({path: renderer(api) for path, renderer in OPTION_OUTPUTS})
         if root is not None:
             files.update(regions(api, root))
+    if platform is not None:
+        files.update(emit_platform_proto.files(platform))
     return files
 
 
@@ -134,10 +151,13 @@ def check(root: Path, files: dict[str, str]) -> int:
         )
         print("\n".join(list(diff)[:40]))
     if stale:
-        print(f"{len(stale)} generated file(s) differ from {DEFINITION}: {', '.join(stale)}")
+        print(
+            f"{len(stale)} generated file(s) differ from {DEFINITION} or "
+            f"{PLATFORM_DEFINITION}: {', '.join(stale)}"
+        )
         print("Run: python3 scripts/codegen/vmafx-api.py --write (never edit generated files)")
         return 1
-    print(f"{len(files)} generated files match {DEFINITION}")
+    print(f"{len(files)} generated files match {DEFINITION} and {PLATFORM_DEFINITION}")
     return 0
 
 
@@ -192,7 +212,7 @@ def _run(root: Path, args: argparse.Namespace) -> int:
     if args.changelog:
         print(changelog.draft(_old_definition(root, args)[0], api), end="")
         return 0
-    files = render(api, root)
+    files = render(api, root, platform_of(api, root))
     return write(root, files) if args.write else check(root, files)
 
 

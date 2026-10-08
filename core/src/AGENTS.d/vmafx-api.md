@@ -19,7 +19,7 @@ paths:
   - bindings/python/vmafx/*
   - core/tools/cli_options.gen.inc
   - pkg/scoreopts/*
-  - proto/vmafx_api.proto
+  - proto/vmafx/v1/vmafx_api.proto
   - api/openapi/components.gen.yaml
   - ffmpeg-patches/src/vf_vmafx_options.h
 invariant: Generated from vmafx.toml, never hand-edit; engine bodies compile as vmaf_engine_*; frame ref = picture VmafRef.

@@ -30,7 +30,7 @@ invariant: Record JSON = proto JSON mapping in RFC 8785 form; digest skips diges
 
 ## Canonical form and digests (do not change without an ADR superseding ADR-2073)
 
-- JSON = proto JSON mapping of `Provenance` (`proto/vmafx_api.proto`): field names as keys, u64/i64 as decimal strings, enums by lower-case value name, `models` / `features` / `annotations` arrays (`proto_repeated`, numbers from 100).
+- JSON = proto JSON mapping of `Provenance` (`proto/vmafx/v1/vmafx_api.proto`): field names as keys, u64/i64 as decimal strings, enums by lower-case value name, `models` / `features` / `annotations` arrays (`proto_repeated`, numbers from 100).
 - RFC 8785 subset: keys byte order, no whitespace, plain integers, escape only `"` `\` control chars (`\b\t\n\f\r`, else `\u00xx` lower case), invalid UTF-8 -> U+FFFD. Equals Python `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`; `test_vmaf_provenance_report.py` recomputes digest that way.
 - `digest` covers everything but `digest` and `elapsed_ns`. `scores_digest` (inside digest) = lines `<report name> <index> <%016x bits>\n`, names byte order, index order. #2159 signs `digest`.
 - Field tables in `provenance_render.c` duplicate definition's field lists (no struct-JSON emitter yet, requests/WP1-7). New struct field -> table entry; `test_vmaf_provenance_report.py` fails on missing or extra key, server's strict protojson fails on unknown one.

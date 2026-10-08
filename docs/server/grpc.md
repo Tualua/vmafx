@@ -49,11 +49,15 @@ interface; see [rest.md](rest.md) for the HTTP endpoints (`/v1/score`,
 
 ## Proto definition
 
-The services are defined in `proto/vmafx.proto`. The scoring options
-(`ScoreOptions`) and the provenance record (`Provenance`) come from
-`proto/vmafx_api.proto`, which is generated from `core/api/vmafx.toml`; the
-[scoring API contract](api-contract.md) lists every option and says how the
-API may change. Generated stubs live under `gen/go/` and are vendored in-tree.
+The services are defined in `api/vmafx-platform.toml`, from which the generator
+writes `proto/vmafx/v1/vmafx.proto` (the scoring service) and
+`proto/vmafx/controller/v1/controller.proto` (the controller). The scoring
+options (`ScoreOptions`) and the provenance record (`Provenance`) come from
+`proto/vmafx/v1/vmafx_api.proto`, which is generated from `core/api/vmafx.toml`;
+the [scoring API contract](api-contract.md) lists every option and says how the
+API may change. Go stubs live under `gen/go/` and are vendored in-tree; see
+[API generation](../development/api-generation.md#platform-definition) for how
+they are regenerated.
 
 ```protobuf
 service VmafxScoring {
