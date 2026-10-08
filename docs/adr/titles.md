@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1325), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1326), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5307,6 +5307,10 @@ Every ADR, one heading each (1325), so the site search finds an ADR by its title
 ## ADR-2377: Go saliency inference runs through the core's MobileSal extractor and the RC4 Go binding
 
 [2377-go-saliency-through-mobilesal-binding](2377-go-saliency-through-mobilesal-binding.md)
+
+## ADR-2383: macOS and Windows package channels are fed by the verified native release pipelines
+
+[2383-package-channels-native-pipelines](2383-package-channels-native-pipelines.md)
 
 ## ADR-2440: Move the praetor pin to 7458a220e1c9 and drop the exceptions for the managed workflows
 

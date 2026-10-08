@@ -8,6 +8,29 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Observability: dashboards, GPU exporters and scraped read errors (2026-10-07)
+
+`rc4/obs-2-dashboards`, [ADR-2349](adr/2349-observability-package.md), #2430.
+
+- `pkg/observability.RegisterScraped` takes a read-error counter
+  (`NewReadErrors`) and a `ScrapeGroup`; a failed read counts under its source
+  and never returns an invalid metric (that fails the whole `/metrics` page).
+- `vmafx-server` and `vmafx-node` record ScoreStream sessions through
+  `internal/app/scoringservice.StreamMetrics`; a sync that touches either
+  `ScoreStream` handler keeps `Begin` / `defer End(retErr)` and the per-frame
+  `Frame` call.
+- The dashboards under `deploy/grafana/dashboards/` (now seven) are generated:
+  on a conflict take either side and run `go run ./tools/obsgen -write`.
+  `build-config.env` pins `DASHBOARD_LINTER_VERSION` and its sha256.
+- No score, FFmpeg patch or C API impact.
+
+## OpenTelemetry: Base builds the providers (2026-10-07)
+
+`fix/otel-providers-constructed`, fork-only. `internal/app/bootstrap.Base` ends with
+`fx.Invoke(func(*otel.Providers) {})`; without it fx never builds golusoris's OTel providers and no binary exports anything.
+Keep it on a rebase or a golusoris bump, unless golusoris's `otel.Module` invokes them itself.
+`TestBase_ConstructsProvidersNobodyRequests` guards it.
+
 ## Praetor pin 7458a220e1c9 and the managed workflows (2026-10-07)
 
 `chore/praetor-pin-7458a220`, [ADR-2440](adr/2440-praetor-pin-7458a220.md). A rebase or sync

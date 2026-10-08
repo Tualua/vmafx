@@ -67,6 +67,24 @@
   Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
+- **Observability: Quality, Nodes and devices, Live sessions and GPU exporter
+  dashboards, linted in CI (RC4, ADR-2349, #2430).** Three more dashboards are
+  generated from the metric definition: Quality (score levels per model and
+  tenant, the bad tail, a score heatmap, the share below 70), Nodes and
+  devices (backend per node, slot use, failures and run time per node, GPU
+  memory, host memory and CPU) and Live sessions (open ScoreStream sessions,
+  frames per second, outcomes, duration); the Overview links to them. One
+  dashboard per vendor GPU exporter (NVIDIA dcgm-exporter, AMD
+  device-metrics-exporter, Intel XPU Manager) covers utilisation, memory,
+  encoder and decoder load and power, to import where that exporter runs.
+  `vmafx-node` serves its GPU memory per device (`nvidia-smi` on CUDA nodes,
+  the amdgpu sysfs files on HIP nodes); `vmafx-server` and `vmafx-node` serve
+  the ScoreStream session families; a failed read of scraped values counts in
+  `vmafx_metrics_read_errors_total`. Every dashboard passes Grafana's
+  dashboard-linter `--strict` (`make lint-dashboards`, pinned release). See
+  [dashboards](docs/development/observability.md#dashboards).
+
+
 - **Observability: one metric definition, node `/metrics`, queue and quality
   metrics, a generated Overview dashboard (RC4, ADR-2349, #2430).** Every
   Prometheus family the services serve is defined once in
@@ -253,6 +271,9 @@
   value the implicit double-to-float conversion gave), narrowing conversions are
   explicit, and C test cases are declared `(void)`. No test value or tolerance
   changed.
+
+
+- **Packaging**: ADR-2383 lets the macOS and Windows package channels (Homebrew, winget and the others in the distribution manifest) take their artifacts from the attested native release pipelines, as a bounded exception to the container-only rule; Linux artifacts stay container-built.
 
 
 - **The vendored Pelorus conformance fixture reads its files back with `_fsopen(..., _SH_DENYNO)` on Windows.** `scripts/sync-pelorus-interop.sh` pins `11e183ec0aed` (VMAFx/pelorus #91, fixing #90): `fixture_equals()` and `fixture_path_exists()` of `core/test/test_pelorus_interop.c` no longer call the deprecated `fopen()` there, which icx-cl reported. No behaviour or ABI change (ABI 1.3).
@@ -485,6 +506,23 @@
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
   conversions in `get_noise_constant()`, the scaled frame size passed to
   `vif_scale_frame_s()` and the second `--feature` option copy are written out.
+
+
+- **Traces, metrics and logs leave the services when an OTLP endpoint is
+  set.** `vmafx-server`, `vmafx-controller`, `vmafx-node`, `vmafx-operator`
+  and `vmafx-mcp` never built their OpenTelemetry exporters, so nothing was
+  exported whatever the endpoint; they now build them at start and log
+  `otel: configured` with `active=true`. The documented
+  `OTEL_EXPORTER_OTLP_ENDPOINT=host:4317` form sent everything to
+  `localhost:4317`: the standard variable takes a URL
+  (`http://otel-collector:4317`), `VMAFX_OTEL_ENDPOINT` takes `host:port`. See
+  [OpenTelemetry](docs/observability/otel.md#environment-variables).
+
+
+- **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
+  The no-reference model (#2166) is a 1.1 item because the live no-reference mode
+  (#2413) needs it; the 1.3 row now names the artefact detectors (#2272), ST-GREED
+  (#2394) and the decision issue (#2167) instead.
 
 
 - **A build with `-Denable_rust_features=true` registers TAD and no longer
