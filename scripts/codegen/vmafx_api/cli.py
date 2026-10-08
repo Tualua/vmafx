@@ -30,6 +30,7 @@ from . import (
     changelog,
     emit_build,
     emit_c,
+    emit_chart,
     emit_cli,
     emit_compat,
     emit_conformance,
@@ -123,6 +124,8 @@ def render(api: Api, root: Path | None = None, platform: Platform | None = None)
     if platform is not None:
         files.update(emit_platform_proto.files(platform))
         files.update(emit_kube_types.files(platform.kube))
+        if platform.chart is not None:
+            files.update(emit_chart.files(platform.chart, platform.kubernetes))
     return files
 
 

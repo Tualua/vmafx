@@ -1361,6 +1361,18 @@ test('test_crd_compat',
     timeout : 900,
 )
 
+# api/kubernetes/openapi-subset.json holds exactly the Kubernetes types the
+# chart's values schema reaches, as the release build-config.env pins defines
+# them (ADR-2350 D13). Downloads the pinned OpenAPI files and checks their
+# digests; exits 77 (skipped, reason printed) when they cannot be downloaded.
+test('test_k8s_openapi_subset_current',
+    import('python').find_installation(),
+    args : [meson.project_source_root() / '..' / 'scripts' / 'codegen' / 'k8s_openapi.py',
+            '--check', '--root', meson.project_source_root() / '..'],
+    suite : ['fast'],
+    timeout : 300,
+)
+
 # Generator unit tests: every emitter and gate, each refusing its planted defects.
 test('test_vmafx_api_generator',
     import('python').find_installation(),

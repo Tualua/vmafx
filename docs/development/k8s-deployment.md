@@ -32,7 +32,13 @@ false` on every typed sub-object so sibling-key typos
 (`replicaCounts`, `repostiory`, `maxSurg`) fail fast at install time
 instead of silently rendering a broken manifest. See
 [ADR-0870](../adr/0870-helm-values-schema-and-container-rebuild-audit.md)
-for the rationale.
+for the rationale. The values the chart copies into pod specs (tolerations,
+affinity, security contexts, probes, volumes, update strategies, node
+selectors, labels and annotations) have the types Kubernetes 1.26, the oldest
+supported release, gives them
+([what that refuses](#upgrading-to-the-kubernetes-typed-values-schema)). Both
+files are generated from `api/vmafx-platform.toml`
+([API generation](api-generation.md#helm-chart-values)).
 
 ## Prerequisites
 
@@ -543,6 +549,44 @@ The job queue of the old Deployment lived wherever its `VMAFX_DB_PATH`
 pointed (an emptyDir unless you mounted a volume); copy the database to the
 new `<release>-controller-data` claim before the first start if you need its
 jobs. Nodes and the operator follow the new Service by themselves.
+
+## Upgrading to the Kubernetes-typed values schema {#upgrading-to-the-kubernetes-typed-values-schema}
+
+From this release the values schema checks the values the chart copies into
+pod specs against the Kubernetes 1.26 types of those fields
+([ADR-2350](../adr/2350-cloud-native-platform.md) D13). Before, each of these
+keys accepted any list or any mapping, and a wrong value surfaced only when
+the API server refused the rendered object or, for a field it does not check,
+not at all. Now `helm install`, `helm upgrade` and `helm lint` refuse it and
+name the key:
+
+| Key | Now refused |
+| --- | --- |
+| `tolerations`, `controller.tolerations`, `node.tolerations` | A list item that is not a toleration, or a toleration field of another type, such as `tolerationSeconds: "60"` (a number is required) |
+| `affinity` | A value that is not an `Affinity`: a list where a term mapping belongs, a node selector term without `nodeSelectorTerms`, a pod affinity term without `topologyKey` |
+| `topologySpreadConstraints`, `controller.topologySpreadConstraints` | A constraint without `maxSkew`, `topologyKey` or `whenUnsatisfiable`, or with a field of another type |
+| `podSecurityContext` | A field of another type, such as `runAsUser: root` (a user ID is a number) |
+| `securityContext` | A field of another type, such as `capabilities: {drop: ALL}` (`drop` is a list) |
+| `livenessProbe`, `readinessProbe` | A field of another type, such as `periodSeconds: often` |
+| `node.volumes`, `node.volumeMounts` | A volume without `name`, a mount without `name` or `mountPath`, a field of another type |
+| `deployment.strategy`, `node.strategy`, `statefulSet.updateStrategy` | A field of another type, such as a list for `maxSurge` |
+| `envFrom` | A list item that is not an `EnvFromSource` (`configMapRef`, `secretRef`, `prefix`) |
+| `ingress.tls` | An item whose `hosts` is not a list of names, or whose `secretName` is not a string |
+| `nodeSelector`, `controller.nodeSelector`, `node.nodeSelector`, `podAnnotations`, `serviceAccount.annotations`, `ingress.annotations`, `monitoring.serviceMonitor.labels` | A value that is not a string, such as `gpu: 1` (write `gpu: "1"`) |
+
+Fields Kubernetes does not know are still accepted inside these types, as the
+API server accepts them. The API server refuses each refused value too once
+the chart puts it into an object; the schema checks it earlier, and also when
+the workload that would use it is disabled (`node.volumes` with
+`node.enabled: false`, for example), where it used to be ignored. Write the
+value as the Kubernetes type has it; the error message names the key and the
+type it expected, for example `at '/tolerations/0/tolerationSeconds': got
+string, want integer`.
+
+The `resources` keys accept more than before: a quantity may be a decimal
+number (`cpu: 1.5`), and `claims` is accepted as Kubernetes 1.26 defines it.
+`imagePullSecrets` keeps the chart's stricter rule that every entry names a
+Secret.
 
 ## Pod security {#pod-security}
 

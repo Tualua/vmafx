@@ -54,6 +54,28 @@ Update note on merge: final UID + container-scope seccompProfile set.
   must enumerate in `values.schema.json` under `allow` object properties.
   Never revert `additionalProperties: true` without ADR.
 
+## Generated values and schema (ADR-2350 D13)
+
+- `values.yaml` + `values.schema.json` generated from `[[chart]]` entries of
+  `api/vmafx-platform.toml` (`scripts/codegen/vmafx-api.py --write`). Never
+  hand-edit; generated-file conflict -> take one side, rerun generator at tip.
+  `values.yaml` byte for byte from entries (`lead` comments verbatim);
+  schema in one layout (fits in 100 columns -> one line).
+- Kubernetes-typed keys: `$ref` `k8s:<type>`; types from
+  `api/kubernetes/openapi-subset.json` (`scripts/codegen/k8s_openapi.py
+  --write`); release pinned in `build-config.env` (`K8S_SCHEMA_VERSION` =
+  last patch of minimum supported minor, digests per file). Raising minimum
+  minor -> bump pin + digests, regenerate subset and schema, rerun
+  `scripts/ci/tests/test_helm_values_schema.py`, update upgrade notes in
+  `docs/development/k8s-deployment.md`.
+- Licence (ADR-2673): embedded Kubernetes types = Apache-2.0 ->
+  `artifacthub.io/license: EUPL-1.2 AND Apache-2.0`;
+  `THIRD-PARTY-NOTICES.txt` (attribution + Apache-2.0 text) written by
+  `k8s_openapi.py --write`, ships in packaged chart. Never drop either while
+  schema embeds `io.k8s.*` types.
+- Guards: `test_vmafx_api_generated_current`, `test_k8s_openapi_subset_current`,
+  `test_helm_values_schema.py`, `check_licence_metadata.py`.
+
 ## Invariants (ADR-1058)
 
 - **Operator events cluster-wide, write-only (ADR-2647)**: own ClusterRole
@@ -169,8 +191,8 @@ Pod template.
 
 ## Controller job store (ADR-2350)
 
-- Store values: one key per setting, no derived copy (WP4 regenerates
-  `values.yaml` + `values.schema.json` from API definition unchanged).
+- Store values: one key per setting, no derived copy (`values.yaml` +
+  `values.schema.json` generated from `[[chart]]`, see below).
   Store env only via `vmafx.controllerStoreEnv`; lifetimes rendered only
   when set (controller owns defaults). DSN only via
   `vmafx.controllerDatabaseDSN`: cnpg -> `<fullname>-db-app` key `uri`,

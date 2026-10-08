@@ -638,3 +638,3282 @@ fields = [
   { name = "conditions", type = "VmafxTenantCondition", repeated = true, optional = true, doc = "Conditions are the latest observations of the tenant." },
   { name = "observedGeneration", type = "int64", optional = true, doc = "ObservedGeneration is the generation the conditions describe." },
 ]
+
+# ---------------------------------------------------------------------------
+# Helm chart values (deploy/helm/vmafx/values.yaml, values.schema.json)
+#
+# One [[chart]] entry per key of values.yaml, in the order of the file: the
+# dotted `path` (a key holding a dot in double quotes), the default `value`
+# (none for a mapping whose keys follow, or for a key only the schema has), the
+# comment and blank lines above the key verbatim (`lead`), an inline `note` and
+# the column of its `#`, `quoted` for a string written in quotes it does not
+# need, `literal` for a `|` block. [chart.schema] is the key's JSON schema
+# without `properties`, which come from the entries below it; `schema_order`
+# where the schema lists a mapping's keys in another order. A `$ref` of
+# `k8s:<name>` is a Kubernetes type of the minimum supported minor
+# (api/kubernetes/openapi-subset.json, scripts/codegen/k8s_openapi.py).
+# Change an entry, then run python3 scripts/codegen/vmafx-api.py --write.
+# ---------------------------------------------------------------------------
+
+[chart_root]
+schema_order = ["nameOverride", "fullnameOverride", "operator", "controller", "image", "imagePullSecrets", "workload", "deployment", "job", "statefulSet", "service", "ingress", "gpu", "resources", "env", "envFrom", "config", "persistence", "serviceAccount", "podAnnotations", "podSecurityContext", "securityContext", "affinity", "tolerations", "nodeSelector", "topologySpreadConstraints", "terminationGracePeriodSeconds", "livenessProbe", "readinessProbe", "monitoring", "pushgateway", "storage", "node", "podDisruptionBudget", "networkPolicy", "auth", "otelCollector"]
+
+[chart_root.schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+title = "VMAFX Helm chart values"
+description = "JSON Schema for deploy/helm/vmafx/values.yaml. Catches typos and invalid enum values at `helm install` / `helm upgrade` / `helm lint` time before they become silent template-rendering bugs."
+type = "object"
+additionalProperties = false
+required = ["workload", "image", "gpu"]
+
+[[chart_defs]]
+name = "sloObjective"
+
+[chart_defs.schema]
+type = "number"
+exclusiveMinimum = 0
+exclusiveMaximum = 1
+description = "An SLO objective: the share of good events, strictly between 0 and 1 (0.99 = 99 %)."
+
+[[chart_defs]]
+name = "promDuration"
+
+[chart_defs.schema]
+type = "string"
+pattern = "^([0-9]+(ms|s|m|h|d|w|y))+$"
+description = "A Prometheus duration such as 5m, 1h or 1h30m."
+
+[[chart_defs]]
+name = "burnRate"
+
+[chart_defs.schema]
+type = "object"
+additionalProperties = false
+required = ["longWindow", "shortWindow", "factor", "for"]
+description = "One burn-rate rule: the ratio of bad events over longWindow and over shortWindow both above factor * (1 - objective), for the for duration."
+properties = { longWindow = { "$ref" = "#/$defs/promDuration" }, shortWindow = { "$ref" = "#/$defs/promDuration" }, factor = { type = "number", exclusiveMinimum = 0 }, for = { "$ref" = "#/$defs/promDuration" } }
+
+[[chart_defs]]
+name = "durationOrEmpty"
+
+[chart_defs.schema]
+type = "string"
+pattern = "^$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+description = "A Go duration such as 30s or 2m; empty keeps the program's default."
+
+[[chart_defs]]
+name = "imageSpec"
+
+[chart_defs.schema]
+type = "object"
+additionalProperties = false
+properties = { repository = { type = "string" }, tag = { type = "string" }, pullPolicy = { type = "string", enum = ["Always", "IfNotPresent", "Never"] } }
+
+[[chart_defs]]
+name = "resourceSpec"
+
+[chart_defs.schema]
+"$ref" = "k8s:io.k8s.api.core.v1.ResourceRequirements"
+
+[[chart_defs]]
+name = "tokenSecretSpec"
+
+[chart_defs.schema]
+type = "object"
+additionalProperties = false
+description = "A Secret key holding a bearer token for the controller, mounted read-only and passed as VMAFX_CONTROLLER_TOKEN_FILE."
+properties = { secretName = { type = "string" }, key = { type = "string", minLength = 1 } }
+
+[[chart_defs]]
+name = "volumeSpec"
+
+[chart_defs.schema]
+type = "object"
+additionalProperties = false
+properties = { enabled = { type = "boolean" }, size = { type = "string" }, mountPath = { type = "string" }, existingClaim = { type = "string" } }
+
+[[chart]]
+path = "nameOverride"
+lead = '''
+# =============================================================================
+# VMAFX Helm chart — default values
+# =============================================================================
+# Override any key with --set or a custom values file.
+#
+# Full documentation: docs/development/k8s-deployment.md
+# GPU scheduling guide: docs/development/gpu-scheduling.md
+# Operator guide: docs/development/operator.md
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Name overrides (standard Helm convention)
+# ---------------------------------------------------------------------------
+# nameOverride replaces only the chart name component of resource names.
+# fullnameOverride replaces the entire resource name prefix.
+# Both are optional; default behaviour is <release>-vmafx.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+description = "Replaces only the chart-name component of resource names. Default: chart name."
+
+[[chart]]
+path = "fullnameOverride"
+value = ""
+
+[chart.schema]
+type = "string"
+description = "Replaces the entire resource-name prefix. Default: <release>-<chartName>."
+
+[[chart]]
+path = "operator"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Operator — vmafx-operator kubebuilder controller (ADR-0714)
+# Disabled by default in Stage 1; enable after CRDs are installed.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "operator.enabled"
+lead = '''
+  # Set to true to deploy the vmafx-operator Deployment + RBAC.
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "operator.replicaCount"
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "operator.image"
+
+[chart.schema]
+"$ref" = "#/$defs/imageSpec"
+
+[[chart]]
+path = "operator.image.repository"
+value = "ghcr.io/vmafx/vmafx-operator"
+
+[[chart]]
+path = "operator.image.tag"
+value = ""
+note = "Defaults to v<Chart.AppVersion> when empty."
+note_column = 18
+
+[[chart]]
+path = "operator.image.pullPolicy"
+value = "IfNotPresent"
+
+[[chart]]
+path = "operator.logLevel"
+value = "info"
+
+[chart.schema]
+type = "string"
+enum = ["debug", "info", "warn", "error"]
+
+[[chart]]
+path = "operator.leaderElect"
+lead = '''
+  # Enable leader election for HA (≥2 replicas).
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "operator.resources"
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "operator.resources.limits"
+
+[[chart]]
+path = "operator.resources.limits.cpu"
+value = "500m"
+quoted = true
+
+[[chart]]
+path = "operator.resources.limits.memory"
+value = "256Mi"
+
+[[chart]]
+path = "operator.resources.requests"
+
+[[chart]]
+path = "operator.resources.requests.cpu"
+value = "100m"
+quoted = true
+
+[[chart]]
+path = "operator.resources.requests.memory"
+value = "64Mi"
+
+[[chart]]
+path = "operator.controllerToken"
+lead = '''
+  # controllerToken — Secret holding the bearer token the operator's GetJob
+  # polls send to the controller (VMAFX_CONTROLLER_TOKEN_FILE, re-read on every
+  # poll). Needed when the controller verifies tokens; the token's
+  # tenant is the one whose VmafxJobs the operator tracks (vmafx:reader).
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/tokenSecretSpec"
+
+[[chart]]
+path = "operator.controllerToken.secretName"
+value = ""
+
+[[chart]]
+path = "operator.controllerToken.key"
+value = "token"
+
+[[chart]]
+path = "controller"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Controller — vmafx-controller: job queue, node API, auth gateway (ADR-1589)
+# ---------------------------------------------------------------------------
+# With controller.store.backend sqlite (the default) the job queue is an
+# embedded SQLite database: one replica, the Recreate strategy and a
+# ReadWriteOnce volume. With postgres the controller runs as several replicas
+# on PostgreSQL (ADR-2350). The node pool (node.enabled) and the operator
+# (operator.enabled) find it
+# through the <fullname>-controller Service. controller.enabled needs
+# auth.enabled (an identity provider, a tenant registry or auth.disabled for
+# dev) and the other way round: the auth settings below configure this
+# workload.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "vmafx-controller workload: job queue, node API and auth gateway (ADR-1589). store.backend sqlite: one replica on the embedded queue; postgres: any number of replicas on PostgreSQL (ADR-2350)."
+
+[[chart]]
+path = "controller.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "controller.image"
+
+[chart.schema]
+"$ref" = "#/$defs/imageSpec"
+
+[[chart]]
+path = "controller.image.repository"
+value = "ghcr.io/vmafx/vmafx-controller"
+
+[[chart]]
+path = "controller.image.tag"
+value = ""
+note = "Defaults to v<Chart.AppVersion> when empty."
+note_column = 18
+
+[[chart]]
+path = "controller.image.pullPolicy"
+value = "IfNotPresent"
+
+[[chart]]
+path = "controller.httpPort"
+lead = '''
+  # httpPort serves /healthz, /readyz, /metrics and POST /v1/score;
+  # grpcPort serves VmafxScoring and VmafxController (nodes, operator, clients).
+'''
+value = 8080
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+
+[[chart]]
+path = "controller.grpcPort"
+value = 9090
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+
+[[chart]]
+path = "controller.replicas"
+lead = '''
+  # replicas — controller pods. More than one needs store.backend postgres
+  # (two pods on the SQLite backend would each own a different queue).
+'''
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 1
+description = "Controller pods; more than one needs store.backend postgres."
+
+[[chart]]
+path = "controller.store"
+lead = '''
+  # store — where the controller keeps jobs and node sessions (ADR-2350).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Where the controller keeps jobs and node sessions (ADR-2350)."
+
+[[chart]]
+path = "controller.store.backend"
+lead = '''
+    # backend — sqlite: the embedded queue on persistence below, one replica,
+    # Recreate. postgres: PostgreSQL, any number of replicas, rolling update,
+    # no claim; a migration Job applies the schema
+    # (vmafx-controller migrate).
+'''
+value = "sqlite"
+
+[chart.schema]
+type = "string"
+enum = ["sqlite", "postgres"]
+
+[[chart]]
+path = "controller.store.leaseTTL"
+lead = '''
+    # Lifetimes of the postgres backend (VMAFX_STORE_*, Go duration strings).
+    # Empty keeps the controller's default (60s, 60s, 5s, 5s, 5m).
+'''
+value = ""
+
+[chart.schema]
+"$ref" = "#/$defs/durationOrEmpty"
+
+[[chart]]
+path = "controller.store.sessionTTL"
+value = ""
+
+[chart.schema]
+"$ref" = "#/$defs/durationOrEmpty"
+
+[[chart]]
+path = "controller.store.sweepInterval"
+value = ""
+
+[chart.schema]
+"$ref" = "#/$defs/durationOrEmpty"
+
+[[chart]]
+path = "controller.store.backoffBase"
+value = ""
+
+[chart.schema]
+"$ref" = "#/$defs/durationOrEmpty"
+
+[[chart]]
+path = "controller.store.backoffMax"
+value = ""
+
+[chart.schema]
+"$ref" = "#/$defs/durationOrEmpty"
+
+[[chart]]
+path = "controller.store.postgresql"
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "controller.store.postgresql.mode"
+lead = '''
+      # mode — cnpg: the chart renders a CloudNativePG Cluster named
+      # <fullname>-db (the CloudNativePG operator is a prerequisite);
+      # external: a database you run, its connection string in a Secret.
+'''
+value = "cnpg"
+
+[chart.schema]
+type = "string"
+enum = ["cnpg", "external"]
+
+[[chart]]
+path = "controller.store.postgresql.cnpg"
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "The CloudNativePG Cluster <fullname>-db the chart renders; the operator is a prerequisite."
+
+[[chart]]
+path = "controller.store.postgresql.cnpg.instances"
+lead = '''
+        # instances — PostgreSQL pods; 3 for production (one primary, two
+        # replicas with automated failover), 1 for a test cluster.
+'''
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 1
+
+[[chart]]
+path = "controller.store.postgresql.cnpg.imageName"
+value = "ghcr.io/cloudnative-pg/postgresql:18.6-202610050823-minimal-trixie@sha256:37ade18dbdddba430858c72725aceeec66f33fa5333e82ea1df4942f6c1c83a3"
+
+[chart.schema]
+type = "string"
+minLength = 1
+
+[[chart]]
+path = "controller.store.postgresql.cnpg.storage"
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "controller.store.postgresql.cnpg.storage.size"
+value = "5Gi"
+
+[chart.schema]
+type = "string"
+minLength = 1
+
+[[chart]]
+path = "controller.store.postgresql.cnpg.storage.storageClass"
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "controller.store.postgresql.cnpg.resources"
+value = {}
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "controller.store.postgresql.external"
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "controller.store.postgresql.external.secretName"
+lead = '''
+        # secretName / secretKey — the Secret key holding the connection
+        # string (postgres://user:password@host:5432/db?sslmode=verify-full).
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "controller.store.postgresql.external.secretKey"
+value = "uri"
+
+[chart.schema]
+type = "string"
+minLength = 1
+
+[[chart]]
+path = "controller.store.migration"
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "controller.store.migration.backoffLimit"
+lead = '''
+      # backoffLimit — retries of the migration Job; it waits for the
+      # database to come up by failing and retrying.
+'''
+value = 10
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "controller.topologySpreadConstraints"
+lead = '''
+  # topologySpreadConstraints — spread of the controller pods. Empty with more
+  # than one replica: a soft spread over Kubernetes nodes.
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.TopologySpreadConstraint" }
+
+[[chart]]
+path = "controller.persistence"
+lead = '''
+  # persistence keeps the SQLite job queue (VMAFX_DB_PATH=/data/...) across
+  # restarts; only the sqlite backend uses it. Disabled: an emptyDir, and
+  # every job is lost with the pod.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "controller.persistence.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "controller.persistence.size"
+value = "1Gi"
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "controller.persistence.storageClass"
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "controller.persistence.existingClaim"
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "controller.resources"
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "controller.resources.limits"
+
+[[chart]]
+path = "controller.resources.limits.cpu"
+value = "2"
+
+[[chart]]
+path = "controller.resources.limits.memory"
+value = "1Gi"
+
+[[chart]]
+path = "controller.resources.requests"
+
+[[chart]]
+path = "controller.resources.requests.cpu"
+value = "250m"
+quoted = true
+
+[[chart]]
+path = "controller.resources.requests.memory"
+value = "256Mi"
+
+[[chart]]
+path = "controller.nodeSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "controller.tolerations"
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.Toleration" }
+
+[[chart]]
+path = "controller.env"
+lead = '''
+  # env — extra environment variables of the controller container only. The
+  # auth settings come from auth.*; env.VMAFX_AUTH_* / VMAFX_JWKS_* are refused.
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = ["string", "number", "boolean"] }
+
+[[chart]]
+path = "image"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/imageSpec"
+
+[[chart]]
+path = "image.repository"
+lead = '''
+  # vmafx-server is the production Go gRPC + HTTP scoring service (ADR-0703).
+  # The Python vmaf-mcp server image (ghcr.io/vmafx/vmafx) remains available
+  # for MCP/stdio IDE deployments; see docs/server/grpc.md for the migration guide.
+'''
+value = "ghcr.io/vmafx/vmafx-server"
+
+[[chart]]
+path = "image.tag"
+value = ""
+note = "Defaults to v<Chart.AppVersion> when empty."
+note_column = 20
+
+[[chart]]
+path = "image.pullPolicy"
+value = "IfNotPresent"
+
+[[chart]]
+path = "imagePullSecrets"
+lead = '''
+
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { type = "object", required = ["name"], properties = { name = { type = "string" } } }
+
+[[chart]]
+path = "workload"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Workload type
+# Select exactly one: Deployment | Job | StatefulSet
+# ---------------------------------------------------------------------------
+'''
+value = "Deployment"
+
+[chart.schema]
+type = "string"
+enum = ["Deployment", "Job", "StatefulSet"]
+description = "Selects which workload kind the chart renders. Must be one of Deployment, Job, or StatefulSet."
+
+[[chart]]
+path = "deployment"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Deployment — long-running vmafx HTTP scoring server.
+# Active when workload == "Deployment".
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "deployment.replicaCount"
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "deployment.strategy"
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.apps.v1.DeploymentStrategy"
+
+[[chart]]
+path = "deployment.strategy.type"
+value = "RollingUpdate"
+
+[[chart]]
+path = "deployment.strategy.rollingUpdate"
+
+[[chart]]
+path = "deployment.strategy.rollingUpdate.maxSurge"
+lead = '''
+      # maxUnavailable: 0 prevents capacity reduction during rollout.
+      # Kubernetes default (25%) would allow pod evictions before replacements
+      # are ready, which drops in-flight scoring requests on GPU workloads.
+'''
+value = 1
+
+[[chart]]
+path = "deployment.strategy.rollingUpdate.maxUnavailable"
+value = 0
+
+[[chart]]
+path = "job"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Job — one-shot batch scoring (vmaf-tune compare / ladder).
+# Active when workload == "Job".
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "job.command"
+lead = '''
+  # Command and arguments for the batch job.
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { type = "string" }
+
+[[chart]]
+path = "job.args"
+value = []
+
+[chart.schema]
+type = "array"
+items = { type = "string" }
+
+[[chart]]
+path = "job.completions"
+lead = '''
+  # Kubernetes Job completion / backoff policy.
+'''
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 1
+
+[[chart]]
+path = "job.parallelism"
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 1
+
+[[chart]]
+path = "job.backoffLimit"
+value = 3
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "job.ttlSecondsAfterFinished"
+lead = '''
+  # Automatically clean up finished Jobs.
+'''
+value = 3600
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "statefulSet"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# StatefulSet — MCP server with sticky session state.
+# Active when workload == "StatefulSet".
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "statefulSet.replicaCount"
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "statefulSet.updateStrategy"
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.apps.v1.StatefulSetUpdateStrategy"
+
+[[chart]]
+path = "statefulSet.updateStrategy.type"
+value = "RollingUpdate"
+
+[[chart]]
+path = "statefulSet.updateStrategy.rollingUpdate"
+
+[[chart]]
+path = "statefulSet.updateStrategy.rollingUpdate.maxUnavailable"
+lead = '''
+      # maxUnavailable: 1 is Kubernetes default for StatefulSet RollingUpdate.
+      # Explicit declaration here prevents silent default drift and documents
+      # the intent.  Set partition: N for canary-style staged rollouts (only
+      # pods with ordinal >= N are updated; 0 means update all).
+'''
+value = 1
+
+[[chart]]
+path = "statefulSet.updateStrategy.rollingUpdate.partition"
+value = 0
+
+[[chart]]
+path = "statefulSet.podManagementPolicy"
+value = "OrderedReady"
+
+[chart.schema]
+type = "string"
+enum = ["OrderedReady", "Parallel"]
+
+[[chart]]
+path = "statefulSet.statePVCSize"
+lead = '''
+  # statePVCSize controls the PersistentVolumeClaim created by the StatefulSet
+  # volumeClaimTemplate for sticky session state (/var/lib/vmafx).
+  # Size this to fit the MCP server's session state on your storage class.
+'''
+value = "1Gi"
+
+[chart.schema]
+type = "string"
+description = "Size of the per-replica PersistentVolumeClaim for MCP session state (/var/lib/vmafx). Standard Kubernetes quantity string (e.g. 1Gi, 500Mi)."
+pattern = "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E|m)?$"
+
+[[chart]]
+path = "terminationGracePeriodSeconds"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Pod termination grace period
+# ---------------------------------------------------------------------------
+# How long Kubernetes waits for the container to exit after SIGTERM before
+# sending SIGKILL.  Kubernetes default is 30 s, which is too short for
+# long-running GPU scoring jobs that cannot be checkpointed mid-frame.
+# 60 s covers the worst-case vmaf-tune encode + score pass on a single
+# segment.  Operators running full-feature CHUG extractions should raise
+# this to 300 s or more to avoid SIGKILL on in-flight frames.
+# Applies to: Deployment (controller / scoring server) and StatefulSet.
+# The node Deployment uses the same value via templates/node.yaml.
+'''
+value = 60
+
+[chart.schema]
+type = "integer"
+minimum = 0
+description = "How long Kubernetes waits after SIGTERM before sending SIGKILL. Default 60 s. GPU scoring jobs that cannot checkpoint mid-frame should set 300+ s."
+
+[[chart]]
+path = "service"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "service.type"
+value = "ClusterIP"
+
+[chart.schema]
+type = "string"
+enum = ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
+
+[[chart]]
+path = "service.port"
+value = 8080
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+
+[[chart]]
+path = "service.targetPort"
+value = 8080
+
+[chart.schema]
+oneOf = [{ type = "integer", minimum = 1, maximum = 65535 }, { type = "string" }]
+
+[[chart]]
+path = "service.extraPorts"
+lead = '''
+  # Additional named ports (e.g. metrics: 9090).
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { type = "object", required = ["name", "port"], properties = { name = { type = "string" }, port = { type = "integer", minimum = 1, maximum = 65535 }, targetPort = { oneOf = [{ type = "integer", minimum = 1, maximum = 65535 }, { type = "string" }] }, protocol = { type = "string", enum = ["TCP", "UDP", "SCTP"] } } }
+description = "Additional named Service ports beyond the primary HTTP port."
+
+[[chart]]
+path = "ingress"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "ingress.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "ingress.className"
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "ingress.annotations"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "ingress.hosts"
+lead = '''
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+'''
+value = [{ host = "vmafx.local", paths = [{ path = "/", pathType = "Prefix" }] }]
+
+[chart.schema]
+type = "array"
+
+[[chart]]
+path = "ingress.tls"
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.networking.v1.IngressTLS" }
+
+[[chart]]
+path = "gpu"
+lead = '''
+  #  - secretName: vmafx-tls
+  #    hosts:
+  #      - vmafx.local
+
+# ---------------------------------------------------------------------------
+# GPU — multi-vendor device-plugin selector
+# ---------------------------------------------------------------------------
+# The chart maps "vendor" to the Kubernetes resource name it requests:
+#   nvidia  →  nvidia.com/gpu                   (CUDA backend)
+#   amd     →  amd.com/gpu                      (HIP backend)
+#   intel   →  gpu.intel.com/<intelDriver>      (SYCL backend)
+#   cpu     →  (no device-plugin resource; CPU-only execution)
+# The Intel device plugin names the resource after the GPU's kernel driver:
+# gpu.intel.com/i915 or gpu.intel.com/xe (Arc B-series and newer, or any GPU
+# bound to xe). resourceName overrides the name for any vendor, e.g. a GPU
+# sharing or MIG resource.
+#
+# ADR-0726: Vulkan backend removed. See docs/backends/README.md.
+# See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
+#
+# The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
+'''
+schema_order = ["enabled", "vendor", "intelDriver", "resourceName", "count"]
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+required = ["vendor", "enabled"]
+
+[[chart]]
+path = "gpu.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "gpu.vendor"
+value = "nvidia"
+note = "nvidia | amd | intel | cpu"
+note_column = 20
+
+[chart.schema]
+type = "string"
+enum = ["nvidia", "amd", "intel", "cpu"]
+description = "Maps to the matching device-plugin resource name. nvidia → nvidia.com/gpu, amd → amd.com/gpu, intel → gpu.intel.com/<intelDriver>, cpu → no device plugin. gpu.resourceName overrides it. Vulkan removed per ADR-0726."
+
+[[chart]]
+path = "gpu.count"
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 1
+description = "Number of GPU units to request from the device plugin. Must be ≥1 when gpu.enabled is true; requesting 0 is a silent no-op on every vendor device plugin (ADR-1047)."
+
+[[chart]]
+path = "gpu.intelDriver"
+value = "i915"
+note = "i915 | xe — used only when vendor is intel"
+note_column = 20
+
+[chart.schema]
+type = "string"
+enum = ["i915", "xe"]
+description = "Kernel driver of the Intel GPUs; the Intel device plugin advertises gpu.intel.com/i915 or gpu.intel.com/xe accordingly. Used only when gpu.vendor is intel."
+
+[[chart]]
+path = "gpu.resourceName"
+value = ""
+note = "explicit device-plugin resource; overrides vendor/intelDriver"
+note_column = 20
+
+[chart.schema]
+type = "string"
+pattern = "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$"
+description = "Explicit extended-resource name to request (domain/name), overriding vendor and intelDriver; for GPU sharing or MIG resources. Refused with gpu.vendor cpu."
+
+[[chart]]
+path = "resources"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+# GPU limits are injected automatically from gpu.vendor + gpu.count.
+# You only need to specify CPU/memory limits here.
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "resources.limits"
+
+[[chart]]
+path = "resources.limits.cpu"
+value = "4"
+
+[[chart]]
+path = "resources.limits.memory"
+value = "8Gi"
+
+[[chart]]
+path = "resources.requests"
+
+[[chart]]
+path = "resources.requests.cpu"
+value = "1"
+
+[[chart]]
+path = "resources.requests.memory"
+value = "2Gi"
+
+[[chart]]
+path = "env"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+# VMAFX_BACKEND is set automatically from gpu.vendor.
+# Override individual variables here.
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+
+[[chart]]
+path = "envFrom"
+lead = '''
+  # VMAFX_LOG_LEVEL: info
+  # VMAFX_THREADS: "4"
+
+# Additional env vars from ConfigMap / Secret references.
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.EnvFromSource" }
+
+[[chart]]
+path = "config"
+lead = '''
+  # - configMapRef:
+  #     name: vmafx-config
+  # - secretRef:
+  #     name: vmafx-secret
+
+# ---------------------------------------------------------------------------
+# ConfigMap
+# Non-secret configuration exposed as environment variables.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+
+[[chart]]
+path = "config.VMAFX_MODEL_DIR"
+lead = '''
+  # Example: VMAFX_MODEL_PATH: /models/vmaf_v0.6.1.json
+'''
+value = "/models"
+
+[[chart]]
+path = "config.VMAFX_OUTPUT_DIR"
+value = "/output"
+
+[[chart]]
+path = "persistence"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "persistence.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "persistence.storageClass"
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "persistence.accessMode"
+value = "ReadWriteOnce"
+
+[chart.schema]
+type = "string"
+enum = ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"]
+
+[[chart]]
+path = "persistence.corpus"
+lead = '''
+  # Corpus input volume (read-only).
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/volumeSpec"
+
+[[chart]]
+path = "persistence.corpus.enabled"
+value = false
+
+[[chart]]
+path = "persistence.corpus.size"
+value = "50Gi"
+
+[[chart]]
+path = "persistence.corpus.mountPath"
+value = "/corpus"
+
+[[chart]]
+path = "persistence.output"
+lead = '''
+    # existingClaim: ""
+  # Scored output volume (read-write).
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/volumeSpec"
+
+[[chart]]
+path = "persistence.output.enabled"
+value = false
+
+[[chart]]
+path = "persistence.output.size"
+value = "10Gi"
+
+[[chart]]
+path = "persistence.output.mountPath"
+value = "/output"
+
+[[chart]]
+path = "persistence.models"
+lead = '''
+    # existingClaim: ""
+  # Model weights volume (read-only).
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/volumeSpec"
+
+[[chart]]
+path = "persistence.models.enabled"
+value = false
+
+[[chart]]
+path = "persistence.models.size"
+value = "1Gi"
+
+[[chart]]
+path = "persistence.models.mountPath"
+value = "/models"
+
+[[chart]]
+path = "serviceAccount"
+lead = '''
+    # existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Service Account
+# The server, job and node pods share this account, which holds no RBAC. The
+# operator runs as <name>-operator and the controller as <name>-controller
+# (created with controller.enabled; the only account that reads VmafxTenants,
+# ADR-1592).
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "serviceAccount.create"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "serviceAccount.annotations"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "serviceAccount.name"
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "podAnnotations"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Pod security
+# ---------------------------------------------------------------------------
+# UID/GID 65532 matches the `nonroot` user baked into
+# gcr.io/distroless/cc-debian13, which is the runtime base for every
+# production VMAFX image (see ADR-0878 / PR #367).  Together with the
+# container-level securityContext below, this satisfies the
+# Pod Security Admission "restricted" profile.
+# See docs/development/k8s-deployment.md#pod-security for the full mapping.
+# ---------------------------------------------------------------------------
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "podSecurityContext"
+lead = '''
+
+'''
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.core.v1.PodSecurityContext"
+
+[[chart]]
+path = "podSecurityContext.runAsNonRoot"
+value = true
+
+[[chart]]
+path = "podSecurityContext.runAsUser"
+value = 65532
+
+[[chart]]
+path = "podSecurityContext.runAsGroup"
+value = 65532
+
+[[chart]]
+path = "podSecurityContext.fsGroup"
+value = 65532
+
+[[chart]]
+path = "podSecurityContext.seccompProfile"
+lead = '''
+  # PSA "restricted" profile requires seccompProfile (ADR-0969).
+  # RuntimeDefault uses the container runtime's default seccomp profile
+  # (typically equivalent to docker/default), which is safe for all
+  # vmafx workloads. Upgrade to Localhost + custom profile if needed.
+'''
+
+[[chart]]
+path = "podSecurityContext.seccompProfile.type"
+value = "RuntimeDefault"
+
+[[chart]]
+path = "securityContext"
+lead = '''
+
+'''
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.core.v1.SecurityContext"
+
+[[chart]]
+path = "securityContext.runAsNonRoot"
+value = true
+
+[[chart]]
+path = "securityContext.runAsUser"
+value = 65532
+
+[[chart]]
+path = "securityContext.allowPrivilegeEscalation"
+value = false
+
+[[chart]]
+path = "securityContext.readOnlyRootFilesystem"
+value = true
+
+[[chart]]
+path = "securityContext.capabilities"
+
+[[chart]]
+path = "securityContext.capabilities.drop"
+value = ["ALL"]
+
+[[chart]]
+path = "securityContext.seccompProfile"
+
+[[chart]]
+path = "securityContext.seccompProfile.type"
+value = "RuntimeDefault"
+
+[[chart]]
+path = "networkPolicy"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# NetworkPolicy — default-deny posture with explicit controller/node/operator
+# traffic allow-rules (ADR-0930).
+# ---------------------------------------------------------------------------
+# Disabled by default because most clusters either ship their own ingress
+# CNI policies (Cilium, Calico) or run without a NetworkPolicy controller,
+# in which case the manifest is silently a no-op but still surfaces a
+# `lint`-visible footprint.  Operators opt in with `--set
+# networkPolicy.enabled=true`.
+#
+# When enabled, the chart emits:
+#   • a default-deny ingress + egress policy for every VMAFX pod, then
+#   • allow-rules for the documented flows below.
+#
+# Required-flow assumptions (override via the allow.* lists when your
+# topology differs):
+#   • controller → node: gRPC on port 50051 (VMAFX_NODE_GRPC_PORT)
+#   • node       → object-store: HTTPS (443) — S3 / GCS / Azure Blob
+#   • operator   → kube-apiserver: HTTPS (443) inside `kube-system`
+#   • DNS        → kube-dns / CoreDNS on UDP/TCP 53
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "NetworkPolicy default-deny posture with allow-rules (ADR-0930). See values.yaml for the full allow.* matrix."
+
+[[chart]]
+path = "networkPolicy.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow"
+lead = '''
+  # Allow rule scaffolding.  Each entry is rendered into the matching
+  # NetworkPolicy spec block; leave empty to suppress that flow.
+'''
+schema_order = ["controllerToNode", "nodeToController", "controllerIngress", "operatorToController", "controllerToDatabase", "controllerToIdentityProvider", "nodeEgressObjectStore", "operatorToApiserver", "serverToApiserver", "nodeMetrics", "metricsScrape", "dns"]
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "networkPolicy.allow.controllerToNode"
+lead = '''
+    # controller → node (in-cluster gRPC dispatch)
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "networkPolicy.allow.controllerToNode.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.controllerToNode.nodePort"
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+description = "Node gRPC port the controller may reach; defaults to node.grpcPort."
+
+[[chart]]
+path = "networkPolicy.allow.nodeToController"
+lead = '''
+      # nodePort defaults to node.grpcPort (the node's gRPC listener); set it
+      # only when the node listens elsewhere.
+      # nodePort: 50052
+    # node → controller (the nodes' controller client: RegisterNode,
+    # Heartbeat, PullWork, ReportResult). Rendered when the nodes have a
+    # controller (node.controllerAddr or controller.enabled). port is the
+    # controller's gRPC port; podSelector / namespaceSelector pick the
+    # controller pods. Empty podSelector: the chart's controller pods when
+    # controller.enabled, else every pod in the release namespace.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Egress from vmafx-node to the controller's gRPC port, rendered when the nodes have a controller (node.controllerAddr or controller.enabled)."
+
+[[chart]]
+path = "networkPolicy.allow.nodeToController.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.nodeToController.port"
+value = 9090
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+
+[[chart]]
+path = "networkPolicy.allow.nodeToController.podSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.nodeToController.namespaceSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.controllerIngress"
+lead = '''
+    # clients → controller: ingress to the controller's HTTP and gRPC ports
+    # (controller.enabled). Empty fromPodSelector admits every pod of the
+    # release namespace (nodes, operator, in-namespace clients).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Ingress to the controller's HTTP and gRPC ports (controller.enabled)."
+
+[[chart]]
+path = "networkPolicy.allow.controllerIngress.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.controllerIngress.fromPodSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.operatorToController"
+lead = '''
+    # operator → controller (GetJob polls, /healthz probes; controller.enabled).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Egress from the operator to the controller (GetJob, /healthz)."
+
+[[chart]]
+path = "networkPolicy.allow.operatorToController.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.controllerToIdentityProvider"
+lead = '''
+    # controller → identity providers: JWKS fetches over HTTPS while auth is on
+    # (auth.enabled and not auth.disabled). Tighten cidrs to your providers.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Egress from the controller to the identity providers' JWKS endpoints while auth is on."
+
+[[chart]]
+path = "networkPolicy.allow.controllerToIdentityProvider.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.controllerToIdentityProvider.ports"
+value = [443]
+
+[chart.schema]
+type = "array"
+items = { type = "integer", minimum = 1, maximum = 65535 }
+
+[[chart]]
+path = "networkPolicy.allow.controllerToIdentityProvider.cidrs"
+value = ["0.0.0.0/0"]
+
+[chart.schema]
+type = "array"
+items = { type = "string" }
+
+[[chart]]
+path = "networkPolicy.allow.controllerToDatabase"
+lead = '''
+    # controller and its migration Job → PostgreSQL (controller.store.backend
+    # postgres). cnpg mode: the pods of the chart's Cluster; external mode:
+    # cidrs, tighten them to your database.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Egress from the controller and its migration Job to PostgreSQL (store.backend postgres): the chart's Cluster in cnpg mode, cidrs in external mode."
+
+[[chart]]
+path = "networkPolicy.allow.controllerToDatabase.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.controllerToDatabase.ports"
+value = [5432]
+
+[chart.schema]
+type = "array"
+items = { type = "integer", minimum = 1, maximum = 65535 }
+
+[[chart]]
+path = "networkPolicy.allow.controllerToDatabase.cidrs"
+value = ["0.0.0.0/0"]
+
+[chart.schema]
+type = "array"
+items = { type = "string" }
+
+[[chart]]
+path = "networkPolicy.allow.nodeEgressObjectStore"
+lead = '''
+    # node → object store (rclone egress to S3/GCS/Azure/etc.)
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "networkPolicy.allow.nodeEgressObjectStore.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.nodeEgressObjectStore.ports"
+value = [443]
+
+[chart.schema]
+type = "array"
+items = { type = "integer", minimum = 1, maximum = 65535 }
+
+[[chart]]
+path = "networkPolicy.allow.nodeEgressObjectStore.cidrs"
+lead = '''
+      # cidrs accepts arbitrary IP ranges.  Default 0.0.0.0/0 lets clusters
+      # without an in-cluster mirror egress to public object stores; tighten
+      # to your bucket VPC CIDR (or to the in-cluster mirror's ClusterIP/24)
+      # for stricter blast radius.
+'''
+value = ["0.0.0.0/0"]
+
+[chart.schema]
+type = "array"
+items = { type = "string" }
+
+[[chart]]
+path = "networkPolicy.allow.nodeEgressObjectStore.except"
+lead = '''
+      # except is rendered as `except:` inside the egress block; useful for
+      # carving out RFC1918 prefixes when defaulting to 0.0.0.0/0.
+'''
+value = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+[chart.schema]
+type = "array"
+items = { type = "string" }
+
+[[chart]]
+path = "networkPolicy.allow.operatorToApiserver"
+lead = '''
+    # operator → kube-apiserver (controller-runtime list/watch)
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "networkPolicy.allow.operatorToApiserver.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.operatorToApiserver.ports"
+value = [443, 6443]
+
+[chart.schema]
+type = "array"
+items = { type = "integer", minimum = 1, maximum = 65535 }
+
+[[chart]]
+path = "networkPolicy.allow.serverToApiserver"
+lead = '''
+    # controller → kube-apiserver: reading VmafxTenant resources. Rendered
+    # only when the controller reads its tenants from them (ADR-1519:
+    # auth.enabled with auth.tenants or auth.tenantSource: kubernetes). The key
+    # keeps its pre-ADR-1589 name; it applies to the controller pods.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Allow the controller to read VmafxTenant resources from the kube-apiserver (ADR-1519)."
+
+[[chart]]
+path = "networkPolicy.allow.serverToApiserver.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.serverToApiserver.ports"
+value = [443, 6443]
+
+[chart.schema]
+type = "array"
+items = { type = "integer", minimum = 1, maximum = 65535 }
+
+[[chart]]
+path = "networkPolicy.allow.nodeMetrics"
+lead = '''
+    # Prometheus scraping of node metrics port 9090 (vmafx-node).
+    # When monitoring.enabled is true, the Prometheus operator scrapes the
+    # node metrics endpoint; the default-deny ingress policy blocks this
+    # without an explicit allow-rule.  fromPodSelector narrows which pods
+    # may scrape; leave empty to allow any in-namespace pod.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Allow Prometheus to scrape vmafx-node metrics port 9090 (ADR-1058)."
+
+[[chart]]
+path = "networkPolicy.allow.nodeMetrics.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.nodeMetrics.fromPodSelector"
+lead = '''
+      # fromPodSelector restricts which pods may reach the metrics port.
+      # Example (Prometheus operator):
+      #   fromPodSelector:
+      #     app.kubernetes.io/name: prometheus
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.metricsScrape"
+lead = '''
+    # Prometheus scraping of every component's metrics port while
+    # monitoring.enabled: the server's and the controller's HTTP port, the
+    # node's metrics port and the operator's 8080. Empty selectors allow any
+    # pod of the release namespace; a Prometheus in another namespace needs
+    # fromNamespaceSelector (for example kubernetes.io/metadata.name:
+    # monitoring) and, to narrow it, fromPodSelector.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Allow Prometheus to scrape every component's metrics port while monitoring.enabled (ADR-2349): server and controller HTTP, node metrics, operator 8080. fromNamespaceSelector admits a Prometheus in another namespace."
+
+[[chart]]
+path = "networkPolicy.allow.metricsScrape.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.metricsScrape.fromNamespaceSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "networkPolicy.allow.metricsScrape.fromPodSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "networkPolicy.allow.dns"
+lead = '''
+    # DNS egress for every VMAFX pod (CoreDNS by default).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "networkPolicy.allow.dns.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.dns.namespaceSelector"
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.dns.namespaceSelector.matchLabels"
+
+[[chart]]
+path = "networkPolicy.allow.dns.namespaceSelector.matchLabels.\"kubernetes.io/metadata.name\""
+value = "kube-system"
+
+[[chart]]
+path = "networkPolicy.allow.dns.podSelector"
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.dns.podSelector.matchLabels"
+
+[[chart]]
+path = "networkPolicy.allow.dns.podSelector.matchLabels.k8s-app"
+value = "kube-dns"
+
+[[chart]]
+path = "affinity"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+'''
+value = {}
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.core.v1.Affinity"
+
+[[chart]]
+path = "tolerations"
+lead = '''
+  # Example: prefer NVIDIA GPU nodes.
+  # nodeAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       preference:
+  #         matchExpressions:
+  #           - key: gpu.vendor
+  #             operator: In
+  #             values: [nvidia]
+
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.Toleration" }
+
+[[chart]]
+path = "nodeSelector"
+lead = '''
+  # Typical GPU node taint:
+  # - key: nvidia.com/gpu
+  #   operator: Exists
+  #   effect: NoSchedule
+
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "topologySpreadConstraints"
+lead = '''
+
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.TopologySpreadConstraint" }
+
+[[chart]]
+path = "livenessProbe"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Health checks (Deployment / StatefulSet only)
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.core.v1.Probe"
+
+[[chart]]
+path = "livenessProbe.httpGet"
+
+[[chart]]
+path = "livenessProbe.httpGet.path"
+value = "/healthz"
+
+[[chart]]
+path = "livenessProbe.httpGet.port"
+value = "http"
+
+[[chart]]
+path = "livenessProbe.initialDelaySeconds"
+value = 15
+
+[[chart]]
+path = "livenessProbe.periodSeconds"
+value = 20
+
+[[chart]]
+path = "livenessProbe.failureThreshold"
+value = 3
+
+[[chart]]
+path = "readinessProbe"
+lead = '''
+
+'''
+
+[chart.schema]
+"$ref" = "k8s:io.k8s.api.core.v1.Probe"
+
+[[chart]]
+path = "readinessProbe.httpGet"
+
+[[chart]]
+path = "readinessProbe.httpGet.path"
+value = "/readyz"
+
+[[chart]]
+path = "readinessProbe.httpGet.port"
+value = "http"
+
+[[chart]]
+path = "readinessProbe.initialDelaySeconds"
+value = 5
+
+[[chart]]
+path = "readinessProbe.periodSeconds"
+value = 10
+
+[[chart]]
+path = "readinessProbe.failureThreshold"
+value = 3
+
+[[chart]]
+path = "monitoring"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Monitoring — scrape targets, alert rules and Grafana dashboards for the
+# Prometheus operator and the Grafana dashboard sidecar
+# (docs/observability/kubernetes.md). Nothing renders while enabled is false.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "monitoring.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.serviceMonitor"
+lead = '''
+  # Scrape settings shared by every component's ServiceMonitor / PodMonitor.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "monitoring.serviceMonitor.namespace"
+lead = '''
+    # Namespace of the monitors and of the PrometheusRule's default; empty is
+    # the release namespace.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "monitoring.serviceMonitor.labels"
+lead = '''
+    # Additional labels so Prometheus picks up the ServiceMonitor.
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "monitoring.serviceMonitor.interval"
+value = "30s"
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "monitoring.serviceMonitor.scrapeTimeout"
+value = "10s"
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "monitoring.serviceMonitor.path"
+value = "/metrics"
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "monitoring.serviceMonitor.scheme"
+value = "http"
+
+[chart.schema]
+type = "string"
+enum = ["http", "https"]
+
+[[chart]]
+path = "monitoring.serviceMonitor.honorLabels"
+lead = '''
+    # Honor labels from the target (useful when job labels are in metrics).
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.components"
+lead = '''
+  # Which components get a monitor. A component that is not deployed
+  # (controller.enabled, node.enabled, operator.enabled) gets none. The
+  # server, controller and node are scraped through their Services
+  # (ServiceMonitor), the operator through its pods (PodMonitor).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Which components get a monitor: server, controller and node a ServiceMonitor on their Service, operator a PodMonitor. A component that is not deployed gets none."
+
+[[chart]]
+path = "monitoring.components.server"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.components.controller"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.components.node"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.components.operator"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.prometheusRule"
+lead = '''
+  # The PrometheusRule of the generated alert and recording rules, with the
+  # objectives and thresholds below.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "The PrometheusRule of the generated alert and recording rules (templates/prometheusrule.yaml)."
+
+[[chart]]
+path = "monitoring.prometheusRule.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.prometheusRule.namespace"
+lead = '''
+    # Empty is the release namespace.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "monitoring.prometheusRule.labels"
+lead = '''
+    # Additional labels so Prometheus selects the rule (ruleSelector).
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "monitoring.dashboards"
+lead = '''
+  # One ConfigMap per generated dashboard, labelled for the Grafana sidecar
+  # (kube-prometheus-stack: grafana.sidecar.dashboards).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "One ConfigMap per generated Grafana dashboard (files/dashboards), labelled for the Grafana dashboard sidecar."
+
+[[chart]]
+path = "monitoring.dashboards.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.dashboards.namespace"
+lead = '''
+    # Empty is the release namespace; set the sidecar's namespace when it
+    # watches only its own.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "monitoring.dashboards.labels"
+lead = '''
+    # The label the sidecar selects ConfigMaps with.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "monitoring.dashboards.labels.grafana_dashboard"
+value = "1"
+
+[[chart]]
+path = "monitoring.dashboards.annotations"
+lead = '''
+    # For example grafana_folder: VMAFx, when the sidecar reads folders from
+    # an annotation.
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "monitoring.dashboards.gpuExporters"
+lead = '''
+    # The dashboards of the vendor GPU exporters, each for clusters that run
+    # that exporter (NVIDIA DCGM, AMD device metrics exporter, Intel XPU
+    # Manager).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Ship the dashboard of a vendor GPU exporter: NVIDIA DCGM (dcgm), AMD device metrics exporter (amd), Intel XPU Manager (intel)."
+
+[[chart]]
+path = "monitoring.dashboards.gpuExporters.dcgm"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.dashboards.gpuExporters.amd"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.dashboards.gpuExporters.intel"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "monitoring.slo"
+lead = '''
+  # BEGIN obsgen monitoring settings
+  # Generated from obsgen.DefaultSettings by go run ./tools/obsgen -write;
+  # change the defaults in pkg/observability/obsgen/settings.go. Override them
+  # in your own values file: the PrometheusRule (prometheusRule.enabled) is
+  # rendered from them, and the Compose example reads the same keys.
+  # slo: the share of events that must be good over 30 days; the error
+  # budget is 1 - objective. Each lies strictly between 0 and 1.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+required = ["jobSuccess", "scoreSuccess", "scoreLatency", "scoreLatencySeconds"]
+description = "SLO objectives: the share of events that must be good over 30 days. The error budget is 1 - objective."
+
+[[chart]]
+path = "monitoring.slo.jobSuccess"
+lead = '''
+    # Controller jobs that complete rather than fail.
+'''
+value = 0.99
+
+[chart.schema]
+"$ref" = "#/$defs/sloObjective"
+
+[[chart]]
+path = "monitoring.slo.scoreSuccess"
+lead = '''
+    # Score requests that return no error.
+'''
+value = 0.99
+
+[chart.schema]
+"$ref" = "#/$defs/sloObjective"
+
+[[chart]]
+path = "monitoring.slo.scoreLatency"
+lead = '''
+    # Score requests that finish within scoreLatencySeconds.
+'''
+value = 0.99
+
+[chart.schema]
+"$ref" = "#/$defs/sloObjective"
+
+[[chart]]
+path = "monitoring.slo.scoreLatencySeconds"
+lead = '''
+    # A bucket bound of vmafx_server_score_duration_seconds, quoted.
+'''
+value = "30"
+
+[chart.schema]
+type = "string"
+enum = ["0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "30", "60", "120", "300", "600", "1800"]
+description = "The latency objective's bound: a bucket bound of vmafx_server_score_duration_seconds, as a string. The enum is checked against metricdef.RequestSecondsBuckets by TestChartSchemaMatchesSettings."
+
+[[chart]]
+path = "monitoring.burnRates"
+lead = '''
+  # burnRates: multi-window, multi-burn-rate alerting. A rule fires when the
+  # ratio of bad events over longWindow and over shortWindow both exceed
+  # factor * (1 - objective) for the for duration. fast is critical, slow a
+  # warning. Windows and for are Prometheus durations.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+required = ["fast", "slow"]
+description = "Multi-window, multi-burn-rate alerting: fast (critical) and slow (warning)."
+
+[[chart]]
+path = "monitoring.burnRates.fast"
+
+[chart.schema]
+"$ref" = "#/$defs/burnRate"
+
+[[chart]]
+path = "monitoring.burnRates.fast.longWindow"
+value = "1h"
+
+[[chart]]
+path = "monitoring.burnRates.fast.shortWindow"
+value = "5m"
+
+[[chart]]
+path = "monitoring.burnRates.fast.factor"
+value = 14.4
+
+[[chart]]
+path = "monitoring.burnRates.fast.for"
+value = "2m"
+
+[[chart]]
+path = "monitoring.burnRates.slow"
+
+[chart.schema]
+"$ref" = "#/$defs/burnRate"
+
+[[chart]]
+path = "monitoring.burnRates.slow.longWindow"
+value = "6h"
+
+[[chart]]
+path = "monitoring.burnRates.slow.shortWindow"
+value = "30m"
+
+[[chart]]
+path = "monitoring.burnRates.slow.factor"
+value = 6
+
+[[chart]]
+path = "monitoring.burnRates.slow.for"
+value = "15m"
+
+[[chart]]
+path = "monitoring.alerts"
+lead = '''
+  # alerts: thresholds of the alerts that are not burn rates.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+required = ["queueAgeSeconds", "scoreRegressionPoints", "scoreRegressionMinScores"]
+
+[[chart]]
+path = "monitoring.alerts.queueAgeSeconds"
+lead = '''
+    # VMAFxQueueAging: how old, in seconds, a tenant's oldest pending job
+    # may get.
+'''
+value = 1800
+
+[chart.schema]
+type = "integer"
+minimum = 1
+description = "VMAFxQueueAging: how old, in seconds, a tenant's oldest pending job may get."
+
+[[chart]]
+path = "monitoring.alerts.scoreRegressionPoints"
+lead = '''
+    # VMAFxScoreRegression: the drop, in score points, of an hour's median
+    # below the median of the previous day's hourly medians.
+'''
+value = 5
+
+[chart.schema]
+type = "number"
+exclusiveMinimum = 0
+maximum = 100
+description = "VMAFxScoreRegression: the drop, in score points, of an hour's median below the median of the previous day's hourly medians."
+
+[[chart]]
+path = "monitoring.alerts.scoreRegressionMinScores"
+lead = '''
+    # VMAFxScoreRegression: the scores an hour needs to be compared.
+'''
+value = 20
+
+[chart.schema]
+type = "integer"
+minimum = 1
+description = "VMAFxScoreRegression: the scores an hour needs to be compared."
+
+[[chart]]
+path = "monitoring.cost"
+lead = '''
+  # cost: the prices of the VMAFx Usage and cost dashboard, the same for
+  # every backend. 0 is unset: its cost panels stay empty.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+required = ["perJobSecond", "perJob", "currency"]
+description = "Prices of the VMAFx Usage and cost dashboard, the same for every backend (Q-193). 0 is unset: its cost panels stay empty."
+
+[[chart]]
+path = "monitoring.cost.perJobSecond"
+lead = '''
+    # Price of one second a node spends on a job.
+'''
+value = 0
+
+[chart.schema]
+type = "number"
+minimum = 0
+description = "Price of one second a node spends on a job."
+
+[[chart]]
+path = "monitoring.cost.perJob"
+lead = '''
+    # Price of one completed or failed job; cancelled jobs are not charged.
+'''
+value = 0
+
+[chart.schema]
+type = "number"
+minimum = 0
+description = "Price of one completed or failed job; cancelled jobs are not charged."
+
+[[chart]]
+path = "monitoring.cost.currency"
+lead = '''
+    # ISO 4217 code shown with the costs, or empty.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+pattern = "^([A-Z]{3})?$"
+description = "ISO 4217 code shown with the costs, or empty."
+
+[[chart]]
+path = "pushgateway"
+lead = '''
+  # END obsgen monitoring settings
+
+# ---------------------------------------------------------------------------
+# Prometheus Pushgateway (for Job workloads)
+# Requires the prometheus-pushgateway dependency in Chart.yaml.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "pushgateway.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "storage"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Storage — how vmafx-node reads rclone-remote sources (ADR-0719, ADR-1526)
+# ---------------------------------------------------------------------------
+# A job's reference / distorted may be a local path, an http(s) URL or an
+# rclone remote (s3://bucket/key, remote:path, ...). mode picks how the node
+# reads remotes; it becomes VMAFX_STORAGE_MODE:
+#   http-serve  per-job `rclone serve http`, streamed into the scorer through
+#               pipes (nothing written to the node's disk). Needs no FUSE.
+#   mount       per-job `rclone mount` under mountRoot. Needs FUSE in the pod:
+#               set node.fuse (a FUSE device plugin's resource); the chart
+#               refuses mount without it.
+#   auto        mount when FUSE is usable, else http-serve; the node logs
+#               which one it chose.
+# Any other value is refused by the schema and by the node.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "storage.mode"
+value = "http-serve"
+quoted = true
+note = "http-serve | mount | auto"
+note_column = 23
+
+[chart.schema]
+type = "string"
+enum = ["http-serve", "mount", "auto"]
+description = "How vmafx-node reads rclone-remote sources (VMAFX_STORAGE_MODE, pkg/storage). http-serve streams them from a per-job rclone serve http into the scorer; mount reads them from a per-job rclone FUSE mount (needs FUSE in the pod); auto picks mount when FUSE is usable, else http-serve. Local paths and http(s) URLs need no rclone in any mode."
+
+[[chart]]
+path = "storage.mountRoot"
+value = ""
+note = "VMAFX_STORAGE_MOUNT_ROOT; empty = the node's temp dir"
+note_column = 23
+
+[chart.schema]
+type = "string"
+description = "Parent directory of mount mode's per-job mount points (VMAFX_STORAGE_MOUNT_ROOT). Empty: the node's temp dir."
+
+[[chart]]
+path = "storage.rclone"
+lead = '''
+                       # (node.ebpf.mountPrefix with the tracker on). Outside
+                       # /tmp the chart mounts an emptyDir there.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "storage.rclone.config"
+value = ""
+note = "rclone.conf contents (remotes + credentials), mounted"
+note_column = 23
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "node"
+lead = '''
+                       # at /etc/vmafx/rclone.conf; empty = no rclone config
+
+# ---------------------------------------------------------------------------
+# Node — vmafx-node worker pool (Deployment)
+# Enabled separately from the controller.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "node.enabled"
+lead = '''
+  # enabled controls whether the worker Deployment is created.
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "node.replicaCount"
+lead = '''
+
+  # replicaCount is the number of worker replicas.
+'''
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "node.strategy"
+lead = '''
+
+  # strategy controls the rolling-update behaviour of the node Deployment.
+  # maxUnavailable: 0 prevents GPU pod eviction before a replacement is ready;
+  # Kubernetes default (25%) would drop in-flight scoring jobs on rolling
+  # upgrades.  maxSurge: 1 allows one extra pod during the rollout so node
+  # capacity is never reduced below replicaCount.
+'''
+
+[chart.schema]
+description = "Rolling-update strategy for the node Deployment. Default: maxUnavailable:0, maxSurge:1 (zero-disruption, GPU-safe)."
+"$ref" = "k8s:io.k8s.api.apps.v1.DeploymentStrategy"
+
+[[chart]]
+path = "node.strategy.type"
+value = "RollingUpdate"
+
+[[chart]]
+path = "node.strategy.rollingUpdate"
+
+[[chart]]
+path = "node.strategy.rollingUpdate.maxSurge"
+value = 1
+
+[[chart]]
+path = "node.strategy.rollingUpdate.maxUnavailable"
+value = 0
+
+[[chart]]
+path = "node.grpcPort"
+lead = '''
+
+  # grpcPort is the port the vmafx-node gRPC server listens on.
+  # Must match VMAFX_GRPC_LISTEN (deploy sets :grpcPort).  The liveness and
+  # readiness probes use tcpSocket on this port — it is the only listener
+  # the node binary exposes.
+'''
+value = 50052
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+description = "gRPC listen port for the vmafx-node server. Must match VMAFX_GRPC_LISTEN env var (default 50052). Used for tcpSocket liveness/readiness probes and the node ClusterIP Service."
+
+[[chart]]
+path = "node.image"
+lead = '''
+
+  # Image overrides for the node binary. The defaults match the canonical
+  # repository and v-prefixed tag emitted by docker-publish-operator-node.yml.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "node.image.repository"
+value = "ghcr.io/vmafx/vmafx-node"
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "node.image.tag"
+value = ""
+note = "Defaults to v<Chart.AppVersion> when empty."
+note_column = 21
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "node.controllerAddr"
+lead = '''
+
+  # controllerAddr is the gRPC address (host:port) of the vmafx-controller the
+  # nodes register with and pull jobs from; it becomes VMAFX_CONTROLLER_ADDR.
+  # Empty: the chart's own controller (<fullname>-controller:<grpcPort>) when
+  # controller.enabled, else unset and the nodes serve direct VmafxScoring
+  # calls only. Use the controller's gRPC port, not its HTTP port. TLS and
+  # polling settings are the VMAFX_CONTROLLER_* variables
+  # (docs/server/node.md), set through `env`.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+description = "gRPC host:port of the vmafx-controller, rendered as VMAFX_CONTROLLER_ADDR. Empty: the chart's controller when controller.enabled, else the node stays standalone (direct VmafxScoring only)."
+
+[[chart]]
+path = "node.controllerToken"
+lead = '''
+
+  # controllerToken — Secret holding the node's bearer token for the
+  # controller (a token with vmafx:node), mounted read-only and
+  # passed as VMAFX_CONTROLLER_TOKEN_FILE (re-read on every call, so a
+  # rotated Secret applies without a restart). Needed when the controller
+  # verifies tokens.
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/tokenSecretSpec"
+
+[[chart]]
+path = "node.controllerToken.secretName"
+value = ""
+
+[[chart]]
+path = "node.controllerToken.key"
+value = "token"
+
+[[chart]]
+path = "node.metricsPort"
+lead = '''
+
+  # metricsPort is the Prometheus scrape port exposed by vmafx-node.
+  # Changing this value updates the node Deployment containerPort, the
+  # node-metrics Service port, and the NetworkPolicy allow rule together.
+  # The default (9090) matches the vmafx-node binary default.
+'''
+value = 9090
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+description = "Prometheus scrape port exposed by vmafx-node. Updates the Deployment containerPort, the node-metrics Service port, and the NetworkPolicy allow rule. Default: 9090."
+
+[[chart]]
+path = "node.resources"
+lead = '''
+
+  # resources overrides for the node pods.
+  # Falls back to .Values.resources when empty.
+'''
+value = {}
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "node.nodeSelector"
+lead = '''
+
+  # nodeSelector pins node pods to GPU-labelled nodes.
+  # Example (NVIDIA):
+  #   nvidia.com/gpu.present: "true"
+'''
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = { type = "string" }
+
+[[chart]]
+path = "node.tolerations"
+lead = '''
+
+  # tolerations for GPU taint (NVIDIA example):
+  #   - key: nvidia.com/gpu
+  #     operator: Exists
+  #     effect: NoSchedule
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.Toleration" }
+
+[[chart]]
+path = "node.volumes"
+lead = '''
+
+  # volumes / volumeMounts for corpus, output, model PVCs.
+'''
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.Volume" }
+
+[[chart]]
+path = "node.volumeMounts"
+value = []
+
+[chart.schema]
+type = "array"
+items = { "$ref" = "k8s:io.k8s.api.core.v1.VolumeMount" }
+
+[[chart]]
+path = "node.fuse"
+lead = '''
+
+  # fuse — FUSE in the node pods, which storage.mode "mount" needs (ADR-1593).
+  # The node image carries the setuid helper fusermount3 and the util-linux
+  # mount and umount it runs; the pod still needs the /dev/fuse device and the
+  # capabilities fusermount3 mounts with:
+  #   resourceName     the extended resource a FUSE device plugin advertises
+  #                    for /dev/fuse (squat/generic-device-plugin with its
+  #                    default domain: devic.es/fuse); one per pod. Required.
+  #   appArmorProfile  container AppArmor profile. The runtimes' default
+  #                    profile denies mount, so on AppArmor hosts set
+  #                    {type: Unconfined} or a Localhost profile that allows
+  #                    FUSE mounts. Empty: the runtime's default.
+  # The container keeps running as UID 65532 with no effective capabilities;
+  # its capability bounding set becomes SYS_ADMIN and DAC_READ_SEARCH and
+  # allowPrivilegeEscalation true, which only the setuid fusermount3 uses.
+  # Such a pod no longer meets the Pod Security "baseline" or "restricted"
+  # profile. storage.mode "mount" without fuse.enabled is refused.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "FUSE in the node pods for storage.mode mount (ADR-1593): a FUSE device plugin's extended resource, SYS_ADMIN and DAC_READ_SEARCH in the capability bounding set for the setuid fusermount3, and an optional AppArmor profile."
+
+[[chart]]
+path = "node.fuse.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "node.fuse.resourceName"
+value = ""
+
+[chart.schema]
+type = "string"
+description = "Extended resource a FUSE device plugin advertises for /dev/fuse (squat/generic-device-plugin default domain: devic.es/fuse). Required with enabled."
+
+[[chart]]
+path = "node.fuse.appArmorProfile"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Container AppArmor profile; the runtimes' default denies mount. Empty: the runtime default."
+
+[[chart]]
+path = "node.fuse.appArmorProfile.type"
+
+[chart.schema]
+type = "string"
+enum = ["RuntimeDefault", "Unconfined", "Localhost"]
+
+[[chart]]
+path = "node.fuse.appArmorProfile.localhostProfile"
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "node.ebpf"
+lead = '''
+
+  # ebpf — the eBPF descriptor tracker (VMAFX_EBPF_BYPASS, ADR-1539, ADR-1593;
+  # docs/development/ebpf-fuse-bypass.md). Needs storage.mode "mount" and
+  # fuse.enabled. A non-root container process has no effective capabilities,
+  # so the container runs as UID 0 with its capabilities dropped to BPF,
+  # PERFMON and SYS_ADMIN, and the host's /sys/kernel/tracing is mounted
+  # read-only (the loader finds the tracepoints there). mountPrefix is
+  # VMAFX_EBPF_MOUNT_PREFIX (absolute, at most 255 bytes); storage.mountRoot
+  # must lie under it and defaults to it.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "eBPF descriptor tracker (VMAFX_EBPF_BYPASS, ADR-1539, ADR-1593). Needs storage.mode mount and node.fuse.enabled; runs the container as UID 0 with BPF, PERFMON and SYS_ADMIN and mounts /sys/kernel/tracing read-only."
+
+[[chart]]
+path = "node.ebpf.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "node.ebpf.mountPrefix"
+value = "/rclone-mount/"
+
+[chart.schema]
+type = "string"
+pattern = "^/"
+maxLength = 255
+description = "VMAFX_EBPF_MOUNT_PREFIX: absolute path whose opens are recorded; storage.mountRoot must lie under it and defaults to it."
+
+[[chart]]
+path = "auth"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# Auth — multi-tenant JWT / OIDC gateway (ADR-0794, ADR-1518, ADR-1519)
+# ---------------------------------------------------------------------------
+# The auth gateway is part of vmafx-controller, which the chart deploys with
+# controller.enabled (ADR-1589). auth.enabled and controller.enabled go
+# together; the chart refuses one without the other, and refuses
+# image.repository naming a vmafx-controller image (the server workload no
+# longer receives the auth settings).
+#
+# Two ways to verify tokens:
+#   1. One identity provider for every tenant (auth.tenantSource ""): the
+#      controller trusts jwksEndpoint / issuer below and takes the tenant from
+#      each token's tenantClaim. Any tenant name the provider issues is
+#      accepted.
+#   2. A tenant registry (auth.tenantSource "kubernetes", implied when
+#      auth.tenants is not empty): the controller reads the VmafxTenant
+#      resources of the release namespace and accepts only their tenants, each
+#      with its own identity provider, suspension switch and role whitelist.
+#      The chart creates one VmafxTenant per auth.tenants entry and grants the
+#      controller's own service account (<serviceAccount>-controller, and no
+#      other account, ADR-1592) read access to VmafxTenants; resources
+#      applied with kubectl are read the same way. jwksEndpoint, issuer,
+#      audience, tenantClaim and rolesClaim below then only fill the fields an
+#      auth.tenants entry leaves out; they are not passed to the controller.
+#
+# For internal / dev deployments set auth.disabled: true (sets
+# VMAFX_AUTH_DISABLED=true: every request runs as tenant "dev" with
+# vmafx:admin and vmafx:node).
+#
+# Quick-start (single tenant, Auth0):
+#
+#   controller:
+#     enabled: true
+#   auth:
+#     enabled: true
+#     tenants:
+#       - tenantId: acme
+#         oidc:
+#           issuer: https://YOUR_DOMAIN.auth0.com/
+#           jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#           audience: https://vmafx.example.com/api
+#
+# See docs/server/auth.md for the full OIDC configuration guide.
+'''
+schema_order = ["enabled", "disabled", "jwksEndpoint", "issuer", "audience", "tenantClaim", "rolesClaim", "scoringRoots", "tenantSource", "tenants"]
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+description = "Multi-tenant JWT/OIDC gateway (ADR-0794). additionalProperties:true to accommodate per-tenant oidc and rbac sub-keys without exhaustive enumeration."
+
+[[chart]]
+path = "auth.enabled"
+lead = '''
+  # enabled — pass the auth settings below to the controller workload
+  # (controller.enabled; the two go together).
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "auth.disabled"
+lead = '''
+
+  # disabled — explicitly bypass auth even when enabled is true.
+  # Useful for dry-run or integration-test pipelines.  Never true in production.
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "auth.tenantSource"
+lead = '''
+
+  # tenantSource — "" (one identity provider, the fields below) or
+  # "kubernetes" (read VmafxTenant resources). auth.tenants not empty implies
+  # "kubernetes".
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+enum = ["", "kubernetes"]
+
+[[chart]]
+path = "auth.jwksEndpoint"
+lead = '''
+
+  # jwksEndpoint — JWKS URL of the single identity provider; with a tenant
+  # registry, the default of an auth.tenants entry without oidc.jwksEndpoint.
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "auth.issuer"
+lead = '''
+
+  # issuer — expected "iss" claim value (same rule as jwksEndpoint).
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "auth.audience"
+lead = '''
+
+  # audience — expected "aud" claim value (optional; same rule).
+'''
+value = ""
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "auth.tenantClaim"
+lead = '''
+
+  # tenantClaim — JWT claim field that holds the tenant identifier.
+  # Auth0: "org_id" | Keycloak: configured custom claim | Dex: "tid" (default).
+'''
+value = "tid"
+quoted = true
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "auth.rolesClaim"
+lead = '''
+
+  # rolesClaim — JWT claim field that holds the list of vmafx role strings.
+'''
+value = "vmafx_roles"
+quoted = true
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "auth.scoringRoots"
+lead = '''
+
+  # scoringRoots — the inputs callers may score when there is no tenant
+  # registry (VMAFX_SCORING_ROOTS, ADR-1577): absolute directories, http(s)
+  # URL prefixes or rclone remote prefixes; "{tenant}" becomes the caller's
+  # tenant ID. Empty: the controller refuses every input (deny by default).
+  # With a tenant registry, set scoring.roots on each auth.tenants entry
+  # instead; the chart refuses both.
+  #   scoringRoots: ["/media/{tenant}", "s3:media/{tenant}"]
+'''
+value = []
+
+[chart.schema]
+type = "array"
+maxItems = 32
+items = { type = "string", minLength = 1 }
+description = "Inputs callers may score without a tenant registry (VMAFX_SCORING_ROOTS, ADR-1577); {tenant} becomes the caller's tenant ID; empty refuses every input."
+
+[[chart]]
+path = "auth.tenants"
+lead = '''
+
+  # tenants — VmafxTenant resources to create in the release namespace. Each
+  # entry maps to one VmafxTenant (see the CRD for every field). Leave empty
+  # and set tenantSource: kubernetes to manage VmafxTenants out-of-band.
+'''
+value = []
+
+[chart.schema]
+type = "array"
+
+[[chart]]
+path = "podDisruptionBudget"
+lead = '''
+  # Example:
+  # tenants:
+  #   - tenantId: acme
+  #     enabled: true
+  #     oidc:
+  #       issuer: https://acme.auth0.com/
+  #       jwksEndpoint: https://acme.auth0.com/.well-known/jwks.json
+  #       audience: vmafx-api
+  #       tenantClaim: org_id
+  #       rolesClaim: vmafx_roles
+  #     rbac:
+  #       defaultRole: vmafx:reader
+  #       # vmafx:node: the role of this tenant's compute nodes (node API only).
+  #       allowedRoles: [vmafx:reader, vmafx:writer, vmafx:node]
+  #     # Inputs acme may score (ADR-1577); none means nothing is scored.
+  #     scoring:
+  #       roots: ["/media/acme", "s3:media/acme"]
+  #   - tenantId: rival-corp
+  #     oidc:
+  #       issuer: https://keycloak.rival-corp.example/realms/vmafx
+  #       jwksEndpoint: https://keycloak.rival-corp.example/realms/vmafx/protocol/openid-connect/certs
+
+# ---------------------------------------------------------------------------
+# PodDisruptionBudget
+# Prevents Kubernetes from evicting all pods simultaneously during voluntary
+# disruptions (node drains, cluster upgrades).
+# Recommended when replicaCount >= 2.  Disabled by default for single-replica
+# dev deployments where a PDB would block node-drain operations.
+# Set minAvailable: 1 or maxUnavailable: 1 (mutually exclusive).
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "PodDisruptionBudget prevents simultaneous eviction of all pods during voluntary disruptions (ADR-1058). Recommended when replicaCount >= 2."
+
+[[chart]]
+path = "podDisruptionBudget.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "podDisruptionBudget.minAvailable"
+
+[chart.schema]
+oneOf = [{ type = "integer", minimum = 0 }, { type = "string", pattern = "^[0-9]+%$" }]
+description = "Minimum number (or percentage) of pods that must remain available. Mutually exclusive with maxUnavailable."
+
+[[chart]]
+path = "podDisruptionBudget.maxUnavailable"
+lead = '''
+  # maxUnavailable: 1 allows exactly one voluntary disruption at a time
+  # (node drain, cluster upgrade) while keeping the rest of the replicas
+  # serving.  This is the correct default for both single-replica dev
+  # deployments and multi-replica production — minAvailable: 1 with a
+  # single-replica Deployment would permanently block node drain operations
+  # (Kubernetes cannot evict the only replica and still satisfy minAvailable).
+  # Switch to minAvailable when you need a hard lower-bound on serving capacity
+  # (e.g., minAvailable: 2 with replicaCount: 3).
+'''
+value = 1
+
+[chart.schema]
+oneOf = [{ type = "integer", minimum = 0 }, { type = "string", pattern = "^[0-9]+%$" }]
+description = "Maximum number (or percentage) of pods that may be unavailable. Mutually exclusive with minAvailable."
+
+[[chart]]
+path = "otelCollector"
+lead = '''
+  # minAvailable: 1  # Uncomment to switch to minAvailable strategy (requires replicaCount >= 2).
+
+# ---------------------------------------------------------------------------
+# NOTES.txt / post-install
+# ---------------------------------------------------------------------------
+# No user-facing knobs here; see templates/NOTES.txt.
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry collector sidecar (ADR-0782)
+# When enabled, an otel-collector sidecar is injected into the controller and
+# server pods.  It receives OTLP/gRPC on :4317 from the process and forwards
+# to the configured exporters (Jaeger, Tempo, OTLP gateway, ...).
+#
+# Disabled by default; enable with --set otelCollector.enabled=true.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+description = "OpenTelemetry collector sidecar (ADR-0782). additionalProperties:true to allow arbitrary receiver/exporter config blocks."
+
+[[chart]]
+path = "otelCollector.enabled"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "otelCollector.image"
+lead = '''
+
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/imageSpec"
+
+[[chart]]
+path = "otelCollector.image.repository"
+value = "otel/opentelemetry-collector-contrib"
+
+[[chart]]
+path = "otelCollector.image.tag"
+value = "0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6"
+quoted = true
+
+[[chart]]
+path = "otelCollector.image.pullPolicy"
+value = "IfNotPresent"
+
+[[chart]]
+path = "otelCollector.otlpGRPCPort"
+lead = '''
+
+  # OTLP gRPC listen address inside the pod.
+'''
+value = 4317
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+
+[[chart]]
+path = "otelCollector.config"
+lead = '''
+
+  # Collector configuration — override to add exporters.
+  # The default ships traces and metrics to stdout for smoke-testing.
+'''
+value = "receivers:\n  otlp:\n    protocols:\n      grpc:\n        endpoint: \"0.0.0.0:4317\"\n\nprocessors:\n  batch:\n    timeout: 10s\n    send_batch_size: 1024\n\nexporters:\n  debug:\n    verbosity: normal\n\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [batch]\n      exporters: [debug]\n    metrics:\n      receivers: [otlp]\n      processors: [batch]\n      exporters: [debug]\n"
+literal = true
+
+[chart.schema]
+type = "string"
+
+[[chart]]
+path = "otelCollector.resources"
+lead = '''
+
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "otelCollector.resources.limits"
+
+[[chart]]
+path = "otelCollector.resources.limits.cpu"
+value = "200m"
+quoted = true
+
+[[chart]]
+path = "otelCollector.resources.limits.memory"
+value = "128Mi"
+
+[[chart]]
+path = "otelCollector.resources.requests"
+
+[[chart]]
+path = "otelCollector.resources.requests.cpu"
+value = "50m"
+quoted = true
+
+[[chart]]
+path = "otelCollector.resources.requests.memory"
+value = "32Mi"

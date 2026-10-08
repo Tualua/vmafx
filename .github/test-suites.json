@@ -128,7 +128,8 @@
         "scripts/ci/tests/test_helm_node_fuse_ebpf.py",
         "scripts/ci/tests/test_helm_observability.py",
         "scripts/ci/tests/test_helm_operator_rbac.py",
-        "scripts/ci/tests/test_helm_service_accounts.py"
+        "scripts/ci/tests/test_helm_service_accounts.py",
+        "scripts/ci/tests/test_helm_values_schema.py"
       ],
       "checks": ["helm lint + template"],
       "not_local": "needs the pinned, checksum-verified helm the helm lint + template job installs",

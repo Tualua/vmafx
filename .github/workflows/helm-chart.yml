@@ -151,6 +151,12 @@ jobs:
       - name: Operator RBAC covers the generated role
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_operator_rbac.py' -v
 
+      # ADR-2350 D13: the values the chart copies into pod specs have the
+      # Kubernetes 1.26 types; planted invalid values are refused, valid ones
+      # render. A full clone also renders them with the schema before the types.
+      - name: Values schema with Kubernetes types
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_values_schema.py' -v
+
       # ADR-1593: node.fuse (FUSE device resource, the setuid helper's
       # capability bounding set) and node.ebpf (tracker env, UID 0 with BPF /
       # PERFMON / SYS_ADMIN, tracefs), and the combinations the chart refuses.

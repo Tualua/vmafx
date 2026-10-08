@@ -13,9 +13,10 @@ A second definition, `api/vmafx-platform.toml`, describes the gRPC services and
 messages of the controller and the scoring server, and the Kubernetes custom
 resources of the platform
 ([ADR-2350](../adr/2350-cloud-native-platform.md) D13); the same generator
-writes their protobuf files and Go types
+writes their protobuf files, Go types and the Helm chart's values and schema
 ([Platform definition](#platform-definition),
-[Kubernetes resources](#kubernetes-resources)).
+[Kubernetes resources](#kubernetes-resources),
+[Helm chart values](#helm-chart-values)).
 
 ## Change the API
 
@@ -137,6 +138,7 @@ its C output.
 | `pkg/scoreopts/options.gen.json`, `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json` | MCP tool input schemas, server-side options, argument-vector spec, command-line flags, library defaults (one text, two packages) |
 | `proto/vmafx/v1/vmafx_api.proto` | `ScoreOptions` and the messages of structs that name `proto` (`Provenance`) |
 | `api/vmafx/v1/groupversion_info.go`, `api/vmafx/v1/<kind>_types.go` | From `api/vmafx-platform.toml`: the Go types of the custom resources with their kubebuilder markers ([Kubernetes resources](#kubernetes-resources)) |
+| `deploy/helm/vmafx/values.yaml`, `deploy/helm/vmafx/values.schema.json` | From `api/vmafx-platform.toml`: the chart's default values with their comments, and their JSON schema ([Helm chart values](#helm-chart-values)) |
 | `api/openapi/components.gen.yaml` | The same messages as OpenAPI 3.0 schemas; also spliced into `api/openapi/vmafx-server-v1.yaml` |
 | `ffmpeg-patches/src/vf_vmafx_options.h` | The `vmafx` filter's context fields, AVOption table and value-name lists |
 | Regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/mcp/tools.md`, `docs/server/api-contract.md` | Option tables between `BEGIN GENERATED` / `END GENERATED` markers |
@@ -352,6 +354,51 @@ or a default is not, and needs a new version.
    chart's `deploy/helm/vmafx/templates/operator-rbac.yaml` must then grant it
    too, which `scripts/ci/tests/test_helm_operator_rbac.py` checks.
 
+### Helm chart values
+
+The same file holds the chart's values: one `[[chart]]` entry per key of
+`deploy/helm/vmafx/values.yaml`, in the order of that file. The generator
+writes `values.yaml` and `values.schema.json` from them; neither is edited by
+hand.
+
+| Key | What it holds |
+| --- | --- |
+| `path` | The dotted key, such as `controller.store.backend`; a key that contains a dot is written in double quotes (`matchLabels."kubernetes.io/metadata.name"`) |
+| `value` | The default. Absent for a mapping whose keys follow as their own entries, and for a key only the schema has |
+| `lead` | The comment and blank lines written above the key, verbatim with their indentation |
+| `note`, `note_column` | A comment on the key's line and the column of its `#`; without a column, two spaces after the value |
+| `quoted` | Write a string in double quotes although YAML would read it plain; strings that need quotes get them anyway |
+| `literal` | Write a multi-line string as a `\|` block |
+| `[chart.schema]` | The key's JSON schema, every keyword but `properties`, which the generator builds from the entries below the key |
+| `schema_order` | The order of a mapping's schema properties, where it differs from the order of `values.yaml` |
+
+`[chart_root]` holds the schema's root keywords (`[chart_root.schema]`), the
+order of the top-level properties and the comment lines after the last key
+(`values_tail`); `[[chart_defs]]` are the schema's own `$defs`. The schema file
+has one layout: an object or array that fits on its line within 100 columns
+is written on one line, any other is expanded.
+
+A `$ref` of `k8s:<name>` refers to a Kubernetes type, such as
+`k8s:io.k8s.api.core.v1.Toleration`, as the chart's minimum supported
+Kubernetes minor defines it. `build-config.env` pins that release
+(`K8S_SCHEMA_VERSION`, the last patch of the minor the
+[deployment guide](k8s-deployment.md#prerequisites) names) and the SHA-256 of
+each OpenAPI v3 file of its tag. `scripts/codegen/k8s_openapi.py --write`
+downloads them, checks the digests, and writes every type the definition names,
+and every type those reach, to `api/kubernetes/openapi-subset.json`, without
+descriptions and `x-kubernetes-*` extensions. The generator copies the types a
+schema reaches into its `$defs`. Kubernetes accepts fields it does not know in
+these types, so the schema does too; a known field must have its type, and a
+required field must be there.
+
+To change a value or its schema:
+
+1. Edit the entry in `api/vmafx-platform.toml`. A new key gets a new entry at
+   its place in the file.
+2. If the entry names a Kubernetes type the subset does not hold yet, run
+   `python3 scripts/codegen/k8s_openapi.py --write`.
+3. Regenerate: `python3 scripts/codegen/vmafx-api.py --write`.
+
 ## Gates
 
 | Gate | Fails when | Shown failing by |
@@ -374,6 +421,9 @@ or a default is not, and needs a new version.
 | `test_crd_generated_current` (Meson, `fast`) | `zz_generated.deepcopy.go`, a CRD under `deploy/helm/vmafx/crds` or `config/rbac/role.yaml` differs from what controller-gen writes, or a generated file is missing or left over; skipped (exit 77, reason printed) without Go | A hand edit of a CRD, an extra and a missing file, in `scripts/codegen/tests/test_crd_generate.py` |
 | `test_crd_compat` (Meson, `fast`) | A generated CRD narrows the one at the merge base with `origin/master` (see [Kubernetes resources](#kubernetes-resources)); skipped (exit 77, reason printed) without Go, git or that ref | Every narrowing planted in `test_crd_generate.py`, and `max_items = 16` for the tenant roots in the definition |
 | `test_helm_operator_rbac.py` (Helm Chart workflow) | The chart does not bind the operator's service account to every rule of `config/rbac/role.yaml` | A chart without the lease rule, and a marker for a resource the chart does not grant |
+| Chart validation (every run) | A path twice or below a missing parent, a key with a value above keys with values, an entry with neither a value nor a schema, a `lead` with a non-comment line, `quoted` or `literal` on a non-string, a `note` without a value, `properties` written by hand, a `$ref` that is neither a `chart_defs` name nor `k8s:<type>`, a `schema_order` that is not a permutation | `scripts/codegen/tests/test_vmafx_platform_chart.py` |
+| `test_k8s_openapi_subset_current` (Meson, `fast`) | `api/kubernetes/openapi-subset.json` differs from the types the definition reaches in the pinned release, or a downloaded file has another SHA-256; skipped (exit 77, reason printed) when the files cannot be downloaded | A stale subset and a wrong digest in `scripts/codegen/tests/test_k8s_openapi.py` |
+| `test_helm_values_schema.py` (Helm Chart workflow) | The chart renders a value Kubernetes 1.26 refuses in a Kubernetes-typed key, or refuses a valid one | 14 planted values (a toleration with `tolerationSeconds: "60"`, a spread constraint without `topologyKey`, a volume without a name, ...), each accepted by the schema before the Kubernetes types |
 
 The compiler, `clang-format` and linker cases of the generator tests skip,
 with the reason, when the tool is not installed.

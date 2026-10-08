@@ -208,7 +208,7 @@ licences of exactly the files the package ships
 | `vmafx-sys` crate | `bindings/rust/vmafx-sys/Cargo.toml` (inherits the workspace's) | `license` | `EUPL-1.2` |
 | `vmafx` crate | `bindings/rust/vmafx/Cargo.toml` | `license` | `EUPL-1.2` |
 | `vmafx-tad` crate (not published) | `core/src/feature/rust/tad/Cargo.toml` | `license` | `EUPL-1.2 AND BSD-2-Clause-Patent` (it ships the root `README.md`, BSD-2-Clause-Patent in `REUSE.toml`) |
-| Helm chart `vmafx` | `deploy/helm/vmafx/Chart.yaml` | `artifacthub.io/license` | `EUPL-1.2` |
+| Helm chart `vmafx` | `deploy/helm/vmafx/Chart.yaml` | `artifacthub.io/license` | `EUPL-1.2 AND Apache-2.0` (its `values.schema.json` embeds Kubernetes type schemas, Apache-2.0; the chart ships `THIRD-PARTY-NOTICES.txt`, [ADR-2673](adr/2673-chart-licence-kubernetes-schemas.md)) |
 | Its Prometheus Pushgateway subchart | `charts/prometheus-pushgateway-*.tgz` | its own `Chart.yaml` | `Apache-2.0` |
 
 A crate's files are what `cargo package --list` puts into it; a chart's are its

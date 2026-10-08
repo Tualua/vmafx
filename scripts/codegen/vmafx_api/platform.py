@@ -14,19 +14,22 @@ derived, and only grow within a v1 package.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Hashable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import tomllib
 
+from .chart import Chart, parse_chart
 from .entries import Entry, need, where_of
 from .kube import Kube, parse_kube
 from .model import Api, DefinitionError
 
 DEFINITION = Path("api/vmafx-platform.toml")
+KUBERNETES_SUBSET = Path("api/kubernetes/openapi-subset.json")
 PROTO_ROOT = "proto"
 FORMAT_VERSION = 1
 SCALARS = frozenset(
@@ -138,6 +141,8 @@ class Platform:
     services: tuple[Service, ...]
     external: tuple[External, ...]
     kube: Kube
+    chart: Chart | None = None
+    kubernetes: dict[str, Any] = field(default_factory=dict)
 
     def file(self, name: str) -> ProtoFile:
         return next(f for f in self.files if f.name == name)
@@ -276,8 +281,13 @@ def external_messages(
     return tuple(External(n, import_path, package, go_package) for n in sorted(names))
 
 
-def parse(data: dict[str, Any], external: tuple[External, ...]) -> Platform:
-    """A validated Platform from the definition's TOML tables."""
+def parse(
+    data: dict[str, Any],
+    external: tuple[External, ...],
+    kubernetes: dict[str, Any] | None = None,
+) -> Platform:
+    """A validated Platform from the definition's TOML tables; `kubernetes` is
+    the `schemas` table of api/kubernetes/openapi-subset.json."""
     head = need(data, "platform", "platform definition")
     if need(head, "version", "[platform]") != FORMAT_VERSION:
         raise DefinitionError(f"[platform] version must be {FORMAT_VERSION}")
@@ -288,6 +298,8 @@ def parse(data: dict[str, Any], external: tuple[External, ...]) -> Platform:
         services=_services(data.get("services", [])),
         external=external,
         kube=parse_kube(data),
+        chart=parse_chart(data),
+        kubernetes=dict(kubernetes or {}),
     )
     validate_platform(platform)
     kube_names = {e.name for e in platform.kube.enums} | {m.name for m in platform.kube.messages}
@@ -299,8 +311,14 @@ def parse(data: dict[str, Any], external: tuple[External, ...]) -> Platform:
 
 
 def load_platform(path: Path, external: tuple[External, ...]) -> Platform:
+    """The definition at `path`, with the Kubernetes subset beside it when present."""
     with path.open("rb") as fh:
-        return parse(tomllib.load(fh), external)
+        data = tomllib.load(fh)
+    subset = path.parent / KUBERNETES_SUBSET.relative_to(DEFINITION.parent)
+    kubernetes = None
+    if subset.exists():
+        kubernetes = json.loads(subset.read_text(encoding="utf-8"))["schemas"]
+    return parse(data, external, kubernetes)
 
 
 # ---------------------------------------------------------------------------

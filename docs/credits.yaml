@@ -1328,6 +1328,19 @@ entries:
   paths:
   - go.mod
   note: Go module k8s.io/api.
+- id: kubernetes-openapi
+  name: Kubernetes OpenAPI v3 specification
+  url: https://github.com/kubernetes/kubernetes
+  kind: code
+  relation: vendored
+  license: Apache-2.0
+  paths:
+  - deploy/helm/vmafx/values.schema.json
+  - deploy/helm/vmafx/THIRD-PARTY-NOTICES.txt
+  - api/kubernetes/openapi-subset.json
+  - scripts/codegen/k8s_openapi.py
+  - build-config.env
+  note: Type schemas of the Helm chart's values schema, from the release build-config.env pins (K8S_SCHEMA_VERSION); attributed in the chart's THIRD-PARTY-NOTICES.txt (ADR-2350 D13, ADR-2673).
 - id: go-apimachinery
   name: apimachinery (Go)
   url: https://github.com/kubernetes/apimachinery
