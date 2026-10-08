@@ -8,6 +8,28 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Helm controller on PostgreSQL and its failover E2E case (2026-10-07)
+
+`rc4/api-wp17-chart`, [ADR-2350](adr/2350-cloud-native-platform.md). The
+controller Deployment takes its replica count, update strategy, volume and
+store environment from the `_helpers.tpl` helpers `vmafx.controllerStoreBackend`,
+`vmafx.controllerStoreEnv`, `vmafx.controllerDatabaseDSN` and
+`vmafx.controllerTopologySpread`; a sync that touches `controller.yaml`,
+`pdb.yaml` or `networkpolicy.yaml` keeps them, and keeps the SQLite store at
+one replica. `controller.store.*` holds one key per setting so the generator
+of the values and schema (ADR-2350 work package 4) reproduces them unchanged.
+The E2E case `02-controller-ha` moves together with
+`.github/workflows/e2e-k8s.yml`, `test/e2e/kind-cluster.sh` and
+`scripts/ci/test_e2e_runtime_contract.py`. no upstream file.
+
+## Observability: SLO report, usage and cost, capacity (2026-10-08)
+
+`rc4/obs-6-slo-cost-capacity`, [ADR-2349](adr/2349-observability-package.md), #2430. Fork-only. The rule file, the chart's
+PrometheusRule template and values block, and the three dashboards are generated (`go run ./tools/obsgen -write`): regenerate, never
+hand-merge. The settings series (`vmafx:slo_objective`, `vmafx:slo_events:rate5m`, `vmafx:slo_bad_events:rate5m`,
+`vmafx:price_job_second`, `vmafx:price_job`) keep `job` and `instance` labels, because dashboard-linter requires both matchers on
+every query; a price rule keeps only a positive price.
+
 ## libvmaf compat library on libvmafx: engine names, split library targets
 
 `rc4/api-wp6-compat`, [ADR-1852](adr/1852-vmafx-api-redesign.md) decision D3,

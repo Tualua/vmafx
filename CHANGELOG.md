@@ -172,6 +172,22 @@
   `docs/development/dco.md` and ADR-2462.
 
 
+- **The Helm chart runs vmafx-controller as several replicas on PostgreSQL
+  ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).**
+  `controller.store.backend: postgres` with `controller.replicas` renders a
+  rolling-update controller Deployment without a volume, a CloudNativePG
+  `Cluster` (`postgresql.mode: cnpg`, the operator is a prerequisite) or the
+  connection URI of an external database from a Secret, and a migration Job
+  that runs `vmafx-controller migrate` once per controller image. Several
+  replicas bring a PodDisruptionBudget and a spread across nodes, and
+  `networkPolicy.enabled` opens the database to the controller. The SQLite
+  store stays the default and one replica; the chart refuses more. A new E2E
+  case kills a controller replica and the node of a running job mid-job on
+  kind and checks that every job is completed exactly once
+  ([integration tests](docs/k8s/integration-tests.md#controller-failover-case),
+  [job store and replicas](docs/development/k8s-deployment.md#controller-store)).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -263,6 +279,22 @@
   five of whose seven queries named series nothing emits, and a test fails
   any shipped panel that queries a series nothing emits. See
   [observability](docs/development/observability.md#metrics).
+
+
+- **SLO report, usage and cost, and capacity dashboards (RC4, ADR-2349,
+  #2430).** `VMAFx SLO report` shows each SLO's compliance, objective, error
+  budget left and burn rate over its time range (30 days by default), from
+  the objectives the rules record (`vmafx:slo_objective`).
+  `VMAFx Usage and cost` counts per tenant the finished jobs, their run time
+  and the scores, and prices them at `monitoring.cost.perJobSecond` (the run
+  time of every finished job) and `monitoring.cost.perJob` (completed and
+  failed jobs; cancelled jobs are not charged), the same for every backend,
+  in `monitoring.cost.currency`; an unset price leaves its cost panels empty.
+  `VMAFx Capacity` sets the nodes' measured capacity against the demand, with
+  the headroom, the demand's growth and linear forecasts of the queue and the
+  demand. The Helm chart ships them like the other dashboards; the Compose
+  smoke test checks them. See
+  [observability](docs/development/observability.md#slo-report).
 
 
 - **Rust integer ADM extractor (`adm_rust`)**: builds configured with
@@ -804,6 +836,13 @@
 
 
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
+
+
+- **Container images build again.** Every image that builds libvmaf stopped
+  at its licence scan because two headers the build generates
+  (`vmafx_build_info.h`, `vmafx_build_commit.h`) had no entry in the licence
+  manifest. Both are listed now, and a test fails when a new generated header
+  lacks one.
 
 
 - Build: libvmaf compiles on macOS again. `feature_collector.h` included C++ standard headers
