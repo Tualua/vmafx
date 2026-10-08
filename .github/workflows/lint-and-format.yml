@@ -847,8 +847,10 @@ jobs:
         with:
           persist-credentials: false
           # The master push checks the render, whose order is read from
-          # history (ADR-2197); a pull request does not.
-          fetch-depth: ${{ github.event_name == 'push' && 0 || 1 }}
+          # history (ADR-2197); a pull request does not. Not
+          # `push && 0 || 1`: 0 is falsy in an expression, so that form
+          # always gave 1 and the render check found a shallow history.
+          fetch-depth: ${{ github.event_name != 'push' && 1 || 0 }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"

@@ -269,7 +269,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # A leg the tier does not owe takes a shallow checkout and stops there.
-          fetch-depth: ${{ steps.leg.outputs.run == 'true' && 0 || 1 }}
+          # A leg that runs needs the tags: `git describe` names the version
+          # `vmaf -v` prints (core/include/meson.build). Not `run && 0 || 1`:
+          # 0 is falsy in an expression, so that form always gave 1.
+          fetch-depth: ${{ steps.leg.outputs.run != 'true' && 1 || 0 }}
 
       # ---------- ccache persistence (Research-0089 §3.1) ----------
       # Linux + macOS build legs all wrap their host compiler in `ccache`

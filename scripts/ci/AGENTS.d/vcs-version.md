@@ -38,6 +38,15 @@ whether checkout could reach tag.
 `.github/workflows/build.yml` must therefore keep `fetch-depth: 0` on its
 checkout: `git describe --long` needs both tag objects and commit
 distance to them; `actions/checkout` default of 1 supplies neither.
+Same for every leg of `libvmaf-build-matrix.yml` that runs:
+`python/test/vmafx_cli_test.py::test_vmaf_version_unaffected` wants
+`vmaf -v` to start with `v`, and tagless fallback `1.0.0-rc.3` does not.
+Never spell conditional depth `cond && 0 || 1`: 0 falsy in expression,
+so it always yields 1 (Ubuntu tox legs and Docs render check red from
+PRs #2390 / #2421 until fixed). Write `!cond && 1 || 0`;
+`scripts/ci/tests/test_workflow_falsy_ternary.py` refuses the falsy form and
+evaluates every expression-valued `fetch-depth` with `ci_expressions.py`; new
+one needs row in its `FETCH_DEPTH_CASES`.
 
 two tester publishing workflows (`macos-tester-bundle.yml`,
 `docker-publish-tester.yml`) take version of published file and image
