@@ -48,13 +48,6 @@
 #endif
 #endif
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#ifndef M_E
-#define M_E 2.71828182845904523536
-#endif
-
 #define SI_EIGENVALUE_EPS SPEED_INTERNAL_EIGENVALUE_EPS
 #define SI_MAX(x, y) ((x) > (y) ? (x) : (y))
 

@@ -109,10 +109,6 @@ constexpr int32_t dwt_lo[4] = {15826, 27411, 7345, -4240};
 constexpr int32_t dwt_hi[4] = {-4240, -7345, 27411, -15826};
 constexpr int32_t dwt_lo_sum = 46342;
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 constexpr int32_t ONE_BY_15 = 8738;
 constexpr int32_t I4_ONE_BY_15 = 286331153;
 

@@ -79,6 +79,15 @@ if host_machine.system() == 'linux'
 elif host_machine.system() == 'darwin'
     test_args += '-D_DARWIN_C_SOURCE'
     add_project_arguments('-D_DARWIN_C_SOURCE', language: ['c', 'cpp'])
+elif host_machine.system() == 'windows'
+    # M_PI, M_E and the other math constants (Netflix/vmaf 4e150067b). The MSVC
+    # C runtime defines them only under _USE_MATH_DEFINES, and MinGW-w64's
+    # <math.h> hides them under __STRICT_ANSI__ (set by -std=c23) unless it is
+    # defined. On the command line it precedes every <math.h> include, so no
+    # translation unit keeps a copy of the constants. Linux takes them from
+    # _GNU_SOURCE, macOS from _DARWIN_C_SOURCE.
+    test_args += '-D_USE_MATH_DEFINES'
+    add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])
 endif
 
 # Header checks

@@ -5,7 +5,8 @@
 # Tests for the msvcism stage of scripts/dev/preflight.sh in a throwaway repo:
 # a tree with no hostile construct passes, and each planted construct (a
 # `nullptr` in a C file, a parenthesised __attribute__, a POSIX-only header
-# outside a platform conditional in a source the Windows build compiles) makes
+# outside a platform conditional in a source the Windows build compiles, an
+# M_PI without the project-wide _USE_MATH_DEFINES of core/meson.build) makes
 # the stage fail with the finding printed; a guarded include and a source a
 # meson.build keeps off Windows pass, and a POSIX-header scan that cannot run
 # fails the stage. Run with `set -e`, a probe that finds nothing must
@@ -81,6 +82,54 @@ out="$(run_stage)" || rc=$?
 case "$out" in *"posix_tool.c:1: <sys/socket.h>"*) ;; *) fail "meson-built finding not printed: $out" ;; esac
 rm meson.build posix_tool.c
 echo "ok   a meson.build gate off Windows exempts a source, an ungated target does not"
+
+# M_PI needs _USE_MATH_DEFINES on Windows. Without the project-wide define in
+# core/meson.build an unguarded use fails; with it the use passes; the define
+# only in test_args, or commented out, is not project-wide and still fails.
+printf '#include <math.h>\ndouble half_turn(void) { return M_PI; }\n' >uses_pi.c
+mkdir -p core
+rc=0
+out="$(run_stage)" || rc=$?
+[ "$rc" -eq 1 ] || fail "M_PI without any define: expected rc=1, got $rc: $out"
+case "$out" in *"M_* math macro without a _USE_MATH_DEFINES define"*"uses_pi.c:2:"*) ;;
+*) fail "M_PI finding not printed: $out" ;; esac
+echo "ok   an unguarded M_PI without the project-wide define fails the stage"
+
+cat >core/meson.build <<'EOF_MESON'
+if host_machine.system() == 'windows'
+    test_args += '-D_USE_MATH_DEFINES'
+    add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])
+endif
+EOF_MESON
+rc=0
+out="$(run_stage)" || rc=$?
+[ "$rc" -eq 0 ] || fail "M_PI with the project-wide define: expected rc=0, got $rc: $out"
+echo "ok   M_PI passes while core/meson.build defines _USE_MATH_DEFINES project-wide"
+
+for planted in "    test_args += '-D_USE_MATH_DEFINES'" \
+  "    # add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])" \
+  "    add_project_arguments('-D_USE_MATH_DEFINES', language: ['cpp'])"; do
+  printf "if host_machine.system() == 'windows'\n%s\nendif\n" "$planted" >core/meson.build
+  rc=0
+  out="$(run_stage)" || rc=$?
+  [ "$rc" -eq 1 ] || fail "planted '$planted': expected rc=1, got $rc: $out"
+done
+rm -r core uses_pi.c
+echo "ok   a define in test_args only, commented out or C++ only does not count"
+
+# Many findings: a probe trimmed with `head` closed the pipe while the scan
+# still wrote, the scan died of SIGPIPE, and under pipefail the `|| x=""`
+# fallback threw the findings away. They must fail the stage.
+for i in $(seq 1 60); do
+  printf '#include <math.h>\ndouble f%s(void) { return M_PI; }\ndouble g%s(void) { return M_PI; }\n' \
+    "$i" "$i" >"many_pi_$i.c"
+done
+rc=0
+out="$(run_stage)" || rc=$?
+[ "$rc" -eq 1 ] || fail "60 unguarded M_PI files: expected rc=1, got $rc: $out"
+case "$out" in *"M_* math macro without a _USE_MATH_DEFINES define"*) ;; *) fail "many-findings case not printed: $out" ;; esac
+rm many_pi_*.c
+echo "ok   sixty files of findings still fail the stage"
 
 # A scanner that cannot run must fail the stage, not pass it for want of output.
 mkdir -p fakebin

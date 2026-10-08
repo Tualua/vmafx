@@ -48,14 +48,6 @@ SOFTWARE.
 #include <stddef.h>
 #include <string.h>
 
-/* MinGW <math.h> does not expose M_PI unless _USE_MATH_DEFINES is set
- * before the include, and a recompile on that toolchain fails with
- * "M_PI undeclared." Provide the POSIX definition as a fallback so the
- * file compiles cleanly on MinGW, MSVC, and glibc/musl alike. */
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"

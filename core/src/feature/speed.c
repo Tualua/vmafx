@@ -31,13 +31,6 @@
 #include <stddef.h>
 #include <string.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#ifndef M_E
-#define M_E 2.71828182845904523536
-#endif
-
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"

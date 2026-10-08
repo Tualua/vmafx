@@ -84,13 +84,6 @@
     "this C library is not glibc; Netflix's values were measured with glibc 2.44's log2()"
 #endif
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#ifndef M_E
-#define M_E 2.71828182845904523536
-#endif
-
 #ifndef SPEED_TESTDATA_DIR
 #define SPEED_TESTDATA_DIR "testdata"
 #endif

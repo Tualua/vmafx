@@ -24,13 +24,6 @@
 #ifndef BARTEN_CSF_TOOLS_H_
 #define BARTEN_CSF_TOOLS_H_
 
-/* MinGW's <math.h> does not expose M_PI unless _USE_MATH_DEFINES is set
- * before the include; provide a fallback that mirrors the convention used
- * in adm_tools.h, integer_adm.h, ciede.c, etc. */
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 static float linear_interpolate(float left_position, float left_value, float right_position,
                                 float right_value, float sample_position)
 {

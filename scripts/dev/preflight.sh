@@ -205,7 +205,7 @@ if want msvcism; then
   msvc_fail=0
   check_pattern() {
     local pat="$1" why="$2" hits
-    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | head -5) || hits="" # grep / xargs exit non-zero when nothing matches
+    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | awk 'NR <= 5') || hits="" # grep / xargs exit non-zero when nothing matches
     if [ -n "$hits" ]; then
       printf '     %s\n' "$why"
       printf '%s\n' "$hits" | sed 's/^/       /'
@@ -228,7 +228,7 @@ if want msvcism; then
   cu_designated=$(changed_cuda | while read -r f; do
     grep -nE '(\{|,)[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=|^[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*(,|\{)[[:space:]]*$' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -5) || cu_designated=""
+  done | awk 'NR <= 5') || cu_designated=""
   if [ -n "$cu_designated" ]; then
     printf '     %s\n' 'designated initializer in CUDA device code — nvcc/MSVC "expected an expression"'
     printf '%s\n' "$cu_designated" | sed 's/^/       /'
@@ -243,7 +243,7 @@ if want msvcism; then
   c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
     grep -nE '\bnullptr\b' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -60) || c_nullptr=""
+  done | awk 'NR <= 60') || c_nullptr=""
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'
@@ -260,7 +260,7 @@ if want msvcism; then
     grep -nE 'numeric_limits<[^>]+>::(max|min)\(\)' "$f" 2>/dev/null |
       grep -vE '\(std::numeric_limits<[^>]+>::(max|min)\)\(\)' |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -60) || sycl_minmax=""
+  done | awk 'NR <= 60') || sycl_minmax=""
   if [ -n "$sycl_minmax" ]; then
     printf '     %s\n' 'numeric_limits<T>::max() / min() in a SYCL source — <windows.h> macro clash; write (std::numeric_limits<T>::max)()'
     printf '%s\n' "$sycl_minmax" | sed 's/^/       /'
@@ -283,7 +283,7 @@ if want msvcism; then
   fi
   py_keys=$(printf '%s\n' "$py_tests" | grep -v '^$' | while read -r f; do
     grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|"
-  done | head -60) || py_keys=""
+  done | awk 'NR <= 60') || py_keys=""
   if [ -n "$py_keys" ]; then
     printf '     %s\n' 'dictionary keyed by str(path.relative_to(...)) in a core/test Python test — backslashes on Windows; use .as_posix()'
     printf '%s\n' "$py_keys" | sed 's/^/       /'
@@ -300,8 +300,8 @@ if want msvcism; then
   msl_reserved='(half|float2|float3|float4|int2|int3|int4|uint2|uint3|uint4|bool2|bool3|bool4|sampler)'
   msl_hits=$(changed_metal | while read -r f; do
     grep -nE "\b(ulong|uint|int|float|bool|long|short|auto|char) +$msl_reserved\b" "$f" 2>/dev/null |
-      head -2 | sed "s|^|$f:|"
-  done | head -5) || msl_hits=""
+      awk 'NR <= 2' | sed "s|^|$f:|"
+  done | awk 'NR <= 5') || msl_hits=""
   if [ -n "$msl_hits" ]; then
     printf '     %s\n' 'MSL reserved type name used as a variable — macOS Metal redeclaration error'
     printf '%s\n' "$msl_hits" | sed 's/^/       /'
@@ -310,37 +310,50 @@ if want msvcism; then
 
   # `M_PI` and friends are POSIX/X-Open, not ISO C. glibc exposes them only
   # under __USE_MISC/__USE_XOPEN, which `-std=c23` disables by defining
-  # __STRICT_ANSI__; the Linux lanes see them anyway because meson passes
-  # -D_GNU_SOURCE. MinGW64 does not honour _GNU_SOURCE, so a file that just
-  # includes <math.h> and uses M_PI compiles everywhere except the required
-  # `Windows MinGW64` lane. The tree's convention is _USE_MATH_DEFINES before
-  # <math.h> plus an `#ifndef M_PI` fallback (adm_csf_tools.h, adm_tools.h).
+  # __STRICT_ANSI__; the Linux lanes see them because meson passes
+  # -D_GNU_SOURCE. The MSVC runtime defines them only under
+  # _USE_MATH_DEFINES, and MinGW-w64's <math.h> hides them under
+  # __STRICT_ANSI__ unless it is defined. Since Netflix/vmaf 4e150067b (Q-301)
+  # core/meson.build passes -D_USE_MATH_DEFINES as a project argument on
+  # Windows hosts, and no translation unit keeps a guard or a copy of the
+  # constants. The macros are accepted while that project argument is in the
+  # build file; without it, a file needs the old per-file guard
+  # (_USE_MATH_DEFINES before <math.h>, or an `#ifndef M_PI` fallback, in the
+  # file or in an in-tree header it includes).
   m_macros='\bM_(PI|E|SQRT2|LN2|LN10|PI_2|PI_4|1_PI|2_PI|SQRT1_2|LOG2E|LOG10E)\b'
-  # A file counts as guarded when it carries the two-step itself OR includes an
-  # in-tree header that does -- integer_adm.c, adm_avx2.c and friends get M_PI
-  # from integer_adm.h / barten_csf_tools.h and are correct as written.
-  c_math=$(changed_sources | while read -r f; do
-    grep -qE "$m_macros" "$f" 2>/dev/null || continue
-    grep -qE '_USE_MATH_DEFINES|#ifndef M_PI' "$f" 2>/dev/null && continue
-    guarded_by_include=0
-    while read -r h; do
-      [ -n "$h" ] || continue
-      if find core -name "$(basename "$h")" -exec \
-        grep -lE '_USE_MATH_DEFINES|#ifndef M_PI' {} + 2>/dev/null | grep -q .; then
-        guarded_by_include=1
-        break
-      fi
-    done <<EOF_INC
+  math_project_define="^[[:space:]]*add_project_arguments\('-D_USE_MATH_DEFINES',[^)]*language: *\[[^]]*'c'"
+  math_defines_project_wide=0
+  if [ -f core/meson.build ] && grep -qE "$math_project_define" core/meson.build; then
+    math_defines_project_wide=1
+  fi
+  c_math=""
+  if [ "$math_defines_project_wide" -eq 0 ]; then
+    # The probes of this stage trim with awk, which reads its whole input:
+    # `head` would close the pipe while a scan still writes, the scan would
+    # die of SIGPIPE, and under pipefail the `|| x=""` fallback would throw
+    # the findings away (a five-finding diff passed this stage locally).
+    c_math=$(changed_sources | while read -r f; do
+      grep -qE "$m_macros" "$f" 2>/dev/null || continue
+      grep -qE '_USE_MATH_DEFINES|#ifndef M_PI' "$f" 2>/dev/null && continue
+      guarded_by_include=0
+      while read -r h; do
+        [ -n "$h" ] || continue
+        if find core -name "$(basename "$h")" -exec \
+          grep -lE '_USE_MATH_DEFINES|#ifndef M_PI' {} + 2>/dev/null | grep -q .; then
+          guarded_by_include=1
+          break
+        fi
+      done <<EOF_INC
 $(grep -oE '#include "[^"]+"' "$f" 2>/dev/null | sed 's|#include "||; s|"||')
 EOF_INC
-    [ "$guarded_by_include" -eq 1 ] && continue
-    grep -nE "$m_macros" "$f" | head -2 | sed "s|^|$f:|"
-  done | head -5) || c_math=""
+      [ "$guarded_by_include" -eq 1 ] && continue
+      grep -nE "$m_macros" "$f" | awk 'NR <= 2' | sed "s|^|$f:|"
+    done | awk 'NR <= 5') || c_math=""
+  fi
   if [ -n "$c_math" ]; then
-    printf '     %s\n' 'M_* math macro without the _USE_MATH_DEFINES / #ifndef guard — MinGW64 C2065'
-    printf '     %s\n' '  (the _USE_MATH_DEFINES define needs a cited NOLINTNEXTLINE for'
-    printf '     %s\n' '   bugprone-reserved-identifier — put it on its OWN line above the'
-    printf '     %s\n' '   #define, not inside a multi-line comment; see core/src/libvmaf.c)'
+    printf '     %s\n' 'M_* math macro without a _USE_MATH_DEFINES define — MSVC / MinGW64 C2065'
+    printf '     %s\n' "  (core/meson.build has no add_project_arguments('-D_USE_MATH_DEFINES', ...)"
+    printf '     %s\n' '   for Windows hosts, and the file has no per-file guard)'
     printf '%s\n' "$c_math" | sed 's/^/       /'
     msvc_fail=1
   fi
@@ -352,7 +365,7 @@ EOF_INC
   # diagnostic at all, not even under -std=c23 -pedantic-errors -Weverything,
   # so this is grepped rather than compiled.
   c_static_init=$(changed_sources | grep -E '\.c$' |
-    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | head -5) || c_static_init=""
+    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | awk 'NR <= 5') || c_static_init=""
   if [ -n "$c_static_init" ]; then
     printf '     %s\n' 'non-constant initialiser in a static aggregate — MSVC C2099; use #define'
     printf '%s\n' "$c_static_init" | sed 's/^/       /'
