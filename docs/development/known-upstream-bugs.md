@@ -206,6 +206,13 @@ the parity guard's option matrix has not seen), ad42c5320 and 9cb9479f2
 (SpEED, above), 8bc5a5c6a and b41d2340a (arm64 ADM, see the arm64 note in
 `docs/rebase-notes.md`), the MSVC series and the HDR groundwork.
 
+`8bc5a5c6a` ("adm: add NEON scale-zero contrast masking") and `b41d2340a`
+("adm: extend NEON processing across scales") are
+**ported in the fork's form**: every NEON kernel returns the fork's scalar
+bits, including the int32 centre tap and int64 excess of ADR-1402, which
+upstream's NEON narrows to int16 as upstream's scalar does. No upstream
+defect was found on the way.
+
 ## Reported upstream on 2026-09-19
 
 Six defects found on `86da14d0` while validating the pull requests above were

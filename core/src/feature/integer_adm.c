@@ -987,6 +987,14 @@ static void init_dispatch_simd(AdmState *s, unsigned w)
             s->dwt2_8 = adm_dwt2_8_neon;
         }
         s->adm_decouple = adm_decouple_neon;
+        s->adm_decouple_s123 = adm_decouple_s123_neon;
+        s->adm_dwt2_s123_combined = adm_dwt2_s123_combined_neon;
+        /* As on x86: the vector contrast masking takes the fixed-point CSF
+         * weights of the default range only (csf_requires_normalization). */
+        if (!s->csf_requires_normalization) {
+            s->adm_cm = adm_cm_neon;
+            s->i4_adm_cm = i4_adm_cm_neon;
+        }
     }
 #else
     (void)s;

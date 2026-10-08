@@ -53,6 +53,22 @@ feature/arm64/
   `adm_decouple_cols()` (`integer_adm_kernels.h`), ADR-1413 truncated
   double product. angle test is `adm_angle_flag_fp64()`'s double
   expression. Details and guards: [`../AGENTS.d/adm-rounding.md`](../AGENTS.d/adm-rounding.md).
+- **Scale 1-3 DWT, scale 1-3 decouple and contrast masking of every scale
+  return scalar's bits** (Netflix/vmaf `8bc5a5c6a`, `b41d2340a`, adapted).
+  `adm_cm_neon()` / `i4_adm_cm_neon()` = interior-row callbacks of scalar
+  drivers `adm_cm_rows()` / `i4_adm_cm_rows()` (row folded once, ADR-1167;
+  scale-0 lanes uint64, scale 1-3 int64). Scale-0 centre tap int32, excess in
+  int64 clamped to [0, INT32_MAX] (ADR-1402); upstream narrows tap to int16:
+  never import that. Edge rows/cols, rows < 4 cols, leftover cols, i4 factor
+  > INT32_MAX: scalar sample. `adm_decouple_s123_neon()`: vector path at gain
+  limit 1 only, angle flag via scalar `adm_angle_flag()` for overshooting
+  lanes; other limits scalar `adm_decouple_s123_cols()`.
+  `adm_dwt2_s123_combined_neon()`: int64 taps + scale rounding + arithmetic
+  shift, narrowed by truncation (`i4_dwt2_tap4()`); de-interleaved block only
+  where `ind_x[k][j] = 2j - 1 + k` (j >= 1, 2j + 8 < w). Dispatch: cm only
+  without `csf_requires_normalization`, as x86. Guards:
+  `test_integer_adm_simd` (cm scale 0 + i4, decouple gains),
+  `test_adm_dwt2_neon` (s123), GCC + clang under qemu.
 - **`#pragma STDC FP_CONTRACT OFF` kept at TU level** even though aarch64 GCC
   ignores it with non-fatal `-Wunknown-pragmas`. Pragma is portable; aarch64 GCC
   does not contract `a + b * c` across statements at default optimisation

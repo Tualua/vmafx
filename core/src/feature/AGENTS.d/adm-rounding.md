@@ -70,12 +70,13 @@ invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 maskin
   `clamp(|x| - thr * 2^shift, 0, INT32_MAX)` in int64:
   `adm_cm_excess_s0()` in `adm_cm_accumulator.h`, two selects, no branch
   (branch mispredicts on noise: scalar AIM stage +90%). Every twin = scalar
-  bit for bit: `cm_excess_avx2()` / `cm_excess_avx512()`, CUDA + HIP call
+  bit for bit: `cm_excess_avx2()` / `cm_excess_avx512()`, NEON
+  `adm_neon_cm_excess_s0()`, CUDA + HIP call
   helper, SYCL `adm_dev_cm_excess_s0()`, Metal `adm_cm_excess_s0()` (MSL).
   Never restore: `(int16_t)` cast on tap, `srai(slli(centre, 16), 16)`
   in vector thresholds, `adm_i16()` on SYCL centre term,
   `abs(x) - (thr << shift)` anywhere (undefined for `thr < 0`). Change one
-  implementation -> change all seven, rerun golden gate. x86 edge rows + rows
+  implementation -> change all eight (NEON included), rerun golden gate. x86 edge rows + rows
   narrower than one block run shared scalar `adm_cm_row()`; leftover columns
   = top lanes of one more vector block, no scalar tail. Guards:
   `test_integer_adm_cm_threshold` (clamp pinned; patch pictures <= 1 on every
