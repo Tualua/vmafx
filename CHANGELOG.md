@@ -527,6 +527,13 @@
   that are not 1920x1080.
 
 
+- **Helm: a node without a models volume scores with the image's models.**
+  The node Deployment pointed `VMAFX_MODEL_DIR` at `persistence.models.mountPath`
+  even when no models volume was mounted (the default), so every job failed
+  with "model not found". It now uses the mount path only with
+  `persistence.models.enabled` and `/usr/local/share/vmafx/model` otherwise.
+
+
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
 
 
