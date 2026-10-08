@@ -37,7 +37,9 @@ RUNS_WITH_ANOTHER_BRANCH = (
     *RUNS_ON_LANDED_COMMIT,
     {"event": "push", "head_branch": RELEASE_NOTES_BRANCH, "check_suite_id": OTHER_BRANCH_SUITE},
 )
-API_GATE = "Go API Compatibility"
+# A required context outside strictMustReport that reports on a master push. It was `Go API
+# Compatibility` while praetor's workflow pushed on every branch; that gate is strict now.
+API_GATE = "Semgrep OSS"
 
 
 class AggregatorEventScope(unittest.TestCase):

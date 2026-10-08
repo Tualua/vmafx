@@ -218,9 +218,14 @@ exceptions (jobs without the tier, each with a reason and an expiry) are the
 `untiered_jobs` of `ci-tier.json`: the aggregator, `Release Script Contract`, the
 label and escalation workflows, the opt-in e2e gate, and the praetor-managed
 `praetor-api.yml` and `praetor-docs.yml`. The last two are locked byte for
-byte by `praetorctl audit`; they carry an unfiltered `push:` trigger and no
-draft gate, so they start on every push to every branch and on every draft.
-That needs a change in praetor.
+byte by `praetorctl audit`. Since the pin `7458a220e1c9` (praetor#815) they push
+only on `master` and listen for `opened`, `synchronize`, `reopened` and
+`ready_for_review`, so they no longer start on a push to another branch. On a
+draft their first step fails closed and every later step is skipped: the job
+starts and reports a red check but does no work. A job-level gate cannot be
+added to a byte-locked file, so they stay in `untiered_jobs`, and
+`test_praetor_managed_jobs_stop_on_a_draft_before_any_work` holds the step
+shape. `push_branch_exceptions` is empty.
 
 Adding a required context: add it to the aggregator `required` list and the
 `# required-aggregator` marker as before, and to `full_only` or `always` in

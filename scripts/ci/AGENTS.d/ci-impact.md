@@ -70,19 +70,20 @@ invariant: Planner fails closed to `mode=full`; planner/work/gate; one tier file
   `leg` skips work; checkout stays unconditional (checkout-ordering gate), shallow when skipped.
 - Untiered job or non-master push trigger = entry in `ci-tier.json` with reason and expiry; test
   fails after expiry. `praetor-api.yml`, `praetor-docs.yml` byte-locked by `praetorctl audit`:
-  fix upstream, never edit here.
+  regenerate with the engine, never edit here. Push only on `master` (praetor#815), so
+  `push_branch_exceptions` empty. Draft: first step fails closed, later steps skipped; job still
+  starts, so both stay in `untiered_jobs`. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work`
+  pins step shape.
 - `gha_expressions.py` evaluates `if:` per Actions docs (null == false, case-insensitive strings,
   `&&`/`||` return operands); unsupported syntax raises. `workflow_router.py` simulates routing
   only, not steps. `CI_ROUTING_WORKFLOWS_DIR` points contract at another tree (proof vs master).
 - ci-tier.json = CI-authority file: planner plans `mode=full` on change.
-- **Own-input lanes (ADR-2198).** `ci-tier.json` `own_input_lanes` names a full-only
-  context whose lane still plans and gates in the light tier (`needs.tier.outputs.light`).
-  Today that is `Windows Tester Zip`: selector `windows_tester_zip_sycl` must stay a
-  superset of `windows_tester_zip` (the gate reads either), and
-  `test_ci_routing_contract.py` plants the old full-tier gate as a defect. Do not move
-  the lane's `impact` or gate back to `outputs.full`.
-- **Cut check (ADR-2198).** `scripts/release/candidate-legs.json` lists the tester legs
-  a cut needs green on the exact commit; a leg added to the Windows matrix, the tester
-  image or the macOS bundle goes in the list (`test_check_candidate_legs.py` pins the
-  names). The three tester workflows keep a `run-name` that carries the dispatched
-  source: the check accepts a dispatch only when the title holds the full SHA.
+- **Own-input lanes (ADR-2198).** `ci-tier.json` `own_input_lanes` names full-only
+  context whose lane still plans and gates in light tier (`needs.tier.outputs.light`).
+  Today: `Windows Tester Zip`. Selector `windows_tester_zip_sycl` stays superset of
+  `windows_tester_zip` (gate reads either). `test_ci_routing_contract.py` plants old full-tier
+  gate as defect. Never move lane's `impact` or gate back to `outputs.full`.
+- **Cut check (ADR-2198).** `scripts/release/candidate-legs.json` lists tester legs
+  cut needs green on exact commit. Leg added to Windows matrix, tester image or macOS bundle
+  goes in list (`test_check_candidate_legs.py` pins names). Three tester workflows keep
+  `run-name` carrying dispatched source: check accepts dispatch only when title holds full SHA.

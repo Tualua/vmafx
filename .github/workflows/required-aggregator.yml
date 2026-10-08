@@ -295,10 +295,9 @@ jobs:
               // ADR-1506 — the praetor exported-API comparison for every Go
               // module. The workflow has no path filter, so a pull request
               // that changes no Go file still reports; the tool itself
-              // finds no change and passes. Deliberately NOT in
-              // strictMustReport: the locked workflow does not run on
-              // ready_for_review, so a draft that becomes ready keeps the
-              // result of its last push and is not re-run.
+              // finds no change and passes. Also in strictMustReport since
+              // the praetor pin 7458a220e1c9 (ADR-2440): the locked workflow
+              // runs on ready_for_review, so a ready draft is re-run.
               'Go API Compatibility',
               // ADR-1687 — the pull-request legs that ADR-1595 gave the tester
               // image, Windows zip and release workflows. The two tester gates
@@ -358,6 +357,9 @@ jobs:
               // path filter legitimately omitted the context.
               'Tidy SYCL',
               'Windows ARM64 MSVC',
+              // ADR-2440 — the locked praetor workflow reports on every pull request
+              // and master push; absence means broken registration.
+              'Go API Compatibility',
               // BUG-098 — these workflows now start for every pull request
               // and master push. The planner may skip their expensive work,
               // but an exact-name gate still reports. Absence therefore means

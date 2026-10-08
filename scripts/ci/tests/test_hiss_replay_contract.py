@@ -158,6 +158,8 @@ ADR_1528_STRICT_CONTEXTS = {
 # workflows. `Release Dry Run` has no push trigger; the aggregator drops it from a
 # run that is not a pull request (scripts/ci/tests/test_required_release_legs.py).
 ADR_1687_STRICT_CONTEXTS = {"Tester Image", "Windows Tester Zip", "Release Dry Run"}
+# ADR-2440: praetor's locked workflow listens for ready_for_review since the pin 7458a220e1c9.
+ADR_2440_STRICT_CONTEXTS = {"Go API Compatibility"}
 
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
@@ -311,7 +313,8 @@ class HissReplayContractTests(unittest.TestCase):
             | ADR_1342_STRICT_CONTEXTS
             | ADR_1474_STRICT_CONTEXTS
             | ADR_1528_STRICT_CONTEXTS
-            | ADR_1687_STRICT_CONTEXTS,
+            | ADR_1687_STRICT_CONTEXTS
+            | ADR_2440_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

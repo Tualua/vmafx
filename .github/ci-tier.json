@@ -96,26 +96,15 @@
     {
       "workflow": "praetor-api.yml",
       "job": "api-compatibility",
-      "reason": "Praetor-managed, byte-locked by `praetorctl audit`: this repository cannot add a draft gate or a branch filter. Needs an upstream change in praetor (cordanaLLM/praetor#815).",
-      "expires": "2026-12-31"
+      "reason": "Praetor-managed, byte-locked by `praetorctl audit`. Since praetor#815 its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check, which the tier's job-level gate cannot express. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
+      "expires": "2027-12-31"
     },
     {
       "workflow": "praetor-docs.yml",
       "job": "documentation",
-      "reason": "Praetor-managed, byte-locked by `praetorctl audit`: this repository cannot add a draft gate or a branch filter. Needs an upstream change in praetor (cordanaLLM/praetor#815).",
-      "expires": "2026-12-31"
+      "reason": "Praetor-managed, byte-locked by `praetorctl audit`. Since praetor#815 its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check, which the tier's job-level gate cannot express. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
+      "expires": "2027-12-31"
     }
   ],
-  "push_branch_exceptions": [
-    {
-      "workflow": "praetor-api.yml",
-      "reason": "Praetor-managed, byte-locked: its `push:` trigger has no branch filter. Needs an upstream change in praetor (cordanaLLM/praetor#815).",
-      "expires": "2026-12-31"
-    },
-    {
-      "workflow": "praetor-docs.yml",
-      "reason": "Praetor-managed, byte-locked: its `push:` trigger has no branch filter. Needs an upstream change in praetor (cordanaLLM/praetor#815).",
-      "expires": "2026-12-31"
-    }
-  ]
+  "push_branch_exceptions": []
 }

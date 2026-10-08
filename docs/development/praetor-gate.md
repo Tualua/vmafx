@@ -169,8 +169,23 @@ engine has the flag. CI and `make verify-all` keep the forge read.
 
 ### The current pin
 
-The pin is `afb739ed81f3`
-([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)). Against the previous pin it
+The pin is `7458a220e1c9`
+([ADR-2440](../adr/2440-praetor-pin-7458a220.md)). Against `afb739ed81f3` it
+changes three things here:
+
+- The emitted `praetor-api.yml` and `praetor-docs.yml` push only on `master`,
+  listen for `ready_for_review` and stop a draft pull request with a failing
+  first step. The engine regenerates them, so audit still locks them byte for
+  byte, and `push_branch_exceptions` in `.github/ci-tier.json` is empty
+  ([CI routing](ci.md)). The jobs still start on a draft, so they stay in
+  `untiered_jobs`.
+- Audit fails when `core.hooksPath` leaves the managed hooks directory. A
+  throwaway clone made with `git clone -c core.hooksPath=...` persists the
+  value and fails it; pass `-c` on each command instead.
+- The caveman article count ignores model names such as `A380`.
+
+The pin before was `afb739ed81f3`
+([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)). Against its predecessor it
 adds five checks this repository had to meet:
 
 | Check | What it asks here | Where it is met |
@@ -205,8 +220,11 @@ requires.
   2026-10-03).
 - The workflow has no path filter, so a pull request without a Go change still
   reports and the comparison passes.
-- It is not in `strictMustReport`, because praetor's locked file does not run on
-  `ready_for_review`.
+- It is in `strictMustReport` since the pin `7458a220e1c9`
+  ([ADR-2440](../adr/2440-praetor-pin-7458a220.md)). Before, praetor's locked
+  file did not run on `ready_for_review`, so a draft that became ready kept the
+  result of its last push; now it is re-run. `test_go_api_compat_required.py`
+  holds the list entry.
 - Audit locks the workflow byte for byte, so its
   `# required-aggregator-job: Go API Compatibility` marker sits in
   `standards-gate.yml`; `scripts/ci/check-aggregator-names.sh` fails when no job

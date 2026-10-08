@@ -220,6 +220,25 @@ def expect_nothing_but_exceptions(contract: Contract, event: wr.SyntheticEvent) 
         raise AssertionError(f"draft pull request ran {sorted(extra)}")
 
 
+PRAETOR_MANAGED = (("praetor-api.yml", "api-compatibility"), ("praetor-docs.yml", "documentation"))
+DRAFT_STOP = "github.event.pull_request.draft == true"
+DRAFT_SKIP = "github.event.pull_request.draft != true"
+
+
+def expect_draft_stop_before_any_work(contract: Contract, workflow: str, job: str) -> None:
+    """A praetor-managed job does no work on a draft (praetor#815).
+
+    The job starts, its first step fails closed, and every later step is skipped. The tier's
+    job-level gate cannot be added to these byte-locked files, so the step shape is the proof.
+    """
+    steps = contract.workflows[workflow]["jobs"][job]["steps"]
+    if steps[0].get("if") != DRAFT_STOP or "exit 1" not in steps[0].get("run", ""):
+        raise AssertionError(f"{workflow}: the first step does not fail closed on a draft")
+    unguarded = [s.get("name") for s in steps[1:] if s.get("if") != DRAFT_SKIP]
+    if unguarded:
+        raise AssertionError(f"{workflow}: steps {unguarded} run on a draft")
+
+
 def expect_no_other_branch_runs(contract: Contract, event: wr.SyntheticEvent) -> None:
     """A push to a branch or a tag triggers nothing but the declared exceptions."""
     triggered, _ = contract.run(event)
@@ -302,6 +321,10 @@ class RoutingContract(unittest.TestCase):
         expect_nothing_but_exceptions(self.contract, with_(FORK, draft=True))
         expect_nothing_but_exceptions(self.contract, with_(RELEASE, draft=True))
 
+    def test_praetor_managed_jobs_stop_on_a_draft_before_any_work(self) -> None:
+        for workflow, job in PRAETOR_MANAGED:
+            expect_draft_stop_before_any_work(self.contract, workflow, job)
+
     def test_master_push_runs_the_full_tier(self) -> None:
         expect_full_tier(self.contract, MASTER_PUSH)
 
@@ -323,7 +346,7 @@ class RoutingContract(unittest.TestCase):
         expect_no_jobs(self.contract, with_(FORK, action="labeled", label="ci: full"))
 
     def test_every_pull_request_workflow_listens_for_ready_for_review(self) -> None:
-        exempt = {"praetor-api.yml", "praetor-docs.yml", "ci-escalate.yml", "pr-type-label.yml"}
+        exempt = {"ci-escalate.yml", "pr-type-label.yml"}
         for name, workflow in self.contract.workflows.items():
             filters = wr.triggers_of(workflow).get("pull_request")
             if filters is None or name in exempt:
@@ -417,6 +440,27 @@ class PlantedDefects(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             expect_nothing_but_exceptions(contract, with_(OWN, draft=True))
+
+    def test_a_praetor_step_that_runs_on_a_draft_is_caught(self) -> None:
+        contract = self.mutated(
+            "praetor-docs.yml",
+            "        if: github.event.pull_request.draft != true\n        run: node tools/markdownlint/verify.mjs",
+            "        run: node tools/markdownlint/verify.mjs",
+        )
+        with self.assertRaises(AssertionError):
+            expect_draft_stop_before_any_work(contract, "praetor-docs.yml", "documentation")
+
+    def test_a_praetor_job_without_the_draft_stop_is_caught(self) -> None:
+        contract = self.mutated(
+            "praetor-api.yml", "        if: github.event.pull_request.draft == true\n", ""
+        )
+        with self.assertRaises(AssertionError):
+            expect_draft_stop_before_any_work(contract, "praetor-api.yml", "api-compatibility")
+
+    def test_a_praetor_push_trigger_without_a_branch_filter_is_caught(self) -> None:
+        contract = self.mutated("praetor-docs.yml", "    branches: ['master']\n", "")
+        with self.assertRaises(AssertionError):
+            expect_no_other_branch_runs(contract, FEATURE_PUSH)
 
     def test_an_unfiltered_push_trigger_is_caught(self) -> None:
         contract = self.mutated("docs.yml", "  push:\n    branches: [master]\n", "  push:\n")
