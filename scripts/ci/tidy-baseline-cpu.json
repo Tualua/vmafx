@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 516,
+  "tus": 515,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -398,7 +398,6 @@
     "core/test/test_motion_five_frame_window.c",
     "core/test/test_motion_min_dim.c",
     "core/test/test_motion_v2_simd.c",
-    "core/test/test_motion_window_incremental.c",
     "core/test/test_ms_ssim_decimate.c",
     "core/test/test_ms_ssim_decimate_coverage.c",
     "core/test/test_niqe.c",

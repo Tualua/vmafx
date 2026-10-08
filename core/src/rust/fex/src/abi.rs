@@ -10,9 +10,7 @@
 
 use core::ffi::{c_char, c_void};
 
-/// Version of this ABI. The shim refuses a twin with another value. It stays 1
-/// until a release ships the ABI: `VmafxRsTwin.advance` (ADR-2090, lane request
-/// MI-1) joined the layout before any release did.
+/// Version of this ABI. The shim refuses a twin with another value.
 pub const VMAFX_RS_ABI_VERSION: u32 = 1;
 
 /// Success.
@@ -182,12 +180,6 @@ pub struct VmafxRsTwin {
     /// Free the state. The host is log-only: its collector callbacks fail,
     /// because the collector may be gone when a context closes.
     pub close: Option<unsafe extern "C" fn(*mut c_void, *const VmafxRsHost)>,
-    /// Append the scores the collector's contents now make final (ADR-2090);
-    /// the shim calls it only when the C extractor has an `advance`. On the
-    /// thread that feeds frames, never next to `extract` or `flush` of the
-    /// same state.
-    pub advance:
-        Option<unsafe extern "C" fn(*mut c_void, *const VmafxRsHost, *mut *const c_char) -> i32>,
 }
 
 // SAFETY: a VmafxRsTwin holds pointers to NUL-terminated string literals with
@@ -196,7 +188,7 @@ pub struct VmafxRsTwin {
 unsafe impl Sync for VmafxRsTwin {}
 
 /// Number of `usize` entries `vmafx_rs_abi_layout` writes.
-pub const VMAFX_RS_ABI_LAYOUT_LEN: usize = 39;
+pub const VMAFX_RS_ABI_LAYOUT_LEN: usize = 38;
 
 /// The sizes and field offsets of every ABI struct, in the order
 /// `core/test/test_rust_abi_layout.c` lists them.
@@ -242,7 +234,6 @@ pub const fn abi_layout() -> [usize; VMAFX_RS_ABI_LAYOUT_LEN] {
         offset_of!(VmafxRsTwin, init),
         offset_of!(VmafxRsTwin, flush),
         offset_of!(VmafxRsTwin, close),
-        offset_of!(VmafxRsTwin, advance),
     ]
 }
 
