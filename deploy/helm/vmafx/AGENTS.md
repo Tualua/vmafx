@@ -56,8 +56,13 @@ Update note on merge: final UID + container-scope seccompProfile set.
 
 ## Invariants (ADR-1058)
 
+- **Operator events cluster-wide, write-only (ADR-2647)**: own ClusterRole
+  (`*-operator-events`): `create`, `patch` on core `events`, nothing else.
+  Operator reconciles CRs in every namespace; event lands in object's
+  namespace. Namespace Role for events loses them outside release namespace.
+  Guard: `scripts/ci/tests/test_helm_service_accounts.py`.
 - **RBAC split**: ClusterRole (`*-operator-crds`) covers CRD resources only.
-  Namespaced resources (pods, events, leases) sit in namespace Role
+  Pods + leader-election leases sit in namespace Role
   (`*-operator-ns`). Never merge into single ClusterRole.
 - **Operator rules >= generated role (ADR-2350 D13)**: both operator roles
   together grant every rule of `config/rbac/role.yaml` (controller-gen output

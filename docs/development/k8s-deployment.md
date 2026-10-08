@@ -201,6 +201,17 @@ What the chart renders:
   unless `node.controllerAddr` names another controller.
 - **Operator** gets `VMAFX_CONTROLLER_GRPC_ADDR` and `VMAFX_CONTROLLER_HTTP_ADDR`
   of the same Service.
+- **Operator RBAC** (`operator.enabled`). The operator's service account is
+  bound to three roles. `<release>-operator-crds` is a `ClusterRole` for
+  `VmafxJob`, `VmafxNode` and `VmafxModelTraining` in every namespace, with
+  their status and finalizers. `<release>-operator-events` is a `ClusterRole`
+  that may only create and patch events, in every namespace: the operator
+  records events on the resources it reconciles, and Kubernetes stores an
+  event in the namespace of its resource
+  ([ADR-2647](../adr/2647-operator-events-cluster-wide.md)).
+  `<release>-operator-ns` is a `Role` in the release namespace for pods and
+  the leader-election lease ([ADR-1058](../adr/1058-helm-chart-security-hardening.md)).
+  None of them grants access to `VmafxTenant`.
 - **Tokens.** `node.controllerToken` / `operator.controllerToken` mount key
   `key` (default `token`) of Secret `secretName` read-only at
   `/var/run/secrets/vmafx/controller-token/token` and set
