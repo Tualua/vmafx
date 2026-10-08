@@ -6890,6 +6890,66 @@ if not is_sycl_acpp
         is_parallel : false)
 endif
 
+# T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06: the covariance entry the SpEED SYCL
+# twins compute (src/feature/sycl/sycl_speed_cov_math.h) against speed.c's own
+# compute_cov_kernel_scalar(), bit for bit, on the host and in a kernel on the
+# default GPU. The probe TU is compiled with the extractors' own arguments, and
+# the C side links the CPU reference from the static libraries like
+# test_speed_simd. The reference is fp64 arithmetic the test compiles itself,
+# so it needs the strict FP flags; the near-exact comparison sum is x86-64
+# long double.
+if not is_sycl_acpp and float_enabled and host_machine.cpu_family() == 'x86_64'
+    sycl_speed_cov_math_probe = custom_target('sycl_speed_cov_math_probe',
+        output : 'sycl_speed_cov_math_probe.o',
+        input : 'test_sycl_speed_cov_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_soft_signed.h',
+                             '../src/feature/sycl/sycl_speed_cov_math.h',
+                             '../src/feature/sycl/sycl_compat.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_speed_cov_math_probe_objects = [sycl_speed_cov_math_probe]
+    if sycl_msvc_device_link
+        sycl_speed_cov_math_probe_objects += custom_target(
+            'sycl_speed_cov_math_probe_device_link',
+            input : sycl_speed_cov_math_probe,
+            output : 'sycl_speed_cov_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_speed_cov_math = executable('test_sycl_speed_cov_math',
+        ['test.c', 'test_sycl_speed_cov_math.c'] + sycl_speed_cov_math_probe_objects
+        + ['../src/mem.cpp', '../src/picture.c', '../src/ref.cpp', '../src/dict.cpp',
+           '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+           '../src/gpu_picture_pool.cpp'] + dnn_sources,
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+        c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                        predict_test_dependencies, dnn_deps, sycl_dependency],
+        objects : [
+            common_cuda_objects,
+            platform_specific_cpu_objects,
+            libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+            log_cpp23_test_objects,
+            libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+            libsvm_static_lib.extract_all_objects(recursive: true),
+        ] + wave8_opt_only_objects,
+        link_language : 'cpp',
+    )
+    test('test_sycl_speed_cov_math', test_sycl_speed_cov_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
+test('test_sycl_speed_cov_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_speed_cov_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1434: what float_adm_sycl's kernels run per work-item
 # (src/feature/sycl/sycl_float_adm_math.h) against adm_tools.c's own routines,
 # bit for bit, on the host and in kernels on the default GPU. The probe TU is

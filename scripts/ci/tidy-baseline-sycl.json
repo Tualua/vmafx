@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "Intel(R) oneAPI DPC++/C++ Compiler 2026.1.1 (2026.1.1.20260724)",
-  "tus": 464,
+  "tus": 466,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -428,6 +428,8 @@
     "core/test/test_sycl_shared_frame_sticky_geometry.c",
     "core/test/test_sycl_shared_planes.c",
     "core/test/test_sycl_speed_chroma_parity.c",
+    "core/test/test_sycl_speed_cov_math.c",
+    "core/test/test_sycl_speed_cov_math_probe.cpp",
     "core/test/test_sycl_speed_singular_parity.c",
     "core/test/test_sycl_speed_temporal_parity.c",
     "core/test/test_sycl_ssim_parity.c",
@@ -519,6 +521,22 @@
         }
       },
       "previous_baseline_sha256": "46b2fac2d9035a08e68eb48f67b5748c2741ccbe4dd98935d5d82a130d69f738"
+    },
+    {
+      "sources": [
+        "core/test/test_sycl_speed_cov_math.c",
+        "core/test/test_sycl_speed_cov_math_probe.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_sycl_speed_cov_math.c",
+            "core/test/test_sycl_speed_cov_math_probe.cpp"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b3156494de2d3d3d30fdabe124ab6ee9d1f1aa18da76e851545e0f10542a6433"
     }
   ]
 }

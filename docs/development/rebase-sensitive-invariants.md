@@ -729,6 +729,22 @@ backend within it.
   `_foreign_libm` variant runs the other libcs' path); the three source contract tests and
   `test_{cuda,hip,sycl}_speed_*_parity` (`==`) guard the twins.
 
+- **SYCL SpEED covariance is the reference's sequential fp64 sum ([ADR-2690](../adr/2690-sycl-speed-covariance-fast-exact.md))**:
+  `core/src/feature/sycl/sycl_speed_cov_math.h::covariance_entry()` adds
+  `(x - mean_x) * (y - mean_y)` in `speed.c::compute_cov_kernel_scalar()`'s
+  order, rounding as each fp64 add rounds (64-bit integers,
+  `sycl_soft_signed.h`), and `launch_covariance()` runs one work-item per
+  entry. A sync must not bring back the parallel fp32-pair sum rounded once:
+  on a cancelling entry it stores the neighbouring fp32 value, 1 ulp of
+  `speed_chroma_u` on a real 3840x1600 10-bit frame. A change to
+  `compute_cov_kernel_scalar()` or the store in `compute_covariance_row()`
+  changes the header in the same PR. `test_sycl_speed_cov_math` (`==`, host
+  and device) and `test_sycl_speed_cov_exact_contract.py` (device-free) guard
+  it. The CUDA and HIP twins still sum in pairs and are unverified
+  (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
+  `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`). See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
   and reproduces `speed.c` operation for operation, up to the variances
