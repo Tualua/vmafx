@@ -64,18 +64,32 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   `compute_covariance_row()` stores `(float)(sum / (w * h))`. A parallel or
   compensated sum rounded once is not that value: on a cancelling
   off-diagonal entry it stores the neighbouring fp32 value (a real 3840x1600
-  10-bit frame, `speed_chroma_u`, 1 ulp). `launch_covariance()` runs
-  one work-item per (channel, entry) calling `covariance_entry()` of
-  `sycl_speed_cov_math.h`, which replays the sub, sub, mul, add chain in
-  64-bit integers (`sycl_soft_signed.h`), the fp64 quotient and the fp32
-  conversion. On rebase: never bring back a pair accumulator, a group
-  reduction or an `ff_*` quotient for this sum, and never give the entry a
-  tolerance. An optimised kernel is allowed only if `test_sycl_speed_cov_math`
+  10-bit frame, `speed_chroma_u`, 1 ulp). `sycl_speed_cov_math.h`
+  holds the reference's operations in 64-bit integers (`sycl_soft_signed.h`):
+  `covariance_difference()`, `covariance_term()`, `covariance_chain()` and
+  `covariance_store()` (the fp64 quotient by the exact count and the fp32
+  conversion); `covariance_entry()` is the whole entry in one function and
+  calls the same helpers. `launch_covariance()` runs them split across
+  launches (ADR-2690): the differences (25 per pixel) and the products in
+  parallel, stored as fp64 bit patterns, term-major, then one sequential
+  chain per (channel, entry) over the stored terms in raster order, in slices
+  of submatrix rows with the running sum kept as bits. Only work that does
+  not depend on the running sum leaves the chain; the operations and their
+  order stay the reference's. `test_sycl_speed_cov_chain` (device-free) and
+  the split device half of `test_sycl_speed_cov_math` check it with `==`. On
+  rebase: never bring back a pair accumulator, a group reduction or an `ff_*`
+  quotient for this sum, and never give the entry a tolerance. An optimised
+  kernel is allowed only if `test_sycl_speed_cov_math`
   (`==` against `compute_cov_kernel_scalar()`, fixture blocks a near-exact sum
   stores differently) still passes on a device
   (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`).
-  `test_sycl_speed_cov_exact_contract.py` pins the source shape. The CUDA and
-  HIP twins have the old design (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
+  `test_sycl_speed_cov_exact_contract.py` pins the source shape, and
+  `test_sycl_speed_chroma_parity`, `test_sycl_speed_temporal_parity` and
+  `test_sycl_speed_singular_parity` compare every output with `==`. Measured
+  cost on the A380 (`vmaf_v1.0.16_3d0h`, 3840x1600): 18.83 ms per frame before
+  the fix, 28.53 ms with the one-work-item entry, 23.06 ms with the split
+  chain; the chain is the remaining 4.2 ms. The CUDA and HIP twins have the
+  old design (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
   `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`).
 
 | SYCL TU | CPU TU | Parity test | ADR |

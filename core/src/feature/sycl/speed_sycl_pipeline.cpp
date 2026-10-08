@@ -16,7 +16,8 @@
  *  rotation's `1.0 / sqrt(1 + t * t)`); those are reproduced with exact fp32
  *  pairs, with feature/speed_givens.h for the rotation, and with the
  *  reference's fp64 operations in 64-bit integers for the covariance sum
- *  (sycl_speed_cov_math.h), rather than fp64, which the device contract
+ *  (sycl_speed_cov_math.h, split across launches: ADR-2690), rather than
+ *  fp64, which the device contract
  *  forbids (ADR-0220). This file must not mention
  *  the fp64 type at all: core/test/test_sycl_kernel_source_contract.py
  *  enforces that.
@@ -701,9 +702,11 @@ void launch_means(sycl::queue &q, const MeansArgs &args, uint32_t channels)
 /* ------------------------------------------------------------------ */
 /* Covariance: compute_covariance_matrix()                             */
 /* The reference adds (x - mean_x) * (y - mean_y) into one fp64 sum in */
-/* raster order, rounding every add; covariance_entry()                */
-/* (sycl_speed_cov_math.h) performs those operations in that order in  */
-/* soft fp64, one work-item per entry.                                 */
+/* raster order, rounding every add. sycl_speed_cov_math.h holds those */
+/* operations in soft fp64; here they run split across launches        */
+/* (ADR-2690): the differences and the products in parallel, stored as */
+/* fp64 bit patterns, then one sequential add chain per entry over the */
+/* stored terms, in slices of submatrix rows.                          */
 /* ------------------------------------------------------------------ */
 
 } // namespace
@@ -711,53 +714,189 @@ void launch_means(sycl::queue &q, const MeansArgs &args, uint32_t channels)
 namespace
 {
 
+constexpr uint32_t kCovGroup = 256u;       /* differences and products */
+constexpr uint32_t kCovChainGroup = 16u;   /* one SIMD-16 thread per group: the chains spread */
+constexpr uint32_t kCovSliceTerms = 8192u; /* stored terms per entry and slice, at most */
+
 struct CovArgs {
     const float *centered;
-    const float *means;
-    float *cov; /* channels x 625 */
+    const float *means; /* channels x 25 */
+    uint64_t *diff;     /* channels x terms x 25: fl64(x - mean) */
+    uint64_t *terms;    /* slice x channels x 325: fl64(dx * dy), term-major */
+    uint64_t *sums;     /* channels x 325: the running sum between slices */
+    float *cov;         /* channels x 625 */
     uint32_t trunc_w;
     uint32_t trunc_h;
     uint32_t sub_w;
     uint32_t sub_h;
+    uint32_t channels;
 };
 
+/* Entry `index` of the lower triangle, row by row: row x holds y = 0..x, so
+ * index = x (x + 1) / 2 + y. The fp32 root is within one of the row and the
+ * two integer checks settle it. */
 inline void triangle_entry(uint32_t index, uint32_t &x, uint32_t &y)
 {
-    uint32_t rest = index;
-    x = 0u;
-    for (uint32_t row = 0; row < kN; row++) {
-        if (rest <= row) {
-            x = row;
-            break;
-        }
-        rest -= row + 1u;
+    const float root = sycl::sqrt(static_cast<float>(8u * index + 1u));
+    auto row = static_cast<uint32_t>((root - 1.0f) * 0.5f);
+    row -= (row * (row + 1u) / 2u > index) ? 1u : 0u;
+    row += ((row + 1u) * (row + 2u) / 2u <= index) ? 1u : 0u;
+    x = row;
+    y = index - row * (row + 1u) / 2u;
+}
+
+size_t round_up(size_t count, uint32_t group)
+{
+    return (count + group - 1u) / group * group;
+}
+
+/* The submatrix rows one slice holds: all of them up to kCovSliceTerms terms. */
+uint32_t covariance_slice_rows(const Geometry &g)
+{
+    const uint32_t rows = kCovSliceTerms / g.sub_w;
+    return std::clamp(rows, 1u, g.sub_h);
+}
+
+} // namespace
+
+namespace
+{
+
+/* fl64(x - mean) for every (channel, pixel of the submatrix, block element):
+ * element e's submatrix starts at (e / 5, e % 5) of the plane. */
+class CovDifferenceKernel : public VmafSyclKernelShape<16, 0>
+{
+  public:
+    CovDifferenceKernel(const CovArgs &args, uint32_t count) : a_(args), count_(count)
+    {
     }
-    y = rest;
-}
 
-/* compute_covariance_row() for entry (x, y), y <= x, of one channel: the
- * submatrices start at (x / 5, x % 5) and (y / 5, y % 5) of the plane. */
-inline void covariance_item(const CovArgs &a, uint32_t ch, uint32_t index)
-{
-    uint32_t x = 0u;
-    uint32_t y = 0u;
-    triangle_entry(index, x, y);
-    const float *plane = a.centered + static_cast<size_t>(ch) * a.trunc_h * a.trunc_w;
-    const float *px = plane + static_cast<size_t>(x / kBlock) * a.trunc_w + x % kBlock;
-    const float *py = plane + static_cast<size_t>(y / kBlock) * a.trunc_w + y % kBlock;
-    const float value = vmaf_sycl_speed_cov::covariance_entry(
-        px, py, a.trunc_w, a.sub_w, a.sub_h, a.means[ch * kN + x], a.means[ch * kN + y]);
-    float *matrix = a.cov + static_cast<size_t>(ch) * kMatrix;
-    matrix[x * kN + y] = value;
-    matrix[y * kN + x] = value;
-}
+    VMAF_SYCL_FUNCTOR_SG_SIZE(16) void operator()(sycl::nd_item<1> it) const
+    {
+        const auto index = static_cast<uint32_t>(it.get_global_id(0));
+        if (index >= count_) {
+            return;
+        }
+        const uint32_t element = index % kN;
+        const uint32_t pixels = a_.sub_w * a_.sub_h;
+        const uint32_t k = (index / kN) % pixels;
+        const uint32_t ch = index / kN / pixels;
+        const uint32_t row = element / kBlock + k / a_.sub_w;
+        const uint32_t col = element % kBlock + k % a_.sub_w;
+        const float *plane = a_.centered + static_cast<size_t>(ch) * a_.trunc_h * a_.trunc_w;
+        const float value = plane[static_cast<size_t>(row) * a_.trunc_w + col];
+        const vmaf_sycl_soft::SoftSigned mean =
+            vmaf_sycl_soft::signed_from_float(a_.means[ch * kN + element]);
+        a_.diff[index] =
+            vmaf_sycl_soft::signed_bits(vmaf_sycl_speed_cov::covariance_difference(value, mean));
+    }
 
-void launch_covariance(sycl::queue &q, const CovArgs &args, uint32_t channels)
+  private:
+    CovArgs a_;
+    uint32_t count_;
+};
+
+/* fl64(dx * dy) for every (term of the slice, channel, entry), stored
+ * term-major so that the chains of neighbouring entries read neighbouring
+ * words. */
+class CovTermKernel : public VmafSyclKernelShape<16, 0>
 {
-    q.parallel_for(sycl::range<2>(channels, kTriangle), [=](sycl::item<2> it) {
-        covariance_item(args, static_cast<uint32_t>(it.get_id(0)),
-                        static_cast<uint32_t>(it.get_id(1)));
-    });
+  public:
+    CovTermKernel(const CovArgs &args, uint32_t first_term, uint32_t count)
+        : a_(args), first_(first_term), count_(count)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(16) void operator()(sycl::nd_item<1> it) const
+    {
+        const auto index = static_cast<uint32_t>(it.get_global_id(0));
+        if (index >= count_ * a_.channels * kTriangle) {
+            return;
+        }
+        uint32_t x = 0u;
+        uint32_t y = 0u;
+        triangle_entry(index % kTriangle, x, y);
+        const uint32_t ch = (index / kTriangle) % a_.channels;
+        const uint32_t k = first_ + index / kTriangle / a_.channels;
+        const uint64_t *d = a_.diff + (static_cast<size_t>(ch) * a_.sub_w * a_.sub_h + k) * kN;
+        const vmaf_sycl_soft::SoftSigned term = vmaf_sycl_speed_cov::covariance_term(
+            vmaf_sycl_soft::signed_from_bits(d[x]), vmaf_sycl_soft::signed_from_bits(d[y]));
+        a_.terms[index] = vmaf_sycl_soft::signed_bits(term);
+    }
+
+  private:
+    CovArgs a_;
+    uint32_t first_;
+    uint32_t count_;
+};
+
+} // namespace
+
+namespace
+{
+
+/* The reference's adds for one (channel, entry) over the slice's terms, in
+ * raster order; the last slice stores the entry as compute_covariance_row()
+ * does, on both sides of the diagonal. */
+class CovChainKernel : public VmafSyclKernelShape<16, 0>
+{
+  public:
+    CovChainKernel(const CovArgs &args, uint32_t count, bool first, bool last)
+        : a_(args), count_(count), first_(first), last_(last)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(16) void operator()(sycl::nd_item<1> it) const
+    {
+        const auto index = static_cast<uint32_t>(it.get_global_id(0));
+        const uint32_t chains = a_.channels * kTriangle;
+        if (index >= chains) {
+            return;
+        }
+        const vmaf_sycl_soft::SoftSigned start =
+            first_ ? vmaf_sycl_speed_cov::covariance_zero() :
+                     vmaf_sycl_soft::signed_from_bits(a_.sums[index]);
+        const vmaf_sycl_soft::SoftSigned sum =
+            vmaf_sycl_speed_cov::covariance_chain(start, a_.terms + index, chains, count_);
+        if (!last_) {
+            a_.sums[index] = vmaf_sycl_soft::signed_bits(sum);
+            return;
+        }
+        uint32_t x = 0u;
+        uint32_t y = 0u;
+        triangle_entry(index % kTriangle, x, y);
+        const uint64_t pixels = static_cast<uint64_t>(a_.sub_w) * a_.sub_h;
+        const float value = vmaf_sycl_speed_cov::covariance_store(sum, pixels);
+        float *matrix = a_.cov + static_cast<size_t>(index / kTriangle) * kMatrix;
+        matrix[x * kN + y] = value;
+        matrix[y * kN + x] = value;
+    }
+
+  private:
+    CovArgs a_;
+    uint32_t count_;
+    bool first_;
+    bool last_;
+};
+
+/* The differences once, then per slice the products and the chains; one
+ * in-order queue, no host wait. */
+void launch_covariance(sycl::queue &q, const CovArgs &args, uint32_t slice_rows)
+{
+    const uint32_t pixels = args.sub_w * args.sub_h;
+    const uint32_t differences = args.channels * pixels * kN;
+    q.parallel_for(sycl::nd_range<1>(round_up(differences, kCovGroup), kCovGroup),
+                   CovDifferenceKernel(args, differences));
+    const uint32_t chains = args.channels * kTriangle;
+    for (uint32_t row = 0; row < args.sub_h; row += slice_rows) {
+        const uint32_t rows = (std::min)(slice_rows, args.sub_h - row);
+        const uint32_t count = rows * args.sub_w;
+        q.parallel_for(
+            sycl::nd_range<1>(round_up(static_cast<size_t>(count) * chains, kCovGroup), kCovGroup),
+            CovTermKernel(args, row * args.sub_w, count));
+        q.parallel_for(sycl::nd_range<1>(round_up(chains, kCovChainGroup), kCovChainGroup),
+                       CovChainKernel(args, count, row == 0u, row + rows == args.sub_h));
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1480,6 +1619,11 @@ struct speed_sycl::Pipeline {
     float *centered;
     float *indterm;
     float *means;
+    /* The split covariance (ADR-2690): differences, one slice of terms, and
+     * the running sums between slices, as fp64 bit patterns. */
+    uint64_t *cov_diff;
+    uint64_t *cov_terms;
+    uint64_t *cov_sums;
     float *cov;
     float *qmat;
     float *rmat;
@@ -1535,6 +1679,12 @@ void allocate_linalg(Pipeline &p)
     const size_t ch = p.config.channels;
     const size_t blocks = p.config.geometry.blocks;
     p.means = device_alloc<float>(q, ch * kN);
+    const Geometry &g = p.config.geometry;
+    const size_t pixels = static_cast<size_t>(g.sub_w) * g.sub_h;
+    const size_t slice = static_cast<size_t>(covariance_slice_rows(g)) * g.sub_w;
+    p.cov_diff = device_alloc<uint64_t>(q, ch * pixels * kN);
+    p.cov_terms = device_alloc<uint64_t>(q, slice * ch * kTriangle);
+    p.cov_sums = device_alloc<uint64_t>(q, ch * kTriangle);
     p.cov = device_alloc<float>(q, ch * kMatrix);
     p.qmat = device_alloc<float>(q, ch * kMatrix);
     p.rmat = device_alloc<float>(q, ch * kMatrix);
@@ -1565,8 +1715,9 @@ namespace
 bool allocations_complete(const Pipeline &p)
 {
     const void *const required[] = {
-        p.staging, p.raw,  p.taps, p.down,        p.centered,  p.indterm,       p.means,
-        p.cov,     p.qmat, p.rmat, p.tail_device, p.tail_host, p.entropy.get(),
+        p.staging, p.raw,         p.taps,      p.down,          p.centered, p.indterm,
+        p.means,   p.cov_diff,    p.cov_terms, p.cov_sums,      p.cov,      p.qmat,
+        p.rmat,    p.tail_device, p.tail_host, p.entropy.get(),
     };
     for (const void *pointer : required) {
         if (pointer == nullptr) {
@@ -1601,6 +1752,9 @@ void release_all(Pipeline &p)
     release(q, p.centered);
     release(q, p.indterm);
     release(q, p.means);
+    release(q, p.cov_diff);
+    release(q, p.cov_terms);
+    release(q, p.cov_sums);
     release(q, p.cov);
     release(q, p.qmat);
     release(q, p.rmat);
@@ -1634,7 +1788,14 @@ bool shape_valid(const PipelineConfig &c)
     const Geometry &g = c.geometry;
     const bool dims = g.blocks > 0u && g.sub_w > 0u && g.sub_h > 0u;
     const bool nested = g.down_w >= g.trunc_w && g.down_h >= g.trunc_h;
-    return dims && nested;
+    if (!dims || !nested) {
+        return false;
+    }
+    /* The covariance kernels index their work-items in 32 bits (ADR-2690). */
+    const uint64_t differences = uint64_t{kMaxChannels} * g.sub_w * g.sub_h * kN;
+    const uint64_t slice = uint64_t{covariance_slice_rows(g)} * g.sub_w;
+    const uint64_t terms = uint64_t{kMaxChannels} * kTriangle * slice;
+    return differences + kCovGroup <= UINT32_MAX && terms + kCovGroup <= UINT32_MAX;
 }
 
 bool config_valid(const PipelineConfig &c)
@@ -1782,12 +1943,16 @@ void enqueue_statistics(Pipeline &p)
     launch_means(q, means, ch);
     const CovArgs cov{.centered = p.centered,
                       .means = p.means,
+                      .diff = p.cov_diff,
+                      .terms = p.cov_terms,
+                      .sums = p.cov_sums,
                       .cov = p.cov,
                       .trunc_w = g.trunc_w,
                       .trunc_h = g.trunc_h,
                       .sub_w = g.sub_w,
-                      .sub_h = g.sub_h};
-    launch_covariance(q, cov, ch);
+                      .sub_h = g.sub_h,
+                      .channels = ch};
+    launch_covariance(q, cov, covariance_slice_rows(g));
     const LinalgArgs linalg{
         .cov = p.cov, .eig = p.eig, .qmat = p.qmat, .rmat = p.rmat, .status = p.status};
     launch_linalg(q, linalg, ch);

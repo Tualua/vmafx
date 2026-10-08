@@ -779,6 +779,8 @@ core/test/test_sycl_psnr_parity.c
 core/test/test_sycl_shared_frame_sticky_geometry.c
 core/test/test_sycl_shared_planes.c
 core/test/test_sycl_speed_chroma_parity.c
+core/test/test_sycl_speed_cov_chain.c
+core/test/test_sycl_speed_cov_chain_probe.cpp
 core/test/test_sycl_speed_cov_math.c
 core/test/test_sycl_speed_cov_math_probe.cpp
 core/test/test_sycl_speed_singular_parity.c
