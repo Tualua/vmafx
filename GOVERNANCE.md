@@ -205,9 +205,14 @@ holds any of the access.
 - **The documentation site**, published from the repository by GitHub Pages.
 - **The project mailbox** named in [`SECURITY.md`](SECURITY.md) and
   [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
-- **Funding accounts.** [Ko-fi](https://ko-fi.com/lusoris) exists today.
-  GitHub Sponsors is planned and will be set up once the funding tiers are
-  finished. Their handover is part of the access list above.
+- **Funding accounts.** [GitHub Sponsors](https://github.com/sponsors/lusoris)
+  (USD, live since 2026-10-08) and [Ko-fi](https://ko-fi.com/lusoris) (EUR)
+  are live; a euro Patreon page is being set up. The GitHub profile belongs to
+  the maintainer's personal account. Sponsorship buys recognition only, listed
+  in [`SPONSORS.md`](SPONSORS.md) and explained on
+  [Support VMAFx](docs/support-vmafx.md)
+  ([ADR-2689](docs/adr/2689-sponsorship-tiers-recognition-only.md)). Their
+  handover is part of the access list above.
 
 ### 8.3 Succession plan
 
