@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0565: Continuous Feature-Mix Evaluation Pipeline (predictor-bench)
 
-- **Status**: Proposed (status update 2026-10-06 below)
+- **Status**: Proposed (status updates 2026-10-06 and 2026-10-07 below)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: ai, vmaf-tune, predictor, eval, corpus, fork-local, ci
@@ -114,3 +114,11 @@ pipeline; the tracking issue is
 names does not exist on `origin/master` `fd8b8c93b`.
 
 The body above is unchanged.
+
+## Status update 2026-10-07: Proposed, built in 1.4 with the metric A/B harness
+
+The decision is still not implemented and stays Proposed. The continuous
+feature-mix evaluation pipeline is the same work as the metric A/B harness of
+[#2240](https://github.com/VMAFx/vmafx/issues/2240) (milestone 1.4), so it is built
+there and no longer scheduled in 1.5. [#2262](https://github.com/VMAFx/vmafx/issues/2262)
+keeps ADR-0459 only. The body above is unchanged.
