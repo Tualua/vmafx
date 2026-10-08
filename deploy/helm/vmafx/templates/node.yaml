@@ -146,8 +146,10 @@ spec:
             {{- end }}
             - name: VMAFX_VMAF_BINARY
               value: "/usr/local/bin/vmaf"
+            # The models volume when it is mounted, else the models the node
+            # image ships (persistence.models.mountPath always has a value).
             - name: VMAFX_MODEL_DIR
-              value: {{ .Values.persistence.models.mountPath | default "/usr/local/share/vmafx/model" | quote }}
+              value: {{ ternary .Values.persistence.models.mountPath "/usr/local/share/vmafx/model" .Values.persistence.models.enabled | quote }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}

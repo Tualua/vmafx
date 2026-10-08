@@ -231,7 +231,7 @@ anonymous pulls can fail.
 | Variable | Set by | Description |
 |---|---|---|
 | `VMAFX_BACKEND` | Chart (from `gpu.vendor`) | Backend selector: `cuda`, `hip`, `sycl`, `cpu` |
-| `VMAFX_MODEL_DIR` | ConfigMap (`config.VMAFX_MODEL_DIR`) | Path to VMAF model JSON files |
+| `VMAFX_MODEL_DIR` | Server: ConfigMap (`config.VMAFX_MODEL_DIR`). Nodes: chart, `persistence.models.mountPath` with `persistence.models.enabled`, else the image's `/usr/local/share/vmafx/model` | Path to VMAF model JSON files |
 | `VMAFX_OUTPUT_DIR` | ConfigMap (`config.VMAFX_OUTPUT_DIR`) | Path for scored output |
 | Any `VMAFX_*` | `values.yaml` `env:` block | Override arbitrary env vars |
 
