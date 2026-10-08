@@ -556,6 +556,15 @@
   never incremented.
 
 
+- **The documentation renders formulas as math
+  ([ADR-2705](docs/adr/2705-docs-math-katex.md)).** Write `$...$` inline or
+  `$$...$$` as a display block; KaTeX 0.18.9 typesets it from files the site
+  serves itself, with no third-party host. The metric, backend, API, usage and
+  development pages that wrote formulas as code text now use TeX, and
+  `scripts/docs/check_math.py` fails the docs build on a formula KaTeX rejects.
+  See [Writing math](docs/development/docs-site-design.md#writing-math).
+
+
 - **The route for Go saliency inference is decided.** [ADR-2377](docs/adr/2377-go-saliency-through-mobilesal-binding.md)
   records that `vmafx-tune` runs the saliency model through the core's MobileSal extractor and the
   generated Go binding, with no second ONNX Runtime integration. No code changes yet; RC5 implements

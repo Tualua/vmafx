@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1342), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1343), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5379,3 +5379,7 @@ Every ADR, one heading each (1342), so the site search finds an ADR by its title
 ## ADR-2689: sponsorship is recognition only, in four monthly tiers, with one source file for the list
 
 [2689-sponsorship-tiers-recognition-only](2689-sponsorship-tiers-recognition-only.md)
+
+## ADR-2705: formulas are TeX rendered by self-hosted KaTeX, checked at build time
+
+[2705-docs-math-katex](2705-docs-math-katex.md)
