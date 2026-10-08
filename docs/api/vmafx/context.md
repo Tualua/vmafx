@@ -66,7 +66,7 @@ Initialise with `VMAFX_FEATURE_RESOLUTION_INIT`.
 | `vmafx_context_extractor_info` | 0.1 | Describe registered extractor `index`; VMAFX_E_NOTFOUND past the last one. |
 | `vmafx_options_set` | 0.1 | Set `key` to `value` in `*options`, creating the set when `*options` is NULL; numeric values are normalised as libvmaf does. The caller owns the set and releases it with vmafx_options_free(). |
 | `vmafx_options_free` | 0.1 | Release an option set; NULL is a no-op. |
-| `vmafx_context_set_option` | 0.1 | Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses. |
+| `vmafx_context_set_option` | 0.1 | Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses. |
 | `vmafx_context_use_feature` | 0.1 | Register the extractor named `extractor` with `options` (copied; may be NULL). VMAFX_E_NOTFOUND names an unknown extractor. |
 | `vmafx_context_use_model` | 0.1 | Register the extractors of every feature `model` reads and mount the model. The context takes a reference to the model until it is destroyed (ADR-1755); the caller may release its own at once. |
 | `vmafx_context_use_model_set` | 0.1 | Register the extractors of every member of `set` and mount the members. The context takes a reference to the set until it is destroyed. |
@@ -79,6 +79,11 @@ Initialise with `VMAFX_FEATURE_RESOLUTION_INIT`.
 | `vmafx_context_use_device` | 0.1 | Score on `device`: the context picks each feature's twin on its backend and holds a reference to the device until it is destroyed. Call it once, before any feature, model or frame; a device can serve several contexts. A context without a device scores on the CPU. |
 | `vmafx_context_admit` | 0.1 | Whether every extractor registered on the context can read `frame` where it lives, without a host copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit() makes the same check before it counts a frame. |
 | `vmafx_context_import_frame` | 0.1 | Import a frame for `context` under the import rule (ADR-1852 decision D8): vmafx_frame_import() and vmafx_context_admit(); a transient failure (VMAFX_E_BUSY, VMAFX_E_TIMEOUT) is retried once after a host wait on `desc.acquire` of at most the context's `import_retry_wait_ns` (10 seconds by default); a second failure or any other one fails naming the backend, device, `input` (for example `main` or `reference`), memory kind, pixel format, modifiers and the refusing extractors. Never falls back to a host copy. |
+| `vmafx_context_backend` | 0.1 | Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a libvmaf caller imported; CPU for NULL and for a context on the CPU. Added in ABI 0.1.6. |
+| `vmafx_context_preallocate` | 0.1 | Let the context allocate `count` frames of `desc` once, in the memory its device reads fastest (page-locked host memory for a GPU device state, else host memory), for vmafx_context_acquire_frame(). Checked against the context's frame retention: a count below the depth its extractors keep is VMAFX_E_INVALID, now and when such an extractor is registered later. Added in ABI 0.1.6. |
+| `vmafx_context_acquire_frame` | 0.1 | One of the frames vmafx_context_preallocate() made, with one reference the caller holds; waits until a frame is free (one returns when its last reference is dropped). VMAFX_E_INVALID without preallocated frames. Added in ABI 0.1.6. |
+| `vmafx_context_attach_sidedata` | 0.1 | Attach the perceptual side data of frame `index` (a pre-processor's interop blob, ADR-1118) to the context; it weights the frame in pooled scores while the `perceptual_weight` option is on. A blob of another interop major version is ignored for that frame with a warning and the engine's errno. Added in ABI 0.1.6. |
+| `vmafx_context_set_default_color` | 0.1 | The colour of the submitted frames that carry none (every member of their VmafxFrameDesc.color UNKNOWN), per input; NULL leaves that input's default unset. Only a model with a `conversion_target` reads frame colour: it converts every pair from its colour and refuses a pair whose colour is not fully specified. VMAFX_E_BUSY once a pair has been converted (the conversion is built from the first converted pair's colour), as is a submitted pair whose colour differs from it. Added in ABI 0.1.6. |
 
 ```c
 VMAFX_EXPORT VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext **out,
@@ -116,6 +121,19 @@ VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const 
 VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
                                                     const VmafxFrameImport *desc, const char *input,
                                                     VmafxFrame **out, VmafxError **error);
+VMAFX_EXPORT uint32_t vmafx_context_backend(const VmafxContext *context);
+VMAFX_EXPORT VmafxStatus vmafx_context_preallocate(VmafxContext *context,
+                                                   const VmafxFrameDesc *desc, uint32_t count,
+                                                   VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
+                                                     VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
+                                                       const void *data, size_t size,
+                                                       VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_context_set_default_color(VmafxContext *context,
+                                                         const VmafxColor *reference,
+                                                         const VmafxColor *distorted,
+                                                         VmafxError **error);
 ```
 
 Back to the [reference index](reference.md).

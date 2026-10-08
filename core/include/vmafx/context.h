@@ -150,8 +150,11 @@ VMAFX_EXPORT VmafxStatus vmafx_options_set(VmafxOptions **options, const char *k
 VMAFX_EXPORT void vmafx_options_free(VmafxOptions *options);
 
 /**
- * Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite
- * number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses.
+ * Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite
+ * number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a
+ * sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by
+ * default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an
+ * unknown key, VMAFX_E_INVALID a value the key refuses.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_context_set_option(VmafxContext *context, const char *key,
@@ -263,6 +266,59 @@ VMAFX_EXPORT VmafxStatus vmafx_context_admit(const VmafxContext *context, const 
 VMAFX_EXPORT VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
                                                     const VmafxFrameImport *desc, const char *input,
                                                     VmafxFrame **out, VmafxError **error);
+
+/**
+ * Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a
+ * libvmaf caller imported; CPU for NULL and for a context on the CPU. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT uint32_t vmafx_context_backend(const VmafxContext *context);
+
+/**
+ * Let the context allocate `count` frames of `desc` once, in the memory its device reads fastest
+ * (page-locked host memory for a GPU device state, else host memory), for
+ * vmafx_context_acquire_frame(). Checked against the context's frame retention: a count below the
+ * depth its extractors keep is VMAFX_E_INVALID, now and when such an extractor is registered later.
+ * Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_preallocate(VmafxContext *context,
+                                                   const VmafxFrameDesc *desc, uint32_t count,
+                                                   VmafxError **error);
+
+/**
+ * One of the frames vmafx_context_preallocate() made, with one reference the caller holds; waits
+ * until a frame is free (one returns when its last reference is dropped). VMAFX_E_INVALID without
+ * preallocated frames. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_acquire_frame(VmafxContext *context, VmafxFrame **out,
+                                                     VmafxError **error);
+
+/**
+ * Attach the perceptual side data of frame `index` (a pre-processor's interop blob, ADR-1118) to
+ * the context; it weights the frame in pooled scores while the `perceptual_weight` option is on. A
+ * blob of another interop major version is ignored for that frame with a warning and the engine's
+ * errno. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_attach_sidedata(VmafxContext *context, uint64_t index,
+                                                       const void *data, size_t size,
+                                                       VmafxError **error);
+
+/**
+ * The colour of the submitted frames that carry none (every member of their VmafxFrameDesc.color
+ * UNKNOWN), per input; NULL leaves that input's default unset. Only a model with a
+ * `conversion_target` reads frame colour: it converts every pair from its colour and refuses a pair
+ * whose colour is not fully specified. VMAFX_E_BUSY once a pair has been converted (the conversion
+ * is built from the first converted pair's colour), as is a submitted pair whose colour differs
+ * from it. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_context_set_default_color(VmafxContext *context,
+                                                         const VmafxColor *reference,
+                                                         const VmafxColor *distorted,
+                                                         VmafxError **error);
 
 #ifdef __cplusplus
 }

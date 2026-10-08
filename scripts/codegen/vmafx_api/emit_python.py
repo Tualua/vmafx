@@ -29,6 +29,7 @@ CTYPES = {
     "uptr": "ctypes.c_size_t",
     "size": "ctypes.c_size_t",
     "ptr": "ctypes.c_void_p",
+    "cptr": "ctypes.c_void_p",
     "status": "ctypes.c_int32",
     "cstr": "ctypes.c_char_p",
 }
@@ -45,6 +46,7 @@ PYTYPES = {
     "cstr": "str | None",
 }
 CONTEXT = "VmafxContext"
+POINTERS = ("ptr", "cptr")  # untyped memory: no Python value
 LINE_LIMIT = 100  # black line length (pyproject.toml)
 
 
@@ -170,7 +172,7 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
         if fld.count:
             return f"tuple[{record}, ...]", f"tuple({record}.from_c(x) for x in {raw})"
         return record, f"{record}.from_c({raw})"
-    if kind != "scalar" or fld.type == "ptr":
+    if kind != "scalar" or fld.type in POINTERS:
         return None
     value = f"_text({raw})" if fld.type == "cstr" else raw
     if fld.count:
@@ -178,19 +180,36 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
     return PYTYPES[fld.type], value
 
 
-def _plain(api: Api, fields: list[Field]) -> bool:
-    """A record converts back to C when every field is a single non-pointer number."""
-    return all(
-        typesys.kind(api, f.type) == "scalar" and f.type not in ("cstr", "ptr") and not f.count
-        for f in fields
+def _number(api: Api, fld: Field) -> bool:
+    """A single non-pointer number."""
+    return (
+        typesys.kind(api, fld.type) == "scalar"
+        and fld.type not in ("cstr", *POINTERS)
+        and not fld.count
     )
 
 
-def _to_c(item: Struct, fields: list[Field]) -> list[str]:
+def _nested_numbers(api: Api, fld: Field) -> bool:
+    """A single struct of numbers (VmafxFrameDesc.color): its record converts back."""
+    if typesys.kind(api, fld.type) != "struct" or fld.count:
+        return False
+    inner = [f for f in api.struct(fld.type).fields if f.name != "struct_size"]
+    return all(_number(api, f) for f in inner)
+
+
+def _plain(api: Api, fields: list[Field]) -> bool:
+    """A record converts back to C when every field is a single non-pointer number
+    or a single struct of such numbers."""
+    return all(_number(api, f) or _nested_numbers(api, f) for f in fields)
+
+
+def _to_c(api: Api, item: Struct, fields: list[Field]) -> list[str]:
     lines = [f"\n    def to_c(self) -> {item.name}:\n", f"        raw = {item.name}()\n"]
     if item.sized:
         lines.append("        raw.struct_size = ctypes.sizeof(raw)\n")
-    lines += [f"        raw.{f.name} = self.{f.name}\n" for f in fields]
+    for f in fields:
+        value = f"self.{f.name}.to_c()" if _nested_numbers(api, f) else f"self.{f.name}"
+        lines.append(f"        raw.{f.name} = {value}\n")
     return [*lines, "        return raw\n"]
 
 
@@ -212,7 +231,7 @@ def _record_class(api: Api, item: Struct) -> str:
     # still converts back (VmafxContextConfig and its log callback).
     plain = [f for f, _ in kept]
     if _plain(api, plain):
-        lines += _to_c(item, plain)
+        lines += _to_c(api, item, plain)
     return "".join(lines)
 
 
@@ -289,7 +308,7 @@ def _bindable(api: Api, param: Param) -> bool:
     kind = typesys.kind(api, param.type)
     if param.mode == "error" or (param.mode == "out" and kind == "struct"):
         return True
-    return param.mode == "in" and kind == "scalar" and param.type != "ptr"
+    return param.mode == "in" and kind == "scalar" and param.type not in POINTERS
 
 
 def context_methods(api: Api) -> list[Function]:
@@ -327,7 +346,7 @@ def library_functions(api: Api) -> list[Function]:
     out = []
     for fn in api.functions:
         kinds = {typesys.kind(api, p.type) for p in fn.params}
-        if kinds - {"scalar"} or any(p.type == "ptr" for p in fn.params):
+        if kinds - {"scalar"} or any(p.type in POINTERS for p in fn.params):
             continue
         if fn.returns not in ("cstr", "void"):
             continue

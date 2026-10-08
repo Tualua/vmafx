@@ -280,6 +280,7 @@ typedef struct VmafContext VmafContext;
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_create")
 VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
 
 /**
@@ -306,6 +307,7 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_use_model")
 VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model);
 
 /**
@@ -326,6 +328,7 @@ VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_use_model_set")
 VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
                                                         VmafModelCollection *model_collection);
 
@@ -359,6 +362,7 @@ VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_use_feature")
 VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
                                  VmafFeatureDictionary *opts_dict);
 
@@ -381,6 +385,7 @@ VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_import_score")
 VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
                                           unsigned index);
 
@@ -429,6 +434,7 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_submit")
 VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                    unsigned index);
 
@@ -454,6 +460,7 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_option")
 VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled);
 
 /**
@@ -490,6 +497,7 @@ VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabl
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_default_color")
 VMAF_EXPORT int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref,
                                            const VmafColor *dist);
 
@@ -517,6 +525,7 @@ VMAF_EXPORT int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *r
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_frame")
 VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score,
                                     unsigned index);
 
@@ -536,6 +545,7 @@ VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double 
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_frame_model_set")
 VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
                                                      VmafModelCollection *model_collection,
                                                      VmafModelCollectionScore *score,
@@ -563,6 +573,7 @@ VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_feature_score")
 VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name,
                                             double *score, unsigned index);
 
@@ -588,6 +599,7 @@ VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *featu
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_pooled")
 VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
                                   enum VmafPoolingMethod pool_method, double *score,
                                   unsigned index_low, unsigned index_high);
@@ -614,6 +626,7 @@ VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_pooled_model_set")
 VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
                                                    VmafModelCollection *model_collection,
                                                    enum VmafPoolingMethod pool_method,
@@ -640,6 +653,7 @@ VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_feature_score_pooled")
 VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
                                           enum VmafPoolingMethod pool_method, double *score,
                                           unsigned index_low, unsigned index_high);
@@ -701,6 +715,7 @@ typedef struct VmafPictureConfiguration {
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_preallocate")
 VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfiguration cfg);
 
 /**
@@ -717,6 +732,7 @@ VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfigur
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_acquire_frame")
 VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
 /**
@@ -750,6 +766,7 @@ VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_destroy")
 VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
 
 /**
@@ -767,6 +784,7 @@ VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_report_write")
 VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
                                   enum VmafOutputFormat fmt);
 
@@ -795,6 +813,7 @@ VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_report_write")
 VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
                                               enum VmafOutputFormat fmt, const char *score_format);
 
@@ -811,6 +830,7 @@ VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *out
  *
  * @return 0 on success, or -EINVAL when @vmaf or @out is NULL.
  */
+VMAF_DEPRECATED("use vmafx_context_backend")
 VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
 
 /**
@@ -856,6 +876,7 @@ VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *ou
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_feature_resolve")
 VMAF_EXPORT int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
                                           const VmafFeatureDictionary *opts_dict,
                                           const VmafPictureConfiguration *pic_cfg,
@@ -884,6 +905,7 @@ VMAF_EXPORT int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_extractor_info")
 VMAF_EXPORT int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index,
                                                   const char **name, enum VmafBackend *backend);
 
@@ -895,6 +917,7 @@ VMAF_EXPORT int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned in
  *
  * @note Thread safety: Safe to call from any thread.
  */
+VMAF_DEPRECATED("use vmafx_version_string")
 VMAF_EXPORT const char *vmaf_version(void);
 
 #ifdef __cplusplus

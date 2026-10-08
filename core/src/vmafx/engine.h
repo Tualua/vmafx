@@ -10,7 +10,8 @@
  * VMAFx API (core/src/vmafx/) is built on (ADR-1852). The libvmaf functions
  * these replace (vmaf_init, vmaf_close, vmaf_feature_score_at_index,
  * vmaf_version) are generated compat shims on the VMAFx API now
- * (core/src/vmafx/compat_libvmaf_gen.c). Nothing here is exported.
+ * (core/src/compat/libvmaf/libvmaf_gen.c, libvmaf.so.3). Nothing here is
+ * exported: libvmafx.so.1's version script hides every engine symbol.
  */
 
 #ifndef VMAFX_ENGINE_H
@@ -72,6 +73,13 @@ int vmaf_engine_score_pooled_model_collection(VmafContext *vmaf,
                                               enum VmafPoolingMethod pool_method,
                                               VmafModelCollectionScore *score, unsigned index_low,
                                               unsigned index_high);
+
+/* ADR-2094: the colorimetry of the next pair for a model's conversion_target
+ * (the VMAFx frames' colour, else the context's default): 0 when unchanged,
+ * else as vmaf_set_input_colorimetry() (-EBUSY once a picture was
+ * converted); -EINVAL for a NULL argument. */
+int vmaf_engine_set_pair_colorimetry(VmafContext *vmaf, const VmafColor *ref,
+                                     const VmafColor *dist);
 
 /* Earlier reference frames the context keeps after a frame was read: 1, or 2
  * once an extractor that reads frame n-2 is registered (ADR-1478); 0 for

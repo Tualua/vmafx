@@ -118,7 +118,10 @@ its C output.
 | `core/src/vmafx.def` | Windows export list, for the shared library split |
 | `core/src/vmafx_symbols.txt` | Exported symbols and their version nodes, read by `check_exported_symbols` |
 | `core/src/vmafx/status_gen.c`, `status_gen.h` | Status names and errno maps |
-| `core/src/vmafx/compat_libvmaf_gen.c` | `libvmaf.h` functions implemented on the new API |
+| `core/src/compat/libvmaf/libvmaf_gen.c`, `status_errno_gen.c` | The generated (`shim`, `glue`) libvmaf functions of the compat library `libvmaf.so.3` and its status-to-errno map |
+| `core/src/vmafx/engine_names_gen.h` | Forced on every engine translation unit: the engine's own libvmaf bodies compile as `vmaf_engine_<stem>` |
+| `core/src/vmafx_legacy_<backend>.map`, `core/src/libvmaf_symbols.txt` | Version node of the libvmaf functions a built backend keeps in the engine (declared exceptions), and which library exports each libvmaf function in which build |
+| `core/test/compat_conformance_gen.h`, `compat_conformance_table_gen.c` | The two function tables (old libvmaf, compat library) and the coverage rule of `test_compat_conformance` |
 | `core/test/test_vmafx_abi_layout.c` | `_Static_assert` of every struct size, alignment, field offset, array length and constant |
 | `bindings/python/vmafx/_api.py` | ctypes binding; checks its layouts at import |
 | `docs/api/vmafx/reference.md` and one page per header | [Reference index](../api/vmafx/reference.md) |
@@ -133,11 +136,33 @@ Every generated C file is already in the repository's clang-format style (long
 `*_INIT` macros sit between `clang-format off` / `on` markers) and the Python
 file in black's style, so formatter hooks never rewrite them.
 
-While the VMAFx functions share `libvmaf.so` with the libvmaf API,
-`hide_unlisted = false` keeps the version script from touching the `vmaf_*`
-exports: they stay unversioned and only `vmafx_*` symbols get version nodes.
-The library split (ADR-1852 decision D3) sets it to `true`, which hides every
-symbol the script does not list.
+Since the library split (ADR-1852 decision D3,
+[ADR-2094](../adr/2094-libvmaf-compat-library-split.md)), `hide_unlisted = true`:
+`libvmafx.so.1` exports the `vmafx_*` functions and nothing the script does
+not list. The libvmaf functions live in `libvmaf.so.3`, generated (`shim`,
+`glue`) or hand-written (`manual`, in `core/src/compat/libvmaf/`) from the
+`[[compat]]` table; a backend's functions that still live in the engine are
+`engine` entries, exported through `core/src/vmafx_legacy_<backend>.map` in
+builds with that backend.
+
+### The compat table
+
+| Key | Meaning |
+| --- | --- |
+| `kind` | `shim` / `glue` (body generated from `null_checks`, `context`, `build`, `out_handle`, `out_struct`, `args`, `post` (asserted after success), `store`, `return_expr` or `body`), `manual` (hand-written), `engine` (no compat definition) |
+| `target`, `calls` | The VMAFx function the entry is built on; for `manual`, every `vmafx_*` function its file calls (a test compares them with the source) |
+| `file` | `manual`: the source under `core/src/compat/libvmaf/` |
+| `engine_with`, `until` | A backend whose builds keep the engine's own definition, and what ends that exception |
+| `when` | A build feature the function exists in (`mcp`) |
+| `platform` | An operating system the function exists on (`windows`: declared under `#ifdef _WIN32`); its name stays out of the ELF version scripts and its row in `core/src/libvmaf_symbols.txt` ends in `@windows` |
+| `note` | One line for the [migration table](../api/vmafx/compat.md) |
+
+Every engine translation unit is compiled with the generated
+`core/src/vmafx/engine_names_gen.h` (`vmaf_engine_name_args`), which names
+the engine's own libvmaf bodies `vmaf_engine_<stem>`; code that uses the
+libvmaf API (the compat library, the tools, black-box tests) defines
+`VMAF_PUBLIC_NAMES`. `test_compat_conformance` compares every compat function
+with its engine body.
 
 ## Option groups
 
