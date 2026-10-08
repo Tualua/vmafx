@@ -23,6 +23,11 @@
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+/* Declares vmaf_set_perceptual_weight_enabled() / _strength(), which the forced
+ * engine_names_gen.h renames to vmaf_engine_*; declared once, with the public
+ * header's linkage: a second plain declaration is MSVC error C2375 (different
+ * linkage) in a TU that includes both. */
+#include "libvmaf/perceptual_weight.h"
 
 /* Bound of the provided-feature walk in vmaf_engine_feature_producer()
  * (HISS-02); no extractor declares more than a few dozen. */
@@ -48,8 +53,6 @@ int vmaf_engine_use_features_from_model_collection(VmafContext *vmaf,
                                                    VmafModelCollection *model_collection);
 int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
                                      unsigned index);
-int vmaf_engine_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled);
-int vmaf_engine_set_perceptual_weight_strength(VmafContext *vmaf, double strength);
 int vmaf_engine_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
                                      const VmafFeatureDictionary *opts_dict,
                                      const VmafPictureConfiguration *pic_cfg,
