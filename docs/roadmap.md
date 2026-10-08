@@ -19,7 +19,13 @@ map of where that plan lives and how the releases are sequenced.
 | [1.3](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167) (a decision after the external runner), the artefact detectors ([#2272](https://github.com/VMAFx/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/VMAFx/vmafx/issues/2394)), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
 | [1.4](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
 | [1.5](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
-| [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the C++23 core, the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
+| [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
+| [2.1](https://github.com/VMAFx/vmafx/milestone/10) | Rust P1a: the default-model extractors Rust-default with SIMD ([#2573](https://github.com/VMAFx/vmafx/issues/2573)) |
+| [2.2](https://github.com/VMAFx/vmafx/milestone/11) | Rust P1b: the remaining CPU extractors and SIMD ([#2574](https://github.com/VMAFx/vmafx/issues/2574)) |
+| [2.3](https://github.com/VMAFx/vmafx/milestone/12) | Rust P2: engine, model loading, predict and pooling, generated ABI shells ([#2575](https://github.com/VMAFx/vmafx/issues/2575)) |
+| [2.4](https://github.com/VMAFx/vmafx/milestone/13) | Rust P3: CLI, tools, MCP server, ONNX Runtime host, host glue ([#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581)) |
+| [2.5](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
+| [3.0](https://github.com/VMAFx/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/VMAFx/vmafx/issues/2579)) |
 
 [ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) set this layout on
 2026-10-06 and declared it the last change of the milestone map until 2.0,
@@ -328,6 +334,18 @@ sequence when normal required checks, review, pinning, and component-specific
 validation pass. Security updates are prioritised rather than being the only
 allowed updates. Because evidence is exact-head, any later merge requires the
 affected candidate checks or measurements to be rerun.
+
+## Rust core
+
+[ADR-2478](adr/2478-rust-core-migration.md) decides that Rust replaces all
+host-side C and C++ by 3.0 behind the unchanged C ABI, exported from Rust and
+generated from the API definition. The epic is
+[#2567](https://github.com/VMAFx/vmafx/issues/2567); the phases and their
+milestones are in the ADR's phase table and the research digest is
+[Research-2479](research/2479-rust-core-migration.md). Native GPU device sources
+and C-only host glue stay on a named exception list with re-evaluation
+triggers. The C implementation of a layer is the differential oracle until it is
+deleted; the `libvmaf.h` compatibility removal stays in 2.0.
 
 ## Things that do not change
 
