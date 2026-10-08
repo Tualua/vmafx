@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1330), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1332), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5323,6 +5323,14 @@ Every ADR, one heading each (1330), so the site search finds an ADR by its title
 ## ADR-2440: Move the praetor pin to 7458a220e1c9 and drop the exceptions for the managed workflows
 
 [2440-praetor-pin-7458a220](2440-praetor-pin-7458a220.md)
+
+## ADR-2461: A lighter deliverables track for small pull requests
+
+[2461-small-pr-deliverables-track](2461-small-pr-deliverables-track.md)
+
+## ADR-2462: Every commit carries a DCO sign-off, checked on pull requests
+
+[2462-dco-sign-off-required](2462-dco-sign-off-required.md)
 
 ## ADR-2478: Rust replaces the host-side C and C++ through 3.0, behind the unchanged C ABI
 

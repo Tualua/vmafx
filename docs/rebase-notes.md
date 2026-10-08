@@ -8,6 +8,33 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## DCO sign-off check (2026-10-08)
+
+`community-dco`, [ADR-2462](adr/2462-dco-sign-off-required.md). The job
+`dco-sign-off` in `.github/workflows/rule-enforcement.yml`, its entry
+`'DCO Sign-off'` in the `required` list of `required-aggregator.yml`,
+`scripts/ci/check-dco.py` with its bot list `BOT_LOGINS`, and `:gitSignOff` in
+`renovate.json` are fork-authored. A sync that rewrites either workflow keeps
+the job and the aggregator entry together (`check-aggregator-names.sh` fails
+when they diverge). `scripts/ci/tests/test_check_dco.py` reads the wiring.
+
+## Small-PR track in the deliverables gate (2026-10-08)
+
+`community-smallpr`, [ADR-2461](adr/2461-small-pr-deliverables-track.md).
+`scripts/ci/deliverables-check.sh` gained section 2c and a skip in the
+six-item loop; the PR template gained a paragraph. Both are fork-authored; a
+sync keeps the fork's side. `scripts/ci/tests/test_deliverables_small_pr.py`
+guards the behaviour and reads the template and the sentinel guide.
+
+## Community health documents (2026-10-08)
+
+`community-docs`, [ADR-2461](adr/2461-small-pr-deliverables-track.md)
+(Proposed). `ACCESSIBILITY.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`,
+`SUPPORT.md`, `CONTRIBUTING.md` and the accessibility issue form are
+fork-authored; no upstream Netflix/vmaf file carries them in this form, so a
+sync keeps the fork's side of every hunk. `CONTRIBUTING.md` still ends with
+the inherited Netflix guide, which a sync may update below the fork's part.
+
 ## Rust core migration decision (2026-10-08, ADR-2478)
 
 `docs/rust-core-plan`, [ADR-2478](adr/2478-rust-core-migration.md). Documentation only: ADR, research digest, roadmap section and one `core/AGENTS.d` page. No code path changes. A sync that ports a Netflix change into a layer with a Rust successor lands it in the C oracle and in the Rust layer in the same PR. no upstream file.

@@ -75,6 +75,17 @@
   scoring lands.
 
 
+- Added `ACCESSIBILITY.md` (commitment, scope, known limitations, how to report
+  a barrier), an accessibility issue form and the `accessibility` label, a
+  "Your first contribution" and "What to expect" section in `CONTRIBUTING.md`,
+  the Contributor Covenant enforcement guidelines and a route for reports about
+  the maintainer in `CODE_OF_CONDUCT.md`, and a continuity and succession
+  section in `GOVERNANCE.md`. `README.md` links the code of conduct, support
+  and accessibility pages; `SUPPORT.md` no longer lists the removed Vulkan
+  backend. ADR-2461 (Accepted) adds a lighter deliverables track for small
+  pull requests.
+
+
 - Added the credits page `docs/credits.md`, rendered from the curated list
   `docs/credits.yaml`: every third-party project, vendored file, model, dataset,
   paper, tool, action, image and font VMAFx ships, adapts or uses, with its
@@ -82,6 +93,15 @@
   docs-fragments-check` fails on page drift, an uncredited vendored or
   inherited path, an unused `LICENSES/*.txt`, a skill derived from an upstream
   with no entry, and an entry path that is gone. See ADR-2485.
+
+
+- Added the required check `DCO Sign-off`: every commit of a pull request must
+  carry a `Signed-off-by:` line (`git commit -s`; `git rebase --signoff` fixes a
+  branch). Renovate, Dependabot and GitHub Actions bot commits in their own pull
+  requests and the release pull request are exempt, and pull requests created
+  before the cutoff in `scripts/ci/dco-cutoff.txt` are grandfathered. Run it locally with
+  `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`. See
+  `docs/development/dco.md` and ADR-2462.
 
 
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
@@ -441,6 +461,15 @@
   does not know is refused with 400.
 - `vmaf --help` lists every option with its values and default, generated
   from the API definition.
+
+
+- The deliverables gate (`scripts/ci/deliverables-check.sh`) and the pull
+  request template recognise `small PR (ADR-2461)`: for a pull request of at
+  most 100 changed lines in one top-level directory that touches no source of
+  `core/`, public header, CLI, build option, golden test, FFmpeg patch or ADR,
+  the research digest, decision matrix, `AGENTS.md` note and rebase note are
+  waived. The marker is refused, with the reasons, when the diff does not
+  qualify. See `docs/development/pr-body-sentinel-guide.md`.
 
 
 - **Citing an ADR in source no longer edits a shared registry
