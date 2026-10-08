@@ -119,9 +119,7 @@ func TestConcurrentClaimsTakeEachJobOnce(t *testing.T) {
 	)
 	for w := range workers {
 		ref := register(t, db.store, "t1", "n"+string(rune('a'+w)))
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range jobs {
 				c, err := db.store.Claim(context.Background(), store.ClaimParams{Session: ref, Backends: []string{"cpu"}, LeaseTTL: time.Minute})
 				if err != nil || c == nil {
@@ -131,7 +129,7 @@ func TestConcurrentClaimsTakeEachJobOnce(t *testing.T) {
 				seen[c.Job.ID]++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if len(seen) != jobs {

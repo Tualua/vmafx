@@ -44,7 +44,7 @@ func TestHTTPScoreLogsCarrySharedFields(t *testing.T) {
 	}
 
 	var line map[string]any
-	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(l), &m); err == nil && m["msg"] == "http Score completed" {
 			line = m

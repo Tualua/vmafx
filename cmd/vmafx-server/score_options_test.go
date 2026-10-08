@@ -35,10 +35,10 @@ func TestScoreRunMapsOptionsToGeneratedFlags(t *testing.T) {
 		Reference: "/r.yuv", Distorted: "/d.yuv", Model: "vmaf_v0.6.1",
 		Options: &vmafxv1.ScoreOptions{
 			Width: proto.Uint32(576), Height: proto.Uint32(324),
-			PixelFormat: proto.String("420"), Bitdepth: proto.Uint32(8),
+			PixelFormat: new("420"), Bitdepth: proto.Uint32(8),
 			Subsample: proto.Uint32(2), Threads: proto.Uint32(4),
-			Feature: []string{"psnr"}, DisableClip: proto.Bool(true),
-			ViewDistance: proto.Float64(4.5), Backend: proto.String("sycl"), Device: proto.String("1"),
+			Feature: []string{"psnr"}, DisableClip: new(true),
+			ViewDistance: new(4.5), Backend: new("sycl"), Device: new("1"),
 		},
 	}
 	run, precision, err := scoreRun(req)
@@ -68,12 +68,12 @@ func TestScoreRunRefusesOptionsTheDefinitionRefuses(t *testing.T) {
 	t.Parallel()
 	cases := map[string]*vmafxv1.ScoreOptions{
 		"invalid bitdepth 14":       {Bitdepth: proto.Uint32(14)},
-		"invalid backend vulkan":    {Backend: proto.String("vulkan")},
+		"invalid backend vulkan":    {Backend: new("vulkan")},
 		"invalid target_width":      {TargetWidth: proto.Uint32(1920)},
-		"needs a backend that":      {Backend: proto.String("cuda"), Device: proto.String("0")},
-		"neither auto nor":          {Backend: proto.String("hip"), Device: proto.String("first")},
-		"invalid precision":         {Precision: proto.String("18")},
-		"invalid view_distance 1.5": {ViewDistance: proto.Float64(1.5)},
+		"needs a backend that":      {Backend: new("cuda"), Device: new("0")},
+		"neither auto nor":          {Backend: new("hip"), Device: new("first")},
+		"invalid precision":         {Precision: new("18")},
+		"invalid view_distance 1.5": {ViewDistance: new(1.5)},
 	}
 	for want, options := range cases {
 		_, err := runScore(context.Background(), nil, &vmafxv1.ScoreRequest{

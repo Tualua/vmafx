@@ -97,10 +97,10 @@ func (s Settings) ApplyValues(doc []byte) (Settings, error) {
 	}
 	picked := map[string]*yaml.Node{}
 	settings := reflect.TypeFor[Settings]()
-	for i := range settings.NumField() {
-		key := settings.Field(i).Tag.Get("yaml")
+	for field := range settings.Fields() {
+		key := field.Tag.Get("yaml")
 		if n, ok := top.Monitoring[key]; ok {
-			if err := checkScalarTypes(&n, settings.Field(i).Type, "monitoring."+key); err != nil {
+			if err := checkScalarTypes(&n, field.Type, "monitoring."+key); err != nil {
 				return s, err
 			}
 			picked[key] = &n
@@ -169,9 +169,9 @@ func checkScalar(c scalarCheck) error {
 
 // fieldByTag finds the struct field of t with yaml tag key.
 func fieldByTag(t reflect.Type, key string) (reflect.StructField, bool) {
-	for i := range t.NumField() {
-		if t.Field(i).Tag.Get("yaml") == key {
-			return t.Field(i), true
+	for field := range t.Fields() {
+		if field.Tag.Get("yaml") == key {
+			return field, true
 		}
 	}
 	return reflect.StructField{}, false

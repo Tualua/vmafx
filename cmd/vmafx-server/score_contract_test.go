@@ -150,7 +150,7 @@ func contractRequest(env contractEnv, tc contractCase) *vmafxv1.ScoreRequest {
 		options = proto.CloneOf(tc.options)
 	}
 	options.Width, options.Height = proto.Uint32(contractWidth), proto.Uint32(contractHeight)
-	options.PixelFormat, options.Bitdepth = proto.String("420"), proto.Uint32(8)
+	options.PixelFormat, options.Bitdepth = new("420"), proto.Uint32(8)
 	return &vmafxv1.ScoreRequest{
 		Reference: filepath.Join(env.yuv, contractRef),
 		Distorted: filepath.Join(env.yuv, contractDis),

@@ -17,6 +17,7 @@ import (
 	_ "embed" // options.gen.json
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -164,22 +165,12 @@ func (o *Option) DefaultOn(surface string) any {
 
 // On reports whether the option is on a surface.
 func (o *Option) On(surface string) bool {
-	for _, s := range o.Surfaces {
-		if s == surface {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(o.Surfaces, surface)
 }
 
 // Repeats reports whether the option takes a list on a surface.
 func (o *Option) Repeats(surface string) bool {
-	for _, s := range o.Repeat {
-		if s == surface {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(o.Repeat, surface)
 }
 
 // LibraryDefault is the value of the library default an option names

@@ -25,7 +25,7 @@ const tag = "vmafx"
 
 // promRef is the panel and variable data source: the template variable.
 func promRef() common.DataSourceRef {
-	return common.DataSourceRef{Type: cog.ToPtr("prometheus"), Uid: cog.ToPtr("${" + promDatasourceVar + "}")}
+	return common.DataSourceRef{Type: new("prometheus"), Uid: new("${" + promDatasourceVar + "}")}
 }
 
 // newDashboard starts a generated VMAFx dashboard: baseDashboard over the
@@ -71,7 +71,7 @@ func scopeVariable(name, query string) *dashboard.QueryVariableBuilder {
 	return dashboard.NewQueryVariableBuilder(name).
 		Label(titleCase(name)).
 		Datasource(promRef()).
-		Query(dashboard.StringOrMap{String: cog.ToPtr(query)}).
+		Query(dashboard.StringOrMap{String: new(query)}).
 		Definition(query).
 		Refresh(dashboard.VariableRefreshOnTimeRangeChanged).
 		Sort(dashboard.VariableSortAlphabeticalAsc).
@@ -194,7 +194,7 @@ func steps(base string, more ...dashboard.Threshold) []dashboard.Threshold {
 
 // at is the threshold step that turns color from value up.
 func at(value float64, color string) dashboard.Threshold {
-	return dashboard.Threshold{Value: cog.ToPtr(value), Color: color}
+	return dashboard.Threshold{Value: new(value), Color: color}
 }
 
 // Grafana unit identifiers by metricdef unit.

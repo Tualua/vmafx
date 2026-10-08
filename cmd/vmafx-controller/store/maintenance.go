@@ -68,10 +68,7 @@ func expireOne(ctx context.Context, q *pgdb.Queries, row pgdb.ExpiredLeasesRow, 
 	if failed {
 		err = q.FailExpired(ctx, pgdb.FailExpiredParams{Error: reason, ID: row.ID, Attempt: row.Attempt})
 	} else {
-		delay := backoff(lost)
-		if delay < 0 {
-			delay = 0
-		}
+		delay := max(backoff(lost), 0)
 		err = q.RequeueExpired(ctx, pgdb.RequeueExpiredParams{
 			DelaySeconds: delay.Seconds(), ID: row.ID, Attempt: row.Attempt,
 		})
