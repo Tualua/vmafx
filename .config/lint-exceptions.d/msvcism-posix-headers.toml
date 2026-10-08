@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Declared exceptions to the msvcism stage's POSIX-only header check of
 # scripts/dev/preflight.sh (scripts/dev/find-posix-only-headers.py). Format and
 # rules: scripts/ci/lint_exceptions.py. A source the Windows build compiles
