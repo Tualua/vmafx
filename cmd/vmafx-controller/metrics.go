@@ -10,16 +10,14 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
 	"github.com/VMAFx/vmafx/pkg/observability"
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
-	"github.com/VMAFx/vmafx/pkg/registry"
 )
 
 // controllerMetrics are the controller's job families (metricdef) and the
 // shared scoring metrics whose quality family a completed job feeds. The queue
-// and node-registry families are read at scrape time (registerQueueCollector).
+// and node families are read from the backend at scrape time (registerQueueCollector).
 type controllerMetrics struct {
 	scoring   *observability.Metrics
 	submitted observability.Counter
@@ -64,7 +62,7 @@ func (m *controllerMetrics) jobSubmitted(tenant string) {
 
 // jobAssigned records how long job waited in the queue before PullWork handed
 // it to a node.
-func (m *controllerMetrics) jobAssigned(job *queue.Job) {
+func (m *controllerMetrics) jobAssigned(job *backend.Job) {
 	if !job.CreatedAt.IsZero() {
 		m.queueWait.Observe(sinceSeconds(job.CreatedAt), job.TenantID)
 	}
@@ -72,15 +70,15 @@ func (m *controllerMetrics) jobAssigned(job *queue.Job) {
 
 // jobFinished counts a job this controller moved to a terminal state, records
 // its time from submission and, for a completed job, its score in the quality
-// family. status is queue.StatusCompleted, StatusFailed or StatusCancelled. A
+// family. status is backend.StatusCompleted, StatusFailed or StatusCancelled. A
 // job without a submission time (it could not be read back) is counted only.
-func (m *controllerMetrics) jobFinished(job *queue.Job, status string) {
+func (m *controllerMetrics) jobFinished(job *backend.Job, status string) {
 	switch status {
-	case queue.StatusCompleted:
+	case backend.StatusCompleted:
 		m.completed.Inc(job.TenantID)
-	case queue.StatusFailed:
+	case backend.StatusFailed:
 		m.failed.Inc(job.TenantID)
-	case queue.StatusCancelled:
+	case backend.StatusCancelled:
 		m.cancelled.Inc(job.TenantID)
 	default:
 		return
@@ -89,7 +87,7 @@ func (m *controllerMetrics) jobFinished(job *queue.Job, status string) {
 		return
 	}
 	m.duration.Observe(sinceSeconds(job.CreatedAt), job.TenantID, status)
-	if status == queue.StatusCompleted {
+	if status == backend.StatusCompleted {
 		m.scoring.ObserveScore(job.TenantID, job.Scoring.Model, job.Score)
 	}
 }
@@ -100,16 +98,11 @@ func sinceSeconds(t time.Time) float64 {
 	return max(time.Since(t).Seconds(), 0)
 }
 
-// queueStats is the part of the queue the scrape reads.
-type queueStats interface {
-	Stats(ctx context.Context) (queue.Stats, error)
-}
-
 // registerQueueCollector registers the scraped families: per-tenant pending
 // and running jobs, the age of each tenant's oldest pending job, the requeue
-// totals and the live node count, read from q and r when Prometheus scrapes.
-// A failed read counts in vmafx_metrics_read_errors_total{source="queue"}.
-func registerQueueCollector(reg *prometheus.Registry, q queue.Queue, r *nodes.Registry) error {
+// totals and the live node count, read from the backend when Prometheus
+// scrapes. A failed read counts in vmafx_metrics_read_errors_total{source="queue"}.
+func registerQueueCollector(reg *prometheus.Registry, b backend.Backend) error {
 	errs, err := observability.NewReadErrors(reg)
 	if err != nil {
 		return fmt.Errorf("controller metrics: %w", err)
@@ -121,7 +114,7 @@ func registerQueueCollector(reg *prometheus.Registry, q queue.Queue, r *nodes.Re
 			metricdef.ControllerQueueOldestAge, metricdef.ControllerJobsRequeued,
 			metricdef.ControllerNodesLive,
 		},
-		Read: queueScrape(q, r),
+		Read: queueScrape(b),
 	}
 	if err := observability.RegisterScraped(reg, errs, group); err != nil {
 		return fmt.Errorf("controller metrics: %w", err)
@@ -129,8 +122,13 @@ func registerQueueCollector(reg *prometheus.Registry, q queue.Queue, r *nodes.Re
 	return nil
 }
 
-// queueScrape reads the queue's counts and the node registry's size.
-func queueScrape(q queueStats, r registry.Counter) observability.ScrapeFunc {
+// queueStats is the part of the backend the scrape reads.
+type queueStats interface {
+	Stats(ctx context.Context) (backend.Stats, error)
+}
+
+// queueScrape reads the backend's counts and live node sessions.
+func queueScrape(q queueStats) observability.ScrapeFunc {
 	return func(ctx context.Context) ([]observability.Sample, error) {
 		st, err := q.Stats(ctx)
 		if err != nil {
@@ -143,14 +141,14 @@ func queueScrape(q queueStats, r registry.Counter) observability.ScrapeFunc {
 			})
 		}
 		return append(samples, observability.Sample{
-			Family: metricdef.ControllerNodesLive, Value: float64(r.Count()),
+			Family: metricdef.ControllerNodesLive, Value: float64(st.LiveNodes),
 		}), nil
 	}
 }
 
 // tenantSamples turns the queue's per-tenant counts into samples. A tenant
 // with no pending job has no oldest-age sample.
-func tenantSamples(tenants []queue.TenantStats, now time.Time) []observability.Sample {
+func tenantSamples(tenants []backend.TenantCount, now time.Time) []observability.Sample {
 	out := make([]observability.Sample, 0, 3*len(tenants))
 	for _, ts := range tenants {
 		lv := []string{ts.TenantID}

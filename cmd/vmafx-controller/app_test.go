@@ -47,7 +47,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -91,16 +90,9 @@ func writeControllerEnv(t *testing.T) {
 // file-watch disabled (a watcher goroutine would otherwise leak across tests);
 // everything else is identical to the binary's composition.
 func productionGraph() fx.Option {
-	envReplace := fx.Replace(config.Options{
-		EnvPrefix: "VMAFX_",
-		Delimiter: ".",
-		Watch:     false,
-		CompoundKeys: []string{
-			"auth.tenant_claim",
-			"auth.roles_claim",
-		},
-	})
-	return fx.Options(productionOptions(envReplace)...)
+	opts := controllerEnvOptions()
+	opts.Watch = false
+	return fx.Options(productionOptions(fx.Replace(opts))...)
 }
 
 // TestAppGraphValidates asserts the production dependency graph is satisfiable
@@ -165,7 +157,7 @@ func TestGRPCListenerBindsAndServes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
-	defer conn.Close()
+	closeWithTest(t, conn)
 
 	client := vmafxv1.NewVmafxScoringClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -207,7 +199,7 @@ func TestAuthInterceptorRejectsMissingTokenWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
-	defer conn.Close()
+	closeWithTest(t, conn)
 
 	client := vmafxv1.NewVmafxScoringClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -398,7 +390,7 @@ func TestGRPCHealthEmitsLinkedSpans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial gRPC: %v", err)
 	}
-	defer conn.Close()
+	closeWithTest(t, conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -435,4 +427,14 @@ func TestGRPCHealthEmitsLinkedSpans(t *testing.T) {
 		t.Errorf("server span parent %s is not the client span %s",
 			serverSpan.Parent().SpanID(), clientSpan.SpanContext().SpanID())
 	}
+}
+
+// closeWithTest closes c when the test ends and reports a failed close.
+func closeWithTest(t *testing.T, c interface{ Close() error }) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := c.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	})
 }

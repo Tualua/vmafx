@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/pgdb"
 )
 
@@ -117,4 +119,74 @@ func (s *Postgres) CountActive(ctx context.Context) ([]ActiveCount, error) {
 		return nil
 	})
 	return out, err
+}
+
+// TenantCount is the pending and running jobs of one tenant and the
+// submission time of its oldest pending job (zero when none is pending).
+type TenantCount struct {
+	TenantID      string
+	Pending       int64
+	Running       int64
+	OldestPending time.Time
+}
+
+// Stats are the store's live counts across tenants.
+type Stats struct {
+	Tenants   []TenantCount
+	LiveNodes int64
+}
+
+// Stats returns the per-tenant counts of pending and running jobs, in tenant
+// order, and the number of live node sessions.
+func (s *Postgres) Stats(ctx context.Context) (Stats, error) {
+	var out Stats
+	err := s.inMaintenance(ctx, func(ctx context.Context, q *pgdb.Queries) error {
+		rows, err := q.TenantStats(ctx)
+		if err != nil {
+			return fmt.Errorf("store: read tenant counts: %w", err)
+		}
+		out.Tenants = foldTenantStats(rows)
+		out.LiveNodes, err = q.CountLiveSessions(ctx)
+		if err != nil {
+			return fmt.Errorf("store: count live sessions: %w", err)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// foldTenantStats folds (tenant, status) rows, ordered by tenant, into one
+// TenantCount per tenant.
+func foldTenantStats(rows []pgdb.TenantStatsRow) []TenantCount {
+	out := make([]TenantCount, 0, len(rows))
+	for _, r := range rows {
+		if len(out) == 0 || out[len(out)-1].TenantID != r.TenantID {
+			out = append(out, TenantCount{TenantID: r.TenantID})
+		}
+		tc := &out[len(out)-1]
+		switch Status(r.Status) {
+		case StatusPending:
+			tc.Pending, tc.OldestPending = r.Jobs, r.Oldest
+		case StatusRunning:
+			tc.Running = r.Jobs
+		}
+	}
+	return out
+}
+
+// JobExists reports whether a job with this ID exists for any tenant. The
+// controller uses it only to refuse another tenant's job with
+// PermissionDenied rather than NotFound, as the SQLite queue did
+// (ADR-1522); it returns nothing of the job.
+func (s *Postgres) JobExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	var exists bool
+	err := s.inMaintenance(ctx, func(ctx context.Context, q *pgdb.Queries) error {
+		var qerr error
+		exists, qerr = q.JobExists(ctx, id)
+		if qerr != nil {
+			return fmt.Errorf("store: look up job %s: %w", id, qerr)
+		}
+		return nil
+	})
+	return exists, err
 }

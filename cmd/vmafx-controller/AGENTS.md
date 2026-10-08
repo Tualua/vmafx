@@ -47,13 +47,14 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 1. **`productionOptions(envReplace)` = single graph source.** `main` and
    `app_test.go` build from it. `fx.Replace` parameterised (fx forbids duplicate
    type replacement): binary passes `Watch:true`, tests `Watch:false`.
-2. **SQLite job queue = transitional (ADR-2350 replaces ADR-1119 queue
-   decision).** `provideJobQueue` wraps `modernc.org/sqlite` queue with
-   `OnStop` `Close` until WP17 store lands: Postgres job table, leased claims
-   (`SKIP LOCKED`, attempt = fencing token), node sessions in DB, River
-   (golusoris `jobs`) for retries/schedules/follow-ups, no DB credentials on
-   nodes (Q-122). Standalone profile = same store on SQLite + `riversqlite`.
-   No new features on SQLite queue; fixes only.
+2. **Backend chosen by `VMAFX_STORE_BACKEND`** (`store_wiring.go`,
+   ADR-2350): `sqlite` (default) = `provideJobQueue` + registry + scheduler
+   behind `backend.Legacy`, one replica, transitional (no new features);
+   `postgres` = `store` + River lease sweep behind `backend.Postgres`, any
+   replica count, no DB credentials on nodes (Q-122). Standalone profile =
+   same store on SQLite + `riversqlite` (waits golusoris#620/#621). Store
+   keys: `storeConfigKeys` join `controllerEnvOptions` CompoundKeys; tests
+   build from `controllerEnvOptions()` (no second key list).
 3. **JWT auth injected via golusoris#269 (`ProvideServerOptionFn`).** Interceptors
    wired via `grpc.ProvideServerOptionFn(func(mw *auth.Middleware) grpc.ServerOption{...})`
    into `group:"grpc.serveropts"`. fx injects `*auth.Middleware`. Do NOT reintroduce
@@ -62,10 +63,10 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 4. **Lazy-provider bind guards load-bearing.** `fx.Invoke(func(_ *http.Server){})`
    and `fx.Invoke(func(_ *grpc.Server){})` force binding HTTP and gRPC listeners.
    Tested in `TestAppStartsAndStops` and `TestGRPCListenerBindsAndServes`.
-5. **Stop order (R1).** `fx.Invoke(func(_ *libvmaf.Scorer, _ queue.Queue, _ *nodes.Registry){})`
-   registered AHEAD of gRPC registration; scorer/queue/registry OnStop hooks
-   run in reverse: gRPC `GracefulStop` → queue `Close` + reaper stop → scorer
-   `Close`. Guard: `TestStopOrder`.
+5. **Stop order (R1).** `fx.Invoke(func(_ *libvmaf.Scorer, _ backend.Backend){})`
+   registered AHEAD of gRPC registration; backend OnStop hooks (SQLite:
+   queue `Close` + reaper stop; Postgres: River `Stop` + pool `Close`) run
+   after gRPC `GracefulStop`, scorer `Close` last. Guard: `TestStopOrder`.
 6. **gen/go/controller = protoc output** (`protoc-gen-go`, `protoimpl`
    present; `generate.sh`). Never hand-edit. Guard: `wire_test.go`
    (`TestControllerProtoMarshalsOverWire`, `VmafxController` over `bufconn`).
@@ -178,6 +179,39 @@ PostgreSQL store replacing SQLite queue. `store/`: migrations
 5. **Tests need Docker** (golusoris `testutil/pg`; `postgres:18.6-alpine`,
    migrations also on `postgres:16.15-alpine`). No skip-on-missing-Docker
    added here; `-short` skips (testutil).
+
+### backend package (ADR-2350, WP17)
+
+Seam between handlers and state: `backend.Backend`. `Postgres` = on
+`store`; SQLite queue + registry behind same interface until SQLite store
+lands. Wire protocol unchanged.
+
+1. **Node ID = session ID** (Postgres): `Register` returns session UUID as
+   node ID; `Report` / `MayReport` resolve attempt from session
+   (`store.AttemptOf` / `RunningAttempt`), not from wire (wire fencing =
+   WP8). Malformed node ID -> `ErrInvalidSession`; malformed job ID ->
+   `ErrNotFound` (reads) / `ErrNotAssigned` (reports).
+2. **Lease sweep = River periodic job** (`LeaseSweepKind`): leader inserts,
+   any replica works it, `SKIP LOCKED` keeps sweeps apart. No
+   `UniqueOpts.ByPeriod` (River refuses < 1 s; leader-only insert is
+   enough). Requeues counted per process (`RecordSweep`).
+3. **One-shot commands before fx** (`Command`): `migrate` (store + River
+   migrations, then `CheckSchema`), `import-sqlite --from F
+   [--empty-tenant T]` (read-only on F, refuses unmigrated DB, second run
+   skips copied IDs). `VMAFX_DB_DSN` required. Exit 2 = usage.
+4. **Backoff**: `ExponentialBackoff(base, max)`; golusoris `jobs` retry
+   policy replaces it with the golusoris bump (same formula).
+5. **Tests** (`go test ./cmd/vmafx-controller/backend/`, Docker): end to
+   end, tenants apart, refusals, River sweep, import, commands.
+   `store/storetest` = shared DB helper (tests only).
+6. **River lifetime** (`store_wiring.go`, `riverRunner`): River started
+   with own context, ended after `Stop`. Never pass fx `OnStart` ctx to
+   `river.Start`: fx ends that ctx at start timeout (fxtest at start return) ->
+   River stops fetching, notifier spins. Start retried in background
+   (2 s, 900 tries); `/readyz` 503 until River runs (`postgresBackend.Ready`)
+   -> replicas start before DB / migration Job without exiting. Guards:
+   `TestRiverKeepsSweepingAfterTheStart`,
+   `TestControllerStartedBeforeItsMigrationsWaitsUnready`.
 
 ### grpc server
 
