@@ -58,6 +58,60 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
+- **VMAFx frame colour and the sample range check (VMAFx API 0.1.6).** A
+  frame carries its colour in `VmafxFrameDesc.color`, and
+  `vmafx_context_set_default_color()` gives the colour of the frames that
+  carry none; a model with a `conversion_target` converts every pair from it,
+  and a pair of another colour after the first converted one is refused with
+  `VMAFX_E_BUSY`. The context option `check_sample_range` of
+  `vmafx_context_set_option()` refuses a sample above 2^bpc - 1. The libvmaf
+  functions `vmaf_set_input_colorimetry()` and
+  `vmaf_set_sample_range_check_enabled()` are compat functions on these, so the
+  `vmaf` command line links against the split library again
+  ([Frame colour](docs/api/vmafx/index.md#frame-colour),
+  [ADR-2094](docs/adr/2094-libvmaf-compat-library-split.md)).
+
+
+- **libvmaf is a compat library on the VMAFx API (RC4 WP6).** The engine and
+  the VMAFx API ship as `libvmafx.so.1` (pkg-config `libvmafx`), which exports
+  `vmafx_*` symbols only; `libvmaf.so.3` keeps the libvmaf API and is written
+  on the exported VMAFx functions alone, so `pkg-config --libs libvmaf` now
+  gives `-lvmaf -lvmafx`. Programs built for libvmaf, unpatched upstream
+  FFmpeg and GStreamer included, build and score unchanged; binaries linked
+  against an earlier `libvmaf.so.3` run against this one. The CUDA and SYCL
+  functions (HIP and Metal in builds with them) remain the engine's until
+  their device-frame work lands. Guide:
+  [Migrating from libvmaf.h](docs/api/vmafx/index.md#migrating-from-libvmafh),
+  [migration table](docs/api/vmafx/compat.md)
+  ([ADR-2094](docs/adr/2094-libvmaf-compat-library-split.md)).
+- **VMAFx API 0.1.6 additions** for the compat library
+  ([reference](docs/api/vmafx/reference.md)): the libvmaf bridge for pictures,
+  models and model sets (`vmafx_frame_from_picture`, `vmafx_frame_to_picture`,
+  `vmafx_model_from_libvmaf`, `vmafx_model_libvmaf_handle`,
+  `vmafx_model_set_from_libvmaf`, `vmafx_model_set_libvmaf_handle`);
+  context-owned preallocated frames (`vmafx_context_preallocate`,
+  `vmafx_context_acquire_frame`); `vmafx_context_backend`,
+  `vmafx_context_attach_sidedata`, `vmafx_backend_name`; frame converters
+  (`vmafx_frame_converter_create`, `vmafx_frame_convert`,
+  `vmafx_frame_converter_destroy`); tiny-AI models and sessions
+  (`vmafx/dnn.h`: `vmafx_dnn_available`, `vmafx_context_use_tiny_model`,
+  `vmafx_context_set_codec_context`, `vmafx_context_is_codec_aware`,
+  `vmafx_context_set_tiny_resize`, `vmafx_dnn_session_*`,
+  `vmafx_dnn_verify_signature`); the embedded MCP server (`vmafx/mcp.h`:
+  `vmafx_mcp_*`); with their structs, handles and constants.
+- **Opt-in deprecation warnings for `libvmaf.h`.** Compile with
+  `-DVMAF_ENABLE_DEPRECATION_WARNINGS` to have every libvmaf call name its
+  VMAFx successor; the warnings become the default in 1.1 and the functions
+  go in 2.0 (ADR-1852 decision D7).
+- **Upstream consumer conformance.** `scripts/ci/upstream-ffmpeg-compat.sh`
+  and `scripts/ci/upstream-gstreamer-compat.sh` build unpatched upstream
+  FFmpeg (`FFMPEG_TAG`) and the upstream GStreamer `vmaf` element
+  (`GST_PLUGINS_BAD_VERSION`, kept current by Renovate) against an installed
+  libvmaf and compare their scores with the `vmaf` command line and with a
+  reference library as exact text; the `Upstream Consumers` workflow runs both
+  ([guide](docs/development/upstream-consumers.md), #2237).
+
+
 - Every scoring option is now defined once, in the option groups of
   `core/api/vmafx.toml`, and generated into each surface: the `vmaf`
   option table and `--help` text, the input schemas both MCP servers serve,
@@ -752,6 +806,11 @@
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
 
 
+- Build: libvmaf compiles on macOS again. `feature_collector.h` included C++ standard headers
+  (through `model.h`) inside an `extern "C"` block, which libc++ rejects with "templates must
+  have C++ linkage"; headers are now included before the C-linkage block.
+
+
 - **The MCP tools advertise and use the library's default model.** `vmaf_score`, `vmaf_score_encoded`
   and `describe_worst_frames` of both MCP servers declared `version=vmaf_v0.6.1` as the default of
   `model` and scored with it when the argument was omitted; they now use `vmaf_v1.0.16_3d0h`, the
@@ -759,6 +818,11 @@
   another model. The controller's gRPC contract documented the same stale default and says
   `vmaf_v1.0.16_3d0h` now. The default-model gate reads the `version=` spelling and the controller
   contract, so the drift cannot return unnoticed.
+
+
+- Build: the Windows MinGW UCRT64 build compiles again. The VMAFx API's printf-format
+  attribute now names MinGW's own archetype (`__MINGW_PRINTF_FORMAT`), so GCC accepts `%zu`
+  under UCRT instead of failing with `-Werror=format`.
 
 
 - The last MSVC warnings of the first Windows run after the zero-warning series
