@@ -184,7 +184,14 @@ repos:
         #   tools/figures/ is praetor's figure engine, locked byte for byte by
         #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
         #   own `make docs-lint` styles its README under praetor's rules.
-        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^docs/rebase-notes\.d/|^changelog\.d/|^tools/figures/'
+        #
+        #   The register skills (social-text, caveman, adhd-format) under
+        #   .agents/skills/ and .claude/skills/ are praetor's files, kept byte
+        #   for byte (decision Q-113): `compile-context --verify` checks the
+        #   projection against the .agents/skills copy and the praetor pin
+        #   supplies the text. They are styled under praetor's rules, not this
+        #   repository's, so a style edit here would make them drift.
+        exclude: '^(\.agents|\.claude)/skills/(social-text|caveman|adhd-format)/|^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^docs/rebase-notes\.d/|^changelog\.d/|^tools/figures/'
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12

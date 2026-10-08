@@ -7,7 +7,7 @@
     "Rule 0 Terminal Disposition: every run ends with structured disposition: in_review or blocked.",
     "Ed25519 Exit-0 Receipts: none. .standards.yaml pins no valid receipt.public_key -\u003e attach no receipt; pin key from `praetorctl gate keygen` to require receipts.",
     "Timeout != failure. Re-check open PRs before retry; prevent duplicate PRs.",
-    "Text register internal: fragments, no filler, verbatim code/paths/errors; facts, paths, commands, verdict."
+    "Text register internal: `caveman` skill: fragments, no filler, verbatim code/paths/errors; facts, paths, commands, verdict."
   ],
   "push_format": "git push origin HEAD:refs/heads/paperclip/\u003cissue-id\u003e",
   "invariants": [

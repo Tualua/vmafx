@@ -11,8 +11,8 @@
   receipt.public_key -> attach no receipt; pin key from `praetorctl gate keygen`
   to require receipts.
 - Timeout != failure. Re-check open PRs before retry; prevent duplicate PRs.
-- Text register internal: fragments, no filler, verbatim code/paths/errors;
-  facts, paths, commands, verdict.
+- Text register internal: `caveman` skill: fragments, no filler, verbatim
+  code/paths/errors; facts, paths, commands, verdict.
 
 ## Push Protocol
 

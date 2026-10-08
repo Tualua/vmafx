@@ -234,7 +234,12 @@ build-upstream-parity/
 
 # Vendor skill mirrors. `.claude/skills/` is canonical and tracked; the
 # per-vendor copies drift and are regenerated from it.
-.agents/skills/
+.agents/skills/*
+# Praetor's text-register bundle (decision Q-113): tracked, byte-identical
+# to the praetor pin, and projected into .claude/skills by compile-context.
+!.agents/skills/social-text/
+!.agents/skills/caveman/
+!.agents/skills/adhd-format/
 
 # vmafx-node eBPF object: generated at build time by scripts/dev/gen-node-bpf.sh,
 # never committed (ADR-1622). The bpf2go binding next to it is committed source.
