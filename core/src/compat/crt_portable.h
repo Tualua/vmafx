@@ -73,6 +73,11 @@ static inline const char *vmaf_getenv_portable(const char *name)
 #endif
 }
 
+/* C header that C++ translation units (dict.cpp, read_json_model.cpp,
+ * gpu_dispatch_env.cpp) include too; `(void)` is the spelling both languages
+ * accept on every required toolchain (an empty list is no prototype before C23,
+ * and core/meson.build falls back to c17). */
+// NOLINTNEXTLINE(modernize-redundant-void-arg): C header read under a C++ translation unit; `(void)` is the C spelling. ADR-1138.
 static inline FILE *vmaf_tmpfile_portable(void)
 {
 #if defined(_MSC_VER)
