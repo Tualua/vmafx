@@ -509,6 +509,14 @@
   actionlint writes it to (a user over `fs.pipe-user-pages-soft`).
 
 
+- **Integer ADM runs on NEON at every scale on aarch64 (Netflix/vmaf
+  `8bc5a5c6a`, `b41d2340a`).** The contrast masking of scale 0 and of scales
+  1 to 3, the DWT of scales 1 to 3 and the decouple of scales 1 to 3 (at an
+  enhancement gain limit of 1) have NEON kernels. They return the scalar
+  kernels' bits: scores are byte-identical at every `--cpumask` setting
+  ([Arm backend](docs/backends/arm/overview.md)).
+
+
 - **ADR-2167 is Accepted.** The `-qpfile` handling of libx264 (offsets applied through `quant_offsets`)
   shipped in #2385 and the maintainer accepted the decision on 2026-10-07; the ADR status and index
   say so. No code changes.
@@ -608,6 +616,13 @@
 
 
 - **The Windows icx-cl and icpx builds no longer print an override warning on every compile.** The strict floating-point line of `intel-llvm-cl` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` instead of `/fp:precise /Qfma-`, and the SYCL compiles and device link of the MSVC build take the `-fno-fast-math -fcomplex-arithmetic=full` reset the Linux icpx already has. Same arithmetic: equal compiler front-end arguments apart from the complex-arithmetic token, equal predefined macros, byte-identical objects and device bitcode ([Research-2170](docs/research/2170-windows-strict-fp-spelling-2026-10-07.md), [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
+
+
+- **`M_PI` and `M_E` come from `<math.h>` on every platform (Netflix/vmaf
+  `4e150067b`).** The build defines `_USE_MATH_DEFINES` on Windows (MSVC,
+  clang-cl, icx-cl and MinGW-w64), and the local copies of the constants
+  (fourteen in the feature sources, the SYCL twins included, and four in
+  tests) are gone. Scores are unchanged: the copies held the same double.
 
 
 - `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.
