@@ -5513,7 +5513,7 @@ if not is_sycl_acpp and float_enabled and host_machine.cpu_family() == 'x86_64'
     # stored as fp64 bit patterns, a sequential add chain in row slices)
     # against compute_cov_kernel_scalar(), bit for bit, device-free: the
     # chain's add against the native fp64 add, the blocks of
-    # speed_cov_cases.h, all 325 entries of the frame-140 plane and a seeded
+    # speed_cov_cases.h, all 325 entries of the synthetic plane and a seeded
     # sweep. The probe TU is built with the extractors' own arguments and
     # launches no kernel. The cases need the same x86-64 long double as
     # test_sycl_speed_cov_math.
