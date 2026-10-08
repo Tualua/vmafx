@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 [package]
 name = "vmafx-core-rs"
 # Independently versioned (ADR-1127, ADR-1151); not published.

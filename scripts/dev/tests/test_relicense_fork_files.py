@@ -428,5 +428,47 @@ class FullHistory(unittest.TestCase):
                 REL.require_full_history(Path())
 
 
+class AiToolCopyright(unittest.TestCase):
+    """ADR-0861: copyright lines name the project holder only."""
+
+    def test_owner_only_notice_passes(self) -> None:
+        """Positive: a file with only Copyright 2026 Lusoris passes."""
+        src = f"# Copyright 2026 Lusoris\n# {TAG} EUPL-1.2\n"
+        self.assertEqual(REL.check_ai_copyright(src), [])
+
+    def test_planted_ai_copyright_fails(self) -> None:
+        """Negative: a planted # Copyright 2026 Claude (Anthropic) line fails."""
+        src = (
+            "#!/usr/bin/env bash\n"
+            "# Copyright 2026 Lusoris\n"
+            "# Copyright 2026 Claude (Anthropic)\n"
+            f"# {TAG} BSD-2-Clause-Patent\n"
+        )
+        violations = REL.check_ai_copyright(src, "scripts/test.sh")
+        self.assertTrue(violations)
+        self.assertIn("scripts/test.sh:3", violations[0])
+        self.assertIn("ADR-0861", violations[0])
+        self.assertIn("Claude", violations[0])
+
+    def test_dual_owner_and_ai_copyright_fails(self) -> None:
+        """Negative: // Copyright 2026 Lusoris and Claude (Anthropic) fails."""
+        src = "// Copyright 2026 Lusoris and Claude (Anthropic)\n" f"// {TAG} BSD-2-Clause-Patent\n"
+        violations = REL.check_ai_copyright(src, "test.go")
+        self.assertTrue(violations)
+        self.assertIn("test.go:1", violations[0])
+        self.assertIn("ADR-0861", violations[0])
+        self.assertIn("Claude", violations[0])
+
+    def test_tool_mention_outside_copyright_line_passes(self) -> None:
+        """Boundary: the word Claude outside a copyright line does not fail."""
+        src = (
+            "#!/usr/bin/env bash\n"
+            "# Tested with Claude for regressions.\n"
+            "# Copyright 2026 Lusoris\n"
+            f"# {TAG} EUPL-1.2\n"
+        )
+        self.assertEqual(REL.check_ai_copyright(src), [])
+
+
 if __name__ == "__main__":
     unittest.main()

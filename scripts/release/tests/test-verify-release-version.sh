@@ -2,8 +2,7 @@
 # Regression tests for the coordinated release-version preflight.
 #
 # Copyright 2026 Lusoris
-# Copyright 2026 Claude (Anthropic)
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 
 set -euo pipefail
 

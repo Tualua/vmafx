@@ -2752,20 +2752,3 @@ entries:
   license: MIT
   paths:
   - .github/workflows/security-scans.yml
-exceptions:
-- path: scripts/ci/setup-envtest.sh
-  rule: uncredited-path
-  reason: the header names the tool that drafted the file as copyright holder; to be rewritten to the project holder
-  expires: '2026-12-31'
-- path: scripts/dev/test-cleanup-agent-state.sh
-  rule: uncredited-path
-  reason: the header names the tool that drafted the file as copyright holder; to be rewritten to the project holder
-  expires: '2026-12-31'
-- path: scripts/release/tests/test-verify-release-version.sh
-  rule: uncredited-path
-  reason: the header names the tool that drafted the file as copyright holder; to be rewritten to the project holder
-  expires: '2026-12-31'
-- path: scripts/release/verify-release-version.sh
-  rule: uncredited-path
-  reason: the header names the tool that drafted the file as copyright holder; to be rewritten to the project holder
-  expires: '2026-12-31'
