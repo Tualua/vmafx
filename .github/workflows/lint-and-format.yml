@@ -854,10 +854,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"
-      - name: Install jsonschema
+      - name: Install the documentation checks' imports
         # make docs-fragments-check validates docs/hardware-reports against
-        # their schema and exits 2 without it (check-hardware-reports.py).
-        run: pip install --require-hashes -r requirements/locks/jsonschema.txt
+        # their schema (jsonschema, check-hardware-reports.py) and reads
+        # docs/credits.yaml (PyYAML, scripts/docs/credits_lib.py, ADR-2485).
+        run: pip install --require-hashes -r requirements/locks/docs-check.txt
       - name: Check generated documentation freshness
         run: make docs-fragments-check
       - name: Check the rendered changelog, ADR index and rebase notes (master push)
