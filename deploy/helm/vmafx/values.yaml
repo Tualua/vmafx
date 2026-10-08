@@ -50,10 +50,11 @@ operator:
 # ---------------------------------------------------------------------------
 # Controller — vmafx-controller: job queue, node API, auth gateway (ADR-1589)
 # ---------------------------------------------------------------------------
-# One replica for now: the job queue is still an embedded SQLite database, so
-# the Deployment uses the Recreate strategy and a ReadWriteOnce volume (ADR-2350
-# moves the job state to PostgreSQL and the controller to several replicas).
-# The node pool (node.enabled) and the operator (operator.enabled) find it
+# With controller.store.backend sqlite (the default) the job queue is an
+# embedded SQLite database: one replica, the Recreate strategy and a
+# ReadWriteOnce volume. With postgres the controller runs as several replicas
+# on PostgreSQL (ADR-2350). The node pool (node.enabled) and the operator
+# (operator.enabled) find it
 # through the <fullname>-controller Service. controller.enabled needs
 # auth.enabled (an identity provider, a tenant registry or auth.disabled for
 # dev) and the other way round: the auth settings below configure this
@@ -68,9 +69,52 @@ controller:
   # grpcPort serves VmafxScoring and VmafxController (nodes, operator, clients).
   httpPort: 8080
   grpcPort: 9090
+  # replicas — controller pods. More than one needs store.backend postgres
+  # (two pods on the SQLite backend would each own a different queue).
+  replicas: 1
+  # store — where the controller keeps jobs and node sessions (ADR-2350).
+  store:
+    # backend — sqlite: the embedded queue on persistence below, one replica,
+    # Recreate. postgres: PostgreSQL, any number of replicas, rolling update,
+    # no claim; a migration Job applies the schema
+    # (vmafx-controller migrate).
+    backend: sqlite
+    # Lifetimes of the postgres backend (VMAFX_STORE_*, Go duration strings).
+    # Empty keeps the controller's default (60s, 60s, 5s, 5s, 5m).
+    leaseTTL: ""
+    sessionTTL: ""
+    sweepInterval: ""
+    backoffBase: ""
+    backoffMax: ""
+    postgresql:
+      # mode — cnpg: the chart renders a CloudNativePG Cluster named
+      # <fullname>-db (the CloudNativePG operator is a prerequisite);
+      # external: a database you run, its connection string in a Secret.
+      mode: cnpg
+      cnpg:
+        # instances — PostgreSQL pods; 3 for production (one primary, two
+        # replicas with automated failover), 1 for a test cluster.
+        instances: 1
+        imageName: ghcr.io/cloudnative-pg/postgresql:18.6-202610050823-minimal-trixie@sha256:37ade18dbdddba430858c72725aceeec66f33fa5333e82ea1df4942f6c1c83a3
+        storage:
+          size: 5Gi
+          storageClass: ""
+        resources: {}
+      external:
+        # secretName / secretKey — the Secret key holding the connection
+        # string (postgres://user:password@host:5432/db?sslmode=verify-full).
+        secretName: ""
+        secretKey: uri
+    migration:
+      # backoffLimit — retries of the migration Job; it waits for the
+      # database to come up by failing and retrying.
+      backoffLimit: 10
+  # topologySpreadConstraints — spread of the controller pods. Empty with more
+  # than one replica: a soft spread over Kubernetes nodes.
+  topologySpreadConstraints: []
   # persistence keeps the SQLite job queue (VMAFX_DB_PATH=/data/...) across
-  # restarts. Disabled: an emptyDir, and every job is lost with the pod. The
-  # claim goes when ADR-2350's PostgreSQL store lands.
+  # restarts; only the sqlite backend uses it. Disabled: an emptyDir, and
+  # every job is lost with the pod.
   persistence:
     enabled: true
     size: 1Gi
@@ -393,6 +437,15 @@ networkPolicy:
       enabled: true
       ports:
         - 443
+      cidrs:
+        - 0.0.0.0/0
+    # controller and its migration Job → PostgreSQL (controller.store.backend
+    # postgres). cnpg mode: the pods of the chart's Cluster; external mode:
+    # cidrs, tighten them to your database.
+    controllerToDatabase:
+      enabled: true
+      ports:
+        - 5432
       cidrs:
         - 0.0.0.0/0
     # node → object store (rclone egress to S3/GCS/Azure/etc.)

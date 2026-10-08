@@ -496,3 +496,132 @@ spec:
       scrapeTimeout: {{ $sm.scrapeTimeout }}
       honorLabels: {{ $sm.honorLabels }}
 {{- end }}
+
+{{/*
+vmafx.controllerStoreBackend — controller.store.backend after its checks
+(ADR-2350): sqlite or postgres; more than one replica needs postgres, and
+postgres in external mode needs the Secret that holds the connection string.
+*/}}
+{{- define "vmafx.controllerStoreBackend" -}}
+{{- $store := .Values.controller.store -}}
+{{- if not (has $store.backend (list "sqlite" "postgres")) -}}
+{{- fail (printf "controller.store.backend: %q is neither sqlite nor postgres" $store.backend) -}}
+{{- end -}}
+{{- if lt (int .Values.controller.replicas) 1 -}}
+{{- fail "controller.replicas: at least 1" -}}
+{{- end -}}
+{{- if and (gt (int .Values.controller.replicas) 1) (ne $store.backend "postgres") -}}
+{{- fail "controller.replicas above 1 needs controller.store.backend postgres: two controllers on the SQLite backend would each own a different queue" -}}
+{{- end -}}
+{{- if eq $store.backend "postgres" -}}
+{{- if not (has $store.postgresql.mode (list "cnpg" "external")) -}}
+{{- fail (printf "controller.store.postgresql.mode: %q is neither cnpg nor external" $store.postgresql.mode) -}}
+{{- end -}}
+{{- if and (eq $store.postgresql.mode "external") (not $store.postgresql.external.secretName) -}}
+{{- fail "controller.store.postgresql.external.secretName: the Secret holding the database connection string is required in external mode" -}}
+{{- end -}}
+{{- end -}}
+{{- $store.backend -}}
+{{- end }}
+
+{{/*
+vmafx.controllerDatabaseCluster — name of the CloudNativePG Cluster the chart
+renders in cnpg mode.
+*/}}
+{{- define "vmafx.controllerDatabaseCluster" -}}
+{{- printf "%s-db" (include "vmafx.fullname" .) -}}
+{{- end }}
+
+{{/*
+vmafx.controllerDatabaseDSN — the env entry VMAFX_DB_DSN, read from the
+CloudNativePG application Secret (<cluster>-app, key uri) or from the external
+Secret. Shared by the controller and its migration Job.
+*/}}
+{{- define "vmafx.controllerDatabaseDSN" -}}
+{{- $pg := .Values.controller.store.postgresql -}}
+- name: VMAFX_DB_DSN
+  valueFrom:
+    secretKeyRef:
+      {{- if eq $pg.mode "external" }}
+      name: {{ $pg.external.secretName | quote }}
+      key: {{ $pg.external.secretKey | default "uri" | quote }}
+      {{- else }}
+      name: {{ printf "%s-app" (include "vmafx.controllerDatabaseCluster" .) | quote }}
+      key: uri
+      {{- end }}
+{{- end }}
+
+{{/*
+vmafx.controllerStoreEnv — the controller's store environment: the SQLite
+queue path, or the backend, the connection string and the lifetimes that are
+set (unset ones keep the controller's defaults).
+*/}}
+{{- define "vmafx.controllerStoreEnv" -}}
+{{- if eq (include "vmafx.controllerStoreBackend" .) "postgres" -}}
+{{- $store := .Values.controller.store -}}
+- name: VMAFX_STORE_BACKEND
+  value: postgres
+{{ include "vmafx.controllerDatabaseDSN" . }}
+{{- range $key, $env := dict "leaseTTL" "VMAFX_STORE_LEASE_TTL" "sessionTTL" "VMAFX_STORE_SESSION_TTL" "sweepInterval" "VMAFX_STORE_SWEEP_INTERVAL" "backoffBase" "VMAFX_STORE_BACKOFF_BASE" "backoffMax" "VMAFX_STORE_BACKOFF_MAX" }}
+{{- with index $store $key }}
+- name: {{ $env }}
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- else -}}
+- name: VMAFX_DB_PATH
+  value: /data/vmafx-controller.db
+{{- end -}}
+{{- end }}
+
+{{/*
+vmafx.controllerTopologySpread — controller.topologySpreadConstraints, or with
+more than one replica and none set a soft spread over Kubernetes nodes.
+*/}}
+{{- define "vmafx.controllerTopologySpread" -}}
+{{- if .Values.controller.topologySpreadConstraints -}}
+topologySpreadConstraints:
+  {{- toYaml .Values.controller.topologySpreadConstraints | nindent 2 }}
+{{- else if gt (int .Values.controller.replicas) 1 -}}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+{{- end -}}
+{{- end }}
+
+{{/*
+vmafx.controllerMigrationPod — pod template of the migration Job
+(controller-database.yaml), which also names the Job by its hash.
+*/}}
+{{- define "vmafx.controllerMigrationPod" -}}
+metadata:
+  labels:
+    {{- include "vmafx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  restartPolicy: OnFailure
+  serviceAccountName: {{ include "vmafx.controllerServiceAccountName" . }}
+  automountServiceAccountToken: false
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: migrate
+      image: {{ include "vmafx.controllerImage" . | quote }}
+      imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
+      args: ["migrate"]
+      env:
+        {{- include "vmafx.controllerDatabaseDSN" . | nindent 8 }}
+      resources:
+        {{- toYaml .Values.controller.resources | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+{{- end }}

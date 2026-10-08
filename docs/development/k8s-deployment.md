@@ -45,6 +45,9 @@ for the rationale.
   ([what can pull them](../usage/docker.md#what-can-pull-the-images)).
 - The relevant GPU device-plugin daemonset installed on GPU nodes — see
   [GPU scheduling guide](gpu-scheduling.md)
+- For the controller on PostgreSQL with the chart's database
+  (`controller.store.postgresql.mode: cnpg`): the CloudNativePG operator — see
+  [job store and replicas](#controller-store)
 
 ## Quick start
 
@@ -177,17 +180,12 @@ operator:
 
 What the chart renders:
 
-- **`<release>-controller` Deployment.** One replica with the `Recreate`
-  strategy: the queue is an embedded SQLite database, so two pods would each
-  own a different queue. `VMAFX_DB_PATH=/data/vmafx-controller.db` on a
-  `ReadWriteOnce` PersistentVolumeClaim (`controller.persistence`;
-  `existingClaim` reuses one, `enabled: false` uses an emptyDir and loses the
-  queue with the pod). Liveness and readiness probe `/healthz` and `/readyz`
-  on the HTTP port. Image `ghcr.io/vmafx/vmafx-controller:v<appVersion>`.
-  The single replica is transitional:
-  [ADR-2350](../adr/2350-cloud-native-platform.md) moves the job state to
-  PostgreSQL so the controller can run several replicas; this section changes
-  when that store ships.
+- **`<release>-controller` Deployment.** Where it keeps its jobs decides its
+  shape ([job store and replicas](#controller-store)): with the default
+  SQLite store one replica, the `Recreate` strategy and the queue on a
+  claim; with the PostgreSQL store `controller.replicas` replicas and a
+  rolling update. Liveness and readiness probe `/healthz` and `/readyz` on
+  the HTTP port. Image `ghcr.io/vmafx/vmafx-controller:v<appVersion>`.
 - **`<release>-controller` service account**, used only by the controller
   pods and the only account bound to the `VmafxTenant` reader Role
   ([ADR-1592](../adr/1592-helm-split-service-accounts.md)); the server, job
@@ -211,6 +209,91 @@ What the chart renders:
   refreshes the mounted file after its sync period). A node token carries
   `vmafx:node`, an operator token `vmafx:reader` of the tenant whose
   `VmafxJob`s it tracks.
+
+### Job store and replicas {#controller-store}
+
+`controller.store.backend` chooses where the controller keeps jobs, attempts
+and node sessions ([ADR-2350](../adr/2350-cloud-native-platform.md); the
+controller side is in [job persistence](../server/controller.md#job-persistence)):
+
+| `controller.store.backend` | Replicas | Update strategy | State |
+| --- | --- | --- | --- |
+| `sqlite` (default) | 1 (the chart refuses more) | `Recreate` | `VMAFX_DB_PATH=/data/vmafx-controller.db` on a `ReadWriteOnce` claim (`controller.persistence`; `existingClaim` reuses one, `enabled: false` uses an emptyDir and loses the queue with the pod) |
+| `postgres` | `controller.replicas` (1 or more) | `RollingUpdate`, `maxUnavailable: 0`, `maxSurge: 1` | PostgreSQL; no claim |
+
+Two controllers on SQLite would each own a different queue, so the SQLite
+store stays one replica. With PostgreSQL every replica serves every request:
+nodes keep their sessions and leases when a replica goes away, and a job
+whose node dies returns to the queue when its lease expires.
+
+```yaml
+controller:
+  enabled: true
+  replicas: 3
+  store:
+    backend: postgres
+    postgresql:
+      mode: cnpg            # or external
+```
+
+**CloudNativePG (`postgresql.mode: cnpg`, the default).** The chart renders a
+`postgresql.cnpg.io/v1` `Cluster` named `<release>-db` and refuses to render
+when the API is missing: the [CloudNativePG](https://cloudnative-pg.io/)
+operator is a prerequisite you install once per cluster, as the chart does
+not install operators. The kind test installs its release manifest, 1.30.1:
+
+```bash
+kubectl apply --server-side -f \
+  https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/cnpg-1.30.1.yaml
+```
+
+| Value | Default | Meaning |
+| --- | --- | --- |
+| `controller.store.postgresql.cnpg.instances` | `1` | PostgreSQL instances (a primary and `instances - 1` replicas) |
+| `controller.store.postgresql.cnpg.imageName` | PostgreSQL 18.6, pinned by digest | Operand image |
+| `controller.store.postgresql.cnpg.storage.size` / `.storageClass` | `5Gi` / cluster default | Volume of each instance |
+| `controller.store.postgresql.cnpg.resources` | `{}` | Requests and limits of the database pods |
+
+The operator creates database `vmafx` owned by role `vmafx` and a Secret
+`<release>-db-app`; the controller reads `VMAFX_DB_DSN` from its `uri` key.
+Role `vmafx` is not a superuser, so row-level security applies to it.
+
+**External database (`postgresql.mode: external`).** Name a Secret that holds
+a connection URI, for example
+`postgres://vmafx:…@db.example:5432/vmafx?sslmode=verify-full`, in
+`controller.store.postgresql.external.secretName` (key `secretKey`, default
+`uri`). The role must not be a superuser.
+
+**Schema migration.** A Job `<release>-controller-migrate-<hash>` runs
+`vmafx-controller migrate` with the controller image
+(`controller.store.migration.backoffLimit` retries, default 10). The hash
+comes from the Job's pod template, so an upgrade that changes the image (or
+another setting of the Job) runs a new Job once and Helm removes the previous
+one, while an upgrade that changes neither keeps the completed Job. Controllers report ready
+only when the database holds the schema they need, so a rolling update waits
+for the migration. The Job carries Argo CD `Sync` hook annotations for
+GitOps installs. To move jobs from an earlier SQLite queue, see
+[moving from the SQLite queue](../server/controller.md#moving-from-the-sqlite-queue).
+
+**Lease and session lifetimes.** `controller.store.leaseTTL`, `sessionTTL`,
+`sweepInterval`, `backoffBase` and `backoffMax` (durations such as `30s` or
+`2m`) set `VMAFX_STORE_LEASE_TTL`, `VMAFX_STORE_SESSION_TTL`,
+`VMAFX_STORE_SWEEP_INTERVAL`, `VMAFX_STORE_BACKOFF_BASE` and
+`VMAFX_STORE_BACKOFF_MAX`. Left empty, the controller's defaults apply
+(60 s, 60 s, 5 s, 5 s, 5 min).
+
+**Several replicas.** With `controller.replicas` above 1 the chart adds a
+PodDisruptionBudget `<release>-controller` (`maxUnavailable: 1`) and, unless
+`controller.topologySpreadConstraints` lists your own, spreads the replicas
+across nodes (`kubernetes.io/hostname`, `ScheduleAnyway`). With
+`networkPolicy.enabled` the rule `allow-controller-to-database` lets the
+controller and migration pods reach the database (see
+[NetworkPolicy](#networkpolicy)).
+
+**Tested on kind.** The E2E suite's `02-controller-ha` case
+(`test/e2e/kuttl-tests/02-controller-ha/`) installs this configuration with
+two replicas, kills one replica and the node of a running job mid-job, and
+checks in the database that every job was completed by exactly one attempt.
 
 The chart refuses `image.repository` naming a `vmafx-controller` image: the
 server workload (`workload`, default `Deployment` with `vmafx-server`) no
@@ -284,10 +367,11 @@ publishes it, together with the operator and node images, when a release is
 published. The CLI and GPU images (`ghcr.io/vmafx/vmafx`) are documented in
 [docker-production.md](docker-production.md).
 
-The controller Deployment and the vmafx-node worker Deployment both use
-`RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1` by default,
-ensuring zero-downtime updates and preventing GPU pod eviction before
-replacements are ready (ADR-1094). The grace period defaults to 60 s
+The vmafx-node worker Deployment, and the controller Deployment on the
+PostgreSQL store, use `RollingUpdate` with `maxUnavailable: 0` and
+`maxSurge: 1`, ensuring zero-downtime updates and preventing GPU pod
+eviction before replacements are ready (ADR-1094). The controller on the
+SQLite store uses `Recreate` ([job store and replicas](#controller-store)). The grace period defaults to 60 s
 (`terminationGracePeriodSeconds: 60`), giving in-flight scoring jobs time
 to finish before SIGKILL. Raise this to 300 s or more for long CHUG
 extractions:
@@ -510,6 +594,7 @@ controller, `allow-controller-to-apiserver` only with a tenant registry):
 | `allow-controller-ingress`      | ingress   | every pod in the release namespace (`controllerIngress.fromPodSelector` narrows) | `controller.httpPort`, `controller.grpcPort` | Nodes, operator and in-namespace clients reach the controller. |
 | `allow-operator-to-controller`  | egress    | the chart's controller pods                     | `controller.grpcPort`, `controller.httpPort` | The operator's `GetJob` polls and `/healthz` probes. |
 | `allow-controller-to-identity-provider` | egress | `controllerToIdentityProvider.cidrs` (default `0.0.0.0/0`) | `443` | JWKS fetches while auth is on (not with `auth.disabled`). |
+| `allow-controller-to-database` | egress | the chart's CloudNativePG `Cluster` pods (`cnpg.io/cluster`), or `controllerToDatabase.cidrs` (default `0.0.0.0/0`) with an external database | `controllerToDatabase.ports` (`5432`) | The controller and its migration Job reach PostgreSQL; rendered with `controller.store.backend: postgres`. |
 | `allow-node-to-controller`      | egress    | the chart's controller pods with `controller.enabled`, else pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `controller.grpcPort`, else `nodeToController.port` (9090) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered when the nodes have a controller. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
@@ -555,7 +640,9 @@ podDisruptionBudget:
 ```
 
 When enabled, the chart creates a `policy/v1 PodDisruptionBudget` for each
-active pool (controller, node, operator).
+active pool (server, node, operator). The controller has its own,
+`maxUnavailable: 1`, whenever `controller.replicas` is above 1, whether or not
+`podDisruptionBudget.enabled` is set ([job store and replicas](#controller-store)).
 
 Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058, ADR-1094.
 

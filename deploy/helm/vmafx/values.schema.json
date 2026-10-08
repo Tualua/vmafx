@@ -30,12 +30,71 @@
     "controller": {
       "type": "object",
       "additionalProperties": false,
-      "description": "vmafx-controller workload: job queue, node API and auth gateway (ADR-1589). One replica while the queue is SQLite; ADR-2350 moves it to PostgreSQL.",
+      "description": "vmafx-controller workload: job queue, node API and auth gateway (ADR-1589). store.backend sqlite: one replica on the embedded queue; postgres: any number of replicas on PostgreSQL (ADR-2350).",
       "properties": {
         "enabled": { "type": "boolean" },
         "image": { "$ref": "#/$defs/imageSpec" },
         "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "grpcPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Controller pods; more than one needs store.backend postgres."
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the controller keeps jobs and node sessions (ADR-2350).",
+          "properties": {
+            "backend": { "type": "string", "enum": ["sqlite", "postgres"] },
+            "leaseTTL": { "$ref": "#/$defs/durationOrEmpty" },
+            "sessionTTL": { "$ref": "#/$defs/durationOrEmpty" },
+            "sweepInterval": { "$ref": "#/$defs/durationOrEmpty" },
+            "backoffBase": { "$ref": "#/$defs/durationOrEmpty" },
+            "backoffMax": { "$ref": "#/$defs/durationOrEmpty" },
+            "postgresql": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": { "type": "string", "enum": ["cnpg", "external"] },
+                "cnpg": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "The CloudNativePG Cluster <fullname>-db the chart renders; the operator is a prerequisite.",
+                  "properties": {
+                    "instances": { "type": "integer", "minimum": 1 },
+                    "imageName": { "type": "string", "minLength": 1 },
+                    "storage": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "size": { "type": "string", "minLength": 1 },
+                        "storageClass": { "type": "string" }
+                      }
+                    },
+                    "resources": { "$ref": "#/$defs/resourceSpec" }
+                  }
+                },
+                "external": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "secretName": { "type": "string" },
+                    "secretKey": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            },
+            "migration": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "backoffLimit": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        },
+        "topologySpreadConstraints": { "type": "array" },
         "persistence": {
           "type": "object",
           "additionalProperties": false,
@@ -503,6 +562,19 @@
                 "enabled": { "type": "boolean" }
               }
             },
+            "controllerToDatabase": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Egress from the controller and its migration Job to PostgreSQL (store.backend postgres): the chart's Cluster in cnpg mode, cidrs in external mode.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": {
+                  "type": "array",
+                  "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+                },
+                "cidrs": { "type": "array", "items": { "type": "string" } }
+              }
+            },
             "controllerToIdentityProvider": {
               "type": "object",
               "additionalProperties": false,
@@ -630,6 +702,11 @@
         "factor": { "type": "number", "exclusiveMinimum": 0 },
         "for": { "$ref": "#/$defs/promDuration" }
       }
+    },
+    "durationOrEmpty": {
+      "type": "string",
+      "pattern": "^$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "description": "A Go duration such as 30s or 2m; empty keeps the program's default."
     },
     "imageSpec": {
       "type": "object",

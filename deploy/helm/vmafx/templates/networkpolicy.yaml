@@ -230,6 +230,50 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: controller and migration Job -> PostgreSQL (ADR-2350,
+# controller.store.backend postgres): the chart's CloudNativePG Cluster pods in
+# cnpg mode, controllerToDatabase.cidrs in external mode.
+# ----------------------------------------------------------------------------
+{{- if and .Values.controller.enabled .Values.networkPolicy.allow.controllerToDatabase.enabled (eq (include "vmafx.controllerStoreBackend" .) "postgres") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-controller-to-database
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [controller, migrate]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- if eq .Values.controller.store.postgresql.mode "cnpg" }}
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "vmafx.controllerDatabaseCluster" . }}
+        {{- else }}
+        {{- range .Values.networkPolicy.allow.controllerToDatabase.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.allow.controllerToDatabase.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: controller -> identity providers (JWKS over HTTPS) while auth is
 # on (ADR-1589; ADR-1519 tenants each name their own JWKS endpoint).
 # ----------------------------------------------------------------------------

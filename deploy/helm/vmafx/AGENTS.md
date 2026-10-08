@@ -142,11 +142,10 @@ Pod template.
 
 ## Controller workload (ADR-1589)
 
-- `templates/controller.yaml`: replicas 1, strategy `Recreate`, `/data` =
-  SQLite queue volume (`controller.persistence`) — transitional. ADR-2350
-  WP17 store moves state to Postgres (CloudNativePG `Cluster` or external
-  DSN), then: 2 replicas, RollingUpdate, PDB, topology spread, no claim.
-  Until then do not raise replicas (two pods = two queues). Selector +
+- `templates/controller.yaml`: shape from `vmafx.controllerStoreBackend`.
+  `sqlite`: replicas 1 (helper refuses more: two pods = two queues),
+  `Recreate`, `/data` claim (`controller.persistence`). `postgres`:
+  `controller.replicas`, RollingUpdate 0/1, no claim, no `/data`. Selector +
   Service carry `component: controller` (selector isolation check).
 - Auth env only via `vmafx.controllerAuthEnv`; server `deployment.yaml` gets
   none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
@@ -156,6 +155,30 @@ Pod template.
   Operator: controller addresses only with `controller.enabled`. Tokens:
   `vmafx.controllerTokenVolume` / `Mount` -> `VMAFX_CONTROLLER_TOKEN_FILE`.
 - Guard: `scripts/ci/tests/test_helm_controller_workload.py` (`helm-chart.yml`).
+
+## Controller job store (ADR-2350)
+
+- Store values: one key per setting, no derived copy (WP4 regenerates
+  `values.yaml` + `values.schema.json` from API definition unchanged).
+  Store env only via `vmafx.controllerStoreEnv`; lifetimes rendered only
+  when set (controller owns defaults). DSN only via
+  `vmafx.controllerDatabaseDSN`: cnpg -> `<fullname>-db-app` key `uri`,
+  external -> `external.secretName` / `secretKey`.
+- `controller-database.yaml`: cnpg `Cluster` `<fullname>-db` fails render
+  without `postgresql.cnpg.io/v1` (operator = prerequisite, chart installs
+  no operator). Migration Job name = `<fullname>-controller-migrate-` + 8
+  hex of sha256 over `vmafx.controllerMigrationPod` (pod template
+  immutable): changed template -> new Job, same template -> no rerun. Job
+  label `component: migrate` (not `controller`: Service + PDB never
+  select Job pods).
+- `pdb.yaml`: controller PDB (maxUnavailable 1) iff replicas > 1,
+  independent of `podDisruptionBudget.enabled`. Spread default
+  (hostname, ScheduleAnyway) iff replicas > 1 and
+  `controller.topologySpreadConstraints` empty.
+- `allow-controller-to-database` selects `component In [controller,
+  migrate]`; cnpg -> pods `cnpg.io/cluster`, external -> `cidrs`.
+- Guards: `scripts/ci/tests/test_helm_controller_store.py`; E2E kuttl case
+  `02-controller-ha` (`test/e2e/AGENTS.md`).
 
 ## Node FUSE and eBPF (ADR-1593)
 
