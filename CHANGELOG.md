@@ -58,6 +58,32 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
+- Every scoring option is now defined once, in the option groups of
+  `core/api/vmafx.toml`, and generated into each surface: the `vmaf`
+  option table and `--help` text, the input schemas both MCP servers serve,
+  the `ScoreOptions` proto message and its OpenAPI schema, the AVOption table
+  of the coming `vmafx` FFmpeg filter (`ffmpeg-patches/src/vf_vmafx_options.h`)
+  and the option tables of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`,
+  `docs/mcp/tools.md` and `docs/server/api-contract.md`. Every command-line
+  spelling `vmaf` accepted before is still accepted (ADR-2044).
+- The `vmaf` JSON report carries a `provenance` object (ABI version, active
+  backend, extractor count, build version) next to `backend_used` (#2142).
+- MCP scoring tools accept `view_distance` and `display_height` (the ADM
+  extractor's viewing distance and display height) and declare the
+  device-target arguments `target_width`, `target_height` and
+  `target_scaling`, which accept only their defaults until device-targeted
+  scoring lands.
+
+
+- Added the credits page `docs/credits.md`, rendered from the curated list
+  `docs/credits.yaml`: every third-party project, vendored file, model, dataset,
+  paper, tool, action, image and font VMAFx ships, adapts or uses, with its
+  relation to the project and the licence its upstream states. `make
+  docs-fragments-check` fails on page drift, an uncredited vendored or
+  inherited path, an unused `LICENSES/*.txt`, a skill derived from an upstream
+  with no entry, and an entry path that is gone. See ADR-2485.
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -173,6 +199,30 @@
   `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
   including the five-frame window and the moving average, in Rust; the default
   stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
+- `vmafx-server` raises two framework defaults that did not fit scoring: the
+  gRPC receive limit is now 64 MiB (a 1080p `ScoreStream` frame pair is 6.2 MB
+  and the old 4 MiB limit rejected it) and the HTTP write timeout is 15 minutes
+  (a synchronous `POST /v1/score` that took more than 60 s lost its
+  connection). `VMAFX_GRPC_MAX_RECV_SIZE` and `VMAFX_HTTP_TIMEOUTS_WRITE`
+  still override both. New page `docs/server/configuration.md` documents the
+  source precedence (environment over file over defaults), the underscore rule
+  of the environment transform and every server limit (#1251).
+- Server log lines share one field set (`request_id`, `rpc`, `route`, `model`,
+  `backend`, `duration_s`, `error`) defined in `pkg/observability`; the legacy
+  `POST /v1/score` path logs it today (#1251).
+
+
+- The scoring server's `ScoreRequest` (gRPC and `POST /v1/score`) takes
+  `options`: raw `.yuv` geometry, backend and device, threads, subsample,
+  precision, features, tiny model and more, so the server can score raw
+  `.yuv` pairs. Every scoring response, the `ScoreStream` aggregate included,
+  carries `provenance`: the library record, the model the server loaded with
+  its SHA-256, the backend receipt and the precision. The versioned contract
+  and its compatibility policy are on `docs/server/api-contract.md`; a
+  contract test (`meson test test_vmafx_score_contract`) checks that the CLI,
+  the C API, gRPC and REST give the same score bit for bit (#2155).
 
 
 - **Preview of the VMAFx C API, generated from one definition (RC4,
@@ -372,6 +422,25 @@
   edits one. `docs/adr/_index_fragments/_order.txt` is frozen: later rows follow
   in the order they landed. GitHub no longer reports such a pull request as
   conflicting after master moves.
+
+
+- **Rust replaces the host-side C and C++ by 3.0 ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** The public C ABI stays and is exported from Rust; the C implementation of each layer is the differential oracle until it is deleted; native GPU device sources and C-only host glue stay on an exception list. The C++23 core item of the 2.0 plan is superseded. Phases, milestones 2.1 to 2.5 and 3.0, and the epic [#2567](https://github.com/VMAFx/vmafx/issues/2567) are in the [roadmap](docs/roadmap.md). No code path changes.
+
+
+- The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
+  `describe_worst_frames`) use the library default model when `model` is
+  omitted (`vmaf_v1.0.16_3d0h` in this release) instead of `vmaf_v0.6.1`;
+  pass `model="version=vmaf_v0.6.1"` to reproduce earlier numbers. Their
+  validation follows the generated schema: `threads` 0 (single-threaded) is
+  accepted, a `feature` list with a non-string or empty entry is refused
+  instead of filtered, and errors name the argument (`invalid tiny_crf 64:
+  must be <= 63`).
+- The scoring server returns lossless scores (`precision` `max`) by default,
+  so its scores equal the CLI's and the C API's bit for bit; a request may
+  still ask for another precision. A request body with a field the contract
+  does not know is refused with 400.
+- `vmaf --help` lists every option with its values and default, generated
+  from the API definition.
 
 
 - **Citing an ADR in source no longer edits a shared registry
@@ -579,6 +648,19 @@
   of the dynamic symbol table with `--exclude-libs` (GNU ld, lld). The Rust
   build also needs no network any more: TAD's unused build-time cbindgen
   dependency is gone and cargo runs `--offline --locked`.
+
+
+- `vmafx-server` no longer cuts a `Score` or `ScoreStream` RPC that runs
+  longer than about two minutes: the gRPC framework rotates connections after
+  2 minutes with a 5 s grace for running RPCs, and the server now gives them
+  30 minutes, the bound of one vmaf run (#1251).
+
+
+- `vmafx-server` `GET /readyz` now returns 503 when the vmaf binary the scorer
+  runs has been removed, is no longer executable, or when `model.dir` is not a
+  directory, instead of staying 200 for as long as the process holds a scorer
+  object. The same check is a readiness check (`vmaf-binary`) on the golusoris
+  status registry (#1251).
 
 
 - **The SYCL dma-buf import no longer closes the caller's descriptor.**

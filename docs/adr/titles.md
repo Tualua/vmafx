@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1327), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1330), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5228,6 +5228,10 @@ Every ADR, one heading each (1327), so the site search finds an ADR by its title
 
 [2012-lefthook-windows-host](2012-lefthook-windows-host.md)
 
+## ADR-2044: VMAFx option groups generate every scoring surface, and the scoring API is a versioned contract
+
+[2044-vmafx-option-groups-scoring-contract](2044-vmafx-option-groups-scoring-contract.md)
+
 ## ADR-2055: The x86 AVX2 level requires FMA
 
 [2055-x86-avx2-gate-requires-fma](2055-x86-avx2-gate-requires-fma.md)
@@ -5319,3 +5323,11 @@ Every ADR, one heading each (1327), so the site search finds an ADR by its title
 ## ADR-2440: Move the praetor pin to 7458a220e1c9 and drop the exceptions for the managed workflows
 
 [2440-praetor-pin-7458a220](2440-praetor-pin-7458a220.md)
+
+## ADR-2478: Rust replaces the host-side C and C++ through 3.0, behind the unchanged C ABI
+
+[2478-rust-core-migration](2478-rust-core-migration.md)
+
+## ADR-2485: VMAFx keeps its own credits page, generated from a curated list and held to the tree
+
+[2485-vmafx-credits-page](2485-vmafx-credits-page.md)
