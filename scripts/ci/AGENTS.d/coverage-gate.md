@@ -2,6 +2,7 @@
 paths:
   - scripts/ci/coverage-*.sh
 invariant: Floors only rise; lowering one needs ADR superseding ADR-0922; delta-gate tolerance 0.5pp.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Coverage Gate ratchet (ADR-0922)

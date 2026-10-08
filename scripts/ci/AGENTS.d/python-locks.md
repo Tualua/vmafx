@@ -4,6 +4,7 @@ paths:
   - scripts/ci/tests/test_python_dependency_locks.py
   - requirements/locks/*
 invariant: Every lock registered in `manifest.json`; installs hash-pinned, exact-path bound; scanners fail closed.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Hash-locked Python dependency policy (ADR-1305)

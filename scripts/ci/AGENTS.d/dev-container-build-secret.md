@@ -4,6 +4,7 @@ paths:
   - scripts/ci/build-dev-container-stage.sh
   - scripts/ci/tests/test_dev_container_build_secret.py
 invariant: `github_token` secret reaches exactly stages built on `gpu-sdks`, step-scoped; never `ARG` / `ENV`; no cache flags.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Dev-container GitHub build secret (ADR-1271)

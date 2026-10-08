@@ -3,6 +3,7 @@ paths:
   - scripts/ci/assertion-density.sh
   - scripts/ci/tests/test-assertion-density.sh
 invariant: Copyright grep accepts legacy and current Lusoris marker; single-literal pattern silently skips gate.
+area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # assertion-density.sh — copyright-grep scope (ADR-0968)

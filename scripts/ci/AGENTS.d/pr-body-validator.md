@@ -7,6 +7,7 @@ paths:
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
 invariant: `deliverables-check.sh` is only parser; validator shims `git diff --name-only` and nothing else.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PR-body deliverables validator (`validate-pr-body.sh`)

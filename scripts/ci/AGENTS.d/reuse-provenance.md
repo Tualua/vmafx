@@ -3,6 +3,7 @@ paths:
   - REUSE.toml
   - scripts/ci/tests/test_reuse_compliance.py
 invariant: `reuse lint` green is not provenance: keep exact overrides for inherited, ported, no-CLA and FFmpeg-patch files.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # REUSE coverage and provenance (BUG-003 / ADR-1250)

@@ -3,6 +3,7 @@ paths:
   - .github/workflows/release-dry-run.yml
   - scripts/ci/release-*.sh
 invariant: Mirrors release builds; publishes nothing.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Release dry run (ADR-1595)

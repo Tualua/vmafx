@@ -3,6 +3,7 @@ paths:
   - scripts/ci/sycl-bench-env.sh
   - scripts/ci/test-sycl-bench-env.sh
 invariant: `$ROOT` reaches `bash -c` only as positional argument of single-quoted body; test hook stays wired.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # `sycl-bench-env.sh`: the prefix stays out of the `bash -c` body

@@ -3,6 +3,7 @@ paths:
   - scripts/ci/check-state-md-rows.sh
   - scripts/ci/tests/test-check-state-md-rows.sh
 invariant: Five checks, none may narrow; status agrees with section; fix by moving row; markup closes per line.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # check-state-md-rows.sh — the status token belongs to the section (ADR-0165)

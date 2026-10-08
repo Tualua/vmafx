@@ -4,6 +4,7 @@ paths:
   - core/test/test_meson_secret_env_sanitization.py
   - core/meson.build
 invariant: Every supported Meson test entry point goes through `run_meson_test.py`; it deletes governed credential keys first.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Meson parent-environment sanitization (ADR-1333)

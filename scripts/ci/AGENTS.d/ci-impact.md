@@ -7,6 +7,7 @@ paths:
   - .github/workflows/ci-*.yml
   - scripts/ci/ci_*.py
 invariant: Planner fails closed to `mode=full`; planner/work/gate; one tier file.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CI impact planner (ADR-1140)

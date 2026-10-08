@@ -6,6 +6,7 @@ paths:
   - scripts/ci/test_go_workflow_contract.py
   - scripts/ci/tests/test_required_release_legs.py
 invariant: `required` list = `# required-aggregator` markers; one reporter per required name; contract suites share one harness.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Required aggregator: check names and the shared harness

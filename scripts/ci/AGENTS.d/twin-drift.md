@@ -3,6 +3,7 @@ paths:
   - scripts/ci/twin-drift-*
   - scripts/ci/tests/test-twin-drift-check.sh
 invariant: Job name sits verbatim in aggregator; parser rules change in script and test together; awk stays POSIX.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Twin-drift check

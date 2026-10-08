@@ -5,6 +5,7 @@ paths:
   - scripts/ci/tests/test_cuda_pin_single_source.py
   - scripts/ci/tests/test_install_cuda_toolkit.py
 invariant: One CUDA release = seven literals owned by `build-config.env` `CUDA_VERSION`; never narrow residual sweep.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CUDA coordinated pin (ADR-1285)

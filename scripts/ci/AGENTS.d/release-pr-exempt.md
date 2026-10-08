@@ -3,6 +3,7 @@ paths:
   - scripts/ci/release-pr-exempt.sh
   - scripts/ci/tests/test-release-pr-exempt.sh
 invariant: Exempt = `release-please--` head ref AND bot author; always exits 0; only four authoring gates consult it.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # release-pr-exempt.sh invariants (ADR-1151)

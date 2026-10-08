@@ -4,6 +4,7 @@ paths:
   - scripts/ci/silent-revert-allowlist.json
   - scripts/ci/tests/test_check_silent_revert.py
 invariant: Measure merge result, exclude merge commits from intent, use live target tip, fail closed.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # check-silent-revert.py invariants (ADR-1284 / ADR-1291)

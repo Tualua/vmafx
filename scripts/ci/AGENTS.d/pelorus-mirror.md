@@ -5,6 +5,7 @@ paths:
   - scripts/ci/tests/test-sync-pelorus-interop.sh
   - scripts/ci/tests/test_pelorus_mirror.py
 invariant: Mirror guard fails closed without exact 40-character pin; CI checks out that object, never branch or tag.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Pelorus mirror provenance gate (ADR-1113, ADR-1276)

@@ -2,6 +2,7 @@
 paths:
   - scripts/ci/tests/test_package_compression.py
 invariant: Pushes use IMAGE_COMPRESSION; xz 9; zopfli zips.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Package compression (ADR-1591, ADR-1594)

@@ -7,6 +7,7 @@ paths:
   - scripts/ci/tests/test_master_concurrency_contract.py
   - scripts/ci/tests/test-dedupe-gate.sh
 invariant: Contract test and caller change together.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Workflow contract tests: E2E, Helm selectors, Security Scans, dedupe gate

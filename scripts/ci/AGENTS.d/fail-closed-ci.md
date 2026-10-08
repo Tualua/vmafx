@@ -5,6 +5,7 @@ paths:
   - scripts/git-hooks/test-pre-push-mypy.py
   - requirements/locks/mypy.txt
 invariant: Required Python Lint = hash-locked mypy via merge-base hook, full history, no exit masking; test stays wired.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Fail-closed CI and required Python Lint

@@ -4,6 +4,7 @@ paths:
   - scripts/ci/cppcheck-public-entrypoints.cfg
   - scripts/ci/tests/test_cppcheck_posix_model.py
 invariant: Both cppcheck paths load generated POSIX model, `--check-level=exhaustive` and public-entrypoint cfg.
+area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Cppcheck models and analysis level

@@ -3,6 +3,7 @@ paths:
   - scripts/ci/check-container-build.sh
   - scripts/ci/tests/test-check-container-build.sh
 invariant: One accepted image identity, `vmaf-dev-mcp`, written in two roots of `dev/Containerfile`; new identity = ADR + marker.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Container-build provenance gate (ADR-1102, ADR-1346, ADR-1354)

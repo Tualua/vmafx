@@ -4,6 +4,7 @@ paths:
   - .semgrep.yml
   - .semgrepignore
 invariant: banned-call rule must report planted defects in vendored paths; vendored finding is fixed, never excluded.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Semgrep covers vendored code

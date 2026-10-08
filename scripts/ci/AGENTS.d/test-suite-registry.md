@@ -6,6 +6,7 @@ paths:
   - .github/test-suites.json
   - requirements/locks/tooling-tests.in
 invariant: Every test file is in one suite with required checks; Tooling Tests runs registry, not hand list.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Test-suite registry (ADR-1528)

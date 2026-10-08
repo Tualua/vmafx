@@ -6,6 +6,7 @@ paths:
   - scripts/ci/test_git_fixture_isolation.py
   - ffmpeg-patches/series.txt
 invariant: Replay `series.txt` cumulatively against `build-config.env` tag; fixtures discard inherited `GIT_*`.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # FFmpeg patch lifecycle (ADR-1240)

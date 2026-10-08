@@ -6,6 +6,7 @@ paths:
   - .github/workflows/macos-tester-bundle.yml
   - .github/workflows/docker-publish-tester.yml
 invariant: `vcs_tag` and tester `git describe`: `--match 'v*.*.*'`, no `--always`; `fallback:`; `build.yml` `fetch-depth: 0`.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # `check-vcs-version-not-bare-sha.sh` invariants

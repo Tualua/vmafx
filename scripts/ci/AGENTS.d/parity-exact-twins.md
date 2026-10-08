@@ -5,6 +5,7 @@ paths:
   - scripts/docs/generate-exact-twins.py
   - scripts/ci/exact_twin_matrix.py
 invariant: Exact twin = fragment + ADR + matrix row; drifting twin fixed, never given tolerance.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Exact twins and math-library twins

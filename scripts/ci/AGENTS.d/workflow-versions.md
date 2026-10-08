@@ -5,6 +5,7 @@ paths:
   - scripts/ci/tests/test_formatter_pins_single_source.py
   - scripts/ci/tests/test_mypy_python_version_single_source.py
 invariant: Level Zero, ruff / black and mypy `python_version`: one owner each plus checked mirrors; raise paired pins together.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Version pins checked by `check-workflow-versions.py`

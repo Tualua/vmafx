@@ -3,6 +3,7 @@ paths:
   - scripts/ci/check-local-data-contract.sh
   - scripts/ci/tests/test-check-local-data-contract.sh
 invariant: `.workingdir/` = private state, `.corpus/` = data, tracked files = public evidence; no tracked link into ignored data.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Local data-root separation (ADR-1277)

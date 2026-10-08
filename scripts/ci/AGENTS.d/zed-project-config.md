@@ -3,6 +3,7 @@ paths:
   - .zed/*
   - scripts/ci/tests/test_zed_project_config.py
 invariant: `.zed/` holds project-scoped settings only; test and files change together, on exact installed-version proof.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Zed project-configuration contract

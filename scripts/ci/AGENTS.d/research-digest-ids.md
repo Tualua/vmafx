@@ -4,6 +4,7 @@ paths:
   - scripts/ci/tests/test_research_digest_ids.py
   - docs/research/*.md
 invariant: New digest: unique numeric prefix + H1 `# Research-NNNN`; baseline debt only shrinks; no `--bootstrap-from-ref` in CI.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Research-digest identifier ratchet

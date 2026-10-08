@@ -14,6 +14,7 @@ paths:
   - scripts/ci/tests/test_praetor_tidy_coverage.py
   - .config/lint-exceptions.d/HISS-11.toml
 invariant: Baselines only via `make tidy-lane-write` (dev container); counts only decrease; `HeaderFilterRegex` starts `(^|/)`.
+area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # tidy-ratchet.py invariants (ADR-1142)

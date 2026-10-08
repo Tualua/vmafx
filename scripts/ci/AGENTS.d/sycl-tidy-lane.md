@@ -5,6 +5,7 @@ paths:
   - scripts/ci/test_sycl_tidy_workflow_contract.py
   - scripts/ci/tests/test_*sycl*.py
 invariant: SYCL TUs reach clang-tidy only through generated compile database; `Tidy SYCL` is strict-required, always reports.
+area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # SYCL custom-command lint database

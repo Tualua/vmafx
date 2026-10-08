@@ -8,6 +8,7 @@ paths:
   - scripts/ci/.shellcheckrc
   - scripts/ci/tests/test-pr-body-input-selection.sh
 invariant: Four gates source `pr-body-input.sh` from their own directory: classify stdin, read, close; never test `[ ! -t 0 ]`.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PR-body stdin classification (`pr-body-input.sh`)

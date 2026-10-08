@@ -4,6 +4,7 @@ paths:
   - scripts/lib/backlog_tracker.py
   - scripts/ci/tests/test_agent_eligibility_precheck.py
 invariant: Exit codes 0 / 1 / 2 and `::error title=...::` stderr format are dispatcher contract.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Agent dispatch precheck

@@ -3,6 +3,7 @@ paths:
   - scripts/ci/*source-adr-citations*
   - scripts/ci/tests/test_check_source_adr_citations.py
 invariant: Plain `ADR-NNNN` in source binds to exact file, derived each run; registry: `retired` + `fixtures` only.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Source ADR citation provenance (ADR-1311, ADR-2200)

@@ -7,6 +7,7 @@ paths:
   - dev/docker-compose.runner.yml
   - dev/scripts/arc-render-node.sh
 invariant: Fork PRs never run on self-hosted hardware; Arc container sees only Arc node; enabled lane must report `success`.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Self-hosted runners

@@ -113,10 +113,31 @@ The script exits 65 for a source it rejects. It rejects:
 | `invariant:` too long | 120 characters |
 | Too many globs | 24 per page |
 | Glob matches nothing | the file was renamed or removed: update the page |
-| Front matter | exactly `paths:` (a list) and `invariant:`; no other key |
+| Front matter | `paths:` (a list) and `invariant:`, plus optional `area:`; no other key |
 | File name | lower-case words joined by `-`, ending in `.md` |
 | Body | must start with a level-one heading (`# Title`) |
-| Anything else in `AGENTS.d/` | only Markdown pages and `_index.md` |
+| Area | `area:` names an `_area-<slug>.md`; every area has a page; summary 1 to 400 characters |
+| Anything else in `AGENTS.d/` | only Markdown pages, `_index.md` and `_area-<slug>.md` |
+
+## Areas
+
+When the table of one directory would pass the 16,000-byte index budget, group
+its pages into areas (decision Q-115; `scripts/ci/` has four: gates, release,
+tidy, tests). Each area has its own generated sub-index and its own budget.
+
+1. Add `AGENTS.d/_area-<slug>.md`: a `# Title` line, then one summary
+   paragraph (at most 400 characters) that says which files and topics the
+   area covers. An agent routes by this summary.
+2. Add `area: <slug>` to the front matter of every page. Once a directory has
+   an area file, every page must name one, and every area needs a page.
+3. Run `make docs-fragments-write`. `AGENTS.md` then lists the areas, and
+   `AGENTS-<slug>.md` next to it holds the table of that area's pages, in the
+   same form as the table of an undivided index.
+
+An agent reads `AGENTS.md`, picks the area whose summary covers the paths it
+will touch (both areas when unsure), matches the paths in that sub-index and
+reads the matching pages. Page paths, links and the `invariant:` rule do not
+change. `_area-<slug>.md` is not a page: it has no front matter and no row.
 
 ## What the index contains
 

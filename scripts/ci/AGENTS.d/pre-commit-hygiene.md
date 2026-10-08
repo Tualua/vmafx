@@ -2,6 +2,7 @@
 paths:
   - .pre-commit-config.yaml
 invariant: Third-party code enters through Meson wraps or `ffmpeg-patches/`, never a submodule; verify hook revision bumps.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Pre-commit hook hygiene — no submodules (ADR-0893)

@@ -5,6 +5,7 @@ paths:
   - scripts/ci/tests/test_lint_configured.py
   - scripts/ci/tests/test_write_compile_commands.py
 invariant: `make lint-c` lints exactly Ninja's configured commands, every variant, `--warnings-as-errors=*`; exporter fail-closed.
+area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Configured native lint (ADR-1142)

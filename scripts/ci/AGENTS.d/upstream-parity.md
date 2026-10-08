@@ -10,6 +10,7 @@ paths:
   - scripts/docs/generate-upstream-parity-allowlist.py
   - testdata/bench_upstream_ab.py
 invariant: Inherited code = Netflix bits, measured in dev image only; difference = ADR + fragment; stale = remove.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Upstream parity guard and its allowlist

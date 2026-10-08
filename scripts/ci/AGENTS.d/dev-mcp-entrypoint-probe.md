@@ -3,6 +3,7 @@ paths:
   - scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh
   - dev/scripts/dev-mcp-entrypoint.sh
 invariant: `_probe_with_retry` runs one program name as argv[0], never `eval`; keep it top-level with its exact opening line.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # dev-MCP entrypoint probe

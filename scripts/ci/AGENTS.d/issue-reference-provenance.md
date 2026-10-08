@@ -3,6 +3,7 @@ paths:
   - scripts/ci/check-issue-reference-provenance.py
   - scripts/ci/tests/test_issue_reference_provenance.py
 invariant: Protected historical contexts keep their archived `lusoris/vmaf` identity; contracts stay context-scoped.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Historical issue-reference provenance (BUG-048 Section E)

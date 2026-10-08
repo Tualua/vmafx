@@ -3,6 +3,7 @@ paths:
   - scripts/ci/state-md-touch-check.sh
   - scripts/ci/test-state-md-touch-check.sh
 invariant: Trigger predicate, opt-out sentinel and placeholder vocabulary couple to Bug-status row of PR template.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # `docs/state.md` touch check

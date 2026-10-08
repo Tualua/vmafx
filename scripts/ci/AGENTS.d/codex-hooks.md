@@ -4,6 +4,7 @@ paths:
   - .codex/hooks/*
   - scripts/ci/tests/test_codex_hook_config.py
 invariant: Every Codex hook command resolves through active worktree root after clearing `GIT_DIR` / `GIT_WORK_TREE`.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Codex repository-hook path contract

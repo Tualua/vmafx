@@ -5,6 +5,7 @@ paths:
   - scripts/ci/tests/test_base_image_single_source.py
   - docker/dev/ubuntu-26.04-cuda.Dockerfile
 invariant: One FROM/COPY parser; shared FROM arguments default from `build-config.env`; CUDA bases equal `DEV_BASE` with digest.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Base-image references (ADR-1231)

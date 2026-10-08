@@ -6,6 +6,7 @@ paths:
   - scripts/ci/test_cross_backend_*.py
   - scripts/ci/exact_twins.d/*
 invariant: `tolerance_for()` falls back to default; cell compares every metric; gate stays stdlib-only (macOS bundle).
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Cross-backend parity gate: calibration table and lanes

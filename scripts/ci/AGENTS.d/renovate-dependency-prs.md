@@ -5,6 +5,7 @@ paths:
   - scripts/ci/tests/test_renovate_file_patterns.py
   - renovate.json
 invariant: Bot exemption = bot author AND every changed path allowlisted; new pinning surface -> allowlist entry plus fixture.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Adding a Renovate-managed surface (ADR-1152)
