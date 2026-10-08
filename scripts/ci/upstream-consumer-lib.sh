@@ -154,20 +154,55 @@ uc_validate() {
   [ -f "$DIST_YUV" ] || uc_die "distorted input missing: $DIST_YUV"
   mkdir -p "$WORK" || uc_die "cannot create $WORK"
   WORK="$(cd "$WORK" && pwd)"
-  [ -f "$PREFIX/lib/pkgconfig/libvmaf.pc" ] || [ -f "$PREFIX/lib64/pkgconfig/libvmaf.pc" ] ||
-    uc_die "no libvmaf.pc under $PREFIX/lib{,64}/pkgconfig"
+  uc_has_pc "$PREFIX" ||
+    uc_die "no libvmaf.pc under $PREFIX/{lib,lib64,lib/<multiarch triplet>}/pkgconfig"
   UC_SCRIPT_PY="$UC_HERE/upstream_consumer_scores.py"
   [ -f "$UC_SCRIPT_PY" ] || uc_die "missing $UC_SCRIPT_PY"
 }
 
+# uc_libdirs PREFIX: the library directories of one install, one per line:
+# lib, lib64 and the multiarch lib/<triplet> (Meson's default libdir on Debian
+# and Ubuntu, e.g. lib/x86_64-linux-gnu), those that exist, in that order.
+# Without any of them it prints lib and lib64, so the paths stay well formed.
+uc_libdirs() {
+  local dir found=0
+  for dir in "$1/lib" "$1/lib64" "$1"/lib/*-linux-*; do
+    if [ -d "$dir" ]; then
+      echo "$dir"
+      found=1
+    fi
+  done
+  if [ "$found" -eq 0 ]; then
+    printf '%s\n' "$1/lib" "$1/lib64"
+  fi
+}
+
+# uc_has_pc PREFIX: succeeds when a library directory of PREFIX holds
+# pkgconfig/libvmaf.pc.
+uc_has_pc() {
+  local dir
+  while IFS= read -r dir; do
+    [ -f "$dir/pkgconfig/libvmaf.pc" ] && return 0
+  done < <(uc_libdirs "$1")
+  return 1
+}
+
 # uc_pkgpath PREFIX: PKG_CONFIG_PATH entries of one install.
 uc_pkgpath() {
-  echo "$1/lib/pkgconfig:$1/lib64/pkgconfig:$1/share/pkgconfig"
+  local dir out=""
+  while IFS= read -r dir; do
+    out="$out$dir/pkgconfig:"
+  done < <(uc_libdirs "$1")
+  echo "$out$1/share/pkgconfig"
 }
 
 # uc_ldpath PREFIX: LD_LIBRARY_PATH entries of one install.
 uc_ldpath() {
-  echo "$1/lib:$1/lib64"
+  local dir out=""
+  while IFS= read -r dir; do
+    out="${out:+$out:}$dir"
+  done < <(uc_libdirs "$1")
+  echo "$out"
 }
 
 # uc_check_loaded PREFIX LOG: LOG holds LD_DEBUG=libs output of a run. Names the

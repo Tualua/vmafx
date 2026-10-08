@@ -49,7 +49,7 @@ line is `PASS` or `FAIL`.
 
 | Option | Meaning |
 | --- | --- |
-| `--prefix DIR` | libvmaf install under test. Required. Found through `lib/pkgconfig` and `lib64/pkgconfig` of the prefix, never through `-lvmaf` alone, so the split layout (`libvmaf.pc` requiring `libvmafx`) works unchanged. |
+| `--prefix DIR` | libvmaf install under test. Required. Found through the `pkgconfig` directory of the prefix's `lib`, `lib64` or multiarch `lib/<triplet>` (Meson's default libdir on Debian and Ubuntu, for example `lib/x86_64-linux-gnu`, which the hosted runner uses), never through `-lvmaf` alone, so the split layout (`libvmaf.pc` requiring `libvmafx`) works unchanged. The same directories go on `LD_LIBRARY_PATH` for the scoring runs. |
 | `--reference-prefix DIR` | Second install. The same consumer binary runs again with `LD_LIBRARY_PATH` pointing at it; scores must match. |
 | `--against-cli` | Also score the same input with `DIR/bin/vmaf` (model `vmaf_v0.6.1`, default precision, one thread) and compare. |
 | `--frames N` | Frames to score. Default 3. |
