@@ -128,6 +128,10 @@ class CheckerLogicTest(unittest.TestCase):
 STUB = '__attribute__((visibility("default"))) void {name}(void) {{}}\n'
 
 
+@unittest.skipUnless(
+    sys.platform.startswith("linux"),
+    "GNU ld version scripts (--version-script) and ELF nm output exist on Linux only",
+)
 @unittest.skipIf(
     None in (tool("cc"), tool("nm"), tool("c++filt")), "needs cc, nm and c++filt on PATH"
 )
