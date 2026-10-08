@@ -487,12 +487,20 @@ jobs:
       # ── Netflix golden + unit tests (Linux) ──────────────────────────
       # Native Meson tests; Python golden assertions run in the dedicated
       # CPU/GCC jobs described at the top of this workflow.
+      # The tests that compile or link (test_compat_library_gates,
+      # test_libvmaf_deprecation) run the build's own compiler, `icx` on the Intel
+      # LLVM leg: source the oneAPI environment as the build step does and keep
+      # PATH through sudo, whose secure_path drops it.
       - name: Run tests (Linux)
         if: startsWith(matrix.os, 'ubuntu')
-        run: >-
-          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
-          --meson-executable "$(command -v meson)" -- -C core/build
-          --no-rebuild --print-errorlogs
+        run: |
+          if [ "${{ matrix.sycl }}" = "true" ]; then
+            source /opt/intel/oneapi/setvars.sh
+          fi
+          sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+            "$(command -v python3)" scripts/ci/run_meson_test.py \
+            --meson-executable "$(command -v meson)" -- -C core/build \
+            --no-rebuild --print-errorlogs
 
       # ── Tests (macOS) ────────────────────────────────────────────────
       - name: Run tests (macOS)
