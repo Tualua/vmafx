@@ -367,6 +367,54 @@ def test_every_meson_generated_header_has_a_licensing_rule() -> None:
         lic.generated_rule(rules, rel)
 
 
+# The libraries core/src/meson.build installs, each with its pkg-config file.
+PKG_CONFIG_FILEBASE = re.compile(r"""filebase\s*:\s*'([\w.-]+)'""")
+
+
+def meson_installed_libraries() -> list[str]:
+    text = (REPO / "core" / "src" / "meson.build").read_text(encoding="utf-8")
+    return sorted(PKG_CONFIG_FILEBASE.findall(text))
+
+
+def missing_library_entries(data: dict, libraries: list[str]) -> list[str]:
+    """Components that record one installed library (`<lib>.so*` or `<lib>.pc`, any
+    directory) but not another one in the same place: the build installs them together
+    (the compat libvmaf.so.3 on libvmafx.so.1, ADR-2094), so an image or bundle that
+    ships one ships both."""
+    problems = []
+    for kind, record in data["artifacts"].items():
+        for component in record["components"]:
+            paths = component.get("paths", [])
+            for path in paths:
+                head, _, name = path.rpartition("/")
+                for lib in libraries:
+                    for suffix in (".so*", ".pc"):
+                        if name != lib + suffix:
+                            continue
+                        for other in libraries:
+                            want = f"{head}/{other}{suffix}" if head else other + suffix
+                            if want not in paths:
+                                problems.append(f"{kind}/{component['id']}: {path} without {want}")
+    return problems
+
+
+def test_every_installed_library_is_recorded_beside_its_sibling() -> None:
+    libraries = meson_installed_libraries()
+    assert libraries == ["libvmaf", "libvmafx"]  # the pattern still reads the build
+    assert missing_library_entries(lic.load_manifest(), libraries) == []
+
+
+def test_a_library_recorded_without_its_sibling_is_found() -> None:
+    data = {"artifacts": {"img": {"components": [
+        {"id": "bin", "paths": ["usr/local/lib/libvmaf.so*", "usr/local/lib/pkgconfig/libvmaf.pc"]},
+        {"id": "zip", "paths": ["libvmafx.so*", "libvmaf.so*"]},
+    ]}}}  # fmt: skip
+    assert missing_library_entries(data, ["libvmaf", "libvmafx"]) == [
+        "img/bin: usr/local/lib/libvmaf.so* without usr/local/lib/libvmafx.so*",
+        "img/bin: usr/local/lib/pkgconfig/libvmaf.pc without usr/local/lib/pkgconfig/libvmafx.pc",
+    ]
+
+
 def test_scan_build_refuses_a_compiled_file_without_licence(tmp_path: Path, monkeypatch) -> None:
     build, repo = fake_build(tmp_path, monkeypatch)
     write(repo / "core/a.c", "int a;\n")

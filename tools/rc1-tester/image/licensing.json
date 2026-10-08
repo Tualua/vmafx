@@ -2548,10 +2548,11 @@
     {
      "id": "vmafx-binaries",
      "kind": "build",
-     "name": "VMAFx: the vmaf command and libvmaf",
+     "name": "VMAFx: the vmaf command, libvmaf and libvmafx",
      "paths": [
       "usr/local/bin/vmaf",
-      "usr/local/lib/libvmaf.so*"
+      "usr/local/lib/libvmaf.so*",
+      "usr/local/lib/libvmafx.so*"
      ],
      "licences": [
       "EUPL-1.2",
@@ -2682,10 +2683,11 @@
     {
      "id": "vmafx-binaries",
      "kind": "build",
-     "name": "VMAFx: the vmaf command and libvmaf",
+     "name": "VMAFx: the vmaf command, libvmaf and libvmafx",
      "paths": [
       "usr/local/bin/vmaf",
-      "usr/local/lib/libvmaf.so*"
+      "usr/local/lib/libvmaf.so*",
+      "usr/local/lib/libvmafx.so*"
      ],
      "licences": [
       "EUPL-1.2",
@@ -3017,13 +3019,15 @@
     {
      "id": "vmafx-binaries",
      "kind": "build",
-     "name": "VMAFx: vmafx-server, the vmaf command and libvmaf",
+     "name": "VMAFx: vmafx-server, the vmaf command, libvmaf and libvmafx",
      "paths": [
       "usr/local/bin/vmafx-server",
       "usr/local/bin/vmaf",
       "usr/local/bin/vmafx",
       "usr/local/lib/libvmaf.so*",
-      "usr/local/lib/pkgconfig/libvmaf.pc"
+      "usr/local/lib/libvmafx.so*",
+      "usr/local/lib/pkgconfig/libvmaf.pc",
+      "usr/local/lib/pkgconfig/libvmafx.pc"
      ],
      "licences": [
       "EUPL-1.2",
@@ -3205,12 +3209,14 @@
     {
      "id": "vmafx-binaries",
      "kind": "build",
-     "name": "VMAFx: vmafx-node, the vmaf command and libvmaf",
+     "name": "VMAFx: vmafx-node, the vmaf command, libvmaf and libvmafx",
      "paths": [
       "usr/local/bin/vmafx-node",
       "usr/local/bin/vmaf",
       "usr/local/lib/libvmaf.so*",
-      "usr/local/lib/pkgconfig/libvmaf.pc"
+      "usr/local/lib/libvmafx.so*",
+      "usr/local/lib/pkgconfig/libvmaf.pc",
+      "usr/local/lib/pkgconfig/libvmafx.pc"
      ],
      "licences": [
       "EUPL-1.2",
@@ -3683,10 +3689,11 @@
     {
      "id": "vmafx-binaries",
      "kind": "build",
-     "name": "VMAFx: the vmaf command and libvmaf",
+     "name": "VMAFx: the vmaf command, libvmaf and libvmafx",
      "paths": [
       "vmaf",
-      "libvmaf.so*"
+      "libvmaf.so*",
+      "libvmafx.so*"
      ],
      "licences": [
       "EUPL-1.2",
