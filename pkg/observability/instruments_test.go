@@ -186,6 +186,8 @@ func readErrors(t *testing.T, reg prometheus.Registerer) Counter {
 
 // TestRegisterScrapedCountsReadErrors: a failed read counts under its source
 // and leaves only its own families out; the rest of the page is served.
+// T-READ-ERRORS-TEST-RACES-GATHER-2026-10-08: it asserted the count of the
+// same scrape and failed in about one run of ten.
 func TestRegisterScrapedCountsReadErrors(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
@@ -201,9 +203,15 @@ func TestRegisterScrapedCountsReadErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got := seriesOf(t, reg, metricdef.MetricsReadErrors.Name) // Gather must not fail
-	if got["device_memory"] != 1 || got["queue"] != 0 {
-		t.Errorf("read errors = %v, want device_memory 1, queue 0", got)
+	// Gather collects the collectors concurrently, so the counter may be read
+	// before the failing read of the same scrape increments it: a failure
+	// shows by the next scrape at the latest. Two gathers count one or two.
+	if first := seriesOf(t, reg, metricdef.MetricsReadErrors.Name); first["queue"] != 0 { // Gather must not fail
+		t.Errorf("the working group counted a read error: %v", first)
+	}
+	got := seriesOf(t, reg, metricdef.MetricsReadErrors.Name)
+	if got["device_memory"] < 1 || got["queue"] != 0 {
+		t.Errorf("read errors after two scrapes = %v, want device_memory >= 1, queue 0", got)
 	}
 	if nodes := seriesOf(t, reg, metricdef.ControllerNodesLive.Name); nodes[""] != 2 {
 		t.Errorf("the working group was not served: %v", nodes)
