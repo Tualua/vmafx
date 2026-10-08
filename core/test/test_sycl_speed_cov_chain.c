@@ -22,10 +22,14 @@
  *     seeded random sweep; the storage of a value to round-trip;
  *   - the split entry to equal (float)(compute_cov_kernel_scalar() / n) on
  *     every flat and cancelling block of speed_cov_cases.h, on all 325
- *     entries of the frame-140 U-reference plane (speed_cov_frame140_plane.h;
- *     entry (14, 11) is 0x3ae6645f), and on a seeded sweep of blocks with
+ *     entries of a synthetic 120 x 50 plane (speed_cov_synthetic_plane.h,
+ *     written by scripts/dev/gen_speed_cov_synthetic_plane.py), and on a
+ *     seeded sweep of blocks with
  *     mixed magnitudes, at several slice heights; covariance_entry() (A)
  *     too, on the fixture.
+ *   - the synthetic plane to keep its discriminator: at least one entry the
+ *     reference's sequential sum and a near-exact sum (x86-64 long double,
+ *     rounded once) store as different fp32 values.
  *
  * The design has no range bound and no fallback: the fallback count it
  * reports is 0 by construction.
@@ -52,20 +56,20 @@ float vmaf_test_cov_split_entry(const float *x, const float *y, size_t stride, u
                                 uint64_t *scratch);
 
 #include "speed_cov_cases.h"
-#include "speed_cov_frame140_plane.h"
+#include "speed_cov_synthetic_plane.h"
 
 enum {
-    F140_BLOCK = 5,
-    F140_ELEMENTS = F140_BLOCK * F140_BLOCK,
-    F140_SUB_W = SPEED_COV_FRAME140_WIDTH - F140_BLOCK + 1,
-    F140_SUB_H = SPEED_COV_FRAME140_HEIGHT - F140_BLOCK + 1,
+    SYN_BLOCK = 5,
+    SYN_ELEMENTS = SYN_BLOCK * SYN_BLOCK,
+    SYN_SUB_W = SPEED_COV_SYNTHETIC_WIDTH - SYN_BLOCK + 1,
+    SYN_SUB_H = SPEED_COV_SYNTHETIC_HEIGHT - SYN_BLOCK + 1,
     SWEEP_BLOCKS = 120000,
     SWEEP_MAX_W = 9,
     SWEEP_MAX_H = 6,
     RANDOM_ADDS = 2000000,
 };
 
-static uint64_t scratch[3u * F140_SUB_W * F140_SUB_H];
+static uint64_t scratch[3u * SYN_SUB_W * SYN_SUB_H];
 
 static uint64_t bits_of(double v)
 {
@@ -198,71 +202,98 @@ static char *test_cases_blocks(void)
 
 /* speed.c's compute_mean() is static, so its statements are repeated here:
  * an fp32 running sum in raster order, then an fp32 quotient by the count. */
-static float frame140_mean(uint32_t element)
+static float synthetic_mean(uint32_t element)
 {
-    const float *base = speed_cov_frame140_plane +
-                        ((size_t)(element / F140_BLOCK) * SPEED_COV_FRAME140_WIDTH) +
-                        (element % F140_BLOCK);
+    const float *base = speed_cov_synthetic_plane +
+                        ((size_t)(element / SYN_BLOCK) * SPEED_COV_SYNTHETIC_WIDTH) +
+                        (element % SYN_BLOCK);
     float result = 0.0f;
-    for (size_t i = 0; i < F140_SUB_H; i++) {
-        for (size_t j = 0; j < F140_SUB_W; j++) {
-            result += base[i * SPEED_COV_FRAME140_WIDTH + j];
+    for (size_t i = 0; i < SYN_SUB_H; i++) {
+        for (size_t j = 0; j < SYN_SUB_W; j++) {
+            result += base[i * SPEED_COV_SYNTHETIC_WIDTH + j];
         }
     }
-    return result / (float)(F140_SUB_W * F140_SUB_H);
+    return result / (float)(SYN_SUB_W * SYN_SUB_H);
 }
 
-static const float *frame140_block(uint32_t element)
+static const float *synthetic_block(uint32_t element)
 {
-    return speed_cov_frame140_plane + ((size_t)(element / F140_BLOCK) * SPEED_COV_FRAME140_WIDTH) +
-           (element % F140_BLOCK);
+    return speed_cov_synthetic_plane + ((size_t)(element / SYN_BLOCK) * SPEED_COV_SYNTHETIC_WIDTH) +
+           (element % SYN_BLOCK);
 }
 
-static unsigned frame140_entry(uint32_t x, uint32_t y, const float *means, uint32_t slice_rows)
+/* The entry of the near-exact sum (x86-64 long double, rounded once), as
+ * near_exact_entry() of speed_cov_cases.h forms it. */
+static float synthetic_near_exact(uint32_t x, uint32_t y, const float *means)
 {
-    const float want_v = reference(frame140_block(x), frame140_block(y), SPEED_COV_FRAME140_WIDTH,
-                                   F140_SUB_W, F140_SUB_H, means[x], means[y]);
-    const float split =
-        vmaf_test_cov_split_entry(frame140_block(x), frame140_block(y), SPEED_COV_FRAME140_WIDTH,
-                                  F140_SUB_W, F140_SUB_H, means[x], means[y], slice_rows, scratch);
-    unsigned wrong = float_bits(split) != float_bits(want_v);
-    if (slice_rows == F140_SUB_H) {
-        const float a =
-            vmaf_test_cov_entry_a(frame140_block(x), frame140_block(y), SPEED_COV_FRAME140_WIDTH,
-                                  F140_SUB_W, F140_SUB_H, means[x], means[y]);
-        wrong += float_bits(a) != float_bits(want_v);
+    const float *bx = synthetic_block(x);
+    const float *by = synthetic_block(y);
+    long double sum = 0.0L;
+    for (size_t i = 0; i < SYN_SUB_H; i++) {
+        for (size_t j = 0; j < SYN_SUB_W; j++) {
+            const double vx = (double)bx[i * SPEED_COV_SYNTHETIC_WIDTH + j] - (double)means[x];
+            const double vy = (double)by[i * SPEED_COV_SYNTHETIC_WIDTH + j] - (double)means[y];
+            const volatile double product = vx * vy;
+            sum += (long double)product;
+        }
     }
-    if (x == 14u && y == 11u && slice_rows == F140_SUB_H) {
-        (void)fprintf(stderr, "[frame 140 entry (14,11): ref 0x%08x split 0x%08x] ",
-                      float_bits(want_v), float_bits(split));
-        wrong += float_bits(split) != 0x3ae6645fu;
+    return (float)(sum / (long double)(SYN_SUB_W * SYN_SUB_H));
+}
+
+static unsigned synthetic_entry(uint32_t x, uint32_t y, const float *means, uint32_t slice_rows,
+                                unsigned *split_entries)
+{
+    const float want_v =
+        reference(synthetic_block(x), synthetic_block(y), SPEED_COV_SYNTHETIC_WIDTH, SYN_SUB_W,
+                  SYN_SUB_H, means[x], means[y]);
+    const float split =
+        vmaf_test_cov_split_entry(synthetic_block(x), synthetic_block(y), SPEED_COV_SYNTHETIC_WIDTH,
+                                  SYN_SUB_W, SYN_SUB_H, means[x], means[y], slice_rows, scratch);
+    unsigned wrong = float_bits(split) != float_bits(want_v);
+    if (slice_rows == SYN_SUB_H) {
+        const float a =
+            vmaf_test_cov_entry_a(synthetic_block(x), synthetic_block(y), SPEED_COV_SYNTHETIC_WIDTH,
+                                  SYN_SUB_W, SYN_SUB_H, means[x], means[y]);
+        wrong += float_bits(a) != float_bits(want_v);
+        if (float_bits(synthetic_near_exact(x, y, means)) != float_bits(want_v)) {
+            if (*split_entries < 2u) {
+                (void)fprintf(stderr, "[entry (%u,%u): sequential 0x%08x near-exact 0x%08x] ", x, y,
+                              float_bits(want_v), float_bits(synthetic_near_exact(x, y, means)));
+            }
+            (*split_entries)++;
+        }
     }
     if (wrong != 0u) {
-        (void)fprintf(stderr, "[frame 140 entry (%u,%u) slice %u differs] ", x, y, slice_rows);
+        (void)fprintf(stderr, "[synthetic entry (%u,%u) slice %u differs] ", x, y, slice_rows);
     }
     return wrong;
 }
 
-static char *test_frame140_plane(void)
+static char *test_synthetic_plane(void)
 {
-    float means[F140_ELEMENTS];
-    for (uint32_t e = 0; e < F140_ELEMENTS; e++) {
-        means[e] = frame140_mean(e);
+    float means[SYN_ELEMENTS];
+    for (uint32_t e = 0; e < SYN_ELEMENTS; e++) {
+        means[e] = synthetic_mean(e);
     }
-    const uint32_t slices[] = {1u, 7u, F140_SUB_H};
+    const uint32_t slices[] = {1u, 7u, SYN_SUB_H};
     unsigned entries = 0u;
+    unsigned split_entries = 0u;
     unsigned wrong = 0u;
     for (size_t s = 0; s < sizeof(slices) / sizeof(slices[0]); s++) {
-        for (uint32_t x = 0; x < F140_ELEMENTS; x++) {
+        for (uint32_t x = 0; x < SYN_ELEMENTS; x++) {
             for (uint32_t y = 0; y <= x; y++) {
-                wrong += frame140_entry(x, y, means, slices[s]);
-                entries += slices[s] == F140_SUB_H;
+                wrong += synthetic_entry(x, y, means, slices[s], &split_entries);
+                entries += slices[s] == SYN_SUB_H;
             }
         }
     }
-    (void)fprintf(stderr, "[frame 140: %u entries, fallback 0] ", entries);
-    mu_assert("the frame-140 fixture does not have 325 entries", entries == 325u);
-    mu_assert("the split covariance differs from compute_cov_kernel_scalar() on the frame-140 "
+    (void)fprintf(stderr, "[synthetic plane: %u entries, %u split, fallback 0] ", entries,
+                  split_entries);
+    mu_assert("the synthetic fixture does not have 325 entries", entries == 325u);
+    mu_assert("the synthetic plane has no entry the sequential and the near-exact sums store "
+              "differently: it no longer discriminates",
+              split_entries >= 1u);
+    mu_assert("the split covariance differs from compute_cov_kernel_scalar() on the synthetic "
               "plane",
               wrong == 0u);
     return NULL;
@@ -320,7 +351,7 @@ char *run_tests(void)
     mu_run_test(test_chain_add_constructed);
     mu_run_test(test_chain_add_random);
     mu_run_test(test_cases_blocks);
-    mu_run_test(test_frame140_plane);
+    mu_run_test(test_synthetic_plane);
     mu_run_test(test_random_blocks);
     return NULL;
 }

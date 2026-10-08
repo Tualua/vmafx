@@ -36,7 +36,7 @@ segment is mostly start-up. See [Start-up dominates the segment](#start-up-domin
 | Runtime | Level Zero `libze-intel-gpu1` 26.35.39758.10, oneAPI icx / icpx image `localhost/vmafx:build-ocloc` |
 | Builds | base `41efb8a10` (frozen "before"), branch `perf/sycl-zerocopy-throughput` (adds the env-gated `VMAF_SYCL_TIMING` timers); library code of the two differs only by those timers |
 | Dev build note | `-Dsycl_icpx_aot_targets=` is empty, so kernels are JIT-loaded in every process; shipped builds compile ahead of time |
-| Content | `Young.Sherlock.S01E01` 2160p: HEVC HDR10 reference against its AV1 encode, both decoded by QSV, 3840x1600 P010, first 200 frames (`trim=end_frame=200` on both inputs) |
+| Content | a 2160p HDR10 HEVC episode (3840x1600 active) against its AV1 encode, both decoded by QSV, 3840x1600 P010, first 200 frames (`trim=end_frame=200` on both inputs) |
 | Repeats | one unrecorded warm-up leg, then R = 3; spread gate rejects a row whose min and max differ by more than the tool's limit |
 
 Commands (from [Throughput harness](../backends/sycl/overview.md)): every row
