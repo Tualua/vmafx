@@ -288,7 +288,7 @@ Open items only; the ledger row ids are in
 This is a platform defect, deferred as
 `T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`. On a gfx1036 (ROCm 7.2.4,
 Linux 7.2.8) a HIP stream now and then never runs a run of the commands it
-was given, roughly once per 10^4 frames, on master as well. A HIP twin then
+was given, roughly once per $10^{4}$ frames, on master as well. A HIP twin then
 reports a wrong score for that frame: `vif_hip` reports the sums of two frames
 when the memset of its accumulators is lost, or fails the run with
 `invalid ratio` when a scale's kernel is lost.

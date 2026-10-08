@@ -1100,6 +1100,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: test-docs-math
+        name: Documentation formula check and KaTeX vendoring keep their contract
+        entry: python3 -B scripts/docs/tests/test_check_math.py
+        language: system
+        files: '^(scripts/docs/(check_math|check_math_worker|mkdocs_math_hook|vendor_katex|tests/test_check_math)\.(py|js)|docs/javascripts/(katex\.js|vendor/katex/)|\.pre-commit-config\.yaml)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: test-docs-charts
         name: Documentation chart generator keeps its contract
         entry: python3 -B scripts/docs/tests/test_charts.py

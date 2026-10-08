@@ -92,6 +92,12 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # `$...$` and `$$...$$` become <span|div class="arithmatex"> carrying \(...\)
+  # or \[...\]; docs/javascripts/katex.js typesets them with the vendored KaTeX
+  # (ADR-2705). generic keeps the markup renderer-neutral, so the sources also
+  # render in GitHub's Markdown view.
+  - pymdownx.arithmatex:
+      generic: true
   - attr_list
   - md_in_html
   - tables
@@ -151,14 +157,22 @@ validation:
 # and publishes the figure stylesheet and player; diagrams use no Mermaid.
 hooks:
   - tools/figures/mkdocs_hook.py
+  # Frozen pages keep their dollar signs as text (ADR-2705).
+  - scripts/docs/mkdocs_math_hook.py
 
 extra_css:
   - stylesheets/vmafx.css
+  - javascripts/vendor/katex/katex.min.css
 
 # Mounts the interactive charts; loads the Vega bundle only on a page with a
 # chart (ADR-1508, scripts/docs/generate-charts.py).
 extra_javascript:
   - javascripts/charts.js
+  # Formulas (ADR-2705): the pinned KaTeX release in docs/javascripts/vendor/katex/,
+  # served from the site, never from a CDN. katex.js runs after the two libraries.
+  - javascripts/vendor/katex/katex.min.js
+  - javascripts/vendor/katex/auto-render.min.js
+  - javascripts/katex.js
 
 extra:
   social:

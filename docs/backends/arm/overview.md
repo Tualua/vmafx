@@ -111,7 +111,7 @@ cross-architecture correctness check.
 |---------|----------|-------|--------------|
 | `psnr_hvs` | ADR-0160 | `test_psnr_hvs_dispatch_invariance`, `test_psnr_hvs_neon` | the first scores the extractor with NEON and with every flag masked and compares the four outputs bit for bit; the second compares the integer DCT alone. The masking threshold uses the scalar's `float` product ([`psnr_hvs`](../../metrics/psnr-hvs.md#cpu-instruction-sets)) |
 | `ssimulacra2` | ADR-0161, 0162, 0163, 0213 | cross-file `build-aux/aarch64-linux-gnu-sve2.ini` under `qemu-aarch64-static -cpu max` | cross-host determinism via `vmaf_ss2_cbrtf` and the sRGB-EOTF LUT; the SVE2 TU is locked to a fixed 4-lane predicate (`svwhilelt_b32(0, 4)`) so its arithmetic order matches NEON at any runtime vector length |
-| `float_moment` | ADR-1500 | `core/test/test_moment_simd.c` (asserts `==`) | each sample, or its float square, is added into one `double` in raster order, as the scalar loop and the x86 kernels do, so a 16-bit frame whose sum of squares passes 2^53 units gets the scalar's bits |
+| `float_moment` | ADR-1500 | `core/test/test_moment_simd.c` (asserts `==`) | each sample, or its float square, is added into one `double` in raster order, as the scalar loop and the x86 kernels do, so a 16-bit frame whose sum of squares passes $2^{53}$ units gets the scalar's bits |
 | `ms_ssim_decimate` | ADR-0125 | decimate tests | per-lane `vfmaq_n_f32` with broadcast coefficients matches the scalar `fmaf` chain exactly |
 | `speed_chroma` / `speed_temporal` | ADR-1459 | `core/test/test_speed_simd.c` | every covariance sum of the NEON row kernel has the bits of `compute_cov_kernel_scalar()`; run under `qemu-aarch64` with GCC and with clang |
 
@@ -239,7 +239,7 @@ configures anything.
 
 Until 2026-10-03 the `float_moment` NEON and SVE2 kernels added in lanes and
 differed from the scalar function on 16-bit frames whose sum of squares
-passes 2^53 units (ADR-1500).
+passes $2^{53}$ units (ADR-1500).
 
 ### 2026-10-02: FP contraction (ADR-1461)
 

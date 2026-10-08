@@ -44,9 +44,9 @@ further things:
   [history](history.md#ciede_sycl-follows-the-cpu-ciede-to-14e-11-2026-10-01)).
 - **Summation order.** A work-group reduction adds in a tree, not in the
   CPU's sequential order. The twins add integers where the terms allow it
-  (`float_psnr`, `float_moment` up to 2^53 units), reproduce the CPU's
+  (`float_psnr`, `float_moment` up to $2^{53}$ units), reproduce the CPU's
   sequential `double` sum from integer increments where they do not
-  (`ssimulacra2`, ADR-1446; `float_moment` past 2^53 units, ADR-1497),
+  (`ssimulacra2`, ADR-1446; `float_moment` past $2^{53}$ units, ADR-1497),
   or read the terms back and add them on the host in the CPU's order
   (`ssim`, ADR-1443; `float_ssim`, ADR-1463; `float_ms_ssim`, ADR-1466).
 - **fp64 on the CPU.** SYCL kernels are fp32-only
@@ -144,7 +144,7 @@ Two device-side controls reduce the remaining deviation:
   `min_sse`, and carries the `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag so
   `--subsample` scaling works as for the other temporal extractors.
 - `float_psnr_sycl` and `float_moment_sycl` add integers, so the sum is exact in
-  any order; `float_moment_sycl` reproduces the CPU's rounding past 2^53 units
+  any order; `float_moment_sycl` reproduces the CPU's rounding past $2^{53}$ units
   ([ADR-1497](../../adr/1497-float-moment-twins-cpu-sum-past-2-53.md)).
 - `psnr_hvs_sycl` stores the 64 terms of every block and the host adds them in
   the CPU's order, so it equals the CPU at every frame size and at 8 to 12 bits

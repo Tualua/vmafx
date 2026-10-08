@@ -608,9 +608,9 @@ backend within it.
 - **`float_psnr_cuda` adds integers ([ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md))**:
   `core/src/feature/cuda/float_psnr/float_psnr_score.cu` forms the CPU's term
   (`diff * diff` in `float`, as `float_psnr.c` does) with `__fmul_rn()` as an
-  integer in units of 1 / scaler^2 and reduces `uint64` values per warp and
+  integer in units of 1 / $\mathrm{scaler}^{2}$ and reduces `uint64` values per warp and
   per block; `float_psnr_cuda.c::float_psnr_noise()` adds the blocks in
-  `uint64` and divides the exact total by scaler^2 and the pixel count. An
+  `uint64` and divides the exact total by $\mathrm{scaler}^{2}$ and the pixel count. An
   fp32 block sum is exact only up to 24 bits. A change to how `float_psnr.c`
   forms or adds its terms changes the kernel in the same PR.
   `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
@@ -619,15 +619,15 @@ backend within it.
   row's exact sum into a double in row order with
   `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
   as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
-  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  past $2^{53}$ units; a sync must not bring back 16x16 blocks or a frame total
   rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
 
 - **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
   `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
   (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of
-  1 / scaler^2 and reduces `uint64` values per sub-group, per work-group and on
+  1 / $\mathrm{scaler}^{2}$ and reduces `uint64` values per sub-group, per work-group and on
   the host; an fp32 group sum is exact only up to 24 bits. The host divides
-  the exact total by scaler^2 and the pixel count. A change to how
+  the exact total by $\mathrm{scaler}^{2}$ and the pixel count. A change to how
   `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
   device, `test_sycl_float_psnr_parity` (`==`) on one.
@@ -635,7 +635,7 @@ backend within it.
   row's exact sum into a double in row order with
   `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
   as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
-  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  past $2^{53}$ units; a sync must not bring back 16x16 blocks or a frame total
   rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
 
 - **`float_moment_hip` adds the CPU's float squares ([ADR-1447](../adr/1447-hip-float-moment-cpu-float-squares.md))**:
@@ -646,7 +646,7 @@ backend within it.
   host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
-  device, `test_hip_float_moment_parity` on one (`==`, past 2^53 units too,
+  device, `test_hip_float_moment_parity` on one (`==`, past $2^{53}$ units too,
   ADR-1497 below).
 
 - **The NEON and SVE2 `float_moment` kernels add in the scalar's order ([ADR-1500](../adr/1500-arm-float-moment-scalar-order.md))**:
@@ -656,7 +656,7 @@ backend within it.
   `x86/moment_avx2.c` do; the SVE2 kernel adds the first `svcntp_b32` active
   lanes of a `svwhilelt_b32` predicate and does not depend on the vector
   length. A sync must not bring back lane accumulators, per-row vector sums or
-  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past 2^53 units the sum
+  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past $2^{53}$ units the sum
   rounds on every add. `core/test/test_moment_simd.c` (`==`) guards it; run
   it under `qemu-aarch64` with `sve=off`, `sve128`, `sve256`, `sve512` and
   `sve2048` after touching any of the four kernels.
@@ -669,7 +669,7 @@ backend within it.
   The host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_cuda_float_moment_exact_contract.py` guards it without a
-  device, `test_cuda_float_moment_parity` on one (`==`, past 2^53 units too,
+  device, `test_cuda_float_moment_parity` on one (`==`, past $2^{53}$ units too,
   ADR-1497 below).
 
 - **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
@@ -680,11 +680,11 @@ backend within it.
   host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_moment_exact_contract.py` guards it without a
-  device, `test_sycl_float_moment_parity` on one (`==`, past 2^53 units too,
+  device, `test_sycl_float_moment_parity` on one (`==`, past $2^{53}$ units too,
   ADR-1497 below).
 
-- **The `float_moment` twins form the CPU's rounded second-moment sum past 2^53 units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
-  on a frame whose sum of float squares can pass 2^53 units
+- **The `float_moment` twins form the CPU's rounded second-moment sum past $2^{53}$ units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
+  on a frame whose sum of float squares can pass $2^{53}$ units
   (`vmaf_moment_sum_may_round()`), the CUDA, SYCL and HIP hosts run four more
   kernels after the frame kernel (row totals, row plans, row units, ordered
   totals) that replace accumulators 2 and 3 with the CPU's sequentially
@@ -1238,7 +1238,7 @@ backend within it.
 
 - **Integer ADM scale-0 masking centre tap ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md))**:
   the fork keeps the 1/15 centre tap of the masking threshold in int32 and
-  clamps `|x| - thr * 2^shift` to [0, INT32_MAX] in int64, where upstream
+  clamps $\lvert x \rvert - \mathrm{thr} \cdot 2^{\mathrm{shift}}$ to [0, INT32_MAX] in int64, where upstream
   master narrows the tap to int16 and subtracts in 32 bits (the fork's own
   Netflix/vmaf PR #1602, second revision, is not merged upstream). The scalar
   definition is `adm_cm_thresh()` in `core/src/feature/integer_adm_kernels.h`

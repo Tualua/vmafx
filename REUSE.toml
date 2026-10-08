@@ -463,6 +463,17 @@ SPDX-FileCopyrightText = [
 ]
 SPDX-License-Identifier = "BSD-3-Clause AND ISC AND MIT AND Unlicense AND 0BSD"
 
+# The documentation's formula renderer (ADR-2705): KaTeX 0.18.9 from its pinned
+# npm release (scripts/docs/vendor_katex.py), served from the site itself. The
+# licence text sits beside it; vendor.json there is fork-authored.
+[[annotations]]
+path = ["docs/javascripts/vendor/katex/katex.min.js", "docs/javascripts/vendor/katex/auto-render.min.js", "docs/javascripts/vendor/katex/katex.min.css", "docs/javascripts/vendor/katex/LICENSE.txt", "docs/javascripts/vendor/katex/fonts/**"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2013-2020 Khan Academy and other contributors",
+]
+SPDX-License-Identifier = "MIT"
+
 # The Kubernetes types of the chart's values schema (ADR-2350 D13): a subset of
 # the OpenAPI v3 specification of kubernetes/kubernetes at the release
 # build-config.env pins (K8S_SCHEMA_VERSION), descriptions and extensions

@@ -21,10 +21,10 @@ the row.
 | Size | Width x height | Samples per plane (N) | |
 |---|---|---|---|
 | 8K DCI | 8192 x 4320 | 35,389,440 | |
-| 16K | 15360 x 8640 | 132,710,400 | below 2^27 |
-| Cap | 32768 x 32768 | 1,073,741,824 | 2^30, `VMAF_PIC_DIM_MAX` per side (`core/src/picture.c`) |
+| 16K | 15360 x 8640 | 132,710,400 | below $2^{27}$ |
+| Cap | 32768 x 32768 | 1,073,741,824 | $2^{30}$, `VMAF_PIC_DIM_MAX` per side (`core/src/picture.c`) |
 
-Samples go up to 16 bits (65535; 65535^2 = 4,294,836,225 is below 2^32 but
+Samples go up to 16 bits (65535; $65535^{2}$ = 4,294,836,225 is below $2^{32}$ but
 above INT32_MAX), chroma at full size (4:4:4), and the content is the worst
 the arithmetic allows: every sample at the maximum difference, full-range
 noise, or a pattern built to drive one term to its maximum. A sum over the
@@ -37,7 +37,7 @@ Each row has one verdict:
 | SAFE | The bound is below the type's range at the cap, with the margin stated. |
 | OVERFLOW@16K | The type can be exceeded by a picture up to 16K: a defect. |
 | OVERFLOW@CAP-ONLY | Safe up to 16K, exceeded between 16K and the cap. |
-| DEPENDS | The bound depends on something other than the picture size: an option, the frame count, or samples above `2^bpc - 1` (no libvmaf entry point checks the range). |
+| DEPENDS | The bound depends on something other than the picture size: an option, the frame count, or samples above $2^{\mathrm{bpc}} - 1$ (no libvmaf entry point checks the range). |
 
 ## Verdicts
 
@@ -63,7 +63,7 @@ it are named in the row.
 | Defect | Backends | Reach | State row |
 |---|---|---|---|
 | Integer ADM scale-0 contrast-masking row summed in `int64_t` | CPU, AVX2, AVX-512, CUDA, HIP, SYCL | a 31-32 or 63-64 pixel wide picture at the default options (1.044 INT64_MAX); 16K with a CSF weight above 38,400 | `T-ADM-CM-SCALE0-ROW-INT64-OVERFLOW-2026-10-05`, fixed |
-| The same row past 2^64 | every backend | a CSF weight between about 45,200 and the ADR-1472 limit of 46,603 | `T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05`, fixed (scale-0 limit 43,900, ADR-1917) |
+| The same row past $2^{64}$ | every backend | a CSF weight between about 45,200 and the ADR-1472 limit of 46,603 | `T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05`, fixed (scale-0 limit 43,900, ADR-1917) |
 | Integer ADM scale 1-3 gain product narrowed to int32 before its bound | CUDA, HIP | any size (an undefined conversion the hardware's saturation hid) | `T-GPU-ADM-S123-GAIN-PRODUCT-NARROWING-2026-10-05`, fixed |
 | APSNR clip SSE in `uint64_t` | CPU, CUDA, HIP, SYCL, Metal | frame 33 of 16K, 122 of 8K, 2072 of 1080p at 16 bits and the maximum difference | `T-PSNR-APSNR-CLIP-SSE-UINT64-WRAP-2026-10-05`, fixed |
 | `sad_avx512()` took 16-bit differences in signed 16-bit lanes | AVX-512 (a function only its parity test calls) | any size, 16-bit samples that differ by more than 32,767 | `T-SIMD-SAD-AVX512-INT16-DIFFERENCE-2026-10-05`, fixed |
@@ -72,13 +72,13 @@ it are named in the row.
 | SpEED covariance divided by the fp32-rounded count | CUDA, HIP, SYCL | `speed_prescale` above 2 past 16K | `T-GPU-SPEED-COV-COUNT-FP32-2026-10-05`, fixed |
 | `float_motion` tile load before the plane | CUDA | planes 3 to 9 or 17 samples wide or high (no score effect) | `T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05`, fixed |
 | `uint` moment-plane and term indices | Metal | `float_vif` with `vif_prescale` above 2.55 at 16K; four extractors past 16K | `T-METAL-UINT-PLANE-INDEX-2026-10-05`, fixed in code (init refusal); open until the macOS tester re-run |
-| Samples above `2^bpc - 1` wrap integers the CPU keeps wide or truncates | CPU, CUDA, HIP, SYCL, Metal | any size, out-of-range input only | `T-OUT-OF-RANGE-SAMPLES-TWIN-DIVERGENCE-2026-10-05`, closed (contract and opt-in check, ADR-1918) |
+| Samples above $2^{\mathrm{bpc}} - 1$ wrap integers the CPU keeps wide or truncates | CPU, CUDA, HIP, SYCL, Metal | any size, out-of-range input only | `T-OUT-OF-RANGE-SAMPLES-TWIN-DIVERGENCE-2026-10-05`, closed (contract and opt-in check, ADR-1918) |
 | Integer ADM scale-0 CSF magnitude `flt` stored in int16 | CPU and AVX-512 wrap, AVX2 saturates, so AVX2 differs from the scalar code | an h/v CSF weight from 43,900 to the ADR-1472 limit of 46,603 | `T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05`, fixed (ADR-1917) |
 | Full-mask warp shuffle in a divergent branch; left shift of a negative `long long` | CUDA | any size | `T-CUDA-WARP-REDUCE-UB-2026-10-05`, fixed |
 
 Not defects, recorded as DEPENDS: the CUDA motion batch counter narrows the
-frame index to `int` and needs 2^31 frames (414 days at 60 fps). Samples
-above `2^bpc - 1` also make several CPU and SIMD integers wrap (the
+frame index to `int` and needs $2^{31}$ frames (414 days at 60 fps). Samples
+above $2^{\mathrm{bpc}} - 1$ also make several CPU and SIMD integers wrap (the
 16-bit motion `row_sad`, the AVX2 and AVX-512 motion x-convolution, the
 integer VIF means the SIMD paths keep un-narrowed, the 16-bit ADM DWT and the
 `psnr_hvs` DCT); they are part of the out-of-range row.
@@ -102,10 +102,10 @@ python3 scripts/dev/adm_cm_row_bound.py --pattern 64
 
 At the default Watson weights the largest row is 1.044 INT64_MAX at a band
 width of 16 (pictures 31 or 32 pixels wide) and 1.021 at 32 (63 or 64),
-0.86 at 16K and 0.91 at the cap: below 2^64 everywhere, about half of it.
+0.86 at 16K and 0.91 at the cap: below $2^{64}$ everywhere, about half of it.
 `core/test/adm_cm_row_overflow_frame.h` is the 64-pixel picture. Under the scale-0 weight limit of 43,900
 ([ADR-1917](../adr/1917-integer-adm-scale0-weight-limit-csf-magnitude.md))
-the largest row at any weight the options can choose is 0.912 of 2^64
+the largest row at any weight the options can choose is 0.912 of $2^{64}$
 (`--weights 43899`, widths 28 to 32).
 
 ## How the bounds were checked
@@ -138,7 +138,7 @@ the reading says on the largest pictures, with worst-case content:
 - **`test_accumulator_bounds_16k`** (fast suite) computes the size products,
   shifts and counts the bounds rest on with the library's own helpers at 8K,
   16K and the cap, without a picture of that size: the SpEED submatrix count
-  (below 2^24 up to 16K for every prescale), the SpEED tail block, the integer
+  (below $2^{24}$ up to 16K for every prescale), the SpEED tail block, the integer
   ADM row shifts, and the CAMBI window (which passes the reciprocal table above
   4K, so CAMBI refuses 8K and 16K).
 

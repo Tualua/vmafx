@@ -1209,9 +1209,9 @@ points at the Python binary.
 `sidecar` trains and inspects a bias-correction term on top of the shipped
 predictor:
 
-```text
-sidecar_vmaf = predictor_vmaf + sidecar_correction(features)
-```
+$$
+\mathrm{vmaf}_{\mathrm{sidecar}} = \mathrm{vmaf}_{\mathrm{predictor}} + \mathrm{correction}_{\mathrm{sidecar}}(\mathit{features})
+$$
 
 The shipped predictor is never mutated, so model upgrades stay deterministic
 and reproducible across hosts.

@@ -311,7 +311,8 @@ makes, in the same library. The cost is 38 to 380 microseconds per frame on a
 Ryzen 9 9950X3D (1920x1080 `speed_chroma` to 3840x2160 `speed_temporal`).
 
 One fp64 statement stays on the device, the Givens rotation's
-`1.0 / sqrt(1 + t * t)`. The kernels have no fp64 type; they compute it from
+$1 / \sqrt{1 + t^2}$ (`1.0 / sqrt(1 + t * t)`). The kernels have no fp64 type;
+they compute it from
 fp32 operations (`core/src/feature/speed_givens.h`), and
 `test_speed_upstream_form` compares that routine with the fp64 statement on
 every input it can receive, all 8,388,609 floats of [1, 2].

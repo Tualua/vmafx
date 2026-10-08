@@ -118,6 +118,18 @@ jobs:
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict
+      # Linux only. Node.js is pinned (same action SHA and version as the
+      # markdown lint job, HISS-11); check_math.py exits 3 without Node.js, so a
+      # missing one fails the job. The script and its tests use pathlib and
+      # subprocess only, so they also run under macOS and Windows with Node.js
+      # on PATH (ADR-2705).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        if: steps.impact.outputs.docs == 'true'
+        with:
+          node-version: "24.21.0"
+      - name: Check every formula compiles with KaTeX (ADR-2705)
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/docs/check_math.py --site build-docs/site
       - name: Check the search index covers user pages only (ADR-1512)
         if: steps.impact.outputs.docs == 'true'
         run: python3 scripts/docs/check_search_scope.py build-docs/site

@@ -992,6 +992,13 @@ dedupe-check:
 docs-build:
 	@command -v mkdocs >/dev/null || { echo "mkdocs not found: pip install -r docs/requirements.txt"; exit 1; }
 	mkdocs build --strict
+	$(MAKE) docs-math-check
+
+# Compiles every formula of the built site with the vendored KaTeX in strict
+# mode (ADR-2705); needs Node.js and fails, never skips, without it.
+.PHONY: docs-math-check
+docs-math-check:
+	@python3 scripts/docs/check_math.py --site build-docs/site
 
 docs-serve:
 	@command -v mkdocs >/dev/null || { echo "mkdocs not found: pip install -r docs/requirements.txt"; exit 1; }

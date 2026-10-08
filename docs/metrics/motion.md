@@ -187,8 +187,13 @@ Registered name: `motion_v2`
 (`VmafFeatureExtractor vmaf_fex_integer_motion_v2`).
 
 A pipelined re-implementation that exploits the linearity of the blur kernel:
-`SAD(blur(f[N-1]), blur(f[N])) == sum(|blur(f[N-1] - f[N])|)`. The frame
-difference, blur, and absolute-sum are fused into a single row-at-a-time
+
+$$
+\mathrm{SAD}(\mathrm{blur}(f_{N-1}), \mathrm{blur}(f_N))
+  = \sum \lvert \mathrm{blur}(f_{N-1} - f_N) \rvert
+$$
+
+The frame difference, blur, and absolute-sum are fused into a single row-at-a-time
 pipeline requiring only one scratch row. Per-frame blurred-state storage is
 eliminated.
 
@@ -248,7 +253,7 @@ All four GPU twins emit `motion3_v2_score` and accept the `motion_blend_factor`,
   twins, so any change to the CPU `motion_v2` flush blend, clip, seed or
   moving-average logic must be mirrored into all four in the same PR.
 - **Edge formula.** All GPU kernels use the CPU `integer_motion_v2.c::mirror`
-  high-edge formula (`2 * size - idx - 2`).
+  high-edge formula ($2\,\mathrm{size} - \mathrm{idx} - 2$).
 
 !!! note "`motion_fps_weight` and `motion_max_val` on `motion_v2`"
     The CPU reference stores `MIN(sad * motion_fps_weight, motion_max_val)` as

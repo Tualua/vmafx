@@ -94,7 +94,7 @@ Design choices:
 
 For a configured batch size `B` and replay fraction `R`:
 
-- Each gradient step reserves exactly the oldest `B - floor(B * R)` pending
+- Each gradient step reserves exactly the oldest $B - \lfloor B R \rfloor$ pending
   samples.
 - Replay fills the remaining slots without replacement when history is
   sufficient, and with replacement only when the available history is smaller

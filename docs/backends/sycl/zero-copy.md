@@ -157,7 +157,7 @@ pass), and a standalone `launch_p010_normalize()` kernel on the rare LINEAR /
 readback fallbacks. It is a no-op for 8-bit NV12.
 
 This is internal — no user action required — but explains why a hand-rolled VA
-import that skips it sees `integer_motion` inflated by exactly `2^(16 − bpc)`
+import that skips it sees `integer_motion` inflated by exactly $2^{16 - \mathrm{bpc}}$
 (64× at 10-bit).
 
 ## Picture pre-allocation

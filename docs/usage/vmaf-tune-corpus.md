@@ -150,7 +150,7 @@ bumping the version in step with the predictor training code.
 | `extra_params` | list[str] | Additional encoder arguments; `[]` for a plain grid run. |
 | `encode_path` | str | Path to the encoded file; empty when not retained. |
 | `encode_size_bytes` | int | Encoded file size. |
-| `bitrate_kbps` | float | `(encode_size_bytes × 8 / 1000) / duration_s`. |
+| `bitrate_kbps` | float | $\dfrac{8 \cdot \mathrm{encode\_size\_bytes} / 1000}{\mathrm{duration\_s}}$. |
 | `encode_time_ms` | float | Wall-clock encode time. |
 | `vmaf_score` | float | Pooled-mean VMAF; `NaN` if scoring was skipped or failed. |
 | `vmaf_model` | str | Model version string that scored the row. |

@@ -138,7 +138,7 @@ authoritative deliverable
 |---|---|
 | `predicate` | `"bisect"` for the built-in search, otherwise the `--predicate-module` spec. |
 | `start_frame`, `end_frame` | Half-open range: start inclusive, end exclusive (Python-slice convention). |
-| `bitrate_kbps` | Encoded-segment bitrate measured by the bisect, `(segment_size_bytes * 8 / 1000) / shot_duration_s` (ADR-0531). `null` with a custom `--predicate-module`, because no real encode runs. `vmaf-tune report` shows `null` as a dash in the per-shot table. |
+| `bitrate_kbps` | Encoded-segment bitrate measured by the bisect, $\dfrac{8 \cdot \mathrm{segment\_size\_bytes} / 1000}{\mathrm{shot\_duration\_s}}$ (ADR-0531). `null` with a custom `--predicate-module`, because no real encode runs. `vmaf-tune report` shows `null` as a dash in the per-shot table. |
 | `segment_commands` | One FFmpeg command per shot. They honour the half-open range through `-frames:v`. |
 | `concat_command` | The FFmpeg concat-demuxer command that joins the segments. |
 
@@ -154,7 +154,8 @@ the shot detector.
 
 The uniform-window splitter still applies to the fallback. Even when the
 detector returns one giant shot, `--max-shot-duration` (default `2.0` s)
-slices it into about `ceil(duration / window)` equal sub-shots, so the tuner
+slices it into about $\lceil \mathrm{duration} / \mathrm{window} \rceil$ equal
+sub-shots, so the tuner
 still produces a useful CRF timeline. `--max-shot-duration 0` restores the
 historical single-shot behaviour
 ([ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md)).

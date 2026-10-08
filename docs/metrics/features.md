@@ -444,7 +444,8 @@ pipelined arithmetic without touching the legacy `motion` registry entry.
   - a raw-pixel ping-pong of two private device buffers caches the previous
     frame's Y plane;
   - per-workgroup `int64` SAD partials reduce on the host;
-  - `motion2_v2_score = min(score[i], score[i+1])` is emitted in `flush()`.
+  - $\mathrm{motion2\_v2\_score} = \min(\mathrm{score}_i, \mathrm{score}_{i+1})$
+    is emitted in `flush()`.
 - **`motion_v2` padding** — mirror padding **diverges** from the corresponding
   `motion_*` kernels by one pixel at the boundary. CPU `integer_motion_v2.c`
   uses reflect-101 mirror `2*size - idx - 2` (ADR-0662 corrected stale GPU-side
@@ -576,7 +577,8 @@ Gaussian-pyramid scales and fuses them with the Wang 2003 weights. See
   the per-scale triples `float_ms_ssim_{l,c,s}_scale{0..4}`, with
   `enable_chroma=true` also `float_ms_ssim_cb` and `float_ms_ssim_cr`).
 - **Output range** — `[0, 1]`, higher is better. With `enable_db=true` the
-  score is `-10 × log10(1 − score)`; `clip_db=true` caps the infinite value of
+  score is $-10 \log_{10}(1 - \mathrm{score})$; `clip_db=true` caps the infinite
+  value of
   identical frames.
 - **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
 
@@ -585,7 +587,7 @@ Gaussian-pyramid scales and fuses them with the Wang 2003 weights. See
 | Option | `ssim` | `float_ssim` | `float_ms_ssim` | Type | Default | Range | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `enable_lcs` | — | yes | yes | bool | `false` | — | Emit the L / C / S components (per scale for MS-SSIM). |
-| `enable_db` | yes | yes | yes | bool | `false` | — | Report `-10·log10(1-score)` instead of the raw ratio. |
+| `enable_db` | yes | yes | yes | bool | `false` | — | Report $-10 \log_{10}(1 - \mathrm{score})$ instead of the raw ratio. |
 | `clip_db` | yes | yes | yes | bool | `false` | — | Cap dB values based on the minimum representable MSE. |
 | `scale` | — | yes | — | int | `0` | `0–10` | Decimation factor of `float_ssim`: `0` = auto per Wang 2003, `1` = none, `2–10` explicit. |
 | `enable_chroma` | — | — | yes | bool | `false` | — | Score the chroma planes too. |
@@ -602,7 +604,7 @@ Gaussian-pyramid scales and fuses them with the Wang 2003 weights. See
   direction (after the `scale` decimation) has no window, and the score is `0`
   (the sum of no terms over `(w − 10) · (h − 10)`, as in Netflix's libvmaf) on
   the scalar and every SIMD path.
-- With exactly 10 samples in a direction the divisor is 0, the mean is `0 / 0`
+- With exactly 10 samples in a direction the divisor is 0, the mean is $0 / 0$
   and the frame fails with a non-finite-score error
   ([ADR-1302](../adr/1302-nonfinite-scores-fail-the-frame.md)).
 - The GPU twins do not run such a plane: `--backend <gpu> --feature float_ssim`

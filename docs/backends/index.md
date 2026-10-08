@@ -233,7 +233,7 @@ Not every feature has every twin. The coverage matrix is in
 Several extractors change behaviour with picture size, so a parity test that
 pins one fixture cannot see the whole contract. Rules to keep in mind:
 
-- The shared SSIM / MS-SSIM auto-scale is `max(1, round(min(w, h) / 256))`,
+- The shared SSIM / MS-SSIM auto-scale is $\max(1, \operatorname{round}(\min(w, h) / 256))$,
   which is always `1` below `min(w, h) = 384`.
 - The ADM border crop is `(int)(dim * 0.1 - 0.5)`, which is `0` only for band
   dimensions `<= 14`; a zero crop pulls the first and last row and column into

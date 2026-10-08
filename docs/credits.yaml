@@ -493,6 +493,15 @@ entries:
   license: BSD-3-Clause
   paths:
   - docs/javascripts/vendor/vega/
+- id: katex
+  name: KaTeX
+  url: https://github.com/KaTeX/KaTeX
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - docs/javascripts/vendor/katex/
+  note: Formula renderer of the documentation site (ADR-2705); also compiles every formula in the docs build check.
 - id: d3
   name: D3
   url: https://github.com/d3/d3

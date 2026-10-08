@@ -30,8 +30,8 @@ typedef struct VmafPicture {
 
 | Format | Chroma planes | `w[1]` / `h[1]` |
 | --- | --- | --- |
-| `VMAF_PIX_FMT_YUV420P` | half width, half height (rounded up) | `ceil(w/2)` / `ceil(h/2)` |
-| `VMAF_PIX_FMT_YUV422P` | half width | `ceil(w/2)` / `h` |
+| `VMAF_PIX_FMT_YUV420P` | half width, half height (rounded up) | $\lceil w/2 \rceil$ / $\lceil h/2 \rceil$ |
+| `VMAF_PIX_FMT_YUV422P` | half width | $\lceil w/2 \rceil$ / $h$ |
 | `VMAF_PIX_FMT_YUV444P` | full size | `w` / `h` |
 | `VMAF_PIX_FMT_YUV400P` | none (luma only) | `0` / `0` |
 | `VMAF_PIX_FMT_UNKNOWN` | sentinel, rejected by the allocator | n/a |
@@ -90,8 +90,8 @@ A complete program is on the [overview page](index.md#minimal-program).
 
 ## Sample range
 
-Every sample of a picture of bit depth `bpc` must be at most 2^bpc - 1. The
-default path does not check it;
+Every sample of a picture of bit depth `bpc` must be at most
+$2^{\mathrm{bpc}} - 1$. The default path does not check it;
 `vmaf_set_sample_range_check_enabled()` turns on a check that refuses an
 out-of-range picture with `-EINVAL`. See [Sample range](sample-range.md).
 
@@ -143,7 +143,7 @@ Sizing the pool:
 | Situation | Minimum `pic_cnt` |
 | --- | --- |
 | Serial run, no `n-2` extractor | 3 pictures serve it |
-| `n_threads` workers | `2 * n_threads + 2` keeps every worker supplied |
+| `n_threads` workers | $2\,n_{\mathrm{threads}} + 2$ keeps every worker supplied |
 | An extractor reads frame `n-2` (five-frame motion window) | 4: the two kept reference pictures plus the current pair |
 
 A pool below 4 with a five-frame window is refused with `-EINVAL` by

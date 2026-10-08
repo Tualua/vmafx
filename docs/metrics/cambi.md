@@ -541,7 +541,7 @@ The arithmetic is the SYCL twin's:
 
 - The c-values keep `cambi.c`'s column histograms and reciprocal table.
 - Top-K pooling sums the largest `topk` fraction exactly as an integer in units
-  of 2^-24.
+  of $2^{-24}$.
 - The score therefore equals `--backend cpu` to the last bit whenever the CPU's
   own `double` sum of those values is exact, and otherwise differs by that
   sum's rounding. On a synthetic, heavily banded 3840x2160 clip that was at
@@ -585,8 +585,8 @@ How the device matches `cambi.c`:
   with the same reciprocal table (`vmaf_cambi_reciprocal_lut()`).
 - **Top-K pooling.** `cambi.c` averages the largest `topk` fraction of c-values
   after a quick-select, summing in `double`. The device finds the same set with
-  a radix select and sums it exactly, as an integer in units of 2^-24 (every
-  non-zero c-value is at least 0.5 and below 2^14).
+  a radix select and sums it exactly, as an integer in units of $2^{-24}$ (every
+  non-zero c-value is at least 0.5 and below $2^{14}$).
 - **Agreement.** The two agree to the last bit whenever the CPU's own sum is
   exact. On frames with a very large banded area the CPU's sum rounds and the
   scores differ in the last few digits: at most 2.2e-15 over 50 frames of Big

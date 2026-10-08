@@ -15,16 +15,16 @@ requirements](#build-requirements)).
 TAD is the mean absolute difference of luma (Y) pixel values between a reference
 frame
 and a distorted frame, normalised to the [0.0, 1.0] range by the peak luma value
-(2^bpc − 1):
+($2^{\mathrm{bpc}} - 1$):
 
-```text
-tad(ref, dis) = (1 / (W × H × peak)) × Σ_{i,j} |ref_Y[i,j] − dis_Y[i,j]|
-```
+$$
+\mathrm{tad}(\mathrm{ref}, \mathrm{dis}) = \frac{1}{W \, H \, \mathrm{peak}} \sum_{i,j} \left\lvert \mathrm{ref}_Y[i,j] - \mathrm{dis}_Y[i,j] \right\rvert
+$$
 
 where:
 
-- `W × H` = number of luma pixels per frame
-- `peak` = maximum luma sample value (255 for 8-bit, 1023 for 10-bit, etc.)
+- $W \times H$ = number of luma pixels per frame
+- $\mathrm{peak}$ = maximum luma sample value (255 for 8-bit, 1023 for 10-bit, etc.)
 - Only the luma (Y) plane is used; chroma planes are ignored.
 
 A second sub-score `tad_sad` reports the raw (unnormalised) sum of absolute

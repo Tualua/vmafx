@@ -80,10 +80,10 @@ extractor that does not declare an option rejects it as unknown.
 | `adm_csf_mode` | `csf` | int | `0` | `0–3` (`adm`), `0–9` (`float_adm`) | all | Contrast-sensitivity-function model. Note 2. |
 | `adm_csf_scale` | `scf` | double | `1.0` | `0–50` | all | H/V-axis CSF sensitivity scale. Read only by `adm_csf_mode=1`. Note 3. |
 | `adm_csf_diag_scale` | `scfd` | double | `1.0` | `0–50` | all | Diagonal-axis CSF sensitivity scale; same applicability. |
-| `adm_noise_weight` | `nw` | double | `0.03125` | `0–1500` | all | Weight in the `(area × noise_weight)^(1/3)` noise-floor term of `adm_cm` / `adm_csf_den`; the default `1/32 ≈ 0.03125` is upstream's noise-floor divisor. |
+| `adm_noise_weight` | `nw` | double | `0.03125` | `0–1500` | all | Weight in the $(\mathrm{area} \times \mathrm{noise\_weight})^{1/3}$ noise-floor term of `adm_cm` / `adm_csf_den`; the default `1/32 ≈ 0.03125` is upstream's noise-floor divisor. |
 | `adm_dlm_weight` | `dlmw` | double | `0.5` | `0.0–1.0` | all | Linear blend between DLM and AIM; `1.0` = DLM only, `0.0` = AIM only. |
 | `adm_min_val` | `min` | double | `0.0` | `0.0–1.0` | all | Floor: fused ADM scores below it are raised to it. |
-| `adm_p_norm` | `apn` | double | `3.0` | `1.0–20.0` | all | p-norm exponent of the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Note 4. |
+| `adm_p_norm` | `apn` | double | `3.0` | `1.0–20.0` | all | p-norm exponent of the contrast-measure finalisation ($x^{1/p}$ pooling in `adm_cm`). Note 4. |
 | `adm_skip_scale0` | `ssz` | bool | `false` | — | `adm` (CPU, CUDA, SYCL, HIP, Metal); `float_adm` (CPU, SYCL, Metal) | Skip scale 0: its outputs are `0.0` and it leaves the fused score. Note 5. |
 | `adm_skip_aim` | — | bool | `false` | — | `adm` (CPU, CUDA, SYCL, Metal; not HIP) | Skip the AIM sub-band calculation; forces the AIM contribution to zero. |
 | `adm_bypass_cm` | `bcm` | int | `0` | `0–1` | `float_adm` (CPU, CUDA, SYCL, HIP, Metal) | Bypass contrast masking: drops the 3x3 masking threshold from the numerator, so `adm2` rises sharply. |
@@ -578,7 +578,7 @@ and 16 bits, both 1920x1080 checkerboard pairs and 3840x2160, with
   before it differ from new ones by that much.
 - On a few unusual frame sizes the old twin was wrong, not merely imprecise:
   where the scale-0 region inside the ADM border has an area just above a
-  power of two (81 areas up to 2^26, for example 962x13542), it reported
+  power of two (81 areas up to $2^{26}$, for example 962x13542), it reported
   `integer_adm_scale0` up to 0.12 too low (0.860 instead of 0.979) and
   `adm2` 0.014 too low. Re-score such material.
 - With `adm_skip_scale0=true` the debug output `integer_adm_den_scale0` is
@@ -599,8 +599,8 @@ difference, and exits 0 only when every frame is.
 ### Fixed-point CSF limits
 
 The fixed-point `adm` extractor stores each scale's CSF weight as an integer:
-`uint16_t` at scale 0 (horizontal/vertical bands scaled by 2^21, the diagonal
-band by 2^23) and `uint32_t` at scales 1-3 (scaled by 2^32). Those budgets
+`uint16_t` at scale 0 (horizontal/vertical bands scaled by $2^{21}$, the diagonal
+band by $2^{23}$) and `uint32_t` at scales 1-3 (scaled by $2^{32}$). Those budgets
 were sized for Watson97 weights near `1e-2`. Full-scale Barten weights are
 about 1.21 at scale 0 and 26.98 at scale 3, so direct narrowing used to wrap
 and publish NaN or near-zero scores. ADR-1191 first made that failure explicit;
@@ -613,7 +613,7 @@ For each scale, `adm` chooses the smallest non-negative power-of-two exponent
 `k` that puts all three fixed-point bands inside their arithmetic budget:
 
 - scale 0: the horizontal and vertical weights stay below 43900, the
-  diagonal weight below 2^16;
+  diagonal weight below $2^{16}$;
 - scales 1, 2 and 3: every weight stays below 279958309, 539893111 and
   546406567.
 
@@ -632,13 +632,14 @@ The CSF stage keeps the 1/30 magnitude of the weighted band in 16 bits, and
 for the largest band the integer wavelet produces (22930) that holds only
 below a weight of 43900; the square would allow 46603.4. Between the two, the
 magnitude wrapped negative in the scalar code and on the GPUs and saturated
-in AVX2, and a 31-32 pixel wide masking row could pass 2^64. A weight in that
+in AVX2, and a 31-32 pixel wide masking row could pass $2^{64}$. A weight in that
 range now takes one more halving. Watson97 at every viewing geometry, the
 default Barten configuration and both blend modes stay below 43900 and keep
 their bits; a Barten configuration that lands in the range (for example
 `adm_csf_scale=1.16:adm_csf_diag_scale=0.3`) moves by about 1e-6.
 
-With the earlier limit of 2^30 a high-contrast picture could wrap that square in
+With the earlier limit of $2^{30}$ a high-contrast picture could wrap that
+square in
 Barten mode:
 `adm=adm_csf_mode=1` failed every frame of the 10 px checkerboard with a NaN
 numerator and returned `integer_adm2` 0.587 instead of 0.784 on the 1 px

@@ -126,7 +126,7 @@ was not re-measured for this page:
     cpu    ...   613.71 fps  median 0.078s  spread 3.5%  pool 76.667831  keys=15  load=6.6
 ```
 
-- `fps` — `nframes / median_time`. The headline figure.
+- `fps` — $\mathrm{nframes} / \mathrm{median\_time}$. The headline figure.
 - `spread` — `(max - min) / median`. Treat anything above ~10 % as noise-dominated
   and re-run on a quieter machine before quoting it.
 - `pool` — pooled VMAF mean, a sanity signal only (see above).
