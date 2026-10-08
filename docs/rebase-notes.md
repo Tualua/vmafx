@@ -8,6 +8,24 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## CodeQL sweep: exact float compares in tests (2026-10-06)
+
+`fix/codeql-test-float-compare`. Test-only: no rebase impact beyond the files named in
+`changelog.d/fixed/codeql-test-float-bits-sweep.md`. Upstream-mirror tests keep their assertions;
+only the comparison spelling moved to `core/test/float_bits.h` (ADR-1502).
+
+## Model JSON checked out with LF, generator format test pinned to the hook's clang-format (2026-10-08)
+
+`fix/master-red-format-pin-model-lf`, no ADR (bug fixes). `.gitattributes` adds
+`model/**/*.json text eol=lf` after upstream's `*.pkl` / `*.model` lines: an
+upstream sync that touches `.gitattributes` keeps the fork's line, or Windows
+builds report other model hashes again (`test_praetor_hashed_files_lf.py`
+fails). `scripts/codegen/tests/support.py::pinned_clang_format()` ties the
+format test to the `clang-format` hook's major in `.pre-commit-config.yaml`;
+bump the hook rev and `requirements/locks/tooling-tests.in` together.
+`core/test/meson.build` gives `test_gpu_picture_pool_uaf` `MALLOC_PERTURB_=0`.
+No upstream file besides `.gitattributes`.
+
 ## RC4: `speed_chroma` Rust twin keeps Netflix's double-form statements
 
 - `core/src/rust/feature/speed/src/` is `speed.c` and `vif_tools.c` ported

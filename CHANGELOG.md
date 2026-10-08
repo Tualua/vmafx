@@ -381,10 +381,26 @@
 
 ### Fixed
 
+- **The API generator's format test compares against the pinned
+  clang-format.** It ran whichever clang-format was installed, and the hosted
+  Linux image's 18.1.3 formats the generated `*_INIT` macros differently from
+  the 23.1.2 the repository pins, so the test failed on every hosted leg. It
+  now uses only the pinned major (`VMAFX_CLANG_FORMAT` names one explicitly)
+  and skips, naming the version it found, otherwise; the Tooling Tests job
+  installs the pinned release. `test_gpu_picture_pool_uaf` no longer writes
+  its deliberately huge allocation on hosts that overcommit memory.
+
+
 - CI: the required gates that share a matrix (`Linux Intel LLVM`, `macOS Clang+Metal`,
   `Windows MSVC+CUDA (full)`, `FFmpeg Ubuntu gcc`, `FFmpeg macOS clang`) judge their own
   leg's job instead of the matrix aggregate, so one failing leg no longer turns the other
   legs' required checks red (`scripts/ci/gate_leg_result.py`).
+
+
+- **Eighteen test files compare exact results with `core/test/float_bits.h`, and four CodeQL findings in tests are fixed in code (no alert dismissed).**
+  `cpp/equality-on-floats` (alerts 1404-1405, 1411-1415, 1417-1458, 1482-1487, 1491-1492, 1496-1498, 1484-1485): the Metal math replays, the DNN tests, `test_predict`, `test_cambi_full_ref_wide_source`, `test_speed_cov_count_division` and `float_moment_sum_model.h` assert with `vmaf_test_identical_f32/_f64`, which is stricter than `==` (a ±0 mismatch fails, a NaN fails) and never a tolerance; `test_speed_cov_count_division` drops its private bit copy.
+  `cpp/constant-comparison` (1495): the always-false `total > 2 * MODEL_JSON_MAX` check of `splice_model_json()` is now a live bound on the model plus the block (`SPLICE_TOTAL_MAX`), and `test_splice_model_json_bounds` fails when any of the three bounds is removed.
+  `cpp/world-writable-file-creation` (1500) and `cpp/unused-static-variable` (1499): `test_read_pictures_convert` creates its model file owner-only and defines the 16-bit target only where zimg uses it.
 
 
 - **The controller no longer writes its job queue into the working directory.**
@@ -505,6 +521,14 @@
 - **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
   its subject, so a model file whose path was longer was named by a cut-off
   path; subjects now keep 1023 bytes and messages 1023.
+
+
+- **Model hashes are the same on Windows.** The repository checked the model
+  JSON files out with CRLF line endings on Windows, so a Windows build's
+  built-in models and any model file loaded there reported a different
+  `vmafx_model_hash()` than on Linux and macOS (and than `sha256sum` of the
+  published file). The model JSON files now check out with LF on every
+  platform.
 
 
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.
