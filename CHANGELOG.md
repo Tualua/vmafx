@@ -628,6 +628,14 @@
 - `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.
 
 
+- **A static MSVC build installs `vmaf.lib` and `vmafx.lib` (Netflix/vmaf
+  `3b4dd350e`).** MSVC, clang-cl and icx-cl builds with
+  `--default-library=static` name their installed libraries the way the MSVC
+  linker opens `-lvmaf` / `-lvmafx`, instead of Meson's `libvmaf.a` /
+  `libvmafx.a`; consumers such as FFmpeg's MSVC toolchain link them without
+  renaming ([Library files of an MSVC build](docs/getting-started/building-on-windows.md#library-files-of-an-msvc-build)).
+
+
 - **A compiler or linker warning now fails the Windows MSVC legs that print none.** `Windows MSVC+CUDA`,
   `Windows ARM64 MSVC` and `Windows MSVC+CUDA (full)` configure with `scripts/ci/werror-args.sh msvc`
   (`-Dwerror=true`: `/WX` on every `cl.exe` compile, `-WX` on every `link.exe` link, `--Werror
@@ -1204,6 +1212,16 @@
   `_open` to `_wsopen_s` / `_sopen_s` (the CRT's non-deprecated spellings) made the
   CRT reject permission bits other than `_S_IREAD` and `_S_IWRITE` as an invalid
   parameter; the mode is masked to those two bits, as the old calls effectively did.
+
+
+### Security
+
+- **`golang.org/x/net` moves from v0.59.0 to v0.60.0 and the Go toolchain from 1.27.1 to 1.27.2**
+  for GO-2026-6617 (an HTTP/2 server crash from an HPACK encoder race) and twelve standard-library
+  advisories published with it (`html/template`, `net/http` and its HTTP/2 copy, `crypto/tls`, `os`,
+  `mime/multipart`). `go.mod` declares `go 1.27.2`, and the release and development images build on
+  the `golang:1.27-trixie` digest that carries Go 1.27.2. `govulncheck ./...` reached the vulnerable
+  symbols from the controller, the tune executor, `pkg/libvmaf` and `tools/obssmoke`; it now reports none.
 
 ## [1.0.0-rc.3] - 2026-10-07
 
