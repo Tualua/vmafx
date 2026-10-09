@@ -264,6 +264,13 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: test-check-msvc-library-names
+        name: MSVC library-name check refuses classic names (Q-299)
+        entry: python3 -B scripts/ci/tests/test_check_msvc_library_names.py
+        language: system
+        files: '^scripts/ci/(check_msvc_library_names\.py|tests/test_check_msvc_library_names\.py)$'
+        pass_filenames: false
+
       - id: test-codex-hook-config
         name: Codex hooks resolve from the active repository worktree
         entry: python3 -B scripts/ci/tests/test_codex_hook_config.py

@@ -132,6 +132,25 @@ and returns `ETIMEDOUT` once it has passed, and the VMAFx API's host fences
 (`vmafx_fence_wait()`) wait on it rather than polling. Upstream's bundled
 pthread-win32 and its `-Dbundled_winpthreads` option are not used.
 
+### Library files of an MSVC build
+
+A static MSVC, clang-cl or icx-cl build (`--default-library=static`, as every
+recipe on this page uses) installs its two libraries under the names the MSVC
+linker gives `-lvmaf` and `-lvmafx`:
+
+| File | What it holds |
+| --- | --- |
+| `lib\vmaf.lib` | the libvmaf API (`vmaf_*`), on top of libvmafx |
+| `lib\vmafx.lib` | the engine and the VMAFx API (`vmafx_*`) |
+| `lib\pkgconfig\libvmaf.pc`, `libvmafx.pc` | `Libs: -lvmaf` with `Requires: libvmafx`, and `Libs: -lvmafx` |
+
+A consumer links both: `vmaf.lib vmafx.lib`, or what
+`pkg-config --libs --static libvmaf` prints. FFmpeg's MSVC toolchain
+(`--toolchain=msvc`) turns `-lvmaf` into `vmaf.lib` and finds the files without
+renaming. MinGW builds keep GCC's names (`libvmaf.a`, `libvmafx.a`), and so does
+an MSVC build with `--default-library=both`, where `vmaf.lib` is the import
+library of `vmaf.dll`.
+
 To confirm the toolset:
 
 - `cl.exe` prints `for ARM64` in its banner when the ARM64-hosted toolset is

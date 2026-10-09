@@ -3065,6 +3065,19 @@ vmafx_build_commit_h = vcs_tag(
     output : 'vmafx_build_commit.h',
 )
 
+# Installed static libraries of an MSVC-like build (cl, clang-cl, icx-cl) are
+# named vmafx.lib / vmaf.lib, the files `-lvmafx` / `-lvmaf` name for the MSVC
+# linker: what pkg-config gives FFmpeg's msvc toolchain and other consumers.
+# Meson's classic naming makes them libvmafx.a / libvmaf.a. Its `namingscheme`
+# option (Meson 1.10) is above this project's floor (meson_version >= 1.4.0),
+# so the names are set explicitly (Netflix/vmaf 3b4dd350e, Q-299). Static-only
+# builds only: with default_library=both, vmaf.lib is the import library of
+# vmaf.dll and the static libraries keep the lib*.a names.
+vmaf_msvc_static_names = cc.get_argument_syntax() == 'msvc' \
+    and get_option('default_library') == 'static'
+vmaf_static_name_kwargs = vmaf_msvc_static_names ? \
+    {'name_prefix' : '', 'name_suffix' : 'lib'} : {}
+
 libvmafx = library(
     'vmafx',
     [libvmafx_sources, rev_target, vmafx_build_commit_h, json_model_c_sources, dnn_sources,
@@ -3114,6 +3127,7 @@ libvmafx = library(
     version : vmafx_soname_version,
     soversion : vmafx_soversion,
     install: true,
+    kwargs : vmaf_static_name_kwargs,
 )
 
 # The libvmaf compatibility library (ADR-1852 decision D3, RC4 WP6): the 107
@@ -3165,7 +3179,7 @@ if vmaf_default_library != 'static'
 endif
 if vmaf_default_library != 'shared'
     libvmaf_static_lib = static_library('vmaf', libvmaf_compat_sources,
-        kwargs : libvmaf_compat_kwargs,
+        kwargs : libvmaf_compat_kwargs + vmaf_static_name_kwargs,
         link_with : libvmafx_static_lib,
         install : true,
     )

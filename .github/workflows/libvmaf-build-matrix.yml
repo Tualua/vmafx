@@ -1146,6 +1146,13 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           ninja -v -C core\build install
 
+      # Q-299 (Netflix/vmaf 3b4dd350e): a static MSVC build installs vmaf.lib
+      # and vmafx.lib, the files link.exe opens for -lvmaf / -lvmafx, and the
+      # pkg-config files that name them.
+      - name: Check installed library names (MSVC)
+        shell: cmd
+        run: python scripts\ci\check_msvc_library_names.py --prefix install
+
       # windows-2025 has no GPU, so no kernel runs here. Whether the linked
       # programs registered their SYCL device images needs none:
       # test_sycl_kernel_registration asks the SYCL runtime for its kernel
@@ -1267,6 +1274,10 @@ jobs:
       - name: Build libvmaf
         shell: cmd
         run: ninja -v -C core\build install
+
+      - name: Check installed library names (MSVC)
+        shell: cmd
+        run: python scripts\ci\check_msvc_library_names.py --prefix install
 
       # The PE header's Machine field must read 0xAA64 (ARM64). An x64
       # binary would still run here under emulation and pass the tests,
