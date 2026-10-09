@@ -1515,6 +1515,16 @@ test_vmafx_context = executable('test_vmafx_context',
 )
 test('test_vmafx_context', test_vmafx_context, suite : ['fast'])
 
+# The transport-less vmafx_mcp_start_sse(): NOTSUP, and its port output is defined.
+test_vmafx_mcp_absent = executable('test_vmafx_mcp_absent',
+    ['test.c', 'test_vmafx_mcp_absent.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_mcp_absent', test_vmafx_mcp_absent, suite : ['fast'])
+
 # RC4 WP5 (#2142, ADR-2073): the canonical JSON of the provenance record, the
 # build id and the backend receipt (internal functions).
 test_vmafx_provenance_json = executable('test_vmafx_provenance_json',

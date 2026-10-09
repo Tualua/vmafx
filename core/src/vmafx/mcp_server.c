@@ -205,7 +205,9 @@ VmafxStatus vmafx_mcp_start_sse(VmafxMcpServer *server, const VmafxMcpSseConfig 
 {
     (void)server;
     (void)config;
-    (void)port;
+    if (port) {
+        *port = 0u; /* no transport, so no bound port: the out-parameter is defined */
+    }
     return mcp_absent(error);
 }
 
