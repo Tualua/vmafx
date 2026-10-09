@@ -363,6 +363,28 @@ documents the two ranges in [features](../metrics/features.md#aim-above-1);
 `test_integer_adm_aim_unclipped` pins both. If upstream adds the clip to the
 integer extractor, port it and change that test in the same PR.
 
+## ADM viewing-distance merge (`cffd5b77d`) — two gaps fixed in this fork
+
+Found 2026-10-08 while porting Netflix/vmaf `33e5f0aca` and `cffd5b77d`;
+present on `upstream/master` `9cb9479f2`; not reported upstream.
+
+Upstream folds an `adm` context that differs only in `adm_norm_view_dist` into
+a registered one as its second distance (`adm_try_merge_view_dist()`). Two
+cases go wrong, both measured on the 576x324 test pair with the shipped
+`vmaf_v1.0.16` models, upstream built at `9cb9479f2` and at its parent
+`cffd5b77d~1`:
+
+| Case | Upstream before the merge | Upstream `9cb9479f2` | This fork |
+| --- | --- | --- | --- |
+| `--model 3d0h --model 5d0h --model 5d0h` (second name) | exit 0 | exit 234: the third model's `adm` is declined (the context already has a second distance) and registered apart; both write `integer_adm2_..._nvd_5` and the collector refuses the second write | exit 0; the 216 values equal upstream's before the merge |
+| `--model 3d0h --feature adm=<5d0h options>:debug=true` | 10 `integer_adm_num*` / `_den*` scores | none: the debug context is folded in and only the first distance's debug scores exist | 10, as before the merge |
+
+**In the fork** ([ADR-2795](../adr/2795-adm-shared-viewing-distances.md)):
+`adm_merge_view_dist()` absorbs a context at the distance the existing one
+already evaluates second, and declines one with `debug` set. The two-model run
+(`3d0h` + `5d0h`) scores the same 1352 values as upstream master.
+`test_adm_view_merge` pins both rules.
+
 ## `KBND_SYMMETRIC` single-reflection at sub-kernel-radius input sizes
 
 **Status:** fixed in this fork (PR #69), still present upstream.

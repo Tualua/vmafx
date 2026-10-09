@@ -545,6 +545,17 @@ test('test_cuda_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-2795: the C extractor and the Rust twin file a second ADM viewing
+# distance under the same keys, and the merge callback handles every option
+# the feature names do not carry. Device-free; the scores are
+# test_integer_adm_view_dist.
+test('test_adm_view_dist_contract',
+    import('python').find_installation(),
+    args : files('test_adm_view_dist_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1436: ciede_sycl runs ciede.c's statements with every fp64 value as an
 # fp32 pair, stores one float per pixel and lets the host add them in the
 # reference's order; the constants and tables of sycl_ff_math.h are the
@@ -2086,6 +2097,29 @@ if fex_vector_alloc_harness
   fex_vector_test_args = ['-DFEX_VECTOR_ALLOC_TEST=1']
   fex_vector_link_args = ['-Wl,--wrap=realloc', '-Wl,--wrap=vmaf_feature_name_from_options']
 endif
+# ADR-2795 (Netflix/vmaf 33e5f0aca + cffd5b77d): the ADM merge callback, the
+# registry's merge pass and the second distance's name dictionary.
+test_adm_view_merge = executable('test_adm_view_merge',
+    ['test.c', 'test_adm_view_merge.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     '../src/fex_ctx_vector.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_adm_view_merge', test_adm_view_merge, suite : ['fast'])
+
 test_fex_ctx_vector = executable('test_fex_ctx_vector',
     # Compile private vector dependencies without interposing on a public-API test.
     ['test.c', 'test_fex_ctx_vector.cpp', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
@@ -4580,6 +4614,16 @@ test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
 )
 test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
     suite : ['fast'])
+
+# ADR-2795: a second ADM viewing distance scores as an extractor at it alone,
+# bit for bit, through one context and through two merged registrations.
+test_integer_adm_view_dist = executable('test_integer_adm_view_dist',
+    ['test.c', 'test_integer_adm_view_dist.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : vmaf_test_link,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_view_dist', test_integer_adm_view_dist, suite : ['fast'])
 
 # T-ADM-INTEGER-AIM-ABOVE-ONE-2026-10-01 (ADR-1417): integer AIM is the
 # unclipped ratio upstream defines, float AIM is clipped at 1. The float

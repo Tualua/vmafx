@@ -119,6 +119,20 @@ const NAMES: [&CStr; 18] = [
     c"integer_adm_den_scale3",
 ];
 
+/// Keys of the second viewing distance's seven scores (`adm_extra_view_keys`
+/// in `integer_adm.c`: the base name and `VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX`).
+/// The C descriptor's `extend_name_dict` maps them to that distance's feature
+/// names (ADR-2795).
+pub const EXTRA_VIEW_NAMES: [&CStr; 7] = [
+    c"VMAF_integer_feature_adm2_score:nvde",
+    c"VMAF_integer_feature_aim_score:nvde",
+    c"VMAF_integer_feature_adm3_score:nvde",
+    c"integer_adm_scale0:nvde",
+    c"integer_adm_scale1:nvde",
+    c"integer_adm_scale2:nvde",
+    c"integer_adm_scale3:nvde",
+];
+
 /// The values of `emit_adm_scores()`, in `NAMES` order.
 fn values(r: &AdmResult, adm3: f64, scale: &[f64; 4]) -> [f64; 18] {
     let s = &r.scores;
@@ -145,7 +159,9 @@ fn values(r: &AdmResult, adm3: f64, scale: &[f64; 4]) -> [f64; 18] {
 }
 
 /// `emit_adm_scores()` through `vmaf_feature_emit_finite_scores()`: every
-/// value is checked before the first one is published.
+/// value is checked before the first one is published. View 0 files the
+/// primary distance's scores (with `debug`, the numerators and denominators
+/// too), view 1 the second distance's seven under [`EXTRA_VIEW_NAMES`].
 pub fn emit(
     host: &mut Host<'_>,
     index: u32,
@@ -153,13 +169,19 @@ pub fn emit(
     adm3: f64,
     scale: &[f64; 4],
     debug: bool,
+    view: usize,
 ) -> Result<(), Error> {
-    let count = if debug { 18 } else { 7 };
+    let count = if debug && view == 0 { 18 } else { 7 };
     let v = values(r, adm3, scale);
     if v[..count].iter().any(|x| !x.is_finite()) {
         return Err(Error::NonFinite(c"integer_adm: non-finite score"));
     }
-    for (name, value) in NAMES[..count].iter().zip(&v[..count]) {
+    let names: &[&CStr] = if view == 0 {
+        &NAMES[..count]
+    } else {
+        &EXTRA_VIEW_NAMES
+    };
+    for (name, value) in names.iter().zip(&v[..count]) {
         host.emit(name, index, *value)?;
     }
     Ok(())
@@ -185,6 +207,15 @@ mod tests {
         );
         assert_eq!(adm3(0.1, 0.9, 0.7, 0.5), Ok(0.5));
         assert!(adm3(f64::NAN, 0.0, 0.7, 0.5).is_err());
+    }
+
+    #[test]
+    fn extra_view_keys_are_the_first_seven_names_with_the_suffix() {
+        for (key, name) in EXTRA_VIEW_NAMES.iter().zip(&NAMES[..7]) {
+            let mut want = name.to_bytes().to_vec();
+            want.extend_from_slice(b":nvde");
+            assert_eq!(key.to_bytes(), want.as_slice());
+        }
     }
 
     #[test]

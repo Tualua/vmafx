@@ -405,6 +405,7 @@ core/test/test_adm_dwt2_x86.c
 core/test/test_adm_gain_limit.c
 core/test/test_adm_nonfinite_score.c
 core/test/test_adm_small_border.c
+core/test/test_adm_view_merge.c
 core/test/test_adm_wide_rounding.c
 core/test/test_async_extractor_thread_pool.c
 core/test/test_barten_csf.c
@@ -585,6 +586,7 @@ core/test/test_integer_adm_quant_step.c
 core/test/test_integer_adm_simd.c
 core/test/test_integer_adm_simd_noise.c
 core/test/test_integer_adm_tiny_frames.c
+core/test/test_integer_adm_view_dist.c
 core/test/test_integer_cambi_sycl.c
 core/test/test_integer_motion_coverage.c
 core/test/test_integer_motion_edge16_coverage.c

@@ -13,7 +13,9 @@ bit identity.
 
 Cells are derived, not listed: for each extractor, the default options plus
 every distinct ``feature_opts_dicts`` entry the ``vmaf_v1.0.16`` models give
-it; with ``--models``, each of those models scored end to end.
+it, plus, for two entries that differ only in ``adm_norm_view_dist``, the
+first with the second's distance as ``adm_norm_view_dist_extra`` (ADR-2795);
+with ``--models``, each of those models scored end to end.
 
 Exit status: 0 all cells equal (or refused by both sides with the same
 status), 1 a mismatch, 2 a run or fixture failure.
@@ -166,6 +168,28 @@ def model_option_sets(root: Path) -> dict[str, list[dict[str, Any]]]:
     return sets
 
 
+VIEW_DIST = "adm_norm_view_dist"
+VIEW_DIST_EXTRA = "adm_norm_view_dist_extra"
+
+
+def view_distance_variants(option_sets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One second-distance variant per pair of option dicts that differ only in
+    the viewing distance (ADR-2795): the first dict, with the second's distance
+    as ``adm_norm_view_dist_extra``. Ordered as the model option sets are."""
+
+    variants: list[dict[str, Any]] = []
+    for i, first in enumerate(option_sets):
+        for second in option_sets[i + 1 :]:
+            if VIEW_DIST not in first or VIEW_DIST not in second:
+                continue
+            rest_first = {k: v for k, v in first.items() if k != VIEW_DIST}
+            rest_second = {k: v for k, v in second.items() if k != VIEW_DIST}
+            if rest_first != rest_second or first[VIEW_DIST] == second[VIEW_DIST]:
+                continue
+            variants.append({**first, VIEW_DIST_EXTRA: second[VIEW_DIST]})
+    return variants
+
+
 def option_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -183,7 +207,8 @@ def build_cells(args: argparse.Namespace, root: Path) -> list[Cell]:
     cells: list[Cell] = []
     option_sets = model_option_sets(root)
     for c_name in args.features:
-        variants: list[dict[str, Any]] = [{}] + [o for o in option_sets.get(c_name, []) if o]
+        model_sets = [o for o in option_sets.get(c_name, []) if o]
+        variants: list[dict[str, Any]] = [{}, *model_sets, *view_distance_variants(model_sets)]
         for i, opts in enumerate(variants):
             for fx in fixtures:
                 for t in args.threads:

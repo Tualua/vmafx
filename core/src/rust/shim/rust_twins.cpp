@@ -12,6 +12,7 @@
  *   - read the parsed option values back from the C-layout priv blob and hand
  *     them to Rust by name,
  *   - build the feature-name dictionary exactly as the C extractors do,
+ *     including the C descriptor's extend_name_dict() entries (ADR-2795),
  *   - pass the pictures and fex->prev_ref / prev_prev_ref as plane views,
  *   - route scores through the C collector (append_with_dict, append,
  *     get_score, set_aggregate).
@@ -316,9 +317,13 @@ int twin_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned 
     inst->twin = twin;
     inst->name_dict = vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                                     fex->options, fex->priv);
-    if (!inst->name_dict) {
+    /* The C extractor's own additions (ADR-2795), on the same option layout. */
+    int dict_err = inst->name_dict ? 0 : -ENOMEM;
+    if (!dict_err && fex->extend_name_dict)
+        dict_err = fex->extend_name_dict(fex, &inst->name_dict);
+    if (dict_err) {
         const int free_err = free_instance(inst);
-        return free_err ? free_err : -ENOMEM;
+        return free_err ? free_err : dict_err;
     }
     const VmafxRsGeometry geom{
         .pix_fmt = static_cast<uint32_t>(pix_fmt), .bpc = bpc, .w = w, .h = h};

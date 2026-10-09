@@ -12,6 +12,11 @@
 //! `aim`, `adm3`, the four scale ratios and, with `debug`, the numerators and
 //! denominators), bit for bit. Registered as `adm_rust`; selected with
 //! `VMAF_FEATURE_IMPL=rust` or `--feature adm_rust`.
+//!
+//! With `adm_norm_view_dist_extra` it evaluates a second viewing distance on
+//! the same DWT and decouple and files those scores under the
+//! [`score::EXTRA_VIEW_NAMES`] keys, which the C descriptor's
+//! `extend_name_dict` maps to that distance's feature names (ADR-2795).
 
 #![forbid(unsafe_code)]
 
@@ -59,8 +64,9 @@ struct ScaleScores {
 /// The integer ADM twin (`AdmState`).
 pub struct IntegerAdm {
     opts: AdmOptions,
-    /// CSF weights of scales 0..3, valid when `config_err` is `None`.
-    weights: [ScaleWeights; 4],
+    /// CSF weights of scales 0..3 per viewing distance, valid when
+    /// `config_err` is `None`.
+    weights: [[ScaleWeights; 4]; 2],
     /// `csf_config_err`: decided in init, returned by every extract.
     config_err: Option<Error>,
     cos_1deg_sq: f32,
@@ -141,8 +147,8 @@ impl IntegerAdm {
 
     /// Scale 0: the CSF stage and the contrast-masking reduction of the
     /// numerator, or with `measure_aim` of the AIM numerator (noise weight 0).
-    fn masked_s0(&mut self, w2: usize, h2: usize, measure_aim: bool) -> f32 {
-        let wt = self.weights[0];
+    fn masked_s0(&mut self, w2: usize, h2: usize, view: usize, measure_aim: bool) -> f32 {
+        let wt = self.weights[view][0];
         let ca = self.csf_args(w2, h2, measure_aim);
         csf::csf_s0(&mut self.buf.p16, wt.fixed, &ca);
         let nw = if measure_aim {
@@ -169,8 +175,15 @@ impl IntegerAdm {
     }
 
     /// Scales 1..3: the 32-bit twin of `masked_s0`.
-    fn masked_s123(&mut self, w2: usize, h2: usize, scale: usize, measure_aim: bool) -> f32 {
-        let wt = self.weights[scale];
+    fn masked_s123(
+        &mut self,
+        w2: usize,
+        h2: usize,
+        scale: usize,
+        view: usize,
+        measure_aim: bool,
+    ) -> f32 {
+        let wt = self.weights[view][scale];
         let ca = self.csf_args(w2, h2, measure_aim);
         csf::csf_s123(&mut self.buf.p32, wt.fixed, &ca);
         let nw = if measure_aim {
@@ -196,9 +209,9 @@ impl IntegerAdm {
         cm::cm_s123(bands, scale, wt.fixed, wt.norm_shift, &args)
     }
 
-    /// `integer_adm_scale0()`: with `adm_skip_scale0` only the low-pass DWT
-    /// runs and the denominator is seeded with 1e-10.
-    fn scale0(&mut self, r: Source<'_>, d: Source<'_>, w: usize, h: usize) -> ScaleScores {
+    /// `integer_adm_scale0_transform()`: the DWT of both pictures and the
+    /// decouple; with `adm_skip_scale0` only the low-pass DWT.
+    fn transform0(&mut self, r: Source<'_>, d: Source<'_>, w: usize, h: usize) {
         let g = DwtGeom {
             w,
             h,
@@ -206,6 +219,17 @@ impl IntegerAdm {
         };
         if self.opts.skip_scale0 {
             self.dwt0(r, d, g, true);
+            return;
+        }
+        self.dwt0(r, d, g, false);
+        let da = self.decouple_args(w.div_ceil(2), h.div_ceil(2));
+        decouple::decouple_s0(&mut self.buf.p16, &da);
+    }
+
+    /// `integer_adm_scale0_weigh()` at viewing distance `view`: with
+    /// `adm_skip_scale0` the denominator is seeded with 1e-10.
+    fn weigh0(&mut self, w2: usize, h2: usize, view: usize) -> ScaleScores {
+        if self.opts.skip_scale0 {
             // `sc->den = 1e-10`, a float.
             #[allow(clippy::cast_possible_truncation)]
             return ScaleScores {
@@ -214,23 +238,19 @@ impl IntegerAdm {
                 aim_num: 0.0,
             };
         }
-        self.dwt0(r, d, g, false);
-        let (w2, h2) = (w.div_ceil(2), h.div_ceil(2));
-        let da = self.decouple_args(w2, h2);
-        decouple::decouple_s0(&mut self.buf.p16, &da);
-        let factors = self.weights[0].factors;
+        let factors = self.weights[view][0].factors;
         let den = den::den_s0(&self.buf.p16.ref_dwt.hvd, factors, &self.den_args(w2, h2));
-        let num = self.masked_s0(w2, h2, false);
+        let num = self.masked_s0(w2, h2, view, false);
         let aim_num = if self.opts.skip_aim {
             0.0
         } else {
-            self.masked_s0(w2, h2, true)
+            self.masked_s0(w2, h2, view, true)
         };
         ScaleScores { num, den, aim_num }
     }
 
-    /// `integer_adm_scale_s123()`.
-    fn scale_s123(&mut self, w: usize, h: usize, scale: usize) -> ScaleScores {
+    /// `integer_adm_scale_s123_transform()`.
+    fn transform_s123(&mut self, w: usize, h: usize, scale: usize) {
         let g = DwtGeom {
             w,
             h,
@@ -246,21 +266,24 @@ impl IntegerAdm {
             g,
             scale,
         );
-        let (w2, h2) = (w.div_ceil(2), h.div_ceil(2));
-        let da = self.decouple_args(w2, h2);
+        let da = self.decouple_args(w.div_ceil(2), h.div_ceil(2));
         decouple::decouple_s123(&mut self.buf.p32, &da);
-        let factors = self.weights[scale].factors;
+    }
+
+    /// `integer_adm_scale_s123_weigh()` at viewing distance `view`.
+    fn weigh_s123(&mut self, w2: usize, h2: usize, scale: usize, view: usize) -> ScaleScores {
+        let factors = self.weights[view][scale].factors;
         let den = den::den_s123(
             &self.buf.p32.ref_dwt.hvd,
             scale,
             factors,
             &self.den_args(w2, h2),
         );
-        let num = self.masked_s123(w2, h2, scale, false);
+        let num = self.masked_s123(w2, h2, scale, view, false);
         let aim_num = if self.opts.skip_aim {
             0.0
         } else {
-            self.masked_s123(w2, h2, scale, true)
+            self.masked_s123(w2, h2, scale, view, true)
         };
         ScaleScores { num, den, aim_num }
     }
@@ -290,31 +313,65 @@ impl IntegerAdm {
         Ok((r, d, w, h))
     }
 
-    /// `integer_compute_adm()`: the four scales and the aggregate.
-    fn compute(&mut self, frame: &Frame<'_>) -> Result<AdmResult, Error> {
+    /// `integer_compute_adm()`: the four scales and the aggregate of every
+    /// viewing distance; the DWT and decouple run once per scale.
+    fn compute(&mut self, frame: &Frame<'_>) -> Result<[AdmResult; 2], Error> {
         let (r, d, w0, h0) = self.sources(frame)?;
         let numden_limit = 1e-10 * f64::from(as_int(w0) * as_int(h0)) / (1920.0 * 1080.0);
-        let mut res = AdmResult::default();
-        let (mut num, mut den, mut aim_num) = (0.0_f64, 0.0_f64, 0.0_f64);
+        let views = self.opts.view_count();
+        let mut res = [AdmResult::default(); 2];
+        let mut sums = [[0.0_f64; 3]; 2];
         let (mut w, mut h) = (w0, h0);
         for scale in 0..4 {
             dwt::src_indices(&mut self.buf.ind_y, h);
             dwt::src_indices(&mut self.buf.ind_x, w);
-            let sc = if scale == 0 {
-                self.scale0(r, d, w, h)
+            if scale == 0 {
+                self.transform0(r, d, w, h);
             } else {
-                self.scale_s123(w, h, scale)
-            };
+                self.transform_s123(w, h, scale);
+            }
             w = w.div_ceil(2);
             h = h.div_ceil(2);
-            num += f64::from(sc.num);
-            den += f64::from(sc.den);
-            aim_num += f64::from(sc.aim_num);
-            res.scores[2 * scale] = f64::from(sc.num);
-            res.scores[2 * scale + 1] = f64::from(sc.den);
+            for view in 0..views {
+                let sc = if scale == 0 {
+                    self.weigh0(w, h, view)
+                } else {
+                    self.weigh_s123(w, h, scale, view)
+                };
+                sums[view][0] += f64::from(sc.num);
+                sums[view][1] += f64::from(sc.den);
+                sums[view][2] += f64::from(sc.aim_num);
+                res[view].scores[2 * scale] = f64::from(sc.num);
+                res[view].scores[2 * scale + 1] = f64::from(sc.den);
+            }
         }
-        score::finalise(&mut res, num, den, aim_num, numden_limit)?;
+        for view in 0..views {
+            let [num, den, aim_num] = sums[view];
+            score::finalise(&mut res[view], num, den, aim_num, numden_limit)?;
+        }
         Ok(res)
+    }
+
+    /// The scores of one viewing distance, filed (`finish_adm_view()`).
+    fn finish_view(
+        &self,
+        host: &mut Host<'_>,
+        index: u32,
+        r: &AdmResult,
+        view: usize,
+    ) -> Result<(), Error> {
+        if !r.score.is_finite() || !r.score_aim.is_finite() {
+            return Err(Error::NonFinite(c"integer_adm: non-finite score"));
+        }
+        let adm3 = score::adm3(
+            r.score,
+            r.score_aim,
+            self.opts.dlm_weight,
+            self.opts.min_val,
+        )?;
+        let mut scale = [0.0_f64; 4];
+        score::scale_ratios(&r.scores, &mut scale)?;
+        score::emit(host, index, r, adm3, &scale, self.opts.debug, view)
     }
 }
 
@@ -329,15 +386,17 @@ impl Extractor for IntegerAdm {
                 c"integer_adm requires width >= 17 and height >= 17",
             ));
         }
-        let cfg = opts.csf_config();
-        let mut weights = [ScaleWeights::default(); 4];
+        let mut weights = [[ScaleWeights::default(); 4]; 2];
         let mut config_err = None;
-        for (scale, w) in weights.iter_mut().enumerate() {
-            match scale_weights(scale, &cfg) {
-                Ok(v) => *w = v,
-                Err(e) => {
-                    config_err = Some(e);
-                    break;
+        'views: for (view, row) in weights.iter_mut().enumerate().take(opts.view_count()) {
+            let cfg = opts.csf_config(view);
+            for (scale, w) in row.iter_mut().enumerate() {
+                match scale_weights(scale, &cfg) {
+                    Ok(v) => *w = v,
+                    Err(e) => {
+                        config_err = Some(e);
+                        break 'views;
+                    }
                 }
             }
         }
@@ -353,22 +412,16 @@ impl Extractor for IntegerAdm {
 
     /// `extract()`.
     fn extract(&mut self, frame: &Frame<'_>, host: &mut Host<'_>) -> Result<(), Error> {
-        viewing_geometry_check(&self.opts.csf_config())?;
+        for view in 0..self.opts.view_count() {
+            viewing_geometry_check(&self.opts.csf_config(view))?;
+        }
         if let Some(e) = self.config_err {
             return Err(e);
         }
-        let r = self.compute(frame)?;
-        if !r.score.is_finite() || !r.score_aim.is_finite() {
-            return Err(Error::NonFinite(c"integer_adm: non-finite score"));
+        let results = self.compute(frame)?;
+        for (view, r) in results.iter().enumerate().take(self.opts.view_count()) {
+            self.finish_view(host, frame.index, r, view)?;
         }
-        let adm3 = score::adm3(
-            r.score,
-            r.score_aim,
-            self.opts.dlm_weight,
-            self.opts.min_val,
-        )?;
-        let mut scale = [0.0_f64; 4];
-        score::scale_ratios(&r.scores, &mut scale)?;
-        score::emit(host, frame.index, &r, adm3, &scale, self.opts.debug)
+        Ok(())
     }
 }

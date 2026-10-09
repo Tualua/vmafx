@@ -37,7 +37,10 @@ invariant: One Rust archive in libvmaf only; registry reaches Rust via the shim 
   instance pointer at the tail) and adds `VMAF_FEATURE_EXTRACTOR_RUST`. The
   option table, provided features and `reads_prev_prev_ref` are the C
   extractor's, which the option parser and the feature-name dictionary rely
-  on. Do not give a twin options of its own.
+  on. Do not give a twin options of its own. Copy includes `merge` and
+  `extend_name_dict` (ADR-2795): `twin_init()` calls `extend_name_dict` after
+  building the dictionary; the registry keeps the C extractor and the twin
+  apart by name, never by callback.
 - **C stays default.** `first_pass_eligible()` skips Rust twins when no flag
   is asked for; only `vmaf_feature_extractor_impl_select()` (env
   `VMAF_FEATURE_IMPL=rust`, read once through `vmaf_gpu_dispatch_env_get()`)

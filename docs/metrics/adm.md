@@ -66,8 +66,9 @@ the fixed-point one has no upper bound.
 
 ## Options
 
-Every option is a feature parameter, so a non-default value changes the
-published feature name (the alias is appended, for example `adm_egl_1.2`).
+Every option except `debug`, `adm_skip_aim` and `adm_norm_view_dist_extra` is
+a feature parameter, so a non-default value changes the published feature name
+(the alias is appended, for example `adm_egl_1.2`).
 "Declared by" lists the extractors whose option table has the entry; an
 extractor that does not declare an option rejects it as unknown.
 
@@ -76,6 +77,7 @@ extractor that does not declare an option rejects it as unknown.
 | `debug` | — | bool | `false` | — | all | Emit debug metrics. |
 | `adm_enhn_gain_limit` | `egl` | double | `100.0` | `1.0–100.0` | all | How many times its reference value a restored coefficient may count for. `1.0` (`egl=1.0`) counts no enhancement as restored detail (NEG models and `vmaf_v1.0.16_*`); `100.0` is upstream's default. Note 1. |
 | `adm_norm_view_dist` | `nvd` | double | `3.0` | `0.75–24.0` (integer `adm`: `nvd × rdh ≥ 3240`) | all | Normalised viewing distance (distance ÷ display height). Note 6. |
+| `adm_norm_view_dist_extra` | `nvde` | double | `0.0` (none) | `0–24.0`; must pass the same floor and give names other than `adm_norm_view_dist`'s | `adm` (CPU, `adm_rust`) | A second viewing distance evaluated on the same DWT and decouple; its scores carry that distance's `nvd` suffix. Note 7. |
 | `adm_ref_display_height` | `rdh` (`adm`), `rdf` (`float_adm`) | int | `1080` | `1–4320` | all | Reference display height in pixels, for viewing-distance scaling. |
 | `adm_csf_mode` | `csf` | int | `0` | `0–3` (`adm`), `0–9` (`float_adm`) | all | Contrast-sensitivity-function model. Note 2. |
 | `adm_csf_scale` | `scf` | double | `1.0` | `0–50` | all | H/V-axis CSF sensitivity scale. Read only by `adm_csf_mode=1`. Note 3. |
@@ -117,6 +119,16 @@ extractor that does not declare an option rejects it as unknown.
   of `adm_norm_view_dist × adm_ref_display_height ≥ 3240` (1080p viewed at 3H).
   Geometries below this floor are refused with a named error and `-EINVAL`;
   use `float_adm` for geometries below the floor ([Fixed-point CSF limits](#fixed-point-csf-limits)).
+- **Note 7** — You rarely set it yourself: libvmaf sets it when two models
+  need `adm` at two viewing distances
+  ([Two viewing distances share one `adm`](#two-viewing-distances-share-one-adm)).
+  Set by hand, `--feature adm=nvd=3:nvde=5` files the `nvd=5` scores under
+  `integer_adm2_nvd_5`, `integer_aim_nvd_5`, `integer_adm3_nvd_5` and
+  `integer_adm_scale0_nvd_5` … `integer_adm_scale3_nvd_5`, the names
+  `--feature adm=nvd=5` gives them. With `debug=true` the numerators and
+  denominators are the first distance's only. A second distance equal to the
+  first, or one whose `%g` text names the same feature (`3.0000001` next to
+  `3`), stops initialisation with `-EINVAL`.
 
 ### Notes on `adm_p_norm` and `adm_skip_scale0`
 
@@ -169,6 +181,38 @@ On the CPU, a build with Rust features also has `adm_rust`, a Rust port of
 Each subsection states what a twin or path returns relative to the CPU
 extractor, how it was measured and what it means for stored scores. Pick the
 one for the extractor you run.
+
+### Two viewing distances share one `adm`
+
+Two models that ask for `adm` with the same options except
+`adm_norm_view_dist`, such as `vmaf_v1.0.16_3d0h` and `vmaf_v1.0.16_5d0h`,
+run one `adm` instead of two. The wavelet transform and the decouple stage do
+not depend on the viewing distance and run once per scale; the
+contrast-sensitivity, denominator and masking stages run once per distance.
+The second distance's scores keep the names the second model reads
+(Netflix/vmaf `cffd5b77d`, [ADR-2795](../adr/2795-adm-shared-viewing-distances.md)).
+
+```sh
+vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
+  --model version=vmaf_v1.0.16_3d0h --model version=vmaf_v1.0.16_5d0h
+```
+
+#### What this means when you use it
+
+- **The scores do not change.** Every frame and pooled value of the two-model
+  run equals the values of each model run alone, as text at `%.6f` and as
+  doubles at `--precision max`: 1560 values on the 48 frames of the 576x324
+  test pair, with `--threads 1` and `4`, for `adm` and for `adm_rust`
+  (`VMAF_FEATURE_IMPL=rust`). `test_integer_adm_view_dist` checks the seven
+  scores of both distances at 8 and 10 bits on the scalar and SIMD paths.
+- **What is not shared.** A context keeps two distances at most; a third model
+  at a third distance gets its own. A context whose `debug` is set, or whose
+  `adm_skip_aim` differs, is not folded in, so its debug scores and its AIM
+  stay its own. A model at a distance a context already evaluates second is
+  absorbed, not run again.
+- **Which backends.** The CPU extractor and `adm_rust` share; the CUDA, SYCL,
+  HIP and Metal `adm` twins still run one instance per distance until each
+  takes the option.
 
 ### `float_adm` does not depend on the processor
 

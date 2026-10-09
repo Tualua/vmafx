@@ -94,6 +94,8 @@ enum VmafFeatureExtractorFlags {
     VMAF_FEATURE_EXTRACTOR_RUST = 1 << 8,
 };
 
+struct VmafFeatureExtractorContext;
+
 typedef struct VmafFeatureExtractor {
     const char *name; ///< Name of feature extractor.
     /**
@@ -217,6 +219,26 @@ typedef struct VmafFeatureExtractor {
      * extractor reads host pictures (chroma, or a host copy of luma).
      */
     bool (*reads_shared_luma_only)(const struct VmafFeatureExtractor *fex);
+
+    /**
+     * Optional (Netflix/vmaf 33e5f0aca, ADR-2795). At registration, when
+     * `incoming` would become a second context of this same extractor with
+     * other options, the registry offers it to each registered context of the
+     * same name that is not yet initialized. Return 1 when `existing` absorbed
+     * `incoming` (the registry then destroys `incoming`, as for a duplicate), 0
+     * to decline, or a negative errno. Integer ADM folds a second viewing
+     * distance into one context this way.
+     */
+    int (*merge)(struct VmafFeatureExtractorContext *existing,
+                 struct VmafFeatureExtractorContext *incoming);
+
+    /**
+     * Optional (ADR-2795): add entries to the feature-name dictionary an
+     * instance built from `provided_features` with its parsed options in
+     * `priv`. Called by the extractor's own init() and by the Rust twin shim,
+     * so both file the same names. Returns 0 or a negative errno.
+     */
+    int (*extend_name_dict)(const struct VmafFeatureExtractor *fex, VmafDictionary **dict);
 
     /**
      * Per-feature characteristics descriptor — drives the per-backend

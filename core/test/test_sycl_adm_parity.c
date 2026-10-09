@@ -261,6 +261,14 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
                 break;
             }
         }
+        /* ADR-2795: the second viewing distance reaches adm_sycl in its own
+         * pull request of the stack. Once the twin declares the option this
+         * fails, and that pull request deletes the gap. */
+        if (!strcmp(a->name, "adm_norm_view_dist_extra")) {
+            mu_assert("adm_sycl declares adm_norm_view_dist_extra: delete the recorded gap",
+                      b == NULL);
+            continue;
+        }
         if (!b)
             (void)fprintf(stderr, "\nadm_sycl is missing CPU option \"%s\"\n", a->name);
         mu_assert("adm_sycl option table is missing a CPU option", b != NULL);

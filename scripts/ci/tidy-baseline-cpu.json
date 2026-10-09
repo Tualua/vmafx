@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 516,
+  "tus": 518,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -236,6 +236,7 @@
     "core/test/test_adm_dwt2_x86.c",
     "core/test/test_adm_gain_limit.c",
     "core/test/test_adm_nonfinite_score.c",
+    "core/test/test_adm_view_merge.c",
     "core/test/test_async_extractor_thread_pool.c",
     "core/test/test_barten_csf.c",
     "core/test/test_barten_csf_coverage.c",
@@ -320,6 +321,7 @@
     "core/test/test_integer_adm_simd.c",
     "core/test/test_integer_adm_simd_noise.c",
     "core/test/test_integer_adm_tiny_frames.c",
+    "core/test/test_integer_adm_view_dist.c",
     "core/test/test_integer_motion_coverage.c",
     "core/test/test_integer_motion_edge16_coverage.c",
     "core/test/test_integer_motion_v2_coverage.c",
@@ -1211,6 +1213,24 @@
         }
       },
       "previous_baseline_sha256": "b2cb33e39d82f7e7324765d0dfda58beb499cc4cdae404f389873dbd29ec5cbb"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_adm.c",
+        "core/src/fex_ctx_vector.cpp",
+        "core/test/test_adm_view_merge.c",
+        "core/test/test_integer_adm_view_dist.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_adm_view_merge.c",
+            "core/test/test_integer_adm_view_dist.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "90bfcfa1914249dc5bb87d831926d1c81212663f7b974afa060770405fefdcfd"
     }
   ]
 }

@@ -414,6 +414,14 @@ static char *test_adm_cuda_option_table_mirrors_cpu(void)
     mu_assert("adm_cuda must declare options", gpu->options != NULL);
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
+        /* ADR-2795: the second viewing distance reaches adm_cuda in its own
+         * pull request of the stack. Once the twin declares the option this
+         * fails, and that pull request deletes the gap. */
+        if (!strcmp(cpu->options[i].name, "adm_norm_view_dist_extra")) {
+            mu_assert("adm_cuda declares adm_norm_view_dist_extra: delete the recorded gap",
+                      find_option(gpu->options, cpu->options[i].name) == NULL);
+            continue;
+        }
         const VmafOption *b = find_option(gpu->options, cpu->options[i].name);
         if (!b || !option_mirrors(&cpu->options[i], b)) {
             (void)fprintf(stderr, "\nadm_cuda does not mirror CPU option \"%s\"\n",
