@@ -212,7 +212,7 @@ observability-compose-smoke:
 # named testdata); gosec walks the filesystem and needs to be told
 # (T-LINT-SCOPE-HISS-FIXTURES-2026-09-22).
 lint-go:
-	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
+	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.1-0.20260914113419-9e8e5d91f2f3)
 	@echo "--- gosec (exclude-generated) ---"
 	@gosec -exclude-generated -exclude-dir=.config/hiss/testdata -quiet ./...
 

@@ -201,10 +201,12 @@ jobs:
 
       - name: Install gosec
         if: steps.impact.outputs.go_checks == 'true'
-        # v2.21.4 pulls x/tools@v0.25.0 which fails to compile under Go 1.26
-        # (invalid array-length constant in tokeninternal.go). v2.27.1 pulls
-        # x/tools@v0.37.0 which is compatible.
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+        # Go 1.27.2 writes export data version 5. The v2.29.0 release builds
+        # with x/tools v0.49.0, which reads at most version 4, so it could not
+        # type-check any package. This commit of gosec's main branch builds
+        # with x/tools v0.50.0 and reports the same findings as v2.29.0 did on
+        # Go 1.27.1. Go back to a release tag once one includes x/tools v0.50.0.
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.1-0.20260914113419-9e8e5d91f2f3
 
       - name: gosec (exclude generated)
         if: steps.impact.outputs.go_checks == 'true'
