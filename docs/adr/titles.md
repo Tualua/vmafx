@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1346), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1347), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5395,3 +5395,7 @@ Every ADR, one heading each (1346), so the site search finds an ADR by its title
 ## ADR-2784: Move the praetor pin to 3a766f2d56ad, take its REUSE workflow and declare the build-warnings lanes it cannot read
 
 [2784-praetor-pin-3a766f2d](2784-praetor-pin-3a766f2d.md)
+
+## ADR-2795: Integer ADM evaluates two viewing distances in one context
+
+[2795-adm-shared-viewing-distances](2795-adm-shared-viewing-distances.md)
