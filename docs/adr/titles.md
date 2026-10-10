@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1359), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1360), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5447,3 +5447,7 @@ Every ADR, one heading each (1359), so the site search finds an ADR by its title
 ## ADR-3137: The one dev image carries the Vulkan loader and lavapipe, so Vulkan-dependent tests build and run on CPU in every lane
 
 [3137-dev-image-vulkan-lavapipe](3137-dev-image-vulkan-lavapipe.md)
+
+## ADR-3143: VMAFx consumes the shared FFmpeg fix series
+
+[3143-ffmpeg-shared-fix-series](3143-ffmpeg-shared-fix-series.md)
