@@ -36,7 +36,7 @@ jobs:
     # Release events also fire for tester prereleases (tester-*, tester-windows-*);
     # only version tags (v*) belong to this workflow. Dependent jobs skip with it.
     if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -166,7 +166,7 @@ jobs:
     # group only served the single self-hosted runner, and GitHub cancels an
     # older pending job when a newer one joins its group. The workflow-level
     # per-tag group still serialises runs of one tag.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -280,7 +280,7 @@ jobs:
   sbom:
     name: Generate SBOMs
     needs: [validate-release, build-artifacts, verify-native-artifacts, mcp-build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -419,7 +419,7 @@ jobs:
   sign:
     name: Sigstore sign artifacts
     needs: [build-artifacts, sbom]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
     permissions:
@@ -466,7 +466,7 @@ jobs:
   provenance:
     name: Attest libvmaf provenance
     needs: [validate-release, build-artifacts, verify-native-artifacts, sbom]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
     permissions:
@@ -538,7 +538,7 @@ jobs:
   mcp-build:
     name: Build vmaf-mcp wheel + sdist
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -590,7 +590,7 @@ jobs:
   mcp-sign:
     name: Sigstore sign vmaf-mcp
     needs: mcp-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
     permissions:
@@ -625,7 +625,7 @@ jobs:
   mcp-provenance:
     name: Attest vmaf-mcp provenance
     needs: [validate-release, mcp-build, sbom]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
     permissions:
@@ -687,7 +687,7 @@ jobs:
   mcp-publish-pypi:
     name: Publish vmaf-mcp PyPI
     needs: [validate-release, mcp-build, mcp-sign, mcp-provenance, sbom]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: pypi-publish    # user binds this to PyPI Trusted Publisher
     permissions:
@@ -858,7 +858,7 @@ jobs:
       - mcp-build
       - mcp-sign
       - mcp-provenance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
     permissions:

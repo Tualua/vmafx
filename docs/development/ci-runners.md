@@ -12,7 +12,7 @@ Jobs choose their pool with a ternary `runs-on` expression keyed on the
 repository variable `ARC_RUNNERS_ENABLED`:
 
 ```yaml
-runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
+runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
 ```
 
 When `ARC_RUNNERS_ENABLED` is `true`, the job is dispatched to an ARC pod with
@@ -56,7 +56,40 @@ SYCL legs, then the other build legs.
 | Job | Workflow | Fallback when `ARC_RUNNERS_ENABLED` is not `true` |
 | --- | --- | --- |
 | `Cppcheck (Whole Project)` | `lint-and-format.yml` | `ubuntu-26.04` |
-| Sanitizers | `tests-and-quality-gates.yml` | `ubuntu-latest` |
+| Sanitizers | `tests-and-quality-gates.yml` | `ubuntu-26.04` |
+
+## Hosted Linux image
+
+Every job that runs on a GitHub-hosted Linux runner names its image by version:
+`ubuntu-26.04`, or `ubuntu-26.04-arm` for the arm64 legs
+([ADR-3251](../adr/3251-hosted-runner-label-explicit.md)). No workflow names
+`ubuntu-latest`, one of its larger-runner forms or `ubuntu-slim`. Docker and
+release jobs follow the same rule.
+
+The reason is a date. GitHub moves `ubuntu-latest` from Ubuntu 24.04 to 26.04 in
+a rollout from 2026-10-19 to 2026-11-19
+([actions/runner-images#14748](https://github.com/actions/runner-images/issues/14748),
+read 2026-10-11). A job on the floating label changes compiler, Python and glibc
+on a day inside that window, without a commit in this repository; a job on a
+versioned label changes them in the pull request that edits the label.
+
+Two cases name another versioned image:
+
+| Case | Where it is declared | Ends |
+| --- | --- | --- |
+| The job's subject is the older image. Today: `verify-native-artifacts` in `supply-chain.yml` runs on `ubuntu-24.04`, the oldest hosted image that loads the native Linux bundle ([ADR-1354](../adr/1354-native-bundle-release-track.md)). | `COMPATIBILITY_TARGETS` in `scripts/ci/check_hosted_runner_labels.py`, with the record that says why | when the record changes |
+| The job fails on `ubuntu-26.04` and needs time. | one entry in `.config/lint-exceptions.d/hosted-runner-label.toml`: workflow file, job, label, reason, end date | at most 90 days after it is written |
+
+`check-hosted-runner-labels` refuses every other label; `make lint-actions` runs
+it after actionlint. The entry format and the cases the check covers are in
+[Hosted runner labels](pre-commit-hooks.md#hosted-runner-labels).
+
+To move to the next image, edit `ALLOWED` in the script, the labels in
+`.github/workflows/` and the declaration in `.github/actionlint.yaml` in one
+pull request, and let the hosted run of that pull request prove each job. A job
+that fails there keeps the old label in the same pull request, with a dated
+fallback. The macOS jobs still name `macos-latest` and the Windows jobs name
+their versioned labels; neither is covered by this check.
 
 ## Windows GPU Build Setup
 

@@ -73,7 +73,7 @@ jobs:
     # comes out of must not be allowed to stop building silently. The workflow
     # always reports its gate; the planner selects this work for container inputs.
     name: Dev Container Build work
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
     # take up to 45 min on a cold runner, and the release rehearsal adds a
     # CPU-only release compile; set a generous ceiling.

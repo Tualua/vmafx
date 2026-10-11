@@ -44,7 +44,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Semgrep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -138,7 +138,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (C/C++)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 35
     permissions:
       contents: read
@@ -200,7 +200,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -247,7 +247,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (Actions)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -270,7 +270,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Gitleaks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -318,7 +318,7 @@ jobs:
     if: needs.tier.outputs.light == 'true' && github.event_name == 'pull_request'
     # required-aggregator
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -63,7 +63,7 @@ jobs:
     # Keep the expensive work name distinct from the exact required gate name
     # below; otherwise one check can mask the other in the aggregator.
     name: Doxygen Public API work
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

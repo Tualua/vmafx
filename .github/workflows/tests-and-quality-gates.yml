@@ -55,7 +55,7 @@ jobs:
     # D24
     # required-aggregator
     name: Netflix CPU Golden
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -208,9 +208,9 @@ jobs:
     # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
     # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
-    # GitHub-hosted ubuntu-latest. If the ARC pool is degraded, set the
+    # GitHub-hosted ubuntu-26.04. If the ARC pool is degraded, set the
     # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -968,7 +968,7 @@ jobs:
     # was not.
     # required-aggregator
     name: Coverage Gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # 75, not 30: the Python suite step below is budgeted 55 min and the rest
     # of the job (apt + pip, the gcov build, the meson unit suite, gcovr) has
     # measured at ~5.5 min. See that step for where 55 comes from.
@@ -1054,7 +1054,7 @@ jobs:
         # unreachable per ADR-0112. CUDA EP attach only requires the CUDA
         # *runtime* library to load (no actual GPU driver), which is why we
         # `apt install libcudart12` below. CreateSession then fails because
-        # there's no real GPU on ubuntu-latest; vmaf_ort_open's two-stage
+        # there's no real GPU on a hosted runner; vmaf_ort_open's two-stage
         # fallback (ADR-0113) catches that and retries with CPU-only
         # session_options, so existing tests stay green while the EP-attach
         # success arm and the new fallback path both execute.
@@ -1361,7 +1361,7 @@ jobs:
 
   # ===== GPU coverage (self-hosted) =====
   # Exercises fork-added CUDA / SYCL kernels, GPU runtime glue, and
-  # AVX-512 SIMD paths that ubuntu-latest can't touch. Runs on a self-hosted
+  # AVX-512 SIMD paths that hosted runners can't touch. Runs on a self-hosted
   # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
@@ -1501,7 +1501,7 @@ jobs:
     # Power of 10 §5
     # required-aggregator
     name: Assertion Density
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

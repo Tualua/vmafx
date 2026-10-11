@@ -44,7 +44,7 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertIn('cron: "19 4 * * 1"', prefix)
         analysis, gate = jobs.split("\n  gate:", 1)
         self.assertNotRegex(analysis, r"(?m)^    (env|defaults|container|services):")
-        self.assertIn("runs-on: ubuntu-latest", analysis)
+        self.assertIn("runs-on: ubuntu-26.04", analysis)
         self.assertIn("id-token: write", analysis)
         self.assertNotIn("id-token: write", gate)
         self.assertNotRegex(analysis, r"(?m)^\s+run:")

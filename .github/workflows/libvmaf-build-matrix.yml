@@ -57,14 +57,14 @@ jobs:
           # `+DNN` siblings were gated, so the plain gcc/clang/ARM/static legs
           # could be red while the merge button stayed green.
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             werror: true
             name: Ubuntu gcc
             tier: full
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache clang-22
             CXX: ccache clang++-22
             werror: true
@@ -99,7 +99,7 @@ jobs:
           # acted on that claim. A Homebrew ORT bump that breaks ABI is a
           # supply-chain pinning problem, not a reason the leg cannot gate.
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             dnn: true
@@ -108,7 +108,7 @@ jobs:
             name: Ubuntu gcc+DNN
             tier: light
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache clang-22
             CXX: ccache clang++-22
             dnn: true
@@ -144,7 +144,7 @@ jobs:
           # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
           # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             hip: true
@@ -176,7 +176,7 @@ jobs:
 
           # --- Static library builds ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             meson_extra: --default-library static
@@ -192,7 +192,7 @@ jobs:
           # CUDA Static lane stays because it exercises a distinct
           # NVCC-static interaction not covered by the dynamic build.
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             cuda: true
@@ -205,7 +205,7 @@ jobs:
           #     image is registered at the .so link step; see post-T7-8
           #     SYCL revival in core/src/meson.build) ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: icx
             CXX: icpx
             sycl: true
@@ -216,7 +216,7 @@ jobs:
 
           # --- CUDA build (gcc + nvcc) ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             cuda: true
@@ -228,7 +228,7 @@ jobs:
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: icx
             CXX: icpx
             sycl: true

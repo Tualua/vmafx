@@ -607,7 +607,7 @@ jobs:
     #     fetch its HEAD and scan docs/adr/ for NNNN-*.md files.  If a number
     #     matches, the check fails.
     #
-    # Phase 2 uses the gh CLI (pre-installed on ubuntu-latest) and is
+    # Phase 2 uses the gh CLI (pre-installed on the hosted image) and is
     # best-effort: if the gh call fails (e.g. rate limit, permissions), the
     # step emits a WARNING but does not block the PR (to preserve offline /
     # restricted-token builds).

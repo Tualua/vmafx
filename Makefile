@@ -218,13 +218,17 @@ lint-go:
 
 # GitHub Actions lint. actionlint validates every workflow under
 # .github/workflows/ against .github/actionlint.yaml; actionlint cannot read a
-# composite action, so scripts/ci/check_composite_actions.py checks those.
+# composite action, so scripts/ci/check_composite_actions.py checks those;
+# scripts/ci/check_hosted_runner_labels.py checks which hosted Ubuntu image
+# every job names (ADR-3251).
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
 	@python3 scripts/ci/run_actionlint.py
 	@echo "--- composite actions (.github/actions): structure + shellcheck ---"
 	@python3 scripts/ci/check_composite_actions.py
+	@echo "--- hosted runner labels (.github/workflows): explicit image, dated fallbacks ---"
+	@python3 scripts/ci/check_hosted_runner_labels.py
 
 .PHONY: docs-render docs-render-check
 
@@ -941,7 +945,7 @@ help:
 	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
 	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
-	@echo "  make lint-actions     — actionlint on .github/workflows/ against .github/actionlint.yaml"
+	@echo "  make lint-actions     — actionlint on .github/workflows/, composite actions, hosted runner labels"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"

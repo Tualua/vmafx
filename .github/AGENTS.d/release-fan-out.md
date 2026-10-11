@@ -55,7 +55,7 @@ explicit SBOM artifact feeds keyless signing before final strict
 attachment job. Never bypass that DAG or restore permissive unmatched-file
 uploads; green workflow must mean every promised asset exists.
 
-Native payload built on `ubuntu-latest` inside `release-build` stage of
+Native payload built on `ubuntu-26.04` inside `release-build` stage of
 tagged `dev/Containerfile` (ADR-1346, supersedes ADR-1178; ADR-1354 moved it
 to Debian 13 release track): stage built in job by
 `scripts/ci/build-dev-container-stage.sh release-build` (no GITHUB_TOKEN:

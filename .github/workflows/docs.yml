@@ -54,7 +54,7 @@ jobs:
     name: Docs Site Build
     outputs:
       docs: ${{ steps.impact.outputs.docs }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # 25, not 10. Every run that actually built docs hit the 10-minute ceiling,
     # and GitHub reports a timed-out job as `cancelled`, which reads like
     # contention rather than a budget. Measured 2026-09-22 at job level:
@@ -147,7 +147,7 @@ jobs:
   deploy:
     if: github.event_name == 'push' && needs.build.outputs.docs == 'true'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # The global `pages` group belongs here and only here: GitHub Pages accepts
     # one concurrent deployment per repository. `cancel-in-progress: false` so a

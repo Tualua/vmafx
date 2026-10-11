@@ -610,10 +610,10 @@ if replacements != 1:
 expect_rejected("tag-pinned attest action", tag_pinned)
 
 restored_generator = mutate_native_provenance(
-    "    runs-on: ubuntu-latest\n",
+    "    runs-on: ubuntu-26.04\n",
     "    uses: slsa-framework/slsa-github-generator/.github/workflows/"
     "generator_generic_slsa3.yml@0123456789abcdef0123456789abcdef01234567\n"
-    "    runs-on: ubuntu-latest\n",
+    "    runs-on: ubuntu-26.04\n",
 )
 expect_rejected("restored slsa-github-generator", restored_generator)
 

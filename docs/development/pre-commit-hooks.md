@@ -350,8 +350,8 @@ default); it is a failure, never a pass. Find the process that holds the pipes
 (`ls -l /proc/*/fd | grep -c pipe`) and run again. The defect is upstream
 (rhysd/actionlint#702).
 
-To validate workflows and composite actions across the repository without
-pre-commit, run:
+To validate workflows, composite actions and hosted runner labels across the
+repository without pre-commit, run:
 
 ```bash
 make lint-actions
@@ -377,6 +377,64 @@ each fail). Run the script alone with:
 
 ```bash
 python3 scripts/ci/check_composite_actions.py
+```
+
+### Hosted runner labels
+
+actionlint accepts every label GitHub knows, so it cannot say which hosted Linux
+image a job should name. `check-hosted-runner-labels`
+(`scripts/ci/check_hosted_runner_labels.py`) holds the rule of
+[ADR-3251](../adr/3251-hosted-runner-label-explicit.md):
+
+| Label a workflow names | Result |
+| --- | --- |
+| `ubuntu-26.04`, `ubuntu-26.04-arm` | accepted |
+| `ubuntu-latest`, its larger-runner forms (`ubuntu-latest-4-cores`), `ubuntu-slim` | refused everywhere: the label carries no version, so the image under the job changes on a date GitHub picks |
+| another versioned image (`ubuntu-24.04`) | refused, unless the job is a listed compatibility target or has a dated fallback |
+
+The check parses every file of `.github/workflows/` and reads every string of
+it, not only `runs-on`: a matrix value, the fallback of an expression, the
+matrix a job prints as JSON for a later job and an input handed to a reusable
+workflow all spell a label. Each label is attributed to the job that holds it;
+text outside `jobs` is reported under the job name `(workflow)`. YAML comments
+and comment lines inside a `run:` block are not read, and neither are names
+that only contain a label, such as the container image `dev-ubuntu-26.04`.
+
+A compatibility target is a job whose subject is the older image. The script
+lists them in `COMPATIBILITY_TARGETS` with the record that says why; today that
+is one job, `verify-native-artifacts` in `supply-chain.yml`
+([ADR-1354](../adr/1354-native-bundle-release-track.md)). The check also fails
+when a listed job stops naming its image, so the list cannot go stale.
+
+A dated fallback is for a job that fails on the current image and needs time.
+Declare it in `.config/lint-exceptions.d/hosted-runner-label.toml`, the
+[declared exception list](#copyright-and-spdx-hook-and-the-declared-exception-list)
+with two more keys:
+
+```toml
+[[exception]]
+path = ".github/workflows/example.yml"
+job = "build"
+label = "ubuntu-24.04"
+reason = "what fails on ubuntu-26.04, and the issue that tracks it"
+expires = 2026-12-01
+```
+
+The end date is at most 90 days out and still holds on the day itself. An entry
+fails the check when it has expired, when its job no longer names the label,
+when it names a floating label, or when a key is missing. The shared list
+accepts one entry per file and rule, so one workflow file carries one fallback
+at a time.
+
+`test-check-hosted-runner-labels` keeps positive, negative and boundary cases
+for the script: a floating label as a literal, a matrix value, an expression
+fallback, a printed matrix and text outside `jobs`; an older image without a
+declaration; an expired, stale or malformed fallback; an unreadable workflow;
+the read bounds (512 workflows, 256 entries, 200 000 nodes per job), each of
+which is a finding and never a silent cut. Run the script alone with:
+
+```bash
+python3 scripts/ci/check_hosted_runner_labels.py
 ```
 
 ## Existing hooks and migration

@@ -94,7 +94,7 @@ paths post-dates the container image's build timestamp, rebuild.
 | gdb / lldb crash investigation | Yes — use the sanitizer-enabled host build |
 | ASan / UBSan / TSan sweep | Yes — `meson setup build-asan -Db_sanitize=address` |
 | Producing a release binary | **No** — must use container |
-| Running the Netflix golden gate | Yes — it is a verification job, not an artifact producer, and is out of scope for this policy. The CI job `netflix-golden` in `tests-and-quality-gates.yml` builds with host meson/ninja on `ubuntu-latest` and runs pytest there |
+| Running the Netflix golden gate | Yes — it is a verification job, not an artifact producer, and is out of scope for this policy. The CI job `netflix-golden` in `tests-and-quality-gates.yml` builds with host meson/ninja on `ubuntu-26.04` and runs pytest there |
 | Quick local smoke test during development | Yes — acceptable, but results should not be published |
 
 If a backend fails to reproduce in the container, diagnose the container first.
@@ -262,7 +262,7 @@ and been cancelled.
 [ADR-1354](../adr/1354-native-bundle-release-track.md) then moved the compile
 from the Ubuntu 26.04 `build-deps` stage onto the Debian 13 release track.
 `build-artifacts` in `.github/workflows/supply-chain.yml` runs on
-`ubuntu-latest`:
+`ubuntu-26.04`:
 
 1. It checks out the release tag.
 2. It builds the `release-build` stage of that tag's `dev/Containerfile` with

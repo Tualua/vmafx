@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # ADR-1151 — every write is made with the release-bot App installation
     # token minted below, so the job's own `GITHUB_TOKEN` never needs write

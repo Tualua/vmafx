@@ -130,8 +130,8 @@ repos:
       # The binary variant ("shfmt") hit HTTP 502 on the mvdan.cc CDN on every
       # CI run because the pre-commit cache key was stale (py3.12 vs py3.14),
       # forcing a re-download on every push. shfmt-src is immune to that CDN
-      # and is equally fast once Go is available on the runner (ubuntu-latest
-      # ships Go). Cache key is now pinned to py3.14 in lint-and-format.yml.
+      # and is equally fast once Go is available on the runner (the hosted
+      # image ships Go). Cache key is now pinned to py3.14 in lint-and-format.yml.
       - id: shfmt-src
         args: ["-w", "-i", "2", "-ci"]
 
@@ -724,6 +724,20 @@ repos:
         entry: python3 scripts/ci/tests/test_check_composite_actions.py
         language: system
         files: '^(scripts/ci/(check_composite_actions\.py|tests/test_check_composite_actions\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: check-hosted-runner-labels
+        name: Workflow jobs name an explicit hosted Ubuntu image, an older one only with a dated fallback
+        entry: python3 scripts/ci/check_hosted_runner_labels.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_hosted_runner_labels|lint_exceptions)\.py$|\.config/lint-exceptions\.d/hosted-runner-label\.toml$)'
+        pass_filenames: false
+
+      - id: test-check-hosted-runner-labels
+        name: Hosted runner label check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_hosted_runner_labels.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_hosted_runner_labels\.py|lint_exceptions\.py|tests/test_hosted_runner_labels\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
       - id: test-check-copyright

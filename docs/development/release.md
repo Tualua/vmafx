@@ -484,7 +484,7 @@ artifacts. In short:
 
 | Concern | What happens |
 | --- | --- |
-| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`, on `ubuntu-latest`. |
+| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`, on `ubuntu-26.04`. |
 | How long | An uncached stage build took under a minute and the release compile under a minute on four workstation CPUs. The job has a 60-minute limit. No workstation or self-hosted runner has to be online. |
 | Compile | `scripts/release/build-native-release-artifacts.sh` inside the image. |
 | Rehearsal | The Dev Container PR gate builds the same stage with the same script on every container-affecting PR. |
