@@ -1510,6 +1510,15 @@
 - Build: the Windows MinGW-w64 (UCRT64) build links again with link-time optimisation. `VMAFX_EXPORT` no longer expands to an ELF visibility attribute under MinGW GCC, which ignores it and warned at every LTO use; it is empty there, as `VMAF_EXPORT` already was. Exported symbols are unchanged.
 
 
+- **The Windows MSVC builds compile again.** `vmaf_next_fex_capacity()`
+  (`core/src/fex_ctx_vector_internal.h`, #2724) called `std::min()` in a
+  translation unit that had read `<windows.h>`, which defines `min` as a
+  macro; every MSVC build of `master` stopped with C2589. The call is spelled
+  `(std::min)(a, b)`, and the `msvcism` stage of `scripts/dev/preflight.sh`
+  now refuses a `min(` / `max(` call behind `<windows.h>` without `NOMINMAX`
+  (`scripts/dev/find-windows-minmax.py`).
+
+
 - The last MSVC warnings of the first Windows run after the zero-warning series
   are fixed: the CUDA / HIP decouple helpers and the x86 motion round constant
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
