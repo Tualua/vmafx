@@ -229,12 +229,12 @@ the repository page that cites it.
 <!-- credits:table texts -->
 | Item | Relation | Licence | Where it is used | Note |
 | --- | --- | --- | --- | --- |
-| [Caveman](https://github.com/JuliusBrussee/caveman) | adapted | `MIT` (terms at adaptation; upstream relicensed to Apache-2.0 on 2026-09-24) | see the note | Julius Brussee and contributors; the internal text register skill is adapted from it. |
+| [Caveman](https://github.com/JuliusBrussee/caveman) | adapted | `MIT` (terms at adaptation; upstream relicensed to Apache-2.0 on 2026-09-24) | `.agents/skills/caveman/LICENSE`, `.claude/skills/caveman/LICENSE` | Julius Brussee and contributors; the internal text register skill is adapted from it. The LICENSE file next to the skill holds the MIT text as praetor ships it with the skill. |
 | [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) | adapted | `unknown` (the page states no licence for the text) | `CODE_OF_CONDUCT.md` | Our code of conduct, with the enforcement guidelines of the same version. |
 | [Conventional Commits](https://www.conventionalcommits.org/) | inspired | `CC-BY-3.0` (as the specification page states it) | `CONTRIBUTING.md` | Commit subjects and release automation. |
 | [Developer Certificate of Origin 1.1](https://developercertificate.org/) | integrated | `unknown` (the text allows verbatim copies only) | `CONTRIBUTING.md` | The sign-off certifies it; the text is referenced, not copied. |
 | [Documenting Architecture Decisions (Michael Nygard)](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions) | inspired | `unknown` | `docs/adr/0000-template.md` | The ADR template follows this format. |
-| [i-have-adhd](https://github.com/ayghri/i-have-adhd) | adapted | `MIT` | see the note | Source of the adhd-format and social-text skills. |
+| [i-have-adhd](https://github.com/ayghri/i-have-adhd) | adapted | `MIT` | `.agents/skills/adhd-format/LICENSE`, `.agents/skills/social-text/LICENSE`, `.claude/skills/adhd-format/LICENSE`, `.claude/skills/social-text/LICENSE` | Ayoub Ghriss and contributors; source of the adhd-format and social-text skills. The LICENSE file next to each skill holds the MIT text as praetor ships it with the skill. |
 | [Keep a Changelog](https://github.com/olivierlacan/keep-a-changelog) | inspired | `MIT` | `changelog.d/README.md` | Section names of the changelog fragments. |
 | [Mozilla community enforcement ladder](https://github.com/mozilla/diversity) | inspired | `MPL-2.0` | `CODE_OF_CONDUCT.md` | The Community Impact Guidelines of the Covenant were inspired by it. |
 <!-- credits:end -->

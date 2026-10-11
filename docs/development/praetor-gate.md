@@ -169,9 +169,45 @@ engine has the flag. CI and `make verify-all` keep the forge read.
 
 ### The current pin
 
-The pin is `d141862c430b`
+The pin is `4ae6247c57d2`
+([ADR-3240](../adr/3240-praetor-pin-4ae6247c.md)), 28 praetor commits after
+`d141862c430b`. It is the engine the workstation's hooks already ran, and it
+refused every commit at the old pin. Against `d141862c430b` it changes this
+here:
+
+- **Read-only context.** `praetorctl compile-context` writes a seventh file
+  from `AGENTS.md`, `AGENTS.readonly.md`, for agents that run without write
+  access: steps that change files, state or history are dropped, prohibitions
+  are kept. `--verify` compares it like the other compiled files, so it is LF
+  in every checkout (`.gitattributes`,
+  `scripts/ci/tests/test_praetor_hashed_files_lf.py`), and
+  `tools/markdownlint/verify.mjs` leaves it out as it leaves out the others.
+- **Gate assets.** `tools/markdownlint/package.json` and its lock file carry
+  js-yaml 5.4.3, `praetor-docs.yml` a newer setup-node, and `praetor-api.yml`
+  sets `GOTOOLCHAIN: auto`. Both workflows also start on `merge_group`; this
+  repository has no merge queue, so that trigger does not fire.
+- **Register skills.** `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` name the work they are adapted from
+  and each carries that work's `LICENSE`; `social-text` gains rules for line
+  breaks and lists.
+- **Agent hook script.** `.config/agent/hooks/block_evasion.py` is praetor's
+  text with four CodeQL findings fixed.
+- **Not adopted.** `adopt` also writes a `PreToolUse` entry into
+  `.claude/settings.json` and `.codex/hooks.json` that calls
+  `praetorctl hook <client> pre-tool` before every tool call. Agent settings
+  change on the operator's decision only, and that decision is open.
+
+Audit's warnings are the same 143 with both engines. The hooks still run the
+engine on `PATH` (see "Move every hook engine at the same time" above):
+praetor's launcher for the pinned engine is not written for a repository that
+keeps its own `lefthook.yml`
+([cordanaLLM/praetor#1172](https://github.com/cordanaLLM/praetor/issues/1172)),
+so a newer workstation engine can refuse commits again until the pin follows
+(`T-HOOKS-ENGINE-FROM-PATH-2026-10-11` in [state](../state.md)).
+
+The pin before was `d141862c430b`
 ([ADR-3061](../adr/3061-praetor-pin-d141862c.md)). Against `3a766f2d56ad` it
-changes one file here, `tools/apicompat/gate/main.go`. The API gate no longer
+changed one file here, `tools/apicompat/gate/main.go`. The API gate no longer
 installs go-apidiff as `module@version`. It writes a small build module that
 requires go-apidiff at the same commit and `golang.org/x/tools` v0.51.0
 exactly, and builds the checker there. Go 1.27.2 writes export data version 5.
@@ -181,10 +217,10 @@ checker read every package as empty, and the gate's canary failed the
 resolved to 1.27.2 ([cordanaLLM/praetor#1051](https://github.com/cordanaLLM/praetor/pull/1051)).
 `praetor-api.yml` still installs Go as `stable`, which is praetor's template
 text ([cordanaLLM/praetor#1037](https://github.com/cordanaLLM/praetor/issues/1037)).
-The engine's audit adds one advisory warning, about the missing cache-band
+The engine's audit added one advisory warning, about the missing cache-band
 markers in `AGENTS.md`.
 
-The pin before was `3a766f2d56ad`
+The pin before that was `3a766f2d56ad`
 ([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)). Against `7458a220e1c9` it
 changed four things here:
 
@@ -304,7 +340,7 @@ only what it can read as a file:
 
 | Text | Checked by | Gate |
 | --- | --- | --- |
-| Root `AGENTS.md` and the compiled vendor files | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
+| Root `AGENTS.md`, the compiled vendor files and `AGENTS.readonly.md` | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
 | Every tracked nested `AGENTS.md` (72 files) | the same commands | blocks |
 | Canonical personas under `.agents/agents/` | the same commands | blocks |
 | `.paperclip/harness.json` strings (`register.sources`) and `.paperclip/rules.md` | `praetorctl audit` | blocks |

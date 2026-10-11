@@ -1015,18 +1015,28 @@ entries:
   relation: adapted
   license: MIT
   license_note: terms at adaptation; upstream relicensed to Apache-2.0 on 2026-09-24
-  paths: []
+  paths:
+  - .agents/skills/caveman/LICENSE
+  - .claude/skills/caveman/LICENSE
   evidence:
   - AGENTS.md
-  note: Julius Brussee and contributors; the internal text register skill is adapted from it.
+  - .agents/skills/caveman/SKILL.md
+  note: Julius Brussee and contributors; the internal text register skill is adapted from it. The LICENSE file next to the skill holds the MIT text as praetor ships it with the skill.
 - id: i-have-adhd
   name: i-have-adhd
   url: https://github.com/ayghri/i-have-adhd
   kind: text
   relation: adapted
   license: MIT
-  paths: []
-  note: Source of the adhd-format and social-text skills.
+  paths:
+  - .agents/skills/adhd-format/LICENSE
+  - .agents/skills/social-text/LICENSE
+  - .claude/skills/adhd-format/LICENSE
+  - .claude/skills/social-text/LICENSE
+  evidence:
+  - .agents/skills/adhd-format/SKILL.md
+  - .agents/skills/social-text/SKILL.md
+  note: Ayoub Ghriss and contributors; source of the adhd-format and social-text skills. The LICENSE file next to each skill holds the MIT text as praetor ships it with the skill.
 - id: contributor-covenant
   name: Contributor Covenant 2.1
   url: https://www.contributor-covenant.org/version/2/1/code_of_conduct/
