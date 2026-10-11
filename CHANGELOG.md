@@ -1548,6 +1548,15 @@
   the template's checkbox made every such body fail.
 
 
+- **Commits pass the local hooks again
+  ([ADR-3240](docs/adr/3240-praetor-pin-4ae6247c.md)).** The hooks run the `praetorctl` on `PATH`,
+  and once the workstation's copy had moved to praetor `4ae6247c57d2` it refused every commit with
+  "target AGENTS.readonly.md missing or unreadable" and "holds an earlier Praetor text". The praetor
+  pin moves from `d141862c430b` to `4ae6247c57d2`, and the files that engine writes are
+  regenerated: the new read-only context file `AGENTS.readonly.md`, the documentation and API gate
+  assets, the three register skills with their licence files, and the agent hook script.
+
+
 - **The `Go API Compatibility` check compares Go APIs again on pull requests
   ([ADR-3061](docs/adr/3061-praetor-pin-d141862c.md)).** Once setup-go's `stable` resolved to Go
   1.27.2, the check failed on every pull request with "the checker reported the canary's removed
