@@ -680,6 +680,13 @@ jobs:
           --meson-executable "$(command -v meson)" --
           -C core/build --suite=dnn --print-errorlogs
 
+      - name: Prefetch Go modules for the suite
+        if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: sudo "$(command -v python3)" scripts/ci/prefetch_go_modules.py
+
       # CPU-only: full test suite + tox.
       - name: Run tests
         if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
@@ -905,6 +912,12 @@ jobs:
       # execute here. This reads the emitted code instead of running it.
       - name: Check Win64 stack alignment
         run: python3 scripts/ci/check-win64-stack-alignment.py core/build
+
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
 
       - name: Test vmaf
         # --print-errorlogs surfaces the failing test's stdout/stderr
@@ -1311,6 +1324,13 @@ jobs:
             throw ("vmaf.exe machine field is 0x{0:X4}, expected 0xAA64 (ARM64)" -f $machine)
           }
           "vmaf.exe machine field 0x{0:X4} (ARM64)" -f $machine
+
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        shell: cmd
+        run: python scripts\ci\prefetch_go_modules.py
 
       # The MinGW UCRT64 lane runs the whole suite; this lane starts with
       # `fast`. --print-errorlogs mirrors that lane so a failing test's

@@ -672,6 +672,9 @@ upstream-parity-full:
 	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
+# The suite's timeouts are sized for an uninstrumented build; a sanitizer run
+# multiplies them (docs/development/ci.md, "Sanitizer legs"), as the CI legs do.
+SANITIZER_TEST_TIMEOUT_MULTIPLIER := 3
 test-sanitizers:
 	@mkdir -p build-san
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
@@ -682,7 +685,8 @@ test-sanitizers:
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
-	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs \
+	    --timeout-multiplier $(SANITIZER_TEST_TIMEOUT_MULTIPLIER)
 
 # test-fast: the pre-push gate. test-timing: the wall-clock budgets (the live
 # window harness's two frame periods), one test at a time, alone on an idle

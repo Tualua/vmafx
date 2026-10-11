@@ -277,7 +277,12 @@ in `buf.yaml` and stay as they are.
     `buf.yaml` and `buf.gen.yaml`. buf is the release `BUF_VERSION` in
     `build-config.env`, run through `go run` so the Go module checksum database
     verifies it; the `protoc-gen-go` and `protoc-gen-go-grpc` plugins are the
-    versions `go.mod` pins as tools. It then adds the `// SAFETY:` proofs
+    versions `go.mod` pins as tools. `go run` of a versioned package asks the
+    module proxy on every run, so a CI job installs that release once with
+    `go install` (`scripts/ci/prefetch_go_modules.py`, into
+    `~/.cache/vmafx-tools/buf-<version>/`) and `proto_generate.py` runs the
+    installed copy when it reports the pinned version. It then adds the
+    `// SAFETY:` proofs
     (`scripts/proto/postprocess_gen_go.py`) and writes every `*.pb.go` under
     `gen/go`, removing stale ones. The `module=` option puts each binding
     under the path of its `go_package`: `gen/go` for `vmafx.v1`,

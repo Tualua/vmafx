@@ -882,3 +882,96 @@ timeout during `test_uds_roundtrip`.
 The last 40 and 100 master runs across all workflows showed no other flaky test
 or build failure; the only other master failure was the `release-please` token
 permissions, tracked in #1289.
+
+## Downloads and timeouts in test jobs (2026-10-10)
+
+Three failures on `master` on 2026-10-10 had one shape: a required job failed
+on something no change had caused, and its re-run passed. Each is fixed where
+it started; the sections below say what a job must do so it stays fixed.
+
+| Failure | Run | Cause | Fix |
+| --- | --- | --- | --- |
+| `test_crd_compat` failed on `Sanitizers (undefined)` | 38069385197, attempt 1, commit `7c107bcec` | The test downloaded Go modules into a cold cache; the module proxy dropped one stream (`INTERNAL_ERROR`) and nothing retried | [Go modules before the suite](#go-modules-before-the-suite) |
+| `test_vmafx_score` timed out after 30 s on `Sanitizers (thread)` | 38075165924, attempt 1, commit `95132391c` | The sanitizer legs ran every test with the timeout of an uninstrumented build | [Sanitizer legs](#sanitizer-legs) |
+| `Dev Container Build` and `Coverage Gate` could not download a fixture | 38055869167 and 38055869346 | The fixture host answered HTTP 504 for some minutes; one download retried for ten seconds, the other not at all | [Fixture downloads](test-fixtures.md#download-retries) |
+
+### Go modules before the suite
+
+Four tests of the Meson suite run Go tooling: `test_crd_generated_current` and
+`test_crd_compat` (`go tool controller-gen`), `test_proto_generated_current`
+(buf and `go tool protoc-gen-go*`) and `test_vmafx_score_contract`
+(`go test ./cmd/vmafx-server/`). On a hosted runner the module cache is empty
+at the start of every job.
+
+A job that runs the fast suite or the whole suite therefore has this step
+before the test step:
+
+```yaml
+- name: Prefetch Go modules for the suite
+  run: python3 scripts/ci/prefetch_go_modules.py
+```
+
+`scripts/ci/prefetch_go_modules.py` runs `go mod download` (every module
+`go.mod` requires, the tools' included, and the Go toolchain `go.mod` names
+when the installed one is older) and installs the pinned buf into the tool
+cache (`go install`, `~/.cache/vmafx-tools/buf-<version>/`), where
+`scripts/codegen/proto_generate.py` finds it. Each download gets five attempts
+with waits of 10, 30, 60 and 120 seconds; a retry keeps what the attempts
+before it stored. When a download fails on every attempt the step fails and
+prints which download and the last error, so the job is red at the download
+and not inside a unit test. Without Go on `PATH` the step prints that and
+passes: the four tests then skip themselves (exit 77).
+
+After the step the four tests need no network. That was measured with an empty
+module cache and `GOPROXY=off` after the prefetch (1.8 GB of modules, 64 s on
+a workstation). buf is installed, not run through `go run`, because `go run
+<package>@<version>` asks the module proxy for the module's versions on every
+run, also with a full cache.
+
+Write the step the way the test step runs the suite: the same `if:`, the same
+`shell:`, and the same `sudo` form (`sudo`, `sudo -E PATH="$PATH"` or none).
+The module cache and the tool cache belong to a user; a prefetch as the runner
+user fills nothing the suite reads when the suite runs under `sudo`.
+`scripts/ci/tests/test_meson_suite_go_prefetch.py` refuses a suite step without
+such a step before it, and a script of the suite's tests that starts Go without
+being listed there.
+
+### Sanitizer legs
+
+A test of `core/test/meson.build` has 30 seconds unless it sets its own
+timeout. Those values are sized for an uninstrumented build. Every Meson test
+run of a sanitizer build passes `--timeout-multiplier 3`:
+
+| Job | Workflow |
+| --- | --- |
+| `Sanitizers (address)`, `Sanitizers (undefined)`, `Sanitizers (thread)` | `tests-and-quality-gates.yml` |
+| `Sanitizers ASan+UBSan`, `Sanitizers TSan` | `sanitizers.yml` |
+| `ThreadSanitizer` | `nightly.yml` (had the multiplier before) |
+| `make test-sanitizers` | `Makefile` (`SANITIZER_TEST_TIMEOUT_MULTIPLIER`) |
+
+The value comes from the durations of all tests in 15 job logs of 2026-10-10:
+the three matrix legs in three runs (11 logs with two re-run attempts, one of
+them the run that timed out) and the two jobs of `sanitizers.yml` in two runs.
+Without a multiplier these tests ran above half of their timeout:
+
+| Test | Timeout | Slowest run | Share of the timeout | With the multiplier |
+| --- | --- | --- | --- | --- |
+| `test_vmafx_score` | 30 s | killed at 30.01 s (thread); 27.99 s finished (ASan+UBSan) | 1.00; 0.93 | 0.33; 0.31 |
+| `test_metal_psnr_hvs_math` | 120 s | 107.88 s (ASan+UBSan) | 0.90 | 0.30 |
+| `test_cambi_stage_simd` | 30 s | 18.88 s (thread) | 0.63 | 0.21 |
+| `test_feature_score_fed_frame` | 30 s | 16.04 s (undefined) | 0.53 | 0.18 |
+| `test_model_collection_api` | 30 s | 15.23 s (thread) | 0.51 | 0.17 |
+
+The same test takes very different times on the same leg: `test_vmafx_score`
+ran 10.27 s, 20.25 s and 20.48 s on the thread leg before the run that killed
+it at 30 s, and `test_vmafx_api_generator` 8.00 s and 27.60 s. A timeout that
+the slowest finished run fills to 0.93 leaves no room for that spread. With
+the multiplier the slowest finished run of every test stays below a third of
+its timeout.
+
+A multiplier for the leg was chosen over longer timeouts on the five tests:
+the slowdown comes from the instrumentation, not from those tests, and the
+next slow test would need the same edit after it has failed once. The job's
+own `timeout-minutes` still ends a run that hangs.
+`scripts/ci/tests/test_sanitizer_suite_timeouts.py` refuses a test run in a
+job with a `-Db_sanitize=` build that passes no multiplier or another value.

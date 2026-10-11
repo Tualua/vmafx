@@ -289,6 +289,13 @@ jobs:
             -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}" \
             -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
+      - name: Prefetch Go modules for the suite
+        if: steps.impact.outputs.c_core == 'true'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        shell: bash
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run unit tests under sanitizer
         if: steps.impact.outputs.c_core == 'true'
         # ADR-0347: replace the previous `--suite=unit` invocation
@@ -369,8 +376,11 @@ jobs:
             echo "::error::ADR-0347 test enumeration produced empty list for sanitizer=${{ matrix.sanitizer }}" >&2
             exit 1
           fi
+          # --timeout-multiplier 3: the suite's timeouts are sized for an
+          # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
           # shellcheck disable=SC2086
-          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs \
+            --timeout-multiplier 3 $TESTS
 
   # ===== DNN / tiny-AI gate =====
   # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn
@@ -1109,6 +1119,12 @@ jobs:
             -Dcpp_args=-fprofile-update=atomic \
             -Dwerror=true $(../scripts/ci/werror-args.sh true)
           ninja -C build-coverage
+      - name: Prefetch Go modules for the suite
+        if: steps.impact.outputs.golden_harness == 'true'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run meson unit suite (with gcov counters)
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
@@ -1393,6 +1409,11 @@ jobs:
               -Dwerror=true $(../scripts/ci/werror-args.sh true)
             ninja -C build-coverage-gpu
           '
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run meson unit suite
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise

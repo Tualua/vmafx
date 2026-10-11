@@ -75,17 +75,12 @@ jobs:
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-bad
 
-      # The 576x324 Netflix pair (D24), fetched the way the Python harness
-      # fetches its fixtures (compat/python-vmaf/config.py, VMAF_RESOURCE_ROOT).
+      # The 576x324 Netflix pair (D24), fetched by the script every other job
+      # uses: md5 checked, a transient failure of the host retried for minutes.
       - name: Fetch the 576x324 test pair
-        run: |
-          set -euo pipefail
-          root="https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv"
-          mkdir -p python/test/resource/yuv
-          for name in src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv; do
-            curl --fail --location --silent --show-error --max-time 300 \
-              -o "python/test/resource/yuv/$name" "$root/$name"
-          done
+        run: >-
+          bash scripts/test/fetch-test-yuvs.sh
+          src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv
 
       # CPU build, no ONNX Runtime and no LTO: the consumers only need the C API.
       - name: Build and install libvmaf (this commit)

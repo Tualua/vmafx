@@ -502,6 +502,14 @@ jobs:
       # test_libvmaf_deprecation) run the build's own compiler, `icx` on the Intel
       # LLVM leg: source the oneAPI environment as the build step does and keep
       # PATH through sudo, whose secure_path drops it.
+      - name: Prefetch Go modules for the suite (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: >-
+          sudo -E PATH="$PATH" "$(command -v python3)"
+          scripts/ci/prefetch_go_modules.py
       - name: Run tests (Linux)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -514,6 +522,12 @@ jobs:
             --no-rebuild --print-errorlogs
 
       # ── Tests (macOS) ────────────────────────────────────────────────
+      - name: Prefetch Go modules for the suite (macOS)
+        if: matrix.os == 'macos-latest'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run tests (macOS)
         if: matrix.os == 'macos-latest'
         run: >-
