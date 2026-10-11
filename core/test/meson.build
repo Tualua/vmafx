@@ -1541,6 +1541,13 @@ if vmaf_default_library != 'shared'
     test('test_compat_conformance_planted_uncovered', test_compat_conformance,
         env : ['VMAF_COMPAT_PLANT=uncovered'], should_fail : true, suite : ['fast'],
         timeout : 300)
+    # A value that names no plant is refused before a scenario starts: a run's
+    # scratch files are named after its plant, and only the two names above
+    # (and none) may reach a file name. Such a value used to run as a plain,
+    # passing run with the value in its file names.
+    test('test_compat_conformance_unknown_plant', test_compat_conformance,
+        env : ['VMAF_COMPAT_PLANT=unknown'], should_fail : true, suite : ['fast'],
+        timeout : 300)
 endif
 test_vmafx_sha256 = executable('test_vmafx_sha256',
     ['test.c', 'test_vmafx_sha256.c', '../src/vmafx/sha256.c'],
