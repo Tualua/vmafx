@@ -21,7 +21,10 @@ constexpr unsigned vmaf_next_fex_capacity(unsigned capacity) noexcept
 {
     constexpr std::uintmax_t count_limit = UINT_MAX / 2u;
     constexpr std::uintmax_t bytes_limit = (SIZE_MAX / sizeof(VmafFeatureExtractorContext *)) / 2u;
-    constexpr auto limit = static_cast<unsigned>(std::min(count_limit, bytes_limit));
+    // (std::min)(...): <windows.h> defines min as a function-like macro and is
+    // read before this header on Windows; the parentheses keep the name from
+    // being expanded (MSVC C2589 otherwise).
+    constexpr auto limit = static_cast<unsigned>((std::min)(count_limit, bytes_limit));
     if (capacity == 0 || capacity > limit)
         return 0;
     return capacity * 2u;
