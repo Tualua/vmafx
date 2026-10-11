@@ -95,6 +95,25 @@ class LintExceptionsTests(unittest.TestCase):
         self.write("spdx", ENTRY.format(expires="2026-12-31") * 2)
         self.assertIn("declared twice", "\n".join(self.findings()))
 
+    def test_two_jobs_of_one_workflow_are_two_entries(self) -> None:
+        one = ENTRY.format(expires="2026-12-31")
+        self.write("hosted-runner-label", one + 'job = "a"\n' + one + 'job = "b"\n')
+        self.assertEqual(self.findings(), [])
+
+    def test_one_job_declared_twice_is_refused(self) -> None:
+        one = ENTRY.format(expires="2026-12-31") + 'job = "a"\n'
+        self.write("hosted-runner-label", one * 2)
+        self.assertIn("hosted-runner-label: a/b.c (a): declared twice", self.findings())
+
+    def test_entries_without_the_part_key_are_one_entry_per_file(self) -> None:
+        self.write("hosted-runner-label", ENTRY.format(expires="2026-12-31") * 2)
+        self.assertIn("hosted-runner-label: a/b.c: declared twice", self.findings())
+
+    def test_part_key_belongs_to_its_rule_only(self) -> None:
+        one = ENTRY.format(expires="2026-12-31")
+        self.write("spdx", one + 'job = "a"\n' + one + 'job = "b"\n')
+        self.assertIn("spdx: a/b.c: declared twice", self.findings())
+
     def test_unparseable_file_is_refused(self) -> None:
         self.write("spdx", "[[exception\n")
         self.assertIn("unreadable", "\n".join(self.findings()))

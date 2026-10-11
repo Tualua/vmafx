@@ -19,6 +19,11 @@ fails on a missing field, a rule that differs from the file name, a path that is
 tracked file, a duplicate, and an expiry further out than ``MAX_DAYS`` (an exception is a
 debt with a due date, not a tier).
 
+A rule has one entry per file. A rule listed in ``PART_KEYS`` excepts one named part of a
+file instead (``hosted-runner-label``: one job of a workflow file, key ``job``), so two
+entries of that rule may name the same file when their parts differ; the same file and part
+twice is a duplicate.
+
 Usage:
     lint_exceptions.py check
     lint_exceptions.py filter <rule> -- <file>...   # print the files the rule still reads
@@ -44,6 +49,8 @@ CHECK_ARGC = 2  # lint_exceptions.py check
 FILTER_ARGC = 4  # lint_exceptions.py filter <rule> --
 REQUIRED = ("path", "reason", "expires")
 GLOB_CHARS = frozenset("*?[]{}")
+# Rules whose entry excepts one part of a file, and the key that names the part.
+PART_KEYS = {"hosted-runner-label": "job"}
 
 
 @dataclass(frozen=True)
@@ -54,6 +61,7 @@ class Entry:
     path: str
     reason: str
     expires: dt.date
+    part: str = ""  # the part of the file a ``PART_KEYS`` rule excepts, else empty
 
 
 def today() -> dt.date:
@@ -84,7 +92,9 @@ def load(root: Path = ROOT) -> tuple[list[Entry], list[str]]:
                     f"{where}: rule {raw['rule']!r} differs from the file name {rule!r}"
                 )
                 continue
-            entries.append(Entry(rule, str(raw["path"]), str(raw["reason"]), raw["expires"]))
+            key = PART_KEYS.get(rule)
+            part = str(raw.get(key, "")) if key else ""
+            entries.append(Entry(rule, str(raw["path"]), str(raw["reason"]), raw["expires"], part))
     return entries, findings
 
 
@@ -105,12 +115,12 @@ def tracked_files(root: Path = ROOT) -> frozenset[str]:
 def validate(entries: list[Entry], tracked: frozenset[str], now: dt.date) -> list[str]:
     """Findings for a parsed list: stale, expired, over-long, pattern or duplicate entries."""
     findings: list[str] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for entry in entries:
-        label = f"{entry.rule}: {entry.path}"
-        if (entry.rule, entry.path) in seen:
+        label = f"{entry.rule}: {entry.path}" + (f" ({entry.part})" if entry.part else "")
+        if (entry.rule, entry.path, entry.part) in seen:
             findings.append(f"{label}: declared twice")
-        seen.add((entry.rule, entry.path))
+        seen.add((entry.rule, entry.path, entry.part))
         if (
             GLOB_CHARS & set(entry.path)
             or entry.path.startswith("/")

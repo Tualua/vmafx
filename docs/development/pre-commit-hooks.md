@@ -301,8 +301,10 @@ An entry stops holding on its `expires` date: the file is read again and the hoo
 fails on it, and `check-lint-exceptions` (always run, also in CI's
 `pre-commit run --all-files`) names the entry. It also fails on a missing field, a
 rule that differs from the file name, a path that is a pattern or not tracked, a
-duplicate, and an expiry more than 400 days out. Fix the file when you can; renew
-an entry only with its reason still true.
+duplicate, and an expiry more than 400 days out. A rule has one entry per file;
+`hosted-runner-label` has one per job of a workflow file (key `job`), so there the
+same file and job twice is the duplicate. Fix the file when you can; renew an entry
+only with its reason still true.
 
 ```bash
 python3 scripts/ci/lint_exceptions.py check
@@ -422,14 +424,16 @@ expires = 2026-12-01
 
 The end date is at most 90 days out and still holds on the day itself. An entry
 fails the check when it has expired, when its job no longer names the label,
-when it names a floating label, or when a key is missing. The shared list
-accepts one entry per file and rule, so one workflow file carries one fallback
-at a time.
+when it names a floating label, or when a key is missing. The list takes one
+entry per job, so two jobs of one workflow file can each carry a fallback; the
+same file and job twice is refused as a duplicate. The jobs that carry one today
+are listed under [Hosted Linux image](ci-runners.md#hosted-linux-image).
 
 `test-check-hosted-runner-labels` keeps positive, negative and boundary cases
 for the script: a floating label as a literal, a matrix value, an expression
 fallback, a printed matrix and text outside `jobs`; an older image without a
-declaration; an expired, stale or malformed fallback; an unreadable workflow;
+declaration; an expired, stale or malformed fallback; two fallbacks in one
+workflow, and the same workflow with one of them removed; an unreadable workflow;
 the read bounds (512 workflows, 256 entries, 200 000 nodes per job), each of
 which is a finding and never a silent cut. Run the script alone with:
 

@@ -121,6 +121,15 @@ class HostedRunnerLabelTest(unittest.TestCase):
         res = self.assert_accepted()
         self.assertIn("1 dated fallback(s)", res.stdout)
 
+    def test_two_declared_fallbacks_in_one_workflow_pass(self) -> None:
+        self.write(OLDER.replace("[ubuntu-26.04, ubuntu-26.04-arm]", "[ubuntu-24.04]"))
+        one = FALLBACK.format(expires="2026-11-30")
+        self.declare(one + one.replace('"build"', '"arm"'))
+        res = self.assert_accepted()
+        self.assertIn("2 dated fallback(s)", res.stdout)
+        self.declare(one)
+        self.assert_refused("job 'arm': names 'ubuntu-24.04' without a dated fallback")
+
     # Negative: floating labels, wherever a workflow can spell one.
 
     def test_floating_literal_refused(self) -> None:
