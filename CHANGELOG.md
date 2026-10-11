@@ -882,6 +882,19 @@
   arithmetic as `picture_copy()`); host frames are read as before.
 
 
+- **Every hosted Linux CI job names its image by version (ADR-3251).** GitHub moves the
+  `ubuntu-latest` label from Ubuntu 24.04 to 26.04 in a rollout from 2026-10-19 to 2026-11-19. The
+  63 jobs and the one runner-pool fallback that still named the floating label now name
+  `ubuntu-26.04`, as the other hosted Linux jobs already did, and the four licence-companion jobs
+  move from `ubuntu-24.04` to it. `verify-native-artifacts` stays on `ubuntu-24.04` on purpose: it
+  proves that the native Linux bundle loads on the oldest hosted image (ADR-1354). A new check,
+  `scripts/ci/check_hosted_runner_labels.py` (pre-commit hook `check-hosted-runner-labels`, third
+  step of `make lint-actions`), refuses a floating label and an older image without a declaration.
+  A job that needs an older image for a while is declared in
+  `.config/lint-exceptions.d/hosted-runner-label.toml` with an end date at most 90 days out.
+  ADR-3251 supersedes ADR-0802. No score, symbol, option or published artefact changes.
+
+
 - **The Windows icx-cl and icpx builds no longer print an override warning on every compile.** The strict floating-point line of `intel-llvm-cl` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` instead of `/fp:precise /Qfma-`, and the SYCL compiles and device link of the MSVC build take the `-fno-fast-math -fcomplex-arithmetic=full` reset the Linux icpx already has. Same arithmetic: equal compiler front-end arguments apart from the complex-arithmetic token, equal predefined macros, byte-identical objects and device bitcode ([Research-2170](docs/research/2170-windows-strict-fp-spelling-2026-10-07.md), [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
 
 
