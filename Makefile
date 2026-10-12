@@ -564,13 +564,18 @@ CLANG_FORMAT_FILES = git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.
 	| grep -v '^core/src/rust/include/' \
 	| python3 scripts/ci/pelorus_mirror.py filter
 
+# Shell files `make format` and `make format-check` hand to shfmt: every tracked `.sh`
+# but the declared exceptions (.config/lint-exceptions.d/shfmt.toml), as the shfmt hook
+# of .pre-commit-config.yaml reads them.
+SHFMT_FILES = python3 scripts/ci/lint_exceptions.py filter shfmt -- $$(git ls-files '*.sh')
+
 # Formatters — writes changes.
 format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$($(CLANG_FORMAT_FILES)) || true
 	@command -v black >/dev/null && black . 2>/dev/null || true
 	@command -v ruff >/dev/null && ruff check --fix-only --quiet . || true
-	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
+	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$($(SHFMT_FILES)) || true
 
 # Formatters — check-only (CI gate, no writes).
 format-check:
@@ -581,7 +586,7 @@ format-check:
 	$(call require-tool,ruff,make lint-tools)
 	ruff check --select I .
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
-	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
+	shfmt -d -i 2 -ci $$($(SHFMT_FILES))
 
 # Security scan (semgrep custom + CERT-C + CWE Top 25).
 sec:

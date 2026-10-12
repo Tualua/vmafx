@@ -52,7 +52,6 @@ extend-exclude = [
   ".config/hiss/testdata/HISS-04/python/negative/loc-at-cap-60.py",
   ".config/hiss/testdata/HISS-04/python/positive/loc-def-over-cap.py",
   ".config/hiss/testdata/HISS-08/python/positive/eval-call.py",
-  ".config/agent/hooks/block_evasion.py",
   "tools/figures/mkdocs_hook.py",
 ]
 
