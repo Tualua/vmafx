@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import importlib.util
 import json
 import unittest
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -189,6 +190,77 @@ class RepositorySecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "VMAFx/vmafx master"):
                 CHECK.inspect(self.policy)
             fetch.assert_not_called()
+
+
+class BypassModeExceptionTests(unittest.TestCase):
+    """A bypass mode other than pull-request mode holds only under a dated exception."""
+
+    PATH = ".github/repository-security-policy.json"
+    DAY = dt.date(2026, 10, 12)
+
+    def setUp(self) -> None:
+        self.policy = json.loads((ROOT / self.PATH).read_text())
+        self.listed = CHECK.lint_exceptions.Entry
+
+    def entry(self, expires: dt.date, rule: str = "", path: str = "") -> Any:
+        return self.listed(rule or CHECK.BYPASS_MODE_RULE, path or self.PATH, "reason", expires)
+
+    def findings(self, entries: list[Any], day: dt.date | None = None) -> list[str]:
+        return cast(list[str], CHECK.bypass_mode_findings(self.policy, entries, day or self.DAY))
+
+    def set_mode(self, mode: str) -> None:
+        for actor in self.policy["ruleset"]["bypass_actors"]:
+            actor["bypass_mode"] = mode
+
+    def tracked(self) -> list[Any]:
+        entries, malformed = CHECK.lint_exceptions.load(ROOT)
+        self.assertEqual(malformed, [])
+        return [entry for entry in entries if entry.rule == CHECK.BYPASS_MODE_RULE]
+
+    def test_the_tracked_policy_holds_under_the_tracked_exception(self) -> None:
+        own = self.tracked()
+        self.assertEqual([entry.path for entry in own], [self.PATH])
+        self.assertEqual(self.findings(own, CHECK.lint_exceptions.today()), [])
+
+    def test_the_tracked_exception_ends_on_its_expiry_date(self) -> None:
+        own = self.tracked()
+        last = own[0].expires
+        self.assertEqual(self.findings(own, last), [])
+        self.assertIn("bypass_mode always", " ".join(self.findings(own, last + dt.timedelta(1))))
+
+    def test_a_mode_other_than_pull_request_without_an_entry_is_a_finding(self) -> None:
+        found = " ".join(self.findings([]))
+        self.assertIn("bypass_mode always", found)
+        self.assertIn("solo-repository-bypass-mode.toml", found)
+
+    def test_an_expired_entry_does_not_hold(self) -> None:
+        yesterday = self.DAY - dt.timedelta(1)
+        self.assertIn("unexpired", " ".join(self.findings([self.entry(yesterday)])))
+        self.assertEqual(self.findings([self.entry(self.DAY)]), [])
+
+    def test_an_entry_of_another_rule_or_file_does_not_hold(self) -> None:
+        later = self.DAY + dt.timedelta(30)
+        for other in (
+            self.entry(later, rule="scorecard-branch-protection"),
+            self.entry(later, path=".github/CODEOWNERS"),
+        ):
+            with self.subTest(other=other):
+                self.assertIn("unexpired", " ".join(self.findings([other])))
+
+    def test_pull_request_mode_needs_no_entry_and_refuses_a_stale_one(self) -> None:
+        self.set_mode("pull_request")
+        self.assertEqual(self.findings([]), [])
+        stale = self.findings([self.entry(self.DAY + dt.timedelta(30))])
+        self.assertIn("stale entry", " ".join(stale))
+
+    def test_the_checker_fails_without_the_exception(self) -> None:
+        with (
+            patch.object(CHECK, "inspect", return_value=([], {})),
+            patch.object(CHECK.sys, "argv", ["check_repository_security.py"]),
+        ):
+            self.assertEqual(CHECK.main(), 0)
+            with patch.object(CHECK.lint_exceptions, "load", return_value=([], [])):
+                self.assertEqual(CHECK.main(), 1)
 
 
 if __name__ == "__main__":

@@ -912,7 +912,7 @@ repos:
         name: Repository security policy failure controls
         entry: python3 -B scripts/dev/tests/test_repository_security.py
         language: system
-        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.config/lint-exceptions\.d/solo-repository-bypass-mode\.toml|scripts/ci/lint_exceptions\.py|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

@@ -35,6 +35,34 @@ nobody who could satisfy it and nothing merged for a week
 !!! note
     Remove the bypass as soon as a second maintainer can review.
 
+#### Bypass mode: a dated exception
+
+The standard for a single-maintainer repository is bypass mode `pull_request`:
+the maintainer merges a pull request without an approval and cannot push to
+`master` outside one. The policy file declares mode `always`, because the
+[merge train](merge-train.md) lands by direct push and adds a render commit
+that no pull request owns
+([ADR-3273](../adr/3273-solo-bypass-mode-dated-exception.md)).
+
+That deviation is one entry of the exception list:
+
+| Fact | Value |
+| --- | --- |
+| Entry | `.config/lint-exceptions.d/solo-repository-bypass-mode.toml` |
+| File it covers | `.github/repository-security-policy.json` |
+| Expiry | 2027-01-09 |
+| Ends when | the train merges through the forge API and the policy declares `pull_request` |
+
+The security checker holds the two files together. It fails when the policy
+declares a mode other than `pull_request` and the list has no unexpired entry
+for it, and it fails when the entry is still there after the mode became
+`pull_request`. This part needs no network:
+
+```bash
+python3 -B scripts/dev/tests/test_repository_security.py
+python3 scripts/ci/lint_exceptions.py check
+```
+
 ## One declaration of the ruleset
 
 The [policy file](../../.github/repository-security-policy.json) is the only
