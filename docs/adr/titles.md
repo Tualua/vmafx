@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1363), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1364), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5463,3 +5463,7 @@ Every ADR, one heading each (1363), so the site search finds an ADR by its title
 ## ADR-3272: Move the praetor pin to 9bf502ec6ce5 and run the hooks through its engine launcher
 
 [3272-praetor-pin-9bf502ec-engine-launcher](3272-praetor-pin-9bf502ec-engine-launcher.md)
+
+## ADR-3273: Bypass mode `always` is a dated exception to the solo-repository standard
+
+[3273-solo-bypass-mode-dated-exception](3273-solo-bypass-mode-dated-exception.md)
