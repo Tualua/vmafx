@@ -265,10 +265,9 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 
 ## 12. Hard rules, worktree discipline and rebase invariants
 
-Three bodies of binding rules live on own pages -> harness stays inside 300-line budget per compiled vendor context file. Not optional: import lines below pull them in for agents expanding imports; every other agent follows links.
+Three bodies of binding rules live on own pages -> harness stays inside 300-line budget per compiled vendor context file. Not optional. Hard rules: import line below pulls them in for agents expanding imports; every other agent follows link. Worktree discipline + rebase invariants: links only, never imported. Invariants page = 97 kB, an import loads it every turn of every session ([ADR-1249](docs/adr/1249-praetor-governance-adoption.md) status update 2026-10-12) -> read its section before rebase, upstream sync, conflict resolution, or edit of a file it cites.
 
 @docs/development/agent-hard-rules.md
-@docs/development/rebase-sensitive-invariants.md
 
 - [Agent hard rules](docs/development/agent-hard-rules.md) — golden-data gate, branch + commit rules, same-PR documentation requirement, licence headers, container preference, `docs/state.md` bug tracking.
 - [Worktree discipline](docs/development/agent-worktree-discipline.md) — isolated agent worktrees, [ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md) host-side hard guard.

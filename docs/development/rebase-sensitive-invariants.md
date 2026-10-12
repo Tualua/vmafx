@@ -2,7 +2,10 @@
 # Rebase-sensitive invariants
 
 Cross-package invariants that any upstream-sync or rebase agent must preserve.
-Referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness. Per-subtree
+The canonical [`AGENTS.md`](../../AGENTS.md) harness links this page and does
+not import it: at its size an import would load it into every turn of every
+agent session. Read the section for the files you touch before a rebase, an
+upstream sync, a conflict resolution or an edit of a file cited here. Per-subtree
 detail (the load-bearing reasons and mechanics) lives in the `AGENTS.md` under
 each subtree; this page is the index. When a rebase touches a cited translation
 unit, read that subtree harness before resolving conflicts. A subtree
