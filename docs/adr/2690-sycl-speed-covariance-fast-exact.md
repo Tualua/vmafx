@@ -51,7 +51,7 @@ The estimate scales the measured A cost (about 4.7 cycles per instruction: 82 SI
 
 ## Measured outcome
 
-Measured on an Arc A380 (xe driver) with QSV zero-copy on a 3840x1600 10-bit segment and `vmaf_v1.0.16_3d0h`, on the fork branch that carried A and B (`perf/sycl-zerocopy-throughput`, Tualua/vmafx). Three interleaved, rotated rounds, video only, uninstrumented, with one unrecorded warm-up per round. The decision metric is the filter's GPU time per frame.
+Measured on an Arc A380 (i915 driver, compute-runtime 26.35.39758.10, kernel 6.19.14) with QSV zero-copy on a 3840x1600 10-bit segment and `vmaf_v1.0.16_3d0h`, on the fork branch that carried A and B (`perf/sycl-zerocopy-throughput`, Tualua/vmafx). Three interleaved, rotated rounds, video only, uninstrumented, with one unrecorded warm-up per round. The decision metric is the filter's GPU time per frame.
 
 | Build | GPU ms per frame, median of 3 | Over the pre-fix kernel |
 |---|---|---|
