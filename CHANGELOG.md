@@ -1470,6 +1470,15 @@
   encode (two tests failed on that, depending on the order they ran in).
 
 
+- Tests: scratch repositories built after `scripts/lib/clean-git-env.sh` no longer
+  start git's automatic maintenance. A commit in such a repository started a
+  detached `git maintenance run --auto`, whose repack deleted loose objects while
+  `scripts/ci/tests/test-default-model-single-source.sh` copied the repository, and
+  `Tooling Tests` failed intermittently with `cp: cannot stat .git/objects/..`. The
+  helper now sets `maintenance.auto=false` and `gc.auto=0`, and
+  `scripts/ci/test_git_fixture_isolation.py` fails when it stops doing so.
+
+
 - **`motion` was NaN in every row of every extracted feature table.** libvmaf emits no
   `integer_motion` key; the first-order motion score is `VMAF_integer_feature_motion_sad_score`.
   `ai/data/feature_extractor.py` now reads it, so the `motion` column of `FULL_FEATURES` holds values.
