@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1368), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1369), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5483,3 +5483,7 @@ Every ADR, one heading each (1368), so the site search finds an ADR by its title
 ## ADR-3292: Restart the release line at 0.1.0; 1.0.0 becomes the first stable release
 
 [3292-release-line-restart-0x](3292-release-line-restart-0x.md)
+
+## ADR-3293: Every owed required context must succeed; absent, skipped and neutral fail
+
+[3293-aggregator-owed-contexts-must-succeed](3293-aggregator-owed-contexts-must-succeed.md)
