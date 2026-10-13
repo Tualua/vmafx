@@ -1064,6 +1064,14 @@
   hook and notes, and the DevContainer bundle. The HISS baseline stays at 0.
 
 
+- **The praetor pin moves to `6622361940dc`
+  ([ADR-3285](docs/adr/3285-praetor-pin-66223619.md)).** CI and the governance hooks run praetor's
+  current main. The register skills `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` are praetor's text at that commit, wrapped so they pass
+  markdownlint's default rules; their content is unchanged. `praetorctl audit` reports the same
+  warnings as at `9bf502ec6ce5`.
+
+
 - **The praetor governance engine moves from `afb739ed81f3` to `7458a220e1c9`
   ([ADR-2440](docs/adr/2440-praetor-pin-7458a220.md)).** The emitted `praetor-api.yml` and
   `praetor-docs.yml` now push only on `master`, listen for `ready_for_review` and stop a draft
@@ -1108,6 +1116,15 @@
   Netflix's behaviour as a named compatibility mode the golden gate runs in, and that the RC9
   retrain trains on reference-exact features. The roadmap, the release page and the retrain
   runbook say so. No extractor or score changes yet.
+
+
+- **Release line restarts at `0.1.0`** ([ADR-3292](docs/adr/3292-release-line-restart-0x.md)):
+  the next release is `v0.1.0`, followed by plain 0.x minor releases without
+  candidates; 1.0.0 becomes the first stable release (Rust core phase P3 plus
+  a frozen public interface), with candidates from `v1.0.0-rc.4`.
+  `v1.0.0-rc.1` to `rc.3` stay published and are marked withdrawn. The Go
+  module retracts them; through the public module proxy, pin `@v0.1.0`
+  explicitly (see [the release guide](docs/development/release.md)).
 
 
 - **A pull request no longer carries the rendered changelog, ADR index or rebase
@@ -1536,6 +1553,9 @@
   (`scripts/dev/find-windows-minmax.py`).
 
 
+- **A pull request that changes core C or C++ is compiled with MSVC before it lands ([ADR-3279](docs/adr/3279-msvc-sycl-leg-on-light-tier.md)).** A light-tier pull request ran no Windows compile of the core, so code that only MSVC or the Windows SDK headers refuse reached `master` (pull request #2724, fixed by #2740). `Windows MSVC+SYCL` now runs on a light-tier pull request whose diff touches C, C++, header or Meson files under `core/` (selector `windows_msvc_sycl`); `Windows MSVC+CUDA` and `Windows ARM64 MSVC` stay full-tier. The `ci: full` escalation no longer stops at a cancel that GitHub answers with 409: it re-runs every workflow it can, names each one it could not, and then fails.
+
+
 - The last MSVC warnings of the first Windows run after the zero-warning series
   are fixed: the CUDA / HIP decouple helpers and the x86 motion round constant
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
@@ -1761,6 +1781,13 @@
 
 
 ### Security
+
+- **A pull request from a fork never runs on the self-hosted `arc-runners` pool.** The Sanitizers
+  and `Cppcheck (Whole Project)` jobs pick the pool only for a push, a dispatch, a schedule or a
+  pull request from a branch of this repository; a fork's pull request runs on `ubuntu-26.04`
+  whatever `ARC_RUNNERS_ENABLED` says. The `Tooling Tests` check refuses any other form of the
+  selector ([ADR-3286](../../docs/adr/3286-arc-runners-fork-guard.md)).
+
 
 - **`golang.org/x/net` moves from v0.59.0 to v0.60.0 and the Go toolchain from 1.27.1 to 1.27.2**
   for GO-2026-6617 (an HTTP/2 server crash from an HPACK encoder race) and twelve standard-library

@@ -8,6 +8,62 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Release line restart at 0.1.0 (2026-10-12)
+
+- `release-please-config.json`: root package `versioning: default`,
+  `prerelease: false`, `bump-minor-pre-major: true`,
+  `bump-patch-for-minor-pre-major: false`, one-shot `release-as: "0.1.0"`
+  (removed by the rollover in the release-merge PR). **On sync**: upstream has
+  no release-please; nothing to merge. Do not restore `versioning: prerelease`
+  before a 1.0.0 candidate line opens (ADR-3292, ADR-1348).
+- `scripts/release/check-one-shot-fields.sh` replaces the inline step of
+  `.github/workflows/rule-enforcement.yml`; its test is
+  `scripts/release/tests/test-check-one-shot-fields.sh`.
+- Root `go.mod` retract block covers rc.1 to rc.3, one reason per entry.
+- No engine source changes; SONAMEs unchanged.
+
+## One MSVC leg on light-tier pull requests that change core C or C++ (2026-10-12)
+
+`ci/msvc-sycl-light-leg`, [ADR-3279](adr/3279-msvc-sycl-leg-on-light-tier.md). A rebase or sync
+keeps, in `.github/workflows/libvmaf-build-matrix.yml`, the job `impact`
+(`Plan MSVC leg impact`), the `if` of `windows-gpu-build` with all three terms (full tier, a
+failed planner, the selector `windows_msvc_sycl`) behind `!cancelled()`, the `tier` key of both
+matrix rows (`Windows MSVC+SYCL` is `light`, `Windows MSVC+CUDA` is `full`) and the first step
+`leg`, whose output `run` gates every step after the checkout. The checkout itself stays
+unconditional and shallow (`fetch-depth: 1`): the checkout-ordering gate counts no checkout
+that carries an `if`. A step added to that job takes
+`if: steps.leg.outputs.run == 'true'`, or it runs on the CUDA row of a light-tier pull request
+without a build tree. `.github/ci-tier.json` keeps `Windows MSVC+SYCL` in `full_only` and in
+`own_input_lanes`; `.github/ci-impact.json` keeps `windows_msvc_sycl` as `own_paths_only`. In
+`scripts/ci/ci_escalate.py`, `cancel()` treats 409 as "already completed" and `rerun_all()`
+carries on after a run it could not re-run and returns the count: do not bring back a loop that
+ends at the first refused request. `scripts/ci/tests/test_ci_routing_contract.py` (ten planted
+defects), `scripts/ci/tests/test_ci_impact.py` (`MsvcLegRouting`) and
+`scripts/ci/tests/test_ci_escalate.py` (`RerunAll`) fail when one of these is lost.
+
+## ARC runner selector refuses forks (2026-10-12)
+
+`ci/arc-fork-guard`, [ADR-3286](adr/3286-arc-runners-fork-guard.md).
+
+- `.github/workflows/tests-and-quality-gates.yml` (Sanitizers) and
+  `.github/workflows/lint-and-format.yml` (Cppcheck): the `runs-on` selector
+  carries `(github.event_name != 'pull_request' ||
+  github.event.pull_request.head.repo.full_name == github.repository)` between
+  the variable and `'arc-runners'`. An upstream sync never touches these
+  fork-only jobs' selectors; a rebase that rewrites either line keeps the guard.
+- `scripts/ci/test_self_hosted_runner_workflow_contract.py`:
+  `ArcForkGuardContract` admits only that form; a job moved to the pool copies
+  the whole expression.
+
+## Praetor pin 6622361940dc (2026-10-12)
+
+`chore/praetor-pin-66223619`, [ADR-3285](adr/3285-praetor-pin-66223619.md). A rebase or sync keeps
+`PRAETOR_REF` at `6622361940dc...` in `.github/workflows/standards-gate.yml`. The six register
+skill files under `.agents/skills/` and `.claude/skills/` are praetor's text at that pin: take them
+from one side of a conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the
+pin>` in a throwaway clone; never re-wrap or edit them by hand. The launcher rules of the
+`9bf502ec6ce5` entry still hold.
+
 ## Praetor pin 9bf502ec6ce5 and the engine launcher in the hooks (2026-10-12)
 
 `build/engine-launcher-adoption`, [ADR-3272](adr/3272-praetor-pin-9bf502ec-engine-launcher.md). A

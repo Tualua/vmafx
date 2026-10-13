@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1364), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1368), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5467,3 +5467,19 @@ Every ADR, one heading each (1364), so the site search finds an ADR by its title
 ## ADR-3273: Bypass mode `always` is a dated exception to the solo-repository standard
 
 [3273-solo-bypass-mode-dated-exception](3273-solo-bypass-mode-dated-exception.md)
+
+## ADR-3279: One MSVC build leg runs on light-tier pull requests that change core C or C++
+
+[3279-msvc-sycl-leg-on-light-tier](3279-msvc-sycl-leg-on-light-tier.md)
+
+## ADR-3285: Move the praetor pin to 6622361940dc and refresh the register skills
+
+[3285-praetor-pin-66223619](3285-praetor-pin-66223619.md)
+
+## ADR-3286: Pull requests from forks never reach the ARC runner pool
+
+[3286-arc-runners-fork-guard](3286-arc-runners-fork-guard.md)
+
+## ADR-3292: Restart the release line at 0.1.0; 1.0.0 becomes the first stable release
+
+[3292-release-line-restart-0x](3292-release-line-restart-0x.md)
