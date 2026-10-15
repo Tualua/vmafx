@@ -8,6 +8,275 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Release provenance assets (2026-10-14)
+
+- `.github/workflows/supply-chain.yml` normalizes and uploads `vmafx-build-provenance.intoto.jsonl`
+  and `vmaf-mcp-provenance.intoto.jsonl` as release assets alongside existing `.sigstore.json` bundles.
+- `.github/workflows/macos-tester-bundle.yml` normalizes and attaches `vmafx-tester-macos-provenance.intoto.jsonl`.
+- `.github/workflows/windows-tester-bundle.yml` normalizes and attaches `vmafx-tester-windows-provenance.intoto.jsonl`.
+- `scripts/ci/check_release_provenance_assets.py` statically validates that every workflow that
+  invokes `action-gh-release` or runs `gh release create`/`upload` writes and uploads an `.intoto.jsonl` asset.
+- **On sync**: upstream Netflix does not attach GitHub-native build-provenance bundles or in-toto
+  provenance assets to its release pipeline. When merging upstream release or packaging workflows,
+  preserve the `actions/attest-build-provenance` steps, `.intoto.jsonl` staging commands, and
+  release asset upload lists (ADR-3316).
+
+## The push aggregator leaves out scheduled runs (2026-10-15)
+
+- `foreignRun()` in `.github/workflows/required-aggregator.yml` also returns true for a
+  `schedule` workflow run. Keep the line when rebasing the aggregator; a sync that drops it
+  lets a scheduled run's skipped check run fail a master push again.
+- `scripts/ci/tests/test_aggregator_event_scope.py` guards it.
+
+## FFmpeg shared fix series v0.2.0 (2026-10-15)
+
+- `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256`
+  move to `VMAFx/ffmpeg-patches` `v0.2.0` (commit `d958384a`). The release's
+  `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and
+  `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two
+  and run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `docs/development/ffmpeg-patch-automation.md`: patch table lists 0005-0008.
+  Fork-only, nothing upstream to merge.
+
+## Pinned local image and local package installs (2026-10-14)
+
+- `Dockerfile.ffmpeg` replaces `FROM vmaf:latest` with `ARG VMAF_IMAGE_DIGEST`
+  and `FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}` to satisfy OpenSSF Scorecard
+  dependency pinning. The base image validation gate in
+  `scripts/ci/check-container-image-references.py` binds this digest-based FROM.
+- `.github/workflows/tests-and-quality-gates.yml` RC1 Tester Report step replaces
+  `pip install ./tools/rc1-tester` with `pip wheel` into `dist/rc1-wheel` followed
+  by `pip install --no-deps dist/rc1-wheel/*.whl` (ADR-3315).
+- `scripts/ci/check_python_dependency_locks.py` refuses non-editable plain-directory
+  and sdist installs, requiring `.whl` files with `--no-deps`.
+- **On sync**: upstream Netflix has neither `Dockerfile.ffmpeg` nor
+  `check-container-image-references.py`. Any new local package installations in
+  CI or Docker recipes must build and install `.whl` archives with `--no-deps`
+  or use `-e` with both `--no-deps` and `--no-build-isolation`.
+
+## Pull-request workflow budget and label lanes (2026-10-14)
+
+- `pr-label-lanes.yml` is the only workflow that listens for `labeled`; it
+  calls `ci-escalate.yml`, `observability-compose.yml` and `e2e-k8s.yml`
+  through `workflow_call`. **On sync**: an upstream or fork workflow that adds
+  a `pull_request` trigger goes into an existing workflow as a job, or into
+  `pr-label-lanes.yml` as a call when a label starts it.
+- `doxygen-public-api.yml`, `scorecard-policy.yml` and
+  `upstream-consumers.yml` are gone; their jobs live in `docs.yml`,
+  `security-scans.yml` and `ffmpeg-integration.yml` with the same check names.
+  **On sync**: do not bring the files back.
+- `scripts/ci/pr_workflow_budget.py` holds the count at 27 (ADR-3314).
+
+## Solo ruleset: zero reviews, pull-request bypass (2026-10-14)
+
+- `.github/repository-security-policy.json` declares ruleset 22587111 as the forge reports it: review count 0,
+  no last-push approval, bypass mode `pull_request` (ADR-3313). A rebase keeps these values; the security
+  checker compares them with the live ruleset.
+- `.config/lint-exceptions.d/solo-repository-bypass-mode.toml` is deleted. A branch that still carries it fails
+  the checker as a stale entry; drop it when rebasing.
+- No upstream file is touched.
+
+## Renovate: one manager owns the CI Python interpreter (2026-10-14)
+
+- `renovate.json` gains a regex custom manager for `PYTHON_CI_VERSION` in
+  `build-config.env` and every workflow `python-version:` pin, a package rule
+  that disables the github-actions manager's `python` (`uses-with`)
+  dependency, and a `CI Python interpreter` group rule with
+  `allowedVersions: "<3.15.0"` (ADR-3312). Fork-local file; upstream Netflix has
+  no Renovate configuration.
+- **On sync**: nothing to merge from upstream. When adding a workflow that
+  installs Python, spell the pin as `python-version: "X.Y.Z"` so the manager
+  and `check-workflow-versions.py` both read it;
+  `scripts/ci/tests/test_renovate_file_patterns.py` fails when they disagree.
+
+## Windows MSVC+CUDA CI legs build without LTO (2026-10-13)
+
+The `Windows MSVC+CUDA` row of `.github/workflows/libvmaf-build-matrix.yml` and
+the `Windows MSVC+CUDA (full)` row of `.github/workflows/build.yml` pass
+`-Db_lto=false`. Keep it when either file is rebased: with LTO each test program
+links with `/LTCG` and the job runs into its time limit. No upstream file is
+involved.
+
+## `build.yml` plans on `build_work`, not `c_core` (2026-10-13)
+
+- `.github/ci-impact.json` gains the selector `build_work`: `c_core` plus
+  `python/**`, `compat/**`, the build, pytest-timeout and tox lock files and
+  `scripts/ci/prune-corrupt-fixtures.sh`. `.github/workflows/build.yml` reads it
+  in the `impact` job.
+- **On sync**: fork-only files; no upstream counterpart. A new `-r` lock,
+  `tox -c` config or `python -m pytest` target in `build.yml` adds its path;
+  `BuildWorkRouting` in `scripts/ci/tests/test_ci_impact.py` fails otherwise.
+  Against master's config (`build.yml` on `c_core`) the test file fails 26 tests.
+
+## nv-codec-headers pinned in the hosted CUDA legs (2026-10-13)
+
+- The four `Install nv-codec-headers` steps of `.github/workflows/build.yml`
+  and `.github/workflows/libvmaf-build-matrix.yml` call
+  `scripts/ci/fetch-nv-codec-headers.sh`; none clones the repository.
+- `scripts/ci/tests/test_nv_codec_headers_single_source.py` fails on a clone of
+  `nv-codec-headers` in either workflow and on any count of script calls other
+  than two per workflow. A workflow change that adds a CUDA leg updates
+  `CI_STEPS_PER_WORKFLOW` with it.
+
+## ADR claim lock independent of the working directory (2026-10-13)
+
+`scripts/adr/next-free.sh` builds its lock name from the resolved absolute
+path of the common git directory, records an owner token in the lock and
+decides each number with an exclusive claim file under `.git/adr-claims/`.
+A sync or cleanup must not bring back a lock name from the relative output of
+`git rev-parse --git-common-dir`, a release that removes a lock it does not
+own, or a claim file written without `noclobber`. The tests that clean up the
+lock (`scripts/adr/test-next-free.sh`,
+`scripts/adr/tests/test-next-free-remote-aware.sh`) compute the same name.
+`scripts/adr/tests/test-next-free-concurrent.sh` guards it.
+
+## Render-only pull request replaces the direct render push (2026-10-13)
+
+- `scripts/ci/deliverables-check.sh` accepts a diff of rendered paths only when
+  `make docs-render-check` passes on its head (ADR-3295); keep the detached
+  worktree check and the refusal of a rendered file next to any other file.
+- The master push step of the Docs job in
+  `.github/workflows/lint-and-format.yml` runs
+  `scripts/ci/check_render_on_master.py`, not `make docs-render-check`.
+- Tests: `scripts/ci/tests/test_deliverables_render_only.py`,
+  `scripts/ci/tests/test_check_render_on_master.py`.
+
+## Strict-FP policy fixtures declare no language (2026-10-13)
+
+- `core/test/test_strict_fp_compiler_args.py`: the five fixture `project()`
+  calls name no language, and `_meson_setup()` fails a fixture whose
+  `project()` does (`PROJECT_WITH_LANGUAGE`). Meson then skips compiler
+  detection in each throwaway setup.
+- **On sync**: fork-only test; no upstream counterpart. A new fixture that needs
+  a compiler object (`meson.get_compiler()`) cannot use `_meson_setup()`; give
+  it its own setup and keep the test under its 90 s limit on Windows ARM64.
+
+## CodeQL analyses every language on every event (2026-10-13)
+
+- `codeql-cpp`, `codeql-python` and `codeql-actions` in
+  `.github/workflows/security-scans.yml` run `init` and `analyze` without a
+  step-level `if:` and without the impact planner (ADR-3294).
+- The `python_lint` selector is gone from `.github/ci-impact.json`.
+- **On sync**: fork-only files; no upstream counterpart. Do not bring back an
+  impact gate on a CodeQL job: a skipped category makes GitHub's `CodeQL` check
+  neutral, which the aggregator blocks (ADR-3293).
+  `scripts/ci/test_security_workflow_contract.py` fails on such a gate.
+
+## Scratch repositories start no git maintenance (2026-10-13)
+
+`scripts/lib/clean-git-env.sh` sets `maintenance.auto=false` and `gc.auto=0`
+through `GIT_CONFIG_COUNT` next to `init.defaultBranch`. A sync that touches the
+helper keeps the three keys and the count of three;
+`test_the_fixture_helper_starts_no_background_maintenance` in
+`scripts/ci/test_git_fixture_isolation.py` fails when a commit after the helper
+starts `git maintenance run` or `git gc --auto`. No upstream file is involved.
+
+## The aggregator fails an owed context that did not succeed (2026-10-13)
+
+- `.github/workflows/required-aggregator.yml` accepts only `success` for an owed
+  required name. Absent or skipped passes only for a name the CI tier does not
+  owe (ADR-2169), a name in `pullRequestOnly` on a non-`pull_request` event, or
+  `Coverage GPU` / `SYCL Parity (Arc A380)` while their repository switch is off.
+  `releaseMustReport` is gone (ADR-3293).
+- `libvmaf-build-matrix.yml` and `tests-and-quality-gates.yml` have no
+  trigger-level `paths-ignore`; ADR-0341's docs-only filter no longer exists.
+- **On sync**: fork-only files; no upstream counterpart. Do not bring back an
+  absent-means-pass branch, `releaseMustReport` or a `paths-ignore` on a required
+  workflow. A workflow that loses its push trigger adds its names to
+  `pullRequestOnly` in the same pull request.
+  `scripts/ci/tests/test_aggregator_absent_fails.py` fails on the old aggregator
+  (9 failed with `AGGREGATOR_UNDER_TEST` pointed at `bfd2074e9`'s copy).
+
+## `persist_to_file` reads its cache under the file lock (2026-10-13)
+
+- `compat/python-vmaf/tools/decorator.py` is Netflix-inherited. The fork reads the
+  cache of `persist_to_file` through `_read_json_cache()`, and every read, the one at
+  decoration time included, runs inside `_file_lock(f"{file_name}.lock")`, the lock
+  that also covers `_write_json_cache_atomic()`. On Windows an unlocked open that
+  overlaps a peer's `os.replace` fails with `PermissionError` 13.
+- `_read_json_cache()` returns `{}` for an absent file and raises
+  `PersistCacheError` for any other read or parse error; a call no longer swallows the
+  error and overwrites the file.
+- On sync: keep the locked reads and the raising `_read_json_cache()`.
+  `test_persist_to_file_touches_cache_only_under_file_lock` and
+  `test_persist_to_file_corrupt_cache_at_call_time_raises_without_overwrite` in
+  `compat/python-vmaf/tests/test_decorator_extended.py` fail on the old form.
+
+## Release line restart at 0.1.0 (2026-10-12)
+
+- `release-please-config.json`: root package `versioning: default`,
+  `prerelease: false`, `bump-minor-pre-major: true`,
+  `bump-patch-for-minor-pre-major: false`, one-shot `release-as: "0.1.0"`
+  (removed by the rollover in the release-merge PR). **On sync**: upstream has
+  no release-please; nothing to merge. Do not restore `versioning: prerelease`
+  before a 1.0.0 candidate line opens (ADR-3292, ADR-1348).
+- `scripts/release/check-one-shot-fields.sh` replaces the inline step of
+  `.github/workflows/rule-enforcement.yml`; its test is
+  `scripts/release/tests/test-check-one-shot-fields.sh`.
+- Root `go.mod` retract block covers rc.1 to rc.3, one reason per entry.
+- No engine source changes; SONAMEs unchanged.
+
+## One MSVC leg on light-tier pull requests that change core C or C++ (2026-10-12)
+
+`ci/msvc-sycl-light-leg`, [ADR-3279](adr/3279-msvc-sycl-leg-on-light-tier.md). A rebase or sync
+keeps, in `.github/workflows/libvmaf-build-matrix.yml`, the job `impact`
+(`Plan MSVC leg impact`), the `if` of `windows-gpu-build` with all three terms (full tier, a
+failed planner, the selector `windows_msvc_sycl`) behind `!cancelled()`, the `tier` key of both
+matrix rows (`Windows MSVC+SYCL` is `light`, `Windows MSVC+CUDA` is `full`) and the first step
+`leg`, whose output `run` gates every step after the checkout. The checkout itself stays
+unconditional and shallow (`fetch-depth: 1`): the checkout-ordering gate counts no checkout
+that carries an `if`. A step added to that job takes
+`if: steps.leg.outputs.run == 'true'`, or it runs on the CUDA row of a light-tier pull request
+without a build tree. `.github/ci-tier.json` keeps `Windows MSVC+SYCL` in `full_only` and in
+`own_input_lanes`; `.github/ci-impact.json` keeps `windows_msvc_sycl` as `own_paths_only`. In
+`scripts/ci/ci_escalate.py`, `cancel()` treats 409 as "already completed" and `rerun_all()`
+carries on after a run it could not re-run and returns the count: do not bring back a loop that
+ends at the first refused request. `scripts/ci/tests/test_ci_routing_contract.py` (ten planted
+defects), `scripts/ci/tests/test_ci_impact.py` (`MsvcLegRouting`) and
+`scripts/ci/tests/test_ci_escalate.py` (`RerunAll`) fail when one of these is lost.
+
+## ARC runner selector refuses forks (2026-10-12)
+
+`ci/arc-fork-guard`, [ADR-3286](adr/3286-arc-runners-fork-guard.md).
+
+- `.github/workflows/tests-and-quality-gates.yml` (Sanitizers) and
+  `.github/workflows/lint-and-format.yml` (Cppcheck): the `runs-on` selector
+  carries `(github.event_name != 'pull_request' ||
+  github.event.pull_request.head.repo.full_name == github.repository)` between
+  the variable and `'arc-runners'`. An upstream sync never touches these
+  fork-only jobs' selectors; a rebase that rewrites either line keeps the guard.
+- `scripts/ci/test_self_hosted_runner_workflow_contract.py`:
+  `ArcForkGuardContract` admits only that form; a job moved to the pool copies
+  the whole expression.
+
+## Praetor pin 6622361940dc (2026-10-12)
+
+`chore/praetor-pin-66223619`, [ADR-3285](adr/3285-praetor-pin-66223619.md). A rebase or sync keeps
+`PRAETOR_REF` at `6622361940dc...` in `.github/workflows/standards-gate.yml`. The six register
+skill files under `.agents/skills/` and `.claude/skills/` are praetor's text at that pin: take them
+from one side of a conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the
+pin>` in a throwaway clone; never re-wrap or edit them by hand. The launcher rules of the
+`9bf502ec6ce5` entry still hold.
+
+## Praetor pin 9bf502ec6ce5 and the engine launcher in the hooks (2026-10-12)
+
+`build/engine-launcher-adoption`, [ADR-3272](adr/3272-praetor-pin-9bf502ec-engine-launcher.md). A
+rebase or sync keeps `PRAETOR_REF` at `9bf502ec6ce5...` in `.github/workflows/standards-gate.yml`,
+and keeps the seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh` and
+`scripts/githooks/state-sync.sh` on `sh .config/lefthook/engine.sh <arguments>`: a side of a
+conflict that calls `praetorctl` or `standardsctl` directly brings back the engine from `PATH`.
+`.config/lefthook/engine.sh` and `.config/praetor/engine.mk` are praetor's text. `praetorctl adopt`
+refreshes each only while it is unedited, so never edit or format them: take them from one side of a
+conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the pin>` in a
+throwaway clone. `praetorctl audit` does not compare these two files or
+`.config/agent/hooks/block_evasion.py`; it does compare `tools/figures/mkdocs_hook.py` byte for byte.
+Keep the launcher's two dated exceptions (`.config/lint-exceptions.d/shfmt.toml`, `spdx.toml`) and
+the three places that skip it for shfmt in step (the `exclude` of the `shfmt-src` hook,
+`SHFMT_FILES` in the `Makefile`, the shell branch of `scripts/githooks/pre-commit.sh`);
+`scripts/ci/tests/test_shfmt_scope.py` fails when they differ. The `PreToolUse` entries `adopt`
+writes into `.claude/settings.json` and `.codex/hooks.json` stay out of this change; they follow in
+a change of their own.
+
 ## Three hosted jobs back on ubuntu-24.04 under a dated fallback (2026-10-11)
 
 `ci/runner-2404-fallback-fallout`, [ADR-3251](adr/3251-hosted-runner-label-explicit.md). A rebase

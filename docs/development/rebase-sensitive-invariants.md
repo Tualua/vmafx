@@ -2,7 +2,10 @@
 # Rebase-sensitive invariants
 
 Cross-package invariants that any upstream-sync or rebase agent must preserve.
-Referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness. Per-subtree
+The canonical [`AGENTS.md`](../../AGENTS.md) harness links this page and does
+not import it: at its size an import would load it into every turn of every
+agent session. Read the section for the files you touch before a rebase, an
+upstream sync, a conflict resolution or an edit of a file cited here. Per-subtree
 detail (the load-bearing reasons and mechanics) lives in the `AGENTS.md` under
 each subtree; this page is the index. When a rebase touches a cited translation
 unit, read that subtree harness before resolving conflicts. A subtree
@@ -89,7 +92,8 @@ backend within it.
   `NOTICE`; no sync brings back `LICENSE-MIT` or another
   root licence file. Package licence fields name the licences of the files the
   package ships, and fork `.toml` files carry an EUPL-1.2 header. The root
-  `go.mod` keeps its `retract [v1.0.0-rc.1, v1.0.0-rc.2]`.
+  `go.mod` keeps its `retract` block: `[v1.0.0-rc.1, v1.0.0-rc.2]` (licence)
+  and `v1.0.0-rc.3` (withdrawn by the 0.x restart, [ADR-3292](../adr/3292-release-line-restart-0x.md)).
   `scripts/ci/check_licence_metadata.py` (required
   `Licence Provenance` job and a pre-commit hook) refuses each breach. See
   [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md).

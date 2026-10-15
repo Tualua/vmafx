@@ -790,8 +790,9 @@ jobs:
     # ADR-0359 — pilot job for the ARC self-hosted runner pool.
     # Variable `ARC_RUNNERS_ENABLED=true` flips this job to the in-cluster
     # `arc-runners` scale set; default `false` keeps GitHub-hosted. If the
-    # ARC pool is degraded, flip the var off and re-trigger CI.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
+    # ARC pool is degraded, flip the var off and re-trigger CI. A pull
+    # request from a fork never reaches the pool (ADR-3286).
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     # Bumped 15→30 min on 2026-05-09: GitHub-hosted runner queue
     # saturation pushed Cppcheck past 15 min on ~all PRs and master.
     # Last green run on master took 5 min; the new ceiling absorbs
@@ -962,10 +963,13 @@ jobs:
         run: make docs-fragments-check
       - name: Check the rendered changelog, ADR index and rebase notes (master push)
         # A pull request carries fragments, not the render (ADR-2197); the
-        # merge train renders each landing batch, so a master tip without the
-        # render is a push that skipped it. Red here is the report.
+        # render lands as its own render-only pull request (ADR-3295), so a
+        # master tip may wait for it. The check passes a current render,
+        # warns while one is owed for less than 24 hours, and is red for an
+        # older owed render or a last render that is not the render of its
+        # fragments.
         if: github.event_name == 'push'
-        run: make docs-render-check
+        run: python3 scripts/ci/check_render_on_master.py
       - name: Install MkDocs Material
         run: |
           pip install --require-hashes -r requirements/locks/package-build.txt

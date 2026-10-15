@@ -15,16 +15,10 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
-    # ADR-0341 / Research-0089 §3.2: skip the full 10-job test matrix
-    # (Netflix golden + sanitizers + Tiny AI + coverage + MCP smoke +
-    # Vulkan parity gates) when only documentation paths change. The
-    # Required Checks Aggregator (ADR-0313) treats "workflow not
-    # reported" as path-filter-skipped/acceptable, so paths-ignore at
-    # the trigger level does NOT break branch protection. Conservative
-    # deny-list — `python/**`, `ai/**`, `mcp-server/**`, `core/**`,
-    # `testdata/**`, `model/**` (binaries), and `.github/workflows/`
-    # all still fire the gates because the corresponding test jobs
-    # consume them as inputs.
+    # No trigger-level paths-ignore: every required job of this workflow
+    # must report on every pull request (ADR-3293), and each job selects
+    # its own work through the CI tier and the impact planner (ADR-2169,
+    # ADR-1140). ADR-0341's docs-only paths-ignore no longer exists.
   workflow_dispatch:
 
 permissions:
@@ -209,8 +203,9 @@ jobs:
     # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
     # GitHub-hosted ubuntu-26.04. If the ARC pool is degraded, set the
-    # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
+    # variable to false and re-trigger CI to fall back instantly. A pull
+    # request from a fork never reaches the pool (ADR-3286).
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -554,8 +549,9 @@ jobs:
         run: |
           python -m pip install --require-hashes \
             -r tools/rc1-tester/requirements-dev-lock.txt
-          python -m pip install --no-deps --no-build-isolation \
-            ./tools/rc1-tester
+          python -m pip wheel --no-deps --no-build-isolation \
+            --wheel-dir dist/rc1-wheel ./tools/rc1-tester
+          python -m pip install --no-deps dist/rc1-wheel/*.whl
       - name: Run RC1 tester regressions
         run: python -m pytest tools/rc1-tester/tests/ -q
       - name: Smoke installed tester launcher

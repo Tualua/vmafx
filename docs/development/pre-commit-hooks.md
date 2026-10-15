@@ -40,9 +40,21 @@ make install-hooks   # reports "left lefthook's .../pre-commit in place"
 order it stops at the first hook it did not write, for example Git LFS's
 `pre-push`.
 
-The governance checks need `praetorctl` at the engine commit pinned as
-`PRAETOR_REF` in `.github/workflows/standards-gate.yml`. A newer engine can
-fail an unchanged tree, so put the pinned build first on `PATH`:
+The governance hooks run `praetorctl` at the engine commit pinned as
+`PRAETOR_REF` in `.github/workflows/standards-gate.yml`, and they find it
+themselves. Each one calls `sh .config/lefthook/engine.sh <arguments>`. The
+launcher reads the pin and runs the engine installed under
+`${XDG_CACHE_HOME:-$HOME/.cache}/praetor/engine/<pin>`. The first hook after
+a pin move installs that engine with `go install`, so it needs the Go
+toolchain and network access once per pin (limit
+`PRAETOR_ENGINE_INSTALL_TIMEOUT` seconds, default 300). A pin the launcher
+cannot read, or an install that fails, ends the hook: no engine from `PATH`
+runs in its place. Details:
+[Moving the praetor pin](praetor-gate.md#moving-the-praetor-pin).
+
+`make verify-all` and a `praetorctl` command you type still run the engine
+on `PATH`. A newer engine can fail an unchanged tree, so for those put the
+pinned build first on `PATH`:
 
 ```bash
 ref=$(sed -n 's/^  PRAETOR_REF: //p' .github/workflows/standards-gate.yml)
@@ -95,7 +107,9 @@ The hooks run in Git for Windows' Bash. Set up a checkout once:
    activating it. The lock installs `reuse` with `charset-normalizer`, because
    reuse cannot use `python-magic` on Windows.
 3. Put lefthook v2 on `PATH`
-   (`go install github.com/evilmartians/lefthook/v2@v2.1.14`) and the pinned
+   (`go install github.com/evilmartians/lefthook/v2@v2.1.14`). The governance
+   hooks call the launcher with `sh` and install the pinned engine with Go,
+   so both must be on `PATH`. For `make verify-all`, put the pinned
    `praetorctl` first on `PATH`, as above.
 4. Install from a shell with the virtualenv active
    (`source .venv/Scripts/activate`): `lefthook install`, then
@@ -506,8 +520,10 @@ make install-hooks                      # restore the default
 Native mode preserves the formatter-only choice in
 [ADR-0924](../adr/0924-native-pre-commit-hooks.md). It runs installed
 `ruff check --fix`, `clang-format -i`, and `shfmt -w` on matching staged
-paths and restages files changed by formatters. Missing formatters print
-a notice. Its pre-commit stage does not run the framework's security,
+paths and restages files changed by formatters. It does not hand a declared
+shfmt exception to shfmt (see
+[shfmt reads every shell file](#shfmt-reads-every-shell-file)). Missing
+formatters print a notice. Its pre-commit stage does not run the framework's security,
 metadata, or agent-drift checks; use the default for those local checks.
 Commit-message validation and push checks still use the framework in
 both modes. CI uses the full framework configuration.
@@ -526,11 +542,12 @@ files left out are the **declared exceptions**,
 `.config/lint-exceptions.d/black.toml` and `.config/lint-exceptions.d/ruff.toml`:
 one tracked file per entry, with a reason and an expiry (format and rules:
 `scripts/ci/lint_exceptions.py`). Today these are the praetor-managed
-`tools/figures/mkdocs_hook.py` (ruff only: praetor ships it black-formatted
-since the pin `3a766f2d56ad`, and its two lazy imports still fail this
-repository's `PLC0415`) and `.config/agent/hooks/block_evasion.py`
-(`praetorctl audit` compares them with praetor's own bytes) and five HISS scanner
-fixtures that are a defect by design.
+`tools/figures/mkdocs_hook.py` (ruff only: `praetorctl audit` compares it with
+praetor's own bytes, praetor ships it black-formatted since the pin
+`3a766f2d56ad`, and its two lazy imports still fail this repository's
+`PLC0415`) and five HISS scanner fixtures that are a defect by design.
+`.config/agent/hooks/block_evasion.py` is no longer listed: since the pin
+`9bf502ec6ce5` it passes both tools as praetor ships it.
 
 The hook `exclude` regexes, the `extend-exclude` of `pyproject.toml` and the list
 name the same files; `test-python-format-scope` (always run) fails when they
@@ -542,6 +559,28 @@ pre-commit hook runs `ruff check --force-exclude` on every staged Python file.
 ```bash
 pre-commit run black ruff-check --all-files
 make lint-py
+```
+
+## shfmt reads every shell file
+
+The `shfmt-src` hook has no path filter: it reads every tracked shell file
+but the **declared exceptions** in `.config/lint-exceptions.d/shfmt.toml`,
+one tracked file per entry with a reason and an expiry. Today that is one
+file, praetor's hook launcher `.config/lefthook/engine.sh`. `praetorctl adopt`
+refreshes it at a pin move only while it is praetor's own text, so a
+formatter must not rewrite it
+([cordanaLLM/praetor#1282](https://github.com/cordanaLLM/praetor/issues/1282)).
+
+Three places skip the listed files: the `exclude` of the hook, the
+`SHFMT_FILES` list that `make format` and `make format-check` share, and the
+shell branch of the native hook. `test-shfmt-scope` (always run) fails when
+one of them differs from the list, when an entry is incomplete, untracked or
+past its expiry, when a listed file is shfmt-clean again (a stale entry), or
+when another shell file falls out of scope.
+
+```bash
+python3 scripts/ci/tests/test_shfmt_scope.py
+bash scripts/ci/tests/test-native-pre-commit.sh
 ```
 
 ## Regression checks

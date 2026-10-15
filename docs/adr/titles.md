@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1362), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1377), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5459,3 +5459,63 @@ Every ADR, one heading each (1362), so the site search finds an ADR by its title
 ## ADR-3251: Every hosted Linux job names its image by version; the floating label is refused
 
 [3251-hosted-runner-label-explicit](3251-hosted-runner-label-explicit.md)
+
+## ADR-3272: Move the praetor pin to 9bf502ec6ce5 and run the hooks through its engine launcher
+
+[3272-praetor-pin-9bf502ec-engine-launcher](3272-praetor-pin-9bf502ec-engine-launcher.md)
+
+## ADR-3273: Bypass mode `always` is a dated exception to the solo-repository standard
+
+[3273-solo-bypass-mode-dated-exception](3273-solo-bypass-mode-dated-exception.md)
+
+## ADR-3279: One MSVC build leg runs on light-tier pull requests that change core C or C++
+
+[3279-msvc-sycl-leg-on-light-tier](3279-msvc-sycl-leg-on-light-tier.md)
+
+## ADR-3285: Move the praetor pin to 6622361940dc and refresh the register skills
+
+[3285-praetor-pin-66223619](3285-praetor-pin-66223619.md)
+
+## ADR-3286: Pull requests from forks never reach the ARC runner pool
+
+[3286-arc-runners-fork-guard](3286-arc-runners-fork-guard.md)
+
+## ADR-3292: Restart the release line at 0.1.0; 1.0.0 becomes the first stable release
+
+[3292-release-line-restart-0x](3292-release-line-restart-0x.md)
+
+## ADR-3293: Every owed required context must succeed; absent, skipped and neutral fail
+
+[3293-aggregator-owed-contexts-must-succeed](3293-aggregator-owed-contexts-must-succeed.md)
+
+## ADR-3294: Every CodeQL language is analysed on every event
+
+[3294-codeql-every-language-every-pr](3294-codeql-every-language-every-pr.md)
+
+## ADR-3295: The render lands as its own render-only pull request
+
+[3295-render-only-pull-request](3295-render-only-pull-request.md)
+
+## ADR-3311: Stream metadata field list seeded from the Pelorus registry
+
+[3311-stream-metadata-field-list](3311-stream-metadata-field-list.md)
+
+## ADR-3312: One Renovate manager owns the CI Python interpreter
+
+[3312-renovate-python-ci-version-group](3312-renovate-python-ci-version-group.md)
+
+## ADR-3313: The solo master ruleset asks for no approval and bypasses at pull-request mode
+
+[3313-solo-ruleset-zero-reviews](3313-solo-ruleset-zero-reviews.md)
+
+## ADR-3314: Pull-request workflows stay inside the Scorecard check-suite window
+
+[3314-pr-workflow-budget-scorecard-window](3314-pr-workflow-budget-scorecard-window.md)
+
+## ADR-3315: Local images and local packages are installed pinned
+
+[3315-scorecard-pinned-local-installs](3315-scorecard-pinned-local-installs.md)
+
+## ADR-3316: Release assets carry their build provenance
+
+[3316-release-intoto-provenance](3316-release-intoto-provenance.md)

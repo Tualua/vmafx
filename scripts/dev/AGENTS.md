@@ -33,6 +33,13 @@ error API data must fail. Checker only reads; CI must never gain
 administration credentials or automatic apply path. Run its offline
 adversarial controls after every change.
 
+Policy bypass mode = `pull_request`, review count 0, no last-push approval
+(ADR-3313, supersedes ADR-3273); no exception entry. `bypass_mode_findings()`
+fails on another mode without unexpired entry of rule
+`solo-repository-bypass-mode` for policy file in `.config/lint-exceptions.d/`,
+and on stale entry while every mode is `pull_request`. Never drop the call
+from `main()`, never widen the rule to a second file.
+
 `hw_encoder_corpus.py` is long-running, append-only corpus producer. It may
 retain rows from successful quality points for diagnosis, but any encode,
 decode, score, or canonical-row failure must make process return non-zero.

@@ -119,7 +119,7 @@ repos:
     hooks:
       - id: ruff-check
         # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
-        exclude: '^(\.config/hiss/testdata/HISS-04/python/(gap/cyclomatic-high|negative/loc-at-cap-60|positive/loc-def-over-cap)\.py|\.config/hiss/testdata/HISS-08/python/positive/eval-call\.py|\.config/agent/hooks/block_evasion\.py|tools/figures/mkdocs_hook\.py)$'
+        exclude: '^(\.config/hiss/testdata/HISS-04/python/(gap/cyclomatic-high|negative/loc-at-cap-60|positive/loc-def-over-cap)\.py|\.config/hiss/testdata/HISS-08/python/positive/eval-call\.py|tools/figures/mkdocs_hook\.py)$'
         args: ["--fix"]
 
   - repo: https://github.com/scop/pre-commit-shfmt
@@ -133,6 +133,10 @@ repos:
       # and is equally fast once Go is available on the runner (the hosted
       # image ships Go). Cache key is now pinned to py3.14 in lint-and-format.yml.
       - id: shfmt-src
+        # Every tracked shell file but the declared exceptions, which no formatter
+        # may rewrite (reason per entry). List: .config/lint-exceptions.d/shfmt.toml
+        # (scripts/ci/tests/test_shfmt_scope.py keeps this pattern in step with it).
+        exclude: '^\.config/lefthook/engine\.sh$'
         args: ["-w", "-i", "2", "-ci"]
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
@@ -285,6 +289,14 @@ repos:
         language: system
         files: '^(scripts/release/(delete-inherited-upstream-tags\.py|inherited-upstream-tags\.json|tests/test_inherited_tags\.py)|scripts/git-hooks/check-push-tags\.py|lefthook\.yml)$'
         pass_filenames: false
+
+      - id: distribution-manifest
+        name: Distribution manifest agrees with the tree and its generators keep their contract (#2314)
+        entry: bash -c 'python3 -B scripts/release/distribution.py check && python3 -B -m unittest scripts/release/tests/test_distribution.py'
+        language: system
+        files: '^(packaging/|scripts/release/(distribution\.py|lint-distribution-recipes\.sh|tests/test_distribution\.py)|scripts/ci/check_licence_metadata\.py|tools/rc1-tester/image/licensing\.json|REUSE\.toml|mcp-server/vmaf-mcp/pyproject\.toml|bindings/rust/vmafx(-sys)?/Cargo\.toml|\.github/workflows/(supply-chain|windows-tester-bundle|macos-tester-bundle)\.yml|\.pre-commit-config\.yaml)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: merge-train-guard-contract
         name: Merge-train ownership and validation regressions
@@ -460,7 +472,7 @@ repos:
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version)_single_source\.py))$'
+        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|rust-toolchain\.toml|Cargo\.toml|core/src/rust/Cargo\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix|rust-ci)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version|rust_toolchain)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-install-cuda-toolkit
@@ -740,6 +752,34 @@ repos:
         files: '^(\.github/workflows/|scripts/ci/(check_hosted_runner_labels\.py|lint_exceptions\.py|tests/test_hosted_runner_labels\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
+      - id: check-pr-workflow-budget
+        name: Pull-request workflows stay inside the Scorecard check-suite window
+        entry: python3 scripts/ci/pr_workflow_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/pr_workflow_budget\.py$)'
+        pass_filenames: false
+
+      - id: test-check-pr-workflow-budget
+        name: Pull-request workflow budget keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_pr_workflow_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: check-release-provenance-assets
+        name: Release workflows upload build-provenance assets (.intoto.jsonl)
+        entry: python3 scripts/ci/check_release_provenance_assets.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/check_release_provenance_assets\.py$)'
+        pass_filenames: false
+
+      - id: test-check-release-provenance-assets
+        name: Release provenance asset check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_release_provenance_assets.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_release_provenance_assets\.py|tests/test_check_release_provenance_assets\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
       - id: test-check-copyright
         name: Copyright and SPDX header check keeps positive, negative and boundary cases
         entry: python3 scripts/ci/tests/test_check_copyright.py
@@ -892,7 +932,7 @@ repos:
         name: Scorecard exact-head policy and workflow contracts
         entry: python3 -B -m unittest discover -s scripts/ci/tests -p test_scorecard_*.py
         language: system
-        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard(-policy)?|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard|security-scans|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -908,7 +948,7 @@ repos:
         name: Repository security policy failure controls
         entry: python3 -B scripts/dev/tests/test_repository_security.py
         language: system
-        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.config/lint-exceptions\.d/solo-repository-bypass-mode\.toml|scripts/ci/lint_exceptions\.py|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1135,14 +1175,14 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|packaging/schemas/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
 
       - id: test-docs-vendored-assets
         name: Vendored docs assets check keeps its contract
         entry: python3 -B scripts/docs/tests/test_vendored_assets.py
         language: system
-        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|packaging/schemas/.*|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1183,6 +1223,13 @@ repos:
         entry: python3 -B scripts/ci/tests/test_clang_format_scope.py
         language: system
         files: '^(scripts/ci/tests/test_clang_format_scope\.py|scripts/githooks/pre-commit\.sh|Makefile|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-shfmt-scope
+        name: shfmt reads every shell file; its exceptions are declared and unexpired
+        entry: python3 -B scripts/ci/tests/test_shfmt_scope.py
+        language: system
+        always_run: true
         pass_filenames: false
 
       - id: test-python-format-scope
