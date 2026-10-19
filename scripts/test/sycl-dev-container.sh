@@ -13,8 +13,10 @@
 #
 # Environment:
 #   CONTAINER_RT       container CLI (default: podman, then docker)
-#   SYCL_DEV_IMAGE     toolchain image (default: localhost/vmafx:build-ocloc)
+#   SYCL_DEV_IMAGE     toolchain image (default: vmaf-dev-mcp:local, built by
+#                      dev/docker-compose.yml; it carries icx/icpx, ocloc, libva and libvpl)
 #   SYCL_DEV_CC        C compiler for the libvmaf build (default: icx)
+#   SYCL_DEV_JOBS      ninja / make parallelism (default: nproc)
 #   SYCL_DEV_TIMEOUT   per-run wall-clock cap in seconds (default: 5400)
 #   YUV_DIR            fixture directory mounted read-only at /yuv
 #   HOST_REPO          host path of the main checkout when running in a devcontainer
@@ -46,7 +48,12 @@ if [ -z "$RT" ]; then
   exit 127
 fi
 
-IMAGE="${SYCL_DEV_IMAGE:-localhost/vmafx:build-ocloc}"
+IMAGE="${SYCL_DEV_IMAGE:-vmaf-dev-mcp:local}"
+JOBS="${SYCL_DEV_JOBS:-$(nproc)}"
+if [[ ! "$JOBS" =~ ^[1-9][0-9]{0,2}$ ]]; then
+  echo "error: SYCL_DEV_JOBS must be an integer from 1 to 999: $JOBS" >&2
+  exit 2
+fi
 TIMEOUT="${SYCL_DEV_TIMEOUT:-5400}"
 WORKTREE="$(git rev-parse --show-toplevel)"
 COMMON="$(git rev-parse --path-format=absolute --git-common-dir)"
@@ -80,34 +87,39 @@ build_libvmaf() {
       --buildtype=release -Db_lto=false -Dsycl_icpx_aot_targets= \
       --prefix="$C/prefix"
   fi
-  ninja -C "$C/build"
-  ninja -C "$C/build" install
+  ninja -C "$C/build" -j "$JOBS"
+  ninja -C "$C/build" -j "$JOBS" install
   mkdir -p "$C/prefix/include/libvmaf"
   find core "$C/build" -path '*include/libvmaf/*.h' -exec cp -f {} "$C/prefix/include/libvmaf/" \;
 }
 
+conf() {
+  sed -n "s/^$1=\"\\{0,1\\}\\([^\"]*\\)\"\\{0,1\\}\$/\\1/p" /work/build-config.env | head -n1
+}
+
 build_ffmpeg() {
-  local tag n
+  local commit p
+  commit="$(conf FFMPEG_COMMIT)"
+  # The FFmpeg source is cached; every build starts again from FFMPEG_COMMIT.
   if [ ! -d "$C/ffmpeg-src" ]; then
-    cp -a /src/ffmpeg-src "$C/ffmpeg-src"
+    /work/scripts/ci/checkout-annotated-tag.sh "$(conf FFMPEG_REMOTE)" "$(conf FFMPEG_TAG)" \
+      "$C/ffmpeg-src"
   fi
-  tag="$(sed -n 's/^FFMPEG_TAG="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /work/build-config.env | head -n1)"
   cd "$C/ffmpeg-src"
-  if [ -n "$tag" ] && git rev-parse --verify -q "$tag^{commit}" >/dev/null; then
-    git reset -q --hard "$tag"
-  else
-    n="$(grep -cvE '^[[:space:]]*(#|$)' /src/vmafx/ffmpeg-patches/series.txt)"
-    git reset -q --hard "HEAD~$n"
-  fi
   # Drops the caller's GIT_* variables and sets the identity `git am` commits with.
   # shellcheck source=scripts/lib/clean-git-env.sh
   . /work/scripts/lib/clean-git-env.sh
-  local p
+  if [ -d .git/rebase-apply ]; then
+    git am --abort
+  fi
+  git reset -q --hard "$commit"
+  git clean -q -fdx
+  # The shared FFmpeg fix series comes first, as in every other build (ADR-3143).
+  bash /work/scripts/ci/ffmpeg-shared-series.sh apply --method am "$C/ffmpeg-src"
   while read -r p; do
     case "$p" in '' | '#'*) continue ;; esac
-    if ! git am --3way "/work/ffmpeg-patches/$p" >/dev/null 2>&1; then
-      git am --abort >/dev/null 2>&1 || true
-      echo "PATCH FAILED: $p" >&2
+    if ! git am --3way "/work/ffmpeg-patches/$p"; then
+      echo "PATCH FAILED: $p (left in $C/ffmpeg-src; the next build aborts it)" >&2
       exit 1
     fi
   done </work/ffmpeg-patches/series.txt
@@ -115,7 +127,7 @@ build_ffmpeg() {
     --prefix="$C/ffmpeg-prefix" --enable-gpl --enable-version3 --enable-libvmaf \
     --enable-libdav1d --enable-vaapi --enable-libvpl --enable-libvmaf-sycl \
     --disable-filter=vmaf_pre --disable-doc --disable-debug
-  make -j"$(nproc)" install
+  make -j"$JOBS" install
   PATH="$C/ffmpeg-prefix/bin:$PATH" LD_LIBRARY_PATH="$C/prefix/lib/x86_64-linux-gnu:$C/prefix/lib:${LD_LIBRARY_PATH:-}" \
     ffmpeg -hide_banner -filters | grep libvmaf
 }
@@ -137,6 +149,7 @@ exec timeout --signal=KILL "$TIMEOUT" "$RT" run --rm \
   --device /dev/dri --security-opt label=disable \
   -e UR_L0_USE_IMMEDIATE_COMMANDLISTS=0 \
   -e SYCL_DEV_CC="${SYCL_DEV_CC:-icx}" \
+  -e JOBS="$JOBS" \
   -v "$(host_path "$WORKTREE"):/work" \
   -v "$(host_path "$YUV_DIR"):/yuv:ro" \
   -w /work --entrypoint bash "$IMAGE" -c "$INNER" _ "$MODE" "$@"

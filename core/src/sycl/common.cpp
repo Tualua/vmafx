@@ -69,6 +69,7 @@ static double monotonic_ms()
 #include "feature/feature_extractor.h"
 #include "log.h"
 #include "scratch_check.h"
+#include "queue_props.h"
 
 namespace syclex = sycl::ext::oneapi::experimental;
 using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;
@@ -302,39 +303,16 @@ static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
     return env_prof != nullptr && env_prof[0] == '1';
 }
 
-/* Primary queue properties. The primary queue runs on Level Zero immediate
- * command lists whatever UR_L0_USE_IMMEDIATE_COMMANDLISTS says (ADR-1763).
- * Root cause (debug session sycl-zerocopy-cambi-nondeterminism): with batched
- * command lists (UR_L0_USE_IMMEDIATE_COMMANDLISTS=0, the Arc A-series setting
- * the bundling page recommends) an Arc A380 on compute-runtime 26.35 silently
- * dropped the zero-copy VA import's copies from a random frame on once each
- * frame's DMA-BUF import was mapped at the GPU address the previous frame's
- * import had just freed; the shared slots froze, every extractor scored stale
- * frames, and wait_and_throw() reported nothing. The mode of this queue -- the
- * one the imports are made against and vmaf_sycl_queue_wait() syncs every frame
- * -- is what matters: an immediate import-only queue next to a batched primary
- * queue still failed, a batched import queue next to an immediate primary queue
- * did not. Every other queue (copy, combined, per-extractor) keeps the process's
- * mode. Keep this until a driver fix is re-tested with
- * scripts/test/zerocopy-e2e.sh --repeat 10 under the batched setting. Without
- * the DPC++ extension (another SYCL implementation) the property is left out;
- * on a backend other than Level Zero it has no effect. */
+/* Primary queue properties: always on Level Zero immediate command lists,
+ * whatever UR_L0_USE_IMMEDIATE_COMMANDLISTS says (ADR-1763, queue_props.h).
+ * The zero-copy VA imports are made against this queue and
+ * vmaf_sycl_queue_wait() syncs it every frame; an immediate import-only queue
+ * next to a batched primary queue still failed, a batched import queue next
+ * to an immediate primary queue did not. Every other queue (copy, combined,
+ * per-extractor) keeps the process's mode. */
 static sycl::property_list sycl_queue_props(bool profiling)
 {
-#ifdef SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST
-    using immediate = sycl::ext::intel::property::queue::immediate_command_list;
-    if (profiling) {
-        return sycl::property_list{sycl::property::queue::in_order{},
-                                   sycl::property::queue::enable_profiling{}, immediate{}};
-    }
-    return sycl::property_list{sycl::property::queue::in_order{}, immediate{}};
-#else
-    if (profiling) {
-        return sycl::property_list{sycl::property::queue::in_order{},
-                                   sycl::property::queue::enable_profiling{}};
-    }
-    return sycl::property_list{sycl::property::queue::in_order{}};
-#endif
+    return vmaf_sycl_in_order_props(profiling, true);
 }
 
 /* The state on `dev`: its primary queue in `ctx` (a VMAFx device's context,

@@ -38,7 +38,7 @@ copy had run while the D3D11 import released the source at once.
 | Immediate command lists on the primary queue (4) | not present | Yes, ADR-1763 |
 | Fatal VA import (5) | open PR VMAFx/vmafx#2110 decides it differently (retry, then fail naming the frame; per-input VA display) | No: deferred to #2110 |
 | Ordered-sum probe source lifetime | not present (`test_sycl_ordered_sum` fails under `MALLOC_PERTURB_` on master too) | Yes |
-| `vmaf_sycl_upload_plane()` synchronous | open row `T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05` | Yes, closes the row |
+| `vmaf_sycl_upload_plane()` synchronous | fixed on master by `fix/sycl-upload-plane-fence` (row `T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05`): orders the copy after the slot's readers and waits for it | No: covered |
 | Chroma import, shared-plane twins, `float_motion` `motion_add_uv` (fork ADR-1597 to 1599) | deferred to post-1.0 by ADR-1688 / [ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md) | No: separate post-1.0 change |
 | e2e harness and comparator | not present | Yes; stage 1 is ADR-1688's admitted set, stages 2 and 3 must be refused by name |
 

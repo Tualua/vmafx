@@ -6,17 +6,18 @@ the Intel GPU (`/dev/dri`). Use it for the QSV zero-copy path of the
 `libvmaf_sycl` filter, which needs the oneVPL GPU runtime and a QSV-enabled
 FFmpeg build.
 
-It is a separate launcher, not `vmaf-dev-mcp`: the work needs the oneVPL
-runtime and the QSV build dependencies that `localhost/vmafx:build-ocloc`
-carries, it builds from the worktree incrementally, and it publishes no
-artifacts.
+It runs the `vmaf-dev-mcp:local` image that `dev/docker-compose.yml` builds
+([dev-MCP container](dev-mcp.md)), which carries icx/icpx, `ocloc`, the oneVPL
+GPU runtime and the QSV build dependencies. Unlike `docker exec vmaf-dev-mcp`,
+it builds the current worktree incrementally in a throwaway container and
+publishes no artifacts.
 
 ## Modes
 
 | Mode | What it does |
 | ---- | ------------ |
 | `libvmaf` | Configures (first run) and builds libvmaf with SYCL (SPIR-V JIT, no AOT targets), installs it into the cache prefix and copies the public headers FFmpeg's `check_pkg_config libvmaf` probes. |
-| `ffmpeg` | Copies the image's FFmpeg checkout, resets it to `FFMPEG_TAG` from `build-config.env`, applies `ffmpeg-patches/series.txt` with `git am --3way` (stops with `PATCH FAILED: <name>` on a conflict), configures with QSV, VAAPI and `--enable-libvmaf-sycl`, builds and installs. Run `libvmaf` first. |
+| `ffmpeg` | Checks out `FFMPEG_TAG` from `FFMPEG_REMOTE` (`build-config.env`) into the cache once, resets it to `FFMPEG_COMMIT` on every run, applies the shared FFmpeg fix series with `scripts/ci/ffmpeg-shared-series.sh` ([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)) and then `ffmpeg-patches/series.txt` with `git am --3way` (stops with `PATCH FAILED: <name>` on a conflict; the next run aborts the half-applied patch), configures with QSV, VAAPI and `--enable-libvmaf-sycl`, builds and installs. Run `libvmaf` first. |
 | `test [args...]` | `meson test -C <cache>/build --print-errorlogs` with your arguments, for example `test --suite sycl`. |
 | `exec <cmd...>` | Runs a command with the built `ffmpeg` and libvmaf on `PATH` / `LD_LIBRARY_PATH`. |
 
@@ -27,7 +28,8 @@ runtime exits 127.
 
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
-| `SYCL_DEV_IMAGE` | `localhost/vmafx:build-ocloc` | Toolchain image. |
+| `SYCL_DEV_IMAGE` | `vmaf-dev-mcp:local` | Toolchain image. |
+| `SYCL_DEV_JOBS` | `nproc` | Parallelism of `ninja` and `make` (1 to 999). On a shared host, set it lower. |
 | `SYCL_DEV_CC` | `icx` | C compiler for the libvmaf build (master's SYCL test executables need a compiler that links `-fsycl`). |
 | `SYCL_DEV_TIMEOUT` | `5400` | Wall-clock cap in seconds for one run (killed with SIGKILL). |
 | `YUV_DIR` | `<main checkout>/python/test/resource/yuv` | Fixtures, mounted read-only at `/yuv`. |
@@ -55,7 +57,7 @@ scripts/test/sycl-dev-container.sh exec bash -c '
       -i /yuv/src01_${s%%:*}_576x324.yuv -pix_fmt nv12 -c:v hevc_qsv \
       -profile:v main -global_quality 22 ${s##*:}.mp4
   done
-  Q="-init_hw_device vaapi=va0:/dev/dri/renderD128 -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0"
+  Q="-init_hw_device vaapi=va0:${RENDER_NODE:-/dev/dri/renderD128} -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0"
   ffmpeg -hide_banner $Q -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i dis.mp4 \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i ref.mp4 \
     -lavfi "[0:v][1:v]libvmaf_sycl=feature=name=psnr" -f null -'
@@ -208,3 +210,9 @@ including `reference=host` cases and the declared `ciede` bound; needs `pytest`,
 see `requirements/locks/pytest-timeout.txt`). CI step: `FFmpeg Patch Stack`,
 `.github/workflows/ffmpeg-patch-stack.yml`; hook: `sycl-zerocopy-contract` in
 `.pre-commit-config.yaml`.
+
+On a host with more than one GPU, `/dev/dri/renderD128` may belong to another
+vendor: run `exec env RENDER_NODE=/dev/dri/renderD<n> bash -c ...` with the
+Intel node (its `/sys/class/drm/renderD<n>/device/vendor` reads `0x8086`).
+`scripts/test/zerocopy-e2e.sh` finds that node itself and takes
+`--render-node PATH` to override it.

@@ -165,7 +165,7 @@ sycl/
   `import_pool.c`; C++ half = `vmafx_sycl_rt.{h,cpp}` (C ABI, catches every
   exception). C files build into library target; `.cpp` in `sycl_sources`.
 - One in-order library queue per device with `immediate_command_list`
-  (draft PR #2217's ADR-1763 precaution; `vmafx_sycl_rt_test_omit_immediate()`
+  (ADR-1763, `queue_props.h`; `vmafx_sycl_rt_test_omit_immediate()`
   and `VMAFX_TEST_SYCL_OMIT_IMMEDIATE=1` exist for re-evaluating it). Engine
   states of contexts on device live in its SYCL context
   (`vmaf_sycl_state_init_queue()`); `sycl_state_create()` = only place
@@ -302,11 +302,12 @@ sycl/
 
 - **Primary queue stays on immediate command lists (ADR-1763).**
   `sycl_queue_props()` in `common.cpp` adds
-  `sycl::ext::intel::property::queue::immediate_command_list` (under
-  `SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`) to the primary queue, which
+  `sycl::ext::intel::property::queue::immediate_command_list` to the primary
+  queue through `vmaf_sycl_in_order_props()` (`queue_props.h`, the one
+  spelling, shared with `library_queue_props()`), which
   runs the VA import in `dmabuf_import.cpp`. Reason: with
   `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` an Arc A380 (compute-runtime 26.35)
-  silently drops the import from a random frame on once the per-frame
+  on i915 silently drops the import from a random frame on once the per-frame
   DMA-BUF import reuses the freed import's GPU address; zero-copy scores go
   stale, no error. Moving the import to its own immediate queue does NOT fix
   it (the primary queue's mode matters). **On rebase / refactor**: keep the

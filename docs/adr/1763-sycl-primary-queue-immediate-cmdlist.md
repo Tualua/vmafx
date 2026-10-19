@@ -38,15 +38,22 @@ host upload in 3 to 7 of every 10 runs. Measured in the debug session
   The primary queue is the one the imports are made against and the one
   `vmaf_sycl_queue_wait` synchronises before freeing them every frame.
 
-The defect sits in the driver stack (a submission is silently discarded), not in
-libvmaf's synchronisation. An upstream report is drafted, not filed.
+The failure was measured on the i915 kernel driver only (Fedora 43, kernel
+6.19.14). On the same A380 model under the xe kernel driver, 180 zero-copy runs
+on 2026-10-10 under the batched setting gave 0 scores that differed from host
+upload. The defect sits in the driver stack (a submission is silently
+discarded), not in libvmaf's synchronisation. An upstream report is drafted,
+not filed.
 
 ## Decision
 
 We will create the primary SYCL queue (`sycl_queue_props()` in
 `core/src/sycl/common.cpp`), on which the VA-surface import runs, with
 `sycl::ext::intel::property::queue::immediate_command_list`, guarded by
-`SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`. The copy queue, the combined
+`SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`. The property is spelled once,
+in `vmaf_sycl_in_order_props()` (`core/src/sycl/queue_props.h`), which the
+VMAFx library queue (`library_queue_props()` in
+`core/src/sycl/vmafx_sycl_rt.cpp`, ADR-2091) uses too. The copy queue, the combined
 graph queue and every per-extractor queue keep the process's command-list mode,
 so the batched-mode advice for Arc A-series stays for them. Without the
 extension macro (another SYCL implementation) the property is left out; on a
