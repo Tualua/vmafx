@@ -300,6 +300,26 @@ sycl/
   `vmaf_feature_score_at_index` must use aliased name, not raw name.
   (ADR-1099)
 
+- **Primary queue stays on immediate command lists (ADR-1763).**
+  `sycl_queue_props()` in `common.cpp` adds
+  `sycl::ext::intel::property::queue::immediate_command_list` (under
+  `SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`) to the primary queue, which
+  runs the VA import in `dmabuf_import.cpp`. Reason: with
+  `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` an Arc A380 (compute-runtime 26.35)
+  silently drops the import from a random frame on once the per-frame
+  DMA-BUF import reuses the freed import's GPU address; zero-copy scores go
+  stale, no error. Moving the import to its own immediate queue does NOT fix
+  it (the primary queue's mode matters). **On rebase / refactor**: keep the
+  property on the queue `vmaf_sycl_get_queue_ptr()` returns, and keep the
+  import on that queue. Remove only after a driver fix, re-tested with
+  `scripts/test/zerocopy-e2e.sh --stage 1 --repeat 10 --cases cambi` under
+  `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` with the property removed (must show
+  `PASS`, 0 of 10 runs differing, 8 and 10 bit).
+
+- **`vmaf_sycl_print_timing()` logs through `vmaf_log` at INFO.** Every
+  SYCL flush calls it, so it must follow the caller's log level (FFmpeg
+  maps `-loglevel` to it). Do not turn it back into `fprintf(stderr, ...)`.
+
 ## Rebase-sensitive invariants per kernel
 
 - **Shared planes: one upload per plane per frame for every twin
