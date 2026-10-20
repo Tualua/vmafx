@@ -28,7 +28,7 @@ Covers:
  1 file changed, 26 insertions(+), 4 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index ccf155ffa6fd3d70e4d178d9daa765f4f86ddaa8..cced594ec4a45fc24b993a61165996434a0dbe17 100644
+index f71bb40ced072ffa130be56daf34cd061df6a787..b7ca2c0c7e464c992377ba9d14229a65d793c326 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -126,6 +126,13 @@ typedef struct LIBVMAFContext {

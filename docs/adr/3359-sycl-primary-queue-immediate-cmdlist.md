@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-1763: The SYCL primary queue, which runs the VA-surface import, uses immediate command lists
+# ADR-3359: The SYCL primary queue, which runs the VA-surface import, uses immediate command lists
 
 - **Status**: Accepted
 - **Date**: 2026-10-02
@@ -87,8 +87,11 @@ immediate while the driver defect exists; `zerocopy-e2e.sh --repeat 10` under
 
 ## References
 
+- Draft PR #2217 (Tualua) carried this record as ADR-1763, and ADR-2091 and
+  Research-2160 cite it by that number; the rework renumbered it with
+  `scripts/adr/next-free.sh --claim` because the open draft still holds ADR-1763.
 - `req` (user, 2026-10-02), D-08: "option C' — only the VA import queue uses `sycl::ext::intel::property::queue::immediate_command_list`; the `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` advice for other kernels stays." The VA import queue is the primary queue; a separate import-only queue was measured and does not fix the defect (Context).
-- [ADR-1121](1121-sycl-qsv-zerocopy-p010-normalization.md), [ADR-1688](1688-sycl-zero-copy-luma-only-admission.md), [ADR-1764](1764-sycl-filter-twin-routing.md).
+- [ADR-1121](1121-sycl-qsv-zerocopy-p010-normalization.md), [ADR-1688](1688-sycl-zero-copy-luma-only-admission.md), [ADR-3360](3360-sycl-filter-twin-routing.md).
 - Testing: [docs/development/sycl-zerocopy-testing.md](../development/sycl-zerocopy-testing.md).
 - Drafted as ADR-1596 on the Tualua fork; renumbered to 1763 when it was ported to
   `VMAFx/vmafx` master, above the numbers its branches claim (up to 1762).

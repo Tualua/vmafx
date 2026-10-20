@@ -39,7 +39,7 @@ ADR-0576.
  1 file changed, 30 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index c7de61c08b68ea34193fb820e64153198776594b..ccf155ffa6fd3d70e4d178d9daa765f4f86ddaa8 100644
+index 3284bc92108725af2359de3782f47b53f41bdba9..f71bb40ced072ffa130be56daf34cd061df6a787 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -126,6 +126,12 @@ typedef struct LIBVMAFContext {

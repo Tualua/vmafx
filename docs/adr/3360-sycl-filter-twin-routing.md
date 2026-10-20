@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-1764: The `libvmaf_sycl` filter routes `feature=` names to their SYCL twins
+# ADR-3360: The `libvmaf_sycl` filter routes `feature=` names to their SYCL twins
 
 - **Status**: Accepted
 - **Date**: 2026-10-05
@@ -75,7 +75,10 @@ frame). This record keeps only what neither covers.
 
 ## References
 
+- Draft PR #2217 (Tualua) carried this record as ADR-1764, and ADR-2091 and
+  Research-2160 cite it by that number; the rework renumbered it with
+  `scripts/adr/next-free.sh --claim` because the open draft still holds ADR-1764.
 - `req` (user, 2026-10-02), D-04 on the Tualua fork: "`libvmaf_sycl` routes `feature=` names to SYCL twins via `vmaf_feature_backend_twin` on BOTH paths: zero-copy (no twin / -ENOTSUP = fatal error) and host-upload (fall back to the CPU extractor with a warning, like the CLI). The host-upload switch to twins must be shown bit-exact vs CPU by test."
 - `req` (user, 2026-10-05): split the fork's zero-copy work; port the parts that do not import chroma, keeping VMAFx's behaviour where ADR-1688 already covers them.
-- [ADR-1359](1359-cli-feature-backend-twin.md), [ADR-1688](1688-sycl-zero-copy-luma-only-admission.md), [ADR-1121](1121-sycl-qsv-zerocopy-p010-normalization.md), [ADR-1763](1763-sycl-primary-queue-immediate-cmdlist.md).
+- [ADR-1359](1359-cli-feature-backend-twin.md), [ADR-1688](1688-sycl-zero-copy-luma-only-admission.md), [ADR-1121](1121-sycl-qsv-zerocopy-p010-normalization.md), [ADR-3359](3359-sycl-primary-queue-immediate-cmdlist.md).
 - Testing: [SYCL zero-copy testing](../development/sycl-zerocopy-testing.md).

@@ -141,7 +141,7 @@ Xe2 / Battlemage users should keep the default (immediate command lists on).
 One queue is exempt. libvmaf creates its primary SYCL queue, the one that
 imports QSV / VA-API surfaces for the `libvmaf_sycl` zero-copy path, with
 immediate command lists whatever this variable says
-([ADR-1763](../../adr/1763-sycl-primary-queue-immediate-cmdlist.md)). With batched
+([ADR-3359](../../adr/3359-sycl-primary-queue-immediate-cmdlist.md)). With batched
 command lists an Arc A380 (compute-runtime 26.35) silently dropped the
 per-frame surface import from a random frame on, so zero-copy scores were
 computed on stale frames and differed from run to run. The copy queue, the

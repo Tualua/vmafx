@@ -36,7 +36,7 @@ replaying the full series against a clean n8.1 checkout
  1 file changed, 52 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index cced594ec4a45fc24b993a61165996434a0dbe17..ea20094e0be9ab9a7f0c8e579f2931682eb9e44a 100644
+index b7ca2c0c7e464c992377ba9d14229a65d793c326..215a31d8c22c41d917ce54b4f0ea145590e3de5c 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -29,6 +29,9 @@

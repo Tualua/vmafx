@@ -12,7 +12,7 @@ QSV-encoded pair and writes ``<clip>_<depth>bit__<case>.<leg>.{json,rc,err}``:
 
 This module reads those files and decides, per case:
 
-* ``host`` must equal ``cpu`` exactly (ADR-1764); otherwise ``NONEXACT host-vs-cpu``.
+* ``host`` must equal ``cpu`` exactly (ADR-3360); otherwise ``NONEXACT host-vs-cpu``.
   The tolerance ``resolve_cell_tolerance()`` would grant is printed for
   information only and never applied. A case may declare a bound explicitly
   (``Case.cpu_bound``): only ``ciede`` does, with the parity gate's LIBM_TWINS

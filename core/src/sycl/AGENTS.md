@@ -165,7 +165,7 @@ sycl/
   `import_pool.c`; C++ half = `vmafx_sycl_rt.{h,cpp}` (C ABI, catches every
   exception). C files build into library target; `.cpp` in `sycl_sources`.
 - One in-order library queue per device with `immediate_command_list`
-  (ADR-1763, `queue_props.h`; `vmafx_sycl_rt_test_omit_immediate()`
+  (ADR-3359, `queue_props.h`; `vmafx_sycl_rt_test_omit_immediate()`
   and `VMAFX_TEST_SYCL_OMIT_IMMEDIATE=1` exist for re-evaluating it). Engine
   states of contexts on device live in its SYCL context
   (`vmaf_sycl_state_init_queue()`); `sycl_state_create()` = only place
@@ -300,7 +300,7 @@ sycl/
   `vmaf_feature_score_at_index` must use aliased name, not raw name.
   (ADR-1099)
 
-- **Primary queue stays on immediate command lists (ADR-1763).**
+- **Primary queue stays on immediate command lists (ADR-3359).**
   `sycl_queue_props()` in `common.cpp` adds
   `sycl::ext::intel::property::queue::immediate_command_list` to the primary
   queue through `vmaf_sycl_in_order_props()` (`queue_props.h`, the one

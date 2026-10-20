@@ -44,7 +44,7 @@ three tries in all with 1 ms between them, and then stops the filter
 with an error naming the frame; no frame is passed through unscored,
 and a filter that stopped prints no pooled score. The software path copies every chroma row of an odd-height frame.
 
-Twin routing (VMAFx ADR-1764): feature= names resolve to their SYCL twin
+Twin routing (VMAFx ADR-3360): feature= names resolve to their SYCL twin
 through vmaf_feature_backend_twin() before registration. On QSV
 zero-copy input a feature without a usable twin is a configuration
 error; on software (host-upload) input the filter warns and computes it
@@ -123,7 +123,7 @@ index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999b
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3529b485ac6b427e3d0b9e3de2462708a6846bff..e397e72d3491a499703bb91b42b9bb75f7c4411c 100644
+index 3529b485ac6b427e3d0b9e3de2462708a6846bff..bb79da9a174208a6435e16c65370d66511808da7 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -51,6 +51,12 @@
@@ -146,7 +146,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..e397e72d3491a499703bb91b42b9bb75
 +#if CONFIG_LIBVMAF_SYCL_FILTER
 +    void *va_display;     /* VA display of the main (distorted) input */
 +    void *va_display_ref; /* VA display of the reference input */
-+    int   route_twins;    /* feature= names resolve to their SYCL twin (VMAFx ADR-1764) */
++    int   route_twins;    /* feature= names resolve to their SYCL twin (VMAFx ADR-3360) */
 +#endif
 +    int   stopped;        /* a frame could not be scored: no pooled score (VMAFx ADR-1761) */
      int   vulkan_device;

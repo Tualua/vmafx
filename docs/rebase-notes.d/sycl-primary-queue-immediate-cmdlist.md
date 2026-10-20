@@ -1,7 +1,7 @@
 
-## ADR-1763 — SYCL primary queue on immediate command lists (2026-10-02)
+## ADR-3359 — SYCL primary queue on immediate command lists (2026-10-02)
 
-`pr/sycl-zerocopy-hardening`, [ADR-1763](adr/1763-sycl-primary-queue-immediate-cmdlist.md);
+`pr/sycl-zerocopy-hardening`, [ADR-3359](adr/3359-sycl-primary-queue-immediate-cmdlist.md);
 row `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02` in [state.md](state.md).
 
 - `core/src/sycl/common.cpp::sycl_queue_props()` adds

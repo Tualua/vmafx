@@ -133,7 +133,7 @@ struct VmafSyclState {
     };
 
     // 8-byte members (queues, pointers, events, sizes, doubles, uint64_t, sub-structs)
-    sycl::queue queue;      // primary queue: VA import, misc ops; immediate cmdlists (ADR-1763)
+    sycl::queue queue;      // primary queue: VA import, misc ops; immediate cmdlists (ADR-3359)
     sycl::queue copy_queue; // separate queue for H2D/D2H DMA transfers
 
     void *shared_ref_buf[2] = {};
@@ -304,7 +304,7 @@ static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
 }
 
 /* Primary queue properties: always on Level Zero immediate command lists,
- * whatever UR_L0_USE_IMMEDIATE_COMMANDLISTS says (ADR-1763, queue_props.h).
+ * whatever UR_L0_USE_IMMEDIATE_COMMANDLISTS says (ADR-3359, queue_props.h).
  * The zero-copy VA imports are made against this queue and
  * vmaf_sycl_queue_wait() syncs it every frame; an immediate import-only queue
  * next to a batched primary queue still failed, a batched import queue next

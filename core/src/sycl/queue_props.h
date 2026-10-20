@@ -5,7 +5,7 @@
 
 /*
  * Properties of an in-order SYCL queue on Level Zero immediate command lists
- * (ADR-1763): one definition for the engine's primary queue
+ * (ADR-3359): one definition for the engine's primary queue
  * (common.cpp::sycl_queue_props()) and the VMAFx library queue
  * (vmafx_sycl_rt.cpp::library_queue_props()).
  *

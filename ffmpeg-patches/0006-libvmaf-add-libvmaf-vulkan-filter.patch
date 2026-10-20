@@ -106,7 +106,7 @@ index ac7f3f4d849ceeaa5fadd773e1f4999bd1cd96c3..102fd55c38821b98c5a760019b6feda0
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index e397e72d3491a499703bb91b42b9bb75f7c4411c..9dfde98020a285d9e2dcd56d0865c7edc798017d 100644
+index bb79da9a174208a6435e16c65370d66511808da7..8a5c0d90d4f43d40f99d1c6067462fc7f9b7ecbf 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -61,6 +61,12 @@

@@ -186,7 +186,7 @@ use `-frames:v 500` for that: FFmpeg applies it after the filtergraph, so the
 filter can score a 501st pair
 ([Score exactly N frames](../../usage/ffmpeg.md#score-exactly-n-frames)).
 
-### Feature routing and supported surfaces (ADR-1764)
+### Feature routing and supported surfaces (ADR-3360)
 
 The `libvmaf_sycl` filter resolves each `feature=` name to its SYCL twin, as
 the `vmaf` CLI does. On QSV zero-copy input it refuses to configure when no
@@ -196,7 +196,7 @@ on the CPU. A twin that needs chroma is still refused at the first frame by the
 admission check above. Zero-copy accepts NV12 and P010 surfaces only. The
 messages and examples are in
 [Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
-the rationale is [ADR-1764](../../adr/1764-sycl-filter-twin-routing.md).
+the rationale is [ADR-3360](../../adr/3360-sycl-filter-twin-routing.md).
 
 ### P010/P012 pixels are normalized in the import
 

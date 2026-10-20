@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# Research-1763: SYCL zero-copy hardening on the luma-only path
+# Research-3359: SYCL zero-copy hardening on the luma-only path
 
-Companion digest for [ADR-1763](../adr/1763-sycl-primary-queue-immediate-cmdlist.md)
-and [ADR-1764](../adr/1764-sycl-filter-twin-routing.md). It records which parts
+Companion digest for [ADR-3359](../adr/3359-sycl-primary-queue-immediate-cmdlist.md)
+and [ADR-3360](../adr/3360-sycl-filter-twin-routing.md). It records which parts
 of the Tualua fork's zero-copy work (its ADR-1595 to ADR-1599) were ported to
 `VMAFx/vmafx` master after
 [ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md), which parts were
@@ -33,16 +33,16 @@ copy had run while the D3D11 import released the source at once.
 | --- | --- | --- |
 | CPU extractor pre-pass guard (1) | ADR-1688 admission check refuses it by name before the frame is counted | No: covered |
 | Per-extractor `-ENOTSUP` for missing host pictures (2) | ADR-1688 refuses every extractor whose `reads_shared_luma_only()` is absent or false, so no twin sees a NULL picture | No: covered (ADR-1688 rejected the per-twin form) |
-| `feature=` twin routing in patch 0005 (3) | not present | Yes, ADR-1764 |
-| NV12 / P010 guard on QSV input | not present | Yes, ADR-1764 |
-| Immediate command lists on the primary queue (4) | not present | Yes, ADR-1763 |
+| `feature=` twin routing in patch 0005 (3) | not present | Yes, ADR-3360 |
+| NV12 / P010 guard on QSV input | not present | Yes, ADR-3360 |
+| Immediate command lists on the primary queue (4) | not present | Yes, ADR-3359 |
 | Fatal VA import (5) | open PR VMAFx/vmafx#2110 decides it differently (retry, then fail naming the frame; per-input VA display) | No: deferred to #2110 |
 | Ordered-sum probe source lifetime | not present (`test_sycl_ordered_sum` fails under `MALLOC_PERTURB_` on master too) | Yes |
 | `vmaf_sycl_upload_plane()` synchronous | fixed on master by `fix/sycl-upload-plane-fence` (row `T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05`): orders the copy after the slot's readers and waits for it | No: covered |
 | Chroma import, shared-plane twins, `float_motion` `motion_add_uv` (fork ADR-1597 to 1599) | deferred to post-1.0 by ADR-1688 / [ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md) | No: separate post-1.0 change |
 | e2e harness and comparator | not present | Yes; stage 1 is ADR-1688's admitted set, stages 2 and 3 must be refused by name |
 
-## Primary-queue command-list mode (ADR-1763)
+## Primary-queue command-list mode (ADR-3359)
 
 Measured on the fork (Arc A380, i915, compute-runtime 26.35.39758.10, Level
 Zero 1.34.0), debug session `sycl-zerocopy-cambi-nondeterminism`:

@@ -18,7 +18,7 @@ colour tags, scores exactly as before.
  1 file changed, 63 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 8223ae993e1fe1646ed96df28867d4dbc7fe2a85..74fd3444f76d1ebf6dd8837b8842f13f5de59b31 100644
+index ca69ca411510571d5d90a6dfc68e5cb9f692bd1b..9655e2b47245bc09df44d3f68f9826917565475d 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -149,6 +149,7 @@ typedef struct LIBVMAFContext {

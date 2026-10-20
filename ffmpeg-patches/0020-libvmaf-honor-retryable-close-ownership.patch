@@ -16,7 +16,7 @@ expire during retryable teardown.
  2 files changed, 82 insertions(+), 19 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 96afd46c065c1a9ac6c64c5d2c9c424559e3aafe..dc3eb25737d89f62e672a4c2c23e0650c28340c9 100644
+index 82179b30907f91fcdd35b140be243a91c23d3c7d..53df86320ca454d4d0d4b3c50fd184b573398827 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -151,6 +151,7 @@ typedef struct LIBVMAFContext {

@@ -970,7 +970,7 @@ other input's display, which used to give a wrong score without an error.
 Every `feature=` name is looked up through `vmaf_feature_backend_twin()`, as the
 `vmaf` CLI does, so `feature=name=vif|name=cambi` runs `vif_sycl` and
 `cambi_sycl` on both input paths
-([ADR-1764](../adr/1764-sycl-filter-twin-routing.md)). The filter logs the
+([ADR-3360](../adr/3360-sycl-filter-twin-routing.md)). The filter logs the
 choice at info level:
 
 ```text

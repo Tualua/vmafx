@@ -6,7 +6,7 @@
   feature without a usable twin fails at configuration and names the reason,
   on software input the filter warns and computes it on the CPU. QSV zero-copy
   accepts NV12 and P010 surfaces only and names any other format
-  ([ADR-1764](docs/adr/1764-sycl-filter-twin-routing.md);
+  ([ADR-3360](docs/adr/3360-sycl-filter-twin-routing.md);
   [Using VMAF with FFmpeg](docs/usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl)).
   `scripts/test/zerocopy-e2e.sh` checks the zero-copy path against host upload
   and the CPU on an Intel GPU

@@ -64,7 +64,7 @@ scripts/test/sycl-dev-container.sh exec bash -c '
 ```
 
 The filter routes `psnr` to its twin (`libvmaf_sycl: feature 'psnr' ->
-psnr_sycl`, [ADR-1764](../adr/1764-sycl-filter-twin-routing.md)); `psnr_sycl`
+psnr_sycl`, [ADR-3360](../adr/3360-sycl-filter-twin-routing.md)); `psnr_sycl`
 needs chroma, so the first frame is refused
 ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)) with
 `vmaf_read_pictures_sycl: feature extractor "psnr_sycl" needs host pictures

@@ -112,7 +112,7 @@ index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25e
  extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index f25c307a584cf3c262655fdb111eed01f9d8e2d3..c7de61c08b68ea34193fb820e64153198776594b 100644
+index cf3886d618f3e0cc058877b737672d4fd7009f12..3284bc92108725af2359de3782f47b53f41bdba9 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -77,6 +77,12 @@

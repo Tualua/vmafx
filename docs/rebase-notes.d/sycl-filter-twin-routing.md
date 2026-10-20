@@ -1,7 +1,7 @@
 ## SYCL zero-copy hardening: twin routing, timing log, e2e harness (2026-10-05)
 
-`pr/sycl-zerocopy-hardening`, [ADR-1764](adr/1764-sycl-filter-twin-routing.md)
-(and ADR-1763 above); ported from the Tualua fork's zero-copy work without its
+`pr/sycl-zerocopy-hardening`, [ADR-3360](adr/3360-sycl-filter-twin-routing.md)
+(and ADR-3359 above); ported from the Tualua fork's zero-copy work without its
 chroma import, which is post-1.0 ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md)).
 
 - `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`:

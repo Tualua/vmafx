@@ -22,7 +22,7 @@ filters follow the same rule (VMAFx ADR-1761).
  1 file changed, 62 insertions(+), 30 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index dc3eb25737d89f62e672a4c2c23e0650c28340c9..8223ae993e1fe1646ed96df28867d4dbc7fe2a85 100644
+index 53df86320ca454d4d0d4b3c50fd184b573398827..ca69ca411510571d5d90a6dfc68e5cb9f692bd1b 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -314,6 +314,21 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
