@@ -8,8 +8,8 @@
 //
 //   - No `unsafe` in the public API surface.
 //   - Errors are returned as `Result<T, Error>` so callers can use `?`.
-//   - Resources release on `Drop`; context teardown retries once and aborts on
-//     persistent failure so retained model borrows cannot end early. Contexts
+//   - Resources release on `Drop`; context teardown retries once and leaks the
+//     context on persistent failure (libvmaf owns its mounted models). Contexts
 //     also expose a consuming `close` with a teardown-only retry token.
 //   - Models and pictures are `Send` but `!Sync`. Contexts are `!Send` because
 //     they carry shared borrows of deliberately-`!Sync` models.

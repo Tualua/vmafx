@@ -55,7 +55,11 @@
 #include "feature_extractor.h"
 #include "log.h"
 
+#include "feature/ssimulacra2_pixel_format.h"
+#include "feature/ssimulacra2_gaussian.h"
 #include "feature/ssimulacra2_score.h"
+#include "../../hip/hip_handle.h"
+#include "../../hip/picture_hip.h"
 #include "picture.h"
 #include "ssimulacra2_hip.h"
 
@@ -73,118 +77,6 @@ enum yuv_matrix_h {
     SS2H_MATRIX_BT601_LIMITED = 1,
     SS2H_MATRIX_BT709_FULL = 2,
     SS2H_MATRIX_BT601_FULL = 3,
-};
-
-/* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
-static const double g_weights[108] = {
-    0.0,
-    0.0007376606707406586,
-    0.0,
-    0.0,
-    0.0007793481682867309,
-    0.0,
-    0.0,
-    0.0004371155730107379,
-    0.0,
-    1.1041726426657346,
-    0.00066284834129271,
-    0.00015231632783718752,
-    0.0,
-    0.0016406437456599754,
-    0.0,
-    1.8422455520539298,
-    11.441172603757666,
-    0.0,
-    0.0007989109436015163,
-    0.000176816438078653,
-    0.0,
-    1.8787594979546387,
-    10.94906990605142,
-    0.0,
-    0.0007289346991508072,
-    0.9677937080626833,
-    0.0,
-    0.00014003424285435884,
-    0.9981766977854967,
-    0.00031949755934435053,
-    0.0004550992113792063,
-    0.0,
-    0.0,
-    0.0013648766163243398,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    7.466890328078848,
-    0.0,
-    17.445833984131262,
-    0.0006235601634041466,
-    0.0,
-    0.0,
-    6.683678146179332,
-    0.00037724407979611296,
-    1.027889937768264,
-    225.20515300849274,
-    0.0,
-    0.0,
-    19.213238186143016,
-    0.0011401524586618361,
-    0.001237755635509985,
-    176.39317598450694,
-    0.0,
-    0.0,
-    24.43300999870476,
-    0.28520802612117757,
-    0.0004485436923833408,
-    0.0,
-    0.0,
-    0.0,
-    34.77906344483772,
-    44.835625328877896,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0008680556573291698,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0005313191874358747,
-    0.0,
-    0.00016533814161379112,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0004179171803251336,
-    0.0017290828234722833,
-    0.0,
-    0.0020827005846636437,
-    0.0,
-    0.0,
-    8.826982764996862,
-    23.19243343998926,
-    0.0,
-    95.1080498811086,
-    0.9863978034400682,
-    0.9834382792465353,
-    0.0012286405048278493,
-    171.2667255897307,
-    0.9807858872435379,
-    0.0,
-    0.0,
-    0.0,
-    0.0005130064588990679,
-    0.0,
-    0.00010854057858411537,
 };
 
 typedef struct Ssimu2StateHip {
@@ -246,6 +138,9 @@ typedef struct Ssimu2StateHip {
     /* The frame submit() enqueued and collect() has not read yet. */
     bool has_pending;
     unsigned pending_index;
+    /* This frame's pictures are device pictures of the VMAFx API, copied
+     * into d_raw on the device: no staging (ADR-2092). */
+    bool device_input;
 } Ssimu2StateHip;
 
 static const VmafOption options[] = {
@@ -262,6 +157,7 @@ static const VmafOption options[] = {
     {0},
 };
 
+#ifdef HAVE_HIPCC /* only the device-kernel build calls it */
 static int ss2h_hip_rc(hipError_t rc)
 {
     if (rc == hipSuccess)
@@ -281,6 +177,7 @@ static int ss2h_hip_rc(hipError_t rc)
         return -EIO;
     }
 }
+#endif /* HAVE_HIPCC */
 
 /* ADR-1324 / ADR-1359: the inputs init rejects (no chroma planes, a side
  * below 8) go to the CPU extractor when the twin was picked for a model or a
@@ -290,71 +187,26 @@ static int check_context_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
 {
     (void)fex;
     (void)bpc;
-    const bool chroma = pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN;
-    return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
+    return (vmaf_ss2_has_chroma(pix_fmt) && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
 }
 
 #ifdef HAVE_HIPCC
+
+#include "feature/ssimulacra2_weights.h"
 
 /* ------------------------------------------------------------------ */
 /* Host setup: recursive Gaussian, YUV constants, geometry             */
 /* ------------------------------------------------------------------ */
 
-/* Verbatim port of ssimulacra2.c::create_recursive_gaussian; the coefficients
- * are the same floats the CPU extractor blurs with. */
+/* Setup recursive Gaussian coefficients via shared ssimu2_compute_gaussian_coeffs(). */
 static void ss2h_setup_gaussian(struct Ss2hIir *iir, double sigma)
 {
-    const double radius = round(3.2795 * sigma + 0.2546);
-    const double pi_div_2r = SS2H_PI / (2.0 * radius);
-    const double omega[3] = {pi_div_2r, 3.0 * pi_div_2r, 5.0 * pi_div_2r};
-
-    const double p1 = +1.0 / tan(0.5 * omega[0]);
-    const double p3 = -1.0 / tan(0.5 * omega[1]);
-    const double p5 = +1.0 / tan(0.5 * omega[2]);
-    const double r1 = +p1 * p1 / sin(omega[0]);
-    const double r3 = -p3 * p3 / sin(omega[1]);
-    const double r5 = +p5 * p5 / sin(omega[2]);
-
-    const double neg_half_sigma2 = -0.5 * sigma * sigma;
-    const double recip_r = 1.0 / radius;
-    double rho[3];
-    for (int i = 0; i < 3; i++)
-        rho[i] = exp(neg_half_sigma2 * omega[i] * omega[i]) * recip_r;
-
-    const double D13 = p1 * r3 - r1 * p3;
-    const double D35 = p3 * r5 - r3 * p5;
-    const double D51 = p5 * r1 - r5 * p1;
-    const double recip_d13 = 1.0 / D13;
-    const double zeta_15 = D35 * recip_d13;
-    const double zeta_35 = D51 * recip_d13;
-
-    const double A[3][3] = {{p1, p3, p5}, {r1, r3, r5}, {zeta_15, zeta_35, 1.0}};
-    const double gamma[3] = {1.0, radius * radius - sigma * sigma,
-                             zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
-    const double det_A = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
-                         A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
-                         A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
-    const double inv_det = 1.0 / det_A;
-
-    double beta[3];
-    for (int col = 0; col < 3; col++) {
-        double M[3][3];
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++)
-                M[i][j] = A[i][j];
-        }
-        for (int i = 0; i < 3; i++)
-            M[i][col] = gamma[i];
-        beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
-                     M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
-                     M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])) *
-                    inv_det;
-    }
-
-    iir->radius = (int)radius;
+    Ssimu2GaussianCoeffs coeffs;
+    ssimu2_compute_gaussian_coeffs(sigma, &coeffs);
+    iir->radius = coeffs.radius;
     for (int i = 0; i < 3; i++) {
-        iir->n2[i] = (float)(-beta[i] * cos(omega[i] * (radius + 1.0)));
-        iir->d1[i] = (float)(-2.0 * cos(omega[i]));
+        iir->n2[i] = coeffs.n2[i];
+        iir->d1[i] = coeffs.d1[i];
     }
 }
 
@@ -367,7 +219,7 @@ static int ss2h_yuv_primaries(int yuv_matrix, float *kr, float *kg, float *kb)
     switch (yuv_matrix) {
     case SS2H_MATRIX_BT709_FULL:
         limited = 0;
-        // fallthrough
+        [[fallthrough]];
     case SS2H_MATRIX_BT709_LIMITED:
         *kr = 0.2126f;
         *kg = 0.7152f;
@@ -375,7 +227,7 @@ static int ss2h_yuv_primaries(int yuv_matrix, float *kr, float *kg, float *kb)
         break;
     case SS2H_MATRIX_BT601_FULL:
         limited = 0;
-        // fallthrough
+        [[fallthrough]];
     case SS2H_MATRIX_BT601_LIMITED:
     default:
         *kr = 0.299f;
@@ -408,15 +260,10 @@ static struct Ss2hYuvCoefficients ss2h_yuv_coefficients(int yuv_matrix, unsigned
     return k;
 }
 
-/* Plane geometry by picture.c's ceil rule. YUV 4:0:0 has no chroma planes to
- * convert; the CPU extractor would read planes that do not exist. */
-static int ss2h_configure_planes(Ssimu2StateHip *s, enum VmafPixelFormat pix_fmt)
+/* Plane geometry by picture.c's ceil rule. init() has refused YUV 4:0:0, which
+ * has no chroma planes to convert (vmaf_ss2_check_pixel_format()). */
+static void ss2h_configure_planes(Ssimu2StateHip *s, enum VmafPixelFormat pix_fmt)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssimulacra2_hip: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input\n");
-        return -EINVAL;
-    }
     const unsigned ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     const unsigned ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
     const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
@@ -427,7 +274,6 @@ static int ss2h_configure_planes(Ssimu2StateHip *s, enum VmafPixelFormat pix_fmt
         s->plane_h[p] = (s->height + sv) >> sv;
         s->row_bytes[p] = (size_t)s->plane_w[p] * bytes_per_sample;
     }
-    return 0;
 }
 
 static void ss2h_configure_scales(Ssimu2StateHip *s)
@@ -804,7 +650,7 @@ static int ss2h_enqueue_scale(const Ssimu2StateHip *s, int scale)
  * the copy of the per-scale sums into h_totals. */
 static int ss2h_enqueue_frame(const Ssimu2StateHip *s)
 {
-    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
+    for (unsigned img = 0; img < SS2H_IMAGES && !s->device_input; img++) {
         for (unsigned p = 0; p < SS2H_CHANNELS; p++) {
             const hipError_t hip_rc =
                 hipMemcpyAsync(s->d_raw[img][p], s->h_raw[img][p], s->row_bytes[p] * s->plane_h[p],
@@ -855,9 +701,9 @@ static double ss2h_pool_score(const double avg_ssim[6][6], const double avg_ed[6
                 const double s_term = scale < num_scales ? avg_ssim[scale][c * 2 + n] : 0.0;
                 const double r_term = scale < num_scales ? avg_ed[scale][c * 4 + n] : 0.0;
                 const double b_term = scale < num_scales ? avg_ed[scale][c * 4 + n + 2] : 0.0;
-                ssim += g_weights[i++] * fabs(s_term);
-                ssim += g_weights[i++] * fabs(r_term);
-                ssim += g_weights[i++] * fabs(b_term);
+                ssim += kWeights[i++] * fabs(s_term);
+                ssim += kWeights[i++] * fabs(r_term);
+                ssim += kWeights[i++] * fabs(b_term);
             }
         }
     }
@@ -912,6 +758,42 @@ static void ss2h_stage_plane(const VmafPicture *pic, unsigned p, void *dst, size
         (void)memcpy(out + (size_t)i * row_bytes, src + (size_t)i * stride, row_bytes);
 }
 
+/* Device pictures of the VMAFx API (ADR-2092): the six raw planes copied
+ * into d_raw on the pictures' library stream, which s->str waits on
+ * (vmaf_hip_picture_upload()); no host staging. */
+static int ss2h_copy_device(const Ssimu2StateHip *s, const VmafPicture *const pics[SS2H_IMAGES])
+{
+    VmafHipPlaneUpload planes[SS2H_IMAGES * SS2H_CHANNELS];
+    unsigned n = 0u;
+    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
+        for (unsigned p = 0; p < SS2H_CHANNELS; p++) {
+            const VmafHipPlaneUpload plane = {.dst = s->d_raw[img][p],
+                                              .dst_pitch = s->row_bytes[p],
+                                              .pic = pics[img],
+                                              .plane = p,
+                                              .row_bytes = s->row_bytes[p],
+                                              .rows = s->plane_h[p]};
+            planes[n++] = plane;
+        }
+    }
+    return vmaf_hip_picture_upload(planes, n, vmaf_hip_stream_bits(s->str));
+}
+
+/* The frame's planes on their way to the device: host pictures packed into
+ * pinned staging (ss2h_enqueue_frame() copies it up), device pictures copied
+ * on the device. */
+static int ss2h_take_pictures(Ssimu2StateHip *s, const VmafPicture *const pics[SS2H_IMAGES])
+{
+    s->device_input = vmaf_hip_picture_device_stream(pics[0]) != 0u;
+    if (s->device_input)
+        return ss2h_copy_device(s, pics);
+    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
+        for (unsigned p = 0; p < SS2H_CHANNELS; p++)
+            ss2h_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
+    }
+    return 0;
+}
+
 #endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
@@ -930,6 +812,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return -ENOSYS;
 #else
     Ssimu2StateHip *s = fex->priv;
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2_hip");
+    if (fmt_err)
+        return fmt_err;
 
     if (w < 8u || h < 8u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_hip: input %ux%u below 8x8 lower bound\n", w,
@@ -940,9 +825,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    const int plane_err = ss2h_configure_planes(s, pix_fmt);
-    if (plane_err)
-        return plane_err;
+    ss2h_configure_planes(s, pix_fmt);
     ss2h_configure_scales(s);
     ss2h_setup_gaussian(&s->iir, SS2H_SIGMA);
     /* The row pass finds every left input of a tile in the tile before it
@@ -991,11 +874,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (!ss2h_picture_matches(s, ref_pic) || !ss2h_picture_matches(s, dist_pic))
         return -EINVAL;
     const VmafPicture *const pics[SS2H_IMAGES] = {ref_pic, dist_pic};
-    for (unsigned img = 0; img < SS2H_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2H_CHANNELS; p++)
-            ss2h_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
-    }
-    const int err = ss2h_enqueue_frame(s);
+    int err = ss2h_take_pictures(s, pics);
+    if (!err)
+        err = ss2h_enqueue_frame(s);
     if (err)
         return err;
     s->pending_index = index;

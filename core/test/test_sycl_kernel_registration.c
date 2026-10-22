@@ -17,6 +17,11 @@
 #include "config.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 #if HAVE_SYCL
 
 #include "sycl/common.h"
@@ -59,3 +64,5 @@ char *run_tests(void)
 }
 
 #endif
+
+/* NOLINTEND(modernize-use-nullptr) */

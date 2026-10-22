@@ -2,29 +2,18 @@
 # Regression tests for the coordinated release-version preflight.
 #
 # Copyright 2026 Lusoris
-# Copyright 2026 Claude (Anthropic)
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY="$SCRIPT_DIR/../verify-release-version.sh"
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT INT TERM
-pass=0
-fail=0
-
-check() {
-  local description="$1"
-  shift
-  if "$@"; then
-    printf 'PASS: %s\n' "$description"
-    pass=$((pass + 1))
-  else
-    printf 'FAIL: %s\n' "$description" >&2
-    fail=$((fail + 1))
-  fi
-}
+# shellcheck source=scripts/release/tests/lib.sh
+. "$SCRIPT_DIR/lib.sh"
 
 # A fixture repo in the post-cut state the verifier now demands (ADR-1151):
 # manifest + markers agree, CHANGELOG.md carries exactly one dated release

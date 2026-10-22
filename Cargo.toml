@@ -10,6 +10,15 @@
 members = [
     "bindings/rust/vmafx-sys",
     "bindings/rust/vmafx",
+]
+# ADR-1713: the Rust code libvmaf links (the extractor framework, the twins,
+# the predictor and the TAD pilot) is its own workspace,
+# core/src/rust/Cargo.toml, with a lockfile that holds no external crate, so
+# Meson's `cargo build --offline --locked` never needs the registry. Cargo
+# resolves a whole workspace even for `-p`, and the bindings above pull in
+# bindgen.
+exclude = [
+    "core/src/rust",
     "core/src/feature/rust/tad",
 ]
 resolver = "2"
@@ -17,13 +26,18 @@ resolver = "2"
 # Shared crate metadata. Per-crate manifests opt in via
 # `repository.workspace = true` (etc.) so URL drift across the workspace
 # is impossible — touch this block once, every member inherits.
+# `license` is the licence of the files a crate ships (ADR-1250, ADR-1699):
+# scripts/ci/check_licence_metadata.py holds every member that inherits it to
+# its files, and a member whose files carry more declares its own.
 [workspace.package]
 authors = ["Lusoris <lusoris@pm.me>"]
 edition = "2024"
-license = "BSD-2-Clause-Patent"
+# build-config.env RUST_VERSION (ADR-3318); check-workflow-versions.py holds it there.
+rust-version = "1.99.1"
+license = "EUPL-1.2"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"
-documentation = "https://vmafx.github.io/vmafx/"
+documentation = "https://vmafx.dev/"
 readme = "README.md"
 
 [profile.release]

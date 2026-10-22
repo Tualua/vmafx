@@ -5,7 +5,7 @@ Go MCP server: exposes 24 tools (`vmaf_score`, `list_models`, ...) to MCP client
 
 ## Composition root (golusoris fx, ADR-1119 Phase-1 PR-5)
 
-`main.go` = `fx.New(...).Run()` over `internal/app/bootstrap.Base` (golusoris.Core = config + slog + clock + id + validate + crypto, plus `otel.Module`, build-version supply). Mirrors sibling migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). Shape:
+`main.go` = `fx.New(...).Run()` over `internal/app/bootstrap.Base` (`bootstrap.Core` = golusoris config + slog + clock + id + validate, plus `otel.Module`, build-version supply). Mirrors sibling migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). Shape:
 
 ```go
 fx.New(
@@ -19,14 +19,13 @@ fx.New(
 
 Facts:
 
-- **MCP server NOT golusoris server module.** golusoris ships no MCP module -> no `golusoris.HTTP` / `grpc.Module` in graph. Transport (stdio or streamable-HTTP from config) owned in `runMCPTransport` fx lifecycle hook: `OnStart` launches goroutine, `OnStop` drains. If golusoris adds MCP module later, fold hook into module. Do not express transport as framework module.
+- **MCP server NOT golusoris server module.** golusoris ships no MCP module -> no `bootstrap.HTTP` / `grpc.Module` in graph. Transport (stdio or streamable-HTTP from config) owned in `runMCPTransport` fx lifecycle hook: `OnStart` launches goroutine, `OnStop` drains. If golusoris adds MCP module later, fold hook into module. Do not express transport as framework module.
 - **`buildServer` domain seam.** `buildMCPServer` = thin fx provider calling `buildServer(*slog.Logger) (*mcp.Server, error)` (`server.go`). `*config.Config` param exists for fx signature / config-driven wiring; `buildServer` itself needs only logger. Tests call `buildServer(nil)` directly and must check error. Error return load-bearing: only path tool failing schema marshal stops process instead of serving without argument validation (invariant #19). Do not widen signature; do not reduce to single return value.
 - **Config keys (env prefix `VMAFX_`, `.` delimiter — `_` becomes `.`):** `VMAFX_MCP_TRANSPORT` -> `mcp.transport` (default `stdio`); `VMAFX_MCP_HTTP_ADDR` -> `mcp.http.addr` (default `:3000`, full listen address). `VMAF_BIN` and `VMAFX_MCP_DIRECT` read directly by tool handlers via `os.Getenv`, NOT koanf — contract unchanged.
-- **Interim env bridge.** `main()` bridges `VMAFX_LOG_LEVEL → LOG_LEVEL` and `VMAFX_LOG_FORMAT → LOG_FORMAT` before `fx.New` (golusoris#234, v0.4.0 log module reads bare `LOG_LEVEL`). Delete lockstep with sibling binaries once carrying golusoris tag lands.
 
 ## Rebase-sensitive invariants
 
-1. **Tool name + schema parity with Python** (`tools.go`): tool names and required-field sets MUST match Python `mcp-server/vmaf-mcp/` server `_list_tools()` output. Adding Go-only tool or renaming required field breaks IDE MCP clients configured against Python schema. Enforced by `server_test.go::TestToolListMatchesPython` and `TestToolSchemasMatchPython`.
+1. **Tool name + schema parity with Python** (`tools.go`): every tool of Python `_list_tools()` served with same property names, JSON types, required set. Python list = `mcp-server/vmaf-mcp/tool-contract.json`, written by `python3 -m vmaf_mcp.tool_contract --write`, kept current by `mcp-server/vmaf-mcp/tests/test_tool_contract.py`; never hand-edit it, never copy the list into Go. Served tool outside contract = must be in `goOnlyTools` (invariant 17). Enforced by `tool_contract_test.go::TestToolListMatchesPython`, `TestToolSchemasMatchPython`; `TestToolContractComparisonRefusesDrift` plants missing / extra / required / type drift. `.github/ci-impact.json` routes contract changes to Go checks.
 
 2. **Direct/subprocess dispatcher** (`impl.go`, `impl_direct.go`): tool handlers with both paths MUST dispatch via:
    `if directPathEnabled() { runFooDirect(...) } else { runFoo(...) }`.
@@ -60,10 +59,24 @@ Facts:
 
 16. **Sidecar parity required** (ADR-1184, #1240). 15 classic tools and 4 sidecar tools (`vmaf_per_shot`, `vmaf_roi`, `vmaf_bench`, `vmaf_vpl`) have byte-compatible Python twins. `impl_sidecar.go` `buildPerShotArgv` / `buildRoiArgv` / `buildBenchArgv` / `buildVplArgv` MUST produce same argv as `server.py` `_build_per_shot_argv` / `_build_roi_argv` / `_build_bench_argv` / `_build_vpl_argv`; schemas (names, enums, defaults, bounds) must match. `sidecar_parity_test.go::TestSidecarArgvParity` drives both sides, compares. Argv builders split out of handlers so test runs without sidecar binary on disk — do not fold back into handlers. Float arguments formatted with `strconv.FormatFloat(v, 'f', -1, 64)` (Go) and `server.py::_fmt_float` (Python); Python `repr` alone NOT equivalent (keeps trailing `.0` on integral values, switches to exponent notation for small magnitudes; changes argv bytes). New float parameter must go through `_fmt_float`.
 
-17. **gRPC bridge deliberately Go-only** (ADR-1184). 5 control-plane tools (`submit_job`, `get_job`, `cancel_job`, `list_jobs`, `vmaf_score_remote`) have NO Python twin: Python server ships no gRPC stack and Phase-4b architecture names Go binary controller MCP client. Legal under invariant #1 because parity test asserts Go superset of Python. Do not delete tools; do not add `grpcio` to `mcp-server/vmaf-mcp` without superseding ADR-1184. Connection targets and credentials environment-only (`VMAFX_CONTROLLER_ADDR`, `VMAFX_SERVER_ADDR`, `VMAFX_CONTROLLER_TOKEN`, `VMAFX_GRPC_TIMEOUT`) — tool argument naming host makes MCP server SSRF pivot. `impl_grpc_test.go::TestGRPCTargetsComeFromEnv` pins this; `validateRemotePath` (shape-only: absolute, no `..`, no control characters) = ONLY guard on remote path arguments (`libvmaf.ValidatePath` cannot apply to file on worker node).
+17. **gRPC bridge deliberately Go-only** (ADR-1184). 5 control-plane tools (`submit_job`, `get_job`, `cancel_job`, `list_jobs`, `vmaf_score_remote`) have NO Python twin: Python server ships no gRPC stack and Phase-4b architecture names Go binary controller MCP client. Legal under invariant #1: listed in `goOnlyTools`; parity test fails when one is dropped or an undeclared tool appears. Do not delete tools; do not add `grpcio` to `mcp-server/vmaf-mcp` without superseding ADR-1184. Connection targets and credentials environment-only (`VMAFX_CONTROLLER_ADDR`, `VMAFX_SERVER_ADDR`, `VMAFX_CONTROLLER_TOKEN`, `VMAFX_GRPC_TIMEOUT`) — tool argument naming host makes MCP server SSRF pivot. `impl_grpc_test.go::TestGRPCTargetsComeFromEnv` pins this; `validateRemotePath` (shape-only: absolute, no `..`, no control characters) = ONLY guard on remote path arguments (`libvmaf.ValidatePath` cannot apply to file on worker node).
 
 18. **Sidecar binary resolution goes through `libvmaf.FindSidecarBinary`** (`pkg/libvmaf/paths.go`). Second candidate — sibling of resolved `vmaf` binary — load-bearing: single `VMAF_BIN` resolves whole family (required by vmaf-dev-mcp container after `make install`). `server.py::_sidecar_binary` mirrors order. Adding sidecar requires adding to `SidecarBinaryEnv` AND `_SIDECAR_BINARY_ENV`.
 
-19. **Every tool reaches server through `registerTools` grouped helpers** (`tools.go`). `registerTools` list of `registerXTools(srv)` calls; tool registrations live in helpers in original order. New tool must go into one (or new helper called by `registerTools`). A `register*` function nothing calls registers nothing. Invariant #1 parity test asserts Python tools present only, so dropped Go-only tool silent. Schema literals marshalled by `toolRegistrar.add`, not tool literal; schema failing marshal cannot reach registered tool: `add` retains error, registers nothing, skips later registrations; `registerTools` returns error, `buildServer` fails. Never substitute default schema for failed marshal: permissive `{"type":"object"}` accepts every argument map, tool stays reachable with declared contract silently disabled, parity tests miss because they compare registered tools only. `cmd/vmafx-mcp/tool_schema_test.go` pins outcome.
+19. **Every tool reaches server through `registerTools` grouped helpers** (`tools.go`). `registerTools` list of `registerXTools(srv)` calls; tool registrations live in helpers in original order. New tool must go into one (or new helper called by `registerTools`). A `register*` function nothing calls registers nothing. Invariant #1 parity test catches dropped Python or declared Go-only tool. Schema literals marshalled by `toolRegistrar.add`, not tool literal; schema failing marshal cannot reach registered tool: `add` retains error, registers nothing, skips later registrations; `registerTools` returns error, `buildServer` fails. Never substitute default schema for failed marshal: permissive `{"type":"object"}` accepts every argument map, tool stays reachable with declared contract silently disabled, parity tests miss because they compare registered tools only. `cmd/vmafx-mcp/tool_schema_test.go` pins outcome.
 
 20. **Auto-dispatch backend identity comes from CLI receipt, never metric counts.** `decodeVmafOutput` accepts concrete top-level `backend_used` value (`cpu`, `cuda`, `sycl`, `hip`, or `metal`) when request used `auto`; missing, generic `gpu`, `auto`, non-string, and unknown receipts become `unknown`. Metric-key counts are run observations and move as extractors change. Keep non-object JSON rejection before response annotation. Explicit subprocess requests echo requested backend; direct-cgo path remains separate, keeps `cpu (direct cgo)`.
+
+21. **Scoring schemas + argv from generated options** (RC4 WP8, ADR-2044).
+    `vmaf_score`, `vmaf_score_encoded`, `describe_worst_frames` registered via
+    `toolRegistrar.addGenerated`: schema = `pkg/scoreopts` `options.gen.json`
+    (generated from `core/api/vmafx.toml`, byte-identical to Python copy
+    `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json`). Validation =
+    `doc.FromMCP` (bounds, enums, reserved); flags = `cliFlag()` /
+    `doc.ExtraArgs` / `scoreExtras.modelSpec`. Hand-written only: tiny_device
+    vs dnn_ep fold, csv/sub/output_fmt agreement, no_reference needs
+    tiny_model, backend -> `--no_<sibling>`. Do not bring back
+    `scoringExtraProperties` or hand flag lists. Omitted `model` =
+    `version=` + `library_defaults[VMAF_DEFAULT_MODEL_VERSION]`, never a
+    literal. New scoring argument = definition entry + regenerate + both
+    servers unchanged unless it needs a hand rule.

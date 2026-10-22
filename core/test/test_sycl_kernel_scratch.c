@@ -30,12 +30,18 @@
 #include "config.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 #if HAVE_SYCL
 
 #include "gpu_dispatch_env.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "sycl/common.h"
 #include "sycl/scratch_check.h"
+#include "compat/path_utf8.h"
 
 #ifndef VMAF_SYCL_SCRATCH_RATCHET
 #error "meson passes the ratchet list path as VMAF_SYCL_SCRATCH_RATCHET"
@@ -118,7 +124,7 @@ static char *load_ratchet(void)
     const char *const override = vmaf_gpu_dispatch_env_get("VMAF_SYCL_SCRATCH_RATCHET_FILE");
     const char *const path =
         (override != NULL && override[0] != '\0') ? override : VMAF_SYCL_SCRATCH_RATCHET;
-    FILE *f = fopen(path, "r");
+    FILE *f = vmaf_fopen_utf8(path, "r");
     mu_assert("cannot open core/src/sycl/scratch_ratchet.txt", f != NULL);
     char line[MAX_LINE];
     int bad = 0;
@@ -303,3 +309,5 @@ char *run_tests(void)
 }
 
 #endif
+
+/* NOLINTEND(modernize-use-nullptr) */

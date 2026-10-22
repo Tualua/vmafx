@@ -42,18 +42,18 @@
 #include "mkdirp.h"
 #include "picture.h"
 
-#ifdef _MSC_VER
-#define CAMBI_NULL_POINTER NULL
-#else
-#define CAMBI_NULL_POINTER nullptr
-#endif
-
 #if ARCH_X86
 #include "x86/cambi_avx2.h"
 #include "x86/cambi_avx512.h"
 #elif ARCH_AARCH64
 #include "arm64/cambi_neon.h"
 #endif
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065); upstream
+ * Netflix/vmaf spells the null pointer `NULL` here too. ADR-1138. */
 
 /* Ratio of pixels for computation, must be 0 < topk <= 1.0 */
 #define DEFAULT_CAMBI_TOPK_POOLING (0.6)
@@ -214,9 +214,9 @@ static const VmafOption options[] = {
                  "maximum value allowed; larger values will be clipped to this value",
                  cambi_max_val, VMAF_OPT_TYPE_DOUBLE, d, DEFAULT_CAMBI_MAX_VAL, 0.0, 1000.0,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "cmxv"),
-    CAMBI_OPTION("enc_width", "Encoding width", enc_width, VMAF_OPT_TYPE_INT, i, 0, 180, 7680,
+    CAMBI_OPTION("enc_width", "Encoding width", enc_width, VMAF_OPT_TYPE_INT, i, 0, 144, 7680,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "encw"),
-    CAMBI_OPTION("enc_height", "Encoding height", enc_height, VMAF_OPT_TYPE_INT, i, 0, 150, 7680,
+    CAMBI_OPTION("enc_height", "Encoding height", enc_height, VMAF_OPT_TYPE_INT, i, 0, 144, 7680,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "ench"),
     CAMBI_OPTION("enc_bitdepth", "Encoding bitdepth", enc_bitdepth, VMAF_OPT_TYPE_INT, i, 0, 6, 16,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "encbd"),
@@ -230,7 +230,7 @@ static const VmafOption options[] = {
     CAMBI_OPTION("topk",
                  "Ratio of pixels for the spatial pooling computation, must be 0 < topk <= 1.0",
                  topk, VMAF_OPT_TYPE_DOUBLE, d, DEFAULT_CAMBI_TOPK_POOLING, 0.0001, 1.0,
-                 VMAF_OPT_FLAG_FEATURE_PARAM, CAMBI_NULL_POINTER),
+                 VMAF_OPT_FLAG_FEATURE_PARAM, NULL),
     CAMBI_OPTION(
         "cambi_topk",
         "Ratio of pixels for the spatial pooling computation, must be 0 < cambi_topk <= 1.0",
@@ -246,16 +246,15 @@ static const VmafOption options[] = {
     CAMBI_OPTION("max_log_contrast", max_log_contrast_help, max_log_contrast_opt, VMAF_OPT_TYPE_INT,
                  i, DEFAULT_CAMBI_MAX_LOG_CONTRAST, 0, 5, VMAF_OPT_FLAG_FEATURE_PARAM, "mlc"),
     CAMBI_OPTION("heatmaps_path", "Path where heatmaps will be dumped.", heatmaps_path,
-                 VMAF_OPT_TYPE_STRING, s, CAMBI_NULL_POINTER, 0, 0, 0, CAMBI_NULL_POINTER),
+                 VMAF_OPT_TYPE_STRING, s, NULL, 0, 0, 0, NULL),
     CAMBI_OPTION(
         "full_ref",
         "If true, CAMBI will be run in full-reference mode and will be computed on both the reference and distorted inputs",
-        full_ref, VMAF_OPT_TYPE_BOOL, b, DEFAULT_CAMBI_FULL_REF_FLAG, 0, 0, 0, CAMBI_NULL_POINTER),
+        full_ref, VMAF_OPT_TYPE_BOOL, b, DEFAULT_CAMBI_FULL_REF_FLAG, 0, 0, 0, NULL),
     CAMBI_OPTION(
         "eotf",
         "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'",
-        eotf, VMAF_OPT_TYPE_STRING, s, DEFAULT_CAMBI_EOTF, 0, 0, VMAF_OPT_FLAG_FEATURE_PARAM,
-        CAMBI_NULL_POINTER),
+        eotf, VMAF_OPT_TYPE_STRING, s, DEFAULT_CAMBI_EOTF, 0, 0, VMAF_OPT_FLAG_FEATURE_PARAM, NULL),
     CAMBI_OPTION(
         "cambi_eotf",
         "Determines the EOTF used to compute the visibility thresholds. Possible values: ['bt1886', 'pq']. Default: 'bt1886'. If both eotf and cambi_eotf are set, cambi_eotf takes precedence.",
@@ -266,7 +265,7 @@ static const VmafOption options[] = {
         "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p. Min speed-up resolution possible values: [1080, 1440, 2160, 0]. Default: 0 (not applied)Note some loss of accuracy is expected with this speedup.",
         cambi_high_res_speedup, VMAF_OPT_TYPE_INT, i, DEFAULT_CAMBI_HIGH_RES_SPEEDUP, 0,
         CAMBI_4K_HEIGHT, VMAF_OPT_FLAG_FEATURE_PARAM, "hrs"),
-    {.name = CAMBI_NULL_POINTER}};
+    {.name = NULL}};
 
 #undef CAMBI_OPTION
 
@@ -389,16 +388,16 @@ static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_con
     *diffs_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
     if (!(*diffs_weights)) {
         aligned_free(*diffs_to_consider);
-        *diffs_to_consider = CAMBI_NULL_POINTER;
+        *diffs_to_consider = NULL;
         return -ENOMEM;
     }
 
     *all_diffs = aligned_malloc(ALIGN_CEIL(sizeof(int)) * (2 * num_diffs + 1), 32);
     if (!(*all_diffs)) {
         aligned_free(*diffs_to_consider);
-        *diffs_to_consider = CAMBI_NULL_POINTER;
+        *diffs_to_consider = NULL;
         aligned_free(*diffs_weights);
-        *diffs_weights = CAMBI_NULL_POINTER;
+        *diffs_weights = NULL;
         return -ENOMEM;
     }
 
@@ -567,8 +566,7 @@ static int setup_contrast_and_luminance(CambiState *s, int num_diffs)
 
     err = vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
                                       s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                      s->buffers.tvi_for_diff, &s->vlt_luma, CAMBI_NULL_POINTER,
-                                      CAMBI_NULL_POINTER);
+                                      s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
     if (err)
         return err;
 
@@ -636,21 +634,25 @@ static int alloc_cambi_buffers(CambiState *s, int alloc_w, int alloc_h, int num_
     return 0;
 }
 
-static int open_heatmaps(CambiState *s)
+/* One 16-bit .gray file per scale under `heatmaps_path` (none when it is
+ * NULL), named for the encode size halved per scale. Shared with the GPU
+ * twins through vmaf_cambi_open_heatmaps(). */
+static int open_heatmaps(const char *heatmaps_path, unsigned enc_width, unsigned enc_height,
+                         FILE *heatmaps_files[NUM_SCALES])
 {
-    if (!s->heatmaps_path)
+    if (!heatmaps_path)
         return 0;
 
-    int mkdir_err = mkdirp(s->heatmaps_path, 0770);
+    int mkdir_err = mkdirp(heatmaps_path, 0770);
     if (mkdir_err)
         return -EINVAL;
 
     char path[1024] = {0};
-    int scaled_w = s->enc_width;
-    int scaled_h = s->enc_height;
+    int scaled_w = enc_width;
+    int scaled_h = enc_height;
     for (int scale = 0; scale < NUM_SCALES; scale++) {
         int snp_ret = snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
-                               s->heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
+                               heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
         if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path))
             return -ENAMETOOLONG;
 
@@ -664,11 +666,11 @@ static int open_heatmaps(CambiState *s)
             return -EINVAL;
         }
 #ifdef _WIN32
-        s->heatmaps_files[scale] = _fdopen(hfd, "wb");
+        heatmaps_files[scale] = _fdopen(hfd, "wb");
 #else
-        s->heatmaps_files[scale] = fdopen(hfd, "w");
+        heatmaps_files[scale] = fdopen(hfd, "w");
 #endif
-        if (!s->heatmaps_files[scale]) {
+        if (!heatmaps_files[scale]) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
 #ifdef _WIN32
             (void)_close(hfd);
@@ -683,10 +685,25 @@ static int open_heatmaps(CambiState *s)
     return 0;
 }
 
+/* Close every open heatmap file and clear its slot; -EIO when a close fails
+ * (the buffered rows of that file are lost). NULL slots are skipped: a partial
+ * init() failure may close before every scale's file was opened, and
+ * fclose(NULL) is undefined. */
+static int close_heatmap_files(FILE *heatmaps_files[NUM_SCALES])
+{
+    int err = 0;
+    for (int scale = 0; scale < NUM_SCALES; scale++) {
+        if (heatmaps_files[scale] && fclose(heatmaps_files[scale]) && !err)
+            err = -EIO;
+        heatmaps_files[scale] = NULL;
+    }
+    return err;
+}
+
 static void setup_callbacks(CambiState *s)
 {
     VmafCambiDerivativeCalculator default_derivative;
-    vmaf_cambi_default_callbacks(CAMBI_NULL_POINTER, CAMBI_NULL_POINTER, &default_derivative);
+    vmaf_cambi_default_callbacks(NULL, NULL, &default_derivative);
 
     s->derivative_callback = (VmafDerivativeCalculator)default_derivative;
     s->calc_c_values_callback = calculate_c_values_default;
@@ -767,7 +784,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (err)
         return fail_init(fex, err);
 
-    err = open_heatmaps(s);
+    err =
+        vmaf_cambi_open_heatmaps(s->heatmaps_path, s->enc_width, s->enc_height, s->heatmaps_files);
     if (err)
         return fail_init(fex, err);
 
@@ -803,8 +821,8 @@ static void decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic, Vm
     float ratio_x = (float)in_w / out_w;
     float ratio_y = (float)in_h / out_h;
 
-    float start_x = ratio_x / 2 - 0.5;
-    float start_y = ratio_y / 2 - 0.5;
+    float start_x = (float)(ratio_x / 2 - 0.5);
+    float start_y = (float)(ratio_y / 2 - 0.5);
 
     float y = start_y;
     for (unsigned i = 0; i < out_h; i++) {
@@ -843,8 +861,8 @@ static void decimate_generic_9b_and_convert_to_10b(const VmafPicture *pic, VmafP
     float ratio_x = (float)in_w / out_w;
     float ratio_y = (float)in_h / out_h;
 
-    float start_x = ratio_x / 2 - 0.5;
-    float start_y = ratio_y / 2 - 0.5;
+    float start_x = (float)(ratio_x / 2 - 0.5);
+    float start_y = (float)(ratio_y / 2 - 0.5);
 
     float y = start_y;
     for (unsigned i = 0; i < out_h; i++) {
@@ -864,8 +882,16 @@ static void decimate_same_size_16b(const uint16_t *data, uint16_t *out_data, ptr
                                    unsigned bpc, int shift_factor, int rounding_offset)
 {
     if (bpc == 10) {
-        // memcpy is faster in case the original bitdepth is already 10
-        memcpy(out_data, data, (size_t)stride * out_h * sizeof(uint16_t));
+        /* One row at a time, each with its own stride: under full_ref the
+         * working picture is allocated MAX(src, enc) wide, so its stride can
+         * exceed the input's, and a caller's picture may be wider than ours.
+         * A single copy of `stride * out_h` samples put every row after the
+         * first at the wrong offset
+         * (T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05). */
+        for (unsigned i = 0; i < out_h; i++) {
+            memcpy(out_data + ((ptrdiff_t)i * out_stride), data + ((ptrdiff_t)i * stride),
+                   (size_t)out_w * sizeof(uint16_t));
+        }
     } else {
         for (unsigned i = 0; i < out_h; i++) {
             for (unsigned j = 0; j < out_w; j++) {
@@ -900,8 +926,8 @@ static void decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic, V
     float ratio_x = (float)in_w / out_w;
     float ratio_y = (float)in_h / out_h;
 
-    float start_x = ratio_x / 2 - 0.5;
-    float start_y = ratio_y / 2 - 0.5;
+    float start_x = (float)(ratio_x / 2 - 0.5);
+    float start_y = (float)(ratio_y / 2 - 0.5);
 
     float y = start_y;
     for (unsigned i = 0; i < out_h; i++) {
@@ -938,7 +964,7 @@ static void anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned hei
     }
 #endif
     uint16_t *data = pic->data[0];
-    int stride = pic->stride[0] >> 1;
+    int stride = (int)(pic->stride[0] >> 1);
 
     for (unsigned i = 0; i < height - 1; i++) {
         for (unsigned j = 0; j < width - 1; j++) {
@@ -1179,7 +1205,7 @@ static void get_spatial_mask_for_index(const VmafPicture *image, VmafPicture *ma
     for (int i = 0; i < pad_size; i++) {
         bool deriv_valid = (i < height);
         if (deriv_valid) {
-            derivative_callback(image_data, derivative_buffer, width, height, i, stride);
+            derivative_callback(image_data, derivative_buffer, width, height, i, (int)stride);
         }
         int curr_row = i + pad_size + 1;
         compute_dp_row_callback(&dp[(ptrdiff_t)curr_row * dp_width],
@@ -1196,7 +1222,7 @@ static void get_spatial_mask_for_index(const VmafPicture *image, VmafPicture *ma
     for (int i = pad_size; i < height + pad_size; i++) {
         bool deriv_valid = (i < height);
         if (deriv_valid) {
-            derivative_callback(image_data, derivative_buffer, width, height, i, stride);
+            derivative_callback(image_data, derivative_buffer, width, height, i, (int)stride);
         }
         compute_dp_row_callback(&dp[(ptrdiff_t)curr_row * dp_width],
                                 &dp[(ptrdiff_t)prev_row * dp_width], derivative_buffer, width,
@@ -1484,7 +1510,7 @@ static void quick_select(float *arr, int n, int k)
 static double spatial_pooling(float *c_values, double topk, unsigned width, unsigned height)
 {
     int num_elements = height * width;
-    int topk_num_elements = clip(topk * num_elements, 1, num_elements);
+    int topk_num_elements = clip((int)(topk * num_elements), 1, num_elements);
     quick_select(c_values, num_elements, topk_num_elements);
     return average_topk_elements(c_values, topk_num_elements);
 }
@@ -1528,7 +1554,7 @@ static int dump_c_values(FILE *heatmaps_files[], const float *c_values, int widt
             to_write[j] = (uint16_t)(scaling_value * c_values[i * width + j]);
         }
         ptrdiff_t offset = ((ptrdiff_t)frame * height + i) * width * sizeof(uint16_t);
-        (void)fseek(file, offset, SEEK_SET);
+        (void)fseek(file, (long)offset, SEEK_SET);
         (void)fwrite((void *)to_write, sizeof(uint16_t), width, file);
     }
     free(to_write);
@@ -1576,8 +1602,9 @@ static int cambi_score(VmafPicture *pics, uint16_t window_size, double topk,
                                scaled_height);
 
         if (write_heatmaps) {
-            int err = dump_c_values(heatmaps_files, buffers->c_values, scaled_width, scaled_height,
-                                    scale, window_size, num_diffs, buffers->diff_weights, frame);
+            int err = vmaf_cambi_dump_c_values(heatmaps_files, buffers->c_values, scaled_width,
+                                               scaled_height, scale, window_size, num_diffs,
+                                               buffers->diff_weights, frame);
             if (err)
                 return err;
         }
@@ -1700,14 +1727,10 @@ static int close_cambi(VmafFeatureExtractor *fex)
     aligned_free(s->buffers.all_diffs);
     aligned_free(s->buffers.derivative_buffer);
 
-    if (s->heatmaps_path) {
-        for (int scale = 0; scale < NUM_SCALES; scale++) {
-            /* NULL-tolerant: a partial init() failure may close before every
-             * scale's file was opened; fclose(NULL) is undefined. */
-            if (s->heatmaps_files[scale])
-                (void)fclose(s->heatmaps_files[scale]);
-        }
-    }
+    /* Every slot is NULL without heatmaps_path (fex->priv is zeroed). */
+    const int heatmaps_err = vmaf_cambi_close_heatmaps(s->heatmaps_files);
+    if (heatmaps_err && !err)
+        err = heatmaps_err;
 
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
@@ -1715,7 +1738,7 @@ static int close_cambi(VmafFeatureExtractor *fex)
     return err;
 }
 
-static const char *provided_features[] = {"Cambi_feature_cambi_score", CAMBI_NULL_POINTER};
+static const char *provided_features[] = {"Cambi_feature_cambi_score", NULL};
 
 extern VmafFeatureExtractor vmaf_fex_cambi;
 VmafFeatureExtractor vmaf_fex_cambi = {
@@ -1825,7 +1848,7 @@ int vmaf_cambi_check_window_fits_lut(uint16_t enc_window, uint16_t src_window)
 void vmaf_cambi_resize_source_indices(unsigned in_len, unsigned out_len, uint32_t *indices)
 {
     float ratio = (float)in_len / out_len;
-    float start = ratio / 2 - 0.5;
+    float start = (float)(ratio / 2 - 0.5);
     float pos = start;
     for (unsigned i = 0; i < out_len; i++) {
         indices[i] = (uint32_t)(int)lroundf(pos);
@@ -1949,6 +1972,28 @@ int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider
         *v_band_size = (uint16_t)size_signed;
 
     return 0;
+}
+
+/* The heatmap writers of the `heatmaps_path` option, for the twins whose
+ * c-values reach the host (T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05):
+ * thin trampolines, so the twin's files are written by this code. */
+int vmaf_cambi_open_heatmaps(const char *path, unsigned enc_width, unsigned enc_height,
+                             FILE *files[VMAF_CAMBI_NUM_SCALES])
+{
+    return open_heatmaps(path, enc_width, enc_height, files);
+}
+
+int vmaf_cambi_dump_c_values(FILE *files[VMAF_CAMBI_NUM_SCALES], const float *c_values, int width,
+                             int height, int scale, int window_size, uint16_t num_diffs,
+                             const int *diff_weights, int frame)
+{
+    return dump_c_values(files, c_values, width, height, scale, window_size, num_diffs,
+                         diff_weights, frame);
+}
+
+int vmaf_cambi_close_heatmaps(FILE *files[VMAF_CAMBI_NUM_SCALES])
+{
+    return close_heatmap_files(files);
 }
 
 /* ----- internal test trampolines (narrowly exposed for in-tree unit tests) ----- */
@@ -2098,17 +2143,10 @@ int vmaf_cambi_test_get_vlt_luma(double visibility_luminance_threshold, VmafLuma
 
 int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_height)
 {
-    CambiState state = {
-        .enc_width = enc_width,
-        .enc_height = enc_height,
-        .heatmaps_path = path,
-    };
-    int err = open_heatmaps(&state);
-    for (int scale = 0; scale < NUM_SCALES; ++scale) {
-        if (state.heatmaps_files[scale] && fclose(state.heatmaps_files[scale]) && !err)
-            err = -EIO;
-    }
-    return err;
+    FILE *files[NUM_SCALES] = {NULL};
+    const int err = open_heatmaps(path, enc_width, enc_height, files);
+    const int close_err = close_heatmap_files(files);
+    return err ? err : close_err;
 }
 
-#undef CAMBI_NULL_POINTER
+/* NOLINTEND(modernize-use-nullptr) */

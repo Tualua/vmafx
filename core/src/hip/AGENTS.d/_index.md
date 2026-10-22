@@ -17,7 +17,10 @@ hip/
   common.{c,h}          # HIP context + (future) stream management
   picture_hip.{c,h}     # device picture alloc/free, and vmaf_hip_picture_upload():
                         #   the one way a host VmafPicture plane reaches the
-                        #   device (waits for the copy; see ../feature/hip/AGENTS.md)
+                        #   device (waits for the copy; see ../feature/hip/AGENTS.md);
+                        #   a VMAFx device picture is copied on its library stream
+  vmafx_hip{,_internal}.h, import_{device,frame,dmabuf,fence,gl}.c,
+  import_convert.hip    # ADR-2092: VMAFx device frames on HIP (vmafx-device-frames page)
   shared_frame.{c,h}    # ADR-1408: frame planes a VmafContext uploads once,
                         #   every twin reads; vmaf_hip_plane_source_acquire()
   hip_handle.h          # uintptr_t <-> hipStream_t / hipEvent_t, via a union
@@ -142,6 +145,6 @@ ninja -C build_full
 ```
 
 required CI lane `Ubuntu HIP` leaves `enable_hipcc` at its default
-(`false`): it installs ROCm 10.0.0 from digest-pinned image (ADR-1225) and
+(`false`): it installs ROCm 10.1.0 from digest-pinned image (ADR-1225) and
 builds host side without device kernels. Kernel-enabled builds
 (`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 7.0+.

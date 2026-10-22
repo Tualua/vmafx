@@ -248,20 +248,20 @@ class ScoreAggregationTest(unittest.TestCase):
 
         self.result.set_score_aggregate_method(np.mean)
         # the following should give same value
-        self.assertAlmostEqual(self.result["VMAF_score"], 35.0661575902223, places=2)
+        self.assertAlmostEqual(self.result["VMAF_score"], 35.070219101439314, places=4)
         # for a 2-D array, first dimension is # models and second is # frames
         self.assertAlmostEqual(
-            self.result["VMAF_two_models_array_score"][0], 35.0661575902223, places=2
+            self.result["VMAF_two_models_array_score"][0], 35.070219101439314, places=4
         )
         self.assertAlmostEqual(
-            self.result["VMAF_two_models_array_score"][1], 35.0661575902223, places=2
+            self.result["VMAF_two_models_array_score"][1], 35.070219101439314, places=4
         )
-        self.assertAlmostEqual(self.result["VMAF_array_score"][0], 22.97749190550349, places=2)
+        self.assertAlmostEqual(self.result["VMAF_array_score"][0], 22.97768506056642, places=4)
         # places=1: VMAF_array_score is derived from libsvm predict() on reshaped per-frame
         # scores; the int→float32 rounding inside libsvm's SVM head makes the last decimal
         # unreliable for mid-score frames (frames 1 & 2 are ~44 and ~37).
-        self.assertAlmostEqual(self.result["VMAF_array_score"][1], 44.79653061901706, places=1)
-        self.assertAlmostEqual(self.result["VMAF_array_score"][2], 37.424450246146364, places=1)
+        self.assertAlmostEqual(self.result["VMAF_array_score"][1], 44.80237017759658, places=4)
+        self.assertAlmostEqual(self.result["VMAF_array_score"][2], 37.43054544029577, places=4)
         # check that a 3-D array will throw assertion, score aggregation accepts only up to 2-D
         with self.assertRaises(AssertionError):
             x = self.result["VMAF_3D_array_score"]

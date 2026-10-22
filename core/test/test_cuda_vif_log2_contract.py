@@ -49,9 +49,9 @@ STATISTIC_SITES = (
     "num_val = log2_lookup(numlog) - log2_lookup(denlog);",
 )
 TRANSFER_KERNEL = (
-    "if (i >= VIF_LOG2_TABLE_SIZE) return;",
-    "if (to_module != 0u) vif_cuda_log2_table[i] = staged[i];",
-    "else staged[i] = vif_cuda_log2_table[i];",
+    "if (i >= VIF_LOG2_TABLE_SIZE) { return; }",
+    "if (to_module != 0u) { vif_cuda_log2_table[i] = staged[i]; }",
+    "else { staged[i] = vif_cuda_log2_table[i]; }",
 )
 UPLOAD = (
     "const size_t table_bytes = VIF_LOG2_TABLE_SIZE * sizeof(uint16_t);",
@@ -68,7 +68,7 @@ INIT_ORDER = (
     "const int cuda_err = vif_init_cuda_context(fex, s, cu_f);",
     "vmaf_cuda_vif_upload_log2_table(fex->cu_state, s->filter1d_module);",
     "return vif_init_unwind(fex, s, table_err);",
-    "int ret = vif_setup_buffers(",
+    "return vif_setup_buffers(",
 )
 TABLE_EXPRESSION = (
     "log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);"
@@ -213,8 +213,8 @@ class CudaVifLog2Contract(unittest.TestCase):
     def test_partial_transfer_is_detected(self) -> None:
         failures = self._edited(
             STATISTIC,
-            "    if (i >= VIF_LOG2_TABLE_SIZE)\n        return;",
-            "    if (i >= VIF_LOG2_TABLE_SIZE / 2u)\n        return;",
+            "    if (i >= VIF_LOG2_TABLE_SIZE) {\n        return;",
+            "    if (i >= VIF_LOG2_TABLE_SIZE / 2u) {\n        return;",
         )
         self._assert_detected(failures, "does not copy the whole table")
 

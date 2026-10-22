@@ -2,7 +2,10 @@
 # Rebase-sensitive invariants
 
 Cross-package invariants that any upstream-sync or rebase agent must preserve.
-Referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness. Per-subtree
+The canonical [`AGENTS.md`](../../AGENTS.md) harness links this page and does
+not import it: at its size an import would load it into every turn of every
+agent session. Read the section for the files you touch before a rebase, an
+upstream sync, a conflict resolution or an edit of a file cited here. Per-subtree
 detail (the load-bearing reasons and mechanics) lives in the `AGENTS.md` under
 each subtree; this page is the index. When a rebase touches a cited translation
 unit, read that subtree harness before resolving conflicts. A subtree
@@ -82,6 +85,19 @@ backend within it.
 
 ## Build, test and CI
 
+- **Root licence files ([ADR-1699](../adr/1699-root-licence-files-eupl.md))**:
+  the root holds `LICENSE` (the EUPL-1.2, byte for byte `LICENSES/EUPL-1.2.txt`)
+  and `NOTICE` (Netflix's `LICENSE`, unchanged). An
+  upstream sync that changes Netflix's `LICENSE` applies it to
+  `NOTICE`; no sync brings back `LICENSE-MIT` or another
+  root licence file. Package licence fields name the licences of the files the
+  package ships, and fork `.toml` files carry an EUPL-1.2 header. The root
+  `go.mod` keeps its `retract` block: `[v1.0.0-rc.1, v1.0.0-rc.2]` (licence)
+  and `v1.0.0-rc.3` (withdrawn by the 0.x restart, [ADR-3292](../adr/3292-release-line-restart-0x.md)).
+  `scripts/ci/check_licence_metadata.py` (required
+  `Licence Provenance` job and a pre-commit hook) refuses each breach. See
+  [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,
@@ -104,6 +120,138 @@ backend within it.
   `scripts/ci/tests/test_zed_project_config.py`. The scoped mechanics live in
   [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
 
+- **`-qpfile` on libx264 goes through `quant_offsets` ([ADR-2167](../adr/2167-ffmpeg-x264-qpfile-quant-offsets.md))**:
+  patch `0007`'s libx264 hunks load the file with `ff_qpfile_load()` in
+  `X264_init()` (refusing `aq-mode=0` and a grid that is not the video's
+  macroblock grid) and add the deltas of input frame `n` to the picture's
+  `quant_offsets` in `setup_frame()`; libx264 has no `qpfile` parameter, so
+  `x264_param_parse(.., "qpfile", ..)` must not return.
+  `ffmpeg-patches/test/qpfile_check.py` guards it, and the saliency code of
+  `pkg/saliency` and `tools/vmaf-tune` passes `-qpfile`, not
+  `-x264-params qpfile=`.
+- **Encoder-parameter options are merged, shot starts are seconds**:
+  `ffencode.BuildFFmpegCommand` and `vmaftune.encode.build_ffmpeg_command` join
+  repeated `-x264-params` / `-x265-params` / `-svtav1-params` / `-vvenc-params`
+  into one (`MergeCodecParams` / `merge_codec_params`; FFmpeg keeps only the
+  last), `-ss` of the per-shot probe and signalstats takes seconds
+  (`ShotStartArg` / `_shot_start_arg`), and no HDR argv carries `-master_display`
+  or `-max_cll` for `hevc_nvenc` (FFmpeg has no such option).
+- **libvmaf is a compat library on libvmafx ([ADR-1852](../adr/1852-vmafx-api-redesign.md) decision D3, RC4 WP6)**:
+  `libvmafx.so.1` (engine + VMAFx API) exports `vmafx_*` only
+  (`core/src/vmafx.map`, `hide_unlisted = true`), plus the libvmaf
+  functions a built backend still keeps (`core/src/vmafx_legacy_<backend>.map`,
+  declared exceptions of `core/api/vmafx.toml`). `libvmaf.so.3`
+  (`core/src/compat/libvmaf/`) defines every other libvmaf function on
+  exported `vmafx_*` symbols and links nothing else. Every engine translation
+  unit compiles with the generated `core/src/vmafx/engine_names_gen.h`
+  forced (`vmaf_engine_name_args`), which renames the engine's own libvmaf
+  bodies to `vmaf_engine_<stem>`: an upstream sync ports a change to such a
+  body into the engine source unchanged and never adds a definition of a
+  libvmaf name to `libvmaf.so.3` by hand (the definition generates it, or a
+  `manual` file of `core/src/compat/libvmaf/` declared there). Generated
+  files are never hand-merged: take either side and run
+  `python3 scripts/codegen/vmafx-api.py --write`; the Meson test
+  `test_vmafx_api_generated_current` fails on any difference.
+  `check_exported_symbols` / `check_exported_symbols_libvmaf` compare both
+  libraries with `core/src/vmafx_symbols.txt` and
+  `core/src/libvmaf_symbols.txt`, and `test_compat_conformance` compares
+  every compat function with its engine body (traces, `%a`). See
+  [core/src/AGENTS.md](../../core/src/AGENTS.md).
+- **VMAFx imported frames never take a host copy ([ADR-1929](../adr/1929-vmafx-device-frames-fences.md))**:
+  `vmafx_frame_import()` binds the producer's planes or converts the semi-planar,
+  packed and MSB layouts on the device (de-interleave, shift, mask: one CPU
+  reference, `core/src/vmafx/import_convert.h`, [ADR-2133](../adr/2133-vmafx-import-422-444-formats.md)) and nothing else;
+  every place that copies imported pixels through host memory calls
+  `vmafx_count_host_copy()` (`core/src/vmafx/frame_import_hooks.h`), and the
+  import tests assert the count stays 0. A frame's release fence is signalled
+  where its last picture reference is dropped (`vmafx_frame_release()`,
+  `pool_frame_release()`), never when a submit returns. The CPU conversion
+  uses the row readers of `core/src/metal/iosurface_layout.h`: a sync that
+  changes them keeps `test_vmafx_import_bitexact` and
+  `test_metal_iosurface_layout` passing together.
+- **Provenance record in the library ([ADR-2073](../adr/2073-vmafx-provenance-record.md))**:
+  the engine's report writers (`core/src/output.cpp`) embed the record and the
+  backend receipt; the CLI no longer edits its report afterwards, so a rebase
+  must not bring back `amend_cli_backend_receipt()`. The feature collector
+  records the producer of every feature vector from the producer the engine
+  installs around each extractor call, prediction and import
+  (`vmaf_feature_producer_swap()`, `vmaf_feature_collector_append_from()`);
+  every engine loader of a model ends in `vmaf_model_stamp_loaded()`. The
+  record's canonical form (RFC 8785 subset) and what `digest` covers are
+  fixed by the ADR. `core/src/vmafx/exactness_gen.c` is generated from
+  `scripts/ci/exact_twins.d` by `make docs-fragments-write`. See
+  [core/src/AGENTS.d/vmafx-provenance.md](../../core/src/AGENTS.d/vmafx-provenance.md).
+- **VMAFx CUDA frames are read on one stream per device ([ADR-2023](../adr/2023-vmafx-cuda-device-frames.md))**:
+  every frame of a CUDA device of the VMAFx API is a CUDA picture on the
+  device's library stream; its acquire wait, conversions and ready event are
+  there, and its release is enqueued there where its last reference is
+  dropped (`core/src/cuda/import_fence.c`). `core/src/libvmaf.c` skips the
+  ADR-1199 barrier only for a pair of `ordered` pictures and never downloads a
+  `vmafx` picture. `integer_vif_cuda` reads each picture with its own pitch
+  (`VifBufferCuda.dis_stride`). Preserve `test_vmafx_import_cuda*` together.
+- **VMAFx window values are the synchronous pooled values ([ADR-2074](../adr/2074-vmafx-window-scores.md))**:
+  `vmafx_score_pooled()`, `vmafx_feature_score_pooled()`,
+  `vmafx_score_pooled_model_set()` and the windows all call
+  `vmafx_pool_engine()` (`core/src/vmafx/score.c`); keep one pooling path.
+  Each context's completion thread finds completion; it is woken by the
+  engine's frame listener (end of `threaded_extract_batch_func()`) and by
+  the hooks in `submit.c`, `register.c` and `context.c`, and calls the engine
+  only through `vmafx_engine_enter()` / `vmafx_engine_leave(context, ...)`,
+  which take the context's engine lock. Its probes never fence
+  (`vmaf_engine_try_score_at_index()`, `vmaf_engine_feature_written()`,
+  `vmaf_predict_inputs_written()`). `vmaf_engine_max_in_flight()` mirrors
+  `batch_job_take_pictures()`, the thread pool's enqueue capacity and the
+  device double buffer; a change to one recomputes it. `test_vmafx_window`,
+  `test_vmafx_window_live`, `test_vmafx_window_cli` and
+  `test_vmafx_lifetime` guard it.
+- **VMAFx HIP frames are read on one stream per device ([ADR-2092](../adr/2092-vmafx-hip-device-frames.md))**:
+  every frame a HIP device of the VMAFx API imports is a
+  `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` picture on the device's library
+  stream. The twins copy it there (`vmaf_hip_picture_upload()`, the shared
+  frame), and the reading twin's stream and the null stream wait for the
+  copies; `bind_hip_frame()` submits each import with `hipStreamQuery()`; a GL
+  import exports GL textures as dma-bufs (`core/src/vmafx/egl_export.c`, [ADR-2132](../adr/2132-hip-gl-textures-through-egl-dmabuf.md); the runtime's HIP-GL interop is never called);
+  a dma-buf is imported with its own size. Keep these when rebasing
+  `core/src/hip/picture_hip.c`, `shared_frame.c` or the three twins that
+  stage on the host. `core/test/test_vmafx_import_hip_contract.py`,
+  `test_hip_shared_frame` and `test_vmafx_import_hip*` (on a device) guard
+  them together.
+- **VMAFx SYCL frames are copied by their readers on the device ([ADR-2091](../adr/2091-vmafx-sycl-device-frames.md))**:
+  every frame of a SYCL device of the VMAFx API is a SYCL device picture
+  (`VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE`, `VmafPicturePrivate.sycl.frame`).
+  The shared luma / chroma uploads in `core/src/sycl/common.cpp` and every SYCL
+  twin that stages its own planes copy it with
+  `vmaf_sycl_picture_read_plane()`, which records the read for the release;
+  `core/src/libvmaf.c` skips the upload wait for such pictures and refuses a
+  non-SYCL extractor on one. Acquire and release are joins (an empty kernel
+  with `depends_on()`), never `ext_oneapi_submit_barrier()` (Research-2160
+  finding 2), and no reader uses `ext_oneapi_memcpy2d()` (finding 1). The
+  de-tile math of the VA-surface import and the VMAFx dma-buf import is one
+  header, `core/src/sycl/detile.h`. Preserve `test_vmafx_import_sycl*` and
+  `core/test/vmafx_sycl_cells.h` together.
+- **The `vmafx` FFmpeg filters are generated from their sources ([ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md))**:
+  `ffmpeg-patches/src/vf_vmafx.c`, `vf_vmafx_pre.c`, `vf_vmafx_options.h` and
+  `ffmpeg_dec_hwaccel.c` are the truth for patches `0023` to `0026`;
+  `scripts/ci/ffmpeg_patch_stack.py --refresh` amends the owning patch and
+  refuses a source no patch owns. Host frames are wrapped on the CPU device
+  (`NULL`) whatever device the context scores on, every hardware pixel format
+  stays in the filter's format list (a frame type without an import is refused
+  by name, never converted by an inserted scale), and a fixed-size frame pool
+  smaller than `vmafx_context_max_in_flight() + 1` is refused before the first
+  frame. A device frame goes back to its producer only after its release
+  fence (`box_release_resources()` waits on a HOST fence), and a Vulkan frame
+  is copied on the GPU into the filter's exportable per-plane pool and
+  imported on the VMAFx device at the Vulkan device's PCI location, never
+  imported straight from the producer's pool and never on another GPU
+  (`vk_import()`). `ffmpeg-patches/test/vmafx_filter_check.py` (`parity`, `pool`,
+  `refusal`, `legacy`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
+  guard them; patch `0026` is fork-only (Q-048) and is refreshed, not dropped,
+  when FFmpeg changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`.
+  The filter pairs or reports ([ADR-2165](../adr/2165-vmafx-filter-pairing-contract.md)):
+  `vmafx_preinit()` sets the framesync defaults `eof_action=pass` and
+  `repeatlast=0`, a main frame without a reference frame passes on unscored
+  and counted, and nothing is flushed or written when no pair was scored;
+  `vmafx_filter_check.py contract` guards it.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`
@@ -138,12 +286,30 @@ backend within it.
   floating `cuda-toolkit-13-4` command in the Containerfile. It also pins the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned
-  `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage
+  `rocm/dev-ubuntu-26.04:10.1.0-full` image in the `rocm-src` stage
   (ADR-1225 / ADR-1231). If SDK versions are bumped (routine security
   maintenance), update their shared pins in `build-config.env` and regenerate
   the mirrors before merging; a ROCm bump
   additionally means re-validating the `rocm-src` prune list against its
-  hipcc smoke check.
+  hipcc smoke check, setting `ROCM_VERSION` (Renovate moves only the image
+  pins), moving the `/opt/rocm/core-<major>.<minor>` paths of the `rocm-src`
+  stage and `docker/Dockerfile.node`, the LLVM sonames of
+  `tools/rc1-tester/image/hip-runtime.json` and the ROCm source pins of
+  `tools/rc1-tester/image/licensing.json`, and re-running the HIP device suite
+  (ROCm 10.1.0 moved the compiler from LLVM 23 to LLVM 24).
+  The `build-deps` stage installs the Vulkan loader, its headers, Mesa's
+  Vulkan drivers (lavapipe) and `vulkan-tools` from the archive of the
+  digest-pinned `DEV_BASE`, and fails its build when `vulkaninfo` does not list
+  lavapipe ([ADR-3137](../adr/3137-dev-image-vulkan-lavapipe.md), operator
+  decision ci-config-19): the Vulkan frame-import tests build in every lane of
+  the one image and the hosted tidy lanes measure them. Do not move these
+  packages into a second image or drop the lavapipe check; a pinned-image bump
+  re-measures the lanes' baselines.
+  The `build-deps` stage installs the diagnostic tools `rr` and `ClangBuildAnalyzer`
+  ([ADR-3336](../adr/3336-dev-image-rr-clangbuildanalyzer.md)); their pins live
+  as single-source `dev/Containerfile` ARGs (`RR_APT_VERSION`, `CLANGBUILDANALYZER_VERSION`,
+  `CLANGBUILDANALYZER_SHA256`) and `scripts/ci/check_ort_tarball_pins.py` guards
+  the ClangBuildAnalyzer download against unpinned installs, checksum omissions, and extraction order bugs.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
   `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
   — do not rename these files. The probe JSON schema fields (`ts`,
@@ -400,11 +566,30 @@ backend within it.
   in memory or spilled registers return wrong values. `test_sycl_kernel_scratch`
   fails on a scratch kernel missing from `core/src/sycl/scratch_ratchet.txt`,
   whose extractors must match `kScratchExtractors` in
-  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl`'s
-  SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
+  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl` runs
+  at SIMD-16 only ([ADR-1830](../adr/1830-sycl-vif-simd16-only.md)): a sync
+  must not bring back its SIMD-32 kernels or `VMAF_SYCL_VIF_SUBGROUP_SIZE`,
+  which spilled on Xe-LP. See
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
+- **`libvmaf_sycl` imports each input with its own VA display and never skips a frame ([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md))**:
+  FFmpeg patch `0005` reads the VA display of both inputs' QSV sessions and imports each
+  input's surfaces with its own; a failed import is retried in a bounded loop and then stops
+  the filter naming the frame, with no pooled score after it. Patch `0013`'s `libvmaf_metal`
+  prints no pooled score after a stop either. A refresh or an upstream rebase must not
+  bring back the single display, the pass-through on a failed import, or a score after a
+  stop. `core/test/test_sycl_filter_import_contract.py` and
+  `core/test/test_metal_iosurface_filter_contract.py` guard it without a device,
+  `ffmpeg-patches/test/check-sycl-import-retry.sh` on one.
+- **`libvmaf` and `libvmaf_cuda` print no pooled score after an error ([ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md))**:
+  FFmpeg patch `0021` is a deliberate divergence from upstream's `vf_libvmaf.c`.
+  `stop_on_frame()` logs the frame and the error once and sets `stopped`. `do_vmaf()` and
+  `do_vmaf_cuda()` call it on every failed copy and read, and `frame_cnt` advances only
+  after a successful read. The shared `uninit()` prints no score after a stop, a failed
+  flush or a failed model. A series refresh keeps the patch; when upstream rewrites these
+  functions, the rule moves into the new code. `core/test/test_ffmpeg_libvmaf_stop_contract.py`
+  guards it without a device, `ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh` on one.
 - **SYCL zero-copy admission ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md))**:
   `vmaf_read_pictures_sycl()` in `core/src/libvmaf.c` refuses, before counting a frame,
   every registered extractor whose `reads_shared_luma_only()` hook is absent or false for
@@ -489,9 +674,9 @@ backend within it.
 - **`float_psnr_cuda` adds integers ([ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md))**:
   `core/src/feature/cuda/float_psnr/float_psnr_score.cu` forms the CPU's term
   (`diff * diff` in `float`, as `float_psnr.c` does) with `__fmul_rn()` as an
-  integer in units of 1 / scaler^2 and reduces `uint64` values per warp and
+  integer in units of 1 / $\mathrm{scaler}^{2}$ and reduces `uint64` values per warp and
   per block; `float_psnr_cuda.c::float_psnr_noise()` adds the blocks in
-  `uint64` and divides the exact total by scaler^2 and the pixel count. An
+  `uint64` and divides the exact total by $\mathrm{scaler}^{2}$ and the pixel count. An
   fp32 block sum is exact only up to 24 bits. A change to how `float_psnr.c`
   forms or adds its terms changes the kernel in the same PR.
   `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
@@ -500,15 +685,15 @@ backend within it.
   row's exact sum into a double in row order with
   `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
   as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
-  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  past $2^{53}$ units; a sync must not bring back 16x16 blocks or a frame total
   rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
 
 - **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
   `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
   (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of
-  1 / scaler^2 and reduces `uint64` values per sub-group, per work-group and on
+  1 / $\mathrm{scaler}^{2}$ and reduces `uint64` values per sub-group, per work-group and on
   the host; an fp32 group sum is exact only up to 24 bits. The host divides
-  the exact total by scaler^2 and the pixel count. A change to how
+  the exact total by $\mathrm{scaler}^{2}$ and the pixel count. A change to how
   `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
   device, `test_sycl_float_psnr_parity` (`==`) on one.
@@ -516,7 +701,7 @@ backend within it.
   row's exact sum into a double in row order with
   `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
   as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
-  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  past $2^{53}$ units; a sync must not bring back 16x16 blocks or a frame total
   rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
 
 - **`float_moment_hip` adds the CPU's float squares ([ADR-1447](../adr/1447-hip-float-moment-cpu-float-squares.md))**:
@@ -527,7 +712,7 @@ backend within it.
   host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
-  device, `test_hip_float_moment_parity` on one (`==`, past 2^53 units too,
+  device, `test_hip_float_moment_parity` on one (`==`, past $2^{53}$ units too,
   ADR-1497 below).
 
 - **The NEON and SVE2 `float_moment` kernels add in the scalar's order ([ADR-1500](../adr/1500-arm-float-moment-scalar-order.md))**:
@@ -537,7 +722,7 @@ backend within it.
   `x86/moment_avx2.c` do; the SVE2 kernel adds the first `svcntp_b32` active
   lanes of a `svwhilelt_b32` predicate and does not depend on the vector
   length. A sync must not bring back lane accumulators, per-row vector sums or
-  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past 2^53 units the sum
+  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past $2^{53}$ units the sum
   rounds on every add. `core/test/test_moment_simd.c` (`==`) guards it; run
   it under `qemu-aarch64` with `sve=off`, `sve128`, `sve256`, `sve512` and
   `sve2048` after touching any of the four kernels.
@@ -550,7 +735,7 @@ backend within it.
   The host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_cuda_float_moment_exact_contract.py` guards it without a
-  device, `test_cuda_float_moment_parity` on one (`==`, past 2^53 units too,
+  device, `test_cuda_float_moment_parity` on one (`==`, past $2^{53}$ units too,
   ADR-1497 below).
 
 - **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
@@ -561,11 +746,11 @@ backend within it.
   host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_moment_exact_contract.py` guards it without a
-  device, `test_sycl_float_moment_parity` on one (`==`, past 2^53 units too,
+  device, `test_sycl_float_moment_parity` on one (`==`, past $2^{53}$ units too,
   ADR-1497 below).
 
-- **The `float_moment` twins form the CPU's rounded second-moment sum past 2^53 units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
-  on a frame whose sum of float squares can pass 2^53 units
+- **The `float_moment` twins form the CPU's rounded second-moment sum past $2^{53}$ units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
+  on a frame whose sum of float squares can pass $2^{53}$ units
   (`vmaf_moment_sum_may_round()`), the CUDA, SYCL and HIP hosts run four more
   kernels after the frame kernel (row totals, row plans, row units, ordered
   totals) that replace accumulators 2 and 3 with the CPU's sequentially
@@ -609,6 +794,25 @@ backend within it.
   on glibc only, the CPU against Netflix's values, without a device (its
   `_foreign_libm` variant runs the other libcs' path); the three source contract tests and
   `test_{cuda,hip,sycl}_speed_*_parity` (`==`) guard the twins.
+
+- **SYCL SpEED covariance is the reference's sequential fp64 sum ([ADR-2690](../adr/2690-sycl-speed-covariance-fast-exact.md))**:
+  `core/src/feature/sycl/sycl_speed_cov_math.h::covariance_entry()` adds
+  `(x - mean_x) * (y - mean_y)` in `speed.c::compute_cov_kernel_scalar()`'s
+  order, rounding as each fp64 add rounds (64-bit integers,
+  `sycl_soft_signed.h`). `launch_covariance()` runs the same helpers split
+  across launches: differences and products in parallel, stored as fp64 bit
+  patterns, then one sequential add chain per entry over the stored terms in
+  raster order. A sync must not bring back the parallel fp32-pair sum rounded
+  once:
+  on a cancelling entry it stores the neighbouring fp32 value, 1 ulp of
+  `speed_chroma_u` on a real 3840x1600 10-bit frame. A change to
+  `compute_cov_kernel_scalar()` or the store in `compute_covariance_row()`
+  changes the header in the same PR. `test_sycl_speed_cov_math` (`==`, host
+  and device), `test_sycl_speed_cov_chain` and
+  `test_sycl_speed_cov_exact_contract.py` (device-free) guard it. The CUDA and HIP twins still sum in pairs and are unverified
+  (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
+  `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`). See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
@@ -1040,9 +1244,17 @@ backend within it.
   `vif_log2_table_generate()`'s values through
   `vmaf_cuda_vif_upload_log2_table()` before any frame is submitted. When
   upstream changes `vif_statistics.cuh` or `filter1d.cu`, keep the lookup and
-  do not bring `log_generate()` back; `filter1d.cu` itself is untouched by
-  the fork. `core/test/test_cuda_vif_log2_contract.py` guards it without a
-  device, `test_cuda_vif_log2_table` on one.
+  do not bring `log_generate()` back. `core/test/test_cuda_vif_log2_contract.py`
+  guards it without a device, `test_cuda_vif_log2_table` on one.
+
+- **Every lane of a warp reaches the CUDA warp reductions (T-CUDA-WARP-REDUCE-UB-2026-10-05)**:
+  `warp_reduce()` / `warp_reduce_u64()` (`core/src/cuda/cuda_helper.cuh`) shuffle
+  with the full mask, so `vif_hori_kernel()` in `cuda/integer_vif/filter1d.cu` calls
+  `vif_hori_flush_accums()` after the per-lane `y < h && x_start < w` branch, the
+  lanes past the plane edge adding zeros; upstream keeps the flush inside it. And
+  `warp_reduce(int64_t)` adds through `warp_reduce_u64()` on the unsigned bits: do not
+  bring back the two-halves form, which shifts a negative word left.
+  `core/test/test_cuda_warp_reduce_contract.py` guards both without a device.
 
 - **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
   the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default
@@ -1101,16 +1313,17 @@ backend within it.
   `integer_adm.c` does; with a `(double)` on an operand (the form #552
   introduced) every integer ADM score and `vmaf_v0.6.1` leave Netflix's
   values by up to 1.8e-5. A sync takes upstream's side of the statement and
-  keeps the suppression comment above it. The SYCL and Metal twins hold their
-  own copy (`sycl/integer_adm_sycl.cpp`, `metal/integer_adm_metal.mm`) and
-  change with it. `core/test/test_integer_adm_quant_step.c` (values, with
-  the bits of a Netflix build) and
-  `core/test/test_integer_adm_quant_step_contract.py` (the three copies)
-  guard it; the Netflix golden gate would not notice.
+  keeps the suppression comment above it. The SYCL twin holds its own copy
+  (`sycl/integer_adm_sycl.cpp`) and changes with it; the Metal twin takes the
+  CPU's `adm_csf_factors()` in `metal/integer_adm_metal_host.c` and holds no
+  copy. `core/test/test_integer_adm_quant_step.c` (values, with the bits of a
+  Netflix build) and `core/test/test_integer_adm_quant_step_contract.py` (both
+  copies, and no Metal copy) guard it; the Netflix golden gate would not
+  notice.
 
 - **Integer ADM scale-0 masking centre tap ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md))**:
   the fork keeps the 1/15 centre tap of the masking threshold in int32 and
-  clamps `|x| - thr * 2^shift` to [0, INT32_MAX] in int64, where upstream
+  clamps $\lvert x \rvert - \mathrm{thr} \cdot 2^{\mathrm{shift}}$ to [0, INT32_MAX] in int64, where upstream
   master narrows the tap to int16 and subtracts in 32 bits (the fork's own
   Netflix/vmaf PR #1602, second revision, is not merged upstream). The scalar
   definition is `adm_cm_thresh()` in `core/src/feature/integer_adm_kernels.h`
@@ -1125,6 +1338,19 @@ backend within it.
   on any change. See [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md)
   and the "fix/adm-cm-centre-tap-wrap" entry of
   [rebase-notes](../rebase-notes.md).
+
+- **Integer ADM scale-0 contrast-masking rows are unsigned**:
+  a scale-0 row of the masking reduction is a sum of non-negative cubes that
+  passes INT64_MAX on a 64-pixel-wide picture at the default CSF weights and on
+  any picture with a weight near its ADR-1472 budget. The CPU sums it, and the
+  frame, in `uint64_t` (`adm_cm_round_row_total_s0()` in
+  `core/src/feature/adm_cm_accumulator.h`, `adm_cm_fold_s0()` in
+  `core/src/feature/integer_adm_kernels.h`), the AVX2 / AVX-512 rows add
+  unsigned, and the CUDA, HIP, SYCL and Metal twins sum unsigned too. Upstream
+  Netflix/vmaf sums int64; a sync keeps the fork's form. Scales 1-3 stay
+  signed. `test_integer_adm_cm_row_unsigned`, `test_gpu_adm_tiny_frames` and
+  `test_adm_cm_row_rounding_contract.py` guard it. See
+  [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md).
 
 - **Integer ADM enhancement gain limit ([ADR-1413](../adr/1413-adm-gain-limit-truncated-double-product.md))**:
   the limited sample is the double product `rst * adm_enhn_gain_limit`

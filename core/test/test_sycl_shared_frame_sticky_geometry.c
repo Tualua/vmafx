@@ -27,6 +27,11 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 #define TOL 1e-4
 
 static uint8_t test_pattern(unsigned plane, unsigned row, unsigned col, unsigned salt)
@@ -120,8 +125,12 @@ static int run_pass(VmafSyclState *sycl_state, unsigned w, unsigned h, double *y
 
 static char *check_geom(VmafSyclState *state, unsigned w, unsigned h)
 {
-    double cpu_y = 0.0, cpu_cb = 0.0, cpu_cr = 0.0;
-    double gpu_y = 0.0, gpu_cb = 0.0, gpu_cr = 0.0;
+    double cpu_y = 0.0;
+    double cpu_cb = 0.0;
+    double cpu_cr = 0.0;
+    double gpu_y = 0.0;
+    double gpu_cb = 0.0;
+    double gpu_cr = 0.0;
     mu_assert("run_pass CPU", !run_pass(NULL, w, h, &cpu_y, &cpu_cb, &cpu_cr));
     mu_assert("run_pass GPU", !run_pass(state, w, h, &gpu_y, &gpu_cb, &gpu_cr));
 
@@ -171,3 +180,5 @@ char *run_tests(void)
     mu_run_test(test_sticky_geometry);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

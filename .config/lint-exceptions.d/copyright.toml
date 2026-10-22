@@ -1,0 +1,42 @@
+# Declared exceptions to the copyright-line check (ADR-0105). Format and rules:
+# scripts/ci/lint_exceptions.py. One file per entry; an entry stops holding on `expires`.
+
+[[exception]]
+path = "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/corrDn.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/innerProd.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/pointOp.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/range2.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/upConv.c"
+reason = "Third-party MATLAB MEX source of Netflix's training harness (compat/python-vmaf/matlab); the authors' copy carries no copyright line and the file is kept as received. It has its SPDX line. Renew or remove when the matlab tree is dropped or relicensed."
+expires = 2027-03-31

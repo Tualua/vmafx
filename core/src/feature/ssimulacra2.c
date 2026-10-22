@@ -44,9 +44,12 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature/common/fmaf_exact.h"
+#include "feature/ssimulacra2_gaussian.h"
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 #include "feature/ssimulacra2_simd_common.h"
+#include "feature/ssimulacra2_weights.h"
 #include "log.h"
 #include "mem.h"
 #include "opt.h"
@@ -100,118 +103,6 @@ static const float kOpsinBias = 0.0037930732552754493f;
 /* BT.709 limited-range YUV → non-linear-RGB matrix, 8-bit reference.
  * Scaled so the code path normalises Y to [16/255, 235/255] and
  * Cb/Cr to [16/255, 240/255] before this matrix is applied. */
-
-/* 108 pooling weights (libjxl tools/ssimulacra2.cc:301). */
-static const double kWeights[108] = {
-    0.0,
-    0.0007376606707406586,
-    0.0,
-    0.0,
-    0.0007793481682867309,
-    0.0,
-    0.0,
-    0.0004371155730107379,
-    0.0,
-    1.1041726426657346,
-    0.00066284834129271,
-    0.00015231632783718752,
-    0.0,
-    0.0016406437456599754,
-    0.0,
-    1.8422455520539298,
-    11.441172603757666,
-    0.0,
-    0.0007989109436015163,
-    0.000176816438078653,
-    0.0,
-    1.8787594979546387,
-    10.94906990605142,
-    0.0,
-    0.0007289346991508072,
-    0.9677937080626833,
-    0.0,
-    0.00014003424285435884,
-    0.9981766977854967,
-    0.00031949755934435053,
-    0.0004550992113792063,
-    0.0,
-    0.0,
-    0.0013648766163243398,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    7.466890328078848,
-    0.0,
-    17.445833984131262,
-    0.0006235601634041466,
-    0.0,
-    0.0,
-    6.683678146179332,
-    0.00037724407979611296,
-    1.027889937768264,
-    225.20515300849274,
-    0.0,
-    0.0,
-    19.213238186143016,
-    0.0011401524586618361,
-    0.001237755635509985,
-    176.39317598450694,
-    0.0,
-    0.0,
-    24.43300999870476,
-    0.28520802612117757,
-    0.0004485436923833408,
-    0.0,
-    0.0,
-    0.0,
-    34.77906344483772,
-    44.835625328877896,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0008680556573291698,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0005313191874358747,
-    0.0,
-    0.00016533814161379112,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0004179171803251336,
-    0.0017290828234722833,
-    0.0,
-    0.0020827005846636437,
-    0.0,
-    0.0,
-    8.826982764996862,
-    23.19243343998926,
-    0.0,
-    95.1080498811086,
-    0.9863978034400682,
-    0.9834382792465353,
-    0.0012286405048278493,
-    171.2667255897307,
-    0.9807858872435379,
-    0.0,
-    0.0,
-    0.0,
-    0.0005130064588990679,
-    0.0,
-    0.00010854057858411537,
-};
 
 /* Gaussian blur is implemented as libjxl's recursive 3-pole IIR
  * ("truncated cosine" approximation). Bit-close to the libjxl C++
@@ -335,84 +226,21 @@ static inline float srgb_to_linear(float v)
     return vmaf_ss2_srgb_eotf(v);
 }
 
-/* A * beta = gamma for the 3x3 system of CreateRecursiveGaussian, solved by
- * Cramer's rule in libjxl's expression order (each column of A replaced by
- * gamma in turn). */
-static void solve_cramer_3x3(const double A[3][3], const double gamma[3], double beta[3])
-{
-    const double det_A = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
-                         A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
-                         A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
-    const double inv_det = 1.0 / det_A;
-
-    for (int col = 0; col < 3; col++) {
-        double M[3][3];
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                M[i][j] = A[i][j];
-            }
-        }
-        for (int i = 0; i < 3; i++) {
-            M[i][col] = gamma[i];
-        }
-        beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
-                     M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
-                     M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])) *
-                    inv_det;
-    }
-}
-
 /* Port of libjxl CreateRecursiveGaussian (lib/jxl/gauss_blur.cc).
  * Charalampidis [2016] "Recursive Implementation of the Gaussian Filter
  * Using Truncated Cosine Functions", with k={1,3,5}. Writes n2[], d1[],
  * and radius into the state; the full IIR pass uses symmetric-sum
- * recurrence `out_k = n2[k]*sum - d1[k]*prev_k - prev2_k`. The file builds
- * with -ffp-contract=off, so the helper split keeps every rounding. */
+ * recurrence `out_k = n2[k]*sum - d1[k]*prev_k - prev2_k`. Evaluated via
+ * shared ssimu2_compute_gaussian_coeffs(). The file builds with
+ * -ffp-contract=off, so the helper split keeps every rounding. */
 static void create_recursive_gaussian(Ssimu2State *s, double sigma)
 {
-    const double radius = round(3.2795 * sigma + 0.2546); /* (57), "N" */
-
-    const double pi_div_2r = SSIMU2_PI / (2.0 * radius);
-    const double omega[3] = {pi_div_2r, 3.0 * pi_div_2r, 5.0 * pi_div_2r};
-
-    /* (37): poles p_k */
-    const double p1 = +1.0 / tan(0.5 * omega[0]);
-    const double p3 = -1.0 / tan(0.5 * omega[1]);
-    const double p5 = +1.0 / tan(0.5 * omega[2]);
-
-    /* (44): residues r_k */
-    const double r1 = +p1 * p1 / sin(omega[0]);
-    const double r3 = -p3 * p3 / sin(omega[1]);
-    const double r5 = +p5 * p5 / sin(omega[2]);
-
-    /* (50): rho_k */
-    const double neg_half_sigma2 = -0.5 * sigma * sigma;
-    const double recip_r = 1.0 / radius;
-    double rho[3];
+    Ssimu2GaussianCoeffs coeffs;
+    ssimu2_compute_gaussian_coeffs(sigma, &coeffs);
+    s->rg_radius = coeffs.radius;
     for (int i = 0; i < 3; i++) {
-        rho[i] = exp(neg_half_sigma2 * omega[i] * omega[i]) * recip_r;
-    }
-
-    /* (52): determinants and zetas */
-    const double D13 = p1 * r3 - r1 * p3;
-    const double D35 = p3 * r5 - r3 * p5;
-    const double D51 = p5 * r1 - r5 * p1;
-    const double recip_d13 = 1.0 / D13;
-    const double zeta_15 = D35 * recip_d13;
-    const double zeta_35 = D51 * recip_d13;
-
-    /* A * beta = gamma; solve via Cramer's rule. */
-    const double A[3][3] = {{p1, p3, p5}, {r1, r3, r5}, {zeta_15, zeta_35, 1.0}};
-    const double gamma[3] = {1.0, radius * radius - sigma * sigma, /* (55) */
-                             zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
-    double beta[3];
-    solve_cramer_3x3(A, gamma, beta);
-
-    /* (33): final coefficients */
-    s->rg_radius = (int)radius;
-    for (int i = 0; i < 3; i++) {
-        s->rg_n2[i] = (float)(-beta[i] * cos(omega[i] * (radius + 1.0)));
-        s->rg_d1[i] = (float)(-2.0 * cos(omega[i]));
+        s->rg_n2[i] = coeffs.n2[i];
+        s->rg_d1[i] = coeffs.d1[i];
     }
 }
 
@@ -488,7 +316,7 @@ static Ssimu2YuvCoeffs yuv_matrix_coeffs(int yuv_matrix)
     switch (yuv_matrix) {
     case YUV_MATRIX_BT709_FULL:
         limited = 0;
-        /* fall through */
+        [[fallthrough]];
     case YUV_MATRIX_BT709_LIMITED:
         kr = 0.2126f;
         kg = 0.7152f;
@@ -994,18 +822,6 @@ static void init_simd_dispatch(Ssimu2State *s)
 #endif
 }
 
-/* The colour conversion reads U and V; 4:0:0 has neither plane (its data[1] /
- * data[2] are NULL), so init() refuses it instead of letting extract() read
- * through a NULL plane. ssimulacra2_sycl refuses it the same way. */
-static int check_pixel_format(enum VmafPixelFormat pix_fmt)
-{
-    if (pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN)
-        return 0;
-    vmaf_log(VMAF_LOG_LEVEL_ERROR,
-             "ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input, not 4:0:0\n");
-    return -EINVAL;
-}
-
 /* Every buffer init() allocates. aligned_free(NULL) is a no-op, so this also
  * releases a partial allocation; the pointers are cleared so that nothing is
  * freed twice. */
@@ -1054,7 +870,9 @@ static int alloc_buffers(Ssimu2State *s, unsigned w)
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
-    const int fmt_err = check_pixel_format(pix_fmt);
+    /* The colour conversion reads U and V: 4:0:0 and an unknown format are
+     * refused here, as every twin's init() does (ssimulacra2_pixel_format.h). */
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2");
     if (fmt_err)
         return fmt_err;
     Ssimu2State *s = fex->priv;
@@ -1179,7 +997,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return append_score(feature_collector, index, score);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     Ssimu2State *s = fex->priv;
     if (!s)
@@ -1198,7 +1016,7 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(Ssimu2State),
     .provided_features = provided_features,
     /* Explicit zero-init so GCC LTO sees the full struct layout

@@ -64,7 +64,7 @@ TERM_STORE = "terms[gid.y * width + gid.x] ="
 TERM_CALL = (
     "vmaf_mtl_issim_term_bits(m, vmaf_mtl_issim_stabilisers(params.k1_bits, params.k2_bits));"
 )
-KERNEL_PARAMS = "constant     VmafMtlIssimParams  &params [[buffer(2)]]"
+KERNEL_PARAMS = "constant VmafMtlIssimParams &params [[buffer(2)]]"
 KERNEL_WEIGHT = "vmaf_mtl_issim_tap_weight(vmaf_mtl_issim_tap_range(gid.x, width))"
 
 HOST_SUM = (
@@ -130,7 +130,7 @@ CPU_GAUSSIAN = [2, 9, 28, 55, 68, 55, 28, 9, 2]
 REFERENCE_LINES = (
     "#define SSIM_K1 (0.01 * 0.01)",
     "#define SSIM_K2 (0.03 * 0.03)",
-    "w_d = m.w;",
+    "w_d = (double)m.w;",
     "c1 = sm * sm * SSIM_K1 * w_d * w_d;",
     "c2 = sm * sm * SSIM_K2 * w_d * w_d;",
     "mx2 = m.mux * (double)m.mux;",

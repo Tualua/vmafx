@@ -32,6 +32,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -66,6 +67,15 @@ static const char *const VIF_SCALE_FEATURES[] = {
     "VMAF_integer_feature_vif_scale3_score",
 };
 #define NUM_VIF_SCALES 4u
+
+/* With `enable_chroma=true` the twin names its features from that option, as
+ * every extractor does (ADR-1836): the alias plus `_enable_chroma`. */
+static const char *const VIF_SCALE_FEATURES_CHROMA[] = {
+    "integer_vif_scale0_enable_chroma",
+    "integer_vif_scale1_enable_chroma",
+    "integer_vif_scale2_enable_chroma",
+    "integer_vif_scale3_enable_chroma",
+};
 
 /* Fill a YUV420P 8-bpc reference picture with a deterministic ramp pattern.
  * Frame-dependent offset makes successive frames differ.
@@ -148,13 +158,25 @@ static char *feed_all_frames(VmafContext *vmaf)
     return NULL;
 }
 
-static char *read_vif_scores(VmafContext *vmaf, double scores_out[NUM_VIF_SCALES])
+static char *read_vif_scores(VmafContext *vmaf, const char *const names[NUM_VIF_SCALES],
+                             double scores_out[NUM_VIF_SCALES])
 {
     for (unsigned k = 0; k < NUM_VIF_SCALES; k++) {
-        const int err =
-            vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[k], &scores_out[k], 1u);
+        const int err = vmaf_feature_score_at_index(vmaf, names[k], &scores_out[k], 1u);
         if (err)
             return "vmaf_feature_score_at_index(vif_scale, idx=1) failed";
+    }
+    return NULL;
+}
+
+/* The scores of an `enable_chroma=true` run are only under the suffixed
+ * names: the default names would be another extractor's (ADR-1836). */
+static char *assert_default_names_absent(VmafContext *vmaf)
+{
+    for (unsigned k = 0; k < NUM_VIF_SCALES; k++) {
+        double score = 0.0;
+        const int err = vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[k], &score, 1u);
+        mu_assert("enable_chroma=true scores are also under the default names", err != 0);
     }
     return NULL;
 }
@@ -179,7 +201,7 @@ static char *run_cpu_vif(double scores_out[NUM_VIF_SCALES])
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    char *score_err = read_vif_scores(vmaf, scores_out);
+    char *score_err = read_vif_scores(vmaf, VIF_SCALE_FEATURES, scores_out);
     if (score_err)
         return score_err;
 
@@ -206,10 +228,13 @@ static char *open_cuda_context(VmafContext **vmaf, VmafCudaState *cu_state,
     return NULL;
 }
 
-/* Run "vif_cuda" with the given options string (NULL → defaults). Returns
- * NaN scores if no CUDA device is present (caller treats as skip). */
-static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictionary *opts)
+/* Run "vif_cuda" with the given options (NULL → defaults) and read the scores
+ * under `names`; with options, the default names must be absent. Returns NaN
+ * scores if no CUDA device is present (caller treats as skip). */
+static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictionary *opts,
+                          const char *const names[NUM_VIF_SCALES])
 {
+    const bool with_options = opts != NULL;
     for (unsigned k = 0; k < NUM_VIF_SCALES; k++)
         scores_out[k] = NAN;
 
@@ -238,7 +263,9 @@ static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictiona
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
-    char *score_err = read_vif_scores(vmaf, scores_out);
+    char *score_err = read_vif_scores(vmaf, names, scores_out);
+    if (!score_err && with_options)
+        score_err = assert_default_names_absent(vmaf);
     if (score_err)
         return score_err;
 
@@ -264,7 +291,7 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
     if (msg)
         return msg;
 
-    msg = run_cuda_vif(cuda_default, NULL);
+    msg = run_cuda_vif(cuda_default, NULL, VIF_SCALE_FEATURES);
     if (msg)
         return msg;
 
@@ -285,12 +312,13 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
 
     /* Vestigial enable_chroma=true contract: must produce *identical* scores
      * to the default invocation (the kernel is luma-only; the option is a
-     * documented no-op — ADR-0597). */
+     * documented no-op — ADR-0597), under the names the option gives them
+     * (ADR-1836). */
     VmafFeatureDictionary *chroma_opts = NULL;
     int err = vmaf_feature_dictionary_set(&chroma_opts, "enable_chroma", "true");
     mu_assert("vmaf_feature_dictionary_set(enable_chroma) failed", !err);
 
-    msg = run_cuda_vif(cuda_chroma, chroma_opts);
+    msg = run_cuda_vif(cuda_chroma, chroma_opts, VIF_SCALE_FEATURES_CHROMA);
     if (msg)
         return msg;
 

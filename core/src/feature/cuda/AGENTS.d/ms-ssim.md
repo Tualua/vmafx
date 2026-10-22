@@ -26,29 +26,28 @@ invariant: MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option fl
   per sum (`l_sum`, `c_sum`, `s_sum`), per scale, every window left to right,
   top to bottom. `ms_ssim_vert_lcs` REDUCES NOTHING: stores `l`, `c`
   (double) and `s` (float, it is one) at `y * w_final + x` of three planes
-  per scale; host `ms_ssim_scale_sums()` adds in index order, the ONLY place
+  per scale; host `ms_ssim_scale_sums()` adds in index order, ONLY place
   terms are added. NEVER bring back `__shfl` / `__shared__ double` / block
   partials: per-block sums = neighbouring float on
   `core/test/float_ms_ssim_order_frame.h` (shared with HIP + SYCL tests:
   `float_ms_ssim_c_scale1` CPU `0x3f7c49a0`, block sum `0x3f7c499f`) and on
-  the formula frame in `test_cuda_float_ms_ssim_order.c`
+  formula frame in `test_cuda_float_ms_ssim_order.c`
   (`float_ms_ssim_l_scale0` CPU `0x3f7cd999`, block sum `0x3f7cd998`); 4 such
   frames in 8.32e6 noise frames on CUDA.
   Tests: `test_cuda_float_ms_ssim_order` (device),
   `test_cuda_float_ms_ssim_exact_contract.py` (device-free). Cost: 20 B per
-  window read back, about 2.1 ns per window, 2.5x to 3.3x the frame time;
+  window read back, about 2.1 ns per window, 2.5x to 3.3x frame time;
   tuning = `T-CUDA-FLOAT-MS-SSIM-EXACT-THROUGHPUT-2026-10-02`. SYCL / HIP / Metal twins still
   old arithmetic: `T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`.
 - **`enable_chroma` = CPU's per-plane pipeline, bit for bit
   (`T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`).** Option table =
   `float_ms_ssim.c`'s four (`enable_lcs`, `enable_db`, `clip_db`,
   `enable_chroma`); `provided_features` = `float_ms_ssim`, `_cb`, `_cr`
-  (without `_cb` / `_cr` the ADR-0530 name fallback routes them to the CPU).
+  (without `_cb` / `_cr` ADR-0530 name fallback routes them to CPU).
   Per plane (`MsSsimPlaneCuda`): own dimensions, scale geometry, pyramid,
-  pinned level 0, term planes and readbacks; shared: raw staging
-  `h_input_uint` (copy synchronous before `picture_copy()`) and the five
-  horizontal planes (luma-sized, in-order stream). Kernels and
-  `ms_ssim_scale_sums()` = the luma path, no chroma copy of any of them.
+  term planes and readbacks; shared: five horizontal planes (luma-sized,
+  in-order stream). Kernels and
+  `ms_ssim_scale_sums()` = luma path, no chroma copy of any of them.
   Plane count and chroma size come from
   `../metal/float_ms_ssim_option_semantics.h`
   (`vmaf_metal_ms_ssim_active_planes()`, `_plane_dimensions()`): YUV400P =
@@ -86,3 +85,19 @@ invariant: MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option fl
   `test_*_ms_ssim_*clip_db_ceiling` variant, which must feed
   IDENTICAL pair — on merely high-similarity fixture ceiling
   never binds, variant passes against unfixed twin.
+
+## Level 0 is converted on the device
+
+- `ms_ssim_picture_to_float` (`integer_ms_ssim/ms_ssim_score.cu`) is
+  `picture_copy()` of each plane, sample for sample: `(float)u16 / scaler`
+  (4, 16, 256 at 10, 12, 16 bits; exact, power of two), one byte per sample
+  at 8 bits and at depths `picture_copy()` has no case for. It runs on
+  reference picture's stream after distorted picture's ready event and
+  previous frame's `lc.finished` (private stream read level 0), and
+  private stream waits on `lc.submit` behind it. planes formerly went
+  DtoH to pinned memory with host wait, through `picture_copy()` on host
+  and HtoD again (`T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06`). Never bring
+  host staging back. Guards: `test_cuda_float_ms_ssim_host_traffic` (copies
+  with host side counted on device: no upload, no plane copy, only
+  term readback), `test_cuda_float_ms_ssim_exact_contract.py` (device-free),
+  `test_cuda_float_ms_ssim_parity`, exact-twin matrix.

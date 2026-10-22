@@ -70,6 +70,27 @@ def test_other_failure_and_silent_cpu_fallback_fail_closed() -> None:
     )
 
 
+def test_failed_metal_run_keeps_the_line_that_names_the_cause() -> None:
+    """Report #2118: both 1080p Metal runs ended with a close-time SpEED warning as
+    their last stderr line; the cell kept that line and lost the error before it."""
+    stderr = (
+        'libvmaf WARNING feature "x" cannot be overwritten at index 1\n'
+        "problem reading pictures\n"
+        "libvmaf WARNING est_params: covariance matrix was singular on 4 of 4 solves\n"
+    )
+
+    def failing(argv, **_kw):
+        return CommandResult(234, "", stderr)
+
+    result = hw_metal.run_metal_equivalence(
+        "vmaf", [FIXTURE], {"f1": {"psnr": [1.0]}}, timeout_seconds=1, runner=failing
+    )
+    error = result["fixtures"][0]["error"]
+    assert result["status"] == "error"
+    assert error.startswith("vmaf exited 234: libvmaf WARNING est_params")
+    assert "problem reading pictures" in error and "cannot be overwritten" in error
+
+
 def test_no_cells_is_error_and_mixed_no_device_is_error() -> None:
     assert hw_metal.status_of_cells([]) == "error"
     assert hw_metal.status_of_cells([{"no_device": True, "error": "x"}, {"error": "y"}]) == "error"

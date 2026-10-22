@@ -201,10 +201,8 @@ static char *score_sycl_model(Geometry g, double out[NUM_FRAMES][NUM_SCALES], in
     return msg;
 }
 
-static char *test_vif_sycl_declares_min_dim(void)
+static char *check_min_dim_fallback_registered(const VmafFeatureExtractor *fex)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("vif_sycl");
-    mu_assert("vif_sycl is not registered", fex != NULL);
     mu_assert("vif_sycl must declare an ADR-1324 context check", fex->context_check != NULL);
     mu_assert("vif_sycl must fall back to the CPU `vif`",
               fex->context_fallback_name && !strcmp(fex->context_fallback_name, "vif"));
@@ -213,10 +211,22 @@ static char *test_vif_sycl_declares_min_dim(void)
                                   VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
     mu_assert("the fallback must be a CPU extractor",
               cpu != NULL && (cpu->flags & device_flags) == 0);
+    return NULL;
+}
 
-    const unsigned min_dim = expected_min_dim();
-    mu_assert("integer VIF filter footprint is not 16 pixels", min_dim == 16u);
+static char *check_context_accepts_min_dim(VmafFeatureExtractor *fex, unsigned min_dim)
+{
     const Geometry accepted[] = {{min_dim, min_dim}, {min_dim, 4096u}, {1920u, 1080u}};
+    for (size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        mu_assert("vif_sycl must accept frames at or above the minimum",
+                  fex->context_check(fex, VMAF_PIX_FMT_YUV420P, 8u, accepted[i].w, accepted[i].h) ==
+                      0);
+    }
+    return NULL;
+}
+
+static char *check_context_rejects_below_min_dim(VmafFeatureExtractor *fex, unsigned min_dim)
+{
     const Geometry rejected[] = {
         {min_dim - 1u, min_dim},
         {min_dim, min_dim - 1u},
@@ -225,16 +235,24 @@ static char *test_vif_sycl_declares_min_dim(void)
         {3u, 3u},
         {4096u, 9u},
     };
-    for (size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
-        mu_assert("vif_sycl must accept frames at or above the minimum",
-                  fex->context_check(fex, VMAF_PIX_FMT_YUV420P, 8u, accepted[i].w, accepted[i].h) ==
-                      0);
-    }
     for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
         mu_assert("vif_sycl must route frames below the minimum to the CPU",
                   fex->context_check(fex, VMAF_PIX_FMT_YUV420P, 8u, rejected[i].w, rejected[i].h) ==
                       -ENOTSUP);
     }
+    return NULL;
+}
+
+static char *test_vif_sycl_declares_min_dim(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("vif_sycl");
+    mu_assert("vif_sycl is not registered", fex != NULL);
+    mu_assert_msg(check_min_dim_fallback_registered(fex));
+
+    const unsigned min_dim = expected_min_dim();
+    mu_assert("integer VIF filter footprint is not 16 pixels", min_dim == 16u);
+    mu_assert_msg(check_context_accepts_min_dim(fex, min_dim));
+    mu_assert_msg(check_context_rejects_below_min_dim(fex, min_dim));
     return NULL;
 }
 

@@ -17,6 +17,12 @@ same terms rounded ``float_ms_ssim_c_scale1`` of the frame in
 position, the host reads the three planes of a scale back and
 ``ms_ssim_scale_sums()`` adds them in index order.
 
+Level 0 of every pyramid is ``picture_copy()`` of the picture plane, computed
+on the device by ``ms_ssim_picture_to_float`` with ``picture_copy()``'s
+divisors; no picture plane goes to the host and back
+(T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06). ``test_cuda_float_ms_ssim_host_traffic``
+counts the copies on a device.
+
 Device-free: reads the sources only. Every planted regression below is a
 construct the earlier twin had, so the contract fails on that design and passes
 on this one. ``test_cuda_float_ms_ssim_order`` checks the bits on a device.
@@ -42,9 +48,9 @@ FIXTURE_SHA256 = "be2341f63ce741510d600479c78313b1331b4070a505e3ed0bb1bfc3f30fff
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 TERM_STORES = (
     "const size_t window = (size_t)y * w_final + x;",
-    "reinterpret_cast<double *>(l_terms.data)[window] = terms.l;",
-    "reinterpret_cast<double *>(c_terms.data)[window] = terms.c;",
-    "reinterpret_cast<float *>(s_terms.data)[window] = (float)terms.s;",
+    "VMAF_CUDA_DPTR(double, l_terms.data)[window] = terms.l;",
+    "VMAF_CUDA_DPTR(double, c_terms.data)[window] = terms.c;",
+    "VMAF_CUDA_DPTR(float, s_terms.data)[window] = (float)terms.s;",
 )
 # A shuffle of a double or a shared array of doubles: a device reduction.
 DOUBLE_REDUCTION = re.compile(r"__shfl_\w+\s*\(|__shared__\s+double\b")
@@ -97,7 +103,9 @@ def _kernel_failures(kernel: str) -> list[str]:
     flat = _flat(kernel)
     for piece in TERM_STORES:
         if piece not in flat:
-            failures.append(f"{KERNEL}: a term is not stored at its window's raster position ({piece})")
+            failures.append(
+                f"{KERNEL}: a term is not stored at its window's raster position ({piece})"
+            )
     if DOUBLE_REDUCTION.search(_code(kernel)):
         failures.append(f"{KERNEL}: the double terms are reduced on the device")
     return failures
@@ -109,7 +117,9 @@ def _host_failures(host: str) -> list[str]:
     sums = " ".join(_function_body(_code(host), "ms_ssim_scale_sums").split())
     for piece in HOST_SUM:
         if piece not in sums:
-            failures.append(f"{HOST}: ms_ssim_scale_sums() is not three doubles in raster order ({piece})")
+            failures.append(
+                f"{HOST}: ms_ssim_scale_sums() is not three doubles in raster order ({piece})"
+            )
     if sums.count("for (") != 1:
         failures.append(f"{HOST}: ms_ssim_scale_sums() is not one pass in raster order")
     if HOST_CALL not in flat:
@@ -142,11 +152,49 @@ def _chroma_failures(host: str) -> list[str]:
     ]
 
 
+# T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06: the twin copied each plane to pinned
+# host memory, waited, ran picture_copy() there and uploaded the floats.
+LEVEL0_HOST = (
+    "CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);",
+    "ms_ssim_launch_to_float(s, cu_f, ref_pic, plane, pl->pyramid_ref, stream)",
+    "ms_ssim_launch_to_float(s, cu_f, dist_pic, plane, pl->pyramid_cmp, stream)",
+    "cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT)",
+    # picture_copy()'s divisors (feature/picture_copy.cpp).
+    "return bpc == 10u ? 4.0f : bpc == 12u ? 16.0f : bpc == 16u ? 256.0f : 0.0f;",
+)
+LEVEL0_KERNEL = (
+    "__global__ void ms_ssim_picture_to_float(",
+    "out[x] = (float)v / scaler;",
+    "out[x] = (float)row[x];",
+)
+HOST_STAGING = re.compile(r"CU_MEMORYTYPE_HOST|cuMemcpyHtoD|picture_copy\s*\(|cuStreamSynchronize")
+
+
+def _level0_failures(sources: dict[str, str]) -> list[str]:
+    host = _flat(sources[HOST])
+    kernel = _flat(sources[KERNEL])
+    failures = [
+        f"{HOST}: level 0 is not converted on the device ({piece})"
+        for piece in LEVEL0_HOST
+        if piece not in host
+    ]
+    failures += [
+        f"{KERNEL}: level 0 is not picture_copy() on the device ({piece})"
+        for piece in LEVEL0_KERNEL
+        if piece not in kernel
+    ]
+    staging = HOST_STAGING.search(_code(sources[HOST]))
+    if staging:
+        failures.append(f"{HOST}: a picture plane goes through the host ({staging.group(0)})")
+    return failures
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
         _kernel_failures(sources[KERNEL])
         + _host_failures(sources[HOST])
         + _chroma_failures(sources[HOST])
+        + _level0_failures(sources)
     )
 
 
@@ -161,21 +209,25 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
     def test_warp_reduction_of_the_terms_is_detected(self) -> None:
         # The earlier kernel's shuffle loop.
         sources = _sources()
-        sources[KERNEL] += (
-            "\ndouble r(double wl) { return wl + __shfl_down_sync(0xffffffff, wl, 16u); }\n"
+        sources[
+            KERNEL
+        ] += "\ndouble r(double wl) { return wl + __shfl_down_sync(0xffffffff, wl, 16u); }\n"
+        self.assertTrue(
+            any("reduced on the device" in item for item in _contract_failures(sources))
         )
-        self.assertTrue(any("reduced on the device" in item for item in _contract_failures(sources)))
 
     def test_block_partial_array_is_detected(self) -> None:
         # The earlier kernel's `s_l_warp`.
         sources = _sources()
         sources[KERNEL] += "\nvoid f(void) { __shared__ double s_l_warp[4]; }\n"
-        self.assertTrue(any("reduced on the device" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("reduced on the device" in item for item in _contract_failures(sources))
+        )
 
     def test_unstored_term_is_detected(self) -> None:
         sources = _sources()
         sources[KERNEL] = sources[KERNEL].replace(
-            "reinterpret_cast<double *>(c_terms.data)[window] = terms.c;", "(void)terms.c;", 1
+            "VMAF_CUDA_DPTR(double, c_terms.data)[window] = terms.c;", "(void)terms.c;", 1
         )
         self.assertTrue(any("raster position" in item for item in _contract_failures(sources)))
 
@@ -210,14 +262,20 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
     def test_reordered_host_sum_is_detected(self) -> None:
         sources = _sources()
         sources[HOST] = sources[HOST].replace(
-            "for (size_t j = 0u; j < n_windows; j++) {", "for (size_t j = n_windows; j-- > 0u;) {", 1
+            "for (size_t j = 0u; j < n_windows; j++) {",
+            "for (size_t j = n_windows; j-- > 0u;) {",
+            1,
         )
-        self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("three doubles in raster" in item for item in _contract_failures(sources))
+        )
 
     def test_sum_of_another_plane_is_detected(self) -> None:
         sources = _sources()
         sources[HOST] = sources[HOST].replace("c += c_terms[j];", "c += l_terms[j];", 1)
-        self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("three doubles in raster" in item for item in _contract_failures(sources))
+        )
 
     def test_fp32_structure_sum_is_detected(self) -> None:
         # The CPU widens s before it adds it; an fp32 accumulator is another sum.
@@ -225,7 +283,9 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
         sources[HOST] = sources[HOST].replace(
             "st += (double)s_terms[j];", "st = (double)((float)st + s_terms[j]);", 1
         )
-        self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("three doubles in raster" in item for item in _contract_failures(sources))
+        )
 
     def test_luma_only_plane_count_is_detected(self) -> None:
         # The HIP twin's former `n_planes = 1u` whatever enable_chroma said.
@@ -241,6 +301,46 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
         sources = _sources()
         sources[HOST] = sources[HOST].replace('"float_ms_ssim_cb", ', "", 1)
         self.assertTrue(any("enable_chroma scores" in item for item in _contract_failures(sources)))
+
+    def test_host_staging_is_detected(self) -> None:
+        # The earlier ms_ssim_copy_plane_to_host() / ms_ssim_upload_level_zero().
+        planted = (
+            "\nstatic int f(void) { CUDA_MEMCPY2D c = {.dstMemoryType = CU_MEMORYTYPE_HOST}; }\n",
+            "\nstatic void f(void) { cuMemcpyHtoDAsync(0, 0, 0, 0); }\n",
+            "\nstatic void f(void) { picture_copy(0, 0, 0, 0, 8, 0); }\n",
+            "\nstatic void f(void) { cuStreamSynchronize(0); }\n",
+        )
+        for code in planted:
+            sources = _sources()
+            sources[HOST] += code
+            self.assertTrue(
+                any("goes through the host" in item for item in _contract_failures(sources)), code
+            )
+
+    def test_unconverted_level0_is_detected(self) -> None:
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace(
+            "ms_ssim_launch_to_float(s, cu_f, dist_pic, plane, pl->pyramid_cmp, stream)", "0", 1
+        )
+        self.assertTrue(
+            any("not converted on the device" in item for item in _contract_failures(sources))
+        )
+
+    def test_other_divisor_is_detected(self) -> None:
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace("bpc == 10u ? 4.0f", "bpc == 10u ? 1024.0f", 1)
+        self.assertTrue(
+            any("not converted on the device" in item for item in _contract_failures(sources))
+        )
+
+    def test_kernel_without_division_is_detected(self) -> None:
+        sources = _sources()
+        sources[KERNEL] = sources[KERNEL].replace(
+            "out[x] = (float)v / scaler;", "out[x] = (float)v;", 1
+        )
+        self.assertTrue(
+            any("not picture_copy() on the device" in item for item in _contract_failures(sources))
+        )
 
 
 if __name__ == "__main__":

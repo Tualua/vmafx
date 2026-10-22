@@ -100,14 +100,13 @@ static int vif_workspace_alloc(VifWorkspace *work, int w, int h)
     if (vif_plane_size(w, h, &work->stride, &plane_size))
         return 1;
     if (SIZE_MAX / plane_size < VIF_BUF_CNT) {
-        printf("error: SIZE_MAX / buf_sz_one < VIF_BUF_CNT, buf_sz_one = %zu.\n", plane_size);
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: SIZE_MAX / buf_sz_one < VIF_BUF_CNT, buf_sz_one = %zu.\n", plane_size);
         return 1;
     }
     work->data = aligned_malloc(plane_size * VIF_BUF_CNT, MAX_ALIGN);
     if (!work->data) {
-        printf("error: aligned_malloc failed for data_buf.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: aligned_malloc failed for data_buf.\n");
         return 1;
     }
     /* One aligned slab, in the original order. Every plane contains a whole
@@ -134,8 +133,8 @@ static void vif_prepare_filter(VifFilter *filter, unsigned scale, const VifSetti
         memcpy(filter->coefficients, settings->filters[scale],
                (size_t)filter->width * sizeof(filter->coefficients[0]));
     } else {
-        filter->width = vif_get_filter_size(scale, settings->kernelscale);
-        vif_get_filter(filter->coefficients, scale, settings->kernelscale);
+        filter->width = vif_get_filter_size(scale, (float)settings->kernelscale);
+        vif_get_filter(filter->coefficients, scale, (float)settings->kernelscale);
     }
 }
 
@@ -239,7 +238,7 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
                 double vif_sigma_nsq, const float (*precomputed_filters)[128],
                 const int *precomputed_filter_widths)
 {
-    if (!precomputed_filters && !vif_validate_kernelscale(vif_kernelscale)) {
+    if (!precomputed_filters && !vif_validate_kernelscale((float)vif_kernelscale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f\n", vif_kernelscale);
         return 1;
     }

@@ -27,5 +27,10 @@
 0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch
 0017-libvmaf-read-pelorus-sidedata.patch
 0018-libvmaf-map-percentile-pool-methods.patch
-0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch
 0020-libvmaf-honor-retryable-close-ownership.patch
+0021-libvmaf-print-no-pooled-score-after-a-mid-run-error.patch
+0022-libvmaf-declare-the-input-colorimetry-from-the-AVFrame-properties.patch
+0023-add-vmafx-filter.patch
+0024-add-vmafx-pre-filter.patch
+0025-add-vmafx-profile-cli-glue.patch
+0026-fftools-loopback-decoder-hwaccel.patch

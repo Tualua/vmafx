@@ -7,7 +7,10 @@ dynamic = ["version"]
 description = "Bounded VMAFx RC1 hardware diagnostics and report bundling."
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
-license = "EUPL-1.2"
+# The licences of the files the sdist and wheel ship (ADR-1560, ADR-1699): the
+# sdist carries image/licenses/, whose third-party notices are MIT.
+license = "EUPL-1.2 AND MIT"
+license-files = ["LICENSES/*"]
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]
@@ -19,7 +22,7 @@ vmaf-rc1-report = "vmaf_rc1_tester.cli:main"
 [project.optional-dependencies]
 # zopfli: the Windows zip builder's Deflate encoder, tested in tests/ (ADR-1594);
 # keep equal to requirements/locks/windows-tester-zip.in.
-dev = ["pytest>=9.1.1", "ruff>=0.16.10", "black==26.10.0", "zopfli==0.4.3", "jsonschema==4.26.0"]
+dev = ["pytest>=9.1.1", "ruff>=0.17.0", "black==26.10.1", "zopfli==0.4.3", "jsonschema==4.26.0"]
 
 [build-system]
 requires = ["hatchling"]

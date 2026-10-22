@@ -32,6 +32,23 @@ pin is CUDA 13.4.2 (`CUDA_VERSION` in `build-config.env`; apt package
 `cuda-toolkit-13-4`). The build uses the driver API only, through `ffnvcodec`
 dynlink wrappers.
 
+Those wrappers come from FFmpeg's
+[nv-codec-headers](https://code.ffmpeg.org/FFmpeg/nv-codec-headers), release
+`n13.1.15.0` or newer (`NV_CODEC_HEADERS_TAG` in `build-config.env`). Older
+releases do not declare `cuArray3DGetDescriptor`, which the device-frame
+import calls. `meson setup` checks for it and stops with this message when
+the installed headers are older:
+
+```text
+ffnvcodec/dynlink_loader.h has no CudaFunctions.cuArray3DGetDescriptor: the
+installed nv-codec-headers are too old. Please install nv-codec-headers
+n13.1.15.0 (commit 0a6fba9a2820628b8103464f4c8753ee05838baa) or newer from
+https://code.ffmpeg.org/FFmpeg/nv-codec-headers.
+```
+
+Install them with `make install` in a checkout of that release (the headers
+land under `include/ffnvcodec/` of the prefix).
+
 ### GPU architecture coverage
 
 **Minimum compute capability: 8.0 (Ampere).** The fork ships cubins for
@@ -178,6 +195,34 @@ software-decoded input the regular `libvmaf` filter accepts a fork-added
 [ADR-0408](../../adr/0408-ffmpeg-libvmaf-cuda-backend-selector.md)); build
 FFmpeg with `--enable-libvmaf-cuda` to enable it.
 
+### Importing frames through the VMAFx API
+
+A program that already holds frames on the GPU (a decoder's surfaces, a
+compositor's GL textures) hands them to a CUDA device of the VMAFx API without
+a copy through the host: device pointers are read where they are, the
+semi-planar (NV12 to P416) and packed (Y210, Y410, ...) layouts are converted
+on the device, and CUDA events order the producer's
+writes and its reuse of the memory against the library's reads on the device.
+See [CUDA devices](../../api/vmafx/index.md#cuda-devices) for the calls, the
+layouts a plane must have, and the fences
+([ADR-2023](../../adr/2023-vmafx-cuda-device-frames.md)).
+
+Frames a Vulkan producer wrote on the same GPU (FFmpeg's Vulkan decode,
+libplacebo) are imported too: the CUDA device imports the exported memory of
+OPTIMAL images as CUDA arrays and of LINEAR images and buffers as device
+pointers, waits on the producer's timeline semaphores on its stream and
+signals them back behind the last reader
+([Vulkan frames](../../api/vmafx/index.md#vulkan-frames),
+[ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)). The `vulkan` suite
+checks it on a host with a CUDA device and a Vulkan driver:
+`python3 scripts/ci/run_meson_test.py -- -C build --suite vulkan`.
+
+Every CUDA twin reads a picture with that picture's own row pitch, so frames
+whose planes have the producer's pitch (rather than the engine's
+texture-aligned one) score as their host-uploaded copies; `integer_vif` read
+both inputs with the engine's pitch until RC4 work package 3
+(`T-CUDA-VIF-PICTURE-PITCH-2026-10-06` in [docs/state.md](../../state.md)).
+
 ### Dispatch knob (`VMAF_CUDA_DISPATCH`)
 
 `VMAF_CUDA_DISPATCH` selects how a CUDA extractor submits work. libvmaf reads
@@ -286,7 +331,7 @@ Open items only. Closed gaps are in the [twin notes](twin-notes.md#history).
 | Gap | Status | Detail |
 |-----|--------|--------|
 | CUDA graph capture dispatch | open | `VMAF_CUDA_DISPATCH=<extractor>:graph` logs `libvmaf: CUDA graph dispatch requested for '<extractor>' but graph capture is not implemented; falling back to direct` and runs `direct`. Graph capture needs static pitch allocation and graph instance lifecycle management across frames (deferred; `docs/state.md`). |
-| Zero-copy picture import | open | `core/src/cuda/picture_cuda.c` stages pictures through pinned host memory (`cuMemcpyHtoDAsync` / `cuMemcpyDtoHAsync`). Linux `dmabuf` / external-memory import (`cuImportExternalMemory`, `cuExternalMemoryGetMappedBuffer`) is not implemented, unlike the SYCL backend (`dmabuf_import.cpp`). The CUDA driver API import needs Vulkan or EGL external handle negotiation (deferred; `docs/state.md`). |
+| Zero-copy picture import | open | `core/src/cuda/picture_cuda.c` uploads and downloads pictures with `cuMemcpy2DAsync` (host pictures, usually pinned, to the device pool and back). A CUDA frame from NVDEC reaches the pool through one device-to-device copy in the FFmpeg `libvmaf_cuda` filter ([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)); no host copy, but not zero-copy. Linux `dmabuf` / external-memory import (`cuImportExternalMemory`, `cuExternalMemoryGetMappedBuffer`) is not implemented, unlike the SYCL backend (`dmabuf_import.cpp`). The CUDA driver API import needs Vulkan or EGL external handle negotiation (deferred; `docs/state.md`). |
 | `float_motion` extra options | open | `motion_add_scale1`, `motion_add_uv` and `motion_filter_size` keep `float_motion` on the CPU. `motion_add_uv=true` is not wired through to the CUDA backend; the `picture_copy()` call in `integer_ms_ssim_cuda.c` passes `0` for the `channel` argument (Y plane only). UV-plane motion on GPU is tracked in [docs/state.md](../../state.md). |
 | `psnr_hvs_cuda` throughput | open (tuning) | Bit-exactness costs a 256-byte readback per block and a sequential host sum: 12.2 ms per 3840x2160 frame on an RTX 4090 instead of 2.4 ms. Details on [the psnr_hvs page](../../metrics/psnr-hvs.md#gpu-twins). |
 | `float_ssim` at `scale=1` on large pictures | open (cost) | The raster-order sum makes an explicit `scale=1` on 1080p or 4K slower (see the [twin notes](twin-notes.md#float_ssim-adds-its-frame-sums-in-the-cpus-order-adr-1464)). |

@@ -12,7 +12,7 @@
   `cambi`, `vif` and `vmaf_v0.6.1` now equal host upload in 10 of 10 runs on
   the Netflix pair and the 1080p checkerboard at 8 and 10 bit, at unchanged
   1080p throughput. `scripts/test/zerocopy-e2e.sh --repeat N` repeats the
-  zero-copy leg and fails on any differing run (ADR-1763,
+  zero-copy leg and fails on any differing run (ADR-3359,
   `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02`;
   [SYCL bundling](docs/backends/sycl/bundling.md),
   [SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).

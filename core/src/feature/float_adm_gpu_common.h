@@ -129,7 +129,7 @@ static inline float fadm_host_from_bits(uint32_t bits)
 /* ------------------------------------------------------------------ */
 
 /* The DWT bands of one scale and the four CSF buffers derived from them. */
-typedef struct FloatAdmGpuBands {
+struct FloatAdmGpuBands {
     uint64_t ref_band; /* float, 4 sub-bands */
     uint64_t dis_band; /* float, 4 sub-bands */
     uint64_t csf_a;    /* float, 3 sub-bands: rfactor * decouple_a */
@@ -140,16 +140,22 @@ typedef struct FloatAdmGpuBands {
     int32_t half_h;
     int32_t buf_stride;
     float rfactor[FADM_BANDS];
-} FloatAdmGpuBands;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuBands FloatAdmGpuBands;
+#endif
 
-typedef struct FloatAdmGpuDecoupleArgs {
+struct FloatAdmGpuDecoupleArgs {
     FloatAdmGpuBands bands;
     double adm_enhn_gain_limit; /* fp64, like the reference's argument */
     float cos_1deg_sq;
     uint32_t pad_;
-} FloatAdmGpuDecoupleArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuDecoupleArgs FloatAdmGpuDecoupleArgs;
+#endif
 
-typedef struct FloatAdmGpuTermArgs {
+struct FloatAdmGpuTermArgs {
     FloatAdmGpuBands bands;
     uint64_t terms; /* float, see fadm_term_index() */
     int32_t left;   /* the reduced region, adm_border_s() */
@@ -160,14 +166,20 @@ typedef struct FloatAdmGpuTermArgs {
     uint32_t is_cube;   /* adm_p_norm == 3.0 */
     uint32_t bypass_cm; /* adm_bypass_cm: no masking threshold */
     uint32_t reserved;
-} FloatAdmGpuTermArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuTermArgs FloatAdmGpuTermArgs;
+#endif
 
-typedef struct FloatAdmGpuRowArgs {
+struct FloatAdmGpuRowArgs {
     uint64_t terms; /* float, see fadm_term_index() */
     uint64_t rows;  /* float, FADM_TERM_SLOTS x region_h, see fadm_row_index() */
     uint32_t region_w;
     uint32_t region_h;
-} FloatAdmGpuRowArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuRowArgs FloatAdmGpuRowArgs;
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Layout.                                                              */
@@ -263,12 +275,15 @@ FADM_HD float fadm_csf_flt(float csf)
 /* What the decouple kernel stores for one band sample: the CSF-weighted
  * additive (a = t - rst) and restored (r = rst) signals, each with its
  * filtered magnitude. */
-typedef struct FloatAdmCsfSample {
+struct FloatAdmCsfSample {
     float csf_a;
     float csf_fa;
     float csf_r;
     float csf_fr;
-} FloatAdmCsfSample;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmCsfSample FloatAdmCsfSample;
+#endif
 
 /* adm_decouple_s() and both adm_csf_s() calls of compute_adm() for band
  * `band` of one sample. */
@@ -363,6 +378,18 @@ FADM_HD float fadm_row_sum(const float *terms, size_t stride, uint32_t count)
 }
 
 #if !defined(FADM_DEVICE_ONLY)
+#include "feature/adm_float_reference.h"
+
+/* FloatAdmPooled - what the per-scale pooling loop produces: compute_adm()'s
+ * `scores`, `num`, `den`, `aim_num` and `aim_den`. */
+typedef struct FloatAdmPooled {
+    double scores[2 * FADM_SCALES];
+    double score_num;
+    double score_den;
+    double aim_num;
+    double aim_den;
+} FloatAdmPooled;
+
 /* adm_fold3_s() over the rows of one slot, top to bottom. */
 static inline float fadm_fold_rows(const float *rows, uint32_t count)
 {
@@ -370,6 +397,47 @@ static inline float fadm_fold_rows(const float *rows, uint32_t count)
     for (uint32_t y = 0u; y < count; y++)
         accum = FADM_FADD(accum, rows[y]);
     return accum;
+}
+
+/* compute_adm()'s scale loop past the kernels: fold rows into band
+ * accumulators and pool each scale via adm_pool_bands_s(). */
+static inline void fadm_pool_scales_common(const AdmBorderS region[FADM_SCALES],
+                                           const size_t row_offset[FADM_SCALES],
+                                           const float *rows_host, double adm_noise_weight,
+                                           double adm_p_norm, int adm_skip_aim_scale,
+                                           FloatAdmPooled *o)
+{
+    o->score_num = 0.0;
+    o->score_den = 0.0;
+    o->aim_num = 0.0;
+    o->aim_den = 0.0;
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
+        const AdmBorderS *r = &region[scale];
+        const int region_w = r->right - r->left;
+        const int region_h = r->bottom - r->top;
+        const float *rows = rows_host + row_offset[scale];
+        float accum[FADM_TERM_SLOTS];
+        for (unsigned slot = 0u; slot < FADM_TERM_SLOTS; slot++) {
+            accum[slot] = fadm_fold_rows(rows + fadm_row_index(slot, 0u, (uint32_t)region_h),
+                                         (uint32_t)region_h);
+        }
+
+        const float den_scale = adm_pool_bands_s(accum + FADM_SLOT_DEN, region_w, region_h,
+                                                 adm_noise_weight, adm_p_norm);
+        const float num_scale = adm_pool_bands_s(accum + FADM_SLOT_CM, region_w, region_h,
+                                                 adm_noise_weight, adm_p_norm);
+        const float aim_num_scale =
+            adm_pool_bands_s(accum + FADM_SLOT_AIM, region_w, region_h, 0.0, adm_p_norm);
+
+        o->score_num += num_scale;
+        o->score_den += den_scale;
+        if (adm_skip_aim_scale != scale) {
+            o->aim_den += den_scale;
+            o->aim_num += aim_num_scale;
+        }
+        o->scores[2 * scale + 0] = num_scale;
+        o->scores[2 * scale + 1] = den_scale;
+    }
 }
 #endif
 

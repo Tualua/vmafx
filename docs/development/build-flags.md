@@ -98,7 +98,7 @@ under [Option details](#option-details).
 | `built_in_models` | bool | `true` | Compile the default `.json` VMAF models into the library, so `version=vmaf_v0.6.1` and the like resolve without disk I/O. |
 | `enable_float` | bool | `true` | Compile the `float_*` extractors; see [`enable_float`](#enable_float). |
 | `fuzz` | bool | `false` | Build the libFuzzer harnesses under `core/test/fuzz/`; see [`fuzz`](#fuzz). |
-| `enable_rust_features` | bool | `false` | Build the Rust-implemented extractors; see [`enable_rust_features`](#enable_rust_features). |
+| `enable_rust_features` | bool | `false` | Build the Rust extractors (Rust twins, TAD); see [`enable_rust_features`](#enable_rust_features). |
 
 ### SIMD
 
@@ -113,6 +113,7 @@ under [Option details](#option-details).
 | --- | --- | --- | --- |
 | `enable_cuda` | bool | `false` | Compile the CUDA backend and its `.cu` kernels; needs the CUDA toolkit (`nvcc`). |
 | `enable_nvtx` | bool | `false` | Instrument CUDA kernels with NVTX ranges for Nsight Systems; see [backends/nvtx/profiling.md](../backends/nvtx/profiling.md). |
+| `enable_zimg` | bool | `false` | Build `vmaf_picture_convert()` (colourspace, format and size conversion) against zimg >= 2.7 found by pkg-config; off, the function returns `-ENOTSUP`. See [Pictures](../api/pictures.md#converting-pictures-vmaf_picture_convert) and [ADR-1822](../adr/1822-additive-picture-convert.md). |
 | `enable_nvcc` | bool | `true` | Compile the CUDA kernel objects with `nvcc` instead of the clang CUDA driver; only read when `enable_cuda=true`. |
 | `nvcc_threads` | integer | `4` | `nvcc --threads` for the per-kernel fatbin compiles, range 1 to 32; see [`nvcc_threads`](#nvcc_threads). |
 
@@ -132,7 +133,7 @@ under [Option details](#option-details).
 | `enable_hip` | bool | `false` | Compile the HIP backend; 19 extractors are registered; see [`enable_hip` and `enable_hipcc`](#enable_hip-and-enable_hipcc). |
 | `enable_hipcc` | bool | `false` | Compile the real HIP kernels with `hipcc`; pair with `enable_hip=true`. |
 | `hip_gfx_targets` | string | auto-detect | AMD GFX targets for `hipcc --offload-arch`; see [`hip_gfx_targets`](#hip_gfx_targets). |
-| `enable_float_vif_hip_autodispatch` | bool | `false` | Let the model registry pick `float_vif_hip` on its own; see [`enable_float_vif_hip_autodispatch`](#enable_float_vif_hip_autodispatch). |
+| `enable_float_vif_hip_autodispatch` | bool | `true` | Let the model registry pick `float_vif_hip` on its own; see [`enable_float_vif_hip_autodispatch`](#enable_float_vif_hip_autodispatch). |
 
 ### GPU device code (CUDA, HIP, SYCL)
 
@@ -288,13 +289,16 @@ or to shrink the fat binary to one target.
 
 Defines `FLOAT_VIF_HIP_AUTODISPATCH`, which sets
 `VMAF_FEATURE_EXTRACTOR_HIP` on the `float_vif_hip` descriptor so the model
-registry can dispatch it
+registry, `--backend hip` and a VMAFx context on a HIP device pick it for
+`float_vif`
 ([ADR-0623](../adr/0623-scaffold-audit-p2-half-finished.md)).
 
-It is off because the HIP picture pool does not exist yet (T7-10c): pictures
-arrive as CPU `VmafPicture`s and the extractor copies them to the device
-itself instead of reading zero-copy from the pool. Enable it only after that
-work lands.
+On by default since [ADR-2092](../adr/2092-vmafx-hip-device-frames.md): the
+option was off until HIP device pictures existed (T7-10c), and the HIP lane
+of the VMAFx API now hands the twins frames in HIP device memory. With
+`-Denable_float_vif_hip_autodispatch=false` the twin runs only when named
+(`--feature float_vif_hip`), and a context on a HIP device refuses imported
+frames for `float_vif` (admission names the CPU extractor).
 
 ### `enable_metal`
 
@@ -326,6 +330,10 @@ into libvmaf and enables the `vmaf_mcp_*` symbols. At run time it serves
 that mutate the measurement thread are future work. Usage is in
 [`docs/mcp/embedded.md`](../mcp/embedded.md).
 
+The server is POSIX code (Unix-domain and TCP sockets, `<unistd.h>`). On
+Windows, `enable_mcp=true` stops configure with an error that says so
+([ADR-2646](../adr/2646-posix-only-build-options.md)).
+
 Each transport has its own flag and needs `enable_mcp=true`:
 
 | Flag | Transport | Notes |
@@ -339,15 +347,23 @@ Each transport has its own flag and needs `enable_mcp=true`:
 Builds the libFuzzer harnesses under `core/test/fuzz/`
 ([ADR-0270](../adr/0270-fuzzing-scaffold.md), OSSF Scorecard `Fuzzing`
 remediation). It needs `clang`; pair it with `-Db_sanitize=address` for heap
-coverage. Opt-in only.
+coverage. Opt-in only. The harnesses are POSIX code (`<unistd.h>`): on Windows,
+`fuzz=true` stops configure with an error that says so
+([ADR-2646](../adr/2646-posix-only-build-options.md)).
 
 ### `enable_rust_features`
 
-Builds the Rust-implemented extractors through the `cbindgen` pilot
-([ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md)). The first migrated
-metric is TAD (Temporal Absolute Difference, `core/src/feature/tad/`). It
-needs `cargo` and `cbindgen` on `PATH`; the build runs `cargo build` and links
-the resulting static library into `libvmaf.so`. CI keeps it off.
+Builds the Rust extractors ([ADR-1713](../adr/1713-rc4-rust-extractor-framework.md)):
+the Rust twins of C extractors, selected at run time with
+`VMAF_FEATURE_IMPL=rust`, and the TAD pilot
+([ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md)). It needs `cargo` on
+`PATH` (no network, no cbindgen); the build runs an offline `cargo build -p
+vmafx-core-rs` and links the one archive into `libvmaf`. Without `cargo`,
+configure stops with an error ([ADR-3318](../adr/3318-rust-toolchain-pin.md)).
+The toolchain is the one `rust-toolchain.toml` pins (`RUST_VERSION` in
+`build-config.env`); rustup installs it on the first `cargo` call in the
+checkout. Off by default; the `Rust` workflow and the dev container build it. See
+[Rust extractor framework](rust-extractor-framework.md).
 
 ## Flag interactions
 
@@ -360,6 +376,9 @@ the resulting static library into `libvmaf.so`. CI keeps it off.
 | `sycl_compiler=acpp` | AdaptiveCpp has no device image compression. | Pair it with `-Dcompress_device_code=false`, or configure stops. |
 | `enable_float` | Adds float twins on top of the integer path. | Turning it off never removes an integer extractor. |
 | `enable_dnn=auto` | Skips DNN tests when ONNX Runtime fails to link. | The gap is not reported as a failure; use `enabled` in CI. |
+| `enable_mcp=true` on Windows | The embedded MCP server is POSIX code (sockets, `<unistd.h>`). | Configure stops with an error that names the dependency ([ADR-2646](../adr/2646-posix-only-build-options.md)). |
+| `fuzz=true` on Windows | The libFuzzer harnesses include `<unistd.h>`. | Configure stops with an error that names the dependency. |
+| `enable_sycl=true` on Windows | The `vmaf_vpl` tool needs VA-API, libva-drm and `<unistd.h>`. | The tool is not looked for; configure prints `vmaf_vpl tool: disabled (Linux only: ...)`. |
 
 ## Standard Meson options that matter
 
@@ -372,7 +391,7 @@ emitted artifact.
 | `default_library` | `both` | `shared` / `static` / `both`; `both` builds `libvmaf.so` and `libvmaf.a` and is what the test suite layout uses. |
 | `b_ndebug` | `false` | `true` disables C `assert()`; set with `-Db_ndebug=true`. |
 | `b_sanitize` | `none` | `address`, `undefined`, `address,undefined`, `thread`, `memory`. |
-| `b_lto` | `true` | LTO is on by default; measurable speedup on the scalar and AVX2 paths. Use `-Db_lto=false` for sanitizer and fuzzing builds. |
+| `b_lto` | `true` | LTO is on by default; measurable speedup on the scalar and AVX2 paths. Use `-Db_lto=false` for sanitizer and fuzzing builds. A static MSVC build with `-Denable_tests=true` links every test program with `/LTCG`; the Windows bundles and the Windows MSVC+CUDA CI legs set `-Db_lto=false`. |
 | `b_lto_threads` | `4` | Per-link LTO partition parallelism (`-flto=4` on GCC, `-flto-jobs=4` on Clang). GCC's plain `-flto` uses every core per link and `ninja -j N` multiplies that by N ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)); `-Db_lto_threads=0` restores the compiler default on a dedicated build box. |
 | `c_args` | empty | Extra C flags. |
 | `prefix` | `/usr/local` | Install prefix for `ninja install`. |
@@ -395,8 +414,8 @@ multiply-add calls the intrinsic or `fma()`.
 | Compiler | Flags in `vmaf_strict_fp_args` |
 | --- | --- |
 | GCC, clang | `-ffp-contract=off` |
-| icx, icpx (`intel-llvm`) | `-fp-model=precise -ffp-contract=off` (order matters: precise first) |
-| icx-cl (`intel-llvm-cl`) | `/fp:precise /Qfma-` |
+| icx, icpx (`intel-llvm`) | `-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full -ffp-contract=off` (order matters: precise first, contraction-off last) |
+| icx-cl (`intel-llvm-cl`) | `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` |
 | MSVC | `/fp:precise` |
 | clang-cl | `/clang:-ffp-contract=off` |
 

@@ -102,7 +102,8 @@ static const VmafOption options[] = {{
                                           * and across upstream Netflix/vmaf — see
                                           * ADR-0597.  Setting `enable_chroma=true` emits a
                                           * one-shot warning during init() and otherwise has
-                                          * no effect on the produced scores. */
+                                          * no effect on the produced scores; their names
+                                          * carry `_enable_chroma` (ADR-1836). */
                                          .name = "enable_chroma",
                                          .help =
                                              "no-op (luma-only kernel; ADR-0597). retained for "
@@ -376,9 +377,12 @@ static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigne
 static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned w, unsigned h,
                              int tex_alignment, bool hbd)
 {
+    /* The picture pitches are set per frame (vif_submit_scales()); this is the
+     * pitch of a picture the engine's pool allocates, until the first frame. */
     s->buf.stride =
         (ptrdiff_t)tex_alignment *
         ((w * (1u << (unsigned)hbd) + (unsigned)tex_alignment - 1u) / (unsigned)tex_alignment);
+    s->buf.dis_stride = s->buf.stride;
     {
         const int rd_w_bytes = (int)(((w + 1u) / 2u) * sizeof(uint16_t));
         s->buf.rd_stride =
@@ -489,6 +493,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (table_err)
         return vif_init_unwind(fex, s, table_err);
 
+    /* The names follow the options as the caller set them, before the no-op
+     * `enable_chroma` is cleared below: `enable_chroma=true` gives the
+     * `_enable_chroma` names, as every extractor names its features from its
+     * options first in init() (ADR-1836). A later failure releases the
+     * dictionary through vif_init_unwind(). */
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return vif_init_unwind(fex, s, -ENOMEM);
+
     vif_drop_vestigial_chroma_option(s);
     (void)pix_fmt; /* YUV400P needs no special case — luma-only path handles it. */
     s->n_planes = 1;
@@ -501,15 +515,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (attr_res != CUDA_SUCCESS)
         return vif_init_unwind(fex, s, vmaf_cuda_result_to_errno((int)attr_res));
 
-    int ret = vif_setup_buffers(fex, s, w, h, tex_alignment, hbd);
-    if (ret)
-        return ret;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return vif_init_unwind(fex, s, -ENOMEM);
-    return 0;
+    return vif_setup_buffers(fex, s, w, h, tex_alignment, hbd);
 }
 
 static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *dis_in, int w,
@@ -696,12 +702,12 @@ typedef struct VifScore {
 static void vif_reduce_accums(const vif_accums *accum, VifScore *vif)
 {
     for (unsigned scale = 0; scale < 4; ++scale) {
-        vif->scale[scale].num =
-            accum[scale].num_log / 2048.0 + accum[scale].x2 +
-            (accum[scale].den_non_log - ((accum[scale].num_non_log) / 16384.0) / (65025.0));
-        vif->scale[scale].den = accum[scale].den_log / 2048.0 -
-                                (accum[scale].x + (accum[scale].num_x * 17)) +
-                                accum[scale].den_non_log;
+        vif->scale[scale].num = (float)(accum[scale].num_log / 2048.0 + accum[scale].x2 +
+                                        (accum[scale].den_non_log -
+                                         ((accum[scale].num_non_log) / 16384.0) / (65025.0)));
+        vif->scale[scale].den =
+            (float)(accum[scale].den_log / 2048.0 - (accum[scale].x + (accum[scale].num_x * 17)) +
+                    accum[scale].den_non_log);
     }
 }
 
@@ -775,6 +781,11 @@ static int vif_order_after_scale0(VifStateCuda *s, CudaFunctions *cu_f, VmafPict
 static int vif_submit_scales(VifStateCuda *s, CudaFunctions *cu_f, VmafPicture *ref_pic,
                              VmafPicture *dist_pic, int w, int h)
 {
+    /* Scale 0 reads the pictures with their own pitches: an imported plane
+     * has its producer's, not the texture-aligned pitch init assumed (the
+     * import of an arbitrary pitch read the wrong rows, ADR-2023). */
+    s->buf.stride = ref_pic->stride[0];
+    s->buf.dis_stride = dist_pic->stride[0];
     for (unsigned scale = 0; scale < 4; ++scale) {
         if (scale > 0) {
             w /= 2;

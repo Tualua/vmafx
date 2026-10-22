@@ -113,18 +113,12 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -ENOMEM;
     }
 
-    if (bpc == 8) {
-        s->peak = 255.0;
-        s->psnr_max = 60.0;
-    } else if (bpc == 10) {
-        s->peak = 255.75;
-        s->psnr_max = 72.0;
-    } else if (bpc == 12) {
-        s->peak = 255.9375;
-        s->psnr_max = 84.0;
-    } else if (bpc == 16) {
-        s->peak = 255.99609375;
-        s->psnr_max = 108.0;
+    if (bpc >= 8 && bpc <= 16) {
+        /* The peak of the 8-bit scale picture_copy() maps a sample to, (2^bpc - 1) / 2^(bpc - 8)
+         * (255, 255.75, 255.9375, 255.99609375 at 8, 10, 12, 16 bits; exact in a double), and the
+         * ceiling 6 * bpc + 12. Every depth the engine reads, not four of them (ADR-2145). */
+        s->peak = (double)((1u << bpc) - 1u) / (double)(1u << (bpc - 8u));
+        s->psnr_max = 6.0 * (double)bpc + 12.0;
     } else {
         /* Unsupported bitdepth. Upstream parity: the buffers allocated above
          * are intentionally left to the extractor teardown path, exactly as
@@ -170,7 +164,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     int w = ref_pic->w[0];
     int h = ref_pic->h[0];
-    int stride = s->float_stride / sizeof(float);
+    int stride = (int)(s->float_stride / sizeof(float));
 
     double noise_ = 0;
     for (int i = 0; i < h; i++)
@@ -198,7 +192,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return 0;
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     PsnrState *s = fex->priv;
     if (s->ref)
@@ -216,7 +210,7 @@ VmafFeatureExtractor vmaf_fex_float_psnr = {
     .options = options,
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(PsnrState),
     .provided_features = provided_features,
 };

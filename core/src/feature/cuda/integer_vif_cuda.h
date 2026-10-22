@@ -31,6 +31,7 @@
 #define DEFAULT_VIF_ENHN_GAIN_LIMIT (100.0)
 #endif // !DEFAULT_VIF_ENHN_GAIN_LIMIT
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no using. ADR-1138. */
 typedef struct VifBufferCuda {
     VmafCudaState cu_state;
 
@@ -60,7 +61,11 @@ typedef struct VifBufferCuda {
         uint32_t *padding;
     } tmp;
 
+    /* Row pitches (bytes) of the reference and distorted pictures scale 0
+     * reads, each the picture's own stride[0] (set per frame: a picture's
+     * pitch is its allocator's, an imported plane's its producer's). */
     ptrdiff_t stride;
+    ptrdiff_t dis_stride;
     ptrdiff_t rd_stride; /* stride (bytes) for half-res ref/dis downsampled buffers */
     ptrdiff_t stride_16;
     ptrdiff_t stride_32;
@@ -85,6 +90,7 @@ typedef struct vif_accums {
     int64_t num_non_log;
     int64_t den_non_log;
 } vif_accums;
+/* NOLINTEND(modernize-use-using) */
 
 extern const unsigned char filter1d_ptx[];
 

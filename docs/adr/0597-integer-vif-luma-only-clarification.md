@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0597: `integer_vif` is luma-only across every backend; CUDA `enable_chroma` is a documented no-op
 
-- **Status**: Accepted
+- **Status**: Accepted (refined by [ADR-1836](1836-cuda-vif-enable-chroma-names.md): with `enable_chroma=true` the scores carry its suffix)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: cuda, vif, parity, docs, audit-disposition

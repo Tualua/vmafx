@@ -18,15 +18,21 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
 - **Registered-model lifetime is encoded**: `VmafContext<'a>` and
   `VmafContextCloseError<'a>` carry `PhantomData<&'a VmafModel>`.
   `use_features_from_model` takes shared `&'a VmafModel`; never erase this
-  lifetime or restore caller-managed raw model contract. libvmaf retains   model pointer through context teardown, including failed close retry.
+  lifetime (source compatibility); libvmaf owns its own reference to every
+  registered model (ADR-1755), so soundness no longer depends on it.
 - **Context guards are not `Send`**: `VmafModel` is deliberately `!Sync`, so   `VmafContext<'a>` or close-retry token carrying `&'a VmafModel` must not
   override auto traits with `unsafe impl Send`. Their `Drop` paths retry once
   only when explicit retry has not happened; after failed explicit retry,
-  drop aborts without third close call. Returning would end model borrow
-  while libvmaf still retained pointer.
+  drop leaks the context without third close call and never aborts (ADR-1755).
 - **`links = "vmaf"`**: `links` field in `Cargo.toml` tells Cargo crate provides
   native `vmaf` library. Only one crate in build graph may set
   `links = "vmaf"`. Do not add second crate with same links key.
+- **Stale-header check (#2786)**: `build.rs` refuses bindings that lack a
+  name of `REQUIRED_SYMBOLS` (`build_support/header_check.rs`), naming the
+  header path and the missing names. A new libvmaf name used by `safe.rs` or
+  `bindings/rust/vmafx/src` goes on that list in the same PR;
+  `tests/header_check.rs` fails otherwise. Do not replace it with a
+  `VMAF_API_VERSION_*` check: stale and current installs both report 3.0.0.
 - **No `pkg-config` dependency**: `build.rs` locates libvmaf via
   `LIBVMAF_PREFIX` only. `pkg-config` not universally available (cross-compile
   targets, minimal CI containers). Do not add `pkg-config` dep without ADR.

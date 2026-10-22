@@ -34,6 +34,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "test.h"
 
@@ -220,11 +221,98 @@ static char *test_decouple_s123_pairs(void)
     return NULL;
 }
 
+/* --- Scales 1-3 CSF and masking terms (T-METAL-INTEGER-ADM-TWIN-DEFECTS) --- */
+
+#define TERM_BLOCK 4096u
+
+/* The CPU's CSF context of `scale` under the default options, writing one
+ * row of band h from `src` into `dst` / `flt`. */
+static I4AdmCsfCtx cpu_csf_ctx(int scale, const int32_t *src, int32_t *dst, int32_t *flt)
+{
+    AdmBuffer no_planes;
+    (void)memset(&no_planes, 0, sizeof(no_planes));
+    I4AdmCsfCtx c;
+    i4_adm_csf_ctx_init(&c, &no_planes, scale, DEFAULT_ADM_NORM_VIEW_DIST,
+                        DEFAULT_ADM_REF_DISPLAY_HEIGHT, DEFAULT_ADM_CSF_MODE, DEFAULT_ADM_CSF_SCALE,
+                        DEFAULT_ADM_CSF_DIAG_SCALE, false);
+    c.src[0] = src;
+    c.dst[0] = dst;
+    c.flt[0] = flt;
+    return c;
+}
+
+/* One block of samples through i4_adm_csf_cols() and through the header;
+ * `old_bad` counts the former kernel's +2^31 rounding of the 1/30 term. */
+static unsigned csf_block_mismatches(int scale, const int32_t *src, unsigned *old_bad)
+{
+    static int32_t dst[TERM_BLOCK];
+    static int32_t flt[TERM_BLOCK];
+    const I4AdmCsfCtx c = cpu_csf_ctx(scale, src, dst, flt);
+    i4_adm_csf_cols(&c, 0, 0, 0, (int)TERM_BLOCK);
+    unsigned bad = 0u;
+    for (unsigned j = 0u; j < TERM_BLOCK; j++) {
+        const int32_t csf =
+            vmaf_mtl_iadm_i4_csf(c.i_rfactor[0], src[j], c.add_bef_shift_dst, c.shift_dst);
+        const int32_t term = vmaf_mtl_iadm_i4_masking_term(I4_ADM_FIX_ONE_BY_30, csf,
+                                                           c.add_bef_shift_flt, c.shift_flt);
+        const int64_t mag = csf < 0 ? -(int64_t)csf : (int64_t)csf;
+        const int32_t former =
+            (int32_t)((((int64_t)I4_ADM_FIX_ONE_BY_30 * mag) + 2147483648LL) >> 32);
+        bad += (csf != dst[j]) + (term != flt[j]);
+        *old_bad += former != flt[j];
+    }
+    return bad;
+}
+
+/* The 1/15 centre tap: i4_adm_cm_thresh() on a 3x3 plane whose only non-zero
+ * sample is the centre of band h; the two empty centres of bands v and d add
+ * their own term, the rounding of 0. */
+static unsigned centre_mismatches(int32_t v, int32_t add, uint32_t shift)
+{
+    int32_t plane[9] = {0, 0, 0, 0, v, 0, 0, 0, 0};
+    int32_t zero[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    int32_t empty[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    int32_t *const angles[3] = {plane, empty, empty};
+    int32_t *const flt[3] = {zero, zero, zero};
+    const int32_t cpu = i4_adm_cm_thresh(angles, flt, 3, 3, 3, 1, 1, add, shift);
+    const int32_t header = vmaf_mtl_iadm_i4_masking_term(I4_ONE_BY_15, v, add, shift) +
+                           (2 * vmaf_mtl_iadm_i4_masking_term(I4_ONE_BY_15, 0, add, shift));
+    return cpu != header;
+}
+
+static char *test_i4_csf_and_masking_terms(void)
+{
+    static int32_t src[TERM_BLOCK];
+    unsigned bad = 0u;
+    unsigned old_bad = 0u;
+    uint64_t state = 0xD1B54A32D192ED03u;
+    for (int scale = 1; scale <= 3; scale++) {
+        for (unsigned block = 0u; block < 64u; block++) {
+            for (unsigned j = 0u; j < TERM_BLOCK; j++) {
+                src[j] = s123_operand(xorshift64(&state)) >> 4;
+            }
+            bad += csf_block_mismatches(scale, src, &old_bad);
+        }
+    }
+    int32_t add_dst[3];
+    int32_t add_flt[3];
+    i4_adm_round_terms(add_dst, add_flt);
+    for (unsigned i = 0u; i < 1000000u; i++) {
+        bad += centre_mismatches(s123_operand(xorshift64(&state)), add_flt[0], i4_shift_flt[0]);
+    }
+    (void)fprintf(stderr, "[former +2^31 rounding off on %u of %u terms] ", old_bad,
+                  3u * 64u * TERM_BLOCK);
+    mu_assert("the scales-1-3 CSF or masking terms are not the CPU's", bad == 0u);
+    mu_assert("the former +2^31 rounding matches the CPU: the case tests nothing", old_bad > 0u);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_decouple_s0_every_operand);
     mu_run_test(test_decouple_s0_reciprocal_operands);
     mu_run_test(test_decouple_s123_pairs);
+    mu_run_test(test_i4_csf_and_masking_terms);
     return NULL;
 }
 

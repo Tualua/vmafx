@@ -55,4 +55,82 @@ int vmaf_predict_score_at_index_model_collection(VmafModelCollection *model_coll
                                                  VmafFeatureCollector *feature_collector,
                                                  unsigned index, VmafModelCollectionScore *score);
 
+/**
+ * @brief Whether every feature @p model reads is written at @p index.
+ *
+ * Reads the collector only (no prediction, no log line), so a caller can ask
+ * before vmaf_predict_score_at_index() whether a prediction at @p index would
+ * find its inputs, without waiting for work in flight (the window scores of
+ * the VMAFx API, ADR-2074).
+ *
+ * @return 0 when all are written, -EAGAIN when one is not written yet or not
+ *         in the collector yet, another negative errno on failure.
+ */
+int vmaf_predict_inputs_written(VmafModel *model, VmafFeatureCollector *feature_collector,
+                                unsigned index);
+
+struct svm_node;
+
+/**
+ * @brief Test entry for the chroma-from-luma feature correction.
+ *
+ * Runs the file-static post_process_feature_from_another() of predict.c on a
+ * caller-built SVM node vector, so a unit test can check the correction
+ * without a full prediction (Netflix/vmaf 314f14b22 includes predict.c into
+ * its test instead; the fork links one predictor implementation, see
+ * Research-2096).
+ *
+ * @param model                  Model whose feature slopes / intercepts apply.
+ * @param node                   Normalised feature values, one per model feature.
+ * @param correction_parameter   Correction strength.
+ * @param value_to_be_corrected  Guided-feature value that triggers the correction.
+ * @param guiding_feature_substr Substring naming the guiding feature.
+ * @param guided_feature_substr  Substring naming the guided feature.
+ * @return 0 on success (also when no correction applies), negative errno on failure.
+ */
+int vmaf_predict_post_process_feature_from_another_for_test(const VmafModel *model,
+                                                            struct svm_node *node,
+                                                            double correction_parameter,
+                                                            double value_to_be_corrected,
+                                                            const char *guiding_feature_substr,
+                                                            const char *guided_feature_substr);
+
+/**
+ * @brief Entry points of the Rust predictor (ADR-1713, RC4 lane P).
+ *
+ * predict.c reaches the Rust predictor only through the table installed with
+ * vmaf_predict_install_rust_ops(); vmaf_rust_predict_install()
+ * (core/src/rust/shim/rust_predict.c, built only with
+ * -Denable_rust_features=true) installs it at vmaf_init(). Code that test
+ * binaries link without libvmaf (predict.c, model.c) never references a Rust
+ * symbol. With no table installed the C predictor runs.
+ */
+struct VmafRustPredictOps {
+    /** Build the predictor of @p model into @p handle; -ENOTSUP = a model it
+     *  does not implement (the C predictor runs and a WARNING says so). */
+    int (*create)(const VmafModel *model, void **handle);
+    /** Score one frame from the raw feature scores in model order; @p nodes
+     *  is scratch of n_features + 1 entries. */
+    int (*predict)(const VmafModel *model, void *handle, const double *scores,
+                   enum VmafModelFlags flags, struct svm_node *nodes, unsigned index,
+                   double *prediction);
+    /** Free a handle create() returned. */
+    void (*destroy)(void *handle);
+};
+
+/**
+ * @brief Install the Rust predictor's table; NULL uninstalls it.
+ *
+ * @param ops  Table with static storage duration, or NULL (C predictor).
+ */
+void vmaf_predict_install_rust_ops(const struct VmafRustPredictOps *ops);
+
+/**
+ * @brief Free the Rust predictor handle @p model holds, through the installed
+ *        table. No-op when the model holds none or no table is installed.
+ *
+ * @param model  Model being destroyed; NULL is a no-op.
+ */
+void vmaf_rust_predict_destroy(VmafModel *model);
+
 #endif /* VMAF_SRC_PREDICT_H_ */

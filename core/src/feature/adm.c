@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "log.h"
 #include "mem.h"
 #include "adm.h"
 #include "adm_score.h"
@@ -220,16 +221,14 @@ static int adm_alloc_bands(AdmFrameBufs *b, int w, int h)
     const size_t buf_sz_one = (size_t)b->buf_stride * ((h + 1) / 2);
 
     if (SIZE_MAX / buf_sz_one < NUM_BUFS_ADM) {
-        (void)printf("error: SIZE_MAX / buf_sz_one < NUM_BUFS_ADM, buf_sz_one = %zu.\n",
-                     buf_sz_one);
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "error: SIZE_MAX / buf_sz_one < NUM_BUFS_ADM, buf_sz_one = %zu.\n", buf_sz_one);
         return 1;
     }
 
     b->data_buf = aligned_malloc(buf_sz_one * NUM_BUFS_ADM, MAX_ALIGN);
     if (!b->data_buf) {
-        (void)printf("error: aligned_malloc failed for data_buf.\n");
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: aligned_malloc failed for data_buf.\n");
         return 1;
     }
 
@@ -251,8 +250,7 @@ static int adm_alloc_indices(char **orig, int *ind[4], int row_bytes, const char
 {
     *orig = aligned_malloc((size_t)row_bytes * 4, MAX_ALIGN);
     if (!*orig) {
-        (void)printf("error: aligned_malloc failed for %s.\n", name);
-        (void)fflush(stdout);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "error: aligned_malloc failed for %s.\n", name);
         return 1;
     }
     char *row = *orig;
@@ -375,7 +373,7 @@ static int adm_accumulate_scales(AdmFrameBufs *b, const AdmScaleOpts *o, const A
         w = (w + 1) / 2;
         h = (h + 1) / 2;
         if (skipped) {
-            den_scale = 1e-10; // avoid divide by zero
+            den_scale = 1e-10f; // avoid divide by zero
         } else {
             adm_scale_sums(b, o, in->h, scale, w, h, &num_scale, &den_scale, &aim_num_scale);
         }

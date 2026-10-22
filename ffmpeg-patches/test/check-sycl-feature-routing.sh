@@ -3,7 +3,7 @@
 # Copyright 2026 Lusoris
 #
 # check-sycl-feature-routing.sh — patch-text contract for libvmaf_sycl feature
-# routing (ADR-1764).
+# routing (ADR-3360).
 #
 # Asserts that patch 0005:
 #   1. resolves feature= names through vmaf_feature_backend_twin;

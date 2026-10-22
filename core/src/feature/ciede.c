@@ -48,14 +48,6 @@ SOFTWARE.
 #include <stddef.h>
 #include <string.h>
 
-/* MinGW <math.h> does not expose M_PI unless _USE_MATH_DEFINES is set
- * before the include, and a recompile on that toolchain fails with
- * "M_PI undeclared." Provide the POSIX definition as a fallback so the
- * file compiles cleanly on MinGW, MSVC, and glibc/musl alike. */
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -214,21 +206,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (pix_fmt == VMAF_PIX_FMT_YUV444P)
         return 0;
 
-    switch (bpc) {
-    case 8:
-        s->scale_chroma_planes = scale_chroma_planes;
-        break;
-    case 10:
-    case 12:
-    case 16:
-        s->scale_chroma_planes = scale_chroma_planes_hbd;
-        break;
-    default:
+    if (bpc < 8 || bpc > 16) {
         /* Unsupported bitdepth is a caller error, not OOM: report -EINVAL,
          * exactly as the former `err = -EINVAL;` + jump-to-`fail_tmp` pair did. */
         ciede_release_tmp(s);
         return -EINVAL;
     }
+    /* Every depth the engine reads, 8 to 16 bits (ADR-2164). */
+    s->scale_chroma_planes = bpc == 8 ? scale_chroma_planes : scale_chroma_planes_hbd;
 
     err = vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
     if (err) {
@@ -253,9 +238,9 @@ static float get_h_prime(const float x, const float y)
  * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
  * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
     // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
-    float hue_angle = atan2(x, y);
+    float hue_angle = (float)atan2(x, y);
     if (hue_angle < 0.0)
-        hue_angle += 2. * M_PI;
+        hue_angle = (float)(hue_angle + (2. * M_PI));
     return hue_angle;
 }
 
@@ -267,9 +252,9 @@ static float get_delta_h_prime(const float c1, const float c2, const float h_pri
     if (fabsf(h_prime_1 - h_prime_2) <= M_PI)
         return h_prime_2 - h_prime_1;
     if (h_prime_2 <= h_prime_1) {
-        return h_prime_2 - h_prime_1 + 2. * M_PI;
+        return (float)(h_prime_2 - h_prime_1 + 2. * M_PI);
     } else {
-        return h_prime_2 - h_prime_1 - 2. * M_PI;
+        return (float)(h_prime_2 - h_prime_1 - 2. * M_PI);
     }
 }
 
@@ -280,31 +265,32 @@ static float get_upcase_h_bar_prime(const float h_prime_1, const float h_prime_2
  * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
  * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
     // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
-    return fabs((h_prime_1 - h_prime_2)) > M_PI ? (h_prime_1 + h_prime_2 + 2.0 * M_PI) / 2.0 :
-                                                  (h_prime_1 + h_prime_2) / 2.0;
+    return (float)(fabs((h_prime_1 - h_prime_2)) > M_PI ?
+                       (h_prime_1 + h_prime_2 + 2.0 * M_PI) / 2.0 :
+                       (h_prime_1 + h_prime_2) / 2.0);
 }
 
 static float get_upcase_t(const float upcase_h_bar_prime)
 {
-    return 1.0 - 0.17 * cos(upcase_h_bar_prime - M_PI / 6.0) +
-           0.24 * cos(2.0 * upcase_h_bar_prime) +
-           0.32 * cos(3.0 * upcase_h_bar_prime + M_PI / 30.0) -
-           0.20 * cos(4.0 * upcase_h_bar_prime - 7.0 * M_PI / 20.0);
+    return (float)(1.0 - 0.17 * cos(upcase_h_bar_prime - M_PI / 6.0) +
+                   0.24 * cos(2.0 * upcase_h_bar_prime) +
+                   0.32 * cos(3.0 * upcase_h_bar_prime + M_PI / 30.0) -
+                   0.20 * cos(4.0 * upcase_h_bar_prime - 7.0 * M_PI / 20.0));
 }
 
 static float radians_to_degrees(const float radians)
 {
-    return radians * (180.0 / M_PI);
+    return (float)(radians * (180.0 / M_PI));
 }
 
 static float degrees_to_radians(const float degrees)
 {
-    return degrees * (M_PI / 180.0);
+    return (float)(degrees * (M_PI / 180.0));
 }
 
 static float get_r_sub_t(const float c_bar_prime, const float upcase_h_bar_prime)
 {
-    const float degrees = (radians_to_degrees(upcase_h_bar_prime) - 275.0) * (1.0 / 25.0);
+    const float degrees = (float)((radians_to_degrees(upcase_h_bar_prime) - 275.0) * (1.0 / 25.0));
 
     /* CIEDE2000 is specified in double precision and the fork's scores are
  * gated against the Netflix golden values at that precision. Switching to
@@ -315,8 +301,8 @@ static float get_r_sub_t(const float c_bar_prime, const float upcase_h_bar_prime
      * the library rounds correctly, and a compiler may replace the call by the
      * product anyway. ADR-1467. */
     // NOLINTBEGIN(performance-type-promotion-in-math-fn)
-    return -2.0 * sqrt(powf(c_bar_prime, 7) / (powf(c_bar_prime, 7) + powf(25., 7))) *
-           sin(degrees_to_radians(60.0 * exp(-(degrees * degrees))));
+    return (float)(-2.0 * sqrt(powf(c_bar_prime, 7) / (powf(c_bar_prime, 7) + powf(25., 7))) *
+                   sin(degrees_to_radians((float)(60.0 * exp(-(degrees * degrees))))));
     // NOLINTEND(performance-type-promotion-in-math-fn)
 }
 
@@ -345,19 +331,22 @@ static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
 {
     const float delta_l_prime = color_2.l - color_1.l;
     const float l_bar = (color_1.l + color_2.l) / 2;
-    const float c1 = sqrt(square(color_1.a) + square(color_1.b));
-    const float c2 = sqrt(square(color_2.a) + square(color_2.b));
+    const float c1 = (float)sqrt(square(color_1.a) + square(color_1.b));
+    const float c2 = (float)sqrt(square(color_2.a) + square(color_2.b));
     const float c_bar = (c1 + c2) / 2;
     const float a_prime_1 =
-        color_1.a + (color_1.a / 2) * (1 - sqrt(pow(c_bar, 7) / (pow(c_bar, 7) + pow(25, 7))));
+        (float)(color_1.a +
+                (color_1.a / 2) * (1 - sqrt(pow(c_bar, 7) / (pow(c_bar, 7) + pow(25, 7)))));
     const float a_prime_2 =
-        color_2.a + (color_2.a / 2) * (1 - sqrt(pow(c_bar, 7) / (pow(c_bar, 7) + pow(25, 7))));
-    const float c_prime_1 = sqrt(square(a_prime_1) + square(color_1.b));
-    const float c_prime_2 = sqrt(square(a_prime_2) + square(color_2.b));
+        (float)(color_2.a +
+                (color_2.a / 2) * (1 - sqrt(pow(c_bar, 7) / (pow(c_bar, 7) + pow(25, 7)))));
+    const float c_prime_1 = (float)sqrt(square(a_prime_1) + square(color_1.b));
+    const float c_prime_2 = (float)sqrt(square(a_prime_2) + square(color_2.b));
     const float c_bar_prime = (c_prime_1 + c_prime_2) / 2;
     const float delta_c_prime = c_prime_2 - c_prime_1;
-    const float s_sub_l = 1. + ((0.015 * square(l_bar - 50)) / sqrt(20 + square(l_bar - 50)));
-    const float s_sub_c = 1. + 0.045 * c_bar_prime;
+    const float s_sub_l =
+        (float)(1. + ((0.015 * square(l_bar - 50)) / sqrt(20 + square(l_bar - 50))));
+    const float s_sub_c = (float)(1. + 0.045 * c_bar_prime);
     const float h_prime_1 = get_h_prime(color_1.b, a_prime_1);
     const float h_prime_2 = get_h_prime(color_2.b, a_prime_2);
     const float delta_h_prime = get_delta_h_prime(c1, c2, h_prime_1, h_prime_2);
@@ -366,10 +355,10 @@ static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
      * before sqrt() promotes it. The cast widens the product's result, as
      * upstream's implicit promotion does (ADR-1476). */
     const float delta_upcase_h_prime =
-        2.0 * sqrt((double)(c_prime_1 * c_prime_2)) * sin(delta_h_prime / 2.0);
+        (float)(2.0 * sqrt((double)(c_prime_1 * c_prime_2)) * sin(delta_h_prime / 2.0));
     const float upcase_h_bar_prime = get_upcase_h_bar_prime(h_prime_1, h_prime_2);
     const float upcase_t = get_upcase_t(upcase_h_bar_prime);
-    const float s_sub_upcase_h = 1.0 + 0.015 * c_bar_prime * upcase_t;
+    const float s_sub_upcase_h = (float)(1.0 + 0.015 * c_bar_prime * upcase_t);
     const float r_sub_t = get_r_sub_t(c_bar_prime, upcase_h_bar_prime);
     const float lightness = delta_l_prime / (ksub.l * s_sub_l);
     const float chroma = delta_c_prime / (ksub.c * s_sub_c);
@@ -379,8 +368,8 @@ static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
      * the rotation term is two float products, rounded to float before it is
      * added to the fp64 squares. The cast widens the products' result, as
      * upstream's implicit promotion does (ADR-1476). */
-    return sqrt(square(lightness) + square(chroma) + square(hue) +
-                (double)(r_sub_t * chroma * hue));
+    return (float)(sqrt(square(lightness) + square(chroma) + square(hue) +
+                        (double)(r_sub_t * chroma * hue)));
 }
 
 static double pow_2_4(double x)
@@ -411,9 +400,9 @@ static float xyz_to_lab_map(double c)
     const double EPSILON = 216.0 / 24389.0;
 
     if (c > EPSILON) {
-        return cbrt_approx(c);
+        return (float)(cbrt_approx(c));
     } else {
-        return (KAPPA * c + 16.0) * (1.0 / 116.0);
+        return (float)((KAPPA * c + 16.0) * (1.0 / 116.0));
     }
 }
 
@@ -443,9 +432,9 @@ static LABColor get_lab_color(double y, double u, double v, unsigned bpc)
     z = xyz_to_lab_map(z * (1.0 / 1.08883));
 
     LABColor lab_color = {
-        .l = (116.0 * y) - 16.0,
-        .a = 500.0 * (x - y),
-        .b = 200.0 * (y - z),
+        .l = (float)((116.0 * y) - 16.0),
+        .a = (float)(500.0 * (x - y)),
+        .b = (float)(200.0 * (y - z)),
     };
 
     return lab_color;
@@ -493,12 +482,12 @@ static double ciede_accumulate_16(const CiedeState *s, const VmafPicture *ref,
     float *dy = s->tmp[3];
     float *du = s->tmp[4];
     float *dv = s->tmp[5];
-    int stride16_r0 = ref->stride[0] / 2;
-    int stride16_r1 = ref->stride[1] / 2;
-    int stride16_r2 = ref->stride[2] / 2;
-    int stride16_d0 = dist->stride[0] / 2;
-    int stride16_d1 = dist->stride[1] / 2;
-    int stride16_d2 = dist->stride[2] / 2;
+    int stride16_r0 = (int)(ref->stride[0] / 2);
+    int stride16_r1 = (int)(ref->stride[1] / 2);
+    int stride16_r2 = (int)(ref->stride[2] / 2);
+    int stride16_d0 = (int)(dist->stride[0] / 2);
+    int stride16_d1 = (int)(dist->stride[1] / 2);
+    int stride16_d2 = (int)(dist->stride[2] / 2);
     for (unsigned i = 0; i < ref->h[0]; i++) {
         const uint16_t *ref_y = (uint16_t *)ref->data[0] + (size_t)i * stride16_r0;
         const uint16_t *ref_u = (uint16_t *)ref->data[1] + (size_t)i * stride16_r1;
@@ -542,8 +531,13 @@ static double ciede_accumulate_scalar(const VmafPicture *ref, const VmafPicture 
                 d_u = ((uint8_t *)dist->data[1])[i * dist->stride[1] + j];
                 d_v = ((uint8_t *)dist->data[2])[i * dist->stride[2] + j];
                 break;
+            case 9:
             case 10:
+            case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
             case 16:
                 // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: the `stride / 2` is the byte→element step for a uint16_t array index, not a value flowing into the float `r_*` / `d_*` destinations. clang-tidy flags the integer division because the surrounding subscript result eventually lands in float, but the index arithmetic itself is correct integer math.
                 r_y = ((uint16_t *)ref->data[0])[i * (ref->stride[0] / 2) + j];
@@ -590,7 +584,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     double de00_sum = 0.;
     const int w = ref->w[0];
-    const KSubArgs default_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
+    const KSubArgs default_ksub = {.l = 0.65f, .c = 1.0f, .h = 4.0f};
 
     if (ref->bpc == 8 && s->preprocess_8) {
         de00_sum += ciede_accumulate_8(s, ref, dist, w, default_ksub);
@@ -604,7 +598,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return vmaf_feature_collector_append(feature_collector, "ciede2000", score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     CiedeState *s = fex->priv;
     /* Independent guards: on a partial-init failure (ref allocated, dist
@@ -633,7 +627,7 @@ VmafFeatureExtractor vmaf_fex_ciede = {
     .name = "ciede",
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(CiedeState),
     .provided_features = provided_features,
     /* Single per-pixel ΔE2000 kernel + double-precision sum

@@ -63,6 +63,11 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_mcp.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 /* ============================================================
  * Harness: stdio pipe-pair + VmafContext + VmafMcpServer.
  *
@@ -1016,3 +1021,5 @@ char *run_tests(void)
     }
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -133,10 +133,10 @@ def fake_suite_introspect(monkeypatch, build: Path, source: Path) -> None:
     ]
     tests.append(
         {
-            "name": "test_sycl_sg32",
+            "name": "test_sycl_graph",
             "cmd": [str(build / "test" / "test_sycl_0")],
             "suite": ["libvmaf:gpu"],
-            "env": {"VMAF_SYCL_VIF_SUBGROUP_SIZE": "32"},
+            "env": {"VMAF_SYCL_DISPATCH": "graph"},
         }
     )
     tests.append(
@@ -196,7 +196,7 @@ def test_stage_writes_shared_executables_once_and_left_out(tmp_path: Path, monke
     pb.stage(build, ["suite:gpu"], image, "gpu-tests.json")
     document = json.loads((image / "image" / "gpu-tests.json").read_text())
     cmds = {t["name"]: t["cmd"] for t in document["tests"]}
-    assert cmds["test_sycl_sg32"] == cmds["test_sycl_0"]  # one copy, two tests
+    assert cmds["test_sycl_graph"] == cmds["test_sycl_0"]  # one copy, two tests
     assert document["left_out"][0]["name"] == "test_cuda_gate"
     assert (image / "tests" / "threads.sh").is_file()
 

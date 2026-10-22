@@ -87,5 +87,5 @@ Either of:
 
 ## License
 
-This documentation file is BSD-2-Clause-Patent, matching the licence
-the fork declares in `LICENSE`. It contains no model weights.
+This documentation file is BSD-2-Clause-Patent; the text is
+`NOTICE` at the repository root. It contains no model weights.

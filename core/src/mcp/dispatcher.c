@@ -22,6 +22,11 @@
 #include "feature/feature_extractor.h"
 #include "mcp_internal.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 /* Forward decls for the tool table. */
 typedef int (*vmaf_mcp_tool_fn)(struct VmafMcpServer *server, const cJSON *arguments,
                                 cJSON **result_out, char **error_message_out);
@@ -474,3 +479,5 @@ int vmaf_mcp_dispatch(struct VmafMcpServer *server, const char *request_buf, cha
     cJSON_Delete(root);
     return build_rc;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

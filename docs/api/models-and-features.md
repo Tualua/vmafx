@@ -31,9 +31,13 @@ Ownership, thread-safety and ABI for all of them:
 
 - The caller owns the `VmafModel` and releases it with
   `vmaf_model_destroy()`. A model registered with a context
-  (`vmaf_use_features_from_model()`) is borrowed until `vmaf_close()`
-  returns exactly 0; destroy it only after that, including across retried
-  closes.
+  (`vmaf_use_features_from_model()`) is reference-counted: the context takes
+  its own reference, so you may destroy your model right after the call
+  succeeds (before or after `vmaf_close()`, across retried closes too) and the
+  model is freed when the last reference goes. A failed registration takes no
+  reference. Before this change the context only borrowed the model and it had
+  to outlive `vmaf_close()` (ADR-1755); code written for that contract keeps
+  working.
 - A model handed to a `VmafModelCollection` belongs to the collection; do
   not destroy it separately.
 - `VmafModelConfig.name` is copied; the caller may free its string after the

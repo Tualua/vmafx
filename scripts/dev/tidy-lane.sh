@@ -19,7 +19,7 @@
 # rewritten baseline back.
 #
 # Usage:
-#   scripts/dev/tidy-lane.sh [options] LANE...   LANE: cpu cuda hip sycl arm64 all
+#   scripts/dev/tidy-lane.sh [options] LANE...   LANE: cpu clang cuda hip sycl arm64 all
 #
 # Options:
 #   --write        rewrite the lane's baseline from the measurement
@@ -53,7 +53,7 @@ CLANG_TIDY_BIN_PATH="${TIDY_LANE_CLANG_TIDY:-/usr/bin/clang-tidy-${CLANG_TIDY_MA
 LLVM_APT_SIGNER_URL="https://apt.llvm.org/llvm-snapshot.gpg.key"
 LLVM_APT_SIGNER_SHA256="8b2a587ffd672c4687e7581dad4b2f6c1bb2ad6b480cd9771ba2ff48e0b8c75d"
 
-ALL_LANES="cpu cuda hip sycl arm64"
+ALL_LANES="cpu clang cuda hip sycl arm64"
 # The arm64 lane's cross toolchain, from the image's own distribution: the
 # compilers the cross file names, the C library they link against, and the
 # emulator meson runs its compiler sanity check with.
@@ -83,8 +83,8 @@ usage() {
 add_lane() {
   case "$1" in
     all) LANES="$ALL_LANES" ;;
-    cpu | cuda | hip | sycl | arm64) LANES="${LANES:+$LANES }$1" ;;
-    *) die "unknown lane '$1' (cpu, cuda, hip, sycl, arm64, all)" 5 ;;
+    cpu | clang | cuda | hip | sycl | arm64) LANES="${LANES:+$LANES }$1" ;;
+    *) die "unknown lane '$1' (cpu, clang, cuda, hip, sycl, arm64, all)" 5 ;;
   esac
 }
 
@@ -122,7 +122,7 @@ parse_args() {
     esac
     shift
   done
-  [ -n "$LANES" ] || die "no lane given (cpu, cuda, hip, sycl, arm64, all)" 5
+  [ -n "$LANES" ] || die "no lane given (cpu, clang, cuda, hip, sycl, arm64, all)" 5
   case "$JOBS" in
     '' | *[!0-9]* | 0) die "--jobs needs a positive integer, got '$JOBS'" 5 ;;
   esac
@@ -140,18 +140,36 @@ source_tar() {
       -T - -cf -
 }
 
+# The container's results go into a fresh staging directory first. The shared
+# report directory ($OUT) keeps the files of earlier runs, so a baseline read
+# from it after a run that wrote none (a rejected write, a container that died)
+# would be a stale one and --write would copy it over the checkout's baseline
+# (T-TIDY-LANE-WRITE-STALE-BASELINE-2026-10-06). Only a file the container
+# produced in this run can reach scripts/ci/.
 copy_results() {
-  local cid="$1" lane
+  local cid="$1" lane stage status=0
+  stage="$(mktemp -d)"
   mkdir -p "$OUT"
-  docker cp "$cid:$WORK/out/." "$OUT/" >/dev/null 2>&1 ||
+  docker cp "$cid:$WORK/out/." "$stage/" >/dev/null 2>&1 ||
     printf 'tidy-lane: the container produced no report\n' >&2
-  [ "$WRITE" -eq 1 ] || return 0
-  for lane in $LANES; do
-    if [ -f "$OUT/tidy-baseline-$lane.json" ]; then
-      cp "$OUT/tidy-baseline-$lane.json" "$REPO_ROOT/scripts/ci/tidy-baseline-$lane.json"
-      printf 'tidy-lane: wrote scripts/ci/tidy-baseline-%s.json\n' "$lane"
-    fi
-  done
+  if [ "$WRITE" -eq 1 ]; then
+    for lane in $LANES; do
+      if [ -f "$stage/tidy-baseline-$lane.json" ]; then
+        cp "$stage/tidy-baseline-$lane.json" "$REPO_ROOT/scripts/ci/tidy-baseline-$lane.json"
+        printf 'tidy-lane: wrote scripts/ci/tidy-baseline-%s.json\n' "$lane"
+      else
+        printf 'tidy-lane: this run produced no baseline for %s; %s is left as it is\n' \
+          "$lane" "scripts/ci/tidy-baseline-$lane.json" >&2
+        status=1
+      fi
+    done
+  fi
+  if ! cp -R "$stage/." "$OUT/" 2>/dev/null; then
+    printf 'tidy-lane: could not copy the results into %s\n' "$OUT" >&2
+    status=1
+  fi
+  rm -rf "$stage"
+  return "$status"
 }
 
 run_on_host() {
@@ -168,7 +186,7 @@ run_on_host() {
   trap "docker rm -f '$cid' >/dev/null 2>&1 || true" EXIT
   source_tar | docker cp - "$cid:/tmp" || die "could not copy the checkout into the container"
   docker start --attach "$cid" || rc=$?
-  copy_results "$cid"
+  copy_results "$cid" || [ "$rc" -ne 0 ] || rc=1
   printf 'tidy-lane: reports and logs in %s\n' "$OUT"
   return "$rc"
 }
@@ -197,6 +215,22 @@ ensure_clang_tidy() {
     die "clang-tidy ${CLANG_TIDY_MAJOR} did not install"
 }
 
+# The clang lane builds with the clang of the llvm-toolchain-<codename>-22
+# archive that ensure_clang_tidy() set up (it parses the same sources with the
+# compiler libFuzzer belongs to); the libFuzzer runtime comes with
+# libclang-rt-22-dev. An image that carries both skips the download.
+ensure_clang_compiler() {
+  if command -v "clang-${CLANG_TIDY_MAJOR}" >/dev/null &&
+    ls /usr/lib/llvm-${CLANG_TIDY_MAJOR}/lib/clang/*/lib/linux/libclang_rt.fuzzer-*.a >/dev/null 2>&1; then
+    return 0
+  fi
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+    "clang-${CLANG_TIDY_MAJOR}" "libclang-rt-${CLANG_TIDY_MAJOR}-dev" >/dev/null
+  command -v "clang-${CLANG_TIDY_MAJOR}" >/dev/null ||
+    die "clang-${CLANG_TIDY_MAJOR} did not install"
+}
+
 have_cross_toolchain() {
   command -v aarch64-linux-gnu-gcc >/dev/null && command -v qemu-aarch64 >/dev/null
 }
@@ -213,9 +247,10 @@ ensure_cross_toolchain() {
 }
 
 # The sycl lane configures with icx / icpx, which need oneAPI's environment;
-# the arm64 lane needs its cross toolchain.
+# the arm64 lane needs its cross toolchain and the clang lane its compiler.
 lane_environment() {
   [ "$1" != arm64 ] || ensure_cross_toolchain
+  [ "$1" != clang ] || ensure_clang_compiler
   [ "$1" = sycl ] || return 0
   set +u
   # shellcheck disable=SC1091  # provided by the image

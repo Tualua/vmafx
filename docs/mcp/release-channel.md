@@ -85,12 +85,14 @@ For the `vmafx-mcp` Go binary release:
 
 1. Build from `cmd/vmafx-mcp/` with `go build -o vmafx-mcp ./cmd/vmafx-mcp`.
 2. Run `go test ./cmd/vmafx-mcp/`. `TestToolListMatchesPython` and
-   `TestToolSchemasMatchPython` confirm schema parity with the Python server
-   without external dependencies; `TestVmafScoreTool` and
+   `TestToolSchemasMatchPython` compare the served tools with the Python
+   server's tool list in `mcp-server/vmaf-mcp/tool-contract.json` (names,
+   property types, required arguments) and refuse any tool that is neither
+   in it nor declared Go-only; `TestVmafScoreTool` and
    `TestGoVsPythonOutputParity` additionally need the Netflix golden YUVs and
    the `vmaf` binary.
-3. Confirm the tool count is 24 (the 19 Python tools plus 5 control-plane
-   tools) before tagging.
+3. The tool count follows from step 2: the Python tools of the contract
+   (19 today) plus the 5 control-plane tools.
 
 !!! note
     The repository has no goreleaser configuration or workflow step that

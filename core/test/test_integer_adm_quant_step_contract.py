@@ -8,12 +8,13 @@
 fork widened it to ``double`` in a static-analysis sweep (PR #552), which moved
 every integer ADM score, and went back to upstream's form in ADR-1475.
 
-Three sources carry the expression: the CPU's
+Two sources carry the expression: the CPU's
 ``core/src/feature/integer_adm_kernels.h`` (which the CUDA and HIP hosts
-include) and the two twins that hold their own copy, SYCL and Metal. This test
-reads them: a copy that promotes an operand of the product would make its twin
-differ from the CPU in the last digits, and the Metal copy cannot be run on a
-Linux runner at all.
+include) and the SYCL twin's own copy. This test reads them: a copy that
+promotes an operand of the product would make its twin differ from the CPU in
+the last digits. The Metal twin takes its CSF weights from the CPU's
+``adm_csf_factors()`` in ``integer_adm_metal_host.c`` since
+T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05 and must not grow a copy again.
 
 Device-free: reads the sources only. ``test_integer_adm_quant_step`` checks the
 CPU's values.
@@ -32,8 +33,11 @@ FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 COPIES = {
     "integer_adm_kernels.h": "dwt_quant_step",
     "sycl/integer_adm_sycl.cpp": "dwt_quant_step",
-    "metal/integer_adm_metal.mm": "iadm_dwt_quant_step",
 }
+# Twins that take adm_csf_factors() from the CPU: no copy of the step.
+NO_COPY = ("metal/integer_adm_metal.mm", "metal/integer_adm_metal_host.c")
+NO_COPY_CALLER = "metal/integer_adm_metal_host.c"
+LOCAL_STEP = re.compile(r"\b\w*quant_step\s*\([^;{]*\)\s*\{")
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 FLOAT_PRODUCT = re.compile(r"params->k\s*\*\s*temp\s*\*\s*temp")
@@ -42,7 +46,8 @@ WIDENED_OPERAND = re.compile(r"\(\s*double\s*\)\s*(?:temp\b|params->k\b)")
 
 
 def _sources() -> dict[str, str]:
-    return {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in COPIES}
+    names = (*COPIES, *NO_COPY)
+    return {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in names}
 
 
 def _function_body(text: str, name: str) -> str | None:
@@ -70,6 +75,11 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
             failures.append(f"{name}: {function}() does not form params->k * temp * temp")
         if WIDENED_OPERAND.search(body):
             failures.append(f"{name}: {function}() promotes an operand of the exponent to double")
+    for name in NO_COPY:
+        if LOCAL_STEP.search(COMMENT.sub(" ", sources[name])):
+            failures.append(f"{name}: holds its own quantisation step; take adm_csf_factors()")
+    if "adm_csf_factors(" not in COMMENT.sub(" ", sources[NO_COPY_CALLER]):
+        failures.append(f"{NO_COPY_CALLER}: does not take the CPU's adm_csf_factors()")
     return failures
 
 
@@ -90,12 +100,23 @@ class IntegerAdmQuantStepContract(unittest.TestCase):
                 failures = _contract_failures(sources)
                 self.assertTrue(any(name in item and "promotes" in item for item in failures))
 
-    def test_metal_spelling_of_the_widened_product_is_detected(self) -> None:
+    def test_metal_copy_of_the_step_is_detected(self) -> None:
+        # The copy integer_adm_metal.mm held until the host took the CPU's weights.
         sources = _sources()
         name = "metal/integer_adm_metal.mm"
-        sources[name] = FLOAT_PRODUCT.sub("(double)params->k * (double)temp * temp", sources[name])
+        sources[name] += (
+            "\nstatic float iadm_dwt_quant_step(const IadmDwtModel *params, int lambda)\n"
+            "{\n    return params->k * temp * temp;\n}\n"
+        )
         failures = _contract_failures(sources)
-        self.assertTrue(any(name in item and "promotes" in item for item in failures))
+        self.assertTrue(any(name in item and "own quantisation step" in item for item in failures))
+
+    def test_metal_host_without_cpu_factors_is_detected(self) -> None:
+        sources = _sources()
+        name = NO_COPY_CALLER
+        sources[name] = sources[name].replace("adm_csf_factors(", "local_csf_factors(")
+        failures = _contract_failures(sources)
+        self.assertTrue(any("adm_csf_factors()" in item for item in failures))
 
     def test_missing_copy_is_detected(self) -> None:
         sources = _sources()

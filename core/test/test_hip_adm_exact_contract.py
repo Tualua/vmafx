@@ -47,6 +47,7 @@ FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 HOST = "hip/integer_adm_hip.c"
 DEN_KERNEL = "hip/integer_adm/adm_csf_den.hip"
 CM_KERNEL = "hip/integer_adm/adm_cm.hip"
+CPU_KERNELS = "integer_adm_kernels.h"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 CPU_HEADER_INCLUDE = '#include "integer_adm_kernels.h"'
@@ -59,15 +60,16 @@ LOCAL_COPY = re.compile(
 CPU_RESULTS = (
     # The noise weight is the option's for the DLM measure and 0 for the AIM
     # measure (ADR-1525), as integer_adm.c passes them.
-    "adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
-    "i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
-    "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
-    "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
+    "adm_cm_result(&c, &bd, s0_accum, noise_weight, adm_p_norm)",
+    "i4_adm_cm_result(&c, &bd, accum, noise_weight, adm_p_norm)",
+    "adm_csf_den_result(&c, accum, adm_noise_weight)",
+    "i4_adm_csf_den_result(&c, accum, adm_noise_weight)",
 )
-# Each context initialiser feeds the launch and the result.
+# Each context initialiser feeds the launch and the result, at the viewing
+# distance being evaluated (`nvd`, ADR-2795).
 CPU_DEN_CONTEXTS = (
-    "adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist",
-    "i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist",
+    "adm_csf_den_ctx_init(&c, w, h, nvd",
+    "i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd",
 )
 CONTEXT_USES = 2
 SKIP_SCALE0_SEED = "float den_scale = (float)1e-10;"
@@ -82,8 +84,10 @@ ROW_LAUNCHES = (
 )
 # A frame: upload, clear, kernels.
 FRAME_UPLOAD = "adm_hip_stage_luma(s, frame, ref_pic, dis_pic)"
-ACCUMULATOR_CLEAR = "hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str)"
-FIRST_KERNELS = "adm_hip_scale0(s, buf, ref_pic, dis_pic,"
+# One clear covers every viewing distance's block (ADR-2795).
+ACCUMULATOR_BYTES = "const size_t res_bytes = sizeof(int64_t) * RES_BUFFER_SIZE * views;"
+ACCUMULATOR_CLEAR = "hipMemsetAsync(buf->tmp_res, 0, res_bytes, s->str)"
+FIRST_KERNELS = "adm_hip_scale0_transform(s, buf, ref_pic, dis_pic,"
 
 
 def _code(source: str) -> str:
@@ -104,7 +108,7 @@ def _calls(flat: str, call: str) -> int:
 def _sources() -> dict[str, str]:
     return {
         name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
-        for name in (HOST, DEN_KERNEL, CM_KERNEL)
+        for name in (HOST, DEN_KERNEL, CM_KERNEL, CPU_KERNELS)
     }
 
 
@@ -112,15 +116,20 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     code = _code(sources[HOST])
     flat = _flat(sources[HOST])
+    flat_kernels = _flat(sources[CPU_KERNELS])
     if CPU_HEADER_INCLUDE not in code:
         failures.append(f"{HOST}: the CPU's integer_adm_kernels.h is no longer included")
     for match in LOCAL_COPY.finditer(code):
         failures.append(f"{HOST}: local copy of {match.group(1)}() next to the CPU's routine")
+    if not _calls(flat, "adm_cm_scale_result(") or not _calls(flat, "adm_csf_den_scale_result("):
+        failures.append(
+            f"{HOST}: a scale is no longer concluded through the shared result routines"
+        )
     for call in CPU_RESULTS:
-        if not _calls(flat, call):
+        if not _calls(flat_kernels, call):
             failures.append(f"{HOST}: a scale is no longer concluded by {call.split('(')[0]}()")
     for call in CPU_DEN_CONTEXTS:
-        if _calls(flat, call) < CONTEXT_USES:
+        if _calls(flat, call) + _calls(flat_kernels, call) < CONTEXT_USES:
             failures.append(
                 f"{HOST}: {call.split('(')[0]}() no longer feeds both the launch and the result"
             )
@@ -136,7 +145,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
 
 def _clear_failures(flat: str) -> list[str]:
     """The frame's accumulator clear lies between its upload and its kernels."""
-    if _calls(flat, ACCUMULATOR_CLEAR) != 1:
+    if _calls(flat, ACCUMULATOR_CLEAR) != 1 or ACCUMULATOR_BYTES not in flat:
         return [f"{HOST}: a frame no longer clears the result accumulators once"]
     clear = flat.find(ACCUMULATOR_CLEAR)
     upload = flat.rfind(FRAME_UPLOAD, 0, clear)
@@ -170,10 +179,10 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
-AIM_CONCLUSION = "(int)scale, 0.0);"
+AIM_CONCLUSION = "(int)scale, 0.0,"
 AIM_CONTEXTS = (
-    "adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist",
-    "i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist",
+    "adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, nvd",
+    "i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, nvd",
 )
 # The scale-0 context feeds the result and the shared DLM / AIM launch; the
 # scales 1-3 context the result and the AIM launch.
@@ -198,10 +207,11 @@ def _aim_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     code = _code(sources[HOST])
     flat = _flat(sources[HOST])
+    flat_kernels = _flat(sources[CPU_KERNELS])
     if _calls(flat, AIM_CONCLUSION) != 1:
         failures.append(f"{HOST}: the AIM scales are no longer concluded with noise weight 0")
     for call in AIM_CONTEXTS:
-        if _calls(flat, call) < AIM_CONTEXT_USES:
+        if _calls(flat, call) + _calls(flat_kernels, call) < AIM_CONTEXT_USES:
             failures.append(
                 f"{HOST}: {call.split('(')[0]}() no longer gives the AIM launch its shifts"
             )
@@ -252,8 +262,8 @@ class AdmHipExactContract(unittest.TestCase):
     def test_own_conclusion_is_detected(self) -> None:
         # The pre-ADR-1423 conclude_adm_csf_den().
         sources = _sources()
-        sources[HOST] = sources[HOST].replace(
-            "return adm_csf_den_result(&c, accum, s->adm_noise_weight);",
+        sources[CPU_KERNELS] = sources[CPU_KERNELS].replace(
+            "return adm_csf_den_result(&c, accum, adm_noise_weight);",
             "return conclude_adm_csf_den(accum, h, w, scale);",
             1,
         )
@@ -338,9 +348,7 @@ class AdmHipExactContract(unittest.TestCase):
     def test_aim_noise_floor_is_detected(self) -> None:
         sources = _sources()
         self.assertIn(AIM_CONCLUSION, sources[HOST])
-        sources[HOST] = sources[HOST].replace(
-            AIM_CONCLUSION, "(int)scale, s->adm_noise_weight);", 1
-        )
+        sources[HOST] = sources[HOST].replace(AIM_CONCLUSION, "(int)scale, s->adm_noise_weight,", 1)
         self.assert_detected(sources, "noise weight 0")
 
     def test_aim_device_shift_is_detected(self) -> None:

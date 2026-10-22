@@ -36,10 +36,27 @@ Do not pick a tag by hand and do not remove a notice. `[ports]`, `[not_ports]`
 and the family rules are reviewed data; a new entry is part of the pull
 request's diff, with the reason in it.
 
+`.toml` files are candidates like the other types the tool can comment (since
+[ADR-1699](../adr/1699-root-licence-files-eupl.md)): a new fork manifest or
+configuration file without a header shows up as `relicense <path>`, and
+`--write` gives it the two-line `#` header (the `Copyright <year> Lusoris`
+line and the EUPL-1.2 tag) the tool writes into Python files. The name
+`pyproject.toml` carries no provenance signal, so upstream's
+`python/pyproject.toml` does not veto a fork package's manifest.
+
+Copyright notices must name the project holder only
+([ADR-0861](../adr/0861-vmafx-copyright-policy-drop-anthropic.md)). The gate
+refuses any tracked file whose header (the leading comment block within the
+first 30 lines) carries a copyright line naming an AI tool or its vendor
+(case-insensitive: Claude, Anthropic, OpenAI, ChatGPT, Copilot, Gemini, Codex)
+with a message naming the file and line number. To fix this refusal, delete the
+AI tool copyright line from the file header, keeping the `Copyright <year> Lusoris`
+notice and the SPDX licence identifier intact.
+
 ## Running it locally
 
 ```bash
-git remote add upstream https://github.com/Netflix/vmaf.git   # once
+git remote add --no-tags upstream https://github.com/Netflix/vmaf.git   # once
 git fetch upstream
 pin="$(python3 scripts/ci/upstream_parity_pin.py --within upstream/master)"
 python3 scripts/dev/relicense_fork_files.py --check --upstream-ref "$pin"
@@ -101,11 +118,18 @@ and in `strictMustReport`, so a run in which it never reported fails too.
 ## What the tool does not manage
 
 - `scripts/ci/exact_twins.d/` (data fragments whose suffix names a backend).
-- `tools/figures/` and `.config/agent/hooks/block_evasion.py` (byte-locked
-  files of the governance engine).
+- `.codex/agents/*.toml` (praetor's Codex projections of `.agents/agents/`,
+  written by the engine; [ADR-1699](../adr/1699-root-licence-files-eupl.md)).
+- `tools/figures/` (files of the governance engine that `praetorctl audit`
+  compares with praetor's own bytes).
+- `.config/agent/hooks/block_evasion.py` and `.config/lefthook/python.sh`
+  (praetor's scripts, which `praetorctl adopt` refreshes only while they are
+  praetor's own text; dated exceptions in
+  `.config/lint-exceptions.d/spdx.toml`).
 - Verbatim mirrors of another repository (`[mirrors]`, the Pelorus files).
 - A licence grant below a file's own header (the first 60 lines), for example
   the header template a sync script embeds as a string.
 
-`reuse lint` (`make lint-reuse`) covers these files' licence metadata through
-[`REUSE.toml`](../../REUSE.toml).
+`reuse lint` (`make lint-reuse` locally, the `REUSE lint` job of
+[`reuse.yml`](../../.github/workflows/reuse.yml) in CI) covers these files'
+licence metadata through [`REUSE.toml`](../../REUSE.toml).

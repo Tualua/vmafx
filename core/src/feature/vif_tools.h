@@ -20,7 +20,9 @@
 #ifndef VIF_TOOLS_H_
 #define VIF_TOOLS_H_
 
+#include <limits.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* The GPU backends that share vif_get_min_dim() are C++ (SYCL) and
  * Objective-C++ (Metal) translation units, while vif_tools.c is C -- without
@@ -84,6 +86,20 @@ int vif_get_scaling_method(char *scaling_method_str, enum vif_scaling_method *sc
 void vif_scale_frame_s(enum vif_scaling_method scale_method, const float *src, float *dst,
                        int src_w, int src_h, int src_stride, int dst_w, int dst_h, int dst_stride);
 
+/* Bilinear scaling with a column table computed once (Netflix/vmaf
+ * 78e11b52c). The table depends only on src_w / dst_w, so a caller that
+ * scales many frames at one size (a feature extractor with a fixed prescale)
+ * fills x1a, x2a and dxa (dst_w entries each) once with
+ * vif_scale_frame_bilinear_precompute_columns_s() and passes them to
+ * vif_scale_frame_bilinear_precomputed_s(), which returns the bits of
+ * vif_scale_frame_s(vif_scale_bilinear, ...). */
+void vif_scale_frame_bilinear_precompute_columns_s(int src_w, int dst_w, int *x1a, int *x2a,
+                                                   float *dxa);
+
+void vif_scale_frame_bilinear_precomputed_s(const float *src, float *dst, int src_w, int src_h,
+                                            int src_stride, int dst_w, int dst_h, int dst_stride,
+                                            const int *x1a, const int *x2a, const float *dxa);
+
 /* Taps of the lanczos4 prescale kernel along one axis: offsets -4 .. 4. */
 #define VIF_LANCZOS4_TAPS 9
 
@@ -96,6 +112,17 @@ void vif_scale_frame_s(enum vif_scaling_method scale_method, const float *src, f
  * (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30). `weights` holds
  * VIF_LANCZOS4_TAPS * dst_len floats. */
 void vif_scale_lanczos4_axis_weights(int src_len, int dst_len, float *weights);
+
+/* The functions of vif_tools.c index a plane with int arithmetic,
+ * y * stride + x with the stride in elements. A plane of h rows of
+ * stride_elems elements fits that index when h * stride_elems <= INT_MAX.
+ * float_vif and SpEED refuse a prescaled plane that does not: from a prescale
+ * of about 1.4142 at the 32768 x 32768 picture cap; 16K fits at every prescale
+ * the options accept (T-PRESCALED-PLANE-INT-INDEX-2026-10-05). */
+static inline bool vif_plane_fits_int_index(size_t stride_elems, size_t h)
+{
+    return h == 0u || stride_elems <= (size_t)INT_MAX / h;
+}
 
 int vif_get_filter_size(int scale, float kernelscale);
 

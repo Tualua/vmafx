@@ -491,6 +491,43 @@ float speed_internal_cpu_speed_score(size_t num_blocks, size_t elements_in_block
                                      SpeedInternalScoreSide ref, SpeedInternalScoreSide dis,
                                      float sigma_nn, float nn_floor, int speed_weight_var_mode);
 
+/* Two more entries, defined in speed.c, for core/test/test_speed_chroma.c
+ * (Netflix/vmaf c70debb10): upstream's test includes speed.c to reach
+ * est_params() and compute_eigenvalues(); the fork's tests do not include
+ * sources (scripts/ci/check-no-non-header-includes.sh). Nothing else calls
+ * them. */
+
+/** The SpeedDimensions fields speed.c's est_params() reads. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation
+ * units; C cannot spell `using` in place of `typedef struct`. ADR-0141. */
+typedef struct SpeedInternalEstGeometry {
+    size_t operating_width;
+    size_t operating_height;
+    size_t block_size;
+    size_t truncated_width;
+    size_t truncated_height;
+    size_t num_blocks_horizontal;
+    size_t num_blocks_vertical;
+    size_t num_blocks;
+    size_t elements_in_block;
+    size_t submatrix_width;
+    size_t submatrix_height;
+} SpeedInternalEstGeometry;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * speed.c's est_params() on one plane of `geom->operating_height` rows of
+ * `geom->operating_width` floats, with the scalar covariance and matrix
+ * kernels. Writes `geom->num_blocks` entropies and variances into `out`.
+ * Returns 0, -EINVAL for a singular covariance matrix or a bad geometry, or
+ * -ENOMEM.
+ */
+int speed_internal_cpu_est_params(const SpeedInternalEstGeometry *geom, const float *data,
+                                  float sigma_nn, SpeedInternalScoreSide out);
+
+/** speed.c's compute_eigenvalues(A, eigenvalues, size, buffer). */
+void speed_internal_cpu_compute_eigenvalues(float *A, float *eigenvalues, int size, float *buffer);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

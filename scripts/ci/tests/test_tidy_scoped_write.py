@@ -39,7 +39,9 @@ def competing_writer(path: Path, scoped: bool, result: Connection) -> None:
     result.close()
 
 
-class ScopedWriter(unittest.TestCase):
+class ScopedFixture(unittest.TestCase):
+    """Shared temporary tree and baseline; defines no test."""
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -94,6 +96,8 @@ class ScopedWriter(unittest.TestCase):
             *extra,
         ]
 
+
+class ScopedWriter(ScopedFixture):
     def test_zero_tightening_preserves_unselected_entries_and_full_metadata(self) -> None:
         result = ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key])
         self.assertEqual(result, 0)
@@ -115,6 +119,39 @@ class ScopedWriter(unittest.TestCase):
             ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key]), 0
         )
         self.assertEqual(self.baseline.read_bytes(), once)
+
+    def test_scoped_write_records_a_new_unit_as_measured(self) -> None:
+        """A unit a lane did not read before enters its measured sources."""
+        original = copy.deepcopy(self.original)
+        original["measured_sources"] = ["core/src/b.c"]
+        self.baseline.write_text(json.dumps(original) + "\n")
+        self.assertEqual(
+            ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key]), 0
+        )
+        updated = json.loads(self.baseline.read_text())
+        self.assertEqual(updated["measured_sources"], ["core/src/a.c", "core/src/b.c"])
+        self.assertEqual(updated["tus"], 293)
+        added = updated["scoped_updates"][0]["changes"]["measured_sources"]["added"]
+        self.assertEqual(added, [self.key])
+        # A unit already measured changes nothing.
+        before = self.baseline.read_bytes()
+        ratchet.write_scoped_baseline(self.baseline, self.measurement(), [self.key])
+        self.assertEqual(json.loads(self.baseline.read_text())["tus"], 293)
+        self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_select_keeps_only_the_prefixes_then_the_only_files(self) -> None:
+        units = [(self.root / name, self.root) for name in ("a/x.c", "a/y.c", "b/z.c")]
+        picked = ratchet.select_units(units, self.root, [], ["a/", "b/z.c"])
+        self.assertEqual(len(picked), 3)
+        # A file entry is one file: "b/z.c" does not select "b/z.cpp".
+        both = [(self.root / "b/z.c", self.root), (self.root / "b/z.cpp", self.root)]
+        self.assertEqual(len(ratchet.select_units(both, self.root, [], ["b/z.c"])), 1)
+        picked = ratchet.select_units(units, self.root, [str(self.root / "a/y.c")], ["a/"])
+        self.assertEqual([u[0].name for u in picked], ["y.c"])
+        with self.assertRaises(ValueError):
+            ratchet.select_units(units, self.root, [str(self.root / "b/z.c")], ["a/"])
+        with self.assertRaises(ValueError):
+            ratchet.select_units(units, self.root, [], ["nothing/"])
 
     def test_scoped_write_preserves_legacy_exact_vendor_entries(self) -> None:
         vendor = "core/src/interop/pelorus_interop.c"
@@ -358,6 +395,80 @@ class ScopedWriter(unittest.TestCase):
             '  42 | log("error: input");\n4 warnings generated.', self.root, self.root
         )
         self.assertFalse(failed)
+
+
+class DeletedFileEntries(ScopedFixture):
+    """A scoped write drops the entries of files the tree no longer has (Q-309)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.root / "core/src/b.c").write_text("int b;\n")
+        (self.root / "core/src/shared.h").write_text("int s;\n")
+        self.gone = "core/src/gone.c"
+        data = copy.deepcopy(self.original)
+        data["warnings"][self.gone] = 4
+        data["nolint_uncited"][self.gone] = 1
+        data["total_warnings"] += 4
+        data["total_nolint_uncited"] += 1
+        data["tus"] = 3
+        data["measured_sources"] = [self.key, "core/src/b.c", self.gone]
+        self.baseline.write_text(json.dumps(data) + "\n")
+
+    def scoped(self, only: str = "core/src/a.c") -> int:
+        """Run the CLI, which both the old and the new tool expose."""
+        measured = self.measurement(sources=[only])
+        argv = self.arguments()
+        argv[argv.index("--only") + 1] = str(self.root / only)
+        with patch.object(ratchet, "measure", return_value=measured):
+            code: int = ratchet.main(argv)
+        return code
+
+    def baseline_measurement(self) -> Any:
+        return ratchet.Measurement.from_json(json.loads(self.baseline.read_text()))
+
+    def test_deleted_file_is_dropped_and_the_ratchet_passes(self) -> None:
+        self.assertEqual(self.scoped(), 0)
+        updated = json.loads(self.baseline.read_text())
+        for metric in ("warnings", "nolint_uncited"):
+            self.assertNotIn(self.gone, updated[metric])
+        self.assertEqual(updated["measured_sources"], [self.key, "core/src/b.c"])
+        self.assertEqual(updated["tus"], 2)
+        self.assertEqual(updated["total_warnings"], sum(updated["warnings"].values()))
+        self.assertEqual(
+            updated["scoped_updates"][0]["changes"]["dropped_deleted_files"]["paths"],
+            [self.gone],
+        )
+        remaining = self.baseline_measurement()
+        measured = self.measurement(
+            tus=2,
+            sources=[self.key, "core/src/b.c"],
+            warnings={"core/src/b.c": 7, "core/src/shared.h": 2},
+            nolint_uncited={"core/src/b.c": 1, "core/src/shared.h": 3},
+        )
+        self.assertEqual(ratchet.report(remaining, measured, allow_slack=True), 0)
+
+    def test_deleted_file_is_dropped_through_the_cli(self) -> None:
+        with patch.object(ratchet, "measure", return_value=self.measurement()):
+            self.assertEqual(ratchet.main(self.arguments()), 0)
+        self.assertNotIn(self.gone, json.loads(self.baseline.read_text())["measured_sources"])
+
+    def test_existing_unmeasured_file_stays_and_fails_closed(self) -> None:
+        self.assertEqual(self.scoped(), 0)
+        updated = json.loads(self.baseline.read_text())
+        self.assertIn("core/src/b.c", updated["measured_sources"])
+        self.assertEqual(updated["warnings"]["core/src/b.c"], 7)
+        measured = self.measurement(sources=[self.key])
+        self.assertEqual(ratchet.report(self.baseline_measurement(), measured, True), 4)
+
+    def test_rename_drops_the_old_path_and_the_new_one_must_be_measured(self) -> None:
+        new = "core/src/renamed.c"
+        (self.root / new).write_text("int r;\n")
+        self.assertEqual(self.scoped(), 0)
+        updated = json.loads(self.baseline.read_text())
+        self.assertNotIn(self.gone, updated["measured_sources"])
+        self.assertNotIn(new, updated["measured_sources"])
+        self.assertEqual(self.scoped(new), 0)
+        self.assertIn(new, json.loads(self.baseline.read_text())["measured_sources"])
 
 
 if __name__ == "__main__":

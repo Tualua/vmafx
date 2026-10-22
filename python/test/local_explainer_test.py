@@ -26,19 +26,19 @@ class LocalExplainerTest(MyTestCase):
     def _assert_vmaf_explanations(self, results, expected_feature_names):
         weights = np.mean(results[0]["VMAF_LE_scores_exps"]["feature_weights"], axis=0)
         self.assertAlmostEqual(
-            weights[0], 0.66021689480916868, places=3
+            weights[0], 0.6602674940751817, places=4
         )  # ADR-0418 macOS-libm Δ relax
         self.assertAlmostEqual(
-            weights[1], 0.14691682562211777, places=3
+            weights[1], 0.14693658997788495, places=4
         )  # ADR-0418 macOS-libm Δ relax
         self.assertAlmostEqual(
-            weights[2], -0.023682744847036086, places=3
+            weights[2], -0.02366380796105634, places=4
         )  # ADR-0418 macOS-libm Δ relax
         self.assertAlmostEqual(
-            weights[3], -0.029779341850172818, places=3
+            weights[3], -0.02967785326094062, places=4
         )  # ADR-0418 macOS-libm Δ relax
         self.assertAlmostEqual(
-            weights[4], 0.19149485210137338, places=3
+            weights[4], 0.1915546856378636, places=4
         )  # ADR-0418 macOS-libm Δ relax
         self.assertAlmostEqual(
             weights[5], 0.31890978778344126, places=3
@@ -151,7 +151,7 @@ class LocalExplainerTest(MyTestCase):
         # py311` mismatches the runner's Python 3.14, so only macOS
         # actually runs this assertion. Calibrated against the
         # macOS-observed value at places=4. See ADR-0418.
-        self.assertAlmostEqual(results[0]["VMAF_LE_score"], 76.66740651351915, places=4)
+        self.assertAlmostEqual(results[0]["VMAF_LE_score"], 76.66741179837011, places=4)
         self.assertAlmostEqual(results[1]["VMAF_LE_score"], 99.946416604585025, places=4)
 
         expected_feature_names = [
@@ -281,7 +281,7 @@ class QualityRunnerTest(MyTestCase):
         # (75.40974269371469) observations. Delta to either platform is 3.018e-5
         # within places=4 tolerance (5e-5). places=4 is the project correctness
         # floor per user mandate; ADR-0418 relax pattern overridden here.
-        self.assertAlmostEqual(results[0]["VMAF_LE_score"], 75.40977288063983, places=4)
+        self.assertAlmostEqual(results[0]["VMAF_LE_score"], 75.40982012663925, places=4)
         self.assertAlmostEqual(results[1]["VMAF_LE_score"], 99.95804823471536, places=4)
 
 

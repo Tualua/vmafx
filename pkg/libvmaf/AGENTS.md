@@ -123,3 +123,10 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
     (not EOF, not caused by our own close after `Wait`) fails the score even
     when the CLI exited 0 and is reported first. Non-Unix build returns
     `ErrStreamInputsUnsupported`; never fall back to a temp file.
+
+14. **Package doc names every path into libvmaf** (`doc.go`): subprocess
+    `Scorer`, cgo `ScoreDirect`, `StreamScorer`, `DNNSession`. New cgo entry
+    point -> add to doc + `PACKAGE_DOC_SURFACES` in
+    `scripts/ci/tests/test_go_libvmaf_linkage_docs.py`. No Go package importing
+    this one (or cgo with libvmaf) may claim it does not link libvmaf; same
+    test fails.

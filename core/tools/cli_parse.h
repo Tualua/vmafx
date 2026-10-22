@@ -91,6 +91,9 @@ typedef struct {
      * (libvmaf default of bilinear applies). Accepted values:
      * "bilinear" (default), "nearest", "bicubic", "disabled". */
     const char *tiny_resize;
+    /* RC4 WP5 (#2142): the JSON report `--verify-provenance` re-runs and
+     * compares; NULL = a scoring run. */
+    const char *verify_provenance;
 
     /* --- Models and features --- */
     CLIModelConfig model_config[CLI_SETTINGS_STATIC_ARRAY_LEN];
@@ -100,10 +103,23 @@ typedef struct {
     unsigned frame_skip_ref;
     unsigned frame_skip_dist;
     unsigned frame_cnt;
+    /* the _ref and _dist sizes default to width and height */
     unsigned width;
     unsigned height;
-    enum VmafPixelFormat pix_fmt;
+    unsigned width_ref, height_ref, width_dist, height_dist;
+    enum VmafPixelFormat
+        pix_fmt; /* the planar frame the input makes: 4:2:0, 4:2:2, 4:4:4 or 4:0:0 */
     unsigned bitdepth;
+    VmafColor color_ref, color_dist; /* ed61076b2; all four attributes or none */
+    /* VmafxPixelFormat of a raw input that is not planar (NV12, P010, YUYV422, V210, RGBA ...,
+     * the layouts of core/api/vmafx.toml); 0: the planar frame of `pix_fmt` (ADR-2145). */
+    unsigned input_layout;
+    /* RGB layouts (ADR-2146): VmafxColorMatrix, VmafxColorRange (of the R'G'B' samples),
+     * VmafxColorTransfer and VmafxColorRange (of the Y'CbCr frame made); 0: not stated. */
+    unsigned rgb_matrix;
+    unsigned rgb_range;
+    unsigned rgb_transfer;
+    unsigned rgb_out_range;
     enum VmafOutputFormat output_fmt;
     unsigned model_cnt;
     unsigned feature_cnt;
@@ -132,7 +148,8 @@ typedef struct {
     bool precision_max;    // --precision=max|full given (selects %.17g)
     bool precision_legacy; // --precision=legacy given (alias for the default)
     bool tiny_fp16;
-    bool no_reference; /* skip reference; only meaningful with NR tiny model */
+    bool no_reference;       /* skip reference; only meaningful with NR tiny model */
+    bool provenance_sidecar; /* RC4 WP5: also write <output>.provenance.json */
     /* T6-9 / ADR-0211 — Sigstore-bundle verification of tiny models. When
      * true, the CLI calls vmaf_dnn_verify_signature() before model load and
      * exits non-zero on any verification failure (missing registry entry,
@@ -143,6 +160,10 @@ typedef struct {
     bool vmafx_mode;
     /* ADR-0696: true when --netflix-compat passed to restore legacy defaults. */
     bool netflix_compat;
+    /* ADR-1874: --list-backends; print the backend report instead of scoring. */
+    bool list_backends;
+    /* ADR-1918: --check-sample-range; vmaf_set_sample_range_check_enabled(). */
+    bool check_sample_range;
 } CLISettings;
 /* NOLINTEND(modernize-use-using) */
 
@@ -155,6 +176,14 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
  * (vmaf_use_feature(), vmaf_model_feature_overload(),
  * vmaf_model_collection_feature_overload()) clears the pointer here first. */
 void cli_free(CLISettings *settings);
+
+/* RC4 WP5: the report of `--verify-provenance <report>` (or
+ * `--verify-provenance=<report>`) in argv, or NULL for a scoring run. */
+const char *cli_verify_provenance_arg(int argc, char *const *argv);
+
+/* Let the next cli_parse() scan a new argv from its start (getopt keeps its
+ * position between scans). */
+void cli_parse_reset(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

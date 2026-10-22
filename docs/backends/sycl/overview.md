@@ -12,6 +12,7 @@ the CPU, and what is still open. The details live on five further pages:
 | Page | What it holds |
 | --- | --- |
 | [AOT targets](aot.md) | Ahead-of-time device code, the default target list, sub-group sizes |
+| [Device sanitizer](device-sanitizer.md) | `-Dsycl_device_asan=true`, what the DPC++ device AddressSanitizer reports on an Arc GPU and what it cannot prove |
 | [Twin notes](twins.md) | How each twin reaches the CPU's bits; compile-line guarantees |
 | [Zero-copy and pictures](zero-copy.md) | QSV / VA-API import, D3D11, picture pre-allocation |
 | [Developer notes](developer-notes.md) | fp64-free kernels, scratch-memory rules, source layout |
@@ -114,7 +115,7 @@ required: GCC LTO objects cannot go through the icpx link. With SYCL on, the
 test executables link as C++, because the SYCL link arguments (`-fsycl`, the
 AOT targets) are accepted only by the icpx driver. SYCL results are the same
 with either C compiler. See
-[ADR-1714](../../adr/1714-hybrid-gcc-cpu-icpx-sycl.md).
+[ADR-3357](../../adr/3357-hybrid-gcc-cpu-icpx-sycl.md).
 
 ## Run
 
@@ -203,7 +204,6 @@ not allow modifying them) and waits for a fixed oneAPI release
 | `VMAF_SYCL_TIMING` | `1` records per-extractor timing with a queue wait |
 | `VMAF_SYCL_CHECKSUM` | `1` logs a CRC of the uploaded ref and dis frame buffers at `INFO` |
 | `VMAF_SYCL_SCRATCH_SELFTEST` | `0` skips the start-up scratch-memory probes ([below](#scratch-memory-on-intel-gpus-adr-1395)) |
-| `VMAF_SYCL_VIF_SUBGROUP_SIZE` | `16` or `32` forces the `vif_sycl` sub-group size |
 | `VMAF_SYCL_AOT_JOBS` | Parallel compiles of the `sycl-aot` test suite (default 4) |
 | `ONEAPI_DEVICE_SELECTOR` | oneAPI runtime device filter, for example `level_zero:0` |
 
@@ -374,17 +374,17 @@ the two probes, so they log no warning. Until 2026-10-03 the term kernel of
 `float_adm_sycl` used 128 bytes of scratch memory there
 ([ADR-1501](../../adr/1501-sycl-float-adm-terms-large-grf-xe2.md)).
 
-### SIMD-32 VIF kernels
+### VIF kernels run at SIMD-16
 
-Every Intel GPU supports SIMD-16 sub-groups, so `vif_sycl` never picks its
-SIMD-32 kernels there by itself. They take the 256-entry register file to avoid
-spilling. To run them anyway, for example to check them on a new driver, set
-`VMAF_SYCL_VIF_SUBGROUP_SIZE=32` (or `16`); a size the device does not support
-is ignored with a warning.
-
-On an Arc A380 at 3840x2160 the SIMD-32 path gives bit-identical scores to
-SIMD-16. It takes 23.4 ms per frame against 23.2, and 67 ms per frame with
-`vif_fused=true` against 24.6.
+`vif_sycl` runs its kernels at sub-group size 16 on every device
+([ADR-1830](../../adr/1830-sycl-vif-simd16-only.md)); a SYCL device without
+SIMD-16 sub-groups (no Intel GPU) gets `-ENOTSUP` from it. The SIMD-32 kernels
+and the `VMAF_SYCL_VIF_SUBGROUP_SIZE` variable that forced them were removed on
+2026-10-05: they needed a 256-entry register file that Xe-LP integrated GPUs
+(UHD 770 and similar) do not have, spilled to scratch memory there, and were
+never faster than SIMD-16 on an Arc A380 (21.19 against 21.20 ms per frame at
+3840x2160, 33.85 against 23.50 ms with `vif_fused=true`). Setting the variable
+now has no effect.
 
 ## Profiling
 

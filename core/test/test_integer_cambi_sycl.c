@@ -106,6 +106,38 @@ static char *alloc_flat_grey_pair(VmafPicture *ref_pic, VmafPicture *dis_pic, un
 /* ------------------------------------------------------------------ */
 /* Test 2: end-to-end smoke — init/submit/collect/close without crash.  */
 /* ------------------------------------------------------------------ */
+/* Feed one synthetic 576x324 YUV420P 8-bpc flat-grey pair (value 64: no
+ * banding, score should be 0) through `vmaf` and read the cambi score.
+ * `vmaf_read_pictures()` takes the pictures over; they are released here only
+ * when the pipeline never received them. */
+static char *run_flat_grey_frame(VmafContext *vmaf, double *score)
+{
+    VmafPicture ref_pic;
+    VmafPicture dis_pic;
+    mu_assert_msg(alloc_flat_grey_pair(&ref_pic, &dis_pic, 576u, 324u));
+
+    /* cambi_sycl is registered and will be auto-selected when the SYCL
+     * state is active and "Cambi_feature_cambi_score" is requested. */
+    int err = vmaf_use_feature(vmaf, "cambi_sycl", NULL);
+    mu_assert("vmaf_use_feature(cambi_sycl) should succeed", err == 0);
+    if (err) {
+        (void)vmaf_picture_unref(&ref_pic);
+        (void)vmaf_picture_unref(&dis_pic);
+        return NULL;
+    }
+
+    err = vmaf_read_pictures(vmaf, &ref_pic, &dis_pic, 0);
+    mu_assert("vmaf_read_pictures should succeed", err == 0);
+
+    /* Flush pipeline. */
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("flush vmaf_read_pictures should succeed", err == 0);
+
+    err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", score, 0);
+    mu_assert("feature score retrieval should succeed", err == 0);
+    return NULL;
+}
+
 static char *test_cambi_sycl_smoke(void)
 {
     if (sycl_init_failed) {
@@ -131,34 +163,8 @@ static char *test_cambi_sycl_smoke(void)
         return NULL;
     }
 
-    /* Allocate a synthetic 576×324 YUV420P 8-bpc picture pair.
-     * Flat grey (value 64) — no banding, score should be 0. */
-    VmafPicture ref_pic, dis_pic;
-    mu_assert_msg(alloc_flat_grey_pair(&ref_pic, &dis_pic, 576u, 324u));
-
-    /* Use vmaf_read_pictures to feed the frame through the pipeline.
-     * cambi_sycl is registered and will be auto-selected when the SYCL
-     * state is active and "Cambi_feature_cambi_score" is requested. */
-    err = vmaf_use_feature(vmaf, "cambi_sycl", NULL);
-    mu_assert("vmaf_use_feature(cambi_sycl) should succeed", err == 0);
-    if (err) {
-        (void)vmaf_picture_unref(&ref_pic);
-        (void)vmaf_picture_unref(&dis_pic);
-        (void)vmaf_close(vmaf);
-        return NULL;
-    }
-
-    err = vmaf_read_pictures(vmaf, &ref_pic, &dis_pic, 0);
-    mu_assert("vmaf_read_pictures should succeed", err == 0);
-
-    /* Flush pipeline. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("flush vmaf_read_pictures should succeed", err == 0);
-
-    /* Retrieve the score. */
     double score = -1.0;
-    err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", &score, 0);
-    mu_assert("feature score retrieval should succeed", err == 0);
+    mu_assert_msg(run_flat_grey_frame(vmaf, &score));
     mu_assert("score should be finite and non-negative", isfinite(score) && score >= 0.0);
 
     (void)vmaf_close(vmaf);

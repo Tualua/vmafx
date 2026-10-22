@@ -57,8 +57,12 @@ vmaf ... --feature ssimulacra2=yuv_matrix=2
 - **Pixel formats:** YUV 4:2:0, 4:2:2, and 4:4:4. The colour conversion needs
   both chroma planes, so 4:0:0 (luma-only) input is refused at init with
   `ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input, not 4:0:0` and
-  `-EINVAL` from `vmaf_read_pictures()`. The `vmaf` CLI never produces it: it
-  rejects `-p 400` and converts Y4M `mono` input to 4:2:0.
+  `-EINVAL` from `vmaf_read_pictures()`. The CUDA, SYCL, HIP and Metal twins
+  refuse it the same way, with their own name in the message
+  (`ssimulacra2_metal: needs ...`). When a model or `--backend` picked the
+  CUDA, SYCL or HIP twin, 4:0:0 input goes to the CPU extractor first, which
+  then refuses it. The `vmaf` CLI never produces 4:0:0 input: it rejects
+  `-p 400` and converts Y4M `mono` input to 4:2:0.
 - **Bit depths:** 8, 10, and 12 bpc.
 - **CPU SIMD:** AVX2, AVX-512, NEON, and SVE2 when the host advertises it. The
   CPU scalar/SIMD path is bit-exact across the fork's host matrix.

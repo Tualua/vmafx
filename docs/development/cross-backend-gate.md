@@ -99,7 +99,7 @@ ADR-0125, ADR-0138 and ADR-0140. Feature-specific relaxations live in
 | `ssim` (fixed-point extractor) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel). |
 | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_ms_ssim_chroma`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188, ADR-0192, ADR-0215, ADR-1382. |
 | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`), `speed_temporal` (the one score `speed_temporal`), for a twin that is not exact | `5e-5` | Places=4; the CUDA, HIP and SYCL twins are exact ([ADR-1477](../adr/1477-speed-upstream-double-math.md)). |
-| `psnr_hvs` (a twin that is not exact) | `5e-4` at 576x324 and below, `5e-4 x sqrt(N / N_576x324)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling). |
+| `psnr_hvs` (a twin that is not exact) | `5e-4` at 576x324 and below, $5 \times 10^{-4} \sqrt{N / N_{576 \times 324}}$ above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling). |
 | `ciede` (a twin that is not in the `1e-9` row) | `5e-3` | ADR-0187 (per-pixel pow, sqrt, sin, atan2). |
 | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur). |
 
@@ -186,6 +186,12 @@ import and rejects an unknown key, a missing key, an empty file, an unknown
 feature or backend, and a missing or empty directory. The
 [generated table of exact twins](cross-backend-exact-twins.md) is rendered from
 the same files by `make docs-fragments-write`.
+
+A listed CUDA, SYCL or HIP twin also needs a recorded row on the
+[depth and layout matrix](exact-twin-matrix.md): every twin at 8, 10, 12 and 16
+bits and in 4:2:0, 4:2:2 and 4:4:4, `==` against the CPU on generated fixtures.
+`scripts/ci/exact_twin_matrix.py --record` writes the row, and
+`test_exact_twin_matrix_contract` fails while a listed twin has none.
 
 A cell whose two sides are the CPU extractor or a listed twin is compared with
 tolerance `0`, at every frame size and ahead of any calibration row, and both
@@ -340,6 +346,40 @@ python3 scripts/ci/cross_backend_parity_gate.py \
 Pin each concurrent run to different hardware; do not multiplex one device
 across parallel parity jobs.
 
+## Whole models on one backend
+
+The gate compares one extractor at a time. Whether a model runs wholly on a
+device is a separate question: the option gate
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md),
+[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md)) sends an
+extractor to the CPU when its twin cannot honour a model option, and the run
+still succeeds. `core/test/test_gpu_v1_models_no_fallback.py` checks the model
+set end to end. For every built-in `vmaf_v1.0.16*` model and the default model,
+it scores these fixtures with `--backend cpu` and with the device backend at
+`--precision max`:
+
+- the 576x324 `src01_hrc00` / `src01_hrc01` pair at 8, 10 and 12 bits 4:2:0
+  and 10 bits 4:2:2;
+- the first 16 frames of the 3840x2160 pair in `testdata/bbb`.
+
+It fails when the device run's `feature_backends` lists an extractor on any
+other backend, or when any per-frame, pooled or aggregate value differs.
+Each run also scores `--feature float_adm=adm_csf_mode=1`, a known fallback,
+and fails if the check does not report it.
+
+Meson registers one test per backend the build enables:
+`test_cuda_v1_models_no_fallback`, `test_sycl_v1_models_no_fallback` and
+`test_hip_v1_models_no_fallback` (suites `slow`, `gpu` and the backend name).
+Each one skips with the reason when it finds no device or a missing fixture.
+`testdata/bbb` and `python/test/resource/yuv` are not in the repository.
+When `~/.cache/vmafx-locks` exists (or `VMAFX_LOCK_DIR`), each device run
+takes that backend's lock file. Run a SYCL build's test with the oneAPI
+environment loaded:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build test_cuda_v1_models_no_fallback
+```
+
 ## Read the output
 
 The JSON artifact contains one record per cell with `status`, `tolerance_abs`,
@@ -387,6 +427,7 @@ test-gates
 | **Netflix golden** ([ADR-0024](../adr/0024-netflix-golden-preserved.md)) | CPU numerical correctness; required and untouchable. |
 | **SYCL Parity (Arc A380)** | Conditional required lane; CPU and SYCL `float_ssim` on real Arc hardware. It runs for eligible non-draft in-repository pull requests, pushes to `master` and manual dispatches when `SYCL_ARC_RUNNER_ENABLED=true` and the runner is online; when the lane is disabled, the required-check aggregator explicitly accepts its skip. |
 | Backend Meson parity tests | Backend-specific correctness, including large-fixture variants where registered. |
+| `test_<backend>_v1_models_no_fallback` | Every `vmaf_v1.0.16*` model and the default model run wholly on the device and return the CPU run's bits ([Whole models on one backend](#whole-models-on-one-backend)). |
 | This matrix runner outside CI | Broader CPU, CUDA, SYCL and HIP feature sweeps and calibration evidence. |
 | macOS tester bundle ([tester page](../usage/tester-image.md)) | Runs this gate's Metal cells, held exact, on an outside tester's Mac ([ADR-1496](../adr/1496-metal-gate-in-tester-bundle.md)). |
 | Per-backend snapshots (`testdata/scores_cpu_*.json`) | Snapshot-based regression checks, not pairwise parity. |

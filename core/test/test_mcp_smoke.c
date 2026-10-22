@@ -52,6 +52,11 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_mcp.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 static char *test_available_returns_one(void)
 {
     mu_assert("vmaf_mcp_available must report 1 in the smoke build", vmaf_mcp_available() == 1);
@@ -60,9 +65,14 @@ static char *test_available_returns_one(void)
 
 static char *test_transport_available_unknown_id_is_zero(void)
 {
+    /* An id no transport owns is this test's subject. It enters the enum
+     * through its bytes: a cast of the constant is what
+     * clang-analyzer-optin.core.EnumCastOutOfRange rejects. */
     int id = 999;
+    VmafMcpTransport unknown;
+    (void)memcpy(&unknown, &id, sizeof(unknown));
     mu_assert("unknown transport id must report unavailable",
-              vmaf_mcp_transport_available((VmafMcpTransport)id) == 0);
+              vmaf_mcp_transport_available(unknown) == 0);
     return NULL;
 }
 
@@ -306,6 +316,35 @@ static char *test_jsonrpc_method_not_found(void)
  * UDS transport round-trip (v2)
  * ============================================================ */
 
+/* A client socket connected to the server's socket file. */
+static char *uds_client_connect(const char *path, int *cfd)
+{
+    *cfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    mu_assert("client socket", *cfd >= 0);
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    memcpy(addr.sun_path, path, strlen(path) + 1u);
+    int crc = connect(*cfd, (const struct sockaddr *)&addr, sizeof(addr));
+    mu_assert("client connect", crc == 0);
+    return NULL;
+}
+
+/* One tools/list request on a connected client and its response. */
+static char *uds_tools_list_exchange(int cfd)
+{
+    static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"tools/list\"}\n";
+    ssize_t w = write(cfd, req, sizeof(req) - 1u);
+    mu_assert("client write", w == (ssize_t)(sizeof(req) - 1u));
+
+    char line[8192];
+    ssize_t got = read_one_line(cfd, line, sizeof(line));
+    mu_assert("uds response received", got > 0);
+    mu_assert("uds id 42", strstr(line, "\"id\":42") != NULL);
+    mu_assert("uds list contains compute_vmaf", strstr(line, "\"compute_vmaf\"") != NULL);
+    return NULL;
+}
+
 static char *test_uds_roundtrip(void)
 {
     /* Deterministic per-pid socket path — keeps parallel test
@@ -328,24 +367,10 @@ static char *test_uds_roundtrip(void)
     mu_assert("uds start", rc == 0);
 
     /* Connect a client and round-trip a tools/list. */
-    int cfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    mu_assert("client socket", cfd >= 0);
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    memcpy(addr.sun_path, path, strlen(path) + 1u);
-    int crc = connect(cfd, (const struct sockaddr *)&addr, sizeof(addr));
-    mu_assert("client connect", crc == 0);
+    int cfd = -1;
+    mu_assert_msg(uds_client_connect(path, &cfd));
 
-    static const char req[] = "{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"tools/list\"}\n";
-    ssize_t w = write(cfd, req, sizeof(req) - 1u);
-    mu_assert("client write", w == (ssize_t)(sizeof(req) - 1u));
-
-    char line[8192];
-    ssize_t got = read_one_line(cfd, line, sizeof(line));
-    mu_assert("uds response received", got > 0);
-    mu_assert("uds id 42", strstr(line, "\"id\":42") != NULL);
-    mu_assert("uds list contains compute_vmaf", strstr(line, "\"compute_vmaf\"") != NULL);
+    mu_assert_msg(uds_tools_list_exchange(cfd));
 
     (void)close(cfd);
     vmaf_mcp_close(&server);
@@ -491,6 +516,8 @@ static char *test_compute_vmaf_yuv420p10_score(void)
      * unsetenv() below so the rest of the table still runs against the default
      * roots; allowlist rejection itself is covered by
      * test_mcp_compute_vmaf_allowlist.c. */
+    /* One thread, before any server worker exists; setenv() is this case's subject. */
+    // NOLINTNEXTLINE(concurrency-mt-unsafe): single-threaded test case, ADR-1142.
     if (setenv("VMAF_MCP_ALLOW", "/tmp", 1) != 0) {
         (void)unlink(ref_path);
         (void)unlink(dis_path);
@@ -503,6 +530,7 @@ static char *test_compute_vmaf_yuv420p10_score(void)
     char *err = request_10bit_score(&h, ref_path, dis_path);
 
     harness_teardown(&h);
+    // NOLINTNEXTLINE(concurrency-mt-unsafe): the harness is torn down above; ADR-1142.
     (void)unsetenv("VMAF_MCP_ALLOW");
     (void)unlink(ref_path);
     (void)unlink(dis_path);
@@ -554,9 +582,11 @@ static ssize_t sse_test_drain(int fd, char *buf, size_t cap, int timeout_seconds
     size_t total = 0u;
     while (total + 1u < cap) {
         ssize_t r = read(fd, buf + total, cap - 1u - total);
-        if (r <= 0)
+        if (r <= 0 || (size_t)r > cap - 1u - total)
             break;
         total += (size_t)r;
+        if (total >= cap)
+            break;
         buf[total] = '\0';
         /* Per WHATWG SSE §9.2 each event is terminated by a blank
          * line. Stop as soon as we see the terminator after we have
@@ -570,8 +600,24 @@ static ssize_t sse_test_drain(int fd, char *buf, size_t cap, int timeout_seconds
         if (strstr(buf, "\r\n\r\n") != NULL && strstr(buf, "\"jsonrpc\"") != NULL)
             break;
     }
-    buf[total] = '\0';
+    if (total < cap)
+        buf[total] = '\0';
     return (ssize_t)total;
+}
+
+/* Headers and frame of a GET /mcp/sse response. */
+static char *sse_expect_event_frame(const char *gbuf)
+{
+    mu_assert("sse 200 OK", strstr(gbuf, "200 OK") != NULL);
+    mu_assert("sse content-type", strstr(gbuf, "text/event-stream") != NULL);
+    /* Per WHATWG SSE §9.2 (accessed 2026-05-09) an event frame ends
+     * in a blank line. The transport emits an initial `event: ready`
+     * frame after the response headers — verify both pieces are
+     * present. */
+    mu_assert("sse event field", strstr(gbuf, "event: ready") != NULL);
+    mu_assert("sse data field", strstr(gbuf, "data: ") != NULL);
+    mu_assert("sse blank-line terminator", strstr(gbuf, "\n\n") != NULL);
+    return NULL;
 }
 
 /* GET /mcp/sse — verify event-stream framing per WHATWG SSE §9.2. */
@@ -587,15 +633,16 @@ static char *sse_check_get_stream(uint16_t port)
     ssize_t got = sse_test_drain(gfd, gbuf, sizeof(gbuf), 3);
     (void)close(gfd);
     mu_assert("sse get response", got > 0);
-    mu_assert("sse 200 OK", strstr(gbuf, "200 OK") != NULL);
-    mu_assert("sse content-type", strstr(gbuf, "text/event-stream") != NULL);
-    /* Per WHATWG SSE §9.2 (accessed 2026-05-09) an event frame ends
-     * in a blank line. The transport emits an initial `event: ready`
-     * frame after the response headers — verify both pieces are
-     * present. */
-    mu_assert("sse event field", strstr(gbuf, "event: ready") != NULL);
-    mu_assert("sse data field", strstr(gbuf, "data: ") != NULL);
-    mu_assert("sse blank-line terminator", strstr(gbuf, "\n\n") != NULL);
+    return sse_expect_event_frame(gbuf);
+}
+
+/* Status line and body of the inline tools/list reply. */
+static char *sse_expect_tools_list(const char *pbuf)
+{
+    mu_assert("sse post 200", strstr(pbuf, "200 OK") != NULL);
+    mu_assert("sse post jsonrpc", strstr(pbuf, "\"jsonrpc\":\"2.0\"") != NULL);
+    mu_assert("sse post id 7", strstr(pbuf, "\"id\":7") != NULL);
+    mu_assert("sse post lists features", strstr(pbuf, "list_features") != NULL);
     return NULL;
 }
 
@@ -619,11 +666,7 @@ static char *sse_check_post_jsonrpc(uint16_t port)
     ssize_t pgot = sse_test_drain(pfd, pbuf, sizeof(pbuf), 5);
     (void)close(pfd);
     mu_assert("sse post response", pgot > 0);
-    mu_assert("sse post 200", strstr(pbuf, "200 OK") != NULL);
-    mu_assert("sse post jsonrpc", strstr(pbuf, "\"jsonrpc\":\"2.0\"") != NULL);
-    mu_assert("sse post id 7", strstr(pbuf, "\"id\":7") != NULL);
-    mu_assert("sse post lists features", strstr(pbuf, "list_features") != NULL);
-    return NULL;
+    return sse_expect_tools_list(pbuf);
 }
 
 static char *test_sse_event_stream(void)
@@ -689,3 +732,5 @@ char *run_tests(void)
     }
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

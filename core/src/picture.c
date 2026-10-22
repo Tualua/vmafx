@@ -136,11 +136,12 @@ int vmaf_picture_priv_init(VmafPicture *pic)
     return 0;
 }
 
-static void picture_compute_geometry(VmafPicture *pic, unsigned w, unsigned h)
+void vmaf_picture_plane_extents(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h,
+                                unsigned plane_w[3], unsigned plane_h[3])
 {
-    const bool ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
-    const bool ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
-    pic->w[0] = w;
+    const bool ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P;
+    const bool ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P;
+    plane_w[0] = w;
     /* Ceiling division: for 4:2:0 an odd luma width/height must produce one
      * extra chroma sample row/column so that every luma sample is covered.
      * Floor (plain >> ss) under-allocates by one row for odd-height inputs,
@@ -148,11 +149,86 @@ static void picture_compute_geometry(VmafPicture *pic, unsigned w, unsigned h)
      * consumers.  (Research-0094, fix/picture-odd-dim-chroma-ceiling.)
      * vmaf_chroma_extent() is the one definition; extractors that size a
      * chroma buffer themselves call it too. */
-    pic->w[1] = pic->w[2] = vmaf_chroma_extent(w, ss_hor);
-    pic->h[0] = h;
-    pic->h[1] = pic->h[2] = vmaf_chroma_extent(h, ss_ver);
-    if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
-        pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
+    plane_w[1] = plane_w[2] = vmaf_chroma_extent(w, ss_hor);
+    plane_h[0] = h;
+    plane_h[1] = plane_h[2] = vmaf_chroma_extent(h, ss_ver);
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P)
+        plane_w[1] = plane_w[2] = plane_h[1] = plane_h[2] = 0;
+}
+
+static unsigned picture_plane_count(enum VmafPixelFormat pix_fmt)
+{
+    return pix_fmt == VMAF_PIX_FMT_YUV400P ? 1u : 3u;
+}
+
+/* The release of a wrapped picture without one: the caller keeps its planes. */
+static int wrap_keep_planes(VmafPicture *pic, void *cookie)
+{
+    (void)pic;
+    (void)cookie;
+    return 0;
+}
+
+int vmaf_picture_wrap_bind(VmafPicture *pic, const VmafPictureWrapped *wrapped)
+{
+    VmafPicture p;
+    memset(&p, 0, sizeof(p));
+    p.pix_fmt = wrapped->pix_fmt;
+    p.bpc = wrapped->bpc;
+    vmaf_picture_plane_extents(p.pix_fmt, wrapped->w, wrapped->h, p.w, p.h);
+    for (unsigned i = 0; i < picture_plane_count(p.pix_fmt); i++) {
+        p.data[i] = wrapped->data[i];
+        p.stride[i] = wrapped->stride[i];
+    }
+    if (vmaf_picture_priv_init(&p))
+        return -ENOMEM;
+    int err = vmaf_picture_set_release_callback(
+        &p, wrapped->cookie,
+        wrapped->release_picture ? wrapped->release_picture : wrap_keep_planes);
+    if (!err)
+        err = vmaf_ref_init(&p.ref);
+    if (err) {
+        free(p.priv);
+        return -ENOMEM;
+    }
+    *pic = p;
+    return 0;
+}
+
+/* Whether every plane the format has can be read: data set and a stride that
+ * holds a row of the plane's samples. */
+static bool wrapped_planes_readable(const VmafPictureWrapped *wrapped)
+{
+    unsigned plane_w[3];
+    unsigned plane_h[3];
+    vmaf_picture_plane_extents(wrapped->pix_fmt, wrapped->w, wrapped->h, plane_w, plane_h);
+    const uint64_t bytes = wrapped->bpc > 8u ? 2u : 1u;
+    for (unsigned i = 0; i < picture_plane_count(wrapped->pix_fmt); i++) {
+        if (!wrapped->data[i] || wrapped->stride[i] < 0 ||
+            (uint64_t)wrapped->stride[i] < (uint64_t)plane_w[i] * bytes)
+            return false;
+    }
+    return true;
+}
+
+/* Netflix/vmaf 700124a4c, with the fork's chroma extents (ADR-1483) and the
+ * checks the VMAFx API makes of borrowed planes (ADR-2949). */
+int vmaf_picture_wrap(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
+{
+    if (!pic)
+        return -EINVAL;
+    if (pic_wrapped.pix_fmt < VMAF_PIX_FMT_YUV420P || pic_wrapped.pix_fmt > VMAF_PIX_FMT_YUV400P)
+        return -EINVAL;
+    if (pic_wrapped.bpc < VMAF_PIC_BPC_MIN || pic_wrapped.bpc > VMAF_PIC_BPC_MAX)
+        return -EINVAL;
+    if (pic_wrapped.w == 0 || pic_wrapped.h == 0 || !wrapped_planes_readable(&pic_wrapped))
+        return -EINVAL;
+    return vmaf_picture_wrap_bind(pic, &pic_wrapped);
+}
+
+static void picture_compute_geometry(VmafPicture *pic, unsigned w, unsigned h)
+{
+    vmaf_picture_plane_extents(pic->pix_fmt, w, h, pic->w, pic->h);
 
     const unsigned aligned_y = (pic->w[0] + DATA_ALIGN - 1u) & ~(DATA_ALIGN - 1u);
     const unsigned aligned_c = (pic->w[1] + DATA_ALIGN - 1u) & ~(DATA_ALIGN - 1u);

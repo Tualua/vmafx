@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1685: A post-1.0 embedding milestone: zero-copy device-frame import with fences, asynchronous window scores, and an unchanged licence
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-05 by [ADR-1852](1852-vmafx-api-redesign.md) for the API shape: a new `vmafx` header family and library with `libvmaf.h` as its compatibility layer)
 - **Date**: 2026-10-05
 - **Deciders**: maintainer
 - **Tags**: api, abi, gpu, cuda, sycl, hip, metal, license, release, roadmap, docs

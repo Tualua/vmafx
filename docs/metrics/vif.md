@@ -73,12 +73,13 @@ prefix):
 | `vif_enhn_gain_limit` | `egl` | both | double | `100.0` | `1.0–100.0` | Cap the per-pixel enhancement-gain ratio so over-sharpened content cannot saturate the score. Set to `1.0` to disable enhancement gain entirely. |
 | `vif_skip_scale0` | `ssclz` | both | bool | `false` | n/a | Skip scale-0 (finest pyramid level) calculations; scale-0 outputs are forced to `0.0` and excluded from the fused score. Matches the CPU path for GPU backends. |
 | `debug` | none | both | bool | `false` | n/a | Emit additional per-scale numerator/denominator debug metrics. |
+| `vif_fused` | none | `vif_sycl` only | bool | `false` | n/a | Run each scale's vertical and horizontal filter passes in one kernel launch. It needs about 230 MB less device memory at 3840x2160 and took about the same time per frame on an Arc A380. The scores are the CPU's either way; they are reported as `integer_vif_scale0_vif_fused` to `integer_vif_scale3_vif_fused`. |
 | `vif_kernelscale` | `ks` | `float_vif` | double | `1.0` | `0.1` to `4.0` | Scale of the Gaussian kernel (2.0 doubles the standard deviation and lengthens the kernel). |
 | `vif_prescale` | `ps` | `float_vif` | double | `1.0` | `0.1` to `4.0` | Scaling factor for the frame (2.0 doubles width and height). |
 | `vif_prescale_method` | `pm` | `float_vif` | string | `nearest` | `nearest`, `bilinear`, `bicubic`, `lanczos4` | Scaling method for the prescale. |
 | `vif_scale1_min_val`, `vif_scale2_min_val`, `vif_scale3_min_val` | `s1miv`, `s2miv`, `s3miv` | `float_vif` | double | `0.0` | `0.0` to `1.0` | A scale's score below its floor is reported as the floor. |
 | `vif_sigma_nsq` | `snsq` | `float_vif` | double | `2.0` | `0.0` to `5.0` | Neural noise variance. |
-| `enable_chroma` | none | `vif_cuda` only | bool | `false` | n/a | **No-op** retained for backward compatibility with callers that pass the option on the CLI or in a model JSON. VIF is luma-only by design; `enable_chroma=true` emits a one-shot warning during init (`integer_vif (CUDA): enable_chroma=true requested but VIF is luma-only by design (...); option is a no-op. See ADR-0597.`) and otherwise has no effect. |
+| `enable_chroma` | none | `vif_cuda` only | bool | `false` | n/a | **No-op** retained for backward compatibility with callers that pass the option on the CLI or in a model JSON. VIF is luma-only by design; `enable_chroma=true` emits a one-shot warning during init (`integer_vif (CUDA): enable_chroma=true requested but VIF is luma-only by design (...); option is a no-op. See ADR-0597.`) and leaves the scores unchanged. The scores are reported under names with the option's suffix, as for any option the caller sets: `integer_vif_scale0_enable_chroma` to `integer_vif_scale3_enable_chroma` (in the collector and `--output`), since [ADR-1836](../adr/1836-cuda-vif-enable-chroma-names.md); before it they kept the default `integer_vif_scale0` to `integer_vif_scale3` names. |
 
 Option aliases are part of the published collector key. Equivalent GPU twin
 options use the CPU spellings (`ks`, `ssclz` and `egl`) so backend selection
@@ -115,6 +116,22 @@ four-scale ladder (got 12x12)
   (the ones actually handed to the pyramid) as well as to the raw input.
 - The integer pyramid has the same bound: every scale reflects its filter taps
   once, which stays inside the plane only from 16 pixels in each dimension up.
+
+### Largest prescaled plane
+
+`float_vif` hands the prescaled plane to the functions of
+`core/src/feature/vif_tools.c`, which index it with `int`, so the plane must
+have at most INT_MAX (2,147,483,647) samples, counted with its row stride.
+16K (15360x8640) stays inside at every accepted `vif_prescale`, up to 4.0
+(2,123,366,400 samples); at the 32768x32768 picture cap the limit is a
+prescale of about 1.414. A larger plane fails `init()` with `-EINVAL`:
+
+```text
+libvmaf ERROR float_vif: the prescaled plane (65536x65536) has more samples than the int index of vif_tools allows; lower vif_prescale
+```
+
+`core/test/test_prescaled_plane_int_index.c` checks the limit without
+allocating a plane of that size.
 
 ### Minimum frame size on the integer GPU twins
 
@@ -214,12 +231,13 @@ enhancement-gain-enabled VIF. Fixed per
 
 - **By model or `--backend`.** For `vif`, `--backend sycl|cuda|hip` with
   `--feature vif` runs the twin.
-- **HIP `float_vif`.** In a default build `--backend hip --feature float_vif`
-  prints
-  `the hip backend has no twin of this extractor; computing it on the CPU` and
-  runs the CPU extractor. Name the extractor
-  (`--backend hip --feature float_vif_hip`), or build with the
-  `enable_float_vif_hip_autodispatch` option (off by default).
+- **HIP `float_vif`.** `--backend hip --feature float_vif` runs
+  `float_vif_hip`, and so does a VMAFx context on a HIP device
+  ([ADR-2092](../adr/2092-vmafx-hip-device-frames.md)). A build with
+  `-Denable_float_vif_hip_autodispatch=false` (on by default) prints
+  `the hip backend has no twin of this extractor; computing it on the CPU`
+  instead and runs the CPU extractor; the twin then runs only when named
+  (`--feature float_vif_hip`).
 
 ### Integer twin notes
 
@@ -229,6 +247,11 @@ enhancement-gain-enabled VIF. Fixed per
   computes a pixel's gain in `double` and truncates two results to integers,
   where `vif_sycl` used `float`, which put a share of those integers one off.
   It now computes both integers exactly, in integer arithmetic.
+- **`vif_sycl`, `vif_fused=true`.** Until October 2026 scales 1 to 3 differed
+  from the CPU on every frame from 1920x1080 up (by up to 4.9e-4 at
+  3840x2160): one launch read a scale from the buffers it was writing the
+  next scale into. The fused scales now alternate between two buffers, and
+  the scores equal the CPU's and the separate passes'.
 - **`vif_sycl`, `debug`.** The option defaulted to `true` until October 2026,
   which added the eleven debug outputs to every run; request them with
   `--feature vif_sycl=debug=true`.
@@ -259,9 +282,13 @@ enhancement-gain-enabled VIF. Fixed per
 
 - **`integer_vif_metal`.** A 4-scale fixed-point Gaussian pyramid
   (`feature/metal/integer_vif.metal` + `_metal.mm`) with int64 moment
-  accumulators and the integer log2-LUT. Because Apple GPUs lack fp64 the
-  per-pixel gain is computed in float (the same fp64-free trade-off as the SYCL
-  twin, ADR-0220).
+  accumulators and the CPU's log2 table. Apple GPUs have no fp64, so the two
+  integers the CPU truncates from its double gain come from an integer
+  division, with the CPU's double operations replayed in 64-bit integers next
+  to an integer boundary (`metal_integer_vif_gain.h`, the SYCL twin's method,
+  [ADR-1498](../adr/1498-metal-twins-exact-designs.md)). The host rounds each
+  scale's sums to `float` and divides them in single precision, as
+  `integer_vif.c` does.
 - **`float_vif_metal`.** A 4-scale separable-Gaussian pyramid with per-scale
   mean/variance/covariance statistics (`feature/metal/float_vif.metal` +
   `_metal.mm`).
@@ -370,3 +397,5 @@ Now under [floating-point stage dumps](#floating-point-stage-dumps).
 - [Features](features.md) - full feature extractor reference
 - [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md) - why
   `enable_chroma` is a documented no-op on the CUDA twin.
+- [ADR-1836](../adr/1836-cuda-vif-enable-chroma-names.md) - why its scores
+  carry the `_enable_chroma` suffix when the option is set.

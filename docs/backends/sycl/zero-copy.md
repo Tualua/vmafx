@@ -14,7 +14,8 @@ correct, and how the pre-allocated picture pool works. Back to the
 | Pre-allocated pool | `vmaf_sycl_preallocate_pictures()`, `vmaf_sycl_picture_fetch()` | all | None when the decoder writes device USM |
 | VA-API dmabuf | `vmaf_sycl_dmabuf_import()`, `vmaf_sycl_import_va_surface()` | Linux | None (zero-copy) |
 | D3D11 staging | `vmaf_sycl_import_d3d11_surface()` | Windows | Two PCIe copies; not zero-copy |
-| Plane upload | `vmaf_sycl_upload_plane()` | all | One host-to-device copy |
+| Plane upload | `vmaf_sycl_upload_plane()` | all | One host-to-device copy; returns when it has completed |
+| VMAFx device frames | `vmafx_frame_import()` / `vmafx_context_import_frame()` on a SYCL device | all (USM); Linux (dma-buf, GL texture, Vulkan memory) | None; every SYCL twin reads the frame, chroma included |
 
 The signatures are in
 [`libvmaf_sycl.h`](../../../core/include/libvmaf/libvmaf_sycl.h) and the
@@ -65,12 +66,41 @@ of the Netflix 576x324 pair as H.264) before the check existed:
 - `feature=name=float_psnr` (the CPU extractor) was skipped on every frame,
   and the result had no `float_psnr` and no error.
 
-Importing the chroma as well would need two pieces of work. The de-tile kernel
-would have to de-interleave the NV12 / P010 UV layer, and every chroma twin
-would need a device chroma path. Neither is implemented. Both belong to the
-post-1.0 zero-copy import
-([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)) and
-need their own ADR.
+This path stays luma-only. Frames imported through the VMAFx API carry the
+chroma as well and every SYCL twin reads them; see
+[VMAFx device frames](#vmafx-device-frames) below.
+
+## VMAFx device frames
+
+The VMAFx API imports a whole frame, luma and chroma, on a SYCL device
+([ADR-2091](../../adr/2091-vmafx-sycl-device-frames.md)): USM of the device's
+SYCL context, and on Linux dma-bufs (linear, Intel Y-tiled or Tile4) and
+OpenGL textures (through an EGL dma-buf export). The semi-planar (NV12 to
+P416), packed (Y210, Y410, ...) and MSB-aligned layouts are converted and
+tiled planes de-tiled on the device with the same address math as
+`vmaf_sycl_import_va_surface()` (`core/src/sycl/detile.h`); every SYCL twin,
+the chroma twins included, copies the planes it reads on the device. Imported
+frames score bit for bit as the same frames uploaded from the host, for every
+SYCL twin declared exact. SYCL events, `sync_file` descriptors and GL syncs
+order the producer's writes; a release fence (host or SYCL event) and a
+release callback tell the producer when it may write into the memory again.
+The calls, the descriptors and the fences are in [SYCL
+devices](../../api/vmafx/index.md#sycl-devices).
+
+Vulkan frames on the same GPU (`VMAFX_MEMORY_VULKAN`,
+[ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)) take the dma-buf
+path: the Mesa driver exports a buffer's or a LINEAR or Tile4 image's memory
+as a dma-buf, and the SYCL device imports it as above. The producer's timeline
+semaphores (up to three per frame, exported as `OPAQUE_FD`) are imported with
+the oneAPI external-semaphore extension and waited on the library queue before
+the first read, and `vmafx_frame_signal_on_release()` signals a timeline on the
+queue behind the frame's last reader, so neither side waits on the host. A
+`sync_file` of the write and a host release fence still work. OPTIMAL images
+are refused by name. See [Vulkan frames](../../api/vmafx/index.md#vulkan-frames).
+
+What is not imported yet: Windows shared textures (`VMAFX_MEMORY_WIN32_SHARED`
+is refused, the D3D11 staging path above remains), and a `sync_file` release
+fence (a SYCL event or host fence is returned instead).
 
 ## D3D11 staging-texture import (Windows)
 
@@ -124,6 +154,24 @@ ffmpeg \
 
 A single shared `qsv` device silently reintroduces the contamination.
 
+### Each input is imported with its own VA display; a failed import stops the filter
+
+`libvmaf_sycl` reads the VA display of each input's QSV session and imports
+that input's surfaces with it
+([ADR-1761](../../adr/1761-sycl-filter-import-retry-then-fail.md)). Before
+this, the reference surfaces were imported with the distorted input's display.
+On an Arc A380 with the two decoders on two VA devices
+(`-init_hw_device vaapi=va0:... -init_hw_device vaapi=va1:...`), that gave 0 of
+24 frames equal to the CPU and a plausible-looking pooled score (54.914218
+against 53.419552), without an error. When a surface ID did not exist in the
+other display, it gave the `invalid VASurfaceID` import failures that the
+filter used to skip.
+
+A failed import is tried again, three tries in all with 1 ms between them, and
+then stops the filter with an error naming the frame. A filter that stopped
+prints no pooled score. `ffmpeg-patches/test/check-sycl-import-retry.sh`
+injects transient and persistent failures to check both outcomes.
+
 Open the VA-API device on the render node directly, as above. Do not derive it
 from a `drm` device (`-init_hw_device drm=drm0:/dev/dri/renderD128
 -init_hw_device vaapi=va0@drm0`): in a rootless container only the render node
@@ -131,15 +179,14 @@ is usable, and that form fails before decoding with `Failed to set value
 'drm=drm0:/dev/dri/renderD128' for option 'init_hw_device': Cannot allocate
 memory`. If the host has more than one GPU, pick the render node of the Intel
 one (`/sys/class/drm/renderD*/device/vendor` is `0x8086`). In a container, pass
-the device with `--device /dev/dri`; an image built from `Containerfile.vmafx`
-runs this command as is.
+the device with `--device /dev/dri`.
 
 The two `trim=end_frame=500` filters score exactly the first 500 pairs. Do not
 use `-frames:v 500` for that: FFmpeg applies it after the filtergraph, so the
 filter can score a 501st pair
 ([Score exactly N frames](../../usage/ffmpeg.md#score-exactly-n-frames)).
 
-### Feature routing and supported surfaces (ADR-1764)
+### Feature routing and supported surfaces (ADR-3360)
 
 The `libvmaf_sycl` filter resolves each `feature=` name to its SYCL twin, as
 the `vmaf` CLI does. On QSV zero-copy input it refuses to configure when no
@@ -149,7 +196,7 @@ on the CPU. A twin that needs chroma is still refused at the first frame by the
 admission check above. Zero-copy accepts NV12 and P010 surfaces only. The
 messages and examples are in
 [Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
-the rationale is [ADR-1764](../../adr/1764-sycl-filter-twin-routing.md).
+the rationale is [ADR-3360](../../adr/3360-sycl-filter-twin-routing.md).
 
 ### P010/P012 pixels are normalized in the import
 
@@ -165,7 +212,7 @@ pass), and a standalone `launch_p010_normalize()` kernel on the rare LINEAR /
 readback fallbacks. It is a no-op for 8-bit NV12.
 
 This is internal — no user action required — but explains why a hand-rolled VA
-import that skips it sees `integer_motion` inflated by exactly `2^(16 − bpc)`
+import that skips it sees `integer_motion` inflated by exactly $2^{16 - \mathrm{bpc}}$
 (64× at 10-bit).
 
 ## Picture pre-allocation

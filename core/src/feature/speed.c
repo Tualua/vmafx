@@ -31,13 +31,6 @@
 #include <stddef.h>
 #include <string.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#ifndef M_E
-#define M_E 2.71828182845904523536
-#endif
-
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -96,6 +89,13 @@ typedef struct SpeedBuffers {
     float *cov_mat;
     float *eigenvalues;
     float *tmp_buffer;
+    /* Bilinear prescale column table (Netflix/vmaf 78e11b52c): filled once by
+     * speed_init() for this instance's fixed original_width / scaled_width and
+     * reused for every frame. NULL unless the prescale is bilinear and
+     * resamples. */
+    int *bilinear_x1a;
+    int *bilinear_x2a;
+    float *bilinear_dxa;
 } SpeedBuffers;
 
 // Everything that is passed in as a feature option and is needed for
@@ -178,7 +178,7 @@ static void matrix_identity(Matrix *m)
 {
     for (int i = 0; i < m->rows; i++) {
         for (int j = 0; j < m->cols; j++) {
-            m->data[i * m->cols + j] = (i == j ? 1 : 0);
+            m->data[i * m->cols + j] = (float)((i == j ? 1 : 0));
         }
     }
 }
@@ -416,7 +416,7 @@ static void convert_to_tridiagonal(float *A, int size, float *d, float *sd, floa
             tridiagonal_multiply(A, v, x, tau_i, i + 1, size);
             // x -= 0.5 * tau_i * dot(x, v) * v]
             float xv = tridiagonal_dot_product(x, v, i + 1, size);
-            float alpha = -0.5 * tau_i * xv;
+            float alpha = (float)(-0.5 * tau_i * xv);
             tridiagonal_axpy(x, v, alpha, i + 1, size);
             // A = A - v * x' - x * v'
             tridiagonal_syr2(A, x, v, i + 1, size);
@@ -462,13 +462,13 @@ static void create_givens(const float a, const float b, float *c, float *s)
     } else if (fabsf(b) > fabsf(a)) {
         float t = -a / b;
         // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
-        float s1 = 1.0 / sqrt(1 + t * t);
+        float s1 = (float)(1.0 / sqrt(1 + t * t));
         *s = s1;
         *c = s1 * t;
     } else {
         float t = -b / a;
         // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
-        float c1 = 1.0 / sqrt(1 + t * t);
+        float c1 = (float)(1.0 / sqrt(1 + t * t));
         *c = c1;
         *s = c1 * t;
     }
@@ -837,7 +837,7 @@ static void compute_covariance_row(const SpeedDimensions *dim, const float *data
            count, sums);
 
     for (size_t k = 0; k < count; k++) {
-        float covariance = sums[k] / (dim->submatrix_width * dim->submatrix_height);
+        float covariance = (float)(sums[k] / (dim->submatrix_width * dim->submatrix_height));
         cov_mat[x_index * dim->elements_in_block + y_first + k] = covariance;
         cov_mat[(y_first + k) * dim->elements_in_block + x_index] = covariance;
     }
@@ -851,7 +851,7 @@ static void compute_covariance_matrix(const SpeedDimensions *dim, const float *d
     for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
         for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
             means[start_row * dim->block_size + start_col] =
-                compute_mean(dim, data, stride_px, start_row, start_col);
+                compute_mean(dim, data, stride_px, (int)start_row, (int)start_col);
         }
     }
 
@@ -918,8 +918,10 @@ static void update_entropy(const SpeedDimensions *dim, float *entropy, const flo
     for (size_t i = 0; i < dim->num_blocks_vertical; i++) {
         for (size_t j = 0; j < dim->num_blocks_horizontal; j++) {
             // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
-            entropy[i * dim->num_blocks_horizontal + j] +=
+            const double increment =
                 log2(L * S[i * dim->num_blocks_horizontal + j] + sigma_nn) + log2(2 * M_PI * M_E);
+            entropy[i * dim->num_blocks_horizontal + j] =
+                (float)(entropy[i * dim->num_blocks_horizontal + j] + increment);
             // NOLINTEND(performance-type-promotion-in-math-fn)
         }
     }
@@ -950,7 +952,7 @@ static bool solve_covariance_system(SpeedState *s, const float *data, const Spee
                               kernel);
 
     // Step 2: Compute the eigenvalues of the covariance matrix
-    compute_eigenvalues(s->buffers.cov_mat, s->buffers.eigenvalues, dim->elements_in_block,
+    compute_eigenvalues(s->buffers.cov_mat, s->buffers.eigenvalues, (int)dim->elements_in_block,
                         s->buffers.tmp_buffer);
 
     // Step 3: Compute independent term for the linear system
@@ -961,8 +963,8 @@ static bool solve_covariance_system(SpeedState *s, const float *data, const Spee
     int err = 0;
     bool regular = is_matrix_regular(dim, s->buffers.eigenvalues);
     if (regular) {
-        err = solve_linear_system(s->buffers.cov_mat, dim->elements_in_block,
-                                  s->buffers.independent_term, dim->num_blocks,
+        err = solve_linear_system(s->buffers.cov_mat, (int)dim->elements_in_block,
+                                  s->buffers.independent_term, (int)dim->num_blocks,
                                   s->buffers.linear_system_sol, s->buffers.tmp_buffer, matmul);
     }
 
@@ -986,7 +988,8 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     // from the linear system above, and B is the block size.
     // Store the results in s->linear_system_sol
     compute_pointwise_product_and_division(&dim, s->buffers.linear_system_sol,
-                                           s->buffers.independent_term, dim.elements_in_block);
+                                           s->buffers.independent_term,
+                                           (float)dim.elements_in_block);
 
     // Step 6: Sum each column in Z into an array S.
     // Store the results in the first row of s->linear_system_sol
@@ -1011,18 +1014,25 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     return cannot_invert ? -EINVAL : 0;
 }
 
+/* upstream's `entropy * log2(argument)`: the product is formed in double and
+ * rounded to float once, as the assignment in upstream's get_speed_score()
+ * does (ADR-1477). `argument` is what upstream passes to log2(). A macro, not
+ * a function, so every use stays the expression upstream compiles. */
+#define SPEED_WE(entropy, argument) ((float)((entropy) * log2(argument)))
+
+/* Every log2() below is upstream's: a double logarithm of a float (or, in
+ * modes 3 to 6, double) argument, multiplied in double and rounded to
+ * float once on assignment (Netflix/vmaf libvmaf/src/feature/speed.c,
+ * get_speed_score(); ADR-1477). */
 static float get_speed_score(const SpeedDimensions *dim, SpeedResultBuffers ref_results,
                              SpeedResultBuffers dis_results, float sigma_nn, float nn_floor,
                              int speed_weight_var_mode)
 {
-    /* Every log2() below is upstream's: a double logarithm of a float (or, in
-     * modes 3 to 6, double) argument, multiplied in double and rounded to
-     * float once on assignment (Netflix/vmaf libvmaf/src/feature/speed.c,
-     * get_speed_score(); ADR-1477). */
     // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
     float score = 0;
     float base_entropy =
-        dim->elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E));
+        (float)(dim->elements_in_block *
+                (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E)));
     for (size_t i = 0; i < dim->num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {
@@ -1033,33 +1043,36 @@ static float get_speed_score(const SpeedDimensions *dim, SpeedResultBuffers ref_
             float spatial_ref = 0.0f;
             float spatial_dis = 0.0f;
             if (speed_weight_var_mode == 0) {
-                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+                spatial_ref = SPEED_WE(ref_results.entropies[i], 1 + ref_results.variances[i]);
+                spatial_dis = SPEED_WE(dis_results.entropies[i], 1 + dis_results.variances[i]);
             } else if (speed_weight_var_mode == 1) {
-                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] * log2(1 + ref_results.variances[i]);
+                spatial_ref = SPEED_WE(ref_results.entropies[i], 1 + ref_results.variances[i]);
+                spatial_dis = SPEED_WE(dis_results.entropies[i], 1 + ref_results.variances[i]);
             } else if (speed_weight_var_mode == 2) {
-                spatial_ref = ref_results.entropies[i] * log2(1 + dis_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+                spatial_ref = SPEED_WE(ref_results.entropies[i], 1 + dis_results.variances[i]);
+                spatial_dis = SPEED_WE(dis_results.entropies[i], 1 + dis_results.variances[i]);
             } else if (speed_weight_var_mode == 3) {
-                spatial_ref = ref_results.entropies[i] *
-                              log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
-                spatial_dis = dis_results.entropies[i] *
-                              log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+                spatial_ref =
+                    SPEED_WE(ref_results.entropies[i],
+                             1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+                spatial_dis =
+                    SPEED_WE(dis_results.entropies[i],
+                             1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
             } else if (speed_weight_var_mode == 4) {
-                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] *
-                              log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+                spatial_ref = SPEED_WE(ref_results.entropies[i], 1 + ref_results.variances[i]);
+                spatial_dis =
+                    SPEED_WE(dis_results.entropies[i],
+                             1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
             } else if (speed_weight_var_mode == 5) {
-                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+                spatial_ref = SPEED_WE(ref_results.entropies[i], 1 + ref_results.variances[i]);
                 spatial_dis =
-                    dis_results.entropies[i] *
-                    log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i]));
+                    SPEED_WE(dis_results.entropies[i], 1 + (0.75 * ref_results.variances[i] +
+                                                            0.25 * dis_results.variances[i]));
             } else if (speed_weight_var_mode == 6) {
-                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+                spatial_ref = SPEED_WE(ref_results.entropies[i], 1 + ref_results.variances[i]);
                 spatial_dis =
-                    dis_results.entropies[i] *
-                    log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i]));
+                    SPEED_WE(dis_results.entropies[i], 1 + (0.25 * ref_results.variances[i] +
+                                                            0.75 * dis_results.variances[i]));
             } else {
                 return -EINVAL;
             }
@@ -1103,6 +1116,72 @@ float speed_internal_cpu_speed_score(size_t num_blocks, size_t elements_in_block
                            speed_weight_var_mode);
 }
 
+void speed_internal_cpu_compute_eigenvalues(float *A, float *eigenvalues, int size, float *buffer)
+{
+    compute_eigenvalues(A, eigenvalues, size, buffer);
+}
+
+static void speed_est_dimensions(SpeedDimensions *dim, const SpeedInternalEstGeometry *geom)
+{
+    memset(dim, 0, sizeof(*dim));
+    dim->operating_width = geom->operating_width;
+    dim->operating_height = geom->operating_height;
+    dim->block_size = geom->block_size;
+    dim->truncated_width = geom->truncated_width;
+    dim->truncated_height = geom->truncated_height;
+    dim->num_blocks_horizontal = geom->num_blocks_horizontal;
+    dim->num_blocks_vertical = geom->num_blocks_vertical;
+    dim->num_blocks = geom->num_blocks;
+    dim->elements_in_block = geom->elements_in_block;
+    dim->submatrix_width = geom->submatrix_width;
+    dim->submatrix_height = geom->submatrix_height;
+}
+
+/* Work buffers of one est_params() call, in one allocation, sized as
+ * Netflix's test_speed_chroma.c sizes them: two rectangular buffers of
+ * elements x blocks, the covariance matrix, the eigenvalues, and a scratch
+ * of five square buffers plus two rectangular ones. */
+static float *speed_est_work_alloc(SpeedBuffers *b, size_t el, size_t blocks)
+{
+    const size_t rect = el * blocks;
+    const size_t total = 4 * rect + 6 * el * el + el;
+    float *work = aligned_malloc(total * sizeof(float), 32);
+    if (!work)
+        return NULL;
+    memset(work, 0, total * sizeof(float));
+    b->independent_term = work;
+    b->linear_system_sol = work + rect;
+    b->cov_mat = work + 2 * rect;
+    b->eigenvalues = b->cov_mat + el * el;
+    b->tmp_buffer = b->eigenvalues + el;
+    return work;
+}
+
+int speed_internal_cpu_est_params(const SpeedInternalEstGeometry *geom, const float *data,
+                                  float sigma_nn, SpeedInternalScoreSide out)
+{
+    if (!geom || !data || !out.entropies || !out.variances)
+        return -EINVAL;
+    /* SpEED's blocks are at most 5x5; the block bound keeps the sizes below
+     * far from size_t overflow. */
+    if (geom->elements_in_block == 0 || geom->elements_in_block > 25 || geom->num_blocks == 0 ||
+        geom->num_blocks > ((size_t)1 << 24))
+        return -EINVAL;
+    SpeedState s;
+    memset(&s, 0, sizeof(s));
+    speed_est_dimensions(&s.dimensions, geom);
+    float *work = speed_est_work_alloc(&s.buffers, geom->elements_in_block, geom->num_blocks);
+    if (!work)
+        return -ENOMEM;
+    s.float_stride = geom->operating_width * sizeof(float);
+    SpeedResultBuffers results = {out.entropies, out.variances};
+    s.ref_results = results;
+    s.dis_results = results;
+    const int err = est_params(&s, data, sigma_nn, &results);
+    aligned_free(work);
+    return err;
+}
+
 static void subtract_image(float *im1, const float *im2, int w, int h, size_t stride)
 {
     size_t stride_px = stride / sizeof(float);
@@ -1113,78 +1192,95 @@ static void subtract_image(float *im1, const float *im2, int w, int h, size_t st
     }
 }
 
+// Resamples the frame buffer in place by speed_prescale, through tmpbuf.
+static void speed_prescale_frame(const SpeedDimensions *dim, const SpeedOptions *opt,
+                                 const SpeedBuffers *bufs, float *frame_buffer, float *tmpbuf,
+                                 size_t stride_px)
+{
+    if (!speed_prescale_resamples(opt->speed_prescale, dim->original_width, dim->original_height,
+                                  dim->scaled_width, dim->scaled_height))
+        return;
+
+    // The scaling method has been checked for validity in the init callback;
+    // the result is still checked, so scaling_method is never read unset.
+    enum vif_scaling_method scaling_method;
+    if (vif_get_scaling_method(opt->speed_prescale_method, &scaling_method))
+        return;
+
+    memcpy(tmpbuf, frame_buffer, stride_px * dim->alloc_height * sizeof(float));
+    if (scaling_method == vif_scale_bilinear && bufs->bilinear_x1a) {
+        // The column table speed_init() filled for this instance's fixed
+        // sizes; the bits of vif_scale_frame_s(vif_scale_bilinear, ...).
+        vif_scale_frame_bilinear_precomputed_s(
+            tmpbuf, frame_buffer, (int)dim->original_width, (int)dim->original_height,
+            (int)stride_px, (int)dim->scaled_width, (int)dim->scaled_height, (int)stride_px,
+            bufs->bilinear_x1a, bufs->bilinear_x2a, bufs->bilinear_dxa);
+        return;
+    }
+    vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, (int)dim->original_width,
+                      (int)dim->original_height, (int)stride_px, (int)dim->scaled_width,
+                      (int)dim->scaled_height, (int)stride_px);
+}
+
 // Filters the image with a Gaussian filter and then performs local
 // mean subtraction
 static void filter_and_downscale(const SpeedDimensions *dim, SpeedOptions *opt, float *frame_buffer,
-                                 float *tmp_buffer, size_t float_stride)
+                                 const SpeedBuffers *bufs, size_t float_stride)
 {
     size_t stride_px = float_stride / sizeof(float);
 
     size_t frame_size = stride_px * dim->alloc_height;
+    float *tmp_buffer = bufs->tmp_buffer;
     float *curr_scale = tmp_buffer;
     tmp_buffer += frame_size;
     float *tmpbuf = tmp_buffer;
 
-    // The scaling method has been checked for validity in the init callback
-    enum vif_scaling_method scaling_method;
-    vif_get_scaling_method(opt->speed_prescale_method, &scaling_method);
-
-    if (speed_prescale_resamples(opt->speed_prescale, dim->original_width, dim->original_height,
-                                 dim->scaled_width, dim->scaled_height)) {
-        memcpy(tmpbuf, frame_buffer, stride_px * dim->alloc_height * sizeof(float));
-        vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, dim->original_width,
-                          dim->original_height, stride_px, dim->scaled_width, dim->scaled_height,
-                          stride_px);
-    }
+    speed_prescale_frame(dim, opt, bufs, frame_buffer, tmpbuf, stride_px);
 
     // The kernelscale has been checked for validity in the init callback
-    int filter_width_antialias = vif_get_filter_size(1, opt->speed_kernelscale);
+    int filter_width_antialias = vif_get_filter_size(1, (float)opt->speed_kernelscale);
     float filter_antialias[128];
-    speed_get_antialias_filter(filter_antialias, NUM_SCALES, opt->speed_kernelscale);
+    speed_get_antialias_filter(filter_antialias, NUM_SCALES, (float)opt->speed_kernelscale);
     size_t downscaled_w = dim->scaled_width >> NUM_SCALES;
     size_t downscaled_h = dim->scaled_height >> NUM_SCALES;
 
-#if ARCH_X86
-    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, dim->scaled_width,
-                   dim->scaled_height, float_stride, float_stride, filter_width_antialias);
-
-    vif_dec16_s(curr_scale, frame_buffer, dim->scaled_width, dim->scaled_height, float_stride,
-                float_stride);
-#else
-    vif_filter1d_dec16_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, dim->scaled_width,
-                         dim->scaled_height, float_stride, float_stride, filter_width_antialias);
+    /* Netflix/vmaf ad42c532: the fused filter on every target, x86 included
+     * (AVX2 vertical pass where dispatched, 9cb9479f); same bits as
+     * vif_filter1d_s() + vif_dec16_s() at every dispatch level. */
+    vif_filter1d_dec16_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
+                         (int)dim->scaled_height, (int)float_stride, (int)float_stride,
+                         filter_width_antialias);
     for (size_t i = 0; i < downscaled_h; i++) {
         memcpy(frame_buffer + i * stride_px, curr_scale + i * stride_px,
                downscaled_w * sizeof(float));
     }
-#endif
 
-    int filter_width = vif_get_filter_size(NUM_SCALES, opt->speed_kernelscale);
+    int filter_width = vif_get_filter_size(NUM_SCALES, (float)opt->speed_kernelscale);
     float filter[128];
-    vif_get_filter(filter, NUM_SCALES, opt->speed_kernelscale);
-    vif_filter1d_s(filter, frame_buffer, curr_scale, tmpbuf, downscaled_w, downscaled_h,
-                   float_stride, float_stride, filter_width);
-    subtract_image(frame_buffer, curr_scale, downscaled_w, downscaled_h, float_stride);
+    vif_get_filter(filter, NUM_SCALES, (float)opt->speed_kernelscale);
+    vif_filter1d_s(filter, frame_buffer, curr_scale, tmpbuf, (int)downscaled_w, (int)downscaled_h,
+                   (int)float_stride, (int)float_stride, filter_width);
+    subtract_image(frame_buffer, curr_scale, (int)downscaled_w, (int)downscaled_h, float_stride);
 }
 
 static int speed_extract_score(SpeedState *s, SpeedOptions *opt, float *ref, float *dis,
                                float *score)
 {
-    filter_and_downscale(&s->dimensions, opt, ref, s->buffers.tmp_buffer, s->float_stride);
-    int err_ref = est_params(s, ref, opt->speed_sigma_nn, &(s->ref_results));
+    filter_and_downscale(&s->dimensions, opt, ref, &s->buffers, s->float_stride);
+    int err_ref = est_params(s, ref, (float)opt->speed_sigma_nn, &(s->ref_results));
 
-    filter_and_downscale(&s->dimensions, opt, dis, s->buffers.tmp_buffer, s->float_stride);
+    filter_and_downscale(&s->dimensions, opt, dis, &s->buffers, s->float_stride);
 
-    int err_dis = est_params(s, dis, opt->speed_sigma_nn, &(s->dis_results));
+    int err_dis = est_params(s, dis, (float)opt->speed_sigma_nn, &(s->dis_results));
 
     // If only one of ref and dis was numerically unstable (very rare)
     // we return 0 instead of an inflated score that may skew the average
     if ((err_ref && !err_dis) || (!err_ref && err_dis)) {
         *score = 0.0f;
     } else {
-        *score =
-            get_speed_score(&s->dimensions, s->ref_results, s->dis_results, opt->speed_sigma_nn,
-                            opt->speed_nn_floor, opt->speed_weight_var_mode);
+        *score = get_speed_score(&s->dimensions, s->ref_results, s->dis_results,
+                                 (float)opt->speed_sigma_nn, (float)opt->speed_nn_floor,
+                                 opt->speed_weight_var_mode);
     }
 
     return err_ref || err_dis;
@@ -1212,6 +1308,14 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     // speed_internal_init_dimensions(); the callers below now check this return.
     if (dim->truncated_height == 0 || dim->truncated_width == 0) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
+        return -EINVAL;
+    }
+    if (!vif_plane_fits_int_index(ALIGN_CEIL(dim->alloc_width * sizeof(float)) / sizeof(float),
+                                  dim->alloc_height)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "SpEED: the prescaled plane (%zux%zu) has more samples than the int index "
+                 "of vif_tools allows; lower speed_prescale\n",
+                 dim->alloc_width, dim->alloc_height);
         return -EINVAL;
     }
 
@@ -1291,6 +1395,33 @@ static void speed_dispatch_cpu_kernel(SpeedState *s)
 #endif
 }
 
+/* The bilinear prescale column table of this instance (Netflix/vmaf
+ * 78e11b52c): it depends only on original_width and scaled_width, both fixed
+ * for the instance, so it is computed here once instead of on every frame. */
+static int speed_alloc_bilinear_columns(SpeedState *s, const SpeedOptions *opt,
+                                        enum vif_scaling_method scaling_method)
+{
+    const SpeedDimensions *dim = &s->dimensions;
+    if (scaling_method != vif_scale_bilinear ||
+        !speed_prescale_resamples(opt->speed_prescale, dim->original_width, dim->original_height,
+                                  dim->scaled_width, dim->scaled_height))
+        return 0;
+
+    s->buffers.bilinear_x1a = aligned_malloc(sizeof(int) * dim->scaled_width, 32);
+    if (!s->buffers.bilinear_x1a)
+        return -ENOMEM;
+    s->buffers.bilinear_x2a = aligned_malloc(sizeof(int) * dim->scaled_width, 32);
+    if (!s->buffers.bilinear_x2a)
+        return -ENOMEM;
+    s->buffers.bilinear_dxa = aligned_malloc(sizeof(float) * dim->scaled_width, 32);
+    if (!s->buffers.bilinear_dxa)
+        return -ENOMEM;
+    vif_scale_frame_bilinear_precompute_columns_s((int)dim->original_width, (int)dim->scaled_width,
+                                                  s->buffers.bilinear_x1a, s->buffers.bilinear_x2a,
+                                                  s->buffers.bilinear_dxa);
+    return 0;
+}
+
 static int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
 {
     SpeedDimensions *dim = &s->dimensions;
@@ -1299,7 +1430,7 @@ static int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
         return dim_err;
 
     // Check that the kernelscale is valid
-    if (!vif_validate_kernelscale(opt->speed_kernelscale)) {
+    if (!vif_validate_kernelscale((float)opt->speed_kernelscale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale\n");
         return -EINVAL;
     }
@@ -1315,10 +1446,25 @@ static int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
     int alloc_err = speed_alloc_buffers(s, dim, stride_px);
     if (alloc_err)
         return alloc_err;
+    alloc_err = speed_alloc_bilinear_columns(s, opt, scaling_method);
+    if (alloc_err)
+        return alloc_err;
 
     speed_dispatch_cpu_kernel(s);
 
     return 0;
+}
+
+/* aligned_free() accepts NULL (free() / _aligned_free()), which the tables
+ * are when the prescale is not bilinear. */
+static void speed_free_bilinear_columns(SpeedBuffers *b)
+{
+    aligned_free(b->bilinear_x1a);
+    aligned_free(b->bilinear_x2a);
+    aligned_free(b->bilinear_dxa);
+    b->bilinear_x1a = NULL;
+    b->bilinear_x2a = NULL;
+    b->bilinear_dxa = NULL;
 }
 
 static int speed_close(SpeedState *s)
@@ -1334,6 +1480,7 @@ static int speed_close(SpeedState *s)
         aligned_free(s->buffers.eigenvalues);
     if (s->buffers.tmp_buffer)
         aligned_free(s->buffers.tmp_buffer);
+    speed_free_bilinear_columns(&s->buffers);
 
     if (s->ref_results.entropies)
         aligned_free(s->ref_results.entropies);
@@ -1494,7 +1641,7 @@ static int extract_chroma(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     } else if (err_v && !err_u) {
         score_uv = score_u;
     } else {
-        score_uv = (score_u + score_v) / 2.0;
+        score_uv = (float)((score_u + score_v) / 2.0);
     }
 
     /* MIN() is a less-than comparison, and every comparison against NaN is
@@ -1726,9 +1873,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         return err;
     }
 
-    int w = s->speed_state.dimensions.original_width;
-    int h = s->speed_state.dimensions.original_height;
-    int float_stride = s->speed_state.float_stride;
+    int w = (int)(s->speed_state.dimensions.original_width);
+    int h = (int)(s->speed_state.dimensions.original_height);
+    int float_stride = (int)(s->speed_state.float_stride);
     subtract_image(s->frame_buffer_ref[other_index], s->frame_buffer_ref[cyclic_index], w, h,
                    float_stride);
     if (s->speed_temporal_use_ref_diff) {
@@ -1745,7 +1892,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return append_temporal_score(s, feature_collector, score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     SpeedTemporalState *s = fex->priv;
     speed_close(&s->speed_state);
@@ -1772,7 +1919,7 @@ VmafFeatureExtractor vmaf_fex_speed_temporal = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(SpeedTemporalState),
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,

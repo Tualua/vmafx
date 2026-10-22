@@ -29,7 +29,11 @@
 # Usage:
 #   scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh \
 #     --stage N --out DIR [--clips src01,checkerboard] [--depths 8,10] \
-#     [--cases a,b,...] [--yuv /yuv] [--bench] [--repeat N]
+#     [--cases a,b,...] [--yuv /yuv] [--bench] [--repeat N] [--render-node PATH]
+#
+# --render-node (or RENDER_NODE) names the Intel GPU's DRM render node; the QSV
+# encode and the zero-copy decode both run on it. Default: the first render node
+# whose PCI vendor is Intel (0x8086), so a host with more GPUs needs no setting.
 #
 # Case files are written to DIR as <clip>_<depth>bit__<case>.<leg>.{json,rc,err};
 # DIR must not be shared between runs of different --depths. --repeat N runs the
@@ -52,13 +56,13 @@ REPEAT=1
 CB_REPEAT="${CB_REPEAT:-20}"
 LEG_TIMEOUT="${LEG_TIMEOUT:-600}"
 SCORE_FMT="${SCORE_FMT:-%.17g}"
-QSV_INIT=(-init_hw_device vaapi=va0:/dev/dri/renderD128
-  -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0)
+RENDER_NODE="${RENDER_NODE:-}"
 
 usage() {
   cat >&2 <<'EOF'
 usage: zerocopy-e2e.sh --stage {1,2,3} --out DIR [--clips list] [--depths list]
                        [--cases list] [--yuv DIR] [--bench] [--repeat N]
+                       [--render-node PATH]
 EOF
   exit 2
 }
@@ -97,12 +101,39 @@ while [ "$#" -gt 0 ]; do
       REPEAT="${2:?}"
       shift 2
       ;;
+    --render-node)
+      RENDER_NODE="${2:?}"
+      shift 2
+      ;;
     *) usage ;;
   esac
 done
 case "$STAGE" in 1 | 2 | 3) ;; *) usage ;; esac
 [ -n "$OUT" ] || usage
 case "$REPEAT" in '' | *[!0-9]* | 0) usage ;; esac
+# first_intel_render_node: the first /dev/dri/renderD* of PCI vendor 0x8086.
+first_intel_render_node() {
+  local v
+  for v in /sys/class/drm/renderD*/device/vendor; do
+    [ -r "$v" ] || continue
+    if [ "$(cat "$v")" = 0x8086 ]; then
+      v="${v%/device/vendor}"
+      echo "/dev/dri/${v##*/}"
+      return 0
+    fi
+  done
+  return 1
+}
+if [ -z "$RENDER_NODE" ] && ! RENDER_NODE="$(first_intel_render_node)"; then
+  echo "no Intel render node found; pass --render-node" >&2
+  exit 2
+fi
+if [ ! -c "$RENDER_NODE" ]; then
+  echo "render node is not a character device: $RENDER_NODE" >&2
+  exit 2
+fi
+QSV_INIT=(-init_hw_device "vaapi=va0:$RENDER_NODE"
+  -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0)
 OUT="$(realpath -m "$OUT")"
 mkdir -p "$OUT/media"
 # Stale case files from an earlier run would be compared again.
@@ -127,7 +158,8 @@ repeat_file() {
   for ((i = 0; i < n; i++)); do cat "$src" >>"$dst"; done
 }
 
-# encode IN.yuv WxH DEPTH OUT.mp4: hevc_qsv, NV12 for 8 bit, P010 for 10 bit.
+# encode IN.yuv WxH DEPTH OUT.mp4: hevc_qsv on RENDER_NODE, NV12 for 8 bit, P010
+# for 10 bit.
 encode() {
   local in="$1" size="$2" depth="$3" out="$4" pf prof
   if [ "$depth" = 8 ]; then
@@ -138,7 +170,9 @@ encode() {
     prof=main10
   fi
   if ! timeout "$LEG_TIMEOUT" ffmpeg -hide_banner -loglevel error -y \
-    -f rawvideo -pix_fmt yuv420p -s "$size" -i "$in" -pix_fmt "$pf" \
+    -init_hw_device "vaapi=ve:$RENDER_NODE" -init_hw_device qsv=qe@ve -filter_hw_device qe \
+    -f rawvideo -pix_fmt yuv420p -s "$size" -i "$in" \
+    -vf "format=$pf,hwupload=extra_hw_frames=16" \
     -c:v hevc_qsv -profile:v "$prof" -global_quality 22 "$out"; then
     echo "ENCODE FAILED $out" >&2
     exit 1

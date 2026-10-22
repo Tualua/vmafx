@@ -1,0 +1,1 @@
+| [ADR-1830](1830-sycl-vif-simd16-only.md) | `vif_sycl` runs at SIMD-16 only: the SIMD-32 kernels, which needed the 256-entry register file Xe-LP lacks and spilled on a UHD 770, and the `VMAF_SYCL_VIF_SUBGROUP_SIZE` override are removed; SIMD-32 was never faster on an Arc A380. Amends ADR-1395 | Accepted | sycl, gpu, testing, rc3, fork-local |

@@ -13,7 +13,7 @@ one place: the dev container
 
 ```bash
 make tidy-lane LANE=cpu          # compare with the committed baseline
-make tidy-lane LANE=all          # cpu, cuda, hip, sycl and arm64, one after the other
+make tidy-lane LANE=all          # cpu, clang, cuda, hip, sycl and arm64, one after the other
 make tidy-lane-write LANE=hip    # rewrite scripts/ci/tidy-baseline-hip.json
 ```
 
@@ -139,9 +139,10 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 
 | Lane | Compilers | `meson setup` options | Parsed by |
 | --- | --- | --- | --- |
-| `cpu` | gcc-15 / g++-15 | `-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false` | clang-tidy 22 |
+| `cpu` | gcc-15 / g++-15 | `-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled -Denable_mcp_uds=true -Denable_mcp_stdio=true -Db_lto=false` | clang-tidy 22 |
+| `clang` | clang-22 / clang++-22 | the `cpu` options plus `-Dfuzz=true` | clang-tidy 22, `--select core/test/fuzz/ --select core/src/read_json_model.c` |
 | `cuda` | gcc-15 / g++-15, nvcc | `-Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22, `--cuda-host-only -nocudalib` |
-| `hip` | gcc-15 / g++-15, hipcc | `-Denable_hip=true -Denable_hipcc=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 for the host files, ROCm's clang-tidy for the `.hip` kernels |
+| `hip` | gcc-15 / g++-15, hipcc | `-Denable_hip=true -Denable_hipcc=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 for the host files, ROCm's clang-tidy for the `.hip` kernels, on their host compilation (`--cuda-host-only`: LLVM 24 lists the device job first, and clang-tidy analyses the first) |
 | `sycl` | icx / icpx | `-Denable_sycl=true -Dsycl_icpx_aot_targets= -Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false` | clang-tidy 22 through `scripts/ci/clang-tidy-sycl.sh` |
 | `arm64` | aarch64-linux-gnu-gcc / g++ 15 (cross) | `--cross-file build-aux/aarch64-linux-gnu.ini --cross-file build-aux/aarch64-linux-gnu-qemu-user.ini -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false` | clang-tidy 22, `--target=aarch64-linux-gnu --sysroot=/usr/aarch64-linux-gnu` |
 
@@ -153,15 +154,27 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 - `cpu` disables the DNN runtime because the hosted runner has no ONNX Runtime
   and the two must measure the same translation units. The GPU lanes enable
   it, so the DNN bodies are measured there.
+- `cpu` also measures the twelve MATLAB MEX sources of `compat/python-vmaf/matlab/`,
+  the LD_PRELOAD fault injector (`ffmpeg-patches/test/fault_inject_libvmaf.c`),
+  and the upstream parity harness (`scripts/dev/upstream_parity_harness.c`). meson
+  never builds them and the MATLAB SDK is on no runner, so
+  `scripts/ci/gen-mex-compile-commands.py` appends compile-database entries for each,
+  using the self-authored stub headers of `scripts/ci/lint-stubs/matlab/`
+  ([ADR-2062](../adr/2062-matlab-mex-lint-stubs.md)) for the MEX files and the
+  real build include paths and definitions for the shims. The stubs are for
+  clang-tidy only: nothing builds or links against them.
 - `sycl` compiles SPIR-V only. The ahead-of-time device list changes backend
   arguments that `scripts/ci/gen-sycl-compile-commands.py` removes from the
   lint database anyway.
-- **Kernels.** meson compiles `.cu`, `.hip` and the SYCL sources through
+- **Kernels and GPU probes.** meson compiles `.cu`, `.hip` and the SYCL sources through
   custom commands, which `compile_commands.json` does not list.
   `scripts/ci/gen-gpu-compile-commands.py` (cuda, hip) and
-  `scripts/ci/gen-sycl-compile-commands.py` (sycl) add them; both stop the
-  lane when a kernel rule exists that they could not read, so a lane never
-  reports a clean measurement of a database without its kernels.
+  `scripts/ci/gen-sycl-compile-commands.py` (sycl) add them; in the `hip` lane,
+  `gen-gpu-compile-commands.py` also appends an entry for the standalone probe
+  `scripts/dev/hip_dispatch_drop_probe.hip` mirroring device-kernel flags. The
+  generators stop the lane when a kernel rule exists that they could not read
+  or when a listed source is missing, so a lane never reports a clean measurement
+  of a database without its kernels.
 - **`.hip` kernels and ROCm's clang-tidy.** ROCm 10's device headers call
   `__builtin_amdgcn_is_invocable`, a builtin of the LLVM that ROCm ships.
   Stock clang-tidy 22 stops there ("builtin functions must be directly
@@ -176,14 +189,134 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
   Ubuntu's `qemu-aarch64` (the first names `qemu-aarch64-static`, which
   Ubuntu 26.04 does not package); meson runs its compiler check through it.
 
+- `clang` exists because libFuzzer is a clang feature: `-Dfuzz=true` is a
+  configure error under gcc, so the five harnesses of `core/test/fuzz/` (and
+  `core/src/read_json_model.c`, which only they compile) are in no gcc
+  database. The lane builds the `cpu` configuration with clang and measures
+  those files only (`--select`, a path prefix of `scripts/ci/tidy-ratchet.py`),
+  so a file the other lanes own is not counted twice. The container installs
+  `clang-22` and `libclang-rt-22-dev` from the same apt.llvm.org archive as
+  clang-tidy.
+- `cpu` configures the embedded MCP server (`-Denable_mcp=true` and its three
+  transports), so `core/src/mcp/` and `core/test/test_mcp_*.c` are read.
+- `cpu` builds `core/tools/vmaf_vpl_core.c` and its test when the `vpl`
+  pkg-config module is found: the container has `libvpl-dev`, so the hosted
+  jobs install it too.
+
+## What every translation unit is read by
+
+Every tracked `.c`, `.cc`, `.cpp`, `.cxx`, `.cu`, `.hip`, `.mm` and `.metal`
+file is in the `measured_sources` of at least one baseline
+(`scripts/ci/tidy-baseline-<lane>.json`) or in
+the shared lint exception list (`.config/lint-exceptions.d/clang-tidy-coverage.toml`).
+`python3 scripts/ci/check-tidy-coverage.py` fails otherwise; it is a pre-commit hook
+(`check-tidy-coverage`) and runs in CI with the rest of the hooks.
+
+A new translation unit therefore has to land in a lane: configure the option
+that builds it in the lane that reads it, and write its allowance with
+`scripts/dev/tidy-lane.sh --write --only <path> <lane>` (the scoped write also
+records the file as measured). A file no lane can read gets one entry in the
+exception list: the path, the rule `clang-tidy-coverage` (the file name), a reason that names the
+missing tool or toolchain, and an expiry date. An entry fails the check once
+it has expired, when its file is gone, and when a lane reads the file after
+all; extend or delete it, never leave it.
+
+### Praetor's copy of the same facts
+
+Since the pin `04cc813ff054` ([ADR-2153](../adr/2153-praetor-pin-04cc813.md)) praetor's own
+translation-unit gate (`praetorctl audit`, `praetorctl ci tidy-coverage --dir=.`) reads a lane
+file list and the `exceptions` list of `.standards.yaml`. Neither is a second source of truth:
+`python3 scripts/ci/praetor_tidy_coverage.py --write` renders
+`.config/clang-tidy/measured-sources.txt` (the union of every baseline's `measured_sources`) and the
+block of `.standards.yaml` between its `BEGIN` / `END generated` markers (one entry per unit no
+lane measures, from the shared exception list, plus the included HIP header) from the baselines and the exception list above. The pre-commit hook
+`check-praetor-tidy-coverage` fails on a stale rendering. Praetor refuses an exception that
+expires more than 90 days out, so each rendered entry expires on the earlier of its own date and
+`PRAETOR_EXPIRY_CAP` in the script (2027-01-04); renew the cap with the entries. Edit the baselines
+and the exception list, never the generated block.
+
+Praetor reads that one `exceptions` key for its other rules too. Since the pin `afb739ed81f3`
+([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)) the script also copies the exception list's
+entries for the rules in `PRAETOR_RULES` into the block, with the same expiry cap: `HISS-11`
+(`.config/lint-exceptions.d/HISS-11.toml`, a declared supply-chain gap) and, since the pin
+`3a766f2d56ad` ([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)), `HISS-10`
+(`.config/lint-exceptions.d/HISS-10.toml`, a workflow whose lanes praetor's build-warnings gate
+reads as compiling without warnings as errors; empty since
+[ADR-2828](../adr/2828-ci-werror-every-lane.md), when every lane spelled its switch).
+
+Since the pin `4ae64cb27e56` the `clang_tidy.data_paths` list of `.standards.yaml` names
+directories whose files are data, not translation units: `scripts/ci/exact_twins.d/` holds the
+exact-twin fragments ([ADR-1428](../adr/1428-exact-twins-fragments.md)), files named
+`<feature>.<backend>`, which praetor read as HIP sources by their `.hip` suffix. Praetor skips a
+file under a declared data path and the script renders no entry for one; any other file with such
+a suffix still needs a lane or an exception. The same pin adds the rule `release-token` to
+`PRAETOR_RULES`, and the script now copies an entry's `category` and `entered` date into the block.
+The release workflows pass that audit without an exception since
+[ADR-3356](../adr/3356-release-token-app-only.md).
+
+| Group | Read by | Why the rest is excepted |
+| --- | --- | --- |
+| C, C++ and the device kernels | `cpu`, `clang`, `cuda`, `hip`, `sycl`, `arm64` (the six container lanes) | |
+| Metal host code (`core/src/metal/*.mm`, `core/src/feature/metal/*_metal.mm`) and the Metal-only C tests | `metal` (macOS, below) | |
+| Metal kernels (`core/src/feature/metal/*.metal`) | nothing | Upstream clang-tidy has no Metal language mode (`clang -x metal` answers "language not recognized"). |
+| Pelorus mirror (`core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) | nothing here | Byte-identical mirror of VMAFx/pelorus (ADR-1113); `scripts/ci/pelorus-mirror-paths.txt` keeps it out of every lane. It is tidied in the pelorus repository's own CI at the pinned SHA, fixed there and re-vendored. One entry per file; the check fails on a mirror file without one. |
+| `.config/hiss/testdata/` | nothing | The planted defect is the fixture. |
+| `cmd/vmafx-node/bpf/` | nothing | Includes `vmlinux.h`, generated from a running kernel's BTF. |
+| `core/tools/compat/win32/getopt.c`, `core/tools/test/test_vmaf_windows_utf8_argv.cpp` | nothing | Built on Windows only. |
+| `core/src/feature/tad_rust.c`, `core/test/test_tad_rust.c` | nothing | Need `-Denable_rust_features=true` (cargo and cbindgen), absent from the image. |
+| Pelorus interop mirror (`scripts/ci/pelorus-mirror-paths.txt`) | nothing | Byte-exact mirror (ADR-1113); fixes go upstream. |
+| `scripts/dev/upstream_parity_harness.c`, `scripts/dev/hip_dispatch_drop_probe.hip` | nothing | Built by hand or by a script, outside meson. |
+
+`core/src/feature/hip/integer_adm/adm_decouple_inline.hip` is a header that two
+kernels include; the check does not count it as a unit.
+
+## The macOS `metal` lane
+
+The Objective-C++ sources of the Metal backend need Apple's SDK, which no
+container has. The `Tidy Metal` workflow
+([`tidy-metal.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/tidy-metal.yml))
+runs on `macos-latest` weekly, on a pull request that touches the Metal host
+sources, and on dispatch (a macOS runner bills ten times a Linux one, so it is
+not a per-pull-request gate, as for the tester bundle): Homebrew's `llvm@22` clang-tidy (the Linux lanes'
+major), Apple clang's compile commands, `-isysroot` named explicitly because
+Homebrew's clang-tidy has no implicit SDK. It measures
+`core/src/metal/`, `core/src/feature/metal/` and the four Metal-only tests
+(`--select`) against `scripts/ci/tidy-baseline-metal.json`. The configuration
+is `TIDY_RATCHET_COMPILERS_metal` / `TIDY_RATCHET_SETUP_metal` in the
+`Makefile`, repeated by the job; `test_tidy_lane_container.py` compares them.
+The job is not a required check yet. It becomes one after it has passed on
+`master`, the path the SYCL lane took (ADR-1297). The artifact of a run
+(`tidy-ratchet-metal`) holds every diagnostic behind the counts; the baseline
+is the same JSON without them.
+
+The lane reads the translation units and the one header only Objective-C++ includes
+(`core/src/metal/objc_handle.h`). Every other header is owned by the `cpu` lane, which reads it
+as C: the Metal shader compiler (C++14) and the C translation units include the Metal math
+headers, so the C++-only fixes `modernize-use-designated-initializers`, `modernize-use-using`
+and `modernize-loop-convert` would break one or the other. The workflow narrows clang-tidy's
+`--header-filter` accordingly.
+
+Dispatch the workflow with `fix=true` to have the runner apply clang-tidy's own fixes (to a fixed
+point), build the fixed tree, measure it and upload the result: `tidy-metal-fixes.patch`,
+`tidy-metal-fix.log`, `tidy-metal-build.log` and `tidy-ratchet-metal.json`. Review the patch
+before applying it: `misc-const-correctness` writes `T const *const p` for a pointer whose
+pointee the code later changes; declare it `T *const p`. Push, then dispatch again without `fix`
+to build and compare with the baseline.
+
 ## What the hosted job covers
 
 The required check `Tidy Ratchet` (`.github/workflows/lint-and-format.yml`)
 measures the `cpu` lane on every change to the C core and fails when a file
-differs from `scripts/ci/tidy-baseline-cpu.json`. It configures exactly what
-`TIDY_RATCHET_SETUP_cpu` says; `scripts/ci/tests/test_tidy_lane_container.py`
-compares the two lines and the clang-tidy major, and runs in the job's first
-step. The container reproduces the hosted measurement byte for byte: for
+differs from `scripts/ci/tidy-baseline-cpu.json`. It runs the same two targets
+as the container, `make tidy-ratchet-build LANE=cpu` and
+`make tidy-ratchet LANE=cpu`, so it configures, builds and extends the compile
+database (the MATLAB MEX sources and extra shims) exactly as the lane's `Makefile` variables
+say; so does the nightly full scan. `scripts/ci/tests/test_tidy_lane_container.py`
+pins both jobs to those targets and to the clang-tidy major. A translation unit
+the baseline measured and the job did not is reported by name as not measured
+and fails the job (exit 4); before 2026-10-06 it counted as 0 and the job asked
+to tighten the baseline of five MEX files it had never read
+(`T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06`). The container reproduces the hosted measurement byte for byte: for
 master `513d2a6fc` the report of `scripts/dev/tidy-lane.sh cpu` and the
 `tidy-ratchet-cpu` artifact of hosted run 37011276599 are the same file
 (SHA-256 `ffb5ca1819a3…`, 327 translation units, 322 findings).

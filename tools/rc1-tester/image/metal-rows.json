@@ -122,6 +122,53 @@
    ]
   },
   {
+   "id": "T-METAL-PSNR-HVS-PER-BLOCK-SUM-FP32-MASK-2026-10-05",
+   "closes_when": "integer_psnr_hvs_metal stores every term and the host adds them in the CPU's order, with the CPU's masking table: every psnr_hvs output equals the CPU's",
+   "cases": [
+    {
+     "test": "test_metal_integer_psnr_hvs_parity",
+     "case": "test_psnr_hvs_metal_registered"
+    },
+    {
+     "test": "test_metal_integer_psnr_hvs_parity",
+     "case": "test_psnr_hvs_cpu_metal_identical"
+    },
+    {
+     "test": "test_metal_integer_psnr_hvs_parity",
+     "case": "test_psnr_hvs_every_depth_identical"
+    },
+    {
+     "test": "test_metal_integer_psnr_hvs_parity",
+     "case": "test_psnr_hvs_every_layout_identical"
+    },
+    {
+     "test": "test_metal_integer_psnr_hvs_parity",
+     "case": "test_psnr_hvs_luma_only_identical"
+    },
+    {
+     "test": "test_metal_integer_psnr_hvs_parity",
+     "case": "test_psnr_hvs_2160p_identical"
+    }
+   ],
+   "metrics": [
+    {
+     "extractor": "integer_psnr_hvs_metal",
+     "metrics": [
+      "psnr_hvs_y",
+      "psnr_hvs_cb",
+      "psnr_hvs_cr",
+      "psnr_hvs"
+     ],
+     "bound": 0
+    }
+   ],
+   "gate": [
+    {
+     "feature": "psnr_hvs"
+    }
+   ]
+  },
+  {
    "id": "T-METAL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02",
    "closes_when": "float_psnr_metal returns the CPU's float_psnr on 10-, 12- and 16-bit input with large differences, past 2^53 units included",
    "cases": [
@@ -480,26 +527,6 @@
    ]
   },
   {
-   "id": "T-GPU-FLOAT-ADM-FRAME-SUM-FLOOR-2026-10-01",
-   "closes_when": "with adm_noise_weight=0 on a flat 16-bit frame float_adm_metal reports the CPU's adm2 = 0",
-   "cases": [
-    {
-     "test": "test_metal_float_adm_parity",
-     "case": "test_float_adm_small_sums_are_not_floored"
-    }
-   ]
-  },
-  {
-   "id": "T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01",
-   "closes_when": "float_adm_metal's init() refuses frames below 17x17 with -EINVAL",
-   "cases": [
-    {
-     "test": "test_metal_float_adm_parity",
-     "case": "test_float_adm_metal_rejects_frames_below_17"
-    }
-   ]
-  },
-  {
    "id": "T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01",
    "closes_when": "float_motion_metal returns the CPU's motion and motion2 on every frame of every fixture and case",
    "cases": [
@@ -662,6 +689,48 @@
    ]
   },
   {
+   "id": "T-METAL-SSIMULACRA2-YUV400-ACCEPTED-2026-10-05",
+   "closes_when": "test_metal_ssimulacra2_parity prints all nine of its cases on an Apple GPU and passes them, test_ssimulacra2_rejects_monochrome included: ssimulacra2_metal refuses 4:0:0 input in init() with -EINVAL instead of reading its missing U plane in submit()",
+   "cases": [
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_metal_registered"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_metal_lifecycle"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_identical_frames_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_lower_third_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_large_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_odd_frame_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_10bit_exact"
+    },
+    {
+     "test": "test_metal_ssimulacra2_parity",
+     "case": "test_ssimulacra2_rejects_monochrome"
+    }
+   ]
+  },
+  {
    "id": "T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29",
    "closes_when": "integer_vif_metal refuses a direct request below 16 px, model dispatch sends such frames to the CPU vif, and 16 px and up are the CPU's",
    "cases": [
@@ -802,6 +871,85 @@
    ]
   },
   {
+   "id": "T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05",
+   "closes_when": "integer_adm_metal equals the CPU on every exact case of test_metal_integer_adm_parity and the adm cell of the parity gate is exact on all four fixtures",
+   "cases": [
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_metal_registered"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_default_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_10bit_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_odd_frame_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_2160p_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_sparse_detail_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_shift_boundary_area_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_model_options_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_barten_mode_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_skip_scale0_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_tiny_frame_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_full_range_noise_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_bright_16bit_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_isolated_patch_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_gain_limit_1_2_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_gain_limit_1_5_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_rejects_below_min_dim"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    }
+   ]
+  },
+  {
    "id": "T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01",
    "closes_when": "integer_adm_metal matches the scalar CPU at adm_enhn_gain_limit 1.2 and 1.5",
    "cases": [
@@ -914,49 +1062,6 @@
    ]
   },
   {
-   "id": "T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30",
-   "closes_when": "the Metal twins pass the flat-frame, --subsample 2, motion_v2 option and one-frame cases (items 1 to 3); item 4 is device-free",
-   "cases": [
-    {
-     "test": "test_metal_float_ssim_parity",
-     "case": "test_float_ssim_flat_db_exact"
-    },
-    {
-     "test": "test_metal_float_ssim_parity",
-     "case": "test_float_ssim_flat_clip_db_exact"
-    },
-    {
-     "test": "test_metal_integer_ssim_parity",
-     "case": "test_ssim_identical"
-    },
-    {
-     "test": "test_metal_integer_ssim_parity",
-     "case": "test_ssim_identical_clipped"
-    },
-    {
-     "test": "test_metal_integer_ssim_parity",
-     "case": "test_ssim_identical_tiny"
-    },
-    {
-     "test": "test_metal_integer_psnr_parity",
-     "case": "test_psnr_apsnr_with_subsample"
-    },
-    {
-     "test": "test_metal_motion_v2_parity",
-     "case": "test_motion_v2_weight_and_cap_exact"
-    },
-    {
-     "test": "test_metal_motion_v2_parity",
-     "case": "test_motion_v2_one_frame_exact"
-    },
-    {
-     "test": "test_metal_motion_v2_parity",
-     "case": "test_motion_v2_default_exact"
-    }
-   ],
-   "device_free": "item (4), the float_ssim_metal scale message, is a source contract that needs no device"
-  },
-  {
    "id": "T-GPU-FLOAT-MOTION3-MISSING-2026-09-30",
    "closes_when": "float_motion_metal emits the CPU's motion3 (default and blend options, one frame) on every fixture",
    "cases": [
@@ -984,6 +1089,57 @@
    ]
   },
   {
+   "id": "T-METAL-CAMBI-SCORE-NAME-SUFFIXED-2026-10-05",
+   "closes_when": "integer_cambi_metal emits its score under the CPU's name and equal to the CPU's: every case of test_metal_integer_cambi_parity passes and the parity gate's cambi cell is OK on every fixture",
+   "cases": [
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_metal_registered"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_gradient_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_textured_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_10bit_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_max_val_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_vis_lum_threshold_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_topk_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_window_size_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_max_log_contrast_exact"
+    },
+    {
+     "test": "test_metal_integer_cambi_parity",
+     "case": "test_cambi_high_res_speedup_exact"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "cambi"
+    }
+   ]
+  },
+  {
    "id": "T-METAL-FFMPEG-FILTER-BIPLANAR-IMPORT-2026-10-05",
    "closes_when": "test_metal_iosurface_import_parity passes on an Apple GPU (NV12 420v / 420f and P010 x420 IOSurfaces imported through the public API give the CPU's planar psnr at ==), and an FFmpeg libvmaf_metal run on VideoToolbox frames gives the libvmaf filter's pooled scores on the same decoded frames (not measured by the bundle)",
    "cases": [
@@ -998,6 +1154,69 @@
     {
      "test": "test_metal_iosurface_import_parity",
      "case": "test_iosurface_p010_import_exact"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-EQUIVALENCE-ALL-EXTRACTORS-RUN-FAILS-2026-10-05",
+   "closes_when": "the Metal equivalence run (every CPU extractor with --backend metal in one process) produces scores on every fixture; its float_psnr, exact on the M4 Pro, equals the CPU's",
+   "metrics": [
+    {
+     "extractor": "float_psnr_metal",
+     "metrics": [
+      "float_psnr"
+     ],
+     "bound": 0
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-UINT-PLANE-INDEX-2026-10-05",
+   "closes_when": "float_vif_metal, integer_ssim_metal, float_ssim_metal and float_ms_ssim_metal refuse at init() a frame whose five moment planes pass the 32-bit uint index (the four refusal cases pass on an Apple GPU), and their parity-gate cells stay exact",
+   "cases": [
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_float_ssim_parity",
+     "case": "test_float_ssim_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_refuses_uint_index_overflow"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ms_ssim"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-ADM-SECOND-VIEW-DIST-DEVICE-2026-10-09",
+   "closes_when": "integer_adm_metal at two viewing distances, in one context and as two folded registrations, equals the CPU on every output of both distances",
+   "cases": [
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_two_views_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_merged_registrations_exact"
     }
    ]
   }

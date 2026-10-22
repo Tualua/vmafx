@@ -123,10 +123,10 @@ metric pipeline, not a JSON drop-in.
 
 ### Industry partners
 
-`Synamedia/Quortex`, `MainConcept`, `Dolby` — Dolby co-developed
+`Synamedia/Quortex`, a commercial encoder vendor, `Dolby` — Dolby co-developed
 the first HDR-VMAF iteration with Netflix (2021); no public model
 artifact has been released by either party. Synamedia and
-MainConcept ship proprietary HDR quality measures behind commercial
+the encoder vendor ship proprietary HDR quality measures behind commercial
 licenses (incompatible with BSD-3-Clause-Plus-Patent shipping).
 Verified via web search (2026-05-09); negative finding.
 

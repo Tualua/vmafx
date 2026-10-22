@@ -209,6 +209,37 @@ The feature kernel host glue, which every `<feature>_<backend>.c` under
 `kernel_template` (for example `integer_motion_v2_cuda.c` includes the CUDA
 one).
 
+## Row addressing above 8 bits
+
+A `VmafPicture` row stride, a pitch from the device allocator and every stride
+the twins pass to a kernel count bytes. Above 8 bits a sample is two bytes, so
+address a row through a byte pointer and cast the row:
+
+```c
+const uint16_t *row = reinterpret_cast<const uint16_t *>(plane + y * stride);
+```
+
+A `uint16_t *` advanced by `y * stride` reads row `2 * y` and, for the lower
+half of the picture, memory past the plane. A stride that counts elements is
+converted in the expression (`stride / sizeof(T)`) or named for its unit
+(`stride_elems`). `core/test/test_gpu_byte_stride_contract.py` (fast suite)
+scans every CUDA, HIP, SYCL and Metal source under `core/src` and fails on the
+byte-stride form.
+
+To check device memory accesses on CUDA, run a build's CUDA tests under
+compute-sanitizer:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build --suite gpu -t 20 \
+    --wrapper '/opt/cuda/bin/compute-sanitizer --tool memcheck --error-exitcode 9'
+```
+
+Device-free tests exit 255 under the sanitizer (no CUDA call to instrument),
+and the out-of-memory tests report the `CUDA_ERROR_OUT_OF_MEMORY` they provoke.
+HIP has an equivalent only on `xnack+` targets: ROCm's GPU AddressSanitizer
+instruments device code for those targets alone, so it cannot check a
+device without XNACK, such as a gfx1036.
+
 ## See also
 
 - [ADR-0239](../adr/0239-gpu-picture-pool-dedup.md): backend-agnostic GPU

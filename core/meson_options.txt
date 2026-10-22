@@ -43,6 +43,11 @@ option('enable_nvtx',
     value: false,
     description: 'Enable NVTX range support')
 
+option('enable_zimg',
+    type: 'boolean',
+    value: false,
+    description: 'Enable zimg-based picture conversion (vmaf_picture_convert); needs zimg >= 2.7 (pkg-config), ADR-1822')
+
 option('enable_nvcc',
     type: 'boolean',
     value: true,
@@ -62,6 +67,11 @@ option('sycl_acpp_targets',
     type: 'string',
     value: 'generic',
     description: 'AdaptiveCpp --acpp-targets argument (e.g. "generic", "omp", "omp;cuda:sm_80", "omp;hip:gfx1100"). Ignored when sycl_compiler is icpx. See ADR-0335.')
+
+option('sycl_device_asan',
+    type: 'boolean',
+    value: false,
+    description: 'Instrument every SYCL translation unit with the DPC++ device AddressSanitizer (icpx -Xarch_device -fsanitize=address -g, on the compiles and the link; Linux only). Run the binaries with ONEAPI_DEVICE_SELECTOR=level_zero:gpu; the Level Zero sanitizer layer reports out-of-bounds device USM accesses. Keeps -Dsycl_icpx_aot_targets= empty (SPIR-V JIT) for the measured check. Debug builds only. See docs/backends/sycl/device-sanitizer.md and scripts/dev/sycl_device_asan_check.sh.')
 
 option('sycl_icpx_aot_targets',
     type: 'string',
@@ -109,8 +119,8 @@ option('enable_hipcc',
 
 option('enable_float_vif_hip_autodispatch',
     type: 'boolean',
-    value: false,
-    description: 'Enable automatic model-driven dispatch of float_vif_hip by setting VMAF_FEATURE_EXTRACTOR_HIP on its descriptor (ADR-0623). Default OFF pending T7-10c picture-pool plumbing: without the pool, pictures arrive as CPU VmafPictures and the extractor performs explicit HtoD copies rather than zero-copy from the HIP picture pool. Enable only after T7-10c lands.')
+    value: true,
+    description: 'Set VMAF_FEATURE_EXTRACTOR_HIP on float_vif_hip, so --backend hip and a VMAFx context on a HIP device pick it for float_vif (ADR-0623, ADR-2092). Default ON since the HIP lane of the VMAFx API reads device frames on the device, the condition ADR-0623 waited for (T7-10c). OFF: the twin runs only when named, and imported HIP frames are refused for float_vif.')
 
 option('nvcc_threads',
     type: 'integer',
@@ -142,4 +152,4 @@ option('fuzz',
 option('enable_rust_features',
     type: 'boolean',
     value: false,
-    description: 'Build Rust-implemented feature extractors (requires cargo + cbindgen in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default OFF — CI defaults to false; enable_rust_features=true requires cargo + cbindgen.')
+    description: 'Build the Rust extractors: the Rust twins of C extractors, selected with VMAF_FEATURE_IMPL=rust, and the TAD pilot (ADR-1713, ADR-0707). Needs cargo in PATH; the cargo build runs offline. Without cargo, configure fails (ADR-3318); the toolchain version is pinned in rust-toolchain.toml. Default OFF.')

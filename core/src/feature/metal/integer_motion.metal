@@ -74,9 +74,8 @@ inline void im_vertical(const threadgroup int *diff, uint lid, uint bpc, threadg
     for (uint i = lid; i < (uint)(IM_GROUP * IM_TILE); i += IM_THREADS) {
         const uint c = i % IM_TILE;
         const uint top = (i / IM_TILE) * IM_TILE + c;
-        vert[i] = vmaf_mtl_motion_vertical(diff[top], diff[top + IM_TILE],
-                                           diff[top + 2 * IM_TILE], diff[top + 3 * IM_TILE],
-                                           diff[top + 4 * IM_TILE], bpc);
+        vert[i] = vmaf_mtl_motion_vertical(diff[top], diff[top + IM_TILE], diff[top + 2 * IM_TILE],
+                                           diff[top + 3 * IM_TILE], diff[top + 4 * IM_TILE], bpc);
     }
 }
 
@@ -110,16 +109,11 @@ inline uint im_pixel(const threadgroup int *vert, uint2 gid, uint2 lid2, uint2 d
 /*  8 bpc kernel                                                        */
 /* ------------------------------------------------------------------ */
 kernel void integer_motion_kernel_8bpc(
-    const device uchar *prev      [[buffer(0)]],
-    const device uchar *cur       [[buffer(1)]],
-    device       uint  *sad_parts [[buffer(2)]],
-    constant     uint2 &params    [[buffer(3)]],
-    constant     uint2 &dim       [[buffer(4)]],
-    uint2 gid         [[thread_position_in_grid]],
-    uint2 bid         [[threadgroup_position_in_grid]],
-    uint2 grid_groups [[threadgroups_per_grid]],
-    uint2 lid2        [[thread_position_in_threadgroup]],
-    uint  lid         [[thread_index_in_threadgroup]])
+    const device uchar *prev [[buffer(0)]], const device uchar *cur [[buffer(1)]],
+    device uint *sad_parts [[buffer(2)]], constant uint2 &params [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], uint2 gid [[thread_position_in_grid]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint2 lid2 [[thread_position_in_threadgroup]], uint lid [[thread_index_in_threadgroup]])
 {
     threadgroup int diff[IM_TILE * IM_TILE];
     threadgroup int vert[IM_GROUP * IM_TILE];
@@ -137,16 +131,11 @@ kernel void integer_motion_kernel_8bpc(
 /*  10 / 12 / 16 bpc kernel: native ushort samples                      */
 /* ------------------------------------------------------------------ */
 kernel void integer_motion_kernel_16bpc(
-    const device uchar *prev      [[buffer(0)]],
-    const device uchar *cur       [[buffer(1)]],
-    device       uint  *sad_parts [[buffer(2)]],
-    constant     uint2 &params    [[buffer(3)]],
-    constant     uint2 &dim       [[buffer(4)]],
-    uint2 gid         [[thread_position_in_grid]],
-    uint2 bid         [[threadgroup_position_in_grid]],
-    uint2 grid_groups [[threadgroups_per_grid]],
-    uint2 lid2        [[thread_position_in_threadgroup]],
-    uint  lid         [[thread_index_in_threadgroup]])
+    const device uchar *prev [[buffer(0)]], const device uchar *cur [[buffer(1)]],
+    device uint *sad_parts [[buffer(2)]], constant uint2 &params [[buffer(3)]],
+    constant uint2 &dim [[buffer(4)]], uint2 gid [[thread_position_in_grid]],
+    uint2 bid [[threadgroup_position_in_grid]], uint2 grid_groups [[threadgroups_per_grid]],
+    uint2 lid2 [[thread_position_in_threadgroup]], uint lid [[thread_index_in_threadgroup]])
 {
     threadgroup int diff[IM_TILE * IM_TILE];
     threadgroup int vert[IM_GROUP * IM_TILE];

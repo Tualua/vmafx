@@ -1,0 +1,1 @@
+| [ADR-1836](1836-cuda-vif-enable-chroma-names.md) | `vif_cuda` builds its feature-name dictionary before it clears the no-op `enable_chroma`, so `enable_chroma=true` reports `integer_vif_scaleN_enable_chroma` like any option the caller sets; scores unchanged. Refines ADR-0597 | Accepted | cuda, feature-extractor, vif, rc3, fork-local |

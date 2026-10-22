@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 import pytest
 
 from vmaf.core.feature_extractor import (
@@ -23,6 +25,7 @@ from vmaf.core.feature_extractor import (
     VifFrameDifferenceFeatureExtractor,
     VmafFeatureExtractor,
     VmafIntegerFeatureExtractor,
+    assert_same_frame_count,
 )
 
 # ---------------------------------------------------------------------------
@@ -300,37 +303,39 @@ class TestDiscoverFeatureExact:
 
     def test_exact_match_found(self):
         frame = self._make_frame({"float_psnr": "42.5", "frameNum": "0"})
-        feature_scores = [[]]
+        feature_scores = [defaultdict(list)]
         feature_nicknames = [None]
         found = PsnrFeatureExtractor._discover_feature_exact(
             frame, 0, "psnr", feature_scores, feature_nicknames
         )
         assert found is True
-        assert feature_scores[0] == [42.5]
-        assert feature_nicknames[0] == "psnr"
+        assert feature_scores[0] == {"psnr": [42.5]}
+        assert feature_nicknames[0] == ["psnr"]
 
     def test_exact_match_not_found(self):
         frame = self._make_frame({"some_other": "1.0"})
-        feature_scores = [[]]
+        feature_scores = [defaultdict(list)]
         feature_nicknames = [None]
         found = PsnrFeatureExtractor._discover_feature_exact(
             frame, 0, "psnr", feature_scores, feature_nicknames
         )
         assert found is False
-        assert feature_scores[0] == []
+        assert feature_scores[0] == {}
 
     def test_exact_match_consistent_nickname(self):
         """Calling twice with same feature must not change the nickname."""
         frame = self._make_frame({"float_psnr": "35.0"})
-        feature_scores = [[], []]
-        feature_nicknames = ["psnr", None]
+        feature_scores = [defaultdict(list), defaultdict(list)]
+        feature_nicknames = [["psnr"], None]
         PsnrFeatureExtractor._discover_feature_exact(
             frame, 0, "psnr", feature_scores, feature_nicknames
         )
-        assert feature_nicknames[0] == "psnr"
+        assert feature_nicknames[0] == ["psnr"]
 
 
 class TestDiscoverFeatureWildcard:
+    """Netflix/vmaf d327ed67b: a wildcard feature collects every key it owns."""
+
     def _make_frame(self, attribs: dict):
         from unittest.mock import MagicMock
 
@@ -338,33 +343,57 @@ class TestDiscoverFeatureWildcard:
         frame.attrib = attribs
         return frame
 
-    def test_wildcard_shortest_wins(self):
-        """Wildcard picks the shortest suffix among multiple wildcard candidates.
-
-        The prefix for vif_scale0 under VmafIntegerFeatureExtractor is
-        ``integer_vif_scale0_``.  Two candidates both start with that prefix;
-        the shorter one is selected.
-        """
+    def test_wildcard_collects_every_suffix(self):
+        """Two instances of one feature with different options: both are kept."""
         frame = self._make_frame(
             {
                 "integer_vif_scale0_egl_1": "0.9",
                 "integer_vif_scale0_eg_1": "0.95",
             }
         )
-        feature_scores = [[]]
+        feature_scores = [defaultdict(list)]
         feature_nicknames = [None]
         found = VmafIntegerFeatureExtractor._discover_feature_wildcard(
             frame, 0, "vif_scale0", feature_scores, feature_nicknames
         )
         assert found is True
-        # Shorter match "integer_vif_scale0_eg_1" wins.
-        assert feature_scores[0] == [pytest.approx(0.95)]
+        assert feature_nicknames[0] == ["vif_scale0_egl_1", "vif_scale0_eg_1"]
+        assert feature_scores[0]["vif_scale0_egl_1"] == [pytest.approx(0.9)]
+        assert feature_scores[0]["vif_scale0_eg_1"] == [pytest.approx(0.95)]
+
+    def test_wildcard_leaves_key_to_longer_atom_feature(self):
+        """``integer_vif_scale0_*`` belongs to ``vif_scale0``, never to ``vif``,
+        whichever comes first in the frame's attributes."""
+        frame = self._make_frame(
+            {
+                "integer_vif_scale0_egl_1": "0.9",
+                "integer_vif_egl_1": "0.7",
+            }
+        )
+        feature_scores = [defaultdict(list)]
+        feature_nicknames = [None]
+        found = VmafIntegerFeatureExtractor._discover_feature_wildcard(
+            frame, 0, "vif", feature_scores, feature_nicknames
+        )
+        assert found is True
+        assert feature_nicknames[0] == ["vif_egl_1"]
+        assert feature_scores[0] == {"vif_egl_1": [pytest.approx(0.7)]}
 
     def test_wildcard_not_found(self):
         frame = self._make_frame({"unrelated_key": "1.0"})
-        feature_scores = [[]]
+        feature_scores = [defaultdict(list)]
         feature_nicknames = [None]
         found = VmafIntegerFeatureExtractor._discover_feature_wildcard(
             frame, 0, "vif_scale0", feature_scores, feature_nicknames
         )
         assert found is False
+        assert feature_scores[0] == {}
+
+
+class TestAssertSameFrameCount:
+    def test_equal_counts_pass(self):
+        assert_same_frame_count([{"a": [1.0, 2.0]}, {}, {"b": [3.0, 4.0], "c": [5.0, 6.0]}])
+
+    def test_unequal_counts_fail(self):
+        with pytest.raises(AssertionError):
+            assert_same_frame_count([{}, {"a": [1.0]}, {"b": [2.0, 3.0]}])

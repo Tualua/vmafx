@@ -37,12 +37,12 @@ ctx.close().expect("vmaf_close failed");
 `VmafContext::close` consumes the active wrapper. Exactly zero invalidates the
 context; any other status returns a `VmafContextCloseError` that exposes only
 the initial error and one `retry()`. The context and retry token carry the
-registered model lifetime, so safe Rust cannot destroy a model while libvmaf
-still references it. Dropping an active context makes an initial close attempt
-plus at most one retry. Dropping a close-retry token consumes that retry only
-if it has not happened; after a failed explicit retry, drop aborts without a
-third close call rather than ending the registered-model borrow while libvmaf
-retains the pointer.
+registered model lifetime (kept for source compatibility; libvmaf owns its own
+reference to every registered model, ADR-1755). Dropping an active context makes
+an initial close attempt plus at most one retry. Dropping a close-retry token
+consumes that retry only if it has not happened; after a failed explicit retry,
+drop leaks the context without a third close call and prints one line to
+stderr. Drop never aborts the process.
 
 ## Building
 
@@ -94,7 +94,7 @@ VMAFX_REPO=$(git rev-parse --show-toplevel) \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LIBVMAF_PREFIX` | `/usr/local` | Install prefix used by `build.rs` to find headers and the shared library. |
+| `LIBVMAF_PREFIX` | `/usr/local` | Install prefix used by `build.rs` to find headers and the shared library. A header that lacks a libvmaf name the crates use stops the build with its path and the missing names ([Rust guide](../../../docs/development/rust.md#an-older-install-under-the-prefix)). |
 | `VMAFX_REPO` | auto-detected | Repository root; used by tests and examples to resolve YUV and model paths. |
 | `VMAFX_YUV_REF` | `<repo>/python/test/resource/yuv/src01_hrc00_576x324.yuv` | Override reference YUV. |
 | `VMAFX_YUV_DIST` | `<repo>/python/test/resource/yuv/src01_hrc01_576x324.yuv` | Override distorted YUV. |
@@ -118,4 +118,5 @@ A higher-level `vmafx` crate (in progress) will be built on top of this one.
 
 ## License
 
-BSD-3-Clause — see [LICENSE](../../../LICENSE).
+EUPL-1.2, the licence every file of this crate carries — see [LICENSE](../../../LICENSE)
+and [Licensing](../../../docs/licensing.md).

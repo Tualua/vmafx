@@ -69,6 +69,7 @@
  * host's (ssimulacra2_math.h, ADR-1363). */
 #define VMAF_SS2_FDIV(a, b) vmaf_sycl_exact::div_rn((a), (b))
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_pixel_format.h"
 #include "feature/ssimulacra2_score.h"
 
 namespace
@@ -116,7 +117,14 @@ constexpr float SS2S_ADVICE_MAX = 0x1p100f;
 /* Shapes of the kernels that run the fp64 operations in integers. */
 constexpr int SS2S_UNITS_SG = 16;
 constexpr int SS2S_UNITS_GRF = 0;
-constexpr int SS2S_SLOT_SG = 16;
+/* The slot kernel needs more than the 128 registers of a SIMD-16 thread. It
+ * leaves the sub-group size to the compiler (ADR-1501) with the large register
+ * file: Xe-LP (tgllp, adl-*, rpl-*) has no large register file and spilled
+ * 384 bytes at a required SIMD-16 (measured on a UHD 770); without a required
+ * size icpx compiles it at SIMD-8 there and at SIMD-16 with 256 registers
+ * everywhere else. Its result does not depend on the sub-group size: it
+ * shares values only through local memory and work-group barriers. */
+constexpr int SS2S_SLOT_SG = 0;
 constexpr int SS2S_SLOT_GRF = 256;
 /* The walk runs on one lane; 16 is the narrowest sub-group every AOT target
  * accepts (ADR-1468). */
@@ -407,14 +415,10 @@ Ss2YuvCoefficients ss2s_yuv_coefficients(int yuv_matrix, unsigned bpc)
     return k;
 }
 
-/* Plane geometry by picture.c's ceil rule; YUV400 has no chroma to convert. */
-int ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
+/* Plane geometry by picture.c's ceil rule. init() has refused 4:0:0, which
+ * has no chroma to convert (vmaf_ss2_check_pixel_format()). */
+void ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssimulacra2_sycl: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input\n");
-        return -EINVAL;
-    }
     const unsigned ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     const unsigned ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
     const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
@@ -425,7 +429,6 @@ int ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
         s->plane_h[p] = (s->height + sv) >> sv;
         s->row_bytes[p] = (size_t)s->plane_w[p] * bytes_per_sample;
     }
-    return 0;
 }
 
 void ss2s_configure_scales(Ssimu2StateSycl *s)
@@ -1147,7 +1150,7 @@ class Ss2SlotKernel : public VmafSyclKernelShape<SS2S_SLOT_SG, SS2S_SLOT_GRF>
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(SS2S_SLOT_SG) void operator()(sycl::nd_item<2> it) const
+    void operator()(sycl::nd_item<2> it) const
     {
         const auto which = (unsigned)it.get_global_id(0);
         const auto lane = (unsigned)it.get_local_id(1);
@@ -1349,12 +1352,29 @@ void enqueue_scale(sycl::queue &q, const Ssimu2StateSycl *s, int scale)
     }
 }
 
-void enqueue_frame(sycl::queue &q, const Ssimu2StateSycl *s)
+/* The raw planes of both pictures into d_raw: uploaded from the pinned
+ * staging submit() packed, or, for frames of the VMAFx API on this device,
+ * copied on the device (ADR-2091; the frame's planes are never read on the
+ * host). 0, or -EIO when a device copy could not be enqueued. */
+int enqueue_raw(sycl::queue &q, const Ssimu2StateSycl *s, const VmafPicture *const pics[2],
+                bool device)
 {
     for (unsigned img = 0; img < SS2S_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2S_CHANNELS; p++)
-            q.memcpy(s->d_raw[img][p], s->h_raw[img][p], s->row_bytes[p] * s->plane_h[p]);
+        for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
+            const size_t row = s->row_bytes[p];
+            if (!device) {
+                q.memcpy(s->d_raw[img][p], s->h_raw[img][p], row * s->plane_h[p]);
+            } else if (vmaf_sycl_picture_read_plane(pics[img], p, &q, s->d_raw[img][p], row, row,
+                                                    s->plane_h[p], nullptr) != 0) {
+                return -EIO;
+            }
+        }
     }
+    return 0;
+}
+
+void enqueue_frame(sycl::queue &q, const Ssimu2StateSycl *s)
+{
     enqueue_linear_rgb(q, s);
     for (int scale = 0; scale < s->num_scales; scale++)
         enqueue_scale(q, s, scale);
@@ -1501,6 +1521,9 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
                   unsigned h)
 {
     auto *s = static_cast<Ssimu2StateSycl *>(fex->priv);
+    const int fmt_err = vmaf_ss2_check_pixel_format(pix_fmt, "ssimulacra2_sycl");
+    if (fmt_err)
+        return fmt_err;
     if (w < 8u || h < 8u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: input %ux%u below 8x8 lower bound\n", w,
                  h);
@@ -1511,9 +1534,7 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    const int plane_err = ss2s_configure_planes(s, pix_fmt);
-    if (plane_err)
-        return plane_err;
+    ss2s_configure_planes(s, pix_fmt);
     ss2s_configure_scales(s);
     ss2s_setup_gaussian(&s->iir, SS2S_SIGMA);
     s->yuv = ss2s_yuv_coefficients(s->yuv_matrix, bpc);
@@ -1535,8 +1556,7 @@ int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
 {
     (void)fex;
     (void)bpc;
-    const bool chroma = pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN;
-    return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
+    return (vmaf_ss2_has_chroma(pix_fmt) && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
 }
 
 bool ss2s_picture_matches(const Ssimu2StateSycl *s, const VmafPicture *pic)
@@ -1578,11 +1598,15 @@ int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture
     if (!ss2s_picture_matches(s, ref_pic) || !ss2s_picture_matches(s, dist_pic))
         return -EINVAL;
     const VmafPicture *const pics[SS2S_IMAGES] = {ref_pic, dist_pic};
-    for (unsigned img = 0; img < SS2S_IMAGES; img++) {
+    const bool device =
+        vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic);
+    for (unsigned img = 0; img < SS2S_IMAGES && !device; img++) {
         for (unsigned p = 0; p < SS2S_CHANNELS; p++)
             ss2s_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
     }
     try {
+        if (enqueue_raw(*qptr, s, pics, device) != 0)
+            return -EIO;
         enqueue_frame(*qptr, s);
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: submit failed: %s\n", e.what());

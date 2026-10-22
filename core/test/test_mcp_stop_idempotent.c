@@ -43,19 +43,37 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_mcp.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
+static char *stop_thrice(VmafMcpServer *server)
+{
+    mu_assert("stop #1 returns 0", vmaf_mcp_stop(server) == 0);
+    mu_assert("stop #2 returns 0", vmaf_mcp_stop(server) == 0);
+    mu_assert("stop #3 returns 0", vmaf_mcp_stop(server) == 0);
+    return NULL;
+}
+
+static char *start_server(VmafContext **ctx, VmafMcpServer **server)
+{
+    VmafConfiguration vcfg = {0};
+    vcfg.log_level = VMAF_LOG_LEVEL_NONE;
+    vcfg.n_threads = 1u;
+    mu_assert("vmaf_init", vmaf_init(ctx, vcfg) == 0);
+    mu_assert("mcp init", vmaf_mcp_init(server, *ctx, NULL) == 0);
+    return NULL;
+}
+
 /* Three consecutive stop() invocations on a server with the stdio
  * transport started must not SIGSEGV. The first joins the worker;
  * the next two are no-ops. */
 static char *test_stop_thrice_with_stdio(void)
 {
     VmafContext *ctx = NULL;
-    VmafConfiguration vcfg = {0};
-    vcfg.log_level = VMAF_LOG_LEVEL_NONE;
-    vcfg.n_threads = 1u;
-    mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
-
     VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    mu_assert_msg(start_server(&ctx, &server));
 
     /* A pipe pair feeds the stdio worker. Closing the read end's
      * write side after start_stdio drives the worker to EOF so the
@@ -77,12 +95,7 @@ static char *test_stop_thrice_with_stdio(void)
     /* The bug: prior code would SIGSEGV on the third invocation
      * because the second exchange mutated 0 -> 2 and the third
      * re-entered the join branch. */
-    int rc1 = vmaf_mcp_stop(server);
-    mu_assert("stop #1 returns 0", rc1 == 0);
-    int rc2 = vmaf_mcp_stop(server);
-    mu_assert("stop #2 returns 0", rc2 == 0);
-    int rc3 = vmaf_mcp_stop(server);
-    mu_assert("stop #3 returns 0", rc3 == 0);
+    mu_assert_msg(stop_thrice(server));
 
     /* close() invokes stop() internally — must also be safe after
      * three prior explicit stops. */
@@ -107,20 +120,10 @@ static char *test_stop_thrice_with_stdio(void)
 static char *test_stop_thrice_without_start(void)
 {
     VmafContext *ctx = NULL;
-    VmafConfiguration vcfg = {0};
-    vcfg.log_level = VMAF_LOG_LEVEL_NONE;
-    vcfg.n_threads = 1u;
-    mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
-
     VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    mu_assert_msg(start_server(&ctx, &server));
 
-    int rc1 = vmaf_mcp_stop(server);
-    mu_assert("stop #1 (no start) returns 0", rc1 == 0);
-    int rc2 = vmaf_mcp_stop(server);
-    mu_assert("stop #2 (no start) returns 0", rc2 == 0);
-    int rc3 = vmaf_mcp_stop(server);
-    mu_assert("stop #3 (no start) returns 0", rc3 == 0);
+    mu_assert_msg(stop_thrice(server));
 
     vmaf_mcp_close(&server);
     mu_assert("close NULLs handle", server == NULL);
@@ -135,13 +138,8 @@ static char *test_stop_thrice_with_uds(void)
         return NULL;
 
     VmafContext *ctx = NULL;
-    VmafConfiguration vcfg = {0};
-    vcfg.log_level = VMAF_LOG_LEVEL_NONE;
-    vcfg.n_threads = 1u;
-    mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
-
     VmafMcpServer *server = NULL;
-    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+    mu_assert_msg(start_server(&ctx, &server));
 
     char path[80];
     int n = snprintf(path, sizeof(path), "/tmp/vmaf-mcp-stop-uds-%d.sock", (int)getpid());
@@ -150,12 +148,7 @@ static char *test_stop_thrice_with_uds(void)
     VmafMcpUdsConfig ucfg = {.path = path};
     mu_assert("start uds", vmaf_mcp_start_uds(server, &ucfg) == 0);
 
-    int rc1 = vmaf_mcp_stop(server);
-    mu_assert("stop #1 returns 0", rc1 == 0);
-    int rc2 = vmaf_mcp_stop(server);
-    mu_assert("stop #2 returns 0", rc2 == 0);
-    int rc3 = vmaf_mcp_stop(server);
-    mu_assert("stop #3 returns 0", rc3 == 0);
+    mu_assert_msg(stop_thrice(server));
 
     vmaf_mcp_close(&server);
     mu_assert("close NULLs handle", server == NULL);
@@ -181,3 +174,5 @@ char *run_tests(void)
     }
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -1,0 +1,319 @@
+{
+  "schema_version": "3",
+  "tool": {
+    "name": "vmaf-tester-report",
+    "version": "0.1.0"
+  },
+  "generated_utc": "2026-10-05T12:10:07Z",
+  "image": {
+    "kind": "windows-zip",
+    "source_commit": "2889f963a955c0cca313b261cabb2d2704b6c99c",
+    "source_ref": "v1.0.0-rc.2-389-g2889f963a",
+    "recipe_commit": "2889f963a955c0cca313b261cabb2d2704b6c99c",
+    "built_by_workflow": true,
+    "image_arch": "x86_64",
+    "compiler": "Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36260 for x64",
+    "libc": "MSVC runtime and Universal CRT, linked statically (/MT); built on Windows 10.0.26100",
+    "base_image": "win25-vs2026-20260925.250.1",
+    "tag": "v1.0.0-rc.2-389-g2889f963a",
+    "gpu_backend": null,
+    "digest": null,
+    "vmaf_version": "1.0.0-rc.2",
+    "vmaf_sha256": "b36816d32c756bbec74f3b77638367697009a7df8820fdbb8eb8a514df10fad6",
+    "libvmaf_sha256": null,
+    "files_match_build": true,
+    "python": "3.13.16"
+  },
+  "host": {
+    "platform": "windows",
+    "machine": "x86_64",
+    "kernel_release": "10.0.26300",
+    "in_container": false,
+    "cpu_model": "12th Gen Intel(R) Core(TM) i9-12900K",
+    "cpuinfo": {
+      "cpu family": "6",
+      "model": "151",
+      "model name": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "stepping": "2",
+      "vendor_id": "GenuineIntel"
+    },
+    "cpu_features": [
+      "avx",
+      "avx2",
+      "bmi2",
+      "sse",
+      "sse2",
+      "sse3",
+      "sse4_1",
+      "sse4_2",
+      "ssse3",
+      "xsave"
+    ],
+    "hwcap": null,
+    "hwcap2": null,
+    "sve_in_hwcap": false,
+    "dispatch_flags": [
+      "sse2",
+      "ssse3",
+      "sse4.1",
+      "avx2"
+    ],
+    "dispatch_flags_source": "mirror of core/src/x86/cpu.c from IsProcessorFeaturePresent; AVX-512 from PF_AVX512F alone (Windows reports no CD, BW, DQ or VL bit)",
+    "logical_cores": 24,
+    "os_version": "Windows 11 (10.0.26300)"
+  },
+  "dispatch_equivalence": {
+    "status": "identical",
+    "fixtures": [
+      {
+        "fixture": "netflix_normal_576x324",
+        "metrics": 76,
+        "values": 3648,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_checkerboard_1px_1080p",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_checkerboard_10px_1080p",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_normal_576x324_10bit",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      }
+    ]
+  },
+  "reference_equivalence": {
+    "status": "identical",
+    "own_arch_scalar": {
+      "file": "x86_64-scalar.json",
+      "generated_with_flags": [],
+      "comparable": true,
+      "gating": true,
+      "status": "identical",
+      "fixtures": [
+        {
+          "fixture": "netflix_normal_576x324",
+          "metrics": 76,
+          "values": 3648,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_1px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_10px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_normal_576x324_10bit",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        }
+      ]
+    },
+    "own_arch_default": {
+      "file": "x86_64-default.json",
+      "generated_with_flags": [
+        "avx2",
+        "sse2",
+        "sse4.1",
+        "ssse3"
+      ],
+      "comparable": true,
+      "gating": true,
+      "status": "identical",
+      "fixtures": [
+        {
+          "fixture": "netflix_normal_576x324",
+          "metrics": 76,
+          "values": 3648,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_1px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_10px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_normal_576x324_10bit",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        }
+      ]
+    }
+  },
+  "metal_equivalence": {
+    "status": "not_applicable"
+  },
+  "metal_gate": {
+    "status": "not_applicable"
+  },
+  "unit_tests": {
+    "status": "pass",
+    "reason": null,
+    "total": 51,
+    "passed": 51,
+    "failed": 0,
+    "skipped": 0,
+    "failures": [],
+    "results": {
+      "test_adm_cm_row_rounding": "pass",
+      "test_adm_dwt2_x86": "pass",
+      "test_cambi_dispatch_invariance": "pass",
+      "test_cambi_simd": "pass",
+      "test_cambi_spatial_mask_simd": "pass",
+      "test_cambi_stage_simd": "pass",
+      "test_ciede": "pass",
+      "test_ciede_simd_parity": "pass",
+      "test_cli_parse": "pass",
+      "test_cpu": "pass",
+      "test_dict": "pass",
+      "test_feature": "pass",
+      "test_feature_collector": "pass",
+      "test_feature_extractor": "pass",
+      "test_feature_isa_invariance": "pass",
+      "test_float_adm_x86": "pass",
+      "test_float_motion_sad": "pass",
+      "test_framesync": "pass",
+      "test_integer_adm_aim_unclipped": "pass",
+      "test_integer_adm_cm_threshold": "pass",
+      "test_integer_adm_simd": "pass",
+      "test_integer_adm_simd_noise": "pass",
+      "test_integer_ssim_simd": "pass",
+      "test_integer_vif_avx2_stages": "pass",
+      "test_integer_vif_avx512_stages": "pass",
+      "test_integer_vif_log2": "pass",
+      "test_iqa_convolve": "pass",
+      "test_locale_handling": "pass",
+      "test_log": "pass",
+      "test_luminance_tools": "pass",
+      "test_moment_simd": "pass",
+      "test_motion_avx512_parity": "pass",
+      "test_motion_v2_simd": "pass",
+      "test_ms_ssim_decimate": "pass",
+      "test_ordered_sum": "pass",
+      "test_output": "pass",
+      "test_path_utf8": "pass",
+      "test_predict": "pass",
+      "test_psnr": "pass",
+      "test_psnr_hvs_avx2": "pass",
+      "test_psnr_hvs_dispatch_invariance": "pass",
+      "test_psnr_hvs_score": "pass",
+      "test_psnr_hvs_simd": "pass",
+      "test_ref": "pass",
+      "test_speed": "pass",
+      "test_speed_simd": "pass",
+      "test_ssim_x86_simd": "pass",
+      "test_ssimulacra2_simd": "pass",
+      "test_thread_pool": "pass",
+      "test_version": "pass",
+      "test_vif_simd": "pass"
+    }
+  },
+  "golden_gate": {
+    "status": "not_applicable",
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "failures": [],
+    "reason": "the Python golden stack is not in the Windows zip; the Netflix pairs are covered by the dispatch and reference checks"
+  },
+  "metal_rows": {
+    "status": "not_applicable",
+    "rows": []
+  },
+  "gpu": {
+    "status": "not_applicable",
+    "reason": "this package carries no build of a GPU backend the GPU section runs"
+  },
+  "not_exercised": [
+    {
+      "item": "tiny-AI / ONNX Runtime",
+      "reason": "built with -Denable_dnn=disabled"
+    },
+    {
+      "item": "Metal",
+      "reason": "needs macOS; this is the Windows zip"
+    },
+    {
+      "item": "CUDA, SYCL and HIP twins",
+      "reason": "this zip holds the CPU-only MSVC build"
+    },
+    {
+      "item": "NEON and SVE2 kernels",
+      "reason": "not applicable on x86_64"
+    },
+    {
+      "item": "AVX-512 kernels",
+      "reason": "this CPU does not report AVX-512"
+    },
+    {
+      "item": "golden check",
+      "reason": "the Python golden stack is not in the Windows zip; the Netflix pairs are covered by the dispatch and reference checks"
+    }
+  ],
+  "verdict": "pass",
+  "failed_checks": [],
+  "note": "",
+  "report_sha256": "02d596bd185522790de8480fe0aabd7e1659af0cd1950de1be6d675bf78e8ffd"
+}

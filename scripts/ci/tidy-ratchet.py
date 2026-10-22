@@ -13,8 +13,10 @@ tightened in the same change (``--write``), so the committed numbers are the
 measured numbers at every commit.
 
 Exit codes: 0 baseline matches, 2 regression, 3 baseline is stale-high (ratchet
-must be tightened), 4 a translation unit failed to compile under clang-tidy
-(the measurement is unusable — fail closed), 5 usage / IO error.
+must be tightened), 4 the measurement is unusable — fail closed: a translation
+unit failed to compile under clang-tidy, or a translation unit the baseline
+measured is missing from the compile database, so its count is unknown, not 0
+— 5 usage / IO error.
 """
 
 from __future__ import annotations
@@ -386,9 +388,12 @@ def run_one(
     # its own unknown options -- "--cuda-host-only", "-x", "hip" -- and every
     # translation unit of the cuda and hip lanes was reported as a compile
     # failure, which is why those baselines could not be re-measured (ledger
-    # L-41). Values that already carry the wrapper pass through unchanged.
+    # L-41). Values that already carry the wrapper pass through unchanged, and so does a
+    # `--header-filter=` option: it is clang-tidy's own, not a compiler flag (the macOS metal
+    # lane narrows it to the headers only Objective-C++ reads).
     forwarded = [
-        arg if arg.startswith("--extra-arg") else f"--extra-arg={arg}" for arg in extra_args
+        arg if arg.startswith(("--extra-arg", "--header-filter=")) else f"--extra-arg={arg}"
+        for arg in extra_args
     ]
     argv = [binary, "-p", str(build_dir), *forwarded, str(source)]
     proc = run_command(
@@ -413,18 +418,21 @@ def run_one(
     return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode
 
 
-def measure(
-    lane: str,
-    build_dir: Path,
+def selected(path: str, chosen: tuple[str, ...]) -> bool:
+    """A ``--select`` entry ending in ``/`` is a directory; any other is one file."""
+    return any(path.startswith(c) if c.endswith("/") else path == c for c in chosen)
+
+
+def select_units(
+    units: list[tuple[Path, Path]],
     repo_root: Path,
-    binary: str,
-    extra_args: list[str],
-    jobs: int,
-    only: Iterable[str] = (),
-) -> Measurement:
-    """Run clang-tidy over every TU of *build_dir* and count NOLINTs."""
-    binary = resolve_clang_tidy(binary, repo_root)
-    units = load_compile_commands(build_dir, repo_root)
+    only: Iterable[str],
+    select: Iterable[str],
+) -> list[tuple[Path, Path]]:
+    """Narrow *units* to the ``--select`` prefixes, then to the ``--only`` files."""
+    chosen = tuple(select)
+    if chosen:
+        units = [u for u in units if selected(u[0].relative_to(repo_root).as_posix(), chosen)]
     wanted = {Path(p).resolve() for p in only}
     if wanted:
         missing = wanted - {unit[0].resolve() for unit in units}
@@ -435,6 +443,27 @@ def measure(
         units = [u for u in units if u[0].resolve() in wanted]
     if not units:
         raise ValueError("compile database selected no translation units")
+    return units
+
+
+def measure(
+    lane: str,
+    build_dir: Path,
+    repo_root: Path,
+    binary: str,
+    extra_args: list[str],
+    jobs: int,
+    only: Iterable[str] = (),
+    select: Iterable[str] = (),
+) -> Measurement:
+    """Run clang-tidy over every TU of *build_dir* and count NOLINTs.
+
+    *select* keeps only the given repository-relative files and the TUs below
+    the given directories (entries ending in ``/``): a lane that reads one part of the tree (the macOS Metal lane)
+    measures that part and nothing the other lanes already read.
+    """
+    binary = resolve_clang_tidy(binary, repo_root)
+    units = select_units(load_compile_commands(build_dir, repo_root), repo_root, only, select)
     result = Measurement(lane=lane, tus=len(units))
     result.sources = sorted(source.relative_to(repo_root).as_posix() for source, _ in units)
     result.clang_tidy_version = clang_tidy_version(binary, repo_root)
@@ -516,14 +545,28 @@ class Delta:
         return self.measured - self.baseline
 
 
-def compare(baseline: Measurement, measured: Measurement) -> tuple[list[Delta], list[Delta]]:
-    """Return ``(regressions, slack)`` per file and metric."""
+def unmeasured_sources(baseline: Measurement, measured: Measurement) -> list[str]:
+    """Translation units the baseline measured that this measurement did not.
+
+    A file with no compile-database entry has no count at all. Read as 0 it
+    looked clean: the hosted cpu lane, built without the MEX compile commands
+    the container adds, reported five MEX sources as "tighten the baseline"
+    (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06).
+    """
+    return sorted(set(baseline.sources) - set(measured.sources))
+
+
+def compare(
+    baseline: Measurement, measured: Measurement, skip: Iterable[str] = ()
+) -> tuple[list[Delta], list[Delta]]:
+    """Return ``(regressions, slack)`` per file and metric, leaving out *skip*."""
     regressions: list[Delta] = []
     slack: list[Delta] = []
+    skipped = set(skip)
     for metric in ("warnings", "nolint_uncited"):
         before: dict[str, int] = getattr(baseline, metric)
         after: dict[str, int] = getattr(measured, metric)
-        for path in sorted(set(before) | set(after)):
+        for path in sorted((set(before) | set(after)) - skipped):
             delta = Delta(metric, path, before.get(path, 0), after.get(path, 0))
             if delta.change > 0:
                 regressions.append(delta)
@@ -539,12 +582,14 @@ def annotate(level: str, message: str) -> None:
 
 def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> int:
     """Print the comparison and return the process exit code."""
-    regressions, slack = compare(baseline, measured)
+    unmeasured = unmeasured_sources(baseline, measured)
+    regressions, slack = compare(baseline, measured, unmeasured)
     print(
         f"tidy-ratchet[{measured.lane}]: {measured.tus} TUs, "
         f"{measured.total_warnings} warnings (baseline {baseline.total_warnings}), "
         f"{measured.total_nolint_uncited} uncited NOLINTs "
-        f"(baseline {baseline.total_nolint_uncited})"
+        f"(baseline {baseline.total_nolint_uncited}), "
+        f"{len(unmeasured)} baseline TUs not measured"
     )
     if baseline.clang_tidy_version and measured.clang_tidy_version != baseline.clang_tidy_version:
         annotate(
@@ -571,6 +616,15 @@ def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> i
             f"{delta.path}: {delta.metric} {delta.baseline} -> {delta.measured} "
             f"({delta.change}) — tighten the baseline: tidy-ratchet.py --write",
         )
+    for path in unmeasured:
+        annotate(
+            "error",
+            f"{path}: not measured — the baseline measured it, this compile database has "
+            f"no entry for it, so its count is unknown, not 0; build the lane's "
+            f"configuration (make tidy-ratchet-build LANE={baseline.lane or measured.lane})",
+        )
+    if unmeasured:
+        return 4
     if regressions:
         return 2
     if slack and not allow_slack:
@@ -583,8 +637,100 @@ class ScopedRegressionError(ValueError):
     """A scoped write must never retain a larger debt allowance."""
 
 
+def record_measured_sources(
+    result: dict[str, Any],
+    original: dict[str, Any],
+    wanted: set[str],
+    changes: dict[str, dict[str, list[Any]]],
+) -> None:
+    """Record the selected TUs of a scoped write as measured by the lane.
+
+    A scoped write is also how a translation unit the lane did not read before
+    enters it, so the coverage check (follow-up pull request) sees
+    it without a full rewrite.
+    """
+    if "measured_sources" not in original:
+        return
+    known = set(original["measured_sources"])
+    added = sorted(wanted - known)
+    if added:
+        result["measured_sources"] = sorted(known | wanted)
+        result["tus"] = int(original.get("tus", 0)) + len(added)
+        changes.setdefault("measured_sources", {})["added"] = added
+
+
+def drop_deleted_entries(
+    result: dict[str, Any], repo_root: Path, changes: dict[str, dict[str, list[Any]]]
+) -> list[str]:
+    """Remove baseline entries whose file is gone from the tree (Q-309).
+
+    A scoped write measures only the touched files, so it could never remove
+    the entry of a file the change deleted; only a full re-measure did, and
+    the gate then failed closed on "not measured". A file that still exists
+    but was not measured keeps its entry: the gate must not forget it.
+    """
+    dropped: set[str] = set()
+    for key in ("warnings", "nolint_uncited"):
+        gone = [p for p in result.get(key, {}) if not (repo_root / p).exists()]
+        for path in gone:
+            del result[key][path]
+        dropped.update(gone)
+        result[f"total_{key}"] = sum(result.get(key, {}).values())
+    sources = result.get("measured_sources")
+    if sources is not None:
+        gone = [p for p in sources if not (repo_root / p).exists()]
+        if gone:
+            result["measured_sources"] = [p for p in sources if p not in set(gone)]
+            result["tus"] = max(0, int(result.get("tus", 0)) - len(gone))
+            dropped.update(gone)
+    if dropped:
+        changes.setdefault("dropped_deleted_files", {})["paths"] = sorted(dropped)
+    return sorted(dropped)
+
+
+def tighten_metric(
+    metric: str,
+    original: dict[str, Any],
+    baseline: Measurement,
+    measured: Measurement,
+    wanted: set[str],
+    result: dict[str, Any],
+    changes: dict[str, dict[str, list[Any]]],
+) -> None:
+    """Lower one debt metric for the selected TUs of a scoped write."""
+    before: dict[str, int] = getattr(baseline, metric)
+    after: dict[str, int] = getattr(measured, metric)
+    raw_before = original.get(metric, {})
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in (*raw_before.values(), *after.values())
+    ):
+        raise ValueError("debt counts must be nonnegative integers")
+    for path, count in after.items():
+        if count > before.get(path, 0):
+            raise ScopedRegressionError(f"{path}: {metric} would increase to {count}")
+    # Preserve historical exact-vendor entries byte-for-byte during a
+    # scoped write. They are normalized out of comparisons above, but a
+    # scoped update must never rewrite unselected baseline scope (ADR-1243).
+    # The next full generated write drops them naturally.
+    merged = dict(raw_before)
+    for path in sorted(wanted):
+        count = after.get(path, 0)
+        if count != before.get(path, 0):
+            changes.setdefault(path, {})[metric] = [before.get(path, 0), count]
+        if count:
+            merged[path] = count
+        else:
+            merged.pop(path, None)
+    result[metric] = dict(sorted(merged.items()))
+    result[f"total_{metric}"] = sum(merged.values())
+
+
 def merge_scoped_baseline(
-    original: dict[str, Any], measured: Measurement, requested: list[str]
+    original: dict[str, Any],
+    measured: Measurement,
+    requested: list[str],
+    repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Tighten selected TUs only; preserve the last full measurement (ADR-1243)."""
     wanted = set(requested)
@@ -602,34 +748,13 @@ def merge_scoped_baseline(
     if baseline.clang_tidy_version != measured.clang_tidy_version:
         raise ValueError("scoped write requires the original clang-tidy version")
     result = copy.deepcopy(original)
-    changes: dict[str, dict[str, list[int]]] = {}
+    changes: dict[str, dict[str, list[Any]]] = {}
     for metric in ("warnings", "nolint_uncited"):
-        before: dict[str, int] = getattr(baseline, metric)
-        after: dict[str, int] = getattr(measured, metric)
-        raw_before = original.get(metric, {})
-        if any(
-            not isinstance(value, int) or isinstance(value, bool) or value < 0
-            for value in (*raw_before.values(), *after.values())
-        ):
-            raise ValueError("debt counts must be nonnegative integers")
-        for path, count in after.items():
-            if count > before.get(path, 0):
-                raise ScopedRegressionError(f"{path}: {metric} would increase to {count}")
-        # Preserve historical exact-vendor entries byte-for-byte during a
-        # scoped write. They are normalized out of comparisons above, but a
-        # scoped update must never rewrite unselected baseline scope (ADR-1243).
-        # The next full generated write drops them naturally.
-        merged = dict(raw_before)
-        for path in sorted(wanted):
-            count = after.get(path, 0)
-            if count != before.get(path, 0):
-                changes.setdefault(path, {})[metric] = [before.get(path, 0), count]
-            if count:
-                merged[path] = count
-            else:
-                merged.pop(path, None)
-        result[metric] = dict(sorted(merged.items()))
-        result[f"total_{metric}"] = sum(merged.values())
+        tighten_metric(metric, original, baseline, measured, wanted, result, changes)
+    record_measured_sources(result, original, wanted, changes)
+    if repo_root is not None:
+        for path in drop_deleted_entries(result, repo_root, changes):
+            annotate("notice", f"{path}: file no longer exists; baseline entry dropped")
     if changes:
         provenance = {
             "sources": sorted(wanted),
@@ -684,7 +809,11 @@ def atomic_write_baseline(path: Path, result: dict[str, Any], expected: bytes | 
 
 
 def write_scoped_baseline(
-    path: Path, measured: Measurement, requested: list[str], expected: bytes | None = None
+    path: Path,
+    measured: Measurement,
+    requested: list[str],
+    expected: bytes | None = None,
+    repo_root: Path | None = None,
 ) -> int:
     """Validate every guard before writing any byte of the existing baseline."""
     try:
@@ -694,7 +823,7 @@ def write_scoped_baseline(
             if expected is not None and original_bytes != expected:
                 raise ValueError("baseline changed during measurement; rerun measurement")
             original = json.loads(original_bytes)
-            result = merge_scoped_baseline(original, measured, requested)
+            result = merge_scoped_baseline(original, measured, requested, repo_root)
             if result != original:
                 atomic_write_baseline(path, result, original_bytes)
     except ScopedRegressionError as exc:
@@ -725,7 +854,9 @@ def write_full_baseline(path: Path, measured: Measurement, expected: bytes | Non
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--lane", default="cpu", help="baseline lane name (cpu, cuda, sycl, hip, arm64)"
+        "--lane",
+        default="cpu",
+        help="baseline lane name (cpu, clang, cuda, sycl, hip, arm64, metal)",
     )
     parser.add_argument("--build-dir", default="build", type=Path)
     parser.add_argument("--repo-root", default=".", type=Path)
@@ -742,6 +873,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         default=[],
         help="measure exactly these TUs; with --write, tighten only their allowance",
+    )
+    parser.add_argument(
+        "--select",
+        action="append",
+        default=[],
+        help="measure only this file, or (ending in /) the TUs below this directory (repeatable)",
     )
     parser.add_argument("--report", type=Path, help="write the measurement JSON here")
     parser.add_argument(
@@ -791,7 +928,9 @@ def finish_measurement(
             requested = [
                 Path(path).resolve().relative_to(repo_root).as_posix() for path in args.only
             ]
-            return write_scoped_baseline(baseline_path, measured, requested, baseline_before)
+            return write_scoped_baseline(
+                baseline_path, measured, requested, baseline_before, repo_root
+            )
         annotate("notice", "--only given: comparison against the baseline skipped")
         return 0
     if args.write:
@@ -817,6 +956,7 @@ def main(argv: list[str] | None = None) -> int:
             args.extra_arg,
             args.jobs,
             args.only,
+            args.select,
         )
         if args.report:
             # ADR-1230: the report artifact carries the diagnostics behind the

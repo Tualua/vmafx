@@ -14,14 +14,17 @@
  *  Bit-exactness contract: the kernels reproduce the CPU's exact integer
  *  rounding shifts, the uint16/uint32/uint64 accumulator widths, and the
  *  uint16 log2 look-up table (VIF_LOG2_TABLE_SIZE = 32768 entries, generated
- *  host-side by integer_vif.c::log_generate and uploaded as a device buffer).
- *  The scalar log2_32 / log2_64 accessors in integer_vif.h are replicated in
- *  MSL via vif_log2_32 / vif_log2_64 (clz-based normalisation, same 2048*k
- *  exponent baked into the returned log value). The four int64 moment
- *  accumulators (accum_num_log, accum_den_log, accum_num_non_log,
- *  accum_den_non_log) are reduced per-workgroup into (lo, hi) uint32 pairs
- *  (MSL lacks atomic_long on Apple Silicon) and summed in int64 on the host,
- *  which then applies the exact CPU final formula:
+ *  host-side by vif_log2_table_generate(), the CPU's call, and uploaded as a
+ *  device buffer). The scalar log2_32 / log2_64 accessors in integer_vif.h
+ *  are replicated in MSL via vif_log2_32 / vif_log2_64 (clz-based
+ *  normalisation, same 2048*k exponent baked into the returned log value).
+ *  The four int64 moment accumulators (accum_num_log, accum_den_log,
+ *  accum_num_non_log, accum_den_non_log) are reduced per workgroup into one
+ *  int64 per field (thread 0 adds the group's values serially; MSL has no
+ *  64-bit atomics on Apple Silicon) and summed in int64 on the host, which
+ *  then applies the exact CPU final formula, rounds each result to float as
+ *  vif_store_residuals() does and divides in single precision as
+ *  write_scores() does:
  *
  *    num = accum_num_log/2048.0 +
  *          (accum_den_non_log - (accum_num_non_log/16384.0)/65025.0)

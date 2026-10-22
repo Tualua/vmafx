@@ -48,54 +48,16 @@
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+#include "vmafx/import_layouts_gen.h"
 
 namespace
 {
 
-const char short_opts[] = "r:d:w:h:p:b:m:c:o:nvq";
-
-enum : std::uint16_t {
-    ARG_OUTPUT_XML = 256,
-    ARG_OUTPUT_JSON,
-    ARG_OUTPUT_CSV,
-    ARG_OUTPUT_SUB,
-    ARG_THREADS,
-    ARG_FEATURE,
-    ARG_SUBSAMPLE,
-    ARG_HELP,
-    ARG_CPUMASK,
-    ARG_GPUMASK,
-    ARG_AOM_CTC,
-    ARG_NFLX_CTC,
-    ARG_FRAME_CNT,
-    ARG_FRAME_SKIP_REF,
-    ARG_FRAME_SKIP_DIST,
-    ARG_NO_CUDA,
-    ARG_NO_SYCL,
-    ARG_SYCL_DEVICE,
-    ARG_NO_HIP,
-    ARG_HIP_DEVICE,
-    ARG_NO_METAL,
-    ARG_METAL_DEVICE,
-    ARG_BACKEND,
-    ARG_PRECISION,
-    ARG_TINY_MODEL,
-    ARG_TINY_DEVICE,
-    ARG_TINY_THREADS,
-    ARG_TINY_FP16,
-    ARG_TINY_MODEL_VERIFY,
-    /* ADR-0519 — codec context for codec-aware tiny models
-     * (e.g. fr_regressor_v2). All three default unset. */
-    ARG_TINY_CODEC,
-    ARG_TINY_PRESET,
-    ARG_TINY_CRF,
-    ARG_NO_REFERENCE,
-    ARG_DNN_EP,
-    /* ADR-0550 — NCHW tiny-model auto-resize filter. */
-    ARG_TINY_RESIZE,
-    /* ADR-0696 — restore Netflix-upstream legacy defaults. */
-    ARG_NETFLIX_COMPAT,
-};
+/* The getopt short option string (short_opts), the long-only option
+ * identifiers (ARG_*), the long option table (long_opts) and the usage lines
+ * are generated from the option groups of core/api/vmafx.toml (ADR-1852, RC4
+ * WP8): a flag, an alias or a help line is added there, never here. */
+#include "cli_options.gen.inc"
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
  * gate passes without explicit flags (CLAUDE.md §8). Round-trip lossless
@@ -135,185 +97,12 @@ const char *resolve_precision_fmt(const char *optarg, const char *app, CLISettin
     return precision_fmt_buf;
 }
 
-const struct option long_opts[] = {
-    {.name = "reference", .has_arg = 1, .flag = nullptr, .val = 'r'},
-    {.name = "distorted", .has_arg = 1, .flag = nullptr, .val = 'd'},
-    {.name = "width", .has_arg = 1, .flag = nullptr, .val = 'w'},
-    {.name = "height", .has_arg = 1, .flag = nullptr, .val = 'h'},
-    {.name = "pixel_format", .has_arg = 1, .flag = nullptr, .val = 'p'},
-    {.name = "bitdepth", .has_arg = 1, .flag = nullptr, .val = 'b'},
-    {.name = "model", .has_arg = 1, .flag = nullptr, .val = 'm'},
-    {.name = "output", .has_arg = 1, .flag = nullptr, .val = 'o'},
-    {.name = "xml", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_XML},
-    {.name = "json", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_JSON},
-    {.name = "csv", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_CSV},
-    {.name = "sub", .has_arg = 0, .flag = nullptr, .val = ARG_OUTPUT_SUB},
-    {.name = "help", .has_arg = 0, .flag = nullptr, .val = ARG_HELP},
-    {.name = "threads", .has_arg = 1, .flag = nullptr, .val = ARG_THREADS},
-    {.name = "feature", .has_arg = 1, .flag = nullptr, .val = ARG_FEATURE},
-    {.name = "subsample", .has_arg = 1, .flag = nullptr, .val = ARG_SUBSAMPLE},
-    {.name = "cpumask", .has_arg = 1, .flag = nullptr, .val = ARG_CPUMASK},
-    {.name = "gpumask", .has_arg = 1, .flag = nullptr, .val = ARG_GPUMASK},
-    {.name = "aom_ctc", .has_arg = 1, .flag = nullptr, .val = ARG_AOM_CTC},
-    {.name = "nflx_ctc", .has_arg = 1, .flag = nullptr, .val = ARG_NFLX_CTC},
-    {.name = "frame_cnt", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_CNT},
-    {.name = "frame_skip_ref", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_SKIP_REF},
-    {.name = "frame_skip_dist", .has_arg = 1, .flag = nullptr, .val = ARG_FRAME_SKIP_DIST},
-    {.name = "no_cuda", .has_arg = 0, .flag = nullptr, .val = ARG_NO_CUDA},
-    {.name = "no_sycl", .has_arg = 0, .flag = nullptr, .val = ARG_NO_SYCL},
-    {.name = "sycl_device", .has_arg = 1, .flag = nullptr, .val = ARG_SYCL_DEVICE},
-    {.name = "no_hip", .has_arg = 0, .flag = nullptr, .val = ARG_NO_HIP},
-    {.name = "hip_device", .has_arg = 1, .flag = nullptr, .val = ARG_HIP_DEVICE},
-    {.name = "no_metal", .has_arg = 0, .flag = nullptr, .val = ARG_NO_METAL},
-    {.name = "metal_device", .has_arg = 1, .flag = nullptr, .val = ARG_METAL_DEVICE},
-    {.name = "backend", .has_arg = 1, .flag = nullptr, .val = ARG_BACKEND},
-    {.name = "precision", .has_arg = 1, .flag = nullptr, .val = ARG_PRECISION},
-    {.name = "tiny-model", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_MODEL},
-    {.name = "tiny_model", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_MODEL},
-    {.name = "tiny-device", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_DEVICE},
-    {.name = "tiny_device", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_DEVICE},
-    {.name = "tiny-threads", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_THREADS},
-    {.name = "tiny_threads", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_THREADS},
-    {.name = "tiny-fp16", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_FP16},
-    {.name = "tiny_fp16", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_FP16},
-    {.name = "tiny-model-verify", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_MODEL_VERIFY},
-    {.name = "tiny_model_verify", .has_arg = 0, .flag = nullptr, .val = ARG_TINY_MODEL_VERIFY},
-    /* ADR-0519 — codec context. Underscore aliases match the rest
-     * of the tiny-* family for scripting consistency. */
-    {.name = "tiny-codec", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CODEC},
-    {.name = "tiny_codec", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CODEC},
-    {.name = "tiny-preset", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_PRESET},
-    {.name = "tiny_preset", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_PRESET},
-    {.name = "tiny-crf", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CRF},
-    {.name = "tiny_crf", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_CRF},
-    {.name = "no-reference", .has_arg = 0, .flag = nullptr, .val = ARG_NO_REFERENCE},
-    {.name = "no_reference", .has_arg = 0, .flag = nullptr, .val = ARG_NO_REFERENCE},
-    /* ADR-0550 — NCHW tiny-model auto-resize filter selector. */
-    {.name = "tiny-resize", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_RESIZE},
-    {.name = "tiny_resize", .has_arg = 1, .flag = nullptr, .val = ARG_TINY_RESIZE},
-    /* --dnn-ep is the user-facing name for selecting the ONNX Runtime
-     * execution provider. It is an alias for --tiny-device so both flags
-     * write to the same CLISettings.tiny_device field. Accepting both names
-     * lets users follow the ORT "execution provider" terminology directly
-     * without knowing the fork's internal "tiny-device" naming. */
-    {.name = "dnn-ep", .has_arg = 1, .flag = nullptr, .val = ARG_DNN_EP},
-    {.name = "dnn_ep", .has_arg = 1, .flag = nullptr, .val = ARG_DNN_EP},
-    {.name = "no_prediction", .has_arg = 0, .flag = nullptr, .val = 'n'},
-    {.name = "netflix-compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
-    {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
-    {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
-    {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
-    {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
-};
-
-void print_usage_options_part1(FILE *const out, const char *const app)
+void print_usage(FILE *const out, const char *const app)
 {
     (void)fprintf(out, "Usage: %s [options]\n\n", app);
-    (void)fprintf(out, "Supported options:\n"
-                       " --help:                      print this message and exit\n"
-                       " --reference/-r $path:        path to reference .y4m or .yuv\n"
-                       " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
-                       " --width/-w $unsigned:        width\n"
-                       " --height/-h $unsigned:       height\n"
-                       " --pixel_format/-p: $string   pixel format (420/422/444)\n"
-                       " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
-                       " --model/-m $params:          model parameters, colon \":\" delimited\n"
-                       "                              `path=` path to model file\n"
-                       "                              `version=` built-in model version\n"
-                       "                              `name=` name used in log (optional)\n"
-                       " --output/-o $path:           output file\n"
-                       " --xml:                       write output file as XML (default)\n"
-                       " --json:                      write output file as JSON\n"
-                       " --csv:                       write output file as CSV\n"
-                       " --sub:                       write output file as subtitle\n"
-                       " --threads $unsigned:         number of threads to use\n"
-                       " --feature $string:           additional feature\n"
-                       " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
-                       " --gpumask: $bitmask          restrict permitted GPU operations\n"
-                       " --frame_cnt $unsigned:       maximum number of frames to process\n"
-                       " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
-                       " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
-                       " --subsample: $unsigned       compute scores only every N frames\n"
-                       " --no_cuda:                   disable CUDA backend\n"
-                       " --no_sycl:                    disable SYCL/oneAPI backend\n"
-                       " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
-                       "                              [Vulkan backend removed in ADR-0726]\n");
-}
-
-/* The codec-context and NR flags of tiny models; split out of
- * print_usage_options_part2() for the HISS-04 function-size limit. */
-void print_usage_options_tiny_codec(FILE *const out)
-{
-    (void)fprintf(
-        out, " --tiny-codec $name:           encoder of the distorted clip; required by\n"
-             "                               codec-aware tiny models (fr_regressor_v2/v3),\n"
-             "                               which refuse to score without it. Must be an\n"
-             "                               entry of the model sidecar's encoder_vocab\n"
-             "                               (the vocabulary differs per model). Common\n"
-             "                               ffprobe aliases (h264|hevc|av1|vp9|vvc) are\n"
-             "                               accepted. Unknown names are rejected at attach\n"
-             "                               time. No default\n"
-             " --tiny-preset $string:        encoder preset string (medium|slow|p4|5|...);\n"
-             "                               interpretation is encoder-specific and mirrors\n"
-             "                               train_fr_regressor_v2.py::PRESET_ORDINAL.\n"
-             "                               Default: ordinal 5 (medium-equivalent). A model\n"
-             "                               trained with one preset value (fr_regressor_v3)\n"
-             "                               ignores it and warns\n"
-             " --tiny-crf $unsigned:         CRF / QP integer used during encoding, normalised\n"
-             "                               as the model's sidecar declares (default: clamp to\n"
-             "                               [0, 63], divide by 63; fr_regressor_v3: min-max\n"
-             "                               over 19..37). Required with --tiny-codec /\n"
-             "                               --tiny-preset. No default\n"
-             " --no-reference:               no-reference mode; valid only with an NR tiny model\n"
-             " --tiny-resize $string:        enable auto-resize for NCHW tiny models when the\n"
-             "                               input frame dims don't match the model's expected\n"
-             "                               shape (e.g. 576x324 input -> 224x224 nr_metric_v1).\n"
-             "                               One of: bilinear, nearest, bicubic, disabled.\n"
-             "                               Default: disabled (mismatch -> -ERANGE hard-error;\n"
-             "                               operator must opt in to resize explicitly).\n"
-             "                               Warning: bilinear/nearest/bicubic produce scores\n"
-             "                               that differ by ~2%% on the same input -- document\n"
-             "                               the filter alongside your model checkpoint.\n");
-}
-
-void print_usage_options_part2(FILE *const out)
-{
-    (void)fprintf(
-        out,
-        " --no_hip:                     disable HIP (AMD ROCm) backend\n"
-        " --hip_device $unsigned:       select HIP GPU by index (opt-in: HIP is off\n"
-        "                               unless this or --backend hip is given)\n"
-        " --no_metal:                   disable Metal (Apple Silicon) backend\n"
-        " --metal_device $unsigned:     select Metal GPU by index (opt-in: Metal is off\n"
-        "                               unless this or --backend metal is given)\n"
-        " --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip|metal.\n"
-        "                               When set to a specific backend, the others are\n"
-        "                               disabled to avoid the dispatcher first-match-wins\n"
-        "                               race. (Vulkan backend was removed in ADR-0726.)\n"
-        " --precision $spec:            score output precision\n"
-        "                                  N (1..17) -> printf \"%%.<N>g\"\n"
-        "                                  max|full  -> \"%%.17g\" (round-trip lossless)\n"
-        "                                  legacy    -> \"%%.6f\" (default; Netflix-compatible)\n"
-        " --tiny-model $path:           load a tiny ONNX model alongside classic models\n"
-        " --tiny-device $string:        auto|cpu|cuda|openvino|openvino-npu|\n"
-        "                                  openvino-cpu|openvino-gpu|coreml|\n"
-        "                                  coreml-ane|coreml-gpu|coreml-cpu|rocm\n"
-        "                                  (default: auto)\n"
-        " --dnn-ep $string:             alias for --tiny-device; selects the ONNX Runtime\n"
-        "                                  execution provider by its ORT name\n"
-        " --tiny-threads $unsigned:     CPU EP intra-op threads (0 = ORT default)\n"
-        " --tiny-fp16:                  request fp16 IO where the EP supports it\n"
-        " --tiny-model-verify:          require Sigstore-bundle verification (cosign verify-blob)\n"
-        "                               of the loaded tiny model before use; refuses to load\n"
-        "                               on missing bundle, missing cosign, or non-zero exit\n");
-    print_usage_options_tiny_codec(out);
-    (void)fprintf(
-        out,
-        " --quiet/-q:                  disable FPS meter when run in a TTY\n"
-        " --no_prediction/-n:          no prediction, extract features only\n"
-        " --netflix-compat:             restore Netflix-upstream legacy defaults (CPU backend,\n"
-        "                                  %%.6f precision, v0.6.1 default model)\n"
-        " --version/-v:                print version and exit\n");
+    for (const char *const line : usage_lines) {
+        (void)fprintf(out, "%s\n", line);
+    }
 }
 
 [[noreturn]] void usage_exit(bool is_error)
@@ -329,8 +118,7 @@ void print_usage_options_part2(FILE *const out)
         (void)fputs(reason, stderr);
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
@@ -342,8 +130,7 @@ template <typename Arg>
         (void)fprintf(stderr, reason, std::forward<Arg>(arg));
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
@@ -355,8 +142,7 @@ template <typename Arg1, typename Arg2>
         (void)fprintf(stderr, reason, std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
@@ -370,15 +156,13 @@ template <typename Arg1, typename Arg2, typename Arg3>
                       std::forward<Arg3>(arg3));
         (void)fprintf(stderr, "\n\n");
     }
-    print_usage_options_part1(out, app);
-    print_usage_options_part2(out);
+    print_usage(out, app);
     usage_exit(reason != nullptr);
 }
 
 [[noreturn]] void usage(const char *const app, std::nullptr_t)
 {
-    print_usage_options_part1(stdout, app);
-    print_usage_options_part2(stdout);
+    print_usage(stdout, app);
     usage_exit(false);
 }
 
@@ -463,32 +247,272 @@ void error(const char *const app, const char *const optarg, const int option,
                                       const char *const app)
 {
     const unsigned bitdepth = parse_unsigned(optarg, option, app);
-    if (!((bitdepth == 8) || (bitdepth == 10) || (bitdepth == 12) || (bitdepth == 16)))
-        error(app, optarg, option, "a valid bitdepth (8/10/12/16)");
+    if (bitdepth < 8 || bitdepth > 16)
+        error(app, optarg, option, "a valid bitdepth (8 to 16)");
     return bitdepth;
 }
 
-[[nodiscard]] enum VmafPixelFormat parse_pix_fmt(const char *const optarg, const int option,
-                                                 const char *const app)
+/* A layout of the import table named on the command line (core/api/vmafx.toml
+ * `[[pixel_formats]]`, ADR-2145): its row, or nullptr. The planar rows (yuv420p ... gray) are
+ * accepted as names too. */
+[[nodiscard]] const VmafxImportLayout *find_layout(const std::string_view name)
 {
-    using sv = std::string_view;
-    const sv arg{optarg};
-    enum VmafPixelFormat pix_fmt = VMAF_PIX_FMT_UNKNOWN;
-
-    if (arg == "420")
-        pix_fmt = VMAF_PIX_FMT_YUV420P;
-    if (arg == "422")
-        pix_fmt = VMAF_PIX_FMT_YUV422P;
-    if (arg == "444")
-        pix_fmt = VMAF_PIX_FMT_YUV444P;
-
-    if (!pix_fmt) {
-        error(app, optarg, option,
-              "a valid pixel format "
-              "(420/422/444)");
+    for (const VmafxImportLayout &row : vmafx_import_layouts) {
+        if (name == row.name)
+            return &row;
     }
+    return nullptr;
+}
 
-    return pix_fmt;
+/* A plain planar row: the frame is the file's, no conversion. */
+[[nodiscard]] bool is_plain_planar(const VmafxImportLayout &row)
+{
+    return row.packed == VMAFX_IMPORT_PACKED_NONE && !row.interleaved && !row.msb &&
+           row.pix_fmt == row.planar_fmt;
+}
+
+/* `--pixel_format`: 400 / 420 / 422 / 444, or a layout of the import table. Sets the planar frame
+ * (`pix_fmt`), the layout of a raw file that is not planar (`input_layout`) and the bit depth a
+ * layout fixes (a later --bitdepth is checked against it). */
+void parse_pixel_format(const char *const value, const int option, const char *const app,
+                        CLISettings *const cli)
+{
+    const std::string_view arg{value};
+    cli->input_layout = 0;
+    cli->pix_fmt = VMAF_PIX_FMT_UNKNOWN;
+    if (arg == "400")
+        cli->pix_fmt = VMAF_PIX_FMT_YUV400P;
+    if (arg == "420")
+        cli->pix_fmt = VMAF_PIX_FMT_YUV420P;
+    if (arg == "422")
+        cli->pix_fmt = VMAF_PIX_FMT_YUV422P;
+    if (arg == "444")
+        cli->pix_fmt = VMAF_PIX_FMT_YUV444P;
+    if (const VmafxImportLayout *const row = find_layout(arg); row && !cli->pix_fmt) {
+        cli->pix_fmt = static_cast<enum VmafPixelFormat>(row->planar_fmt);
+        if (!is_plain_planar(*row))
+            cli->input_layout = row->pix_fmt;
+        if (row->bpc_min == row->bpc_max)
+            cli->bitdepth = row->bpc_min;
+    }
+    if (!cli->pix_fmt) {
+        error(app, value, option,
+              "a valid pixel format (400/420/422/444, or a layout: nv12 nv16 nv24 p010 p016 p210 "
+              "p216 p410 p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36 vuyx ayuv yuv444p16msb "
+              "rgb rgba bgra)");
+    }
+}
+
+/* A name and its VmafxColor* value. */
+struct NamedColor {
+    const char *name;
+    unsigned value;
+};
+
+[[nodiscard]] unsigned parse_named_color(const NamedColor *const table, const size_t n,
+                                         const char *const optarg, const int option,
+                                         const char *const app, const char *const expected)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (std::string_view{optarg} == table[i].name)
+            return table[i].value;
+    }
+    error(app, optarg, option, expected);
+    return 0;
+}
+
+/* The statement of a raw RGB input (ADR-2146). Values the integer conversion does not make
+ * (bt2020cl, ictcp, linear) are parsed so that the refusal can name them. */
+void handle_rgb_flag(const int o, const char *const value, const char *const app,
+                     CLISettings *const cli)
+{
+    static const NamedColor matrices[] = {
+        {.name = "bt601", .value = VMAF_COLOR_MATRIX_BT601},
+        {.name = "bt709", .value = VMAF_COLOR_MATRIX_BT709},
+        {.name = "bt2020ncl", .value = VMAF_COLOR_MATRIX_BT2020_NCL},
+        {.name = "bt2020cl", .value = VMAF_COLOR_MATRIX_BT2020_CL},
+        {.name = "ictcp", .value = VMAF_COLOR_MATRIX_ICTCP}};
+    static const NamedColor ranges[] = {{.name = "limited", .value = VMAF_COLOR_RANGE_LIMITED},
+                                        {.name = "full", .value = VMAF_COLOR_RANGE_FULL}};
+    static const NamedColor transfers[] = {{.name = "bt709", .value = VMAF_COLOR_TRC_BT709},
+                                           {.name = "srgb", .value = VMAF_COLOR_TRC_SRGB},
+                                           {.name = "pq", .value = VMAF_COLOR_TRC_SMPTE2084},
+                                           {.name = "hlg", .value = VMAF_COLOR_TRC_HLG},
+                                           {.name = "linear", .value = VMAF_COLOR_TRC_LINEAR}};
+    switch (o) {
+    case ARG_RGB_MATRIX:
+        cli->rgb_matrix = parse_named_color(matrices, std::size(matrices), value, o, app,
+                                            "a matrix: bt601, bt709 or bt2020ncl");
+        break;
+    case ARG_RGB_RANGE:
+        cli->rgb_range =
+            parse_named_color(ranges, std::size(ranges), value, o, app, "a range: limited or full");
+        break;
+    case ARG_RGB_TRANSFER:
+        cli->rgb_transfer = parse_named_color(transfers, std::size(transfers), value, o, app,
+                                              "a transfer: bt709, srgb, pq or hlg");
+        break;
+    default:
+        cli->rgb_out_range =
+            parse_named_color(ranges, std::size(ranges), value, o, app, "a range: limited or full");
+        break;
+    }
+}
+
+/* Per-input colorimetry flags (Netflix/vmaf ed61076b2): --color_X_ref and
+ * --color_X_dist describe the reference and the distorted input. Fork
+ * adaptation: upstream stores the parsed colour into every fetched picture's
+ * `VmafPicture::color`; the fork keeps VmafPicture unchanged (ADR-1822) and
+ * hands it to vmaf_set_input_colorimetry() (ADR-2093). */
+struct NamedValue {
+    const char *name;
+    unsigned val;
+};
+
+[[nodiscard]] bool lookup_named_value(const NamedValue *const table, const size_t table_len,
+                                      const char *const optarg, unsigned *const val)
+{
+    for (size_t i = 0; i < table_len; i++) {
+        if (!strcmp(optarg, table[i].name)) {
+            *val = table[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const NamedValue color_range_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_RANGE_UNKNOWN},
+    {.name = "limited", .val = VMAF_COLOR_RANGE_LIMITED},
+    {.name = "full", .val = VMAF_COLOR_RANGE_FULL},
+};
+
+const NamedValue color_primaries_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_PRIMARIES_UNKNOWN},
+    {.name = "bt709", .val = VMAF_COLOR_PRIMARIES_BT709},
+    {.name = "bt2020", .val = VMAF_COLOR_PRIMARIES_BT2020},
+};
+
+const NamedValue color_trc_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_TRC_UNKNOWN},
+    {.name = "bt709", .val = VMAF_COLOR_TRC_BT709},
+    {.name = "smpte2084", .val = VMAF_COLOR_TRC_SMPTE2084},
+    {.name = "pq", .val = VMAF_COLOR_TRC_SMPTE2084},
+};
+
+const NamedValue color_matrix_names[] = {
+    {.name = "unknown", .val = VMAF_COLOR_MATRIX_UNKNOWN},
+    {.name = "bt709", .val = VMAF_COLOR_MATRIX_BT709},
+    {.name = "bt2020nc", .val = VMAF_COLOR_MATRIX_BT2020_NCL},
+    {.name = "ictcp", .val = VMAF_COLOR_MATRIX_ICTCP},
+};
+
+template <size_t N>
+[[nodiscard]] unsigned parse_color_attr(const NamedValue (&table)[N], const char *const optarg,
+                                        const int option, const char *const app,
+                                        const char *const expected)
+{
+    unsigned val = 0;
+    if (!lookup_named_value(table, N, optarg, &val))
+        error(app, optarg, option, expected);
+    return val;
+}
+
+[[nodiscard]] bool color_any_set(const VmafColor *const color)
+{
+    return color->range != VMAF_COLOR_RANGE_UNKNOWN ||
+           color->primaries != VMAF_COLOR_PRIMARIES_UNKNOWN ||
+           color->trc != VMAF_COLOR_TRC_UNKNOWN || color->matrix != VMAF_COLOR_MATRIX_UNKNOWN;
+}
+
+[[nodiscard]] bool color_all_set(const VmafColor *const color)
+{
+    return color->range != VMAF_COLOR_RANGE_UNKNOWN &&
+           color->primaries != VMAF_COLOR_PRIMARIES_UNKNOWN &&
+           color->trc != VMAF_COLOR_TRC_UNKNOWN && color->matrix != VMAF_COLOR_MATRIX_UNKNOWN;
+}
+
+void handle_color_range_flag(const int o, const char *const optarg, const char *const app,
+                             CLISettings *const settings)
+{
+    const char *const expected = "a valid color range (unknown/limited/full)";
+    VmafColor *const color =
+        (o == ARG_COLOR_RANGE_REF) ? &settings->color_ref : &settings->color_dist;
+    color->range = static_cast<enum VmafColorRange>(
+        parse_color_attr(color_range_names, optarg, o, app, expected));
+}
+
+void handle_color_primaries_flag(const int o, const char *const optarg, const char *const app,
+                                 CLISettings *const settings)
+{
+    const char *const expected = "a valid color primaries name, e.g. unknown/bt709/bt2020";
+    VmafColor *const color =
+        (o == ARG_COLOR_PRIMARIES_REF) ? &settings->color_ref : &settings->color_dist;
+    color->primaries = static_cast<enum VmafColorPrimaries>(
+        parse_color_attr(color_primaries_names, optarg, o, app, expected));
+}
+
+void handle_color_trc_flag(const int o, const char *const optarg, const char *const app,
+                           CLISettings *const settings)
+{
+    const char *const expected = "a valid transfer characteristic name, e.g. unknown/bt709/pq";
+    VmafColor *const color =
+        (o == ARG_COLOR_TRC_REF) ? &settings->color_ref : &settings->color_dist;
+    color->trc = static_cast<enum VmafColorTransferCharacteristic>(
+        parse_color_attr(color_trc_names, optarg, o, app, expected));
+}
+
+void handle_color_matrix_flag(const int o, const char *const optarg, const char *const app,
+                              CLISettings *const settings)
+{
+    const char *const expected = "a valid matrix coefficients name, e.g. bt709/bt2020nc/ictcp";
+    VmafColor *const color =
+        (o == ARG_COLOR_MATRIX_REF) ? &settings->color_ref : &settings->color_dist;
+    color->matrix = static_cast<enum VmafColorMatrixCoefficients>(
+        parse_color_attr(color_matrix_names, optarg, o, app, expected));
+}
+
+/* True for any of the eight --color_*_ref / --color_*_dist options (consecutive enumerators). */
+[[nodiscard]] bool is_color_flag(const int o)
+{
+    return o >= ARG_COLOR_RANGE_REF && o <= ARG_COLOR_MATRIX_DIST;
+}
+
+void handle_color_flag(const int o, const char *const optarg, const char *const app,
+                       CLISettings *const settings)
+{
+    switch (o) {
+    case ARG_COLOR_RANGE_REF:
+    case ARG_COLOR_RANGE_DIST:
+        handle_color_range_flag(o, optarg, app, settings);
+        break;
+    case ARG_COLOR_PRIMARIES_REF:
+    case ARG_COLOR_PRIMARIES_DIST:
+        handle_color_primaries_flag(o, optarg, app, settings);
+        break;
+    case ARG_COLOR_TRC_REF:
+    case ARG_COLOR_TRC_DIST:
+        handle_color_trc_flag(o, optarg, app, settings);
+        break;
+    default:
+        handle_color_matrix_flag(o, optarg, app, settings);
+        break;
+    }
+}
+
+/* Each input needs all four attributes or none. */
+void validate_color_settings(const char *const app, const CLISettings *const settings)
+{
+    if (color_any_set(&settings->color_ref) && !color_all_set(&settings->color_ref)) {
+        usage(app, "The reference colorimetry must either be fully specified or left unset: "
+                   "provide all of --color_range_ref, --color_primaries_ref, "
+                   "--color_trc_ref and --color_matrix_ref\n");
+    }
+    if (color_any_set(&settings->color_dist) && !color_all_set(&settings->color_dist)) {
+        usage(app, "The distorted colorimetry must either be fully specified or left unset: "
+                   "provide all of --color_range_dist, --color_primaries_dist, "
+                   "--color_trc_dist and --color_matrix_dist\n");
+    }
 }
 
 /* ADR-1190 — escape-aware splitting of the `--model` / `--feature` option
@@ -696,7 +720,7 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
     if (!optarg_copy)
         usage(app, "error while parsing model option: %s", optarg);
     (void)memset(optarg_copy, 0, optarg_sz + 1);
-    (void)strncpy(optarg_copy, optarg, optarg_sz);
+    (void)memcpy(optarg_copy, optarg, optarg_sz);
 
     CLIModelConfig model_cfg = {
         .path = nullptr,
@@ -784,7 +808,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     if (!optarg_copy)
         usage(app, "error while parsing feature option: %s", optarg);
     (void)memset(optarg_copy, 0, optarg_sz + 1);
-    (void)strncpy(optarg_copy, optarg, optarg_sz);
+    (void)memcpy(optarg_copy, optarg, optarg_sz);
     void *buf = optarg_copy;
 
     char *const feature_name = cli_split(&optarg_copy, '=');
@@ -995,6 +1019,16 @@ void parse_nflx_ctc(CLISettings *const settings, const char *const optarg, const
     usage(app, "bad nflx_ctc version \"%s\"", optarg);
 }
 
+[[nodiscard]] static unsigned parse_dimension(const char *const optarg, const int option,
+                                              const char *const option_name, const char *const app)
+{
+    const unsigned val = parse_unsigned(optarg, option, app);
+    if (val == 0) {
+        usage(app, "--%s must be > 0", option_name);
+    }
+    return val;
+}
+
 void handle_video_input_flag(const int o, const char *const optarg, const char *const app,
                              CLISettings *const settings)
 {
@@ -1006,15 +1040,31 @@ void handle_video_input_flag(const int o, const char *const optarg, const char *
         settings->path_dist = const_cast<char *>(optarg);
         break;
     case 'w':
-        settings->width = parse_unsigned(optarg, 'w', app);
+        settings->width = parse_dimension(optarg, 'w', "width", app);
         settings->use_yuv = true;
         break;
     case 'h':
-        settings->height = parse_unsigned(optarg, 'h', app);
+        settings->height = parse_dimension(optarg, 'h', "height", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_WIDTH_REF:
+        settings->width_ref = parse_dimension(optarg, ARG_WIDTH_REF, "width_ref", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_WIDTH_DIST:
+        settings->width_dist = parse_dimension(optarg, ARG_WIDTH_DIST, "width_dist", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_HEIGHT_REF:
+        settings->height_ref = parse_dimension(optarg, ARG_HEIGHT_REF, "height_ref", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_HEIGHT_DIST:
+        settings->height_dist = parse_dimension(optarg, ARG_HEIGHT_DIST, "height_dist", app);
         settings->use_yuv = true;
         break;
     case 'p':
-        settings->pix_fmt = parse_pix_fmt(optarg, 'p', app);
+        parse_pixel_format(optarg, 'p', app, settings);
         settings->use_yuv = true;
         break;
     case 'b':
@@ -1214,24 +1264,79 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
     }
 }
 
-static void validate_yuv_settings(const char *const app, const CLISettings *const settings)
+static void default_yuv_sizes(CLISettings *const settings)
+{
+    if (settings->width_ref == 0)
+        settings->width_ref = settings->width;
+    if (settings->height_ref == 0)
+        settings->height_ref = settings->height;
+    if (settings->width_dist == 0)
+        settings->width_dist = settings->width;
+    if (settings->height_dist == 0)
+        settings->height_dist = settings->height;
+}
+
+/* A layout of the import table holds the bit depths of its row. */
+static void validate_layout_depth(const char *const app, const CLISettings *const settings)
+{
+    for (const VmafxImportLayout &row : vmafx_import_layouts) {
+        if (row.pix_fmt != settings->input_layout)
+            continue;
+        if (settings->bitdepth >= row.bpc_min && settings->bitdepth <= row.bpc_max)
+            continue;
+        char range[16];
+        (void)snprintf(range, sizeof range, "%u to %u", row.bpc_min, row.bpc_max);
+        usage(app, "--pixel_format %s holds %s bits per component, not --bitdepth %u", row.name,
+              static_cast<const char *>(range), settings->bitdepth);
+    }
+}
+
+/* An RGB layout is converted to Y'CbCr with a matrix, range and transfer the user states
+ * (ADR-2146): each one missing is refused by its flag, a matrix or transfer the integer
+ * conversion does not make is refused by name. Nothing is assumed. */
+static void validate_rgb_statement(const char *const app, const CLISettings *const settings)
+{
+    for (const VmafxImportLayout &row : vmafx_import_layouts) {
+        if (row.pix_fmt != settings->input_layout || !row.needs_statement)
+            continue;
+        const char *const need = "%s is converted to Y'CbCr with a matrix, range and transfer you "
+                                 "state; none is assumed: --%s is missing";
+        if (!settings->rgb_matrix)
+            usage(app, need, row.name, "rgb_matrix (bt601, bt709 or bt2020ncl)");
+        if (!settings->rgb_range)
+            usage(app, need, row.name, "rgb_range (limited or full)");
+        if (!settings->rgb_transfer)
+            usage(app, need, row.name, "rgb_transfer (bt709, srgb, pq or hlg)");
+        if (!settings->rgb_out_range)
+            usage(app, need, row.name, "rgb_out_range (limited or full)");
+        if (settings->rgb_matrix == VMAF_COLOR_MATRIX_BT2020_CL ||
+            settings->rgb_matrix == VMAF_COLOR_MATRIX_ICTCP) {
+            usage(app, "--rgb_matrix: the integer conversion covers bt601, bt709 and bt2020ncl; "
+                       "bt2020cl and ictcp need the transfer function in the conversion");
+        }
+        if (settings->rgb_transfer == VMAF_COLOR_TRC_LINEAR) {
+            usage(app, "--rgb_transfer linear: the matrix applies to non-linear R'G'B'; encode "
+                       "the samples first");
+        }
+    }
+}
+
+static void validate_yuv_settings(const char *const app, CLISettings *const settings)
 {
     if (!settings->use_yuv) {
         return;
     }
-    if (settings->width == 0 && (settings->height || settings->pix_fmt || settings->bitdepth)) {
-        usage(app, "--width must be > 0");
-    }
-    if (settings->height == 0 && (settings->width || settings->pix_fmt || settings->bitdepth)) {
-        usage(app, "--height must be > 0");
-    }
-    if (!(settings->width && settings->height && settings->pix_fmt && settings->bitdepth)) {
+    default_yuv_sizes(settings);
+    if (!(settings->width_ref && settings->height_ref && settings->width_dist &&
+          settings->height_dist && settings->pix_fmt && settings->bitdepth)) {
         usage(app, "The following options are required for .yuv input:\n"
-                   "  --width/-w\n"
-                   "  --height/-h\n"
+                   "  --width/-w, or --width_ref and --width_dist\n"
+                   "  --height/-h, or --height_ref and --height_dist\n"
                    "  --pixel_format/-p\n"
-                   "  --bitdepth/-b\n");
+                   "  --bitdepth/-b (implied by most layouts)\n");
     }
+    validate_layout_depth(app, settings);
+    validate_rgb_statement(app, settings);
 }
 
 void validate_cli_settings(const char *const app, CLISettings *const settings)
@@ -1248,6 +1353,7 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
         usage(app, "Distorted .y4m or .yuv (-d/--distorted) is required");
 
     validate_yuv_settings(app, settings);
+    validate_color_settings(app, settings);
 
     if (settings->model_cnt == 0 && !settings->no_prediction) {
 #if VMAF_BUILT_IN_MODELS
@@ -1354,6 +1460,15 @@ void handle_misc_flag(const int o, const char *const app, CLISettings *const set
     case ARG_NETFLIX_COMPAT:
         settings->netflix_compat = true;
         break;
+    case ARG_PROVENANCE_SIDECAR:
+        settings->provenance_sidecar = true;
+        break;
+    case ARG_LIST_BACKENDS:
+        settings->list_backends = true;
+        break;
+    case ARG_CHECK_SAMPLE_RANGE:
+        settings->check_sample_range = true;
+        break;
     case 'v':
         if (settings->vmafx_mode) {
             (void)fprintf(stderr, "VMAFX %s (auto-backend, precision=max)\n", vmaf_version());
@@ -1375,6 +1490,10 @@ bool handle_primary_cli_opt(const int o, const char *const optarg, const char *c
     case 'd':
     case 'w':
     case 'h':
+    case ARG_WIDTH_REF:
+    case ARG_WIDTH_DIST:
+    case ARG_HEIGHT_REF:
+    case ARG_HEIGHT_DIST:
     case 'p':
     case 'b':
     case 'o':
@@ -1402,10 +1521,31 @@ bool handle_primary_cli_opt(const int o, const char *const optarg, const char *c
     }
 }
 
+/* Colour-description and RGB-conversion options; true when `o` is one. */
+[[nodiscard]] bool handle_conversion_cli_opt(const int o, const char *const optarg,
+                                             const char *const app, CLISettings *const settings)
+{
+    if (is_color_flag(o)) {
+        handle_color_flag(o, optarg, app, settings);
+        return true;
+    }
+    switch (o) {
+    case ARG_RGB_MATRIX:
+    case ARG_RGB_RANGE:
+    case ARG_RGB_TRANSFER:
+    case ARG_RGB_OUT_RANGE:
+        handle_rgb_flag(o, optarg, app, settings);
+        return true;
+    default:
+        return false;
+    }
+}
+
 void process_single_cli_opt(const int o, const char *const optarg, const char *const app,
                             CLISettings *const settings)
 {
-    if (handle_primary_cli_opt(o, optarg, app, settings))
+    if (handle_primary_cli_opt(o, optarg, app, settings) ||
+        handle_conversion_cli_opt(o, optarg, app, settings))
         return;
 
     switch (o) {
@@ -1445,7 +1585,13 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
     case 'q':
     case 'v':
     case ARG_NETFLIX_COMPAT:
+    case ARG_PROVENANCE_SIDECAR:
+    case ARG_LIST_BACKENDS:
+    case ARG_CHECK_SAMPLE_RANGE:
         handle_misc_flag(o, app, settings);
+        break;
+    case ARG_VERIFY_PROVENANCE:
+        settings->verify_provenance = optarg;
         break;
     default:
         break;
@@ -1482,6 +1628,9 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     while ((o = getopt_long(argc, argv, short_opts, long_opts, nullptr)) >= 0) {
         process_single_cli_opt(o, optarg, argv[0], settings);
     }
+    /* ADR-1874: the report needs no inputs; vmaf.cpp prints it and exits. */
+    if (settings->list_backends)
+        return;
 
     if (settings->vmafx_mode) {
         /* ADR-0690: apply modernized defaults (precision=max) unless explicit --precision given */
@@ -1508,8 +1657,32 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     if (!settings->output_fmt)
         settings->output_fmt = VMAF_OUTPUT_FORMAT_XML;
 
+    /* RC4 WP5: a verification run takes its configuration from the report. */
+    if (settings->verify_provenance)
+        return;
     apply_backend_settings(argv[0], settings);
     validate_cli_settings(argv[0], settings);
+}
+
+const char *cli_verify_provenance_arg(const int argc, char *const *const argv)
+{
+    static constexpr std::string_view option = "--verify-provenance";
+    for (int i = 1; i < argc; i++) {
+        const std::string_view arg{argv[i]};
+        if (arg == option)
+            return i + 1 < argc ? argv[i + 1] : nullptr;
+        if (arg.starts_with(option) && arg.size() > option.size() && arg[option.size()] == '=')
+            return argv[i] + option.size() + 1;
+    }
+    return nullptr;
+}
+
+void cli_parse_reset(void)
+{
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    optreset = 1;
+#endif
+    optind = 1;
 }
 
 /* Release what the settings still own. An option dictionary handed to

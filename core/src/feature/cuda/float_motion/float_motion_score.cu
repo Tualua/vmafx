@@ -12,22 +12,16 @@
  *      horizontal pass, mirror padding `2 * (sup - 1) - idx`.
  *   3. Frame > 0: sum of absolute differences against the previous blur.
  *
- *  Numerical contract (ADR-1403, ADR-1409). Both steps are the CPU's
- *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
- *   - the blur is convolution_f32_c_s(): each tap one rounded fp32 multiply
- *     and one rounded fp32 add, taps in order. The fatbin builds with
- *     --fmad=false, so nothing is fused.
- *   - the SAD is compute_motion_simd(): float_sad_line() adds the absolute
- *     differences of one row, left to right, into one fp32 accumulator, and
- *     the rows are added top to bottom into another. The result depends on
- *     that order (at 1920x1080 it is up to 1.4e-4 from the exact sum), so
- *     float_motion_row_sad runs one thread per row over the whole row, and
- *     the host adds the rows (feature/float_motion_sad.h). A per-block
- *     partial sum, which this file used to produce, cannot give that value.
+ *  Numerical contract (ADR-1403, ADR-1409): the fatbin builds with
+ *  --fmad=false, so nothing is fused. See feature/float_motion_sad.h.
  */
 
 #include "cuda_helper.cuh"
 #include "common.h"
+#include "cuda/cuda_tile_index.h"
+
+#define VMAF_FLOAT_MOTION_FUNC static __device__ __forceinline__
+#include "feature/float_motion_sad.h"
 
 #define FM_BX 16
 #define FM_BY 16
@@ -36,42 +30,46 @@
 #define FM_TILE_H (FM_BY + 2 * FM_RADIUS)
 #define FM_ROW_THREADS 128
 
-__device__ static const float FM_FILT[5] = {
+namespace
+{
+
+__device__ const float FM_FILT[5] = {
     0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f, 0.054488685f,
 };
 
+/* Tile-load index: the CPU's skip-boundary mirror (reflect-101), clamped into
+ * the plane for the padding loads no output consumes. A plane narrower or
+ * shorter than one tile (3 to 9 samples, or 17) reflected some of those loads
+ * to a negative index, a read before the plane; the HIP twin clamps them the
+ * same way (fm_tile_index()). */
 __device__ __forceinline__ int fm_mirror(int idx, int sup)
 {
-    if (idx < 0)
-        return -idx;
-    if (idx >= sup)
-        return 2 * (sup - 1) - idx;
-    return idx;
+    return vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx, sup), sup);
 }
 
 /* picture_copy() of an 8-bit sample. */
 struct FmSample8 {
     const uint8_t *plane;
     ptrdiff_t stride;
-
-    __device__ __forceinline__ float operator()(int gx, int gy) const
-    {
-        return (float)plane[gy * stride + gx] - 128.0f;
-    }
 };
+
+__device__ __forceinline__ float fm_sample(const FmSample8 &s, int gx, int gy)
+{
+    return (float)s.plane[gy * s.stride + gx] - 128.0f;
+}
 
 /* picture_copy() of a 10-, 12- or 16-bit sample. */
 struct FmSample16 {
     const uint8_t *plane;
     ptrdiff_t stride;
     float inv_scaler;
-
-    __device__ __forceinline__ float operator()(int gx, int gy) const
-    {
-        const uint16_t r = reinterpret_cast<const uint16_t *>(plane + gy * stride)[gx];
-        return (float)r * inv_scaler - 128.0f;
-    }
 };
+
+__device__ __forceinline__ float fm_sample(const FmSample16 &s, int gx, int gy)
+{
+    const uint16_t r = reinterpret_cast<const uint16_t *>(s.plane + gy * s.stride)[gx];
+    return (float)r * s.inv_scaler - 128.0f;
+}
 
 /* Fill this block's (16 + 4) x (16 + 4) tile of converted samples, mirrored
  * at the frame edges. Every thread of the block loads its share. */
@@ -87,7 +85,7 @@ __device__ __forceinline__ void fm_load_tile(float (*tile)[FM_TILE_W], const Sam
         const unsigned tc = i % FM_TILE_W;
         const int gx = fm_mirror(tile_ox + (int)tc, (int)width);
         const int gy = fm_mirror(tile_oy + (int)tr, (int)height);
-        tile[tr][tc] = sample(gx, gy);
+        tile[tr][tc] = fm_sample(sample, gx, gy);
     }
 }
 
@@ -102,8 +100,9 @@ __device__ __forceinline__ float fm_blur_pixel(const float (*tile)[FM_TILE_W])
     for (int xf = 0; xf < 5; xf++) {
         float v = 0.0f;
 #pragma unroll
-        for (int yf = 0; yf < 5; yf++)
+        for (int yf = 0; yf < 5; yf++) {
             v += FM_FILT[yf] * tile[ly - FM_RADIUS + yf][lx - FM_RADIUS + xf];
+        }
         blurred += FM_FILT[xf] * v;
     }
     return blurred;
@@ -118,9 +117,12 @@ __device__ __forceinline__ void fm_blur_block(float (*tile)[FM_TILE_W], const Sa
     __syncthreads();
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x < width && y < height)
+    if (x < width && y < height) {
         cur_blur[(size_t)y * width + (size_t)x] = fm_blur_pixel(tile);
+    }
 }
+
+} /* namespace */
 
 extern "C" {
 
@@ -129,7 +131,9 @@ __global__ void float_motion_kernel_8bpc(const uint8_t *__restrict__ ref, ptrdif
                                          unsigned height)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
-    const FmSample8 sample = {ref, ref_stride};
+    FmSample8 sample;
+    sample.plane = ref;
+    sample.stride = ref_stride;
     fm_blur_block(s_tile, sample, cur_blur, width, height);
 }
 
@@ -138,14 +142,11 @@ __global__ void float_motion_kernel_16bpc(const uint8_t *__restrict__ ref, ptrdi
                                           unsigned height, unsigned bpc)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
-    float scaler = 1.0f;
-    if (bpc == 10)
-        scaler = 4.0f;
-    else if (bpc == 12)
-        scaler = 16.0f;
-    else if (bpc == 16)
-        scaler = 256.0f;
-    const FmSample16 sample = {ref, ref_stride, 1.0f / scaler};
+    const float scaler = vmaf_float_motion_scaler(bpc);
+    FmSample16 sample;
+    sample.plane = ref;
+    sample.stride = ref_stride;
+    sample.inv_scaler = 1.0f / scaler;
     fm_blur_block(s_tile, sample, cur_blur, width, height);
 }
 
@@ -157,8 +158,9 @@ __global__ void __launch_bounds__(FM_ROW_THREADS)
                          float *__restrict__ row_sad, unsigned width, unsigned height)
 {
     const unsigned y = blockIdx.x * blockDim.x + threadIdx.x;
-    if (y >= height)
+    if (y >= height) {
         return;
+    }
     const float *cur = cur_blur + (size_t)y * width;
     const float *prev = prev_blur + (size_t)y * width;
     float accum = 0.0f;

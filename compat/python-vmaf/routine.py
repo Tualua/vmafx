@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
+import copy
 import os
 from types import SimpleNamespace
 
@@ -37,6 +38,7 @@ _DATASET_LEVEL_FIELDS = (
     "resampling_type",
     "crop_cmd",
     "pad_cmd",
+    "fps_cmd",
     "workfile_yuv_type",
     "duration_sec",
     "fps",
@@ -68,23 +70,68 @@ def _override_or_dis(dataset_value, dis_video, key):
 
 
 def _resolve_dimension(dataset_value, ref_video, dis_video, key):
-    """Frame width/height: dataset override, else whichever side declares it.
-
-    When both sides declare it they have to agree; that assert is the dataset's
-    only guard against a reference/distorted geometry mismatch.
+    """Common frame width/height: dataset override, else the reference's, else
+    the distorted video's. The two sides may differ since Netflix/vmaf
+    2e6bbb657; each side's own value is resolved by _resolve_side_dimensions().
     """
     if dataset_value is not None:
         return dataset_value
-    in_ref = key in ref_video
-    in_dis = key in dis_video
-    if in_ref and not in_dis:
+    if key in ref_video:
         return ref_video[key]
-    if in_dis and not in_ref:
+    if key in dis_video:
         return dis_video[key]
-    if in_ref and in_dis:
-        assert ref_video[key] == dis_video[key]
-        return ref_video[key]
     return None
+
+
+def _resolve_side_dimensions(video, common_width, common_height, side):
+    """(width, height) of one side: its own pair, else the common pair.
+
+    A video that sets one of the two must set both (Netflix/vmaf 2e6bbb657).
+    """
+    has_width = "width" in video
+    has_height = "height" in video
+    if has_width and not has_height:
+        assert False, (
+            f"Width is set in {side}_video, but height is not set. "
+            "If one is set, then the other must be set too."
+        )
+    if has_height and not has_width:
+        assert False, (
+            f"Height is set in {side}_video, but width is not set. "
+            "If one is set, then the other must be set too."
+        )
+    if has_width:
+        return video["width"], video["height"]
+    return common_width, common_height
+
+
+def _assert_equalizable(fields):
+    """Different reference and distorted sizes need a quality size to meet at."""
+    ref_wh = (fields.ref_width, fields.ref_height)
+    dis_wh = (fields.dis_width, fields.dis_height)
+    if None in ref_wh or None in dis_wh or ref_wh == dis_wh:
+        return
+    assert fields.quality_width is not None and fields.quality_height is not None, (
+        "Width and height are set for ref_video and dis_video, but they do not match and there "
+        "is no quality width and quality height to equalize them."
+    )
+
+
+def _resampling_entries(common, ref_type, dis_type):
+    """asset_dict entries for the resampling types (Netflix/vmaf 2e6bbb657).
+
+    Equal per-side types keep the common key, for files written before the
+    per-side keys existed; one per-side type is paired with the common one.
+    """
+    if ref_type is not None and dis_type is not None:
+        if ref_type == dis_type:
+            return [("resampling_type", ref_type)]
+        return [("ref_resampling_type", ref_type), ("dis_resampling_type", dis_type)]
+    if ref_type is not None:
+        return [("ref_resampling_type", ref_type), ("dis_resampling_type", common)]
+    if dis_type is not None:
+        return [("dis_resampling_type", dis_type), ("ref_resampling_type", common)]
+    return [("resampling_type", common)]
 
 
 def _resolve_cmd_pair(dataset_value, ref_video, dis_video, key):
@@ -115,14 +162,23 @@ def _resolve_asset_fields(defaults, ref_video, dis_video, groundtruth):
         fps=_override_or_dis(defaults.fps, dis_video, "fps"),
         start_frame=_override_or_dis(defaults.start_frame, dis_video, "start_frame"),
         end_frame=_override_or_dis(defaults.end_frame, dis_video, "end_frame"),
-        workfile_yuv_type=defaults.workfile_yuv_type,
+        workfile_yuv_type=_override_or_dis(
+            defaults.workfile_yuv_type, dis_video, "workfile_yuv_type"
+        ),
     )
-    fields.ref_crop_cmd, fields.dis_crop_cmd = _resolve_cmd_pair(
-        defaults.crop_cmd, ref_video, dis_video, "crop_cmd"
+    fields.ref_width, fields.ref_height = _resolve_side_dimensions(
+        ref_video, fields.width, fields.height, "ref"
     )
-    fields.ref_pad_cmd, fields.dis_pad_cmd = _resolve_cmd_pair(
-        defaults.pad_cmd, ref_video, dis_video, "pad_cmd"
+    fields.dis_width, fields.dis_height = _resolve_side_dimensions(
+        dis_video, fields.width, fields.height, "dis"
     )
+    _assert_equalizable(fields)
+    fields.ref_resampling_type = ref_video.get("resampling_type", fields.resampling_type)
+    fields.dis_resampling_type = dis_video.get("resampling_type", fields.resampling_type)
+    for key in ("crop_cmd", "pad_cmd", "fps_cmd"):
+        ref_cmd, dis_cmd = _resolve_cmd_pair(getattr(defaults, key), ref_video, dis_video, key)
+        setattr(fields, "ref_" + key, ref_cmd)
+        setattr(fields, "dis_" + key, dis_cmd)
     return fields
 
 
@@ -140,16 +196,15 @@ def _copy_present(target, sources):
 def _build_asset_dict(fields, ref_video, dis_video):
     """The Asset ``asset_dict``; fields the dataset does not set are left out."""
     asset_dict = {"ref_yuv_type": fields.ref_yuv_fmt, "dis_yuv_type": fields.dis_yuv_fmt}
-    if fields.width is not None:
-        if asset_dict["ref_yuv_type"] != "notyuv":
-            asset_dict["ref_width"] = fields.width
-        if asset_dict["dis_yuv_type"] != "notyuv":
-            asset_dict["dis_width"] = fields.width
-    if fields.height is not None:
-        if asset_dict["ref_yuv_type"] != "notyuv":
-            asset_dict["ref_height"] = fields.height
-        if asset_dict["dis_yuv_type"] != "notyuv":
-            asset_dict["dis_height"] = fields.height
+    # Each side's own size (Netflix/vmaf 2e6bbb657); a notyuv side has none.
+    for side, key, value in (
+        ("ref", "width", fields.ref_width),
+        ("dis", "width", fields.dis_width),
+        ("ref", "height", fields.ref_height),
+        ("dis", "height", fields.dis_height),
+    ):
+        if value is not None and asset_dict[side + "_yuv_type"] != "notyuv":
+            asset_dict[side + "_" + key] = value
 
     for asset_key, value in (
         ("groundtruth", fields.groundtruth),
@@ -157,11 +212,15 @@ def _build_asset_dict(fields, ref_video, dis_video):
         ("groundtruth_std", fields.groundtruth_std),
         ("quality_width", fields.quality_width),
         ("quality_height", fields.quality_height),
-        ("resampling_type", fields.resampling_type),
+        *_resampling_entries(
+            fields.resampling_type, fields.ref_resampling_type, fields.dis_resampling_type
+        ),
         ("ref_crop_cmd", fields.ref_crop_cmd),
         ("dis_crop_cmd", fields.dis_crop_cmd),
         ("ref_pad_cmd", fields.ref_pad_cmd),
         ("dis_pad_cmd", fields.dis_pad_cmd),
+        ("ref_fps_cmd", fields.ref_fps_cmd),
+        ("dis_fps_cmd", fields.dis_fps_cmd),
         ("duration_sec", fields.duration_sec),
         ("workfile_yuv_type", fields.workfile_yuv_type),
         ("rebuf_indices", fields.rebuf_indices),
@@ -187,42 +246,61 @@ def _build_asset_dict(fields, ref_video, dis_video):
     return asset_dict
 
 
-def read_dataset(dataset, **kwargs):
+class SubjectiveDatasetReader(object):
+    """Reads a subjective dataset file into Assets (Netflix/vmaf 2e6bbb657).
 
-    groundtruth_key = kwargs["groundtruth_key"] if "groundtruth_key" in kwargs else None
-    skip_asset_with_none_groundtruth = (
-        kwargs["skip_asset_with_none_groundtruth"]
-        if "skip_asset_with_none_groundtruth" in kwargs
-        else False
-    )
-    content_ids = kwargs["content_ids"] if "content_ids" in kwargs else None
-    asset_ids = kwargs["asset_ids"] if "asset_ids" in kwargs else None
+    ``kwargs``: ``groundtruth_key``, ``skip_asset_with_none_groundtruth``,
+    ``content_ids``, ``asset_ids``, ``workdir_root``. ``read_dataset()`` is
+    ``SubjectiveDatasetReader(dataset, **kwargs).read()``.
+    """
+
+    def __init__(self, dataset, **kwargs):
+        self.dataset = dataset
+        self.kwargs = kwargs
+
+        self._assert_args()
+
+    def _assert_args(self):
+
+        dataset = self.dataset
+
+        # asserts, can add more to the list...
+        assert hasattr(dataset, "dataset_name")
+        assert hasattr(dataset, "ref_videos")
+        assert hasattr(dataset, "dis_videos")
+
+        assert hasattr(dataset, "yuv_fmt") or all(
+            ["yuv_fmt" in ref_video for ref_video in dataset.ref_videos]
+        )
+
+    def read(self):
+        return _read_dataset_assets(self.dataset, self.kwargs)
+
+
+def _selected(dis_video, content_ids, asset_ids):
+    """Whether the content_ids / asset_ids filters keep this distorted video."""
+    if content_ids is not None and dis_video["content_id"] not in content_ids:
+        return False
+    return asset_ids is None or dis_video["asset_id"] in asset_ids
+
+
+def _read_dataset_assets(dataset, kwargs):
+    """The body of SubjectiveDatasetReader.read(): one Asset per distorted video."""
+    groundtruth_key = kwargs.get("groundtruth_key")
+    skip_asset_with_none_groundtruth = kwargs.get("skip_asset_with_none_groundtruth", False)
+    content_ids = kwargs.get("content_ids")
+    asset_ids = kwargs.get("asset_ids")
     workdir_root = kwargs["workdir_root"] if "workdir_root" in kwargs else VmafConfig.workdir_path()
 
-    # asserts, can add more to the list...
-    assert hasattr(dataset, "dataset_name")
-    assert hasattr(dataset, "ref_videos")
-    assert hasattr(dataset, "dis_videos")
-
-    assert hasattr(dataset, "yuv_fmt") or all(
-        ["yuv_fmt" in ref_video for ref_video in dataset.ref_videos]
-    )
-
-    data_set_name = dataset.dataset_name
-    ref_videos = dataset.ref_videos
-    dis_videos = dataset.dis_videos
     defaults = _dataset_defaults(dataset)
 
     ref_dict = {}  # dictionary of content_id -> path for ref videos
-    for ref_video in ref_videos:
+    for ref_video in dataset.ref_videos:
         ref_dict[ref_video["content_id"]] = ref_video
 
     assets = []
-    for dis_video in dis_videos:
-        if content_ids is not None and dis_video["content_id"] not in content_ids:
-            continue
-
-        if asset_ids is not None and dis_video["asset_id"] not in asset_ids:
+    for dis_video in dataset.dis_videos:
+        if not _selected(dis_video, content_ids, asset_ids):
             continue
 
         groundtruth = _resolve_groundtruth(dis_video, groundtruth_key)
@@ -232,10 +310,10 @@ def read_dataset(dataset, **kwargs):
         asset_dict = _build_asset_dict(fields, ref_video, dis_video)
 
         if groundtruth is None and skip_asset_with_none_groundtruth:
-            pass
-        else:
-            asset = Asset(
-                dataset=data_set_name,
+            continue
+        assets.append(
+            Asset(
+                dataset=dataset.dataset_name,
                 content_id=dis_video["content_id"],
                 asset_id=dis_video["asset_id"],
                 workdir_root=workdir_root,
@@ -243,9 +321,16 @@ def read_dataset(dataset, **kwargs):
                 dis_path=dis_video["path"],
                 asset_dict=asset_dict,
             )
-            assets.append(asset)
+        )
 
     return assets
+
+
+def read_dataset(dataset, **kwargs):
+
+    subjective_dataset_reader = SubjectiveDatasetReader(dataset, **kwargs)
+
+    return subjective_dataset_reader.read()
 
 
 def _run_one_side(test_dataset, runner_class, opts):
@@ -414,65 +499,31 @@ def compare_two_quality_runners_on_dataset(
     }
 
 
+def _aggregated_dataset(test_dataset, kwargs):
+    """The dataset with groundtruth from subjective modeling of its raw scores."""
+    from sureal.dataset_reader import RawDatasetReader
+    from sureal.subjective_model import DmosModel
+
+    subj_model_class = (
+        kwargs["subj_model_class"]
+        if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
+        else DmosModel
+    )
+    dataset_reader_class = (
+        kwargs["dataset_reader_class"] if "dataset_reader_class" in kwargs else RawDatasetReader
+    )
+    subjective_model = subj_model_class(dataset_reader_class(test_dataset))
+    subjective_model.run_modeling(**kwargs)
+    return subjective_model.to_aggregated_dataset(**kwargs)
+
+
 def _read_assets_with_subjective_fallback(test_dataset, kwargs):
-    """Read dataset assets; fall back to subjective modeling without groundtruth."""
+    """(assets, raw assets): the dataset's assets, and when any lacks
+    groundtruth, those of the aggregated dataset with the originals as raw."""
     test_assets = read_dataset(test_dataset, **kwargs)
-    test_raw_assets = None
-    try:
-        for test_asset in test_assets:
-            assert test_asset.groundtruth is not None
-    except AssertionError:
-        # no groundtruth, try to do subjective modeling
-        from sureal.dataset_reader import RawDatasetReader
-        from sureal.subjective_model import DmosModel
-
-        subj_model_class = (
-            kwargs["subj_model_class"]
-            if "subj_model_class" in kwargs and kwargs["subj_model_class"] is not None
-            else DmosModel
-        )
-        dataset_reader_class = (
-            kwargs["dataset_reader_class"] if "dataset_reader_class" in kwargs else RawDatasetReader
-        )
-        subjective_model = subj_model_class(dataset_reader_class(test_dataset))
-        subjective_model.run_modeling(**kwargs)
-        test_dataset_aggregate = subjective_model.to_aggregated_dataset(**kwargs)
-        test_raw_assets = test_assets
-        test_assets = read_dataset(test_dataset_aggregate, **kwargs)
-    return test_assets, test_raw_assets
-
-
-def _add_model_filepaths(optional_dict, model_filepath, kwargs):
-    """Record the model paths (default + per-resolution) into optional_dict."""
-    if not optional_dict:
-        optional_dict = {}
-    optional_dict["model_filepath"] = model_filepath
-    for res in ("720", "480", "2160"):
-        key = "model_{}_filepath".format(res)
-        if key in kwargs and kwargs[key] is not None:
-            optional_dict["{}model_filepath".format(res)] = kwargs[key]
-    return optional_dict
-
-
-def _build_test_optional_dict(model_filepath, kwargs):
-    """Assemble the runner's optional_dict from model paths and kwargs flags."""
-    optional_dict = kwargs["optional_dict"] if "optional_dict" in kwargs else None
-
-    if model_filepath is not None:
-        optional_dict = _add_model_filepaths(optional_dict, model_filepath, kwargs)
-
-    for flag in ("enable_transform_score", "disable_clip_score", "subsample"):
-        if flag in kwargs and kwargs[flag] is not None:
-            if not optional_dict:
-                optional_dict = {}
-            optional_dict[flag] = kwargs[flag]
-
-    if "additional_optional_dict" in kwargs and kwargs["additional_optional_dict"] is not None:
-        assert isinstance(kwargs["additional_optional_dict"], dict)
-        if not optional_dict:
-            optional_dict = {}
-        optional_dict.update(kwargs["additional_optional_dict"])
-    return optional_dict
+    if all(test_asset.groundtruth is not None for test_asset in test_assets):
+        return test_assets, None
+    return read_dataset(_aggregated_dataset(test_dataset, kwargs), **kwargs), test_assets
 
 
 def _resolve_test_processes(kwargs, parallelize):
@@ -676,13 +727,14 @@ def _run_test_runner(
     parallelize,
     processes,
     aggregate_method,
+    delete_workdir=True,
 ):
     """Run the quality runner over the test assets; return (runner, results)."""
     runner = runner_class(
         test_assets,
         None,
         fifo_mode=fifo_mode,
-        delete_workdir=True,
+        delete_workdir=delete_workdir,
         result_store=result_store,
         optional_dict=optional_dict,
         optional_dict2=None,
@@ -701,6 +753,164 @@ def _raw_groundtruths(test_raw_assets):
     return list(map(lambda asset: asset.raw_groundtruth, test_raw_assets))
 
 
+# kwarg -> quality-runner option of the per-resolution models (Netflix/vmaf
+# 2e6bbb657); passed only when a model_filepath is set.
+_TESTER_MODEL_PATH_KWARGS = (
+    ("model_720_filepath", "720model_filepath"),
+    ("model_480_filepath", "480model_filepath"),
+    ("model_2160_filepath", "2160model_filepath"),
+    ("model_hfr_720_filepath", "hfr_720model_filepath"),
+    ("model_hfr_480_filepath", "hfr_480model_filepath"),
+    ("model_hfr_filepath", "hfr_model_filepath"),
+    ("model_hfr_2160_filepath", "hfr_2160model_filepath"),
+)
+
+
+def _tester_optional_dict(optional_dict, kwargs):
+    """The quality runner's optional_dict: the given one plus the kwargs options."""
+    optional_dict = {} if optional_dict is None else optional_dict
+    if optional_dict.get("model_filepath") is not None:
+        for kwarg, key in _TESTER_MODEL_PATH_KWARGS:
+            if kwargs.get(kwarg) is not None:
+                optional_dict[key] = kwargs[kwarg]
+    for flag in ("enable_transform_score", "disable_clip_score", "subsample"):
+        if kwargs.get(flag) is not None:
+            optional_dict[flag] = kwargs[flag]
+    if kwargs.get("additional_optional_dict") is not None:
+        assert isinstance(kwargs["additional_optional_dict"], dict)
+        optional_dict.update(kwargs["additional_optional_dict"])
+    return optional_dict
+
+
+class SubjectiveDatasetTester(object):
+    """Scores a quality runner on a SubjectiveDatasetReader's assets against
+    their groundtruth (Netflix/vmaf 2e6bbb657).
+
+    After ``run()``: ``test_assets`` (with groundtruth), ``results`` (one per
+    asset) and ``stats``. Assets without groundtruth get it from subjective
+    modeling (``subj_model_class``, default DMOS) and the runner then runs on
+    the raw assets. The fork keeps ``allow_uncalibrated``: a failing stats
+    calculation raises CalibrationError unless it is True.
+    """
+
+    def __init__(
+        self,
+        subjective_dataset_reader,
+        quality_runner_class,
+        quality_runner_optional_dict=None,
+        ax=None,
+        result_store=FileSystemResultStore(),
+        parallelize=True,
+        fifo_mode=True,
+        aggregate_method=np.mean,
+        type="regressor",
+        allow_uncalibrated=False,
+        **kwargs,
+    ):
+
+        self.dataset = subjective_dataset_reader.dataset
+        self.quality_runner_class = quality_runner_class
+        self.quality_runner_optional_dict = quality_runner_optional_dict
+        self.ax = ax
+        self.result_store = result_store
+        self.parallelize = parallelize
+        self.fifo_mode = fifo_mode
+        self.aggregate_method = aggregate_method
+        self.type = type
+        self.allow_uncalibrated = allow_uncalibrated
+        self.kwargs = kwargs
+        if hasattr(subjective_dataset_reader, "kwargs"):
+            self.kwargs.update(subjective_dataset_reader.kwargs)
+
+        self.test_assets = copy.deepcopy(subjective_dataset_reader.read())
+        self.test_raw_assets = None
+
+        self.results = []
+        self.stats = []
+
+    def derive_assets(self):
+        """Give assets without groundtruth one from subjective modeling."""
+        self.test_raw_assets = None
+        if all(test_asset.groundtruth is not None for test_asset in self.test_assets):
+            return
+        self.test_raw_assets = self.test_assets
+        self.test_assets = read_dataset(
+            _aggregated_dataset(self.dataset, self.kwargs), **self.kwargs
+        )
+
+    def run(self):
+        self.derive_assets()
+        assets_for_runner = (
+            self.test_assets if self.test_raw_assets is None else self.test_raw_assets
+        )
+        self.quality_runner_optional_dict = _tester_optional_dict(
+            self.quality_runner_optional_dict, self.kwargs
+        )
+        processes = _resolve_test_processes(self.kwargs, self.parallelize)
+
+        runner, self.results = _run_test_runner(
+            self.quality_runner_class,
+            assets_for_runner,
+            self.fifo_mode,
+            self.result_store,
+            self.quality_runner_optional_dict,
+            self.parallelize,
+            processes,
+            self.aggregate_method,
+            delete_workdir=self.kwargs.get("delete_workdir", True),
+        )
+        model_type = _resolve_test_model_type(runner, self.type)
+        split_test_indices_for_perf_ci = self.kwargs.get("split_test_indices_for_perf_ci", False)
+        self.stats, num_models = self._stats(model_type, split_test_indices_for_perf_ci)
+
+        _print_test_stats(model_type, self.stats, split_test_indices_for_perf_ci)
+
+        if self.ax is not None:
+            _plot_test_scatter(
+                self.ax,
+                model_type,
+                self.quality_runner_class,
+                self.stats,
+                self.test_assets,
+                num_models,
+                self.kwargs,
+            )
+
+    def _stats(self, model_type, split_test_indices_for_perf_ci):
+        """(stats, num_models) of the predictions against the groundtruth."""
+        groundtruths = list(map(lambda asset: asset.groundtruth, self.test_assets))
+        predictions = list(
+            map(lambda result: result[self.quality_runner_class.get_score_key()], self.results)
+        )
+        groundtruths_std = list(map(lambda asset: asset.groundtruth_std, self.test_assets))
+        return _compute_test_stats(
+            model_type,
+            groundtruths,
+            predictions,
+            self.quality_runner_class,
+            self.results,
+            _raw_groundtruths(self.test_raw_assets),
+            groundtruths_std,
+            split_test_indices_for_perf_ci,
+            self.allow_uncalibrated,
+        )
+
+
+def _test_optional_dict(model_filepath, kwargs):
+    """run_test_on_dataset()'s optional_dict, taken out of kwargs, with the
+    model path in it (Netflix/vmaf 2e6bbb657)."""
+    optional_dict = kwargs.pop("optional_dict", None) or {}
+    optional_dict.setdefault("model_filepath", None)
+    if model_filepath is not None and optional_dict["model_filepath"] is not None:
+        # make sure the specified model_filepath matches the one in optional_dict
+        assert (
+            optional_dict["model_filepath"] == model_filepath
+        ), "Different model_filepath specified in optional_dict"
+    elif model_filepath is not None:
+        optional_dict["model_filepath"] = model_filepath
+    return optional_dict
+
+
 def run_test_on_dataset(
     test_dataset,
     runner_class,
@@ -715,52 +925,25 @@ def run_test_on_dataset(
     **kwargs,
 ):
 
-    test_assets, test_raw_assets = _read_assets_with_subjective_fallback(test_dataset, kwargs)
-    optional_dict = _build_test_optional_dict(model_filepath, kwargs)
-    processes = _resolve_test_processes(kwargs, parallelize)
+    subjective_dataset_reader = SubjectiveDatasetReader(test_dataset, **kwargs)
+    optional_dict = _test_optional_dict(model_filepath, kwargs)
 
-    runner, results = _run_test_runner(
+    subjective_dataset_tester = SubjectiveDatasetTester(
+        subjective_dataset_reader,
         runner_class,
-        test_assets,
-        fifo_mode,
-        result_store,
-        optional_dict,
-        parallelize,
-        processes,
-        aggregate_method,
+        quality_runner_optional_dict=optional_dict,
+        ax=ax,
+        result_store=result_store,
+        parallelize=parallelize,
+        fifo_mode=fifo_mode,
+        aggregate_method=aggregate_method,
+        type=type,
+        allow_uncalibrated=allow_uncalibrated,
+        **kwargs,
     )
+    subjective_dataset_tester.run()
 
-    model_type = _resolve_test_model_type(runner, type)
-
-    split_test_indices_for_perf_ci = (
-        kwargs["split_test_indices_for_perf_ci"]
-        if "split_test_indices_for_perf_ci" in kwargs
-        else False
-    )
-
-    # plot
-    groundtruths = list(map(lambda asset: asset.groundtruth, test_assets))
-    predictions = list(map(lambda result: result[runner_class.get_score_key()], results))
-    raw_grountruths = _raw_groundtruths(test_raw_assets)
-    groundtruths_std = list(map(lambda asset: asset.groundtruth_std, test_assets))
-    stats, num_models = _compute_test_stats(
-        model_type,
-        groundtruths,
-        predictions,
-        runner_class,
-        results,
-        raw_grountruths,
-        groundtruths_std,
-        split_test_indices_for_perf_ci,
-        allow_uncalibrated,
-    )
-
-    _print_test_stats(model_type, stats, split_test_indices_for_perf_ci)
-
-    if ax is not None:
-        _plot_test_scatter(ax, model_type, runner_class, stats, test_assets, num_models, kwargs)
-
-    return test_assets, results
+    return subjective_dataset_tester.test_assets, subjective_dataset_tester.results
 
 
 def print_matplotlib_warning():

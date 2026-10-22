@@ -25,7 +25,8 @@ REQUIRED = {
         "sycl/float_adm_sycl.cpp",
         "sycl/integer_adm_sycl.cpp",
         "metal/float_adm_metal.mm",
-        "metal/integer_adm_metal.mm",
+        # integer_adm_metal concludes in its host file (ADR-1806).
+        "metal/integer_adm_metal_host.c",
     ),
     "vmaf_vif_emit_scores": (
         "float_vif.c",
@@ -49,7 +50,7 @@ REQUIRED = {
         "sycl/float_adm_sycl.cpp",
         "sycl/integer_adm_sycl.cpp",
         "metal/float_adm_metal.mm",
-        "metal/integer_adm_metal.mm",
+        "metal/integer_adm_metal_host.c",
     ),
     "vmaf_feature_emit_finite_scores": (
         "float_adm.c",
