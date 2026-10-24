@@ -1,0 +1,56 @@
+{
+  "name": "vmafx (podman, local GPU toolchains)",
+  "build": {
+    "dockerfile": "../../dev/Containerfile",
+    "context": "../..",
+    "target": "gpu-sdks",
+    "options": [
+      "--format=docker"
+    ]
+  },
+  "runArgs": [
+    "--userns=keep-id:uid=2000,gid=2000",
+    "--device=/dev/dri",
+    "--group-add=keep-groups",
+    "--security-opt=label=disable"
+  ],
+  "containerUser": "vmaf",
+  "remoteUser": "vmaf",
+  "updateRemoteUserUID": false,
+  "mounts": [
+    "source=vmafx-devc-claude-${devcontainerId},target=/home/vmaf/.claude,type=volume,U=true",
+    "source=${localEnv:XDG_RUNTIME_DIR}/podman/podman.sock,target=/run/podman/podman.sock,type=bind"
+  ],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vmaf/.claude",
+    "CONTAINER_HOST": "unix:///run/podman/podman.sock",
+    "HOST_REPO": "${localWorkspaceFolder}"
+  },
+  "onCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends podman-remote && sudo ln -sf /usr/bin/podman-remote /usr/local/bin/podman",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "vmaf",
+      "installZsh": false,
+      "installOhMyZsh": false,
+      "upgradePackages": false
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/go:1": {},
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "llvm-vs-code-extensions.vscode-clangd",
+        "mesonbuild.mesonbuild",
+        "ms-python.python"
+      ],
+      "settings": {
+        "clangd.arguments": [
+          "--header-insertion=never"
+        ]
+      }
+    }
+  }
+}

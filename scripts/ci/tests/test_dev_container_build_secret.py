@@ -92,6 +92,18 @@ class BuildSecretContract(unittest.TestCase):
         text = self.containerfile.replace("required=false", "required=true", 1)
         self.assertTrue(any("required=false" in error for error in self.errors(containerfile=text)))
 
+    def test_env_secret_mount_fails(self) -> None:
+        text = self.containerfile.replace(
+            "id=github_token,required=false", "id=github_token,env=GITHUB_TOKEN,required=false", 1
+        )
+        self.assertTrue(any("not with env=" in error for error in self.errors(containerfile=text)))
+
+    def test_secret_file_not_read_fails(self) -> None:
+        text = self.containerfile.replace("cat /run/secrets/github_token", "cat /dev/null", 1)
+        self.assertTrue(
+            any("read the token from" in error for error in self.errors(containerfile=text))
+        )
+
     def test_missing_compose_source_or_build_grant_fails(self) -> None:
         for needle in ("    environment: GITHUB_TOKEN\n", "          target: github_token\n"):
             with self.subTest(needle=needle.strip()):

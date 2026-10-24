@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STAGE_BUILDER = "scripts/ci/build-dev-container-stage.sh"
 BUILD_OPTION = "--secret id=github_token,env=GITHUB_TOKEN"
+NEO_FETCH_MOUNT = "/run/secrets/github_token"
 CALLER_ENV_LINE = "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
 TOKEN_DECLARATION = re.compile(r"(?m)^\s*(?:ARG|ENV)\s+GITHUB_TOKEN(?:\s|=)")
 MOUNT = re.compile(r"--mount=(?P<options>[^\s\\]+)")
@@ -118,13 +119,18 @@ def validate_containerfile(text: str) -> list[str]:
     mounts = _mount_options(text)
     if len(mounts) != 1:
         errors.append("dev/Containerfile must have exactly one github_token secret mount")
-    elif mounts[0].get("env") != "GITHUB_TOKEN" or mounts[0].get("required") != "false":
-        errors.append("github_token must mount as optional GITHUB_TOKEN (required=false)")
+    elif mounts[0].get("required") != "false":
+        errors.append("github_token must mount as an optional secret (required=false)")
+    elif "env" in mounts[0] or mounts[0].get("target", NEO_FETCH_MOUNT) != NEO_FETCH_MOUNT:
+        # Podman's Buildah refuses the env= key (ADR-3520).
+        errors.append(f"github_token must mount as the file {NEO_FETCH_MOUNT}, not with env=")
     mount_at = text.find("--mount=type=secret,id=github_token")
     block_end = text.find("\n\n", mount_at)
     block = text[mount_at:block_end] if mount_at >= 0 and block_end >= 0 else ""
     if "fetch-intel-neo.py" not in block:
         errors.append("github_token must be scoped to the NEO fetch RUN")
+    if f'GITHUB_TOKEN="$(cat {NEO_FETCH_MOUNT} 2>/dev/null || true)"' not in block:
+        errors.append(f"the NEO fetch RUN must read the token from {NEO_FETCH_MOUNT}")
     if 'token_args=(--github-token "${GITHUB_TOKEN}")' not in block:
         errors.append("the NEO fetch RUN must ignore an empty github_token secret")
     return errors

@@ -477,16 +477,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # through scripts/ci/install-intel-ocloc.sh, so both compile with one IGC.
 # The IGC debs install into /usr/local/lib without an ldconfig trigger, hence
 # the explicit ldconfig before anything loads them.
+# The token secret is read from its file mount, not `env=`: Podman's Buildah
+# rejects the `env=` key, BuildKit accepts both.
 COPY build-config.env /opt/vmafx/build-config.env
 COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
 # hadolint ignore=DL3003,DL3008,DL3009
-RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
+RUN --mount=type=secret,id=github_token,required=false \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \
     && apt-get update && apt-get install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
     && token_args=() \
+    && GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" \
     && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
     && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" "${token_args[@]}" \
     && apt-get update \

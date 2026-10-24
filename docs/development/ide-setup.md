@@ -88,6 +88,107 @@ through `--vmaf-binary`.
 If clangd otherwise works, regenerate the compilation database with the
 backend enabled before changing source includes.
 
+## Podman dev container
+
+`.devcontainer/podman/devcontainer.json` is a VS Code dev container that builds
+its own image on your machine. Use it when you cannot pull the image of the
+root `.devcontainer/devcontainer.json`: that one starts from
+`ghcr.io/vmafx/vmafx-dev-mcp`, a private package
+([ADR-1564](../adr/1564-dev-image-private-guard.md)). This one builds the
+`gpu-sdks` stage of [`dev/Containerfile`](../../dev/Containerfile) from public,
+pinned inputs, so it needs no registry login
+([ADR-3520](../adr/3520-podman-dev-container-local-build.md)).
+
+The container has CUDA (`nvcc`), oneAPI (`icx` / `icpx` on `PATH`, no
+`setvars.sh` needed), the Intel NEO OpenCL and Level Zero runtimes with
+`ocloc`, and ROCm (`hipcc`). CUDA and HIP code compiles everywhere. It runs only
+on a GPU the container can reach, and the configuration passes `/dev/dri`
+through, which covers Intel GPUs. Your workspace files stay owned by your host
+user.
+
+The image holds the CUDA toolkit and oneAPI, which may be used but not
+redistributed. Keep it local: do not push it to a registry.
+
+### Before the first start
+
+1. Use rootless Podman and enable your user's Podman socket:
+
+    ```bash
+    systemctl --user enable --now podman.socket
+    ```
+
+    The container mounts it so `podman` inside drives the host's engine,
+    which is what the `scripts/test/` helpers expect.
+
+2. Point VS Code's Dev Containers extension at Podman. Set
+   `"dev.containers.dockerPath": "podman"` in your user settings.
+
+3. Make sure your user can open the GPU's render node, for example
+   `/dev/dri/renderD128`. On most desktop distributions the logged-in user
+   already can. Otherwise add the user to the `render` group.
+
+### Open the repository in the container
+
+Run **Dev Containers: Reopen in Container** and pick
+**vmafx (podman, local GPU toolchains)**.
+
+The first build takes over an hour. It pulls the ROCm image (about 21 GB), and
+the finished image is about 28 GB. Later starts reuse the image. Run
+**Dev Containers: Rebuild Container** after a change to the `gpu-sdks` stage or
+to `build-config.env`. A change to the sources does not need a rebuild,
+because the stage copies none.
+
+The build uses `--format=docker`. Podman's default OCI format drops the
+`SHELL` instruction, and every `RUN` step would then run under `/bin/sh`. To
+build the image by hand:
+
+```bash
+podman build --format docker -f dev/Containerfile --target gpu-sdks \
+    -t localhost/vmafx-devc:gpu-sdks .
+```
+
+Pass `--secret id=github_token,env=GITHUB_TOKEN` as well if the Intel NEO step
+hits GitHub's API rate limit.
+
+### Check the GPU and build
+
+Inside the container, `sycl-ls` lists the Intel GPU through Level Zero and
+OpenCL. On an Arc Pro B50 it shows:
+
+```text
+[opencl:gpu][opencl:1] Intel(R) OpenCL Graphics (discrete), Intel(R) Arc(TM) Pro B50 Graphics OpenCL 3.0 NEO  [26.35.39758.10]
+[level_zero:gpu][level_zero:0] Intel(R) oneAPI Unified Runtime over Level-Zero V2, Intel(R) Arc(TM) Pro B50 Graphics 20.1.0 [1.17.39758+10]
+```
+
+Then configure the IDE build as described
+[above](#make-sure-the-build-directory-covers-every-backend-you-touch). To
+compile the SYCL kernels for your GPU only, rather than all 19 default AOT
+targets, pass the target (here, Battlemage `bmg-g21`):
+
+```bash
+CC=icx CXX=icpx meson setup build core -Denable_sycl=true \
+    -Dsycl_icpx_aot_targets=bmg-g21 -Db_lto=false
+ninja -C build
+python3 scripts/ci/run_meson_test.py -- -C build --suite sycl
+```
+
+Without `-Db_lto=false` the test executables do not link with the default
+linker (`undefined reference to vmaf_engine_init`). The
+[SYCL backend guide](../backends/sycl/overview.md) covers the compiler and
+linker choices.
+
+### Limits
+
+- The container reaches Intel and AMD render nodes. It does not get NVIDIA
+  devices or AMD's `/dev/kfd`. To run CUDA or HIP code on a GPU, use the
+  [dev-MCP container](dev-mcp.md) with your GPU passed through.
+- It has the toolchains only. `vmaf`, FFmpeg and the MCP server are not built
+  into the image, so you build them from the workspace. The dev-MCP container
+  ships them prebuilt.
+- `--group-add=keep-groups` works only with a local Podman. If VS Code talks
+  to Podman over a remote connection, remove that line from `runArgs`, and the
+  render node must then be readable without the extra groups.
+
 ## Zed editor
 
 The checked-in contract targets **Zed 1.18.1**
